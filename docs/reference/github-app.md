@@ -9,7 +9,7 @@ This reference is for operators whose Projects live in private `github.com` repo
 
 ## What the App is
 
-Each Gateway owns at most one GitHub App. The App is a registration on GitHub with a private key that only this Gateway holds. It has three permissions, `Contents: write`, `Metadata: read`, and `Pull requests: write`, and it receives no webhooks. It cannot change repository settings. Each operation asks GitHub for a token with only the permissions it needs, so a read never carries write access.
+Each Gateway owns at most one GitHub App. The App is a registration on GitHub with a private key that only this Gateway holds. It has four permissions, `Checks: read`, `Contents: write`, `Metadata: read`, and `Pull requests: write`, and it receives no webhooks. It cannot change repository settings. Each operation asks GitHub for a token with only the permissions it needs, so a read never carries write access.
 
 The App is public on GitHub. Public means that any GitHub account can install it, which lets you add organizations that do not own the registration. An installation gives your Gateway access to that account's repositories. It gives the installing account nothing.
 
@@ -49,6 +49,14 @@ The Gateway needs outbound HTTPS access to `api.github.com` for every read of a 
 After the approval of the last subtask, the Gateway asks GitHub for a token with `Contents: write` and `Pull requests: write` for the Project repository. The token reaches the Node the same way as a read token, and `git` pushes the task branch with it. The Gateway then opens the pull request and later reads its state with the same kind of token. Unlike a read, publishing has no path without the App: without an App or an installation that covers the repository, the task counts a communication failure and then asks for assistance. [ADR 0121](/decisions/0121-end-agent-turns-with-a-run-receipt) owns this use.
 
 An installation made before the App gained `Contents: write` and `Pull requests: write` keeps its old permissions until the account owner accepts the new ones in the installation settings on GitHub. Until then, GitHub refuses the publish token with 422, and the assistance reason quotes GitHub's message: "The permissions requested are not granted to this installation."
+
+## How Orbit watches a task pull request
+
+Each scheduler tick reads a settling group's pull request with the pull request token. While the pull request is open, the Gateway also asks GitHub for a second token with only `Checks: read`, and lists the check runs of the pull request's head commit. A failed check run makes the group ask for assistance, as the [tasks reference](/reference/tasks#pull-request-and-settle-metrics) describes. [ADR 0140](/decisions/0140-watch-settling-pull-requests-for-conflicts-and-failed-checks) owns this use.
+
+The checks token is separate because GitHub refuses a whole token request that names a permission the installation has not accepted. When GitHub refuses the checks token, the Gateway skips the check runs and still reports conflicts. Publishing and merge watching keep working.
+
+An App registered before Orbit requested `Checks: read` does not have it. Open the App settings on GitHub, set Permissions → Checks to Read-only, and save. Then the account owner accepts the new permission in the settings of each installation. Failed checks are reported after that.
 
 ## What the App does not cover
 
