@@ -481,9 +481,11 @@ final readonly class DnsmasqPrivateDnsManager implements PrivateDnsManager
         return <<<BASH
             {$helpers}
             if [ "\$records_changed" = 0 ] && [ "\$catalog_changed" = 0 ]; then
-                if ! systemctl is-active --quiet dnsmasq; then
-                    systemctl restart dnsmasq
+                if systemctl is-active --quiet dnsmasq; then
+                    confirm_listener_catalog || exit 1
+                    exit 0
                 fi
+                systemctl restart dnsmasq
                 confirm_listener_catalog || exit 1
                 exit 0
             fi
