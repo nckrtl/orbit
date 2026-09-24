@@ -44,6 +44,28 @@ The `websocket`, `proxycli`, `analytics`, and Metrics publishers also switch a c
 
 The `app-dev.caddy` publisher renders every Route site from stored state only, Route transitions included. Any publication on a Node therefore renders the same Route sites, whichever command requested it. [Stored transitions](/reference/routes#stored-transitions) lists the state each transition stores.
 
+## Listener addresses
+
+Each publisher chooses its `bind` addresses with the listener rule of the [Node Caddy build](#node-caddy-build), so the fragments and a build agree:
+
+| Sites | Node without `ingress` | Node with `ingress` |
+| --- | --- | --- |
+| Private Route sites in `app-dev.caddy`: workload and Router sites, custom proxy Routes, analytics tracking hosts, Agentation, and Vite | The WireGuard address, and the LAN address when the Node has one | `0.0.0.0` |
+| Public Ingress sites | None | `0.0.0.0` |
+| `reverb.orbit`, `analytics.orbit`, `collector.cli-proxy-api.orbit`, and Herdr observer sites | The WireGuard address | `0.0.0.0` when the Node has a private Route site; otherwise the WireGuard address |
+| `gateway.orbit`, `metrics.orbit`, and the service metrics scrape site | The WireGuard address | The WireGuard address |
+
+Caddy sends a connection for a specific address only to the sites bound to that address. If one site binds the WireGuard address and another binds `0.0.0.0` on the same port, a WireGuard client that asks for the second hostname gets an empty response. The rule puts every site that WireGuard clients use on the same listener.
+
+The Gateway decides the addresses from stored state: the Node's `ingress` role, its WireGuard and LAN addresses, and its Route sites. The `app-dev`, `websocket`, `analytics`, ProxyCli, and Herdr publishers also rewrite the `bind` lines of the fragments they carry to this rule:
+
+- The private `https://` sites in `app-dev.caddy`.
+- Every site in `websocket.caddy`, `analytics.caddy`, `proxycli.caddy`, and `herdr-<session>.caddy`.
+
+One publication therefore corrects a listener that another publisher wrote earlier. It publishes a new version when only a carried fragment changed. Public sites, Unix socket sites, and all other fragments keep their `bind` lines. The Metrics, service metrics, and Gateway web publishers bind the WireGuard address and carry other fragments unchanged.
+
+A stored LAN address must exist on its Node. Otherwise Caddy fails to reload, and the publisher restores the previous version and fails with its usual error code.
+
 ## Publication lock
 
 Every publisher holds `/run/lock/orbit/caddy.lock` from before it reads the live version until Caddy has reloaded. A second publisher waits up to 30 seconds for the lock and then fails without changing the Node. The fragment and certificate publishers above all use this lock.

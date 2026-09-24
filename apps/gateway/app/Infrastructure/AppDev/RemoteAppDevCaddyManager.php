@@ -6,6 +6,8 @@ namespace App\Infrastructure\AppDev;
 
 use App\Domain\AppDev\AppDevCaddyManager;
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
+use App\Infrastructure\Caddy\Build\NodeCaddyListenerResolver;
+use App\Infrastructure\Caddy\CaddyFragmentListeners;
 use App\Models\Node;
 
 final readonly class RemoteAppDevCaddyManager implements AppDevCaddyManager
@@ -16,6 +18,7 @@ final readonly class RemoteAppDevCaddyManager implements AppDevCaddyManager
         private AppDevSshExecutor $ssh,
         private AppDevCaddyPublisher $publisher = new AppDevCaddyPublisher,
         private ?DevelopmentProjectionOperationLock $projection = null,
+        private ?NodeCaddyListenerResolver $listeners = null,
     ) {}
 
     public function converge(Node $node): void
@@ -23,19 +26,31 @@ final readonly class RemoteAppDevCaddyManager implements AppDevCaddyManager
         $this->owner()->run(fn () => $this->convergeSites($node));
     }
 
-    /** The Node's `app-dev.caddy` fragment, rendered from stored state. */
+    /** The Node's `app-dev.caddy` fragment, rendered from stored state with the Node's listeners. */
     public function render(Node $node): string
     {
-        return $this->renderer->render($this->sites->forNode($node));
+        return $this->fragment($node)['configuration'];
+    }
+
+    /** @return array{configuration: string, listeners: CaddyFragmentListeners} */
+    private function fragment(Node $node): array
+    {
+        $sites = $this->sites->forNode($node);
+        $listeners = ($this->listeners ?? app(NodeCaddyListenerResolver::class))->fragments($node, $sites);
+
+        return [
+            'configuration' => $this->renderer->render($sites, $listeners->routeBind()),
+            'listeners' => $listeners,
+        ];
     }
 
     private function convergeSites(Node $node): void
     {
-        $configuration = $this->render($node);
+        ['configuration' => $configuration, 'listeners' => $listeners] = $this->fragment($node);
         $version = bin2hex(random_bytes(8));
         $this->ssh->execute(
             $node,
-            $this->publisher->command($configuration, $version),
+            $this->publisher->command($configuration, $version, $listeners),
             step: 'caddy-config',
             errorCode: 'app-dev.caddy_config_failed',
         );

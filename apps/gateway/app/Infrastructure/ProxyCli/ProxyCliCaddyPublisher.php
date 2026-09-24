@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\ProxyCli;
 
+use App\Infrastructure\Caddy\CaddyFragmentListeners;
 use App\Infrastructure\Caddy\CaddyGlobalOptions;
 use App\Infrastructure\Caddy\CaddyPublicationLock;
 use App\Infrastructure\Caddy\OwnsCaddyGlobalOptions;
@@ -26,11 +27,12 @@ final readonly class ProxyCliCaddyPublisher
     public function command(
         string $configuration,
         string $port,
-        string $wireguardIp,
+        CaddyFragmentListeners $listeners,
         ?string $appDevConfiguration = null,
     ): RemoteCommand {
         $lockScript = CaddyPublicationLock::script();
-        $encoded = base64_encode($configuration);
+        $listenerScript = $listeners->script();
+        $encoded = base64_encode(str_replace(ProxyCliFootprint::CaddyBindPlaceholder, $listeners->sharedBind(), $configuration));
         $replacedFragment = $appDevConfiguration === null ? '' : self::AppDevFragment;
         $replacementEncoded = base64_encode($appDevConfiguration ?? '');
         $version = bin2hex(random_bytes(8));
@@ -47,8 +49,6 @@ final readonly class ProxyCliCaddyPublisher
                 ProxyCliFootprint::CaddyfilePath,
                 ProxyCliFootprint::CaddyServiceName,
                 CaddyPublicationLock::Path,
-                $wireguardIp,
-                ProxyCliFootprint::CaddyBindPlaceholder,
                 $replacedFragment,
             ],
             input: CaddyGlobalOptions::conflictGuard().<<<BASH
@@ -58,9 +58,7 @@ final readonly class ProxyCliCaddyPublisher
                 live_caddyfile=\$4
                 caddy_service=\$5
                 lock=\$6
-                wireguard_ip=\$7
-                bind_placeholder=\$8
-                replaced_fragment=\$9
+                replaced_fragment=\$7
                 {$lockScript}
                 candidate="\$versions/\$version.candidate"
                 published="\$versions/\$version"
@@ -84,18 +82,15 @@ final readonly class ProxyCliCaddyPublisher
                 if [ -n "\$replaced_fragment" ]; then
                     printf '%s' '{$replacementEncoded}' | base64 --decode > "\$candidate/fragments/\$replaced_fragment"
                 fi
-                bind_address=\$wireguard_ip
-                if grep -qsE '^[[:space:]]*bind[[:space:]]+0\\.0\\.0\\.0' "\$candidate"/fragments/*.caddy; then
-                    bind_address=0.0.0.0
-                fi
-                printf '%s' '{$encoded}' | base64 --decode \\
-                    | sed "s/\$bind_placeholder/\$bind_address/" > "\$candidate/fragments/\$owned_fragment"
+                printf '%s' '{$encoded}' | base64 --decode > "\$candidate/fragments/\$owned_fragment"
+                {$listenerScript}
                 printf '%s\n' '{$this->encodedGlobalOptions()}' | base64 --decode > "\$candidate/Caddyfile"
                 printf 'import %s/fragments/*.caddy\n' "\$candidate" >> "\$candidate/Caddyfile"
                 chown -R root:caddy "\$candidate"
                 find "\$candidate" -type d -exec chmod 0750 {} +
                 find "\$candidate" -type f -exec chmod 0640 {} +
                 if [ -z "\$replaced_fragment" ] \\
+                    && [ "\$listeners_rewritten" = 0 ] \\
                     && [ -d "\$current_fragments" ] \\
                     && [ -f "\$current_fragments/\$owned_fragment" ] \\
                     && cmp -s -- "\$candidate/fragments/\$owned_fragment" "\$current_fragments/\$owned_fragment" \\

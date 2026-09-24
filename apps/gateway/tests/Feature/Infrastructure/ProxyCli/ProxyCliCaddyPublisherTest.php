@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Infrastructure\Caddy\CaddyFragmentListeners;
 use App\Infrastructure\ProxyCli\ProxyCliCaddyPublisher;
 use App\Infrastructure\ProxyCli\ProxyCliCaddySiteRenderer;
 use Illuminate\Filesystem\Filesystem;
@@ -39,7 +40,7 @@ describe('the ProxyCli Caddy publication with a Route takeover', function (): vo
                 ->and(basename($published))->not->toBe('live')
                 ->and(file_get_contents("{$published}/fragments/app-dev.caddy"))->toBe(PROXYCLI_ROUTE_FRAGMENT_WITHOUT_COLLECTOR)
                 ->and(file_get_contents("{$published}/fragments/proxycli.caddy"))
-                ->toContain("collector.cli-proxy-api.orbit {\n    bind 0.0.0.0\n")
+                ->toContain("collector.cli-proxy-api.orbit {\n    bind 10.44.0.17\n")
                 ->and(file_get_contents("{$published}/fragments/other.caddy"))->toBe("other.orbit {\n}\n")
                 ->and(proxycli_caddy_log($root, 'systemctl'))->toBe(['enable caddy', 'reload-or-restart caddy'])
                 ->and(proxycli_caddy_log($root, 'caddy'))->toHaveCount(1);
@@ -115,11 +116,11 @@ function proxycli_caddy_run(string $root, ?string $appDevConfiguration, bool $va
     $command = new ProxyCliCaddyPublisher()->command(
         new ProxyCliCaddySiteRenderer()->render(8787),
         '8787',
-        '10.44.0.17',
+        new CaddyFragmentListeners(['10.44.0.17'], ['10.44.0.17']),
         $appDevConfiguration,
     );
     $arguments = array_slice($command->arguments, 1);
-    // bash -seu -- version fragment versions Caddyfile service lock address placeholder replaced
+    // bash -seu -- version fragment versions Caddyfile service lock replaced
     $arguments[5] = "{$root}/versions";
     $arguments[6] = "{$root}/Caddyfile";
     $arguments[8] = "{$root}/caddy.lock";

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\AppDev;
 
 use App\Domain\Hibernation\RuntimeHibernation;
+use App\Infrastructure\Caddy\CaddyFragmentListeners;
 use App\Infrastructure\Caddy\CaddyGlobalOptions;
 use App\Infrastructure\Caddy\CaddyPublicationLock;
 use App\Infrastructure\Caddy\OwnsCaddyGlobalOptions;
@@ -34,10 +35,16 @@ final readonly class AppDevCaddyPublisher
         );
     }
 
-    public function command(string $configuration, string $version): RemoteCommand
+    /**
+     * @param  CaddyFragmentListeners|null  $listeners  The Node's listeners. The publication rewrites the carried
+     *                                                  shared fragments to them; without them it carries every
+     *                                                  fragment as it is.
+     */
+    public function command(string $configuration, string $version, ?CaddyFragmentListeners $listeners = null): RemoteCommand
     {
         $encoded = base64_encode($configuration);
         $lockScript = CaddyPublicationLock::script();
+        $listenerScript = $listeners?->script() ?? 'listeners_rewritten=0';
 
         return new RemoteCommand(
             arguments: [
@@ -116,13 +123,14 @@ final readonly class AppDevCaddyPublisher
                 esac
                 printf '%s' '{$encoded}' | base64 --decode | \
                     tee "\$candidate/fragments/app-dev.caddy" >/dev/null
+                {$listenerScript}
                 printf '%s\n' '{$this->encodedGlobalOptions()}' | base64 --decode > "\$candidate/Caddyfile"
                 printf 'import %s/fragments/*.caddy\n' "\$candidate" >> "\$candidate/Caddyfile"
                 chown -R root:caddy "\$candidate"
                 find "\$candidate" -type d -exec chmod 0750 {} +
                 find "\$candidate" -type f -exec chmod 0640 {} +
 
-                if [ -f "\$previous_fragments/app-dev.caddy" ] && cmp -s -- "\$candidate/fragments/app-dev.caddy" "\$previous_fragments/app-dev.caddy"; then
+                if [ "\$listeners_rewritten" = 0 ] && [ -f "\$previous_fragments/app-dev.caddy" ] && cmp -s -- "\$candidate/fragments/app-dev.caddy" "\$previous_fragments/app-dev.caddy"; then
                     exit 0
                 fi
 

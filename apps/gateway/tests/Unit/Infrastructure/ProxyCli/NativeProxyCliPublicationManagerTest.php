@@ -145,7 +145,7 @@ function proxycli_publication_manager(
                     return new CommandResult(0, '', '', 1, false);
                 }
 
-                $isCaddyPublish = str_contains($command->input ?? '', 'bind_placeholder=');
+                $isCaddyPublish = str_contains($command->input ?? '', 'orbit_rewrite_listeners');
                 $this->events[] = $isCaddyPublish ? 'ssh:caddy' : 'ssh:caddy-remove';
 
                 return new CommandResult($this->failCaddy ? 1 : 0, '', '', 1, false);

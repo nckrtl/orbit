@@ -10,6 +10,8 @@ use App\Domain\Analytics\PlausibleProcess;
 use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\Certificates\GatewayCertificateIssuer;
 use App\Domain\Nodes\NodeRoleOperationException;
+use App\Infrastructure\Caddy\Build\NodeCaddyListenerResolver;
+use App\Infrastructure\Caddy\CaddyFragmentListeners;
 use App\Infrastructure\Nodes\CaddyPackageSourceProgram;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\RemoteCommand;
@@ -29,6 +31,7 @@ final readonly class NativeAnalyticsPublicationManager implements AnalyticsPubli
         private SshExecutor $ssh,
         private SshKeyProvider $keys,
         private KnownHostsStore $knownHosts,
+        private ?NodeCaddyListenerResolver $listeners = null,
     ) {}
 
     public function converge(Node $node): void
@@ -58,7 +61,7 @@ final readonly class NativeAnalyticsPublicationManager implements AnalyticsPubli
         $configuration = $this->site->render($address);
         $caddyResult = $this->ssh->execute(
             $this->connection($node, $address),
-            $this->caddy->command($configuration, (string) PlausibleProcess::PORT, $address),
+            $this->caddy->command($configuration, (string) PlausibleProcess::PORT, $this->listeners($node)),
         );
 
         if (! $caddyResult->succeeded()) {
@@ -145,6 +148,11 @@ final readonly class NativeAnalyticsPublicationManager implements AnalyticsPubli
     public function removeUnreachable(Node $node): void
     {
         $this->dns->converge();
+    }
+
+    private function listeners(Node $node): CaddyFragmentListeners
+    {
+        return ($this->listeners ?? app(NodeCaddyListenerResolver::class))->fragments($node);
     }
 
     private function connection(Node $node, string $address): SshConnection

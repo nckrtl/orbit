@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Infrastructure\Analytics\AnalyticsCaddyPublisher;
 use App\Infrastructure\AppDev\AppDevCaddyPublisher;
 use App\Infrastructure\AppProd\AppProdCaddyPublisher;
+use App\Infrastructure\Caddy\CaddyFragmentListeners;
 use App\Infrastructure\Caddy\CaddyGlobalOptions;
 use App\Infrastructure\Metrics\MetricsCaddyPublisher;
 use App\Infrastructure\Metrics\ServiceMetricsConfigRenderer;
@@ -87,11 +88,11 @@ it('refuses carried global options right before every Caddy publisher validates 
     'app-dev removal' => fn (): string => new AppDevCaddyPublisher()->removeCommand('version')->input,
     'app-prod publish' => fn (): string => new AppProdCaddyPublisher()->command("app.test {\n}\n", 'version')->input,
     'app-prod removal' => fn (): string => new AppProdCaddyPublisher()->removeCommand('version')->input,
-    'websocket publish' => fn (): string => new WebSocketCaddyPublisher()->command("ws.test {\n}\n", '8080', '10.6.0.2')->input,
+    'websocket publish' => fn (): string => new WebSocketCaddyPublisher()->command("ws.test {\n}\n", '8080', new CaddyFragmentListeners(['10.6.0.2'], ['10.6.0.2']))->input,
     'websocket removal' => fn (): string => new WebSocketCaddyPublisher()->removeCommand()->input,
-    'analytics publish' => fn (): string => new AnalyticsCaddyPublisher()->command("stats.test {\n}\n", '8000', '10.6.0.2')->input,
+    'analytics publish' => fn (): string => new AnalyticsCaddyPublisher()->command("stats.test {\n}\n", '8000', new CaddyFragmentListeners(['10.6.0.2'], ['10.6.0.2']))->input,
     'analytics removal' => fn (): string => new AnalyticsCaddyPublisher()->removeCommand()->input,
-    'proxycli publish' => fn (): string => new ProxyCliCaddyPublisher()->command("proxy.test {\n}\n", '8317', '10.6.0.2')->input,
+    'proxycli publish' => fn (): string => new ProxyCliCaddyPublisher()->command("proxy.test {\n}\n", '8317', new CaddyFragmentListeners(['10.6.0.2'], ['10.6.0.2']))->input,
     'proxycli removal' => fn (): string => new ProxyCliCaddyPublisher()->removeCommand()->input,
     'metrics publish' => fn (): string => caddy_global_options_metrics_script(fn (MetricsCaddyPublisher $publisher) => $publisher->publish("metrics.orbit {\n}\n")),
     'metrics withdrawal' => fn (): string => caddy_global_options_metrics_script(fn (MetricsCaddyPublisher $publisher) => $publisher->withdrawForCutover()),
@@ -111,7 +112,7 @@ it('passes Orbit global options to a removal script as an argument', function (C
 ]);
 
 it('writes Orbit global options into the ProxyCli candidate before its import', function (): void {
-    $input = new ProxyCliCaddyPublisher()->command("proxy.test {\n}\n", '8317', '10.6.0.2')->input;
+    $input = new ProxyCliCaddyPublisher()->command("proxy.test {\n}\n", '8317', new CaddyFragmentListeners(['10.6.0.2'], ['10.6.0.2']))->input;
 
     expect(substr_count($input, "'".base64_encode(CaddyGlobalOptions::render())."' | base64 --decode > \"\$candidate/Caddyfile\""))
         ->toBe(2)

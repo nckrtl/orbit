@@ -9,6 +9,8 @@ use App\Domain\Certificates\GatewayCertificateIssuer;
 use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\WebSocket\WebSocketHostname;
 use App\Domain\WebSocket\WebSocketPublicationManager;
+use App\Infrastructure\Caddy\Build\NodeCaddyListenerResolver;
+use App\Infrastructure\Caddy\CaddyFragmentListeners;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
@@ -27,6 +29,7 @@ final readonly class NativeWebSocketPublicationManager implements WebSocketPubli
         private SshKeyProvider $keys,
         private KnownHostsStore $knownHosts,
         private int $port = 0,
+        private ?NodeCaddyListenerResolver $listeners = null,
     ) {}
 
     public function converge(Node $node): void
@@ -54,7 +57,7 @@ final readonly class NativeWebSocketPublicationManager implements WebSocketPubli
         $configuration = $this->site->render($this->resolvedPort());
         $caddyResult = $this->ssh->execute(
             $this->connection($node, $address),
-            $this->caddy->command($configuration, (string) $this->resolvedPort(), $address),
+            $this->caddy->command($configuration, (string) $this->resolvedPort(), $this->listeners($node)),
         );
 
         if (! $caddyResult->succeeded()) {
@@ -82,6 +85,11 @@ final readonly class NativeWebSocketPublicationManager implements WebSocketPubli
     public function removeUnreachable(Node $node): void
     {
         $this->dns->converge();
+    }
+
+    private function listeners(Node $node): CaddyFragmentListeners
+    {
+        return ($this->listeners ?? app(NodeCaddyListenerResolver::class))->fragments($node);
     }
 
     private function connection(Node $node, string $address): SshConnection
