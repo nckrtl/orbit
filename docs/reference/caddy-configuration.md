@@ -144,7 +144,9 @@ reverb.orbit {
 }
 ```
 
-The Gateway renders the sites from committed database state only. The same state always gives the same file. Route transitions are stored state too: a Route that is being published or withdrawn, an Instance that is being removed, a placement change, and a Router replacement each have a database record that the build reads. A Node gets at most one site for each domain and port. When a Route's current and transition placements render the same site on one Node, the build keeps the current one. Any other duplicate fails the build.
+The Gateway renders the sites from committed database state only. A role's sites render while the role is provisioning or active, and after a failed reconvergence, because they were live before that attempt. They stop rendering when the role's removal starts or when its first convergence fails. A Herdr observer site renders while its session publishes the observer and is not being removed.
+
+The same state always gives the same file. Route transitions are stored state too: a Route that is being published or withdrawn, an Instance that is being removed, a placement change, and a Router replacement each have a database record that the build reads. A Node gets at most one site for each domain and port. When a Route's current and transition placements render the same site on one Node, the build keeps the current one. Any other duplicate fails the build.
 
 | Site source | Nodes | Listener |
 | --- | --- | --- |
@@ -169,11 +171,12 @@ The Gateway sends one script to the Node over SSH. On the Node that runs the Gat
 
 1. Takes `/run/lock/orbit/caddy.lock` with the [path checks](#publication-lock) above.
 2. Checks that the packaged `/usr/bin/caddy` is at least the [release floor](/reference/node-provisioning#package-sources), 2.9.0.
-3. Backs up a live Caddyfile that Orbit did not build, as [replaced configuration](#replaced-configuration) describes.
-4. Writes `/etc/caddy/orbit-versions/<version>/Caddyfile`. The version name comes from a digest of the file.
+3. Stops without a change when `/etc/caddy/Caddyfile` already points at this version.
+4. Writes `/etc/caddy/orbit-versions/<version>/Caddyfile`. The version name is the first 32 hexadecimal characters of the file's SHA-256 digest.
 5. Runs `caddy validate` as the `caddy` user, so log files that validation creates stay writable by the service.
-6. Points `/etc/caddy/Caddyfile` at the new version, then enables and reloads the `caddy` service.
-7. Keeps the live version and the nine newest others, and removes older versions.
+6. Backs up a live Caddyfile that Orbit did not build, as [replaced configuration](#replaced-configuration) describes.
+7. Points `/etc/caddy/Caddyfile` at the new version, then enables and reloads the `caddy` service.
+8. Keeps the live version and the nine newest others, and removes older versions. It never removes the `staged` directory.
 
 A version holds only its `Caddyfile`. It has no fragments and imports nothing. Every Node with Caddy sites, the Gateway machine included, installs Caddy from the pinned source before its first build.
 
@@ -183,11 +186,29 @@ A build either publishes the whole file or changes nothing. It fails when a site
 
 The command that requested the build fails with its usual error code, such as `app-dev.caddy_config_failed` or `websocket.caddy_publication_failed`. The error details and the activity record name the Node, the failed stage, and Caddy's message. A missing certificate file fails validation; converge the role or Route that owns the site to publish it again. One broken site blocks every Caddy change on its Node until it is fixed, because each build renders every site.
 
+The failed stage is one of `lock`, `release`, `unchanged`, `write`, `validate`, `backup`, `swap`, or `reload`, or `render` and `gateway-lock` on the Gateway before it contacts the Node.
+
 [`orbit doctor`](/cli/doctor) reports `role.caddy_build_drift` when the live Caddyfile differs from a fresh render. The issue lists the site sources on that Node. Repeat any command that publishes one of them, such as `orbit node:role:add NODE app-dev --converge`, to build the Node again.
+
+### Render without pushing
+
+The Gateway can already render a Node's build, but no command pushes it yet. Role publishers still write the fragment layout above. On the Gateway machine, an operator or a reviewer can render one Node and compare it with that Node's live configuration:
+
+```bash
+php artisan orbit:caddy-build NODE --dry-run
+php artisan orbit:caddy-build NODE --dry-run --diff
+```
+
+| Option | Result |
+| --- | --- |
+| `--dry-run` | Required. Prints the rendered Caddyfile and changes nothing. |
+| `--diff` | Reads the live `/etc/caddy/Caddyfile` and its fragments, and prints one line for each site: `same`, `changed`, `build only`, or `live only`. A `changed` site lists the lines that differ. |
+
+The command exits with status 1 and prints `Build refused:` with the reason when the render has a problem, such as a duplicate address or a WireGuard-only site on a wildcard port. The output names hostnames and certificate paths; Orbit's Caddy sites hold no secrets.
 
 ### Replaced configuration
 
-The build replaces a Caddyfile that does not start with its marker line. It never adopts it. The first build on such a Node copies what it replaces to `/etc/caddy/orbit-backups/<UTC timestamp>/`:
+The build replaces a Caddyfile that does not start with its marker line. It never adopts it. The first build on such a Node copies what it replaces to `/etc/caddy/orbit-backups/<UTC timestamp>/`, after the new version passes validation:
 
 | Live `/etc/caddy/Caddyfile` | Backup |
 | --- | --- |

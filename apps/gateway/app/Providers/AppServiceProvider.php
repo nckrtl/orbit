@@ -205,6 +205,16 @@ use App\Infrastructure\AppProd\RemoteAppProdCaddyManager;
 use App\Infrastructure\AppProd\RemoteAppProdPhpFpmManager;
 use App\Infrastructure\Apps\NativeAppUpdateProjectionMutator;
 use App\Infrastructure\Apps\RemoteAppUpdateSourceMutator;
+use App\Infrastructure\Caddy\Build\NodeCaddyBuildLock;
+use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
+use App\Infrastructure\Caddy\Build\Sources\AnalyticsCaddySiteSource;
+use App\Infrastructure\Caddy\Build\Sources\AppCaddySiteSource;
+use App\Infrastructure\Caddy\Build\Sources\GatewayWebCaddySiteSource;
+use App\Infrastructure\Caddy\Build\Sources\HerdrObserverCaddySiteSource;
+use App\Infrastructure\Caddy\Build\Sources\MetricsCaddySiteSource;
+use App\Infrastructure\Caddy\Build\Sources\ProxyCliCaddySiteSource;
+use App\Infrastructure\Caddy\Build\Sources\ServiceMetricsCaddySiteSource;
+use App\Infrastructure\Caddy\Build\Sources\WebSocketCaddySiteSource;
 use App\Infrastructure\Certificates\OpenSslGatewayCertificateIssuer;
 use App\Infrastructure\Certificates\OpenSslGatewayCertificateValidator;
 use App\Infrastructure\Certificates\OpenSslLeafCertificateSigner;
@@ -544,6 +554,26 @@ final class AppServiceProvider extends ServiceProvider
                     .'/locks/metrics-credentials',
                 deadline: app(CommandDeadline::class),
             ),
+        );
+        $this->app->scoped(
+            NodeCaddyBuildLock::class,
+            static fn (): NodeCaddyBuildLock => new NodeCaddyBuildLock(
+                directory: rtrim(string: (string) config('orbit.home'), characters: '/').'/locks/caddy-build',
+                deadline: app(CommandDeadline::class),
+            ),
+        );
+        $this->app->bind(
+            NodeCaddyfileRenderer::class,
+            static fn (): NodeCaddyfileRenderer => new NodeCaddyfileRenderer([
+                app(GatewayWebCaddySiteSource::class),
+                app(MetricsCaddySiteSource::class),
+                app(ServiceMetricsCaddySiteSource::class),
+                app(AppCaddySiteSource::class),
+                app(WebSocketCaddySiteSource::class),
+                app(AnalyticsCaddySiteSource::class),
+                app(ProxyCliCaddySiteSource::class),
+                app(HerdrObserverCaddySiteSource::class),
+            ]),
         );
         $this->app->scoped(
             ClusterRouterOperationLock::class,
