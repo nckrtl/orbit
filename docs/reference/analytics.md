@@ -97,7 +97,7 @@ The host answers two paths and nothing else.
 | `/api/event` | The Plausible event endpoint. |
 | Every other path | 404, so the dashboard never becomes public. |
 
-The Router serves the host and reaches Plausible over WireGuard; the Ingress forwards the host to the Router as it does for every public Route. A tracking Route has no target and no upstream of its own, and the generic `route:*` commands refuse to create or change one.
+The Router serves the host and reaches Plausible over WireGuard; the Ingress forwards the host to the Router as it does for every public Route. While the analytics role converges, the host keeps its Caddy site and its private DNS record. A tracking Route has no target and no upstream of its own, and the generic `route:*` commands refuse to create or change one.
 
 `orbit instance:analytics:show INSTANCE` returns each host with its Route, its script URL, its event URL, and the DNS record to create. The Gateway knows no public address, so the record is a `CNAME` from the tracking host to the Instance's own domain, which already resolves to your Ingress. The answer also carries the script tag for the Project. `orbit instance:analytics:disable INSTANCE` removes the hosts. You still create the site in Plausible and add the script tag to the Project yourself.
 

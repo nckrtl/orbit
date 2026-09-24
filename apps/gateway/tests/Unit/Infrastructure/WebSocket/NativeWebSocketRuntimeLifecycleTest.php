@@ -92,6 +92,7 @@ it('stops and disables the unit, purging the install path only when asked', func
     expect($commands)->toHaveCount(1);
     expect($commands[0]->input)
         ->toContain('systemctl disable --now')
+        ->toContain("systemctl daemon-reload || true\nsystemctl reset-failed -- \"\$service.service\" >/dev/null 2>&1 || true\n")
         ->toContain('rm -rf -- "$install_path"');
 });
 

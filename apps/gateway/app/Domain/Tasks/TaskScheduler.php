@@ -68,6 +68,9 @@ final readonly class TaskScheduler
             $status = $health?->state;
             if ($status === 'merged') {
                 try {
+                    if (TaskPullRequestHealth::isReason($group->assistance_reason)) {
+                        $group->update(['assistance_requested' => false, 'assistance_reason' => null]);
+                    }
                     $this->completeGroup->execute($group);
                 } catch (Throwable $exception) {
                     $group->update(['assistance_requested' => true, 'assistance_reason' => 'Merged pull request cleanup failed: '.$exception->getMessage()]);

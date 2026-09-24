@@ -6,10 +6,12 @@ use App\Actions\Doctor\ScheduleDoctorProbe;
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Doctor\DoctorFamily;
 use App\Domain\Doctor\DoctorFamilyStatus;
+use App\Domain\Doctor\DoctorInspectionException;
 use App\Domain\Doctor\DoctorNodeContext;
 use App\Domain\Doctor\NodeInspectionData;
 use App\Domain\Doctor\ScheduleInspectionData;
 use App\Domain\Doctor\ScheduleStateInspector;
+use App\Domain\Nodes\RoleName;
 use App\Domain\Schedules\DesiredTimerState;
 use App\Domain\Schedules\ScheduleTargetResolver;
 use App\Domain\Shared\LifecycleStatus;
@@ -117,6 +119,52 @@ it('collapses unreachable host inspection to one family issue', function (): voi
         ->and($this->inspector->inspections)->toBe(0);
 });
 
+it('skips the orphan scan on a Node without Schedules or roles', function (): void {
+    $this->schedule->delete();
+    $this->inspector->orphanScanFails = true;
+
+    $report = $this->probe->inspect(new DoctorNodeContext($this->node, new NodeInspectionData(true, 'linux', 'x86_64', true)));
+
+    expect($report->status)->toBe(DoctorFamilyStatus::Healthy)
+        ->and($report->checked)->toBe(0)
+        ->and($report->issues)->toBeEmpty()
+        ->and($this->inspector->orphanScans)->toBe(0);
+});
+
+it('skips the orphan scan on an unreachable Node without Schedules', function (): void {
+    $this->schedule->delete();
+    $this->node->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
+    $this->inspector->orphanScanFails = true;
+
+    $report = $this->probe->inspect(new DoctorNodeContext($this->node, new NodeInspectionData(false, null, null, null)));
+
+    expect($report->status)->toBe(DoctorFamilyStatus::Healthy)
+        ->and($report->issues)->toBeEmpty()
+        ->and($this->inspector->orphanScans)->toBe(0);
+});
+
+it('scans a Node with a role for orphans even without Schedules', function (): void {
+    $this->schedule->delete();
+    $this->node->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
+    $this->inspector->orphans = ['123e4567-e89b-42d3-a456-426614174099'];
+
+    $report = $this->probe->inspect(new DoctorNodeContext($this->node, new NodeInspectionData(true, 'linux', 'x86_64', true)));
+
+    expect($this->inspector->orphanScans)->toBe(1)
+        ->and(array_map(static fn ($issue): string => $issue->code, $report->issues))->toBe(['schedule.orphan_artifact']);
+});
+
+it('still reports a failed orphan scan on a Node with a role', function (): void {
+    $this->schedule->delete();
+    $this->node->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
+    $this->inspector->orphanScanFails = true;
+
+    $report = $this->probe->inspect(new DoctorNodeContext($this->node, new NodeInspectionData(true, 'linux', 'x86_64', true)));
+
+    expect($report->status)->toBe(DoctorFamilyStatus::Unverifiable)
+        ->and(array_map(static fn ($issue): string => $issue->code, $report->issues))->toBe(['schedule.inspection_failed']);
+});
+
 final class ScheduleDoctorFakeInspector implements ScheduleStateInspector
 {
     public ScheduleInspectionData $inspection;
@@ -125,6 +173,10 @@ final class ScheduleDoctorFakeInspector implements ScheduleStateInspector
     public array $orphans = [];
 
     public int $inspections = 0;
+
+    public int $orphanScans = 0;
+
+    public bool $orphanScanFails = false;
 
     public function __construct()
     {
@@ -140,6 +192,12 @@ final class ScheduleDoctorFakeInspector implements ScheduleStateInspector
 
     public function orphanIds(Node $node, array $knownIds): array
     {
+        $this->orphanScans++;
+
+        if ($this->orphanScanFails) {
+            throw new DoctorInspectionException;
+        }
+
         return $this->orphans;
     }
 }

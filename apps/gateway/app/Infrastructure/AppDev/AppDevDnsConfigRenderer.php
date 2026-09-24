@@ -101,28 +101,7 @@ final readonly class AppDevDnsConfigRenderer
         if ($gateway instanceof Node) {
             $records->push("host-record=gateway.orbit,{$gateway->wireguard_ip}");
 
-            $metrics = Node::query()
-                ->where(static function (Builder $q) use ($pendingNode): void {
-                    $q->where('status', LifecycleStatus::Active->value);
-
-                    if ($pendingNode instanceof Node && $pendingNode->exists) {
-                        $q->orWhere('id', $pendingNode->id);
-                    }
-                })
-                ->whereNotNull('wireguard_ip')
-                ->whereHas('roles', static function (Builder $q) use ($pendingNode): void {
-                    $q->where('role', RoleName::Metrics->value)
-                        ->where(static function (Builder $q) use ($pendingNode): void {
-                            $q->where('status', LifecycleStatus::Active->value);
-
-                            if ($pendingNode instanceof Node && $pendingNode->exists) {
-                                $q->orWhere(static fn (Builder $q): Builder => $q
-                                    ->where('node_id', $pendingNode->id)
-                                    ->where('status', LifecycleStatus::Provisioning->value));
-                            }
-                        });
-                })
-                ->first();
+            $metrics = $this->roleNode(RoleName::Metrics, $pendingNode);
             if ($metrics instanceof Node) {
                 $records->push("host-record=metrics.orbit,{$gateway->wireguard_ip}");
             }
@@ -174,31 +153,32 @@ final readonly class AppDevDnsConfigRenderer
             : null;
     }
 
-    /** The Node that holds a singleton role, counting a pending Node that is still provisioning it. */
+    /**
+     * The Node that holds a singleton role. `node:role:add NODE ROLE --converge` marks the assignment
+     * provisioning while it republishes DNS, so a converging holder keeps its record; an active holder
+     * wins. A pending Node counts while it is still being added.
+     */
     private function roleNode(RoleName $role, ?Node $pendingNode): ?Node
     {
-        return Node::query()
-            ->where(static function (Builder $q) use ($pendingNode): void {
-                $q->where('status', LifecycleStatus::Active->value);
+        $node = null;
 
-                if ($pendingNode instanceof Node && $pendingNode->exists) {
-                    $q->orWhere('id', $pendingNode->id);
-                }
-            })
-            ->whereNotNull('wireguard_ip')
-            ->whereHas('roles', static function (Builder $q) use ($pendingNode, $role): void {
-                $q->where('role', $role->value)
-                    ->where(static function (Builder $q) use ($pendingNode): void {
-                        $q->where('status', LifecycleStatus::Active->value);
+        foreach ([LifecycleStatus::Active, LifecycleStatus::Provisioning] as $status) {
+            $node ??= Node::query()
+                ->where(static function (Builder $q) use ($pendingNode): void {
+                    $q->where('status', LifecycleStatus::Active->value);
 
-                        if ($pendingNode instanceof Node && $pendingNode->exists) {
-                            $q->orWhere(static fn (Builder $q): Builder => $q
-                                ->where('node_id', $pendingNode->id)
-                                ->where('status', LifecycleStatus::Provisioning->value));
-                        }
-                    });
-            })
-            ->first();
+                    if ($pendingNode instanceof Node && $pendingNode->exists) {
+                        $q->orWhere('id', $pendingNode->id);
+                    }
+                })
+                ->whereNotNull('wireguard_ip')
+                ->whereHas('roles', static fn (Builder $q): Builder => $q
+                    ->where('role', $role->value)
+                    ->where('status', $status->value))
+                ->first();
+        }
+
+        return $node;
     }
 
     /**

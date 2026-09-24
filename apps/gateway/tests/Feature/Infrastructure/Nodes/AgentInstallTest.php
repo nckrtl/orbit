@@ -184,7 +184,30 @@ it('stops, disables, and deletes all agent files during removal', function (): v
             ['sudo', 'rm', '-f', '--', '/etc/systemd/system/orbit-agent.service', '/usr/local/bin/orbit-agent'],
             ['sudo', 'rm', '-rf', '--', '/etc/orbit/agent'],
             ['sudo', 'systemctl', 'daemon-reload'],
+            ['sudo', 'systemctl', 'reset-failed', 'orbit-agent'],
         ]);
+});
+
+it('completes agent removal when the unit has no failed record to reset', function (): void {
+    $ssh = new class implements SshExecutor
+    {
+        /** @var list<RemoteCommand> */
+        public array $commands = [];
+
+        public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
+        {
+            $this->commands[] = $command;
+
+            return $command->arguments === ['sudo', 'systemctl', 'reset-failed', 'orbit-agent']
+                ? new CommandResult(1, '', 'Failed to reset failed state of unit orbit-agent.service: Unit orbit-agent.service not loaded.', 1, false)
+                : new CommandResult(0, '', '', 1, false);
+        }
+    };
+
+    nodeAgentExecutor($ssh)->remove(nodeAgentNode());
+
+    expect(array_map(static fn (RemoteCommand $command): array => $command->arguments, $ssh->commands))
+        ->toContain(['sudo', 'systemctl', 'reset-failed', 'orbit-agent']);
 });
 
 it('removes the files when the agent unit is missing', function (): void {

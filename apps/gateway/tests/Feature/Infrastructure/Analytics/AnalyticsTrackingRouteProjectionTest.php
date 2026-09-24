@@ -160,7 +160,7 @@ describe('analytics tracking Route sites', function (): void {
 
     it('renders no site while no analytics role is active or while the Route retires', function (): void {
         $this->route->update(['status' => RouteStatus::Active]);
-        $this->analytics->roles()->update(['status' => LifecycleStatus::Provisioning]);
+        $this->analytics->roles()->update(['status' => LifecycleStatus::Failed]);
 
         expect(new AppDevSiteRepository()->all())->toBeEmpty();
 
@@ -168,6 +168,24 @@ describe('analytics tracking Route sites', function (): void {
         $this->route->update(['status' => RouteStatus::Retiring]);
 
         expect(new AppDevSiteRepository()->all())->toBeEmpty();
+    });
+
+    it('keeps the site and its private DNS while the analytics role itself converges', function (): void {
+        $this->route->update(['status' => RouteStatus::Active]);
+        // `node:role:add services analytics --converge` marks the assignment provisioning while it republishes DNS.
+        $this->analytics->roles()->update(['status' => LifecycleStatus::Provisioning]);
+
+        expect(new AppDevSiteRepository()->all()->map->analyticsUpstream->all())->toBe(['10.44.0.40:8000'])
+            ->and(new AppDevDnsConfigRenderer(new AppDevSiteRepository)->render())
+            ->toContain('host-record=analytics.shop.example.com,10.44.0.20');
+    });
+
+    it('prefers an active analytics holder over a converging one', function (): void {
+        $this->route->update(['status' => RouteStatus::Active]);
+        $this->analytics->roles()->update(['status' => LifecycleStatus::Provisioning]);
+        analytics_projection_node('services-2', '10.44.0.41', null, null, RoleName::Analytics);
+
+        expect(new AppDevSiteRepository()->all()->map->analyticsUpstream->all())->toBe(['10.44.0.41:8000']);
     });
 
     it('answers private DNS for the host with the Router', function (): void {

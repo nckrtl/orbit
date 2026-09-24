@@ -566,6 +566,74 @@ it('retains the old successful source after failed sync and accepts a corrected 
         ->toBe(4);
 });
 
+it('quick sync proves the mount, installs guest helpers, and migrates without readiness verification or a new binding', function (): void {
+    $root = preparedTopologyRepository();
+    $paths = new StatePaths(temporaryPath('orbit-quick-sync-state-', 4));
+    promoteDiscoveryGeneration($root, $paths);
+    $worktree = pinnedFeatureWorktree($root, 'quick-sync');
+    $target = featureTarget('TST-123');
+    $events = [];
+    fakePinnedWorktreeProcesses($target, $events);
+    $acquirer = preparedTopologyAcquirer($root, $paths, new IncusHost(pool: 'default'), new OperationId(str_repeat('f', 32)));
+    $request = new TopologyRequest('TST-123', $worktree);
+    $ready = $acquirer->acquire($request);
+    $readyRecord = $ready->toArray();
+    $migrationDirectory = $worktree.'/apps/gateway/database/migrations';
+    if (! is_dir($migrationDirectory)) {
+        mkdir($migrationDirectory, 0700, true);
+    }
+    file_put_contents($migrationDirectory.'/2099_01_01_000000_quick_sync.php', "<?php\n// quick sync fixture\n");
+    $events = [];
+
+    $synced = $acquirer->sync($request, quick: true);
+
+    $commands = array_map(
+        static fn (array $event): string => implode(' ', array_map(strval(...), $event)),
+        $events,
+    );
+    $mount = array_find_key($commands, static fn (string $command): bool => str_contains(
+        $command,
+        ' -- mountpoint -q -- /home/orbit/orbit',
+    ));
+    $helpers = array_find_key($commands, static fn (string $command): bool => str_contains(
+        $command,
+        '/usr/local/bin/verify-topology.sh',
+    ) && str_contains($command, ' -- install -o root -g root -m 0755 '));
+    $migration = array_find_key($commands, static fn (string $command): bool => str_contains(
+        $command,
+        'php artisan migrate --force --no-interaction',
+    ));
+    expect($mount)
+        ->toBeInt()
+        ->and($helpers)
+        ->toBeInt()
+        ->toBeGreaterThan($mount)
+        ->and($migration)
+        ->toBeInt()
+        ->toBeGreaterThan($helpers)
+        ->and(implode("\n", $commands))
+        ->not->toContain(' -- /usr/local/bin/verify-topology.sh ', WorktreeSynchronizer::SOURCE_STATE_MARKER, 'converge-gateway.sh')
+        ->and($synced->toArray())
+        ->toBe($readyRecord)
+        ->and(IssueState::forWorktree('TST-123', $worktree)->requireTopology(AttemptPurpose::Discovery)->toArray())
+        ->toBe($readyRecord)
+        ->and(fn () => $acquirer->verify($request))
+        ->toThrow(
+            RuntimeException::class,
+            'The mounted source differs from the last successful readiness record; run topology sync.',
+        );
+
+    $events = [];
+    $full = $acquirer->sync($request);
+    expect($full->source->overlayPaths)
+        ->toContain('apps/gateway/database/migrations/2099_01_01_000000_quick_sync.php')
+        ->and(implode("\n", array_map(
+            static fn (array $event): string => implode(' ', array_map(strval(...), $event)),
+            $events,
+        )))
+        ->toContain(' -- /usr/local/bin/verify-topology.sh ', WorktreeSynchronizer::SOURCE_STATE_MARKER);
+});
+
 it('rolls back its exact attempt without publishing readiness when Gateway migration fails', function (): void {
     $root = preparedTopologyRepository();
     $paths = new StatePaths(temporaryPath('orbit-schema-failure-state-', 4));

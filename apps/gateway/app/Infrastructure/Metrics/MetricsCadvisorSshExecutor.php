@@ -441,6 +441,16 @@ final readonly class MetricsCadvisorSshExecutor implements MetricsCadvisorRuntim
             'The cAdvisor configuration could not be removed.',
         );
         $this->reloadUnits($node, $errorCode);
+        $this->resetFailedService($node);
+    }
+
+    /**
+     * Clears the failed-unit record that systemd keeps after a crashed unit's file is removed.
+     * The command fails for a unit that is not failed or no longer loaded, so its result is ignored.
+     */
+    private function resetFailedService(Node $node): void
+    {
+        $this->raw($node, new RemoteCommand(['sudo', 'systemctl', 'reset-failed', MetricsFootprint::CadvisorService]));
     }
 
     private function setServiceActive(Node $node, bool $active, string $errorCode): void

@@ -238,6 +238,16 @@ describe('topology commands', function () {
             ->toBeTrue()
             ->and(new ExecCommand()->getDefinition()->hasOption('review-action'))
             ->toBeTrue()
+            ->and(new ExecCommand()->getDefinition()->hasOption('record'))
+            ->toBeTrue()
+            ->and(new LogsCommand()->getDefinition()->hasOption('record'))
+            ->toBeTrue()
+            ->and(new SpawnCommand()->getDefinition()->hasOption('record'))
+            ->toBeFalse()
+            ->and(new SyncCommand()->getDefinition()->hasOption('quick'))
+            ->toBeTrue()
+            ->and(new VerifyCommand()->getDefinition()->hasOption('quick'))
+            ->toBeFalse()
             ->and(new ExecCommand()->getDefinition()->hasOption('required'))
             ->toBeTrue()
             ->and(new ShellCommand()->getDefinition()->hasOption('review-action'))
@@ -336,6 +346,36 @@ describe('topology commands', function () {
             ->artisan('topology:acquire', ['issue' => 'TST-12', 'worktree' => 'relative/path'])
             ->expectsOutputToContain('absolute')
             ->assertFailed();
+    });
+
+    it('refuses an invalid record label and a recorded review action before any process runs', function () {
+        Process::fake();
+
+        $this
+            ->artisan('topology:exec', ['issue' => 'TST-12', 'role' => 'gateway', '--argv' => '["true"]', '--record' => 'no/slash'])
+            ->expectsOutputToContain('The --record label must be 1 to 80')
+            ->assertFailed();
+        $this
+            ->artisan('topology:exec', ['issue' => 'TST-12', 'role' => 'gateway', '--argv' => '["true"]', '--record' => ''])
+            ->expectsOutputToContain('The --record label must be 1 to 80')
+            ->assertFailed();
+        $this
+            ->artisan('topology:exec', [
+                'issue' => 'TST-12',
+                'role' => 'gateway',
+                '--argv' => '["true"]',
+                '--proof' => true,
+                '--review-action' => 'inspect',
+                '--record' => 'inspect',
+            ])
+            ->expectsOutputToContain('--record does not apply to a review action')
+            ->assertFailed();
+        $this
+            ->artisan('topology:logs', ['issue' => 'TST-12', 'role' => 'app-dev', 'name' => 'viewer', '--record' => str_repeat('x', 81)])
+            ->expectsOutputToContain('The --record label must be 1 to 80')
+            ->assertFailed();
+
+        Process::assertNothingRan();
     });
 
     it('names a missing worktree and refuses two candidates', function () {
@@ -966,6 +1006,65 @@ describe('topology commands', function () {
                 'orbit',
                 'doctor',
             ]);
+    });
+
+    it('records exec and logs evidence without changing their output or exit code', function () {
+        ['worktree' => $worktree] = commandPrimaryFixture('AUX-8');
+        $state = IssueState::forWorktree('AUX-8', $worktree);
+        $attempt = new AttemptId(str_repeat('a', 32));
+        $topology = commandTopologyFixture('AUX-8', $attempt, AttemptPurpose::Discovery);
+        $state->writeAttempt($attempt, AttemptPurpose::Discovery, new OperationId(str_repeat('c', 32)));
+        $state->writeTopology($topology);
+        app()->instance(
+            StatePaths::class,
+            new StatePaths(temporaryPath('orbit-command-host-', 6)),
+        );
+        Process::fake(function (PendingProcess $process) use ($topology) {
+            $command = $process->command;
+            assert(is_array($command));
+            if (($command[3] ?? null) === 'list') {
+                return Process::result(json_encode([
+                    commandInstanceFixture($topology, 'gateway'),
+                    commandInstanceFixture($topology, 'app-dev'),
+                ], JSON_THROW_ON_ERROR));
+            }
+            if (in_array('journalctl', $command, true)) {
+                return Process::result("2026-09-24T06:40:00.123456+00:00 app-dev bun[42]: joined presence\n");
+            }
+
+            return Process::result("Bearer secret-token\n", 'failed once', 7);
+        });
+
+        $this
+            ->artisan('topology:exec', [
+                'issue' => 'AUX-8',
+                'role' => 'gateway',
+                '--argv' => '["orbit","node:list","--password=hunter2"]',
+                '--record' => 'node list after crash',
+            ])
+            ->expectsOutput("Bearer secret-token\n")
+            ->assertExitCode(1);
+        $this
+            ->artisan('topology:logs', [
+                'issue' => 'AUX-8',
+                'role' => 'app-dev',
+                'name' => 'viewer',
+                '--record' => 'viewer.log',
+            ])
+            ->expectsOutput('2026-09-24T06:40:00.123456+00:00 app-dev bun[42]: joined presence')
+            ->assertSuccessful();
+
+        $evidence = (string) file_get_contents($worktree.'/.e2e/evidence.log');
+        expect(fileperms($worktree.'/.e2e/evidence.log') & 0777)
+            ->toBe(0600)
+            ->and($evidence)
+            ->toMatch('/\A=== \d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z node list after crash node=gateway exit=7 duration=\d+ms end=\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z\n'
+                .preg_quote("\$ orbit node:list '--password=[REDACTED]'\n--- stdout\nBearer [REDACTED]\n--- stderr\nfailed once\n\n", '/')
+                .'=== \S+ viewer\.log node=app-dev exit=0 duration=\d+ms end=\S+\n'
+                .preg_quote("\$ sudo journalctl --no-pager --output=short-iso-precise --unit=orbit-e2e-viewer.service\n"
+                    ."--- stdout\n2026-09-24T06:40:00.123456+00:00 app-dev bun[42]: joined presence\n--- stderr\n\n", '/')
+                .'\z/')
+            ->not->toContain('hunter2', 'secret-token');
     });
 
     it('reads the attempt from the worktree and names an absent one', function () {

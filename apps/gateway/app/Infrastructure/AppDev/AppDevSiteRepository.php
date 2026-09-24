@@ -653,7 +653,7 @@ final readonly class AppDevSiteRepository
      */
     private function analyticsTrackingSites(Route $route, ?Node $router, bool $includeIngress = true): array
     {
-        $upstream = AnalyticsTrackingUpstream::current();
+        $upstream = AnalyticsTrackingUpstream::current(includeConverging: true);
 
         // A retiring tracking host is on its way to removal and serves nothing, as its public edge
         // was withdrawn first.

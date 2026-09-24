@@ -171,6 +171,8 @@ Gateway Schedule operations return only these stable domain error codes.
 
 Doctor checks Schedule as the explicit `schedule` family in its canonical order. It compares stored intent with bounded read-only host observations and never installs, reloads, enables, starts, stops, completes, repairs, adopts, or removes Schedule state.
 
+Doctor also scans the owned namespace for orphan artifacts. The scan needs SSH and passwordless `sudo`, so it runs only on a reachable Node that hosts a Schedule or has at least one role. A Node with neither, such as a client Node, gets no orphan scan and no `schedule.inspection_failed` from it.
+
 Doctor checks whether the derived runtime user can traverse from the shared `/etc/orbit` parent to the protected script. Doctor reports `schedule.artifact_permissions_mismatch` when an ancestor blocks access to an otherwise valid script. The check changes no host state and returns no path, user, command, or raw permission diagnostic.
 
 | Doctor issue code | Difference |

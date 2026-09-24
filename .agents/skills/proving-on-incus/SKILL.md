@@ -32,11 +32,11 @@ bin/e2e-topology logs TASK-58 app-dev viewer --since=-2min
 bin/e2e-topology kill TASK-58 app-dev viewer
 ```
 
-`spawn` returns at once. `logs` prints the output with precise timestamps and keeps working after the process ends, so it doubles as timestamped evidence. Stop a process with `kill`; `pkill -f` inside `exec` can match and kill its own shell.
+`spawn` returns at once. `logs` prints the output with precise timestamps and keeps working after the process ends, so it doubles as timestamped evidence; add `--record=LABEL` to keep it in the evidence log. Stop a process with `kill`; `pkill -f` inside `exec` can match and kill its own shell.
 
 ## Change code on the topology
 
-The worktree is mounted read-write into `gateway` and `app-dev`, so an edited file is live there at once. Run `sync` only after a migration or when a guest helper script changed. It runs the full readiness check and takes minutes.
+The worktree is mounted read-write into `gateway` and `app-dev`, so an edited file is live there at once. Run `sync` only after a migration or when a guest helper script changed. A full `sync` runs the readiness check and takes minutes. After a migration, run `sync ISSUE --quick` when you do not need full verification: it proves the mount, installs the guest helpers, and applies the migrations without the readiness probes. Run a full `sync` before you rely on `verify`.
 
 A task workspace clone reaches the Nodes through its bridge worktree, and every harness command copies the clone's changes into the bridge first. Run any command, such as `status`, to push an edit.
 
@@ -48,5 +48,6 @@ A task workspace clone reaches the Nodes through its bridge worktree, and every 
 ## Keep the evidence honest
 
 - Do not work around a product gap on the Nodes, for example with `/etc/hosts` entries or hand-installed packages. A workaround hides the failure the proof exists to catch. Record the gap as a finding and ask for help when it blocks you.
-- Record the date and time before and after each action, for example with `["date","-Ins"]`. Timing claims such as "within one second" need both ends.
+- Record proof evidence with `--record=LABEL` on `exec` and `logs`, for example `exec TASK-58 gateway --argv='["orbit","node:list"]' --record="node list after crash"`. The harness appends the command, its UTC start and end times in milliseconds, the exit code, and the redacted output to `<worktree>/.e2e/evidence.log`. Cite entries by label in the evidence summary instead of copying output by hand.
+- Timing claims such as "within one second" need both ends. Use the recorded start and end times, or record `["date","-Ins"]` before and after an action that the harness does not run.
 - Record every limitation, manual patch, and skipped check in the evidence summary.

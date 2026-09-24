@@ -70,6 +70,10 @@ final readonly class ScheduleDoctorProbe implements DoctorFamilyProbe
             }
         }
 
+        if (! $this->scansForOrphans($context, $schedules->isNotEmpty())) {
+            return DoctorFamilyReportData::fromIssues(DoctorFamily::Schedule, $schedules->count(), $issues);
+        }
+
         try {
             foreach ($this->inspector->orphanIds($context->node, $schedules->pluck('id')->all()) as $id) {
                 $issues[] = new DoctorIssueData(
@@ -97,6 +101,20 @@ final readonly class ScheduleDoctorProbe implements DoctorFamilyProbe
         }
 
         return DoctorFamilyReportData::fromIssues(DoctorFamily::Schedule, $schedules->count(), $issues);
+    }
+
+    /**
+     * The orphan scan needs SSH and passwordless sudo. A Node with no role, such as a client Node,
+     * has no Orbit-managed sudo, so Doctor scans it only while it hosts a Schedule. An unreachable
+     * Node without Schedules has nothing this family can report.
+     */
+    private function scansForOrphans(DoctorNodeContext $context, bool $hasSchedules): bool
+    {
+        if ($hasSchedules) {
+            return true;
+        }
+
+        return $context->inspection->reachable && $context->node->roles()->exists();
     }
 
     /** @return list<DoctorIssueData> */
