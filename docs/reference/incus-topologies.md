@@ -112,6 +112,19 @@ There is no reaper: a topology lives until the operator releases it. Every comma
 | `status ISSUE` | Reports the state files, capture identity, retained topology, and review evaluation without touching Incus |
 | `release ISSUE [--proof\|--candidate] [--replace\|--abandon] [--recover-extension=none\|app-prod --expected-attempt=ID]` | Releases the selected topology and verifies absence. A successful proof requires explicit replacement or abandonment; ordinary closeout owns post-refresh release. Recovery options identify one exact legacy lease. |
 
+### Task workspace clones
+
+A task workspace is an independent clone, not a linked worktree, so it holds neither the topology snapshot nor its locks. When `bin/e2e-topology` runs in such a clone and a primary checkout is registered for the clone's origin, it runs the command through a bridge worktree. [ADR 0135](/decisions/0135-run-incus-topologies-for-task-workspace-clones-through-a-bridge-worktree) records the decision.
+
+| Step | What happens |
+| --- | --- |
+| Find the primary | Reads `$XDG_STATE_HOME/orbit/e2e-primary-checkouts/{origin key}`, which the snapshot primary writes. Without a live registration, the command runs in the clone as before. |
+| Update the bridge | Checks out the clone's HEAD in `<worktree root>/<clone directory>-e2e` on branch `<clone branch>-e2e`, a linked worktree of the primary. |
+| Mirror the work | Copies the clone's modified and untracked files, removes its deleted tracked files, and mirrors each `vendor/` directory. Other ignored files in the bridge stay. |
+| Run | Runs the bridge's `bin/e2e-topology` with each clone path replaced by the bridge path and `--worktree` set to the bridge. |
+
+The bridge keeps its other ignored files, such as `.e2e/`, `.env`, and Gateway storage, because the harness and the guests write them into the mount. In a task workspace on branch `task-58`, run `bin/e2e-topology acquire TASK-58 .`, then the other commands with `TASK-58`. The mounted source is the bridge, so a file that the harness or a guest writes into the mount appears in the bridge, not in the clone. Set `ORBIT_E2E_BRIDGE=0` to run in the clone itself.
+
 `bin/worktree-remove ISSUE` releases the proof topology only after its closeout guard permits cleanup, then releases discovery and removes the worktree. [ADR 0049](/decisions/0049-keep-delivery-artifacts-off-the-merge-head) describes the artifact refs used by retained proof. Captured proof evidence and review records remain in the primary archive after worktree removal.
 
 ### Guest commands

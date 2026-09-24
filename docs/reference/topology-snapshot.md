@@ -35,6 +35,9 @@ Every command accepts `--json`, and `--main-sha=SHA` must be the full SHA of the
 | `restore` | Restores the promoted snapshots, leaves the VMs stopped, and clears `corrupt.json` |
 | `rebuild --main-sha=SHA` | Forgets stale manifests and builds from the base image when every exact resource is absent |
 | `recover-legacy --main-sha=SHA` | Proves ownership of present resources, retains evidence, and builds again |
+| `register [--force]` | Registers the primary checkout for its origin, so task workspace clones can [bridge](/reference/incus-topologies#task-workspace-clones) to it; `--force` replaces a live registration |
+
+The primary checkout is also registered whenever `bin/e2e-topology` or `bin/e2e-topology-snapshot` runs in it or in one of its linked worktrees while it holds a promoted generation. The first live primary keeps the registration. [ADR 0135](/decisions/0135-run-incus-topologies-for-task-workspace-clones-through-a-bridge-worktree) records the decision.
 
 ## Declared replacement
 

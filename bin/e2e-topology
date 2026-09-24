@@ -30,6 +30,9 @@ usage: bin/e2e-topology <action> ISSUE [...]
 
 Every action except acquire finds the issue among registered Git worktrees
 or takes --worktree=PATH. State lives in <worktree>/.e2e/.
+
+In a task workspace clone, every action runs through a bridge worktree of the
+registered primary checkout. ORBIT_E2E_BRIDGE=0 runs it in the clone.
 USAGE
     exit 64
 fi
@@ -39,6 +42,11 @@ shift
 
 case "$action" in
     acquire|shell|exec|sync|verify|prove|capture|review|equivalence|candidate|closeout|status|release)
+        # In a task workspace clone, run through a bridge worktree of the registered primary (ADR 0135).
+        # The bridge replaces this process; status 79 means the command runs here.
+        status=0
+        python3 "$root/bin/e2e-clone-bridge" route "$root" "$action" "$@" || status=$?
+        [[ $status -eq 79 ]] || exit "$status"
         exec php "$root/apps/e2e/artisan" "topology:$action" "$@"
         ;;
     *)

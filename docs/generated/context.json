@@ -3462,6 +3462,26 @@
             ]
         },
         {
+            "path": "docs/decisions/0135-run-incus-topologies-for-task-workspace-clones-through-a-bridge-worktree.md",
+            "title": "ADR 0135: Run Incus topologies for task workspace clones through a bridge worktree",
+            "kind": "decision",
+            "components": [
+                "apps/docs",
+                "apps/e2e"
+            ],
+            "concepts": [
+                "Database",
+                "Gateway",
+                "Task",
+                "Task group"
+            ],
+            "governing_adrs": [
+                "0005",
+                "0131",
+                "0135"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -3620,7 +3640,8 @@
                 "0131",
                 "0132",
                 "0133",
-                "0134"
+                "0134",
+                "0135"
             ]
         },
         {
@@ -4310,7 +4331,8 @@
                 "Proof topology",
                 "Route",
                 "Router",
-                "Schedule"
+                "Schedule",
+                "Task"
             ],
             "governing_adrs": [
                 "0005",
@@ -4319,7 +4341,8 @@
                 "0040",
                 "0049",
                 "0056",
-                "0114"
+                "0114",
+                "0135"
             ]
         },
         {
@@ -4811,6 +4834,7 @@
                 "Proof topology",
                 "Route",
                 "Router",
+                "Task",
                 "Web root"
             ],
             "governing_adrs": [
@@ -4820,7 +4844,8 @@
                 "0036",
                 "0037",
                 "0049",
-                "0056"
+                "0056",
+                "0135"
             ]
         },
         {
