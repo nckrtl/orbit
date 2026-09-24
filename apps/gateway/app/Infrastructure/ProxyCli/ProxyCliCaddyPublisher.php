@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\ProxyCli;
 
+use App\Infrastructure\Caddy\CaddyGlobalOptions;
+use App\Infrastructure\Caddy\OwnsCaddyGlobalOptions;
 use App\Infrastructure\Ssh\RemoteCommand;
 
 /**
@@ -12,6 +14,8 @@ use App\Infrastructure\Ssh\RemoteCommand;
  */
 final readonly class ProxyCliCaddyPublisher
 {
+    use OwnsCaddyGlobalOptions;
+
     public function command(string $configuration, string $port, string $wireguardIp): RemoteCommand
     {
         $encoded = base64_encode($configuration);
@@ -32,7 +36,7 @@ final readonly class ProxyCliCaddyPublisher
                 $wireguardIp,
                 ProxyCliFootprint::CaddyBindPlaceholder,
             ],
-            input: <<<BASH
+            input: CaddyGlobalOptions::conflictGuard().<<<BASH
                 version=\$1
                 owned_fragment=\$2
                 versions=\$3
@@ -58,7 +62,7 @@ final readonly class ProxyCliCaddyPublisher
                         cp --preserve=mode,ownership -- "\$fragment" "\$candidate/fragments/"
                     done
                 elif [ -f "\$source_main" ] && [ "\$source_main" != "\$live_caddyfile" ]; then
-                    cp --preserve=mode,ownership -- "\$source_main" "\$candidate/fragments/unmanaged.caddy"
+                    cp --preserve=mode,ownership -- "\$source_main" "\$candidate/fragments/00-unmanaged.caddy"
                 fi
                 bind_address=\$wireguard_ip
                 if grep -qsE '^[[:space:]]*bind[[:space:]]+0\\.0\\.0\\.0' "\$candidate"/fragments/*.caddy; then
@@ -66,7 +70,8 @@ final readonly class ProxyCliCaddyPublisher
                 fi
                 printf '%s' '{$encoded}' | base64 --decode \\
                     | sed "s/\$bind_placeholder/\$bind_address/" > "\$candidate/fragments/\$owned_fragment"
-                printf 'import %s/fragments/*.caddy\n' "\$candidate" > "\$candidate/Caddyfile"
+                printf '%s\n' '{$this->encodedGlobalOptions()}' | base64 --decode > "\$candidate/Caddyfile"
+                printf 'import %s/fragments/*.caddy\n' "\$candidate" >> "\$candidate/Caddyfile"
                 chown -R root:caddy "\$candidate"
                 find "\$candidate" -type d -exec chmod 0750 {} +
                 find "\$candidate" -type f -exec chmod 0640 {} +
@@ -77,8 +82,10 @@ final readonly class ProxyCliCaddyPublisher
                     rm -rf -- "\$candidate"
                     exit 0
                 fi
+                refuse_carried_global_options "\$candidate" "\$source_main"
                 caddy validate --config "\$candidate/Caddyfile" --adapter caddyfile
-                printf 'import %s/%s/fragments/*.caddy\n' "\$versions" "\$version" > "\$candidate/Caddyfile"
+                printf '%s\n' '{$this->encodedGlobalOptions()}' | base64 --decode > "\$candidate/Caddyfile"
+                printf 'import %s/%s/fragments/*.caddy\n' "\$versions" "\$version" >> "\$candidate/Caddyfile"
                 mv -fT -- "\$candidate" "\$published"
                 ln -s -- "\$published/Caddyfile" "\$candidate_link"
                 previous_target=\$(readlink -- "\$live_caddyfile" || true)
@@ -113,14 +120,16 @@ final readonly class ProxyCliCaddyPublisher
                 ProxyCliFootprint::CaddyfilePath,
                 ProxyCliFootprint::CaddyServiceName,
                 ProxyCliFootprint::CaddyLockPath,
+                $this->encodedGlobalOptions(),
             ],
-            input: <<<'BASH'
+            input: CaddyGlobalOptions::conflictGuard().<<<'BASH'
                 version=$1
                 owned_fragment=$2
                 versions=$3
                 live_caddyfile=$4
                 caddy_service=$5
                 lock=$6
+                global_options=$7
                 exec 9>"$lock"
                 flock -w 30 9
                 source_main=$(readlink -f "$live_caddyfile")
@@ -139,12 +148,15 @@ final readonly class ProxyCliCaddyPublisher
                     fi
                     cp --preserve=mode,ownership -- "$fragment" "$candidate/fragments/"
                 done
-                printf 'import %s/fragments/*.caddy\n' "$candidate" > "$candidate/Caddyfile"
+                printf '%s\n' "$global_options" | base64 --decode > "$candidate/Caddyfile"
+                printf 'import %s/fragments/*.caddy\n' "$candidate" >> "$candidate/Caddyfile"
                 chown -R root:caddy "$candidate"
                 find "$candidate" -type d -exec chmod 0750 {} +
                 find "$candidate" -type f -exec chmod 0640 {} +
+                refuse_carried_global_options "$candidate" "$source_main"
                 caddy validate --config "$candidate/Caddyfile" --adapter caddyfile
-                printf 'import %s/%s/fragments/*.caddy\n' "$versions" "$version" > "$candidate/Caddyfile"
+                printf '%s\n' "$global_options" | base64 --decode > "$candidate/Caddyfile"
+                printf 'import %s/%s/fragments/*.caddy\n' "$versions" "$version" >> "$candidate/Caddyfile"
                 mv -fT -- "$candidate" "$published"
                 ln -s -- "$published/Caddyfile" "$candidate_link"
                 previous_target=$(readlink -- "$live_caddyfile" || true)

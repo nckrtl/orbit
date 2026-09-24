@@ -10,6 +10,8 @@ use App\Infrastructure\Metrics\MetricsCaddyPublisher;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
+use App\Infrastructure\ProxyCli\ProxyCliCaddyPublisher;
+use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\WebSocket\WebSocketCaddyPublisher;
 use Illuminate\Filesystem\Filesystem;
 use Symfony\Component\Process\Process;
@@ -76,17 +78,35 @@ it('refuses carried global options right before every Caddy publisher validates 
     'websocket removal' => fn (): string => new WebSocketCaddyPublisher()->removeCommand()->input,
     'analytics publish' => fn (): string => new AnalyticsCaddyPublisher()->command("stats.test {\n}\n", '8000', '10.6.0.2')->input,
     'analytics removal' => fn (): string => new AnalyticsCaddyPublisher()->removeCommand()->input,
+    'proxycli publish' => fn (): string => new ProxyCliCaddyPublisher()->command("collector.proxycli.orbit {\n}\n", '8787', '10.6.0.2')->input,
+    'proxycli removal' => fn (): string => new ProxyCliCaddyPublisher()->removeCommand()->input,
     'metrics publish' => fn (): string => caddy_global_options_metrics_script(fn (MetricsCaddyPublisher $publisher) => $publisher->publish("metrics.orbit {\n}\n")),
     'metrics withdrawal' => fn (): string => caddy_global_options_metrics_script(fn (MetricsCaddyPublisher $publisher) => $publisher->withdrawForCutover()),
 ]);
 
-it('passes Orbit global options to the analytics removal script as an argument', function (): void {
-    $command = new AnalyticsCaddyPublisher()->removeCommand();
+it('passes Orbit global options to a nowdoc removal script as an argument', function (Closure $command): void {
+    $command = $command();
 
     expect(base64_decode((string) collect($command->arguments)->last(), true))
         ->toBe(CaddyGlobalOptions::render())
         ->and($command->input)
-        ->toContain('global_options=$7');
+        ->toContain('global_options=$7')
+        ->and(substr_count((string) $command->input, "printf '%s\\n' \"\$global_options\" | base64 --decode > \"\$candidate/Caddyfile\""))
+        ->toBe(2);
+})->with([
+    'analytics removal' => fn (): RemoteCommand => new AnalyticsCaddyPublisher()->removeCommand(),
+    'proxycli removal' => fn (): RemoteCommand => new ProxyCliCaddyPublisher()->removeCommand(),
+]);
+
+it('writes Orbit global options into every proxycli Caddyfile it validates or publishes', function (): void {
+    $program = (string) new ProxyCliCaddyPublisher()->command("collector.proxycli.orbit {\n}\n", '8787', '10.6.0.2')->input;
+    $globalOptions = "printf '%s\n' '".base64_encode(CaddyGlobalOptions::render())."' | base64 --decode > \"\$candidate/Caddyfile\"";
+
+    expect(substr_count($program, $globalOptions))
+        ->toBe(2)
+        ->and($program)
+        ->toContain('cp --preserve=mode,ownership -- "$source_main" "$candidate/fragments/00-unmanaged.caddy"')
+        ->not->toContain('"$candidate/fragments/unmanaged.caddy"');
 });
 
 /**

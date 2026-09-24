@@ -37,14 +37,17 @@ Caddy accepts one global options block, and only as the first block. Orbit write
 | `websocket` site | `websocket.caddy_publication_failed` |
 | `analytics` site | `analytics.caddy_publication_failed` |
 | Herdr observer site | `herdr.observer_failed` |
+| `proxycli` site | `proxycli.caddy_publication_failed` |
 | Metrics site on the Gateway | `metrics.caddy_publication_failed` |
 
-For every publisher except Metrics, the activity record keeps the command output. It names the fragment, the options in the block, and the file to edit:
+For every publisher except Metrics and `proxycli`, the activity record keeps the command output. It names the fragment, the options in the block, and the file to edit:
 
 ```text
 Caddy fragment 00-unmanaged.caddy opens its own global options block (local_certs, email). Orbit writes the only global options block. Remove that block from /etc/caddy/Caddyfile, then publish again.
 ```
 
 On first adoption the file is the Node's own `/etc/caddy/Caddyfile`. When Orbit already carries the fragment, the file is that fragment in the live version, under `/etc/caddy/orbit-versions/<version>/fragments/`. Remove the whole block, keep the site blocks, and repeat the command that failed. Orbit does not support operator global options; it never merges, strips, or rewrites them.
+
+`orbit proxycli:disable` does not check its Caddy removal. When the removal is refused, the command still succeeds and the `proxycli` site stays in the live version until a later removal succeeds.
 
 A site block, a snippet such as `(common) {`, and an address that starts with an environment placeholder such as `{$SITE} {` are not global blocks.

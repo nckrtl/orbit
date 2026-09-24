@@ -3509,7 +3509,8 @@
             ],
             "concepts": [
                 "Gateway",
-                "Node"
+                "Node",
+                "proxycli"
             ],
             "governing_adrs": [
                 "0137"
@@ -4040,7 +4041,8 @@
             "concepts": [
                 "Gateway",
                 "Ingress",
-                "Node"
+                "Node",
+                "proxycli"
             ],
             "governing_adrs": [
                 "0137"
