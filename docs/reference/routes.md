@@ -24,7 +24,7 @@ The Gateway stores each Route's settings and tracks setup of its certificates, w
 | Generation basis | The current target Node for a generated Route, or its last target Node after target clearing. An explicit Route stores no generation basis. |
 | Publication | The only publication field: `private` or `public`. The Route keeps this value even when it has no target. Public-edge readiness is `status`, `replacement_step`, `failed_step`, and Doctor, not a second publication field. |
 | Status | `pending`, `active`, `activating`, `retiring`, or `failed`. Failure details identify the step to retry. |
-| Site publication | Whether the Route's sites are published. Creation sets it before the first Caddy publication, and removal or a failed creation clears it before the publication that withdraws the sites. An `active` or `activating` Route always keeps it. |
+| Site publication | Whether the Route's sites are published. An `active` or `activating` Route always keeps it. [Stored transitions](#stored-transitions) says when it changes. |
 | Placement transition | During a placement change, `transition_node_id` and `transition_cluster_id` hold the Route's second placement. See [Stored transitions](#stored-transitions). |
 | Target storage | The Route can own several ordered target rows. An active multi-target set belongs to one explicit production Route and uses distinct active app-prod Nodes in the same Cluster. |
 | Configured target | A Project Route accepts a single Instance target or an ordered production target set. A custom proxy Route stores a loopback upstream or a Node Process. |
@@ -450,7 +450,11 @@ Deployment, code rollback, clone finalization, Instance removal, environment imp
 
 Route and Instance removal keep their coordinated removal contract. Setting the existing target or clearing an already empty Route succeeds without creating, deleting, or reassigning a Route association. A Node grant change does not alter private network reachability and retains its command-authorization behavior.
 
-Instance removal is the coordinated target-clear exception. After complete source and Route preflight, the Gateway marks each accepted Instance `removing`. Development removal publishes an unavailable response before deleting each final-target Route in worktree-first order. That response comes from stored state: the Route has no targets, keeps its site publication, and an open development removal member names the departing Instance. Removal then clears the site publication, publishes Caddy without the Route, and only then removes the Instance and Router certificates and deletes the Route. Production removal republishes every ordered survivor when a shared Route remains. Final-target removal clears managed Route projections, deletes the Route, and releases its domain before source finalization. A projection failure keeps the unfinished Route checkpoint available for retry. The [Instance removal reference](/reference/appinstance-removal) owns content retention, the transient response, cascade order, and retry behavior.
+Instance removal is the coordinated target-clear exception. After complete source and Route preflight, the Gateway marks each accepted Instance `removing`. Development removal publishes an unavailable response before deleting each final-target Route in worktree-first order.
+
+That response comes from stored state: the Route has no targets, keeps its site publication, and an open development removal member names the departing Instance. Removal then clears the site publication, publishes Caddy without the Route, and only then removes the Instance and Router certificates and deletes the Route.
+
+Production removal republishes every ordered survivor when a shared Route remains. Final-target removal clears managed Route projections, deletes the Route, and releases its domain before source finalization. A projection failure keeps the unfinished Route checkpoint available for retry. The [Instance removal reference](/reference/appinstance-removal) owns content retention, the transient response, cascade order, and retry behavior.
 
 During a Node or Cluster placement mutation, the Gateway validates only Routes whose direct scope, target Nodes, retained generation basis, or provisioning baseline depends on the affected Nodes or Clusters. It compares proposed domains with one operation-local index of all Route domain owners, so an unaffected Route still blocks a collision. Routes outside this workset stay unchanged.
 
@@ -464,9 +468,11 @@ Every Caddy publication renders a Route's sites from stored state only, so any l
 | --- | --- | --- |
 | Creation | Site publication set before the first Caddy publication | The `pending` Route renders like an `active` one. A failed creation clears the record. |
 | Domain change | The `pending` replacement Route and its `replacement_step` | Each replacement site appears once its certificate step completes, from the staging scopes until cleanup. |
-| Placement change | `transition_node_id` and `transition_cluster_id` on the Route | Before cutover they hold the candidate placement. Its Router sites appear once the Router certificate step completes and use `route-<id>-router-hostname-change`. At cutover the Route takes the candidate placement and the columns take the old one, which keeps its live sites. The `cleanup` step stops rendering the old placement. |
+| Placement change | `transition_node_id` and `transition_cluster_id` on the Route | The candidate before cutover and the old placement after it, until the `cleanup` step. |
 | Router replacement | The candidate `router` role row and its `failed_step` | From the Router Caddy step until cleanup, both Routers serve the Cluster's Router sites. |
 | Instance removal | No targets, the site publication, and an open development removal member | The Router answers `503 Orbit Route unavailable`, or the workload Node when the Route has no separate Router. |
+
+Before cutover, the candidate placement's Router sites appear once the Router certificate step completes and use `route-<id>-router-hostname-change`. At cutover the Route takes the candidate placement and the columns take the old one, which keeps its live sites. Creation sets the site publication before the first Caddy publication. Removal and a failed creation clear it before the publication that withdraws the sites.
 
 When a Route's current and second placement render the same domain and listener on one Node, the current site wins. Private DNS answers with the current placement. A Router replacement moves the DNS answer to the candidate at its DNS publication step.
 
