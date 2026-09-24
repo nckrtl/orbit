@@ -126,6 +126,26 @@ it('writes the Gateway address into the agent configuration and restarts after a
     );
 });
 
+it('writes the Gateway address while the gateway role itself converges', function (): void {
+    $ssh = new AgentInstallSsh(null);
+    $agent = nodeAgentExecutor($ssh);
+    // `node:role:add gateway gateway --converge` marks the assignment provisioning while it runs.
+    Node::query()->whereHas('roles', static fn ($query) => $query->where('role', RoleName::Gateway))
+        ->firstOrFail()->roles()->where('role', RoleName::Gateway)->update(['status' => LifecycleStatus::Provisioning]);
+
+    $agent->converge(nodeAgentNode());
+
+    $contents = array_map(static function (RemoteCommand $command): string {
+        if ($command->protectedInput === null) {
+            return '';
+        }
+
+        return stream_get_contents($command->protectedInput->stream()) ?: '';
+    }, $ssh->commands);
+
+    expect($contents)->toContain('gateway_url = "https://gateway.orbit"'."\n".'gateway_address = "10.44.0.1"'."\n");
+});
+
 it('restarts the agent when the Gateway address changes', function (): void {
     $ssh = new AgentInstallStatefulSsh;
     $agent = nodeAgentExecutor($ssh);
