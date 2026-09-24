@@ -39,6 +39,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WebSocket\WebSocketCredentialManager;
 use App\Domain\WebSocket\WebSocketCredentials;
 use App\Domain\WebSocket\WebSocketPublicationManager;
+use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Infrastructure\AppDev\AppDevSshExecutor;
 use App\Infrastructure\AppProd\AppProdSshExecutor;
 use App\Infrastructure\Nodes\CaddyPackageSourceProgram;
@@ -253,7 +254,12 @@ it('converges and removes the gateway role while VPN removal stays protected', f
     $vpnAssignment->update(['status' => LifecycleStatus::Active]);
     $firewall = baseline_firewall($events);
     $ssh = baseline_ssh($events);
-    $gateway = new GatewayRoleBaseline($firewall, baseline_dns($events));
+    $gateway = new GatewayRoleBaseline(
+        $firewall,
+        baseline_dns($events),
+        new NodeRolePrerequisiteCommandFactory,
+        new AppDevSshExecutor($ssh, baseline_keys(), baseline_known_hosts()),
+    );
     $vpn = new VpnRoleBaseline(
         new NodeRolePrerequisiteCommandFactory,
         $ssh,
@@ -267,6 +273,8 @@ it('converges and removes the gateway role while VPN removal stays protected', f
     $vpn->converge($vpnNode, $vpnAssignment);
 
     expect($events)->toBe([
+        'ssh:caddy-source',
+        'ssh:caddy',
         'firewall:converge:gateway',
         'dns:none',
         'ssh:vpn',
@@ -278,6 +286,8 @@ it('converges and removes the gateway role while VPN removal stays protected', f
     $gateway->removeUnreachable($gatewayNode, $gatewayAssignment);
 
     expect($events)->toBe([
+        'ssh:caddy-source',
+        'ssh:caddy',
         'firewall:converge:gateway',
         'dns:none',
         'ssh:vpn',
@@ -521,6 +531,46 @@ it('refuses database convergence without a WireGuard address', function (): void
         ->toBe([]);
 });
 
+it('installs pinned Caddy before the gateway role firewall and stops when it cannot', function (): void {
+    $events = [];
+    [$node, $assignment] = role_baseline_models(RoleName::Gateway, name: 'gateway-caddy');
+    $ssh = new class($events) implements SshExecutor
+    {
+        /** @var list<RemoteCommand> */
+        public array $commands = [];
+
+        /** @param list<string> $events */
+        public function __construct(
+            private array &$events,
+        ) {}
+
+        public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
+        {
+            $this->commands[] = $command;
+            $this->events[] = 'ssh:caddy-source';
+
+            return new CommandResult(1, '', 'The caddy candidate does not come from the pinned Orbit source.', 1, false);
+        }
+    };
+    $gateway = new GatewayRoleBaseline(
+        baseline_firewall($events),
+        baseline_dns($events),
+        new NodeRolePrerequisiteCommandFactory,
+        new AppDevSshExecutor($ssh, baseline_keys(), baseline_known_hosts()),
+    );
+
+    expect(fn () => $gateway->converge($node, $assignment))
+        ->toThrow(function (RuntimeConvergenceException $exception): void {
+            expect($exception->step)->toBe('caddy-package-source')
+                ->and($exception->errorCode)->toBe('gateway.caddy_install_failed');
+        })
+        ->and($events)->toBe(['ssh:caddy-source'])
+        ->and($ssh->commands[0]->arguments)
+        ->toBe(['sudo', 'bash', '-seu', '--', ...CaddyPackageSourceProgram::arguments()])
+        ->and($ssh->commands[0]->input)
+        ->toBe(CaddyPackageSourceProgram::render());
+});
+
 it('dispatches every assignment to its code-defined baseline', function (): void {
     expect(class_exists(NativeRoleBaselineConverger::class))->toBeTrue();
 
@@ -530,7 +580,12 @@ it('dispatches every assignment to its code-defined baseline', function (): void
     $metricsFleet = Mockery::mock(MetricsFleetReconciler::class);
     $metricsFleet->shouldReceive('reconcile')->times(8);
     $dispatcher = new NativeRoleBaselineConverger(
-        new GatewayRoleBaseline($firewall, baseline_dns($events)),
+        new GatewayRoleBaseline(
+            $firewall,
+            baseline_dns($events),
+            new NodeRolePrerequisiteCommandFactory,
+            new AppDevSshExecutor($ssh, baseline_keys(), baseline_known_hosts()),
+        ),
         new VpnRoleBaseline(
             new NodeRolePrerequisiteCommandFactory,
             $ssh,
@@ -790,6 +845,8 @@ it('checks the remote operating system before every role convergence', function 
 
     expect($events)->toBe([
         'guard:gateway',
+        'ssh:caddy-source',
+        'ssh:caddy',
         'firewall:converge:gateway',
         'dns:none',
         'guard:vpn',
@@ -952,7 +1009,12 @@ function database_role_baseline(array &$events): DatabaseRoleBaseline
 /** @param list<string> $events */
 function gateway_role_baseline(array &$events): GatewayRoleBaseline
 {
-    return new GatewayRoleBaseline(baseline_firewall($events), baseline_dns($events));
+    return new GatewayRoleBaseline(
+        baseline_firewall($events),
+        baseline_dns($events),
+        new NodeRolePrerequisiteCommandFactory,
+        new AppDevSshExecutor(baseline_ssh($events), baseline_keys(), baseline_known_hosts()),
+    );
 }
 
 /** @param list<string> $events */

@@ -13,8 +13,9 @@ use App\Infrastructure\Processes\SystemdVpnOrderingDropIn;
 /**
  * Installs Caddy on the Gateway machine from the pinned Caddy apt source, the same way role
  * convergence installs it on every other Node, and orders the Caddy unit after the managed
- * WireGuard interface. It runs before any Gateway web step that needs the `caddy` group or
- * validates a Caddyfile. ADR 0100 and ADR 0140 record the decision.
+ * WireGuard interface. It runs after the read-only checkout path check and before any Gateway web
+ * step that needs the `caddy` group or validates a Caddyfile. ADR 0100 and ADR 0141 record the
+ * decision.
  *
  * Both steps are idempotent. The source program upgrades an archive Caddy in place and keeps the
  * Orbit-owned Caddyfile; the ordering drop-in changes nothing when it already matches.
