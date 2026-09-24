@@ -2,8 +2,8 @@
 // PrometheusMetricsQueries and PrometheusNodeMetricsMapper. Pure: every value comes from the
 // decoded responses passed in, so it is testable from Prometheus JSON alone.
 
-/** The window every rate() covers; at a five-second scrape it holds six samples. */
-const RATE_WINDOW = "30s";
+/** The window every rate() covers; at a ten-second scrape it holds four samples. */
+const RATE_WINDOW = "40s";
 
 const SCALAR_NAMES = [
     "node_memory_MemTotal_bytes",

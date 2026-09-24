@@ -100,7 +100,9 @@ Every project runs analysis at level 6. The configured paths keep the existing a
 
 CLI and E2E have counted exceptions for Larastan findings on inherited command helpers. The exceptions match exact command names, inputs, and files. Unmatched exceptions and new findings fail analysis.
 
-`bin/bootstrap` seeds missing quality caches after installing dependencies, so `bin/worktree-create` gives new worktrees a warm starting point. It prefers compatible successful main publications of Pint and PHPStan result caches, then falls back to the clean primary main checkout. Feature worktrees are not seed sources. Compatibility requires identical project Composer lock files and that tool's configuration; main publications also bind the PHP minor version, checksum, and commit ancestry. Existing destination caches are preserved, and copied caches are independent files. Run `bin/worktree-cache` to seed an existing checkout after installing dependencies.
+`bin/bootstrap` seeds missing quality caches after installing dependencies, so `bin/worktree-create` gives new worktrees a warm starting point. It prefers compatible successful main publications of Pint and PHPStan result caches, then falls back to the clean primary main checkout. Feature worktrees are not seed sources. Compatibility requires identical project Composer lock files and that tool's configuration; main publications also bind the PHP minor version, checksum, and commit ancestry. Existing destination caches are preserved, and copied caches are independent files.
+
+Run `bin/worktree-cache` to seed an existing checkout after installing dependencies. It finds main publications the same way `bin/tia-cache seed` does, including the store registered for the checkout's origin.
 
 Pint stores its cache in `vendor/pint.cache`. PHPStan stores analysis results in `vendor/phpstan/cache/resultCache.php`. Both tools validate cached results and recheck changed inputs. PHPStan's path-specific compiled container and Larastan's migration cache stay local and rebuild when needed; bootstrap copies only portable result caches. A missing or incompatible source cache falls back to a normal first run. Pint and PHPStan also check the exact PHP runtime version internally; matching only the minor version does not guarantee a cache hit.
 
@@ -130,13 +132,19 @@ Baselines stay separate between projects. Bootstrap seeds absent worktree caches
 
 ## Main test baselines
 
-[ADR 0052](/decisions/0052-seed-worktrees-from-successful-main-test-baselines) governs baseline ownership. Each repository stores one successful publication per Composer project in its Git common directory under `orbit-tia/v1/published`. Linked worktrees share these publications. Each project keeps writable Pest history in its checkout-local `.orbit-tia` directory unless `ORBIT_TIA_DIRECTORY` overrides it. Separate clones can seed from a transported publication store through `ORBIT_MAIN_CACHE_STORE`. Bootstrap uses this override only while seeding. Other repositories need their own initial refresh.
+[ADR 0052](/decisions/0052-seed-worktrees-from-successful-main-test-baselines) governs baseline ownership. Each repository stores one successful publication per Composer project in its Git common directory under `orbit-tia/v1/published`. Linked worktrees share these publications. Each project keeps writable Pest history in its checkout-local `.orbit-tia` directory unless `ORBIT_TIA_DIRECTORY` overrides it. Separate clones can seed from a transported publication store through `ORBIT_MAIN_CACHE_STORE`. Bootstrap uses this override only while seeding. Without the override, a clone seeds from its own store when it has publications, and otherwise from the store registered for its origin on the same machine. Other repositories need their own initial refresh.
 
 Worktree creation fetches origin, and creates the task from fetched main without advancing the primary checkout or queuing duplicate background checks. It then calls bootstrap, which reuses Composer’s download cache, installs the locked Pest runner, and copies a compatible main dependency graph into each absent private cache. Bootstrap validates guidance, runs `composer test:affected`, and runs `composer check` in each project. A compatible history selects affected tests; a cache miss may need a full run. Any failed check fails bootstrap. `bin/bootstrap --skip-checks` explicitly requests installation, seeding, and guidance validation only. Manually created worktrees get the same setup through `bin/bootstrap`.
 
 [ADR 0119](/decisions/0119-publish-main-caches-from-clean-bootstrap-runs) extends bootstrap to save successful test and quality caches back to the existing local store after all checks pass. The checkout must remain clean at the same fetched main commit. Feature changes, failed checks, custom TIA directories, imported caches, and `--skip-checks` keep results private. The existing maintenance lock and atomic writes protect publication; older results cannot replace newer caches. Deployment remains responsible for updating the running checkout. The primary checkout may be dirty or on another branch; worktree creation leaves its HEAD, index, and files unchanged.
 
-Automatic task workspace provisioning currently creates independent clones through `RemoteDevelopmentAppInstanceSourceLifecycle`; it does not call `bin/worktree-create` or `bin/bootstrap`. These clones do not share this Git store. This cache flow applies to linked worktrees and explicit bootstrap runs, not automatically to managed task Instances.
+Automatic task workspace provisioning creates independent clones through `RemoteDevelopmentAppInstanceSourceLifecycle`; it does not call `bin/worktree-create` or `bin/bootstrap`. [ADR 0131](/decisions/0131-seed-task-workspace-clones-from-the-registered-main-cache-store) lets these clones reuse the main caches of a primary checkout on the same machine:
+
+- Every graph or quality publication registers its store for the repository's origin at `$XDG_STATE_HOME/orbit/main-cache-stores/{key}`; `$XDG_STATE_HOME` defaults to `~/.local/state`. HTTPS and SSH URLs of one repository share a key.
+- The first live store keeps the registration. Run `bin/tia-cache register` in a repository to make its store the registered one.
+- Root `composer check` runs `bin/worktree-cache` and `bin/tia-cache seed` before its checks, so a task's baseline check starts from the registered test graphs and Pint and PHPStan caches.
+- Seeding queues a background refresh of the registered store for each project that lags the clone's fetched main.
+- A project whose last refresh failed at that main commit, or at a descendant, is not queued again.
 
 The locked Pest runner includes the merged binary-result serialization fix. A runner change invalidates older graphs, so its first run needs a fresh baseline. A successful process exit alone does not prove that every test result was saved; successive-worktree verification must compare executed and replayed results.
 
@@ -151,6 +159,7 @@ The repository commands manage this lifecycle.
 | `bin/tia-cache refresh` | Requests refresh and waits for the repository worker; exits nonzero when a requested project fails |
 | `bin/tia-cache status` | Prints test publications and maintenance state, including pending requests, current publications, failures, and log paths |
 | `bin/tia-cache status --json --remote` | Reads authoritative remote main and returns maintenance state as JSON without changing the checkout or queue |
+| `bin/tia-cache register` | Makes this repository's store the one that independent clones of its origin seed from |
 | `bin/worktree-remove ISSUE` | Verifies the feature merged, queues background refresh, then releases resources and removes the worktree |
 
 Cache commands accept `--repository=PATH`. Seed and refresh accept repeatable `--project=apps/docs` options; their default covers all five Composer projects. Maintenance status covers the whole monorepo. Seed reports missing or incompatible graphs and leaves those projects cold; a cache miss does not fail setup.
@@ -168,10 +177,13 @@ The background worker removes worktree-setup settings before it starts, and ever
 | Orbit, application, and database settings | Names that start with `ORBIT_`, `APP_`, or `DB_`, plus `DATABASE_URL`, `CACHE_STORE`, `SESSION_DRIVER`, and `QUEUE_CONNECTION` |
 | Setup temporary directories | `TMPDIR`, `TMP`, and `TEMP` |
 | Retained process access | Other settings, including `PATH`, the user home and shell, tool configuration, and dependency authentication |
+| Added for maintenance | `PAO_DISABLE=1`, so Pest, PHPStan, and Rector print their normal output even when an agent session starts the refresh. It applies only to the worker's commands. |
 
 Each project loads its own environment and test configuration after this filter. The filter proves only that setup settings cannot select a project runtime; it does not prove that a queued background check ran or passed. Inspect a failed run with `bin/tia-cache status --json --remote`, then read the per-check `log` paths in `results` and `correctness_failures`; use `refresh_log` for worker launch or setup failures.
 
 One worker holds the repository refresh lock. Requests live in `orbit-tia/v1/requests.json` and remain pending until a worker records their outcome. Repeated requests for the same target combine; requests arriving during a run remain pending when they name newer work. Each batch fetches newest main. An interrupted worker leaves recoverable requests. Failed checks retain their logs and previous successful publications without an automatic retry loop. Background workers have reduced CPU priority and keep their runner and logs in the Git common directory so worktree removal cannot interrupt them. When closeout does not use `bin/worktree-remove`, the orchestrator queues refresh explicitly after verifying the merge.
+
+After each batch, the worker deletes run log directories that no recorded result or failure names.
 
 Publication replaces one complete snapshot atomically after testing succeeds on clean main. The snapshot contains only the portable dependency graph and its metadata. Seed checks the project, locked Composer dependencies and test configuration, Pest fingerprint including dependencies and PHP minor version, checksum, and commit ancestry. It does not copy affected-test lists, worker partials, coverage reports, or download state. A no-affected-tests run can publish a newer tested main commit while retaining an older graph anchor; both commits are recorded.
 

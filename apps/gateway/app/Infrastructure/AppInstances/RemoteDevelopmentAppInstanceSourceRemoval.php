@@ -918,13 +918,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
     ): array {
         $paths = [];
 
-        foreach (explode("\0", $inventory) as $field) {
-            if (! str_starts_with($field, 'worktree ')) {
-                continue;
-            }
-
-            $value = substr($field, 9);
-
+        foreach (self::liveWorktrees($inventory) as $value) {
             if (isset($quarantineMappings[$value])) {
                 $value = $quarantineMappings[$value];
             }
@@ -946,6 +940,32 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
         }
 
         return $paths;
+    }
+
+    /**
+     * The worktree paths of a `git worktree list --porcelain -z` listing, without the ones Git
+     * marks prunable because their directory is gone, such as a test worktree under a cleared
+     * `/tmp`. Git drops those records on its next prune, and removing the checkout removes them.
+     *
+     * @return list<string>
+     */
+    private static function liveWorktrees(string $inventory): array
+    {
+        /** @var list<array{path: string, prunable: bool}> $records */
+        $records = [];
+
+        foreach (explode("\0", $inventory) as $field) {
+            if (str_starts_with($field, 'worktree ')) {
+                $records[] = ['path' => substr($field, 9), 'prunable' => false];
+            } elseif ($records !== [] && ($field === 'prunable' || str_starts_with($field, 'prunable '))) {
+                $records[array_key_last($records)]['prunable'] = true;
+            }
+        }
+
+        return array_values(array_map(
+            static fn (array $record): string => $record['path'],
+            array_filter($records, static fn (array $record): bool => ! $record['prunable']),
+        ));
     }
 
     private function isPublished(AppInstance $appInstance, string $origin, string $commit): bool
@@ -1897,15 +1917,32 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
             test "$repository_identity" = "$expected_repository_identity"
             failure=15
             linked_count=0
+            linked_path=
+            linked_prunable=0
+            # A prunable worktree's directory is gone, so it does not keep the checkout in use.
+            count_linked() {
+                if [ -n "$linked_path" ] && [ "$linked_prunable" = 0 ]; then
+                    linked_count=$((linked_count + 1))
+                    test "$linked_path" = "$checkout"
+                fi
+                linked_path=
+                linked_prunable=0
+            }
             while IFS= read -r -d '' field; do
                 case "$field" in
                     'worktree '*)
+                        count_linked
                         linked_path=${field#worktree }
-                        linked_count=$((linked_count + 1))
-                        test "$linked_path" = "$checkout"
+                        ;;
+                    prunable|'prunable '*)
+                        linked_prunable=1
+                        ;;
+                    '')
+                        count_linked
                         ;;
                 esac
             done < <(git -C "$checkout" worktree list --porcelain -z)
+            count_linked
             test "$linked_count" = 1
             if [ "$force" != 1 ]; then
                 failure=20

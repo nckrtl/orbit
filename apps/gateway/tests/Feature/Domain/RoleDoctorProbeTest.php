@@ -198,7 +198,7 @@ it('reports a Caddy below the rendered floor as drift, naming the floor and the 
     expect(array_map(static fn (DoctorIssueData $issue): string => $issue->code, $report->issues))
         ->toBe(['role.caddy_version_unsupported'])
         ->and($report->issues[0]->expected)
-        ->toBe('>=2.8.0')
+        ->toBe('>=2.9.0')
         ->and($report->issues[0]->observed)
         ->toBe('2.6.2')
         ->and($report->issues[0]->resourceId)
@@ -217,7 +217,7 @@ it('keeps a Caddy at or above the floor, and a role without Caddy, out of the re
 
     expect($report->issues)->toBe([]);
 })->with([
-    'the floor itself' => ['2.8.0'],
+    'the floor itself' => ['2.9.0'],
     'the current stable' => ['v2.11.4'],
     'a role that needs no Caddy' => [null],
 ]);

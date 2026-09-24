@@ -13,11 +13,15 @@ use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Process;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Tests\Support\ProcessesApiFakeRuntimeManager;
 
-/** @param  list<array{name: string, state: string}>  $units */
-function prometheus_unit_states(array $units): void
+/**
+ * @param  list<array{name: string, state: string}>  $units
+ * @param  list<string>  $containers  Running containers cAdvisor reports, by name.
+ */
+function prometheus_unit_states(array $units, array $containers = []): void
 {
     Http::fake([
         '*/api/datasources' => Http::response([['type' => 'prometheus', 'uid' => 'orbit-prometheus']]),
@@ -25,13 +29,22 @@ function prometheus_unit_states(array $units): void
             'status' => 'success',
             'data' => [
                 'resultType' => 'vector',
-                'result' => array_map(
-                    static fn (array $unit): array => [
-                        'metric' => ['__name__' => 'node_systemd_unit_state', 'name' => $unit['name'], 'state' => $unit['state']],
-                        'value' => [1789700000, '1'],
-                    ],
-                    $units,
-                ),
+                'result' => [
+                    ...array_map(
+                        static fn (array $unit): array => [
+                            'metric' => ['name' => $unit['name'], 'state' => $unit['state']],
+                            'value' => [1789700000, '1'],
+                        ],
+                        $units,
+                    ),
+                    ...array_map(
+                        static fn (string $container): array => [
+                            'metric' => ['__name__' => 'container_last_seen', 'name' => $container, 'image' => 'valkey:8'],
+                            'value' => [1789700000, '1789700000'],
+                        ],
+                        $containers,
+                    ),
+                ],
             ],
         ]),
     ]);
@@ -75,6 +88,13 @@ function status_index_with_fake_node_reads(): PrometheusProcessRuntimeStatusInde
         public function credentials(): MetricsCredentialsData
         {
             return new MetricsCredentialsData('https://metrics.orbit', 'admin', 'password');
+        }
+
+        public function storedCredentials(): MetricsCredentialsData
+        {
+
+            return $this->credentials();
+
         }
 
         public function reset(): MetricsCredentialsData
@@ -128,14 +148,55 @@ describe(PrometheusProcessRuntimeStatusIndex::class, function (): void {
         expect($statuses)->toBe([1 => 'nodes-were-asked']);
     });
 
-    it('asks the Node for a Docker Process, which the systemd metric never covers', function (): void {
-        prometheus_unit_states([]);
+    it('reads a Docker Process from the containers cAdvisor reports', function (): void {
+        prometheus_unit_states([], ['orbit-process-3-valkey']);
 
         $statuses = status_index_with_fake_node_reads()->statuses(new Collection([
             status_index_process(3, 'valkey', ProcessRuntime::Docker),
+            status_index_process(4, 'plausible', ProcessRuntime::Docker),
         ]));
 
-        expect($statuses)->toBe([3 => 'nodes-were-asked']);
+        // cAdvisor reports running containers only, so a container without a series has exited.
+        expect($statuses)->toBe([3 => 'running', 4 => 'exited']);
+    });
+
+    it('answers every list within the cache window from one query', function (): void {
+        prometheus_unit_states([['name' => 'orbit-process-1-horizon.service', 'state' => 'active']], ['orbit-process-3-valkey']);
+        $index = status_index_with_fake_node_reads();
+        $processes = new Collection([
+            status_index_process(1, 'horizon'),
+            status_index_process(3, 'valkey', ProcessRuntime::Docker),
+        ]);
+
+        $index->statuses($processes);
+        $second = $index->statuses($processes);
+
+        expect($second)->toBe([1 => 'active', 3 => 'running']);
+        Http::assertSentCount(2);
+    });
+
+    it('reports the status observed after a start, stop, or restart until Prometheus catches up', function (): void {
+        // Prometheus still holds the reading from before the stop.
+        prometheus_unit_states([], ['orbit-process-3-valkey']);
+        $index = status_index_with_fake_node_reads();
+        $valkey = status_index_process(3, 'valkey', ProcessRuntime::Docker);
+
+        $index->remember($valkey, 'exited');
+
+        expect($index->statuses(new Collection([$valkey])))->toBe([3 => 'exited']);
+
+        $this->travel(PrometheusProcessRuntimeStatusIndex::ObservedSeconds + 1)->seconds();
+        Cache::forget('processes.runtime-states');
+
+        expect($index->statuses(new Collection([$valkey])))->toBe([3 => 'running']);
+    });
+
+    it('does not cache a read Prometheus could not answer', function (): void {
+        Http::fake(['*' => Http::response([], 503)]);
+        $index = status_index_with_fake_node_reads();
+
+        expect($index->statuses(new Collection([status_index_process(1, 'horizon')])))->toBe([1 => 'nodes-were-asked'])
+            ->and(Cache::get('processes.runtime-states'))->toBeNull();
     });
 });
 

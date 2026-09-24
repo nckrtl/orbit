@@ -2657,7 +2657,7 @@ export interface paths {
         put?: never;
         /**
          * Create a Task group
-         * @description Creates a Task group for an App with an optional ordered list of Task subtasks. Requires Gateway access. `status` is `backlog` (the default) or `todo`; the scheduler never claims a `backlog` group. A `todo` group needs at least one subtask (`tasks.no_subtasks`), and create then asks the scheduler to claim the oldest `todo` group that still fits the concurrency ceilings. `plan: true` on a `backlog` group provisions its Instance on an app-dev Node with access to itself and starts a T3 planner thread that becomes the reviewer (`tasks.plan_requires_backlog`, `tasks.planner_driver_unavailable`, `tasks.planner_node_unavailable`, `tasks.planner_unavailable`). Optional `notify_coder` or Commander `notify_on_settle` opts the group into the Coder settle webhook. Returns `tasks.disabled` while the extension is off.
+         * @description Creates a Task group for an App with an optional ordered list of Task subtasks. Requires Gateway access. `status` is `backlog` (the default) or `todo`; the scheduler never claims a `backlog` group. A `todo` group needs at least one subtask (`tasks.no_subtasks`), each with at least one deliverable (`tasks.subtask_deliverables_missing`), and create then asks the scheduler to claim the oldest `todo` group that still fits the concurrency ceilings. `plan: true` on a `backlog` group provisions its Instance on an app-dev Node with access to itself and starts a T3 planner thread that becomes the reviewer (`tasks.plan_requires_backlog`, `tasks.planner_driver_unavailable`, `tasks.planner_node_unavailable`, `tasks.planner_unavailable`). Optional `notify_coder` or Commander `notify_on_settle` opts the group into the Coder settle webhook. Returns `tasks.disabled` while the extension is off.
          */
         post: operations["tasks-create"];
         delete?: never;
@@ -2685,7 +2685,7 @@ export interface paths {
         head?: never;
         /**
          * Update a Task group
-         * @description Updates a Task group. `title` and `brief` change only in `backlog` (`tasks.not_in_backlog`). `status` moves the group between `backlog` and `todo`; a claimed group cannot move (`tasks.already_claimed`), and `todo` needs at least one subtask (`tasks.no_subtasks`). Moving to `todo` asks the scheduler to claim; for a planning group Orbit first commits the workspace as `Plan: {title}` (`tasks.commit_failed`). Served by the Node that holds the group's Instance, or by the Gateway for a group without one. Returns `tasks.disabled` while the extension is off.
+         * @description Updates a Task group. `title` and `brief` change only in `backlog` (`tasks.not_in_backlog`). `status` moves the group between `backlog` and `todo`; a claimed group cannot move (`tasks.already_claimed`), and `todo` needs at least one subtask (`tasks.no_subtasks`) and a deliverable on every subtask (`tasks.subtask_deliverables_missing`, whose details name the subtasks). Moving to `todo` asks the scheduler to claim; for a planning group Orbit first commits the workspace as `Plan: {title}` (`tasks.commit_failed`). Served by the Node that holds the group's Instance, or by the Gateway for a group without one. Returns `tasks.disabled` while the extension is off.
          */
         patch: operations["tasks-update"];
         trace?: never;
@@ -2778,7 +2778,7 @@ export interface paths {
         put?: never;
         /**
          * Create a subtask
-         * @description Appends one subtask to a Task group at the next position with status `todo`. Works in any group status. Served by the Node that holds the group's Instance, or by the Gateway for a group without one. Returns `tasks.disabled` while the extension is off.
+         * @description Appends one subtask to a Task group at the next position with status `todo`. Works in any group status. `deliverables` is a list of at most 20 typed items the subtask must deliver, each with a unique slug `id`, a `type`, and a `description`: `file` adds `path` (a path or glob) and `change` (`created`, `modified`, or `any`); `test` adds `project`, `file` (a Pest test file in that project), and `name` (a substring of the test name); `command` adds `command` and an optional `directory`; `review` adds nothing. Orbit verifies file, test, and command deliverables at handoff, and the reviewer confirms review deliverables. Outside `backlog`, a subtask needs at least one deliverable (`tasks.subtask_deliverables_missing`). Served by the Node that holds the group's Instance, or by the Gateway for a group without one. Returns `tasks.disabled` while the extension is off.
          */
         post: operations["tasks-subtask-create"];
         delete?: never;
@@ -2806,7 +2806,7 @@ export interface paths {
         head?: never;
         /**
          * Update a subtask
-         * @description Updates a subtask `title`, `brief`, or `position` while its group is in `backlog` (`tasks.not_in_backlog`). Other subtasks shift so positions stay gapless from 1. Served by the Node that holds the group's Instance, or by the Gateway for a group without one. Returns `tasks.disabled` while the extension is off.
+         * @description Updates a subtask `title`, `brief`, or `position` while its group is in `backlog` (`tasks.not_in_backlog`). Other subtasks shift so positions stay gapless from 1. `deliverables` replaces the whole list, in the form that subtask create takes. It changes in `backlog`, or in any group status while the subtask is `todo` (`tasks.deliverables_locked`); outside `backlog` the list cannot become empty (`tasks.subtask_deliverables_missing`). Served by the Node that holds the group's Instance, or by the Gateway for a group without one. Returns `tasks.disabled` while the extension is off.
          */
         patch: operations["tasks-subtask-update"];
         trace?: never;
@@ -3560,6 +3560,9 @@ export interface components {
             position?: number;
             title?: string;
             brief?: string;
+            deliverables?: {
+                [key: string]: string;
+            }[];
             /** @enum {string} */
             status?: "todo" | "reserved" | "running" | "reviewing" | "completed" | "failed" | "cancelled";
             implementer_agent_thread_id?: number | null;
@@ -3619,6 +3622,12 @@ export interface components {
             posted_at?: string;
             review_attempt?: number | null;
             commit_sha?: string | null;
+            pull_request?: components["schemas"]["TaskCommentPullRequest"] | null;
+        };
+        TaskCommentPullRequest: {
+            summary?: string;
+            changes?: string[];
+            breaking?: string[];
         };
         ToolManager: {
             id?: number | null;
@@ -14499,7 +14508,7 @@ export interface operations {
                     app_id: number;
                     /** @description Short name of the feature */
                     title: string;
-                    /** @description Deliverables and acceptance */
+                    /** @description Goal and acceptance */
                     brief: string;
                     /**
                      * @description backlog (default) or todo
@@ -14514,6 +14523,28 @@ export interface operations {
                     tasks?: {
                         title: string;
                         brief: string;
+                        deliverables?: {
+                            id: string;
+                            /** @enum {string} */
+                            type: "file" | "test" | "command" | "review";
+                            description: string;
+                            /** @description Conditionally required. */
+                            path?: string;
+                            /**
+                             * @description Conditionally required.
+                             * @enum {string}
+                             */
+                            change?: "created" | "modified" | "any";
+                            /** @description Conditionally required. */
+                            project?: string;
+                            /** @description Conditionally required. */
+                            file?: string;
+                            /** @description Conditionally required. */
+                            name?: string;
+                            /** @description Conditionally required. */
+                            command?: string;
+                            directory?: string;
+                        }[];
                     }[];
                 };
             };
@@ -14937,8 +14968,31 @@ export interface operations {
                 "application/json": {
                     /** @description Short name of the step */
                     title: string;
-                    /** @description Deliverables and acceptance of the step */
+                    /** @description Goal and acceptance of the step */
                     brief: string;
+                    /** @description JSON file with an array of typed deliverables for the step */
+                    deliverables?: {
+                        id: string;
+                        /** @enum {string} */
+                        type: "file" | "test" | "command" | "review";
+                        description: string;
+                        /** @description Conditionally required. */
+                        path?: string;
+                        /**
+                         * @description Conditionally required.
+                         * @enum {string}
+                         */
+                        change?: "created" | "modified" | "any";
+                        /** @description Conditionally required. */
+                        project?: string;
+                        /** @description Conditionally required. */
+                        file?: string;
+                        /** @description Conditionally required. */
+                        name?: string;
+                        /** @description Conditionally required. */
+                        command?: string;
+                        directory?: string;
+                    }[];
                 };
             };
         };
@@ -15092,6 +15146,29 @@ export interface operations {
                     brief?: string;
                     /** @description New position, starting at 1 */
                     position?: number;
+                    /** @description JSON file with an array of typed deliverables that replaces the list */
+                    deliverables?: {
+                        id: string;
+                        /** @enum {string} */
+                        type: "file" | "test" | "command" | "review";
+                        description: string;
+                        /** @description Conditionally required. */
+                        path?: string;
+                        /**
+                         * @description Conditionally required.
+                         * @enum {string}
+                         */
+                        change?: "created" | "modified" | "any";
+                        /** @description Conditionally required. */
+                        project?: string;
+                        /** @description Conditionally required. */
+                        file?: string;
+                        /** @description Conditionally required. */
+                        name?: string;
+                        /** @description Conditionally required. */
+                        command?: string;
+                        directory?: string;
+                    }[];
                 };
             };
         };

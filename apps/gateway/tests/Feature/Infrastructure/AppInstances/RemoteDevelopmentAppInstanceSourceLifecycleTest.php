@@ -512,6 +512,27 @@ it('returns linked-worktree inventory and refuses deletion with every path and b
         ->toContain('refs/heads/dev');
 });
 
+it('removes a checkout whose only other worktree lost its directory', function (): void {
+    $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'dev');
+    $this->source->prepare($instance, false);
+    $resolution = $this->source->resolve($instance);
+    $instance->update([
+        'branch' => $resolution->branch,
+        'starting_commit' => $resolution->startingCommit,
+        'status' => AppInstanceState::SourceResolved,
+    ]);
+    // A test run adds a worktree under /tmp, and /tmp is cleared before the workspace is removed.
+    $scratch = $this->sandbox.'/tmp-worktree';
+    orb76_run(['git', '-C', $instance->checkout_path, 'worktree', 'add', '-b', 'scratch', $scratch, 'HEAD']);
+    orb76_run(['rm', '-rf', $scratch]);
+
+    $inventory = $this->removal->inspect($instance, true);
+    $this->removal->remove($instance, $inventory, true);
+
+    expect($inventory->linkedWorktreePaths)->toBe([$instance->checkout_path])
+        ->and(is_dir($instance->checkout_path))->toBeFalse();
+});
+
 it('refuses a replacement or changed canonical origin between inspection and deletion', function (
     string $mutation,
     bool $force,

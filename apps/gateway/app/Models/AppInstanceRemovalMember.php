@@ -29,6 +29,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $source_identity
  * @property list<string> $linked_worktree_paths
  * @property string $source_digest
+ * @property bool $runtime_published
  * @property Carbon|null $source_prepared_at
  * @property Carbon|null $route_cleared_at
  * @property string|null $route_outcome
@@ -62,6 +63,7 @@ final class AppInstanceRemovalMember extends Model
         'source_identity',
         'linked_worktree_paths',
         'source_digest',
+        'runtime_published',
         'source_prepared_at',
         'route_cleared_at',
         'route_outcome',
@@ -82,6 +84,7 @@ final class AppInstanceRemovalMember extends Model
     {
         return [
             'linked_worktree_paths' => 'array',
+            'runtime_published' => 'boolean',
             'source_prepared_at' => 'datetime',
             'route_cleared_at' => 'datetime',
             'source_finalized_at' => 'datetime',

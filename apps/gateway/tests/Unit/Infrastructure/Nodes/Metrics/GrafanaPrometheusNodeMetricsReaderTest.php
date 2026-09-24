@@ -37,6 +37,13 @@ final class FakeGrafanaMetricsCredentialManager implements MetricsCredentialMana
         return $this->data;
     }
 
+    public function storedCredentials(): MetricsCredentialsData
+    {
+
+        return $this->credentials();
+
+    }
+
     public function reset(): MetricsCredentialsData
     {
         throw new RuntimeException('not used in this test');

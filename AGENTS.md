@@ -21,11 +21,12 @@ Choose the entry point for the work at hand.
 | --- | --- |
 | Shape a feature and prepare its ADRs and documentation | [grill-with-docs](.agents/skills/grill-with-docs/SKILL.md) |
 | Hand a feature to an Orbit planner when the operator asks for Orbit | [implementing-in-orbit](.agents/skills/implementing-in-orbit/SKILL.md) |
+| Split an agreed feature into Orbit task subtasks | [creating-tasks](.agents/skills/creating-tasks/SKILL.md) |
 | Build the feature and submit a complete PR | [developing-features](.agents/skills/developing-features/SKILL.md) |
 | Review a proposal or completed PR | [reviewing-pull-requests](.agents/skills/reviewing-pull-requests/SKILL.md) |
 | Merge an approved PR | [merging-pull-requests](.agents/skills/merging-pull-requests/SKILL.md) |
 
-For focused documentation work, use [writing-documentation](.agents/skills/writing-documentation/SKILL.md). For CLI design and audits, use [designing-cli-commands](.agents/skills/designing-cli-commands/SKILL.md). For real terminal recordings, use [verifying-cli-output](.agents/skills/verifying-cli-output/SKILL.md). Project guidance supplies coding and testing conventions.
+For focused documentation work, use [writing-documentation](.agents/skills/writing-documentation/SKILL.md). For CLI design and audits, use [designing-cli-commands](.agents/skills/designing-cli-commands/SKILL.md). For real terminal recordings, use [verifying-cli-output](.agents/skills/verifying-cli-output/SKILL.md). For proofs on an Incus topology, use [proving-on-incus](.agents/skills/proving-on-incus/SKILL.md). Project guidance supplies coding and testing conventions.
 
 ## Checks and resources
 

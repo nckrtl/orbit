@@ -18,10 +18,12 @@ final class CreateSubtaskRequest extends GatewayRequest implements HasBody
     #[\Override]
     protected Method $method = Method::POST;
 
+    /** @param list<array<string, string>> $deliverables */
     public function __construct(
         private readonly int $groupId,
         private readonly string $title,
         private readonly string $brief,
+        private readonly array $deliverables = [],
     ) {}
 
     public function resolveEndpoint(): string
@@ -42,6 +44,12 @@ final class CreateSubtaskRequest extends GatewayRequest implements HasBody
 
     protected function defaultBody(): string
     {
-        return json_encode(['title' => $this->title, 'brief' => $this->brief], JSON_THROW_ON_ERROR);
+        $body = ['title' => $this->title, 'brief' => $this->brief];
+
+        if ($this->deliverables !== []) {
+            $body['deliverables'] = $this->deliverables;
+        }
+
+        return json_encode($body, JSON_THROW_ON_ERROR);
     }
 }

@@ -153,6 +153,7 @@ describe("turns", () => {
 
         expect(events[0]).toMatchObject({
             kind: "snapshot",
+            run: expect.any(String),
             state: "idle",
             turnId: null,
             entries: [],
@@ -251,6 +252,91 @@ describe("turns", () => {
         const result = snapshot.entries.find((e: any) => e.message.role === "toolResult").message;
         expect(result.isError).toBe(true);
         expect(JSON.stringify(result.content)).toContain("No Laravel app with Laravel Boost found");
+    });
+});
+
+describe("resume", () => {
+    const done = (events: any[]) => events.some((e) => e.kind === "state" && e.state === "done");
+
+    /** Runs one turn with a bash call and returns the events of a stream that watched it. */
+    async function completedTurn(): Promise<{ h: Harness; events: any[] }> {
+        const h = await created();
+        h.faux.setResponses([
+            fauxAssistantMessage([fauxToolCall("bash", { command: "echo probe" })], {
+                stopReason: "toolUse",
+            }),
+            fauxAssistantMessage("finished"),
+        ]);
+        const collecting = h.stream("thread-1", done);
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        await h.request("POST", "/sessions/thread-1/messages", { key: "k1", text: "go" });
+
+        return { h, events: await collecting };
+    }
+
+    it("sends only the events after the cursor, without a snapshot", async () => {
+        const { h, events } = await completedTurn();
+        const run = events[0].run;
+        const first = events.find((e) => e.kind === "entry");
+
+        const resumed = await h.stream("thread-1", done, `?run=${run}&after=${first.sequence}`);
+
+        expect(resumed[0]).toMatchObject({
+            kind: "resumed",
+            run,
+            sequence: first.sequence,
+            session: { id: "thread-1" },
+            context: [],
+        });
+        expect(resumed.some((e) => e.kind === "snapshot")).toBe(false);
+        const later = (e: any) => e.kind === "entry" && e.sequence > first.sequence;
+        expect(resumed.filter(later)).toEqual(events.filter(later));
+        expect(resumed.filter((e) => e.kind === "entry" && e.sequence <= first.sequence)).toEqual(
+            [],
+        );
+        expect(resumed.at(-1)).toMatchObject({ kind: "state", state: "done", run });
+        expect(resumed.at(-1).sequence).toBe(events.at(-1).sequence);
+        const sequences = resumed.slice(1).map((e) => e.sequence);
+        expect(sequences).toEqual([...sequences].sort((a, b) => a - b));
+    });
+
+    it("names a tool call that has no result yet at the cursor", async () => {
+        const { h, events } = await completedTurn();
+        const call = events.find((e) => e.kind === "entry" && e.entry.message.role === "assistant");
+
+        const resumed = await h.stream("thread-1", done, `?run=${call.run}&after=${call.sequence}`);
+
+        expect(resumed[0].context).toEqual([call.entry]);
+        expect(resumed[1].entry.message).toMatchObject({
+            role: "toolResult",
+            toolCallId: call.entry.message.content[0].id,
+        });
+    });
+
+    it.each([
+        ["another run", (run: string) => `?run=other${run}&after=1`],
+        ["a sequence ahead of the run", (run: string) => `?run=${run}&after=999999`],
+        ["a malformed sequence", (run: string) => `?run=${run}&after=abc`],
+        ["no run", () => "?after=1"],
+    ])("sends a snapshot for %s", async (_name, query) => {
+        const { h, events } = await completedTurn();
+
+        const [first] = await h.stream("thread-1", (e) => e.length > 0, query(events[0].run));
+
+        expect(first).toMatchObject({ kind: "snapshot", run: events[0].run, state: "done" });
+        expect(first.entries).toHaveLength(4);
+    });
+
+    it("sends a snapshot for a cursor from before a restart", async () => {
+        const { h, events } = await completedTurn();
+        const cursor = `?run=${events[0].run}&after=${events.at(-1).sequence}`;
+
+        harness = await h.restart();
+        const [first] = await harness.stream("thread-1", (e) => e.length > 0, cursor);
+
+        expect(first).toMatchObject({ kind: "snapshot", state: "done" });
+        expect(first.run).not.toBe(events[0].run);
+        expect(first.entries).toHaveLength(4);
     });
 });
 

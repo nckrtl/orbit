@@ -182,7 +182,7 @@ describe(RefreshScheduler::class, function (): void {
         expect($metrics->totalCalls())->toBe(1);
     });
 
-    it('does not re-fetch a node page before its 5-second interval has passed', function (): void {
+    it('does not re-fetch a node page before its 10-second interval has passed', function (): void {
         $clock = new FakeClock;
         $metrics = new CountingNodeMetricsSource(results: [1 => ['cores' => [0.1], 'mem' => [1.0, 2.0], 'swap' => [0.0, 0.0], 'uptime' => '1m', 'disks' => [['/', 1.0, 2.0]]]]);
         $scheduler = refresh_scheduler($metrics, clock: $clock->closure());
@@ -191,7 +191,7 @@ describe(RefreshScheduler::class, function (): void {
         $scheduler->tick($state, [1], false, [], []);
         expect($metrics->totalCalls())->toBe(1);
 
-        $clock->advance(4.0);
+        $clock->advance(9.0);
         $scheduler->tick($state, [1], false, [], []);
         expect($metrics->totalCalls())->toBe(1);
 
@@ -213,7 +213,7 @@ describe(RefreshScheduler::class, function (): void {
         expect($metrics->calls)->toBe([1 => 1, 2 => 1, 3 => 1]);
     });
 
-    it('backs off a failed node page to 60 seconds instead of its normal 5-second interval', function (): void {
+    it('backs off a failed node page to 60 seconds instead of its normal 10-second interval', function (): void {
         $clock = new FakeClock;
         $metrics = new CountingNodeMetricsSource(default: null); // Every fetch "fails" (returns null).
         $scheduler = refresh_scheduler($metrics, clock: $clock->closure());

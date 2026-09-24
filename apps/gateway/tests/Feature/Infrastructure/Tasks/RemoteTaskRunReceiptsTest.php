@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Tasks\TaskDeliverable;
 use App\Domain\Tasks\TaskRunOutcome;
 use App\Domain\Tasks\TaskRunReceiptException;
 use App\Domain\Tasks\TaskThreadRole;
@@ -92,7 +93,7 @@ it('installs the run script outside the tracked tree and reads the receipt it wr
 
     expect($written->getExitCode())->toBe(0)
         ->and(is_executable($checkout.'/.git/orbit/run'))->toBeTrue()
-        ->and(json_decode((string) file_get_contents($checkout.'/.git/orbit/turn.json'), true))->toBe(['role' => 'implementer', 'final' => false])
+        ->and(json_decode((string) file_get_contents($checkout.'/.git/orbit/turn.json'), true))->toBe(['role' => 'implementer', 'final' => false, 'deliverables' => []])
         ->and($receipt?->outcome)->toBe(TaskRunOutcome::ReadyForReview)
         ->and($receipt?->summary)->toBe('Added the export.')
         ->and($receipt?->hash)->toBe(hash_file('sha256', $checkout.'/.git/orbit/run.json'))
@@ -104,7 +105,7 @@ it('removes a receipt only while its content is unchanged', function (): void {
     $instance = run_receipt_instance($checkout);
     $receipts = run_receipts(new LocalShellSshExecutor);
     $receipts->prepare($instance, TaskThreadRole::Implementer);
-    run_receipt_script($checkout, ['--outcome=blocked', '--summary=The API key is missing.']);
+    run_receipt_script($checkout, ['--outcome=blocked', '--summary=The API key is missing.', '--question=Where do I find the API key?']);
     $first = $receipts->read($instance);
     run_receipt_script($checkout, ['--outcome=ready_for_review', '--summary=Done.']);
 
@@ -150,7 +151,26 @@ it('refuses input that does not fit the turn', function (TaskThreadRole $role, a
     'a missing summary value' => [TaskThreadRole::Implementer, ['--outcome=blocked', '--summary'], '--summary needs a value.'],
     'a repeated flag' => [TaskThreadRole::Implementer, ['--outcome=blocked', '--outcome=blocked', '--summary=No.'], 'pass --outcome once.'],
     'an unknown flag' => [TaskThreadRole::Implementer, ['--outcome=blocked', '--summary=No.', '--force'], 'unknown argument --force.'],
+    'a blocked implementer turn without a question' => [TaskThreadRole::Implementer, ['--outcome=blocked', '--summary=Gateway implementation not completed.'], 'blocked needs --question with one specific question the operator can answer. If you can decide or find the answer yourself, keep working instead.'],
+    'a blocked reviewer turn without a question' => [TaskThreadRole::Reviewer, ['--outcome=blocked', '--summary=The brief is unclear.'], 'blocked needs --question with one specific question the operator can answer. If you can decide or find the answer yourself, keep working instead.'],
+    'an empty question' => [TaskThreadRole::Implementer, ['--outcome=blocked', '--summary=No.', '--question= '], '--question cannot be empty.'],
+    'a question on another outcome' => [TaskThreadRole::Implementer, ['--outcome=ready_for_review', '--summary=Done.', '--question=Is this fine?'], '--question is only for --outcome=blocked.'],
 ]);
+
+it('records the question of a blocked turn', function (): void {
+    $checkout = run_receipt_checkout();
+    $instance = run_receipt_instance($checkout);
+    $receipts = run_receipts(new LocalShellSshExecutor);
+    $receipts->prepare($instance, TaskThreadRole::Implementer);
+
+    $process = run_receipt_script($checkout, ['--outcome=blocked', '--summary=Installing intl needs sudo.', '--question', ' May I run sudo apt-get install php8.5-intl? ']);
+    $receipt = $receipts->read($instance);
+
+    expect($process->getExitCode())->toBe(0)
+        ->and($receipt?->outcome)->toBe(TaskRunOutcome::Blocked)
+        ->and($receipt?->question)->toBe('May I run sudo apt-get install php8.5-intl?')
+        ->and($receipt?->body())->toBe("Installing intl needs sudo.\n\nQuestion: May I run sudo apt-get install php8.5-intl?");
+});
 
 it('refuses to write a receipt before Orbit starts a turn', function (): void {
     $checkout = run_receipt_checkout();
@@ -175,6 +195,8 @@ it('treats a hand-written receipt without an outcome and summary as invalid', fu
     'invalid json' => ['{"outcome":'],
     'unknown outcome' => ['{"outcome":"done","summary":"Done."}'],
     'empty summary' => ['{"outcome":"blocked","summary":" "}'],
+    'blocked without a question' => ['{"outcome":"blocked","summary":"Gateway implementation not completed."}'],
+    'blocked with an empty question' => ['{"outcome":"blocked","summary":"Stuck.","question":" "}'],
 ]);
 
 it('reports an unreachable workspace instead of a missing receipt', function (): void {
@@ -213,7 +235,7 @@ it('records the pull request fields with the approval of the last subtask, with 
     $receipt = $receipts->read($instance);
 
     expect($process->getExitCode())->toBe(0)
-        ->and(json_decode((string) file_get_contents($checkout.'/.git/orbit/turn.json'), true))->toBe(['role' => 'reviewer', 'final' => true])
+        ->and(json_decode((string) file_get_contents($checkout.'/.git/orbit/turn.json'), true))->toBe(['role' => 'reviewer', 'final' => true, 'deliverables' => []])
         ->and($receipt?->outcome)->toBe(TaskRunOutcome::Approved)
         ->and($receipt?->pullRequest?->summary)->toBe('Adds exports.')
         ->and($receipt?->pullRequest?->changes)->toHaveCount(40)
@@ -230,4 +252,96 @@ it('lets a reviewer request changes on the last subtask without the pull request
 
     expect($process->getExitCode())->toBe(0)
         ->and($receipts->read($instance)?->outcome)->toBe(TaskRunOutcome::ChangesRequested);
+});
+
+/** @return list<TaskDeliverable> */
+function run_receipt_deliverables(): array
+{
+    return [
+        TaskDeliverable::fromArray(['id' => 'reference-page', 'type' => 'file', 'description' => 'Document the export', 'path' => 'docs/reference/tasks.md', 'change' => 'modified']),
+        TaskDeliverable::fromArray(['id' => 'export-test', 'type' => 'test', 'description' => 'Test the export', 'project' => 'apps/gateway', 'file' => 'tests/Feature/ExportTest.php', 'name' => 'exports']),
+        TaskDeliverable::fromArray(['id' => 'error-copy', 'type' => 'review', 'description' => 'Errors name the subtask']),
+    ];
+}
+
+describe('deliverable confirmations', function (): void {
+    it('writes the deliverables into the turn', function (): void {
+        $checkout = run_receipt_checkout();
+        $receipts = run_receipts(new LocalShellSshExecutor);
+
+        $receipts->prepare(run_receipt_instance($checkout), TaskThreadRole::Implementer, deliverables: run_receipt_deliverables());
+
+        expect(json_decode((string) file_get_contents($checkout.'/.git/orbit/turn.json'), true)['deliverables'])->toBe([
+            ['id' => 'reference-page', 'type' => 'file', 'description' => 'Document the export'],
+            ['id' => 'export-test', 'type' => 'test', 'description' => 'Test the export'],
+            ['id' => 'error-copy', 'type' => 'review', 'description' => 'Errors name the subtask'],
+        ]);
+    });
+
+    it('records the confirmation of every deliverable in a ready_for_review receipt', function (): void {
+        $checkout = run_receipt_checkout();
+        $instance = run_receipt_instance($checkout);
+        $receipts = run_receipts(new LocalShellSshExecutor);
+        $receipts->prepare($instance, TaskThreadRole::Implementer, deliverables: run_receipt_deliverables());
+
+        $process = run_receipt_script($checkout, [
+            '--outcome=ready_for_review', '--summary=Added the export.',
+            '--deliverable=reference-page=Export section in docs/reference/tasks.md',
+            '--deliverable', 'export-test= tests/Feature/ExportTest.php covers it ',
+            '--deliverable=error-copy=The error names the subtask ID',
+        ]);
+
+        expect($process->getExitCode())->toBe(0)
+            ->and($receipts->read($instance)?->deliverables)->toBe([
+                'reference-page' => 'Export section in docs/reference/tasks.md',
+                'export-test' => 'tests/Feature/ExportTest.php covers it',
+                'error-copy' => 'The error names the subtask ID',
+            ]);
+    });
+
+    it('records the review confirmations of an approval', function (): void {
+        $checkout = run_receipt_checkout();
+        $instance = run_receipt_instance($checkout);
+        $receipts = run_receipts(new LocalShellSshExecutor);
+        $receipts->prepare($instance, TaskThreadRole::Reviewer, deliverables: run_receipt_deliverables());
+
+        $process = run_receipt_script($checkout, ['--outcome=approved', '--summary=Checked.', '--deliverable=error-copy=Read each message in ExportController']);
+
+        expect($process->getExitCode())->toBe(0)
+            ->and($receipts->read($instance)?->deliverables)->toBe(['error-copy' => 'Read each message in ExportController']);
+    });
+
+    it('refuses confirmations that do not fit the turn', function (TaskThreadRole $role, array $arguments, string $error): void {
+        $checkout = run_receipt_checkout();
+        $instance = run_receipt_instance($checkout);
+        $receipts = run_receipts(new LocalShellSshExecutor);
+        $receipts->prepare($instance, $role, deliverables: run_receipt_deliverables());
+
+        $process = run_receipt_script($checkout, $arguments);
+
+        expect($process->getExitCode())->toBe(2)
+            ->and($process->getErrorOutput())->toBe("orbit run: {$error}\n")
+            ->and($receipts->read($instance))->toBeNull();
+    })->with([
+        'a handoff without confirmations' => [TaskThreadRole::Implementer, ['--outcome=ready_for_review', '--summary=Done.'], 'ready_for_review needs --deliverable=ID=evidence for: reference-page, export-test, error-copy. Say where or how each one is met.'],
+        'a handoff that misses one' => [TaskThreadRole::Implementer, ['--outcome=ready_for_review', '--summary=Done.', '--deliverable=reference-page=Updated', '--deliverable=error-copy=Done'], 'ready_for_review needs --deliverable=ID=evidence for: export-test. Say where or how each one is met.'],
+        'an unknown deliverable' => [TaskThreadRole::Implementer, ['--outcome=ready_for_review', '--summary=Done.', '--deliverable=changelog=Added'], 'unknown deliverable changelog. This subtask\'s deliverables are: reference-page, export-test, error-copy.'],
+        'a deliverable confirmed twice' => [TaskThreadRole::Implementer, ['--outcome=ready_for_review', '--summary=Done.', '--deliverable=error-copy=A', '--deliverable=error-copy=B'], 'confirm deliverable error-copy once.'],
+        'a confirmation without evidence' => [TaskThreadRole::Implementer, ['--outcome=ready_for_review', '--summary=Done.', '--deliverable=error-copy= '], '--deliverable=error-copy needs evidence after the equals sign.'],
+        'a confirmation without an ID' => [TaskThreadRole::Implementer, ['--outcome=ready_for_review', '--summary=Done.', '--deliverable=Everything is done'], '--deliverable needs the form ID=evidence, such as --deliverable=export-test="tests/Feature/ExportTest.php".'],
+        'a confirmation on a blocked turn' => [TaskThreadRole::Implementer, ['--outcome=blocked', '--summary=Stuck.', '--question=Which API?', '--deliverable=error-copy=Done'], '--deliverable is only for --outcome=ready_for_review.'],
+        'an approval without the review confirmation' => [TaskThreadRole::Reviewer, ['--outcome=approved', '--summary=Good.', '--deliverable=reference-page=Read it'], 'approved needs --deliverable=ID=evidence for: error-copy. Say where or how each one is met.'],
+        'confirmations on requested changes' => [TaskThreadRole::Reviewer, ['--outcome=changes_requested', '--summary=Fix it.', '--deliverable=error-copy=Missing'], '--deliverable is only for --outcome=approved.'],
+    ]);
+
+    it('refuses any confirmation for a subtask without deliverables', function (): void {
+        $checkout = run_receipt_checkout();
+        $instance = run_receipt_instance($checkout);
+        run_receipts(new LocalShellSshExecutor)->prepare($instance, TaskThreadRole::Implementer);
+
+        $process = run_receipt_script($checkout, ['--outcome=ready_for_review', '--summary=Done.', '--deliverable=docs=Added']);
+
+        expect($process->getExitCode())->toBe(2)
+            ->and($process->getErrorOutput())->toBe("orbit run: unknown deliverable docs. This subtask's deliverables are: none.\n");
+    });
 });

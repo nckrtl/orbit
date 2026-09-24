@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Support;
 
+use App\Domain\Tasks\TaskDeliverable;
 use App\Domain\Tasks\TaskRunReceipt;
 use App\Domain\Tasks\TaskRunReceipts;
 use App\Domain\Tasks\TaskThreadRole;
@@ -28,14 +29,27 @@ final class FakeTaskRunReceipts implements TaskRunReceipts
         $this->receipts ??= [self::contents('ready_for_review')];
     }
 
-    public static function contents(string $outcome, string $summary = 'Done.'): string
+    /** @param array<string, string> $deliverables confirmations by deliverable ID */
+    public static function contents(string $outcome, string $summary = 'Done.', ?string $question = null, array $deliverables = []): string
     {
-        return json_encode(['outcome' => $outcome, 'summary' => $summary, 'nonce' => bin2hex(random_bytes(8))], JSON_THROW_ON_ERROR);
+        $receipt = ['outcome' => $outcome, 'summary' => $summary];
+        if ($question !== null) {
+            $receipt['question'] = $question;
+        }
+        if ($deliverables !== []) {
+            $receipt['deliverables'] = $deliverables;
+        }
+
+        return json_encode([...$receipt, 'nonce' => bin2hex(random_bytes(8))], JSON_THROW_ON_ERROR);
     }
 
-    public function prepare(AppInstance $instance, TaskThreadRole $role, bool $final = false): void
+    /** @var list<list<string>> the deliverable IDs written into each prepared turn */
+    public array $turnDeliverables = [];
+
+    public function prepare(AppInstance $instance, TaskThreadRole $role, bool $final = false, array $deliverables = []): void
     {
         $this->prepared[] = $role->value.($final ? ':final' : '');
+        $this->turnDeliverables[] = array_map(static fn (TaskDeliverable $deliverable): string => $deliverable->id, $deliverables);
     }
 
     public function read(AppInstance $instance): ?TaskRunReceipt

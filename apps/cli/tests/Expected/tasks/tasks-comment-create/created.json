@@ -1,1 +1,1 @@
-{"id":3,"task_group_id":1,"task_id":1,"agent_thread_id":null,"type":"resolution","body":"Use the existing request base.","author":"nick","posted_at":"2026-09-23T10:00:00+00:00","review_attempt":null,"commit_sha":null,"request_id":"0198e15c-bf97-7c23-8f1f-61b8fe67a844"}
+{"id":3,"task_group_id":1,"task_id":1,"agent_thread_id":null,"type":"resolution","body":"Use the existing request base.","author":"nick","posted_at":"2026-09-23T10:00:00+00:00","review_attempt":null,"commit_sha":null,"pull_request":null,"request_id":"0198e15c-bf97-7c23-8f1f-61b8fe67a844"}

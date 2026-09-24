@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useFleet } from "../api/queries";
 import { formatCompactCount, formatTokens, taskAgentsQuery, taskIdentity } from "../api/tasks";
 import { Frame } from "../ui/Frame";
+import { usePageVisible } from "../ui/usePageVisible";
 import {
     agentProvider,
     applyAgentEvent,
@@ -246,11 +247,26 @@ function SessionViewer({ session }: { session: AgentThread }) {
     const [menuOpen, setMenuOpen] = useState(false);
     const menuRef = useRef<HTMLDivElement>(null);
     const viewport = useRef<HTMLDivElement>(null);
+    // Each open stream holds a Gateway PHP worker, so a background tab gives its streams back.
+    // A reopened stream resumes after the last cursor, or starts with a snapshot when the
+    // driver cannot resume, so nothing is lost while it is paused.
+    const visible = usePageVisible();
+    const cursor = useRef<string | null>(null);
+    useEffect(() => {
+        cursor.current = conversation.cursor;
+    }, [conversation.cursor]);
     useEffect(() => {
         if (session.node_id === null) return;
+        if (!visible) {
+            setConnection("Paused");
+            return;
+        }
+        const after =
+            cursor.current === null ? "" : `?after_sequence=${encodeURIComponent(cursor.current)}`;
         const source = new EventSource(
-            `/api/v1/task-groups/${session.task_group_id}/agents/${session.id}/stream`,
+            `/api/v1/task-groups/${session.task_group_id}/agents/${session.id}/stream${after}`,
         );
+        setConnection("Connecting…");
         source.addEventListener("agent", (event: MessageEvent<string>) => {
             try {
                 const data: unknown = JSON.parse(event.data);
@@ -270,7 +286,7 @@ function SessionViewer({ session }: { session: AgentThread }) {
                     : "Reconnecting…",
             );
         return () => source.close();
-    }, [session.id, session.node_id, session.task_group_id]);
+    }, [session.id, session.node_id, session.task_group_id, visible]);
     // The stream can end or miss a transition. A new state in the polled list wins over it.
     const listedStatus = agentStateLabel(session.state);
     useEffect(() => {

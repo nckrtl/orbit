@@ -24,15 +24,15 @@ describe('Caddy release floor', function (): void {
         expect(CaddyRelease::supports($output))->toBe($supported);
     })->with([
         'the archive build that cannot read log_skip' => ["2.6.2\n", false],
-        'one patch below the floor' => ["2.7.6\n", false],
-        'the floor itself' => ["2.8.0\n", true],
+        'the release that cannot read tls force_automate' => ["2.8.4\n", false],
+        'the floor itself' => ["2.9.0\n", true],
         'the current stable' => ["v2.11.4 h1:abc\n", true],
         'unreadable output' => ['nonsense', false],
     ]);
 
     it('states the floor as a constraint the Tool version helper understands', function (): void {
-        expect(CaddyRelease::constraint())->toBe('>=2.8.0')
-            ->and(CaddyRelease::MINIMUM)->toBe('2.8.0');
+        expect(CaddyRelease::constraint())->toBe('>=2.9.0')
+            ->and(CaddyRelease::MINIMUM)->toBe('2.9.0');
     });
 });
 
@@ -70,7 +70,7 @@ describe('Caddy package source', function (): void {
             '/etc/apt/sources.list.d/orbit-caddy.sources',
             '783dfee04b19e851a928cd87b34710213ebbe7628f98d9f34595ab83be578c00',
             '65760C51EDEA2017CEA2CA15155B6D79CA56EA34',
-            '2.8.0',
+            '2.9.0',
         ]);
     });
 

@@ -5,20 +5,37 @@ declare(strict_types=1);
 namespace App\Http\Requests\Tasks;
 
 use App\Data\Tasks\UpdateTaskData;
+use App\Domain\Tasks\TaskDeliverableType;
 use App\Http\Requests\TopLevelJsonObjectInspector;
+use App\Rules\DistinctDeliverableIds;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
+use Illuminate\Validation\Rules\Enum;
+use Illuminate\Validation\Rules\In;
 use Illuminate\Validation\ValidationException;
 use UnexpectedValueException;
 
 final class UpdateTaskRequest extends FormRequest
 {
-    /** @return array<string, list<string>> */
+    /** @return array<string, list<string|Enum|In|DistinctDeliverableIds>> */
     public function rules(): array
     {
         return [
             'title' => ['sometimes', 'string', 'max:160'],
             'brief' => ['sometimes', 'string', 'max:8000'],
             'position' => ['sometimes', 'integer:strict', 'min:1'],
+            'deliverables' => ['sometimes', 'array', 'list', 'max:5', new DistinctDeliverableIds],
+            'deliverables.*' => ['required', 'array:id,type,description,path,change,project,file,name,command,directory'],
+            'deliverables.*.id' => ['required', 'string', 'max:64', 'regex:/\A[a-z0-9]+(?:-[a-z0-9]+)*\z/'],
+            'deliverables.*.type' => ['required', 'string', Rule::enum(TaskDeliverableType::class)],
+            'deliverables.*.description' => ['required', 'string', 'max:500'],
+            'deliverables.*.path' => ['required_if:deliverables.*.type,file', 'prohibited_unless:deliverables.*.type,file', 'string', 'max:500', 'not_regex:#(?:\A/|(?:\A|/)\.\.(?:/|\z))#'],
+            'deliverables.*.change' => ['required_if:deliverables.*.type,file', 'prohibited_unless:deliverables.*.type,file', 'string', Rule::in(['created', 'modified', 'any'])],
+            'deliverables.*.project' => ['required_if:deliverables.*.type,test', 'prohibited_unless:deliverables.*.type,test', 'string', 'max:500', 'not_regex:#(?:\A/|(?:\A|/)\.\.(?:/|\z))#'],
+            'deliverables.*.file' => ['required_if:deliverables.*.type,test', 'prohibited_unless:deliverables.*.type,test', 'string', 'max:500', 'not_regex:#(?:\A/|(?:\A|/)\.\.(?:/|\z))#'],
+            'deliverables.*.name' => ['required_if:deliverables.*.type,test', 'prohibited_unless:deliverables.*.type,test', 'string', 'max:200'],
+            'deliverables.*.command' => ['required_if:deliverables.*.type,command', 'prohibited_unless:deliverables.*.type,command', 'string', 'max:1000'],
+            'deliverables.*.directory' => ['sometimes', 'prohibited_unless:deliverables.*.type,command', 'string', 'max:500', 'not_regex:#(?:\A/|(?:\A|/)\.\.(?:/|\z))#'],
         ];
     }
 
@@ -26,7 +43,7 @@ final class UpdateTaskRequest extends FormRequest
     public function validationData(): array
     {
         try {
-            return app(TopLevelJsonObjectInspector::class)->inspect($this->getContent(), ['title', 'brief', 'position']);
+            return app(TopLevelJsonObjectInspector::class)->inspect($this->getContent(), ['title', 'brief', 'position', 'deliverables']);
         } catch (UnexpectedValueException $exception) {
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
         }
@@ -40,6 +57,7 @@ final class UpdateTaskRequest extends FormRequest
             title: is_string($this->validated('title')) ? $this->validated('title') : null,
             brief: is_string($this->validated('brief')) ? $this->validated('brief') : null,
             position: is_int($position) ? $position : null,
+            deliverables: array_key_exists('deliverables', $this->validated()) ? CreateTaskRequest::deliverables($this->validated('deliverables')) : null,
         );
     }
 }

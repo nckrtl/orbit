@@ -121,7 +121,8 @@ export function applyAgentEvent(
         return state;
     const cursor = typeof item.cursor === "string" ? item.cursor : null;
     if (cursor !== null && cursor === state.cursor) return state;
-    const next = { ...state, cursor };
+    // Only the last event of a batch carries a cursor. Keep the last one seen to resume from.
+    const next = { ...state, cursor: cursor ?? state.cursor };
     if (item.kind === "snapshot") {
         next.entries = (Array.isArray(item.entries) ? item.entries : []).flatMap((value) => {
             const parsed = entry(value);

@@ -59,6 +59,8 @@ def maintenance_environment():
         and not name.startswith(ISOLATED_ENVIRONMENT_PREFIXES)
     }
     environment['COMPOSER_PROCESS_TIMEOUT'] = '0'
+    # An agent session that queues a refresh must not switch its commands to agent output (laravel/pao).
+    environment['PAO_DISABLE'] = '1'
     return environment
 
 
@@ -110,6 +112,64 @@ def common_directory(repository):
 
 def cache_store(common):
     return common / 'orbit-tia/v1'
+
+
+def origin_key(root):
+    """Name one repository across all its local clones by its normalized origin URL."""
+    url = git(root, 'remote', 'get-url', 'origin')
+    match = re.fullmatch(r'(?:[a-z][a-z0-9+.-]*://)?(?:[^@/]+@)?([^:/]+)[:/](.+?)(?:\.git)?/*', url, re.IGNORECASE)
+    return digest((f'{match.group(1).lower()}/{match.group(2)}' if match else url).encode())
+
+
+def registry_path(root):
+    state = os.environ.get('XDG_STATE_HOME') or str(Path.home() / '.local/state')
+    return Path(state) / 'orbit/main-cache-stores' / origin_key(root)
+
+
+def has_publications(store):
+    return (store / 'published').is_dir() or (store / 'quality').is_dir()
+
+
+def register_store(root, store, force=False):
+    """Let independent clones of the same origin on this machine seed from this store."""
+    link = registry_path(root)
+    store = store.resolve()
+    try:
+        current = link.resolve(strict=True)
+    except (OSError, RuntimeError):
+        current = None
+    if current == store or (current is not None and has_publications(current) and not force):
+        # The first live store keeps the registration, so a short-lived clone cannot take it over.
+        return False
+    link.parent.mkdir(parents=True, exist_ok=True)
+    temporary = link.with_name(f'.{link.name}.{os.getpid()}')
+    temporary.unlink(missing_ok=True)
+    temporary.symlink_to(store)
+    os.replace(temporary, link)
+    return True
+
+
+def seed_store(root, common):
+    """Choose where a checkout seeds from: the explicit store, its own Git store, or its origin's registered store."""
+    explicit = os.environ.get('ORBIT_MAIN_CACHE_STORE')
+    if explicit:
+        return Path(explicit), False
+    own = cache_store(common)
+    if has_publications(own):
+        return own, False
+    try:
+        registered = registry_path(root).resolve(strict=True)
+    except (OSError, RuntimeError):
+        return own, False
+    return (registered, True) if has_publications(registered) else (own, False)
+
+
+def store_common(store):
+    """Return the Git common directory that owns a store under orbit-tia/v1."""
+    common = store.parent.parent
+    if store != cache_store(common) or not (common / 'HEAD').is_file():
+        raise ValueError(f'{store} is not a repository cache store.')
+    return common
 
 
 def digest(data):
@@ -219,6 +279,36 @@ def seed(root, store, projects):
             print(f'[{project}] cache not seeded: {error}', flush=True)
 
 
+def is_ancestor(repository, ancestor, descendant):
+    return subprocess.run(['git', '-C', str(repository), 'merge-base', '--is-ancestor', ancestor, descendant],
+                          capture_output=True).returncode == 0
+
+
+def request_refresh(root, store):
+    """Queue maintenance of a registered store that lags this checkout's main, without retrying a failed target."""
+    target = known_main(common_directory(root))
+    if target is None:
+        return
+    common = store_common(store)
+    results = load_requests(store).get('results', {})
+    lagging = []
+    for project in PROJECTS:
+        try:
+            tested = read_publication(store, project)['tested_commit']
+        except (OSError, ValueError, KeyError, TypeError):
+            tested = None
+        if tested is not None and (tested == target or not is_ancestor(root, tested, target)):
+            continue
+        result = results.get(project, {})
+        if not result.get('success', True) and (result.get('commit') == target
+                                               or is_ancestor(common, target, result.get('commit', ''))):
+            continue
+        lagging.append(project)
+    if lagging:
+        print(f'Registered main caches lag {target[:12]}: {", ".join(lagging)}', flush=True)
+        start_background(common, store, lagging)
+
+
 def prepare_checkout(common, store):
     # This private repository can use branch main while the user's main is dirty.
     # A .git file gives Pest a cache key distinct from other checkouts of this origin.
@@ -301,6 +391,7 @@ def publish_graph(root, store, project, commit, info, graph):
         'sha256': digest(graph.encode()), 'graph': graph,
     }
     publish_snapshot(root, publication_path(store, project), snapshot)
+    announce(root, store)
     print(f'[{project}] published main {commit[:12]}', flush=True)
 
 
@@ -363,6 +454,15 @@ def publish_quality(root, store, project, commit, tool):
                 'data': base64.b64encode(data).decode(),
                 'published_at': datetime.now(timezone.utc).isoformat()}
     publish_snapshot(root, quality_path(store, project, tool), snapshot)
+    announce(root, store)
+
+
+def announce(root, store):
+    try:
+        if register_store(root, store):
+            print(f'Registered {store} for clones of this origin: {registry_path(root)}', flush=True)
+    except (OSError, RuntimeError) as error:
+        print(f'Main cache store not registered: {error}', file=sys.stderr, flush=True)
 
 
 def publish_snapshot(root, path, snapshot):
@@ -631,10 +731,31 @@ def drain(common, store, lock):
                     if state['pending'].get(project) == request:
                         del state['pending'][project]
                 save_requests(store, state)
+                prune_runs(store, state, directory)
             print(f'Main cache refresh at {commit}: {"FAILED" if any(not o["success"] for o in outcomes.values()) else "passed"}; logs: {directory}', flush=True)
     finally:
         COMMAND_LOCK = None
         lock.close()
+
+
+def prune_runs(store, state, current):
+    """Delete run logs that no recorded result or failure still names."""
+    kept = {current.name}
+
+    def collect(value):
+        if isinstance(value, dict):
+            for item in value.values():
+                collect(item)
+        elif isinstance(value, list):
+            for item in value:
+                collect(item)
+        elif isinstance(value, str) and value.startswith(str(store) + os.sep):
+            kept.add(Path(value).relative_to(store).parts[0])
+
+    collect(state)
+    for run in store.glob('run-*'):
+        if run.name not in kept and run.is_dir() and not run.is_symlink():
+            shutil.rmtree(run, ignore_errors=True)
 
 
 def refresh(common, store, projects):
@@ -694,7 +815,7 @@ def status(common, store, remote=False):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=('seed', 'refresh', 'status', 'work', 'publish'))
+    parser.add_argument('action', choices=('seed', 'refresh', 'status', 'work', 'publish', 'register'))
     parser.add_argument('--repository', default='.')
     parser.add_argument('--project', action='append', choices=PROJECTS)
     parser.add_argument('--background', action='store_true')
@@ -716,8 +837,20 @@ def main():
     projects = args.project or PROJECTS
     if args.action == 'seed':
         root = Path(git(args.repository, 'rev-parse', '--show-toplevel'))
-        store = Path(os.environ.get('ORBIT_MAIN_CACHE_STORE', store))
+        store, registered = seed_store(root, common)
+        if registered:
+            print(f'Seeding from the main cache store registered for this origin: {store}', flush=True)
         seed(root, store, projects)
+        if registered:
+            try:
+                request_refresh(root, store)
+            except (RuntimeError, OSError, ValueError, KeyError, TypeError) as error:
+                print(f'Main cache refresh not requested: {error}', flush=True)
+    elif args.action == 'register':
+        if not has_publications(store):
+            raise ValueError(f'{store} has no main publications to register.')
+        register_store(common_directory(args.repository), store, force=True)
+        print(f'Registered {store} for clones of this origin: {registry_path(common_directory(args.repository))}')
     elif args.action == 'publish':
         root = Path(git(args.repository, 'rev-parse', '--show-toplevel'))
         publish_bootstrap(root, store, projects, args.commit)

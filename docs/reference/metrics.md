@@ -69,9 +69,15 @@ Doctor does not expect an exporter service, exporter firewall rule, or exporter 
 
 Every Node that runs `prometheus-node-exporter` runs cAdvisor the same way: a pinned static binary at `/usr/local/bin/orbit-cadvisor`, not a Docker container, because the Gateway Node is itself an exporter Node and has no Docker. A systemd unit (`orbit-cadvisor.service`) binds it to the Node's WireGuard address on port 9102, `Restart=always`, and a UFW rule admits only the Metrics Node's WireGuard address to that port, mirroring the node exporter's own rule. Enabling and disabling the exporter on a Node enables and disables cAdvisor with it; disabling removes the unit, the firewall rule, and the binary.
 
-An unfiltered cAdvisor is expensive: measured on beast, it added 8,359 series against `node_exporter`'s 5,150, at 3.1-4.5% of one core and 54-65 MiB. cAdvisor's install disables every metric kind except `cpu` and `memory` (`--disable_metrics=sched,percpu,memory_numa,cpuLoad,diskIO,disk,network,tcp,advtcp,udp,app,process,hugetlb,referenced_memory,cpu_topology,resctrl,cpuset,oom_event,pressure`), and `--store_container_labels=false` drops Docker container labels and environment variables from becoming Prometheus label dimensions. Prometheus scrapes cAdvisor every 30 seconds, six times less often than the node exporter's five seconds, because process CPU and memory do not need `orbit top`'s node-page resolution and cAdvisor is the more expensive job of the two.
+An unfiltered cAdvisor is expensive: measured on beast, it added 8,359 series against `node_exporter`'s 5,150, at 3.1-4.5% of one core and 54-65 MiB. cAdvisor's install disables every metric kind except `cpu` and `memory` (`--disable_metrics=sched,percpu,memory_numa,cpuLoad,diskIO,disk,network,tcp,advtcp,udp,app,process,hugetlb,referenced_memory,cpu_topology,resctrl,cpuset,oom_event,pressure`), and `--store_container_labels=false` drops Docker container labels and environment variables from becoming Prometheus label dimensions. That cost is cAdvisor's own collection, which runs whether or not anything scrapes it. A scrape only serializes the values it already holds, measured at about 0.03 seconds per Node, so Prometheus scrapes cAdvisor on the same ten seconds as the node exporter.
 
 A Process's cAdvisor series is keyed by its systemd unit name or Docker container name, both `orbit-process-{id}-{name}`. A Process cAdvisor has no series for — not running, or cAdvisor unreachable — reports null CPU and memory, never zero.
+
+## Process runtime status
+
+A Process list reads every Process's runtime status from the same Prometheus in one query. A systemd Process takes its state from `node_systemd_unit_state`, and a missing unit is `inactive`. cAdvisor reports only running containers, so a Docker Process with a series is `running` and one without is `exited`. The Gateway caches that answer for ten seconds, so every open list and screen shares one query. When the Gateway starts, stops, or restarts a Process, it reads the new status from the Node, broadcasts it as `process.status`, and lists report that status for thirty seconds, until Prometheus holds a sample from after the change.
+
+If Prometheus cannot answer at all, the list asks each Process's Node over SSH instead, and it does not cache that answer.
 
 ## Private access and credentials
 
@@ -138,9 +144,9 @@ A removal that the Gateway authorized and that finds no single active Gateway wh
 
 ## Reading Node metrics
 
-[`orbit node:metrics`](/cli/node#orbit-node-metrics) reads a Node's CPU, memory, swap, load, uptime, pressure, and disk snapshot from the Metrics role's own Prometheus. It reads through Grafana's datasource proxy, not from Prometheus directly. The Gateway authenticates with the stored Grafana credential, resolves the Prometheus datasource, and runs four instant PromQL queries filtered to that Node's exporter instance.
+[`orbit node:metrics`](/cli/node#orbit-node-metrics) reads a Node's CPU, memory, swap, load, uptime, pressure, and disk snapshot from the Metrics role's own Prometheus. It reads through Grafana's datasource proxy, not from Prometheus directly. The Gateway authenticates each query with the stored Grafana credential, without verifying it first, resolves the Prometheus datasource, and runs four instant PromQL queries filtered to that Node's exporter instance.
 
-Prometheus scrapes every selected exporter every five seconds and keeps samples for seven days, so a reading is at most five seconds old. Each rate the queries compute covers a thirty-second window, wide enough to survive a dropped scrape and short enough to show a spike rather than average it away. A scrape costs the Node one read of `/proc` and `/sys`, measured between 0.08 and 0.18 seconds depending on how many cores and filesystems it has.
+Prometheus scrapes every selected exporter every ten seconds and keeps samples for seven days, so a reading is at most ten seconds old. `orbit top` and the web dashboard refresh node metrics on the same ten seconds. Each rate the queries compute covers a forty-second window, wide enough to survive a dropped scrape and short enough to show a spike rather than average it away. A scrape costs the Node one read of `/proc` and `/sys`, measured between 0.08 and 0.18 seconds depending on how many cores and filesystems it has.
 
 No orbit software runs on the Node beyond the exporter this role already manages. The command does not depend on what CLI build the Node was provisioned with. A Node with no active exporter selection or no Prometheus samples yet answers `node.metrics_unreachable` instead of failing.
 

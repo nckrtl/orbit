@@ -14,5 +14,7 @@ final class CreateTaskData extends Data
     public function __construct(
         public string $title,
         public string $brief,
+        /** @var list<array<string, string>> */
+        public array $deliverables = [],
     ) {}
 }

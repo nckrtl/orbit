@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\WebSocket;
 
+use App\Infrastructure\Caddy\CaddyGlobalOptions;
 use App\Infrastructure\Caddy\OwnsCaddyGlobalOptions;
 use App\Infrastructure\Ssh\RemoteCommand;
 
@@ -38,7 +39,7 @@ final readonly class WebSocketCaddyPublisher
                 $wireguardIp,
                 WebSocketFootprint::CaddyBindPlaceholder,
             ],
-            input: <<<BASH
+            input: CaddyGlobalOptions::conflictGuard().<<<BASH
                 version=\$1
                 owned_fragment=\$2
                 versions=\$3
@@ -66,10 +67,13 @@ final readonly class WebSocketCaddyPublisher
                 elif [ -f "\$source_main" ] && [ "\$source_main" != "\$live_caddyfile" ]; then
                     cp --preserve=mode,ownership -- "\$source_main" "\$candidate/fragments/unmanaged.caddy"
                 fi
-                # Caddy refuses to mix a wildcard and a specific address on one port, so the
-                # site binds whatever this node's other sites already bind.
+                # A listener on the WireGuard address takes every connection to that address, so
+                # the site joins it when another site binds it. Otherwise it follows a wildcard
+                # bind, so it never takes traffic from the node's wildcard sites.
                 bind_address=\$wireguard_ip
-                if grep -qsE '^[[:space:]]*bind[[:space:]]+0\\.0\\.0\\.0' "\$candidate"/fragments/*.caddy; then
+                escaped_ip=\$(printf '%s' "\$wireguard_ip" | sed 's/\\./\\\\./g')
+                if ! grep -qsE "^[[:space:]]*bind([[:space:]]+[^[:space:]]+)*[[:space:]]+\$escaped_ip([[:space:]]|\\\$)" "\$candidate"/fragments/*.caddy \\
+                    && grep -qsE '^[[:space:]]*bind[[:space:]]+0\\.0\\.0\\.0' "\$candidate"/fragments/*.caddy; then
                     bind_address=0.0.0.0
                 fi
                 printf '%s' '{$encoded}' | base64 --decode \\
@@ -86,6 +90,7 @@ final readonly class WebSocketCaddyPublisher
                     rm -rf -- "\$candidate"
                     exit 0
                 fi
+                refuse_carried_global_options "\$candidate" "\$source_main"
                 caddy validate --config "\$candidate/Caddyfile" --adapter caddyfile
                 printf '%s\n' '{$this->encodedGlobalOptions()}' | base64 --decode > "\$candidate/Caddyfile"
                 printf 'import %s/%s/fragments/*.caddy\n' "\$versions" "\$version" >> "\$candidate/Caddyfile"
@@ -126,7 +131,7 @@ final readonly class WebSocketCaddyPublisher
                 WebSocketFootprint::CaddyServiceName,
                 WebSocketFootprint::CaddyLockPath,
             ],
-            input: <<<'BASH'
+            input: CaddyGlobalOptions::conflictGuard().<<<'BASH'
                 version=$1
                 owned_fragment=$2
                 versions=$3
@@ -156,6 +161,7 @@ final readonly class WebSocketCaddyPublisher
                 chown -R root:caddy "$candidate"
                 find "$candidate" -type d -exec chmod 0750 {} +
                 find "$candidate" -type f -exec chmod 0640 {} +
+                refuse_carried_global_options "$candidate" "$source_main"
                 caddy validate --config "$candidate/Caddyfile" --adapter caddyfile
                 printf '%s\n' 'ewogICAgYXV0b19odHRwcyBkaXNhYmxlX2NlcnRzCn0K' | base64 --decode > "$candidate/Caddyfile"
                 printf 'import %s/%s/fragments/*.caddy\n' "$versions" "$version" >> "$candidate/Caddyfile"

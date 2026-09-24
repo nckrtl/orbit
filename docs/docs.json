@@ -101,6 +101,7 @@
               "reference/browser-access",
               "reference/gateway-recovery",
               "reference/node-provisioning",
+              "reference/caddy-configuration",
               "reference/node-settings",
               "reference/node-retarget",
               "reference/wireguard-endpoints",
@@ -697,7 +698,16 @@
               "decisions/0123-serve-the-web-app-from-the-gateway-origin",
               "decisions/0124-plan-backlog-groups-with-a-t3-planner",
               "decisions/0125-run-the-project-check-when-the-implementer-hands-off",
-              "decisions/0126-limit-browser-api-calls-to-orbit-origins"
+              "decisions/0126-limit-browser-api-calls-to-orbit-origins",
+              "decisions/0127-share-one-ssh-connection-per-node",
+              "decisions/0131-seed-task-workspace-clones-from-the-registered-main-cache-store",
+              "decisions/0132-pause-only-for-the-acting-thread-and-a-real-question",
+              "decisions/0133-verify-typed-subtask-deliverables-at-handoff",
+              "decisions/0134-resume-pi-agent-streams-from-a-cursor",
+              "decisions/0135-run-incus-topologies-for-task-workspace-clones-through-a-bridge-worktree",
+              "decisions/0136-run-long-lived-topology-processes-as-transient-units",
+              "decisions/0137-refuse-carried-caddy-global-options",
+              "decisions/0138-opt-public-ingress-sites-into-caddy-certificate-automation"
             ]
           }
         ]

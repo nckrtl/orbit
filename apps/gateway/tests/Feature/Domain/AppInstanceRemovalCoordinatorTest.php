@@ -878,6 +878,35 @@ it('removes an Instance that has no Route without touching Route projections', f
         ->toBe(["runtime:{$instance->id}"]);
 })->with(['development', 'production']);
 
+it('removes a source-resolved task workspace that never received a Route', function (): void {
+    $instance = orb181_coordinator_instance(withRoute: false);
+    $instance->app->update(['type' => ProjectType::LaravelApp]);
+    $instance->update(['status' => AppInstanceState::SourceResolved]);
+    $removal = $this->orb181Coordinator->execute($instance->refresh()->load(['app', 'node', 'routes.targets']), true);
+    $member = $removal->members->sole();
+
+    expect($removal->status->value)
+        ->toBe('completed')
+        ->and($member->route_outcome)
+        ->toBe('none')
+        ->and($member->source_finalized_at)
+        ->not->toBeNull()
+        ->and($member->runtime_published)
+        ->toBeFalse()
+        ->and($this->orb181Projector->calls)
+        ->toBe([])
+        ->and(AppInstance::query()->whereKey($instance->id)->exists())
+        ->toBeFalse();
+});
+
+it('refuses a source-resolved Instance that a Route targets', function (): void {
+    $instance = orb181_coordinator_instance();
+    $instance->update(['status' => AppInstanceState::SourceResolved]);
+
+    expect(fn () => $this->orb181Coordinator->execute($instance->refresh()->load(['app', 'node', 'routes.targets']), true))
+        ->toThrow(ResourceOperationException::class, 'is not active.');
+});
+
 it('removes the Route an operator set on a monorepo Instance', function (): void {
     $instance = orb181_coordinator_instance();
     $instance->app->update(['type' => ProjectType::Monorepo]);

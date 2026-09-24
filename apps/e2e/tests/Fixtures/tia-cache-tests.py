@@ -20,6 +20,9 @@ loader = importlib.machinery.SourceFileLoader('tia_cache', sys.argv.pop(1))
 spec = importlib.util.spec_from_loader(loader.name, loader)
 cache = importlib.util.module_from_spec(spec)
 loader.exec_module(cache)
+# Publication registers stores under XDG_STATE_HOME; keep that out of the developer's own state.
+STATE_HOME = tempfile.TemporaryDirectory(prefix='orbit-tia-state-')
+os.environ['XDG_STATE_HOME'] = STATE_HOME.name
 
 
 class MainCacheTest(unittest.TestCase):
@@ -134,6 +137,83 @@ class MainCacheTest(unittest.TestCase):
         self.assertEqual(self.graph, json.loads((directory / 'graph.json').read_text()))
         (directory / 'graph.json').write_text('private clone progress')
         self.assertEqual(self.graph, json.loads(cache.read_publication(self.store, self.project)['graph']))
+
+    def test_separate_clone_seeds_from_the_store_registered_for_its_origin(self):
+        self.publish()
+        self.assertEqual(self.store.resolve(), cache.registry_path(self.root).resolve())
+        clone = Path(self.temporary.name) / 'task workspace'
+        cache.git(self.root, 'clone', str(self.root), str(clone))
+        directory = clone / self.project / '.orbit-tia'
+        with patch.dict(os.environ, {'ORBIT_MAIN_CACHE_STORE': ''}), \
+                patch.object(sys, 'argv', ['tia-cache', 'seed', '--repository', str(clone), '--project', self.project]), \
+                patch.object(cache, 'metadata', return_value={**self.info, 'cache': str(directory)}), \
+                patch.object(cache, 'start_background') as background:
+            self.assertEqual(0, cache.main())
+        self.assertEqual(self.graph, json.loads((directory / 'graph.json').read_text()))
+        # The clone's own store stays empty: its private runs never become the shared baseline.
+        self.assertFalse(cache.has_publications(cache.cache_store(cache.common_directory(clone))))
+        self.assertEqual(sorted(set(cache.PROJECTS) - {self.project}), sorted(background.call_args.args[2]))
+
+    def test_registration_keeps_the_first_live_store_until_forced(self):
+        self.publish()
+        other = Path(self.temporary.name) / 'other-store'
+        (other / 'published').mkdir(parents=True)
+        self.assertFalse(cache.register_store(self.root, other))
+        self.assertEqual(self.store.resolve(), cache.registry_path(self.root).resolve())
+        self.assertTrue(cache.register_store(self.root, other, force=True))
+        self.assertEqual(other.resolve(), cache.registry_path(self.root).resolve())
+        shutil.rmtree(other)
+        # A removed store no longer holds the registration.
+        self.assertTrue(cache.register_store(self.root, self.store))
+        self.assertEqual(self.store.resolve(), cache.registry_path(self.root).resolve())
+
+    def test_origin_key_matches_https_and_ssh_urls_of_one_repository(self):
+        keys = set()
+        for url in ['https://github.com/nckrtl/orbit.git', 'git@github.com:nckrtl/orbit.git',
+                    'ssh://git@GitHub.com/nckrtl/orbit', 'https://github.com/nckrtl/orbit/']:
+            cache.git(self.root, 'remote', 'set-url', 'origin', url)
+            keys.add(cache.origin_key(self.root))
+        self.assertEqual(1, len(keys))
+        cache.git(self.root, 'remote', 'set-url', 'origin', 'https://github.com/nckrtl/other.git')
+        self.assertNotIn(cache.origin_key(self.root), keys)
+
+    def test_lagging_registered_store_is_refreshed_once_per_failed_target(self):
+        self.publish()
+        clone = Path(self.temporary.name) / 'task workspace'
+        cache.git(self.root, 'clone', str(self.root), str(clone))
+        (self.root / 'source.php').write_text('merged feature')
+        newer = self.commit_change('merged feature')
+        cache.git(clone, 'fetch', 'origin')
+        with patch.object(cache, 'start_background') as background:
+            cache.request_refresh(clone, self.store)
+        self.assertIn(self.project, background.call_args.args[2])
+        self.assertEqual(self.common, background.call_args.args[0])
+        with cache.queue_lock(self.store):
+            state = cache.load_requests(self.store)
+            for project in cache.PROJECTS:
+                state['results'][project] = {'commit': newer, 'success': False, 'checks': []}
+            cache.save_requests(self.store, state)
+        with patch.object(cache, 'start_background') as background:
+            cache.request_refresh(clone, self.store)
+        background.assert_not_called()
+
+    def test_worker_prunes_run_logs_that_no_result_names(self):
+        self.store.mkdir(parents=True, exist_ok=True)
+        named, stale, current = (self.store / name for name in ('run-named', 'run-stale', 'run-current'))
+        for directory in (named, stale, current):
+            directory.mkdir()
+            (directory / 'check.log').write_text('log')
+        state = {'results': {self.project: {'checks': [{'log': str(named / 'check.log')}]}}}
+        cache.prune_runs(self.store, state, current)
+        self.assertTrue(named.is_dir())
+        self.assertTrue(current.is_dir())
+        self.assertFalse(stale.exists())
+
+    def test_maintenance_commands_run_without_agent_output_only_for_the_worker(self):
+        with patch.dict(os.environ, {'CLAUDECODE': '1', 'AI_AGENT': 'claude', 'PAO_DISABLE': '0'}):
+            environment = cache.maintenance_environment()
+            self.assertEqual('1', environment['PAO_DISABLE'])
+            self.assertEqual('0', os.environ['PAO_DISABLE'])
 
     def test_failed_run_keeps_last_successful_publication(self):
         self.publish()
@@ -1125,9 +1205,10 @@ class ReviewGateTest(unittest.TestCase):
         runner = self.root / 'bin/review-check'
         runner.write_bytes(Path(cache.__file__).with_name('review-check').read_bytes())
         runner.chmod(0o755)
-        seed = self.root / 'bin/tia-cache'
-        seed.write_text('#!/bin/sh\nexit 0\n')
-        seed.chmod(0o755)
+        for name in ('tia-cache', 'worktree-cache'):
+            seed = self.root / 'bin' / name
+            seed.write_text(f'#!/bin/sh\nprintf "{name} %s\\n" "$*" >> "$GATE_TEST_SEEDS"\n')
+            seed.chmod(0o755)
         for project in cache.PROJECTS:
             (self.root / project).mkdir(parents=True)
         self.commit_change('gate fixture')
@@ -1145,8 +1226,17 @@ fi
 """)
         composer.chmod(0o755)
         self.gate_env = {**os.environ, 'PATH': str(fake_bin) + os.pathsep + os.environ['PATH'],
-                         'GATE_TEST_CALLS': str(self.common / 'calls'), 'GATE_TEST_ROOT': str(self.root)}
+                         'GATE_TEST_CALLS': str(self.common / 'calls'), 'GATE_TEST_ROOT': str(self.root),
+                         'GATE_TEST_SEEDS': str(self.common / 'seeds')}
         return runner
+
+    def test_gate_seeds_quality_and_test_caches_before_checks(self):
+        runner = self.gate_fixture()
+        result = subprocess.run([str(runner)], env=self.gate_env, capture_output=True, text=True)
+        self.assertEqual(0, result.returncode, result.stderr + result.stdout)
+        root = self.root.resolve()
+        self.assertEqual([f'worktree-cache --worktree {root}', f'tia-cache seed --repository {root}'],
+                         (self.common / 'seeds').read_text().splitlines())
 
     def test_gate_runs_all_five_projects_and_records_builder_and_exact_candidate(self):
         runner = self.gate_fixture()

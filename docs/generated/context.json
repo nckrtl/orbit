@@ -97,7 +97,8 @@
                 "0103",
                 "0104",
                 "0109",
-                "0110"
+                "0110",
+                "0127"
             ]
         },
         {
@@ -2986,7 +2987,8 @@
             "governing_adrs": [
                 "0103",
                 "0110",
-                "0112"
+                "0112",
+                "0132"
             ]
         },
         {
@@ -3093,7 +3095,8 @@
                 "0110",
                 "0113",
                 "0114",
-                "0117"
+                "0117",
+                "0132"
             ]
         },
         {
@@ -3248,7 +3251,8 @@
                 "0113",
                 "0114",
                 "0117",
-                "0121"
+                "0121",
+                "0132"
             ]
         },
         {
@@ -3352,6 +3356,188 @@
             "governing_adrs": [
                 "0123",
                 "0126"
+            ]
+        },
+        {
+            "path": "docs/decisions/0127-share-one-ssh-connection-per-node.md",
+            "title": "ADR 0127: Share one SSH connection per Node",
+            "kind": "decision",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Doctor",
+                "Gateway",
+                "Node",
+                "Process",
+                "Task"
+            ],
+            "governing_adrs": [
+                "0033",
+                "0127"
+            ]
+        },
+        {
+            "path": "docs/decisions/0131-seed-task-workspace-clones-from-the-registered-main-cache-store.md",
+            "title": "ADR 0131: Seed task workspace clones from the registered main cache store",
+            "kind": "decision",
+            "components": [
+                "apps/docs",
+                "apps/e2e"
+            ],
+            "concepts": [
+                "Gateway",
+                "Project",
+                "Task",
+                "Task group"
+            ],
+            "governing_adrs": [
+                "0052",
+                "0054",
+                "0119",
+                "0131"
+            ]
+        },
+        {
+            "path": "docs/decisions/0132-pause-only-for-the-acting-thread-and-a-real-question.md",
+            "title": "ADR 0132: Pause a task only for its acting thread or a real question",
+            "kind": "decision",
+            "components": [
+                "apps/docs",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Gateway",
+                "Project",
+                "Route",
+                "Task",
+                "Task group"
+            ],
+            "governing_adrs": [
+                "0110",
+                "0114",
+                "0121",
+                "0124",
+                "0132"
+            ]
+        },
+        {
+            "path": "docs/decisions/0133-verify-typed-subtask-deliverables-at-handoff.md",
+            "title": "ADR 0133: Verify typed subtask deliverables at handoff",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Gateway",
+                "Project",
+                "Task",
+                "Task group"
+            ],
+            "governing_adrs": [
+                "0114",
+                "0121",
+                "0124",
+                "0125",
+                "0133"
+            ]
+        },
+        {
+            "path": "docs/decisions/0134-resume-pi-agent-streams-from-a-cursor.md",
+            "title": "ADR 0134: Resume Pi agent streams from a cursor",
+            "kind": "decision",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Gateway",
+                "Task",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0116",
+                "0134"
+            ]
+        },
+        {
+            "path": "docs/decisions/0135-run-incus-topologies-for-task-workspace-clones-through-a-bridge-worktree.md",
+            "title": "ADR 0135: Run Incus topologies for task workspace clones through a bridge worktree",
+            "kind": "decision",
+            "components": [
+                "apps/docs",
+                "apps/e2e"
+            ],
+            "concepts": [
+                "Database",
+                "Gateway",
+                "Task",
+                "Task group"
+            ],
+            "governing_adrs": [
+                "0005",
+                "0131",
+                "0135"
+            ]
+        },
+        {
+            "path": "docs/decisions/0136-run-long-lived-topology-processes-as-transient-units.md",
+            "title": "ADR 0136: Run long-lived topology processes as transient units",
+            "kind": "decision",
+            "components": [
+                "apps/docs",
+                "apps/e2e"
+            ],
+            "concepts": [
+                "Node",
+                "Process",
+                "Task",
+                "Task group"
+            ],
+            "governing_adrs": [
+                "0005",
+                "0136"
+            ]
+        },
+        {
+            "path": "docs/decisions/0137-refuse-carried-caddy-global-options.md",
+            "title": "ADR 0137: Refuse carried Caddy global options",
+            "kind": "decision",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Gateway",
+                "Node",
+                "proxycli"
+            ],
+            "governing_adrs": [
+                "0137"
+            ]
+        },
+        {
+            "path": "docs/decisions/0138-opt-public-ingress-sites-into-caddy-certificate-automation.md",
+            "title": "ADR 0138: Opt public Ingress sites into Caddy certificate automation",
+            "kind": "decision",
+            "components": [
+                "apps/docs",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Doctor",
+                "Gateway",
+                "Ingress",
+                "Instance",
+                "Node",
+                "Route"
+            ],
+            "governing_adrs": [
+                "0100",
+                "0101",
+                "0137",
+                "0138"
             ]
         },
         {
@@ -3508,7 +3694,16 @@
                 "0123",
                 "0124",
                 "0125",
-                "0126"
+                "0126",
+                "0127",
+                "0131",
+                "0132",
+                "0133",
+                "0134",
+                "0135",
+                "0136",
+                "0137",
+                "0138"
             ]
         },
         {
@@ -3767,7 +3962,9 @@
                 "Repository identity",
                 "Route",
                 "Router",
-                "Schedule"
+                "Schedule",
+                "Task",
+                "Task group"
             ],
             "governing_adrs": [
                 "0027",
@@ -3859,6 +4056,27 @@
             ],
             "governing_adrs": [
                 "0126"
+            ]
+        },
+        {
+            "path": "docs/reference/caddy-configuration.md",
+            "title": "Caddy configuration",
+            "kind": "reference",
+            "components": [],
+            "concepts": [
+                "Cluster",
+                "Doctor",
+                "Gateway",
+                "Ingress",
+                "Instance",
+                "Node",
+                "Route",
+                "Router",
+                "proxycli"
+            ],
+            "governing_adrs": [
+                "0137",
+                "0138"
             ]
         },
         {
@@ -4170,7 +4388,8 @@
                 "0076",
                 "0113",
                 "0114",
-                "0119"
+                "0119",
+                "0131"
             ]
         },
         {
@@ -4195,7 +4414,8 @@
                 "Proof topology",
                 "Route",
                 "Router",
-                "Schedule"
+                "Schedule",
+                "Task"
             ],
             "governing_adrs": [
                 "0005",
@@ -4204,7 +4424,9 @@
                 "0040",
                 "0049",
                 "0056",
-                "0114"
+                "0114",
+                "0135",
+                "0136"
             ]
         },
         {
@@ -4383,6 +4605,7 @@
                 "Doctor",
                 "Gateway",
                 "Herdr session",
+                "Ingress",
                 "Instance",
                 "Node",
                 "Process",
@@ -4393,7 +4616,8 @@
             "governing_adrs": [
                 "0072",
                 "0094",
-                "0100"
+                "0100",
+                "0138"
             ]
         },
         {
@@ -4441,7 +4665,8 @@
                 "Project",
                 "Route",
                 "Router",
-                "Schedule"
+                "Schedule",
+                "Task"
             ],
             "governing_adrs": [
                 "0021",
@@ -4571,7 +4796,8 @@
                 "0067",
                 "0080",
                 "0082",
-                "0101"
+                "0101",
+                "0138"
             ]
         },
         {
@@ -4619,7 +4845,9 @@
             "path": "docs/reference/tasks.md",
             "title": "Tasks",
             "kind": "reference",
-            "components": [],
+            "components": [
+                "apps/gateway"
+            ],
             "concepts": [
                 "Database",
                 "Development node exclusion",
@@ -4645,7 +4873,10 @@
                 "0121",
                 "0122",
                 "0124",
-                "0125"
+                "0125",
+                "0132",
+                "0133",
+                "0134"
             ]
         },
         {
@@ -4690,6 +4921,7 @@
                 "Proof topology",
                 "Route",
                 "Router",
+                "Task",
                 "Web root"
             ],
             "governing_adrs": [
@@ -4699,7 +4931,8 @@
                 "0036",
                 "0037",
                 "0049",
-                "0056"
+                "0056",
+                "0135"
             ]
         },
         {

@@ -17,6 +17,8 @@ final readonly class TaskCommentResponse
         public string $postedAt,
         public ?int $reviewAttempt,
         public ?string $commitSha,
+        /** @var array{summary: string, changes: list<string>, breaking: list<string>}|null */
+        public ?array $pullRequest,
         public string $requestId,
     ) {}
 
@@ -34,6 +36,7 @@ final readonly class TaskCommentResponse
             postedAt: TaskFields::text($data, 'posted_at', 'task comment', $requestId),
             reviewAttempt: TaskFields::nullableInt($data, 'review_attempt'),
             commitSha: TaskFields::nullableText($data, 'commit_sha'),
+            pullRequest: self::pullRequest($data['pull_request'] ?? null),
             requestId: $requestId,
         );
     }
@@ -50,6 +53,7 @@ final readonly class TaskCommentResponse
      *     posted_at: string,
      *     review_attempt: int|null,
      *     commit_sha: string|null,
+     *     pull_request: array{summary: string, changes: list<string>, breaking: list<string>}|null,
      *     request_id: string
      * }
      */
@@ -66,7 +70,21 @@ final readonly class TaskCommentResponse
             'posted_at' => $this->postedAt,
             'review_attempt' => $this->reviewAttempt,
             'commit_sha' => $this->commitSha,
+            'pull_request' => $this->pullRequest,
             'request_id' => $this->requestId,
         ];
+    }
+
+    /** @return array{summary: string, changes: list<string>, breaking: list<string>}|null */
+    private static function pullRequest(mixed $value): ?array
+    {
+        if (! is_array($value) || ! is_string($value['summary'] ?? null)) {
+            return null;
+        }
+        $lines = static fn (mixed $items): array => is_array($items)
+            ? array_values(array_filter($items, is_string(...)))
+            : [];
+
+        return ['summary' => $value['summary'], 'changes' => $lines($value['changes'] ?? null), 'breaking' => $lines($value['breaking'] ?? null)];
     }
 }

@@ -145,3 +145,91 @@ it('passes invocation-local output and cancellation controls to the process runn
         ->and($runner->invocation?->cancelled)
         ->toBe($cancelled);
 });
+
+/** A runner that records the invocation and succeeds. */
+function ssh_executor_recording_runner(): ProcessRunner
+{
+    return new class implements ProcessRunner
+    {
+        public ?ProcessInvocation $invocation = null;
+
+        public function run(ProcessInvocation $invocation): CommandResult
+        {
+            $this->invocation = $invocation;
+
+            return new CommandResult(0, '', '', 1, false);
+        }
+    };
+}
+
+function ssh_executor_connection(string $sshDirectory): SshConnection
+{
+    return new SshConnection(
+        host: '10.44.0.3',
+        user: 'orbit',
+        port: 22,
+        identityFile: "{$sshDirectory}/id_ed25519",
+        knownHostsFile: "{$sshDirectory}/known_hosts",
+    );
+}
+
+it('runs each command as a channel on the Node\'s shared connection', function (): void {
+    $sshDirectory = '/tmp/omx-'.bin2hex(random_bytes(3));
+    mkdir($sshDirectory, 0700);
+    $runner = ssh_executor_recording_runner();
+
+    try {
+        new NativeSshExecutor($runner)->execute(ssh_executor_connection($sshDirectory), new RemoteCommand(['true']));
+
+        expect(array_slice($runner->invocation?->arguments ?? [], 17, 7))
+            ->toBe([
+                '-o',
+                'ControlMaster=auto',
+                '-o',
+                "ControlPath={$sshDirectory}/mux/%C",
+                '-o',
+                'ControlPersist=60s',
+                '--',
+            ])
+            ->and(fileperms("{$sshDirectory}/mux") & 0777)
+            ->toBe(0700);
+    } finally {
+        @rmdir("{$sshDirectory}/mux");
+        @rmdir($sshDirectory);
+    }
+});
+
+it('opens its own connection when the socket directory cannot hold a socket', function (): void {
+    $runner = ssh_executor_recording_runner();
+    $tooLong = '/tmp/'.str_repeat('a', 40);
+
+    new NativeSshExecutor($runner)->execute(ssh_executor_connection($tooLong), new RemoteCommand(['true']));
+
+    expect($runner->invocation?->arguments)
+        ->not->toContain('ControlMaster=auto')
+        ->and(is_dir("{$tooLong}/mux"))
+        ->toBeFalse();
+});
+
+it('opens a new connection when the caller does not share one', function (): void {
+    $sshDirectory = '/tmp/omx-'.bin2hex(random_bytes(3));
+    mkdir($sshDirectory, 0700);
+    $runner = ssh_executor_recording_runner();
+    $connection = new SshConnection(
+        host: '10.44.0.3',
+        user: 'orbit',
+        port: 22,
+        identityFile: "{$sshDirectory}/id_ed25519",
+        knownHostsFile: "{$sshDirectory}/known_hosts",
+        shareConnection: false,
+    );
+
+    try {
+        new NativeSshExecutor($runner)->execute($connection, new RemoteCommand(['true']));
+
+        expect($runner->invocation?->arguments)->not->toContain('ControlMaster=auto');
+    } finally {
+        @rmdir("{$sshDirectory}/mux");
+        @rmdir($sshDirectory);
+    }
+});

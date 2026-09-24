@@ -20,10 +20,11 @@ final class UpdateSubtaskCommand extends TaskCommand
         {--title= : New title}
         {--brief= : New brief}
         {--position= : New position, starting at 1}
+        {--deliverables= : JSON file with an array of typed deliverables that replaces the list}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'Change a subtask\'s title, brief, or position.';
+    protected $description = 'Change a subtask\'s title, brief, position, or deliverables.';
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
     {
@@ -51,10 +52,16 @@ final class UpdateSubtaskCommand extends TaskCommand
             }
         }
 
-        $changed = $title !== null || $brief !== null || $position !== null;
+        $deliverables = $this->deliverablesFile();
+
+        if ($deliverables === false) {
+            return self::FAILURE;
+        }
+
+        $changed = $title !== null || $brief !== null || $position !== null || $deliverables !== null;
 
         if (! $changed && ! $this->consoleMode()->mayPrompt) {
-            return $this->renderGatewayFailure('tasks.update_required', 'Provide at least one subtask update: --title, --brief, or --position.');
+            return $this->renderGatewayFailure('tasks.update_required', 'Provide at least one subtask update: --title, --brief, --position, or --deliverables.');
         }
 
         $connector = $this->gatewayConnector($repository, $connectors);
@@ -63,7 +70,9 @@ final class UpdateSubtaskCommand extends TaskCommand
             return self::FAILURE;
         }
 
-        $groupId ??= $this->selectGroup($connector, ['backlog']);
+        // The deliverables of a todo subtask change in any group status; everything else only in backlog.
+        $onlyDeliverables = $deliverables !== null && $title === null && $brief === null && $position === null;
+        $groupId ??= $this->selectGroup($connector, $onlyDeliverables ? [] : ['backlog']);
 
         if ($groupId === null) {
             return self::FAILURE;
@@ -93,7 +102,7 @@ final class UpdateSubtaskCommand extends TaskCommand
 
         $task = $this->sendWithProgress(
             $connector,
-            new UpdateSubtaskRequest($groupId, $subtaskId, $title, $brief, $position),
+            new UpdateSubtaskRequest($groupId, $subtaskId, $title, $brief, $position, $deliverables),
             SubtaskResponse::class,
             ['Update subtask', 'Updating subtask', 'Updated subtask'],
         );

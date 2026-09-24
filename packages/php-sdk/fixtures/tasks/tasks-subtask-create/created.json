@@ -10,6 +10,22 @@
             "position": 3,
             "title": "Document the commands",
             "brief": "Add docs/cli/tasks.mdx.",
+            "deliverables": [
+                {
+                    "id": "cli-page",
+                    "type": "file",
+                    "description": "Document every tasks command",
+                    "path": "docs/cli/tasks.mdx",
+                    "change": "modified"
+                },
+                {
+                    "id": "docs-lint",
+                    "type": "command",
+                    "description": "The documentation lint passes",
+                    "command": "composer docs-lint",
+                    "directory": "."
+                }
+            ],
             "status": "todo",
             "implementer_agent_thread_id": null,
             "tokens": null,

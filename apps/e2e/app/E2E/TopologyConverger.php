@@ -154,8 +154,9 @@ final readonly class TopologyConverger
         $steps['converge.metrics'] = true;
         // Rolling refreshes restore snapshots and skip provisioning, so the
         // product must re-render every projection from the checked-out code.
-        // The app-prod internal-TLS fragment lands inside the managed Caddy
-        // layout first so the product publisher carries it forward.
+        // The internal-TLS step first removes the retired `local_certs` global
+        // fragment an older snapshot carries, so the product publisher's own
+        // global options block stays the only one.
         if ($typedCheckoutPath === null || $productionPlacement !== null) {
             $this->run($instances[$appProdNode], 'converge-sample-app.sh', ['internal-tls']);
         }

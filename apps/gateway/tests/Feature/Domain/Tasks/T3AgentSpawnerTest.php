@@ -165,7 +165,7 @@ it('spawns the group reviewer with its first review and a fresh implementer on t
         ->and($dispatcher->commands[5]['runtimeMode'])->toBe('full-access')
         ->and($dispatcher->commands[5]['interactionMode'])->toBe('default')
         ->and($implementerSelection['instanceId'])->toBe('codex')
-        ->and($implementerSelection['options'])->toBe([['id' => 'reasoningEffort', 'value' => 'low']]);
+        ->and($implementerSelection['options'])->toBe([['id' => 'reasoningEffort', 'value' => 'high']]);
 });
 
 it('posts T3 model options as id and value JSON objects', function (): void {
@@ -407,7 +407,37 @@ it('starts the planner as the group reviewer thread with the planning brief', fu
         ->and($text)->toContain('Orbit task group #'.$group->id.' for Project orbit (app_id '.$group->app_id.')')
         ->and($text)->toContain('on the branch task-'.$group->id.' and leave them uncommitted')
         ->and($text)->toContain('tasks-subtask-create, tasks-subtask-update, and tasks-subtask-destroy')
-        ->and($text)->toContain('move the group to Todo with tasks-update and status todo');
+        ->and($text)->toContain('move the group to Todo with tasks-update and status todo')
+        ->and($text)->toContain('Give every subtask at least one deliverable and at most five in its deliverables list, and turn each explicit item of its brief into one.')
+        ->and($text)->toContain('Split the feature with the creating-tasks skill (.agents/skills/creating-tasks/SKILL.md)')
+        ->and($text)->toContain('refuses to move the group to Todo while a subtask has none');
+});
+
+it('lists the deliverables for the implementer and names the review deliverables the approval must confirm', function (): void {
+    $group = t3_spawner_group();
+    $task = $group->tasks->first();
+    $task->update(['deliverables' => [
+        ['id' => 'reference-page', 'type' => 'file', 'description' => 'Document the export', 'path' => 'docs/reference/tasks.md', 'change' => 'modified'],
+        ['id' => 'export-test', 'type' => 'test', 'description' => 'Test the export', 'project' => 'apps/gateway', 'file' => 'tests/Feature/ExportTest.php', 'name' => 'exports every subtask'],
+        ['id' => 'web-tests', 'type' => 'command', 'description' => 'The web tests pass', 'command' => 'bun test', 'directory' => 'apps/web'],
+        ['id' => 'error-copy', 'type' => 'review', 'description' => 'Errors name the subtask'],
+    ]]);
+    [$spawner, $dispatcher] = t3_spawner_stack();
+
+    $spawner->spawnReviewer($task->refresh());
+    $spawner->spawnImplementer($task);
+    $review = $dispatcher->commands[2]['message']['text'];
+    $implement = $dispatcher->commands[5]['message']['text'];
+    $list = "Deliverables. Orbit checks each one before the review:\n"
+        ."- reference-page (file: docs/reference/tasks.md, modified): Document the export\n"
+        ."- export-test (test: Pest test \"exports every subtask\" in apps/gateway/tests/Feature/ExportTest.php): Test the export\n"
+        ."- web-tests (command: `bun test` in apps/web): The web tests pass\n"
+        .'- error-copy (review: confirmed by the reviewer): Errors name the subtask';
+
+    expect($implement)->toContain($list)
+        ->and($implement)->toContain('Add --deliverable=ID=evidence for each deliverable of this subtask (reference-page, export-test, web-tests, error-copy)')
+        ->and($review)->toContain($list)
+        ->and($review)->toContain('The approval must confirm each review deliverable (error-copy) with --deliverable=ID=evidence');
 });
 
 it('tells a planner thread it has become the reviewer with the first review request only', function (): void {

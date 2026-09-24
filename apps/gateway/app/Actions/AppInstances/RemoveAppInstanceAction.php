@@ -290,7 +290,7 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
 
                     if (
                         ! $lockedMember instanceof AppInstance
-                        || $lockedMember->status !== AppInstanceState::Active
+                        || ! $this->removableState($lockedMember)
                         || $lockedMember->migration_required
                         || $lockedMember->app_id !== $member->app_id
                         || $lockedMember->node_id !== $member->node_id
@@ -356,6 +356,7 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
                             'source_identity' => $inventory->sourceIdentity,
                             'linked_worktree_paths' => $inventory->linkedWorktreePaths,
                             'source_digest' => $inventory->digest,
+                            'runtime_published' => $lockedMembers->get($member->id)?->status === AppInstanceState::Active,
                         ]);
                 }
 
@@ -480,7 +481,7 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
             );
         }
 
-        if ($appInstance->status !== AppInstanceState::Active) {
+        if (! $this->removableState($appInstance)) {
             throw new ResourceOperationException(
                 errorCode: 'instance.remove_refused',
                 message: "AppInstance [{$appInstance->name}] is not active.",
@@ -718,7 +719,22 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
 
     private function withoutRoute(AppInstance $appInstance): bool
     {
-        return $appInstance->routes->isEmpty() && ! $appInstance->requiresRoute();
+        return $appInstance->routes->isEmpty()
+            && (! $appInstance->requiresRoute() || $appInstance->status === AppInstanceState::SourceResolved);
+    }
+
+    /**
+     * An active AppInstance is removable. So is a source-resolved checkout that never received a route, such as a task workspace.
+     */
+    private function removableState(AppInstance $appInstance): bool
+    {
+        if ($appInstance->status === AppInstanceState::Active) {
+            return true;
+        }
+
+        return $appInstance->status === AppInstanceState::SourceResolved
+            && ! $appInstance->routes()->exists()
+            && ! RouteTarget::query()->where('app_instance_id', $appInstance->id)->exists();
     }
 
     private function productionRouteIsSafe(Route $route, AppInstance $requested): bool
@@ -893,7 +909,11 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
     {
         ($this->schedules ?? app(CascadeAppInstanceSchedulesAction::class))->execute($member->app_instance_id);
         $this->processes->execute($member->app_instance_id);
-        $this->routes->cleanupRuntime($member);
+
+        // A checkout that never became active, such as a task workspace, has no pool, site, or certificate to withdraw.
+        if ($member->runtime_published) {
+            $this->routes->cleanupRuntime($member);
+        }
         $member->update(['runtime_cleaned_at' => now()]);
     }
 

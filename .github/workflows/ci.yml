@@ -156,7 +156,7 @@ jobs:
             orbit-tia-php8.5-${{ matrix.directory }}-
 
       - name: Run affected tests
-        run: vendor/bin/pest --parallel --processes=2 --tia --compact
+        run: vendor/bin/pest --parallel --processes=4 --tia --compact
 
       - name: Save Pest TIA graph
         if: success()

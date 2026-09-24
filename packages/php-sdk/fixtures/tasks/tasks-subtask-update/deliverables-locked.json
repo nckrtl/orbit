@@ -1,0 +1,13 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\Tasks\\UpdateSubtaskRequest",
+    "route": "PATCH /api/v1/task-groups/{group}/tasks/{task}",
+    "status": 409,
+    "body": {
+        "error": {
+            "code": "tasks.deliverables_locked",
+            "message": "Deliverables change only while the group is in backlog or the subtask is todo.",
+            "details": {}
+        }
+    }
+}

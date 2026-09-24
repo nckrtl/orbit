@@ -692,6 +692,8 @@ it('lists runtime status and removes only the selected process', function (): vo
                 (int) $process->id => $this->runtime->status($process),
             ])->all();
         }
+
+        public function remember(Process $process, string $status): void {}
     }, new class implements ProcessUsageIndex
     {
         public function usage(Collection $processes): array

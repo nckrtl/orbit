@@ -214,7 +214,9 @@ it('prepares a backlog group and moves it to todo through MCP', function (): voi
 
     $group = $call('tasks-create', ['app_id' => $this->appRecord->id, 'title' => 'MCP backlog', 'brief' => 'Prepare first.']);
     $first = $call('tasks-subtask-create', ['group' => $group['id'], 'title' => 'First', 'brief' => 'One.']);
-    $second = $call('tasks-subtask-create', ['group' => $group['id'], 'title' => 'Second', 'brief' => 'Two.']);
+    $second = $call('tasks-subtask-create', ['group' => $group['id'], 'title' => 'Second', 'brief' => 'Two.', 'deliverables' => [
+        ['id' => 'second-page', 'type' => 'file', 'description' => 'Document the second step', 'path' => 'docs/second.md', 'change' => 'created'],
+    ]]);
     $moved = $call('tasks-subtask-update', ['group' => $group['id'], 'task' => $second['id'], 'position' => 1]);
     $destroyed = $call('tasks-subtask-destroy', ['group' => $group['id'], 'task' => $first['id']]);
     $ready = $call('tasks-update', ['group' => $group['id'], 'status' => 'todo']);
@@ -223,5 +225,8 @@ it('prepares a backlog group and moves it to todo through MCP', function (): voi
         ->and($moved['position'])->toBe(1)
         ->and($destroyed['title'])->toBe('First')
         ->and($ready['status'])->toBe('todo')
-        ->and(array_column($ready['tasks'], 'title'))->toBe(['Second']);
+        ->and(array_column($ready['tasks'], 'title'))->toBe(['Second'])
+        ->and($ready['tasks'][0]['deliverables'])->toBe([
+            ['id' => 'second-page', 'type' => 'file', 'description' => 'Document the second step', 'path' => 'docs/second.md', 'change' => 'created'],
+        ]);
 });
