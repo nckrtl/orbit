@@ -165,7 +165,9 @@ On a Node with `ingress`, first-row sites bind `0.0.0.0`, `gateway.orbit` stays 
 
 ### When a build runs
 
-A command that changes Caddy sites commits its change and then requests a build for each affected Node. That covers Route and Instance commands, deploys, role convergence, Metrics, ProxyCli, Herdr observers, and Gateway web convergence. When a command adds a site, it publishes the site's certificate before the build. When it removes a site, it builds first and removes the certificate afterwards. The Gateway refuses to remove a certificate that a site on the Node still names: the step fails with `app-dev.certificate_in_use`, keeps the certificate, and the command can be retried. A certificate step that replaces a certificate a live site already uses reloads Caddy itself.
+A command that changes Caddy sites commits its change and then requests a build for each affected Node. That covers Route and Instance commands, deploys, role convergence, Metrics, ProxyCli, Herdr observers, and Gateway web convergence. When a command adds a site, it publishes the site's certificate before the build. When it removes a site, it builds first and removes the certificate afterwards. A certificate step that replaces a certificate a live site already uses reloads Caddy itself.
+
+The Gateway refuses to remove a certificate that a site on the Node still names, because `caddy validate` would then fail for every later build. The step fails with `app-dev.certificate_in_use` and keeps the certificate, so the command can be retried.
 
 The Gateway runs one build at a time for each Node. A second build waits up to 30 seconds and then reads the latest committed state. When a build renders the same file that is already live, it changes nothing and does not reload Caddy.
 
