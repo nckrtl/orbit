@@ -12,7 +12,7 @@ use JsonException;
 final readonly class LocalExtensionState
 {
     /** @var list<string> */
-    private const array Extensions = ['herdr', 'proxycli'];
+    private const array Extensions = ['proxycli'];
 
     public function __construct(private string $path) {}
 

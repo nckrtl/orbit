@@ -10,7 +10,7 @@ The Gateway renders the complete Caddyfile for one Node from stored state in one
 
 ## Status
 
-Proposed.
+Proposed. Amended by [ADR 0145](/decisions/0145-retire-the-herdr-integration), which removes the Herdr observer site source. The Context keeps the Herdr publisher as it was surveyed.
 
 ## Context
 
@@ -38,7 +38,7 @@ The Gateway owns every Caddy file on a Node through one build per Node. The rule
 
 ### One build per Node
 
-- The Gateway owns a Node Caddy build. A build reads stored state for one Node and renders one Caddyfile: a fixed Orbit marker line, Orbit's global options block from `CaddyGlobalOptions`, then the sites of every site source that applies to that Node. The site sources are `gateway`, Metrics, service metrics, Router and workload sites for `app-dev` and `app-prod` (including custom proxy Routes, analytics tracking hosts, Agentation, and Vite), public Ingress, `websocket`, `analytics`, ProxyCli, and Herdr observers.
+- The Gateway owns a Node Caddy build. A build reads stored state for one Node and renders one Caddyfile: a fixed Orbit marker line, Orbit's global options block from `CaddyGlobalOptions`, then the sites of every site source that applies to that Node. The site sources are `gateway`, Metrics, service metrics, Router and workload sites for `app-dev` and `app-prod` (including custom proxy Routes, analytics tracking hosts, Agentation, and Vite), public Ingress, `websocket`, `analytics`, and ProxyCli.
 - The render is deterministic. The same stored state gives the same bytes. The version name is derived from a digest of the file, so an unchanged render writes nothing and does not reload Caddy.
 - A Node gets at most one site block for each address, which is a domain with its port and listener. When a Route's current placement and its second placement render the same address on one Node, the build keeps the current placement's site and skips the other. Any other duplicate fails the build before it contacts the Node, and the error names both sources.
 - The Gateway pushes the file with one root script: take `/run/lock/orbit/caddy.lock` with its path checks, check the Caddy release, write `/etc/caddy/orbit-versions/<version>/Caddyfile`, run `/usr/bin/caddy validate` as the `caddy` user, back up a foreign Caddyfile, swap `/etc/caddy/Caddyfile` to the new version, enable and reload the `caddy` service, and restore the previous target when the reload fails. It keeps the live version and the nine newest others and removes older versions.
@@ -50,8 +50,8 @@ The Gateway owns every Caddy file on a Node through one build per Node. The rule
 
 - A publisher commits its state change, publishes any certificate or other files the new sites need, and then requests a build for each affected Node. It never requests a build inside a database transaction. Otherwise a concurrent build on the same Node reads state without the change and can push last, and a rollback leaves a pushed site with no database record.
 - Removal runs in the opposite order: commit the state change, build, then remove the certificate and other files.
-- Certificates stay a separate step. It must finish before the build, because `caddy validate` loads every certificate file the Caddyfile names. A certificate step that replaces a certificate file a live site already uses reloads Caddy itself under the Node lock, because a build whose render did not change does not reload. The `websocket` and Metrics certificate steps already reload this way. The `app-dev` certificate step reloads today without the Node lock and starts to take it. The Herdr and Gateway certificate steps start to reload this way.
-- Non-Caddy work stays with its role: PHP-FPM pools, dnsmasq, ufw, the FPM exporter and its unit, the `orbit-websocket` unit, and the Herdr observer unit and certificate. The `app-dev` role creates the hibernation marker and log directories before it requests a build.
+- Certificates stay a separate step. It must finish before the build, because `caddy validate` loads every certificate file the Caddyfile names. A certificate step that replaces a certificate file a live site already uses reloads Caddy itself under the Node lock, because a build whose render did not change does not reload. The `websocket` and Metrics certificate steps already reload this way. The `app-dev` certificate step reloads today without the Node lock and starts to take it. The Gateway certificate step starts to reload this way.
+- Non-Caddy work stays with its role: PHP-FPM pools, dnsmasq, ufw, the FPM exporter and its unit, and the `orbit-websocket` unit. The `app-dev` role creates the hibernation marker and log directories before it requests a build.
 
 ### Transitions are stored state
 
@@ -70,7 +70,7 @@ The Gateway owns every Caddy file on a Node through one build per Node. The rule
   | `app-dev` and `app-prod` workload and Router sites, custom proxy Routes, analytics tracking hosts, Agentation, and Vite | On a Node with `ingress`, `0.0.0.0`. On any other Node, its WireGuard address and its LAN address when it has one |
   | Public Ingress sites | `0.0.0.0`, because clients reach them on the public address |
   | `gateway.orbit`, `metrics.orbit`, and the service metrics scrape site | The Node's WireGuard address only |
-  | `websocket`, `analytics`, ProxyCli, and Herdr observers | The WireGuard address, or `0.0.0.0` when a site from the first row binds `0.0.0.0` on the same port |
+  | `websocket`, `analytics`, and ProxyCli | The WireGuard address, or `0.0.0.0` when a site from the first row binds `0.0.0.0` on the same port |
 
 - Caddy accepts a wildcard and a specific listener on one port. A connection to the specific address reaches only the sites bound to it. Connections to every other address reach the wildcard sites. A run on Caddy 2.9.1 and 2.11.4 showed this behavior; no official Caddy 2.9.0 image exists.
 - Because of that rule, a Node without `ingress` has no wildcard listener for first-row sites. Nothing on the Node reaches them through loopback: Routers and Ingress prefer a Node's LAN address and fall back to its WireGuard address, and private DNS answers with the Router's LAN address for eligible LAN clients and its WireGuard address otherwise. A WireGuard-only site such as `gateway.orbit` then shares port 443 with the Router sites of a Gateway that is also the Router, and nothing Gateway-private reaches a public listener.
@@ -85,7 +85,7 @@ The Gateway owns every Caddy file on a Node through one build per Node. The rule
 
 ### Every Node that runs Caddy installs it the same way
 
-- Every Node with a Caddy site source installs Caddy through `CaddyPackageSourceProgram` before its first build. The `gateway`, `ingress`, `router`, `app-dev`, `app-prod`, `websocket`, and `analytics` roles list the `caddy` package, and role convergence runs the program. Gateway bootstrap and Gateway web convergence both run it on the Gateway machine. ProxyCli and Herdr observer publication run it on their Node before they request a build.
+- Every Node with a Caddy site source installs Caddy through `CaddyPackageSourceProgram` before its first build. The `gateway`, `ingress`, `router`, `app-dev`, `app-prod`, `websocket`, and `analytics` roles list the `caddy` package, and role convergence runs the program. Gateway bootstrap and Gateway web convergence both run it on the Gateway machine. ProxyCli publication runs it on its Node before it requests a build.
 - The quickstart stops installing Caddy by hand. Gateway bootstrap installs it with the pinned key digest and fingerprint and checks the floor. On a Gateway that the old quickstart set up, the program publishes the pinned keyring and source file over the manual ones.
 - The build uses only the packaged `/usr/bin/caddy` and the `caddy` systemd service. It does not use a Linuxbrew or other Caddy binary. The install step also writes the Caddy service ordering drop-in after `wg-quick@orbit`, so each Node gets it once.
 - The push script checks the release of `/usr/bin/caddy` against the floor in `CaddyRelease` before it writes a version. A Node below the floor fails the build and keeps its live configuration.
@@ -103,7 +103,7 @@ The Gateway owns every Caddy file on a Node through one build per Node. The rule
 - This decision supersedes [ADR 0137](/decisions/0137-refuse-carried-caddy-global-options). No fragment is carried, so the carried global options guard is removed. Orbit still writes the only global options block.
 - [ADR 0138](/decisions/0138-opt-public-ingress-sites-into-caddy-certificate-automation) and [ADR 0139](/decisions/0139-collect-caddy-http-metrics-on-every-node) keep their global block and per-site certificate rules. The build renders them.
 - It amends [ADR 0099](/decisions/0099-collect-role-specific-service-metrics): the Node Caddy build, not a shared Caddy publisher, owns composition, validation, publication, and recovery for the scrape site.
-- It extends [ADR 0100](/decisions/0100-install-caddy-from-the-pinned-caddy-apt-source) to the Gateway machine, `ingress`, ProxyCli, and Herdr observer Nodes, and adds the release check to every build.
+- It extends [ADR 0100](/decisions/0100-install-caddy-from-the-pinned-caddy-apt-source) to the Gateway machine, `ingress`, and ProxyCli Nodes, and adds the release check to every build.
 - It amends a consequence of [ADR 0080](/decisions/0080-add-node-owned-custom-proxy-routes): unmanaged Caddy fragments do not stay in place. They are backed up and stop serving at the first build.
 - The sites that [ADR 0009](/decisions/0009-clustered-app-instance-routing) and [ADR 0011](/decisions/0011-clustered-production-ingress-and-app-prod-placement) describe as fragments in one composed Caddy service become sites in one rendered Caddyfile. Their ownership does not change.
 
@@ -126,9 +126,9 @@ The Gateway owns every Caddy file on a Node through one build per Node. The rule
 - Every build renders every site on the Node, so a Node with many sites runs more database queries and a larger `caddy validate` per change. Unchanged renders skip validation and reload.
 - A failing site source blocks every Caddy change on that Node until it is fixed. Today only that publisher's fragment is blocked.
 - A Node that holds `ingress` and a WireGuard-only site, such as `gateway` with `ingress` and `router`, fails the build when its first-row sites share the port. `gateway` with `router` and no `ingress` builds: its Router sites bind the WireGuard and LAN addresses. Today those Router sites bind `0.0.0.0` beside `gateway.orbit` and answer WireGuard clients with an empty response.
-- `websocket`, `analytics`, ProxyCli, and Herdr sites bind `0.0.0.0` only on a Node with `ingress` and first-row sites on their port. There they answer on the public listener for their own hostname. Everywhere else they bind the WireGuard address.
+- `websocket`, `analytics`, and ProxyCli sites bind `0.0.0.0` only on a Node with `ingress` and first-row sites on their port. There they answer on the public listener for their own hostname. Everywhere else they bind the WireGuard address.
 - Route transitions need schema changes: a stored publication record on each Route and the two transition placement columns.
-- Every Node with Caddy sites, the Gateway machine included, installs Caddy from the pinned source. A Gateway that still runs another Caddy upgrades on its next bootstrap or web convergence. A Node that serves Herdr observers through a Linuxbrew Caddy switches to the packaged service.
+- Every Node with Caddy sites, the Gateway machine included, installs Caddy from the pinned source. A Gateway that still runs another Caddy upgrades on its next bootstrap or web convergence.
 - Migration is ordered. The stored transition state and every site source must exist before any publisher uses the build, because a build replaces every site it cannot render. All publishers and the Incus harness then switch to the build in one change.
 
 ## Affects

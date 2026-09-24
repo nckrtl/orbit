@@ -10,7 +10,7 @@ description: "Proposed. A Node name is a unique registry identifier. Operators c
 
 ## Status
 
-Proposed.
+Proposed. Amended by [ADR 0145](/decisions/0145-retire-the-herdr-integration): Orbit has no Herdr sessions, so a rename no longer refuses with `node.has_herdr_sessions`.
 
 This extends the Node registry contract used by [ADR 0072](/decisions/0072-add-and-remove-nodes-without-changing-the-machine) and the family-specific action list in [ADR 0071](/decisions/0071-use-one-verb-vocabulary-across-cli-routes-and-sdk). It does not change [ADR 0061](/decisions/0061-use-vpn-dns-by-default-on-managed-peers) or [ADR 0090](/decisions/0090-relocate-the-gateway-role-independently-of-vpn).
 
@@ -49,5 +49,5 @@ A rename that rewrote Herdr observer hostnames would republish Caddy sites and p
 
 - Components: apps/gateway, apps/cli, packages/php-sdk, apps/docs, apps/e2e
 - ADRs: extends [ADR 0071](/decisions/0071-use-one-verb-vocabulary-across-cli-routes-and-sdk) and [ADR 0072](/decisions/0072-add-and-remove-nodes-without-changing-the-machine); used with [ADR 0090](/decisions/0090-relocate-the-gateway-role-independently-of-vpn)
-- Detail: [`node`](/cli/node), [Relocate the gateway role](/solutions/relocate-gateway-role), [Herdr sessions](/reference/herdr-sessions), [CLI command vocabulary](/reference/cli-command-vocabulary)
+- Detail: [`node`](/cli/node), [Relocate the gateway role](/solutions/relocate-gateway-role), [CLI command vocabulary](/reference/cli-command-vocabulary)
 - Verify: Gateway RenameNodeAction, node-rename API, CLI `node:rename`, PHP SDK transport, and MCP catalogue tests

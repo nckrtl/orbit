@@ -53,7 +53,6 @@ Commands are grouped by the record they manage. Each family has its own page wit
 | [`top`](/cli/top) | The fleet as one live, sectioned screen. |
 | [`extension`](/cli/extension) | Optional local command extensions. |
 | [`tasks`](/cli/tasks) | Task groups, their subtasks and comments, and the Gateway tasks extension. |
-| [`herdr`](/cli/herdr) | Named Herdr terminal sessions and observation grants. |
 
 ## Select a Gateway
 
@@ -115,11 +114,10 @@ A successful command exits with `0`. A handled failure returns the command's doc
 
 ## Enable an extension
 
-Some command families are hidden until you enable them on the operator machine. Local extension state composes that client's command surface. The `herdr` family stays local. The `proxycli` family also has a fleet enable that deploys a collector; see [proxycli](/cli/proxycli).
+Some command families are hidden until you enable them on the operator machine. Local extension state composes that client's command surface. The `proxycli` family also has a fleet enable that deploys a collector; see [proxycli](/cli/proxycli).
 
 ```bash
 orbit extension:list
-orbit extension:enable herdr
 orbit extension:enable proxycli
 ```
 

@@ -24,7 +24,7 @@ orbit doctor [--node=ID] [--family=FAMILY ...] [--json]
 | Option | Default | Meaning |
 | --- | --- | --- |
 | `--node=ID` | every registered Node the caller may address | Numeric Node ID. The CLI rejects a value that is not a positive integer with `doctor.node_id_invalid`. |
-| `--family=FAMILY` | every family | Limit checks to one family. Repeat the option for more than one. Accepted values are `node`, `role`, `app`, `instance`, `workspace`, `schedule`, `tool`, `process`, `firewall`, `herdr`, `database_connection`, and `route`. |
+| `--family=FAMILY` | every family | Limit checks to one family. Repeat the option for more than one. Accepted values are `node`, `role`, `app`, `instance`, `workspace`, `schedule`, `tool`, `process`, `firewall`, `database_connection`, and `route`. |
 
 ```bash
 orbit doctor
@@ -51,7 +51,7 @@ The Gateway observes each Node once over its fixed SSH boundary before it runs t
 
 Checks that read root-owned files run through passwordless `sudo` on the Node. Every check that reads the live Caddy version is one of them, because Orbit publishes each version under `/etc/caddy/orbit-versions` as `root:caddy` with mode `0750`.
 
-Families run in canonical order whatever filter you pass: `node`, `role`, `app`, `instance`, `workspace`, `schedule`, `tool`, `process`, `firewall`, `herdr`, `database_connection`, `route`. Nodes sort by name and then ID, and resources sort by ID, so two runs against the same state produce the same report.
+Families run in canonical order whatever filter you pass: `node`, `role`, `app`, `instance`, `workspace`, `schedule`, `tool`, `process`, `firewall`, `database_connection`, `route`. Nodes sort by name and then ID, and resources sort by ID, so two runs against the same state produce the same report.
 
 Each issue carries a stable code, a kind of `drift` or `unverifiable`, the resource type, ID, and name, a summary, and bounded `expected` and `observed` values. A family is `healthy` with no issues, `drift` with drift only, and `unverifiable` when any issue is unverifiable. `checked` counts the family's persisted resources on that Node, not commands. The report never contains raw output, commands, paths, URLs, branch names, credentials, environment values, configuration contents, or exception text.
 
@@ -68,7 +68,6 @@ Each issue carries a stable code, a kind of `drift` or `unverifiable`, the resou
 | `tool` | Installed state and, when a constraint is stored, the normalized installed version of each Tool. | `tool.not_installed`, `tool.version_mismatch`, `tool.node_unreachable`, `tool.inspection_failed` |
 | `process` | Desired state against the observed systemd or Docker status of each Instance and Node Process. | `process.runtime_missing`, `process.state_mismatch`, `process.node_unreachable`, `process.inspection_failed` |
 | `firewall` | UFW backend state and each named rule the Gateway owns on the Node. | `firewall.backend_inactive`, `firewall.lifecycle_not_active`, `firewall.rule_missing`, `firewall.rule_mismatch`, `firewall.node_unreachable`, `firewall.inspection_failed` |
-| `herdr` | The Process, private observer, and session identity of each named Herdr session. | `herdr.process_unhealthy`, `herdr.listener_unhealthy`, `herdr.session_unhealthy`, `herdr.node_unreachable`, `herdr.inspection_failed` |
 | `database_connection` | Registry records and Instance attachments against the stored environment keys they project. | `database_connection.missing`, `database_connection.unhealthy`, `database_connection.env_mismatch`, `database_connection.inspection_failed` |
 | `route` | Custom proxy DNS, Orbit CA leaf, Caddy site, and local upstream reachability on the serving Node. | `route.dns_mismatch`, `route.certificate_mismatch`, `route.caddy_mismatch`, `route.upstream_unreachable`, `route.node_unreachable`, `route.inspection_failed` |
 
@@ -76,7 +75,7 @@ The `app` and `instance` families compare the `remote.origin.url` value stored i
 
 A sleeping development Instance is not drift. When the awake marker is absent, Doctor does not report `process.state_mismatch` for a Process that is desired running, not keep-alive, and observed stopped; the [hibernation reference](/reference/app-dev-runtime-hibernation#inspect) owns that rule. A prepared production home without a `current` link is healthy before its first deployment; the [release layout reference](/reference/deployments#inspect-release-placement-with-doctor) owns that rule.
 
-The reference pages describe each family's comparison in more detail: [Schedules](/reference/schedules#inspect-schedule-drift), [Tools](/reference/tools#check-removal-with-doctor), [Database connections](/reference/database-connections#inspect-attachments-with-doctor), [Herdr sessions](/reference/herdr-sessions#doctor), [Instance environment variables](/reference/environment-variables#inspect-the-projection-with-doctor), [custom proxy Routes](/reference/routes#custom-proxy-routes), and [the Caddy release a role needs](/reference/node-provisioning#package-sources).
+The reference pages describe each family's comparison in more detail: [Schedules](/reference/schedules#inspect-schedule-drift), [Tools](/reference/tools#check-removal-with-doctor), [Database connections](/reference/database-connections#inspect-attachments-with-doctor), [Instance environment variables](/reference/environment-variables#inspect-the-projection-with-doctor), [custom proxy Routes](/reference/routes#custom-proxy-routes), and [the Caddy release a role needs](/reference/node-provisioning#package-sources).
 
 <Warning>
 Doctor keeps no report history. The Gateway writes one ordinary Activity row for the request and stores no findings, so keep the returned report and request ID if you need them later.

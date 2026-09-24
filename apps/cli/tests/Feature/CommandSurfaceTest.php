@@ -335,20 +335,13 @@ it('only hides Orbit commands that belong to disabled extensions', function (): 
     $orbitCommands = collect(app(Kernel::class)->all())
         ->filter(static fn (Command $command): bool => str_starts_with($command::class, 'App\\Commands\\'));
 
-    expect($orbitCommands)->toHaveCount(170);
+    expect($orbitCommands)->toHaveCount(163);
     expect($orbitCommands
         ->filter(static fn (Command $command): bool => $command->isHidden())
         ->keys()
         ->sort()
         ->values()
         ->all())->toBe([
-            'herdr:observe',
-            'herdr:session:adopt',
-            'herdr:session:create',
-            'herdr:session:destroy',
-            'herdr:session:list',
-            'herdr:session:restart',
-            'herdr:session:show',
             'internal:database-local',
             'proxycli:disable',
             'proxycli:enable',
@@ -359,7 +352,7 @@ it('only hides Orbit commands that belong to disabled extensions', function (): 
         ]);
 });
 
-it('keeps command-surface visibility independent of caller Herdr settings', function (bool $herdrEnabled): void {
+it('keeps command-surface visibility independent of caller extension settings', function (bool $proxycliEnabled): void {
     $filesystem = new Filesystem;
     $callerHome = sys_get_temp_dir().'/orbit-cli-command-surface-caller-'.Str::uuid();
     mkdir($callerHome, 0700, true);
@@ -369,25 +362,25 @@ it('keeps command-surface visibility independent of caller Herdr settings', func
 
     replaceCommandSurfaceHome($callerHome);
 
-    if ($herdrEnabled) {
-        app(LocalExtensionState::class)->enable('herdr');
+    if ($proxycliEnabled) {
+        app(LocalExtensionState::class)->enable('proxycli');
     }
 
     $callerSnapshot = commandSurfaceHomeSnapshot($callerHome);
 
     replaceCommandSurfaceHome($this->orbitHome);
 
-    expect(app(LocalExtensionState::class)->enabled('herdr'))->toBeFalse();
+    expect(app(LocalExtensionState::class)->enabled('proxycli'))->toBeFalse();
     expect(collect(app(Kernel::class)->all())
-        ->filter(static fn (Command $command): bool => str_starts_with($command::class, 'App\\Commands\\Herdr\\'))
+        ->filter(static fn (Command $command): bool => str_starts_with($command::class, 'App\\Commands\\ProxyCli\\'))
         ->every(static fn (Command $command): bool => $command->isHidden()))
         ->toBeTrue();
     expect(collect(app(Kernel::class)->all())
         ->reject(static fn (Command $command): bool => $command->isHidden())
         ->keys()
         ->all())
-        ->not->toContain('herdr:session:create')
-        ->not->toContain('herdr:observe');
+        ->not->toContain('proxycli:enable')
+        ->not->toContain('proxycli:status');
     expect(commandSurfaceHomeSnapshot($callerHome))->toBe($callerSnapshot)
         ->and(commandSurfaceHomeSnapshot($this->callerOrbitHome))->toBe($this->callerSnapshot);
 
@@ -399,8 +392,8 @@ it('keeps command-surface visibility independent of caller Herdr settings', func
 
     $filesystem->deleteDirectory($callerHome);
 })->with([
-    'Herdr disabled' => [false],
-    'Herdr enabled' => [true],
+    'proxycli disabled' => [false],
+    'proxycli enabled' => [true],
 ]);
 
 it('removes only owned command-surface fixtures and leaves caller configuration intact', function (): void {
@@ -634,36 +627,6 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         'github:app:destroy' => [[], ['yes' => false, 'json' => false]],
         'github:app:install' => [[], ['name' => null, 'owner' => null, 'json' => false]],
         'github:app:show' => [[], ['json' => false]],
-        'herdr:observe' => [
-            ['session'],
-            [
-                'node' => null,
-                'pane' => null,
-                'terminal' => null,
-                'cols' => null,
-                'rows' => null,
-                'origin' => null,
-                'json' => false,
-            ],
-        ],
-        'herdr:session:create' => [
-            ['session'],
-            ['node' => null, 'user' => null, 'publish-observer' => false, 'json' => false],
-        ],
-        'herdr:session:adopt' => [
-            ['session'],
-            ['node' => null, 'user' => null, 'publish-observer' => false, 'json' => false],
-        ],
-        'herdr:session:list' => [[], ['node' => null, 'json' => false]],
-        'herdr:session:destroy' => [
-            ['session'],
-            ['node' => null, 'accept-termination' => false, 'yes' => false, 'json' => false],
-        ],
-        'herdr:session:restart' => [
-            ['session'],
-            ['node' => null, 'handoff' => false, 'json' => false],
-        ],
-        'herdr:session:show' => [['session'], ['node' => null, 'json' => false]],
         'instance:analytics:disable' => [['instance'], ['yes' => false, 'json' => false]],
         'instance:analytics:enable' => [['instance'], ['host' => [], 'json' => false]],
         'instance:analytics:show' => [['instance'], ['json' => false]],
