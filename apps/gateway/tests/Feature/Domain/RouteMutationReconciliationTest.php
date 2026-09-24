@@ -17,6 +17,7 @@ use App\Data\Clusters\UpdateClusterData;
 use App\Data\Nodes\ProvisionNodeData;
 use App\Data\Routes\CreateRouteData;
 use App\Data\Routes\UpdateRouteData;
+use App\Domain\Analytics\AnalyticsTrackingRouteProjector;
 use App\Domain\AppDev\AppDevTldConverger;
 use App\Domain\AppDev\ClusterRouterDnsSelectionReconciler;
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
@@ -55,6 +56,7 @@ use App\Models\Route;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Sleep;
 use Illuminate\Support\Str;
+use Tests\Support\FakeAnalyticsTrackingRouteProjector;
 use Tests\Support\FakeClusterRouterDnsSelectionReconciler;
 use Tests\Support\FakeClusterRouterReplacementProjector;
 use Tests\Support\FakeRouteRemovalProjector;
@@ -1698,6 +1700,189 @@ it('keeps a custom proxy Route on its member Node when a TLD-less Cluster activa
         ->toBe(['node_id' => $this->node->id, 'cluster_id' => null]);
 });
 
+it('moves an analytics tracking host with its Instance Route when the Node attaches or detaches', function (): void {
+    $this->target->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
+    $owner = app(CreateRouteAction::class)->execute(new CreateRouteData(
+        appId: $this->orbitApp->id,
+        domain: 'site.example.test',
+        publication: RoutePublication::Private,
+        appInstanceId: $this->target->id,
+        nodeId: null,
+        clusterId: null,
+    ))['route'];
+    $owner->update(['status' => RouteStatus::Active]);
+    $tracking = reconciliation_tracking_route($this->target, $owner, 'analytics.site.example.test');
+    $cluster = reconciliation_active_cluster('tracking-membership', 'cluster.test');
+    bind_node_tld_projection();
+    $projector = bind_tracking_projection();
+    $settled = static fn (?int $nodeId, ?int $clusterId): array => [
+        'node_id' => $nodeId,
+        'cluster_id' => $clusterId,
+        'status' => RouteStatus::Active,
+        'transition_node_id' => null,
+        'transition_cluster_id' => null,
+        'replacement_step' => null,
+    ];
+
+    app(AttachClusterNodeAction::class)->execute($cluster, $this->node);
+
+    expect($this->node->refresh()->cluster_id)
+        ->toBe($cluster->id)
+        ->and($owner->refresh()->only(['node_id', 'cluster_id']))
+        ->toBe(['node_id' => null, 'cluster_id' => $cluster->id])
+        ->and($tracking->refresh()->only(array_keys($settled(null, null))))
+        ->toBe($settled(null, $cluster->id))
+        ->and($projector->events)
+        ->toBe([
+            "prepare:cluster-{$cluster->id}",
+            "build:cluster-{$cluster->id}",
+            'dns',
+            "withdraw:node-{$this->node->id}",
+        ]);
+
+    $projector->events = [];
+    app(DetachClusterNodeAction::class)->execute($cluster, $this->node->refresh());
+
+    expect($this->node->refresh()->cluster_id)
+        ->toBeNull()
+        ->and($owner->refresh()->only(['node_id', 'cluster_id']))
+        ->toBe(['node_id' => $this->node->id, 'cluster_id' => null])
+        ->and($tracking->refresh()->only(array_keys($settled(null, null))))
+        ->toBe($settled($this->node->id, null))
+        ->and($projector->events)
+        ->toBe([
+            "prepare:node-{$this->node->id}",
+            "build:node-{$this->node->id}",
+            'dns',
+            "withdraw:cluster-{$cluster->id}",
+        ]);
+});
+
+it('keeps a tracking host serving its old placement when its move fails before cutover', function (): void {
+    $this->target->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
+    $owner = app(CreateRouteAction::class)->execute(new CreateRouteData(
+        appId: $this->orbitApp->id,
+        domain: 'site.example.test',
+        publication: RoutePublication::Private,
+        appInstanceId: $this->target->id,
+        nodeId: null,
+        clusterId: null,
+    ))['route'];
+    $owner->update(['status' => RouteStatus::Active]);
+    $tracking = reconciliation_tracking_route($this->target, $owner, 'analytics.site.example.test');
+    $cluster = reconciliation_active_cluster('tracking-failure', 'cluster.test');
+    bind_node_tld_projection();
+    $projector = bind_tracking_projection();
+    $projector->failAt = 'build';
+
+    expect(fn () => app(AttachClusterNodeAction::class)->execute($cluster, $this->node))
+        ->toThrow(RuntimeConvergenceException::class, 'Injected tracking build failure.');
+
+    expect($tracking->refresh()->only(['node_id', 'cluster_id', 'transition_node_id', 'transition_cluster_id', 'status']))
+        ->toBe([
+            'node_id' => $this->node->id,
+            'cluster_id' => null,
+            'transition_node_id' => null,
+            'transition_cluster_id' => null,
+            'status' => RouteStatus::Active,
+        ])
+        ->and($projector->events)
+        ->toBe([
+            "prepare:cluster-{$cluster->id}",
+            "build:cluster-{$cluster->id}",
+            "withdraw:cluster-{$cluster->id}",
+        ])
+        ->and($this->node->refresh()->cluster_id)
+        ->toBeNull();
+
+    $projector->events = [];
+    app(AttachClusterNodeAction::class)->execute($cluster, $this->node->refresh());
+
+    expect($tracking->refresh()->only(['node_id', 'cluster_id', 'transition_node_id', 'transition_cluster_id']))
+        ->toBe([
+            'node_id' => null,
+            'cluster_id' => $cluster->id,
+            'transition_node_id' => null,
+            'transition_cluster_id' => null,
+        ])
+        ->and($this->node->refresh()->cluster_id)
+        ->toBe($cluster->id);
+});
+
+it('refuses an attach before any Route moves when a later Route cannot move', function (): void {
+    $this->target->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
+    $first = app(CreateRouteAction::class)->execute(new CreateRouteData(
+        appId: $this->orbitApp->id,
+        domain: 'first.example.test',
+        publication: RoutePublication::Private,
+        appInstanceId: $this->target->id,
+        nodeId: null,
+        clusterId: null,
+    ))['route'];
+    $first->update(['status' => RouteStatus::Active]);
+    $legacy = reconciliation_instance($this->orbitApp, $this->node, 'legacy');
+    $legacy->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
+    $second = app(CreateRouteAction::class)->execute(new CreateRouteData(
+        appId: $this->orbitApp->id,
+        domain: 'legacy.example.test',
+        publication: RoutePublication::Private,
+        appInstanceId: $legacy->id,
+        nodeId: null,
+        clusterId: null,
+    ))['route'];
+    $second->update(['status' => RouteStatus::Active]);
+    $legacy->update(['source_is_laravel' => null]);
+    $cluster = reconciliation_active_cluster('preflight-refusal', 'cluster.test');
+    $events = bind_node_tld_projection();
+
+    expect(fn () => app(AttachClusterNodeAction::class)->execute($cluster, $this->node))
+        ->toThrow(function (ResourceOperationException $exception): void {
+            expect($exception->errorCode)->toBe('instance.source_profile_missing');
+        });
+
+    expect($events->values)
+        ->toBe([])
+        ->and($first->refresh()->only(['node_id', 'cluster_id', 'transition_node_id', 'transition_cluster_id', 'replacement_step']))
+        ->toBe([
+            'node_id' => $this->node->id,
+            'cluster_id' => null,
+            'transition_node_id' => null,
+            'transition_cluster_id' => null,
+            'replacement_step' => null,
+        ])
+        ->and($this->node->refresh()->cluster_id)
+        ->toBeNull();
+});
+
+it('refuses a conflicting Cluster LAN address before any Route moves', function (): void {
+    $this->target->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
+    $route = app(CreateRouteAction::class)->execute(new CreateRouteData(
+        appId: $this->orbitApp->id,
+        domain: 'lan.example.test',
+        publication: RoutePublication::Private,
+        appInstanceId: $this->target->id,
+        nodeId: null,
+        clusterId: null,
+    ))['route'];
+    $route->update(['status' => RouteStatus::Active]);
+    $cluster = reconciliation_active_cluster('lan-conflict', 'cluster.test');
+    Node::query()->where('cluster_id', $cluster->id)->update(['lan_ip' => '192.168.50.10']);
+    $this->node->update(['lan_ip' => '192.168.50.10']);
+    $events = bind_node_tld_projection();
+
+    expect(fn () => app(AttachClusterNodeAction::class)->execute($cluster, $this->node))
+        ->toThrow(function (ResourceOperationException $exception): void {
+            expect($exception->errorCode)->toBe('cluster.lan_ip_conflict');
+        });
+
+    expect($events->values)
+        ->toBe([])
+        ->and($route->refresh()->only(['node_id', 'cluster_id', 'replacement_step']))
+        ->toBe(['node_id' => $this->node->id, 'cluster_id' => null, 'replacement_step' => null])
+        ->and($this->node->refresh()->cluster_id)
+        ->toBeNull();
+});
+
 it('waits once for private DNS answers when an attach moves many Routes, without holding the projection owner', function (): void {
     $routes = [];
 
@@ -2101,6 +2286,33 @@ function reconciliation_custom_proxy(Node $node, string $domain): Route
     $route->update(['status' => RouteStatus::Active]);
 
     return $route;
+}
+
+function reconciliation_tracking_route(AppInstance $instance, Route $owner, string $domain): Route
+{
+    $route = Route::query()->create([
+        'kind' => RouteKind::AnalyticsTracking,
+        'app_id' => null,
+        'node_id' => $owner->node_id,
+        'cluster_id' => $owner->cluster_id,
+        'generation_basis_node_id' => null,
+        'domain' => $domain,
+        'provenance' => RouteProvenance::Explicit,
+        'publication' => RoutePublication::Private,
+        'status' => RouteStatus::Pending,
+    ]);
+    $route->analyticsTracking()->create(['app_instance_id' => $instance->id]);
+    $route->update(['status' => RouteStatus::Active]);
+
+    return $route;
+}
+
+function bind_tracking_projection(): FakeAnalyticsTrackingRouteProjector
+{
+    $projector = new FakeAnalyticsTrackingRouteProjector;
+    app()->instance(AnalyticsTrackingRouteProjector::class, $projector);
+
+    return $projector;
 }
 
 function reconciliation_update(

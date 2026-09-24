@@ -310,7 +310,7 @@ final readonly class RouteMutationReconciler
         $clusterIds = $this->affectedIds($clusterOverrides, $baselineClusterOverrides);
 
         return Route::query()
-            ->with(['app', 'targets.appInstance.node', 'generationBasisNode'])
+            ->with(['app', 'targets.appInstance.node', 'generationBasisNode', 'analyticsTracking.appInstance.node'])
             ->where('kind', '!=', RouteKind::CustomProxy->value)
             ->where(function (Builder $query) use ($nodeIds, $clusterIds): void {
                 $query->whereRaw('0 = 1');
@@ -322,6 +322,10 @@ final readonly class RouteMutationReconciler
                         ->orWhereHas(
                             'targets.appInstance',
                             static fn (Builder $target): Builder => $target->whereIn('node_id', $nodeIds),
+                        )
+                        ->orWhereHas(
+                            'analyticsTracking.appInstance',
+                            static fn (Builder $instance): Builder => $instance->whereIn('node_id', $nodeIds),
                         );
                 }
 
@@ -338,6 +342,10 @@ final readonly class RouteMutationReconciler
                         )
                         ->orWhereHas(
                             'targets.appInstance.node',
+                            static fn (Builder $node): Builder => $node->whereIn('cluster_id', $clusterIds),
+                        )
+                        ->orWhereHas(
+                            'analyticsTracking.appInstance.node',
                             static fn (Builder $node): Builder => $node->whereIn('cluster_id', $clusterIds),
                         );
                 }
@@ -416,6 +424,10 @@ final readonly class RouteMutationReconciler
             $firstTarget ??= $target;
         }
 
+        if ($route->isAnalyticsTracking()) {
+            $placement = $this->trackingPlacement($route, $nodeOverrides, $clusterOverrides);
+        }
+
         if (! $placement instanceof RoutePlacement) {
             $placement = $this->placementWithoutTarget($route, $nodeOverrides, $clusterOverrides);
         }
@@ -449,6 +461,28 @@ final readonly class RouteMutationReconciler
             'generation_basis_node_id' => $route->generation_basis_node_id,
             'domain' => RouteDomain::validate($domain),
         ];
+    }
+
+    /**
+     * A tracking host mirrors the scope of its Instance's own Route, so it takes the placement of
+     * the Instance's Node, exactly as that Route's target does.
+     *
+     * @param  array<int, array{tld?: ?string, cluster_id?: ?int}>  $nodeOverrides
+     * @param  array<int, array{tld?: ?string, state?: ClusterState}>  $clusterOverrides
+     */
+    private function trackingPlacement(Route $route, array $nodeOverrides, array $clusterOverrides): RoutePlacement
+    {
+        $instance = $route->analyticsTracking?->appInstance;
+
+        if (! $instance instanceof AppInstance || $instance->status !== AppInstanceState::Active) {
+            throw new ResourceOperationException(
+                errorCode: 'route.target_invalid',
+                message: "Tracking host [{$route->domain}] has no active Instance.",
+                status: 409,
+            );
+        }
+
+        return $this->state->forNode($instance->node, $nodeOverrides, $clusterOverrides);
     }
 
     /**

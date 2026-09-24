@@ -196,6 +196,29 @@ describe('analytics tracking Route sites', function (): void {
             ->not->toContain('host-record=analytics.shop.example.com,10.44.0.30');
     });
 
+    it('serves a moving host at both placements until cleanup and answers DNS with the current one', function (): void {
+        $workload = analytics_projection_node('app-dev', '10.44.0.50', null, null, RoleName::AppDev);
+        $this->route->update([
+            'publication' => RoutePublication::Private,
+            'status' => RouteStatus::Active,
+            'transition_node_id' => $workload->id,
+            'replacement_step' => RouteReplacementStep::DatabaseCutover,
+        ]);
+        $sites = new AppDevSiteRepository;
+
+        expect($sites->forNode($this->router)->map(static fn (AppDevSite $site): array => [$site->scope, $site->secondary])->all())
+            ->toBe([["route-{$this->route->id}-router", false]])
+            ->and($sites->forNode($workload)->map(static fn (AppDevSite $site): array => [$site->scope, $site->secondary])->all())
+            ->toBe([["route-{$this->route->id}-router", true]])
+            ->and(new AppDevDnsConfigRenderer($sites)->render())
+            ->toContain('host-record=analytics.shop.example.com,10.44.0.20')
+            ->not->toContain('host-record=analytics.shop.example.com,10.44.0.50');
+
+        $this->route->update(['replacement_step' => RouteReplacementStep::Cleanup]);
+
+        expect(new AppDevSiteRepository()->forNode($workload))->toBeEmpty();
+    });
+
     it('never treats the tracking site as a PHP workload', function (): void {
         $this->route->update(['status' => RouteStatus::Active]);
 

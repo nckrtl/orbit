@@ -621,12 +621,18 @@ final readonly class ProvisionNodeAction
         ?string $previousTld,
         ?int $previousClusterId,
     ): void {
-        foreach ($this->routeReconciler()->generatedPrivateDomainChanges(
+        $changes = $this->routeReconciler()->generatedPrivateDomainChanges(
             nodeOverrides: [$node->id => ['tld' => $tld, 'cluster_id' => $clusterId]],
             baselineNodeOverrides: [
                 $node->id => ['tld' => $previousTld, 'cluster_id' => $previousClusterId],
             ],
-        ) as $change) {
+        );
+
+        foreach ($changes as $change) {
+            $this->convergeRoute()->assertConvergible($change['route'], $change['domain'], allowGenerated: true);
+        }
+
+        foreach ($changes as $change) {
             $this->convergeRoute()->execute($change['route'], $change['domain'], allowGenerated: true);
         }
     }

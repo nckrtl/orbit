@@ -378,7 +378,7 @@ Old projections are removed only after the replacement domain is authoritative.
 
 ### Change Cluster activation
 
-The Gateway reconciles every private Route whose current target Node, Cluster scope, or retained generation basis depends on the Cluster before activation or deactivation becomes authoritative. It inventories those Routes, validates every resulting domain, routing scope, target, and required Router, and refuses the complete change when any result is invalid. Cluster TLD, membership, and Instance placement stay unchanged.
+The Gateway reconciles every private Route whose current target Node, Cluster scope, or retained generation basis depends on the Cluster before activation or deactivation becomes authoritative. It inventories those Routes, validates every resulting domain, routing scope, target, and required Router, and refuses the complete change when any result is invalid. It checks every Route it moves before the first one moves. Cluster TLD, membership, and Instance placement stay unchanged. An analytics tracking host moves with its Instance's Route.
 
 Activation prepares and verifies the Cluster Router serving path before publication. Deactivation prepares usable direct Node scope before it removes authoritative Cluster routing. Workload and Router Caddy, Route-scoped certificates, firewall policy, DNS, and detected Laravel URLs agree with the published scope, including a TLD-less Cluster that already owns Routes.
 
@@ -410,7 +410,7 @@ Clearing a Router that would leave Cluster-owned Routes without a serving path s
 
 ### Change Cluster membership
 
-The Gateway reconciles every private Route whose current target Node or retained generation basis uses the Node before attach or detach becomes authoritative. It inventories those Routes, validates the complete proposed domains, routing scopes, targets, and required Router, and refuses an invalid or occupied result before it changes membership, a Route record, environment configuration, or traffic. Cluster TLD, Cluster state, and Instance placement stay unchanged. Custom proxy Routes on the Node are not reconciled; they keep Node scope and keep serving.
+The Gateway reconciles every private Route whose current target Node or retained generation basis uses the Node before attach or detach becomes authoritative. It inventories those Routes, validates the complete proposed domains, routing scopes, targets, and required Router, and refuses an invalid or occupied result before it changes membership, a Route record, environment configuration, or traffic. It also checks every Route it moves and the Node's LAN address against the Cluster before the first Route moves, so a refusal leaves every Route in place. Cluster TLD, Cluster state, and Instance placement stay unchanged. Custom proxy Routes on the Node are not reconciled; they keep Node scope and keep serving. An [analytics tracking host](/reference/analytics#publish-a-tracking-host) moves with its Instance's Route.
 
 Attach to an active Cluster prepares and verifies the Cluster serving path before publication, including a TLD-less active Cluster that still uses Cluster scope and a Router. Detach prepares usable direct Node scope before it removes authoritative Cluster routing. Workload and Router Caddy, Route-scoped certificates, firewall policy, private DNS, and detected Laravel URLs agree with the published scope.
 

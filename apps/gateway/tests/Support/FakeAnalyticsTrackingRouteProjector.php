@@ -15,6 +15,11 @@ final class FakeAnalyticsTrackingRouteProjector implements AnalyticsTrackingRout
 
     public int $failures = 0;
 
+    /** @var list<string> */
+    public array $events = [];
+
+    public ?string $failAt = null;
+
     public function converge(Route $route): void
     {
         $this->routeIds[] = $route->id;
@@ -30,5 +35,42 @@ final class FakeAnalyticsTrackingRouteProjector implements AnalyticsTrackingRout
             errorCode: 'route.test_projection',
             message: 'Injected projection failure.',
         );
+    }
+
+    public function prepareHost(Route $candidate): void
+    {
+        $this->event('prepare', $candidate);
+    }
+
+    public function buildHost(Route $placement): void
+    {
+        $this->event('build', $placement);
+    }
+
+    public function publishDns(): void
+    {
+        $this->event('dns');
+    }
+
+    public function withdrawHost(Route $retired, Route $current): void
+    {
+        $this->event('withdraw', $retired);
+    }
+
+    private function event(string $name, ?Route $placement = null): void
+    {
+        $this->events[] = $placement instanceof Route
+            ? "{$name}:".($placement->node_id === null ? "cluster-{$placement->cluster_id}" : "node-{$placement->node_id}")
+            : $name;
+
+        if ($this->failAt === $name) {
+            $this->failAt = null;
+
+            throw new RuntimeConvergenceException(
+                step: "tracking-{$name}",
+                errorCode: "route.test_tracking_{$name}",
+                message: "Injected tracking {$name} failure.",
+            );
+        }
     }
 }

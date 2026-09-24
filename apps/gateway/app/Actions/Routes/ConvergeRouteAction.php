@@ -36,6 +36,7 @@ final readonly class ConvergeRouteAction
         private AppInstanceEnvironmentOperationLock $environmentOperations,
         private DevelopmentProjectionOperationLock $owner,
         private PrivateDnsAnswerExpiry $dnsAnswers = new PrivateDnsAnswerExpiry,
+        private ?ConvergeAnalyticsTrackingPlacementAction $trackingPlacement = null,
     ) {}
 
     /**
@@ -52,6 +53,10 @@ final readonly class ConvergeRouteAction
         ?RoutePlacement $placement = null,
         bool $deferPlacementWithdrawal = false,
     ): Route {
+        if ($route->isAnalyticsTracking() && $placement instanceof RoutePlacement) {
+            return $this->convergeTrackingPlacement($route, $placement, $deferPlacementWithdrawal);
+        }
+
         $domain = RouteDomain::validate($domain);
         $targetIds = $this->targetIds($route);
 
@@ -102,8 +107,94 @@ final readonly class ConvergeRouteAction
         $this->dnsAnswers->waitAfter(...$pending->map(static fn (Route $route) => $route->transition_dns_moved_at)->all());
 
         foreach ($pending as $route) {
+            if ($route->isAnalyticsTracking()) {
+                $this->owned($this->trackingInstanceIds($route), fn (): Route => $this->tracking()->withdraw($route));
+
+                continue;
+            }
+
             $this->owned($this->targetIds($route), fn (): ?Route => $this->completePlacementOwned($route->id));
         }
+    }
+
+    /**
+     * Refuses a Route change that `execute()` would refuse before it changes anything, so a caller
+     * that moves many Routes can check every one of them before it moves the first. It checks the
+     * same domain change conflicts and target eligibility as `execute()`.
+     */
+    public function assertConvergible(Route $route, string $domain, bool $allowGenerated = false): void
+    {
+        $route = $this->storedRoute($route->id);
+
+        if (! $route instanceof Route || $route->isAnalyticsTracking()) {
+            return;
+        }
+
+        $domain = RouteDomain::validate($domain);
+
+        if ($route->replaced_by_route_id !== null && $route->status !== RouteStatus::Retiring) {
+            $replacement = Route::query()->find($route->replaced_by_route_id);
+
+            if (! $replacement instanceof Route || $replacement->domain !== $domain) {
+                $this->refuseDomainChangeConflict();
+            }
+        }
+
+        if ($route->replaced_by_route_id === null && $route->replacement_step !== null && $route->domain !== $domain) {
+            $this->refuseDomainChangeConflict();
+        }
+
+        $this->eligibleTargets(
+            $route,
+            allowRetiring: $route->status === RouteStatus::Retiring,
+            allowGenerated: $allowGenerated,
+        );
+    }
+
+    private function refuseDomainChangeConflict(): never
+    {
+        throw new ResourceOperationException(
+            errorCode: 'route.domain_change_conflict',
+            message: 'The Route already has another domain change in progress.',
+            status: 409,
+        );
+    }
+
+    /**
+     * A tracking host follows its Instance Route. It moves under that Instance's environment owner
+     * and waits for private DNS answers to expire without holding any owner.
+     */
+    private function convergeTrackingPlacement(Route $route, RoutePlacement $placement, bool $deferWithdrawal): Route
+    {
+        $instanceIds = $this->trackingInstanceIds($route);
+        $moved = $this->owned($instanceIds, fn (): Route => $this->tracking()->cutOver($route, $placement));
+
+        if (! $this->tracking()->awaitsWithdrawal($moved)) {
+            return $moved;
+        }
+
+        if ($moved->replacement_step === RouteReplacementStep::DatabaseCutover) {
+            if ($deferWithdrawal) {
+                return $moved;
+            }
+
+            $this->dnsAnswers->waitAfter($moved->transition_dns_moved_at);
+        }
+
+        return $this->owned($instanceIds, fn (): Route => $this->tracking()->withdraw($moved));
+    }
+
+    /** @return list<int> */
+    private function trackingInstanceIds(Route $route): array
+    {
+        $instanceId = $route->analyticsTracking()->value('app_instance_id');
+
+        return $instanceId === null ? [] : [(int) $instanceId];
+    }
+
+    private function tracking(): ConvergeAnalyticsTrackingPlacementAction
+    {
+        return $this->trackingPlacement ?? app(ConvergeAnalyticsTrackingPlacementAction::class);
     }
 
     /**

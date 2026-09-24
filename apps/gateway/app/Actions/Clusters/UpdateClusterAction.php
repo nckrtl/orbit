@@ -159,10 +159,16 @@ final readonly class UpdateClusterAction
         ?string $previousTld,
         ClusterState $state,
     ): void {
-        foreach ($this->routeReconciler()->generatedPrivateDomainChanges(
+        $changes = $this->routeReconciler()->generatedPrivateDomainChanges(
             clusterOverrides: [$cluster->id => ['tld' => $tld, 'state' => $state]],
             baselineClusterOverrides: [$cluster->id => ['tld' => $previousTld, 'state' => $cluster->state]],
-        ) as $change) {
+        );
+
+        foreach ($changes as $change) {
+            $this->convergeRoute()->assertConvergible($change['route'], $change['domain'], allowGenerated: true);
+        }
+
+        foreach ($changes as $change) {
             $this->convergeRoute()->execute($change['route'], $change['domain'], allowGenerated: true);
         }
     }
@@ -176,9 +182,19 @@ final readonly class UpdateClusterAction
         $reconciler = $this->routeReconciler();
         $reconciler->validate(clusterOverrides: $overrides);
 
+        $changes = $reconciler->activePrivatePlacementChanges(clusterOverrides: $overrides);
         $converged = [];
 
-        foreach ($reconciler->activePrivatePlacementChanges(clusterOverrides: $overrides) as $change) {
+        // Every Route is checked before the first one moves, so a refusal leaves them all in place.
+        foreach ($changes as $change) {
+            $this->convergeRoute()->assertConvergible(
+                $change['route'],
+                $change['domain'],
+                allowGenerated: $change['route']->provenance === RouteProvenance::Generated,
+            );
+        }
+
+        foreach ($changes as $change) {
             $converged[] = $this->convergeRoute()->execute(
                 $change['route'],
                 $change['domain'],

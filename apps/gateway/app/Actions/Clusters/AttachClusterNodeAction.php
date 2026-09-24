@@ -45,6 +45,17 @@ final readonly class AttachClusterNodeAction
             );
         }
 
+        if (
+            $node->lan_ip !== null
+            && Node::query()
+                ->where('cluster_id', $cluster->id)
+                ->whereKeyNot($node->id)
+                ->where('lan_ip', $node->lan_ip)
+                ->exists()
+        ) {
+            throw $this->lanIpConflict($node);
+        }
+
         $overrides = [$node->id => ['cluster_id' => $cluster->id]];
         $this->convergeMembership($overrides);
 
@@ -94,12 +105,7 @@ final readonly class AttachClusterNodeAction
                     ]);
                     $lockedNode->update(['cluster_id' => $lockedCluster->id]);
                 } catch (QueryException $exception) {
-                    throw new ResourceOperationException(
-                        errorCode: 'cluster.lan_ip_conflict',
-                        message: "Node [{$lockedNode->name}] conflicts with a Cluster LAN address.",
-                        status: 409,
-                        previous: $exception,
-                    );
+                    throw $this->lanIpConflict($lockedNode, $exception);
                 }
 
                 return $lockedCluster->refresh();
@@ -120,9 +126,15 @@ final readonly class AttachClusterNodeAction
     /** @param array<int, array{cluster_id: ?int}> $overrides */
     private function convergeMembership(array $overrides): void
     {
+        $changes = $this->routeReconciler()->membershipChanges(nodeOverrides: $overrides);
         $converged = [];
 
-        foreach ($this->routeReconciler()->membershipChanges(nodeOverrides: $overrides) as $change) {
+        // Every Route is checked before the first one moves, so a refusal leaves them all in place.
+        foreach ($changes as $change) {
+            $this->convergeRoute()->assertConvergible($change['route'], $change['domain'], allowGenerated: true);
+        }
+
+        foreach ($changes as $change) {
             $converged[] = $this->convergeRoute()->execute(
                 $change['route'],
                 $change['domain'],
@@ -134,6 +146,16 @@ final readonly class AttachClusterNodeAction
 
         // One wait for private DNS answers to expire covers every Route this change moved.
         $this->convergeRoute()->completePlacements($converged);
+    }
+
+    private function lanIpConflict(Node $node, ?QueryException $previous = null): ResourceOperationException
+    {
+        return new ResourceOperationException(
+            errorCode: 'cluster.lan_ip_conflict',
+            message: "Node [{$node->name}] conflicts with a Cluster LAN address.",
+            status: 409,
+            previous: $previous,
+        );
     }
 
     private function routeReconciler(): RouteMutationReconciler
