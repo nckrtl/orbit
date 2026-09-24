@@ -36,7 +36,7 @@ shop.example.com {
 }
 ```
 
-`force_automate` makes Caddy manage the certificate for that hostname even though the global block disables certificate management. Caddy uses its default issuers, Let's Encrypt first, and renews the certificate on its own. Let's Encrypt validates the hostname over HTTP on port 80. The hostname's public DNS must point at the Ingress Node. Orbit opens port 80 on the Ingress firewall while the Cluster has a live public Route.
+`force_automate` makes Caddy manage the certificate for that hostname even though the global block disables certificate management. Caddy uses its default issuers, Let's Encrypt first, and renews the certificate on its own. Let's Encrypt validates the hostname on port 80 or 443. The hostname's public DNS must point at the Ingress Node. Orbit opens both ports on the Ingress firewall while the Cluster has a live public Route.
 
 Private sites never carry `force_automate`, so Caddy never asks a public CA for a private hostname, even when a pinned certificate does not match its site. `force_automate` needs Caddy 2.9.0 or newer, which is the [release floor](/reference/node-provisioning#package-sources). [ADR 0138](/decisions/0138-opt-public-ingress-sites-into-caddy-certificate-automation) records this rule.
 
@@ -56,15 +56,20 @@ Caddy accepts one global options block, and only as the first block. Orbit write
 | `app-prod` sites | `app-prod.caddy_config_failed` |
 | `websocket` site | `websocket.caddy_publication_failed` |
 | `analytics` site | `analytics.caddy_publication_failed` |
+| ProxyCli collector site | `proxycli.caddy_publication_failed` |
 | Herdr observer site | `herdr.observer_failed` |
 | Metrics site on the Gateway | `metrics.caddy_publication_failed` |
 
-For every publisher except Metrics, the activity record keeps the command output. It names the fragment, the options in the block, and the file to edit:
+Role convergence, such as `orbit node:role:add NODE app-dev --converge`, fails with `node_role.convergence_failed`; `orbit node:role:list` shows the publisher's code as the underlying error.
+
+The refusal message names the fragment, the options in the block, and the file to edit:
 
 ```text
 Caddy fragment 00-unmanaged.caddy opens its own global options block (local_certs, email). Orbit writes the only global options block. Remove that block from /etc/caddy/Caddyfile, then publish again.
 ```
 
-On first adoption the file is the Node's own `/etc/caddy/Caddyfile`. When Orbit already carries the fragment, the file is that fragment in the live version, under `/etc/caddy/orbit-versions/<version>/fragments/`. Remove the whole block, keep the site blocks, and repeat the command that failed. Orbit does not support operator global options; it never merges, strips, or rewrites them.
+The activity record keeps that message when a Route or Instance command fails on an `app-dev` or `app-prod` site publication. Role convergence and the other publishers record only the error code, because they do not keep command output. After one of those codes, check the start of the adopted `/etc/caddy/Caddyfile` and of every fragment that Orbit did not write in the live version.
+
+On first adoption the file to edit is the Node's own `/etc/caddy/Caddyfile`. When Orbit already carries the fragment, it is that fragment in the live version, under `/etc/caddy/orbit-versions/<version>/fragments/`. Remove the whole block, keep the site blocks, and repeat the command that failed. Orbit does not support operator global options; it never merges, strips, or rewrites them.
 
 A site block, a snippet such as `(common) {`, and an address that starts with an environment placeholder such as `{$SITE} {` are not global blocks.

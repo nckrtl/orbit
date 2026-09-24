@@ -31,6 +31,7 @@ A spike on the Gateway against beast and `services` measured OpenSSH 10.2 connec
 - `%C` hashes the local host, the Node address, the port, and the user. A Node that moves to a new address or port gets a new connection.
 - When the socket path would exceed the Unix socket limit, or the directory cannot be created, the Gateway runs the command on its own connection.
 - A shared connection keeps the existing `ServerAliveInterval=5` and `ServerAliveCountMax=2`, so a dead Node ends it within about ten seconds.
+- A reachability check opens a new connection. A shared connection outlives a stopped sshd, so it would report a Node reachable that no new connection can reach. Doctor's Node inspection and the `--offline` reachability check behind role and Node removal use a new connection.
 - The two `scp` transfers keep their own connections. They run rarely and do not use `NativeSshExecutor`.
 
 ## Rejected alternatives
@@ -46,10 +47,11 @@ A spike on the Gateway against beast and `services` measured OpenSSH 10.2 connec
 - A Node authenticates the Gateway once per connection instead of once per command.
 - A key or host-key change on a Node takes effect for the Gateway when its connection closes, which happens after 60 idle seconds. Node retargeting uses a new address, so it gets a new connection immediately.
 - When a Node refuses a channel, OpenSSH writes two warning lines to that command's stderr before it opens a direct connection.
+- A reachability check still pays the full connection cost of about 190 ms.
 
 ## Affects
 
 - Components: apps/gateway
 - ADRs: [ADR 0033](/decisions/0033-trust-wireguard-members-for-private-node-traffic)
 - Detail: [Architecture](/architecture)
-- Verify: `NativeSshExecutorTest`, and after deployment `ssh -O check` against a Node's socket in `ORBIT_HOME/ssh/mux`.
+- Verify: `NativeSshExecutorTest`, `SshNodeStateInspectorTest`, and after deployment `ssh -O check` against a Node's socket in `ORBIT_HOME/ssh/mux`.
