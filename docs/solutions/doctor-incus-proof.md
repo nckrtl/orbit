@@ -39,7 +39,7 @@ These fixtures depend on these properties of the harness and the Nodes.
 
 - The baseline depends on the convergence sequence on [Topology snapshot](/reference/topology-snapshot#refresh), which `prove` runs before setup.
 - Denying one sudo command works because sudoers applies the last matching entry, so the drop-in must sort after Orbit's grant in `/etc/sudoers.d`.
-- Denying `bash` breaks more than one inspector. The production Instance, private Route, public Route edge, and custom proxy Route inspectors all run `sudo bash`.
+- Denying `bash` breaks more than one inspector. The production Instance, private Route, public Route edge, custom proxy Route, and Schedule inspectors all run `sudo bash`.
 - Setup actions run before every acceptance action, so the baseline report is recorded before any fixture is applied.
 
 ## Verification
