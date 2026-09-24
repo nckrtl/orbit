@@ -24,7 +24,7 @@ Every role keeps its sites in its own fragment, such as `app-dev.caddy` or `metr
 
 ## Adopted Caddyfile
 
-On the first publication, a Node's `/etc/caddy/Caddyfile` can be a regular file. When that file is the unmodified package default, Orbit replaces it. Otherwise Orbit keeps it as `fragments/00-unmanaged.caddy` and carries it into every later version. A legacy `fragments/unmanaged.caddy` becomes `00-unmanaged.caddy` on the next publication.
+On the first publication, a Node's `/etc/caddy/Caddyfile` can be a regular file or a symlink to a file outside `/etc/caddy/orbit-versions`. When it is a regular file that matches the unmodified package default, Orbit replaces it. Otherwise the publisher keeps it as `fragments/00-unmanaged.caddy` and carries it into every later version. The Metrics publisher on the Gateway keeps it as `fragments/unmanaged.caddy`. The `app-dev`, `app-prod`, and Herdr observer publishers rename a legacy `fragments/unmanaged.caddy` to `00-unmanaged.caddy` on their next publication.
 
 ## Carried global options
 
