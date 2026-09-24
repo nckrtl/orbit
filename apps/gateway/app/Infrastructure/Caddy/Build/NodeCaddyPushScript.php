@@ -193,6 +193,7 @@ final readonly class NodeCaddyPushScript
             mv -fT -- "\$link" "\$live"
 
             stage=reload
+            reload_started=\$(date +%s)
             if ! systemctl enable --quiet "\$caddy_service" || ! systemctl reload-or-restart "\$caddy_service"; then
                 if [ -n "\$previous_target" ]; then
                     ln -s -- "\$previous_target" "\$link"
@@ -206,7 +207,7 @@ final readonly class NodeCaddyPushScript
                     systemctl reload-or-restart "\$caddy_service" || systemctl restart "\$caddy_service" || true
                 fi
                 rm -rf -- "\$published"
-                journalctl -u "\$caddy_service" -n 20 --no-pager -o cat 2>/dev/null | grep '^Error:' | tail -n 1 >&2 || true
+                journalctl -u "\$caddy_service" --since "@\$reload_started" --no-pager -o cat 2>/dev/null | grep '^Error:' | head -n 1 >&2 || true
                 printf 'Caddy did not reload the new version; the previous configuration is live again.\\n' >&2
                 exit 1
             fi
