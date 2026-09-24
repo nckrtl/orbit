@@ -11,7 +11,6 @@ use App\Domain\Analytics\AnalyticsStorageProcessGuard;
 use App\Domain\Analytics\PlausibleRuntimeLifecycle;
 use App\Domain\AppDev\AppDevCaddyManager;
 use App\Domain\AppDev\PrivateDnsManager;
-use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\AppProd\AppProdCaddyManager;
 use App\Domain\Clusters\ClusterRouterOperationLock;
 use App\Domain\Metrics\MetricsCadvisorLifecycle;
@@ -560,9 +559,12 @@ it('installs pinned Caddy before the gateway role firewall and stops when it can
     );
 
     expect(fn () => $gateway->converge($node, $assignment))
-        ->toThrow(function (RuntimeConvergenceException $exception): void {
+        ->toThrow(function (NodeRoleOperationException $exception): void {
             expect($exception->step)->toBe('caddy-package-source')
-                ->and($exception->errorCode)->toBe('gateway.caddy_install_failed');
+                ->and($exception->errorCode)->toBe('node_role.convergence_failed')
+                ->and($exception->underlyingErrorCode)->toBe('gateway.caddy_install_failed')
+                ->and($exception->getMessage())->toBe('Gateway role step [caddy-package-source] failed on node [gateway-caddy].')
+                ->and($exception->result?->exitCode)->toBe(1);
         })
         ->and($events)->toBe(['ssh:caddy-source'])
         ->and($ssh->commands[0]->arguments)

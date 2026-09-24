@@ -6,7 +6,9 @@ namespace App\Infrastructure\Nodes\Roles;
 
 use App\Actions\Nodes\GrantGatewayRoleAccessAction;
 use App\Domain\AppDev\PrivateDnsManager;
+use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Nodes\NodeRoleFirewallManager;
+use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Nodes\RoleBaseline;
 use App\Domain\Nodes\RoleName;
 use App\Infrastructure\AppDev\AppDevSshExecutor;
@@ -34,8 +36,8 @@ final readonly class GatewayRoleBaseline implements RoleBaseline
     {
         $caddySource = $this->commands->caddySource($node, RoleName::Gateway);
         if ($caddySource instanceof RemoteCommand) {
-            $this->ssh->execute($node, $caddySource, 'caddy-package-source', 'gateway.caddy_install_failed');
-            $this->ssh->execute(
+            $this->run($node, $caddySource, 'caddy-package-source', 'gateway.caddy_install_failed');
+            $this->run(
                 $node,
                 new RemoteCommand($this->vpnOrdering->arguments('caddy'), $this->vpnOrdering->script()),
                 'caddy-ordering',
@@ -46,6 +48,31 @@ final readonly class GatewayRoleBaseline implements RoleBaseline
         $this->firewall->converge($node, RoleName::Gateway, $node->user);
         $this->grants()->execute($node);
         $this->dns->converge();
+    }
+
+    /**
+     * Runs one Gateway role step over SSH and names the Gateway role in its failure, so the API
+     * message matches the step instead of the shared executor's wording.
+     */
+    private function run(
+        Node $node,
+        RemoteCommand $command,
+        string $step,
+        string $errorCode,
+        ?float $commandTimeout = null,
+    ): void {
+        try {
+            $this->ssh->execute($node, $command, $step, $errorCode, $commandTimeout);
+        } catch (RuntimeConvergenceException $exception) {
+            throw new NodeRoleOperationException(
+                step: $step,
+                errorCode: 'node_role.convergence_failed',
+                underlyingErrorCode: $exception->errorCode,
+                message: "Gateway role step [{$step}] failed on node [{$node->name}].",
+                result: $exception->result,
+                previous: $exception,
+            );
+        }
     }
 
     private function grants(): GrantGatewayRoleAccessAction
