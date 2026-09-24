@@ -31,10 +31,13 @@ final readonly class AppDevCaddyConfigRenderer
                     $handler = $this->handler($site);
                     $internal = $this->localUnixSite($site);
 
+                    // Orbit disables certificate management Node-wide; only a public listener opts back
+                    // in, so Caddy asks a public CA for public hostnames alone (ADR 0138).
                     $siteBlock = $site->publicListener
                         ? <<<CADDY
                             {$site->domain} {
                                 bind 0.0.0.0
+                                tls force_automate
                                 {$handler}
                             }
                             CADDY
