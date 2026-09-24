@@ -28,6 +28,7 @@ The hand-made Route must go before the Node Caddy build takes over, because a bu
 - `collector.proxycli.orbit` stops being reserved or published. Apex `cli-proxy-api.orbit` stays free for the management Route.
 - Enable checks for a Route on the collector name before it changes anything. A custom proxy Route whose Node is the collector Node, whose upstream is `http://127.0.0.1:8787` (the collector port), and which has no Process target is a takeover candidate. Any other Route on that name fails enable with `proxycli.hostname_taken` (409) and changes nothing.
 - A takeover holds the development projection lock. It stores the Route as `retiring` with no published sites, renders the Node's route fragment without it, and publishes that fragment and the collector fragment in one Caddy validation and reload. When that publication fails, it restores the Route and Caddy keeps the previous version. After the reload it runs the normal Route removal, which removes the Route's certificate and record.
+- The collector Caddy site retries its loopback upstream for up to 5 seconds. Enable restarts the collector Process, and a request that arrives during that restart waits instead of failing.
 - Private DNS for the name never disappears. The Route and the extension publish the same `host-record` for the collector Node's WireGuard address, and the renderer deduplicates it.
 - The rollout for an existing Route is one command: `orbit proxycli:enable` with the current settings.
 
