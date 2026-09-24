@@ -181,7 +181,7 @@ final readonly class NativeInstanceStateInspector implements InstanceStateInspec
                 fi
             }
             origin_matches() {
-                test "$(git -C "$checkout" remote get-url origin)" = "$repository"
+                test "$(git -C "$checkout" config --get remote.origin.url)" = "$repository"
             }
             source_identity_matches() {
                 test -n "$starting_commit" || return 1

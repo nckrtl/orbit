@@ -4870,6 +4870,7 @@
             "kind": "reference",
             "components": [],
             "concepts": [
+                "Doctor",
                 "Gateway",
                 "Instance",
                 "Node"
@@ -5237,7 +5238,9 @@
                 "Gateway",
                 "Instance",
                 "Node",
-                "Proof topology"
+                "Proof topology",
+                "Route",
+                "Schedule"
             ],
             "governing_adrs": [
                 "0022"

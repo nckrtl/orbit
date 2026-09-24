@@ -49,6 +49,8 @@ Doctor selects only Nodes that the caller may address through Node access. A `--
 
 The Gateway observes each Node once over its fixed SSH boundary before it runs the selected family probes. That observation contains only reachability, platform, architecture, and whether the managed WireGuard address is present. When a Node is unreachable, database-only checks still run, and every live-state family with managed resources on that Node reports one `*.node_unreachable` issue instead of inspecting resources.
 
+Checks that read root-owned files run through passwordless `sudo` on the Node. Every check that reads the live Caddy version is one of them, because Orbit publishes each version under `/etc/caddy/orbit-versions` as `root:caddy` with mode `0750`.
+
 Families run in canonical order whatever filter you pass: `node`, `role`, `app`, `instance`, `workspace`, `schedule`, `tool`, `process`, `firewall`, `herdr`, `database_connection`, `route`. Nodes sort by name and then ID, and resources sort by ID, so two runs against the same state produce the same report.
 
 Each issue carries a stable code, a kind of `drift` or `unverifiable`, the resource type, ID, and name, a summary, and bounded `expected` and `observed` values. A family is `healthy` with no issues, `drift` with drift only, and `unverifiable` when any issue is unverifiable. `checked` counts the family's persisted resources on that Node, not commands. The report never contains raw output, commands, paths, URLs, branch names, credentials, environment values, configuration contents, or exception text.
@@ -69,6 +71,8 @@ Each issue carries a stable code, a kind of `drift` or `unverifiable`, the resou
 | `herdr` | The Process, private observer, and session identity of each named Herdr session. | `herdr.process_unhealthy`, `herdr.listener_unhealthy`, `herdr.session_unhealthy`, `herdr.node_unreachable`, `herdr.inspection_failed` |
 | `database_connection` | Registry records and Instance attachments against the stored environment keys they project. | `database_connection.missing`, `database_connection.unhealthy`, `database_connection.env_mismatch`, `database_connection.inspection_failed` |
 | `route` | Custom proxy DNS, Orbit CA leaf, Caddy site, and local upstream reachability on the serving Node. | `route.dns_mismatch`, `route.certificate_mismatch`, `route.caddy_mismatch`, `route.upstream_unreachable`, `route.node_unreachable`, `route.inspection_failed` |
+
+The `app` and `instance` families compare the `remote.origin.url` value stored in each checkout. They ignore `insteadOf` rewrites from the Node's Git configuration, so a Node that rewrites HTTPS URLs to SSH still matches. The `app` family accepts a development checkout under the Node's [apps root](/reference/node-settings#derive-the-effective-root) or under the managed user's home.
 
 A sleeping development Instance is not drift. When the awake marker is absent, Doctor does not report `process.state_mismatch` for a Process that is desired running, not keep-alive, and observed stopped; the [hibernation reference](/reference/app-dev-runtime-hibernation#inspect) owns that rule. A prepared production home without a `current` link is healthy before its first deployment; the [release layout reference](/reference/deployments#inspect-release-placement-with-doctor) owns that rule.
 
