@@ -283,7 +283,7 @@ function public_edge_node(string $name, string $wireguardIp, ?string $lanIp, Clu
 
     foreach ($roles as $role) {
         $node->roles()->create([
-            'cluster_id' => $cluster->id,
+            'cluster_id' => in_array($role, [RoleName::Router, RoleName::Ingress], true) ? $cluster->id : null,
             'role' => $role,
             'status' => LifecycleStatus::Active,
         ]);
