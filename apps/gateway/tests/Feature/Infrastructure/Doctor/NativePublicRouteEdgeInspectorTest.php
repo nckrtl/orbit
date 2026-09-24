@@ -35,6 +35,9 @@ beforeEach(function (): void {
         'domain' => 'analytics.shop.example.com',
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Public,
+        'status' => RouteStatus::Pending,
+    ]);
+    $this->route->update([
         'status' => RouteStatus::Active,
         'replacement_step' => RouteReplacementStep::PublicActivated,
     ]);
