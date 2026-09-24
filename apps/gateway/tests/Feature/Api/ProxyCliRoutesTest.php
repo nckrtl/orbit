@@ -63,9 +63,10 @@ function proxycli_hostname_route(Node $node, string $upstream, ?int $processId =
         'domain' => 'collector.cli-proxy-api.orbit',
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Private,
-        'status' => RouteStatus::Active,
+        'status' => RouteStatus::Pending,
     ]);
     $route->customProxy()->create(['node_id' => $node->id, 'process_id' => $processId, 'upstream' => $upstream]);
+    $route->update(['status' => RouteStatus::Active]);
 
     return $route;
 }

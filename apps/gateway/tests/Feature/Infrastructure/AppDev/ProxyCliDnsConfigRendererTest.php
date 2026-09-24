@@ -68,9 +68,10 @@ it('publishes one collector record while a custom proxy Route still serves the n
         'domain' => 'collector.cli-proxy-api.orbit',
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Private,
-        'status' => RouteStatus::Active,
+        'status' => RouteStatus::Pending,
     ]);
     $route->customProxy()->create(['node_id' => $collector->id, 'upstream' => 'http://127.0.0.1:8787']);
+    $route->update(['status' => RouteStatus::Active]);
     app(ProxyCliState::class)->enable($collector->id, 'valkey', 'http://127.0.0.1:8317', 'key', 'read', 'control');
 
     $configuration = new AppDevDnsConfigRenderer(new AppDevSiteRepository)->render();

@@ -120,9 +120,9 @@ function proxycli_caddy_run(string $root, ?string $appDevConfiguration, bool $va
     );
     $arguments = array_slice($command->arguments, 1);
     // bash -seu -- version fragment versions Caddyfile service lock address placeholder replaced
-    $arguments[6] = "{$root}/versions";
-    $arguments[7] = "{$root}/Caddyfile";
-    $arguments[9] = "{$root}/caddy.lock";
+    $arguments[5] = "{$root}/versions";
+    $arguments[6] = "{$root}/Caddyfile";
+    $arguments[8] = "{$root}/caddy.lock";
 
     $process = new Process($arguments, env: [
         'PATH' => "{$root}/bin:".getenv('PATH'),

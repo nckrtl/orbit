@@ -116,9 +116,10 @@ function proxycli_takeover_route(Node $node, string $domain, string $upstream): 
         'domain' => $domain,
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Private,
-        'status' => RouteStatus::Active,
+        'status' => RouteStatus::Pending,
     ]);
     $route->customProxy()->create(['node_id' => $node->id, 'upstream' => $upstream]);
+    $route->update(['status' => RouteStatus::Active]);
 
     return $route->refresh();
 }
