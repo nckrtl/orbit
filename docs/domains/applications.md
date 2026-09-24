@@ -60,7 +60,7 @@ Source preparation moves through three durable states:
 reserved -> checkout_prepared -> source_resolved
 ```
 
-A retry must match the recorded Project, Node, source layout, root, path, repository, branch override, selected branch, and domain input. Orbit also verifies the commit recorded before activation, then resumes the next incomplete step. After activation, development can advance `HEAD` without changing the recorded starting commit. Adding, removing, or changing the branch override returns `instance.placement_conflict` before any changes.
+A retry must match the recorded Project, Node, source layout, root, path, repository, branch override, selected branch, and domain input. Orbit also verifies the commit recorded before activation, then resumes the next incomplete step. After activation, development can advance `HEAD` or switch branches without changing the recorded selected branch or starting commit. Adding, removing, or changing the branch override returns `instance.placement_conflict` before any changes.
 
 ## Register an existing development source
 
