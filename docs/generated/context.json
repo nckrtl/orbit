@@ -3482,6 +3482,25 @@
             ]
         },
         {
+            "path": "docs/decisions/0136-run-long-lived-topology-processes-as-transient-units.md",
+            "title": "ADR 0136: Run long-lived topology processes as transient units",
+            "kind": "decision",
+            "components": [
+                "apps/docs",
+                "apps/e2e"
+            ],
+            "concepts": [
+                "Node",
+                "Process",
+                "Task",
+                "Task group"
+            ],
+            "governing_adrs": [
+                "0005",
+                "0136"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -3641,7 +3660,8 @@
                 "0132",
                 "0133",
                 "0134",
-                "0135"
+                "0135",
+                "0136"
             ]
         },
         {
@@ -4342,7 +4362,8 @@
                 "0049",
                 "0056",
                 "0114",
-                "0135"
+                "0135",
+                "0136"
             ]
         },
         {

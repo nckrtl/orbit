@@ -100,8 +100,11 @@ There is no reaper: a topology lives until the operator releases it. Every comma
 | --- | --- |
 | `acquire ISSUE WORKTREE` | Creates discovery from the saved generation, applies pending Gateway migrations from mounted source, verifies readiness, and refuses duplicate discovery or a missing vendor tree |
 | `shell ISSUE NODE [--proof --review-action=ID --required]` | Opens a login shell as `orbit` on one physical Node key of discovery, a retained diagnosis, or a captured successful proof; successful-proof use starts a separate interactive review action |
-| `exec ISSUE NODE --argv=JSON [--proof --review-action=ID --required]` | Runs one argument vector as `orbit` on one physical Node key; `--argv-file=PATH` replaces `--argv`; successful-proof use records its result as a required or exploratory review action |
-| `sync ISSUE` | Proves the mount, applies pending Gateway migrations from mounted source, and verifies readiness |
+| `exec ISSUE NODE --argv=JSON [--timeout=SECONDS] [--proof --review-action=ID --required]` | Runs one argument vector as `orbit` on one physical Node key for up to `--timeout` seconds, default 60, at most 3600. `--argv-file=PATH` replaces `--argv`. Successful-proof use records a review action. |
+| `spawn ISSUE NODE NAME --argv=JSON` | Starts one argument vector as `orbit` on a discovery Node as the transient unit `orbit-e2e-NAME.service` and returns at once |
+| `logs ISSUE NODE NAME [--since=TIME] [--lines=N]` | Prints the spawned process's output with precise timestamps, also after it ended |
+| `kill ISSUE NODE NAME` | Stops the spawned process; its logs stay readable |
+| `sync ISSUE` | Proves the mount, applies pending Gateway migrations from mounted source, and verifies readiness; a file edit needs no `sync` |
 | `verify ISSUE` | Verifies discovery readiness and records the report |
 | `prove ISSUE [--plan=PATH]` | Proves the clean worktree HEAD on a fresh proof topology; a declared snapshot replacement starts from the generic base, and the plan defaults to `.loop/proof/ISSUE.json` |
 | `capture ISSUE [--plan=PATH]` | Captures and archives complete successful proof evidence without releasing the topology, then permits interactive review |
@@ -131,13 +134,17 @@ The bridge keeps its other ignored files, such as `.e2e/`, `.env`, and Gateway s
 
 `exec` prints `{"state":"executed","exit_code":N,"stdout":"...","stderr":"..."}` with `--json` and the guest stdout without it, and exits `0` only when the guest command does. `--argv='["orbit","doctor","--json"]'` is an inline JSON array of strings; `--argv-file=PATH` names a file holding `{"argv":[...],"stdin":null}` when the vector needs stdin. The harness refuses both at once. Commands select physical Node keys, so `app-prod` selects the cloned Node and `app-prod-2` selects the constructed Node of an extended attempt. A shared role name never selects multiple Nodes.
 
+Incus waits for every process an `exec` session starts, so a command that leaves a background process holds `exec` open until its timeout. Start a long-lived process with `spawn` instead. [ADR 0136](/decisions/0136-run-long-lived-topology-processes-as-transient-units) records the decision.
+
 The vector runs through `runuser -u orbit -- env -C /home/orbit HOME=/home/orbit ORBIT_HOME=/home/orbit/.orbit DB_DATABASE=/home/orbit/.orbit/gateway.sqlite PROGRAM ARGS`. No shell profile loads: `argv[0]` must resolve on the guest `PATH` or be absolute, and it cannot start with `-` or carry `=`. The harness links the checkout's `apps/cli/orbit` to `/usr/local/bin/orbit` on every checkout Node, so `orbit` resolves by name. Wrap a pipeline in `["sh","-c","..."]` and root work in `["sudo","..."]`. `shell` opens the same environment with `bash -l`, in `/home/orbit/orbit` on a checkout Node and in `/home/orbit` on either app-prod Node; `exec` always runs in `/home/orbit`.
 
 `exec --proof` and `shell --proof` accept a `diagnosis` proof under its existing debugging path. They accept a proved topology only after complete capture and bind each successful-proof action to its issue, candidate, and attempt in the separate review record. The harness records whether an action is required or exploratory and its result. An interactive shell action stays incomplete until `review` records its result and finding. Required failures and incomplete required records prevent approval; exploratory failures remain distinct.
 
 ## Discovery mount
 
-`acquire` attaches the worktree to `gateway` and `app-dev` as the Incus disk device `orbit-source`, a virtiofs (virtual I/O filesystem) share mounted read-write at `/home/orbit/orbit`. Every host edit is live in both guests. Acquisition and `sync` also install the current guest helper scripts on every physical Node before readiness checks, including three-node topologies cloned from an older snapshot. Guests never run Composer: host `bin/bootstrap` owns `vendor/`, and `acquire` refuses a worktree without the Gateway, CLI, and SDK autoloaders. The harness places the preserved Gateway `.env` into the worktree when it is absent there. The mount device is part of the attempt inventory, so exact release removes it.
+`acquire` attaches the worktree to `gateway` and `app-dev` as the Incus disk device `orbit-source`, a virtiofs (virtual I/O filesystem) share mounted read-write at `/home/orbit/orbit`. Every host edit is live in both guests, so a changed file needs no `sync`; run `sync` after a migration or a guest helper change.
+
+Acquisition and `sync` also install the current guest helper scripts on every physical Node before readiness checks, including three-node topologies cloned from an older snapshot. Guests never run Composer: host `bin/bootstrap` owns `vendor/`, and `acquire` refuses a worktree without the Gateway, CLI, and SDK autoloaders. The harness places the preserved Gateway `.env` into the worktree when it is absent there. The mount device is part of the attempt inventory, so exact release removes it.
 
 Before reporting readiness, acquisition updates the three cloned Nodes' stored public SSH addresses and retargets stored VPN endpoints that name the snapshot Gateway. It keeps omitted endpoints omitted, preserves endpoint ports, and aligns each peer's saved and running endpoint with the Gateway's provisioning inputs. A later peer configuration therefore selects the acquired Gateway without a manual override. Acquisition uses the current harness preparation code, not a cached copy from the snapshot.
 

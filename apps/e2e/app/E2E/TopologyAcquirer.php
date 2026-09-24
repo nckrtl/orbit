@@ -158,13 +158,14 @@ final readonly class TopologyAcquirer
         array $argv,
         ?string $stdin = null,
         AttemptPurpose $purpose = AttemptPurpose::Discovery,
+        int $timeout = 60,
     ): GuestCommandResult {
         $state = IssueState::forWorktree($request->issue, $request->worktree);
         $lock = $this->issueLock($request->issue);
         try {
             $instance = $this->ownedInstance($this->mutableTopology($state, $purpose), $role);
 
-            return $this->host->exec($instance, GuestCommand::asOrbitUser($argv, stdin: $stdin));
+            return $this->host->exec($instance, GuestCommand::asOrbitUser($argv, $timeout, $stdin));
         } finally {
             $lock->release();
         }

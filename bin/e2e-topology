@@ -11,8 +11,13 @@ usage: bin/e2e-topology <action> ISSUE [...]
   shell   ISSUE NODE [--proof --review-action=ID --required]
                                   shell on a recorded physical Node key (including app-prod-2 when declared);
                                   successful proof starts a review action
-  exec    ISSUE NODE --argv=JSON [--proof --review-action=ID --required]
+  exec    ISSUE NODE --argv=JSON [--timeout=SECONDS] [--proof --review-action=ID --required]
                                   run on a recorded physical Node key; successful proof records a review action
+  spawn   ISSUE NODE NAME --argv=JSON
+                                  start a long-lived process on a discovery Node and return at once
+  logs    ISSUE NODE NAME [--since=TIME] [--lines=N]
+                                  print the timestamped output of a spawned process
+  kill    ISSUE NODE NAME         stop a spawned process; its logs stay readable
   sync    ISSUE                   re-verify the mounted source identity
   verify  ISSUE                   verify the discovery topology
   prove   ISSUE [--plan=PATH]     prove the worktree HEAD (default .loop/proof/ISSUE.json)
@@ -41,7 +46,7 @@ action=$1
 shift
 
 case "$action" in
-    acquire|shell|exec|sync|verify|prove|capture|review|equivalence|candidate|closeout|status|release)
+    acquire|shell|exec|spawn|logs|kill|sync|verify|prove|capture|review|equivalence|candidate|closeout|status|release)
         # In a task workspace clone, run through a bridge worktree of the registered primary (ADR 0135).
         # The bridge replaces this process; status 79 means the command runs here.
         status=0

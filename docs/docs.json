@@ -703,7 +703,8 @@
               "decisions/0132-pause-only-for-the-acting-thread-and-a-real-question",
               "decisions/0133-verify-typed-subtask-deliverables-at-handoff",
               "decisions/0134-resume-pi-agent-streams-from-a-cursor",
-              "decisions/0135-run-incus-topologies-for-task-workspace-clones-through-a-bridge-worktree"
+              "decisions/0135-run-incus-topologies-for-task-workspace-clones-through-a-bridge-worktree",
+              "decisions/0136-run-long-lived-topology-processes-as-transient-units"
             ]
           }
         ]
