@@ -3633,6 +3633,25 @@
             ]
         },
         {
+            "path": "docs/decisions/0140-watch-settling-pull-requests-for-conflicts-and-failed-checks.md",
+            "title": "ADR 0140: Watch settling pull requests for conflicts and failed checks",
+            "kind": "decision",
+            "components": [
+                "apps/docs",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Gateway",
+                "Task"
+            ],
+            "governing_adrs": [
+                "0098",
+                "0113",
+                "0121",
+                "0140"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -3799,7 +3818,8 @@
                 "0136",
                 "0137",
                 "0138",
-                "0139"
+                "0139",
+                "0140"
             ]
         },
         {
@@ -4440,7 +4460,8 @@
             ],
             "governing_adrs": [
                 "0098",
-                "0121"
+                "0121",
+                "0140"
             ]
         },
         {
@@ -4996,7 +5017,8 @@
                 "0125",
                 "0132",
                 "0133",
-                "0134"
+                "0134",
+                "0140"
             ]
         },
         {

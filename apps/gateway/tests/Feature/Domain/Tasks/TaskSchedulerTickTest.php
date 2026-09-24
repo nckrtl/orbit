@@ -214,6 +214,118 @@ it('continues watching a prior settling PR and completes only after it merges', 
     Http::assertSentCount(6);
 });
 
+/** A settling group whose pull request the tick reads through the faked GitHub App. */
+function tick_settling_group(): TaskGroup
+{
+    $group = tick_group();
+    $group->app->update(['repository_url' => 'https://github.com/acme/orbit.git']);
+    $group->update(['status' => TaskGroupStatus::Settling, 'pr_url' => 'https://github.com/acme/orbit/pull/42']);
+    $group->tasks()->update(['status' => TaskStatus::Completed]);
+    app(TaskExtensionState::class)->enable();
+    GitHubTestSupport::storeApp();
+
+    return $group;
+}
+
+/** @return CoderSettleNotifier&object{reasons: list<string>} */
+function tick_assistance_notifier(): CoderSettleNotifier
+{
+    $notifier = new class implements CoderSettleNotifier
+    {
+        /** @var list<string> */
+        public array $reasons = [];
+
+        public function notify(TaskGroup $group): void {}
+
+        public function escalate(TaskGroup $group, TaskSessionObservation $observation, TaskSessionDecision $decision): void {}
+
+        public function assistance(TaskGroup $group, string $reason): void
+        {
+            $this->reasons[] = $reason;
+        }
+    };
+    app()->instance(CoderSettleNotifier::class, $notifier);
+
+    return $notifier;
+}
+
+it('asks for assistance once per set of pull request problems and withdraws it when the pull request is healthy', function (): void {
+    $group = tick_settling_group();
+    $notifier = tick_assistance_notifier();
+    $conflict = ['merged' => false, 'state' => 'open', 'mergeable' => false, 'mergeable_state' => 'dirty', 'head' => ['sha' => 'abc123'], 'base' => ['ref' => 'main']];
+    $clean = ['merged' => false, 'state' => 'open', 'mergeable' => true, 'mergeable_state' => 'clean', 'head' => ['sha' => 'def456'], 'base' => ['ref' => 'main']];
+    Http::preventStrayRequests();
+    Http::fake([
+        'https://api.github.com/repos/acme/orbit/installation' => Http::response(['id' => 9]),
+        'https://api.github.com/app/installations/9/access_tokens' => Http::response(['token' => 'ghs_watch'], 201),
+        'https://api.github.com/repos/acme/orbit/pulls/42' => Http::sequence()
+            ->push($conflict)->push($conflict)
+            ->push([...$clean, 'mergeable_state' => 'unstable'])
+            ->push($clean),
+        'https://api.github.com/repos/acme/orbit/commits/abc123/check-runs*' => Http::response(['check_runs' => []]),
+        'https://api.github.com/repos/acme/orbit/commits/def456/check-runs*' => Http::sequence()
+            ->push(['check_runs' => [['name' => 'Rust agent', 'status' => 'completed', 'conclusion' => 'failure', 'html_url' => 'https://github.com/acme/orbit/runs/1']]])
+            ->push(['check_runs' => [['name' => 'Rust agent', 'status' => 'completed', 'conclusion' => 'success', 'html_url' => 'https://github.com/acme/orbit/runs/2']]]),
+    ]);
+    $conflictReason = 'The pull request needs attention: It conflicts with main; merge main into the task branch and push.';
+    $checkReason = 'The pull request needs attention: Check Rust agent failed: https://github.com/acme/orbit/runs/1.';
+
+    app(TaskScheduler::class)->tick();
+    $this->assertDatabaseHas('task_groups', ['id' => $group->id, 'status' => 'settling', 'assistance_requested' => true, 'assistance_reason' => $conflictReason]);
+    $requestedAt = $group->fresh()?->updated_at;
+    $this->travel(1)->minute();
+
+    app(TaskScheduler::class)->tick();
+    expect($notifier->reasons)->toBe([$conflictReason])
+        ->and($group->fresh()?->updated_at?->equalTo($requestedAt))->toBeTrue();
+
+    app(TaskScheduler::class)->tick();
+    $this->assertDatabaseHas('task_groups', ['id' => $group->id, 'assistance_requested' => true, 'assistance_reason' => $checkReason]);
+    expect($notifier->reasons)->toBe([$conflictReason, $checkReason]);
+
+    app(TaskScheduler::class)->tick();
+    $this->assertDatabaseHas('task_groups', ['id' => $group->id, 'status' => 'settling', 'assistance_requested' => false, 'assistance_reason' => null]);
+    expect($notifier->reasons)->toHaveCount(2);
+});
+
+it('leaves another cause of assistance on a settling group alone while its pull request conflicts or recovers', function (): void {
+    $group = tick_settling_group();
+    $group->update(['assistance_requested' => true, 'assistance_reason' => 'Merged pull request cleanup failed: disk full']);
+    $notifier = tick_assistance_notifier();
+    Http::preventStrayRequests();
+    Http::fake([
+        'https://api.github.com/repos/acme/orbit/installation' => Http::response(['id' => 9]),
+        'https://api.github.com/app/installations/9/access_tokens' => Http::response(['token' => 'ghs_watch'], 201),
+        'https://api.github.com/repos/acme/orbit/pulls/42' => Http::sequence()
+            ->push(['merged' => false, 'state' => 'open', 'mergeable' => false, 'base' => ['ref' => 'main']])
+            ->push(['merged' => false, 'state' => 'open', 'mergeable' => true, 'base' => ['ref' => 'main']]),
+    ]);
+
+    app(TaskScheduler::class)->tick();
+    app(TaskScheduler::class)->tick();
+
+    $this->assertDatabaseHas('task_groups', ['id' => $group->id, 'status' => 'settling', 'assistance_requested' => true, 'assistance_reason' => 'Merged pull request cleanup failed: disk full']);
+    expect($notifier->reasons)->toBe([]);
+});
+
+it('changes nothing on a settling group when GitHub cannot report the pull request', function (): void {
+    $group = tick_settling_group();
+    $reason = 'The pull request needs attention: It conflicts with main; merge main into the task branch and push.';
+    $group->update(['assistance_requested' => true, 'assistance_reason' => $reason]);
+    $notifier = tick_assistance_notifier();
+    Http::preventStrayRequests();
+    Http::fake([
+        'https://api.github.com/repos/acme/orbit/installation' => Http::response(['id' => 9]),
+        'https://api.github.com/app/installations/9/access_tokens' => Http::response(['token' => 'ghs_watch'], 201),
+        'https://api.github.com/repos/acme/orbit/pulls/42' => Http::response([], 502),
+    ]);
+
+    app(TaskScheduler::class)->tick();
+
+    $this->assertDatabaseHas('task_groups', ['id' => $group->id, 'status' => 'settling', 'assistance_requested' => true, 'assistance_reason' => $reason]);
+    expect($notifier->reasons)->toBe([]);
+});
+
 it('returns no decisions when the tasks extension is disabled', function (): void {
     tick_group();
 

@@ -7,7 +7,9 @@ namespace App\Infrastructure\GitHub;
 use App\Domain\GitHub\GitHubApi;
 use App\Domain\GitHub\GitHubApiException;
 use App\Domain\GitHub\GitHubAppCredentials;
+use App\Domain\GitHub\GitHubCheckRun;
 use App\Domain\GitHub\GitHubInstallation;
+use App\Domain\GitHub\GitHubPullRequest;
 use App\Domain\GitHub\GitHubPullRequestDraft;
 use App\Domain\GitHub\GitHubPullRequestState;
 use App\Domain\GitHub\GitHubRepository;
@@ -111,7 +113,7 @@ final readonly class HttpGitHubApi implements GitHubApi
     {
         $response = $this->send(
             fn (): Response => $this->asApp($credentials)
-                ->get('/repos/'.rawurlencode($repository->owner).'/'.rawurlencode($repository->name).'/installation'),
+                ->get($this->repositoryPath($repository).'/installation'),
         );
 
         if ($response->status() === 404) {
@@ -143,9 +145,17 @@ final readonly class HttpGitHubApi implements GitHubApi
         return $this->repositoryToken($credentials, $installationId, $repository, ['contents' => 'write', 'pull_requests' => 'write']);
     }
 
+    public function repositoryChecksToken(
+        GitHubAppCredentials $credentials,
+        int $installationId,
+        GitHubRepository $repository,
+    ): string {
+        return $this->repositoryToken($credentials, $installationId, $repository, ['checks' => 'read']);
+    }
+
     public function openPullRequest(#[SensitiveParameter] string $token, GitHubRepository $repository, GitHubPullRequestDraft $draft): string
     {
-        $path = '/repos/'.rawurlencode($repository->owner).'/'.rawurlencode($repository->name).'/pulls';
+        $path = $this->repositoryPath($repository).'/pulls';
         $response = $this->send(fn (): Response => $this->request()->withToken($token)->post($path, [
             'title' => $draft->title,
             'head' => $draft->head,
@@ -173,18 +183,52 @@ final readonly class HttpGitHubApi implements GitHubApi
         return $url;
     }
 
-    public function pullRequestState(#[SensitiveParameter] string $token, GitHubRepository $repository, int $number): GitHubPullRequestState
+    public function pullRequest(#[SensitiveParameter] string $token, GitHubRepository $repository, int $number): GitHubPullRequest
     {
         $response = $this->send(fn (): Response => $this->request()->withToken($token)
-            ->get('/repos/'.rawurlencode($repository->owner).'/'.rawurlencode($repository->name).'/pulls/'.$number));
+            ->get($this->repositoryPath($repository).'/pulls/'.$number));
         if (! $response->successful()) {
             throw GitHubApiException::unavailable();
         }
-        if ($response->json('merged') === true) {
-            return GitHubPullRequestState::Merged;
+        $state = match (true) {
+            $response->json('merged') === true => GitHubPullRequestState::Merged,
+            $response->json('state') === 'closed' => GitHubPullRequestState::Closed,
+            default => GitHubPullRequestState::Open,
+        };
+        $mergeable = $response->json('mergeable');
+
+        return new GitHubPullRequest(
+            state: $state,
+            mergeable: is_bool($mergeable) ? $mergeable : null,
+            mergeableState: $this->text($response->json('mergeable_state')),
+            headSha: $this->text($response->json('head.sha')),
+            baseRef: $this->text($response->json('base.ref')),
+        );
+    }
+
+    public function checkRuns(#[SensitiveParameter] string $token, GitHubRepository $repository, string $sha): array
+    {
+        $response = $this->send(fn (): Response => $this->request()->withToken($token)
+            ->get($this->repositoryPath($repository).'/commits/'.rawurlencode($sha).'/check-runs', ['per_page' => 100]));
+        $rows = $response->json('check_runs');
+        if (! $response->successful() || ! is_array($rows)) {
+            throw GitHubApiException::unavailable();
         }
 
-        return $response->json('state') === 'closed' ? GitHubPullRequestState::Closed : GitHubPullRequestState::Open;
+        $runs = [];
+        foreach ($rows as $row) {
+            $name = is_array($row) ? $this->text($row['name'] ?? null) : null;
+            if ($name === null) {
+                continue;
+            }
+            $runs[] = new GitHubCheckRun(
+                name: $name,
+                conclusion: $this->text($row['conclusion'] ?? null),
+                url: $this->text($row['html_url'] ?? null) ?? $this->text($row['details_url'] ?? null),
+            );
+        }
+
+        return $runs;
     }
 
     /** @param array<string, string> $permissions */
@@ -214,6 +258,16 @@ final readonly class HttpGitHubApi implements GitHubApi
         }
 
         return $token;
+    }
+
+    private function repositoryPath(GitHubRepository $repository): string
+    {
+        return '/repos/'.rawurlencode($repository->owner).'/'.rawurlencode($repository->name);
+    }
+
+    private function text(mixed $value): ?string
+    {
+        return is_string($value) && $value !== '' ? $value : null;
     }
 
     private function installation(mixed $row): ?GitHubInstallation

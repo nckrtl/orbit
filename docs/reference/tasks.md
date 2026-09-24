@@ -409,7 +409,11 @@ Before Orbit commits the last subtask, Jev checks that the change list covers ev
 
 After the commit, the Gateway pushes the workspace HEAD to `task-{group id}` on `origin` and opens the pull request against the Project's default branch through the [Gateway GitHub App](/reference/github-app). The group title is the title. The description holds the summary, a Changes list, a Breaking changes list or `None.`, and one line that says each subtask passed `composer check` and reviewer approval. When an open pull request already has that head, the Gateway uses it. The Gateway stores the URL as the group's `pr_url` and moves the group to `settling`. A failed push or request counts as a communication failure and is retried.
 
-Settling watches the stored pull request through the GitHub App until it merges. A settling group without a URL requests assistance and remains incomplete.
+Settling watches the stored pull request through the GitHub App until it merges. A merged pull request completes the group, and a pull request that closes without merging requests assistance. A settling group without a URL requests assistance and remains incomplete.
+
+While the pull request is open, each tick also checks it for problems ([ADR 0140](/decisions/0140-watch-settling-pull-requests-for-conflicts-and-failed-checks)). The pull request conflicts when GitHub reports it as not mergeable. A check fails when a check run on the head commit completes with `failure`, `timed_out`, `cancelled`, `startup_failure`, or `action_required`. Each problem adds one sentence to an assistance reason that starts with `The pull request needs attention: `, such as `It conflicts with main; merge main into the task branch and push.` or `Check Rust agent failed: <url>.`
+
+The Gateway notifies Coder once for each new reason, not on every tick. When the pull request has no problems again, the Gateway clears the request, but only when its reason starts with that prefix. It never clears or replaces an assistance request with another cause. A failed GitHub read changes nothing. Without the App permission `checks: read`, the Gateway reports conflicts only.
 
 The Gateway then writes settle metrics. Active groups also refresh these fields when an authorized caller shows the group.
 
