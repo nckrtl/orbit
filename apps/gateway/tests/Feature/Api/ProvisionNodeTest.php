@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Domain\Metrics\MetricsFleetReconciler;
+use App\Domain\Nodes\NodeAgentRuntime;
 use App\Domain\Nodes\NodeConverger;
 use App\Domain\Nodes\NodeObservation;
 use App\Domain\Nodes\NodeProvisioningException;
@@ -38,6 +40,46 @@ describe('POST /api/v1/nodes', function (): void {
         ]);
         $this->markAsGateway($operator);
         $this->withServerVariables(['REMOTE_ADDR' => '10.44.0.2']);
+    });
+
+    it('fails provisioning at step agent', function (): void {
+        app()->instance(NodeConverger::class, new class implements NodeConverger
+        {
+            public function converge(
+                Node $node,
+                NodeProvisioningIdentity $identity,
+                ?string $expectedSshHostFingerprint = null,
+                bool $rolelessOperator = false,
+            ): NodeObservation {
+                return new NodeObservation('x86_64');
+            }
+        });
+
+        app()->instance(MetricsFleetReconciler::class, new class implements MetricsFleetReconciler
+        {
+            public function reconcile(): void {}
+
+            public function retire(Node $node): void {}
+        });
+
+        app(NodeAgentRuntime::class)->failure = static function (): never {
+            throw new RuntimeException('agent unavailable');
+        };
+
+        $this->postJson('/api/v1/nodes', [
+            'name' => 'agent-failure-node',
+            'public_ssh_host' => '192.0.2.79',
+            'platform' => 'linux',
+            'architecture' => 'x86_64',
+            'wireguard_ip' => '10.44.0.79',
+            'host_key_fingerprint' => 'SHA256:'.str_repeat('A', 43),
+            'roles' => ['metrics'],
+        ])
+            ->assertStatus(502)
+            ->assertJsonPath('error.code', 'node.agent_install_failed')
+            ->assertJsonPath('error.details.step', 'agent');
+
+        expect(Node::query()->where('name', 'agent-failure-node')->value('failed_step'))->toBe('agent');
     });
 
     it('provisions a node through the gateway action', function (): void {

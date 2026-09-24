@@ -18,7 +18,9 @@ use App\Domain\Firewall\FirewallOperationException;
 use App\Domain\Firewall\RouterLanIngressReconciler;
 use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Nodes\LinuxUserName;
+use App\Domain\Nodes\ManagedNodeEligibility;
 use App\Domain\Nodes\ManagedUserAccountResolver;
+use App\Domain\Nodes\NodeAgentRuntime;
 use App\Domain\Nodes\NodeArchitectureMismatchException;
 use App\Domain\Nodes\NodeConverger;
 use App\Domain\Nodes\NodeObservation;
@@ -61,6 +63,8 @@ final readonly class ProvisionNodeAction
         private NodeProvisioningLock $provisioningLock,
         private AppDevTldConverger $appDevTldConverger,
         private MetricsFleetReconciler $metrics,
+        private NodeAgentRuntime $agent,
+        private ManagedNodeEligibility $managedNodeEligibility,
         private ConfiguredStoragePathValidator $storagePaths,
         private UpdateNodeSettingsAction $nodeSettings,
         private ManagedUserAccountResolver $accounts,
@@ -478,6 +482,24 @@ final readonly class ProvisionNodeAction
             $this->markFailed($node, $failure);
 
             throw $failure;
+        }
+
+        $node->refresh();
+
+        if ($this->managedNodeEligibility->allows($node)) {
+            try {
+                $this->agent->converge($node);
+            } catch (Throwable $exception) {
+                $failure = new NodeProvisioningException(
+                    step: 'agent',
+                    errorCode: 'node.agent_install_failed',
+                    message: 'Node agent installation failed.',
+                    previous: $exception,
+                );
+                $this->handleFailure($node, $failure, $priorActiveState);
+
+                throw $failure;
+            }
         }
 
         $result = $node->refresh()->load('roles');

@@ -12,6 +12,7 @@ use App\Domain\Firewall\RouterLanIngressReconciler;
 use App\Domain\Metrics\ExporterDegradationReason;
 use App\Domain\Metrics\MetricsAccessRevoker;
 use App\Domain\Metrics\MetricsFleetReconciler;
+use App\Domain\Nodes\NodeAgentRuntime;
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\NodeProvisioningLock;
 use App\Domain\Nodes\NodeProvisioningLockException;
@@ -29,6 +30,7 @@ use App\Models\HerdrSession;
 use App\Models\Node;
 use App\Models\Process;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Support\Facades\Log;
 use Throwable;
 
 final readonly class RemoveNodeAction
@@ -41,6 +43,7 @@ final readonly class RemoveNodeAction
         private NodeReachabilityProbe $reachability,
         private RemoveNodeRoleAction $roles,
         private NodeSideResidue $residue,
+        private NodeAgentRuntime $agent,
         private NodeProvisioningLock $provisioningLock,
         private NodeRoleFirewallManager $firewall,
         private ?RouteRemovalGuard $routes = null,
@@ -141,6 +144,18 @@ final readonly class RemoveNodeAction
                 message: "Could not retire Metrics exporter state for node [{$node->name}].",
                 previous: $exception,
             );
+        }
+
+        if ($shed === null) {
+            try {
+                $this->agent->remove($node);
+            } catch (Throwable $exception) {
+                Log::warning('Node agent removal failed; node removal will continue.', [
+                    'node_id' => $node->id,
+                    'node_name' => $node->name,
+                    'exception' => $exception,
+                ]);
+            }
         }
 
         // Public SSH is reopened while the tunnel still exists, so the machine

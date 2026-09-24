@@ -10,6 +10,7 @@ use App\Domain\AppInstances\Deployment\DeploymentPhase;
 use App\Domain\AppInstances\Deployment\DeploymentStep;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Firewall\RouterLanIngressReconciler;
+use App\Domain\Nodes\NodeAgentRuntime;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskCheckRunner;
@@ -26,12 +27,14 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Laravel\Ai\Classification;
 use Tests\Support\FakeAgentationSiteProjection;
 use Tests\Support\FakeClusterRouterDnsSelectionReconciler;
+use Tests\Support\FakeNodeAgentRuntime;
 use Tests\Support\FakeRouterLanIngressReconciler;
 use Tests\Support\FakeTaskCheckRunner;
 use Tests\Support\FakeTaskRunReceipts;
 use Tests\Support\FakeVitePortRuntime;
 use Tests\TestCase;
 
+require_once __DIR__.'/Support/FakeNodeAgentRuntime.php';
 require_once __DIR__.'/Support/Orb245TransferFakes.php';
 require_once __DIR__.'/Support/AgentDriverTestSupport.php';
 require_once __DIR__.'/Support/ResponseFixtures.php';
@@ -44,6 +47,7 @@ require_once __DIR__.'/Helpers/InstanceAnalyticsFixtures.php';
 uses(TestCase::class, RefreshDatabase::class)
     ->beforeEach(function (): void {
         app()->instance(VitePortRuntime::class, new FakeVitePortRuntime);
+        app()->instance(NodeAgentRuntime::class, new FakeNodeAgentRuntime);
         app()->instance(AgentationSiteProjection::class, new FakeAgentationSiteProjection);
         app()->instance(RouterLanIngressReconciler::class, new FakeRouterLanIngressReconciler);
         app()->instance(ClusterRouterDnsSelectionReconciler::class, new FakeClusterRouterDnsSelectionReconciler);

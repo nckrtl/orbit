@@ -1,5 +1,6 @@
 import { queryOptions, useQuery } from "@tanstack/react-query";
 import { useLiveness } from "../realtime/liveness";
+import { useAgentProcessStatuses } from "../realtime/agent-processes";
 import { get } from "./client";
 import { queryClient } from "./queryClient";
 import type {
@@ -108,7 +109,7 @@ export function useFleet(): Fleet {
         nodes: nodes.data ?? EMPTY,
         projects: projects.data ?? EMPTY,
         instances: instances.data ?? EMPTY,
-        processes: processes.data ?? EMPTY,
+        processes: useAgentProcessStatuses(processes.data ?? EMPTY, instances.data ?? EMPTY),
         schedules: schedules.data ?? EMPTY,
         databases: databases.data ?? EMPTY,
         firewall: firewall.data ?? EMPTY,

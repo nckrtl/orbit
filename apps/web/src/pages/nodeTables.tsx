@@ -6,6 +6,25 @@ import type { NodeMetrics } from "../metrics/prometheus";
 import { Bar } from "../ui/Bar";
 import type { Column } from "../ui/Pane";
 import { Status, StatusDot } from "../ui/Status";
+import { useAgentState } from "../realtime/agent-presence";
+
+function NodeStatus({
+    node,
+    reach,
+    dot = false,
+}: {
+    node: Node;
+    reach: boolean | null;
+    dot?: boolean;
+}) {
+    const agent = useAgentState(node.id);
+    const value = agent === "not_seen" ? node.status : agent === "online" ? "online" : "offline";
+    return dot ? (
+        <StatusDot value={value} reach={agent === "not_seen" ? reach : null} />
+    ) : (
+        <Status value={value} reach={agent === "not_seen" ? reach : null} />
+    );
+}
 
 /**
  * The two node tables, for the dashboard and the Nodes page. A node with a role serves the fleet and
@@ -71,7 +90,7 @@ export function useNodeTables(wide = false) {
                 value: (n) => n.name,
                 cell: (n) => (
                     <span className="flex items-center">
-                        <StatusDot value={n.status} reach={reachOf(n)} />
+                        <NodeStatus node={n} reach={reachOf(n)} dot />
                         <span>{n.name}</span>
                     </span>
                 ),
@@ -131,7 +150,7 @@ export function useNodeTables(wide = false) {
                 width: 22,
                 fit: true,
                 value: (n) => n.status,
-                cell: (n) => <Status value={n.status} reach={null} />,
+                cell: (n) => <NodeStatus node={n} reach={null} />,
             },
             ...(wide
                 ? ([

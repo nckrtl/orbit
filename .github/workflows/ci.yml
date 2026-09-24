@@ -265,10 +265,37 @@ jobs:
       - name: Run tests
         run: bun run test
 
+  agent:
+    name: Rust agent
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/agent
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-musl,aarch64-unknown-linux-musl
+          components: clippy,rustfmt
+      - name: Install cross compiler
+        run: cargo install cross --locked
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+      - name: Run clippy
+        run: cargo clippy --locked --all-targets -- -D warnings
+      - name: Run tests
+        run: cargo test --locked
+      - name: Build static x86_64 binary
+        run: cross build --locked --release --target x86_64-unknown-linux-musl
+      - name: Build static aarch64 binary
+        run: cross build --locked --release --target aarch64-unknown-linux-musl
+
   required:
     name: Required checks
     if: always()
-    needs: [project, web, agent-annotation, pi-server]
+    needs: [project, web, agent-annotation, pi-server, agent]
     runs-on: ubuntu-latest
     steps:
       - name: Require every project to pass
@@ -277,4 +304,5 @@ jobs:
           WEB_RESULT: ${{ needs.web.result }}
           ANNOTATION_RESULT: ${{ needs.agent-annotation.result }}
           PI_SERVER_RESULT: ${{ needs.pi-server.result }}
-        run: test "$PROJECT_RESULT" = success && test "$WEB_RESULT" = success && test "$ANNOTATION_RESULT" = success && test "$PI_SERVER_RESULT" = success
+          AGENT_RESULT: ${{ needs.agent.result }}
+        run: test "$PROJECT_RESULT" = success && test "$WEB_RESULT" = success && test "$ANNOTATION_RESULT" = success && test "$PI_SERVER_RESULT" = success && test "$AGENT_RESULT" = success

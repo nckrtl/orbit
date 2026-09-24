@@ -1,0 +1,4 @@
+# One pinned build image per target for CI and the agent release workflow. cross's default
+# aarch64 musl image ships a glibc too old to run the build scripts it compiles.
+[target.aarch64-unknown-linux-musl]
+image = "ghcr.io/cross-rs/aarch64-unknown-linux-musl@sha256:3e4143bd829176f52fe2cff24ecd7d007bb3fcc640310f667eb1c88d8b4daa9f"

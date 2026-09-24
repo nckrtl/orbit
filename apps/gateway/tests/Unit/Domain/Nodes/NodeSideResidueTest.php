@@ -5,10 +5,11 @@ declare(strict_types=1);
 use App\Domain\Nodes\NodeSideResidue;
 use App\Domain\Nodes\RoleName;
 
-it('names the Metrics exporter footprint only when the node leaves the fleet', function (): void {
+it('names fleet-level footprints only when the node leaves the fleet', function (): void {
     expect(new NodeSideResidue()->describe([], nodeLeavesFleet: true))
         ->toBe([
             'Metrics node exporter package, its Orbit systemd drop-in and its firewall rule for port 9100',
+            'Node agent, its systemd unit, binary, and /etc/orbit/agent configuration',
         ])
         ->and(new NodeSideResidue()->describe([], nodeLeavesFleet: false))
         ->toBe([]);
@@ -69,11 +70,11 @@ it('merges several roles into one sorted list without repeating the exporter', f
         ->and($lines)
         ->toBe(array_values(array_unique($lines)))
         ->and(count($lines))
-        ->toBe(7);
+        ->toBe(8);
 });
 
 it('leaves nothing behind for the roles that cannot be removed', function (RoleName $role): void {
-    expect(new NodeSideResidue()->describe([$role], nodeLeavesFleet: true))->toHaveCount(1);
+    expect(new NodeSideResidue()->describe([$role], nodeLeavesFleet: true))->toHaveCount(2);
 })->with([
     'vpn' => [RoleName::Vpn],
     'ingress' => [RoleName::Ingress],
