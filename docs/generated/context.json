@@ -5215,7 +5215,8 @@
                 "Instance",
                 "Node",
                 "Proof topology",
-                "Route"
+                "Route",
+                "Schedule"
             ],
             "governing_adrs": [
                 "0022"
