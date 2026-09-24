@@ -137,9 +137,15 @@ final readonly class DetachClusterNodeAction
     /** @param array<int, array{cluster_id: ?int}> $overrides */
     private function convergeMembership(array $overrides): void
     {
+        $changes = $this->routeReconciler()->membershipChanges(nodeOverrides: $overrides);
         $converged = [];
 
-        foreach ($this->routeReconciler()->membershipChanges(nodeOverrides: $overrides) as $change) {
+        // Every Route is checked before the first one moves, so a refusal leaves them all in place.
+        foreach ($changes as $change) {
+            $this->convergeRoute()->assertConvergible($change['route'], $change['domain'], allowGenerated: true);
+        }
+
+        foreach ($changes as $change) {
             $converged[] = $this->convergeRoute()->execute(
                 $change['route'],
                 $change['domain'],

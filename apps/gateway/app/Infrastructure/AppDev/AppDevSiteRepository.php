@@ -61,6 +61,7 @@ final readonly class AppDevSiteRepository
                 'cluster.routerAssignment.node',
                 'cluster.ingressAssignment.node',
                 'transitionCluster.routerAssignment.node',
+                'transitionNode',
                 'customProxy',
                 'analyticsTracking',
                 'node',
@@ -150,6 +151,7 @@ final readonly class AppDevSiteRepository
 
             if ($route->kind === RouteKind::AnalyticsTracking) {
                 $sites->push(...$this->analyticsTrackingSites($route, $route->cluster_id === null ? $route->node : $router));
+                $sites->push(...$this->analyticsTrackingTransitionSites($route));
 
                 foreach ($clusterSecondRouters as $secondRouter) {
                     $sites->push(...$this->routerScopeSites(
@@ -710,6 +712,28 @@ final readonly class AppDevSiteRepository
         }
 
         return $sites;
+    }
+
+    /**
+     * A tracking host that moves with its Instance Route keeps serving its second placement until
+     * the move stores `cleanup` to withdraw it. Private DNS answers only with the current placement.
+     *
+     * @return list<AppDevSite>
+     */
+    private function analyticsTrackingTransitionSites(Route $route): array
+    {
+        if (! $route->hasPlacementTransition() || $route->replacement_step === RouteReplacementStep::Cleanup) {
+            return [];
+        }
+
+        $host = $route->transition_cluster_id === null
+            ? $route->transitionNode
+            : $route->transitionCluster?->routerAssignment?->node;
+
+        return array_map(
+            static fn (AppDevSite $site): AppDevSite => $site->asSecondary(),
+            $this->analyticsTrackingSites($route, $host, includeIngress: false),
+        );
     }
 
     private function ingressSite(Route $route, Node $ingress, ?Node $router): AppDevSite

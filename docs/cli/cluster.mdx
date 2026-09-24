@@ -3,7 +3,7 @@ title: "cluster"
 description: "Group Nodes into a Cluster, give it a development TLD and one Router, and attach or detach member Nodes."
 ---
 
-A Cluster is an optional group of Nodes with one name, at most one development TLD, and one Router. A Node outside a Cluster is standalone. Active membership gives a Node's Routes Cluster scope, so private traffic reaches them through the Router instead of the workload Node directly.
+A Cluster is an optional group of Nodes with one name, at most one development TLD, and one Router. A Node outside a Cluster is standalone. Active membership gives a Node's Project Routes and [analytics tracking hosts](/reference/analytics#publish-a-tracking-host) Cluster scope, so private traffic reaches them through the Router instead of the workload Node directly. [Custom proxy Routes](/reference/routes#custom-proxy-routes) stay on their Node.
 
 The [Routes reference](/reference/routes) owns domain generation, routing scope, and Router transition ownership. [Private DNS](/reference/private-dns#cluster-router-addresses) owns which Router address a requester receives.
 
@@ -120,7 +120,7 @@ orbit cluster:node:add <cluster> <node>
 orbit cluster:node:add 3 7
 ```
 
-Attaching to an inactive Cluster records membership and leaves Node routing and generated domains unchanged. Attaching to an active Cluster without a TLD uses Cluster scope and keeps generated domains on the Node TLD. Attaching to an active Cluster with a TLD moves generated Route domains into that Cluster namespace and Cluster scope before membership becomes authoritative. `node:add --cluster=ID` attaches a Node during provisioning with the same guards.
+Attaching to an inactive Cluster records membership and leaves Node routing and generated domains unchanged. Attaching to an active Cluster without a TLD uses Cluster scope and keeps generated domains on the Node TLD. Attaching to an active Cluster with a TLD moves generated Route domains into that Cluster namespace and Cluster scope before membership becomes authoritative. Custom proxy Routes on the Node keep Node scope and keep serving. `node:add --cluster=ID` attaches a Node during provisioning with the same guards.
 
 | Error code | Meaning |
 | --- | --- |
