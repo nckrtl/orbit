@@ -137,14 +137,20 @@ final readonly class DetachClusterNodeAction
     /** @param array<int, array{cluster_id: ?int}> $overrides */
     private function convergeMembership(array $overrides): void
     {
+        $converged = [];
+
         foreach ($this->routeReconciler()->membershipChanges(nodeOverrides: $overrides) as $change) {
-            $this->convergeRoute()->execute(
+            $converged[] = $this->convergeRoute()->execute(
                 $change['route'],
                 $change['domain'],
                 allowGenerated: true,
                 placement: $change['placement'],
+                deferPlacementWithdrawal: true,
             );
         }
+
+        // One wait for private DNS answers to expire covers every Route this change moved.
+        $this->convergeRoute()->completePlacements($converged);
     }
 
     private function routeReconciler(): RouteMutationReconciler

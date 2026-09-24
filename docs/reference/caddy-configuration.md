@@ -43,6 +43,8 @@ Every role keeps its sites in its own fragment, such as `app-dev.caddy` or `metr
 
 The `websocket`, `proxycli`, `analytics`, and Metrics publishers also switch a certificate directory, such as `/etc/caddy/orbit-websocket-cert-current`, and reload Caddy.
 
+The `app-dev.caddy` publisher renders every Route site from stored state only, Route transitions included. Any publication on a Node therefore renders the same Route sites, whichever command requested it. [Stored transitions](/reference/routes#stored-transitions) lists the state each transition stores.
+
 ## Publication lock
 
 Every publisher holds `/run/lock/orbit/caddy.lock` from before it reads the live version until Caddy has reloaded. A second publisher waits up to 30 seconds for the lock and then fails without changing the Node. The fragment and certificate publishers above all use this lock.
@@ -146,7 +148,7 @@ reverb.orbit {
 
 The Gateway renders the sites from committed database state only. A role's sites render while the role is provisioning or active, and after a failed reconvergence, because they were live before that attempt. They stop rendering when the role's removal starts or when its first convergence fails. A Herdr observer site renders while its session publishes the observer and is not being removed.
 
-The same state always gives the same file. Route transitions are stored state too: a Route that is being published or withdrawn, an Instance that is being removed, a placement change, and a Router replacement each have a database record that the build reads. A Node gets at most one site for each domain and port. When a Route's current and transition placements render the same site on one Node, the build keeps the current one. Any other duplicate fails the build.
+The same state always gives the same file. Route transitions are already [stored state](/reference/routes#stored-transitions): a Route that is being published or withdrawn, an Instance that is being removed, a placement change, and a Router replacement each have a database record that the build reads. A Node gets at most one site for each domain and port. When a Route's current and transition placements render the same site on one Node, the build keeps the current one. Any other duplicate fails the build.
 
 | Site source | Nodes | Listener |
 | --- | --- | --- |

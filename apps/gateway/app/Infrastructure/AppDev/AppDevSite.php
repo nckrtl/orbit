@@ -33,7 +33,24 @@ final readonly class AppDevSite
         public ?string $analyticsUpstream = null,
         /** @var list<string> */
         public array $analyticsTrustedProxies = [],
+        /**
+         * The site serves a second placement or a second Router during a stored transition. The
+         * current site for the same address wins, and private DNS answers with it only when a
+         * Router selection names its Node.
+         */
+        public bool $secondary = false,
     ) {}
+
+    public function asSecondary(): self
+    {
+        return clone ($this, ['secondary' => true]);
+    }
+
+    /** Caddy serves one site block for each domain and listener on a Node. */
+    public function addressKey(): string
+    {
+        return $this->nodeId.'|'.$this->domain.'|'.($this->publicListener ? 'public' : 'private');
+    }
 
     public function poolName(): string
     {

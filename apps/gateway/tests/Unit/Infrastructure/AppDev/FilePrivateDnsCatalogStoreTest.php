@@ -77,3 +77,28 @@ it('reloads an atomic replacement with the same timestamp and byte count without
         unlink($path);
     }
 });
+
+it('reloads a replacement that keeps the inode, timestamp, and byte count', function (): void {
+    $path = tempnam(sys_get_temp_dir(), 'orbit-dns-catalog-');
+    $question = new DnsQuestion('sample.orbit', DnsRecordType::A);
+    $requester = DnsRequester::unidentified('10.44.0.9');
+    try {
+        file_put_contents($path, json_encode(['records' => ['sample.orbit' => '10.44.0.3']], JSON_THROW_ON_ERROR));
+        $timestamp = filemtime($path);
+        $inode = fileinode($path);
+        $store = new FilePrivateDnsCatalogStore($path);
+        expect($store->catalog()->addressFor($question, $requester))->toBe('10.44.0.3');
+
+        // Two publications in one second reused the inode on a Gateway; only the content differs.
+        file_put_contents($path, json_encode(['records' => ['sample.orbit' => '10.44.0.1']], JSON_THROW_ON_ERROR));
+        touch($path, $timestamp);
+        clearstatcache(true, $path);
+
+        expect(fileinode($path))->toBe($inode)
+            ->and($store->refresh())->toBeTrue()
+            ->and($store->catalog()->addressFor($question, $requester))->toBe('10.44.0.1')
+            ->and($store->refresh())->toBeFalse();
+    } finally {
+        unlink($path);
+    }
+});

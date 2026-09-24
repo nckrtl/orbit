@@ -10,11 +10,10 @@ use App\Domain\Clusters\ClusterState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\ProxyCli\ProxyCliHostname;
 use App\Domain\ProxyCli\ProxyCliState;
+use App\Domain\Routes\ClusterRouterTransition;
 use App\Domain\Shared\LifecycleStatus;
-use App\Models\AppInstance;
 use App\Models\HerdrSession;
 use App\Models\Node;
-use App\Models\Route;
 use Illuminate\Database\Eloquent\Builder;
 
 final readonly class AppDevDnsConfigRenderer
@@ -22,6 +21,7 @@ final readonly class AppDevDnsConfigRenderer
     public function __construct(
         private AppDevSiteRepository $sites,
         private ClusterRouterDnsSelection $selection = new ClusterRouterDnsSelection,
+        private ClusterRouterTransition $routerTransitions = new ClusterRouterTransition,
     ) {}
 
     /**
@@ -30,9 +30,6 @@ final readonly class AppDevDnsConfigRenderer
      */
     public function render(
         ?Node $pendingNode = null,
-        ?Route $pendingRoute = null,
-        ?AppInstance $unavailableInstance = null,
-        ?Route $additionalRoute = null,
         array $nodeOverrides = [],
         array $clusterOverrides = [],
     ): string {
@@ -65,24 +62,21 @@ final readonly class AppDevDnsConfigRenderer
 
                 return $records;
             });
+        // A Router selection names the Router Node that answers: a selection being published or
+        // restored, else a stored Router replacement that has published DNS.
+        $selectedRouters = array_values(array_replace(
+            $this->routerTransitions->dnsRouters(),
+            $this->routerOverrides($clusterOverrides),
+        ));
         $records = $nodes
             ->toBase()
             ->merge($this->sites
-                ->all(
-                    $pendingRoute,
-                    $unavailableInstance,
-                    $additionalRoute,
-                    $this->routerOverrides($clusterOverrides),
-                )
+                ->all()
                 ->groupBy('domain')
-                ->map(static function ($sites): string {
-                    /** @var AppDevSite $site */
-                    $site = $sites->first(
-                        static fn (AppDevSite $candidate): bool => $candidate->isProxy(),
-                    ) ?? $sites->first();
-
-                    return "host-record={$site->domain},{$site->nodeAddress}";
-                }));
+                ->map(fn ($sites): string => $this->hostRecord(
+                    $sites->values()->all(),
+                    $selectedRouters,
+                )));
         // `node:role:add gateway gateway --converge` marks the singleton assignment provisioning while
         // it republishes DNS, so a converging holder keeps gateway.orbit; an active holder wins.
         $gateway = null;
@@ -201,23 +195,13 @@ final readonly class AppDevDnsConfigRenderer
      */
     public function catalog(
         ?Node $pendingNode = null,
-        ?Route $pendingRoute = null,
-        ?AppInstance $unavailableInstance = null,
-        ?Route $additionalRoute = null,
         array $nodeOverrides = [],
         array $clusterOverrides = [],
     ): PrivateDnsAnswerCatalog {
         $catalog = PrivateDnsAnswerCatalog::fromDnsmasqConfiguration(
-            $this->render(
-                $pendingNode,
-                $pendingRoute,
-                $unavailableInstance,
-                $additionalRoute,
-                $nodeOverrides,
-                $clusterOverrides,
-            ),
+            $this->render($pendingNode, $nodeOverrides, $clusterOverrides),
         );
-        $answers = $this->selection->answers($nodeOverrides, $clusterOverrides, $additionalRoute);
+        $answers = $this->selection->answers($nodeOverrides, $clusterOverrides);
         $overrides = $catalog->overrides;
 
         foreach ($answers['overrides'] as $cacheKey => $requesterOverrides) {
@@ -235,6 +219,29 @@ final readonly class AppDevDnsConfigRenderer
             ],
             overrides: $overrides,
         );
+    }
+
+    /**
+     * A domain answers with its Router, else its workload. A Router selection that is being
+     * published or restored names the Router Node that answers; otherwise a site that serves a
+     * second placement or a second Router never answers while the current site exists.
+     *
+     * @param  list<AppDevSite>  $sites
+     * @param  list<int>  $selectedRouters
+     */
+    private function hostRecord(array $sites, array $selectedRouters): string
+    {
+        $sites = collect($sites);
+        $selected = $sites->filter(static fn (AppDevSite $site): bool => in_array($site->nodeId, $selectedRouters, true));
+        $current = $sites->reject(static fn (AppDevSite $site): bool => $site->secondary);
+        $site = $selected->first(static fn (AppDevSite $candidate): bool => $candidate->isProxy())
+            ?? $selected->first()
+            ?? $current->first(static fn (AppDevSite $candidate): bool => $candidate->isProxy())
+            ?? $current->first()
+            ?? $sites->first();
+
+        /** @var AppDevSite $site */
+        return "host-record={$site->domain},{$site->nodeAddress}";
     }
 
     /**

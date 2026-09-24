@@ -9,6 +9,7 @@ use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
+use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -33,12 +34,18 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property RouteReplacementStep|null $replacement_step
  * @property array<string, mixed>|null $target_set_intent
  * @property string|null $target_set_step
+ * @property bool $sites_published
+ * @property int|null $transition_node_id
+ * @property int|null $transition_cluster_id
+ * @property CarbonImmutable|null $transition_dns_moved_at
  * @property-read App|null $app
  * @property-read Node|null $node
  * @property-read Cluster|null $cluster
  * @property-read Node|null $generationBasisNode
  * @property-read Route|null $replaces
  * @property-read Route|null $replacedBy
+ * @property-read Node|null $transitionNode
+ * @property-read Cluster|null $transitionCluster
  * @property-read Collection<int, RouteTarget> $targets
  * @property-read RouteCustomProxy|null $customProxy
  * @property-read RouteAnalyticsTracking|null $analyticsTracking
@@ -50,6 +57,7 @@ final class Route extends Model
     protected $attributes = [
         'kind' => 'app',
         'status' => 'pending',
+        'sites_published' => false,
     ];
 
     /** @var list<string> */
@@ -71,7 +79,26 @@ final class Route extends Model
         'replacement_step',
         'target_set_intent',
         'target_set_step',
+        'sites_published',
+        'transition_node_id',
+        'transition_cluster_id',
+        'transition_dns_moved_at',
     ];
+
+    /**
+     * An authoritative Route always serves its sites, so it always keeps its publication record.
+     * Creation sets the record before its first build; removal clears it together with leaving the
+     * authoritative states.
+     */
+    #[\Override]
+    protected static function booted(): void
+    {
+        self::saving(static function (self $route): void {
+            if ($route->status->isAuthoritative()) {
+                $route->sites_published = true;
+            }
+        });
+    }
 
     public function isCustomProxy(): bool
     {
@@ -92,6 +119,27 @@ final class Route extends Model
     public function isAuthoritative(): bool
     {
         return $this->status->isAuthoritative();
+    }
+
+    /**
+     * Sets the publication record before the first build that renders the Route's sites, once
+     * the certificates those sites name exist. It writes only that column, so it never races other
+     * Route state. Removal and a failed creation clear the record together with their status.
+     */
+    public function publishSites(): void
+    {
+        self::query()
+            ->whereKey($this->id)
+            ->where('sites_published', false)
+            ->update(['sites_published' => true]);
+        $this->setAttribute('sites_published', true);
+        $this->syncOriginalAttribute('sites_published');
+    }
+
+    /** A placement change stores its second placement until its cleanup finishes. */
+    public function hasPlacementTransition(): bool
+    {
+        return $this->transition_node_id !== null || $this->transition_cluster_id !== null;
     }
 
     /** @return BelongsTo<App, $this> */
@@ -130,6 +178,18 @@ final class Route extends Model
         return $this->belongsTo(self::class, 'replaced_by_route_id');
     }
 
+    /** @return BelongsTo<Node, $this> */
+    public function transitionNode(): BelongsTo
+    {
+        return $this->belongsTo(Node::class, 'transition_node_id');
+    }
+
+    /** @return BelongsTo<Cluster, $this> */
+    public function transitionCluster(): BelongsTo
+    {
+        return $this->belongsTo(Cluster::class, 'transition_cluster_id');
+    }
+
     /** @return HasMany<RouteTarget, $this> */
     public function targets(): HasMany
     {
@@ -158,6 +218,8 @@ final class Route extends Model
             'status' => RouteStatus::class,
             'replacement_step' => RouteReplacementStep::class,
             'target_set_intent' => 'array',
+            'sites_published' => 'boolean',
+            'transition_dns_moved_at' => 'immutable_datetime',
         ];
     }
 }

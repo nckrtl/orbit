@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Routes;
 
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
+use App\Domain\AppDev\PrivateDnsAnswerExpiry;
 use App\Domain\AppInstances\AppInstanceSourceProfileGuard;
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\AppInstances\DevelopmentAppInstanceConfigurator;
@@ -34,19 +35,96 @@ final readonly class ConvergeRouteAction
         private AppInstanceRouteEnvironmentSynchronizer $routeEnvironment,
         private AppInstanceEnvironmentOperationLock $environmentOperations,
         private DevelopmentProjectionOperationLock $owner,
+        private PrivateDnsAnswerExpiry $dnsAnswers = new PrivateDnsAnswerExpiry,
     ) {}
 
+    /**
+     * A placement change moves private DNS before it withdraws the old placement, and waits for
+     * cached answers to expire in between without holding the projection or environment owners.
+     * With `$deferPlacementWithdrawal`, the caller waits once for all its Routes through
+     * `completePlacements()` instead.
+     */
     public function execute(
         Route $route,
         string $domain,
         ?RoutePublication $publication = null,
         bool $allowGenerated = false,
         ?RoutePlacement $placement = null,
+        bool $deferPlacementWithdrawal = false,
     ): Route {
         $domain = RouteDomain::validate($domain);
+        $targetIds = $this->targetIds($route);
 
-        /** @var list<int> $targetIds */
-        $targetIds = $route
+        try {
+            return $this->owned($targetIds, fn (): Route => $this->convergeOwned(
+                $route->id,
+                $domain,
+                $targetIds,
+                $publication,
+                $allowGenerated,
+                $placement,
+            ));
+        } catch (PlacementWithdrawalPending $pending) {
+            if (! $pending->restores() && $deferPlacementWithdrawal) {
+                return Route::query()->with('targets')->findOrFail($pending->routeId);
+            }
+
+            $this->dnsAnswers->waitAfter(Route::query()->find($pending->routeId)?->transition_dns_moved_at);
+
+            if ($pending->restores()) {
+                $this->owned($targetIds, fn (): ?Route => $this->restorePlacementOwned($pending->routeId));
+
+                throw $pending->failure;
+            }
+
+            return $this->owned($targetIds, fn (): ?Route => $this->completePlacementOwned($pending->routeId))
+                ?? Route::query()->with('targets')->findOrFail($pending->routeId);
+        }
+    }
+
+    /**
+     * Finishes the placement changes that `execute()` deferred: one wait for private DNS answers to
+     * expire, then each withdrawal under the owners after reading its Route again.
+     *
+     * @param  iterable<Route>  $routes
+     */
+    public function completePlacements(iterable $routes): void
+    {
+        $pending = collect($routes)
+            ->map(static fn (Route $route): ?Route => Route::query()->find($route->id))
+            ->filter(fn (?Route $route): bool => $route instanceof Route && $this->awaitsPlacementWithdrawal($route))
+            ->values();
+
+        if ($pending->isEmpty()) {
+            return;
+        }
+
+        $this->dnsAnswers->waitAfter(...$pending->map(static fn (Route $route) => $route->transition_dns_moved_at)->all());
+
+        foreach ($pending as $route) {
+            $this->owned($this->targetIds($route), fn (): ?Route => $this->completePlacementOwned($route->id));
+        }
+    }
+
+    /**
+     * @template TResult
+     *
+     * @param  list<int>  $targetIds
+     * @param  callable(): TResult  $operation
+     * @return TResult
+     */
+    private function owned(array $targetIds, callable $operation): mixed
+    {
+        return $this->environmentOperations->run(
+            $targetIds,
+            fn (): mixed => $this->owner->run($operation(...)),
+        );
+    }
+
+    /** @return list<int> */
+    private function targetIds(Route $route): array
+    {
+        return $route
             ->targets()
             ->orderBy('position')
             ->orderBy('app_instance_id')
@@ -54,20 +132,88 @@ final readonly class ConvergeRouteAction
             ->map(static fn (mixed $id): int => (int) $id)
             ->values()
             ->all();
+    }
 
-        return $this->environmentOperations->run(
-            $targetIds,
-            fn (): Route => $this->owner->run(
-                fn (): Route => $this->convergeOwned(
-                    $route->id,
-                    $domain,
-                    $targetIds,
-                    $publication,
-                    $allowGenerated,
-                    $placement,
-                ),
-            ),
+    private function awaitsPlacementWithdrawal(Route $route): bool
+    {
+        return $route->hasPlacementTransition()
+            && $route->replacement_step === RouteReplacementStep::DatabaseCutover;
+    }
+
+    /** Withdraws the old placement once private DNS moved and cached answers can have expired. */
+    private function completePlacementOwned(int $routeId): ?Route
+    {
+        $route = $this->storedRoute($routeId);
+
+        if (
+            ! $route instanceof Route
+            || ! $route->hasPlacementTransition()
+            || ! in_array($route->replacement_step, [RouteReplacementStep::DatabaseCutover, RouteReplacementStep::Cleanup], true)
+        ) {
+            return $route;
+        }
+
+        // Another operation moved private DNS again during the wait; it withdraws after its own
+        // grace period, so a later move never shortens it.
+        if (
+            $route->replacement_step === RouteReplacementStep::DatabaseCutover
+            && $this->dnsAnswers->remainingAfter($route->transition_dns_moved_at) > 0
+        ) {
+            return $route;
+        }
+
+        return $this->withdrawPlacement(
+            $route,
+            $this->candidateWithPlacement($route, new RoutePlacement(
+                nodeId: $route->node_id,
+                clusterId: $route->cluster_id,
+                effectiveTld: null,
+            )),
+            $this->eligibleTargets($route, allowGenerated: true),
         );
+    }
+
+    /**
+     * Withdraws the candidate placement of a failed change once private DNS moved back and cached
+     * answers can have expired. A retry that moved the change on in the meantime owns it instead.
+     */
+    private function restorePlacementOwned(int $routeId): ?Route
+    {
+        $route = $this->storedRoute($routeId);
+
+        if (
+            ! $route instanceof Route
+            || ! $route->hasPlacementTransition()
+            || $route->failed_step === null
+            || $this->forwardRank($route->replacement_step) >= $this->forwardRank(RouteReplacementStep::DatabaseCutover)
+            || $this->dnsAnswers->remainingAfter($route->transition_dns_moved_at) > 0
+        ) {
+            return $route;
+        }
+
+        $this->withdrawCandidatePlacement(
+            $route,
+            $this->candidateWithPlacement($route, new RoutePlacement(
+                nodeId: $route->node_id,
+                clusterId: $route->cluster_id,
+                effectiveTld: null,
+            )),
+            $this->candidateWithPlacement($route, new RoutePlacement(
+                nodeId: $route->transition_node_id,
+                clusterId: $route->transition_cluster_id,
+                effectiveTld: null,
+            )),
+            $this->eligibleTargets($route, allowGenerated: true),
+        );
+
+        return $route;
+    }
+
+    private function storedRoute(int $routeId): ?Route
+    {
+        return Route::query()
+            ->with(['targets.appInstance.app', 'targets.appInstance.node', 'cluster.routerAssignment.node'])
+            ->find($routeId);
     }
 
     /** @param list<int> $expectedTargetIds */
@@ -555,7 +701,7 @@ final readonly class ConvergeRouteAction
             && $this->forwardRank($route->replacement_step)
                 >= $this->forwardRank(RouteReplacementStep::DatabaseCutover)
         ) {
-            return $this->cleanupPlacement($route, $retired, $candidate, $targets);
+            return $this->cleanupPlacement($route, $candidate, $targets);
         }
 
         $failureStep = 'workload-certificate';
@@ -574,7 +720,10 @@ final readonly class ConvergeRouteAction
             $this->forwardStep(
                 $route,
                 RouteReplacementStep::WorkloadCaddy,
-                function () use ($targets, $route, $candidate): void {
+                function () use ($targets, $route, $candidate, $placement): void {
+                    // The candidate placement is stored before any build renders it.
+                    $this->storeTransition($route, $placement->nodeId, $placement->clusterId);
+
                     foreach ($targets as $appInstance) {
                         $this->projection->prepareWorkloadCaddy($appInstance, $route, $candidate);
                     }
@@ -673,7 +822,7 @@ final readonly class ConvergeRouteAction
                 $this->forwardRank($route->refresh()->replacement_step)
                     < $this->forwardRank(RouteReplacementStep::DatabaseCutover)
             ) {
-                $this->failBeforeCutoverPlacement($route, $retired, $targets);
+                $this->failBeforeCutoverPlacement($route, $retired, $candidate, $targets, $exception);
             }
 
             throw $exception;
@@ -681,7 +830,6 @@ final readonly class ConvergeRouteAction
 
         return $this->cleanupPlacement(
             $route->refresh(),
-            $retired,
             $this->candidateWithPlacement($route->refresh(), $placement),
             $targets,
         );
@@ -689,8 +837,9 @@ final readonly class ConvergeRouteAction
 
     private function candidateWithPlacement(Route $route, RoutePlacement $placement): Route
     {
-        $candidate = $route->newInstance($route->getAttributes(), true);
-        $candidate->exists = true;
+        // The candidate keeps the Route's id, so the certificate scopes it names are the Route's own.
+        $candidate = $route->newInstance([], true);
+        $candidate->setRawAttributes($route->getAttributes(), true);
         $candidate->node_id = $placement->nodeId;
         $candidate->cluster_id = $placement->clusterId;
         $candidate->setRelation('targets', $route->targets);
@@ -709,11 +858,18 @@ final readonly class ConvergeRouteAction
         return $candidate;
     }
 
+    /**
+     * At cutover the Route takes the candidate placement and the transition columns take the old
+     * one, because private DNS pointed at the old placement and clients can hold that answer.
+     */
     private function cutoverPlacement(Route $route, RoutePlacement $placement): void
     {
         DB::transaction(function () use ($route, $placement): void {
             $locked = Route::query()->lockForUpdate()->findOrFail($route->id);
             $locked->update([
+                'transition_node_id' => $locked->node_id,
+                'transition_cluster_id' => $locked->cluster_id,
+                'transition_dns_moved_at' => null,
                 'node_id' => $placement->nodeId,
                 'cluster_id' => $placement->clusterId,
                 'replacement_step' => RouteReplacementStep::DatabaseCutover,
@@ -724,12 +880,72 @@ final readonly class ConvergeRouteAction
         });
     }
 
-    /** @param list<AppInstance> $targets */
-    private function cleanupPlacement(Route $route, Route $retired, Route $candidate, array $targets): Route
+    /** The grace period before a withdrawal counts from the latest DNS move of the Route. */
+    private function recordDnsMoved(Route $route): void
     {
+        Route::query()->whereKey($route->id)->update(['transition_dns_moved_at' => now()]);
+    }
+
+    private function storeTransition(Route $route, ?int $nodeId, ?int $clusterId): void
+    {
+        DB::transaction(function () use ($route, $nodeId, $clusterId): void {
+            $locked = Route::query()->lockForUpdate()->findOrFail($route->id);
+            $locked->update([
+                'transition_node_id' => $nodeId,
+                'transition_cluster_id' => $clusterId,
+                'transition_dns_moved_at' => null,
+            ]);
+            $route->setRawAttributes($locked->refresh()->getAttributes(), true);
+        });
+    }
+
+    /**
+     * Cleanup issues the live certificates for the current placement and publishes private DNS,
+     * which now answers with the current placement. `execute()` then waits outside the owners
+     * until cached answers for the old placement can have expired, and `withdrawPlacement()`
+     * withdraws it. A failure before the `cleanup` step keeps both placements serving. The
+     * transition columns stay until the end, so a retry still knows the old placement.
+     *
+     * @param  list<AppInstance>  $targets
+     */
+    private function cleanupPlacement(Route $route, Route $candidate, array $targets): Route
+    {
+        if ($route->replacement_step === RouteReplacementStep::Cleanup) {
+            return $this->withdrawPlacement($route, $candidate, $targets);
+        }
+
         try {
             foreach ($targets as $appInstance) {
-                $this->projection->cleanup($appInstance, $retired);
+                $this->projection->prepareCleanup($appInstance, $route);
+            }
+
+            // Private DNS moves to the current placement before the old one stops serving.
+            $this->projection->publishDns($route, $candidate);
+            $this->recordDnsMoved($route);
+        } catch (Throwable $exception) {
+            $this->recordFailure($route, 'cleanup', $this->errorCode($exception));
+
+            throw $exception;
+        }
+
+        throw new PlacementWithdrawalPending($route->id);
+    }
+
+    /**
+     * Stores the `cleanup` step so builds render the live scopes and no second placement, builds,
+     * and removes the staging and old certificates. It clears the transition columns last.
+     *
+     * @param  list<AppInstance>  $targets
+     */
+    private function withdrawPlacement(Route $route, Route $candidate, array $targets): Route
+    {
+        try {
+            if ($route->replacement_step !== RouteReplacementStep::Cleanup) {
+                $this->checkpoint($route, RouteReplacementStep::Cleanup);
+            }
+
+            foreach ($targets as $appInstance) {
+                $this->projection->cleanup($appInstance, $route);
 
                 if ($appInstance->placedOnAppProd()) {
                     $this->routeEnvironment->synchronizeRouteDomain(
@@ -749,6 +965,9 @@ final readonly class ConvergeRouteAction
             DB::transaction(function () use ($route): void {
                 $locked = Route::query()->lockForUpdate()->findOrFail($route->id);
                 $locked->update([
+                    'transition_node_id' => null,
+                    'transition_cluster_id' => null,
+                    'transition_dns_moved_at' => null,
                     'replacement_step' => $locked->publication === RoutePublication::Public
                         ? RouteReplacementStep::IngressFirewall
                         : null,
@@ -766,21 +985,59 @@ final readonly class ConvergeRouteAction
         return $route->refresh()->load('targets');
     }
 
+    /**
+     * A restore stops rendering the candidate placement, builds every Node that served it, and
+     * then removes its certificates. From `router-caddy` on, private DNS can have answered Cluster
+     * members with the candidate, so the restore first publishes DNS for the current placement,
+     * and `execute()` waits outside the owners for those answers to expire before the
+     * withdrawal. When that publication fails, both placements keep serving until a retry.
+     *
+     * @param  list<AppInstance>  $targets
+     */
+    private function failBeforeCutoverPlacement(
+        Route $route,
+        Route $retired,
+        Route $candidate,
+        array $targets,
+        Throwable $failure,
+    ): void {
+        if ($this->forwardRank($route->replacement_step) >= $this->forwardRank(RouteReplacementStep::RouterCaddy)) {
+            try {
+                $this->projection->rollbackDns($route);
+            } catch (Throwable) {
+                return;
+            }
+
+            $this->recordDnsMoved($route);
+
+            throw new PlacementWithdrawalPending($route->id, $failure);
+        }
+
+        $this->withdrawCandidatePlacement($route, $retired, $candidate, $targets);
+    }
+
     /** @param list<AppInstance> $targets */
-    private function failBeforeCutoverPlacement(Route $route, Route $retired, array $targets): void
+    private function withdrawCandidatePlacement(Route $route, Route $retired, Route $candidate, array $targets): void
     {
         // The rollback removes the candidate certificates, so a retry restarts from the first step.
         Route::query()
             ->whereKey($route->id)
-            ->update(['replacement_step' => RouteReplacementStep::Reserved->value]);
+            ->update([
+                'replacement_step' => RouteReplacementStep::Reserved->value,
+                'transition_node_id' => null,
+                'transition_cluster_id' => null,
+                'transition_dns_moved_at' => null,
+            ]);
+        $route->refresh();
 
         try {
             foreach ($targets as $appInstance) {
                 $this->projection->rollbackCaddy($appInstance, $route);
+                $this->projection->rollbackCaddy($appInstance, $candidate);
             }
 
             foreach ($targets as $appInstance) {
-                $this->projection->rollbackCertificates($appInstance, $route);
+                $this->projection->rollbackCertificates($appInstance, $candidate);
 
                 if ($appInstance->placedOnAppProd()) {
                     $this->routeEnvironment->synchronizeRouteDomain(
@@ -829,10 +1086,23 @@ final readonly class ConvergeRouteAction
         });
     }
 
-    /** @param list<AppInstance> $targets */
+    /**
+     * Cleanup issues the live certificates for the replacement, stores the `cleanup` step so builds
+     * render the live scopes, and then builds and removes the staging certificates.
+     *
+     * @param  list<AppInstance>  $targets
+     */
     private function cleanup(Route $replacement, Route $current, array $targets): Route
     {
         try {
+            if ($replacement->replacement_step !== RouteReplacementStep::Cleanup) {
+                foreach ($targets as $appInstance) {
+                    $this->projection->prepareCleanup($appInstance, $replacement);
+                }
+
+                $this->checkpoint($replacement, RouteReplacementStep::Cleanup);
+            }
+
             foreach ($targets as $appInstance) {
                 // The replacement is authoritative from cutover on, so the live certificate and the
                 // staging scopes are named after it, not after the Route being retired.

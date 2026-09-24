@@ -236,8 +236,10 @@ final readonly class CreateRouteAction
             $this->customProxies->converge($route);
             $route->update(['status' => RouteStatus::Active]);
         } catch (Throwable $exception) {
+            // A failed creation clears the publication record, so the next build withdraws the site.
             $route->update([
                 'status' => RouteStatus::Failed,
+                'sites_published' => false,
                 'failed_step' => 'projection',
                 'error_code' => property_exists($exception, 'errorCode') && is_string($exception->errorCode)
                     ? $exception->errorCode

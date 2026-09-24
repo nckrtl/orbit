@@ -29,8 +29,10 @@ final readonly class NativeCustomProxyRouteProjector implements CustomProxyRoute
             throw new RuntimeException('A custom proxy Route requires a serving Node.');
         }
 
+        // Creation stores the publication record once its certificate exists, before its first build.
         $this->certificates->convergeCustomProxy($route, $node);
-        $this->caddy->convergeRoute($node, $route);
-        $this->dns->convergeRoute($route);
+        $route->publishSites();
+        $this->caddy->converge($node);
+        $this->dns->converge();
     }
 }

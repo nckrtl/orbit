@@ -9,12 +9,14 @@ use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\AppInstances\ProductionPhpRuntimeIdentity;
 use App\Domain\AppInstances\ProductionPhpRuntimeManager;
 use App\Domain\Certificates\LeafCertificateSigner;
+use App\Domain\Clusters\ClusterState;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\PublicRouteEdgeProjector;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
+use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AppDev\AppDevCaddyConfigRenderer;
@@ -110,6 +112,77 @@ it('serves the exact transient development 503 without an upstream then deletes 
         'status' => RouteStatus::Pending,
     ]);
     expect($replacement->domain)->toBe($route->domain);
+});
+
+it('withdraws the final Route in a build before it removes the Instance certificate', function (): void {
+    [$member, $route] = orb181_projector_development_member();
+    [$projector, $ssh] = orb181_removal_projector($this);
+
+    expect($projector->clearRouteTarget($member))->toBe('deleted');
+
+    $scope = "app-instance-{$member->app_instance_id}";
+    $removal = collect($ssh->commands)->search(
+        static fn (RemoteCommand $command): bool => is_string($command->input)
+            && str_contains($command->input, 'rm -rf -- "$managed_home/.orbit/certificates/$scope"')
+            && in_array($scope, $command->arguments, true),
+    );
+    $published = orb181_caddy_configurations(array_slice($ssh->commands, 0, is_int($removal) ? $removal : 0));
+
+    // The unavailable answer renders from the stored Route, its record, and the open member; clearing
+    // the record withdraws it in the build that runs before the certificate is removed.
+    $serving = array_keys(array_filter(
+        $published,
+        static fn (string $configuration): bool => str_contains($configuration, 'dev.acme.test'),
+    ));
+
+    expect($removal)->toBeInt()
+        ->and($serving)->not->toBeEmpty()
+        ->and($published[$serving[0]])->toContain('Orbit Route unavailable')
+        ->and(count($published) - 1)->toBeGreaterThan(max($serving))
+        ->and(end($published))->not->toContain('dev.acme.test');
+});
+
+it('withdraws the second placement of a Route that waits for its placement withdrawal', function (): void {
+    [$member, $route] = orb181_projector_development_member();
+    // A detach moved the Route off Cluster scope and waits out the grace period before it
+    // withdraws the old Router placement.
+    $cluster = Cluster::query()->create(['name' => 'waiting', 'state' => ClusterState::Active]);
+    $router = orb181_projector_node('old-router', '41', $cluster, RoleName::Router);
+    Route::query()->whereKey($route->id)->update([
+        'transition_cluster_id' => $cluster->id,
+        'replacement_step' => RouteReplacementStep::DatabaseCutover->value,
+        'transition_dns_moved_at' => now(),
+    ]);
+    [$projector, $ssh] = orb181_removal_projector($this);
+
+    expect($projector->clearRouteTarget($member))->toBe('deleted');
+
+    $on = static fn (string $host): array => collect($ssh->commands)
+        ->keys()
+        ->filter(static fn (int $index): bool => $ssh->connections[$index]->host === $host)
+        ->map(static fn (int $index): RemoteCommand => $ssh->commands[$index])
+        ->values()
+        ->all();
+    $removed = static fn (array $commands): array => collect($commands)
+        ->filter(static fn (RemoteCommand $command): bool => is_string($command->input)
+            && str_contains($command->input, 'rm -rf -- "$managed_home/.orbit/certificates/$scope"'))
+        ->map(static fn (RemoteCommand $command): ?string => collect($command->arguments)
+            ->first(static fn (string $argument): bool => str_starts_with($argument, 'route-') || str_starts_with($argument, 'app-instance-')))
+        ->values()
+        ->all();
+    $routerConfigurations = orb181_caddy_configurations($on((string) $router->wireguard_ip));
+
+    // The old Router is built without the Route before its certificates are removed.
+    expect($routerConfigurations)->not->toBeEmpty()
+        ->and(end($routerConfigurations))->not->toContain('dev.acme.test')
+        ->and($removed($on((string) $router->wireguard_ip)))->toBe([
+            "route-{$route->id}-router",
+            "route-{$route->id}-router-hostname-change",
+        ])
+        ->and($removed($on('10.44.0.31')))->toContain(
+            "app-instance-{$member->app_instance_id}",
+            "app-instance-{$member->app_instance_id}-hostname-change",
+        );
 });
 
 it('keeps the final Route row until every projection cleanup succeeds', function (): void {

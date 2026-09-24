@@ -53,11 +53,14 @@ beforeEach(function (): void {
 });
 
 describe('analytics tracking Route sites', function (): void {
-    it('renders nothing for a pending tracking Route until it is the Route being converged', function (): void {
+    it('renders nothing for a pending tracking Route until its creation stores the publication record', function (): void {
         $sites = new AppDevSiteRepository;
 
-        expect($sites->all())->toBeEmpty()
-            ->and($sites->forNode($this->router, $this->route)->map->scope->all())
+        expect($sites->all())->toBeEmpty();
+
+        $this->route->publishSites();
+
+        expect($sites->forNode($this->router)->map->scope->all())
             ->toBe(["route-{$this->route->id}-router"]);
     });
 

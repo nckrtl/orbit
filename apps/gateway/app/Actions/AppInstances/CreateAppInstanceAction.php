@@ -466,6 +466,7 @@ final readonly class CreateAppInstanceAction
                 ->whereHas('targets', static fn ($query) => $query->where('app_instance_id', $appInstance->id))
                 ->where('status', '<>', RouteStatus::Active->value)
                 ->update([
+                    'sites_published' => false,
                     'status' => RouteStatus::Failed,
                     'failed_step' => $step,
                     'error_code' => $errorCode,
