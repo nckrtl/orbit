@@ -182,7 +182,7 @@ The Gateway sends one script to the Node over SSH. On the Node that runs the Gat
 7. Points `/etc/caddy/Caddyfile` at the new version, then enables and reloads the `caddy` service.
 8. Keeps the live version and the nine newest others, and removes older versions. It never removes the `staged` directory.
 
-The addresses are the WireGuard and LAN addresses that sites bind, because Caddy cannot start with a missing listen address. The version name is the first 32 hexadecimal characters of the file's SHA-256 digest. Validation runs as the `caddy` user, so log files that it creates stay writable by the service. A build's version whose file no longer matches its digest was edited by hand. The script backs it up before it replaces or prunes it, whatever the new version is.
+The addresses are the WireGuard and LAN addresses that sites bind, because Caddy cannot start with a missing listen address. The version name is the first 32 hexadecimal characters of the file's SHA-256 digest. Validation runs as the `caddy` user, so log files that it creates stay writable by the service. When a build's version file differs from its digest, someone edited it by hand. The script backs that version up before it replaces or prunes it, whatever the new version is.
 
 A version holds only its `Caddyfile`. It has no fragments and imports nothing. Every Node with Caddy sites, the Gateway machine included, installs Caddy from the pinned source before its first build.
 
@@ -224,6 +224,6 @@ The build replaces a Caddyfile that does not start with its marker line. It neve
 | Any other regular file | The file |
 | A symlink outside `/etc/caddy/orbit-versions` | The file it points at |
 | A version with a `fragments` directory | The whole version directory |
-| A build's version whose file no longer matches its digest | The whole version directory, also when prune removes it |
+| A build's version whose file differs from its digest | The whole version directory, also when prune removes it |
 
 Sites in the replaced file stop serving after that build. Move a hand-placed site into Orbit before the first build, for example as a [custom proxy Route](/reference/routes#custom-proxy-routes). The build never deletes a backup; remove it by hand when you do not need it.
