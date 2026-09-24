@@ -32,7 +32,7 @@ The agent merges changes to the same unit or container that arrive within 250 mi
 
 The agent connects to the Gateway at `https://gateway.orbit` and to Reverb at `wss://reverb.orbit`. It never uses system DNS: its configuration contains the Gateway's WireGuard address, and the realtime response contains Reverb's serving address. The agent connects to each address while verifying the certificate for the unchanged hostname against the Orbit root certificate that the Gateway installs with it. The Gateway identifies the agent by the Node's WireGuard address, as it identifies every other caller.
 
-The Gateway writes `gateway_address` to the agent's `config.toml` on every converge. This is the WireGuard address that Orbit's private DNS answers for `gateway.orbit`.
+The Gateway writes `gateway_address` to the agent's `config.toml` on every converge. This is the WireGuard address that Orbit's private DNS answers for `gateway.orbit`. The agent sends every Gateway request to `gateway_address` on port 443, with `gateway.orbit` as the TLS server name, and verifies the certificate against `ca.pem` without resolving the hostname.
 
 1. The agent calls `GET /api/v1/agent/realtime`. The response names the Reverb connection, its serving address, the Node's channel, and the agent's member ID.
 
@@ -40,8 +40,8 @@ The Gateway writes `gateway_address` to the agent's `config.toml` on every conve
    {
      "data": {
        "url": "wss://reverb.orbit",
-      "address": "10.0.0.2",
-      "key": "<reverb-app-key>",
+       "address": "10.44.0.3",
+       "key": "<reverb-app-key>",
        "channel": "presence-node.12",
        "member": "agent.12"
      },
@@ -51,15 +51,14 @@ The Gateway writes `gateway_address` to the agent's `config.toml` on every conve
 
    `url`, `address`, and `key` are `null` when no `websocket` role is active. The agent then asks again every 60 seconds.
 
-3. The agent sends every Gateway request to `gateway_address` on port 443. It retains `gateway.orbit` as the TLS server name and verifies that certificate against `ca.pem` without resolving the hostname.
-4. The agent opens a TCP connection to the Reverb `address` on port 443. It uses `reverb.orbit` as the TLS server name and verifies that certificate against `ca.pem`. It reads its `socket_id` from `pusher:connection_established`.
-5. The agent requests authorization at `POST /api/v1/agent/broadcasting/auth` with `socket_id`, `channel_name`, and `version`.
+2. The agent opens a TCP connection to the Reverb `address` on port 443. It uses `reverb.orbit` as the TLS server name and verifies that certificate against `ca.pem`. It reads its `socket_id` from `pusher:connection_established`.
+3. The agent requests authorization at `POST /api/v1/agent/broadcasting/auth` with `socket_id`, `channel_name`, and `version`.
 
    The `version` value is the agent's short version string, such as `1.2.3`. The Gateway signs membership `agent.{id}` on the caller's own channel only. The response has the Pusher `auth` and `channel_data` values.
 
-6. The agent subscribes to `presence-node.{id}`, sends its snapshot, and then sends heartbeats and changes. [Realtime events](/reference/events#node-agent-channels) defines the events.
+4. The agent subscribes to `presence-node.{id}`, sends its snapshot, and then sends heartbeats and changes. [Realtime events](/reference/events#node-agent-channels) defines the events.
 
-When the Gateway role moves, its WireGuard address changes. `node:add` and a role converge rewrite `gateway_address`; a changed configuration restarts the agent. The same converge updates the WebSocket serving address returned to the agent.
+When the Gateway role moves, its WireGuard address changes, and every agent loses the Gateway until its configuration is rewritten. Run `orbit node:add <node>` or a role converge on each Node; a changed `gateway_address` restarts the agent. The Reverb address needs no converge, because the agent reads it from each realtime response when it connects.
 
 The two agent endpoints require an active WireGuard peer, but no Gateway access edge. They do not record Activity.
 
