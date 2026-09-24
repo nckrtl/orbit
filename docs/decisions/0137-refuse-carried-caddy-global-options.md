@@ -14,7 +14,7 @@ Proposed.
 
 ## Context
 
-The Orbit Caddy publishers for `app-dev`, `app-prod`, `websocket`, `analytics`, Metrics, and Herdr observers write a candidate `Caddyfile` in the versioned layout under `/etc/caddy/orbit-versions`. Since commit `7fe26990` that file starts with Orbit's global options block, `auto_https disable_certs`, followed by `import <version>/fragments/*.caddy`. A publisher keeps a Node's pre-existing `Caddyfile` as `fragments/00-unmanaged.caddy` unless it is the unmodified package default, and it copies every fragment it does not own into the next version.
+The Orbit Caddy publishers for `app-dev`, `app-prod`, `websocket`, `analytics`, ProxyCli, Metrics, and Herdr observers write a candidate `Caddyfile` in the versioned layout under `/etc/caddy/orbit-versions`. Since commit `7fe26990` that file starts with Orbit's global options block (the ProxyCli publisher omitted it until this decision), `auto_https disable_certs`, followed by `import <version>/fragments/*.caddy`. A publisher keeps a Node's pre-existing `Caddyfile` as `fragments/00-unmanaged.caddy` unless it is the unmodified package default, and it copies every fragment it does not own into the next version.
 
 Caddy accepts one global options block, and only as the first block. An adopted `Caddyfile` or a carried fragment that starts with its own global block therefore makes every candidate invalid. `caddy validate` then reports "server block without any key is global configuration, and if used, it must be first", and every changed publication on that Node fails with `<role>.caddy_config_failed`. The message names neither the fragment nor the fix. The Incus harness hit this on `app-prod` when its internal TLS step carried a `local_certs` block; [PR #634](https://github.com/nckrtl/orbit/pull/634) removed that fragment from the harness.
 
@@ -23,8 +23,8 @@ The global options decide certificate automation for every site on the Node. Orb
 ## Decision
 
 - Orbit owns the Caddy global options on a Node. The block that `CaddyGlobalOptions` renders is the only global block in a published version.
-- Before it validates a candidate, each of those publishers and fragment removals checks every carried fragment. A fragment whose first block has no key is a global options block. The publisher then exits without publishing. It changes neither the live `Caddyfile` nor Caddy.
-- The error names the fragment, the option names inside the block, and the file to edit: the live version's fragment when Orbit already carries it, or the adopted `Caddyfile` on first adoption. The operator removes the block and publishes again. The role's existing error code, such as `app-dev.caddy_config_failed`, stays the failure code.
+- Every one of those publishers and fragment removals, ProxyCli included, writes that block. Before it validates a candidate, each checks every carried fragment. A fragment whose first block has no key is a global options block. The publisher then exits without publishing. It changes neither the live `Caddyfile` nor Caddy.
+- The error names the fragment, the option names inside the block, and the file to edit: the live version's fragment when Orbit already carries it, or the adopted `Caddyfile` on first adoption. The operator removes the block and publishes again. The publisher's existing error code, such as `app-dev.caddy_config_failed`, stays the failure code. The message reaches the activity record only where the failing path already keeps command output.
 - Site blocks, snippets, and addresses that start with an environment placeholder such as `{$SITE}` are not global blocks and keep working.
 
 ## Rejected alternatives
@@ -37,8 +37,9 @@ The global options decide certificate automation for every site on the Node. Orb
 ## Consequences
 
 - An operator sees which file blocks publication and what to remove. The Node keeps serving its current configuration until then.
+- Role convergence and several publishers keep no command output, so after `node:role:add --converge` the operator sees only `app-dev.caddy_config_failed` as the underlying error, not the message. The reference page tells the operator where to look.
 - Operator global options are not supported on Orbit Nodes. A setting that must apply Node-wide needs an Orbit change to `CaddyGlobalOptions`.
-- The check is a small shell parser in the publisher scripts. It recognizes a global block by its first token and does not evaluate imports inside a carried fragment. `caddy validate` remains the final check.
+- The check is a small shell parser in the publisher scripts. It ignores comments, carriage returns, and a byte order mark, recognizes a global block by its first token, and does not evaluate imports inside a carried fragment. `caddy validate` remains the final check.
 
 ## Affects
 
