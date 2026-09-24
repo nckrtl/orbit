@@ -60,10 +60,10 @@ beforeEach(function (): void {
     $this->withServerVariables(['REMOTE_ADDR' => '10.44.0.1']);
     $this->removalHome = sys_get_temp_dir().'/orbit-route-removal-order-'.Str::uuid();
     config()->set('orbit.home', $this->removalHome);
-    $this->nodes = new RouteRemovalSimulatedNodes;
-    $this->dnsRuns = new RouteRemovalDnsRunner;
-    route_removal_bind_projectors($this->nodes, $this->dnsRuns);
-    $this->beast = route_removal_node('beast', 7, RoleName::AppDev);
+    $this->nodes = new CertificateOrderNodes;
+    $this->dnsRuns = new CertificateOrderDnsRunner;
+    certificate_order_bind_projectors($this->nodes, $this->dnsRuns);
+    $this->beast = certificate_order_node('beast', 7, RoleName::AppDev);
 });
 
 afterEach(function (): void {
@@ -121,7 +121,7 @@ describe('Route removal certificate order', function (): void {
 
     it('withdraws a targetless Project Route from its Router before it removes the Router certificate', function (): void {
         $cluster = Cluster::query()->create(['name' => 'lab', 'state' => ClusterState::Active]);
-        $router = route_removal_node('router', 20, RoleName::Router, $cluster);
+        $router = certificate_order_node('router', 20, RoleName::Router, $cluster);
         $app = OrbitApp::query()->create([
             'name' => 'Acme',
             'slug' => 'acme',
@@ -139,7 +139,7 @@ describe('Route removal certificate order', function (): void {
         // A vacated Route keeps its domain and serves the unavailable answer from its Router.
         $route->update(['status' => RouteStatus::Active, 'target_set_step' => RouteTargetSetStep::Completed]);
         $this->nodes->issue('10.44.0.20', "route-{$route->id}-router");
-        route_removal_caddy()->converge($router);
+        certificate_order_caddy()->converge($router);
 
         expect($this->nodes->names('10.44.0.20', "route-{$route->id}-router"))->toBeTrue();
 
@@ -193,7 +193,7 @@ describe('Route removal certificate order', function (): void {
             ->json('data.id');
         $route = Route::query()->findOrFail($routeId);
 
-        expect(fn () => route_removal_certificates()->removeCustomProxy($route, $this->beast))
+        expect(fn () => certificate_order_certificates()->removeCustomProxy($route, $this->beast))
             ->toThrow(function (RuntimeConvergenceException $exception): void {
                 expect($exception->step)->toBe('certificate-remove')
                     ->and($exception->errorCode)->toBe('app-dev.certificate_in_use');
@@ -204,7 +204,7 @@ describe('Route removal certificate order', function (): void {
     });
 });
 
-function route_removal_node(string $name, int $octet, RoleName $role, ?Cluster $cluster = null): Node
+function certificate_order_node(string $name, int $octet, RoleName $role, ?Cluster $cluster = null): Node
 {
     $node = Node::query()->create([
         'cluster_id' => $cluster?->id,
@@ -224,7 +224,7 @@ function route_removal_node(string $name, int $octet, RoleName $role, ?Cluster $
     return $node;
 }
 
-function route_removal_bind_projectors(RouteRemovalSimulatedNodes $nodes, RouteRemovalDnsRunner $dnsRuns): void
+function certificate_order_bind_projectors(CertificateOrderNodes $nodes, CertificateOrderDnsRunner $dnsRuns): void
 {
     $executor = new AppDevSshExecutor(
         $nodes,
@@ -288,12 +288,12 @@ function route_removal_bind_projectors(RouteRemovalSimulatedNodes $nodes, RouteR
     );
 }
 
-function route_removal_caddy(): RemoteAppDevCaddyManager
+function certificate_order_caddy(): RemoteAppDevCaddyManager
 {
     return app(RemoteAppDevCaddyManager::class);
 }
 
-function route_removal_certificates(): RemoteAppDevCertificateManager
+function certificate_order_certificates(): RemoteAppDevCertificateManager
 {
     return app(RemoteAppDevCertificateManager::class);
 }
@@ -302,7 +302,7 @@ function route_removal_certificates(): RemoteAppDevCertificateManager
  * Nodes keyed by WireGuard address. Each keeps its live `app-dev.caddy` and its certificates, and
  * refuses a Caddy publish that names a missing certificate.
  */
-final class RouteRemovalSimulatedNodes implements SshExecutor
+final class CertificateOrderNodes implements SshExecutor
 {
     /** @var array<string, string> */
     public array $live = [];
@@ -391,7 +391,7 @@ final class RouteRemovalSimulatedNodes implements SshExecutor
     }
 }
 
-final class RouteRemovalDnsRunner implements ProcessRunner
+final class CertificateOrderDnsRunner implements ProcessRunner
 {
     public bool $failNext = false;
 
