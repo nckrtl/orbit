@@ -486,7 +486,9 @@ Cleanup issues the live Router certificate for the new placement and publishes p
 
 #### Withdrawal grace period
 
-Private DNS answers carry a 30-second TTL. After a transition moves a name, it waits 31 seconds, the TTL plus one second, before it stops serving the old target. One Cluster change waits once for all the Routes it moves. It does not hold the development projection owner while it waits, so other Route and Instance commands run during the wait. It then reads each Route again before it withdraws the old placement. The grace period counts from the latest DNS move of that Route, which the Route stores. When another change moves the same Route again during the wait, that change withdraws after its own full grace period. An Instance removal during the wait withdraws both placements and removes their certificates.
+Private DNS answers carry a 30-second TTL. After a transition moves a name, it waits 31 seconds, the TTL plus one second, before it stops serving the old target. One Cluster change waits once for all the Routes it moves. It does not hold the development projection owner while it waits, so other Route and Instance commands run during the wait. It then reads each Route again before it withdraws the old placement.
+
+The grace period counts from the latest DNS move of that Route, which the Route stores. When another change moves the same Route again during the wait, that change withdraws after its own full grace period. An Instance removal during the wait withdraws both placements and removes their certificates.
 
 The grace period covers clients whose resolver honors the TTL, such as systemd-resolved and dnsmasq on Orbit Nodes. When Caddy publishes the withdrawal, it finishes every request already in progress on the old target. It closes idle keep-alive connections, so a client's next request resolves the name again.
 
