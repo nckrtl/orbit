@@ -66,10 +66,13 @@ final readonly class WebSocketCaddyPublisher
                 elif [ -f "\$source_main" ] && [ "\$source_main" != "\$live_caddyfile" ]; then
                     cp --preserve=mode,ownership -- "\$source_main" "\$candidate/fragments/unmanaged.caddy"
                 fi
-                # Caddy refuses to mix a wildcard and a specific address on one port, so the
-                # site binds whatever this node's other sites already bind.
+                # A listener on the WireGuard address takes every connection to that address, so
+                # the site joins it when another site binds it. Otherwise it follows a wildcard
+                # bind, so it never takes traffic from the node's wildcard sites.
                 bind_address=\$wireguard_ip
-                if grep -qsE '^[[:space:]]*bind[[:space:]]+0\\.0\\.0\\.0' "\$candidate"/fragments/*.caddy; then
+                escaped_ip=\$(printf '%s' "\$wireguard_ip" | sed 's/\\./\\\\./g')
+                if ! grep -qsE "^[[:space:]]*bind([[:space:]]+[^[:space:]]+)*[[:space:]]+\$escaped_ip([[:space:]]|\\\$)" "\$candidate"/fragments/*.caddy \\
+                    && grep -qsE '^[[:space:]]*bind[[:space:]]+0\\.0\\.0\\.0' "\$candidate"/fragments/*.caddy; then
                     bind_address=0.0.0.0
                 fi
                 printf '%s' '{$encoded}' | base64 --decode \\
