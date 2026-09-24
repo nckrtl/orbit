@@ -102,3 +102,47 @@ it('reloads a replacement that keeps the inode, timestamp, and byte count', func
         unlink($path);
     }
 });
+
+it('confirms each catalog it loads with the digest of that catalog', function (): void {
+    $root = sys_get_temp_dir().'/orbit-catalog-loaded-'.bin2hex(random_bytes(8));
+    $files = new Filesystem;
+    $files->makeDirectory($root, 0755, true);
+    $path = $root.'/catalog.json';
+    $loaded = FilePrivateDnsCatalogStore::loadedPath($path);
+    $first = json_encode(['records' => ['sample.orbit' => '10.44.0.2']], JSON_THROW_ON_ERROR);
+    $second = json_encode(['records' => ['sample.orbit' => '10.44.0.3']], JSON_THROW_ON_ERROR);
+
+    try {
+        $files->put($path, $first);
+        $store = new FilePrivateDnsCatalogStore($path, loadedPath: $loaded);
+
+        expect($loaded)->toBe($path.'.loaded')
+            ->and(file_get_contents($loaded))->toBe(hash('sha256', $first).PHP_EOL);
+
+        $files->put($path, '{not-json');
+        expect($store->refresh())->toBeFalse()
+            ->and(file_get_contents($loaded))->toBe(hash('sha256', $first).PHP_EOL);
+
+        $files->put($path, $second);
+        expect($store->refresh())->toBeTrue()
+            ->and(file_get_contents($loaded))->toBe(hash('sha256', $second).PHP_EOL)
+            ->and(glob($root.'/*.candidate'))->toBe([]);
+    } finally {
+        $files->deleteDirectory($root);
+    }
+});
+
+it('keeps serving when it cannot write the confirmation', function (): void {
+    $path = tempnam(sys_get_temp_dir(), 'orbit-dns-catalog-');
+    $question = new DnsQuestion('sample.orbit', DnsRecordType::A);
+    $requester = DnsRequester::unidentified('10.44.0.9');
+
+    try {
+        file_put_contents($path, json_encode(['records' => ['sample.orbit' => '10.44.0.2']], JSON_THROW_ON_ERROR));
+        $store = new FilePrivateDnsCatalogStore($path, loadedPath: $path.'.missing/catalog.json.loaded');
+
+        expect($store->catalog()->addressFor($question, $requester))->toBe('10.44.0.2');
+    } finally {
+        unlink($path);
+    }
+});

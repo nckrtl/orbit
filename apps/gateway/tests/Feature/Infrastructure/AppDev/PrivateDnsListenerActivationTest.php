@@ -95,6 +95,150 @@ it('picks up a catalog republish without restarting the listener once it is alre
     }
 });
 
+it('keeps a running listener that confirms a changed catalog', function (): void {
+    $harness = new PrivateDnsPublishHarness;
+    orb307_published_cluster();
+    $harness->putVpnFragment("# Managed by Orbit.\nlisten-address=127.0.0.55\nbind-interfaces\n");
+
+    try {
+        $manager = $harness->listenerManager();
+        $manager->converge();
+        $harness->markActive();
+        $harness->markListenerActive();
+        $harness->confirmListenerLoads();
+        $harness->clearServiceLog();
+        orb_catalog_change();
+        $manager->converge();
+
+        expect($harness->serviceCalls())->not->toContain('restart orbit-private-dns.service')
+            ->and(trim((string) file_get_contents($harness->loadedPath())))
+            ->toBe(hash_file('sha256', $harness->catalogPath()));
+    } finally {
+        $harness->cleanup();
+    }
+});
+
+it('restarts a running listener that does not confirm a changed catalog', function (): void {
+    $harness = new PrivateDnsPublishHarness;
+    orb307_published_cluster();
+    $harness->putVpnFragment("# Managed by Orbit.\nlisten-address=127.0.0.55\nbind-interfaces\n");
+
+    try {
+        $manager = $harness->listenerManager();
+        $manager->converge();
+        $harness->markActive();
+        $harness->markListenerActive();
+        $harness->clearServiceLog();
+        orb_catalog_change();
+        $manager->converge();
+
+        expect($harness->serviceCalls())->toContain('restart orbit-private-dns.service')
+            ->not->toContain('enable --now orbit-private-dns.service')
+            ->and(file_get_contents($harness->catalogPath()))->toContain('10.44.0.99');
+    } finally {
+        $harness->cleanup();
+    }
+});
+
+it('restarts a running listener that confirmed an older catalog while the catalog is unchanged', function (): void {
+    $harness = new PrivateDnsPublishHarness;
+    orb307_published_cluster();
+    $harness->putVpnFragment("# Managed by Orbit.\nlisten-address=127.0.0.55\nbind-interfaces\n");
+
+    try {
+        $manager = $harness->listenerManager();
+        $manager->converge();
+        $harness->markActive();
+        $harness->markListenerActive();
+        $harness->putLoaded(hash('sha256', 'an older catalog').PHP_EOL);
+        $harness->clearServiceLog();
+        $manager->converge();
+
+        expect($harness->serviceCalls())->toContain('restart orbit-private-dns.service');
+    } finally {
+        $harness->cleanup();
+    }
+});
+
+it('restores the previous catalog when a listener that does not confirm it fails to restart', function (): void {
+    $harness = new PrivateDnsPublishHarness;
+    orb307_published_cluster();
+    $harness->putVpnFragment("# Managed by Orbit.\nlisten-address=127.0.0.55\nbind-interfaces\n");
+
+    try {
+        $manager = $harness->listenerManager();
+        $manager->converge();
+        $previousCatalog = (string) file_get_contents($harness->catalogPath());
+        $harness->markActive();
+        $harness->markListenerActive();
+        $harness->failListenerRestart();
+        orb_catalog_change();
+
+        expect(fn () => $manager->converge())->toThrow(RuntimeConvergenceException::class);
+        expect(file_get_contents($harness->catalogPath()))->toBe($previousCatalog);
+    } finally {
+        $harness->cleanup();
+    }
+});
+
+it('restarts a listener it does not manage when that listener does not confirm a changed catalog', function (): void {
+    $harness = new PrivateDnsPublishHarness;
+    orb307_published_cluster();
+
+    try {
+        $manager = $harness->manager();
+        $manager->converge();
+        $harness->markActive();
+        $harness->markListenerActive();
+        $harness->clearServiceLog();
+        orb_catalog_change();
+        $manager->converge();
+
+        expect($harness->serviceCalls())->toContain('restart orbit-private-dns.service')
+            ->not->toContain('enable --now orbit-private-dns.service');
+    } finally {
+        $harness->cleanup();
+    }
+});
+
+it('leaves a listener it does not manage running when that listener confirms a changed catalog', function (): void {
+    $harness = new PrivateDnsPublishHarness;
+    orb307_published_cluster();
+
+    try {
+        $manager = $harness->manager();
+        $manager->converge();
+        $harness->markActive();
+        $harness->markListenerActive();
+        $harness->confirmListenerLoads();
+        $harness->clearServiceLog();
+        orb_catalog_change();
+        $manager->converge();
+
+        expect($harness->serviceCalls())->not->toContain('restart orbit-private-dns.service');
+    } finally {
+        $harness->cleanup();
+    }
+});
+
+it('fails a records publication when a listener that does not confirm the catalog cannot restart', function (): void {
+    $harness = new PrivateDnsPublishHarness;
+    orb307_published_cluster();
+
+    try {
+        $manager = $harness->manager();
+        $manager->converge();
+        $harness->markActive();
+        $harness->markListenerActive();
+        $harness->failListenerRestart();
+        orb_catalog_change();
+
+        expect(fn () => $manager->converge())->toThrow(RuntimeConvergenceException::class);
+    } finally {
+        $harness->cleanup();
+    }
+});
+
 it('restores the previous dnsmasq fragment and catalog when listener activation fails', function (): void {
     $harness = new PrivateDnsPublishHarness;
     orb307_published_cluster();
@@ -211,6 +355,31 @@ it('answers UDP and TCP from a file-backed catalog after a republish without res
             ->toBe('10.44.0.7')
             ->and($reloaded)
             ->toBe('192.168.6.21');
+    } finally {
+        $server->stop();
+        $files->deleteDirectory($root);
+    }
+});
+
+it('loads and confirms a republished catalog on an idle tick without a query', function (): void {
+    $root = sys_get_temp_dir().'/orbit-listener-idle-'.bin2hex(random_bytes(8));
+    $files = new Filesystem;
+    $files->makeDirectory($root, 0755, true);
+    $catalog = $root.'/catalog.json';
+    $first = "{\"requesters\":{},\"records\":{\"commander.test\":\"10.44.0.7\"},\"suffixes\":{},\"overrides\":{}}\n";
+    $second = "{\"requesters\":{},\"records\":{\"commander.test\":\"10.44.0.8\"},\"suffixes\":{},\"overrides\":{}}\n";
+    $files->put($catalog, $first);
+    $server = new PrivateDnsListenerFactory()->make($catalog, '127.0.0.1', 0, '127.0.0.55:53535');
+
+    try {
+        $server->start();
+        expect(file_get_contents($catalog.'.loaded'))->toBe(hash('sha256', $first).PHP_EOL);
+
+        $files->put($catalog, $second);
+        $server->serveOnce(0.05);
+
+        expect(file_get_contents($catalog.'.loaded'))->toBe(hash('sha256', $second).PHP_EOL)
+            ->and(orb307_query($server, '127.0.0.1', 'udp', 'commander.test'))->toBe('10.44.0.8');
     } finally {
         $server->stop();
         $files->deleteDirectory($root);
@@ -475,4 +644,19 @@ function orb314_dig(string $server, int $port, string $name, string $transport):
     }
 
     return trim($process->getOutput());
+}
+
+/**
+ * Registers one more requester, which changes the published catalog.
+ */
+function orb_catalog_change(): void
+{
+    Node::query()->create([
+        'name' => 'catalog-change',
+        'status' => LifecycleStatus::Active,
+        'platform' => 'linux',
+        'public_ssh_host' => '192.0.2.99',
+        'wireguard_ip' => '10.44.0.99',
+        'user' => 'orbit',
+    ]);
 }

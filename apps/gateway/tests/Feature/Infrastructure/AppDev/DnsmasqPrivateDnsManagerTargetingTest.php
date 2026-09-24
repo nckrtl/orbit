@@ -38,7 +38,11 @@ it('publishes private DNS on the VPN node when gateway and vpn are split', funct
         ->and($ssh->commands[0]->input)
         ->toContain('orbit-records.conf')
         ->toContain('catalog.json')
-        ->not->toContain('orbit-private-dns.service');
+        ->toContain('catalog.json.loaded')
+        ->toContain('listen_addr=10.44.0.1')
+        ->toContain('systemctl restart orbit-private-dns.service')
+        ->not->toContain('enable --now')
+        ->not->toContain('orbit:private-dns-serve');
 });
 
 it('publishes on the VPN node while the gateway or vpn role converges', function (RoleName $converging): void {
@@ -82,7 +86,9 @@ it('does not rewrite the listener unit when publishing records to a remote vpn n
         ->and($ssh->commands[0]->input)
         ->toContain('orbit-records.conf')
         ->not->toContain('/srv/orbit/gateway-new')
-        ->not->toContain('orbit-private-dns.service');
+        ->not->toContain('enable --now')
+        ->not->toContain('daemon-reload')
+        ->not->toContain('orbit:private-dns-serve');
 });
 
 it('keeps local publication when gateway and vpn share a node', function (): void {

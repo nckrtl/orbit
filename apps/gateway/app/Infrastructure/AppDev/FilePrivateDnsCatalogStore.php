@@ -10,7 +10,7 @@ use JsonException;
 final class FilePrivateDnsCatalogStore
 {
     /**
-     * The digest of the loaded catalog. A publication replaces the file atomically, and two
+     * The SHA-256 digest of the loaded catalog. A publication replaces the file atomically, and two
      * publications in the same second can keep the same inode, mtime, and size, so only the
      * content identifies a replacement.
      */
@@ -20,9 +20,14 @@ final class FilePrivateDnsCatalogStore
 
     private WireGuardDnsRequesterResolver $requesters;
 
+    /**
+     * @param  ?string  $loadedPath  Receives the digest of each catalog the store loads, so a publication can
+     *                               confirm that the running listener serves the catalog it published.
+     */
     public function __construct(
         private readonly string $path,
         private readonly ?PrivateDnsAnswerCache $cache = null,
+        private readonly ?string $loadedPath = null,
     ) {
         $this->catalog = new PrivateDnsAnswerCatalog(exact: [], suffixes: []);
         $this->requesters = WireGuardDnsRequesterResolver::fromPublished([]);
@@ -41,7 +46,7 @@ final class FilePrivateDnsCatalogStore
             return false;
         }
 
-        $signature = hash('xxh128', $contents);
+        $signature = hash('sha256', $contents);
         if ($signature === $this->signature) {
             return false;
         }
@@ -68,8 +73,32 @@ final class FilePrivateDnsCatalogStore
         $this->requesters = WireGuardDnsRequesterResolver::fromPublished($requesters);
         $this->signature = $signature;
         $this->cache?->flush();
+        $this->confirm($signature);
 
         return true;
+    }
+
+    /**
+     * The file that confirms which catalog the listener serves, next to the catalog itself.
+     */
+    public static function loadedPath(string $catalogPath): string
+    {
+        return $catalogPath.'.loaded';
+    }
+
+    /**
+     * A failed write never stops the listener. The publication then cannot confirm the load and restarts it.
+     */
+    private function confirm(string $signature): void
+    {
+        if ($this->loadedPath === null) {
+            return;
+        }
+
+        $candidate = $this->loadedPath.'.'.getmypid().'.candidate';
+        if (@file_put_contents($candidate, $signature.PHP_EOL) === false || ! @rename($candidate, $this->loadedPath)) {
+            @unlink($candidate);
+        }
     }
 
     public function catalog(): PrivateDnsAnswerCatalog

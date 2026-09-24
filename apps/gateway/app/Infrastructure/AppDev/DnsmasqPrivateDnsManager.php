@@ -95,7 +95,7 @@ final readonly class DnsmasqPrivateDnsManager implements PrivateDnsManager
             : 'export PATH='.escapeshellarg($this->executablePath).':"$PATH"'."\n";
         $remote = $this->remoteListenerOwner();
         $listener = $remote instanceof Node
-            ? $this->recordsOnlyActivation()
+            ? $this->recordsOnlyActivation($this->resolvedListenAddress())
             : $this->listenerPublication();
         $result = $this->runPublication($remote, <<<BASH
             {$pathExport}managed={$recordsDirectory}/{$recordsFile}
@@ -206,7 +206,7 @@ final readonly class DnsmasqPrivateDnsManager implements PrivateDnsManager
     {
         $listen = $this->resolvedListenAddress();
         if (! $this->activateListener || $listen === null) {
-            return $this->recordsOnlyActivation();
+            return $this->recordsOnlyActivation($listen);
         }
 
         $unit = $this->units->render(
@@ -220,6 +220,7 @@ final readonly class DnsmasqPrivateDnsManager implements PrivateDnsManager
             workingDirectory: $this->checkout(),
         );
         $unitEncoded = base64_encode($unit);
+        $helpers = $this->listenerHelpers($listen);
         $unitDirectory = $this->unitDirectory;
         $unitName = $this->units->name();
         $unitPath = $this->units->path($unitDirectory);
@@ -236,8 +237,6 @@ final readonly class DnsmasqPrivateDnsManager implements PrivateDnsManager
             vpn_candidate={$this->recordsDirectory}/.{$this->vpnFragmentFile}.\$\$.candidate
             unit_backup=\$(mktemp "\$validation/{$unitName}.backup.XXXXXX")
             vpn_backup=\$(mktemp "\$validation/{$this->vpnFragmentFile}.backup.XXXXXX")
-            listen_addr={$listen}
-            listen_port={$this->listenPort}
             had_unit=0
             had_vpn=0
             trap 'rm -rf -- "\$validation"; rm -f -- "\$candidate" "\$backup" "\$catalog_candidate" "\$catalog_backup" "\$unit_candidate" "\$vpn_candidate" "\$unit_backup" "\$vpn_backup"' EXIT
@@ -266,6 +265,107 @@ final readonly class DnsmasqPrivateDnsManager implements PrivateDnsManager
             if [ -f "\$unit_managed" ] && cmp -s -- "\$validation/{$unitName}" "\$unit_managed"; then
                 unit_changed=0
             fi
+            {$helpers}
+            restore_listener() {
+                if [ "\$had_managed" = 1 ]; then
+                    install {$ownership}-m 0644 -- "\$backup" "\$managed"
+                else
+                    rm -f -- "\$managed"
+                fi
+                if [ "\$had_catalog" = 1 ]; then
+                    install {$ownership}-m 0644 -- "\$catalog_backup" "\$catalog_managed"
+                else
+                    rm -f -- "\$catalog_managed"
+                fi
+                if [ "\$had_vpn" = 1 ]; then
+                    install {$ownership}-m 0644 -- "\$vpn_backup" "\$vpn_managed"
+                elif [ -n "\${vpn_managed:-}" ]; then
+                    rm -f -- "\$vpn_managed"
+                fi
+                if [ "\$had_unit" = 1 ]; then
+                    install {$ownership}-m 0644 -- "\$unit_backup" "\$unit_managed"
+                else
+                    rm -f -- "\$unit_managed"
+                    systemctl disable --now {$unitName} || true
+                fi
+                systemctl daemon-reload || true
+                systemctl restart dnsmasq || true
+                if [ "\$had_unit" = 1 ]; then
+                    systemctl enable --now {$unitName} || true
+                fi
+            }
+            if [ "\$records_changed" = 0 ] && [ "\$catalog_changed" = 0 ] && [ "\$vpn_changed" = 0 ] && [ "\$unit_changed" = 0 ]; then
+                if systemctl is-active --quiet dnsmasq && systemctl is-active --quiet {$unitName} && php_owns_vpn_dns && listener_confirms_catalog; then
+                    exit 0
+                fi
+            fi
+            if [ "\$records_changed" = 1 ]; then
+                install {$ownership}-m 0644 -- "\$validation/fragments/{$recordsFile}" "\$candidate"
+                mv -fT -- "\$candidate" "\$managed"
+            fi
+            if [ "\$catalog_changed" = 1 ]; then
+                install {$ownership}-m 0644 -- "\$validation/catalog.json" "\$catalog_candidate"
+                mv -fT -- "\$catalog_candidate" "\$catalog_managed"
+            fi
+            if [ "\$unit_changed" = 1 ]; then
+                install -d -m 0755 -- "\$unit_directory"
+                install {$ownership}-m 0644 -- "\$validation/{$unitName}" "\$unit_candidate"
+                mv -fT -- "\$unit_candidate" "\$unit_managed"
+                systemctl daemon-reload
+            fi
+            # A listener that starts here loads the current catalog. One that already runs must confirm it.
+            listener_started=0
+            if ! listener_running; then
+                listener_started=1
+            fi
+            if [ "\$unit_changed" = 1 ] || [ "\$listener_started" = 1 ]; then
+                if ! systemctl enable --now {$unitName}; then
+                    restore_listener
+                    exit 1
+                fi
+            fi
+            if ! listener_running; then
+                restore_listener
+                exit 1
+            fi
+            if [ "\$vpn_changed" = 1 ]; then
+                install {$ownership}-m 0644 -- "\$validation/fragments/{$this->vpnFragmentFile}" "\$vpn_candidate"
+                mv -fT -- "\$vpn_candidate" "\$vpn_managed"
+            fi
+            if [ "\$records_changed" = 1 ] || [ "\$vpn_changed" = 1 ] || ! systemctl is-active --quiet dnsmasq; then
+                if ! systemctl restart dnsmasq; then
+                    restore_listener
+                    exit 1
+                fi
+            fi
+            if ! wait_until_php_owns_vpn_dns; then
+                restore_listener
+                exit 1
+            fi
+            if [ "\$listener_started" = 0 ] && ! listener_confirms_catalog; then
+                if ! restart_listener; then
+                    restore_listener
+                    exit 1
+                fi
+            fi
+            BASH;
+    }
+
+    /**
+     * Shell functions that find the listener and confirm the catalog it serves. The listener writes the digest of
+     * each catalog it loads next to the catalog. A listener whose code predates that confirmation never writes it,
+     * so it counts as current while the catalog stays unchanged and is restarted when the catalog changes.
+     */
+    private function listenerHelpers(?string $listen): string
+    {
+        $unitName = $this->units->name();
+        $loaded = FilePrivateDnsCatalogStore::loadedPath($this->catalogDirectory.'/'.$this->catalogFile);
+        $listenAddress = $listen ?? '';
+
+        return <<<BASH
+            catalog_loaded={$loaded}
+            listen_addr={$listenAddress}
+            listen_port={$this->listenPort}
             listener_pid() {
                 systemctl show -p MainPID --value {$unitName} 2>/dev/null || true
             }
@@ -297,77 +397,37 @@ final readonly class DnsmasqPrivateDnsManager implements PrivateDnsManager
                 done
                 return 1
             }
-            restore_listener() {
-                if [ "\$had_managed" = 1 ]; then
-                    install {$ownership}-m 0644 -- "\$backup" "\$managed"
-                else
-                    rm -f -- "\$managed"
-                fi
-                if [ "\$had_catalog" = 1 ]; then
-                    install {$ownership}-m 0644 -- "\$catalog_backup" "\$catalog_managed"
-                else
-                    rm -f -- "\$catalog_managed"
-                fi
-                if [ "\$had_vpn" = 1 ]; then
-                    install {$ownership}-m 0644 -- "\$vpn_backup" "\$vpn_managed"
-                elif [ -n "\${vpn_managed:-}" ]; then
-                    rm -f -- "\$vpn_managed"
-                fi
-                if [ "\$had_unit" = 1 ]; then
-                    install {$ownership}-m 0644 -- "\$unit_backup" "\$unit_managed"
-                else
-                    rm -f -- "\$unit_managed"
-                    systemctl disable --now {$unitName} || true
-                fi
-                systemctl daemon-reload || true
-                systemctl restart dnsmasq || true
-                if [ "\$had_unit" = 1 ]; then
-                    systemctl enable --now {$unitName} || true
-                fi
+            listener_confirms_catalog() {
+                local expected loaded n=0
+                expected=\$(sha256sum -- "\$catalog_managed" | cut -d ' ' -f 1)
+                while :; do
+                    loaded=\$(cat -- "\$catalog_loaded" 2>/dev/null || true)
+                    if [ "\$loaded" = "\$expected" ]; then
+                        return 0
+                    fi
+                    if [ "\$catalog_changed" = 0 ] && [ -z "\$loaded" ]; then
+                        return 0
+                    fi
+                    if [ "\$n" -ge 50 ]; then
+                        return 1
+                    fi
+                    sleep 0.1
+                    n=\$((n + 1))
+                done
             }
-            if [ "\$records_changed" = 0 ] && [ "\$catalog_changed" = 0 ] && [ "\$vpn_changed" = 0 ] && [ "\$unit_changed" = 0 ]; then
-                if systemctl is-active --quiet dnsmasq && systemctl is-active --quiet {$unitName} && php_owns_vpn_dns; then
-                    exit 0
+            restart_listener() {
+                systemctl restart {$unitName} || return 1
+                if [ -n "\$listen_addr" ]; then
+                    wait_until_php_owns_vpn_dns || return 1
                 fi
-            fi
-            if [ "\$records_changed" = 1 ]; then
-                install {$ownership}-m 0644 -- "\$validation/fragments/{$recordsFile}" "\$candidate"
-                mv -fT -- "\$candidate" "\$managed"
-            fi
-            if [ "\$catalog_changed" = 1 ]; then
-                install {$ownership}-m 0644 -- "\$validation/catalog.json" "\$catalog_candidate"
-                mv -fT -- "\$catalog_candidate" "\$catalog_managed"
-            fi
-            if [ "\$unit_changed" = 1 ]; then
-                install -d -m 0755 -- "\$unit_directory"
-                install {$ownership}-m 0644 -- "\$validation/{$unitName}" "\$unit_candidate"
-                mv -fT -- "\$unit_candidate" "\$unit_managed"
-                systemctl daemon-reload
-            fi
-            if [ "\$unit_changed" = 1 ] || ! listener_running; then
-                if ! systemctl enable --now {$unitName}; then
-                    restore_listener
-                    exit 1
+                systemctl is-active --quiet {$unitName}
+            }
+            confirm_listener_catalog() {
+                if ! systemctl is-active --quiet {$unitName}; then
+                    return 0
                 fi
-            fi
-            if ! listener_running; then
-                restore_listener
-                exit 1
-            fi
-            if [ "\$vpn_changed" = 1 ]; then
-                install {$ownership}-m 0644 -- "\$validation/fragments/{$this->vpnFragmentFile}" "\$vpn_candidate"
-                mv -fT -- "\$vpn_candidate" "\$vpn_managed"
-            fi
-            if [ "\$records_changed" = 1 ] || [ "\$vpn_changed" = 1 ] || ! systemctl is-active --quiet dnsmasq; then
-                if ! systemctl restart dnsmasq; then
-                    restore_listener
-                    exit 1
-                fi
-            fi
-            if ! wait_until_php_owns_vpn_dns; then
-                restore_listener
-                exit 1
-            fi
+                listener_confirms_catalog || restart_listener
+            }
             BASH;
     }
 
@@ -408,17 +468,23 @@ final readonly class DnsmasqPrivateDnsManager implements PrivateDnsManager
             PYTHON;
     }
 
-    private function recordsOnlyActivation(): string
+    /**
+     * Publishes records and the catalog without managing the listener unit. A running listener must still confirm
+     * the published catalog, or it is restarted so it serves that catalog.
+     */
+    private function recordsOnlyActivation(?string $listen): string
     {
         $ownership = $this->preserveRootOwnership ? '-o root -g root ' : '';
         $recordsFile = $this->recordsFile;
+        $helpers = $this->listenerHelpers($listen);
 
         return <<<BASH
+            {$helpers}
             if [ "\$records_changed" = 0 ] && [ "\$catalog_changed" = 0 ]; then
-                if systemctl is-active --quiet dnsmasq; then
-                    exit 0
+                if ! systemctl is-active --quiet dnsmasq; then
+                    systemctl restart dnsmasq
                 fi
-                systemctl restart dnsmasq
+                confirm_listener_catalog || exit 1
                 exit 0
             fi
             if [ "\$records_changed" = 1 ]; then
@@ -430,6 +496,7 @@ final readonly class DnsmasqPrivateDnsManager implements PrivateDnsManager
                 mv -fT -- "\$catalog_candidate" "\$catalog_managed"
             fi
             if [ "\$records_changed" = 0 ] && systemctl is-active --quiet dnsmasq; then
+                confirm_listener_catalog || exit 1
                 exit 0
             fi
             if ! systemctl restart dnsmasq; then
@@ -446,6 +513,7 @@ final readonly class DnsmasqPrivateDnsManager implements PrivateDnsManager
                 systemctl restart dnsmasq || true
                 exit 1
             fi
+            confirm_listener_catalog || exit 1
             BASH;
     }
 

@@ -32,6 +32,9 @@ final class PrivateDnsPublishHarness
         $failBind = $this->root.'/state-fail-bind';
         $active = $this->root.'/state-active';
         $listenerActive = $this->root.'/state-listener-active';
+        $listenerConfirms = $this->root.'/state-listener-confirms';
+        $failListenerRestart = $this->root.'/state-fail-listener-restart';
+        $catalog = $this->root.'/var/lib/orbit/private-dns/catalog.json';
         $serviceLog = $this->root.'/systemctl.log';
         $ssLog = $this->root.'/ss.log';
         $this->writeShim('dnsmasq', <<<BASH
@@ -67,6 +70,15 @@ final class PrivateDnsPublishHarness
                 printf '%s\n' '0'
                 exit 0
             fi
+            if [ "\${1:-}" = 'restart' ] && [ "\${2:-}" = 'orbit-private-dns.service' ]; then
+                if [ -f '{$failListenerRestart}' ]; then
+                    echo 'orbit-private-dns failed to restart' >&2
+                    rm -f '{$listenerActive}'
+                    exit 1
+                fi
+                touch '{$listenerActive}'
+                exit 0
+            fi
             if [ "\${1:-}" = 'restart' ]; then
                 if [ -f '{$failRestart}' ]; then
                     echo 'dnsmasq failed to restart' >&2
@@ -97,9 +109,13 @@ final class PrivateDnsPublishHarness
             fi
             exit 0
             BASH);
-        $this->writeShim('sleep', <<<'BASH'
+        // A waiting publication gives the listener time to load the catalog. A confirming listener does so here.
+        $this->writeShim('sleep', <<<BASH
             #!/bin/bash
             set -euo pipefail
+            if [ -f '{$listenerConfirms}' ] && [ -f '{$listenerActive}' ] && [ -f '{$catalog}' ]; then
+                sha256sum -- '{$catalog}' | cut -d ' ' -f 1 > '{$catalog}.loaded'
+            fi
             exit 0
             BASH);
         $this->writeShim('systemd-analyze', <<<'BASH'
@@ -193,6 +209,26 @@ final class PrivateDnsPublishHarness
     public function markListenerActive(): void
     {
         file_put_contents($this->root.'/state-listener-active', '1');
+    }
+
+    public function confirmListenerLoads(): void
+    {
+        file_put_contents($this->root.'/state-listener-confirms', '1');
+    }
+
+    public function failListenerRestart(): void
+    {
+        file_put_contents($this->root.'/state-fail-listener-restart', '1');
+    }
+
+    public function loadedPath(): string
+    {
+        return $this->catalogPath().'.loaded';
+    }
+
+    public function putLoaded(string $contents): void
+    {
+        $this->files->put($this->loadedPath(), $contents);
     }
 
     public function failListenerStart(): void
