@@ -126,7 +126,7 @@ The Gateway reads the snapshot from the [Metrics role's](/reference/metrics) own
 
 The snapshot reports `cores` as a list of per-core busy ratios from 0 to 1, `memory` and `swap` as used and total bytes, `load` as the 1, 5, and 15-minute averages, `uptime_seconds`, `pressure` as the `some` `avg10` value from each of CPU, memory, and I/O pressure (`0` when the Node's kernel has no PSI support), and `disks` as a list of mount, used, and total bytes, with pseudo filesystems (`tmpfs`, `proc`, `sysfs`, and similar) excluded and `/` listed first. Human output renders bytes and durations in readable units; JSON keeps the raw numbers.
 
-`orbit top` reads the same Prometheus data directly from the Metrics role's Grafana, for every Node at once for the dashboard and filtered to one Node for its page, rather than calling `node:metrics` per Node; see [ADR 0088](/decisions/0088-cli-reads-display-metrics-from-grafana).
+The [web app](/reference/web-app) reads the same Prometheus data directly from the Metrics role's Grafana, for every Node at once, rather than calling `node:metrics` per Node; see [ADR 0088](/decisions/0088-cli-reads-display-metrics-from-grafana).
 
 ## orbit node:remove
 

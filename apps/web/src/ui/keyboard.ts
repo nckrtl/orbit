@@ -7,7 +7,7 @@ import { chooseAction, openMenu } from "./menu";
 import { paneBeside, paneOrder, panes, selectionKey, type Target, ui } from "./store";
 
 /**
- * The keys `orbit top` answers, ported from its Interaction class. While nothing is focused the
+ * The keys the screen answers. While nothing is focused the
  * arrows hover: the sidebar reacts straight away, the page panes wait for Enter. A focused pane
  * moves its selection. `a` lists the actions for the selected row or the open record.
  */

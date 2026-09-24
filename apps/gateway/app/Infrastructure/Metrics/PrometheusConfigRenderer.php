@@ -12,7 +12,7 @@ final readonly class PrometheusConfigRenderer
     /**
      * How often Prometheus scrapes every node exporter and cAdvisor. A scrape only serializes
      * values each exporter already collects, measured at about 0.03s for cAdvisor and 0.1s for
-     * the node exporter. `orbit top` and the web dashboard refresh on the same ten seconds, so
+     * the node exporter. The web dashboard refreshes on the same ten seconds, so
      * no reader polls faster than new samples arrive.
      */
     public const string ScrapeInterval = '10s';
