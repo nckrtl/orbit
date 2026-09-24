@@ -30,19 +30,18 @@ final readonly class ServiceMetricsConfigRenderer
         'aarch64' => 'd9773dfef3f6efbbbea0fe8be40ea79652d71ea24b20bfe89690ab026e205442',
     ];
 
-    public function caddy(string $address, string $metricsAddress, bool $perHost = true): string
+    /**
+     * The scrape site only. Orbit's global options already collect per-host metrics on every Node.
+     */
+    public function caddy(string $address, string $metricsAddress): string
     {
         $this->guardAddress($address);
         $this->guardAddress($metricsAddress);
         $port = self::CaddyPort;
         $marker = self::Marker;
-        $metrics = $perHost ? "metrics {\n        per_host\n    }" : "servers 0.0.0.0:443 {\n        metrics\n    }";
 
         return <<<CADDY
             {$marker}
-            {
-                {$metrics}
-            }
             http://{$address}:{$port} {
                 bind {$address}
                 @scraper remote_ip {$metricsAddress}

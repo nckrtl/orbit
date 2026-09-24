@@ -3611,6 +3611,28 @@
             ]
         },
         {
+            "path": "docs/decisions/0139-collect-caddy-http-metrics-on-every-node.md",
+            "title": "ADR 0139: Collect Caddy HTTP metrics on every Node",
+            "kind": "decision",
+            "components": [
+                "apps/docs",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Gateway",
+                "Ingress",
+                "Instance",
+                "Node",
+                "Route"
+            ],
+            "governing_adrs": [
+                "0099",
+                "0137",
+                "0138",
+                "0139"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -3776,7 +3798,8 @@
                 "0135",
                 "0136",
                 "0137",
-                "0138"
+                "0138",
+                "0139"
             ]
         },
         {
@@ -4149,7 +4172,8 @@
             ],
             "governing_adrs": [
                 "0137",
-                "0138"
+                "0138",
+                "0139"
             ]
         },
         {

@@ -187,7 +187,7 @@ it('withdraws an existing Metrics route with valid global options and preserves 
             ->toBe($previous);
         $published = dirname((string) readlink("{$root}/Caddyfile"));
         expect(file_get_contents("{$published}/Caddyfile"))
-            ->toBe("{\n    auto_https disable_certs\n}\nimport {$published}/fragments/*.caddy\n");
+            ->toBe("{\n    auto_https disable_certs\n    metrics {\n        per_host\n    }\n}\nimport {$published}/fragments/*.caddy\n");
         expect(file_get_contents("{$published}/fragments/example.caddy"))->toBe($unrelated);
         expect(file_exists("{$published}/fragments/metrics.caddy"))->toBeFalse();
 

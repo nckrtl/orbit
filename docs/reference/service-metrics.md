@@ -26,7 +26,7 @@ The **Orbit Caddy Traffic** dashboard shows request rate, 5xx responses, request
 
 The dashboard selects Caddy's outer `subroute` handler, as observed with Orbit's site configuration on Caddy 2.6.2 and 2.11.4. It includes direct and proxied responses without adding the nested handler observations. These are requests seen by the selected Caddy site, not deduplicated requests across the entire fleet. Private traffic to a shared site can also be included.
 
-Caddy 2.9 and later support per-host collection. Prometheus retains published public host labels and metrics without a host label. Older Caddy versions, including Ubuntu's Caddy 2.6.2, instrument the outer `subroute` handler on Orbit's shared `0.0.0.0:443` listener. They report observations for the node, including direct responses and private traffic on that listener. The dedicated scrape listener is excluded. Orbit does not upgrade Caddy when metrics are enabled. Per-host collection applies to the shared Caddy process, so the Prometheus host filter bounds stored series, not Caddy's own in-memory series.
+Every Node that runs Caddy collects per-host metrics, because Orbit's [Caddy global options](/reference/caddy-configuration#published-layout) turn them on. The service metrics fragment adds only the WireGuard scrape site on a selected Ingress Node. Prometheus retains published public host labels and metrics without a host label. Per-host collection applies to the shared Caddy process, so the Prometheus host filter bounds stored series, not Caddy's own in-memory series.
 
 Ingress normally proxies to the Router. Its upstream-health metrics do not establish the health of each Instance. Traffic that never reaches Caddy requires an external probe.
 
