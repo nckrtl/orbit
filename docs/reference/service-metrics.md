@@ -64,7 +64,9 @@ Changing the Metrics node replaces its scrape access. When a node is unreachable
 
 ### Recovery and inspection
 
-FPM updates validate a candidate and recover the prior pool file on reload failure. Caddy uses the shared publisher's lock, validation, and rollback. Exporter and firewall updates retain a recovery journal; retry recovers an interrupted update. A failed fleet convergence restores touched service snapshots in reverse order, including when Prometheus publication fails. Ownership conflicts stop mutation, and recovery failures remain explicit errors.
+FPM updates validate a candidate and recover the prior pool file on reload failure. Caddy uses the shared publisher's lock, validation, and rollback. Under the proposed [Node Caddy build](/reference/caddy-configuration#node-caddy-build) ([ADR 0141](/decisions/0141-build-each-node-caddyfile-on-the-gateway)), the scrape site is rendered from stored state, and service metrics does not read or restore Caddy files on the Node.
+
+Exporter and firewall updates retain a recovery journal; retry recovers an interrupted update. A failed fleet convergence restores touched service snapshots in reverse order, including when Prometheus publication fails. Ownership conflicts stop mutation, and recovery failures remain explicit errors.
 
 Doctor's firewall expectations include the service allow and deny rules. Production runtime inspection expects the generated status directives when monitoring is selected. These checks do not replace scrape-health checks.
 

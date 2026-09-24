@@ -122,4 +122,4 @@ Doctor compares desired Process state with the observed systemd or Docker status
 
 `orbit process:list --instance=ID` shows the same desired and observed states, including `keep_alive`.
 
-Development Caddy publication validates its candidate as the Caddy service user. Validation can create access logs; running it as root leaves new log files unwritable by the service.
+Development Caddy publication validates its candidate as the Caddy service user. Validation can create access logs; running it as root leaves new log files unwritable by the service. Under the proposed [Node Caddy build](/reference/caddy-configuration#node-caddy-build) ([ADR 0141](/decisions/0141-build-each-node-caddyfile-on-the-gateway)), app-dev role convergence creates the hibernation directories before it requests a build, and the build validates as the Caddy service user.

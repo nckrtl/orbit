@@ -3584,7 +3584,8 @@
                 "proxycli"
             ],
             "governing_adrs": [
-                "0137"
+                "0137",
+                "0141"
             ]
         },
         {
@@ -3649,6 +3650,42 @@
                 "0113",
                 "0121",
                 "0140"
+            ]
+        },
+        {
+            "path": "docs/decisions/0141-build-each-node-caddyfile-on-the-gateway.md",
+            "title": "ADR 0141: Build each Node's Caddyfile on the Gateway",
+            "kind": "decision",
+            "components": [
+                "apps/docs",
+                "apps/e2e",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Cluster",
+                "Database",
+                "Doctor",
+                "Gateway",
+                "Ingress",
+                "Instance",
+                "Node",
+                "Process",
+                "Project",
+                "Route",
+                "Router",
+                "proxycli"
+            ],
+            "governing_adrs": [
+                "0009",
+                "0011",
+                "0080",
+                "0099",
+                "0100",
+                "0128",
+                "0137",
+                "0138",
+                "0139",
+                "0141"
             ]
         },
         {
@@ -3819,7 +3856,8 @@
                 "0137",
                 "0138",
                 "0139",
-                "0140"
+                "0140",
+                "0141"
             ]
         },
         {
@@ -4001,7 +4039,8 @@
             ],
             "governing_adrs": [
                 "0074",
-                "0075"
+                "0075",
+                "0141"
             ]
         },
         {
@@ -4181,12 +4220,14 @@
             "components": [],
             "concepts": [
                 "Cluster",
+                "Database",
                 "Doctor",
                 "Gateway",
                 "Herdr session",
                 "Ingress",
                 "Instance",
                 "Node",
+                "Process",
                 "Route",
                 "Router",
                 "proxycli"
@@ -4194,7 +4235,8 @@
             "governing_adrs": [
                 "0137",
                 "0138",
-                "0139"
+                "0139",
+                "0141"
             ]
         },
         {
@@ -4713,7 +4755,8 @@
                 "0055",
                 "0057",
                 "0088",
-                "0092"
+                "0092",
+                "0141"
             ]
         },
         {
@@ -4753,13 +4796,15 @@
                 "Process",
                 "Project",
                 "Route",
-                "Router"
+                "Router",
+                "proxycli"
             ],
             "governing_adrs": [
                 "0072",
                 "0094",
                 "0100",
-                "0138"
+                "0138",
+                "0141"
             ]
         },
         {
@@ -4939,7 +4984,8 @@
                 "0080",
                 "0082",
                 "0101",
-                "0138"
+                "0138",
+                "0141"
             ]
         },
         {
@@ -4971,6 +5017,7 @@
             "components": [],
             "concepts": [
                 "Doctor",
+                "Gateway",
                 "Ingress",
                 "Instance",
                 "Node",
@@ -4980,7 +5027,8 @@
                 "Web root"
             ],
             "governing_adrs": [
-                "0099"
+                "0099",
+                "0141"
             ]
         },
         {
@@ -5075,7 +5123,8 @@
                 "0037",
                 "0049",
                 "0056",
-                "0135"
+                "0135",
+                "0141"
             ]
         },
         {
@@ -5166,7 +5215,8 @@
                 "Router"
             ],
             "governing_adrs": [
-                "0080"
+                "0080",
+                "0141"
             ]
         },
         {
