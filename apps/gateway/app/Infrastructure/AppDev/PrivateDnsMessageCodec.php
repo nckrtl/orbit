@@ -7,6 +7,7 @@ namespace App\Infrastructure\AppDev;
 use App\Domain\AppDev\DnsQuestion;
 use App\Domain\AppDev\DnsRecordType;
 use App\Domain\AppDev\PrivateDnsAnswer;
+use App\Domain\AppDev\PrivateDnsAnswerExpiry;
 use InvalidArgumentException;
 
 final readonly class PrivateDnsMessageCodec
@@ -17,7 +18,7 @@ final readonly class PrivateDnsMessageCodec
 
     private const int ClassIn = 1;
 
-    private const int Ttl = 30;
+    private const int Ttl = PrivateDnsAnswerExpiry::TtlSeconds;
 
     public function decodeQuestion(string $message): DecodedDnsQuery
     {

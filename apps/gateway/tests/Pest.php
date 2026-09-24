@@ -24,6 +24,7 @@ use App\Models\Cluster;
 use App\Models\Node;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Sleep;
 use Laravel\Ai\Classification;
 use Tests\Support\FakeAgentationSiteProjection;
 use Tests\Support\FakeClusterRouterDnsSelectionReconciler;
@@ -54,6 +55,8 @@ uses(TestCase::class, RefreshDatabase::class)
         app()->instance(TaskRunReceipts::class, new FakeTaskRunReceipts);
         app()->instance(TaskCheckRunner::class, new FakeTaskCheckRunner);
         Classification::fake();
+        // Transitions wait for private DNS answers to expire; tests assert those waits instead.
+        Sleep::fake(syncWithCarbon: true);
     })
     ->in('Feature');
 

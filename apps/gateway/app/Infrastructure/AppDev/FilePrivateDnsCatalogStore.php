@@ -9,8 +9,12 @@ use JsonException;
 
 final class FilePrivateDnsCatalogStore
 {
-    /** @var array{int, int, int}|null */
-    private ?array $signature = null;
+    /**
+     * The digest of the loaded catalog. A publication replaces the file atomically, and two
+     * publications in the same second can keep the same inode, mtime, and size, so only the
+     * content identifies a replacement.
+     */
+    private ?string $signature = null;
 
     private PrivateDnsAnswerCatalog $catalog;
 
@@ -32,17 +36,13 @@ final class FilePrivateDnsCatalogStore
             return false;
         }
 
-        $stat = stat($this->path);
-        if ($stat === false) {
-            return false;
-        }
-        $signature = [$stat['ino'], $stat['mtime'], $stat['size']];
-        if ($signature === $this->signature) {
+        $contents = file_get_contents($this->path);
+        if (! is_string($contents) || $contents === '') {
             return false;
         }
 
-        $contents = file_get_contents($this->path);
-        if (! is_string($contents) || $contents === '') {
+        $signature = hash('xxh128', $contents);
+        if ($signature === $this->signature) {
             return false;
         }
 

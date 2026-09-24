@@ -1661,6 +1661,7 @@ it('accepts environment and domain operations after recovering an active source 
         'prepareFirewallPolicy',
         'prepareRouterCaddy',
         'publishDns',
+        'prepareCleanup',
         'cleanup',
     ] as $method) {
         $projector->shouldReceive($method)->once();

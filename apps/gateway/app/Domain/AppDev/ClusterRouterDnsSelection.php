@@ -6,6 +6,9 @@ namespace App\Domain\AppDev;
 
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Routes\ClusterRouterTransition;
+use App\Domain\Routes\RouteCertificateStaging;
+use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\Cluster;
@@ -65,7 +68,6 @@ final readonly class ClusterRouterDnsSelection
     public function answers(
         array $nodeOverrides = [],
         array $clusterOverrides = [],
-        ?Route $additionalRoute = null,
     ): array {
         $suffixes = [];
         $overrides = [];
@@ -83,7 +85,7 @@ final readonly class ClusterRouterDnsSelection
                 continue;
             }
 
-            $names = $this->selectedNames($projection['cluster_id'], $tld, $additionalRoute);
+            $names = $this->selectedNames($projection['cluster_id'], $tld);
 
             foreach ($projection['eligible'] as $requester) {
                 $key = DnsRequester::registered($requester->id, (string) $requester->wireguard_ip)->cacheKey();
@@ -186,6 +188,14 @@ final readonly class ClusterRouterDnsSelection
                 : null;
         }
 
+        // A Router replacement that published DNS keeps answering with its candidate.
+        $candidateId = new ClusterRouterTransition()->dnsRouters()[$cluster->id] ?? null;
+        $candidate = is_int($candidateId) ? Node::query()->find($candidateId) : null;
+
+        if ($candidate instanceof Node) {
+            return $this->applyNodeOverrides($candidate, $nodeOverrides[$candidate->id] ?? []);
+        }
+
         $assignment = NodeRole::query()
             ->where('cluster_id', $cluster->id)
             ->where('role', RoleName::Router)
@@ -270,7 +280,7 @@ final readonly class ClusterRouterDnsSelection
     /**
      * @return list<string>
      */
-    private function selectedNames(int $clusterId, ?string $tld, ?Route $additionalRoute): array
+    private function selectedNames(int $clusterId, ?string $tld): array
     {
         $names = [];
 
@@ -302,12 +312,18 @@ final readonly class ClusterRouterDnsSelection
             $names[] = $this->normalizeName($route->domain);
         }
 
-        if (
-            $additionalRoute instanceof Route
-            && $additionalRoute->cluster_id === $clusterId
-            && $additionalRoute->domain !== ''
-        ) {
-            $names[] = $this->normalizeName($additionalRoute->domain);
+        // A placement change into this Cluster names its domain once the candidate Router serves it,
+        // until a failure starts its restore or cutover makes the Cluster the Route's own.
+        $candidates = Route::query()
+            ->where('transition_cluster_id', $clusterId)
+            ->whereNull('failed_step')
+            ->orderBy('id')
+            ->get()
+            ->filter(static fn (Route $route): bool => RouteCertificateStaging::placementCandidate($route)
+                && RouteCertificateStaging::reached($route, RouteReplacementStep::RouterCaddy));
+
+        foreach ($candidates as $route) {
+            $names[] = $this->normalizeName($route->domain);
         }
 
         return array_values(array_unique(array_filter($names, static fn (string $name): bool => $name !== '')));

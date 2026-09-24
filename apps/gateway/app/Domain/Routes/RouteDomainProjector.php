@@ -33,7 +33,16 @@ interface RouteDomainProjector
 
     public function publishDns(Route $current, Route $candidate): void;
 
-    /** Runs after cutover, so `$route` is the Route the Node now serves, never the retiring one. */
+    /**
+     * Runs after cutover and before the `cleanup` step is stored: issues the live certificates of
+     * the Route the Node now serves, so the builds that follow can name them.
+     */
+    public function prepareCleanup(AppInstance $appInstance, Route $route): void;
+
+    /**
+     * Runs after the `cleanup` step is stored, so `$route` is the Route the Node now serves, never
+     * the retiring one. It builds the Nodes and then removes the staging and old certificates.
+     */
     public function cleanup(AppInstance $appInstance, Route $route): void;
 
     public function rollbackDns(Route $route): void;

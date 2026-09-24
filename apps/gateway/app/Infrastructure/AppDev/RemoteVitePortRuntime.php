@@ -159,8 +159,8 @@ final readonly class RemoteVitePortRuntime implements VitePortRuntime
     {
         $this->projection->run(function () use ($instance): void {
             $instance->loadMissing('routes');
-            foreach ($instance->routes as $route) {
-                $this->caddy->convergeRoute($instance->node, $route);
+            if ($instance->routes->isNotEmpty()) {
+                $this->caddy->converge($instance->node);
             }
         });
     }

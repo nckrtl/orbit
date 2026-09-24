@@ -5,12 +5,14 @@ declare(strict_types=1);
 namespace App\Actions\Clusters;
 
 use App\Domain\AppDev\ClusterRouterDnsSelectionReconciler;
+use App\Domain\AppDev\PrivateDnsAnswerExpiry;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Clusters\ClusterRouterOperationLock;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\ClusterRouterReplacementProjector;
 use App\Domain\Routes\ClusterRouterReplacementStep;
+use App\Domain\Routes\ClusterRouterTransition;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -30,6 +32,7 @@ final readonly class SetClusterRouterAction
         private ClusterRouterOperationLock $operations,
         private ?ClusterRouterDnsSelectionReconciler $dnsSelection = null,
         private ?ClusterRouterReplacementProjector $replacements = null,
+        private ?PrivateDnsAnswerExpiry $dnsAnswers = null,
     ) {}
 
     public function execute(Cluster $cluster, Node $node): Cluster
@@ -130,11 +133,17 @@ final readonly class SetClusterRouterAction
 
         try {
             if ($this->shouldRun($candidate, ClusterRouterReplacementStep::DatabaseCutover)) {
+                // One transaction stores the new active Router and the completed step, so every build
+                // keeps rendering the Router sites on both Routers until cleanup.
                 DB::transaction(static function () use ($active, $candidate): void {
                     $active?->update(['status' => LifecycleStatus::Removing]);
-                    $candidate->update(['status' => LifecycleStatus::Active, 'failed_step' => null, 'error_code' => null]);
+                    $candidate->update([
+                        'status' => LifecycleStatus::Active,
+                        'failed_step' => ClusterRouterReplacementStep::DatabaseCutover->value,
+                        'error_code' => null,
+                    ]);
                 });
-                $this->checkpoint($candidate, ClusterRouterReplacementStep::DatabaseCutover);
+                $candidate->refresh();
             }
         } catch (Throwable $exception) {
             if ($routes->isEmpty()) {
@@ -149,6 +158,9 @@ final readonly class SetClusterRouterAction
 
         try {
             if ($routes->isNotEmpty() && $oldRouter instanceof Node && $this->shouldRun($candidate, ClusterRouterReplacementStep::Cleanup)) {
+                $this->moveDnsFromOldRouter($cluster->id, $candidate);
+                $this->stopOldRouterSites($cluster->id, $candidate);
+
                 foreach ($routes as $route) {
                     $this->projector()->cleanupOldRouter($route, $oldRouter);
                 }
@@ -229,12 +241,16 @@ final readonly class SetClusterRouterAction
         Throwable $exception,
     ): void {
         $failedStep = $this->stepName($exception, ClusterRouterReplacementStep::RouterCertificate->value);
+        $errorCode = property_exists($exception, 'errorCode') && is_string($exception->errorCode)
+            ? $exception->errorCode
+            : 'node_role.operation_failed';
+        // A restoring candidate stops answering private DNS but keeps serving its Router sites.
+        $candidate->update([
+            'failed_step' => "rollback:{$failedStep}",
+            'error_code' => $errorCode,
+        ]);
 
         try {
-            foreach ($routes as $route) {
-                $this->projector()->restore($route, $router, $oldRouter);
-            }
-
             if ($oldRouter instanceof Node && is_int($oldRouter->cluster_id)) {
                 $this->dnsSelection()->expand(
                     clusterOverrides: [$oldRouter->cluster_id => ['router_node_id' => $oldRouter->id]],
@@ -242,10 +258,42 @@ final readonly class SetClusterRouterAction
                 );
             }
         } catch (Throwable $rollback) {
+            // Private DNS may still answer with the candidate, so it keeps serving until a retry.
+            $candidate->update(['error_code' => $this->errorCode($rollback)]);
+
+            throw $rollback;
+        }
+
+        // A failed DNS publication can have answered with the candidate.
+        if ($failedStep === ClusterRouterReplacementStep::DnsPublished->value) {
+            $this->answers()->wait();
+        }
+
+        // The candidate then stops serving, so the builds below withdraw its sites before its
+        // certificates are removed.
+        $candidate->update(['status' => LifecycleStatus::Failed]);
+
+        try {
+            foreach ($routes as $route) {
+                $this->projector()->restore($route, $router, $oldRouter);
+            }
+        } catch (Throwable $rollback) {
             $this->fail($candidate, "rollback:{$failedStep}", $rollback);
         }
 
         $this->fail($candidate, $failedStep, $exception);
+    }
+
+    private function errorCode(Throwable $exception): string
+    {
+        return property_exists($exception, 'errorCode') && is_string($exception->errorCode)
+            ? $exception->errorCode
+            : 'node_role.operation_failed';
+    }
+
+    private function answers(): PrivateDnsAnswerExpiry
+    {
+        return $this->dnsAnswers ?? new PrivateDnsAnswerExpiry;
     }
 
     private function forward(NodeRole $candidate, ClusterRouterReplacementStep $step, callable $operation): void
@@ -446,11 +494,49 @@ final readonly class SetClusterRouterAction
             return;
         }
 
+        $this->moveDnsFromOldRouter($cluster->id, $current);
+        $this->stopOldRouterSites($cluster->id, $current);
+
         foreach ($this->clusterRoutes($cluster->id) as $route) {
             $this->projector()->cleanupOldRouter($route, $oldRouter);
         }
 
         $current->update(['failed_step' => null, 'error_code' => null]);
+    }
+
+    /**
+     * Cleanup publishes private DNS from stored state, which answers with the new active Router,
+     * and waits until cached answers for the old Router can have expired. Only then does it stop
+     * serving on the old Router. The old Router keeps serving when the publication fails.
+     */
+    private function moveDnsFromOldRouter(int $clusterId, NodeRole $current): void
+    {
+        $serving = NodeRole::query()
+            ->where('cluster_id', $clusterId)
+            ->where('role', RoleName::Router)
+            ->where('status', LifecycleStatus::Removing)
+            ->whereKeyNot($current->id)
+            ->whereNull('failed_step')
+            ->exists();
+
+        if (! $serving) {
+            return;
+        }
+
+        $this->dnsSelection()->prune(clusterIds: [$clusterId]);
+        $this->answers()->wait();
+    }
+
+    /** Marks the old Router rows so the next build of each old Router drops the Cluster's Router sites. */
+    private function stopOldRouterSites(int $clusterId, NodeRole $current): void
+    {
+        NodeRole::query()
+            ->where('cluster_id', $clusterId)
+            ->where('role', RoleName::Router)
+            ->where('status', LifecycleStatus::Removing)
+            ->whereKeyNot($current->id)
+            ->whereNull('failed_step')
+            ->update(['failed_step' => ClusterRouterTransition::OldRouterCleanup]);
     }
 
     private function publicationCompleted(NodeRole $candidate): bool

@@ -176,14 +176,20 @@ final readonly class UpdateClusterAction
         $reconciler = $this->routeReconciler();
         $reconciler->validate(clusterOverrides: $overrides);
 
+        $converged = [];
+
         foreach ($reconciler->activePrivatePlacementChanges(clusterOverrides: $overrides) as $change) {
-            $this->convergeRoute()->execute(
+            $converged[] = $this->convergeRoute()->execute(
                 $change['route'],
                 $change['domain'],
                 allowGenerated: $change['route']->provenance === RouteProvenance::Generated,
                 placement: $change['placement'],
+                deferPlacementWithdrawal: true,
             );
         }
+
+        // One wait for private DNS answers to expire covers every Route this change moved.
+        $this->convergeRoute()->completePlacements($converged);
     }
 
     private function assertActiveRouterIfRequired(Cluster $cluster, ?string $tld, ClusterState $state): void

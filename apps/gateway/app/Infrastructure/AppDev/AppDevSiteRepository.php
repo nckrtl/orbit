@@ -6,8 +6,10 @@ namespace App\Infrastructure\AppDev;
 
 use App\Domain\Analytics\AnalyticsTrackingUpstream;
 use App\Domain\AppInstances\AppInstanceState;
+use App\Domain\Routes\ClusterRouterTransition;
 use App\Domain\Routes\CustomProxyUpstream;
 use App\Domain\Routes\PublicRouteEligibility;
+use App\Domain\Routes\RouteCertificateStaging;
 use App\Domain\Routes\RouteKind;
 use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
@@ -25,48 +27,32 @@ final readonly class AppDevSiteRepository
     public function __construct(
         private PublicRouteEligibility $eligibility = new PublicRouteEligibility,
         private IngressSiteRepository $ingressSites = new IngressSiteRepository,
+        private ClusterRouterTransition $routerTransitions = new ClusterRouterTransition,
     ) {}
 
     /**
-     * @param  array<int, int>  $routerOverrides
+     * Every site on the Node, read from stored state only, so any converge on the Node renders the
+     * same sites.
+     *
      * @return Collection<int, AppDevSite>
      */
-    public function forNode(
-        Node $node,
-        ?Route $pendingRoute = null,
-        ?AppInstance $unavailableInstance = null,
-        ?Route $additionalRoute = null,
-        array $routerOverrides = [],
-    ): Collection {
-        return $this->sites($node, $pendingRoute, $unavailableInstance, $additionalRoute, $routerOverrides);
+    public function forNode(Node $node): Collection
+    {
+        return $this->sites($node);
     }
 
-    /**
-     * @param  array<int, int>  $routerOverrides
-     * @return Collection<int, AppDevSite>
-     */
-    public function all(
-        ?Route $pendingRoute = null,
-        ?AppInstance $unavailableInstance = null,
-        ?Route $additionalRoute = null,
-        array $routerOverrides = [],
-    ): Collection {
-        return $this->sites(null, $pendingRoute, $unavailableInstance, $additionalRoute, $routerOverrides);
+    /** @return Collection<int, AppDevSite> */
+    public function all(): Collection
+    {
+        return $this->sites(null);
     }
 
-    /**
-     * @param  array<int, int>  $routerOverrides
-     * @return Collection<int, AppDevSite>
-     */
-    private function sites(
-        ?Node $node,
-        ?Route $pendingRoute,
-        ?AppInstance $unavailableInstance,
-        ?Route $additionalRoute,
-        array $routerOverrides = [],
-    ): Collection {
+    /** @return Collection<int, AppDevSite> */
+    private function sites(?Node $node): Collection
+    {
         /** @var Collection<int, AppDevSite> $sites */
         $sites = collect();
+        $secondRouters = $this->routerTransitions->secondRouters();
 
         $routeQuery = Route::query()
             ->with([
@@ -74,73 +60,61 @@ final readonly class AppDevSiteRepository
                 'targets.appInstance.node',
                 'cluster.routerAssignment.node',
                 'cluster.ingressAssignment.node',
+                'transitionCluster.routerAssignment.node',
                 'customProxy',
                 'analyticsTracking',
                 'node',
             ])
-            ->where(static function (Builder $query) use ($pendingRoute): void {
-                $query->whereIn('status', [
-                    RouteStatus::Active->value,
-                    RouteStatus::Activating->value,
-                    RouteStatus::Retiring->value,
-                ])->orWhere(static function (Builder $query): void {
-                    // A failed replacement serves nothing. Its rollback marks it failed before it
-                    // withdraws the candidate sites and then removes their certificates.
-                    $query
-                        ->where('status', RouteStatus::Pending->value)
-                        ->whereNotNull('replaces_route_id');
-                });
-
-                if ($pendingRoute instanceof Route) {
-                    $query->orWhere('id', $pendingRoute->id);
-                }
+            ->where(static function (Builder $query): void {
+                // A pending domain change replacement renders from its stored steps. A failed
+                // replacement serves nothing: its rollback marks it failed before it withdraws the
+                // candidate sites and then removes their certificates.
+                $query->where('sites_published', true)
+                    ->orWhere(static function (Builder $query): void {
+                        $query
+                            ->where('status', RouteStatus::Pending->value)
+                            ->whereNotNull('replaces_route_id');
+                    });
             });
 
         if ($node instanceof Node) {
             $nodeId = $node->id;
-            $overrideClusterIds = array_keys(array_filter(
-                $routerOverrides,
-                static fn (int $routerId): bool => $routerId === $nodeId,
+            $secondRouterClusterIds = array_keys(array_filter(
+                $secondRouters,
+                static fn (array $routers): bool => collect($routers)->contains(
+                    static fn (Node $router): bool => $router->id === $nodeId,
+                ),
             ));
-            $routeQuery->where(static function (Builder $query) use (
-                $nodeId,
-                $pendingRoute,
-                $unavailableInstance,
-                $overrideClusterIds,
-            ): void {
-                $query->where(static function (Builder $query) use (
-                    $nodeId,
-                    $pendingRoute,
-                    $unavailableInstance,
-                    $overrideClusterIds,
-                ): void {
-                    $query
-                        ->where('routes.node_id', $nodeId)
-                        ->orWhereHas(
-                            'targets.appInstance',
-                            static fn (Builder $query): Builder => $query->where('node_id', $nodeId),
-                        )
-                        ->orWhereHas(
-                            'cluster.routerAssignment',
-                            static fn (Builder $query): Builder => $query->where('node_id', $nodeId),
-                        )
-                        ->orWhereHas(
-                            'cluster.ingressAssignment',
-                            static fn (Builder $query): Builder => $query->where('node_id', $nodeId),
-                        );
+            $routeQuery->where(static function (Builder $query) use ($nodeId, $secondRouterClusterIds): void {
+                $query
+                    ->where('routes.node_id', $nodeId)
+                    ->orWhere('routes.transition_node_id', $nodeId)
+                    ->orWhereHas(
+                        'targets.appInstance',
+                        static fn (Builder $query): Builder => $query->where('node_id', $nodeId),
+                    )
+                    ->orWhereHas(
+                        'cluster.routerAssignment',
+                        static fn (Builder $query): Builder => $query->where('node_id', $nodeId),
+                    )
+                    ->orWhereHas(
+                        'cluster.ingressAssignment',
+                        static fn (Builder $query): Builder => $query->where('node_id', $nodeId),
+                    )
+                    ->orWhereHas(
+                        'transitionCluster.routerAssignment',
+                        static fn (Builder $query): Builder => $query->where('node_id', $nodeId),
+                    )
+                    ->orWhereExists(static fn ($members) => $members
+                        ->selectRaw('1')
+                        ->from('app_instance_removal_members')
+                        ->whereColumn('app_instance_removal_members.route_id', 'routes.id')
+                        ->where('app_instance_removal_members.node_id', $nodeId)
+                        ->whereNull('app_instance_removal_members.row_deleted_at'));
 
-                    if ($overrideClusterIds !== []) {
-                        $query->orWhereIn('cluster_id', $overrideClusterIds);
-                    }
-
-                    if (
-                        $pendingRoute instanceof Route
-                        && $unavailableInstance instanceof AppInstance
-                        && $unavailableInstance->node_id === $nodeId
-                    ) {
-                        $query->orWhere('routes.id', $pendingRoute->id);
-                    }
-                });
+                if ($secondRouterClusterIds !== []) {
+                    $query->orWhereIn('routes.cluster_id', $secondRouterClusterIds);
+                }
             });
         }
 
@@ -158,7 +132,7 @@ final readonly class AppDevSiteRepository
                 });
         });
 
-        $routes = $routeQuery->get();
+        $routes = $routeQuery->orderBy('id')->get();
         /** @var Collection<int, Route> $routes */
         foreach ($routes as $route) {
             if ($route->kind === RouteKind::CustomProxy) {
@@ -171,139 +145,49 @@ final readonly class AppDevSiteRepository
                 continue;
             }
 
+            $router = $route->cluster?->routerAssignment?->node;
+            $clusterSecondRouters = is_int($route->cluster_id) ? ($secondRouters[$route->cluster_id] ?? []) : [];
+
             if ($route->kind === RouteKind::AnalyticsTracking) {
-                foreach ($this->analyticsTrackingSites($route, $pendingRoute, $routerOverrides) as $site) {
-                    $sites->push($site);
+                $sites->push(...$this->analyticsTrackingSites($route, $route->cluster_id === null ? $route->node : $router));
+
+                foreach ($clusterSecondRouters as $secondRouter) {
+                    $sites->push(...$this->routerScopeSites(
+                        $route,
+                        $secondRouter,
+                        $this->analyticsTrackingSites($route, $secondRouter, includeIngress: false),
+                    ));
                 }
 
                 continue;
             }
 
-            $targets = $route
-                ->targets
-                ->map(static fn ($targetRow) => $targetRow->appInstance)
-                ->filter(
-                    static fn ($target): bool => (
-                        $target instanceof AppInstance
-                        && is_string($target->node->wireguard_ip)
-                        && in_array(
-                            $target->status,
-                            [AppInstanceState::SourceResolved, AppInstanceState::Active],
-                            true,
-                        )
-                    ),
-                )
-                ->values();
-            // A pending replacement answers from the staging certificates its domain change issues,
-            // because the Instance's live leaf still names the current domain and the replacement's
-            // live Router leaf does not exist until cleanup. Each site appears only once the step that
-            // writes its certificate has completed.
-            $stagesDomainChange = $route->status === RouteStatus::Pending && $route->replaces_route_id !== null;
+            $sites->push(...$this->projectRouteSites(
+                $route,
+                $router,
+                stagesWorkload: RouteCertificateStaging::workload($route),
+                stagesRouter: RouteCertificateStaging::router($route),
+            ));
 
-            if ($stagesDomainChange && ! $this->domainChangeReached($route, RouteReplacementStep::WorkloadCertificate)) {
-                continue;
-            }
-
-            $router = ! $stagesDomainChange || $this->domainChangeReached($route, RouteReplacementStep::RouterCertificate)
-                ? $this->routerFor($route, $routerOverrides)
-                : null;
-            $ingress = $route->cluster !== null
-                ? $this->eligibility->activeIngress($route->cluster)
-                : null;
-            $hasPublicIngress = $this->publishesIngress($route)
-                && $ingress instanceof Node;
-            $ingressSharesRouter = $hasPublicIngress && $router instanceof Node && $ingress->is($router);
-            $localTargets = $router instanceof Node
-                ? $targets->filter(static fn (AppInstance $target): bool => $router->is($target->node))
-                : collect();
-            $remoteTargets = $router instanceof Node
-                ? $targets->filter(static fn (AppInstance $target): bool => ! $router->is($target->node))
-                : $targets;
-            $hasComposedPool = $router instanceof Node
-                && is_string($router->wireguard_ip)
-                && $localTargets->isNotEmpty()
-                && $remoteTargets->isNotEmpty()
-                && ! $ingressSharesRouter;
-            $hasRouterSite = $router instanceof Node
-            && is_string($router->wireguard_ip)
-            && $remoteTargets->isNotEmpty()
-            && $localTargets->isEmpty()
-            && ! $ingressSharesRouter;
-
-            foreach ($targets as $target) {
-                if ($hasPublicIngress && $ingress->is($target->node) && $ingressSharesRouter) {
-                    $sites->push($this->composedPublicSite($target, $route, $ingress));
-
-                    continue;
-                }
-
-                if ($hasComposedPool && $router->is($target->node)) {
-                    continue;
-                }
-
-                $sites->push($this->appInstanceSite($target, $route, domainChange: $stagesDomainChange));
-            }
-
-            if ($hasComposedPool) {
-                $sites->push($this->composedPoolSite(
-                    array_values($localTargets->all()),
-                    array_values($remoteTargets->all()),
+            foreach ($clusterSecondRouters as $secondRouter) {
+                $sites->push(...$this->routerScopeSites($route, $secondRouter, $this->projectRouteSites(
                     $route,
-                    $router,
-                    domainChange: $stagesDomainChange,
-                ));
+                    $secondRouter,
+                    stagesWorkload: RouteCertificateStaging::workload($route),
+                    stagesRouter: RouteCertificateStaging::router($route),
+                )));
             }
 
-            if ($hasRouterSite) {
-                $sites->push($this->routerSite(
-                    array_values($remoteTargets->all()),
-                    $route,
-                    $router,
-                    domainChange: $stagesDomainChange,
-                ));
-            }
+            $sites->push(...$this->secondPlacementSites($route));
 
-            if (
-                $targets->isEmpty()
-                && $router instanceof Node
-                && in_array($route->status, [RouteStatus::Active, RouteStatus::Activating], true)
-                && ! AppInstanceRemovalMember::query()
-                    ->where('route_id', $route->id)
-                    ->whereNull('row_deleted_at')
-                    ->exists()
-            ) {
-                $sites->push($this->unavailableRouteSite($route, $router));
-            }
+            $unavailable = $this->unavailableSite($route, $router);
 
-            if ($hasPublicIngress && ! $ingressSharesRouter) {
-                $sites->push($this->ingressSite($route, $ingress, $router));
+            if ($unavailable instanceof AppDevSite) {
+                $sites->push($unavailable);
             }
-
-            if (
-                $hasPublicIngress
-                && $ingressSharesRouter
-                && ! $targets->contains(static fn (AppInstance $target): bool => $ingress->is($target->node))
-            ) {
-                $sites->push($this->publicRouterSite(array_values($targets->all()), $route, $ingress));
-            }
-
-            if (
-                $pendingRoute instanceof Route
-                && $route->is($pendingRoute)
-                && $unavailableInstance instanceof AppInstance
-                && $targets->isEmpty()
-            ) {
-                $sites->push($this->unavailableSite($unavailableInstance, $route, $router));
-            }
-
         }
 
-        if (
-            $additionalRoute instanceof Route
-            && $sites->every(static fn (AppDevSite $site): bool => $site->domain !== $additionalRoute->domain)
-        ) {
-            $this->appendDomainChangeSites($sites, $additionalRoute, $routerOverrides);
-        }
+        $sites = $this->withoutDuplicateSecondarySites($sites);
 
         if ($node instanceof Node) {
             return $sites->where('nodeId', $node->id)->values();
@@ -313,60 +197,257 @@ final readonly class AppDevSiteRepository
     }
 
     /**
-     * @param  Collection<int, AppDevSite>  $sites
-     * @param  array<int, int>  $routerOverrides
+     * The sites a Project Route renders with one Router: workload, Router, composed pool, public
+     * Ingress, and the unavailable Router answer of a targetless Route.
+     *
+     * @return list<AppDevSite>
      */
-    private function appendDomainChangeSites(Collection $sites, Route $route, array $routerOverrides = []): void
+    private function projectRouteSites(Route $route, ?Node $router, bool $stagesWorkload, bool $stagesRouter): array
     {
-        $route->loadMissing([
-            'targets.appInstance.app',
-            'targets.appInstance.node',
-            'cluster.routerAssignment.node',
-        ]);
+        $sites = [];
         $targets = $route
             ->targets
             ->map(static fn ($targetRow) => $targetRow->appInstance)
-            ->filter(static fn ($target): bool => $target instanceof AppInstance)
+            ->filter(
+                static fn ($target): bool => (
+                    $target instanceof AppInstance
+                    && is_string($target->node->wireguard_ip)
+                    && in_array(
+                        $target->status,
+                        [AppInstanceState::SourceResolved, AppInstanceState::Active],
+                        true,
+                    )
+                ),
+            )
             ->values();
-        $router = $this->routerFor($route, $routerOverrides);
+        // A pending replacement answers from the staging certificates its domain change issues. Each
+        // site appears only once the step that writes its certificate has completed.
+        $gatesOnSteps = $route->status === RouteStatus::Pending && $route->replaces_route_id !== null;
+
+        if ($gatesOnSteps && ! RouteCertificateStaging::reached($route, RouteReplacementStep::WorkloadCertificate)) {
+            return [];
+        }
+
+        if ($gatesOnSteps && ! RouteCertificateStaging::reached($route, RouteReplacementStep::RouterCertificate)) {
+            $router = null;
+        }
+
+        $ingress = $route->cluster !== null
+            ? $this->eligibility->activeIngress($route->cluster)
+            : null;
+        $hasPublicIngress = $this->publishesIngress($route)
+            && $ingress instanceof Node;
+        $ingressSharesRouter = $hasPublicIngress && $router instanceof Node && $ingress->is($router);
+        $localTargets = $router instanceof Node
+            ? $targets->filter(static fn (AppInstance $target): bool => $router->is($target->node))
+            : collect();
+        $remoteTargets = $router instanceof Node
+            ? $targets->filter(static fn (AppInstance $target): bool => ! $router->is($target->node))
+            : $targets;
+        $hasComposedPool = $router instanceof Node
+            && is_string($router->wireguard_ip)
+            && $localTargets->isNotEmpty()
+            && $remoteTargets->isNotEmpty()
+            && ! $ingressSharesRouter;
+        $hasRouterSite = $router instanceof Node
+        && is_string($router->wireguard_ip)
+        && $remoteTargets->isNotEmpty()
+        && $localTargets->isEmpty()
+        && ! $ingressSharesRouter;
 
         foreach ($targets as $target) {
-            $sites->push($this->appInstanceSite($target, $route, domainChange: true));
+            if ($hasPublicIngress && $ingress->is($target->node) && $ingressSharesRouter) {
+                $sites[] = $this->composedPublicSite($target, $route, $ingress);
+
+                continue;
+            }
+
+            if ($hasComposedPool && $router->is($target->node)) {
+                continue;
+            }
+
+            $sites[] = $this->appInstanceSite($target, $route, domainChange: $stagesWorkload);
+        }
+
+        if ($hasComposedPool) {
+            $sites[] = $this->composedPoolSite(
+                array_values($localTargets->all()),
+                array_values($remoteTargets->all()),
+                $route,
+                $router,
+                domainChange: $stagesRouter,
+            );
+        }
+
+        if ($hasRouterSite) {
+            $sites[] = $this->routerSite(
+                array_values($remoteTargets->all()),
+                $route,
+                $router,
+                domainChange: $stagesRouter,
+            );
         }
 
         if (
-            $router instanceof Node
-            && $targets->isNotEmpty()
-            && ! $targets->contains(static fn (AppInstance $target): bool => $router->is($target->node))
+            $targets->isEmpty()
+            && $router instanceof Node
+            && in_array($route->status, [RouteStatus::Active, RouteStatus::Activating], true)
+            && ! AppInstanceRemovalMember::query()
+                ->where('route_id', $route->id)
+                ->whereNull('row_deleted_at')
+                ->exists()
         ) {
-            $sites->push($this->routerSite(
-                array_values($targets->all()),
-                $route,
-                $router,
-                domainChange: true,
-            ));
+            $sites[] = $this->unavailableRouteSite($route, $router);
         }
-    }
 
-    private function domainChangeReached(Route $route, RouteReplacementStep $step): bool
-    {
-        return $route->replacement_step?->hasReached($step) === true;
+        if ($hasPublicIngress && ! $ingressSharesRouter) {
+            $sites[] = $this->ingressSite($route, $ingress, $router);
+        }
+
+        if (
+            $hasPublicIngress
+            && $ingressSharesRouter
+            && ! $targets->contains(static fn (AppInstance $target): bool => $ingress->is($target->node))
+        ) {
+            $sites[] = $this->publicRouterSite(array_values($targets->all()), $route, $ingress);
+        }
+
+        return $sites;
     }
 
     /**
-     * @param  array<int, int>  $routerOverrides
+     * A second Router serves only the Route's Router scope sites. The Ingress upstream and every
+     * workload site follow the active Router.
+     *
+     * @param  list<AppDevSite>  $sites
+     * @return list<AppDevSite>
      */
-    private function routerFor(Route $route, array $routerOverrides): ?Node
+    private function routerScopeSites(Route $route, Node $router, array $sites): array
     {
-        $clusterId = $route->cluster_id;
+        return array_values(array_map(
+            static fn (AppDevSite $site): AppDevSite => $site->asSecondary(),
+            array_filter(
+                $sites,
+                static fn (AppDevSite $site): bool => $site->nodeId === $router->id
+                    && $site->scope === "route-{$route->id}-router",
+            ),
+        ));
+    }
 
-        if (is_int($clusterId) && array_key_exists($clusterId, $routerOverrides)) {
-            $router = Node::query()->find($routerOverrides[$clusterId]);
+    /**
+     * The second placement of a placement change: the candidate before `database-cutover`, which
+     * answers from the staging Router scope once its certificate exists, and the old placement
+     * after it, which keeps its live scopes until cleanup.
+     *
+     * @return list<AppDevSite>
+     */
+    private function secondPlacementSites(Route $route): array
+    {
+        $candidate = RouteCertificateStaging::placementCandidate($route);
 
-            return $router instanceof Node ? $router : null;
+        if (! $candidate && ! RouteCertificateStaging::placementCutOver($route)) {
+            return [];
         }
 
-        return $route->cluster?->routerAssignment?->node;
+        if ($candidate && ! RouteCertificateStaging::reached($route, RouteReplacementStep::WorkloadCertificate)) {
+            return [];
+        }
+
+        $second = $route->replicate();
+        $second->id = $route->id;
+        $second->exists = true;
+        $second->node_id = $route->transition_node_id;
+        $second->cluster_id = $route->transition_cluster_id;
+        $second->transition_node_id = null;
+        $second->transition_cluster_id = null;
+        $second->setRelation('targets', $route->targets);
+        $second->setRelation('cluster', $route->transitionCluster);
+        $router = $route->transitionCluster?->routerAssignment?->node;
+
+        if ($candidate && ! RouteCertificateStaging::reached($route, RouteReplacementStep::RouterCertificate)) {
+            $router = null;
+        }
+
+        $sites = $this->projectRouteSites($second, $router, stagesWorkload: $candidate, stagesRouter: $candidate);
+
+        return array_values(array_map(
+            static fn (AppDevSite $site): AppDevSite => $site->asSecondary(),
+            array_filter($sites, static fn (AppDevSite $site): bool => ! $site->publicListener),
+        ));
+    }
+
+    /**
+     * The unavailable answer of an Instance removal: its targets are gone, the Route still has its
+     * publication record, and an open development removal member names the departing Instance.
+     */
+    private function unavailableSite(Route $route, ?Node $router): ?AppDevSite
+    {
+        if ($route->targets->isNotEmpty()) {
+            return null;
+        }
+
+        $member = AppInstanceRemovalMember::query()
+            ->where('route_id', $route->id)
+            ->where('environment', 'development')
+            ->whereNull('row_deleted_at')
+            ->whereNull('route_cleared_at')
+            ->orderBy('id')
+            ->first();
+        $instance = $member instanceof AppInstanceRemovalMember
+            ? AppInstance::query()->with('node')->find($member->app_instance_id)
+            : null;
+
+        if (! $instance instanceof AppInstance) {
+            return null;
+        }
+
+        $usesRouterProjection = $router instanceof Node && ! $router->is($instance->node);
+        $node = $usesRouterProjection ? $router : $instance->node;
+
+        return new AppDevSite(
+            nodeId: $node->id,
+            nodeAddress: $node->wireguard_ip ?? '',
+            scope: $usesRouterProjection ? "route-{$route->id}-router" : "app-instance-{$instance->id}",
+            checkoutPath: '',
+            documentRoot: '',
+            phpVersion: null,
+            domain: $route->domain,
+            unavailable: true,
+        );
+    }
+
+    /**
+     * A second placement or second Router site that renders an address the current site already
+     * serves on that Node is skipped, so the Node keeps one site block for the address.
+     *
+     * @param  Collection<int, AppDevSite>  $sites
+     * @return Collection<int, AppDevSite>
+     */
+    private function withoutDuplicateSecondarySites(Collection $sites): Collection
+    {
+        $current = $sites
+            ->reject(static fn (AppDevSite $site): bool => $site->secondary)
+            ->map(static fn (AppDevSite $site): string => $site->addressKey())
+            ->flip();
+        $seen = [];
+
+        return $sites
+            ->filter(static function (AppDevSite $site) use ($current, &$seen): bool {
+                if (! $site->secondary) {
+                    return true;
+                }
+
+                $key = $site->addressKey();
+
+                if ($current->has($key) || isset($seen[$key])) {
+                    return false;
+                }
+
+                $seen[$key] = true;
+
+                return true;
+            })
+            ->values();
     }
 
     private function appInstanceSite(
@@ -486,26 +567,6 @@ final readonly class AppDevSiteRepository
         );
     }
 
-    private function unavailableSite(AppInstance $instance, Route $route, ?Node $router): AppDevSite
-    {
-        $usesRouterProjection = $router instanceof Node && ! $router->is($instance->node);
-        $node = $usesRouterProjection ? $router : $instance->node;
-        $scope = $usesRouterProjection
-            ? "route-{$route->id}-router"
-            : "app-instance-{$instance->id}";
-
-        return new AppDevSite(
-            nodeId: $node->id,
-            nodeAddress: $node->wireguard_ip ?? '',
-            scope: $scope,
-            checkoutPath: '',
-            documentRoot: '',
-            phpVersion: null,
-            domain: $route->domain,
-            unavailable: true,
-        );
-    }
-
     private function publishesIngress(Route $route): bool
     {
         return $this->eligibility->publicEdgeIsLive($route);
@@ -588,19 +649,17 @@ final readonly class AppDevSiteRepository
      * the Ingress serves the public listener itself. The Router site is first, so private DNS
      * answers with the Router.
      *
-     * @param  array<int, int>  $routerOverrides
      * @return list<AppDevSite>
      */
-    private function analyticsTrackingSites(Route $route, ?Route $pendingRoute, array $routerOverrides): array
+    private function analyticsTrackingSites(Route $route, ?Node $router, bool $includeIngress = true): array
     {
-        $served = in_array($route->status, [RouteStatus::Active, RouteStatus::Activating], true)
-            || ($pendingRoute instanceof Route && $route->is($pendingRoute));
-        // A cluster-scoped host is served by the cluster's Router; a node-scoped one by its own Node.
-        $router = $route->cluster_id === null ? $route->node : $this->routerFor($route, $routerOverrides);
         $upstream = AnalyticsTrackingUpstream::current(includeConverging: true);
 
+        // A retiring tracking host is on its way to removal and serves nothing, as its public edge
+        // was withdrawn first.
         if (
-            ! $served
+            ! $route->sites_published
+            || $route->status === RouteStatus::Retiring
             || $upstream === null
             || ! $router instanceof Node
             || ! is_string($router->wireguard_ip)
@@ -609,7 +668,7 @@ final readonly class AppDevSiteRepository
             return [];
         }
 
-        $ingress = $route->cluster !== null && $this->publishesIngress($route)
+        $ingress = $includeIngress && $route->cluster !== null && $this->publishesIngress($route)
             ? $this->eligibility->activeIngress($route->cluster)
             : null;
 

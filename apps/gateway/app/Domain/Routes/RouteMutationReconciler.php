@@ -193,6 +193,7 @@ final readonly class RouteMutationReconciler
                 $route->domain === $proposal['domain']
                 && $route->node_id === $proposal['node_id']
                 && $route->cluster_id === $proposal['cluster_id']
+                && ! $this->awaitsPlacementCleanup($route)
             ) {
                 continue;
             }
@@ -217,6 +218,17 @@ final readonly class RouteMutationReconciler
         }
 
         return $changes;
+    }
+
+    /**
+     * A placement change that cut over keeps its old placement stored until cleanup finishes. The
+     * retry of the same mutation resumes that cleanup, although the Route already has the proposed
+     * placement.
+     */
+    private function awaitsPlacementCleanup(Route $route): bool
+    {
+        return $route->hasPlacementTransition()
+            && $route->replacement_step?->hasReached(RouteReplacementStep::DatabaseCutover) === true;
     }
 
     /**

@@ -71,9 +71,9 @@ it('projects a production workload through a remote Router over LAN without publ
         ->first(static fn (RemoteCommand $command): bool => in_array('s_client', $command->arguments, true));
     $sites = new AppDevSiteRepository;
     $renderer = new AppDevCaddyConfigRenderer;
-    $workloadConfiguration = $renderer->render($sites->forNode($workload, $route));
-    $routerConfiguration = $renderer->render($sites->forNode($router, $route));
-    $dnsConfiguration = new AppDevDnsConfigRenderer($sites)->render(pendingRoute: $route);
+    $workloadConfiguration = $renderer->render($sites->forNode($workload));
+    $routerConfiguration = $renderer->render($sites->forNode($router));
+    $dnsConfiguration = new AppDevDnsConfigRenderer($sites)->render();
     $publishedInputs = collect($ssh->commands)->pluck('command.input')->filter();
 
     expect($productionPhp->converged)->toBe([$appInstance->id])

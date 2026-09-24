@@ -2297,6 +2297,7 @@ function bind_route_domain_update_for_registration_test(): void
         'verifyWorkload' => null,
         'prepareRouterCaddy' => null,
         'publishDns' => null,
+        'prepareCleanup' => null,
         'cleanup' => null,
     ]);
     app()->instance(RouteDomainProjector::class, $projector);

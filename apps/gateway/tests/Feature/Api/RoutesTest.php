@@ -545,6 +545,7 @@ it('updates an active explicit private development domain through a replacement 
     $projector->shouldReceive('verifyWorkload')->twice();
     $projector->shouldReceive('prepareRouterCaddy')->once();
     $projector->shouldReceive('publishDns')->once();
+    $projector->shouldReceive('prepareCleanup')->once();
     $projector->shouldReceive('cleanup')->once();
     app()->instance(RouteDomainProjector::class, $projector);
     app()->instance(
@@ -1028,7 +1029,7 @@ it('projects a production pool with LAN preference, WireGuard fallback, mixed lo
     expect($router)->not->toBeNull();
     $renderer = new AppDevCaddyConfigRenderer;
 
-    $remote = $renderer->render(new AppDevSiteRepository()->forNode($router, additionalRoute: $route));
+    $remote = $renderer->render(new AppDevSiteRepository()->forNode($router));
     expect($remote)
         ->toContain("reverse_proxy https://{$first->node->lan_ip} https://{$second->node->lan_ip}")
         ->toContain('lb_policy round_robin')
@@ -1037,7 +1038,7 @@ it('projects a production pool with LAN preference, WireGuard fallback, mixed lo
 
     $second->node->update(['lan_ip' => null]);
     $route->refresh()->load(['cluster.routerAssignment.node', 'targets.appInstance.node']);
-    $wireguard = $renderer->render(new AppDevSiteRepository()->forNode($router, additionalRoute: $route));
+    $wireguard = $renderer->render(new AppDevSiteRepository()->forNode($router));
     expect($wireguard)
         ->toContain("https://{$first->node->lan_ip}")
         ->toContain("https://{$second->node->refresh()->wireguard_ip}");
@@ -1047,7 +1048,7 @@ it('projects a production pool with LAN preference, WireGuard fallback, mixed lo
     $router->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
     $first->update(['node_id' => $router->id]);
     $route->refresh()->load(['cluster.routerAssignment.node', 'targets.appInstance.app', 'targets.appInstance.node']);
-    $composed = $renderer->render(new AppDevSiteRepository()->forNode($router, additionalRoute: $route));
+    $composed = $renderer->render(new AppDevSiteRepository()->forNode($router));
     expect($composed)
         ->toContain('unix//run/orbit/route-'.$route->id.'-local.sock')
         ->toContain('https://'.$second->node->refresh()->wireguard_ip)
@@ -1059,7 +1060,7 @@ it('projects a production pool with LAN preference, WireGuard fallback, mixed lo
     $second->update(['status' => AppInstanceState::SourceResolved]);
     $route->targets()->delete();
     $route->refresh()->load(['cluster.routerAssignment.node', 'targets.appInstance.node']);
-    $empty = $renderer->render(new AppDevSiteRepository()->forNode($router, additionalRoute: $route));
+    $empty = $renderer->render(new AppDevSiteRepository()->forNode($router));
     expect($empty)
         ->toContain('Orbit Route unavailable')
         ->toContain('respond "Orbit Route unavailable\n" 503')
@@ -1144,7 +1145,7 @@ it('transfers an App instance from another Route and leaves a vacated Route serv
     $other->load(['cluster.routerAssignment.node', 'targets.appInstance.node']);
     $router = $other->cluster?->routerAssignment?->node;
     expect($router)->not->toBeNull();
-    $sites = new AppDevSiteRepository()->forNode($router, additionalRoute: $other);
+    $sites = new AppDevSiteRepository()->forNode($router);
     $rendered = new AppDevCaddyConfigRenderer()->render($sites);
     $vacatedSite = collect(preg_split('/\n\n/', $rendered) ?: [])
         ->first(static fn (string $block): bool => str_contains($block, 'vacated.example.test'));
@@ -1350,6 +1351,7 @@ function route_api_domain_projector(bool $rollback = false, bool $cleanup = fals
     }
 
     if ($cleanup) {
+        $projector->shouldReceive('prepareCleanup')->once();
         $projector->shouldReceive('cleanup')->once();
     }
 

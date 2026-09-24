@@ -19,9 +19,7 @@ use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
-use App\Models\AppInstance;
 use App\Models\Node;
-use App\Models\Route;
 use JsonException;
 
 final readonly class DnsmasqPrivateDnsManager implements PrivateDnsManager
@@ -60,22 +58,7 @@ final readonly class DnsmasqPrivateDnsManager implements PrivateDnsManager
 
     public function converge(?Node $pendingNode = null): void
     {
-        $this->owner()->run(fn () => $this->publish($pendingNode, null, null));
-    }
-
-    public function convergeRoute(Route $route): void
-    {
-        $this->owner()->run(fn () => $this->publish(null, $route, null));
-    }
-
-    public function convergeUnavailableRoute(Route $route, AppInstance $appInstance): void
-    {
-        $this->owner()->run(fn () => $this->publish(null, $route, $appInstance));
-    }
-
-    public function convergeHostnameChange(Route $candidate): void
-    {
-        $this->owner()->run(fn () => $this->publish(null, null, null, $candidate));
+        $this->owner()->run(fn () => $this->publish($pendingNode));
     }
 
     /**
@@ -84,7 +67,7 @@ final readonly class DnsmasqPrivateDnsManager implements PrivateDnsManager
      */
     public function convergeSelection(array $nodeOverrides = [], array $clusterOverrides = []): void
     {
-        $this->owner()->run(fn () => $this->publish(null, null, null, null, $nodeOverrides, $clusterOverrides));
+        $this->owner()->run(fn () => $this->publish(null, $nodeOverrides, $clusterOverrides));
     }
 
     /**
@@ -93,28 +76,11 @@ final readonly class DnsmasqPrivateDnsManager implements PrivateDnsManager
      */
     private function publish(
         ?Node $pendingNode,
-        ?Route $pendingRoute,
-        ?AppInstance $unavailableInstance,
-        ?Route $additionalRoute = null,
         array $nodeOverrides = [],
         array $clusterOverrides = [],
     ): void {
-        $configuration = $this->renderer->render(
-            $pendingNode,
-            $pendingRoute,
-            $unavailableInstance,
-            $additionalRoute,
-            $nodeOverrides,
-            $clusterOverrides,
-        );
-        $catalog = $this->publication(
-            $pendingNode,
-            $pendingRoute,
-            $unavailableInstance,
-            $additionalRoute,
-            $nodeOverrides,
-            $clusterOverrides,
-        );
+        $configuration = $this->renderer->render($pendingNode, $nodeOverrides, $clusterOverrides);
+        $catalog = $this->publication($pendingNode, $nodeOverrides, $clusterOverrides);
         $encoded = base64_encode($configuration);
         $catalogEncoded = base64_encode($catalog);
         $recordsDirectory = $this->recordsDirectory;
@@ -555,23 +521,13 @@ final readonly class DnsmasqPrivateDnsManager implements PrivateDnsManager
      */
     private function publication(
         ?Node $pendingNode,
-        ?Route $pendingRoute,
-        ?AppInstance $unavailableInstance,
-        ?Route $additionalRoute,
         array $nodeOverrides,
         array $clusterOverrides,
     ): string {
         try {
             return json_encode([
                 'requesters' => $this->renderer->registeredRequesters(),
-                ...$this->renderer->catalog(
-                    $pendingNode,
-                    $pendingRoute,
-                    $unavailableInstance,
-                    $additionalRoute,
-                    $nodeOverrides,
-                    $clusterOverrides,
-                )->toPublished(),
+                ...$this->renderer->catalog($pendingNode, $nodeOverrides, $clusterOverrides)->toPublished(),
             ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)."\n";
         } catch (JsonException $exception) {
             throw new RuntimeConvergenceException(

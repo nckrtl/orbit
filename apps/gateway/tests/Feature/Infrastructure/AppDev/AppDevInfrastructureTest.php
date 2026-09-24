@@ -918,9 +918,10 @@ it('retains exact DNS records for active and pending Routes on different Routers
     $renderer = new AppDevDnsConfigRenderer(new AppDevSiteRepository);
     $manager = new DnsmasqPrivateDnsManager($processes, $renderer);
 
-    $manager->convergeRoute($secondRoute);
+    $secondRoute->publishSites();
+    $manager->converge();
 
-    $configuration = $renderer->render(pendingRoute: $secondRoute);
+    $configuration = $renderer->render();
 
     expect($configuration)
         ->toContain(
