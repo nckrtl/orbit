@@ -1,0 +1,270 @@
+#!/usr/bin/env python3
+"""Run Incus topology commands from an independent clone through a linked bridge worktree (ADR 0135)."""
+import hashlib
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+NOT_BRIDGED = 79
+VENDOR_PATTERNS = ('vendor', '*/vendor', '*/*/vendor')
+DEFAULT_WORKTREE_ROOT = '/fast/worktrees/orbit'
+
+
+class BridgeFailure(Exception):
+    pass
+
+
+def git(root, *args, check=True):
+    result = subprocess.run(['git', '-C', str(root), *args], capture_output=True, text=True)
+    if check and result.returncode:
+        raise BridgeFailure((result.stderr or '').strip() or f'git {args[0]} exited {result.returncode}')
+    return result.stdout.strip() if result.returncode == 0 else None
+
+
+def git_z(root, *args):
+    result = subprocess.run(['git', '-C', str(root), *args], capture_output=True)
+    if result.returncode:
+        raise BridgeFailure(result.stderr.decode(errors='replace').strip() or f'git {args[0]} failed')
+    return [entry.decode() for entry in result.stdout.split(b'\0') if entry]
+
+
+def toplevel(path):
+    return Path(git(path, 'rev-parse', '--show-toplevel')).resolve()
+
+
+def is_linked_worktree(root):
+    directory = git(root, 'rev-parse', '--path-format=absolute', '--git-dir')
+    common = git(root, 'rev-parse', '--path-format=absolute', '--git-common-dir')
+    return Path(directory).resolve() != Path(common).resolve()
+
+
+def origin_key(root):
+    """Name one repository across all its local clones by its normalized origin URL, as bin/tia-cache does."""
+    url = git(root, 'remote', 'get-url', 'origin', check=False)
+    if not url:
+        return None
+    match = re.fullmatch(r'(?:[a-z][a-z0-9+.-]*://)?(?:[^@/]+@)?([^:/]+)[:/](.+?)(?:\.git)?/*', url, re.IGNORECASE)
+    return hashlib.sha256((f'{match.group(1).lower()}/{match.group(2)}' if match else url).encode()).hexdigest()
+
+
+def registry_path(key):
+    state = os.environ.get('XDG_STATE_HOME') or str(Path.home() / '.local/state')
+    return Path(state) / 'orbit/e2e-primary-checkouts' / key
+
+
+def is_snapshot_primary(root):
+    """A checkout that owns the topology snapshot: not a linked worktree, and holding a promoted generation."""
+    return (Path(root) / '.e2e/topology-snapshot/promoted.json').is_file() and not is_linked_worktree(root)
+
+
+def registered_primary(key):
+    """The live primary registered for an origin, or None when the link is missing, dangling, or no longer valid."""
+    try:
+        target = registry_path(key).resolve(strict=True)
+    except (OSError, RuntimeError):
+        return None
+    try:
+        valid = (
+            target.is_dir()
+            and target.stat().st_uid == os.geteuid()
+            and is_snapshot_primary(target)
+            and origin_key(target) == key
+        )
+    except (OSError, BridgeFailure):
+        return None
+    return target if valid else None
+
+
+def primary_of(root):
+    """The checkout that owns a repository: itself, or the first worktree when root is a linked worktree."""
+    root = toplevel(root)
+    if not is_linked_worktree(root):
+        return root
+    first = git(root, 'worktree', 'list', '--porcelain').splitlines()[0]
+    return Path(first[len('worktree '):]).resolve()
+
+
+def register(root, force=False):
+    """Register a snapshot primary for its origin. The first live primary keeps the registration unless forced."""
+    root = primary_of(root)
+    if not is_snapshot_primary(root):
+        raise BridgeFailure(f'{root} holds no promoted topology snapshot generation, so it cannot be registered.')
+    key = origin_key(root)
+    if key is None:
+        raise BridgeFailure(f'{root} has no origin remote.')
+    current = registered_primary(key)
+    if current == root or (current is not None and not force):
+        return False
+    link = registry_path(key)
+    link.parent.mkdir(parents=True, exist_ok=True)
+    temporary = link.with_name(f'.{link.name}.{os.getpid()}')
+    temporary.unlink(missing_ok=True)
+    temporary.symlink_to(root)
+    os.replace(temporary, link)
+    return True
+
+
+def bridge_primary(clone):
+    """The registered primary a clone bridges through, or None when the command runs in place."""
+    if os.environ.get('ORBIT_E2E_BRIDGE', '1') == '0' or is_linked_worktree(clone):
+        return None
+    key = origin_key(clone)
+    primary = registered_primary(key) if key else None
+    return None if primary is None or primary == clone else primary
+
+
+def copy_entry(source, destination):
+    if destination.is_symlink() or destination.is_file():
+        destination.unlink()
+    elif destination.is_dir():
+        shutil.rmtree(destination)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    if source.is_symlink():
+        destination.symlink_to(os.readlink(source))
+    else:
+        shutil.copy2(source, destination)
+
+
+def vendor_directories(clone):
+    found = set()
+    for pattern in VENDOR_PATTERNS:
+        for directory in clone.glob(pattern):
+            relative = directory.relative_to(clone)
+            if directory.is_dir() and not directory.is_symlink() and 'vendor' not in relative.parts[:-1] \
+                    and 'node_modules' not in relative.parts:
+                found.add(relative)
+    return sorted(found)
+
+
+def mirror_vendor(clone, bridge, relative):
+    source, destination = clone / relative, bridge / relative
+    destination.mkdir(parents=True, exist_ok=True)
+    if shutil.which('rsync'):
+        result = subprocess.run(['rsync', '-a', '--delete', f'{source}/', f'{destination}/'], capture_output=True, text=True)
+        if result.returncode:
+            raise BridgeFailure(f'Mirroring {relative} failed: {result.stderr.strip()}')
+        return
+    shutil.rmtree(destination)
+    shutil.copytree(source, destination, symlinks=True)
+
+
+def prepare(clone, primary):
+    """Point the bridge worktree at the clone's HEAD and copy the clone's uncommitted work into it."""
+    branch = git(clone, 'symbolic-ref', '--quiet', '--short', 'HEAD', check=False)
+    if not branch:
+        raise BridgeFailure(f'{clone} is not on a branch; check out the task branch first.')
+    head = git(clone, 'rev-parse', 'HEAD')
+    root = git(primary, 'config', '--path', '--get', 'orbit.worktreeRoot', check=False) or DEFAULT_WORKTREE_ROOT
+    bridge = Path(root).expanduser().resolve() / f'{clone.name}-e2e'
+    bridge_branch = f'{branch}-e2e'
+    staging = f'refs/orbit/e2e-bridge/{clone.name}'
+
+    git(primary, 'fetch', '--quiet', '--no-tags', str(clone), f'+refs/heads/{branch}:{staging}')
+    registered = [Path(entry[len('worktree '):]).resolve()
+                  for entry in git(primary, 'worktree', 'list', '--porcelain').splitlines()
+                  if entry.startswith('worktree ')]
+    if bridge in registered:
+        git(bridge, 'checkout', '--quiet', '--force', '-B', bridge_branch, head)
+    elif bridge.exists():
+        raise BridgeFailure(f'{bridge} exists but is not a worktree of {primary}; move it away first.')
+    else:
+        bridge.parent.mkdir(parents=True, exist_ok=True)
+        git(primary, 'worktree', 'add', '--quiet', '--force', '-B', bridge_branch, str(bridge), head)
+    # Untracked files the clone no longer has; ignored files such as .e2e/ and .env stay.
+    git(bridge, 'clean', '-fdq')
+
+    for relative in git_z(clone, 'ls-files', '-z', '-m', '-o', '--exclude-standard'):
+        source, destination = clone / relative, bridge / relative
+        if source.exists() or source.is_symlink():
+            copy_entry(source, destination)
+        elif destination.exists() or destination.is_symlink():
+            destination.unlink()
+    for relative in vendor_directories(clone):
+        mirror_vendor(clone, bridge, relative)
+    return bridge
+
+
+def rewrite(arguments, clone, bridge, cwd):
+    """Replace every clone path with the bridge, and name the bridge as the worktree."""
+    def same(value):
+        path = Path(value) if os.path.isabs(value) else Path(cwd) / value
+        return path.exists() and path.resolve() == clone
+
+    rewritten, has_worktree = [], False
+    for argument in arguments:
+        if argument.startswith('--worktree='):
+            has_worktree = True
+            value = argument[len('--worktree='):]
+            rewritten.append(f'--worktree={bridge}' if same(value) else argument)
+        elif not argument.startswith('-') and same(argument):
+            rewritten.append(str(bridge))
+        else:
+            rewritten.append(argument)
+    return rewritten, has_worktree
+
+
+def route(root, action, arguments):
+    clone = toplevel(root)
+    if is_linked_worktree(clone) or is_snapshot_primary(clone):
+        # The primary and its linked worktrees run in place and keep the primary registered.
+        try:
+            register(clone)
+        except BridgeFailure:
+            pass
+        return None
+    primary = bridge_primary(clone)
+    if primary is None:
+        return None
+    bridge = prepare(clone, primary)
+    rewritten, has_worktree = rewrite(arguments, clone, bridge, os.getcwd())
+    if action not in ('acquire',) and not has_worktree:
+        rewritten.append(f'--worktree={bridge}')
+    print(f'orbit: running through bridge worktree {bridge} of {primary}', file=sys.stderr, flush=True)
+    return [str(bridge / 'bin/e2e-topology'), action, *rewritten]
+
+
+def fail(message, arguments):
+    if '--json' in arguments:
+        print(json.dumps({'state': 'failed', 'error': message}))
+    print(f'orbit: {message}', file=sys.stderr)
+    return 1
+
+
+def main(argv):
+    if len(argv) >= 3 and argv[0] == 'route':
+        root, action, arguments = argv[1], argv[2], argv[3:]
+        try:
+            command = route(root, action, arguments)
+        except BridgeFailure as exception:
+            return fail(str(exception), arguments)
+        if command is None:
+            return NOT_BRIDGED
+        os.execv(command[0], command)
+    if len(argv) >= 2 and argv[0] == 'register':
+        arguments = argv[2:]
+        unknown = [argument for argument in arguments if argument not in ('--force', '--if-primary', '--json')]
+        if unknown:
+            return fail(f'unknown register option: {unknown[0]}', arguments)
+        root = primary_of(argv[1])
+        if '--if-primary' in arguments and not is_snapshot_primary(root):
+            return 0
+        try:
+            changed = register(root, force='--force' in arguments)
+        except BridgeFailure as exception:
+            return fail(str(exception), arguments)
+        key = origin_key(root)
+        if '--json' in arguments:
+            print(json.dumps({'state': 'registered', 'primary': str(registered_primary(key)), 'changed': changed}))
+        elif '--if-primary' not in arguments:
+            print(f'Registered {registered_primary(key)} for task workspace clones: {registry_path(key)}')
+        return 0
+    print('usage: bin/e2e-clone-bridge route ROOT ACTION [ARGS...] | register ROOT [--force] [--if-primary] [--json]', file=sys.stderr)
+    return 64
+
+
+if __name__ == '__main__':
+    sys.exit(main(sys.argv[1:]))

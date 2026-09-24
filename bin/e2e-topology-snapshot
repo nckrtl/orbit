@@ -16,6 +16,7 @@ usage: bin/e2e-topology-snapshot <action> [options]
                                 manifests and build the topology snapshot again from the base image
   recover-legacy --main-sha=SHA disaster recovery: prove ownership of present legacy resources,
                                 retain evidence, and build the topology snapshot again
+  register [--force]            register this checkout so task workspace clones can bridge to it
 
 Orbit keeps one persistent topology snapshot. Discovery and proof topologies are
 disposable copies of it, and successful retained proof is promoted into it.
@@ -28,7 +29,14 @@ shift
 
 case "$action" in
     status|fingerprint|promote|refresh|restore|rebuild|recover-legacy)
-        exec php "$root/apps/e2e/artisan" "topology-snapshot:$action" "$@"
+        status=0
+        php "$root/apps/e2e/artisan" "topology-snapshot:$action" "$@" || status=$?
+        # The primary that holds the snapshot registers itself for task workspace clones (ADR 0135).
+        python3 "$root/bin/e2e-clone-bridge" register "$root" --if-primary >/dev/null 2>&1 || true
+        exit "$status"
+        ;;
+    register)
+        exec python3 "$root/bin/e2e-clone-bridge" register "$root" "$@"
         ;;
     *)
         echo "unknown topology snapshot action: $action" >&2
