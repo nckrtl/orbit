@@ -76,7 +76,7 @@ A custom proxy Route created before the name was reserved can still hold it. Ena
 | A custom proxy Route on the collector Node to `http://127.0.0.1:8787`, with no Process target | Takes the Route over, then removes it. |
 | Any other Route | Refuses with `proxycli.hostname_taken` and changes nothing. |
 
-A takeover publishes the collector site and withdraws the Route's site in one Caddy reload, so the name is served throughout. Enable also restarts the collector Process. The collector site retries the loopback collector for up to 5 seconds when it cannot connect, so a request that arrives during that restart waits instead of failing.
+A takeover publishes the collector site and withdraws the Route's site in one Caddy reload, so the name is served throughout. Enable then restarts the collector Process. The collector site retries the loopback collector for up to 5 seconds when it cannot connect, so a request that arrives during that restart waits instead of failing.
 
 Private DNS keeps the same answer, the collector Node's WireGuard address. Enable then removes the Route's certificate and record, as `route:destroy` does. When the Caddy reload fails, the Route stays and keeps serving. When the Route removal fails, the collector site still serves the name, and the Route stays `failed` until a second enable or `route:destroy` finishes the removal.
 

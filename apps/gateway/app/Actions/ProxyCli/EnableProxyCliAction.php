@@ -43,6 +43,9 @@ final readonly class EnableProxyCliAction
             $readToken,
             $controlToken,
         );
+        // Publish first: a takeover moves the name onto the collector site, which waits for the collector while
+        // the runtime converge restarts it. The Route's site would fail those requests instead.
+        $this->publication->converge($node, takeover: $takeover);
         $this->runtime->converge($node, [
             'PROXYCLI_CLIPROXY_URL' => rtrim($data->cliproxyUrl, '/'),
             'PROXYCLI_MANAGEMENT_KEY' => $data->cliproxyManagementKey,
@@ -51,7 +54,6 @@ final readonly class EnableProxyCliAction
             ...$this->cacheEnvironment($connection),
             'PROXYCLI_PORT' => (string) ProxyCliProcess::PORT,
         ]);
-        $this->publication->converge($node, takeover: $takeover);
 
         return new ProxyCliStatusData(
             true,

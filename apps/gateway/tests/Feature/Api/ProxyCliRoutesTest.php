@@ -10,6 +10,8 @@ use App\Domain\Processes\ProcessRuntime;
 use App\Domain\ProxyCli\ProxyCliAccount;
 use App\Domain\ProxyCli\ProxyCliCache;
 use App\Domain\ProxyCli\ProxyCliProcess;
+use App\Domain\ProxyCli\ProxyCliPublicationManager;
+use App\Domain\ProxyCli\ProxyCliRuntimeLifecycle;
 use App\Domain\ProxyCli\ProxyCliSnapshotStore;
 use App\Domain\ProxyCli\ProxyCliState;
 use App\Domain\ProxyCli\ProxyCliWindow;
@@ -189,6 +191,47 @@ it('hands the collector custom proxy Route to the publication takeover', functio
         ->assertJsonPath('data.hostname', 'collector.cli-proxy-api.orbit');
 
     expect(app(RecordingProxyCliPublicationManager::class)->takeoverRouteId)->toBe($route->id);
+});
+
+it('takes over the Route before it restarts the collector', function (): void {
+    $gateway = proxycli_gateway();
+    $node = proxycli_node();
+    proxycli_valkey($node);
+    $route = proxycli_hostname_route($node, 'http://127.0.0.1:8787');
+    $events = new ArrayObject;
+    app()->instance(ProxyCliPublicationManager::class, new class($events) implements ProxyCliPublicationManager
+    {
+        public function __construct(private ArrayObject $events) {}
+
+        public function converge(Node $node, int $port = ProxyCliProcess::PORT, ?OrbitRoute $takeover = null): void
+        {
+            $this->events->append("publication:route-{$takeover?->id}");
+        }
+
+        public function remove(Node $node): void {}
+    });
+    app()->instance(ProxyCliRuntimeLifecycle::class, new class($events) implements ProxyCliRuntimeLifecycle
+    {
+        public function __construct(private ArrayObject $events) {}
+
+        public function converge(Node $node, array $environment, int $port = ProxyCliProcess::PORT): void
+        {
+            $this->events->append('runtime');
+        }
+
+        public function remove(Node $node): void {}
+    });
+
+    $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
+        ->postJson('/api/v1/proxycli', [
+            'node_id' => $node->id,
+            'cache_connection' => 'valkey',
+            'cliproxy_url' => 'http://127.0.0.1:8317',
+            'cliproxy_management_key' => 'management-key',
+        ])
+        ->assertCreated();
+
+    expect($events->getArrayCopy())->toBe(["publication:route-{$route->id}", 'runtime']);
 });
 
 it('refuses to enable while another Route holds the collector hostname', function (Closure $route): void {
