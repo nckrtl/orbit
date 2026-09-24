@@ -76,6 +76,24 @@ Human output uses a detail tree with the command and status, the request ID the 
 
 A record identifies the operation, its target, its caller, and its result. It never holds a command line, a calendar, a journal line, an environment value, a credential, a path, a runtime user, unit or container content, application output, or raw remote output. The SDK redacts credential-shaped values from `properties` before the CLI prints them. Deployment and rollback records carry only the terminal status, selected release, failed step, and error code.
 
+## Redaction
+
+The Gateway redacts `properties` before it stores a record, for every command:
+
+- A field is stored as `[REDACTED]` when any segment of its name ends with `key`, `token`, `secret`, `password`, `passwd`, `passphrase`, `credential`, `bearer`, or `pem`, in any case or separator style. For example, `cliproxy_management_key`, `api_key`, and `webhookSecret` are redacted. A new field that matches this rule is redacted without a code change.
+- Only audited public fields are exempt: `public_key`, `wireguard_public_key`, and `host_key_fingerprint`.
+- Environment maps keep variable names and replace every value.
+- Inside other text values, the Gateway redacts secret assignments such as `MANAGEMENT_KEY=value`, URL user information, `Authorization` headers, bearer tokens, and PEM blocks.
+- Every other input field stays, so a record still shows the target, the Node, and the non-secret options the caller supplied.
+
+To apply these rules to records that are already stored, run this on the Gateway:
+
+```bash
+php artisan orbit:activity-redact [--dry-run]
+```
+
+The command rewrites only records that still hold a value the rules redact, and it prints how many it scanned and redacted. Records that are already redacted stay unchanged, so you can run it again safely. `--dry-run` counts the records without changing them.
+
 <Note>
 Doctor writes one ordinary Activity for each request and stores no findings in it. Schedule completion callbacks create no Activity at all.
 </Note>

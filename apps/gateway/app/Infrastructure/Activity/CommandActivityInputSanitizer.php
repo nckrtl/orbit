@@ -14,31 +14,41 @@ final readonly class CommandActivityInputSanitizer
 
     private const string INVALID_PROPERTY_NAME = '[INVALID_PROPERTY_NAME]';
 
-    /** @var list<string> */
-    private const array FORBIDDEN_KEYS = [
-        'app_key',
-        'appkey',
-        'application_key',
-        'operation_token',
-        'executor_secret',
-        'password',
-        'password_hash',
-        'secret',
+    /**
+     * A field is secret when one of its name segments ends with one of these words.
+     *
+     * @var list<string>
+     */
+    private const array SECRET_WORDS = [
+        'key',
+        'keys',
         'token',
-        'api_key',
-        'api_token',
-        'access_token',
-        'refresh_token',
-        'private_key',
-        'pre_shared_key',
+        'tokens',
+        'secret',
+        'secrets',
+        'password',
+        'passwords',
+        'passwd',
+        'passphrase',
+        'credential',
+        'credentials',
         'bearer',
-        'bearer_token',
+        'pem',
+    ];
+
+    /**
+     * Audited fields whose names contain a secret word but whose values are public.
+     *
+     * @var list<string>
+     */
+    private const array NON_SECRET_KEYS = [
+        'public_key',
+        'wireguard_public_key',
+        'host_key_fingerprint',
     ];
 
     private const string SECRET_KEY_CORE =
-        '(?:APP[_-]?KEY|APPLICATION[_-]?KEY|APPKEY|API[_-]?KEY|API[_-]?TOKEN|ACCESS[_-]?TOKEN|'
-        .'REFRESH[_-]?TOKEN|OPERATION[_-]?TOKEN|EXECUTOR[_-]?SECRET|PRIVATE[_-]?KEY|'
-        .'PRE[_-]?SHARED[_-]?KEY|PASSWORD[_-]?HASH|PASSWORD|SECRET|TOKEN|BEARER[_-]?TOKEN|BEARER)';
+        '(?:[A-Za-z0-9]*(?:KEYS?|TOKENS?|SECRETS?|PASSWORDS?|PASSWD|PASSPHRASE|CREDENTIALS?|BEARER))';
 
     private const string SECRET_KEY_IDENTIFIER = '(?:[A-Za-z][A-Za-z0-9]*[_-])*'.self::SECRET_KEY_CORE;
 
@@ -106,7 +116,7 @@ final readonly class CommandActivityInputSanitizer
             ) ?? $redacted;
         $redacted =
             preg_replace(
-                pattern: '/\b((?:Proxy-)?Authorization)\s*:\s*[^\s\'\"]+(?:\s+[^\s\'\"]+)?/i',
+                pattern: '/\b((?:Proxy-)?Authorization)\s*:\s*(?!\[REDACTED\])[^\s\'\"]+(?:\s+[^\s\'\"]+)?/i',
                 replacement: '$1: '.self::REDACTED,
                 subject: $redacted,
             ) ?? $redacted;
@@ -145,15 +155,16 @@ final readonly class CommandActivityInputSanitizer
             ? strtolower($underscored)
             : Str::snake($underscored);
 
-        if (in_array($normalized, self::FORBIDDEN_KEYS, strict: true)) {
-            return true;
+        if (in_array($normalized, self::NON_SECRET_KEYS, strict: true)) {
+            return false;
         }
 
-        return
-            preg_match(
-                '/(?:^|_)(app_?key|password(?:_hash)?|secret|token|api_?key|api_?token|access_?token|refresh_?token|private_?key|pre_?shared_?key|bearer(?:_?token)?)$/',
-                $normalized,
-            ) === 1;
+        $words = implode('|', self::SECRET_WORDS);
+
+        return array_any(
+            explode('_', $normalized),
+            static fn (string $segment): bool => preg_match('/(?:'.$words.')\z/D', $segment) === 1,
+        );
     }
 
     /**

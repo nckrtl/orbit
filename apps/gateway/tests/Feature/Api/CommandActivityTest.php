@@ -538,6 +538,39 @@ it('recursively redacts sensitive input and URL userinfo before persistence', fu
         ->not->toContain($repositoryPassword, $nestedToken, $nestedPassword);
 });
 
+it('fails closed for new secret-named input fields on any command', function (): void {
+    $requestId = (string) Str::uuid();
+    $signingKey = (string) Str::uuid();
+    $webhookSecret = (string) Str::uuid();
+    $operator = Node::query()->create([
+        'name' => 'operator',
+        'status' => LifecycleStatus::Active,
+        'public_ssh_host' => '192.0.2.2',
+        'wireguard_ip' => '10.44.0.2',
+    ]);
+    $this->markAsGateway($operator);
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => '10.44.0.2'])
+        ->withHeader('X-Orbit-Request-Id', $requestId)
+        ->postJson('/api/v1/apps', [
+            'slug' => 'secret-app',
+            'deploy_signing_key' => $signingKey,
+            'webhookSecret' => $webhookSecret,
+            'public_key' => 'peer-public',
+        ])
+        ->assertUnprocessable();
+
+    $input = Activity::query()->where('request_id', $requestId)->sole()->properties?->get('input');
+
+    expect($input)->toBe([
+        'slug' => 'secret-app',
+        'deploy_signing_key' => '[REDACTED]',
+        'webhookSecret' => '[REDACTED]',
+        'public_key' => 'peer-public',
+    ]);
+});
+
 it('redacts secret repository query parameters before persistence and activity serialization', function (): void {
     $requestId = (string) Str::uuid();
     $repositoryUrl = 'https://example.test/repo.git?token=sentinel&branch=main';
