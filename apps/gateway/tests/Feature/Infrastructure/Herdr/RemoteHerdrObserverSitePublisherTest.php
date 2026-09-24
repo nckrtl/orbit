@@ -7,6 +7,7 @@ use App\Domain\Herdr\ObservationGrantClaims;
 use App\Domain\Herdr\ObservationGrantSigner;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AppDev\AppDevSshExecutor;
+use App\Infrastructure\Caddy\CaddyGlobalOptions;
 use App\Infrastructure\Herdr\RemoteHerdrObserverSitePublisher;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
@@ -81,6 +82,8 @@ it('publishes a hardened receive-only Herdr observer service', function (): void
         ->and($program)->toContain('lock=$9')
         ->and($program)->toContain('source_main=$(readlink -f "$live_caddyfile")')
         ->and($program)->toContain('legacy_fragment=$versions/current/fragments/$owned_fragment')
+        ->and($program)->toStartWith(CaddyGlobalOptions::conflictGuard())
+        ->and($program)->toContain("refuse_carried_global_options \"\$candidate\" \"\$source_main\"\n\"\$caddy\" validate --config")
         ->and(strpos((string) $program, 'trap \'rm -rf -- "$work"\' EXIT'))
         ->toBeLessThan(strpos((string) $program, 'cp -a -- "$source_main" "$previous_main"'))
         ->and($program)->toContain('systemd-analyze verify "$work/$unit_name"')
