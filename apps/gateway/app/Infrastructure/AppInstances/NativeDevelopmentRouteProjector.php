@@ -249,7 +249,29 @@ final readonly class NativeDevelopmentRouteProjector implements AppInstanceTrans
         }
 
         $this->certificates->removeHostnameChange($appInstance, $route);
+        $this->removeRetiringRouterCertificate($route, $router);
         $this->dns->converge();
+    }
+
+    /**
+     * The retiring Route stops being served at cutover, so its Router leaf has no site left once
+     * the Router Caddy above is republished.
+     */
+    private function removeRetiringRouterCertificate(Route $route, ?Node $router): void
+    {
+        if (! $router instanceof Node || $route->replaces_route_id === null) {
+            return;
+        }
+
+        $scope = "route-{$route->replaces_route_id}-router";
+
+        if ($this->usesCertificate($router, $scope)) {
+            return;
+        }
+
+        $retiring = new Route;
+        $retiring->id = $route->replaces_route_id;
+        $this->certificates->removeRouteRouter($retiring, $router);
     }
 
     public function rollbackDns(Route $route): void

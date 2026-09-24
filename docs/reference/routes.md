@@ -416,7 +416,19 @@ For production, the Gateway checks the saved environment location and renders st
 
 Cutover is one database transition. The Gateway publishes the replacement domain in private DNS only after it verifies every required projection, then marks the replacement `activating` and the old Route `retiring`. Instance output derives only the replacement domain. Route inspection exposes both records and their relationship. Cleanup then removes old projections, deletes the retiring Route, and marks the replacement `active`.
 
-A retiring Route stops being served at cutover. Both domains share one certificate scope per Instance, and cleanup issues that certificate for the Route the Node now serves. A Node that kept answering under the previous domain would present a certificate naming the replacement, and Caddy would then treat that host as unmanaged and try to obtain a public certificate for a private Orbit domain. Until cutover, both domains stay served, so an interrupted change never leaves the Route unreachable.
+Until cleanup, the replacement domain is served from staging certificates that the change issues for it. The workload uses `app-instance-<id>-hostname-change`, and a separate Router uses `route-<replacement id>-router-hostname-change`. The Instance's live `app-instance-<id>` certificate still names the current domain until cleanup.
+
+| Certificate scope | Node | Issued at | Removed at |
+| --- | --- | --- | --- |
+| `app-instance-<id>-hostname-change` | Workload | Workload certificate step | Cleanup or rollback |
+| `route-<replacement id>-router-hostname-change` | Router | Router certificate step | Cleanup or rollback |
+| `app-instance-<id>` | Workload | Reissued for the replacement domain at cleanup | Instance removal |
+| `route-<replacement id>-router` | Router | Cleanup | Route removal |
+| `route-<retiring id>-router` | Router | Before the change | Cleanup, after Router Caddy drops its site |
+
+A retiring Route stops being served at cutover. Both domains share the Instance's live certificate scope, and cleanup issues that certificate for the Route the Node now serves. It then republishes workload and Router Caddy with the live scopes and removes the staging scopes and the retiring Route's Router certificate.
+
+A Node that kept answering under the previous domain would present a certificate naming the replacement, and Caddy would then treat that host as unmanaged and try to obtain a public certificate for a private Orbit domain. Until cutover, both domains stay served, so an interrupted change never leaves the Route unreachable.
 
 ### Resume or refuse a change
 

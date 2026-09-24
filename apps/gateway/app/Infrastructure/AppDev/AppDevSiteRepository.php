@@ -194,6 +194,12 @@ final readonly class AppDevSiteRepository
                     ),
                 )
                 ->values();
+            // The replacement a domain change is staging answers from the staging certificates the
+            // change issued, because the Instance's live leaf still names the current domain and the
+            // replacement's live Router leaf does not exist until cleanup.
+            $stagesDomainChange = $additionalRoute instanceof Route
+                && $route->is($additionalRoute)
+                && $route->replaces_route_id !== null;
             $router = $this->routerFor($route, $routerOverrides);
             $ingress = $route->cluster !== null
                 ? $this->eligibility->activeIngress($route->cluster)
@@ -229,7 +235,7 @@ final readonly class AppDevSiteRepository
                     continue;
                 }
 
-                $sites->push($this->appInstanceSite($target, $route));
+                $sites->push($this->appInstanceSite($target, $route, domainChange: $stagesDomainChange));
             }
 
             if ($hasComposedPool) {
@@ -242,7 +248,12 @@ final readonly class AppDevSiteRepository
             }
 
             if ($hasRouterSite) {
-                $sites->push($this->routerSite(array_values($remoteTargets->all()), $route, $router));
+                $sites->push($this->routerSite(
+                    array_values($remoteTargets->all()),
+                    $route,
+                    $router,
+                    domainChange: $stagesDomainChange,
+                ));
             }
 
             if (
