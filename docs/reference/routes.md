@@ -324,7 +324,15 @@ Failure before cutover leaves the preview Route authoritative, restores its envi
 
 The Gateway refuses Ingress replacement or removal while any public Route in that Cluster depends on the Ingress, unless a later operation preserves that public edge atomically.
 
-Doctor instance checks report public Ingress, private forwarding, TLS, and firewall drift with bounded codes. They expose no placement and change no Ingress, Router, workload, TLS, or firewall state. Related-node checks use only caller-authorized selected nodes. An unavailable observation reports `instance.related_node_unverifiable` without contacting an unselected Node.
+Doctor instance checks report public Ingress, private forwarding, TLS, and firewall drift with bounded codes. They expose no placement and change no Ingress, Router, workload, TLS, or firewall state.
+
+| Doctor issue code | Difference |
+| --- | --- |
+| `instance.public_ingress_mismatch` | The live Caddy version on the Ingress does not contain the public site that Orbit renders for it, apart from TLS lines. |
+| `instance.public_tls_mismatch` | The public site pins an Orbit CA leaf, or it lacks `tls force_automate` while the Node disables certificate management. |
+| `instance.public_firewall_mismatch` | The Ingress firewall is inactive, or it lacks an exact managed rule for public HTTP on port 80 or HTTPS on port 443. |
+
+Doctor builds the expected public site the same way the publisher does. A separate Ingress expects a reverse proxy to the Router. An Ingress that shares its Node with the Router and the workload expects the composed site that serves the Instance directly. Related-node checks use only caller-authorized selected nodes. An unavailable observation reports `instance.related_node_unverifiable` without contacting an unselected Node.
 
 ### Publication ownership
 

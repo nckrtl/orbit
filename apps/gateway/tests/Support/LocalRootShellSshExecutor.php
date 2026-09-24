@@ -15,6 +15,7 @@ use Symfony\Component\Process\Process;
  *
  * A command that starts with `sudo` runs without that prefix and can read the directory. Any other
  * command runs while the directory denies access, as a root-owned 0750 directory does to the SSH user.
+ * `sudo ufw status numbered` answers with the configured firewall status instead of the host's.
  */
 final class LocalRootShellSshExecutor implements SshExecutor
 {
@@ -23,12 +24,19 @@ final class LocalRootShellSshExecutor implements SshExecutor
 
     public function __construct(
         private readonly string $rootOnlyDirectory,
+        public string $ufwStatus = "Status: inactive\n",
+        public int $ufwExitCode = 0,
     ) {}
 
     public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
     {
         $this->commands[] = $command;
         $arguments = $command->arguments;
+
+        if ($arguments === ['sudo', 'ufw', 'status', 'numbered']) {
+            return new CommandResult($this->ufwExitCode, $this->ufwStatus, '', 1, false);
+        }
+
         $privileged = $arguments[0] === 'sudo';
 
         if ($privileged) {

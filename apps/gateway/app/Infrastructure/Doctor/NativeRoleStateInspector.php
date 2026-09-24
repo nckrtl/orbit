@@ -9,9 +9,6 @@ use App\Domain\Doctor\RoleInspectionData;
 use App\Domain\Doctor\RoleStateInspector;
 use App\Domain\Nodes\RoleName;
 use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
-use App\Infrastructure\Firewall\UfwManagedRule;
-use App\Infrastructure\Firewall\UfwRuleOwnership;
-use App\Infrastructure\Firewall\UfwStatusParser;
 use App\Infrastructure\Nodes\NodeBootstrapPackageCatalog;
 use App\Infrastructure\Nodes\NodeRoleServiceCatalog;
 use App\Infrastructure\Processes\CommandDeadline;
@@ -70,7 +67,7 @@ final readonly class NativeRoleStateInspector implements RoleStateInspector
         private NodeRoleServiceCatalog $services,
         private NodeFirewallRuleCatalog $firewall,
         private CommandDeadline $deadline,
-        private UfwStatusParser $firewallParser = new UfwStatusParser,
+        private UfwManagedRulesCheck $firewallCheck = new UfwManagedRulesCheck,
     ) {}
 
     public function inspect(NodeRole $role): RoleInspectionData
@@ -167,24 +164,6 @@ final readonly class NativeRoleStateInspector implements RoleStateInspector
 
     private function firewallMatches(CommandResult $result, Node $node, NodeRole $role): bool
     {
-        if (! $result->succeeded() || $result->truncated) {
-            throw new DoctorInspectionException;
-        }
-        if (preg_match('/\AStatus:\s+inactive\s*\z/i', $result->stdout) === 1) {
-            return false;
-        }
-        if (preg_match('/\AStatus:\s+active\s*$/mi', $result->stdout) !== 1) {
-            throw new DoctorInspectionException;
-        }
-
-        return array_all(
-            $this->firewall->forRole($node, $role->role),
-            fn (UfwManagedRule $rule): bool => (
-                $this->firewallParser->ownership(
-                    $result->stdout,
-                    $rule->shape,
-                ) === UfwRuleOwnership::Exact
-            ),
-        );
+        return $this->firewallCheck->matches($result, $this->firewall->forRole($node, $role->role));
     }
 }
