@@ -53,20 +53,38 @@ final readonly class WebSocketCaddyPublisher
                 candidate="\$versions/\$version.candidate"
                 published="\$versions/\$version"
                 candidate_link="\$(dirname "\$live_caddyfile")/.Caddyfile.orbit-\$version"
-                trap 'rm -rf -- "\$candidate"; rm -f -- "\$candidate_link"' EXIT
+                rollback_file="\$(dirname "\$live_caddyfile")/.Caddyfile.orbit-rollback-file-\$version"
+                trap 'rm -rf -- "\$candidate"; rm -f -- "\$candidate_link" "\$rollback_file"' EXIT
                 install -d -o root -g caddy -m 0750 -- "\$versions" "\$candidate/fragments"
                 source_main=\$(readlink -f "\$live_caddyfile")
                 current_fragments=\$(dirname "\$source_main")/fragments
-                if [ -d "\$current_fragments" ]; then
-                    for fragment in "\$current_fragments"/*.caddy; do
-                        if [ ! -e "\$fragment" ] || [ "\$(basename "\$fragment")" = "\$owned_fragment" ]; then
-                            continue
+                case "\$source_main" in
+                    "\$versions"/*/Caddyfile)
+                        for fragment in "\$current_fragments"/*.caddy; do
+                            if [ ! -e "\$fragment" ] || [ "\$(basename "\$fragment")" = "\$owned_fragment" ]; then
+                                continue
+                            fi
+                            cp --preserve=mode,ownership -- "\$fragment" "\$candidate/fragments/"
+                        done
+                        ;;
+                    *)
+                        # Orbit keeps a Caddyfile it did not publish, unless it is the unmodified package default.
+                        preserve_source_main=0
+                        if [ -f "\$source_main" ]; then
+                            preserve_source_main=1
                         fi
-                        cp --preserve=mode,ownership -- "\$fragment" "\$candidate/fragments/"
-                    done
-                elif [ -f "\$source_main" ] && [ "\$source_main" != "\$live_caddyfile" ]; then
-                    cp --preserve=mode,ownership -- "\$source_main" "\$candidate/fragments/unmanaged.caddy"
-                fi
+                        if [ "\$preserve_source_main" = 1 ] && [ "\$source_main" = "\$live_caddyfile" ]; then
+                            current_md5=\$(md5sum -- "\$source_main" | awk '{print \$1}')
+                            default_md5=\$(dpkg-query -W -f='\${Conffiles}\n' "\$caddy_service" | awk -v live_caddyfile="\$live_caddyfile" '\$1 == live_caddyfile { print \$2; exit }')
+                            if [ -n "\$default_md5" ] && [ "\$current_md5" = "\$default_md5" ]; then
+                                preserve_source_main=0
+                            fi
+                        fi
+                        if [ "\$preserve_source_main" = 1 ]; then
+                            cp --preserve=mode,ownership -- "\$source_main" "\$candidate/fragments/00-unmanaged.caddy"
+                        fi
+                        ;;
+                esac
                 # A listener on the WireGuard address takes every connection to that address, so
                 # the site joins it when another site binds it. Otherwise it follows a wildcard
                 # bind, so it never takes traffic from the node's wildcard sites.
@@ -97,6 +115,9 @@ final readonly class WebSocketCaddyPublisher
                 mv -fT -- "\$candidate" "\$published"
                 ln -s -- "\$published/Caddyfile" "\$candidate_link"
                 previous_target=\$(readlink -- "\$live_caddyfile" || true)
+                if [ -z "\$previous_target" ] && [ -f "\$live_caddyfile" ]; then
+                    cp -a -- "\$live_caddyfile" "\$rollback_file"
+                fi
                 mv -fT -- "\$candidate_link" "\$live_caddyfile"
                 systemctl enable "\$caddy_service"
                 if ! systemctl reload-or-restart "\$caddy_service"; then
@@ -105,6 +126,9 @@ final readonly class WebSocketCaddyPublisher
                         ln -s -- "\$previous_target" "\$candidate_link"
                         mv -fT -- "\$candidate_link" "\$live_caddyfile"
                         # A rejected load can leave its listeners open beside the live ones; only a restart drops them.
+                        systemctl restart "\$caddy_service" || true
+                    elif [ -f "\$rollback_file" ]; then
+                        mv -fT -- "\$rollback_file" "\$live_caddyfile"
                         systemctl restart "\$caddy_service" || true
                     fi
                     rm -rf -- "\$published"
