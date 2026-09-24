@@ -87,7 +87,9 @@ final readonly class ConvergeAnalyticsTrackingPlacementAction
 
     /**
      * Stops serving the old placement once private DNS moved and cached answers can have expired.
-     * The stored `cleanup` step lets a retry finish a withdrawal without waiting again.
+     * The caller waits for that without holding any owner. When another operation moved private
+     * DNS again during the wait, this returns and that operation withdraws after its own grace
+     * period. The stored `cleanup` step lets a retry finish a withdrawal without waiting again.
      */
     public function withdraw(Route $route): Route
     {
@@ -97,12 +99,14 @@ final readonly class ConvergeAnalyticsTrackingPlacementAction
             return $route;
         }
 
-        if ($route->replacement_step === RouteReplacementStep::DatabaseCutover) {
-            if ($route->transition_dns_moved_at === null) {
-                return $route;
-            }
-
-            $this->dnsAnswers->waitAfter($route->transition_dns_moved_at);
+        if (
+            $route->replacement_step === RouteReplacementStep::DatabaseCutover
+            && (
+                $route->transition_dns_moved_at === null
+                || $this->dnsAnswers->remainingAfter($route->transition_dns_moved_at) > 0
+            )
+        ) {
+            return $route;
         }
 
         $retired = $this->withPlacement($route, $route->transition_node_id, $route->transition_cluster_id);

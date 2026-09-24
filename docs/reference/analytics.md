@@ -87,7 +87,7 @@ A tracking host is served wherever the Instance's own domain is served, because 
 | Cluster-scoped and public | Public too: the Ingress forwards it to the Router, as for every public Route. |
 | Node-scoped or private | The same: the Instance's own Node serves it, behind whatever edge already fronts that Node. |
 
-When a Cluster attach, detach, or activation moves the Instance's Route, the tracking host moves with it. Both placements serve the host until private DNS answers for the old placement can have expired, then the old placement stops serving. A move that fails before private DNS moves leaves the host on its old placement, and a retry moves it again.
+When a Cluster attach, detach, activation, or deactivation moves the Instance's Route, the tracking host moves with it. Both placements serve the host until private DNS answers for the old placement can have expired, then the old placement stops serving. A move that fails before private DNS moves leaves the host on its old placement, and a retry moves it again.
 
 When something other than Orbit terminates the public TLS, point the tracking host at the same edge as the Instance's domain, and let that edge reach the Node the same way.
 
