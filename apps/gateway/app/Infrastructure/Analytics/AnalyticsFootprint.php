@@ -28,8 +28,6 @@ final readonly class AnalyticsFootprint
 
     public const string CertificateOwnershipMarker = 'analytics-certificate';
 
-    public const string CaddyLockPath = '/run/lock/orbit-caddy.lock';
-
     public const string CaddyVersionsDirectory = '/etc/caddy/orbit-versions';
 
     public const string CaddyfilePath = '/etc/caddy/Caddyfile';

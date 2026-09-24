@@ -6,6 +6,7 @@ namespace App\Infrastructure\Metrics;
 
 use App\Domain\Certificates\GatewayCertificatePaths;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Caddy\CaddyPublicationLock;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
 use InvalidArgumentException;
@@ -42,8 +43,7 @@ final readonly class MetricsCertificatePublisher
                 candidate="$directory.candidate"
                 link=/etc/caddy/orbit-metrics-cert-current.candidate
                 current=/etc/caddy/orbit-metrics-cert-current
-                exec 9>/run/lock/orbit-caddy.lock
-                flock -w 30 9
+                BASH.PHP_EOL.CaddyPublicationLock::script(CaddyPublicationLock::Path).PHP_EOL.<<<'BASH'
                 trap 'rm -rf -- "$candidate"; rm -f -- "$link"' EXIT
                 if [ -e "$versions" ]; then
                     test -d "$versions"
@@ -137,8 +137,7 @@ final readonly class MetricsCertificatePublisher
                 current=/etc/caddy/orbit-metrics-cert-current
                 owner="$versions/.orbit-owner"
                 link=/etc/caddy/orbit-metrics-cert-current.rollback
-                exec 9>/run/lock/orbit-caddy.lock
-                flock -w 30 9
+                BASH.PHP_EOL.CaddyPublicationLock::script(CaddyPublicationLock::Path).PHP_EOL.<<<'BASH'
                 trap 'rm -f -- "$link"' EXIT
                 test -d "$versions"
                 test -f "$owner"
@@ -196,8 +195,7 @@ final readonly class MetricsCertificatePublisher
                 versions=/etc/caddy/orbit-metrics-cert-versions
                 current=/etc/caddy/orbit-metrics-cert-current
                 owner="$versions/.orbit-owner"
-                exec 9>/run/lock/orbit-caddy.lock
-                flock -w 30 9
+                BASH.PHP_EOL.CaddyPublicationLock::script(CaddyPublicationLock::Path).PHP_EOL.<<<'BASH'
                 if [ ! -e "$versions" ] && [ ! -e "$current" ] && [ ! -L "$current" ]; then
                     exit 0
                 fi

@@ -33,8 +33,6 @@ final readonly class WebSocketFootprint
 
     public const string CertificateOwnershipMarker = 'websocket-certificate';
 
-    public const string CaddyLockPath = '/run/lock/orbit-caddy.lock';
-
     public const string CaddyVersionsDirectory = '/etc/caddy/orbit-versions';
 
     public const string CaddyfilePath = '/etc/caddy/Caddyfile';

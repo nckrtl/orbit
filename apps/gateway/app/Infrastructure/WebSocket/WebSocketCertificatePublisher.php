@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\WebSocket;
 
+use App\Infrastructure\Caddy\CaddyPublicationLock;
 use App\Infrastructure\Processes\ProtectedInput;
 use App\Infrastructure\Ssh\RemoteCommand;
 use SensitiveParameter;
@@ -19,14 +20,12 @@ final readonly class WebSocketCertificatePublisher
         $keyEncoded = base64_encode($privateKeyPem);
         $current = WebSocketFootprint::CertificateCurrentDirectory;
         $caddyService = WebSocketFootprint::CaddyServiceName;
-        $lock = WebSocketFootprint::CaddyLockPath;
+        $lockScript = CaddyPublicationLock::script(CaddyPublicationLock::Path);
 
         $script = <<<BASH
             current={$current}
             caddy_service={$caddyService}
-            lock={$lock}
-            exec 9>"\$lock"
-            flock -w 30 9
+            {$lockScript}
             candidate="\$current.orbit-candidate"
             trap 'rm -rf -- "\$candidate"' EXIT
             install -d -o root -g caddy -m 0750 -- "\$candidate"

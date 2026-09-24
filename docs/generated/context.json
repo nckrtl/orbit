@@ -4183,6 +4183,7 @@
                 "Cluster",
                 "Doctor",
                 "Gateway",
+                "Herdr session",
                 "Ingress",
                 "Instance",
                 "Node",

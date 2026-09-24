@@ -1,11 +1,11 @@
 ---
 title: "Caddy configuration"
-description: "How Orbit owns a Node's Caddyfile, adopts an existing one, and refuses carried global options."
+description: "How Orbit owns a Node's Caddyfile, adopts an existing one, refuses carried global options, and runs publishers one at a time under one lock."
 ---
 
 # Caddy configuration
 
-Orbit owns `/etc/caddy/Caddyfile` on a Node that serves sites through Caddy. This page tells an operator how Orbit publishes that file, what happens to a Caddyfile that existed before Orbit, and how to fix a Node whose publication fails on global options. [ADR 0137](/decisions/0137-refuse-carried-caddy-global-options) records the global options rule.
+Orbit owns `/etc/caddy/Caddyfile` on a Node that serves sites through Caddy. This page tells an operator how Orbit publishes that file, how publishers avoid dropping each other's sites, what happens to a Caddyfile that existed before Orbit, and how to fix a Node whose publication fails on global options. [ADR 0137](/decisions/0137-refuse-carried-caddy-global-options) records the global options rule.
 
 ## Published layout
 
@@ -28,6 +28,37 @@ The global options block is Orbit's, and it is the same on every Node.
 `metrics { per_host }` makes Caddy count requests, errors, and durations per hostname. On the Node, `curl http://localhost:2019/metrics` shows them. Prometheus scrapes them only on Ingress, as [service metrics](/reference/service-metrics#caddy-traffic) describes. [ADR 0139](/decisions/0139-collect-caddy-http-metrics-on-every-node) records this choice and its cost.
 
 Every role keeps its sites in its own fragment, such as `app-dev.caddy` or `metrics.caddy`. A publisher replaces only its own fragment and copies every other fragment into the new version. It runs `caddy validate` on the candidate before it switches the symlink, and it restores the previous file or symlink when Caddy fails to reload.
+
+| Fragment | Publisher |
+| --- | --- |
+| `app-dev.caddy` | App development sites and [Route](/reference/routes) ingress |
+| `app-prod.caddy` | App production sites |
+| `00-metrics-service.caddy` | [Service metrics](/reference/service-metrics) monitoring site |
+| `herdr-<session>.caddy` | [Herdr session](/reference/herdr-sessions) observer |
+| `metrics.caddy` | [Metrics](/reference/metrics) route on the Gateway |
+| `websocket.caddy` | `websocket` role |
+| `proxycli.caddy` | [ProxyCLI](/reference/proxycli) collector |
+| `analytics.caddy` | [Analytics](/reference/analytics) role |
+| `00-unmanaged.caddy` | An [adopted Caddyfile](#adopted-caddyfile) |
+
+The `websocket`, `proxycli`, `analytics`, and Metrics publishers also switch a certificate directory, such as `/etc/caddy/orbit-websocket-cert-current`, and reload Caddy.
+
+## Publication lock
+
+Every publisher holds `/run/lock/orbit/caddy.lock` from before it reads the live version until Caddy has reloaded. A second publisher waits up to 30 seconds for the lock and then fails without changing the Node. The fragment and certificate publishers above all use this lock.
+
+Without one shared lock, two publishers could each copy the fragments they saw. The later switch would then drop the fragment that the earlier one had just published.
+
+Before it takes the lock, a publisher checks the lock path:
+
+| Path | Requirement |
+| --- | --- |
+| `/run/lock/orbit` | A real directory, not a symlink, owned by `root:root` with mode `0700`. Orbit creates it with that mode when it is missing. |
+| `/run/lock/orbit/caddy.lock` | A regular file, not a symlink, owned by `root:root`. Orbit sets mode `0600` after it opens the file. |
+
+A failed check stops the publication before any change. `/run/lock` is a tmpfs, so the lock and its directory are recreated after a reboot.
+
+The Gateway's own `gateway.caddy` fragment is published during Gateway convergence in several separate steps. That publication does not take the lock.
 
 ## Public Ingress certificates
 
