@@ -1,7 +1,7 @@
 ---
 title: "ADR 0137: Refuse carried Caddy global options"
 sidebarTitle: "0137 Refuse carried Caddy global options"
-description: "Proposed. Orbit writes the only Caddy global options block on a Node. A publisher refuses a candidate when a fragment it carries forward opens its own global block, and names the fragment, the options, and the file to edit."
+description: "Proposed. Superseded by ADR 0141. Orbit writes the only Caddy global options block on a Node. A publisher refuses a candidate when a fragment it carries forward opens its own global block, and names the fragment, the options, and the file to edit."
 ---
 
 # ADR 0137: Refuse carried Caddy global options
@@ -10,7 +10,7 @@ Orbit writes the only Caddy global options block on a Node. When a fragment that
 
 ## Status
 
-Proposed.
+Proposed. Superseded by [ADR 0141](/decisions/0141-build-each-node-caddyfile-on-the-gateway), which renders each Node's whole Caddyfile on the Gateway and carries no fragment forward.
 
 ## Context
 

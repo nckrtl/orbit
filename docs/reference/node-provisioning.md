@@ -79,6 +79,8 @@ Converging a role on a Node that still carries the archive package upgrades it i
 
 The Gateway machine itself is not a managed Node for packages. Its own Caddy comes from the [quickstart](/quickstart) install, which uses the same pinned source.
 
+Proposed in [ADR 0141](/decisions/0141-build-each-node-caddyfile-on-the-gateway), not live yet: every Node with Caddy sites installs Caddy through this step before its first [Node Caddy build](/reference/caddy-configuration#node-caddy-build). The `gateway` and `ingress` roles gain the `caddy` package. Gateway bootstrap and Gateway web convergence run the step on the Gateway machine, and the quickstart stops installing Caddy by hand. ProxyCli and Herdr observer publication run it on their Node, and the build uses only the packaged `/usr/bin/caddy`, never a Linuxbrew Caddy. The step also orders the Caddy service after `wg-quick@orbit`. Each build checks the floor again.
+
 ## Converge an existing Node
 
 `node:add` for a recorded Node converges that machine again. The Gateway may record the Node as `provisioning` while that work runs. When the Node was already `active` and a later step fails, the Gateway restores `active`, including when private DNS or Router LAN cleanup also fails. It does not leave a serving Gateway in `provisioning`. A non-active Gateway hides the peer from fleet authority, so clients then receive `node_access.required` until an operator repairs the status by hand.

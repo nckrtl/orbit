@@ -713,7 +713,9 @@
               "decisions/0137-refuse-carried-caddy-global-options",
               "decisions/0138-opt-public-ingress-sites-into-caddy-certificate-automation",
               "decisions/0139-collect-caddy-http-metrics-on-every-node",
-              "decisions/0140-watch-settling-pull-requests-for-conflicts-and-failed-checks"
+              "decisions/0140-watch-settling-pull-requests-for-conflicts-and-failed-checks",
+              "decisions/0141-build-each-node-caddyfile-on-the-gateway",
+              "decisions/0142-apply-plausibles-clickhouse-configuration-from-the-analytics-role"
             ]
           }
         ]

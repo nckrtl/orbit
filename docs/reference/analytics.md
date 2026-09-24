@@ -18,7 +18,7 @@ The analytics role owns one Docker Process named `plausible` on its own Node, an
 
 A Process needs a command. For PostgreSQL use `postgres`. The ClickHouse image already passes its own configuration file, so give it a server argument that starts with two dashes, such as `-- --logger.level=warning`; `--config-file` makes it restart forever.
 
-Both Processes publish their port on the Node's WireGuard address only. Plausible connects with the credentials in each Process's environment: `POSTGRES_USER` and `POSTGRES_PASSWORD`, and `CLICKHOUSE_USER`, `CLICKHOUSE_PASSWORD`, and `CLICKHOUSE_DB`. The ClickHouse container creates that database and user itself. Give analytics a PostgreSQL Process of its own, because Plausible connects as that Process's own user. ClickHouse assumes a large server by default, so give its Process the low-resource configuration that Plausible documents when the Node is small. Plan about 2 GB of memory for the three services together, and disk that grows with traffic.
+Both Processes publish their port on the Node's WireGuard address only. Plausible connects with the credentials in each Process's environment: `POSTGRES_USER` and `POSTGRES_PASSWORD`, and `CLICKHOUSE_USER`, `CLICKHOUSE_PASSWORD`, and `CLICKHOUSE_DB`. The ClickHouse container creates that database and user itself. Give analytics a PostgreSQL Process of its own, because Plausible connects as that Process's own user. The role applies Plausible's own ClickHouse configuration to the ClickHouse Process, as [ClickHouse configuration](#clickhouse-configuration) describes. Plan about 2 GB of memory for the three services together, and disk that grows with traffic.
 
 ## Assign the role
 
@@ -30,12 +30,45 @@ Assignment names the two Processes by ID and refuses when one is missing, is not
 
 | Step | Result |
 | --- | --- |
+| Configure ClickHouse | Plausible's ClickHouse files on the ClickHouse Process's Node and their read-only mounts in that Process. |
 | Connect storage | The two connection URLs, derived from the environment of the two Processes. |
 | Admit local storage | One `orbit:analytics-*-local` firewall rule for each storage Process on the same Node. |
 | Run Plausible | The `plausible` Process at the pinned version, published on the Node's WireGuard address. It creates and migrates its PostgreSQL database each time it starts. |
 | Publish the dashboard | Only after Plausible answers `/api/health`: an Orbit CA certificate, a Caddy site on the role's Node, and a private DNS record for `analytics.orbit`. |
 
 The first person to open `https://analytics.orbit` registers the Plausible owner account. Orbit does not create Plausible accounts, sites, or API tokens. To show visits on an Instance page, create a Stats API key in that Plausible account and store it with `orbit analytics:credentials --set`. The Gateway keeps the key as a protected setting and never returns it. `orbit analytics:credentials` reports only whether a key is stored. [Instance analytics stats](/reference/instance-analytics-stats) owns the read.
+
+## ClickHouse configuration
+
+ClickHouse's defaults assume a large server. On a small Node its own system log tables grow and its background merges run out of memory. Each role converge therefore applies the four ClickHouse files that Plausible Community Edition ships, unchanged. [ADR 0142](/decisions/0142-apply-plausibles-clickhouse-configuration-from-the-analytics-role) owns this step.
+
+The role writes each file on the Node that runs the ClickHouse Process. Each file is root-owned with mode `0644`. The role mounts each file read-only into the ClickHouse Process at the path that Plausible's own setup uses.
+
+| Host file | Container path |
+| --- | --- |
+| `/etc/orbit/analytics/clickhouse/config.d/logs.xml` | `/etc/clickhouse-server/config.d/logs.xml` |
+| `/etc/orbit/analytics/clickhouse/config.d/ipv4-only.xml` | `/etc/clickhouse-server/config.d/ipv4-only.xml` |
+| `/etc/orbit/analytics/clickhouse/config.d/low-resources.xml` | `/etc/clickhouse-server/config.d/low-resources.xml` |
+| `/etc/orbit/analytics/clickhouse/users.d/default-profile-low-resources-overrides.xml` | `/etc/clickhouse-server/users.d/default-profile-low-resources-overrides.xml` |
+
+`logs.xml` keeps only `query_log`, for 30 days, and removes ClickHouse's other system log tables. Tables that ClickHouse wrote before keep their data; Orbit does not drop them.
+
+The role adds only the mounts that the Process lacks. It keeps the Process's ID, name, image, command, environment, ports, and other volumes. When another volume already uses one of the four container paths, the converge fails with `analytics.clickhouse_mount_conflict`. Remove that volume first.
+
+| What changed | What happens to ClickHouse |
+| --- | --- |
+| A mount was added | The Process runtime replaces the container, which reads the files as it starts. |
+| Only a file changed | The Process runtime restarts the container. |
+| Nothing | ClickHouse keeps running. |
+| The Process is stopped | It stays stopped and reads the files at its next start. |
+
+To apply the configuration to an existing install, converge the role again with the same two Processes. The command asks for them when you leave them out in an interactive terminal.
+
+```bash
+orbit node:role:add NODE analytics --converge --postgres-process=ID --clickhouse-process=ID
+```
+
+A failure stops the converge at the `clickhouse-config` step, before Plausible runs. The next converge repeats the step and restarts a ClickHouse Process that the failure left `failed`. Removing the role leaves the files and mounts in place.
 
 ## Update and remove the role
 

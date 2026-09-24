@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Nodes\Roles;
 
+use App\Domain\Analytics\AnalyticsClickhouseConfigurationManager;
 use App\Domain\Analytics\AnalyticsPublicationManager;
 use App\Domain\Analytics\AnalyticsRoleSettingsRepository;
 use App\Domain\Analytics\AnalyticsSecretManager;
@@ -18,14 +19,16 @@ use App\Models\Node;
 use App\Models\NodeRole;
 
 /**
- * Converges the analytics role: it proves the two storage Processes, runs Plausible as the node's
- * `plausible` Process with the URLs those Processes declare, and publishes `analytics.orbit`.
+ * Converges the analytics role: it proves the two storage Processes, applies Plausible's ClickHouse
+ * configuration to the ClickHouse Process, runs Plausible as the node's `plausible` Process with the
+ * URLs those Processes declare, and publishes `analytics.orbit`.
  */
 final readonly class AnalyticsRoleBaseline implements RoleBaseline
 {
     public function __construct(
         private AnalyticsRoleSettingsRepository $settings,
         private AnalyticsStorageProcessGuard $storage,
+        private AnalyticsClickhouseConfigurationManager $clickhouse,
         private AnalyticsSecretManager $secrets,
         private PlausibleRuntimeLifecycle $runtime,
         private AnalyticsPublicationManager $publication,
@@ -45,6 +48,7 @@ final readonly class AnalyticsRoleBaseline implements RoleBaseline
         }
 
         $processes = $this->storage->assert($settings->postgresProcessId, $settings->clickhouseProcessId);
+        $this->clickhouse->converge($processes['clickhouse']);
 
         // Before Plausible starts: a storage Process on this Node is only reachable from the
         // `plausible` container once the role's own rules admit the Docker bridge.

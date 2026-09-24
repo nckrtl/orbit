@@ -25,7 +25,7 @@ Use `--upstream=http://127.0.0.1:4788` when the Process listener is a known loop
 
 The Gateway then publishes exact private DNS for `executor.orbit`, issues an Orbit CA leaf on Beast, and writes the Caddy reverse-proxy site. List and show include the Route. Destroy removes only that Route.
 
-Leave the unmanaged `executor.test` fragment and hand-placed certificate in place until clients have moved. Orbit automation must not delete live unmanaged Caddy or those certificate files. After `https://executor.orbit` works, remove the sidecar by hand on Beast and retire `executor.test` from client configuration.
+Leave the unmanaged `executor.test` fragment and hand-placed certificate in place until clients have moved. Orbit automation must not delete live unmanaged Caddy or those certificate files. The proposed [Node Caddy build](/reference/caddy-configuration#node-caddy-build) ([ADR 0141](/decisions/0141-build-each-node-caddyfile-on-the-gateway)) changes this: its first build on Beast backs up the fragment to `/etc/caddy/orbit-backups/` and stops serving `executor.test`, so move clients before that build. After `https://executor.orbit` works, remove the sidecar by hand on Beast and retire `executor.test` from client configuration.
 
 [Custom proxy Routes](/reference/routes#custom-proxy-routes) owns uniqueness, DNS, Caddy, and removal. [ADR 0080](/decisions/0080-add-node-owned-custom-proxy-routes) records the kind.
 

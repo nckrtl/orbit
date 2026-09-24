@@ -119,7 +119,7 @@ orbit metrics:disable --force
 orbit metrics:disable --force --purge-data
 ```
 
-Metrics reconvergence and removal preserve Caddy global options and unrelated site fragments when withdrawing the Metrics route.
+Metrics reconvergence and removal preserve Caddy global options and unrelated site fragments when withdrawing the Metrics route. Under the proposed [Node Caddy build](/reference/caddy-configuration#node-caddy-build) ([ADR 0141](/decisions/0141-build-each-node-caddyfile-on-the-gateway)), they change the stored Metrics publication and build the Gateway's Node instead.
 
 Interactive disable shows a preview and asks for confirmation, defaulting to No. Interactive decline, Ctrl-C, or EOF exits with `input.cancelled` and makes no changes. Non-interactive disable without `--force` fails with `metrics.force_required`, and so does `--purge-data` without `--force`, in every mode.
 
