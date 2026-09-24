@@ -3366,6 +3366,7 @@
                 "apps/gateway"
             ],
             "concepts": [
+                "Doctor",
                 "Gateway",
                 "Node",
                 "Process",

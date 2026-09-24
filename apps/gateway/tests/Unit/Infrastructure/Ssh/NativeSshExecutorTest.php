@@ -210,3 +210,26 @@ it('opens its own connection when the socket directory cannot hold a socket', fu
         ->and(is_dir("{$tooLong}/mux"))
         ->toBeFalse();
 });
+
+it('opens a new connection when the caller does not share one', function (): void {
+    $sshDirectory = '/tmp/omx-'.bin2hex(random_bytes(3));
+    mkdir($sshDirectory, 0700);
+    $runner = ssh_executor_recording_runner();
+    $connection = new SshConnection(
+        host: '10.44.0.3',
+        user: 'orbit',
+        port: 22,
+        identityFile: "{$sshDirectory}/id_ed25519",
+        knownHostsFile: "{$sshDirectory}/known_hosts",
+        shareConnection: false,
+    );
+
+    try {
+        new NativeSshExecutor($runner)->execute($connection, new RemoteCommand(['true']));
+
+        expect($runner->invocation?->arguments)->not->toContain('ControlMaster=auto');
+    } finally {
+        @rmdir("{$sshDirectory}/mux");
+        @rmdir($sshDirectory);
+    }
+});
