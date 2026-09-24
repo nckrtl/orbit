@@ -52,7 +52,7 @@ Measured with 20 or more forced reloads per run, in a network namespace on the s
 
 - Reloads reset about 93% fewer connections. Browsers and curl negotiate HTTP/2, so they see only these resets.
 - The setting applies to every `SO_REUSEPORT` group on the Node, not only Caddy. It only moves connections that a closed socket would otherwise reset.
-- HTTP/1.1 clients can still get an empty reply on a new connection during a reload. Orbit's own CLI and PHP SDK use HTTP/1.1, so a command can fail this way while the Gateway's Caddy reloads. No Caddy setting fixes this. Fewer reloads, such as ADR 0141's unchanged-render rule, reduce the exposure.
+- HTTP/1.1 clients can still get an empty reply on a new connection during a reload. Orbit's own CLI and PHP SDK use HTTP/1.1. They retry a read once after a refused, reset, or empty connection, so a read survives a reload. A command that changes state can still fail this way while the Gateway's Caddy reloads, because the CLI and SDK never retry a change. No Caddy setting fixes this. Fewer reloads, such as ADR 0141's unchanged-render rule, reduce the exposure.
 - Nodes need Linux 5.14 or newer. Every supported Ubuntu release meets that.
 
 ## Affects
