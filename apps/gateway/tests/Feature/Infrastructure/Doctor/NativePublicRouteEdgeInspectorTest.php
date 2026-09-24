@@ -136,6 +136,39 @@ describe('an Ingress that shares the Router and the workload', function (): void
         expect(public_edge_observe($this))->toBe([true, false, true]);
     });
 
+    it('reports a public site that pins an Orbit CA leaf', function (): void {
+        $scope = "route-{$this->route->id}-ingress";
+        public_edge_publish($this->caddy, $this->ingress, static fn (string $site): string => str_replace(
+            "    tls force_automate\n",
+            "    tls /etc/caddy/orbit-certificates/{$scope}/current/cert.pem /etc/caddy/orbit-certificates/{$scope}/current/key.pem\n",
+            $site,
+        ));
+
+        expect(public_edge_observe($this))->toBe([true, false, true]);
+    });
+
+    it('accepts a site without certificate automation on a Node that leaves certificate management on', function (): void {
+        public_edge_publish(
+            $this->caddy,
+            $this->ingress,
+            static fn (string $site): string => str_replace("    tls force_automate\n", '', $site),
+            globalOptions: '',
+        );
+
+        expect(public_edge_observe($this))->toBe([true, true, true]);
+    });
+
+    it('fails closed when the firewall status cannot be read', function (int $exitCode, string $status): void {
+        public_edge_publish($this->caddy, $this->ingress);
+        $this->ssh->ufwExitCode = $exitCode;
+        $this->ssh->ufwStatus = $status;
+
+        expect(fn () => public_edge_observe($this))->toThrow(DoctorInspectionException::class);
+    })->with([
+        'failed command' => [1, ''],
+        'unrecognised status' => [0, "ERROR: problem running iptables\n"],
+    ]);
+
     it('reports a Node that does not serve the public site at all', function (): void {
         public_edge_publish($this->caddy, $this->ingress, static fn (string $site): string => "# no sites\n");
 
@@ -209,12 +242,12 @@ function public_edge_inspector(LocalRootShellSshExecutor $ssh, string $caddy): N
  *
  * @param  (Closure(string): string)|null  $edit
  */
-function public_edge_publish(string $caddy, Node $ingress, ?Closure $edit = null): void
+function public_edge_publish(string $caddy, Node $ingress, ?Closure $edit = null, ?string $globalOptions = null): void
 {
     $sites = new AppDevCaddyConfigRenderer()->render(new AppDevSiteRepository()->forNode($ingress));
     file_put_contents(
         "{$caddy}/orbit-versions/v1/Caddyfile",
-        CaddyGlobalOptions::render()."import {$caddy}/orbit-versions/v1/fragments/*.caddy\n",
+        ($globalOptions ?? CaddyGlobalOptions::render())."import {$caddy}/orbit-versions/v1/fragments/*.caddy\n",
     );
     file_put_contents("{$caddy}/orbit-versions/v1/fragments/app-dev.caddy", $edit instanceof Closure ? $edit($sites) : $sites);
 }

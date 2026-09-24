@@ -13,11 +13,7 @@ use App\Infrastructure\AppDev\AppDevSite;
 use App\Infrastructure\AppDev\AppDevSiteRepository;
 use App\Infrastructure\AppDev\AppDevSshExecutor;
 use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
-use App\Infrastructure\Firewall\UfwManagedRule;
-use App\Infrastructure\Firewall\UfwRuleOwnership;
-use App\Infrastructure\Firewall\UfwStatusParser;
 use App\Infrastructure\Processes\CommandDeadline;
-use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Node;
 use App\Models\Route;
@@ -41,7 +37,7 @@ final readonly class NativePublicRouteEdgeInspector implements PublicRouteEdgeIn
         private AppDevSiteRepository $sites = new AppDevSiteRepository,
         private AppDevCaddyConfigRenderer $renderer = new AppDevCaddyConfigRenderer,
         private NodeFirewallRuleCatalog $firewall = new NodeFirewallRuleCatalog,
-        private UfwStatusParser $ufw = new UfwStatusParser,
+        private UfwManagedRulesCheck $ufw = new UfwManagedRulesCheck,
         private string $liveCaddyfilePath = '/etc/caddy/Caddyfile',
     ) {}
 
@@ -160,27 +156,6 @@ final readonly class NativePublicRouteEdgeInspector implements PublicRouteEdgeIn
             commandTimeout: $this->deadline->cap(30.0),
         );
 
-        return $this->firewallStatusMatches($result, $rules);
-    }
-
-    /** @param list<UfwManagedRule> $rules */
-    private function firewallStatusMatches(CommandResult $result, array $rules): bool
-    {
-        if (! $result->succeeded() || $result->truncated) {
-            throw new DoctorInspectionException;
-        }
-
-        if (preg_match('/\AStatus:\s+inactive\s*\z/i', $result->stdout) === 1) {
-            return false;
-        }
-
-        if (preg_match('/\AStatus:\s+active\s*$/mi', $result->stdout) !== 1) {
-            throw new DoctorInspectionException;
-        }
-
-        return array_all(
-            $rules,
-            fn (UfwManagedRule $rule): bool => $this->ufw->ownership($result->stdout, $rule->shape) === UfwRuleOwnership::Exact,
-        );
+        return $this->ufw->matches($result, $rules);
     }
 }

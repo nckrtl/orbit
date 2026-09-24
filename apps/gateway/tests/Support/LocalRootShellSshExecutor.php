@@ -25,6 +25,7 @@ final class LocalRootShellSshExecutor implements SshExecutor
     public function __construct(
         private readonly string $rootOnlyDirectory,
         public string $ufwStatus = "Status: inactive\n",
+        public int $ufwExitCode = 0,
     ) {}
 
     public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
@@ -33,7 +34,7 @@ final class LocalRootShellSshExecutor implements SshExecutor
         $arguments = $command->arguments;
 
         if ($arguments === ['sudo', 'ufw', 'status', 'numbered']) {
-            return new CommandResult(0, $this->ufwStatus, '', 1, false);
+            return new CommandResult($this->ufwExitCode, $this->ufwStatus, '', 1, false);
         }
 
         $privileged = $arguments[0] === 'sudo';
