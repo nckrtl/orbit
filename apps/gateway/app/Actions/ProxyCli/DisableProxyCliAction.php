@@ -26,10 +26,15 @@ final readonly class DisableProxyCliAction
 
         if ($node instanceof Node) {
             $this->runtime->remove($node);
-            $this->publication->remove($node);
         }
 
+        // Disable before the publication removal: it republishes private DNS, which keeps the collector name
+        // while the extension is still enabled.
         $this->state->disable();
+
+        if ($node instanceof Node) {
+            $this->publication->remove($node);
+        }
 
         return new ProxyCliStatusData(false, $nodeId, $this->state->cacheConnection(), null, ProxyCliHostname::Value);
     }
