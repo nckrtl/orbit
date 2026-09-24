@@ -105,6 +105,31 @@ final readonly class NodeCaddyPushScript
                 exit "\$status"
             }
             trap report EXIT
+            digest_matches() {
+                local name
+                name=\$(basename -- "\$1")
+                if ! printf '%s' "\$name" | grep -Eq '^[0-9a-f]{32}\$' || [ ! -f "\$1/Caddyfile" ]; then
+                    return 0
+                fi
+                [ "\$(sha256sum -- "\$1/Caddyfile" | awk '{ print substr(\$1, 1, 32) }')" = "\$name" ]
+            }
+            make_backup() {
+                local source=\$1 kind=\$2 stamp backup suffix=1
+                install -d -o root -g root -m 0700 -- "\$backups" || return 1
+                stamp=\$(date -u +%Y%m%dT%H%M%SZ)
+                backup="\$backups/\$stamp"
+                while ! mkdir -m 0700 -- "\$backup" 2>/dev/null; do
+                    suffix=\$((suffix + 1))
+                    [ "\$suffix" -le 100 ] || return 1
+                    backup="\$backups/\$stamp-\$suffix"
+                done
+                if [ "\$kind" = directory ]; then
+                    cp -a -- "\$source" "\$backup/\$(basename -- "\$source")" || return 1
+                else
+                    cp -p -- "\$source" "\$backup/Caddyfile" || return 1
+                fi
+                printf 'Backed up %s to %s.\\n' "\$source" "\$backup" >&2
+            }
             umask 0077
             {$lock}
 
@@ -131,17 +156,15 @@ final readonly class NodeCaddyPushScript
             done
 
             stage=unchanged
-            tampered=0
             live_main=
             if [ -e "\$live" ] || [ -L "\$live" ]; then
                 live_main=\$(readlink -f -- "\$live" || true)
             fi
             if [ -L "\$live" ] && [ "\$live_main" = "\$published/Caddyfile" ] && [ -f "\$published/Caddyfile" ]; then
-                printf '%s' '{$encoded}' | base64 --decode | cmp -s -- - "\$published/Caddyfile" && {
+                if printf '%s' '{$encoded}' | base64 --decode | cmp -s -- - "\$published/Caddyfile"; then
                     printf 'orbit-caddy-build-result=unchanged\\n'
                     exit 0
-                }
-                tampered=1
+                fi
             fi
 
             stage=write
@@ -167,12 +190,15 @@ final readonly class NodeCaddyPushScript
             stage=backup
             backup_source=
             backup_kind=
-            if [ "\$tampered" = 1 ]; then
-                backup_source=\$published
-                backup_kind=directory
-            elif [ -L "\$live" ]; then
-                if [ -z "\$live_main" ] || [ ! -f "\$live_main" ] || [ "\$(head -n 1 -- "\$live_main")" = "\$marker" ]; then
+            if [ -L "\$live" ]; then
+                if [ -z "\$live_main" ] || [ ! -f "\$live_main" ]; then
                     :
+                elif [ "\$(head -n 1 -- "\$live_main")" = "\$marker" ]; then
+                    # A build's version that no longer matches its digest was edited by hand.
+                    if [ "\${live_main#"\$versions"/}" != "\$live_main" ] && ! digest_matches "\$(dirname -- "\$live_main")"; then
+                        backup_source=\$(dirname -- "\$live_main")
+                        backup_kind=directory
+                    fi
                 elif [ "\${live_main#"\$versions"/}" != "\$live_main" ] && [ -d "\$(dirname -- "\$live_main")/fragments" ]; then
                     backup_source=\$(dirname -- "\$live_main")
                     backup_kind=directory
@@ -189,21 +215,7 @@ final readonly class NodeCaddyPushScript
                 fi
             fi
             if [ -n "\$backup_kind" ]; then
-                install -d -o root -g root -m 0700 -- "\$backups"
-                stamp=\$(date -u +%Y%m%dT%H%M%SZ)
-                backup="\$backups/\$stamp"
-                suffix=1
-                while ! mkdir -m 0700 -- "\$backup" 2>/dev/null; do
-                    suffix=\$((suffix + 1))
-                    test "\$suffix" -le 100
-                    backup="\$backups/\$stamp-\$suffix"
-                done
-                if [ "\$backup_kind" = directory ]; then
-                    cp -a -- "\$backup_source" "\$backup/\$(basename -- "\$backup_source")"
-                else
-                    cp -p -- "\$backup_source" "\$backup/Caddyfile"
-                fi
-                printf 'Backed up the replaced Caddy configuration to %s.\\n' "\$backup" >&2
+                make_backup "\$backup_source" "\$backup_kind"
             fi
 
             stage=swap
@@ -262,6 +274,10 @@ final readonly class NodeCaddyPushScript
                 fi
                 if [ "\$kept" -lt "\$retained" ]; then
                     kept=\$((kept + 1))
+                    continue
+                fi
+                if ! digest_matches "\$directory" && ! make_backup "\$directory" directory; then
+                    printf 'Kept the old version %s, which was edited by hand and could not be backed up.\\n' "\$name" >&2
                     continue
                 fi
                 rm -rf -- "\$directory" || printf 'Could not remove the old version %s.\\n' "\$name" >&2

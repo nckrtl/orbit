@@ -55,7 +55,7 @@ describe('a first build', function (): void {
             ->and($backups)->toHaveCount(1)
             ->and($backups[0])->toMatch('/\A\d{8}T\d{6}Z\z/')
             ->and(file_get_contents($this->harness->path("orbit-backups/{$backups[0]}/Caddyfile")))->toBe("hand.example.com {\n    respond \"hand placed\"\n}\n")
-            ->and($result['stderr'])->toContain('Backed up the replaced Caddy configuration');
+            ->and($result['stderr'])->toContain('Backed up '.$this->harness->path('Caddyfile').' to ');
     });
 
     it('backs up the whole version directory of the old fragment layout, unmanaged fragment included', function (): void {
@@ -113,6 +113,43 @@ describe('a later build', function (): void {
             ->and(file_get_contents($this->harness->path('Caddyfile')))->toBe($caddyfile->content)
             ->and(file_get_contents($this->harness->path("orbit-backups/{$backup}/{$caddyfile->version}/Caddyfile")))->toContain('hand.example.com')
             ->and($this->harness->directories('orbit-versions'))->toBe([$caddyfile->version]);
+    });
+
+    it('backs up a hand-edited live version before a build with a different version replaces it', function (): void {
+        $first = node_caddy_push_file('shop.test');
+        $this->harness->push($first);
+        file_put_contents($this->harness->path("orbit-versions/{$first->version}/Caddyfile"), $first->content."hand.example.com {\n    respond hi\n}\n");
+        $next = node_caddy_push_file('other.test');
+
+        $result = $this->harness->push($next);
+        [$backup] = $this->harness->directories('orbit-backups');
+
+        expect($result['exit'])->toBe(0, $result['stderr'])
+            ->and(file_get_contents($this->harness->path('Caddyfile')))->toBe($next->content)
+            ->and(file_get_contents($this->harness->path("orbit-backups/{$backup}/{$first->version}/Caddyfile")))->toContain('hand.example.com');
+    });
+
+    it('backs up a hand-edited old version before prune removes it, and keeps an intact one without a backup', function (): void {
+        $edited = node_caddy_push_file('edited.test');
+        $intact = node_caddy_push_file('intact.test');
+        $this->harness->write("orbit-versions/{$edited->version}/Caddyfile", $edited->content."# edited\n");
+        $this->harness->write("orbit-versions/{$intact->version}/Caddyfile", $intact->content);
+        touch($this->harness->path("orbit-versions/{$edited->version}"), time() - 3600);
+        touch($this->harness->path("orbit-versions/{$intact->version}"), time() - 3500);
+        foreach (range(1, 9) as $age) {
+            $name = sprintf('%016x', $age);
+            $this->harness->write("orbit-versions/{$name}/Caddyfile", "# old {$age}\n");
+            touch($this->harness->path("orbit-versions/{$name}"), time() - ($age * 60));
+        }
+        $live = node_caddy_push_file('shop.test');
+
+        $result = $this->harness->push($live);
+        $backups = $this->harness->directories('orbit-backups');
+
+        expect($result['exit'])->toBe(0, $result['stderr'])
+            ->and($this->harness->directories('orbit-versions'))->not->toContain($edited->version, $intact->version)
+            ->and($backups)->toHaveCount(1)
+            ->and(file_get_contents($this->harness->path("orbit-backups/{$backups[0]}/{$edited->version}/Caddyfile")))->toEndWith("# edited\n");
     });
 
     it('restores a hand-edited live version when Caddy fails to reload its replacement', function (): void {
