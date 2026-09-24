@@ -13,6 +13,7 @@ use App\Domain\GitHub\RepositoryPullRequestAccess;
 use App\Domain\Tasks\TaskPullRequestHealth;
 use App\Domain\Tasks\TaskPullRequestWatcher;
 use App\Models\TaskGroup;
+use Illuminate\Support\Facades\Cache;
 use Throwable;
 
 /**
@@ -20,6 +21,8 @@ use Throwable;
  */
 final readonly class HttpTaskPullRequestWatcher implements TaskPullRequestWatcher
 {
+    private const int CHECKS_CACHE_SECONDS = 60;
+
     public function __construct(private RepositoryPullRequestAccess $access, private GitHubApi $github) {}
 
     public function status(TaskGroup $group): ?string
@@ -51,7 +54,7 @@ final readonly class HttpTaskPullRequestWatcher implements TaskPullRequestWatche
             if ($pullRequest->state !== GitHubPullRequestState::Open) {
                 return new TaskPullRequestHealth($pullRequest->state->value);
             }
-            $failed = $this->failedChecks($repository, $pullRequest);
+            $failed = $this->failedChecks($repository, $number, $pullRequest);
         } catch (Throwable) {
             return null;
         }
@@ -68,21 +71,41 @@ final readonly class HttpTaskPullRequestWatcher implements TaskPullRequestWatche
         return new TaskPullRequestHealth('open', $problems);
     }
 
-    /** @return list<GitHubCheckRun> */
-    private function failedChecks(GitHubRepository $repository, GitHubPullRequest $pullRequest): array
+    /**
+     * Failed check runs on the head commit, read at most once a minute per commit. The scheduler ticks
+     * every few seconds, and each read costs a checks token and a check-run list against the App's rate
+     * limit. Only names and URLs are cached, never a token. A new push has a new head, so it reads fresh.
+     *
+     * @return list<GitHubCheckRun>
+     */
+    private function failedChecks(GitHubRepository $repository, int $number, GitHubPullRequest $pullRequest): array
     {
         if ($pullRequest->headSha === null) {
             return [];
         }
-        $token = $this->access->checksToken($repository);
-        if ($token === null) {
-            return [];
+        $key = 'tasks:pull-request-checks:'.$repository->owner.'/'.$repository->name.'#'.$number.'@'.$pullRequest->headSha;
+        /** @var list<array{name: string, url: ?string}>|null $failed */
+        $failed = Cache::get($key);
+        if (! is_array($failed)) {
+            $token = $this->access->checksToken($repository);
+            if ($token === null) {
+                // Not cached: a missing permission or a passing token failure is re-read next tick.
+                return [];
+            }
+            $failed = array_values(array_map(
+                static fn (GitHubCheckRun $run): array => ['name' => $run->name, 'url' => $run->url],
+                array_filter(
+                    $this->github->checkRuns($token, $repository, $pullRequest->headSha),
+                    static fn (GitHubCheckRun $run): bool => $run->failed(),
+                ),
+            ));
+            Cache::put($key, $failed, self::CHECKS_CACHE_SECONDS);
         }
 
-        return array_values(array_filter(
-            $this->github->checkRuns($token, $repository, $pullRequest->headSha),
-            static fn (GitHubCheckRun $run): bool => $run->failed(),
-        ));
+        return array_map(
+            static fn (array $run): GitHubCheckRun => new GitHubCheckRun($run['name'], 'failure', $run['url']),
+            $failed,
+        );
     }
 
     /** @return array{GitHubRepository, int}|null */

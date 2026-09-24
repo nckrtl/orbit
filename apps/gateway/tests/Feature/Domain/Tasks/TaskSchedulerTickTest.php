@@ -283,6 +283,8 @@ it('asks for assistance once per set of pull request problems and withdraws it w
     $this->assertDatabaseHas('task_groups', ['id' => $group->id, 'assistance_requested' => true, 'assistance_reason' => $checkReason]);
     expect($notifier->reasons)->toBe([$conflictReason, $checkReason]);
 
+    // A re-run on the same head commit is read once the minute-long check cache expires.
+    $this->travel(61)->seconds();
     app(TaskScheduler::class)->tick();
     $this->assertDatabaseHas('task_groups', ['id' => $group->id, 'status' => 'settling', 'assistance_requested' => false, 'assistance_reason' => null]);
     expect($notifier->reasons)->toHaveCount(2);

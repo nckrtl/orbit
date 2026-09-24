@@ -191,3 +191,26 @@ it('reports no health when GitHub fails to list the check runs', function (): vo
 
     expect(app(HttpTaskPullRequestWatcher::class)->health(watcher_group()))->toBeNull();
 });
+
+it('reads the check runs of one head commit at most once a minute', function (): void {
+    GitHubTestSupport::storeApp();
+    watcher_fake_health([], [
+        ['name' => 'Rust agent', 'status' => 'completed', 'conclusion' => 'failure', 'html_url' => 'https://github.com/acme/orbit/runs/1'],
+    ]);
+    $watcher = app(HttpTaskPullRequestWatcher::class);
+    $checkRunReads = static fn (): int => count(Http::recorded(
+        static fn (Request $request): bool => str_contains($request->url(), '/check-runs'),
+    ));
+
+    $first = $watcher->health(watcher_group());
+    $second = $watcher->health(TaskGroup::query()->sole()->load('app'));
+
+    expect($first?->problems)->toBe(['Check Rust agent failed: https://github.com/acme/orbit/runs/1.'])
+        ->and($second?->problems)->toBe($first?->problems)
+        ->and($checkRunReads())->toBe(1);
+
+    $this->travel(61)->seconds();
+    $watcher->health(TaskGroup::query()->sole()->load('app'));
+
+    expect($checkRunReads())->toBe(2);
+});

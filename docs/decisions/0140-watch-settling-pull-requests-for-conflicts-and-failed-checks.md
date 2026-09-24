@@ -46,7 +46,7 @@ GitHub reports a conflict in the pull request itself: `mergeable` is `false`, or
 
 - A conflict or a failed check on a settling pull request asks for assistance once, and the group reads healthy again after the fix.
 - An existing App reports failed checks only after its owner grants the permission. Open the App settings on GitHub, set Permissions → Checks to Read-only, and save. Then accept the new permission on each installation. Until then, the Gateway reports conflicts only.
-- Each tick makes up to three more GitHub requests per open settling pull request: an installation lookup, the checks token, and the check run list.
+- The Gateway reads the check runs of one head commit at most once a minute, and caches only check names and URLs. The read costs three GitHub requests, an installation lookup, the checks token, and the check run list, so an open settling pull request adds about 180 requests an hour. A re-run on the same commit shows within a minute; a push reads at once.
 - The Gateway reads up to 100 check runs per head commit. A failed check beyond that page is not reported.
 - A conflict request that is still stored when the pull request merges stays on the completed group.
 
