@@ -98,7 +98,8 @@
                 "0104",
                 "0109",
                 "0110",
-                "0127"
+                "0127",
+                "0145"
             ]
         },
         {
@@ -438,6 +439,7 @@
                 "Database connection",
                 "Node",
                 "Process",
+                "Route",
                 "proxycli"
             ],
             "governing_adrs": []
@@ -2969,7 +2971,8 @@
             ],
             "governing_adrs": [
                 "0104",
-                "0109"
+                "0109",
+                "0145"
             ]
         },
         {
@@ -3747,6 +3750,31 @@
             ]
         },
         {
+            "path": "docs/decisions/0145-publish-the-proxycli-collector-on-collector-cli-proxy-api-orbit.md",
+            "title": "ADR 0145: Publish the proxycli collector on collector.cli-proxy-api.orbit",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Gateway",
+                "Ingress",
+                "Node",
+                "Process",
+                "Route",
+                "proxycli"
+            ],
+            "governing_adrs": [
+                "0104",
+                "0109",
+                "0141",
+                "0145"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -3918,7 +3946,8 @@
                 "0141",
                 "0142",
                 "0143",
-                "0144"
+                "0144",
+                "0145"
             ]
         },
         {
@@ -5004,7 +5033,8 @@
             "governing_adrs": [
                 "0104",
                 "0108",
-                "0109"
+                "0109",
+                "0145"
             ]
         },
         {
@@ -5028,8 +5058,7 @@
                 "Route",
                 "Router",
                 "Tool",
-                "Web root",
-                "proxycli"
+                "Web root"
             ],
             "governing_adrs": [
                 "0009",

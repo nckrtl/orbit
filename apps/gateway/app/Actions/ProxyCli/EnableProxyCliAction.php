@@ -7,6 +7,7 @@ namespace App\Actions\ProxyCli;
 use App\Data\ProxyCli\EnableProxyCliData;
 use App\Data\ProxyCli\ProxyCliStatusData;
 use App\Domain\ProxyCli\ProxyCliHostname;
+use App\Domain\ProxyCli\ProxyCliHostnameRoute;
 use App\Domain\ProxyCli\ProxyCliPlacement;
 use App\Domain\ProxyCli\ProxyCliProcess;
 use App\Domain\ProxyCli\ProxyCliPublicationManager;
@@ -24,12 +25,14 @@ final readonly class EnableProxyCliAction
         private ProxyCliRuntimeLifecycle $runtime,
         private ProxyCliPublicationManager $publication,
         private ProxyCliSnapshotStore $snapshots,
+        private ProxyCliHostnameRoute $hostnameRoute = new ProxyCliHostnameRoute,
     ) {}
 
     public function execute(#[SensitiveParameter] EnableProxyCliData $data): ProxyCliStatusData
     {
         $node = $this->placement->node($data->nodeId);
         $connection = $this->placement->connection($data->cacheConnection);
+        $takeover = $this->hostnameRoute->takeoverCandidate($node);
         $readToken = $this->state->readToken() ?? bin2hex(random_bytes(24));
         $controlToken = $this->state->controlToken() ?? bin2hex(random_bytes(24));
         $this->state->enable(
@@ -48,7 +51,7 @@ final readonly class EnableProxyCliAction
             ...$this->cacheEnvironment($connection),
             'PROXYCLI_PORT' => (string) ProxyCliProcess::PORT,
         ]);
-        $this->publication->converge($node);
+        $this->publication->converge($node, takeover: $takeover);
 
         return new ProxyCliStatusData(
             true,

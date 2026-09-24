@@ -6,7 +6,7 @@ namespace App\Infrastructure\ProxyCli;
 
 use App\Domain\ProxyCli\ProxyCliProcess;
 
-/** Renders the Caddy site that terminates Orbit-CA TLS for collector.proxycli.orbit and reverse-proxies to the loopback collector. */
+/** Renders the Caddy site that terminates Orbit-CA TLS for the collector hostname and reverse-proxies to the loopback collector. */
 final readonly class ProxyCliCaddySiteRenderer
 {
     public function render(int $port = ProxyCliProcess::PORT): string

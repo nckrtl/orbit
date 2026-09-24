@@ -185,7 +185,7 @@ export const liveFirewallQuery = (nodeId: number) =>
 
 const disabledProxyCli = (): ProxyCliStatus => ({
     enabled: false,
-    hostname: "collector.proxycli.orbit",
+    hostname: "collector.cli-proxy-api.orbit",
     node_id: null,
     cache_connection: null,
     collected_at: null,

@@ -15,7 +15,7 @@ final class DisableProxyCliCommand extends ProxyCliCommand
     protected $signature = 'proxycli:disable {--json : Return machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'Stop the collector and withdraw collector.proxycli.orbit.';
+    protected $description = 'Stop the collector and withdraw collector.cli-proxy-api.orbit.';
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $factory): int
     {

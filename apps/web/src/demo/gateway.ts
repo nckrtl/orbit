@@ -195,7 +195,7 @@ export function createDemoGateway() {
                 () =>
                     ok({
                         enabled: proxycliEnabled,
-                        hostname: "collector.proxycli.orbit",
+                        hostname: "collector.cli-proxy-api.orbit",
                         node_id: proxycliEnabled ? 2 : null,
                         cache_connection: proxycliEnabled ? "valkey" : null,
                         collected_at: proxycliEnabled ? "2026-09-20T12:00:00Z" : null,
