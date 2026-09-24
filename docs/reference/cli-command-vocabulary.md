@@ -73,9 +73,8 @@ Some families expose actions that are not the pairs above. Those last segments b
 | `realtime` | `tail` | The CLI streams decoded realtime Gateway events as they arrive. |
 | `schedule` | `logs`, `run` | The CLI reads Schedule logs or runs a Schedule once. |
 | `tasks` | `cancel`, `complete`, `status` | The CLI cancels or completes a task group, or reports whether the tasks extension is on. |
-| `top` | `top` | The CLI shows the fleet as a live screen. |
 
-`doctor`, `profile`, and `top` are one-segment commands. Each family name is the command.
+`doctor` and `profile` are one-segment commands. Each family name is the command.
 
 ## Noun-ending commands
 

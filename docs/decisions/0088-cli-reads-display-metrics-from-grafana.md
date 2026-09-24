@@ -55,4 +55,4 @@ Prometheus binds `127.0.0.1:9090` on the Metrics Node only ([`MetricsRuntimeSpec
 - Components: apps/gateway, apps/cli, apps/docs
 - ADRs: carves out one exception to [ADR 0085](/decisions/0085-build-orbit-top-as-a-thin-tui-client)'s "no aggregate endpoint" rule, scoped to Node metrics display only; none amended
 - Detail: [`node`](/cli/node), [`metrics`](/cli/metrics)
-- Verify: `apps/gateway/tests/Unit/Infrastructure/Metrics/PrometheusNodeMetricsMapperTest.php`, `apps/gateway/tests/Unit/Infrastructure/Nodes/Metrics/GrafanaPrometheusNodeMetricsReaderTest.php`, `apps/cli/tests/Unit/Support/Metrics/PrometheusNodeMetricsMapperTest.php`, `apps/cli/tests/Feature/Tui/Sources/GrafanaPrometheusMetricsSourceTest.php`
+- Verify: `apps/gateway/tests/Unit/Infrastructure/Metrics/PrometheusNodeMetricsMapperTest.php`, `apps/gateway/tests/Unit/Infrastructure/Nodes/Metrics/GrafanaPrometheusNodeMetricsReaderTest.php`
