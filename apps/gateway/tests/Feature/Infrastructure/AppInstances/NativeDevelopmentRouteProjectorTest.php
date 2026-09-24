@@ -310,6 +310,59 @@ it('preserves the ready hostname candidate across an interrupted DNS publication
         ->not->toContain("host-record=feature.acme.test,{$router->wireguard_ip}");
 });
 
+it('serves every hostname-change site from a certificate the flow wrote for that domain', function (): void {
+    [$appInstance, $route, $workload, $router] = orb127_route_projection_models();
+    $route->update(['status' => RouteStatus::Active]);
+    $appInstance->update(['status' => AppInstanceState::Active, 'source_is_laravel' => false]);
+    $replacement = Route::query()->create([
+        'app_id' => $route->app_id,
+        'cluster_id' => $route->cluster_id,
+        'domain' => 'next.acme.test',
+        'provenance' => $route->provenance,
+        'publication' => $route->publication,
+        'status' => RouteStatus::Pending,
+        'replaces_route_id' => $route->id,
+        'replacement_step' => RouteReplacementStep::Reserved,
+    ]);
+    $replacement->targets()->create(['app_instance_id' => $appInstance->id, 'position' => 0]);
+    $route->update(['replaced_by_route_id' => $replacement->id]);
+    [$projector, $ssh, $processes, $home] = orb127_route_projector();
+
+    try {
+        $current = $route->refresh();
+        $candidate = $replacement->refresh();
+        $projector->prepareWorkloadCertificate($appInstance, $current, $candidate);
+        $projector->prepareWorkloadCaddy($appInstance, $current, $candidate);
+        $projector->prepareRouterCertificate($appInstance, $current, $candidate);
+        $projector->prepareFirewallPolicy($appInstance, $candidate);
+        $projector->verifyWorkload($appInstance, $candidate);
+        $projector->prepareRouterCaddy($appInstance, $current, $candidate);
+        $projector->publishDns($current, $candidate);
+        $route->update(['status' => RouteStatus::Retiring]);
+        $replacement->update([
+            'status' => RouteStatus::Activating,
+            'replacement_step' => RouteReplacementStep::DatabaseCutover,
+        ]);
+        $projector->cleanup($appInstance->refresh(), $replacement->refresh());
+
+        [$mismatches, $disk, $served] = orb_hostname_change_certificate_replay(
+            $ssh,
+            [
+                $workload->wireguard_ip => ["app-instance-{$appInstance->id}" => 'feature.acme.test'],
+                $router->wireguard_ip => ["route-{$route->id}-router" => 'feature.acme.test'],
+            ],
+        );
+
+        expect($mismatches)->toBe([])
+            ->and($served[$workload->wireguard_ip])->toBe(['next.acme.test' => "app-instance-{$appInstance->id}"])
+            ->and($served[$router->wireguard_ip])->toBe(['next.acme.test' => "route-{$replacement->id}-router"])
+            ->and($disk[$workload->wireguard_ip])->toBe(["app-instance-{$appInstance->id}" => 'next.acme.test'])
+            ->and($disk[$router->wireguard_ip])->toBe(["route-{$replacement->id}-router" => 'next.acme.test']);
+    } finally {
+        new Filesystem()->deleteDirectory($home);
+    }
+});
+
 it('preserves production release sites at the environment synchronization checkpoint', function (): void {
     [$appInstance, $route, $workload, $router] = orb127_route_projection_models();
     $route->update(['status' => RouteStatus::Active]);
@@ -833,6 +886,63 @@ function orb127_route_projection_models(
         ]);
 
     return [$appInstance, $route, $workload, $router];
+}
+
+/**
+ * Replays the recorded SSH commands against a per-Node certificate store, the way `caddy validate`
+ * sees the Node. Every published Caddy site must name a certificate scope that is on disk and was
+ * issued for that site's domain.
+ *
+ * @param  array<string, array<string, string>>  $disk  scope => domain per Node address
+ * @return array{list<string>, array<string, array<string, string>>, array<string, array<string, string>>}
+ */
+function orb_hostname_change_certificate_replay(Orb127RouteSshExecutor $ssh, array $disk): array
+{
+    $mismatches = [];
+    $served = [];
+
+    foreach ($ssh->commands as $index => $command) {
+        $host = $ssh->hosts[$index];
+        $arguments = $command->arguments;
+
+        if (($arguments[1] ?? null) === '-ceu' && str_contains($arguments[2] ?? '', 'orbit-certificates/$scope')) {
+            $disk[$host][$arguments[4]] = $arguments[5];
+
+            continue;
+        }
+
+        if (str_contains($command->input ?? '', 'sudo rm -rf -- "/etc/caddy/orbit-certificates/$scope"')) {
+            unset($disk[$host][$arguments[3]]);
+
+            continue;
+        }
+
+        if (
+            ! str_contains($command->input ?? '', 'caddy validate --config')
+            || preg_match("/printf '%s' '([A-Za-z0-9+\\/=]*)' \\| base64 --decode/", $command->input ?? '', $encoded) !== 1
+        ) {
+            continue;
+        }
+
+        preg_match_all(
+            '#https://(\S+) \{\s+bind 0\.0\.0\.0\s+tls /etc/caddy/orbit-certificates/([^/]+)/current/cert\.pem#',
+            (string) base64_decode($encoded[1], true),
+            $sites,
+            PREG_SET_ORDER,
+        );
+        $served[$host] = [];
+
+        foreach ($sites as [, $domain, $scope]) {
+            $served[$host][$domain] = $scope;
+            $issuedFor = $disk[$host][$scope] ?? 'missing';
+
+            if ($issuedFor !== $domain) {
+                $mismatches[] = "{$host}: {$domain} uses {$scope} ({$issuedFor})";
+            }
+        }
+    }
+
+    return [$mismatches, $disk, $served];
 }
 
 /** @return array{NativeDevelopmentRouteProjector, Orb127RouteSshExecutor, Orb127RouteProcessRunner, string} */
