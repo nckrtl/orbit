@@ -37,3 +37,30 @@ it('refuses a credential-bearing origin before returning displayable facts', fun
         $files->deleteDirectory($directory);
     }
 });
+
+it('reports the stored origin, not the URL an insteadOf rule rewrites it to', function (): void {
+    $directory = sys_get_temp_dir().'/orbit-cli-git-'.Str::uuid();
+    $files = new Filesystem;
+    $files->ensureDirectoryExists($directory);
+
+    try {
+        foreach ([
+            ['git', 'init', '--initial-branch=main', $directory],
+            ['git', '-C', $directory, 'config', 'user.email', 'orbit@example.test'],
+            ['git', '-C', $directory, 'config', 'user.name', 'Orbit Test'],
+            ['git', '-C', $directory, 'commit', '--allow-empty', '-m', 'Initial'],
+            ['git', '-C', $directory, 'remote', 'add', 'origin', 'https://example.test/acme/site.git'],
+            ['git', '-C', $directory, 'config', 'url.https://rewrite-user:rewrite-token@example.test/.insteadOf', 'https://example.test/'],
+        ] as $command) {
+            $process = new Process($command);
+            $process->mustRun();
+        }
+
+        $facts = new NativeGitRegistrationDiscovery()->inspect($directory);
+
+        expect($facts?->repositoryUrl)->toBe('https://example.test/acme/site.git')
+            ->and($facts?->slug)->toBe('site');
+    } finally {
+        $files->deleteDirectory($directory);
+    }
+});

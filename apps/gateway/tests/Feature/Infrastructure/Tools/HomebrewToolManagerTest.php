@@ -88,7 +88,7 @@ describe(HomebrewToolManager::class, function (): void {
 
         $program = $ssh->commands[0]->input;
         $upgradeGate = strpos($program, 'current_revision=$(git -C "$repository" rev-parse HEAD)');
-        $originCheck = strpos($program, 'remote get-url origin');
+        $originCheck = strpos($program, 'config --get remote.origin.url');
         $cleanTree = strpos($program, 'status --porcelain=v1 --untracked-files=all');
         $fetch = strpos($program, 'fetch --filter=blob:none origin "$expected_revision"');
         $checkout = is_int($fetch)

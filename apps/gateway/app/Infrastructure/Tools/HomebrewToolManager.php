@@ -121,7 +121,7 @@ final readonly class HomebrewToolManager implements ToolManager
                 test ! -L "$repository"
                 test -d "$repository/.git"
                 test "$(stat -c %U:%G "$repository")" = "$managed_user:$managed_group"
-                test "$(git -C "$repository" remote get-url origin)" = "$expected_origin"
+                test "$(git -C "$repository" config --get remote.origin.url)" = "$expected_origin"
                 test -z "$(git -C "$repository" status --porcelain=v1 --untracked-files=all)"
                 test -L "$prefix/bin/brew"
                 test "$(readlink "$prefix/bin/brew")" = ../Homebrew/bin/brew
@@ -137,7 +137,7 @@ final readonly class HomebrewToolManager implements ToolManager
             test ! -L "$repository"
             test -d "$repository/.git"
             test "$(stat -c %U:%G "$repository")" = "$managed_user:$managed_group"
-            test "$(git -C "$repository" remote get-url origin)" = "$expected_origin"
+            test "$(git -C "$repository" config --get remote.origin.url)" = "$expected_origin"
             test "$(git -C "$repository" rev-parse HEAD)" = "$expected_revision"
             test -z "$(git -C "$repository" status --porcelain=v1 --untracked-files=all)"
             test -L "$prefix/bin/brew"

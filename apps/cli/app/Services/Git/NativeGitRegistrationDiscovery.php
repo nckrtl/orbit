@@ -16,7 +16,8 @@ final readonly class NativeGitRegistrationDiscovery implements GitRegistrationDi
             return null;
         }
 
-        $repository = $this->git($top, ['remote', 'get-url', 'origin']);
+        // The stored origin, not the URL after the user's insteadOf rewrites, is what the Gateway records.
+        $repository = $this->git($top, ['config', '--get', 'remote.origin.url']);
         $commit = $this->git($top, ['rev-parse', '--verify', 'HEAD^{commit}']);
 
         if ($repository === null || ! GitRepositoryOriginPolicy::isSafe($repository) || $commit === null) {
