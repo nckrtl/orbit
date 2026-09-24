@@ -113,12 +113,14 @@ final readonly class RemoveNodeAction
                 ),
             followUp: $shed === null ? null : $this->residue->followUp(nodeLeavesFleet: true),
         );
+        // A failed step returns the Node to this status, so a failed Node never becomes active by rollback.
+        $priorStatus = $node->status;
         $node->update(['status' => LifecycleStatus::Removing]);
 
         try {
             $this->metricsAccess->revoke();
         } catch (Throwable $exception) {
-            $node->update(['status' => LifecycleStatus::Active]);
+            $node->update(['status' => $priorStatus]);
 
             throw $this->failure(
                 step: 'grafana-access-revocation',
@@ -131,7 +133,7 @@ final readonly class RemoveNodeAction
         try {
             $this->metrics->retire($node);
         } catch (Throwable $exception) {
-            $node->update(['status' => LifecycleStatus::Active]);
+            $node->update(['status' => $priorStatus]);
             $rollbackFailure = $this->restoreMetricsSelection();
 
             if ($rollbackFailure instanceof Throwable) {
@@ -166,7 +168,7 @@ final readonly class RemoveNodeAction
             try {
                 $this->firewall->restorePublicSsh($node, $node->user);
             } catch (Throwable $exception) {
-                $node->update(['status' => LifecycleStatus::Active]);
+                $node->update(['status' => $priorStatus]);
                 $rollbackFailure = $this->restoreMetricsSelection();
 
                 if ($rollbackFailure instanceof Throwable) {
@@ -189,7 +191,7 @@ final readonly class RemoveNodeAction
                 $this->peers->remove($node);
                 $peerRemoved = true;
             } catch (Throwable $exception) {
-                $node->update(['status' => LifecycleStatus::Active]);
+                $node->update(['status' => $priorStatus]);
                 $rollbackFailure = $this->restoreMetricsSelection();
 
                 if ($rollbackFailure instanceof Throwable) {
@@ -212,7 +214,7 @@ final readonly class RemoveNodeAction
                     clusterIds: [$lanClusterId],
                 );
             } catch (Throwable $exception) {
-                $node->update(['status' => LifecycleStatus::Active]);
+                $node->update(['status' => $priorStatus]);
                 $rollbackFailure = null;
 
                 if ($peerRemoved) {
@@ -250,7 +252,7 @@ final readonly class RemoveNodeAction
         try {
             $this->dns->converge();
         } catch (Throwable $exception) {
-            $node->update(['status' => LifecycleStatus::Active]);
+            $node->update(['status' => $priorStatus]);
             $rollbackFailure = null;
 
             if ($peerRemoved) {
@@ -287,7 +289,7 @@ final readonly class RemoveNodeAction
         try {
             $node->delete();
         } catch (Throwable $exception) {
-            $node->update(['status' => LifecycleStatus::Active]);
+            $node->update(['status' => $priorStatus]);
             $rollbackFailure = null;
 
             if ($peerRemoved) {

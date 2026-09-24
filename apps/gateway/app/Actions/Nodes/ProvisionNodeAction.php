@@ -1055,6 +1055,11 @@ final readonly class ProvisionNodeAction
                 $state['tld'] = $currentTld;
             }
 
+            // The architecture is a fact the bootstrap observed on the machine, not attempt state.
+            if (($state['architecture'] ?? null) === null && is_string($node->architecture) && $node->architecture !== '') {
+                $state['architecture'] = $node->architecture;
+            }
+
             $node->update($state);
         });
     }

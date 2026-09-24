@@ -37,7 +37,7 @@ The Gateway console command `orbit:node-provision` applies the same defaults for
 
 ## Machine architecture
 
-After verifying managed SSH access, the Gateway runs `uname -m` to read the architecture, such as `x86_64` or `aarch64`. A new Node stores that value. An existing Node keeps its recorded architecture regardless of request input.
+After verifying managed SSH access, the Gateway runs `uname -m` to read the architecture, such as `x86_64` or `aarch64`. A Node without a recorded architecture stores that value, and keeps it even when a later provisioning step fails and the Gateway restores the Node's other state. An existing Node keeps its recorded architecture regardless of request input.
 
 An explicit architecture for a new Node must match the observed value. A mismatch returns HTTP 409 before package-manager or role setup. Architecture failures mark the Node as failed at `machine-architecture`.
 
@@ -119,7 +119,7 @@ Use `--offline` only for an unreachable Node. The Gateway probes it first and ke
 
 For an unreachable Node, `--offline --force` sheds every remaining role on the Gateway side, deletes Node-owned Herdr session and Process records without remote runtime cleanup, removes the WireGuard peer, and deletes the record. It changes nothing on the machine: the roles' Caddy sites, checkouts, containers, Process units or containers, Orbit UFW rules, the Metrics exporter, and the Node agent stay in place, public SSH stays closed, and the response lists what remains under `retained_on_node`.
 
-A failed step rolls the Gateway back and keeps the Node record active. Each failure names the step that stopped and the state the Gateway leaves behind.
+A failed step rolls the Gateway back and returns the Node record to the status it had before removal, so a `failed` Node stays `failed`. Each failure names the step that stopped and the state the Gateway leaves behind.
 
 | Code | Step | Result |
 | --- | --- | --- |
@@ -127,13 +127,13 @@ A failed step rolls the Gateway back and keeps the Node record active. Each fail
 | `node.self_removal_forbidden`, `node.gateway_removal_forbidden`, `node.vpn_removal_forbidden` | guard | The Gateway changes nothing. |
 | `node.confirmation_required` | guard | The Gateway changes nothing; `--offline` needs `--force`. |
 | `node.provisioning_busy` | lifecycle owner | The Gateway changes nothing; another lifecycle operation holds the Node name. |
-| `node.grafana_access_revocation_failed` | `grafana-access-revocation` | The Node record is active again. |
-| `node.metrics_reconcile_failed` | `metrics-exporters` | The Node record is active again and the Metrics selection is restored. |
-| `node.firewall_recovery_failed` | `firewall-recovery` | The Node record is active again, the WireGuard peer is kept, and the Metrics selection is restored. Use `--offline --force` when the machine is unreachable. |
-| `node.wireguard_projection_failed` | `wireguard-projection` | The Node record is active again and the Metrics selection is restored. |
-| `node.dns_projection_failed` | `dns-projection` | The Node record is active again, and the WireGuard peer and Metrics selection are restored. |
-| `node.persistence_failed` | `persistence` | The Node record is active again, and the WireGuard peer, DNS records, and Metrics selection are restored. |
-| `node.removal_rollback_failed` | `wireguard-rollback`, `persistence-rollback`, or `metrics-exporters-rollback` | The Node record is active again, but the named rollback did not complete. |
+| `node.grafana_access_revocation_failed` | `grafana-access-revocation` | The Node record has its previous status again. |
+| `node.metrics_reconcile_failed` | `metrics-exporters` | The Node record has its previous status again and the Metrics selection is restored. |
+| `node.firewall_recovery_failed` | `firewall-recovery` | The Node record has its previous status again, the WireGuard peer is kept, and the Metrics selection is restored. Use `--offline --force` when the machine is unreachable. |
+| `node.wireguard_projection_failed` | `wireguard-projection` | The Node record has its previous status again and the Metrics selection is restored. |
+| `node.dns_projection_failed` | `dns-projection` | The Node record has its previous status again, and the WireGuard peer and Metrics selection are restored. |
+| `node.persistence_failed` | `persistence` | The Node record has its previous status again, and the WireGuard peer, DNS records, and Metrics selection are restored. |
+| `node.removal_rollback_failed` | `wireguard-rollback`, `persistence-rollback`, or `metrics-exporters-rollback` | The Node record has its previous status again, but the named rollback did not complete. |
 
 Removing a Node's last role also restores the public SSH recovery rule; [Node retarget](/reference/node-retarget#two-boundaries) describes that boundary.
 
