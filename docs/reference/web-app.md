@@ -48,7 +48,7 @@ The web directory is `/home/orbit/web` unless `ORBIT_GATEWAY_WEB` sets another p
 | `releases/<commit>` | One built release, named after the 12-character commit it was built from. |
 | `current` | A link to the release that the Gateway serves. |
 
-`orbit:bootstrap` creates the directory and publishes the site. After a Gateway deploy that changes the site, run `php artisan orbit:gateway-web` in the Gateway checkout. It creates the directory, publishes the Gateway certificate with the public root certificate, and publishes the site, without changing roles, VPN settings, or the Gateway Node. Gateway deploys do not change the releases or `current`.
+`orbit:bootstrap` creates the directory and publishes the site. After a Gateway deploy that changes the site, run `php artisan orbit:gateway-web` in the Gateway checkout. It installs Caddy from the [pinned source](/reference/node-provisioning#package-sources), creates the directory, publishes the Gateway certificate with the public root certificate, and publishes the site, without changing roles, VPN settings, or the Gateway Node. Gateway deploys do not change the releases or `current`.
 
 ## Release a build
 

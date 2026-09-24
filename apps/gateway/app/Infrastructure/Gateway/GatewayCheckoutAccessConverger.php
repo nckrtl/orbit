@@ -59,7 +59,11 @@ final readonly class GatewayCheckoutAccessConverger
         ]);
     }
 
-    private function validate(): void
+    /**
+     * Refuses a checkout path outside the managed user's home, or one that resolves elsewhere,
+     * before any step changes the machine.
+     */
+    public function validate(): void
     {
         $components = explode('/', $this->checkoutPath);
 

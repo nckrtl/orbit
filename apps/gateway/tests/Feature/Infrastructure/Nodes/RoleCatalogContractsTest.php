@@ -19,7 +19,7 @@ it('covers exact package and service matrices', function (): void {
     expect($p->forNode($node))
         ->toBe(['ca-certificates', 'curl', 'gnupg', 'libnss-resolve', 'openssh-client', 'sudo', 'ufw', 'wireguard'])
         ->and($p->forRole($node, RoleName::Gateway))
-        ->toBe(['ca-certificates'])
+        ->toBe(['ca-certificates', 'caddy'])
         ->and($p->forRole($node, RoleName::Vpn))
         ->toBe(['dnsmasq', 'openssl'])
         ->and($p->forRole($node, RoleName::Router))

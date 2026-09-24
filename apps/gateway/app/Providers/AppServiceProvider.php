@@ -232,6 +232,7 @@ use App\Infrastructure\Gateway\GatewayCheckoutAccessConverger;
 use App\Infrastructure\Gateway\GatewayFpmConfigRenderer;
 use App\Infrastructure\Gateway\GatewayWebDirectoryConverger;
 use App\Infrastructure\Gateway\NativeGatewayCaddyConverger;
+use App\Infrastructure\Gateway\NativeGatewayCaddyInstaller;
 use App\Infrastructure\Gateway\NativeGatewayCertificatePublisher;
 use App\Infrastructure\Gateway\NativeGatewayFpmConverger;
 use App\Infrastructure\Gateway\NativeGatewaySelfAccessConverger;
@@ -674,6 +675,7 @@ final class AppServiceProvider extends ServiceProvider
                 ),
                 fpm: new NativeGatewayFpmConverger(app(ProcessRunner::class)),
                 caddy: new NativeGatewayCaddyConverger(app(ProcessRunner::class)),
+                caddyInstaller: new NativeGatewayCaddyInstaller(app(ProcessRunner::class)),
                 orbitHome: rtrim(string: (string) config('orbit.home'), characters: '/'),
                 checkoutPath: rtrim(string: (string) config('orbit.gateway_checkout'), characters: '/'),
                 webRoot: (string) config('orbit.gateway_web'),
