@@ -16,11 +16,15 @@ use App\Models\Route;
 use App\Models\RouteCustomProxy;
 use Throwable;
 
+/**
+ * Reads the live Caddy version as root, because published versions under /etc/caddy/orbit-versions are root:caddy 0750.
+ */
 final readonly class NativeCustomProxyRouteInspector implements CustomProxyRouteInspector
 {
     public function __construct(
         private AppDevSshExecutor $ssh,
         private CommandDeadline $deadline,
+        private string $liveCaddyfilePath = '/etc/caddy/Caddyfile',
     ) {}
 
     public function inspect(RouteCustomProxy $proxy): CustomProxyRouteObservation
@@ -88,6 +92,7 @@ final readonly class NativeCustomProxyRouteInspector implements CustomProxyRoute
 
         return new RemoteCommand(
             arguments: [
+                'sudo',
                 'bash',
                 '-seu',
                 '--',
@@ -97,6 +102,7 @@ final readonly class NativeCustomProxyRouteInspector implements CustomProxyRoute
                 $expectedDns,
                 $upstream->host === '::1' ? '127.0.0.1' : $upstream->host,
                 (string) $upstream->port,
+                $this->liveCaddyfilePath,
             ],
             input: <<<'BASH'
                 domain=$1
@@ -105,14 +111,14 @@ final readonly class NativeCustomProxyRouteInspector implements CustomProxyRoute
                 expected_dns=$4
                 upstream_host=$5
                 upstream_port=$6
-                live=$(readlink -f /etc/caddy/Caddyfile)
+                live=$(readlink -f "$7")
                 fragment_dir=$(dirname "$live")/fragments
                 if grep -Rqs -- "$domain" "$fragment_dir" 2>/dev/null && grep -Rqs -- "$upstream" "$fragment_dir" 2>/dev/null; then
                     printf 'caddy=1\n'
                 else
                     printf 'caddy=0\n'
                 fi
-                if sudo test -f "$certificates/cert.pem" && sudo test -f "$certificates/key.pem"; then
+                if test -f "$certificates/cert.pem" && test -f "$certificates/key.pem"; then
                     printf 'tls=1\n'
                 else
                     printf 'tls=0\n'

@@ -23,7 +23,7 @@ use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\Route;
 use Illuminate\Support\Facades\File;
-use Tests\Support\LocalShellSshExecutor;
+use Tests\Support\LocalRootShellSshExecutor;
 
 beforeEach(function (): void {
     $cluster = Cluster::query()->create(['name' => 'edge', 'tld' => 'edge.test', 'state' => ClusterState::Active]);
@@ -54,6 +54,18 @@ it('accepts a public site that opts into certificate automation under the Node-w
     public_edge_inspector_publish($this->caddy, CaddyGlobalOptions::render(), public_edge_inspector_site($this->route));
 
     expect(public_edge_inspector($this->caddy)->inspect($this->ingress, $this->route)->publicTlsMatches)->toBeTrue();
+});
+
+it('reads the root-only published Caddy version through sudo', function (): void {
+    $site = str_replace("    tls force_automate\n", '', public_edge_inspector_site($this->route));
+    public_edge_inspector_publish($this->caddy, CaddyGlobalOptions::render(), $site);
+    $ssh = new LocalRootShellSshExecutor("{$this->caddy}/orbit-versions");
+
+    $observation = public_edge_inspector($this->caddy, $ssh)->inspect($this->ingress, $this->route);
+
+    expect(array_slice($ssh->commands[0]->arguments, 0, 3))->toBe(['sudo', 'bash', '-seu'])
+        ->and($observation->ingressProjectionMatches)->toBeTrue()
+        ->and($observation->publicTlsMatches)->toBeFalse();
 });
 
 it('reports a public site that Caddy will not certify because the Node disables certificate management', function (): void {
@@ -94,11 +106,11 @@ it('reports a Node that does not serve the public site at all', function (): voi
         ->and($observation->ingressProjectionMatches)->toBeFalse();
 });
 
-function public_edge_inspector(string $caddy): NativePublicRouteEdgeInspector
+function public_edge_inspector(string $caddy, ?LocalRootShellSshExecutor $ssh = null): NativePublicRouteEdgeInspector
 {
     return new NativePublicRouteEdgeInspector(
         new AppDevSshExecutor(
-            new LocalShellSshExecutor,
+            $ssh ?? new LocalRootShellSshExecutor("{$caddy}/orbit-versions"),
             new class implements SshKeyProvider
             {
                 public function privateKeyPath(): string
