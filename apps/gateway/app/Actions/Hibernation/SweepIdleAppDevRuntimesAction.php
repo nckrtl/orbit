@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Hibernation;
 
+use App\Domain\AgentView\AgentProcessView;
 use App\Domain\Hibernation\AppDevHibernationPolicy;
 use App\Domain\Hibernation\AppInstanceCheckoutInspector;
 use App\Domain\Hibernation\HibernationMarkerStore;
@@ -28,6 +29,7 @@ final readonly class SweepIdleAppDevRuntimesAction
         private AppInstanceCheckoutInspector $checkouts,
         private int $idleSeconds = RuntimeHibernation::DefaultIdleSeconds,
         private int $dependencyIdleSeconds = RuntimeHibernation::DefaultDependencyIdleSeconds,
+        private ?AgentProcessView $agents = null,
     ) {}
 
     public function execute(?Carbon $now = null): RuntimeHibernationSweepResult
@@ -64,6 +66,11 @@ final readonly class SweepIdleAppDevRuntimesAction
             if ($this->isIdle($httpActivity, $now, $this->idleSeconds)) {
                 $this->admissions->run([(int) $instance->id], function () use ($instance, $running, $key): void {
                     foreach ($running as $process) {
+                        // A fresh agent view that shows the Process stopped saves the stop's SSH commands.
+                        if ($this->agents?->isStopped($process) === true) {
+                            continue;
+                        }
+
                         $this->runtime->stop($process);
                     }
 
