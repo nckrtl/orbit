@@ -195,7 +195,6 @@
               "cli/profile",
               "cli/activity",
               "cli/realtime",
-              "cli/top",
               "cli/extension",
               "cli/tasks",
               "cli/herdr",
@@ -717,7 +716,8 @@
               "decisions/0141-build-each-node-caddyfile-on-the-gateway",
               "decisions/0142-apply-plausibles-clickhouse-configuration-from-the-analytics-role",
               "decisions/0143-record-topology-evidence-and-sync-without-verification",
-              "decisions/0144-migrate-waiting-connections-when-caddy-reloads"
+              "decisions/0144-migrate-waiting-connections-when-caddy-reloads",
+              "decisions/0147-retire-orbit-top"
             ]
           }
         ]

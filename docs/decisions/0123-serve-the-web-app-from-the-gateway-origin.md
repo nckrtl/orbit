@@ -10,7 +10,7 @@ The Gateway's Caddy site serves the built Orbit web app at `https://gateway.orbi
 
 ## Status
 
-Proposed.
+Proposed. Amended by [ADR 0147](/decisions/0147-retire-orbit-top): the web app replaces `orbit top`, which the CLI no longer has.
 
 This amends the rejected web dashboard alternative in [ADR 0085](/decisions/0085-build-orbit-top-as-a-thin-tui-client). The web app is a second client of the same API and realtime channel. It does not replace `orbit top`.
 

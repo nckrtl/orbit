@@ -528,25 +528,6 @@
             "governing_adrs": []
         },
         {
-            "path": "docs/cli/top.mdx",
-            "title": "top",
-            "kind": "product",
-            "components": [],
-            "concepts": [
-                "Database",
-                "Database connection",
-                "Doctor",
-                "Firewall rule",
-                "Gateway",
-                "Instance",
-                "Node",
-                "Process",
-                "Project",
-                "Schedule"
-            ],
-            "governing_adrs": []
-        },
-        {
             "path": "docs/cli/workspace.mdx",
             "title": "Git worktrees",
             "kind": "product",
@@ -2376,7 +2357,8 @@
             ],
             "governing_adrs": [
                 "0084",
-                "0085"
+                "0085",
+                "0147"
             ]
         },
         {
@@ -2446,7 +2428,8 @@
             "governing_adrs": [
                 "0084",
                 "0085",
-                "0088"
+                "0088",
+                "0147"
             ]
         },
         {
@@ -3298,7 +3281,8 @@
             "governing_adrs": [
                 "0084",
                 "0085",
-                "0123"
+                "0123",
+                "0147"
             ]
         },
         {
@@ -3776,6 +3760,27 @@
             ]
         },
         {
+            "path": "docs/decisions/0147-retire-orbit-top.md",
+            "title": "ADR 0147: Retire orbit top",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs"
+            ],
+            "concepts": [
+                "Gateway",
+                "Node",
+                "Process"
+            ],
+            "governing_adrs": [
+                "0085",
+                "0088",
+                "0123",
+                "0129",
+                "0147"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -3948,7 +3953,8 @@
                 "0142",
                 "0143",
                 "0144",
-                "0145"
+                "0145",
+                "0147"
             ]
         },
         {

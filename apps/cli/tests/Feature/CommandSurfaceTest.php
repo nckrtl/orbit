@@ -215,7 +215,6 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'tool:remove',
         'tool:show',
         'tool:update',
-        'top',
     ]);
 });
 
@@ -335,7 +334,7 @@ it('only hides Orbit commands that belong to disabled extensions', function (): 
     $orbitCommands = collect(app(Kernel::class)->all())
         ->filter(static fn (Command $command): bool => str_starts_with($command::class, 'App\\Commands\\'));
 
-    expect($orbitCommands)->toHaveCount(170);
+    expect($orbitCommands)->toHaveCount(169);
     expect($orbitCommands
         ->filter(static fn (Command $command): bool => $command->isHidden())
         ->keys()
@@ -1322,11 +1321,6 @@ it('renders one exact json failure envelope for every Orbit product command', fu
         'tool:remove' => [['tool' => '1'], ...$profileMissing],
         'tool:show' => [['tool' => '1'], ...$profileMissing],
         'tool:update' => [['tool' => '1'], ...$profileMissing],
-        'top' => [
-            [],
-            'code' => 'input.invalid',
-            'message' => 'orbit top does not support --json; it is an interactive screen with no final result.',
-        ],
     ];
     $visibleCommandNames = collect(app(Kernel::class)->all())
         ->reject(static fn (Command $command): bool => $command->isHidden())

@@ -1,4 +1,4 @@
-// The PromQL `orbit top` sends and the mapping it applies, ported from the CLI's
+// The PromQL the dashboard sends and the mapping it applies, matching the Gateway's
 // PrometheusMetricsQueries and PrometheusNodeMetricsMapper. Pure: every value comes from the
 // decoded responses passed in, so it is testable from Prometheus JSON alone.
 

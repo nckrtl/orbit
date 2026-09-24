@@ -1,6 +1,6 @@
 # Orbit web
 
-The fleet as a live web page: the same screen `orbit top` draws, in a browser. It is a static single-page app that calls the Gateway API and subscribes to the Gateway's record-change channel. It keeps no state of its own and has no server.
+The fleet as a live web page. It is a static single-page app that calls the Gateway API and subscribes to the Gateway's record-change channel. It keeps no state of its own and has no server.
 
 ## Run it locally
 
@@ -9,9 +9,9 @@ bun install
 vp dev
 ```
 
-`vp dev` prints a local URL. The dev server proxies `/api` and the WebSocket to the Gateway in the CLI's active profile (`~/.orbit/config.json`), with that profile's Orbit CA. The Gateway identifies the caller by its WireGuard address, so this machine must be a WireGuard peer, as it must be for `orbit top`. Set `ORBIT_GATEWAY` to use another profile, or `ORBIT_GATEWAY_URL` and `ORBIT_CA_PATH` to use no profile.
+`vp dev` prints a local URL. The dev server proxies `/api` and the WebSocket to the Gateway in the CLI's active profile (`~/.orbit/config.json`), with that profile's Orbit CA. The Gateway identifies the caller by its WireGuard address, so this machine must be a WireGuard peer, as it must be for the CLI. Set `ORBIT_GATEWAY` to use another profile, or `ORBIT_GATEWAY_URL` and `ORBIT_CA_PATH` to use no profile.
 
-The Gateway names the Nodes. Node metrics come from the Metrics role's Grafana, as they do in `orbit top`: the page asks the Gateway for the Grafana credential once and then queries Prometheus through Grafana's datasource proxy, with one fleet-wide query for the dashboard. Prometheus only has samples for the Nodes whose exporter is enabled, so every other Node shows no metrics and no request goes out for it. The page reaches Grafana at the same-origin path `/grafana`, which the dev server proxies to the URL the credentials name.
+The Gateway names the Nodes. Node metrics come from the Metrics role's Grafana: the page asks the Gateway for the Grafana credential once and then queries Prometheus through Grafana's datasource proxy, with one fleet-wide query for the dashboard. Prometheus only has samples for the Nodes whose exporter is enabled, so every other Node shows no metrics and no request goes out for it. The page reaches Grafana at the same-origin path `/grafana`, which the dev server proxies to the URL the credentials name.
 
 The page acts on the real fleet. Process, schedule, database, and firewall actions send the same requests the matching commands send.
 

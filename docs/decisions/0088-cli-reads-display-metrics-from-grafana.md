@@ -1,7 +1,7 @@
 ---
 title: "ADR 0088: CLI reads display metrics from Grafana"
 sidebarTitle: "0088 CLI reads display metrics from Grafana"
-description: "Accepted. orbit top and the Gateway's own node:metrics implementation both read Node metrics through the Metrics role's Grafana datasource proxy, never from the CLI to Prometheus directly and never through a new Gateway aggregate endpoint."
+description: "Accepted. Amended by ADR 0147. orbit top and the Gateway's own node:metrics implementation both read Node metrics through the Metrics role's Grafana datasource proxy, never from the CLI to Prometheus directly and never through a new Gateway aggregate endpoint."
 ---
 
 # ADR 0088: CLI reads display metrics from Grafana
@@ -10,7 +10,7 @@ description: "Accepted. orbit top and the Gateway's own node:metrics implementat
 
 ## Status
 
-Accepted on 2026-09-18.
+Accepted on 2026-09-18. Amended by [ADR 0147](/decisions/0147-retire-orbit-top): the CLI no longer reads display metrics, and the web app reads them through the Gateway's `/grafana` path.
 
 ## Context
 
@@ -54,5 +54,5 @@ Prometheus binds `127.0.0.1:9090` on the Metrics Node only ([`MetricsRuntimeSpec
 
 - Components: apps/gateway, apps/cli, apps/docs
 - ADRs: carves out one exception to [ADR 0085](/decisions/0085-build-orbit-top-as-a-thin-tui-client)'s "no aggregate endpoint" rule, scoped to Node metrics display only; none amended
-- Detail: [`node`](/cli/node), [`metrics`](/cli/metrics), [`top`](/cli/top)
+- Detail: [`node`](/cli/node), [`metrics`](/cli/metrics)
 - Verify: `apps/gateway/tests/Unit/Infrastructure/Metrics/PrometheusNodeMetricsMapperTest.php`, `apps/gateway/tests/Unit/Infrastructure/Nodes/Metrics/GrafanaPrometheusNodeMetricsReaderTest.php`, `apps/cli/tests/Unit/Support/Metrics/PrometheusNodeMetricsMapperTest.php`, `apps/cli/tests/Feature/Tui/Sources/GrafanaPrometheusMetricsSourceTest.php`
