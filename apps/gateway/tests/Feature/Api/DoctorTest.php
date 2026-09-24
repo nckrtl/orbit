@@ -44,7 +44,7 @@ describe('Doctor API', function (): void {
             ->and($payload['data']['summary'])
             ->toBe([
                 'nodes' => 1,
-                'families' => 11,
+                'families' => 10,
                 'checks' => 1,
                 'drift' => 0,
                 'unverifiable' => 0,
