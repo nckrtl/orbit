@@ -16,11 +16,16 @@ final readonly class PrivateDnsAnswerExpiry
     /** The TTL of every answer the Orbit private DNS listener returns. */
     public const int TtlSeconds = 30;
 
-    /** One extra second covers a query answered just before the publication. */
-    public const int WaitSeconds = self::TtlSeconds + 1;
+    /**
+     * The grace period between moving a name and withdrawing its old target: the answer TTL plus
+     * one second for a query answered just before the publication. It covers resolvers that honor
+     * the TTL. Caddy finishes in-flight requests on the old target when it reloads and closes idle
+     * keep-alive connections, so their next request resolves again.
+     */
+    public const int WithdrawalGraceSeconds = self::TtlSeconds + 1;
 
     public function wait(): void
     {
-        Sleep::for(self::WaitSeconds)->seconds();
+        Sleep::for(self::WithdrawalGraceSeconds)->seconds();
     }
 }

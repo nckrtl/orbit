@@ -553,6 +553,8 @@ it('converges a same-domain Cluster scope change on one Route and restores after
             'dns-publication',
             'prepare-cleanup',
             'dns-publication',
+            // The owner is released for the wait and taken again before the withdrawal.
+            'owner',
             'cleanup',
             'url:https://old.example.test',
             'workload-verify',
@@ -642,7 +644,7 @@ it('stores a placement change on the Route and restores after DNS publication wi
         ])
         ->and($this->events->values)->toContain('rollback-caddy', 'rollback-certificates');
     // The candidate was withdrawn only after cached answers for it could have expired.
-    Sleep::assertSequence([Sleep::for(PrivateDnsAnswerExpiry::WaitSeconds)->seconds()]);
+    Sleep::assertSequence([Sleep::for(PrivateDnsAnswerExpiry::WithdrawalGraceSeconds)->seconds()]);
 
     DB::unprepared('DROP TRIGGER route_placement_cutover_failure');
     $this->events->placementStates = [];
@@ -696,7 +698,7 @@ it('keeps both placements serving when private DNS cannot move before cleanup', 
 
     expect($route->refresh()->transition_node_id)->toBeNull()
         ->and($route->replacement_step)->toBeNull()
-        ->and($this->events->values)->toBe(['owner', 'prepare-cleanup', 'dns-publication', 'cleanup', 'workload-verify']);
+        ->and($this->events->values)->toBe(['owner', 'prepare-cleanup', 'dns-publication', 'owner', 'cleanup', 'workload-verify']);
     Sleep::assertSleptTimes(1);
 });
 

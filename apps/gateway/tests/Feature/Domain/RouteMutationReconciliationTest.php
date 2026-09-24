@@ -43,12 +43,17 @@ use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tools\ToolManagerMaterializer;
+use App\Infrastructure\AppDev\NativeDevelopmentProjectionOperationLock;
+use App\Infrastructure\Processes\CommandDeadline;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Route;
+use Illuminate\Filesystem\Filesystem;
+use Illuminate\Support\Sleep;
+use Illuminate\Support\Str;
 use Tests\Support\FakeClusterRouterDnsSelectionReconciler;
 use Tests\Support\FakeClusterRouterReplacementProjector;
 use Tests\Support\FakeRouteRemovalProjector;
@@ -1628,6 +1633,73 @@ it('keeps an explicit Route domain fixed when a Node attaches or detaches', func
         ])
         ->and($this->node->refresh()->cluster_id)
         ->toBeNull();
+});
+
+it('waits once for private DNS answers when an attach moves many Routes, without holding the projection owner', function (): void {
+    $routes = [];
+
+    foreach (['feature', 'second', 'third', 'fourth'] as $index => $name) {
+        $target = $index === 0 ? $this->target : reconciliation_instance($this->orbitApp, $this->node, $name);
+        $target->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
+        $route = app(CreateRouteAction::class)->execute(new CreateRouteData(
+            appId: $this->orbitApp->id,
+            domain: "{$name}.example.test",
+            publication: RoutePublication::Private,
+            appInstanceId: $target->id,
+            nodeId: null,
+            clusterId: null,
+        ))['route'];
+        $route->update(['status' => RouteStatus::Active]);
+        $routes[] = $route;
+    }
+
+    $cluster = reconciliation_active_cluster('many-routes', 'cluster.test');
+    bind_node_tld_projection();
+    $orbitHome = sys_get_temp_dir().'/orbit-placement-owner-'.Str::uuid();
+    app()->instance(
+        DevelopmentProjectionOperationLock::class,
+        new NativeDevelopmentProjectionOperationLock($orbitHome, new CommandDeadline),
+    );
+    // Another Route command asks for the projection owner during the wait and gives up at once.
+    $now = 0.0;
+    $clock = static function () use (&$now): float {
+        return $now;
+    };
+    $deadline = new CommandDeadline($clock);
+    $deadline->start(0.02);
+    $contender = new NativeDevelopmentProjectionOperationLock(
+        $orbitHome,
+        $deadline,
+        $clock,
+        static function (int $microseconds) use (&$now): void {
+            $now += $microseconds / 1_000_000;
+        },
+    );
+    $served = [];
+    Sleep::whenFakingSleep(static function () use ($contender, &$served): void {
+        $served[] = $contender->run(static fn (): string => 'served');
+    });
+
+    try {
+        app(AttachClusterNodeAction::class)->execute($cluster, $this->node);
+    } finally {
+        new Filesystem()->deleteDirectory($orbitHome);
+    }
+
+    Sleep::assertSleptTimes(1);
+
+    expect($served)->toBe(['served']);
+
+    foreach ($routes as $route) {
+        expect($route->refresh()->only(['node_id', 'cluster_id', 'transition_node_id', 'transition_cluster_id']))
+            ->toBe([
+                'node_id' => null,
+                'cluster_id' => $cluster->id,
+                'transition_node_id' => null,
+                'transition_cluster_id' => null,
+            ])
+            ->and($route->replacement_step)->toBeNull();
+    }
 });
 
 it('resumes a cut over placement cleanup when the same attach is retried', function (): void {
