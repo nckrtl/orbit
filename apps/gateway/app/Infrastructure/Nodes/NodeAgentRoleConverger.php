@@ -30,6 +30,7 @@ final readonly class NodeAgentRoleConverger
                 'node_id' => $node->id,
                 'node_name' => $node->name,
                 'error' => $exception::class,
+                'message' => $exception->getMessage(),
             ]);
         }
     }
