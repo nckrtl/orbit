@@ -24,6 +24,8 @@ The Gateway stores each Route's settings and tracks setup of its certificates, w
 | Generation basis | The current target Node for a generated Route, or its last target Node after target clearing. An explicit Route stores no generation basis. |
 | Publication | The only publication field: `private` or `public`. The Route keeps this value even when it has no target. Public-edge readiness is `status`, `replacement_step`, `failed_step`, and Doctor, not a second publication field. |
 | Status | `pending`, `active`, `activating`, `retiring`, or `failed`. Failure details identify the step to retry. |
+| Site publication | Whether the Route's sites are published. Creation sets it before the first Caddy publication, and removal or a failed creation clears it before the publication that withdraws the sites. An `active` or `activating` Route always keeps it. |
+| Placement transition | During a placement change, `transition_node_id` and `transition_cluster_id` hold the Route's second placement. See [Stored transitions](#stored-transitions). |
 | Target storage | The Route can own several ordered target rows. An active multi-target set belongs to one explicit production Route and uses distinct active app-prod Nodes in the same Cluster. |
 | Configured target | A Project Route accepts a single Instance target or an ordered production target set. A custom proxy Route stores a loopback upstream or a Node Process. |
 
@@ -384,7 +386,9 @@ Route identity stays on the same Route. Domains, targets, scopes, workload proje
 
 When Router and workload roles share the old or new Node, the composed Caddy service uses the local next hop and never proxies back into its own HTTPS listener.
 
-Failure before publication restores the previous Router and infrastructure intent. Each preparation, publication, database, cleanup, or rollback failure records `failed_step` and `error_code` on the Cluster Router candidate with durable completed-step evidence. Retry revalidates that evidence and resumes from the earliest unverified step under the Cluster Router owner. The Gateway refuses a conflicting transition and does not delete another transition's live candidate or activate against stale Router state. After publication, retry continues forward.
+From the Router Caddy step until cleanup, both Routers serve the Cluster's Router sites, because private DNS points at the old Router until the DNS publication step and clients can hold that answer. The Ingress upstream follows the active Router, so it switches when the candidate becomes active. Cleanup first stops serving the Router sites on the old Router, publishes its Caddy, and then removes its Router certificates and firewall rules. [Stored transitions](#stored-transitions) lists the stored steps.
+
+Failure before publication restores the previous Router and infrastructure intent. The restore stops serving the Router sites on the candidate, publishes its Caddy, and then removes its certificates, so the old Router keeps serving. Each preparation, publication, database, cleanup, or rollback failure records `failed_step` and `error_code` on the Cluster Router candidate with durable completed-step evidence. Retry revalidates that evidence and resumes from the earliest unverified step under the Cluster Router owner. The Gateway refuses a conflicting transition and does not delete another transition's live candidate or activate against stale Router state. After publication, retry continues forward.
 
 A valid serving configuration succeeds even when the application returns HTTP 500. Application health does not change Instance or Route lifecycle.
 
@@ -416,7 +420,7 @@ For production, the Gateway checks the saved environment location and renders st
 
 Cutover is one database transition. The Gateway publishes the replacement domain in private DNS only after it verifies every required projection, then marks the replacement `activating` and the old Route `retiring`. Instance output derives only the replacement domain. Route inspection exposes both records and their relationship. Cleanup then removes old projections, deletes the retiring Route, and marks the replacement `active`.
 
-Until cleanup, the replacement domain is served from staging certificates that the change issues for it. The workload uses `app-instance-<id>-hostname-change`, and a separate Router uses `route-<replacement id>-router-hostname-change`, also for a composed pool on a Router that holds one of the targets. The Instance's live `app-instance-<id>` certificate still names the current domain until cleanup. The Gateway chooses these scopes from the stored replacement. A `pending` replacement renders a site only after the step that issues its certificate completes, and a `failed` replacement renders no site.
+Until cleanup, the replacement domain is served from staging certificates that the change issues for it. The workload uses `app-instance-<id>-hostname-change`, and a separate Router uses `route-<replacement id>-router-hostname-change`, also for a composed pool on a Router that holds one of the targets. The Instance's live `app-instance-<id>` certificate still names the current domain until cleanup. The Gateway chooses these scopes from the stored replacement. A `pending` replacement renders a site only after the step that issues its certificate completes, and a `failed` replacement renders no site. After cutover the `activating` replacement keeps the staging scopes until cleanup has issued the live certificates.
 
 | Certificate scope | Node | Issued at | Removed at |
 | --- | --- | --- | --- |
@@ -426,7 +430,7 @@ Until cleanup, the replacement domain is served from staging certificates that t
 | `route-<replacement id>-router` | Router | Cleanup | Route removal |
 | `route-<retiring id>-router` | The retiring Route's Router | Before the change | Cleanup, after that Router's Caddy drops its site |
 
-A retiring Route stops being served at cutover. Both domains share the Instance's live certificate scope, and cleanup issues that certificate for the Route the Node now serves. It then republishes workload and Router Caddy with the live scopes and removes the staging scopes. When the change also moves the Route to another Cluster, cleanup republishes the retiring Route's Router too. It then removes the retiring Route's Router certificate from that Router.
+A retiring Route stops being served at cutover. Both domains share the Instance's live certificate scope, and cleanup issues that certificate for the Route the Node now serves. Cleanup issues the live certificates, stores its `cleanup` step so every later publication names them, republishes workload and Router Caddy, and then removes the staging scopes. A failed cleanup therefore never leaves a Router publication naming a certificate that does not exist. When the change also moves the Route to another Cluster, cleanup republishes the retiring Route's Router too. It then removes the retiring Route's Router certificate from that Router.
 
 A Node that kept answering under the previous domain would present a certificate naming the replacement, and Caddy would then treat that host as unmanaged and try to obtain a public certificate for a private Orbit domain. Until cutover, both domains stay served, so an interrupted change never leaves the Route unreachable.
 
@@ -446,15 +450,31 @@ Deployment, code rollback, clone finalization, Instance removal, environment imp
 
 Route and Instance removal keep their coordinated removal contract. Setting the existing target or clearing an already empty Route succeeds without creating, deleting, or reassigning a Route association. A Node grant change does not alter private network reachability and retains its command-authorization behavior.
 
-Instance removal is the coordinated target-clear exception. After complete source and Route preflight, the Gateway marks each accepted Instance `removing`. Development removal publishes an unavailable response before deleting each final-target Route in worktree-first order. Production removal republishes every ordered survivor when a shared Route remains. Final-target removal clears managed Route projections, deletes the Route, and releases its domain before source finalization. A projection failure keeps the unfinished Route checkpoint available for retry. The [Instance removal reference](/reference/appinstance-removal) owns content retention, the transient response, cascade order, and retry behavior.
+Instance removal is the coordinated target-clear exception. After complete source and Route preflight, the Gateway marks each accepted Instance `removing`. Development removal publishes an unavailable response before deleting each final-target Route in worktree-first order. That response comes from stored state: the Route has no targets, keeps its site publication, and an open development removal member names the departing Instance. Removal then clears the site publication, publishes Caddy without the Route, and only then removes the Instance and Router certificates and deletes the Route. Production removal republishes every ordered survivor when a shared Route remains. Final-target removal clears managed Route projections, deletes the Route, and releases its domain before source finalization. A projection failure keeps the unfinished Route checkpoint available for retry. The [Instance removal reference](/reference/appinstance-removal) owns content retention, the transient response, cascade order, and retry behavior.
 
 During a Node or Cluster placement mutation, the Gateway validates only Routes whose direct scope, target Nodes, retained generation basis, or provisioning baseline depends on the affected Nodes or Clusters. It compares proposed domains with one operation-local index of all Route domain owners, so an unaffected Route still blocks a collision. Routes outside this workset stay unchanged.
 
 A Node or Cluster TLD change fully reconciles those generated private Routes. A Cluster activation or deactivation fully reconciles the private Routes whose scope or generated domain depends on that Cluster. Node attach and detach fully reconcile the private Routes whose scope or generated domain follows that membership change. Router replacement moves private Router projections without changing Route identity. Other active Route and Router-clearing mutations keep the separate reconciliation refusal.
 
+### Stored transitions
+
+Every Caddy publication renders a Route's sites from stored state only, so any later publication on a Node renders the same sites until the state changes again. A transition stores its state before the publication that needs it, and a withdrawal stores it before the publication that removes a site and before the certificate removal.
+
+| Transition | Stored state | Sites |
+| --- | --- | --- |
+| Creation | Site publication set before the first Caddy publication | The `pending` Route renders like an `active` one. A failed creation clears the record. |
+| Domain change | The `pending` replacement Route and its `replacement_step` | Each replacement site appears once its certificate step completes, from the staging scopes until cleanup. |
+| Placement change | `transition_node_id` and `transition_cluster_id` on the Route | Before cutover they hold the candidate placement. Its Router sites appear once the Router certificate step completes and use `route-<id>-router-hostname-change`. At cutover the Route takes the candidate placement and the columns take the old one, which keeps its live sites. The `cleanup` step stops rendering the old placement. |
+| Router replacement | The candidate `router` role row and its `failed_step` | From the Router Caddy step until cleanup, both Routers serve the Cluster's Router sites. |
+| Instance removal | No targets, the site publication, and an open development removal member | The Router answers `503 Orbit Route unavailable`, or the workload Node when the Route has no separate Router. |
+
+When a Route's current and second placement render the same domain and listener on one Node, the current site wins. Private DNS answers with the current placement. A Router replacement moves the DNS answer to the candidate at its DNS publication step.
+
+A placement change restores differently before and after its DNS publication step. Before it, the restore clears the columns, publishes Caddy without the candidate, and then removes the candidate certificates. After it, the restore first publishes private DNS for the current placement while both placements still serve, and then does the same. Cleanup issues the live Router certificate for the new placement, stores its `cleanup` step, publishes Caddy on every affected Node, removes the staging and old certificates, and clears the columns last, so a retry still knows the old placement.
+
 ### Remove an untargeted private Route
 
-`route:destroy` removes an already untargeted private Route. The Gateway refuses a targeted Route before it changes projections. It then removes Route-owned DNS records, withdraws workload and Router Caddy fragments while their certificates remain, removes those certificates, removes firewall entries, and deletes the Route record last. MCP `route-destroy` sends the Route id as a tool argument; the server places it on the path. A DELETE body may repeat that path id, and the Gateway treats it as path identity rather than an unsupported field.
+`route:destroy` removes an already untargeted private Route. The Gateway refuses a targeted Route before it changes projections. It then clears the Route's site publication, removes Route-owned DNS records, withdraws workload and Router Caddy sites while their certificates remain, removes those certificates, removes firewall entries, and deletes the Route record last. MCP `route-destroy` sends the Route id as a tool argument; the server places it on the path. A DELETE body may repeat that path id, and the Gateway treats it as path identity rather than an unsupported field.
 
 A failure at a projection step or at final record deletion keeps the Route inspectable with bounded `failed_step` and `error_code`. Retry uses the same destroy request, revalidates completed work, and resumes at the earliest unverified step. It does not restore removed projections, delete unrelated Routes or workloads, or accept a conflicting target mutation.
 

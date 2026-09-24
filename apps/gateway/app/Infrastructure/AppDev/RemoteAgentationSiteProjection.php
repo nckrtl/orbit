@@ -20,8 +20,8 @@ final readonly class RemoteAgentationSiteProjection implements AgentationSitePro
         $this->projection->run(function () use ($instance): void {
             $instance->loadMissing(['routes', 'node']);
 
-            foreach ($instance->routes as $route) {
-                $this->caddy->convergeRoute($instance->node, $route);
+            if ($instance->routes->isNotEmpty()) {
+                $this->caddy->converge($instance->node);
             }
         });
     }

@@ -11,6 +11,7 @@ use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\ClusterRouterReplacementProjector;
 use App\Domain\Routes\ClusterRouterReplacementStep;
+use App\Domain\Routes\ClusterRouterTransition;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -130,11 +131,17 @@ final readonly class SetClusterRouterAction
 
         try {
             if ($this->shouldRun($candidate, ClusterRouterReplacementStep::DatabaseCutover)) {
+                // One transaction stores the new active Router and the completed step, so every build
+                // keeps rendering the Router sites on both Routers until cleanup.
                 DB::transaction(static function () use ($active, $candidate): void {
                     $active?->update(['status' => LifecycleStatus::Removing]);
-                    $candidate->update(['status' => LifecycleStatus::Active, 'failed_step' => null, 'error_code' => null]);
+                    $candidate->update([
+                        'status' => LifecycleStatus::Active,
+                        'failed_step' => ClusterRouterReplacementStep::DatabaseCutover->value,
+                        'error_code' => null,
+                    ]);
                 });
-                $this->checkpoint($candidate, ClusterRouterReplacementStep::DatabaseCutover);
+                $candidate->refresh();
             }
         } catch (Throwable $exception) {
             if ($routes->isEmpty()) {
@@ -149,6 +156,8 @@ final readonly class SetClusterRouterAction
 
         try {
             if ($routes->isNotEmpty() && $oldRouter instanceof Node && $this->shouldRun($candidate, ClusterRouterReplacementStep::Cleanup)) {
+                $this->stopOldRouterSites($cluster->id, $candidate);
+
                 foreach ($routes as $route) {
                     $this->projector()->cleanupOldRouter($route, $oldRouter);
                 }
@@ -229,6 +238,16 @@ final readonly class SetClusterRouterAction
         Throwable $exception,
     ): void {
         $failedStep = $this->stepName($exception, ClusterRouterReplacementStep::RouterCertificate->value);
+        $errorCode = property_exists($exception, 'errorCode') && is_string($exception->errorCode)
+            ? $exception->errorCode
+            : 'node_role.operation_failed';
+        // Stored state changes first: a restoring candidate serves no Router site, so the builds
+        // below withdraw its sites before its certificates are removed.
+        $candidate->update([
+            'status' => LifecycleStatus::Failed,
+            'failed_step' => "rollback:{$failedStep}",
+            'error_code' => $errorCode,
+        ]);
 
         try {
             foreach ($routes as $route) {
@@ -446,11 +465,25 @@ final readonly class SetClusterRouterAction
             return;
         }
 
+        $this->stopOldRouterSites($cluster->id, $current);
+
         foreach ($this->clusterRoutes($cluster->id) as $route) {
             $this->projector()->cleanupOldRouter($route, $oldRouter);
         }
 
         $current->update(['failed_step' => null, 'error_code' => null]);
+    }
+
+    /** Marks the old Router rows so the next build of each old Router drops the Cluster's Router sites. */
+    private function stopOldRouterSites(int $clusterId, NodeRole $current): void
+    {
+        NodeRole::query()
+            ->where('cluster_id', $clusterId)
+            ->where('role', RoleName::Router)
+            ->where('status', LifecycleStatus::Removing)
+            ->whereKeyNot($current->id)
+            ->whereNull('failed_step')
+            ->update(['failed_step' => ClusterRouterTransition::OldRouterCleanup]);
     }
 
     private function publicationCompleted(NodeRole $candidate): bool

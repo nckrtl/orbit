@@ -152,6 +152,7 @@ final readonly class EnableInstanceAnalyticsAction
             } catch (Throwable $exception) {
                 $route->update([
                     'status' => RouteStatus::Failed,
+                    'sites_published' => false,
                     'failed_step' => 'projection',
                     'error_code' => property_exists($exception, 'errorCode') && is_string($exception->errorCode)
                         ? $exception->errorCode

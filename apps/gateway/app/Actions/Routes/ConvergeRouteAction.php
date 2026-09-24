@@ -555,7 +555,7 @@ final readonly class ConvergeRouteAction
             && $this->forwardRank($route->replacement_step)
                 >= $this->forwardRank(RouteReplacementStep::DatabaseCutover)
         ) {
-            return $this->cleanupPlacement($route, $retired, $candidate, $targets);
+            return $this->cleanupPlacement($route, $candidate, $targets);
         }
 
         $failureStep = 'workload-certificate';
@@ -574,7 +574,10 @@ final readonly class ConvergeRouteAction
             $this->forwardStep(
                 $route,
                 RouteReplacementStep::WorkloadCaddy,
-                function () use ($targets, $route, $candidate): void {
+                function () use ($targets, $route, $candidate, $placement): void {
+                    // The candidate placement is stored before any build renders it.
+                    $this->storeTransition($route, $placement->nodeId, $placement->clusterId);
+
                     foreach ($targets as $appInstance) {
                         $this->projection->prepareWorkloadCaddy($appInstance, $route, $candidate);
                     }
@@ -673,7 +676,7 @@ final readonly class ConvergeRouteAction
                 $this->forwardRank($route->refresh()->replacement_step)
                     < $this->forwardRank(RouteReplacementStep::DatabaseCutover)
             ) {
-                $this->failBeforeCutoverPlacement($route, $retired, $targets);
+                $this->failBeforeCutoverPlacement($route, $retired, $candidate, $targets);
             }
 
             throw $exception;
@@ -681,7 +684,6 @@ final readonly class ConvergeRouteAction
 
         return $this->cleanupPlacement(
             $route->refresh(),
-            $retired,
             $this->candidateWithPlacement($route->refresh(), $placement),
             $targets,
         );
@@ -689,8 +691,9 @@ final readonly class ConvergeRouteAction
 
     private function candidateWithPlacement(Route $route, RoutePlacement $placement): Route
     {
-        $candidate = $route->newInstance($route->getAttributes(), true);
-        $candidate->exists = true;
+        // The candidate keeps the Route's id, so the certificate scopes it names are the Route's own.
+        $candidate = $route->newInstance([], true);
+        $candidate->setRawAttributes($route->getAttributes(), true);
         $candidate->node_id = $placement->nodeId;
         $candidate->cluster_id = $placement->clusterId;
         $candidate->setRelation('targets', $route->targets);
@@ -709,11 +712,17 @@ final readonly class ConvergeRouteAction
         return $candidate;
     }
 
+    /**
+     * At cutover the Route takes the candidate placement and the transition columns take the old
+     * one, because private DNS pointed at the old placement and clients can hold that answer.
+     */
     private function cutoverPlacement(Route $route, RoutePlacement $placement): void
     {
         DB::transaction(function () use ($route, $placement): void {
             $locked = Route::query()->lockForUpdate()->findOrFail($route->id);
             $locked->update([
+                'transition_node_id' => $locked->node_id,
+                'transition_cluster_id' => $locked->cluster_id,
                 'node_id' => $placement->nodeId,
                 'cluster_id' => $placement->clusterId,
                 'replacement_step' => RouteReplacementStep::DatabaseCutover,
@@ -724,12 +733,39 @@ final readonly class ConvergeRouteAction
         });
     }
 
-    /** @param list<AppInstance> $targets */
-    private function cleanupPlacement(Route $route, Route $retired, Route $candidate, array $targets): Route
+    private function storeTransition(Route $route, ?int $nodeId, ?int $clusterId): void
+    {
+        DB::transaction(function () use ($route, $nodeId, $clusterId): void {
+            $locked = Route::query()->lockForUpdate()->findOrFail($route->id);
+            $locked->update([
+                'transition_node_id' => $nodeId,
+                'transition_cluster_id' => $clusterId,
+            ]);
+            $route->setRawAttributes($locked->refresh()->getAttributes(), true);
+        });
+    }
+
+    /**
+     * Cleanup issues the live certificates for the current placement, stores the `cleanup` step
+     * so builds render the live scopes and no second placement, builds, and removes the staging
+     * and old certificates. The transition columns stay until then, so a retry still knows the
+     * old placement.
+     *
+     * @param  list<AppInstance>  $targets
+     */
+    private function cleanupPlacement(Route $route, Route $candidate, array $targets): Route
     {
         try {
+            if ($route->replacement_step !== RouteReplacementStep::Cleanup) {
+                foreach ($targets as $appInstance) {
+                    $this->projection->prepareCleanup($appInstance, $route);
+                }
+
+                $this->checkpoint($route, RouteReplacementStep::Cleanup);
+            }
+
             foreach ($targets as $appInstance) {
-                $this->projection->cleanup($appInstance, $retired);
+                $this->projection->cleanup($appInstance, $route);
 
                 if ($appInstance->placedOnAppProd()) {
                     $this->routeEnvironment->synchronizeRouteDomain(
@@ -749,6 +785,8 @@ final readonly class ConvergeRouteAction
             DB::transaction(function () use ($route): void {
                 $locked = Route::query()->lockForUpdate()->findOrFail($route->id);
                 $locked->update([
+                    'transition_node_id' => null,
+                    'transition_cluster_id' => null,
                     'replacement_step' => $locked->publication === RoutePublication::Public
                         ? RouteReplacementStep::IngressFirewall
                         : null,
@@ -766,21 +804,40 @@ final readonly class ConvergeRouteAction
         return $route->refresh()->load('targets');
     }
 
-    /** @param list<AppInstance> $targets */
-    private function failBeforeCutoverPlacement(Route $route, Route $retired, array $targets): void
+    /**
+     * A restore stops rendering the candidate placement, builds every Node that served it, and
+     * then removes its certificates. After `dns-published` it first publishes private DNS for the
+     * current placement again, while both placements still serve.
+     *
+     * @param  list<AppInstance>  $targets
+     */
+    private function failBeforeCutoverPlacement(Route $route, Route $retired, Route $candidate, array $targets): void
     {
+        try {
+            if ($this->forwardRank($route->replacement_step) >= $this->forwardRank(RouteReplacementStep::DnsPublished)) {
+                $this->projection->rollbackDns($route);
+            }
+        } catch (Throwable) {
+        }
+
         // The rollback removes the candidate certificates, so a retry restarts from the first step.
         Route::query()
             ->whereKey($route->id)
-            ->update(['replacement_step' => RouteReplacementStep::Reserved->value]);
+            ->update([
+                'replacement_step' => RouteReplacementStep::Reserved->value,
+                'transition_node_id' => null,
+                'transition_cluster_id' => null,
+            ]);
+        $route->refresh();
 
         try {
             foreach ($targets as $appInstance) {
                 $this->projection->rollbackCaddy($appInstance, $route);
+                $this->projection->rollbackCaddy($appInstance, $candidate);
             }
 
             foreach ($targets as $appInstance) {
-                $this->projection->rollbackCertificates($appInstance, $route);
+                $this->projection->rollbackCertificates($appInstance, $candidate);
 
                 if ($appInstance->placedOnAppProd()) {
                     $this->routeEnvironment->synchronizeRouteDomain(
@@ -829,10 +886,23 @@ final readonly class ConvergeRouteAction
         });
     }
 
-    /** @param list<AppInstance> $targets */
+    /**
+     * Cleanup issues the live certificates for the replacement, stores the `cleanup` step so builds
+     * render the live scopes, and then builds and removes the staging certificates.
+     *
+     * @param  list<AppInstance>  $targets
+     */
     private function cleanup(Route $replacement, Route $current, array $targets): Route
     {
         try {
+            if ($replacement->replacement_step !== RouteReplacementStep::Cleanup) {
+                foreach ($targets as $appInstance) {
+                    $this->projection->prepareCleanup($appInstance, $replacement);
+                }
+
+                $this->checkpoint($replacement, RouteReplacementStep::Cleanup);
+            }
+
             foreach ($targets as $appInstance) {
                 // The replacement is authoritative from cutover on, so the live certificate and the
                 // staging scopes are named after it, not after the Route being retired.

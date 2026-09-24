@@ -2,17 +2,22 @@
 
 declare(strict_types=1);
 
+use App\Actions\Clusters\SetClusterRouterAction;
 use App\Actions\Routes\ConvergeRouteAction;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\AppInstances\Transfer\AppInstanceTransferStatus;
 use App\Domain\AppInstances\Transfer\AppInstanceTransferStep;
 use App\Domain\Certificates\LeafCertificateSigner;
+use App\Domain\Clusters\ClusterRouterOperationLock;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
+use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Routes\ClusterRouterReplacementProjector;
 use App\Domain\Routes\RouteDomainProjector;
+use App\Domain\Routes\RoutePlacement;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteReplacementStep;
@@ -28,11 +33,13 @@ use App\Infrastructure\AppDev\DnsmasqPrivateDnsManager;
 use App\Infrastructure\AppDev\RemoteAppDevCaddyManager;
 use App\Infrastructure\AppDev\RemoteAppDevCertificateManager;
 use App\Infrastructure\AppDev\RemoteAppDevPhpFpmManager;
+use App\Infrastructure\AppDev\RemoteAppDevRouteFirewallManager;
 use App\Infrastructure\AppInstances\NativeDevelopmentRouteProjector;
 use App\Infrastructure\Nodes\RemotePhpPackageManager;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
+use App\Infrastructure\Routes\NativeClusterRouterReplacementProjector;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\RemoteCommand;
@@ -44,15 +51,18 @@ use App\Models\AppInstance;
 use App\Models\AppInstanceTransfer;
 use App\Models\Cluster;
 use App\Models\Node;
+use App\Models\NodeRole;
 use App\Models\Route;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Str;
+use Tests\Support\FakeClusterRouterDnsSelectionReconciler;
 
 it('uses one local workload site when Router and workload roles share a Node', function (): void {
     [$appInstance, $route, $node] = orb127_route_projection_models(coLocated: true, phpVersion: '8.5');
     $sites = new AppDevSiteRepository;
-    $nodeSites = $sites->forNode($node, $route);
+    $route->publishSites();
+    $nodeSites = $sites->forNode($node);
     $configuration = new AppDevCaddyConfigRenderer()->render($nodeSites);
     [$projector, $ssh, $processes, $home] = orb127_route_projector();
 
@@ -93,14 +103,12 @@ it('renders old and candidate hostname sites with separate certificate scopes be
     [$appInstance, $route, $workload, $router] = orb127_route_projection_models();
     $route->update(['status' => RouteStatus::Active]);
     $appInstance->update(['status' => AppInstanceState::Active]);
-    $route->refresh()->load(['targets.appInstance.app', 'targets.appInstance.node', 'cluster.routerAssignment.node']);
-    $candidate = clone $route;
-    $candidate->domain = 'next.acme.test';
+    $replacement = orb_pending_domain_change($route, $appInstance, RouteReplacementStep::RouterCaddy);
     $sites = new AppDevSiteRepository;
 
-    $workloadSites = $sites->forNode($workload, additionalRoute: $candidate);
-    $routerSites = $sites->forNode($router, additionalRoute: $candidate);
-    $dns = new AppDevDnsConfigRenderer($sites)->render(additionalRoute: $candidate);
+    $workloadSites = $sites->forNode($workload);
+    $routerSites = $sites->forNode($router);
+    $dns = new AppDevDnsConfigRenderer($sites)->render();
 
     expect($workloadSites->pluck('domain')->all())
         ->toBe(['feature.acme.test', 'next.acme.test'])
@@ -114,7 +122,7 @@ it('renders old and candidate hostname sites with separate certificate scopes be
         ->and($routerSites->map->certificateDirectory()->all())
         ->toBe([
             "/etc/caddy/orbit-certificates/route-{$route->id}-router/current",
-            "/etc/caddy/orbit-certificates/route-{$route->id}-router-hostname-change/current",
+            "/etc/caddy/orbit-certificates/route-{$replacement->id}-router-hostname-change/current",
         ])
         ->and($dns)
         ->toContain(
@@ -303,7 +311,7 @@ it('preserves the ready hostname candidate across an interrupted DNS publication
             "host-record=next.acme.test,{$router->wireguard_ip}",
         );
 
-    expect($sites->forNode($workload, additionalRoute: $replacement)->pluck('domain')->all())
+    expect($sites->forNode($workload)->pluck('domain')->all())
         ->toBe(['feature.acme.test', 'next.acme.test']);
 
     // Cutover ends the old name. Both sites share one certificate scope, so serving the retired
@@ -350,7 +358,7 @@ it('serves every hostname-change site from a certificate the flow wrote for that
             'status' => RouteStatus::Activating,
             'replacement_step' => RouteReplacementStep::DatabaseCutover,
         ]);
-        $projector->cleanup($appInstance->refresh(), $replacement->refresh());
+        orb_domain_change_cleanup($projector, [$appInstance->refresh()], $replacement);
 
         [$mismatches, $disk, $served] = orb_hostname_change_certificate_replay(
             $ssh,
@@ -493,10 +501,7 @@ it('serves a composed Router pool from the staging Router certificate during a d
         $routerDuringChange = new AppDevSiteRepository()->forNode($router)->firstWhere('domain', 'next.acme.test');
         $route->update(['status' => RouteStatus::Retiring]);
         $replacement->update(['status' => RouteStatus::Activating, 'replacement_step' => RouteReplacementStep::DatabaseCutover]);
-
-        foreach ($targets as $target) {
-            $projector->cleanup($target, $replacement->refresh());
-        }
+        orb_domain_change_cleanup($projector, $targets, $replacement);
 
         [$mismatches, $disk, $served] = orb_hostname_change_certificate_replay(
             $ssh,
@@ -552,7 +557,7 @@ it('removes the retiring Router certificate from the Router that served it when 
         $projector->prepareRouterCaddy($appInstance, $current, $candidate);
         $route->update(['status' => RouteStatus::Retiring]);
         $replacement->update(['status' => RouteStatus::Activating, 'replacement_step' => RouteReplacementStep::DatabaseCutover]);
-        $projector->cleanup($appInstance->refresh(), $replacement->refresh());
+        orb_domain_change_cleanup($projector, [$appInstance->refresh()], $replacement);
 
         [$mismatches, $disk, $served] = orb_hostname_change_certificate_replay(
             $ssh,
@@ -567,6 +572,136 @@ it('removes the retiring Router certificate from the Router that served it when 
             ->and($disk[$oldRouter->wireguard_ip])->toBe([])
             ->and($served[$newRouter->wireguard_ip])->toBe(['next.acme.test' => "route-{$replacement->id}-router"])
             ->and($disk[$newRouter->wireguard_ip])->toBe(["route-{$replacement->id}-router" => 'next.acme.test']);
+    } finally {
+        new Filesystem()->deleteDirectory($home);
+    }
+});
+
+it('moves a Route to another Cluster through its stored transition and restores a failed move', function (): void {
+    [$appInstance, $route, $workload, $oldRouter] = orb127_route_projection_models();
+    $route->update(['status' => RouteStatus::Active]);
+    $appInstance->update(['status' => AppInstanceState::Active, 'source_is_laravel' => false]);
+    [$cluster, $newRouter] = orb_second_cluster_router();
+    [$projector, $ssh, $processes, $home] = orb127_route_projector();
+    app()->instance(RouteDomainProjector::class, $projector);
+    $placement = new RoutePlacement(nodeId: null, clusterId: $cluster->id, effectiveTld: null);
+    $disk = [
+        $workload->wireguard_ip => ["app-instance-{$appInstance->id}" => 'feature.acme.test'],
+        $oldRouter->wireguard_ip => ["route-{$route->id}-router" => 'feature.acme.test'],
+    ];
+    // Private DNS publication runs after the candidate Router build, so the restore has to withdraw
+    // the candidate before it removes the candidate certificates.
+    $processes->failNext = 1;
+
+    try {
+        expect(fn () => app(ConvergeRouteAction::class)->execute($route, 'feature.acme.test', placement: $placement))
+            ->toThrow(RuntimeConvergenceException::class);
+
+        [$mismatches, $afterRestore, $served] = orb_hostname_change_certificate_replay($ssh, $disk);
+        $restored = $route->refresh();
+
+        expect($mismatches)->toBe([])
+            ->and($restored->cluster_id)->toBe($oldRouter->cluster_id)
+            ->and($restored->transition_cluster_id)->toBeNull()
+            ->and($restored->replacement_step)->toBe(RouteReplacementStep::Reserved)
+            ->and($served[$newRouter->wireguard_ip])->toBe([])
+            ->and($afterRestore[$newRouter->wireguard_ip])->toBe([])
+            ->and($served[$oldRouter->wireguard_ip])->toBe(['feature.acme.test' => "route-{$route->id}-router"]);
+
+        $moved = app(ConvergeRouteAction::class)->execute($restored, 'feature.acme.test', placement: $placement);
+        [$mismatches, $afterMove, $served] = orb_hostname_change_certificate_replay($ssh, $disk);
+
+        expect($mismatches)->toBe([])
+            ->and($moved->cluster_id)->toBe($cluster->id)
+            ->and($moved->transition_cluster_id)->toBeNull()
+            ->and($moved->replacement_step)->toBeNull()
+            ->and($served[$newRouter->wireguard_ip])->toBe(['feature.acme.test' => "route-{$route->id}-router"])
+            ->and($served[$oldRouter->wireguard_ip])->toBe([])
+            ->and($afterMove[$newRouter->wireguard_ip])->toBe(["route-{$route->id}-router" => 'feature.acme.test'])
+            ->and($afterMove[$oldRouter->wireguard_ip])->toBe([])
+            ->and($afterMove[$workload->wireguard_ip])->toBe(["app-instance-{$appInstance->id}" => 'feature.acme.test']);
+    } finally {
+        new Filesystem()->deleteDirectory($home);
+    }
+});
+
+it('replaces a Router through its stored router rows and restores a failed replacement', function (): void {
+    [$appInstance, $route, $workload, $oldRouter] = orb127_route_projection_models();
+    $route->update(['status' => RouteStatus::Active]);
+    $appInstance->update(['status' => AppInstanceState::Active, 'source_is_laravel' => false]);
+    $candidate = orb_router_candidate($oldRouter);
+    [$projector, $ssh, $processes, $home] = orb127_route_projector();
+    $action = orb_router_replacement_action();
+    $disk = [
+        $workload->wireguard_ip => ["app-instance-{$appInstance->id}" => 'feature.acme.test'],
+        $oldRouter->wireguard_ip => ["route-{$route->id}-router" => 'feature.acme.test'],
+    ];
+    $cluster = Cluster::query()->findOrFail($oldRouter->cluster_id);
+    // The DNS publication fails once, after the candidate build served the Router sites.
+    $processes->failNext = 1;
+
+    try {
+        expect(fn () => $action->execute($cluster, $candidate))->toThrow(RuntimeConvergenceException::class);
+
+        [$mismatches, $afterRestore, $served] = orb_hostname_change_certificate_replay($ssh, $disk);
+        $row = NodeRole::query()->where('node_id', $candidate->id)->where('role', RoleName::Router)->sole();
+
+        expect($mismatches)->toBe([])
+            ->and($row->status)->toBe(LifecycleStatus::Failed)
+            ->and($row->failed_step)->toBe('dns-publication')
+            ->and($served[$candidate->wireguard_ip])->toBe([])
+            ->and($afterRestore[$candidate->wireguard_ip])->toBe([])
+            ->and(new AppDevSiteRepository()->forNode($oldRouter)->pluck('domain')->all())->toBe(['feature.acme.test']);
+
+        $action->execute($cluster->refresh(), $candidate);
+        [$mismatches, $afterReplacement, $served] = orb_hostname_change_certificate_replay($ssh, $disk);
+
+        expect($mismatches)->toBe([])
+            ->and($cluster->refresh()->routerAssignment?->node_id)->toBe($candidate->id)
+            ->and(NodeRole::query()->where('node_id', $oldRouter->id)->where('role', RoleName::Router)->exists())->toBeFalse()
+            ->and($served[$candidate->wireguard_ip])->toBe(['feature.acme.test' => "route-{$route->id}-router"])
+            ->and($served[$oldRouter->wireguard_ip])->toBe([])
+            ->and($afterReplacement[$oldRouter->wireguard_ip])->toBe([])
+            ->and($afterReplacement[$candidate->wireguard_ip])->toBe(["route-{$route->id}-router" => 'feature.acme.test']);
+    } finally {
+        new Filesystem()->deleteDirectory($home);
+    }
+});
+
+it('serves a crash-left pending domain change from its staging certificate on the replacement Router', function (): void {
+    [$appInstance, $route, $workload, $oldRouter] = orb127_route_projection_models();
+    $route->update(['status' => RouteStatus::Active]);
+    $appInstance->update(['status' => AppInstanceState::Active, 'source_is_laravel' => false]);
+    // The Gateway stopped after the domain change built the old Router.
+    $replacement = orb_pending_domain_change($route, $appInstance, RouteReplacementStep::RouterCaddy);
+    $candidate = orb_router_candidate($oldRouter);
+    [$projector, $ssh, $processes, $home] = orb127_route_projector();
+    $disk = [
+        $workload->wireguard_ip => [
+            "app-instance-{$appInstance->id}" => 'feature.acme.test',
+            "app-instance-{$appInstance->id}-hostname-change" => 'next.acme.test',
+        ],
+        $oldRouter->wireguard_ip => [
+            "route-{$route->id}-router" => 'feature.acme.test',
+            "route-{$replacement->id}-router-hostname-change" => 'next.acme.test',
+        ],
+    ];
+
+    try {
+        orb_router_replacement_action()->execute(Cluster::query()->findOrFail($oldRouter->cluster_id), $candidate);
+
+        [$mismatches, $after, $served] = orb_hostname_change_certificate_replay($ssh, $disk);
+
+        expect($mismatches)->toBe([])
+            ->and($served[$candidate->wireguard_ip])->toBe([
+                'feature.acme.test' => "route-{$route->id}-router",
+                'next.acme.test' => "route-{$replacement->id}-router-hostname-change",
+            ])
+            ->and($after[$candidate->wireguard_ip])->toBe([
+                "route-{$route->id}-router" => 'feature.acme.test',
+                "route-{$replacement->id}-router-hostname-change" => 'next.acme.test',
+            ])
+            ->and($after[$oldRouter->wireguard_ip])->toBe([]);
     } finally {
         new Filesystem()->deleteDirectory($home);
     }
@@ -691,7 +826,9 @@ it('hydrates only requested workload and Router routes while global inventory st
     $unrelatedRoute->update(['status' => RouteStatus::Active]);
     $unrelatedInstance->update(['status' => 'active']);
     $sites = new AppDevSiteRepository;
-    $globalSites = $sites->all($pendingRoute);
+    // Creation stores the publication record before the first build of the pending Route.
+    $pendingRoute->publishSites();
+    $globalSites = $sites->all();
     $retrievedRoutes = collect();
     $retrievedInstances = collect();
     Event::listen(
@@ -707,7 +844,7 @@ it('hydrates only requested workload and Router routes while global inventory st
         },
     );
 
-    $workloadSites = $sites->forNode($workload, $pendingRoute);
+    $workloadSites = $sites->forNode($workload);
 
     $siteIdentity = static fn (AppDevSite $site): array => [
         $site->scope,
@@ -736,7 +873,7 @@ it('hydrates only requested workload and Router routes while global inventory st
         )
         ->not->toContain($failedRoute->domain);
 
-    $routerSites = $sites->forNode($router, $pendingRoute);
+    $routerSites = $sites->forNode($router);
 
     expect($routerSites->map($siteIdentity)->all())
         ->toBe($globalSites->where('nodeId', $router->id)->values()->map($siteIdentity)->all())
@@ -1154,6 +1291,74 @@ function orb_hostname_change_certificate_replay(Orb127RouteSshExecutor $ssh, arr
     return [$mismatches, $disk, $served];
 }
 
+/** @return array{Cluster, Node} */
+function orb_second_cluster_router(): array
+{
+    $cluster = Cluster::query()->create(['name' => 'moved-'.Str::lower(Str::random(8)), 'state' => ClusterState::Active]);
+    $router = Node::query()->create([
+        'cluster_id' => $cluster->id,
+        'name' => 'router-'.Str::lower(Str::random(8)),
+        'status' => LifecycleStatus::Active,
+        'platform' => 'linux',
+        'public_ssh_host' => '192.0.2.30',
+        'wireguard_ip' => '10.44.0.30',
+        'user' => 'orbit',
+    ]);
+    $router->roles()->create(['cluster_id' => $cluster->id, 'role' => RoleName::Router, 'status' => LifecycleStatus::Active]);
+
+    return [$cluster, $router];
+}
+
+function orb_router_candidate(Node $router): Node
+{
+    return Node::query()->create([
+        'cluster_id' => $router->cluster_id,
+        'name' => 'candidate-'.Str::lower(Str::random(8)),
+        'status' => LifecycleStatus::Active,
+        'platform' => 'linux',
+        'public_ssh_host' => '192.0.2.40',
+        'wireguard_ip' => '10.44.0.40',
+        'user' => 'orbit',
+    ]);
+}
+
+/** Runs the real Router replacement projector bound by `orb127_route_projector()`, with no role baseline work. */
+function orb_router_replacement_action(): SetClusterRouterAction
+{
+    return new SetClusterRouterAction(
+        new class implements RoleBaselineConverger
+        {
+            public function converge(Node $node, NodeRole $assignment): void {}
+
+            public function remove(Node $node, NodeRole $assignment, bool $purgeData): void {}
+
+            public function removeUnreachable(Node $node, NodeRole $assignment): void {}
+        },
+        app(ClusterRouterOperationLock::class),
+        new FakeClusterRouterDnsSelectionReconciler,
+        app(ClusterRouterReplacementProjector::class),
+    );
+}
+
+/**
+ * Cleanup issues the live certificates, stores the `cleanup` step, and then builds and removes the
+ * staging certificates, as `ConvergeRouteAction` does.
+ *
+ * @param  list<AppInstance>  $targets
+ */
+function orb_domain_change_cleanup(NativeDevelopmentRouteProjector $projector, array $targets, Route $replacement): void
+{
+    foreach ($targets as $target) {
+        $projector->prepareCleanup($target, $replacement->refresh());
+    }
+
+    $replacement->update(['replacement_step' => RouteReplacementStep::Cleanup]);
+
+    foreach ($targets as $target) {
+        $projector->cleanup($target, $replacement->refresh());
+    }
+}
+
 function orb_pending_domain_change(Route $route, AppInstance $appInstance, RouteReplacementStep $step): Route
 {
     $replacement = Route::query()->create([
@@ -1226,6 +1431,9 @@ function orb127_route_projector(?Closure $failSsh = null, bool $failDns = false)
     $processes = new Orb127RouteProcessRunner($failDns);
     $home = sys_get_temp_dir().'/orbit-route-projector-'.Str::uuid();
     config()->set('orbit.home', $home);
+    $certificates = new RemoteAppDevCertificateManager($executor, $signer, $accounts);
+    $caddy = new RemoteAppDevCaddyManager($sites, new AppDevCaddyConfigRenderer, $executor);
+    $dns = new DnsmasqPrivateDnsManager($processes, new AppDevDnsConfigRenderer($sites));
     $projector = new NativeDevelopmentRouteProjector(
         new RemoteAppDevPhpFpmManager(
             $sites,
@@ -1234,10 +1442,20 @@ function orb127_route_projector(?Closure $failSsh = null, bool $failDns = false)
             $accounts,
             new RemotePhpPackageManager,
         ),
-        new RemoteAppDevCertificateManager($executor, $signer, $accounts),
-        new RemoteAppDevCaddyManager($sites, new AppDevCaddyConfigRenderer, $executor),
-        new DnsmasqPrivateDnsManager($processes, new AppDevDnsConfigRenderer($sites)),
+        $certificates,
+        $caddy,
+        $dns,
         $executor,
+    );
+    app()->instance(
+        ClusterRouterReplacementProjector::class,
+        new NativeClusterRouterReplacementProjector(
+            $certificates,
+            $caddy,
+            new RemoteAppDevRouteFirewallManager($executor),
+            $dns,
+            $executor,
+        ),
     );
 
     return [$projector, $ssh, $processes, $home];

@@ -112,6 +112,34 @@ it('serves the exact transient development 503 without an upstream then deletes 
     expect($replacement->domain)->toBe($route->domain);
 });
 
+it('withdraws the final Route in a build before it removes the Instance certificate', function (): void {
+    [$member, $route] = orb181_projector_development_member();
+    [$projector, $ssh] = orb181_removal_projector($this);
+
+    expect($projector->clearRouteTarget($member))->toBe('deleted');
+
+    $scope = "app-instance-{$member->app_instance_id}";
+    $removal = collect($ssh->commands)->search(
+        static fn (RemoteCommand $command): bool => is_string($command->input)
+            && str_contains($command->input, 'rm -rf -- "$managed_home/.orbit/certificates/$scope"')
+            && in_array($scope, $command->arguments, true),
+    );
+    $published = orb181_caddy_configurations(array_slice($ssh->commands, 0, is_int($removal) ? $removal : 0));
+
+    // The unavailable answer renders from the stored Route, its record, and the open member; clearing
+    // the record withdraws it in the build that runs before the certificate is removed.
+    $serving = array_keys(array_filter(
+        $published,
+        static fn (string $configuration): bool => str_contains($configuration, 'dev.acme.test'),
+    ));
+
+    expect($removal)->toBeInt()
+        ->and($serving)->not->toBeEmpty()
+        ->and($published[$serving[0]])->toContain('Orbit Route unavailable')
+        ->and(count($published) - 1)->toBeGreaterThan(max($serving))
+        ->and(end($published))->not->toContain('dev.acme.test');
+});
+
 it('keeps the final Route row until every projection cleanup succeeds', function (): void {
     [$member, $route] = orb181_projector_development_member();
     [$projector, $ssh] = orb181_removal_projector($this);

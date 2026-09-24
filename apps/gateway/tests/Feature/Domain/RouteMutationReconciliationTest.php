@@ -85,6 +85,7 @@ it('converges an eligible active explicit development Route domain', function ()
         'prepareFirewallPolicy',
         'prepareRouterCaddy',
         'publishDns',
+        'prepareCleanup',
         'cleanup',
     ] as $method) {
         $projector->shouldReceive($method)->once();
@@ -867,6 +868,7 @@ it('prepares generated private projections before publishing a Node TLD change',
             'router-caddy',
             'url:https://feature.acme.next.test',
             'dns-publication',
+            'prepare-cleanup',
             'cleanup',
             'url:https://feature.acme.next.test',
             'workload-verify',
@@ -1087,6 +1089,7 @@ it('prepares generated private projections before publishing a Cluster TLD chang
             'router-caddy',
             'url:https://prepared.acme.next-cluster.test',
             'dns-publication',
+            'prepare-cleanup',
             'cleanup',
             'url:https://prepared.acme.next-cluster.test',
             'workload-verify',
@@ -1567,6 +1570,7 @@ it('prepares private projections before an attach becomes authoritative', functi
             'router-caddy',
             'url:https://feature.acme.cluster.test',
             'dns-publication',
+            'prepare-cleanup',
             'cleanup',
             'url:https://feature.acme.cluster.test',
             'workload-verify',
@@ -1668,6 +1672,7 @@ it('prepares direct Node scope before detach removes Cluster membership', functi
             'router-caddy',
             'url:https://feature.acme.dev.test',
             'dns-publication',
+            'prepare-cleanup',
             'cleanup',
             'url:https://feature.acme.dev.test',
             'workload-verify',
@@ -2001,6 +2006,11 @@ final class NodeTldRouteProjector implements RouteDomainProjector
     public function publishDns(Route $current, Route $candidate): void
     {
         $this->event('dns-publication');
+    }
+
+    public function prepareCleanup(AppInstance $appInstance, Route $route): void
+    {
+        $this->events->values[] = 'prepare-cleanup';
     }
 
     public function cleanup(AppInstance $appInstance, Route $route): void

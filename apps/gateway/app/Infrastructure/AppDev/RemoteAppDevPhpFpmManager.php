@@ -14,7 +14,6 @@ use App\Infrastructure\Nodes\PhpFpmPublicationPlan;
 use App\Infrastructure\Nodes\RemotePhpPackageManager;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Node;
-use App\Models\Route;
 use App\Rules\SupportedPhpVersion;
 
 final readonly class RemoteAppDevPhpFpmManager implements AppDevPhpFpmManager
@@ -34,16 +33,11 @@ final readonly class RemoteAppDevPhpFpmManager implements AppDevPhpFpmManager
         $this->convergeSites($node);
     }
 
-    public function convergeRoute(Node $node, Route $route): void
-    {
-        $this->convergeSites($node, $route);
-    }
-
-    private function convergeSites(Node $node, ?Route $pendingRoute = null): void
+    private function convergeSites(Node $node): void
     {
         $account = $this->accounts->resolve($node);
         $desiredSites = $this->sites
-            ->forNode($node, $pendingRoute)
+            ->forNode($node)
             ->filter(
                 static fn (AppDevSite $site): bool => (
                     $site->phpVersion !== null

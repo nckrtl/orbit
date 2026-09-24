@@ -11,6 +11,7 @@ use App\Domain\Clusters\ClusterRouterOperationLock;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\ClusterRouterReplacementProjector;
+use App\Domain\Routes\ClusterRouterReplacementStep;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
@@ -768,10 +769,17 @@ it('composes a colocated replacement Caddy site without a self-proxy hop', funct
     $this->putJson("/api/v1/clusters/{$this->cluster->id}/router/{$this->first->id}")->assertOk();
     [$route] = cluster_router_owned_route($this->cluster, $this->second);
     $this->second->update(['lan_ip' => '10.10.0.3']);
-    $sites = new AppDevSiteRepository()->forNode(
-        $this->second,
-        routerOverrides: [$this->cluster->id => $this->second->id],
+    // The stored candidate row serves the Cluster's Router sites from `router-caddy`.
+    NodeRole::query()->updateOrCreate(
+        ['node_id' => $this->second->id, 'role' => RoleName::Router],
+        [
+            'cluster_id' => $this->cluster->id,
+            'status' => LifecycleStatus::Provisioning,
+            'failed_step' => ClusterRouterReplacementStep::WorkloadVerified->value,
+            'error_code' => null,
+        ],
     );
+    $sites = new AppDevSiteRepository()->forNode($this->second);
     $rendered = new AppDevCaddyConfigRenderer()->render($sites);
 
     expect($sites->contains(fn ($site): bool => $site->isProxy() && $site->domain === $route->domain))

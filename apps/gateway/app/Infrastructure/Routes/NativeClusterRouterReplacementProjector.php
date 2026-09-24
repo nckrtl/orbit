@@ -6,6 +6,9 @@ namespace App\Infrastructure\Routes;
 
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Routes\ClusterRouterReplacementProjector;
+use App\Domain\Routes\RouteCertificateStaging;
+use App\Domain\Routes\RouteReplacementStep;
+use App\Domain\Routes\RouteStatus;
 use App\Infrastructure\AppDev\AppDevSshExecutor;
 use App\Infrastructure\AppDev\DnsmasqPrivateDnsManager;
 use App\Infrastructure\AppDev\RemoteAppDevCaddyManager;
@@ -26,9 +29,20 @@ final readonly class NativeClusterRouterReplacementProjector implements ClusterR
         private AppDevSshExecutor $ssh,
     ) {}
 
+    /**
+     * The candidate serves each Router site with the certificate scope its stored state names. A
+     * domain change replacement answers from its staging Router scope until its cleanup, also
+     * when a crash left it `pending`, and only once its own change has issued that scope.
+     */
     public function prepareRouterCertificate(Route $route, Node $router, AppInstance $workload): void
     {
-        if ($this->colocated($router, $workload)) {
+        if ($this->colocated($router, $workload) || ! $this->rendersRouterSites($route)) {
+            return;
+        }
+
+        if (RouteCertificateStaging::router($route)) {
+            $this->certificates->convergeRouteRouterHostnameChange($route, $router);
+
             return;
         }
 
@@ -46,22 +60,21 @@ final readonly class NativeClusterRouterReplacementProjector implements ClusterR
 
     public function verifyWorkload(Route $route, Node $router, AppInstance $workload): void
     {
-        if ($this->colocated($router, $workload)) {
+        if ($this->colocated($router, $workload) || ! $this->rendersRouterSites($route)) {
             return;
         }
 
         $this->verifyLeaf($workload, $route, $router);
     }
 
+    /** The candidate `router` row's stored step makes it serve the Cluster's Router sites. */
     public function prepareRouterCaddy(Route $route, Node $router): void
     {
-        $clusterId = $route->cluster_id;
-
-        if (! is_int($clusterId)) {
+        if (! is_int($route->cluster_id)) {
             return;
         }
 
-        $this->caddy->convergeRoute($router, $route, [$clusterId => $router->id]);
+        $this->caddy->converge($router);
     }
 
     public function publishDns(Route $route, Node $router): void
@@ -77,23 +90,33 @@ final readonly class NativeClusterRouterReplacementProjector implements ClusterR
         );
     }
 
+    /**
+     * The old Router row is marked first, so this build drops the Router sites before their
+     * certificates and firewall rules are removed.
+     */
     public function cleanupOldRouter(Route $route, Node $oldRouter): void
     {
+        $this->caddy->converge($oldRouter);
+
         foreach ($this->workloads($route) as $workload) {
             if ($this->colocated($oldRouter, $workload)) {
                 continue;
             }
 
             $this->certificates->removeRouteRouter($route, $oldRouter);
+            $this->certificates->removeRouteRouterHostnameChange($route, $oldRouter);
             $this->firewall->remove($workload->node, $route->id);
         }
-
-        $this->caddy->converge($oldRouter);
     }
 
+    /**
+     * The candidate row is marked first, so this build drops the Router sites from the candidate
+     * before its certificates and firewall rules are removed. The old Router keeps serving.
+     */
     public function restore(Route $route, Node $newRouter, ?Node $oldRouter): void
     {
         $clusterId = $route->cluster_id;
+        $this->caddy->converge($newRouter);
 
         foreach ($this->workloads($route) as $workload) {
             if ($this->colocated($newRouter, $workload)) {
@@ -101,16 +124,31 @@ final readonly class NativeClusterRouterReplacementProjector implements ClusterR
             }
 
             $this->certificates->removeRouteRouter($route, $newRouter);
+            $this->certificates->removeRouteRouterHostnameChange($route, $newRouter);
             $this->firewall->remove($workload->node, $route->id);
         }
-
-        $this->caddy->converge($newRouter);
 
         if (is_int($clusterId) && $oldRouter instanceof Node) {
             $this->dns->convergeSelection(
                 clusterOverrides: [$clusterId => ['router_node_id' => $oldRouter->id]],
             );
         }
+    }
+
+    /**
+     * Whether a build renders the Route's Router sites: a published Route, or a pending domain change
+     * replacement once its own change has issued the staging Router certificate. A failed
+     * replacement and an earlier pending one render nothing.
+     */
+    private function rendersRouterSites(Route $route): bool
+    {
+        if ($route->sites_published) {
+            return true;
+        }
+
+        return $route->status === RouteStatus::Pending
+            && $route->replaces_route_id !== null
+            && RouteCertificateStaging::reached($route, RouteReplacementStep::RouterCertificate);
     }
 
     private function colocated(Node $router, AppInstance $workload): bool

@@ -24,8 +24,10 @@ final readonly class NativeAnalyticsTrackingRouteProjector implements AnalyticsT
     {
         $router = $this->sites->routerNode($route);
 
+        // Creation stores the publication record before its first build renders the Route.
+        $route->publishSites();
         $this->certificates->convergeRouteRouter($route, $router);
-        $this->caddy->convergeRoute($router, $route);
-        $this->dns->convergeRoute($route);
+        $this->caddy->converge($router);
+        $this->dns->converge();
     }
 }

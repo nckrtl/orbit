@@ -76,6 +76,7 @@ it('converges a generated private development Route when Node TLD reconciliation
             'router-caddy',
             'url:https://feature.acme.next.test',
             'dns-publication',
+            'prepare-cleanup',
             'cleanup',
             'url:https://feature.acme.next.test',
             'workload-verify',
@@ -237,6 +238,30 @@ it('records Router replacement failure, restores the old Router, and retries the
     'router-caddy',
     'dns-publication',
 ]);
+
+it('stores which Routers serve the Router sites before each Router build, restore, and cleanup', function (): void {
+    [$cluster, , , $current, $replacement] = cluster_router_replacement_route();
+    $projector = bind_cluster_router_replacement_projection();
+    $projector->failures = ['dns-publication' => 1];
+    $both = [$current->id, $replacement->id];
+    sort($both);
+
+    expect(fn () => app(SetClusterRouterAction::class)->execute($cluster, $replacement))
+        ->toThrow(RuntimeConvergenceException::class, 'Injected dns-publication failure.');
+
+    $projector->failures = [];
+    app(SetClusterRouterAction::class)->execute($cluster, $replacement);
+
+    expect(array_map(
+        static fn (array $serving): string => $serving['step'].':'.implode(',', $serving['routers']),
+        $projector->serving,
+    ))->toBe([
+        'router-caddy:'.implode(',', $both),
+        "restore:{$current->id}",
+        'router-caddy:'.implode(',', $both),
+        "cleanup:{$replacement->id}",
+    ]);
+});
 
 it('records Router replacement database failure after publication and retries forward', function (): void {
     [$cluster, $route, $member, $current, $replacement] = cluster_router_replacement_route();
@@ -459,6 +484,7 @@ it('converges a same-domain Cluster scope change on one Route and restores after
             'router-caddy',
             'url:https://old.example.test',
             'dns-publication',
+            'prepare-cleanup',
             'cleanup',
             'url:https://old.example.test',
             'workload-verify',
@@ -500,6 +526,67 @@ it('converges a same-domain Cluster scope change on one Route and restores after
         ->toBeNull()
         ->and($this->events->values)
         ->toContain('workload-certificate', 'router-certificate');
+});
+
+it('stores a placement change on the Route and restores after DNS publication with DNS first', function (): void {
+    $route = route_domain_change_route(laravel: false);
+    $cluster = Cluster::query()->create(['name' => 'placement', 'state' => 'active', 'tld' => 'cluster.test']);
+    $router = Node::query()->create([
+        'name' => 'placement-router',
+        'status' => LifecycleStatus::Active,
+        'platform' => 'linux',
+        'architecture' => 'x86_64',
+        'public_ssh_host' => '192.0.2.31',
+        'wireguard_ip' => '10.44.0.31',
+        'user' => 'orbit',
+    ]);
+    $router->update(['cluster_id' => $cluster->id]);
+    $router->roles()->create(['cluster_id' => $cluster->id, 'role' => RoleName::Router, 'status' => LifecycleStatus::Active]);
+    $placement = new RoutePlacement(nodeId: null, clusterId: $cluster->id, effectiveTld: 'cluster.test');
+    DB::unprepared(<<<SQL
+        CREATE TRIGGER route_placement_cutover_failure
+        BEFORE UPDATE OF cluster_id ON routes
+        WHEN NEW.cluster_id = {$cluster->id} AND NEW.replacement_step = 'database-cutover'
+        BEGIN
+            SELECT RAISE(ABORT, 'Injected placement cutover failure.');
+        END
+        SQL);
+
+    expect(fn () => app(ConvergeRouteAction::class)->execute($route, $route->domain, placement: $placement))
+        ->toThrow(QueryException::class);
+
+    $restored = $route->refresh();
+
+    // The candidate placement is stored from `workload-caddy`. The restore after `dns-published`
+    // publishes DNS for the current placement while both placements still serve, then clears the
+    // transition and builds.
+    expect($restored->cluster_id)->toBeNull()
+        ->and($restored->transition_cluster_id)->toBeNull()
+        ->and($restored->replacement_step)->toBe(RouteReplacementStep::Reserved)
+        ->and($restored->failed_step)->toBe('database-cutover')
+        ->and($this->events->placementStates)->toBe([
+            "workload-caddy:cluster=-,transition={$cluster->id},step=workload-certificate",
+            "rollback-dns:cluster=-,transition={$cluster->id},step=dns-published",
+            'rollback-dns:cluster=-,transition=-,step=reserved',
+        ])
+        ->and($this->events->values)->toContain('rollback-caddy', 'rollback-certificates');
+
+    DB::unprepared('DROP TRIGGER route_placement_cutover_failure');
+    $this->events->placementStates = [];
+    $moved = app(ConvergeRouteAction::class)->execute($restored, $restored->domain, placement: $placement);
+
+    // Cutover swaps the placements; cleanup issues the live certificates before it stores its step,
+    // and clears the old placement only once it has built and removed the old certificates.
+    expect($moved->cluster_id)->toBe($cluster->id)
+        ->and($moved->transition_cluster_id)->toBeNull()
+        ->and($moved->transition_node_id)->toBeNull()
+        ->and($moved->replacement_step)->toBeNull()
+        ->and($this->events->placementStates)->toBe([
+            "workload-caddy:cluster=-,transition={$cluster->id},step=workload-certificate",
+            "prepare-cleanup:cluster={$cluster->id},transition=-,step=database-cutover",
+            "cleanup:cluster={$cluster->id},transition=-,step=cleanup",
+        ])
+        ->and(Route::query()->whereKey($route->id)->value('transition_node_id'))->toBeNull();
 });
 
 it('applies proposed Cluster placement on a generated domain replacement', function (): void {
@@ -651,6 +738,7 @@ it('prepares every projection and Laravel URL before DNS then cuts over and clea
             'router-caddy',
             'url:https://next.example.test',
             'dns-publication',
+            'prepare-cleanup',
             'cleanup',
             'url:https://next.example.test',
             'workload-verify',
@@ -707,6 +795,7 @@ it('synchronizes the production candidate environment before DNS and preserves t
             'router-caddy',
             'environment:candidate',
             'dns-publication',
+            'prepare-cleanup',
             'cleanup',
             'environment:candidate',
             'workload-verify',
@@ -809,6 +898,7 @@ it('restarts a failed replacement from its first step because rollback removed i
             'workload-verify',
             'router-caddy',
             'dns-publication',
+            'prepare-cleanup',
             'cleanup',
             'workload-verify',
         ]);
@@ -923,10 +1013,12 @@ it('exposes activating and retiring Routes through one cutover transition', func
 
     $replacement = Route::query()->where('domain', 'next.example.test')->sole();
 
+    // Cleanup issued the live certificates and stored its step before the failure, so every
+    // later build renders the live scopes.
     expect($replacement->status)
         ->toBe(RouteStatus::Activating)
         ->and($replacement->replacement_step)
-        ->toBe(RouteReplacementStep::DatabaseCutover)
+        ->toBe(RouteReplacementStep::Cleanup)
         ->and($replacement->failed_step)
         ->toBe('cleanup')
         ->and($route->refresh()->status)
@@ -1116,6 +1208,7 @@ it('prepares public Ingress after Router Caddy and activates the handler only af
             'dns-publication',
             'public-activated',
             'ingress-firewall',
+            'prepare-cleanup',
             'cleanup',
             'environment:candidate',
             'workload-verify',
@@ -1722,6 +1815,12 @@ final class RouteDomainChangeEvents
 
     /** @var list<?RouteStatus> The replacement's stored status each time rollback republishes Caddy. */
     public array $rollbackCaddyStatuses = [];
+
+    /** @var list<?string> The stored step when cleanup issues the live certificates and when it builds. */
+    public array $cleanupSteps = [];
+
+    /** @var list<string> Each build, DNS publication, and cleanup with the Route's stored transition cluster and step. */
+    public array $placementStates = [];
 }
 
 final class RouteDomainChangeProjectorFake implements RouteDomainProjector
@@ -1740,6 +1839,7 @@ final class RouteDomainChangeProjectorFake implements RouteDomainProjector
 
     public function prepareWorkloadCaddy(AppInstance $appInstance, Route $current, Route $candidate): void
     {
+        $this->placement('workload-caddy', $current);
         $this->event('workload-caddy');
     }
 
@@ -1798,14 +1898,24 @@ final class RouteDomainChangeProjectorFake implements RouteDomainProjector
         $this->event('dns-publication');
     }
 
+    public function prepareCleanup(AppInstance $appInstance, Route $route): void
+    {
+        $this->placement('prepare-cleanup', $route);
+        $this->events->cleanupSteps[] = Route::query()->find($route->id)?->replacement_step?->value;
+        $this->event('prepare-cleanup');
+    }
+
     public function cleanup(AppInstance $appInstance, Route $route): void
     {
+        $this->placement('cleanup', $route);
+        $this->events->cleanupSteps[] = Route::query()->find($route->id)?->replacement_step?->value;
         $this->events->cleanupDomains[] = "cleanup:{$route->domain}";
         $this->event('cleanup');
     }
 
     public function rollbackDns(Route $route): void
     {
+        $this->placement('rollback-dns', $route);
         $this->event('rollback-dns');
     }
 
@@ -1818,6 +1928,18 @@ final class RouteDomainChangeProjectorFake implements RouteDomainProjector
     public function rollbackCertificates(AppInstance $appInstance, Route $route): void
     {
         $this->event('rollback-certificates');
+    }
+
+    private function placement(string $event, Route $route): void
+    {
+        $stored = Route::query()->find($route->id);
+        $this->events->placementStates[] = sprintf(
+            '%s:cluster=%s,transition=%s,step=%s',
+            $event,
+            $stored?->cluster_id ?? '-',
+            $stored?->transition_cluster_id ?? '-',
+            $stored?->replacement_step?->value ?? '-',
+        );
     }
 
     private function event(string $event): void

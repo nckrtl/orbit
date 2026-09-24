@@ -41,18 +41,20 @@ final readonly class NativeDevelopmentRouteProjector implements AppInstanceTrans
     {
         $appInstance->loadMissing('node');
         $route->loadMissing('cluster.routerAssignment.node');
+        // Creation stores the publication record before its first build renders the Route.
+        $route->publishSites();
 
         $this->ssh->execute(
             $appInstance->node,
             new DevelopmentCaddyAccessCommand()->command(
-                new AppDevSiteRepository()->forNode($appInstance->node, $route),
+                new AppDevSiteRepository()->forNode($appInstance->node),
             ),
             step: 'source-access',
             errorCode: 'app-dev.source_access_failed',
         );
-        $this->php->convergeRoute($appInstance->node, $route);
+        $this->php->converge($appInstance->node);
         $this->certificates->convergeAppInstance($appInstance, $route);
-        $this->caddy->convergeRoute($appInstance->node, $route);
+        $this->caddy->converge($appInstance->node);
 
         $router = $route->cluster?->routerAssignment?->node;
 
@@ -65,7 +67,7 @@ final readonly class NativeDevelopmentRouteProjector implements AppInstanceTrans
         }
 
         if ($router instanceof Node && $router->is($appInstance->node)) {
-            $this->dns->convergeRoute($route);
+            $this->dns->converge();
 
             return;
         }
@@ -74,11 +76,11 @@ final readonly class NativeDevelopmentRouteProjector implements AppInstanceTrans
             $this->certificates->convergeRouteRouter($route, $router);
             $this->convergeLanFirewall($appInstance, $route, $router);
             $this->verifyWorkloadLeaf($appInstance, $route, $router);
-            $this->caddy->convergeRoute($router, $route);
+            $this->caddy->converge($router);
         }
 
         // DNS is deliberately last. A failed earlier projection is never reachable by name.
-        $this->dns->convergeRoute($route);
+        $this->dns->converge();
     }
 
     public function prepareWorkloadCertificate(AppInstance $appInstance, Route $current, Route $candidate): void
@@ -140,7 +142,7 @@ final readonly class NativeDevelopmentRouteProjector implements AppInstanceTrans
     public function prepareWorkloadCaddy(AppInstance $appInstance, Route $current, Route $candidate): void
     {
         $appInstance->loadMissing('node');
-        $this->caddy->convergeHostnameChange($appInstance->node, $candidate);
+        $this->caddy->converge($appInstance->node);
     }
 
     public function prepareRouterCertificate(AppInstance $appInstance, Route $current, Route $candidate): void
@@ -175,7 +177,7 @@ final readonly class NativeDevelopmentRouteProjector implements AppInstanceTrans
         $router = $this->router($appInstance, $candidate);
 
         if ($router instanceof Node) {
-            $this->caddy->convergeHostnameChange($router, $candidate);
+            $this->caddy->converge($router);
         }
     }
 
@@ -223,16 +225,17 @@ final readonly class NativeDevelopmentRouteProjector implements AppInstanceTrans
 
     public function publishDns(Route $current, Route $candidate): void
     {
-        $this->dns->convergeHostnameChange($candidate);
+        $this->dns->converge();
     }
 
     /**
      * Cleanup runs after cutover, so `$route` is the Route the Node now serves. Both the live
      * certificate and the staging scopes are named after it: a certificate issued for the retiring
      * domain would leave the served host without a matching leaf, and Caddy would fall back to
-     * automatic HTTPS for a private Orbit domain.
+     * automatic HTTPS for a private Orbit domain. The live certificates exist before the Route's
+     * stored step makes its sites name them.
      */
-    public function cleanup(AppInstance $appInstance, Route $route): void
+    public function prepareCleanup(AppInstance $appInstance, Route $route): void
     {
         $appInstance->loadMissing('node');
         $route->loadMissing('cluster.routerAssignment.node');
@@ -242,16 +245,52 @@ final readonly class NativeDevelopmentRouteProjector implements AppInstanceTrans
         if ($router instanceof Node) {
             $this->certificates->convergeRouteRouter($route, $router);
         }
+    }
 
+    /**
+     * The stored step now renders the live scopes and no second placement, so each build drops the
+     * staging and old sites before their certificates are removed.
+     */
+    public function cleanup(AppInstance $appInstance, Route $route): void
+    {
+        $appInstance->loadMissing('node');
+        $route->loadMissing(['cluster.routerAssignment.node', 'transitionCluster.routerAssignment.node']);
+        $router = $this->routeRouter($route);
+        $built = [$appInstance->node];
         $this->caddy->converge($appInstance->node);
 
         if ($router instanceof Node && ! $router->is($appInstance->node)) {
             $this->caddy->converge($router);
+            $built[] = $router;
         }
 
         $this->certificates->removeHostnameChange($appInstance, $route);
-        $this->removeRetiringRouterCertificate($route, [$appInstance->node, $router]);
+        $this->removeOldPlacementRouterCertificate($route, $built);
+        $this->removeRetiringRouterCertificate($route, $built);
         $this->dns->converge();
+    }
+
+    /**
+     * A placement change leaves the Route's live Router leaf on the Router of its old placement.
+     * That Router is built without the old placement before its leaf is removed.
+     *
+     * @param  list<Node>  $built
+     */
+    private function removeOldPlacementRouterCertificate(Route $route, array $built): void
+    {
+        $oldRouter = $route->transitionCluster?->routerAssignment?->node;
+
+        if (! $route->hasPlacementTransition() || ! $oldRouter instanceof Node) {
+            return;
+        }
+
+        if (! collect($built)->contains(static fn (Node $node): bool => $node->is($oldRouter))) {
+            $this->caddy->converge($oldRouter);
+        }
+
+        if (! $this->usesCertificate($oldRouter, "route-{$route->id}-router")) {
+            $this->certificates->removeRouteRouter($route, $oldRouter);
+        }
     }
 
     /**
@@ -278,7 +317,7 @@ final readonly class NativeDevelopmentRouteProjector implements AppInstanceTrans
      * served it, which is not the new Router when the change also moved the Route to another
      * Cluster. That Router is republished without the retiring site before its leaf is removed.
      *
-     * @param  list<?Node>  $published
+     * @param  list<Node>  $published
      */
     private function removeRetiringRouterCertificate(Route $route, array $published): void
     {
@@ -293,7 +332,7 @@ final readonly class NativeDevelopmentRouteProjector implements AppInstanceTrans
             return;
         }
 
-        if (! collect($published)->contains(static fn (?Node $node): bool => $node?->is($router) === true)) {
+        if (! collect($published)->contains(static fn (Node $node): bool => $node->is($router))) {
             $this->caddy->converge($router);
         }
 

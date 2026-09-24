@@ -6,9 +6,7 @@ namespace App\Infrastructure\AppDev;
 
 use App\Domain\AppDev\AppDevCaddyManager;
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
-use App\Models\AppInstance;
 use App\Models\Node;
-use App\Models\Route;
 
 final readonly class RemoteAppDevCaddyManager implements AppDevCaddyManager
 {
@@ -25,37 +23,9 @@ final readonly class RemoteAppDevCaddyManager implements AppDevCaddyManager
         $this->owner()->run(fn () => $this->convergeSites($node));
     }
 
-    /**
-     * @param  array<int, int>  $routerOverrides
-     */
-    public function convergeRoute(Node $node, Route $route, array $routerOverrides = []): void
+    private function convergeSites(Node $node): void
     {
-        $this->owner()->run(fn () => $this->convergeSites($node, $route, routerOverrides: $routerOverrides));
-    }
-
-    public function convergeUnavailableRoute(Node $node, Route $route, AppInstance $appInstance): void
-    {
-        $this->owner()->run(fn () => $this->convergeSites($node, $route, $appInstance));
-    }
-
-    public function convergeHostnameChange(Node $node, Route $candidate): void
-    {
-        $this->owner()->run(fn () => $this->convergeSites($node, additionalRoute: $candidate));
-    }
-
-    /**
-     * @param  array<int, int>  $routerOverrides
-     */
-    private function convergeSites(
-        Node $node,
-        ?Route $pendingRoute = null,
-        ?AppInstance $unavailableInstance = null,
-        ?Route $additionalRoute = null,
-        array $routerOverrides = [],
-    ): void {
-        $configuration = $this->renderer->render(
-            $this->sites->forNode($node, $pendingRoute, $unavailableInstance, $additionalRoute, $routerOverrides),
-        );
+        $configuration = $this->renderer->render($this->sites->forNode($node));
         $version = bin2hex(random_bytes(8));
         $this->ssh->execute(
             $node,

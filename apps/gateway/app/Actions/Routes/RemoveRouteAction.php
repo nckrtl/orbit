@@ -137,16 +137,20 @@ final readonly class RemoveRouteAction
         }
     }
 
+    /**
+     * Removal clears the publication record before the build that withdraws the Route's sites,
+     * and the Route leaves the authoritative states with it.
+     */
     private function beginRemoval(Route $route): void
     {
-        if ($route->status === RouteStatus::Retiring) {
+        if ($route->status === RouteStatus::Retiring && ! $route->sites_published) {
             return;
         }
 
         DB::transaction(function () use ($route): void {
             $locked = Route::query()->lockForUpdate()->findOrFail($route->id);
 
-            if ($locked->status === RouteStatus::Retiring) {
+            if ($locked->status === RouteStatus::Retiring && ! $locked->sites_published) {
                 $route->setRawAttributes($locked->refresh()->getAttributes(), true);
 
                 return;
@@ -154,6 +158,7 @@ final readonly class RemoveRouteAction
 
             $locked->update([
                 'status' => RouteStatus::Retiring,
+                'sites_published' => false,
             ]);
             $route->setRawAttributes($locked->refresh()->getAttributes(), true);
         });
