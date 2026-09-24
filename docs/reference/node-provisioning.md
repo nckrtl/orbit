@@ -77,7 +77,7 @@ Converging a role on a Node that still carries the archive package upgrades it i
 
 [`orbit doctor`](/cli/doctor) reports a Node whose Caddy is below the floor as `role.caddy_version_unsupported`, with the constraint as the expected value and the installed release as the observed one. Doctor never repairs; `orbit node:role:add <node> <role> --converge` does.
 
-The Gateway machine installs Caddy the same way. Gateway bootstrap and Gateway web convergence run the Caddy source step on the Gateway machine before its first Caddy build. A Gateway that still runs the archive package upgrades on its next web convergence.
+The Gateway machine installs Caddy the same way. Gateway bootstrap and Gateway web convergence (`php artisan orbit:gateway-web`) run the Caddy source step and the `wg-quick@orbit` ordering on the Gateway machine through local `sudo`, before any other Gateway web step and before its first Caddy build. A Gateway that still runs the archive package upgrades on its next bootstrap or web convergence. A failure stops at the `gateway-caddy-install` step with `gateway.caddy_install_failed` and leaves the live Caddy configuration unchanged.
 
 ## Converge an existing Node
 

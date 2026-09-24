@@ -21,14 +21,21 @@ final readonly class NativeGatewayWebConverger implements GatewayWebConverger
         private NativeGatewayCertificatePublisher $certificatePublisher,
         private NativeGatewayFpmConverger $fpm,
         private NativeGatewayCaddyConverger $caddy,
+        private NativeGatewayCaddyInstaller $caddyInstaller,
         private string $orbitHome,
         private string $checkoutPath,
         private string $webRoot,
         private RuntimeHibernatorConverger $hibernator,
     ) {}
 
+    /**
+     * Installs Caddy first: the checkout, web directory, and certificate steps grant the `caddy`
+     * group access, and the Caddy step validates with the installed release.
+     */
     public function converge(string $hostname, string $wireguardIp): void
     {
+        $this->checkout->validate();
+        $this->caddyInstaller->install();
         $this->checkout->converge();
         $this->webDirectory->converge();
         $certificate = $this->certificates->issue($hostname, $wireguardIp);

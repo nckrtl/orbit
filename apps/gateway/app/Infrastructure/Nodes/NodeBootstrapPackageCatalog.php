@@ -25,7 +25,7 @@ final class NodeBootstrapPackageCatalog
     public function forRole(Node $node, RoleName $role): array
     {
         return match ($role) {
-            RoleName::Gateway => ['ca-certificates'],
+            RoleName::Gateway => ['ca-certificates', 'caddy'],
             RoleName::Vpn => ['dnsmasq', 'openssl'],
             RoleName::Router => ['caddy', 'openssl'],
             RoleName::Ingress => [],

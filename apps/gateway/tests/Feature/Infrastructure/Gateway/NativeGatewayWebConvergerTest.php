@@ -12,9 +12,11 @@ use App\Infrastructure\Gateway\GatewayCheckoutAccessConverger;
 use App\Infrastructure\Gateway\GatewayFpmConfigRenderer;
 use App\Infrastructure\Gateway\GatewayWebDirectoryConverger;
 use App\Infrastructure\Gateway\NativeGatewayCaddyConverger;
+use App\Infrastructure\Gateway\NativeGatewayCaddyInstaller;
 use App\Infrastructure\Gateway\NativeGatewayCertificatePublisher;
 use App\Infrastructure\Gateway\NativeGatewayFpmConverger;
 use App\Infrastructure\Gateway\NativeGatewayWebConverger;
+use App\Infrastructure\Nodes\CaddyPackageSourceProgram;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
@@ -448,36 +450,45 @@ it('preserves live FPM disk and does not reload when complete effective validati
     }
 });
 
-it('orders the gateway Caddy unit after the managed WireGuard interface', function (): void {
+it('installs Caddy from the pinned source and orders it after WireGuard before any Caddy step', function (): void {
     [$converger, $processes, , $orbitHome] = gateway_web_converger();
 
     try {
         $converger->converge('gateway.orbit', '10.44.0.1');
         $calls = Collection::make($processes->calls);
         $commands = $calls->map(static fn (ProcessInvocation $invocation): array => $invocation->arguments);
+        $installIndex = $commands->search(['sudo', 'bash', '-seu', '--', ...CaddyPackageSourceProgram::arguments()]);
+        $orderingIndex = $commands->search(['sudo', 'bash', '-seu', '--', 'caddy', '/etc/systemd/system']);
+        $firstCaddyGroupIndex = $commands->search(
+            static fn (array $arguments): bool => in_array(needle: 'orbit:caddy', haystack: $arguments, strict: true),
+        );
+        $validationIndex = $commands->search(
+            static fn (array $arguments): bool => array_slice(array: $arguments, offset: 0, length: 3) === ['sudo', 'caddy', 'validate'],
+        );
         $reloadIndex = $commands->search(['sudo', 'systemctl', 'reload-or-restart', 'caddy']);
-        $orderingIndex = $commands->search(
-            ['sudo', 'bash', '-seu', '--', 'caddy', '/etc/systemd/system'],
-        );
-        $ordering = $calls->firstOrFail(
-            static fn (ProcessInvocation $invocation): bool => (
-                $invocation->arguments === [
-                    'sudo',
-                    'bash',
-                    '-seu',
-                    '--',
-                    'caddy',
-                    '/etc/systemd/system',
-                ]
-            ),
-        );
+        $install = $calls->get($installIndex);
+        $ordering = $calls->get($orderingIndex);
         $orderingInput = $ordering->input ?? '';
 
-        expect($reloadIndex)
+        expect($installIndex)
             ->toBeInt()
             ->and($orderingIndex)
-            ->toBeInt()
-            ->toBeGreaterThan($reloadIndex)
+            ->toBe($installIndex + 1)
+            ->and($firstCaddyGroupIndex)
+            ->toBeGreaterThan($orderingIndex)
+            ->and($validationIndex)
+            ->toBeGreaterThan($orderingIndex)
+            ->and($reloadIndex)
+            ->toBeGreaterThan($validationIndex)
+            ->and($commands->filter(
+                static fn (array $arguments): bool => $arguments === ['sudo', 'bash', '-seu', '--', 'caddy', '/etc/systemd/system'],
+            ))
+            ->toHaveCount(1)
+            ->and($install->input)
+            ->toBe(CaddyPackageSourceProgram::render())
+            ->toContain('-o Dpkg::Options::=--force-confold')
+            ->and($install->timeout)
+            ->toBe(900.0)
             ->and($orderingInput)
             ->toContain(
                 'managed=$directory/orbit-vpn.conf',
@@ -491,6 +502,65 @@ it('orders the gateway Caddy unit after the managed WireGuard interface', functi
                 strict: true,
             ))
             ->toBe("# Managed by Orbit.\n[Unit]\nAfter=wg-quick@orbit.service\nWants=wg-quick@orbit.service\n");
+    } finally {
+        new Filesystem()->deleteDirectory($orbitHome);
+    }
+});
+
+it('repeats the same idempotent install step on every web convergence', function (): void {
+    [$converger, $processes, , $orbitHome] = gateway_web_converger();
+
+    try {
+        $converger->converge('gateway.orbit', '10.44.0.1');
+        $first = array_slice(array: $processes->calls, offset: 0, length: 3);
+        $processes->calls = [];
+        $converger->converge('gateway.orbit', '10.44.0.1');
+        $second = array_slice(array: $processes->calls, offset: 0, length: 3);
+
+        expect($second)
+            ->toEqual($first)
+            ->and($first[0]->arguments)
+            ->toBe(['sudo', 'bash', '-seu', '--', '/home/orbit/orbit-gateway'])
+            ->and($first[1]->arguments)
+            ->toBe(['sudo', 'bash', '-seu', '--', ...CaddyPackageSourceProgram::arguments()])
+            ->and($first[2]->arguments)
+            ->toBe(['sudo', 'bash', '-seu', '--', 'caddy', '/etc/systemd/system']);
+    } finally {
+        new Filesystem()->deleteDirectory($orbitHome);
+    }
+});
+
+it('stops before any Caddy or certificate step when Caddy cannot be installed', function (): void {
+    [$converger, $processes, $issuer, $orbitHome, $hibernator] = gateway_web_converger(failure: 'caddy-install');
+
+    try {
+        expect(fn () => $converger->converge('gateway.orbit', '10.44.0.1'))
+            ->toThrow(function (NodeProvisioningException $exception): void {
+                expect($exception->step)
+                    ->toBe('gateway-caddy-install')
+                    ->and($exception->errorCode)
+                    ->toBe('gateway.caddy_install_failed')
+                    ->and($exception->result?->stderr)
+                    ->toBe('The caddy candidate does not come from the pinned Orbit source.');
+            });
+
+        $commands = Collection::make($processes->calls)
+            ->map(static fn (ProcessInvocation $invocation): array => $invocation->arguments);
+
+        expect($commands->last())
+            ->toBe(['sudo', 'bash', '-seu', '--', ...CaddyPackageSourceProgram::arguments()])
+            ->and($commands->contains(['sudo', 'bash', '-seu', '--', 'caddy', '/etc/systemd/system']))
+            ->toBeFalse()
+            ->and($commands->contains(
+                static fn (array $arguments): bool => in_array(needle: 'orbit:caddy', haystack: $arguments, strict: true)
+                    || in_array(needle: 'caddy', haystack: array_slice(array: $arguments, offset: 1, length: 1), strict: true)
+                    || end($arguments) === '/etc/caddy/Caddyfile',
+            ))
+            ->toBeFalse()
+            ->and($issuer->calls)
+            ->toBeEmpty()
+            ->and($hibernator->calls)
+            ->toBe(0);
     } finally {
         new Filesystem()->deleteDirectory($orbitHome);
     }
@@ -722,6 +792,13 @@ function gateway_web_converger(?string $failure = null, string $checkoutPath = '
             $arguments = $invocation->arguments;
 
             if (
+                $this->failure === 'caddy-install'
+                && $arguments === ['sudo', 'bash', '-seu', '--', ...CaddyPackageSourceProgram::arguments()]
+            ) {
+                return new CommandResult(1, '', 'The caddy candidate does not come from the pinned Orbit source.', 2, false);
+            }
+
+            if (
                 $this->failure === 'fpm-validation'
                 && array_slice(array: $arguments, offset: 0, length: 4) === [
                     'sudo',
@@ -773,6 +850,7 @@ function gateway_web_converger(?string $failure = null, string $checkoutPath = '
             certificatePublisher: new NativeGatewayCertificatePublisher($processes, $orbitHome),
             fpm: new NativeGatewayFpmConverger($processes),
             caddy: new NativeGatewayCaddyConverger($processes),
+            caddyInstaller: new NativeGatewayCaddyInstaller($processes),
             orbitHome: $orbitHome,
             checkoutPath: $checkoutPath,
             webRoot: '/home/orbit/web',

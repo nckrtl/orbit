@@ -47,7 +47,7 @@ describe('Caddy package source', function (): void {
         'app production' => [RoleName::AppProd, true],
         'websocket' => [RoleName::WebSocket, true],
         'analytics' => [RoleName::Analytics, true],
-        'gateway' => [RoleName::Gateway, false],
+        'gateway' => [RoleName::Gateway, true],
         'VPN' => [RoleName::Vpn, false],
         'database' => [RoleName::Database, false],
         'metrics' => [RoleName::Metrics, false],
