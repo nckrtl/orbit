@@ -3776,6 +3776,24 @@
             ]
         },
         {
+            "path": "docs/decisions/0146-confirm-the-catalog-that-the-private-dns-listener-serves.md",
+            "title": "ADR 0146: Confirm the catalog that the private DNS listener serves",
+            "kind": "decision",
+            "components": [
+                "apps/docs",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Gateway",
+                "Node",
+                "proxycli"
+            ],
+            "governing_adrs": [
+                "0092",
+                "0146"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -3948,7 +3966,8 @@
                 "0142",
                 "0143",
                 "0144",
-                "0145"
+                "0145",
+                "0146"
             ]
         },
         {
@@ -4981,7 +5000,9 @@
             "path": "docs/reference/private-dns.md",
             "title": "Private DNS",
             "kind": "reference",
-            "components": [],
+            "components": [
+                "apps/gateway"
+            ],
             "concepts": [
                 "Cluster",
                 "Gateway",
@@ -4993,7 +5014,8 @@
             ],
             "governing_adrs": [
                 "0061",
-                "0062"
+                "0062",
+                "0146"
             ]
         },
         {
