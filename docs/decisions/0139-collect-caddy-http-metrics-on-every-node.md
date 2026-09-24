@@ -27,7 +27,7 @@ Collected metrics also help debugging on Nodes that Prometheus does not scrape. 
 - `CaddyGlobalOptions` renders `metrics { per_host }` after `auto_https disable_certs`. Every Orbit Caddy publisher writes that block, so every Node that runs Caddy collects per-host HTTP metrics.
 - The service metrics fragment contains only the Orbit marker and the WireGuard scrape site. It opens no global block.
 - Scrape targets, the scrape listener, firewall rules, and Prometheus host filtering stay as ADR 0099 describes. Only a selected Ingress Node with a published public Route exposes Caddy metrics to Prometheus.
-- Per-host collection needs Caddy 2.9.0, which is the release floor from [ADR 0138](/decisions/0138-opt-public-ingress-sites-into-caddy-certificate-automation). Service metrics no longer checks the Caddy version or renders a fallback for older releases.
+- Caddy supports `per_host` from release 2.9.0, which is the floor from [ADR 0138](/decisions/0138-opt-public-ingress-sites-into-caddy-certificate-automation). Service metrics no longer checks the Caddy version or renders a fallback for older releases.
 
 ## Rejected alternatives
 
