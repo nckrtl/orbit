@@ -23,4 +23,32 @@ enum RouteReplacementStep: string
     case DatabaseCutover = 'database-cutover';
     case PublicActivated = 'public-activated';
     case Cleanup = 'cleanup';
+
+    /** The order in which a Route change completes its steps. */
+    public function rank(): int
+    {
+        return match ($this) {
+            self::Reserved => 0,
+            self::WorkloadCertificate => 1,
+            self::WorkloadCaddy => 2,
+            self::RouterCertificate => 3,
+            self::FirewallPolicy => 4,
+            self::WorkloadVerified => 5,
+            self::RouterCaddy => 6,
+            self::IngressCertificate => 7,
+            self::IngressCaddy => 8,
+            self::PublicEdgeVerified => 9,
+            self::LaravelUrl, self::EnvironmentSynchronized => 10,
+            self::DnsPublished => 11,
+            self::DatabaseCutover => 12,
+            self::PublicActivated => 13,
+            self::IngressFirewall => 14,
+            self::Cleanup => 15,
+        };
+    }
+
+    public function hasReached(self $step): bool
+    {
+        return $this->rank() >= $step->rank();
+    }
 }

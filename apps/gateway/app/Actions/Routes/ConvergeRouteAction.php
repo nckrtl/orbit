@@ -470,12 +470,14 @@ final readonly class ConvergeRouteAction
                     );
                 }
 
+                // A failed replacement has withdrawn its sites and may have removed their
+                // certificates, so the identical request restarts it from its first step.
                 if ($existing->status === RouteStatus::Failed) {
                     $existing->update([
                         'status' => RouteStatus::Pending,
                         'failed_step' => null,
                         'error_code' => null,
-                        'replacement_step' => $existing->replacement_step ?? RouteReplacementStep::Reserved,
+                        'replacement_step' => RouteReplacementStep::Reserved,
                     ]);
                 }
 
@@ -767,10 +769,18 @@ final readonly class ConvergeRouteAction
     /** @param list<AppInstance> $targets */
     private function failBeforeCutoverPlacement(Route $route, Route $retired, array $targets): void
     {
+        // The rollback removes the candidate certificates, so a retry restarts from the first step.
+        Route::query()
+            ->whereKey($route->id)
+            ->update(['replacement_step' => RouteReplacementStep::Reserved->value]);
+
         try {
             foreach ($targets as $appInstance) {
-                $this->projection->rollbackCertificates($appInstance, $route);
                 $this->projection->rollbackCaddy($appInstance, $route);
+            }
+
+            foreach ($targets as $appInstance) {
+                $this->projection->rollbackCertificates($appInstance, $route);
 
                 if ($appInstance->placedOnAppProd()) {
                     $this->routeEnvironment->synchronizeRouteDomain(
@@ -878,10 +888,20 @@ final readonly class ConvergeRouteAction
 
         $old = Route::query()->find((int) $replacement->replaces_route_id);
 
+        // Stored state changes first: a failed replacement renders no site, so the Caddy publications
+        // below withdraw the candidate before its certificates are removed. It stays failed when
+        // the rollback cannot finish.
+        Route::query()
+            ->whereKey($replacement->id)
+            ->update(['status' => RouteStatus::Failed->value]);
+
         try {
             foreach ($targets as $appInstance) {
-                $this->projection->rollbackCertificates($appInstance, $replacement);
                 $this->projection->rollbackCaddy($appInstance, $replacement);
+            }
+
+            foreach ($targets as $appInstance) {
+                $this->projection->rollbackCertificates($appInstance, $replacement);
 
                 if ($appInstance->placedOnAppProd()) {
                     $this->routeEnvironment->synchronizeRouteDomain(
@@ -910,9 +930,6 @@ final readonly class ConvergeRouteAction
                 $locked->delete();
             });
         } catch (Throwable) {
-            Route::query()
-                ->whereKey($replacement->id)
-                ->update(['status' => RouteStatus::Failed->value]);
         }
     }
 
@@ -949,24 +966,6 @@ final readonly class ConvergeRouteAction
 
     private function forwardRank(?RouteReplacementStep $step): int
     {
-        return match ($step) {
-            RouteReplacementStep::Reserved => 0,
-            RouteReplacementStep::WorkloadCertificate => 1,
-            RouteReplacementStep::WorkloadCaddy => 2,
-            RouteReplacementStep::RouterCertificate => 3,
-            RouteReplacementStep::FirewallPolicy => 4,
-            RouteReplacementStep::WorkloadVerified => 5,
-            RouteReplacementStep::RouterCaddy => 6,
-            RouteReplacementStep::IngressCertificate => 7,
-            RouteReplacementStep::IngressCaddy => 8,
-            RouteReplacementStep::PublicEdgeVerified => 9,
-            RouteReplacementStep::LaravelUrl, RouteReplacementStep::EnvironmentSynchronized => 10,
-            RouteReplacementStep::DnsPublished => 11,
-            RouteReplacementStep::DatabaseCutover => 12,
-            RouteReplacementStep::PublicActivated => 13,
-            RouteReplacementStep::IngressFirewall => 14,
-            RouteReplacementStep::Cleanup => 15,
-            default => -1,
-        };
+        return $step?->rank() ?? -1;
     }
 }
