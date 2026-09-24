@@ -85,7 +85,7 @@ On each reload, Caddy opens a new listening socket and closes the old one. With 
 
 The step applies a candidate file with `sysctl --load` before it installs the file, so a kernel that refuses the setting fails the `caddy-package-source` step and leaves no file behind. When the file already matches, the step leaves it untouched but applies it again, so a changed live value returns to `1`. The step refuses a live file that is a symlink, not a regular file, or not `root:root` mode `0644`. Doctor does not check the setting; converge the role to repair it.
 
-The setting does not help HTTP/1.1-only clients. When the old Caddy configuration has already accepted a new HTTP/1.1 connection, a request it reads after the reload starts gets an empty reply. HTTP/2 clients, such as browsers and curl, do not see this.
+The setting does not help HTTP/1.1 clients. When the old Caddy configuration has already accepted a new HTTP/1.1 connection, a request it reads after the reload starts gets an empty reply. Orbit's own CLI and PHP SDK use HTTP/1.1, so a command can fail this way while the Gateway's Caddy reloads; run it again. HTTP/2 clients, such as browsers and curl, do not see this.
 
 [`orbit doctor`](/cli/doctor) reports a Node whose Caddy is below the floor as `role.caddy_version_unsupported`, with the constraint as the expected value and the installed release as the observed one. Doctor never repairs; `orbit node:role:add <node> <role> --converge` does.
 
