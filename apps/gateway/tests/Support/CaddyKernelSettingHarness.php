@@ -109,7 +109,9 @@ final class CaddyKernelSettingHarness
             done
 
             destination=${args[${#args[@]}-1]}
-            printf 'install %s\n' "${destination##*/}" >> "${HARNESS_CALL_LOG}"
+            if [ "${args[0]}" != -d ]; then
+              printf 'install %s\n' "${destination##*/}" >> "${HARNESS_CALL_LOG}"
+            fi
             exec /usr/bin/install "${args[@]}"
             BASH);
         $this->writeShim('stat', <<<'BASH'
