@@ -125,7 +125,7 @@ Doctor checks the agent in the `node` family on every eligible Node. It checks o
 | `node.agent_inactive` | The unit exists but is not active. |
 | `node.agent_outdated` | The binary's checksum differs from the pinned checksum for the Node's architecture. |
 
-Run `orbit node:add <node>` to repair any of them.
+Run `orbit node:add <node>` to repair any of them. `node:add` refuses a Node that owns Instances; repair such a Node by converging one of its roles with `orbit node:role:add <node> <role> --converge`.
 
 ## Releases
 

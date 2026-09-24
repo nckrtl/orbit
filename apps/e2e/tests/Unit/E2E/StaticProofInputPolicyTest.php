@@ -20,6 +20,11 @@ describe('StaticProofInputPolicy', function (): void {
     it('classifies the phase-one repository boundaries explicitly', function (string $path, string $expected): void {
         expect(new StaticProofInputPolicy()->classify($path)->value)->toBe($expected);
     })->with([
+        'agent manifest' => ['apps/agent/Cargo.toml', 'runtime'],
+        'agent dependency lock' => ['apps/agent/Cargo.lock', 'runtime'],
+        'agent implementation' => ['apps/agent/src/main.rs', 'runtime'],
+        'agent support library' => ['apps/agent/src/lib.rs', 'runtime'],
+        'agent release check' => ['apps/agent/scripts/check-release-tag.sh', 'runtime'],
         'CLI runtime' => ['apps/cli/app/Commands/DoctorCommand.php', 'runtime'],
         'Gateway migration' => ['apps/gateway/database/migrations/example.php', 'runtime'],
         'E2E entrypoint' => ['bin/e2e-topology', 'runtime'],
@@ -47,6 +52,7 @@ describe('StaticProofInputPolicy', function (): void {
         'CLI design fixture' => ['apps/cli/design/Flows/NodeAddFlowCommand.php', 'non-runtime'],
         'SDK response fixture' => ['packages/php-sdk/fixtures/nodes/node-list/default.json', 'non-runtime'],
         'optional gateway proof script' => ['apps/e2e/resources/proofs/rename-and-relocate-gateway-role.sh', 'non-runtime'],
+        'Node agent lifecycle proof record' => ['apps/e2e/resources/proofs/node-agent-lifecycle.md', 'non-runtime'],
         'unknown governed path' => ['apps/cli/extensions/Extension.php', 'indeterminate'],
         'unknown root path' => ['unexpected.txt', 'indeterminate'],
     ]);
