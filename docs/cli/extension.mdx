@@ -58,7 +58,7 @@ An unknown slug fails with `extension.unknown`. A configuration file that is mal
 
 ## orbit extension:disable
 
-Disable one extension. Its commands disappear from `orbit list`, and running one directly fails with `extension.disabled`.
+Disable one extension. Its commands disappear from `orbit list`, and running one directly fails with `extension.disabled`. The command changes only local state. It never calls the Gateway.
 
 ```bash
 orbit extension:disable <extension> [--json]
@@ -77,7 +77,7 @@ Disabling an already disabled extension succeeds. JSON returns `extension` and `
 <Note>
 Disabling `herdr` does not stop, remove, or change anything the extension created on a Node. A Herdr session keeps running after you disable the `herdr` extension; use `herdr:session:destroy` first if you want it gone.
 
-Disabling `proxycli` also disables the fleet feature when the CLI can reach the Gateway: the collector Process stops, `collector.cli-proxy-api.orbit` is withdrawn, and the web quota UI hides. Use `proxycli:disable` when you want that fleet stop without hiding the local commands.
+Disabling `proxycli` only hides the `proxycli:*` commands on this machine. The collector keeps running for the fleet. To stop the fleet feature, run [`proxycli:disable`](/cli/proxycli#orbit-proxyclidisable) while the extension is enabled.
 </Note>
 
 ## Related

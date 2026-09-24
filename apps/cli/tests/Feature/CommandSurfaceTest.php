@@ -887,7 +887,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
                 'json' => false,
             ],
         ],
-        'proxycli:disable' => [[], ['json' => false]],
+        'proxycli:disable' => [[], ['yes' => false, 'json' => false]],
         'proxycli:enable' => [[], [
             'node' => null,
             'cache-connection' => null,

@@ -6,13 +6,8 @@ namespace App\Commands\Extension;
 
 use App\Commands\GatewayCommand;
 use App\Exceptions\GatewayConfigException;
-use App\Repositories\GatewayConfigRepository;
 use App\Services\Extensions\LocalExtensionState;
-use App\Services\GatewayConnectorFactory;
 use App\Support\Console\ProgressState;
-use Orbit\Sdk\GatewayApiException;
-use Orbit\Sdk\Requests\ProxyCli\DisableProxyCliRequest;
-use Orbit\Sdk\Responses\ProxyCli\ProxyCliStatusResponse;
 
 final class DisableExtensionCommand extends GatewayCommand
 {
@@ -22,11 +17,8 @@ final class DisableExtensionCommand extends GatewayCommand
     #[\Override]
     protected $description = 'Disable an optional Orbit CLI extension.';
 
-    public function handle(
-        LocalExtensionState $extensions,
-        GatewayConfigRepository $repository,
-        GatewayConnectorFactory $factory,
-    ): int {
+    public function handle(LocalExtensionState $extensions): int
+    {
         $extension = $this->argument('extension');
 
         if (! $extensions->known($extension)) {
@@ -35,10 +27,6 @@ final class DisableExtensionCommand extends GatewayCommand
 
         $progress = $this->progressDisplay("Extension: {$extension}");
         $progress->admit('disable', 'Disable extension', 'Disabling extension', 'Disabled extension');
-
-        if ($extension === 'proxycli' && ! $this->disableFleetFeature($repository, $factory)) {
-            return self::FAILURE;
-        }
 
         try {
             $progress->during('disable', fn () => $extensions->disable($extension));
@@ -57,40 +45,5 @@ final class DisableExtensionCommand extends GatewayCommand
         }
 
         return self::SUCCESS;
-    }
-
-    private function disableFleetFeature(
-        GatewayConfigRepository $repository,
-        GatewayConnectorFactory $factory,
-    ): bool {
-        try {
-            $profile = $repository->active();
-        } catch (GatewayConfigException $exception) {
-            $this->renderGatewayFailure(
-                $exception->isPrivacyFailure() ? GatewayConfigException::CONFIG_NOT_PRIVATE : 'gateway.config_invalid',
-                $exception->isPrivacyFailure() ? $exception->getMessage() : 'Orbit gateway configuration is invalid.',
-            );
-
-            return false;
-        }
-
-        if ($profile === null) {
-            return true;
-        }
-
-        try {
-            $response = $this->sendOrThrow(
-                $factory->make($profile),
-                new DisableProxyCliRequest,
-                ProxyCliStatusResponse::class,
-            );
-        } catch (GatewayApiException $exception) {
-            $code = $exception->errorCode() ?? 'gateway.request_failed';
-            $this->renderGatewayFailure($code, $exception->getMessage(), $exception->requestId());
-
-            return false;
-        }
-
-        return $response instanceof ProxyCliStatusResponse;
     }
 }

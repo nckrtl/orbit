@@ -12,7 +12,9 @@ use Orbit\Sdk\Responses\ProxyCli\ProxyCliStatusResponse;
 final class DisableProxyCliCommand extends ProxyCliCommand
 {
     #[\Override]
-    protected $signature = 'proxycli:disable {--json : Return machine-readable JSON}';
+    protected $signature = 'proxycli:disable
+        {--yes : Confirm the fleet-wide stop without a prompt}
+        {--json : Return machine-readable JSON}';
 
     #[\Override]
     protected $description = 'Stop the collector and withdraw collector.cli-proxy-api.orbit.';
@@ -21,6 +23,14 @@ final class DisableProxyCliCommand extends ProxyCliCommand
     {
         if (($blocked = $this->guardExtension()) !== null) {
             return $blocked;
+        }
+
+        if (! $this->confirmAction(
+            'Disable ProxyCli for the whole fleet? This stops the collector, withdraws collector.cli-proxy-api.orbit and its certificate, and deletes the stored management key and read tokens.',
+            'ProxyCli disable cancelled.',
+            requiredMessage: 'Non-interactive ProxyCli disable requires --yes.',
+        )) {
+            return self::FAILURE;
         }
 
         $connector = $this->gatewayConnector($repository, $factory);

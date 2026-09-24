@@ -100,14 +100,15 @@ The Python runtime decodes CLIProxyAPI's wrapped status, headers, and JSON-strin
 
 ## Disable
 
-Disable the fleet feature when you want collection and the Quota UI to stop. The local CLI extension can stay enabled if you still need the commands later.
+Disable the fleet feature when you want collection and the Quota UI to stop for every client.
 
 ```bash
 orbit proxycli:disable
-orbit extension:disable proxycli
 ```
 
-`proxycli:disable` stops and removes the Process, withdraws the Caddy site, certificate, and DNS record, and hides the web quota UI. `extension:disable proxycli` also calls that fleet disable when the CLI can reach the Gateway, then hides the local commands. Valkey data and the Redis connection stay until the operator removes them.
+`proxycli:disable` asks a default-No question that names the fleet effect. Noninteractive and JSON calls need `--yes`. It stops and removes the Process, withdraws the Caddy site, certificate, and DNS record, and hides the web quota UI. It also deletes the stored management key and the read and control tokens, so enabling again needs the key file and gives CodexBar a new read token. Valkey data and the Redis connection stay until the operator removes them.
+
+`extension:disable proxycli` only hides the local commands on one machine. It never calls the Gateway and leaves the collector serving. [ADR 0148](/decisions/0148-keep-extension-commands-local-and-confirm-the-proxycli-fleet-stop) records this split.
 
 ## Clients
 
