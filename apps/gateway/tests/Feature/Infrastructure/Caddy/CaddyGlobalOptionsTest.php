@@ -7,6 +7,7 @@ use App\Infrastructure\AppDev\AppDevCaddyPublisher;
 use App\Infrastructure\AppProd\AppProdCaddyPublisher;
 use App\Infrastructure\Caddy\CaddyGlobalOptions;
 use App\Infrastructure\Metrics\MetricsCaddyPublisher;
+use App\Infrastructure\Metrics\ServiceMetricsConfigRenderer;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
@@ -54,6 +55,7 @@ describe('carried global options guard', function (): void {
         'an empty file' => '',
         'a CRLF site block' => "example.test {\r\n    respond ok\r\n}\r\n",
         'a site block after a trailing-comment line' => "example.test { # site\n    respond \"a # b\"\n}\n",
+        'the Orbit service metrics fragment' => new ServiceMetricsConfigRenderer()->caddy('10.44.0.4', '10.44.0.7'),
     ]);
 
     it('names the fragment in the published version when Orbit already carries it', function (): void {

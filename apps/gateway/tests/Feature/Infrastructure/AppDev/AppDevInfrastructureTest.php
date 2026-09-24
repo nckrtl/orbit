@@ -1213,7 +1213,7 @@ it('retires only the exact package-default caddyfile while preserving modified c
             ->not
             ->toHaveKey('unmanaged.caddy')
             ->and($defaultResult->liveMainAfter)
-            ->toBe("{\n    auto_https disable_certs\n}\nimport ".$harness->etcCaddyPath('orbit-versions/test-version/fragments/*.caddy')."\n");
+            ->toBe("{\n    auto_https disable_certs\n    metrics {\n        per_host\n    }\n}\nimport ".$harness->etcCaddyPath('orbit-versions/test-version/fragments/*.caddy')."\n");
         expect(fileperms($harness->etcCaddyPath('orbit-locks')) & 0o777)->toBe(0o700);
         expect(fileperms($harness->etcCaddyPath('orbit-locks/caddy.lock')) & 0o777)->toBe(0o600);
 
