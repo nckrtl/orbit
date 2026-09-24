@@ -8,13 +8,14 @@ use App\Domain\Tools\SemverVersionNormalizer;
 use App\Domain\Tools\VersionConstraint;
 
 /**
- * A hibernating app-dev site renders `log_skip`, which the Caddy project added in 2.8.0, so every
- * Caddy publication fails on a Node below that release. ADR 0100 records the floor and the pinned
- * package source that keeps a Node above it.
+ * A hibernating app-dev site renders `log_skip`, which the Caddy project added in 2.8.0, and a public
+ * Ingress site renders `tls force_automate`, added in 2.9.0, so every Caddy publication fails on a
+ * Node below that release. ADR 0100 records the floor and the pinned package source that keeps a
+ * Node above it; ADR 0138 raised it to 2.9.0.
  */
 final readonly class CaddyRelease
 {
-    public const string MINIMUM = '2.8.0';
+    public const string MINIMUM = '2.9.0';
 
     public static function constraint(): string
     {

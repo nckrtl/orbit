@@ -6,6 +6,7 @@ use App\Domain\AppDev\DevelopmentServerEndpoint;
 use App\Domain\Hibernation\RuntimeHibernation;
 use App\Infrastructure\AppDev\AppDevCaddyConfigRenderer;
 use App\Infrastructure\AppDev\AppDevSite;
+use App\Infrastructure\Caddy\CaddyGlobalOptions;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 
@@ -114,7 +115,7 @@ it('binds a public Ingress proxy without an https prefix and preserves forwarded
     ]));
 
     expect($configuration)
-        ->toContain('shop.example.test {')
+        ->toContain("shop.example.test {\n    bind 0.0.0.0\n    tls force_automate\n")
         ->toContain('reverse_proxy https://10.10.0.20')
         ->toContain('header_up Host shop.example.test')
         ->toContain('header_up X-Forwarded-Proto https')
@@ -124,6 +125,47 @@ it('binds a public Ingress proxy without an https prefix and preserves forwarded
         ->not->toContain('https://shop.example.test {')
         ->not->toContain('cert.pem')
         ->not->toContain('key.pem');
+});
+
+it('automates the public Ingress certificate alone under the Node-wide certificate default', function (): void {
+    $sites = new AppDevCaddyConfigRenderer()->render(collect([
+        new AppDevSite(
+            nodeId: 3,
+            nodeAddress: '10.44.0.3',
+            scope: 'route-9-ingress',
+            checkoutPath: '',
+            documentRoot: '',
+            phpVersion: null,
+            domain: 'shop.example.com',
+            upstreamAddresses: ['10.10.0.20'],
+            certificateScope: 'route-9-ingress',
+            publicListener: true,
+            preserveForwardedIdentity: true,
+        ),
+        new AppDevSite(
+            nodeId: 3,
+            nodeAddress: '10.44.0.3',
+            scope: 'route-10',
+            checkoutPath: '',
+            documentRoot: '',
+            phpVersion: null,
+            domain: 'shop.example.org',
+            upstreamAddresses: ['10.10.0.20'],
+            certificateScope: 'route-10',
+        ),
+    ]));
+
+    $adapted = caddy_adapt(CaddyGlobalOptions::render().$sites);
+    expect($adapted->succeeded())->toBeTrue();
+
+    /** @var array{apps: array{http: array{servers: array<string, array{automatic_https?: array{disable_certificates?: bool}}>}, tls: array{certificates: array{automate?: list<string>}}}} $json */
+    $json = json_decode($adapted->stdout, true, flags: JSON_THROW_ON_ERROR);
+    $server = array_values($json['apps']['http']['servers'])[0];
+
+    // Caddy skips automatic HTTPS certificates for the whole server, and manages only the names on
+    // the automate loader. A private site with a public-looking name never reaches a public CA.
+    expect($server['automatic_https']['disable_certificates'] ?? false)->toBeTrue()
+        ->and($json['apps']['tls']['certificates']['automate'] ?? [])->toBe(['shop.example.com']);
 });
 
 it('measures a development site without waking it or counting the request as activity', function (): void {
@@ -425,6 +467,7 @@ describe('analytics tracking site', function (): void {
         expect($configuration)->toBe(<<<'CADDY'
             analytics.shop.example.com {
                 bind 0.0.0.0
+                tls force_automate
                 handle /js/* {
                     reverse_proxy http://10.44.0.40:8000
                 }

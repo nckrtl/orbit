@@ -18,9 +18,27 @@ Each publication writes a new version under `/etc/caddy/orbit-versions/<version>
 import /etc/caddy/orbit-versions/<version>/fragments/*.caddy
 ```
 
-The global options block is Orbit's. `auto_https disable_certs` keeps Caddy's HTTP-to-HTTPS redirects but stops Caddy from obtaining certificates on its own; each site serves the certificate Orbit publishes for it.
+The global options block is Orbit's. `auto_https disable_certs` keeps Caddy's HTTP-to-HTTPS redirects but stops Caddy from obtaining certificates on its own. A private site serves the Orbit CA certificate Orbit publishes for it. A public Ingress site opts back in, as [public Ingress certificates](#public-ingress-certificates) describes.
 
 Every role keeps its sites in its own fragment, such as `app-dev.caddy` or `metrics.caddy`. A publisher replaces only its own fragment and copies every other fragment into the new version. It runs `caddy validate` on the candidate before it switches the symlink, and it restores the previous file or symlink when Caddy fails to reload.
+
+## Public Ingress certificates
+
+A public Ingress site gets its certificate from Let's Encrypt, not from Orbit. Its site block carries `tls force_automate`:
+
+```caddy
+shop.example.com {
+    bind 0.0.0.0
+    tls force_automate
+    reverse_proxy https://10.0.0.20 {
+        # Router forwarding settings
+    }
+}
+```
+
+`force_automate` makes Caddy manage the certificate for that hostname even though the global block disables certificate management. Caddy uses its default issuers, Let's Encrypt first, and renews the certificate on its own. The HTTP-01 challenge needs public DNS for the hostname and port 80 open on the Ingress Node. Orbit opens the Ingress firewall while the Cluster has a live public Route. Private sites never carry `force_automate`, so Caddy never asks a public CA for a private hostname, even when a pinned certificate does not match its site. `force_automate` needs Caddy 2.9.0 or newer, which is the [release floor](/reference/node-provisioning#package-sources). [ADR 0138](/decisions/0138-opt-public-ingress-sites-into-caddy-certificate-automation) records this rule.
+
+[`orbit doctor`](/cli/doctor) reports `instance.public_tls_mismatch` when the live public site pins an Orbit CA leaf, or when its block lacks `tls force_automate` while the live Caddyfile disables certificate management. Converge the public Route to publish the site again.
 
 ## Adopted Caddyfile
 
