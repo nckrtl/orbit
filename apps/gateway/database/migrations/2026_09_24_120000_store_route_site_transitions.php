@@ -19,6 +19,8 @@ return new class extends Migration
             $table->boolean('sites_published')->default(false);
             $table->unsignedBigInteger('transition_node_id')->nullable();
             $table->unsignedBigInteger('transition_cluster_id')->nullable();
+            // When private DNS last moved away from the placement the transition withdraws.
+            $table->timestamp('transition_dns_moved_at')->nullable();
         });
 
         // Active, activating, and retiring Routes serve their sites today. The Route contract trigger
@@ -59,7 +61,7 @@ return new class extends Migration
         }
 
         Schema::table('routes', static function (Blueprint $table): void {
-            $table->dropColumn(['sites_published', 'transition_node_id', 'transition_cluster_id']);
+            $table->dropColumn(['sites_published', 'transition_node_id', 'transition_cluster_id', 'transition_dns_moved_at']);
         });
     }
 };

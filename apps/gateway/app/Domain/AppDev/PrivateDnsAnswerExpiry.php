@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Domain\AppDev;
 
+use Carbon\CarbonInterface;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Sleep;
 
 /**
@@ -27,5 +29,29 @@ final readonly class PrivateDnsAnswerExpiry
     public function wait(): void
     {
         Sleep::for(self::WithdrawalGraceSeconds)->seconds();
+    }
+
+    /** The whole seconds of the grace period left after a name moved at `$movedAt`. */
+    public function remainingAfter(?CarbonInterface $movedAt): int
+    {
+        if (! $movedAt instanceof CarbonInterface) {
+            return self::WithdrawalGraceSeconds;
+        }
+
+        return max(0, self::WithdrawalGraceSeconds - (Carbon::now()->getTimestamp() - $movedAt->getTimestamp()));
+    }
+
+    /** Waits until the grace period after the latest of the given moves has passed. */
+    public function waitAfter(?CarbonInterface ...$movedAt): void
+    {
+        $remaining = array_reduce(
+            $movedAt,
+            fn (int $longest, ?CarbonInterface $moved): int => max($longest, $this->remainingAfter($moved)),
+            0,
+        );
+
+        if ($remaining > 0) {
+            Sleep::for($remaining)->seconds();
+        }
     }
 }

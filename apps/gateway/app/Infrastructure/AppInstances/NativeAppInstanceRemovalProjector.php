@@ -165,27 +165,44 @@ final readonly class NativeAppInstanceRemovalProjector implements AppInstanceRem
     /**
      * Stored state changes first: the Route leaves the authoritative states and drops its
      * publication record, so the builds withdraw its sites before their certificates are removed
-     * and the Route row is deleted.
+     * and the Route row is deleted. A placement change that waits for its withdrawal also leaves
+     * sites and certificates on its second placement, so removal withdraws those too.
      */
     private function removeRouteProjection(Route $route, AppInstance $appInstance): void
     {
+        $route->loadMissing(['transitionCluster.routerAssignment.node']);
+        $transitionRouter = $route->transitionCluster?->routerAssignment?->node;
+        $hadTransition = $route->hasPlacementTransition();
         DB::transaction(static function () use ($route): void {
             $locked = Route::query()->lockForUpdate()->findOrFail($route->id);
             $locked->update(['status' => RouteStatus::Retiring, 'sites_published' => false]);
             $route->setRawAttributes($locked->refresh()->getAttributes(), true);
         });
         $router = $route->cluster?->routerAssignment?->node;
+        $routers = collect([$router, $transitionRouter])
+            ->filter(static fn (?Node $node): bool => $node instanceof Node && ! $node->is($appInstance->node))
+            ->unique(static fn (Node $node): int => $node->id)
+            ->values();
         $this->caddy->converge($appInstance->node);
 
-        if ($router instanceof Node && ! $router->is($appInstance->node)) {
-            $this->caddy->converge($router);
+        foreach ($routers as $serving) {
+            $this->caddy->converge($serving);
         }
 
         $this->certificates->removeAppInstance($appInstance);
+
+        if ($hadTransition) {
+            $this->certificates->removeHostnameChange($appInstance, $route);
+        }
+
         $this->metrics?->reconcile();
 
-        if ($router instanceof Node && ! $router->is($appInstance->node)) {
-            $this->certificates->removeRouteRouter($route, $router);
+        foreach ($routers as $serving) {
+            $this->certificates->removeRouteRouter($route, $serving);
+
+            if ($hadTransition && ! ($router instanceof Node && $serving->is($router))) {
+                $this->certificates->removeRouteRouterHostnameChange($route, $serving);
+            }
         }
 
         if ($appInstance->placedOnAppDev()) {

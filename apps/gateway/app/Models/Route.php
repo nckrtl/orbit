@@ -9,6 +9,7 @@ use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
+use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -36,6 +37,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property bool $sites_published
  * @property int|null $transition_node_id
  * @property int|null $transition_cluster_id
+ * @property CarbonImmutable|null $transition_dns_moved_at
  * @property-read App|null $app
  * @property-read Node|null $node
  * @property-read Cluster|null $cluster
@@ -80,6 +82,7 @@ final class Route extends Model
         'sites_published',
         'transition_node_id',
         'transition_cluster_id',
+        'transition_dns_moved_at',
     ];
 
     /**
@@ -216,6 +219,7 @@ final class Route extends Model
             'replacement_step' => RouteReplacementStep::class,
             'target_set_intent' => 'array',
             'sites_published' => 'boolean',
+            'transition_dns_moved_at' => 'immutable_datetime',
         ];
     }
 }

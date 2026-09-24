@@ -56,7 +56,7 @@ uses(TestCase::class, RefreshDatabase::class)
         app()->instance(TaskCheckRunner::class, new FakeTaskCheckRunner);
         Classification::fake();
         // Transitions wait for private DNS answers to expire; tests assert those waits instead.
-        Sleep::fake();
+        Sleep::fake(syncWithCarbon: true);
     })
     ->in('Feature');
 

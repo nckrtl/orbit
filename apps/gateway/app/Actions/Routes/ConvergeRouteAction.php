@@ -69,7 +69,7 @@ final readonly class ConvergeRouteAction
                 return Route::query()->with('targets')->findOrFail($pending->routeId);
             }
 
-            $this->dnsAnswers->wait();
+            $this->dnsAnswers->waitAfter(Route::query()->find($pending->routeId)?->transition_dns_moved_at);
 
             if ($pending->restores()) {
                 $this->owned($targetIds, fn (): ?Route => $this->restorePlacementOwned($pending->routeId));
@@ -99,7 +99,7 @@ final readonly class ConvergeRouteAction
             return;
         }
 
-        $this->dnsAnswers->wait();
+        $this->dnsAnswers->waitAfter(...$pending->map(static fn (Route $route) => $route->transition_dns_moved_at)->all());
 
         foreach ($pending as $route) {
             $this->owned($this->targetIds($route), fn (): ?Route => $this->completePlacementOwned($route->id));
@@ -153,6 +153,15 @@ final readonly class ConvergeRouteAction
             return $route;
         }
 
+        // Another operation moved private DNS again during the wait; it withdraws after its own
+        // grace period, so a later move never shortens it.
+        if (
+            $route->replacement_step === RouteReplacementStep::DatabaseCutover
+            && $this->dnsAnswers->remainingAfter($route->transition_dns_moved_at) > 0
+        ) {
+            return $route;
+        }
+
         return $this->withdrawPlacement(
             $route,
             $this->candidateWithPlacement($route, new RoutePlacement(
@@ -177,6 +186,7 @@ final readonly class ConvergeRouteAction
             || ! $route->hasPlacementTransition()
             || $route->failed_step === null
             || $this->forwardRank($route->replacement_step) >= $this->forwardRank(RouteReplacementStep::DatabaseCutover)
+            || $this->dnsAnswers->remainingAfter($route->transition_dns_moved_at) > 0
         ) {
             return $route;
         }
@@ -859,6 +869,7 @@ final readonly class ConvergeRouteAction
             $locked->update([
                 'transition_node_id' => $locked->node_id,
                 'transition_cluster_id' => $locked->cluster_id,
+                'transition_dns_moved_at' => null,
                 'node_id' => $placement->nodeId,
                 'cluster_id' => $placement->clusterId,
                 'replacement_step' => RouteReplacementStep::DatabaseCutover,
@@ -869,6 +880,12 @@ final readonly class ConvergeRouteAction
         });
     }
 
+    /** The grace period before a withdrawal counts from the latest DNS move of the Route. */
+    private function recordDnsMoved(Route $route): void
+    {
+        Route::query()->whereKey($route->id)->update(['transition_dns_moved_at' => now()]);
+    }
+
     private function storeTransition(Route $route, ?int $nodeId, ?int $clusterId): void
     {
         DB::transaction(function () use ($route, $nodeId, $clusterId): void {
@@ -876,6 +893,7 @@ final readonly class ConvergeRouteAction
             $locked->update([
                 'transition_node_id' => $nodeId,
                 'transition_cluster_id' => $clusterId,
+                'transition_dns_moved_at' => null,
             ]);
             $route->setRawAttributes($locked->refresh()->getAttributes(), true);
         });
@@ -903,6 +921,7 @@ final readonly class ConvergeRouteAction
 
             // Private DNS moves to the current placement before the old one stops serving.
             $this->projection->publishDns($route, $candidate);
+            $this->recordDnsMoved($route);
         } catch (Throwable $exception) {
             $this->recordFailure($route, 'cleanup', $this->errorCode($exception));
 
@@ -948,6 +967,7 @@ final readonly class ConvergeRouteAction
                 $locked->update([
                     'transition_node_id' => null,
                     'transition_cluster_id' => null,
+                    'transition_dns_moved_at' => null,
                     'replacement_step' => $locked->publication === RoutePublication::Public
                         ? RouteReplacementStep::IngressFirewall
                         : null,
@@ -988,6 +1008,8 @@ final readonly class ConvergeRouteAction
                 return;
             }
 
+            $this->recordDnsMoved($route);
+
             throw new PlacementWithdrawalPending($route->id, $failure);
         }
 
@@ -1004,6 +1026,7 @@ final readonly class ConvergeRouteAction
                 'replacement_step' => RouteReplacementStep::Reserved->value,
                 'transition_node_id' => null,
                 'transition_cluster_id' => null,
+                'transition_dns_moved_at' => null,
             ]);
         $route->refresh();
 

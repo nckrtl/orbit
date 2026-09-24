@@ -599,6 +599,7 @@ it('converges a same-domain Cluster scope change on one Route and restores after
 });
 
 it('stores a placement change on the Route and restores after DNS publication with DNS first', function (): void {
+    $this->freezeTime();
     $route = route_domain_change_route(laravel: false);
     $cluster = Cluster::query()->create(['name' => 'placement', 'state' => 'active', 'tld' => 'cluster.test']);
     $router = Node::query()->create([
@@ -700,6 +701,49 @@ it('keeps both placements serving when private DNS cannot move before cleanup', 
         ->and($route->replacement_step)->toBeNull()
         ->and($this->events->values)->toBe(['owner', 'prepare-cleanup', 'dns-publication', 'owner', 'cleanup', 'workload-verify']);
     Sleep::assertSleptTimes(1);
+});
+
+it('counts the grace period from the latest DNS move when another change reverses the placement during the wait', function (): void {
+    $this->freezeTime();
+    $route = route_domain_change_route(laravel: false);
+    $nodeId = $route->node_id;
+    $cluster = route_placement_cluster('placement-race', '10.44.0.34');
+    $forward = new RoutePlacement(nodeId: null, clusterId: $cluster->id, effectiveTld: 'cluster.test');
+    $back = new RoutePlacement(nodeId: $nodeId, clusterId: null, effectiveTld: null);
+    $action = app(ConvergeRouteAction::class);
+    $moved = $action->execute($route, $route->domain, placement: $forward, deferPlacementWithdrawal: true);
+    $reversed = false;
+    // A reverse change cuts the Route back and moves private DNS while the first change waits.
+    Sleep::whenFakingSleep(static function () use (&$reversed, $action, $route, $back): void {
+        if ($reversed) {
+            return;
+        }
+
+        $reversed = true;
+        $action->execute($route->refresh(), $route->domain, placement: $back, deferPlacementWithdrawal: true);
+    });
+    $this->events->values = [];
+
+    $action->completePlacements([$moved]);
+
+    $waiting = $route->refresh();
+
+    expect($waiting->node_id)->toBe($nodeId)
+        ->and($waiting->transition_cluster_id)->toBe($cluster->id)
+        ->and($waiting->replacement_step)->toBe(RouteReplacementStep::DatabaseCutover)
+        ->and($this->events->values)->not->toContain('cleanup');
+
+    // The reverse change withdraws only after its own full grace period.
+    $action->completePlacements([$waiting]);
+
+    expect($route->refresh()->transition_cluster_id)->toBeNull()
+        ->and($route->node_id)->toBe($nodeId)
+        ->and($route->replacement_step)->toBeNull()
+        ->and($this->events->values)->toContain('cleanup');
+    Sleep::assertSequence([
+        Sleep::for(PrivateDnsAnswerExpiry::WithdrawalGraceSeconds)->seconds(),
+        Sleep::for(PrivateDnsAnswerExpiry::WithdrawalGraceSeconds)->seconds(),
+    ]);
 });
 
 it('keeps the candidate placement when the restore cannot move private DNS back', function (): void {
