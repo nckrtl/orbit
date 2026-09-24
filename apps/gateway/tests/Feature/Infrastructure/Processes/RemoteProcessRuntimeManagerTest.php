@@ -142,6 +142,7 @@ it('installs and manages a systemd process through fixed SSH argv', function ():
             ['sudo', 'systemctl', 'disable', '--now', $unit],
             ['sudo', 'rm', '-f', '--', $path],
             ['sudo', 'systemctl', 'daemon-reload'],
+            ['sudo', 'systemctl', 'reset-failed', $unit],
         ])
         ->and($this->ssh->commands[2]->input)
         ->toContain("X-Orbit-Process-ID={$process->id}")
@@ -1567,7 +1568,35 @@ it('removes an instance process after its role and resources enter removing stat
     expect($this->ssh->connections)
         ->each(fn ($connection) => $connection->user->toBe('nckrtl'))
         ->and($this->ssh->commands)
-        ->toHaveCount(5);
+        ->toHaveCount(6);
+});
+
+it('removes a systemd process whose unit has no failed record to reset', function (): void {
+    $process = runtime_manager_systemd_process($this->instance);
+    $unit = "orbit-process-{$process->id}-queue.service";
+    $path = "/etc/systemd/system/{$unit}";
+    $this->ssh->responses = [
+        process_runtime_result(),
+        process_runtime_result(stdout: "[Unit]\nX-Orbit-Process-ID={$process->id}\n"),
+        process_runtime_result(),
+        process_runtime_result(),
+        process_runtime_result(),
+        process_runtime_result(1, stderr: "Failed to reset failed state of unit {$unit}: Unit {$unit} not loaded."),
+    ];
+
+    $this->manager->remove($process);
+
+    expect(array_map(
+        static fn (RemoteCommand $command): array => $command->arguments,
+        $this->ssh->commands,
+    ))->toBe([
+        ['sudo', 'test', '-e', $path],
+        ['sudo', 'cat', '--', $path],
+        ['sudo', 'systemctl', 'disable', '--now', $unit],
+        ['sudo', 'rm', '-f', '--', $path],
+        ['sudo', 'systemctl', 'daemon-reload'],
+        ['sudo', 'systemctl', 'reset-failed', $unit],
+    ]);
 });
 
 it('derives the production removal target from persisted AppInstance identity', function (): void {

@@ -131,6 +131,7 @@ final readonly class NativeWebSocketRuntimeLifecycle implements WebSocketRuntime
                     fi
                     rm -f -- "/etc/systemd/system/$service.service"
                     systemctl daemon-reload || true
+                    systemctl reset-failed -- "$service.service" >/dev/null 2>&1 || true
                     if [ "$purge_data" = 1 ]; then
                         rm -rf -- "$install_path"
                     fi

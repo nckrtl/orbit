@@ -236,7 +236,17 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
             'process.remove_failed',
             target: $target,
         );
+        $this->resetFailedUnit($process, $target);
         $this->removeViteEnvironment($process, $target);
+    }
+
+    /**
+     * Clears the failed-unit record that systemd keeps after a crashed unit's file is removed.
+     * The command fails for a unit that is not failed or no longer loaded, so its result is ignored.
+     */
+    private function resetFailedUnit(#[SensitiveParameter] Process $process, ProcessTarget $target): void
+    {
+        $this->execute($process, ['sudo', 'systemctl', 'reset-failed', $this->systemd->unitName($process)], target: $target);
     }
 
     private function removeViteEnvironment(Process $process, ProcessTarget $target): void

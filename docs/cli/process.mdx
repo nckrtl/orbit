@@ -242,7 +242,7 @@ orbit process:logs 41 --lines=250
 
 ## orbit process:destroy
 
-Stop and remove the exact owned runtime artifacts of one Process, then delete its record. With `--app`, destroy one Project process definition by name.
+Stop and remove the exact owned runtime artifacts of one Process, then delete its record. For a systemd Process, the Gateway also resets the unit's failed state, so a crashed unit leaves no `failed` record behind. With `--app`, destroy one Project process definition by name.
 
 ```bash
 orbit process:destroy <process> [--app=APP] [--yes] [--json]

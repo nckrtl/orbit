@@ -353,6 +353,8 @@ final readonly class RemoteScheduleRuntimeManager implements ScheduleRuntimeMana
             fi
             rm -f -- "$timer_path" "$service_path" "$script_path"
             systemctl daemon-reload
+            systemctl reset-failed "$service" >/dev/null 2>&1 || true
+            systemctl reset-failed "$timer" >/dev/null 2>&1 || true
             [ ! -e "$timer_path" ] && [ ! -e "$service_path" ] && [ ! -e "$script_path" ]
             BASH;
     }

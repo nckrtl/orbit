@@ -138,6 +138,7 @@ it('retracts only the owned Herdr observer service and files', function (): void
         ->and($command->arguments[6])->toMatch('/\Aherdr-12-[a-f0-9]{16}\z/D')
         ->and($program)->toContain('systemctl disable --now "$unit_name"')
         ->and($program)->toContain('rm -f -- "$unit"')
+        ->and($program)->toContain('systemctl reset-failed "$unit_name" >/dev/null 2>&1 || true')
         ->and($program)->toContain('rm -rf -- "$directory"')
         ->and($program)->toContain('rm -f -- "$legacy_fragment"')
         ->and($program)->not->toContain('systemctl disable --now "$unit_name" >/dev/null 2>&1 || true')

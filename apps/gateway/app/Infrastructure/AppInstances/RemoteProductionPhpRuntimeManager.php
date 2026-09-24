@@ -971,6 +971,7 @@ final readonly class RemoteProductionPhpRuntimeManager implements ProductionPhpR
             rm -rf -- "$generated_directory"
             rm -f -- "$unit_path"
             systemctl daemon-reload
+            systemctl reset-failed "$service" >/dev/null 2>&1 || true
             if [ -e "$socket" ] || [ -L "$socket" ]; then
                 test -S "$socket"
                 test "$(stat -c '%U:%G' -- "$socket")" = "$user:caddy"

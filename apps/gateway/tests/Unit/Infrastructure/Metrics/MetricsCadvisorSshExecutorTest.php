@@ -162,7 +162,32 @@ it('removes the unit, service, firewall rule, and binary, in that order', functi
     $binaryIndex = array_search(['sudo', 'rm', '-f', '--', '/usr/local/bin/orbit-cadvisor'], $arguments, true);
 
     expect(is_int($removeIndex) && is_int($binaryIndex) && $removeIndex < $binaryIndex)->toBeTrue();
+    expect(array_slice($arguments, (int) $removeIndex, 3))->toBe([
+        ['sudo', 'rm', '-f', '--', '/etc/systemd/system/orbit-cadvisor.service'],
+        ['sudo', 'systemctl', 'daemon-reload'],
+        ['sudo', 'systemctl', 'reset-failed', 'orbit-cadvisor'],
+    ]);
     expect($ssh->configuration)->toBeNull()->and($ssh->serviceActive)->toBeFalse()->and($ssh->firewall)->toBeFalse();
+});
+
+it('completes removal when the cAdvisor unit has no failed record to reset', function (): void {
+    $ssh = new CadvisorStatefulSsh(
+        binaryChecksum: MetricsFootprint::CadvisorChecksumSha256,
+        configuration: cadvisorUnit('10.44.0.4'),
+        serviceActive: true,
+        firewall: true,
+        failArguments: ['sudo', 'systemctl', 'reset-failed', 'orbit-cadvisor'],
+    );
+
+    cadvisorExecutor($ssh)->remove(
+        cadvisorNode('app-prod', '10.44.0.4'),
+        cadvisorNode('metrics', '10.44.0.3'),
+    );
+
+    expect(array_map(static fn (RemoteCommand $command): array => $command->arguments, $ssh->commands))
+        ->toContain(['sudo', 'systemctl', 'reset-failed', 'orbit-cadvisor'], ['sudo', 'rm', '-f', '--', '/usr/local/bin/orbit-cadvisor'])
+        ->and($ssh->configuration)->toBeNull()
+        ->and($ssh->firewall)->toBeFalse();
 });
 
 it('refuses foreign unit ownership before any mutation', function (): void {

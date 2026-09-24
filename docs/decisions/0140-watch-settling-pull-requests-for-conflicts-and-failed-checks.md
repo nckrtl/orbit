@@ -31,6 +31,7 @@ GitHub reports a conflict in the pull request itself: `mergeable` is `false`, or
 - Problems produce one assistance reason. It starts with `The pull request needs attention: ` and has one sentence per problem, such as `It conflicts with main; merge main into the task branch and push.` or `Check Rust agent failed: <url>.`
 - The Gateway writes the reason and notifies Coder only when the reason differs from the stored one. The same problems on the next tick change nothing.
 - When the open pull request has no problems, the Gateway clears the assistance request only if its reason starts with that prefix. It leaves any other assistance request as it is, and it does not replace another request with its own.
+- When the pull request merges, the Gateway clears an assistance request with that prefix before it completes the group. A request with another cause stays. A completion failure still replaces the request with its own cleanup reason.
 - A GitHub failure while the Gateway reads the pull request or its check runs changes nothing on the group.
 - The App manifest requests `checks: read`, so a newly registered App has it.
 
@@ -48,7 +49,7 @@ GitHub reports a conflict in the pull request itself: `mergeable` is `false`, or
 - An existing App reports failed checks only after its owner grants the permission. Open the App settings on GitHub, set Permissions → Checks to Read-only, and save. Then accept the new permission on each installation. Until then, the Gateway reports conflicts only.
 - The Gateway reads the check runs of one head commit at most once a minute, and caches only check names and URLs. The read costs three GitHub requests, an installation lookup, the checks token, and the check run list, so an open settling pull request adds about 180 requests an hour. A re-run on the same commit shows within a minute; a push reads at once.
 - The Gateway reads up to 100 check runs per head commit. A failed check beyond that page is not reported.
-- A conflict request that is still stored when the pull request merges stays on the completed group.
+- A completed group keeps no pull request assistance request from before the merge. Another cause of assistance stays on the completed group until an operator clears it.
 
 ## Affects
 
