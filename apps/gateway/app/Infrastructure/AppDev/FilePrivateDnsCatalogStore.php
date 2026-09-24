@@ -91,7 +91,7 @@ final class FilePrivateDnsCatalogStore
      */
     private function confirm(string $signature): void
     {
-        if ($this->loadedPath === null) {
+        if ($this->loadedPath === null || ! is_dir(dirname($this->loadedPath)) || ! is_writable(dirname($this->loadedPath))) {
             return;
         }
 
