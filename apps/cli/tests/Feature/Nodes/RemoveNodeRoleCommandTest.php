@@ -231,6 +231,15 @@ it('requires the preview failure in json mode and sends no forced retry', functi
         'error' => [
             'code' => 'validation.failed',
             'message' => 'Use --force to remove this node role.',
+            'details' => [
+                'field' => 'force',
+                'reason' => 'destructive_consent_required',
+                'role' => 'app-dev',
+                'dependents' => [
+                    '1 development instance record',
+                    '1 workspace record',
+                ],
+            ],
             'request_id' => node_role_remove_request_id(),
         ],
     ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
@@ -287,6 +296,7 @@ it('requires the preview failure in non-interactive mode and sends no forced ret
     $this
         ->artisan('node:role:remove', ['node' => '7', 'role' => 'app-dev', '--no-interaction' => true])
         ->expectsOutputToContain('Use --force to remove this node role.')
+        ->expectsOutputToContain('reason: destructive_consent_required')
         ->expectsOutput('Request ID: '.node_role_remove_request_id())
         ->assertExitCode(1);
 

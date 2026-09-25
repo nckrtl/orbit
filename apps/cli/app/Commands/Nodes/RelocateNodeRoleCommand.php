@@ -158,11 +158,7 @@ final class RelocateNodeRoleCommand extends NodeCommand
         $progress->finish('Relocation requires consent.');
 
         if (! $this->consoleMode()->mayPrompt) {
-            return $this->renderGatewayFailure(
-                $exception->errorCode() ?? 'gateway.request_failed',
-                $exception->getMessage(),
-                $exception->requestId(),
-            );
+            return $this->renderApiFailure($exception);
         }
 
         if (! $this->confirmAction(

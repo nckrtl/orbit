@@ -128,11 +128,7 @@ final class RemoveNodeRoleCommand extends NodeCommand
         $progress->finish('Removal requires consent.');
 
         if (! $this->consoleMode()->mayPrompt) {
-            return $this->renderGatewayFailure(
-                $exception->errorCode() ?? 'gateway.request_failed',
-                $exception->getMessage(),
-                $exception->requestId(),
-            );
+            return $this->renderApiFailure($exception);
         }
 
         $dependents = $this->dependents($exception);
