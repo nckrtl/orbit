@@ -33,6 +33,7 @@ use App\Models\Node;
 use App\Models\Process;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Cache;
+use Tests\Support\TestToolchain;
 
 beforeEach(function (): void {
     $this->ssh = new ProcessRuntimeFakeSshExecutor;
@@ -2079,7 +2080,7 @@ final class ProcessRuntimeExecutingSshExecutor implements SshExecutor
             arguments: [
                 '/usr/bin/env',
                 '-i',
-                "PATH={$this->executableDirectory}:/usr/bin:/bin",
+                "PATH={$this->executableDirectory}:".TestToolchain::path(),
                 ...$command->arguments,
             ],
             protectedInput: $command->protectedInput,

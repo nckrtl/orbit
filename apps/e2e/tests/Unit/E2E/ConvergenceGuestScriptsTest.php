@@ -608,7 +608,7 @@ function metrics_publication_probe_fixture(bool $metricsAssigned): array
         $pdo->exec("INSERT INTO nodes VALUES (2, 'app-dev', 'active', '10.44.0.2')");
         $pdo->exec("INSERT INTO node_roles VALUES (2, 'app-dev', 'active'), (2, 'metrics', 'active')");
         $render = new Process([
-            '/usr/bin/php',
+            PHP_BINARY,
             '-r',
             'require $argv[1]; echo (new App\\Infrastructure\\Metrics\\MetricsPublicationRenderer)->caddy($argv[2], $argv[3]);',
             "{$sourceRoot}/apps/gateway/vendor/autoload.php",
@@ -666,7 +666,7 @@ function metrics_publication_probe_fixture(bool $metricsAssigned): array
             "{$root}/etc/caddy/orbit-metrics-cert-versions",
             "{$root}/etc/caddy/orbit-metrics-cert-current",
         ],
-        (string) file_get_contents(dirname(__DIR__, 3).'/resources/guest/verify-topology.sh'),
+        guestScriptSource('verify-topology.sh'),
     );
     file_put_contents("{$root}/verify.sh", $script);
     chmod("{$root}/verify.sh", 0o700);
@@ -821,7 +821,7 @@ function vpn_dns_probe_run(int $blockedTries): array
 
     $process = new Process([
         'bash',
-        dirname(__DIR__, 3).'/resources/guest/verify-topology.sh',
+        guestScriptPath('verify-topology.sh'),
         'https.gateway-internal',
         'readiness',
         str_repeat('a', 40),
@@ -934,7 +934,7 @@ describe('Gateway host prerequisite convergence', function () {
         $run = static function (string $probe, array $value) use ($root): Process {
             return new Process([
                 'bash',
-                dirname(__DIR__, 3).'/resources/guest/verify-topology.sh',
+                guestScriptPath('verify-topology.sh'),
                 $probe,
                 'proof',
                 str_repeat('a', 40),
@@ -1030,7 +1030,7 @@ function verifierWireguardFixture(): string
             "{$root}/home/orbit/.orbit/ssh/id_ed25519",
             "{$root}/home/orbit/.orbit/ssh/known_hosts",
         ],
-        (string) file_get_contents(dirname(__DIR__, 3).'/resources/guest/verify-topology.sh'),
+        guestScriptSource('verify-topology.sh'),
     );
     file_put_contents("{$root}/verify-topology.sh", $script);
     chmod("{$root}/verify-topology.sh", 0o700);
@@ -1086,7 +1086,7 @@ function appinstance_routes_probe_fixture(array $statuses, array $targets, array
     $script = str_replace(
         '/home/orbit/.orbit/gateway.sqlite',
         $db,
-        (string) file_get_contents(dirname(__DIR__, 3).'/resources/guest/verify-topology.sh'),
+        guestScriptSource('verify-topology.sh'),
     );
     file_put_contents("{$root}/verify-topology.sh", $script);
     chmod("{$root}/verify-topology.sh", 0o700);
@@ -1825,7 +1825,7 @@ describe('convergence guest scripts', function () {
     });
 
     it('enforces the verifier argument and output contract', function () {
-        $script = dirname(__DIR__, 3).'/resources/guest/verify-topology.sh';
+        $script = guestScriptPath('verify-topology.sh');
         $sha = str_repeat('a', 40);
         expect(new Process(['bash', $script], timeout: 5)->run())->not->toBe(0);
         foreach ([
@@ -1860,7 +1860,7 @@ describe('convergence guest scripts', function () {
         $sha = str_repeat('a', 40);
         $process = new Process([
             'bash',
-            dirname(__DIR__, 3).'/resources/guest/verify-topology.sh',
+            guestScriptPath('verify-topology.sh'),
             'vm.gateway.running',
             'readiness',
             $sha,
@@ -1887,7 +1887,7 @@ describe('convergence guest scripts', function () {
         chmod("{$root}/bin/systemctl", 0o700);
         $process = new Process([
             'bash',
-            dirname(__DIR__, 3).'/resources/guest/verify-topology.sh',
+            guestScriptPath('verify-topology.sh'),
             'vm.gateway.running',
             'readiness',
             str_repeat('a', 40),
@@ -1935,7 +1935,7 @@ describe('convergence guest scripts', function () {
             $script = str_replace(
                 '/home/orbit/orbit',
                 $repository,
-                file_get_contents(dirname(__DIR__, 3).'/resources/guest/verify-topology.sh'),
+                guestScriptSource('verify-topology.sh'),
             );
             file_put_contents("{$root}/verify.sh", $script);
             chmod("{$root}/verify.sh", 0o700);
@@ -1978,7 +1978,7 @@ describe('convergence guest scripts', function () {
         mkdir("{$root}/bin", 0o700, true);
         file_put_contents("{$root}/bin/systemctl", "#!/usr/bin/env bash\nprintf '%s\\n' \"\$SYSTEM_STATE\"\n");
         chmod("{$root}/bin/systemctl", 0o700);
-        $script = dirname(__DIR__, 3).'/resources/guest/verify-topology.sh';
+        $script = guestScriptPath('verify-topology.sh');
         $sha = str_repeat('a', 40);
 
         $degraded = new Process([
@@ -2009,7 +2009,7 @@ describe('convergence guest scripts', function () {
     });
 
     it('keeps the CLI gateway status check for the app-dev operator only', function () {
-        $source = file_get_contents(dirname(__DIR__, 3).'/resources/guest/verify-topology.sh');
+        $source = guestScriptSource('verify-topology.sh');
         preg_match('/role\.gateway\) (.*?);/s', $source, $gatewayBranch);
         expect($gatewayBranch[1] ?? '')
             ->not
@@ -2025,7 +2025,7 @@ describe('convergence guest scripts', function () {
         chmod("{$root}/bin/systemctl", 0o700);
         $process = new Process([
             'bash',
-            dirname(__DIR__, 3).'/resources/guest/verify-topology.sh',
+            guestScriptPath('verify-topology.sh'),
             'vm.gateway.running',
             'readiness',
             str_repeat('a', 40),
@@ -2285,7 +2285,7 @@ describe('convergence guest scripts', function () {
             $script = str_replace(
                 ['/etc/caddy/Caddyfile', '/etc/caddy/orbit-versions'],
                 ["{$root}/etc/caddy/Caddyfile", "{$root}/etc/caddy/orbit-versions"],
-                (string) file_get_contents(dirname(__DIR__, 3).'/resources/guest/verify-topology.sh'),
+                guestScriptSource('verify-topology.sh'),
             );
             file_put_contents("{$root}/verify.sh", $script);
             $placement = base64_encode(json_encode([
@@ -2347,7 +2347,7 @@ describe('convergence guest scripts', function () {
             $script = str_replace(
                 ['/etc/caddy/Caddyfile', '/etc/caddy/orbit-versions'],
                 ["{$root}/etc/caddy/Caddyfile", "{$root}/etc/caddy/orbit-versions"],
-                (string) file_get_contents(dirname(__DIR__, 3).'/resources/guest/verify-topology.sh'),
+                guestScriptSource('verify-topology.sh'),
             );
             file_put_contents("{$root}/verify.sh", $script);
             $command = ['bash', "{$root}/verify.sh", 'caddy.app-dev', 'readiness', str_repeat('a', 40), 'orbit-e2e-topology-snapshot-app-dev'];
@@ -2383,12 +2383,12 @@ describe('convergence guest scripts', function () {
                 "INSERT INTO node_roles VALUES (1, 'gateway', 'active'), (1, 'vpn', 'active'), "
                 ."(2, 'app-dev', 'active'), (2, 'metrics', 'active'), (3, 'app-prod', 'active')",
             );
-            file_put_contents("{$root}/bin/php", "#!/usr/bin/env bash\nexec /usr/bin/php \"\$@\"\n");
+            file_put_contents("{$root}/bin/php", "#!/usr/bin/env bash\nexec ".escapeshellarg(PHP_BINARY)." \"\$@\"\n");
             chmod("{$root}/bin/php", 0o700);
             $script = str_replace(
                 '/home/orbit/.orbit/gateway.sqlite',
                 $db,
-                file_get_contents(dirname(__DIR__, 3).'/resources/guest/verify-topology.sh'),
+                guestScriptSource('verify-topology.sh'),
             );
             file_put_contents("{$root}/verify.sh", $script);
             chmod("{$root}/verify.sh", 0o700);
@@ -2475,7 +2475,7 @@ describe('convergence guest scripts', function () {
     });
 
     it('keeps verifier contract paths and commands explicit', function () {
-        $source = file_get_contents(dirname(__DIR__, 3).'/resources/guest/verify-topology.sh');
+        $source = guestScriptSource('verify-topology.sh');
         expect($source)->toContain(
             'php8.5-fpm',
             'wg-quick@orbit',
@@ -2533,7 +2533,7 @@ describe('convergence guest scripts', function () {
             printf '%s\n' "$*" >>"$TYPED_PROBE_COMMANDS"
             BASH);
         chmod("{$root}/bin/php", 0o700);
-        $script = dirname(__DIR__, 3).'/resources/guest/verify-topology.sh';
+        $script = guestScriptPath('verify-topology.sh');
         $environment = [
             'PATH' => "{$root}/bin:".getenv('PATH'),
             'TYPED_PROBE_COMMANDS' => "{$root}/commands",
@@ -4613,7 +4613,7 @@ describe('convergence guest scripts', function () {
         $script = str_replace(
             ['source_marker=/var/lib/orbit-e2e/source-state', 'source_root=/home/orbit/orbit'],
             ["source_marker={$marker}", "source_root={$root}/source"],
-            file_get_contents(dirname(__DIR__, 3).'/resources/guest/verify-topology.sh'),
+            guestScriptSource('verify-topology.sh'),
         );
         file_put_contents("{$root}/verify.sh", $script);
         chmod("{$root}/verify.sh", 0o700);

@@ -56,6 +56,7 @@ use Tests\Support\AppDevFakeProcessRunner;
 use Tests\Support\AppDevFakeSshExecutor;
 use Tests\Support\FakeNodeCaddyBuilds;
 use Tests\Support\FpmPublishHarness;
+use Tests\Support\TestToolchain;
 
 function app_dev_account_resolver(
     ManagedUserAccount $account = new ManagedUserAccount('orbit', 'orbit', '/home/orbit'),
@@ -151,9 +152,9 @@ it('keeps the default resolver policy during an app development TLD convergence'
                 $command->input ?? '',
             );
             $process = new Process(
-                ['/bin/bash', '-seu', '--', ...array_slice($command->arguments, 4)],
+                [TestToolchain::bash(), '-seu', '--', ...array_slice($command->arguments, 4)],
                 cwd: $this->root,
-                env: ['PATH' => "{$this->root}/bin:/usr/bin:/bin"],
+                env: ['PATH' => "{$this->root}/bin:".TestToolchain::path()],
             );
             $process->setInput($input);
             $process->run();
@@ -1427,8 +1428,6 @@ function run_app_dev_certificate_probe_locally(RemoteCommand $command, string $r
             'install -o root -g root ',
             'sudo ',
             'openssl ',
-            'date -d "$not_before" +%s',
-            'date -d "$not_after" +%s',
         ],
         [
             $root,
@@ -1439,12 +1438,6 @@ function run_app_dev_certificate_probe_locally(RemoteCommand $command, string $r
             'install ',
             '',
             app_dev_test_openssl_binary().' ',
-            PHP_OS_FAMILY === 'Darwin'
-                ? 'date -j -f "%b %e %T %Y %Z" "$not_before" +%s'
-                : 'date -d "$not_before" +%s',
-            PHP_OS_FAMILY === 'Darwin'
-                ? 'date -j -f "%b %e %T %Y %Z" "$not_after" +%s'
-                : 'date -d "$not_after" +%s',
         ],
         $command->input ?? '',
     );

@@ -66,7 +66,7 @@ These families have recorded fixtures and contract tests.
 
 | Family | Fixtures |
 | --- | --- |
-| `node` | `node-list/default`, `node-show/default`, `node-add/created`, `node-add/tld-required`, `node-add/fingerprint-required`, `node-metrics/default` |
+| `node` | `node-list/default`, `node-show/default`, `node-add/created`, `node-add/tld-required`, `node-add/fingerprint-required`, `node-role-remove/step-failed`, `node-metrics/default` |
 | `app` | `app-list/default`, `app-show/default`, `app-create/created`, `app-destroy/removed` |
 | `instance` | `instance-list/default`, `instance-show/default`, `instance-create/created`, `instance-create/candidate-required`, `instance-deployment-list/default`, `instance-deployment-show/default` |
 | `database-connection` | `database-user-list/default` |

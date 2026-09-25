@@ -36,6 +36,11 @@ final readonly class ReadPnpmDependencyGraphAction
         }
     }
 
+    private function stale(): never
+    {
+        throw new DependencyParseException('dependencies.stale_pnpm_lockfile');
+    }
+
     private function invalid(): never
     {
         throw new DependencyParseException('dependencies.invalid_pnpm_input');
@@ -324,8 +329,9 @@ final readonly class ReadPnpmDependencyGraphAction
                 $specifier = $this->constraint($entry->specifier ?? null);
                 $expected = $declared[$name] ?? ($field === 'dependencies' ? ($peers[$name] ?? null) : null);
 
+                // pnpm install rewrites the importer from package.json, so a specifier difference is a stale lock.
                 if ($expected !== $specifier) {
-                    $this->invalid();
+                    $this->stale();
                 }
 
                 $id = $this->target($name, $entry->version ?? null, $snapshots);
@@ -344,7 +350,7 @@ final readonly class ReadPnpmDependencyGraphAction
             }
 
             if (array_diff_key($declared, $locked) !== []) {
-                $this->invalid();
+                $this->stale();
             }
         }
 

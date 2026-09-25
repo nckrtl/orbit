@@ -171,6 +171,30 @@ describe('single instance dependency scan', function (): void {
         }
     })->with(['present', 'absent', 'stale', 'stale-absent', 'unknown']);
 
+    it('tells the operator how to refresh a stale lockfile', function (string $code, string $hint): void {
+        $inventory = scan_cli_inventory('unknown');
+        $inventory['data']['javascript']['error_code'] = $code;
+        MockClient::global([
+            ResolveAppInstanceRequest::class => MockResponse::make(['data' => ['domain' => 'fixture.example.test', 'instance_id' => 17, 'app_id' => 3, 'node_id' => 9, 'environment' => 'development'], 'meta' => ['request_id' => scan_cli_id()]]),
+            ScanInstanceDependenciesRequest::class => MockResponse::make($inventory),
+        ]);
+
+        expect(Artisan::call('instance:dependencies:scan', ['--app' => 'fixture.example.test', '--no-interaction' => true]))->toBe(1);
+        // The detail renderer wraps long values, so compare without whitespace.
+        expect(preg_replace('/\s+/', '', Artisan::output()))->toContain($code, 'Fix', preg_replace('/\s+/', '', $hint));
+    })->with([
+        'npm' => ['dependencies.stale_npm_lockfile', 'Run npm install in the project root'],
+        'pnpm' => ['dependencies.stale_pnpm_lockfile', 'Run pnpm install in the project root'],
+        'Bun' => ['dependencies.stale_bun_lockfile', 'Run bun install in the project root'],
+    ]);
+
+    it('adds no fix line for other failures', function (): void {
+        scan_cli_mock('unknown');
+
+        Artisan::call('instance:dependencies:scan', ['--app' => 'fixture.example.test', '--no-interaction' => true]);
+        expect(Artisan::output())->not->toContain('Fix');
+    });
+
     it('never scans or falls back after target refusal', function (string $error): void {
         $mock = MockClient::global([ResolveAppInstanceRequest::class => MockResponse::make(['error' => ['code' => $error, 'message' => 'Target refused.', 'details' => []]], 409, ['X-Orbit-Request-Id' => scan_cli_id()])]);
         expect(Artisan::call('instance:dependencies:scan', ['--app' => 'fixture.example.test', '--json' => true]))->toBe(1);

@@ -48,7 +48,7 @@ Each parser reads data only. It does not load project code, run a package manage
 | Composer | `composer.json`, `composer.lock` | Composer 1 and 2 JSON lock structure with `packages` and `packages-dev`; Composer has no lockfile format version field. Preserve aliases, source references, and platform or virtual requirements without inventing package resolutions. |
 | npm | `package.json`, `package-lock.json` or `npm-shrinkwrap.json` | `lockfileVersion` 2 and 3 using the `packages` map. Shrinkwrap takes precedence. Version 1 is unsupported. |
 | pnpm | `package.json`, `pnpm-lock.yaml` | `lockfileVersion` 9.0, one root importer (`.`), package records and snapshots, including peer context. Earlier versions are unsupported. |
-| Bun | `package.json`, `bun.lock` | Text JSONC lock with `lockfileVersion` 1 and only its root workspace. Binary `bun.lockb` is unsupported. |
+| Bun | `package.json`, `bun.lock` | Text JSONC lock with `lockfileVersion` 1 or 2 and only its root workspace. Bun 1.4 writes version 2. Binary `bun.lockb` and version 3 are unsupported. |
 
 npm bundled dependency names (`bundleDependencies` / `bundledDependencies`) may lack separate lock entries. Those edges stay optional with a null target. The reader ignores `workspaces` metadata on transitive package records. Only the project root or lock root rejects workspace layouts.
 
@@ -104,6 +104,7 @@ Each ecosystem has a last successful observation and a latest scan outcome. A su
 | Both manifest and lockfile are absent | Record that the ecosystem is absent and clear its previous usage. |
 | Manifest exists but its lockfile is missing | Report an incomplete scan; preserve the last successful observation. |
 | Lockfile exists without its manifest | Report an incomplete scan; preserve the last successful observation. |
+| Lockfile root differs from the manifest | Report `dependencies.stale_npm_lockfile`, `dependencies.stale_pnpm_lockfile`, or `dependencies.stale_bun_lockfile`; preserve the last successful observation. Human output adds a short `Fix` line, such as `Run bun install in the project root and commit bun.lock.` |
 | Format is unsupported, files are invalid, or source is unreadable | Report failure and preserve the last successful observation. |
 | No production release is selected | Report unavailable source, not an empty inventory. |
 | Source changes during collection | Refuse to publish the mixed observation and report a retryable conflict. |

@@ -237,11 +237,11 @@ it('surfaces the persisted tool id from a version-probe failure', function (): v
         ->expectsOutput(json_encode(['error' => [
             'code' => 'tool.version_probe_failed',
             'message' => 'The tool manager operation failed.',
-            'details' => ['id' => 110],
+            'details' => ['id' => 110, 'step' => 'install', 'outcome' => 'manager_failed'],
             'request_id' => $id,
         ]], JSON_THROW_ON_ERROR))
         ->doesntExpectOutputToContain('validation-secret')
-        ->doesntExpectOutputToContain('step')
+        ->doesntExpectOutputToContain('manager_output')
         ->assertExitCode(1);
 });
 
@@ -273,6 +273,8 @@ it('prints the persisted tool id for a human version-probe failure', function ()
         ])
         ->expectsOutput('The tool manager operation failed.')
         ->expectsOutput('id: 110')
+        ->expectsOutput('step: install')
+        ->expectsOutput('outcome: manager_failed')
         ->expectsOutput("Request ID: {$id}")
         ->assertExitCode(1);
 });
