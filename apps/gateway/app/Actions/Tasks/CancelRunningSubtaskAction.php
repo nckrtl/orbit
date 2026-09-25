@@ -19,7 +19,8 @@ use App\Models\TaskGroup;
 
 /**
  * Stops a running subtask's implementer and its running check, then lets the scheduler start the next
- * subtask. Both stops happen after the status check in the scheduler's lock.
+ * subtask. Both stops are remote calls that run after the status check and outside any database
+ * transaction. The scheduler records the cancel afterwards, only while the subtask is still running.
  */
 final readonly class CancelRunningSubtaskAction
 {
@@ -63,7 +64,8 @@ final readonly class CancelRunningSubtaskAction
 
     /**
      * A subtask without an implementer is in its baseline check, and one that handed off may be in
-     * its handoff check. Either check stops with the subtask.
+     * its handoff check. Either check stops with the subtask. The scheduler marks it cancelled once the
+     * stop succeeded, so a failed stop leaves it running.
      */
     private function stopCheck(TaskGroup $group, Task $task): void
     {
@@ -73,7 +75,6 @@ final readonly class CancelRunningSubtaskAction
             return;
         }
 
-        $check->update(['status' => TaskCheckStatus::Cancelled, 'finished_at' => now()]);
         $instance = $group->fresh()?->taskable;
         if (! $instance instanceof AppInstance) {
             return;

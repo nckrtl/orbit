@@ -77,7 +77,11 @@ Subtask create appends one subtask at the next position with status `todo`. It w
 
 Cancel a `running` subtask with `tasks:subtask:cancel`. Only a `running` subtask can be cancelled; another status returns HTTP 409 `tasks.subtask_not_running`. Cancellation interrupts that subtask's implementer and stops its running [baseline or handoff check](#project-check). It keeps the group and its Instance and starts the lowest-position `todo` subtask. When no implementer has started in the group yet, that subtask runs the baseline check first. When no `todo` subtask remains, the group moves to `settling`.
 
-Orbit checks the subtask status before it stops anything. When the implementer or check cannot be stopped, cancellation returns HTTP 502 `tasks.subtask_interrupt_failed` and leaves the subtask `running`, so an operator can retry. When the implementer's Node stays unreachable, cancel the group instead. A `cancelled` or `failed` subtask does not block the next subtask.
+Orbit checks the subtask status before it stops anything. It interrupts the implementer first and then stops the check. It holds no database lock while it waits for the agent or the Node, so other Gateway writes continue. When the implementer or check cannot be stopped, cancellation returns HTTP 502 `tasks.subtask_interrupt_failed` and leaves the subtask and its check `running`, so an operator can retry. When the implementer's Node stays unreachable, cancel the group instead. A `cancelled` or `failed` subtask does not block the next subtask.
+
+When the check cannot be stopped, the implementer may already be interrupted. The subtask stays `running` without a working implementer, and the next tick may remind the implementer or fail the subtask. Retry the cancel, or cancel the group.
+
+After both stops succeed, Orbit records the cancel only when the subtask is still `running`. When a tick moved it on while Orbit stopped it, for example to `reviewing`, that new state stands and cancellation returns HTTP 409 `tasks.subtask_not_running`. The implementer and check were still stopped. Cancel the subtask again in its new state, or cancel the group.
 
 When cancellation leaves no `todo` subtask, the group moves to `settling` without a `pr_url`. Orbit opens a pull request only after the last subtask is approved, so the group asks for assistance. Use `tasks:cancel` to end it. For a group with an approved subtask, cancellation first pushes the workspace HEAD to `task-{group id}` on `origin`, so the approved commits stay on the branch. Open a pull request from that branch if you want to keep the work.
 
@@ -500,6 +504,12 @@ Call `tasks-cancel` with `{ "group": 123 }`, or run `orbit tasks:cancel 123`, to
 
 A route-free Instance in `source_resolved` uses the Ops database cleanup contract: delete the Instance row and retain its checkout on disk. Other Instances use the existing forced Instance remover, including Route cleanup. Removal errors propagate and leave the group attached for retry. Cancellation does not interrupt the external agent conversation.
 
-Before it removes the Instance of a `settling` group with an approved subtask, cancellation pushes the workspace HEAD to `task-{group id}` on `origin`. A failed push returns HTTP 502 with `tasks.push_failed` and keeps the group and its Instance, so you can retry. Uncommitted workspace changes are not pushed.
+Before it removes the Instance of a `settling` group with an approved subtask, cancellation pushes the workspace HEAD to `task-{group id}` on `origin`. A failed push returns HTTP 502 with `tasks.push_failed` and keeps the group and its Instance, so you can retry. Uncommitted workspace changes are not pushed. The push runs outside any database transaction.
+
+A group whose push keeps failing cannot be cancelled. Two causes do not clear on their own.
+
+When the workspace Node is gone, restore the Node at its recorded WireGuard address and cancel again. Without the Node, the approved commits are lost and the group stays `settling`.
+
+When `origin` already has an unrelated `task-{group id}` branch, Git rejects the push, because it is not a force push. A Gateway rebuild that reuses group IDs causes this. Keep that branch under another name if you need it. Then delete `task-{group id}` on `origin` and cancel again.
 
 A `completed` group, or a `settling` group with a `pr_url`, returns HTTP 409 with `tasks.not_cancellable` (an MCP error result). Use `tasks-complete` for a settling group after review and merge.

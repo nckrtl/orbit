@@ -936,18 +936,31 @@ final readonly class TaskScheduler
     }
 
     /**
-     * Cancels a running subtask and starts the next one. `$stop` runs inside the lock, after the status
-     * check and before any state changes, so an interrupt is never sent for a subtask that is no longer
-     * running. An exception from `$stop` leaves the subtask running.
+     * Cancels a running subtask and starts the next one. `$stop` makes the remote calls that stop the
+     * subtask's implementer and check. It runs outside any database transaction, so a slow Node or agent
+     * never holds the Gateway's SQLite write lock. An exception from `$stop` leaves the subtask and its
+     * check running. The state change then applies only when the subtask is still running: when it moved
+     * on while `$stop` ran, its new state stands and the cancel returns a conflict.
      *
      * @param  Closure(Task): void  $stop
      */
     public function cancelRunningSubtask(TaskGroup $taskGroup, Task $task, Closure $stop): TaskGroup
     {
         $taskGroup->requireManagedExecution();
+        $running = Task::query()->where('task_group_id', $taskGroup->id)->findOrFail($task->id);
+        if ($running->status !== TaskStatus::Running) {
+            throw new ResourceOperationException(
+                errorCode: 'tasks.subtask_not_running',
+                message: __('Only a running subtask can be cancelled.'),
+                status: 409,
+            );
+        }
+
+        $stop($running);
+
         /** @var Task|null $next */
         $next = null;
-        $group = DB::transaction(function () use ($taskGroup, $task, $stop, &$next): TaskGroup {
+        $group = DB::transaction(function () use ($taskGroup, $task, &$next): TaskGroup {
             $locked = Task::query()->where('task_group_id', $taskGroup->id)->lockForUpdate()->findOrFail($task->id);
             $group = TaskGroup::query()->where('execution_mode', TaskExecutionMode::Managed)
                 ->lockForUpdate()
@@ -956,12 +969,14 @@ final readonly class TaskScheduler
             if ($locked->status !== TaskStatus::Running) {
                 throw new ResourceOperationException(
                     errorCode: 'tasks.subtask_not_running',
-                    message: __('Only a running subtask can be cancelled.'),
+                    message: __('The subtask stopped running while Orbit stopped it, so its new state stands.'),
                     status: 409,
                 );
             }
 
-            $stop($locked);
+            TaskCheck::query()->where('task_id', $locked->id)
+                ->where('status', TaskCheckStatus::Running->value)
+                ->update(['status' => TaskCheckStatus::Cancelled->value, 'finished_at' => now(), 'updated_at' => now()]);
 
             $assistanceReason = $locked->assistance_reason;
             $locked->update([

@@ -22,6 +22,7 @@ use App\Models\Node;
 use App\Models\Task;
 use App\Models\TaskCheck;
 use App\Models\TaskGroup;
+use Illuminate\Support\Facades\DB;
 use Tests\Support\FakeAgentDriver;
 use Tests\Support\FakeTaskCheckRunner;
 use Tests\Support\FakeTaskRunReceipts;
@@ -493,4 +494,61 @@ it('sends no interrupt when the subtask stopped running before the lock', functi
 
     expect($driver->calls)->toBe([])
         ->and($running->fresh()->status)->toBe(TaskStatus::Reviewing);
+});
+
+it('stops the implementer and the check outside any database transaction', function (): void {
+    [$group, $running, $next, $check, $checks, $spawner, $gateway] = cancel_subtask_in_baseline(113);
+    $this->markAsGateway($gateway);
+    $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip]);
+    AgentThread::query()->create([
+        'task_group_id' => $group->id,
+        'task_id' => $running->id,
+        'driver' => 'fake',
+        'runtime_key' => 'outside-runtime',
+        'external_id' => 'outside-session',
+        'role' => 'implementer',
+    ]);
+    $driver = new FakeAgentDriver('fake');
+    $driver->supportsInterruption = true;
+    app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
+    $testLevel = DB::transactionLevel();
+
+    $this->postJson("/api/v1/task-groups/{$group->id}/tasks/{$running->id}/cancel")
+        ->assertOk()
+        ->assertJsonPath('data.status', 'cancelled');
+
+    expect($driver->interruptTransactionLevels)->toBe([$testLevel])
+        ->and($checks->cancelTransactionLevels)->toBe([$testLevel])
+        ->and($check->fresh()->status)->toBe(TaskCheckStatus::Cancelled);
+});
+
+it('keeps the new state when the subtask stops running while Orbit stops it', function (): void {
+    [$group, $running, $next, $check, $checks, $spawner, $gateway] = cancel_subtask_in_baseline(114);
+    $this->markAsGateway($gateway);
+    $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip]);
+    AgentThread::query()->create([
+        'task_group_id' => $group->id,
+        'task_id' => $running->id,
+        'driver' => 'fake',
+        'runtime_key' => 'moved-runtime',
+        'external_id' => 'moved-session',
+        'role' => 'implementer',
+    ]);
+    $driver = new FakeAgentDriver('fake');
+    $driver->supportsInterruption = true;
+    $driver->duringInterrupt = static function () use ($running): void {
+        Task::query()->whereKey($running->id)->update(['status' => TaskStatus::Reviewing]);
+    };
+    app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
+
+    $this->postJson("/api/v1/task-groups/{$group->id}/tasks/{$running->id}/cancel")
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'tasks.subtask_not_running');
+
+    expect($running->fresh()->status)->toBe(TaskStatus::Reviewing)
+        ->and($running->fresh()->settled_at)->toBeNull()
+        ->and($next->fresh()->status)->toBe(TaskStatus::Todo)
+        ->and($check->fresh()->status)->toBe(TaskCheckStatus::Running)
+        ->and($checks->starts)->toBe(0)
+        ->and($group->fresh()->status)->toBe(TaskGroupStatus::Running);
 });

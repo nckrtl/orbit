@@ -17,6 +17,7 @@ use App\Models\AppInstanceRemoval;
 use App\Models\Node;
 use App\Models\Task;
 use App\Models\TaskGroup;
+use Illuminate\Support\Facades\DB;
 
 function cancellable_task_group(TaskGroupStatus $status, ?string $prUrl = null): TaskGroup
 {
@@ -82,6 +83,9 @@ function cancel_recording_publisher(int $failures = 0): object
         /** @var list<int> */
         public array $pushes = [];
 
+        /** @var list<int> the database transaction level at each push */
+        public array $transactionLevels = [];
+
         public function __construct(private int $failures) {}
 
         public function publish(TaskGroup $group, string $body): string
@@ -92,6 +96,7 @@ function cancel_recording_publisher(int $failures = 0): object
         public function push(TaskGroup $group): void
         {
             $this->pushes[] = $group->id;
+            $this->transactionLevels[] = DB::transactionLevel();
             if ($this->failures-- > 0) {
                 throw new TaskPullRequestException('The task branch could not be pushed.');
             }
@@ -162,10 +167,12 @@ it('pushes approved commits before it cancels a settling group without a pull re
     cancel_subtask($group, TaskStatus::Completed, 1);
     $cancelledSubtask = cancel_subtask($group, TaskStatus::Cancelled, 2);
     $instanceId = $group->taskable_id;
+    $testLevel = DB::transactionLevel();
 
     $cancelled = app(CancelTaskGroupAction::class)->execute($group);
 
     expect($publisher->pushes)->toBe([$group->id])
+        ->and($publisher->transactionLevels)->toBe([$testLevel])
         ->and($remover->calls)->toBe([[$instanceId, true]])
         ->and($cancelled->status)->toBe(TaskGroupStatus::Cancelled)
         ->and($cancelled->taskable_id)->toBeNull()
