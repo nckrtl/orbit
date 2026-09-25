@@ -301,7 +301,7 @@ function synchronizerGit(string $path, array $arguments): array
 
 function removeSynchronizerFixture(string $path): void
 {
-    $prefix = sys_get_temp_dir().'/orbit-';
+    $prefix = temporaryDirectory().'/orbit-';
 
     if (! str_starts_with($path, $prefix)) {
         throw new RuntimeException('Refusing to remove an unsafe synchronizer fixture.');
