@@ -107,6 +107,10 @@ orbit activity:show 481
 
 Activity records identify the operation, target, caller, and result. They never contain commands, environment values, credentials, or remote output.
 
+## Retry after a connection failure
+
+A command that reads from the Gateway retries the read once. When the connection is refused, reset, or closed before any HTTP response, the CLI waits 250 milliseconds and sends the same read again with the same request ID. A Caddy reload on the Gateway can cause these failures. The CLI never retries a change, a read that received any HTTP response (including a `5xx` error), a timeout, or a deployment stream. A second failure ends the command with the error. The read and its retry share the 900-second request timeout, so the retry never extends it. A refused or reset connection usually fails within milliseconds, so the retry usually adds about 250 milliseconds.
+
 ## Exit status
 
 A successful command exits with `0`. A handled failure returns the command's documented nonzero status. Local commands do not need a Gateway request to succeed. Parser usage errors, product refusals, and failed streams keep their existing statuses; scripts should check the exit status as well as the result.

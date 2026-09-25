@@ -10,7 +10,9 @@ use InvalidArgumentException;
 use LogicException;
 use Orbit\Sdk\Requests\Environment\EnvironmentRequest;
 use Orbit\Sdk\Support\GatewayOrigin;
+use Orbit\Sdk\Support\GatewayReadRetry;
 use Orbit\Sdk\Support\GatewayRequestId;
+use Saloon\Contracts\Sender;
 use Saloon\Enums\PipeOrder;
 use Saloon\Exceptions\Request\FatalRequestException;
 use Saloon\Http\Connector;
@@ -18,6 +20,7 @@ use Saloon\Http\Faking\MockClient;
 use Saloon\Http\PendingRequest;
 use Saloon\Http\Request;
 use Saloon\Http\Response;
+use Saloon\Http\Senders\GuzzleSender;
 use Saloon\Traits\Plugins\AlwaysThrowOnErrors;
 use SensitiveParameter;
 use Throwable;
@@ -149,6 +152,17 @@ final class GatewayConnector extends Connector
             name: 'alwaysThrowOnErrors',
             order: PipeOrder::LAST,
         );
+    }
+
+    /**
+     * Retry a read once after a connection failure without any response. See GatewayReadRetry.
+     */
+    protected function defaultSender(): Sender
+    {
+        $sender = new GuzzleSender;
+        $sender->getHandlerStack()->push(GatewayReadRetry::middleware(), GatewayReadRetry::NAME);
+
+        return $sender;
     }
 
     /** @return array<string, string> */
