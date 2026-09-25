@@ -190,7 +190,7 @@ final readonly class RelocateNodeRoleAction
         $reconcileMetrics = ($this->metricsDeferral ?? app(MetricsReconcileDeferral::class))->during(
             function () use ($target, $source, $assignment, $role): void {
                 $this->afterTransfer($target, $assignment, $role);
-                $this->retractSource($source, $role);
+                $this->retractSource($source, $assignment, $role);
             },
         );
 
@@ -233,7 +233,7 @@ final readonly class RelocateNodeRoleAction
         }
     }
 
-    private function retractSource(Node $source, RoleName $role): void
+    private function retractSource(Node $source, NodeRole $assignment, RoleName $role): void
     {
         if ($role === RoleName::WebSocket) {
             // The source still serves `reverb.orbit` until clients that resolved it before the target's
@@ -248,20 +248,25 @@ final readonly class RelocateNodeRoleAction
             return;
         }
 
-        $this->baselines->remove($source, $this->ghostAssignment($source, $role), false);
+        $this->baselines->remove($source, $this->ghostAssignment($source, $assignment), false);
         $this->forgetOwnedSettings($source, $role);
     }
 
-    private function ghostAssignment(Node $source, RoleName $role): NodeRole
+    /**
+     * The moved assignment as the source held it. It keeps the assignment id because the source's
+     * runtime still carries it, for example on the Metrics containers.
+     */
+    private function ghostAssignment(Node $source, NodeRole $assignment): NodeRole
     {
-        $assignment = new NodeRole([
+        $ghost = new NodeRole([
             'node_id' => $source->id,
-            'role' => $role,
+            'role' => $assignment->role,
             'status' => LifecycleStatus::Active,
         ]);
-        $assignment->setRelation('node', $source);
+        $ghost->setAttribute('id', $assignment->id);
+        $ghost->setRelation('node', $source);
 
-        return $assignment;
+        return $ghost;
     }
 
     private function copyOwnedSettings(Node $source, Node $target, RoleName $role): void
