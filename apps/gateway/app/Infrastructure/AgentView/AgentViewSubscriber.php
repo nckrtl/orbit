@@ -56,6 +56,9 @@ final class AgentViewSubscriber
 
     public const int ConnectTimeoutSeconds = 10;
 
+    /** The old server of a move gets a short connect limit, so an unreachable Node never stalls the serving link. */
+    public const int OldServerConnectTimeoutSeconds = 2;
+
     public const int SnapshotRequestSeconds = 5;
 
     private const float MaxBackoffSeconds = 30.0;
@@ -340,7 +343,7 @@ final class AgentViewSubscriber
                 serverName: WebSocketHostname::Value,
                 path: '/app/'.rawurlencode($credentials->appKey).'?protocol=7&client=orbit-gateway&version=1.0&flash=false',
                 caPath: $this->caPath,
-            ), self::ConnectTimeoutSeconds);
+            ), $this->isServingLink($link) ? self::ConnectTimeoutSeconds : self::OldServerConnectTimeoutSeconds);
             $socketId = $this->awaitConnectionEstablished($link);
         } catch (Throwable $exception) {
             $link->socket->close();
@@ -359,9 +362,14 @@ final class AgentViewSubscriber
         $this->refresh();
     }
 
+    private function isServingLink(AgentViewLink $link): bool
+    {
+        return array_key_first($this->links) === $link->address;
+    }
+
     private function awaitConnectionEstablished(AgentViewLink $link): string
     {
-        $deadline = $this->now() + self::ConnectTimeoutSeconds;
+        $deadline = $this->now() + ($this->isServingLink($link) ? self::ConnectTimeoutSeconds : self::OldServerConnectTimeoutSeconds);
 
         while ($link->socket->isConnected() && $this->now() < $deadline) {
             foreach ($link->socket->receive(self::ReceiveWaitSeconds) as $message) {

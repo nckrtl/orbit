@@ -50,19 +50,28 @@ final readonly class RecordEventBroadcaster
         }
 
         foreach ($connections as $index => $connection) {
-            $this->send(function () use ($connection, $event, $index): void {
-                $this->realtime->configureBroadcasting($connection);
-
-                if ($index === 0) {
+            if ($index === 0) {
+                $this->send(function () use ($connection, $event): void {
+                    $this->realtime->configureBroadcasting($connection);
                     event($event);
+                }, $type, $id);
 
-                    return;
-                }
+                continue;
+            }
 
+            // The old server of a move only gets a short try, and none for a while after it failed, so an
+            // unreachable old Node never slows the broadcast to the serving server.
+            if ($this->realtime->oldServerSkipped($connection)) {
+                continue;
+            }
+
+            $reached = $this->send(function () use ($connection, $event): void {
+                $this->realtime->configureBroadcasting($connection, oldServer: true);
                 // The old Node's server gets the same payload directly, so listeners run once.
                 Broadcast::purge('reverb');
                 Broadcast::connection('reverb')->broadcast($event->broadcastOn(), $event->broadcastAs(), $event->broadcastWith());
             }, $type, $id);
+            $this->realtime->recordOldServer($connection, $reached);
         }
 
         if (count($connections) > 1) {
@@ -72,12 +81,16 @@ final readonly class RecordEventBroadcaster
     }
 
     /** @param Closure(): mixed $operation */
-    private function send(Closure $operation, RecordEventType $type, int|string $id): void
+    private function send(Closure $operation, RecordEventType $type, int|string $id): bool
     {
         try {
             $operation();
+
+            return true;
         } catch (Throwable $exception) {
             $this->failed($type, $id, $exception);
+
+            return false;
         }
     }
 

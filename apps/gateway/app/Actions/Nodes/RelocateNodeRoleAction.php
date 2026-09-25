@@ -200,7 +200,7 @@ final readonly class RelocateNodeRoleAction
                 $exception->underlyingErrorCode,
                 "Role [{$role->value}] now runs on node [{$target->name}], but withdrawing it from node [{$source->name}] failed, so the move is incomplete: "
                     .$exception->getMessage()
-                    ." Run `orbit node:role:relocate {$target->name} {$role->value} --from {$source->name} --force` to finish it.",
+                    ." Run `orbit node:role:relocate {$target->name} {$role->value} --from {$source->name} --force` to finish it once node [{$source->name}] is reachable.",
                 $exception->result,
                 $exception,
             );

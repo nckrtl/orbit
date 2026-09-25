@@ -247,7 +247,7 @@ describe(RelocateNodeRoleAction::class, function (): void {
             ->toThrow(function (NodeRoleOperationException $exception) use ($source, $target): void {
                 expect($exception->underlyingErrorCode)->toBe('websocket.caddy_publication_failed')
                     ->and($exception->getMessage())->toStartWith("Role [websocket] now runs on node [{$target->name}], but withdrawing it from node [{$source->name}] failed, so the move is incomplete:")
-                    ->and($exception->getMessage())->toEndWith("Run `orbit node:role:relocate {$target->name} websocket --from {$source->name} --force` to finish it.");
+                    ->and($exception->getMessage())->toEndWith("Run `orbit node:role:relocate {$target->name} websocket --from {$source->name} --force` to finish it once node [{$source->name}] is reachable.");
             });
 
         expect($this->baselines->removed)->toBe([]);
