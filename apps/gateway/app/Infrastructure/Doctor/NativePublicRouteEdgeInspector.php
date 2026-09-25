@@ -63,11 +63,9 @@ final readonly class NativePublicRouteEdgeInspector implements PublicRouteEdgeIn
                         expected=$(printf '%s' "$2" | base64 --decode)
                         certificates=$3
                         live=$(readlink -f "$4")
-                        fragment_dir=$(dirname "$live")/fragments
-                        # The live configuration must hold the rendered public site: the one file a Node Caddy
-                        # build writes, or the fragments of a Node no build replaced yet. TLS lines are compared
-                        # separately below, so a TLS-only difference reports as a TLS mismatch.
-                        observed=$(cat "$live" "$fragment_dir"/*.caddy 2>/dev/null | sed '/^[[:space:]]*tls /d' || true)
+                        # The one live file a Node Caddy build writes must hold the rendered public site. TLS lines
+                        # are compared separately below, so a TLS-only difference reports as a TLS mismatch.
+                        observed=$(sed '/^[[:space:]]*tls /d' "$live" 2>/dev/null || true)
                         case "$observed" in
                             *"$expected"*) printf 'ingress=1\n' ;;
                             *) printf 'ingress=0\n' ;;
@@ -78,9 +76,9 @@ final readonly class NativePublicRouteEdgeInspector implements PublicRouteEdgeIn
                             $0 == start { inside = 1 }
                             inside { print }
                             inside && $0 == "}" { exit }
-                        ' "$live" "$fragment_dir"/*.caddy 2>/dev/null || true)
+                        ' "$live" 2>/dev/null || true)
                         if [ -n "$site" ] \
-                            && ! grep -Rqs -- "tls $certificates/cert.pem" "$live" "$fragment_dir" 2>/dev/null \
+                            && ! grep -qs -- "tls $certificates/cert.pem" "$live" \
                             && { printf '%s\n' "$site" | grep -Eq '^[[:space:]]+tls force_automate$' \
                                 || ! grep -Eqs '^[[:space:]]*auto_https[[:space:]]+(disable_certs|off)$' "$live"; }; then
                             printf 'tls=1\n'

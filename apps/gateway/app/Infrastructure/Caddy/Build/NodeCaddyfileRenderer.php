@@ -40,6 +40,7 @@ final readonly class NodeCaddyfileRenderer
         $listeners = NodeCaddyListeners::forSites($node, $sites);
 
         $blocks = [];
+        $rendered = [];
         $listenAddresses = [];
         /** @var array<string, CaddySite> $addresses */
         $addresses = [];
@@ -80,7 +81,9 @@ final readonly class NodeCaddyfileRenderer
             $body = $site->bindPlaceholder === null
                 ? $site->body
                 : str_replace($site->bindPlaceholder, implode(' ', $bind), $site->body);
-            $blocks[] = "# orbit: {$site->source} {$site->name}".PHP_EOL.rtrim($body).PHP_EOL;
+            $block = "# orbit: {$site->source} {$site->name}".PHP_EOL.rtrim($body).PHP_EOL;
+            $blocks[] = $block;
+            $rendered[] = ['source' => $site->source, 'name' => $site->name, 'block' => $block];
         }
 
         $content = self::Marker.PHP_EOL.CaddyGlobalOptions::render();
@@ -96,6 +99,7 @@ final readonly class NodeCaddyfileRenderer
             sites: $sites,
             problems: array_values(array_unique($problems)),
             listenAddresses: array_values($listenAddresses),
+            blocks: $rendered,
         );
     }
 

@@ -599,22 +599,29 @@ it('maps each production projection without retaining protected diagnostics', fu
     'Caddy' => ["1\n1\n1\n1\n1\n0\n", 'caddyProjectionMatches'],
 ]);
 
-it('compares the live Caddy configuration of either layout with the Instance Node render', function (string $layout, string $expected): void {
+it('finds each of the Instance site blocks unchanged in the one live Caddyfile', function (string $layout, string $expected): void {
     $sandbox = sys_get_temp_dir().'/orbit-doctor-caddy-'.bin2hex(random_bytes(6));
     $live = $layout === 'fragment' ? "{$sandbox}/v1/Caddyfile" : "{$sandbox}/v2/Caddyfile";
     $program = application_production_observation_program('caddy_matches', "readlink() { printf '%s\\n' '{$live}'; }");
     $instance = AppInstance::query()->latest('id')->firstOrFail();
+    $sites = app(ProductionInstanceInspectionExpectationFactory::class)->make($instance)->caddySites;
+    $render = app(NodeCaddyfileRenderer::class)->render($instance->node)->content;
     $files = new Filesystem;
-    $files->ensureDirectoryExists(dirname($live).'/fragments');
+    $files->ensureDirectoryExists("{$sandbox}/v1/fragments");
+    $files->ensureDirectoryExists("{$sandbox}/v2");
 
     try {
-        if ($layout === 'fragment') {
-            file_put_contents($live, "import {$sandbox}/v1/fragments/*.caddy\n");
-            file_put_contents("{$sandbox}/v1/fragments/app-dev.caddy", app(ProductionInstanceInspectionExpectationFactory::class)->make($instance)->caddy);
-        } else {
-            $render = app(NodeCaddyfileRenderer::class)->render($instance->node)->content;
-            file_put_contents($live, $layout === 'build drift' ? $render."# hand edit\n" : $render);
-        }
+        expect($sites)->toHaveCount(1)
+            ->and($sites[0])->toStartWith("# orbit: app-prod app-instance-{$instance->id}\n")
+            ->and($render)->toContain($sites[0]);
+
+        file_put_contents($live, match ($layout) {
+            'build' => $render,
+            'edit inside' => str_replace($sites[0], str_replace("\n}\n", "\n    respond hand-edit\n}\n", $sites[0]), $render),
+            'edit elsewhere' => $render."\nhand.example.test {\n    respond hi\n}\n",
+            'fragment' => "import {$sandbox}/v1/fragments/*.caddy\n",
+        });
+        file_put_contents("{$sandbox}/v1/fragments/app-dev.caddy", $sites[0]);
 
         expect(application_run(['bash'], $program)->stdout)->toBe("{$expected}\n");
     } finally {
@@ -622,8 +629,9 @@ it('compares the live Caddy configuration of either layout with the Instance Nod
     }
 })->with([
     'a Node Caddy build that matches a fresh render' => ['build', '1'],
-    'a Node Caddy build edited after its push' => ['build drift', '0'],
-    'the fragment layout of a Node no build replaced yet' => ['fragment', '1'],
+    'a hand edit inside the Instance site' => ['edit inside', '0'],
+    'a hand edit elsewhere in the file, which role.caddy_build_drift reports' => ['edit elsewhere', '1'],
+    'the fragment layout of an earlier release, which Doctor no longer reads' => ['fragment', '0'],
 ]);
 
 it('keeps an unavailable production runtime observation distinct from drift', function (): void {

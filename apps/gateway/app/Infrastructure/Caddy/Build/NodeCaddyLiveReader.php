@@ -8,8 +8,8 @@ use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Node;
 
 /**
- * Reads a Node's live Caddy configuration as one text, with the fragments of the old layout inlined
- * where the live file imports them. It changes nothing on the Node.
+ * Reads a Node's live `/etc/caddy/Caddyfile` through its symlink. A Node Caddy build keeps every site in
+ * that one file, so nothing it imports is read. A missing file reads as empty. It changes nothing on the Node.
  */
 final readonly class NodeCaddyLiveReader
 {
@@ -22,7 +22,7 @@ final readonly class NodeCaddyLiveReader
     {
         $result = $this->transport->run($node, $this->command());
 
-        if (! $result->succeeded()) {
+        if (! $result->succeeded() || $result->truncated) {
             throw new NodeCaddyBuildException($node->name, 'read-live', trim($result->stderr) ?: 'The live Caddyfile could not be read.');
         }
 
@@ -35,28 +35,9 @@ final readonly class NodeCaddyLiveReader
             arguments: ['sudo', 'bash', '-seu', '--', $this->caddyDirectory.'/Caddyfile'],
             input: <<<'BASH'
                 live=$1
-                if [ ! -e "$live" ]; then
-                    exit 0
+                if [ -e "$live" ]; then
+                    cat -- "$(readlink -f -- "$live")"
                 fi
-                main=$(readlink -f -- "$live")
-                while IFS= read -r line || [ -n "$line" ]; do
-                    trimmed=$(printf '%s' "$line" | sed 's/^[[:space:]]*//')
-                    case "$trimmed" in
-                        import\ /*)
-                            pattern=${trimmed#import }
-                            for fragment in $pattern; do
-                                if [ -f "$fragment" ]; then
-                                    printf '# orbit-live-fragment: %s\n' "$(basename -- "$fragment")"
-                                    cat -- "$fragment"
-                                    printf '\n'
-                                fi
-                            done
-                            ;;
-                        *)
-                            printf '%s\n' "$line"
-                            ;;
-                    esac
-                done < "$main"
                 BASH,
             maxOutputBytes: 4_194_304,
             timeout: 60.0,

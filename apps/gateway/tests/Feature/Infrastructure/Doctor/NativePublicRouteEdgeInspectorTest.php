@@ -45,7 +45,7 @@ const PUBLIC_EDGE_UFW_ACTIVE = <<<'UFW'
 
 beforeEach(function (): void {
     $this->caddy = sys_get_temp_dir().'/orbit-public-edge-'.bin2hex(random_bytes(4));
-    File::ensureDirectoryExists("{$this->caddy}/orbit-versions/v1/fragments");
+    File::ensureDirectoryExists("{$this->caddy}/orbit-versions/v1");
     symlink("{$this->caddy}/orbit-versions/v1/Caddyfile", "{$this->caddy}/Caddyfile");
     $this->ssh = new LocalRootShellSshExecutor("{$this->caddy}/orbit-versions", PUBLIC_EDGE_UFW_ACTIVE);
 });
@@ -166,7 +166,7 @@ describe('an Ingress that shares the Router and the workload', function (): void
         public_edge_publish($this->caddy, $this->ingress);
 
         expect(public_edge_observe($this))->toBe([true, true, true])
-            ->and(file_get_contents("{$this->caddy}/orbit-versions/v1/fragments/app-dev.caddy"))
+            ->and(file_get_contents("{$this->caddy}/orbit-versions/v1/Caddyfile"))
             ->toContain('php_fastcgi unix//run/php/orbit-app-')
             ->not->toContain('reverse_proxy');
     });
@@ -319,7 +319,7 @@ function public_edge_inspector(LocalRootShellSshExecutor $ssh, string $caddy): N
 }
 
 /**
- * Publishes the Ingress Node's App development sites as the publisher renders them.
+ * Publishes the Ingress Node's Route sites after the global options block in the one live Caddyfile.
  *
  * @param  (Closure(string): string)|null  $edit
  */
@@ -328,9 +328,8 @@ function public_edge_publish(string $caddy, Node $ingress, ?Closure $edit = null
     $sites = new AppDevCaddyConfigRenderer()->render(new AppDevSiteRepository()->forNode($ingress));
     file_put_contents(
         "{$caddy}/orbit-versions/v1/Caddyfile",
-        ($globalOptions ?? CaddyGlobalOptions::render())."import {$caddy}/orbit-versions/v1/fragments/*.caddy\n",
+        ($globalOptions ?? CaddyGlobalOptions::render()).($edit instanceof Closure ? $edit($sites) : $sites),
     );
-    file_put_contents("{$caddy}/orbit-versions/v1/fragments/app-dev.caddy", $edit instanceof Closure ? $edit($sites) : $sites);
 }
 
 /**

@@ -15,6 +15,7 @@ use App\Infrastructure\Caddy\Build\NodeCaddyBuildResult;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
 use App\Infrastructure\Caddy\Build\NodeCaddyfile;
 use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
+use App\Infrastructure\Caddy\Build\NodeCaddyLiveReader;
 use App\Infrastructure\Caddy\Build\NodeCaddySiteSource;
 use App\Infrastructure\Caddy\Build\NodeCaddyTransport;
 use App\Infrastructure\Processes\CommandResult;
@@ -28,6 +29,7 @@ use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
 use Illuminate\Filesystem\Filesystem;
+use Symfony\Component\Process\Process;
 use Tests\Support\CaddySiteCertificateFixtures;
 
 beforeEach(function (): void {
@@ -294,7 +296,7 @@ describe('the site diff', function (): void {
             {
                 auto_https disable_certs
             }
-            # orbit-live-fragment: websocket.caddy
+            # hand edit
             reverb.orbit {
                 bind 10.44.0.1
                 reverse_proxy 127.0.0.1:8080
@@ -421,6 +423,28 @@ describe('the build command', function (): void {
             ->assertSuccessful();
 
         expect($this->ssh->commands[0]->arguments)->toBe(['sudo', 'bash', '-seu', '--', '/etc/caddy/Caddyfile']);
+    });
+
+    it('reads only the live file through its symlink and never the files it imports', function (): void {
+        $root = sys_get_temp_dir().'/orbit-caddy-live-'.bin2hex(random_bytes(6));
+        mkdir("{$root}/orbit-versions/0123456789abcdef/fragments", 0777, true);
+        file_put_contents("{$root}/orbit-versions/0123456789abcdef/Caddyfile", "import {$root}/orbit-versions/0123456789abcdef/fragments/*.caddy\n");
+        file_put_contents("{$root}/orbit-versions/0123456789abcdef/fragments/app-dev.caddy", "shop.test {\n}\n");
+        symlink("{$root}/orbit-versions/0123456789abcdef/Caddyfile", "{$root}/Caddyfile");
+        $command = new NodeCaddyLiveReader(node_caddy_builder_transport($this), $root)->command();
+
+        try {
+            $live = new Process(array_slice($command->arguments, 1), input: $command->input);
+            $live->mustRun();
+            unlink("{$root}/Caddyfile");
+            $missing = new Process(array_slice($command->arguments, 1), input: $command->input);
+            $missing->mustRun();
+        } finally {
+            new Filesystem()->deleteDirectory($root);
+        }
+
+        expect($live->getOutput())->toBe("import {$root}/orbit-versions/0123456789abcdef/fragments/*.caddy\n")
+            ->and($missing->getOutput())->toBe('');
     });
 });
 
