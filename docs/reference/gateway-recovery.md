@@ -72,6 +72,8 @@ php artisan config:clear
 php artisan migrate --force
 ```
 
+The agent view subscriber, `orbit-agent-view.service`, writes only to its cache files in `ORBIT_HOME/cache/agent-view`, never to the database, so it can keep running during a backup and an update. A backup does not need those files: the view rebuilds within seconds. Within 60 seconds of a source change, it exits and systemd starts it with the new code. [Gateway view](/reference/node-agent#gateway-view) describes it.
+
 Read the release notes before migrations. Do not run `composer update`, `composer setup`, `key:generate`, or Gateway bootstrap as a generic update step. Dependency installation uses the committed locks; bootstrap changes machine configuration and needs its own explicit instructions.
 
 If every command succeeds, start the services and verify before resuming automation:
