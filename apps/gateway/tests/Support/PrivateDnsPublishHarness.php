@@ -7,6 +7,8 @@ namespace Tests\Support;
 use App\Infrastructure\AppDev\AppDevDnsConfigRenderer;
 use App\Infrastructure\AppDev\AppDevSiteRepository;
 use App\Infrastructure\AppDev\DnsmasqPrivateDnsManager;
+use App\Infrastructure\AppDev\NativeDevelopmentProjectionOperationLock;
+use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\NativeProcessRunner;
 use Illuminate\Filesystem\Filesystem;
 
@@ -169,6 +171,7 @@ final class PrivateDnsPublishHarness
     {
         return new DnsmasqPrivateDnsManager(
             processes: new NativeProcessRunner,
+            projection: $this->projectionLock(),
             renderer: new AppDevDnsConfigRenderer(new AppDevSiteRepository),
             recordsDirectory: $this->root.'/etc/dnsmasq.d',
             dnsmasqConf: $this->root.'/etc/dnsmasq.conf',
@@ -184,6 +187,7 @@ final class PrivateDnsPublishHarness
     {
         return new DnsmasqPrivateDnsManager(
             processes: new NativeProcessRunner,
+            projection: $this->projectionLock(),
             renderer: new AppDevDnsConfigRenderer(new AppDevSiteRepository),
             recordsDirectory: $this->root.'/etc/dnsmasq.d',
             dnsmasqConf: $this->root.'/etc/dnsmasq.conf',
@@ -197,6 +201,14 @@ final class PrivateDnsPublishHarness
             phpBinary: PHP_BINARY,
             unitDirectory: $this->root.'/etc/systemd/system',
         );
+    }
+
+    /**
+     * A lock of its own, so a harness publication never makes a parallel test wait for the shared Orbit home lock.
+     */
+    private function projectionLock(): NativeDevelopmentProjectionOperationLock
+    {
+        return new NativeDevelopmentProjectionOperationLock($this->root.'/orbit-home', app(CommandDeadline::class));
     }
 
     public function confDirectory(): string
