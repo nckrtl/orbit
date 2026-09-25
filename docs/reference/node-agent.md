@@ -127,7 +127,7 @@ The agent accepts three source types and checks each one itself. It runs no prog
 
 | Type | Fields | What the agent reads | The agent refuses |
 | --- | --- | --- | --- |
-| `laravel` | `path`: the Instance checkout | `storage/logs/laravel.log`, or the newest `laravel-*.log` when it is absent. It follows a daily file to the next day's file. | A path that is not normalized and absolute. A link at `storage/logs` or at the file. A file that is not regular, or that `root` owns. |
+| `laravel` | `path`: the Instance checkout | `storage/logs/laravel.log`, or the newest `laravel-*.log` when it is absent. It follows a daily file to the next day's file, and continues where it left a file that becomes the newest again. | A path that is not normalized and absolute. A link at `storage/logs` or at the file. A file that is not regular, or that `root` owns. |
 | `journal` | `unit`: the Process's systemd unit | The journal files in `/var/log/journal` and `/run/log/journal`. It returns the entries of the unit and systemd's own messages about it. | A unit that is not `orbit-process-{id}-{name}.service`, with a positive `id` and a name of lowercase letters, digits, and inner hyphens. |
 | `docker` | `container` and `process_id` | The container's standard output and standard error, through the Docker Engine API. | A name that is not `orbit-process-{id}-{name}` with those rules, and a container without the labels `orbit.managed=true` and `orbit.process.id` equal to `process_id`. |
 
@@ -142,7 +142,7 @@ The agent redacts each line with the Gateway's secret patterns before it sends i
 | Limit | Value |
 | --- | --- |
 | Streams | 16 |
-| First lines | The stream's `lines`, at most 256 KiB. They do not count against the rates. |
+| First lines | The stream's `lines`, at most 256 KiB. The agent holds at most 256 KiB of them while it reads, and they do not count against the rates. |
 | Line length | 8 KiB; a longer line is cut and ends with `[truncated]` |
 | Events | One `client-log` event for each stream every 250 milliseconds at most, each under 10,000 bytes |
 | Rate | 32 KiB per second for each stream, with a 256 KiB burst, and 256 KiB per second for the agent |

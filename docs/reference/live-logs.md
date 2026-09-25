@@ -104,7 +104,7 @@ Each record has one source, the same one that its one-shot read uses.
 | systemd Process | The journal entries of `orbit-process-{id}-{name}.service`, and systemd's own messages about that unit | `2026-09-25T10:15:02+00:00 name[pid]: message` |
 | Docker Process | The output of container `orbit-process-{id}-{name}` | Each line of standard output and standard error |
 
-The agent follows a daily log file to the next day's file. It starts from the beginning of a file that was truncated. The journal format differs from `journalctl --output short-iso` only by the missing host name.
+The agent follows a daily log file to the next day's file. When an earlier file becomes the newest again, it continues where it left that file, so no line is sent twice. It starts from the beginning of a file that was truncated. The journal format differs from `journalctl --output short-iso` only by the missing host name.
 
 The agent refuses a log file that `root` owns, a link at `storage/logs` or at the log file, and a container without the labels `orbit.managed=true` and `orbit.process.id={id}`. The stream then ends with `source_unavailable`.
 
@@ -132,11 +132,15 @@ The agent redacts each line before it leaves the Node. The Gateway redacts it ag
 | Where | What is replaced with `[REDACTED]` |
 | --- | --- |
 | Agent and Gateway | PEM blocks, credentials in URLs such as `https://user:pass@host`, `Authorization` and `Proxy-Authorization` header values, `Bearer` tokens, and the value after a secret-named key, such as `API_KEY=...`, `"password": "..."`, or `db_password: ...` |
-| Gateway | Each stored environment value of the Instance of eight characters or more, and each environment value of a Docker Process |
+| Gateway | Each stored environment value of the Instance, or each environment value of a Docker Process, of eight characters or more, except the values of setting keys |
 
-A PEM block that spans lines is redacted from its `BEGIN` line through its `END` line, for at most 200 lines.
+The setting keys are `APP_ENV`, `APP_NAME`, `APP_URL`, `APP_LOCALE`, `APP_FALLBACK_LOCALE`, `DB_CONNECTION`, `DB_HOST`, `DB_PORT`, `LOG_*`, and every key that ends in `_DRIVER`, `_CONNECTION`, or `_STORE`. Their values, such as `production`, would otherwise hide ordinary words in the log.
 
-Redaction is a safety net. It misses a secret with no recognizable shape or key name, a secret split across lines or encoded, an Instance environment value shorter than eight characters, and personal data such as email addresses and customer records in exception messages. Access to the serving Node decides who may read a log.
+A PEM block that spans lines is redacted from its `BEGIN` line through its `END` line, for at most 200 lines. When no `END` line comes within 200 lines, the 200th line becomes `[orbit] 199 lines redacted after a PEM BEGIN line without END`, and the lines after it show again.
+
+Redaction is a safety net. It misses a secret with no recognizable shape or key name, and a secret split across lines or encoded. It keeps an environment value shorter than eight characters or stored under a setting key. It also misses personal data, such as email addresses and customer records in exception messages. Access to the serving Node decides who may read a log.
+
+The CLI redacts credential-shaped text again before it prints a line, and it writes `[redacted]` in lower case. A line in the terminal can therefore show both forms. `[REDACTED]` marks a value that the agent or the Gateway replaced. `[redacted]` marks one that the CLI replaced, for example in `API_KEY=[redacted]`, where the CLI matched the already redacted `API_KEY=[REDACTED]` again.
 
 ## When the live path is not available
 
@@ -148,9 +152,12 @@ The Gateway refuses to open a stream with `logs.live_unavailable` (409) when it 
 | `realtime_not_configured` | No `websocket` role is active. |
 | `subscriber_down` | The agent view subscriber is not running or not connected. |
 | `agent_unavailable` | The Gateway has no fresh [view](/reference/node-agent#freshness) of the serving Node, for example because its agent is stopped. |
-| `agent_outdated` | The Node's agent is fresh but has not joined its log channel. Agents before 0.3.0 cannot stream logs. |
+| `agent_not_joined` | The Node's agent is 0.3.0 or newer and fresh, but it has not joined its log channel yet, for example while it reconnects during a `websocket` move. |
+| `agent_outdated` | The Node's agent is older than 0.3.0 and cannot stream logs. |
 
 Clients then use one-shot reads over SSH: the web app polls every 10 seconds, and `--follow` in the CLI polls every 5 seconds. They do the same when the Gateway refuses a stream with `logs.stream_limit`.
+
+Six reasons pass on their own: `subscriber_down`, `agent_unavailable`, `agent_not_joined`, `logs.stream_limit`, and the ends `agent_left` and `relay_behind`. For these, the web app and the CLI try to open a stream again every 30 seconds while they poll. They keep polling for `ssh_only`, `realtime_not_configured`, `agent_outdated`, and `source_unavailable`.
 
 | Code | HTTP | Meaning |
 | --- | --- | --- |
