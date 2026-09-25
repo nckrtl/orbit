@@ -223,7 +223,9 @@ When the parent task is open, Tokens is the total for the current implementer of
 
 ## Scheduler and ceilings
 
-After a create or update stores a `todo` group, the Gateway scheduler claims the oldest `todo` group that still fits the Node ceiling. It never claims a `backlog` group. It does not poll Nodes and it does not apply a per-Project ceiling.
+After a create or update stores a `todo` group, the Gateway scheduler claims the oldest `todo` group that still fits the Node ceiling. If provisioning returns no Instance, that group returns to `todo` with a visible assistance reason and the scheduler continues with the next eligible `todo` group.
+
+It never claims a `backlog` group. It does not poll Nodes and it does not apply a per-Project ceiling.
 
 Active groups are those in `reserved`, `running`, `reviewing`, or `settling`.
 
@@ -233,7 +235,9 @@ Active groups are those in `reserved`, `running`, `reviewing`, or `settling`.
 
 The Node ceiling applies once `taskable` points at an Instance on that Node. A group without an Instance is not held by a Project ceiling.
 
-A fitting claimed group moves from `todo` to `reserved`. InstanceProvisioning assigns the shared Instance on an active Linux `app-dev` Node with capacity and a WireGuard address. Both of the group's drivers must allow the Node. T3 requires an active `t3-code` Process, and Pi requires an active `pi-server` Process, each with desired state `running`. This recorded state is the placement signal, not an HTTP health probe. A [development node exclusion](/reference/development-node-exclusions) removes that Node from the choice before the driver checks and the ceiling. If no remaining Node fits, provisioning returns no Instance and the group remains `queued` without a workspace.
+A fitting claimed group moves from `todo` to `reserved`. InstanceProvisioning assigns the shared Instance on an active Linux `app-dev` Node with capacity and a WireGuard address. Both of the group's drivers must allow the Node. T3 requires an active `t3-code` Process, and Pi requires an active `pi-server` Process, each with desired state `running`. This recorded state is the placement signal, not an HTTP health probe. A [development node exclusion](/reference/development-node-exclusions) removes that Node from the choice before the driver checks and the ceiling.
+
+If no remaining Node fits, provisioning returns no Instance, the group returns to `todo` with a visible assistance reason, and claim processing continues with the next eligible group. The reason clears when a later provisioning attempt succeeds and the group moves to `running`; it does not block task observation while the group is running.
 
 When the assignment fits the Node ceiling, the group becomes `running`. AgentSpawner starts the first implementer through the selected driver. The shared reviewer starts at the first handoff. The Gateway stores an Orbit thread ID only after creation and the opening turn succeed.
 
@@ -378,7 +382,7 @@ Confidence below `ORBIT_TASKS_JEV_CONFIDENCE_THRESHOLD` (default `0.75`) becomes
 
 Gateway uses `laravel/ai` Classification with its official TypeSafe provider in `config/ai.php`. The package client posts to TypeSafe. Tests use the package fake and never call the network.
 
-Run the tick with `php artisan tasks:tick` while the extension is enabled. One Gateway lock protects scheduled and manual ticks. A held lock skips the invocation without routing or claiming work. After current work and merge checks, the tick fills available Node capacity with the oldest `todo` groups. Groups that are reserved, running, reviewing, settling, assisted, or awaiting merge count toward the limit of 10.
+Run the tick with `php artisan tasks:tick` while the extension is enabled. One Gateway lock protects scheduled and manual ticks. A held lock skips the invocation without routing or claiming work. After current work and merge checks, the tick fills available Node capacity with the oldest `todo` groups. A provisioning failure leaves the group in `todo` with its assistance reason visible, and the tick continues to the next eligible group. When a later attempt succeeds, the reason clears as the group moves to `running`. Groups that are reserved, running, reviewing, settling, assisted, or awaiting merge count toward the limit of 10.
 
 The Gateway registers `tasks:tick` every ten seconds when the tasks extension is enabled. LIVE Ops must run Laravel's `php artisan schedule:work` process for this schedule to advance sessions; this feature does not provision that process or a fleet cron.
 

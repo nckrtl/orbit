@@ -21,6 +21,8 @@ use Throwable;
 
 final readonly class TaskScheduler
 {
+    private const string ProvisioningUnavailableReason = 'Workspace provisioning did not return an instance.';
+
     public function __construct(
         private TaskConcurrencyGuard $ceilings,
         private InstanceProvisioning $provisioning,
@@ -762,38 +764,49 @@ final readonly class TaskScheduler
 
     public function claimNext(): ?TaskGroup
     {
-        $reserved = DB::transaction(function (): ?TaskGroup {
-            $candidates = TaskGroup::query()->where('execution_mode', TaskExecutionMode::Managed)
-                ->with(['tasks', 'taskable'])
-                ->where('status', TaskGroupStatus::Todo)
-                ->orderBy('id')
-                ->lockForUpdate()
-                ->get();
+        $unprovisionableGroupIds = [];
 
-            foreach ($candidates as $group) {
-                if (! $this->ceilings->canActivate($group)) {
-                    continue;
+        while (true) {
+            $reserved = DB::transaction(function () use ($unprovisionableGroupIds): ?TaskGroup {
+                $candidates = TaskGroup::query()->where('execution_mode', TaskExecutionMode::Managed)
+                    ->with(['tasks', 'taskable'])
+                    ->where('status', TaskGroupStatus::Todo)
+                    ->when($unprovisionableGroupIds !== [], fn ($query) => $query->whereNotIn('id', $unprovisionableGroupIds))
+                    ->orderBy('id')
+                    ->lockForUpdate()
+                    ->get();
+
+                foreach ($candidates as $group) {
+                    if (! $this->ceilings->canActivate($group)) {
+                        continue;
+                    }
+
+                    $group->status = TaskGroupStatus::Reserved;
+                    $group->save();
+
+                    return $group->fresh(['tasks', 'app', 'taskable']) ?? $group;
                 }
 
-                $group->status = TaskGroupStatus::Reserved;
-                $group->save();
+                return null;
+            });
 
-                return $group->fresh(['tasks', 'app', 'taskable']) ?? $group;
+            if (! $reserved instanceof TaskGroup) {
+                return null;
             }
 
-            return null;
-        });
+            $instance = $this->provisioning->provision(InstanceProvisionIntent::for($reserved));
 
-        if (! $reserved instanceof TaskGroup) {
-            return null;
-        }
+            if (! $instance instanceof AppInstance) {
+                $reserved->update([
+                    'status' => TaskGroupStatus::Todo,
+                    'assistance_reason' => self::ProvisioningUnavailableReason,
+                ]);
+                $unprovisionableGroupIds[] = $reserved->id;
 
-        $instance = $this->provisioning->provision(InstanceProvisionIntent::for($reserved));
+                continue;
+            }
 
-        if (! $instance instanceof AppInstance) {
-            $reserved->update(['status' => TaskGroupStatus::Todo]);
-
-            return null;
+            break;
         }
 
         $started = DB::transaction(function () use ($reserved, $instance): TaskGroup {
@@ -818,6 +831,10 @@ final readonly class TaskScheduler
 
             $group->status = TaskGroupStatus::Running;
             $group->started_at ??= now();
+            if ($group->assistance_reason === self::ProvisioningUnavailableReason) {
+                $group->assistance_requested = false;
+                $group->assistance_reason = null;
+            }
             $group->save();
 
             return $group->fresh(['tasks', 'app', 'taskable']) ?? $group;
