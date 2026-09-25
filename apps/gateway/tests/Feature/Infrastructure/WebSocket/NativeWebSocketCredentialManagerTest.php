@@ -5,6 +5,8 @@ declare(strict_types=1);
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\WebSocket\WebSocketCredentialManager;
+use App\Infrastructure\Caddy\Build\CaddySiteCertificates;
+use App\Infrastructure\WebSocket\WebSocketDnsTarget;
 use App\Infrastructure\WebSocket\WebSocketFootprint;
 use App\Models\Node;
 use App\Models\Setting;
@@ -69,6 +71,29 @@ it('reads the active assignment credentials through current()', function (): voi
         ->and($current?->appKey)->toBe($ensured->appKey)
         ->and($current?->appSecret)->toBe($ensured->appSecret)
         ->and($current?->laravelAppKey)->toBe($ensured->laravelAppKey);
+});
+
+it('points the Gateway realtime client at the Node that serves reverb.orbit during a move', function (): void {
+    $source = Node::query()->create([
+        'name' => 'websocket-source',
+        'status' => LifecycleStatus::Active,
+        'platform' => 'linux',
+        'public_ssh_host' => '192.0.2.89',
+        'wireguard_ip' => '10.44.0.89',
+        'user' => 'orbit',
+    ]);
+    new CaddySiteCertificates()->record($source->id, CaddySiteCertificates::Websocket);
+    // The move stored the role row on the target, which has its certificate but no live build yet.
+    $target = websocketCredentialsNode();
+    new CaddySiteCertificates()->record($target->id, CaddySiteCertificates::Websocket);
+    $manager = app(WebSocketCredentialManager::class);
+    $manager->ensure($target);
+
+    expect($manager->current()?->servingAddress)->toBe('10.44.0.89');
+
+    new WebSocketDnsTarget()->markServing($target->id);
+
+    expect($manager->current()?->servingAddress)->toBe('10.44.0.90');
 });
 
 it('purges every stored credential', function (): void {

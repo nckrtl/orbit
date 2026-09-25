@@ -24,6 +24,7 @@ final readonly class NativeWebSocketCredentialManager implements WebSocketCreden
 
     public function __construct(
         private SettingRepository $settings,
+        private WebSocketDnsTarget $dnsTarget = new WebSocketDnsTarget,
     ) {}
 
     public function ensure(Node $node): WebSocketCredentials
@@ -77,12 +78,17 @@ final readonly class NativeWebSocketCredentialManager implements WebSocketCreden
             return null;
         }
 
+        // The Gateway's own realtime client reaches `reverb.orbit` where private DNS sends every other client:
+        // during a move, the old Node until the new Node's build serves the site.
+        $serving = $this->dnsTarget->node($node);
+        $address = $serving?->wireguard_ip;
+
         return new WebSocketCredentials(
             $appId,
             $appKey,
             $appSecret,
             $laravelAppKey,
-            is_string($node->wireguard_ip) && $node->wireguard_ip !== '' ? $node->wireguard_ip : null,
+            is_string($address) && $address !== '' ? $address : null,
         );
     }
 

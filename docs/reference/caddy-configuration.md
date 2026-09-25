@@ -47,7 +47,9 @@ A role's sites render while the role is provisioning or active, and after a fail
 
 The `websocket`, `analytics`, ProxyCli, and Metrics sites also wait for their certificate: the Gateway records when the role's certificate step has placed the certificate on the Node, and forgets it at the removal that withdraws the site. A build during a role's first convergence or relocation therefore leaves that site out instead of failing for every site on the Node.
 
-When `websocket` moves, the old Node keeps `reverb.orbit` until the new Node serves it, private DNS answers with the new Node, and cached answers can have expired, which is the 31-second grace that Route moves use. Only then does the move withdraw the site and the certificate on the old Node. Private DNS names the new Node only after its build is live. Until then, any private DNS publication, such as one from a Route created during the move, still answers with the old Node, so a client never reaches a Node that does not serve the site yet.
+When `websocket` moves, the old Node keeps `reverb.orbit` until the new Node serves it, private DNS answers with the new Node, and cached answers can have expired, which is the 31-second grace that Route moves use. Only then does the move withdraw the site and the certificate on the old Node.
+
+Private DNS names the new Node only after its build is live. Until then, any private DNS publication, such as one from a Route created during the move, still answers with the old Node, so a client never reaches a Node that does not serve the site yet. The Gateway's own realtime client, which sends broadcasts and subscribes to the agent view, connects to the same Node that private DNS names.
 
 | Site source | Nodes | Listener |
 | --- | --- | --- |
@@ -132,7 +134,7 @@ The command that requested the build fails with its usual error code:
 | Metrics and service metrics | `metrics.caddy_publication_failed` |
 | Gateway web convergence | `gateway.caddy_config_invalid` at `render` or `validate`, `gateway.caddy_start_failed` at `reload`, and `gateway.caddy_config_install_failed` at any other stage |
 
-Role convergence, such as `orbit node:role:add NODE app-dev --converge`, fails with `node_role.convergence_failed`; `orbit node:role:list` shows the publisher's code as the underlying error. The error message, the activity record, and the `node`, `stage`, and `message` fields of the error details name the Node, the failed stage, and Caddy's message. The CLI prints them under `error.details` with `--json`, next to the `step` that requested the build:
+Role convergence, such as `orbit node:role:add NODE app-dev --converge`, fails with `node_role.convergence_failed`; `orbit node:role:list` shows the publisher's code as the underlying error. The error message, the activity record, and the `node`, `stage`, and `message` fields of the error details name the Node, the failed stage, and Caddy's message. Each stage bounds the message at 2,000 bytes of UTF-8 and marks a cut with `…`. The CLI prints them under `error.details` with `--json`, next to the `step` that requested the build:
 
 ```text
 The Caddy build for Node [app-prod] failed at stage [validate]: Error: loading certificates: open /etc/caddy/orbit-websocket-cert-current/reverb.pem: no such file or directory
@@ -209,5 +211,7 @@ The `role` family renders the Node's build from stored state and compares it byt
 | `buildable` | `refused` | Stored state renders no buildable file, as `Build refused:` in `orbit:caddy-build NODE --dry-run` shows |
 
 Doctor checks every Linux Node that renders a Caddy site or holds a `gateway`, `router`, `ingress`, `app-dev`, `app-prod`, `websocket`, or `analytics` role. To repair drift, build the Node again with `php artisan orbit:caddy-build NODE` on the Gateway machine, or converge a role that publishes one of the listed sites, such as `orbit node:role:add NODE app-prod --converge`. The build backs up a hand-edited or foreign file before it replaces it. When Doctor cannot read the live file, it reports `role.inspection_failed`.
+
+Doctor compares under the Gateway's build lock for the Node, so it waits for a running build to finish and never reports the file that build is replacing. A command that has saved its change but has not started its build yet can still show `role.caddy_build_drift` for a moment. Run Doctor again; a drift that remains is real. When a build holds the lock for more than 30 seconds, Doctor reports `role.inspection_failed` for that Node.
 
 For a production Instance, the `instance` family checks that each of the Instance's own site blocks is in the live file exactly as a build renders it, and reports `instance.caddy_projection_mismatch` otherwise. Route families check their Route's sites in the same file. A change elsewhere in the file shows only as `role.caddy_build_drift`.

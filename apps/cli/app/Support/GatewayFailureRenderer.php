@@ -18,7 +18,7 @@ final class GatewayFailureRenderer
 
     private const int MAX_MESSAGE_LENGTH = 512;
 
-    /** Caddy's message in a Node Caddy build failure, which the Gateway bounds at 2,000 characters. */
+    /** Caddy's message in a Node Caddy build failure, which the Gateway bounds at 2,000 bytes. A longer one is cut, not dropped. */
     private const int MAX_BUILD_MESSAGE_LENGTH = 2000;
 
     /** The fields a failed Node Caddy build adds to any error it causes: the Node, the failed stage, and Caddy's message. */
@@ -76,7 +76,7 @@ final class GatewayFailureRenderer
     {
         $node = $details['node'] ?? null;
         $stage = $details['stage'] ?? null;
-        $message = is_string($details['message'] ?? null) ? self::safeText($details['message'], self::MAX_BUILD_MESSAGE_LENGTH) : null;
+        $message = is_string($details['message'] ?? null) ? self::truncatedText($details['message'], self::MAX_BUILD_MESSAGE_LENGTH) : null;
 
         if (
             ! is_string($node)
@@ -284,6 +284,25 @@ final class GatewayFailureRenderer
 
         if ($text === '' || strlen($text) > $maxLength) {
             return null;
+        }
+
+        return $text;
+    }
+
+    /**
+     * Like safeText, but cuts an oversized text on a UTF-8 character boundary and marks the cut, instead of dropping it.
+     */
+    private static function truncatedText(string $text, int $maxLength): ?string
+    {
+        $text = preg_replace(pattern: '/[\x00-\x1F\x7F]+/', replacement: ' ', subject: mb_scrub($text, 'UTF-8'));
+        $text = is_string($text) ? trim($text) : '';
+
+        if ($text === '') {
+            return null;
+        }
+
+        if (strlen($text) > $maxLength) {
+            $text = mb_strcut($text, 0, $maxLength - strlen('…'), 'UTF-8').'…';
         }
 
         return $text;

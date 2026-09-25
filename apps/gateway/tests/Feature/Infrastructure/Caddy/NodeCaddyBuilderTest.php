@@ -257,6 +257,33 @@ describe('two publishers on one Node', function (): void {
     });
 });
 
+describe('build error details', function (): void {
+    it('bounds the detail of every stage to 2,000 bytes on a character boundary', function (string $stage): void {
+        $exception = new NodeCaddyBuildException('app-dev', $stage, str_repeat('é', 1500));
+
+        expect(strlen($exception->detail))->toBeLessThanOrEqual(NodeCaddyBuildException::MaxDetailBytes)
+            ->and(mb_check_encoding($exception->detail, 'UTF-8'))->toBeTrue()
+            ->and($exception->detail)->toEndWith('é…')
+            ->and($exception->details()['message'])->toBe($exception->detail);
+    })->with(['render', 'validate']);
+
+    it('bounds a long Caddy message from the push script', function (): void {
+        $node = node_caddy_builder_node('app-dev', '10.44.0.3');
+        $this->ssh->results = [new CommandResult(1, '', 'Error: '.str_repeat('ü', 3000)."\norbit-caddy-build-stage=validate\n", 1, false)];
+
+        expect(fn () => node_caddy_builder($this)->build($node))
+            ->toThrow(function (NodeCaddyBuildException $exception): void {
+                expect($exception->stage)->toBe('validate')
+                    ->and(strlen($exception->detail))->toBeLessThanOrEqual(2000)
+                    ->and(mb_check_encoding($exception->detail, 'UTF-8'))->toBeTrue();
+            });
+    });
+
+    it('keeps a short detail unchanged', function (): void {
+        expect(new NodeCaddyBuildException('app-dev', 'reload', 'Caddy did not reload.')->detail)->toBe('Caddy did not reload.');
+    });
+});
+
 describe('the listen address check', function (): void {
     it('runs the address stage over SSH without root and changes nothing', function (): void {
         $node = node_caddy_builder_node('app-dev', '10.44.0.3');

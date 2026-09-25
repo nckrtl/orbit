@@ -1034,5 +1034,19 @@ it('keeps the details of a failed Node Caddy build for any error code and drops 
         ->and(GatewayFailureRenderer::safeDetails('metrics.caddy_publication_failed', ['node' => 'gateway', 'stage' => 'validate']))->toBe([])
         ->and(GatewayFailureRenderer::safeDetails('metrics.caddy_publication_failed', ['node' => "gate\nway", 'stage' => 'validate', 'message' => 'x']))->toBe([])
         ->and(GatewayFailureRenderer::safeDetails('metrics.caddy_publication_failed', ['node' => 'gateway', 'stage' => 'Validate!', 'message' => 'x']))->toBe([])
-        ->and(GatewayFailureRenderer::safeDetails('metrics.caddy_publication_failed', ['node' => 'gateway', 'stage' => 'validate', 'message' => str_repeat('a', 2001)]))->toBe([]);
+        ->and(GatewayFailureRenderer::safeDetails('metrics.caddy_publication_failed', ['node' => 'gateway', 'stage' => 'validate', 'message' => " \n "]))->toBe([]);
+});
+
+it('cuts an oversized build message on a character boundary instead of dropping the build details', function (): void {
+    $details = GatewayFailureRenderer::safeDetails('app-dev.caddy_config_failed', [
+        'node' => 'app-prod',
+        'stage' => 'render',
+        'message' => str_repeat('é', 1500),
+    ]);
+
+    expect($details['node'] ?? null)->toBe('app-prod')
+        ->and($details['stage'] ?? null)->toBe('render')
+        ->and(strlen($details['message'] ?? ''))->toBeLessThanOrEqual(2000)
+        ->and(mb_check_encoding($details['message'] ?? '', 'UTF-8'))->toBeTrue()
+        ->and($details['message'] ?? '')->toEndWith('é…');
 });

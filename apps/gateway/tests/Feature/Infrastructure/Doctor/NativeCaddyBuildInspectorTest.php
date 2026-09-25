@@ -6,6 +6,7 @@ use App\Domain\Doctor\DoctorInspectionException;
 use App\Domain\Gateway\GatewayServingHost;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
+use App\Infrastructure\Caddy\Build\NodeCaddyBuildLock;
 use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
 use App\Infrastructure\Caddy\Build\NodeCaddyLiveReader;
 use App\Infrastructure\Caddy\Build\NodeCaddyTransport;
@@ -20,10 +21,16 @@ use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
+use Illuminate\Filesystem\Filesystem;
 use Tests\Support\CaddySiteCertificateFixtures;
 
 beforeEach(function (): void {
     $this->ssh = new CaddyBuildInspectorSsh;
+    $this->lockDirectory = sys_get_temp_dir().'/orbit-caddy-build-inspector-'.bin2hex(random_bytes(6));
+});
+
+afterEach(function (): void {
+    new Filesystem()->deleteDirectory($this->lockDirectory);
 });
 
 it('matches a live Caddyfile that is byte for byte the fresh build', function (): void {
@@ -112,7 +119,29 @@ it('fails closed when the live Caddyfile cannot be read', function (CommandResul
     'a truncated read' => [new CommandResult(0, 'partial', '', 1, true)],
 ]);
 
-function caddy_build_inspector(object $test): NativeCaddyBuildInspector
+it('waits for a running build of the Node and reports its read as failed when the build keeps the lock', function (): void {
+    $node = caddy_build_inspector_websocket_node();
+    $this->ssh->live = app(NodeCaddyfileRenderer::class)->render($node)->content;
+    $now = 0.0;
+    $lock = new NodeCaddyBuildLock($this->lockDirectory, clock: function () use (&$now): float {
+        return $now += 31.0;
+    }, wait: static function (int $microseconds): void {});
+    mkdir($this->lockDirectory, 0o700, true);
+    $held = fopen("{$this->lockDirectory}/node-{$node->id}.lock", 'c+');
+    flock($held, LOCK_EX);
+
+    try {
+        expect(fn () => caddy_build_inspector($this, $lock)->inspect($node))->toThrow(DoctorInspectionException::class)
+            ->and($this->ssh->commands)->toBe([]);
+    } finally {
+        flock($held, LOCK_UN);
+        fclose($held);
+    }
+
+    expect(caddy_build_inspector($this, $lock)->inspect($node)?->matches)->toBeTrue();
+});
+
+function caddy_build_inspector(object $test, ?NodeCaddyBuildLock $lock = null): NativeCaddyBuildInspector
 {
     return new NativeCaddyBuildInspector(
         app(NodeCaddyfileRenderer::class),
@@ -123,6 +152,7 @@ function caddy_build_inspector(object $test): NativeCaddyBuildInspector
             new CaddyBuildInspectorKnownHosts,
             app(GatewayServingHost::class),
         )),
+        $lock ?? new NodeCaddyBuildLock($test->lockDirectory),
     );
 }
 

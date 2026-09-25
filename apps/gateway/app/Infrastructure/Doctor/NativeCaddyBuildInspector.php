@@ -10,6 +10,7 @@ use App\Domain\Doctor\DoctorInspectionException;
 use App\Domain\Nodes\RoleName;
 use App\Infrastructure\Caddy\Build\CaddySite;
 use App\Infrastructure\Caddy\Build\CaddySiteRoles;
+use App\Infrastructure\Caddy\Build\NodeCaddyBuildLock;
 use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
 use App\Infrastructure\Caddy\Build\NodeCaddyLiveReader;
 use App\Models\Node;
@@ -37,6 +38,7 @@ final readonly class NativeCaddyBuildInspector implements CaddyBuildInspector
     public function __construct(
         private NodeCaddyfileRenderer $renderer,
         private NodeCaddyLiveReader $live,
+        private NodeCaddyBuildLock $lock,
     ) {}
 
     public function inspect(Node $node): ?CaddyBuildObservation
@@ -46,13 +48,16 @@ final readonly class NativeCaddyBuildInspector implements CaddyBuildInspector
         }
 
         try {
-            $caddyfile = $this->renderer->render($node);
-
-            if ($caddyfile->sites === [] && ! $this->servesCaddyRole($node)) {
+            if ($this->renderer->render($node)->sites === [] && ! $this->servesCaddyRole($node)) {
                 return null;
             }
 
-            $live = $this->live->read($node);
+            // Under the Gateway's build lock for the Node, a build that is running finishes first, so Doctor
+            // never compares the stored state of a build with the file that build is still replacing.
+            [$caddyfile, $live] = $this->lock->run($node->id, $node->name, fn (): array => [
+                $this->renderer->render($node),
+                $this->live->read($node),
+            ]);
         } catch (Throwable) {
             throw new DoctorInspectionException;
         }
