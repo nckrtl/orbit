@@ -68,6 +68,41 @@ describe('AgentChannelState', function (): void {
             ->and($state->units)->toBe([]);
     });
 
+    it('wants a snapshot while agent events arrive without a complete one', function (): void {
+        $state = new AgentChannelState;
+
+        $state->apply('client-heartbeat', ['sequence' => 7], 100.0);
+        $state->apply('client-heartbeat', ['sequence' => 8], 105.0);
+
+        expect($state->snapshotWantedSince)->toBe(100.0);
+
+        $state->apply('client-snapshot', ['sequence' => 9, 'part' => 1, 'parts' => 1, 'docker' => 'absent', 'units' => []], 106.0);
+
+        expect($state->snapshotWantedSince)->toBeNull();
+    });
+
+    it('wants a confirming snapshot after its sequence goes back, even when the other stream completes one', function (): void {
+        $state = new AgentChannelState;
+        $state->apply('client-snapshot', ['sequence' => 40, 'part' => 1, 'parts' => 1, 'docker' => 'available', 'units' => [
+            channel_unit('orbit-process-1-web', 'running', 'docker'),
+        ]], 100.0);
+
+        // A second connection that publishes as the same agent member starts again at 1.
+        $state->apply('client-snapshot', ['sequence' => 1, 'part' => 1, 'parts' => 1, 'docker' => 'absent', 'units' => []], 101.0);
+
+        expect($state->hasSnapshot)->toBeTrue()
+            ->and($state->units)->toBe([])
+            ->and($state->snapshotWantedSince)->toBe(101.0);
+
+        $state->snapshotRequested();
+        $state->apply('client-snapshot', ['sequence' => 41, 'part' => 1, 'parts' => 1, 'docker' => 'available', 'units' => [
+            channel_unit('orbit-process-1-web', 'running', 'docker'),
+        ]], 106.0);
+
+        expect($state->units)->toBe(['docker:orbit-process-1-web' => 'running'])
+            ->and($state->snapshotWantedSince)->toBeNull();
+    });
+
     it('keeps only well-formed Orbit Process units', function (): void {
         $state = new AgentChannelState;
 

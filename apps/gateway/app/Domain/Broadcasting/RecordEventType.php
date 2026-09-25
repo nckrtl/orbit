@@ -48,4 +48,7 @@ enum RecordEventType: string
     case DeployStepCreated = 'deploy_step.created';
     case DeployStepUpdated = 'deploy_step.updated';
     case DeployStepDeleted = 'deploy_step.deleted';
+
+    case DeploymentCreated = 'deployment.created';
+    case DeploymentUpdated = 'deployment.updated';
 }

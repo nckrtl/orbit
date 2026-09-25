@@ -261,6 +261,7 @@
             "group": "Firewall",
             "openapi": "/openapi.json",
             "pages": [
+              "GET /api/v1/firewall-rules",
               "GET /api/v1/nodes/{node}/firewall-rules",
               "POST /api/v1/nodes/{node}/firewall-rules/allow",
               "POST /api/v1/nodes/{node}/firewall-rules/deny",
@@ -708,7 +709,8 @@
               "decisions/0146-retire-the-herdr-integration",
               "decisions/0147-retire-orbit-top",
               "decisions/0148-keep-a-gateway-view-of-node-agent-state",
-              "decisions/0150-keep-extension-commands-local-and-confirm-the-proxycli-fleet-stop"
+              "decisions/0150-keep-extension-commands-local-and-confirm-the-proxycli-fleet-stop",
+              "decisions/0154-recover-the-gateway-agent-view-without-a-membership-change"
             ]
           }
         ]

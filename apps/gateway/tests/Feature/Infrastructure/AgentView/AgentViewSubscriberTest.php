@@ -253,6 +253,128 @@ describe('the agent view subscriber', function (): void {
         expect(app(AgentStateView::class)->node($node->id)->freshness)->toBe(AgentViewFreshness::Missing);
     });
 
+    it('joins the channel again when agent events keep arriving without a complete snapshot', function (): void {
+        activate_websocket_role();
+        $node = subscriber_managed_node('app-dev', '10.44.0.3');
+        [$subscriber, $socket, $state] = agent_view_subscriber();
+        $subscriber->pass();
+        $sent = count($socket->sent);
+
+        // The agent's snapshot never arrived, for example because it was lost with a dropped connection.
+        $socket->push(agent_event($node->id, 'client-heartbeat', ['sequence' => 30]));
+        $subscriber->pass();
+        $state->now += AgentViewSubscriber::SnapshotRequestSeconds - 1;
+        $subscriber->pass();
+
+        expect(array_slice($socket->sent, $sent))->toBe([]);
+
+        $state->now += 1;
+        $subscriber->pass();
+        $requests = array_slice($socket->sent, $sent);
+
+        expect(array_column($requests, 'event'))->toBe(['pusher:unsubscribe', 'pusher:subscribe'])
+            ->and(array_column(array_column($requests, 'data'), 'channel'))->toBe(["presence-node.{$node->id}", "presence-node.{$node->id}"])
+            ->and($requests[1]['data']['channel_data'])->toBe('{"user_id":"gateway.1234.5678","user_info":{"kind":"gateway"}}');
+
+        // Still no snapshot: it asks again, but not more than once every few seconds.
+        $sent = count($socket->sent);
+        $socket->push(agent_event($node->id, 'client-heartbeat', ['sequence' => 31]));
+        $subscriber->pass();
+        $state->now += AgentViewSubscriber::SnapshotRequestSeconds - 1;
+        $subscriber->pass();
+
+        expect(array_slice($socket->sent, $sent))->toBe([]);
+
+        $state->now += 1;
+        $subscriber->pass();
+
+        expect(array_column(array_slice($socket->sent, $sent), 'event'))->toBe(['pusher:unsubscribe', 'pusher:subscribe']);
+
+        $socket->push(agent_snapshot($node->id, 32, [
+            ['name' => 'orbit-process-9-web', 'runtime' => 'systemd', 'runtime_status' => 'active'],
+        ]));
+        $subscriber->pass();
+
+        expect(app(AgentStateView::class)->node($node->id)->status(ProcessRuntime::Systemd, 'orbit-process-9-web'))->toBe('active');
+    });
+
+    it('recovers a Node after a second connection published as the same agent member', function (): void {
+        activate_websocket_role();
+        $node = subscriber_managed_node('app-dev', '10.44.0.3');
+        [$subscriber, $socket, $state] = agent_view_subscriber();
+        $subscriber->pass();
+        $running = [['name' => 'orbit-process-9-web', 'runtime' => 'docker', 'runtime_status' => 'running']];
+        $socket->push(agent_snapshot($node->id, 40, $running));
+        $subscriber->pass();
+
+        // A second agent process joins as `agent.{id}`. Reverb announces no member and relays both streams.
+        $socket->push(
+            agent_event($node->id, 'client-snapshot', ['sequence' => 1, 'docker' => 'absent', 'part' => 1, 'parts' => 1, 'units' => []]),
+            agent_event($node->id, 'client-heartbeat', ['sequence' => 41]),
+            agent_event($node->id, 'client-heartbeat', ['sequence' => 2]),
+        );
+        $subscriber->pass();
+
+        expect(app(AgentStateView::class)->node($node->id)->freshness)->toBe(AgentViewFreshness::Missing);
+
+        // The second process exits. Reverb announces nothing, and the agent sends only heartbeats.
+        $sent = count($socket->sent);
+        $state->now += AgentViewSubscriber::SnapshotRequestSeconds;
+        $socket->push(agent_event($node->id, 'client-heartbeat', ['sequence' => 42]));
+        $subscriber->pass();
+
+        expect(array_column(array_slice($socket->sent, $sent), 'event'))->toBe(['pusher:unsubscribe', 'pusher:subscribe']);
+
+        $socket->push(agent_snapshot($node->id, 43, $running));
+        $subscriber->pass();
+
+        $view = app(AgentStateView::class)->node($node->id);
+        expect($view->freshness)->toBe(AgentViewFreshness::Fresh)
+            ->and($view->status(ProcessRuntime::Docker, 'orbit-process-9-web'))->toBe('running');
+    });
+
+    it('asks for a confirming snapshot when the last one came from a second connection', function (): void {
+        activate_websocket_role();
+        $node = subscriber_managed_node('app-dev', '10.44.0.3');
+        [$subscriber, $socket, $state] = agent_view_subscriber();
+        $subscriber->pass();
+        $running = [['name' => 'orbit-process-9-web', 'runtime' => 'docker', 'runtime_status' => 'running']];
+        $socket->push(agent_snapshot($node->id, 40, $running));
+        $subscriber->pass();
+
+        // The second process's snapshot is complete but wrong: it had not reached Docker yet.
+        $socket->push(agent_event($node->id, 'client-snapshot', ['sequence' => 1, 'docker' => 'absent', 'part' => 1, 'parts' => 1, 'units' => []]));
+        $subscriber->pass();
+        $sent = count($socket->sent);
+        $state->now += AgentViewSubscriber::SnapshotRequestSeconds;
+        $subscriber->pass();
+
+        expect(array_column(array_slice($socket->sent, $sent), 'event'))->toBe(['pusher:unsubscribe', 'pusher:subscribe']);
+
+        $socket->push(agent_snapshot($node->id, 41, $running));
+        $subscriber->pass();
+
+        expect(app(AgentStateView::class)->node($node->id)->status(ProcessRuntime::Docker, 'orbit-process-9-web'))->toBe('running');
+    });
+
+    it('does not ask again while every snapshot arrives', function (): void {
+        activate_websocket_role();
+        $node = subscriber_managed_node('app-dev', '10.44.0.3');
+        [$subscriber, $socket, $state] = agent_view_subscriber();
+        $subscriber->pass();
+        $socket->push(agent_snapshot($node->id, 1, []));
+        $subscriber->pass();
+        $sent = count($socket->sent);
+
+        foreach (range(2, 6) as $sequence) {
+            $state->now += 5;
+            $socket->push(agent_event($node->id, 'client-heartbeat', ['sequence' => $sequence]));
+            $subscriber->pass();
+        }
+
+        expect(array_slice($socket->sent, $sent))->toBe([]);
+    });
+
     it('reports itself connected as soon as it reconnects', function (): void {
         activate_websocket_role();
         subscriber_managed_node('app-dev', '10.44.0.3');

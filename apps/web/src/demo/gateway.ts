@@ -281,6 +281,16 @@ export function createDemoGateway() {
                 ([, task = ""]) =>
                     ok(list("GET /api/v1/task-groups/{group}/tasks/{task}/comments", task)),
             ],
+            [
+                "GET",
+                /^\/api\/v1\/firewall-rules$/,
+                () =>
+                    ok(
+                        [...nodes]
+                            .sort((a, b) => a.id - b.id)
+                            .flatMap((node) => rules(String(node.id))),
+                    ),
+            ],
             ["GET", /^\/api\/v1\/nodes\/(\d+)\/firewall-rules$/, ([node = ""]) => ok(rules(node))],
             [
                 "GET",

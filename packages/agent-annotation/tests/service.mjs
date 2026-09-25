@@ -104,6 +104,35 @@ const origin = `http://127.0.0.1:${server.address().port}`;
 const browser = await chromium.launch();
 let local;
 try {
+    // A live subscription replaces the 15-second poll; a hidden tab never polls.
+    const quiet = await browser.newContext();
+    await quiet.clock.install();
+    const watcher = await quiet.newPage();
+    let reads = 0;
+    watcher.on("request", (request) => {
+        if (new URL(request.url()).pathname === "/annotations" && request.method() === "GET")
+            reads++;
+    });
+    const subscribed = subscriptions;
+    await watcher.goto(origin);
+    for (let tries = 0; subscriptions === subscribed && tries < 100; tries++)
+        await new Promise((resolve) => setTimeout(resolve, 50));
+    assert.ok(subscriptions > subscribed, "the watcher subscribes");
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    const settled = reads;
+    await watcher.clock.runFor(60_000);
+    assert.equal(reads, settled, "a live subscription stops the periodic fetch");
+    for (const socket of streams) socket.close();
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    await watcher.clock.runFor(1_000);
+    const reconnecting = reads;
+    await watcher.evaluate(() => {
+        Object.defineProperty(document, "visibilityState", { value: "hidden", configurable: true });
+    });
+    await watcher.clock.runFor(60_000);
+    assert.ok(reads - reconnecting <= 1, "a hidden tab does not poll");
+    await quiet.close();
+
     const context = await browser.newContext();
     const page = await context.newPage();
     await page.goto(origin);

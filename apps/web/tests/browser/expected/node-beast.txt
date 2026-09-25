@@ -50,4 +50,4 @@
 │  orbit:wireguard-members │ any │ allow │ any on orbit │ live
 ╰─
 
-←→ navigation or page · ↑↓ panes · Enter focuses · Esc back · x or right-click actions    demo fleet
+←→ navigation or page · ↑↓ panes · Enter focuses · Esc back · x or right-click actions    live updates paused demo fleet

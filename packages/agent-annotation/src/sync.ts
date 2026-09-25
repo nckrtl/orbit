@@ -1,6 +1,10 @@
 import { createStore } from "./core/store";
 import { threadSelection } from "./thread";
-import { connectAnnotationRealtime, type AnnotationRealtime } from "./realtime";
+import {
+    connectAnnotationRealtime,
+    type AnnotationRealtime,
+    type AnnotationRealtimeConnection,
+} from "./realtime";
 import { checkOrbit } from "./orbit";
 import { dismissAnnotations, isDismissed, loadAnnotations, saveAnnotations } from "./store";
 import type { Annotation } from "./types";
@@ -373,18 +377,27 @@ export function subscribeAnnotationEvents(handlers: AnnotationEventHandlers): ()
                 void refresh();
             }
         };
-        let disconnect = () => {};
+        let connection: AnnotationRealtimeConnection | undefined;
         if (settings.mode === "orbit") {
             void checkOrbit().then((availability) => {
                 if (closed || availability.state !== "available") return;
-                disconnect = connectAnnotationRealtime(realtime, () => void refresh());
+                connection = connectAnnotationRealtime(realtime, () => void refresh());
             });
         }
-        const timer = setInterval(() => void refresh(), 15000);
+        // Poll only when no event would tell us about a change, and never from a hidden tab.
+        const hidden = () => document.visibilityState === "hidden";
+        const timer = setInterval(() => {
+            if (!hidden() && !connection?.live()) void refresh();
+        }, 15000);
+        const onVisible = () => {
+            if (!hidden() && !connection?.live()) void refresh();
+        };
+        document.addEventListener("visibilitychange", onVisible);
         stop = () => {
             closed = true;
             clearInterval(timer);
-            disconnect();
+            document.removeEventListener("visibilitychange", onVisible);
+            connection?.stop();
             stream?.close();
         };
         void refresh();

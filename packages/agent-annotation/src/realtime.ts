@@ -8,15 +8,25 @@ export type AnnotationRealtime = {
     channel?: string;
     /** Host connection: notify on annotation changes and every successful subscription. */
     subscribe?: (refresh: () => void) => () => void;
+    /** Host connection: whether it is subscribed right now. The periodic refresh pauses while it is. */
+    live?: () => boolean;
 };
+
+/** A realtime connection: `live` says whether annotation changes arrive as events right now. */
+export type AnnotationRealtimeConnection = { stop: () => void; live: () => boolean };
 
 /** Own a connection only when the host does not supply its existing subscription. */
 export function connectAnnotationRealtime(
     options: AnnotationRealtime,
     refresh: () => void,
-): () => void {
-    if (options.subscribe) return options.subscribe(refresh);
+): AnnotationRealtimeConnection {
+    if (options.subscribe) {
+        const host = options.live;
+
+        return { stop: options.subscribe(refresh), live: () => host?.() ?? false };
+    }
     let stopped = false;
+    let live = false;
     let socket: Pusher | undefined;
     let retry: ReturnType<typeof setTimeout> | undefined;
     const controller = new AbortController();
@@ -63,16 +73,26 @@ export function connectAnnotationRealtime(
                 if (!stopped) refresh();
             };
             channel.bind("annotation.updated", notify);
-            channel.bind("pusher:subscription_succeeded", notify);
+            channel.bind("pusher:subscription_succeeded", () => {
+                live = true;
+                notify();
+            });
+            socket.connection.bind("state_change", ({ current }: { current: string }) => {
+                if (current !== "connected") live = false;
+            });
         } catch {
             if (!stopped) retry = setTimeout(() => void connect(), 30000);
         }
     };
     void connect();
-    return () => {
-        stopped = true;
-        controller.abort();
-        clearTimeout(retry);
-        socket?.disconnect();
+    return {
+        stop: () => {
+            stopped = true;
+            live = false;
+            controller.abort();
+            clearTimeout(retry);
+            socket?.disconnect();
+        },
+        live: () => live,
     };
 }

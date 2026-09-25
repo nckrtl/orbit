@@ -56,7 +56,7 @@ The Gateway writes `gateway_address` to the agent's `config.toml` on every conve
 
    The `version` value is the agent's short version string, such as `1.2.3`. The Gateway signs membership `agent.{id}` on the caller's own channel only. The response has the Pusher `auth` and `channel_data` values.
 
-4. The agent subscribes to `presence-node.{id}`, sends its snapshot, and then sends heartbeats and changes. [Realtime events](/reference/events#node-agent-channels) defines the events.
+4. The agent subscribes to `presence-node.{id}` and sends its snapshot. Then it publishes the events in [Realtime events](/reference/events#node-agent-channels).
 
 When the Gateway role moves, its WireGuard address changes, and every agent loses the Gateway until its configuration is rewritten. Run `orbit node:add <node>` or a role converge on each Node; a changed `gateway_address` restarts the agent. The Reverb address needs no converge, because the agent reads it from each realtime response when it connects.
 
@@ -70,7 +70,21 @@ The two agent endpoints require an active WireGuard peer, but no Gateway access 
 | `validation.failed` | 422 | `socket_id` is missing or not a Pusher socket ID, `channel_name` is missing, or `version` is not a short version string. |
 | `realtime.not_configured` | 404 | No `websocket` role is active, so there is nothing to sign. |
 
-When the connection drops, the agent reconnects with exponential backoff from 1 second to 30 seconds, with jitter. Every connection repeats all four steps, because Reverb gives each connection a new `socket_id`. The agent answers Reverb's `pusher:ping` with `pusher:pong`.
+When the connection drops, the agent reconnects with exponential backoff from 2 seconds to 30 seconds, with jitter. A session that stayed joined for 60 seconds starts the backoff again from 2 seconds. A session that fails sooner keeps backing off, so an agent that fails right after every join does not retry every 2 seconds. Every connection repeats all four steps, because Reverb gives each connection a new `socket_id`.
+
+The agent bounds each step, so a peer that stops answering never holds it:
+
+| Step | Limit |
+| --- | --- |
+| A Gateway request | 10 seconds to connect and 30 seconds in total |
+| One join, from the TCP connection to `pusher_internal:subscription_succeeded` | 30 seconds |
+| A joined connection | After 15 seconds without a message from Reverb, the agent sends `pusher:ping`. When nothing arrives within 10 more seconds, it reconnects. |
+
+The agent answers Reverb's `pusher:ping` with `pusher:pong`.
+
+One Node runs one agent. The agent holds an exclusive lock on `/etc/orbit/agent` while it runs, and a second agent process exits with `another orbit-agent already runs on this Node`. A second process would join as the same member, and Reverb announces neither its join nor its exit, so it would mix two event streams on the channel.
+
+Agent 0.1.1 has none of the limits above, no lock, and no 60-second snapshot. [ADR 0154](/decisions/0154-recover-the-gateway-agent-view-without-a-membership-change) added them in 0.1.2.
 
 ## Gateway view
 
@@ -89,7 +103,11 @@ The subscriber is a Gateway process that runs next to PHP-FPM on the Gateway hos
 | Channels | `presence-node.{id}` for every Node inside the [managed-node boundary](#where-it-runs) |
 | Member | `gateway.{socket id}`, with `user_info` `{ "kind": "gateway" }`, signed by the subscriber with the Reverb app secret |
 
-The subscriber joins each channel as a new member, so each agent sends it a full snapshot. Every 5 seconds it reads the Reverb connection again, and every 30 seconds the Node list: it joins new Nodes, leaves removed Nodes, and reconnects when the Reverb key changes. During a `websocket` move it keeps one link to each Reverb server that holds clients and takes each Node's state from the link with the newest agent event, as [Caddy configuration](/reference/caddy-configuration#node-caddy-build) describes. Without an active `websocket` role, it checks again every 60 seconds.
+The subscriber joins each channel as a new member, so each agent sends it a full snapshot.
+
+The subscriber asks an agent for a snapshot when a channel owes one for 5 seconds. A channel owes a snapshot while agent events arrive without a complete snapshot, and after the agent's `sequence` goes back without a membership change, until the next request. To ask, the subscriber sends `pusher:unsubscribe` and `pusher:subscribe` for that channel on its connection. Reverb announces it as a new member, and every agent connection sends a complete snapshot. The subscriber asks each channel at most once every 5 seconds and keeps what it knows until the snapshot arrives. [ADR 0154](/decisions/0154-recover-the-gateway-agent-view-without-a-membership-change) records why.
+
+Every 5 seconds it reads the Reverb connection again, and every 30 seconds the Node list: it joins new Nodes, leaves removed Nodes, and reconnects when the Reverb key changes. During a `websocket` move it keeps one link to each Reverb server that holds clients and takes each Node's state from the link with the newest agent event, as [Caddy configuration](/reference/caddy-configuration#node-caddy-build) describes. Without an active `websocket` role, it checks again every 60 seconds.
 
 When the connection drops, the subscriber clears the view and reconnects with exponential backoff from 1 second to 30 seconds, with jitter. While a second link is open, or for 15 seconds after one closed, it keeps a Node's stored view instead of clearing it. It answers `pusher:ping`, sends its own ping after 30 quiet seconds, and reconnects when no answer arrives within 30 more seconds. It ignores a message larger than 64 KB and keeps at most 4,096 units for each Node.
 
@@ -106,7 +124,7 @@ The view lives in its own file cache store in `ORBIT_HOME/cache/agent-view`. The
 
 The subscriber writes its own entry every 5 seconds, and at once when its connection drops or comes back. It removes the entry when it stops.
 
-The subscriber applies agent events with the rules in [Realtime events](/reference/events#events): it accepts an event only when Reverb's `user_id` is `agent.{id}`, applies a snapshot when every part has arrived, and starts over when the agent's `sequence` restarts. It removes a Node's entry when `agent.{id}` leaves the channel. It keeps a unit only when the name has the form `orbit-process-{id}-{name}`, the runtime is `systemd` or `docker`, and the status is a short lowercase word.
+The subscriber applies agent events with the rules in [Realtime events](/reference/events#events): it accepts an event only when Reverb's `user_id` is `agent.{id}`, applies a snapshot when every part has arrived, and starts over when the agent's `sequence` restarts. It removes a Node's entry when `agent.{id}` leaves the channel. Reverb announces that only when the member's last connection leaves. It keeps a unit only when the name has the form `orbit-process-{id}-{name}`, the runtime is `systemd` or `docker`, and the status is a short lowercase word.
 
 ### Freshness
 
@@ -172,6 +190,9 @@ The agent recovers from each failure below without an operator.
 | Reverb is down or the `websocket` role is absent | The agent and the subscriber retry. The web app polls Prometheus, and Gateway reads use Prometheus and SSH. |
 | The agent view subscriber stops | systemd restarts it after 2 seconds. Until it rejoins, the Gateway's view turns stale after 15 seconds, and Gateway reads use Prometheus and SSH. |
 | The Gateway is down | The agent cannot get a membership signed and retries. An agent that is already connected keeps publishing. |
+| A snapshot is lost | The subscriber asks for a new snapshot within about 10 seconds. Agent 0.1.2 also sends one every 60 seconds. |
+| A second agent process runs on the Node | Agent 0.1.2 refuses to start it. A second 0.1.1 process keeps resetting the subscriber's state, so the view stays `missing` until about 10 seconds after it exits. |
+| Reverb stops answering without closing the connection | The agent reconnects within about 30 seconds. |
 | systemd D-Bus is unavailable | The agent exits with an error, and systemd restarts it. |
 
 The agent logs to the systemd journal. Logs contain no Reverb key or signature.
@@ -201,7 +222,7 @@ Run `orbit node:add <node>` to repair the first three. `node:add` refuses a Node
 | --- | --- | --- |
 | `subscriber_down` | The subscriber stopped, or it has not written its health in the last 30 seconds. | Check `systemctl status orbit-agent-view` on the Gateway host, or run `php artisan orbit:gateway-web` in the Gateway checkout. |
 | `disconnected` | The subscriber runs but has no Reverb connection. | Check the `websocket` role with `orbit doctor --family=role`. |
-| `missing` | The subscriber is connected but has no complete snapshot from this Node's agent. | Check `journalctl -u orbit-agent` on the Node. |
+| `missing` | The subscriber is connected but has no complete snapshot from this Node's agent. The subscriber asks for one within about 10 seconds of the agent's next event. | Check `journalctl -u orbit-agent` on the Node, and `pgrep -a orbit-agent` for a second agent process. |
 | `stale` | No agent event arrived from this Node in the last 15 seconds. | Check the Node's network and `journalctl -u orbit-agent` on the Node. |
 
 ## Releases

@@ -30,6 +30,11 @@ use Throwable;
  * server and merges them per Node, taking the state with the newest agent event. A Node that loses its
  * state on one link while another link is open, or shortly after a link closed, keeps its stored entry,
  * which goes stale on its own, instead of reading as missing while its agent reconnects.
+ *
+ * Reverb announces a member only when its first connection joins and its last one leaves, and an
+ * agent sends a snapshot only when a member joins. So when agent events keep arriving without a
+ * complete snapshot, or the agent's sequence goes back without a membership change, the subscriber
+ * leaves and joins that channel again: its new membership makes every agent connection send one.
  */
 final class AgentViewSubscriber
 {
@@ -50,6 +55,8 @@ final class AgentViewSubscriber
     public const int PongTimeoutSeconds = 30;
 
     public const int ConnectTimeoutSeconds = 10;
+
+    public const int SnapshotRequestSeconds = 5;
 
     private const float MaxBackoffSeconds = 30.0;
 
@@ -198,6 +205,7 @@ final class AgentViewSubscriber
         $this->flush();
 
         foreach ($live as $link) {
+            $this->requestSnapshots($link);
             $this->keepAlive($link);
         }
 
@@ -400,7 +408,7 @@ final class AgentViewSubscriber
 
             foreach (array_diff(array_keys($link->channels), $this->nodeIds) as $nodeId) {
                 $this->send($link, ['event' => 'pusher:unsubscribe', 'data' => ['channel' => "presence-node.{$nodeId}"]]);
-                unset($link->channels[$nodeId]);
+                unset($link->channels[$nodeId], $link->snapshotRequestedAt[$nodeId]);
                 $this->dirty[$nodeId] = true;
             }
 
@@ -422,11 +430,52 @@ final class AgentViewSubscriber
             return;
         }
 
-        $channel = "presence-node.{$nodeId}";
-        $signature = $this->signer->sign($link->socketId, $channel, $link->connection, "gateway.{$link->socketId}", ['kind' => 'gateway']);
-
-        if ($this->send($link, ['event' => 'pusher:subscribe', 'data' => ['channel' => $channel] + $signature])) {
+        if ($this->send($link, $this->subscription($nodeId, $link->socketId, $link->connection))) {
             $link->channels[$nodeId] = new AgentChannelState;
+        }
+    }
+
+    /** @return array<string, mixed> */
+    private function subscription(int $nodeId, string $socketId, RealtimeConnectionData $connection): array
+    {
+        $channel = "presence-node.{$nodeId}";
+        $signature = $this->signer->sign($socketId, $channel, $connection, "gateway.{$socketId}", ['kind' => 'gateway']);
+
+        return ['event' => 'pusher:subscribe', 'data' => ['channel' => $channel] + $signature];
+    }
+
+    /**
+     * Leaves and joins again each channel on this link whose agent owes a complete snapshot. Reverb then
+     * announces the subscriber as a new member, and every agent connection answers with a snapshot. The
+     * state stays in place, so the Node turns fresh as soon as that snapshot is complete.
+     */
+    private function requestSnapshots(AgentViewLink $link): void
+    {
+        if ($link->socketId === null || $link->connection === null) {
+            return;
+        }
+
+        foreach ($link->channels as $nodeId => $state) {
+            $wantedSince = $state->snapshotWantedSince;
+
+            if (
+                $wantedSince === null
+                || $this->now() - $wantedSince < self::SnapshotRequestSeconds
+                || $this->now() - ($link->snapshotRequestedAt[$nodeId] ?? -INF) < self::SnapshotRequestSeconds
+            ) {
+                continue;
+            }
+
+            $link->snapshotRequestedAt[$nodeId] = $this->now();
+            $state->snapshotRequested();
+            $this->log->info('The agent view subscriber asks a Node agent for a complete snapshot.', ['node_id' => $nodeId, 'address' => $link->address]);
+
+            if (
+                ! $this->send($link, ['event' => 'pusher:unsubscribe', 'data' => ['channel' => "presence-node.{$nodeId}"]])
+                || ! $this->send($link, $this->subscription($nodeId, $link->socketId, $link->connection))
+            ) {
+                return;
+            }
         }
     }
 

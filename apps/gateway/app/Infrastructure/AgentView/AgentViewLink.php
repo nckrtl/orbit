@@ -27,6 +27,9 @@ final class AgentViewLink
 
     public ?float $pingSentAt = null;
 
+    /** @var array<int, float> When the subscriber last asked each Node's agent on this server for a snapshot. */
+    public array $snapshotRequestedAt = [];
+
     public function __construct(
         public readonly string $address,
         public readonly WebSocketClient $socket,
@@ -42,6 +45,7 @@ final class AgentViewLink
     {
         $this->socket->close();
         $this->channels = [];
+        $this->snapshotRequestedAt = [];
         $this->socketId = null;
         $this->connection = null;
         $this->pingSentAt = null;

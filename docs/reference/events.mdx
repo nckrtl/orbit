@@ -144,9 +144,18 @@ A Route that Orbit creates implicitly while provisioning an Instance does not em
 
 A deploy step has no numeric id in its API shape, so `id` carries the step's name instead. `data` matches the deploy-step list and show endpoints exactly, so it does not include the owning Instance's id.
 
+### Deployment (`deployment`)
+
+| Type | Fires when | Data |
+| --- | --- | --- |
+| `deployment.created` | An `instance:deploy` or `instance:rollback` run starts and records its `running` row. | `AppInstanceDeploymentData` |
+| `deployment.updated` | That run finishes, whether it succeeded or failed. | `AppInstanceDeploymentData` |
+
+`data` matches one row of `GET /api/v1/instances/{instance}/deployments`, so it carries `app_instance_id`. It never carries the run's output events; a client fetches `GET /api/v1/deployments/{deployment}` for those. The Gateway keeps the 50 newest rows per Instance and removes older rows without an event, so a client that shows the history refetches it after `deployment.updated`.
+
 ## Limits
 
-An event broadcasts only when its triggering action returns successfully. An operation that fails after it already wrote failure evidence onto a record, such as a `failed_step` or `error_code`, does not broadcast that write: the action throws before it reaches the broadcast call, and the HTTP response already reports the failure.
+An event broadcasts only when its triggering action returns successfully. Deployment events are the exception: a failed run still records its outcome, so it still broadcasts `deployment.updated`. An operation that fails after it already wrote failure evidence onto a record, such as a `failed_step` or `error_code`, does not broadcast that write: the action throws before it reaches the broadcast call, and the HTTP response already reports the failure.
 
 An idempotent create call, such as adding a Process, Schedule, or firewall rule that already exists with identical configuration, returns the existing record without change and does not broadcast. Only a call that creates a genuinely new record broadcasts a `created` event.
 
@@ -185,7 +194,7 @@ Each Node has a presence channel, `presence-node.{id}`, where its [Node agent](/
 | `gateway.{socket id}` | The Gateway's agent view subscriber | The subscriber itself, with the Reverb app secret the Gateway holds. No HTTP request is involved. |
 | `viewer.{socket id}` | Any other subscriber, such as a browser | `POST /api/v1/broadcasting/auth`, with the same rules as `orbit`. |
 
-A member's `user_info` is `{ "kind": "agent", "node_id": 12, "version": "0.1.0" }` for the agent, `{ "kind": "gateway" }` for the subscriber, and `{ "kind": "viewer", "node_id": 7 }` for a viewer, where a viewer's `node_id` is the Node the viewer connects from. The existing auth endpoint never signs an `agent.*` or `gateway.*` member. It refuses any other `presence-*` channel, including a malformed `presence-node.*` name, with `broadcast.channel_forbidden` (403). Presence events tell a subscriber when the agent joins (`pusher:member_added`) and leaves (`pusher:member_removed`). A clean agent stop and an agent crash both close the connection, so the agent leaves at once.
+A member's `user_info` is `{ "kind": "agent", "node_id": 12, "version": "0.1.0" }` for the agent, `{ "kind": "gateway" }` for the subscriber, and `{ "kind": "viewer", "node_id": 7 }` for a viewer, where a viewer's `node_id` is the Node the viewer connects from. The existing auth endpoint never signs an `agent.*` or `gateway.*` member. It refuses any other `presence-*` channel, including a malformed `presence-node.*` name, with `broadcast.channel_forbidden` (403). Presence events tell a subscriber when the agent joins (`pusher:member_added`) and leaves (`pusher:member_removed`). A clean agent stop and an agent crash both close the connection, so the agent leaves at once. Reverb announces a member only when its first connection joins and its last connection leaves, so a second connection with the same member ID produces no presence event.
 
 ### Events
 
@@ -194,12 +203,12 @@ The agent publishes Pusher client events. Reverb adds the sender's `user_id` to 
 | Event | When | Data |
 | --- | --- | --- |
 | `client-heartbeat` | Every 5 seconds. | `{ sequence, at }` |
-| `client-snapshot` | After the agent joins, when a new member joins, and after the agent reconnects to Docker. | `{ sequence, at, docker, part, parts, units }` |
+| `client-snapshot` | After the agent joins, when a new member joins, after the agent reconnects to Docker, and at least every 60 seconds. Agent 0.1.1 sends no periodic snapshot. | `{ sequence, at, docker, part, parts, units }` |
 | `client-process` | As soon as a unit or container changes, after 250 milliseconds of merging. | `{ sequence, at, unit }` |
 
 | Field | Contract |
 | --- | --- |
-| `sequence` | A counter that increases with every event from one agent run. It restarts at 1 when the agent restarts. |
+| `sequence` | A counter that increases with every event from one agent run. It restarts at 1 when the agent restarts. A subscriber that sees it go back without a member event cannot tell a restarted agent from a second agent process, so it should discard its state and wait for a new snapshot. |
 | `at` | ISO 8601 UTC time at which the agent sent the event. |
 | `docker` | `available` or `absent`. |
 | `part`, `parts` | This part's number, from 1, and the number of parts. The agent splits a snapshot so that each message stays under Reverb's 10,000-byte limit. The parts arrive in order with consecutive `sequence` values, and a subscriber applies the snapshot once it has every part. |
