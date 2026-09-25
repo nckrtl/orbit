@@ -584,7 +584,8 @@
             "title": "Contributing to Orbit",
             "kind": "product",
             "components": [
-                "apps/cli"
+                "apps/cli",
+                "apps/gateway"
             ],
             "concepts": [
                 "Gateway",
