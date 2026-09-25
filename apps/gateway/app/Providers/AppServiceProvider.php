@@ -550,6 +550,7 @@ final class AppServiceProvider extends ServiceProvider
                     command: [PHP_BINARY, base_path('artisan'), 'orbit:agent-view-publish'],
                     log: $app->make(LoggerInterface::class),
                     clock: CacheAgentStateView::now(...),
+                    workingDirectory: base_path(),
                 ),
             ),
         );

@@ -158,6 +158,36 @@ describe("task events", () => {
         expect(fetched.sort()).toEqual(["task-groups", "task-groups/8"]);
     });
 
+    it("lets an event's refetch replace a request that started before the change", async () => {
+        const key = ["task-groups", "8"];
+        let calls = 0;
+        let answerOldRequest: (value: unknown) => void = () => {};
+        const queryFn = () => {
+            calls += 1;
+            if (calls === 1) return Promise.resolve({ lines: 0 });
+            if (calls === 2) return new Promise((resolve) => (answerOldRequest = resolve));
+            return Promise.resolve({ lines: 5 });
+        };
+        const unsubscribe = new QueryObserver(client, {
+            queryKey: key,
+            queryFn,
+            staleTime: Infinity,
+        }).subscribe(() => {});
+        await vi.waitFor(() => expect(client.getQueryData(key)).toEqual({ lines: 0 }));
+        void client.refetchQueries({ queryKey: key });
+        await vi.waitFor(() => expect(calls).toBe(2));
+
+        applyEvent(client, event("task_group.updated", { id: 8, status: "running" }));
+        flushTaskRefetches();
+        await vi.waitFor(() => expect(client.getQueryData(key)).toEqual({ lines: 5 }));
+        answerOldRequest({ lines: 3 });
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        unsubscribe();
+
+        expect(calls).toBe(3);
+        expect(client.getQueryData(key)).toEqual({ lines: 5 });
+    });
+
     it("refetches that subtask's comments for a new comment", () => {
         const invalidate = vi.spyOn(client, "invalidateQueries");
         applyEvent(client, event("task_comment.created", { id: 40, task_group_id: 8, task_id: 3 }));

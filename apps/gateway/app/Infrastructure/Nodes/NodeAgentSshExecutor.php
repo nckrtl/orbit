@@ -21,10 +21,24 @@ use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\AppInstance;
 use App\Models\Node;
+use Illuminate\Support\Facades\Log;
 use Throwable;
 
 final readonly class NodeAgentSshExecutor implements NodeAgentRuntime
 {
+    /** Closes each named checkout's regular `.env` to other users, and names every checkout it could not close on stderr. */
+    public const string CloseEnvironmentsScript = <<<'BASH'
+        failed=0
+        for checkout in "$@"; do
+          [ -d "$checkout" ] && [ ! -L "$checkout" ] || continue
+          if ! find "$checkout" -maxdepth 1 -name .env -type f -exec chmod o-rwx {} + 2>/dev/null; then
+            printf '%s\n' "$checkout" >&2
+            failed=1
+          fi
+        done
+        exit "$failed"
+        BASH;
+
     public function __construct(
         private SshExecutor $ssh,
         private SshKeyProvider $keys,
@@ -75,8 +89,8 @@ final readonly class NodeAgentSshExecutor implements NodeAgentRuntime
 
     /**
      * Removes the world bits from the `.env` of every Instance checkout in the Instance root, so the
-     * agent, like every other local user, cannot read it. Best effort: a failure leaves the files as
-     * they are and does not fail the converge.
+     * agent, like every other local user, cannot read it. Best effort: a failure logs a warning with
+     * the checkouts it could not close and does not fail the converge.
      */
     private function closeInstanceEnvironments(Node $node, ?string $root): void
     {
@@ -86,6 +100,7 @@ final readonly class NodeAgentSshExecutor implements NodeAgentRuntime
 
         $checkouts = AppInstance::query()
             ->where('node_id', $node->getKey())
+            ->orderBy('id')
             ->pluck('checkout_path')
             ->filter(static fn (mixed $path): bool => is_string($path) && str_starts_with($path, $root.'/') && ! str_contains($path, '/..'))
             ->values()
@@ -96,17 +111,21 @@ final readonly class NodeAgentSshExecutor implements NodeAgentRuntime
         }
 
         try {
-            $this->raw($node, new RemoteCommand(
+            $result = $this->raw($node, new RemoteCommand(
                 arguments: ['bash', '-seu', '--', ...$checkouts],
-                input: <<<'BASH'
-                    for checkout in "$@"; do
-                      [ -d "$checkout" ] && [ ! -L "$checkout" ] || continue
-                      find "$checkout" -maxdepth 1 -name .env -type f -perm /o=rwx -exec chmod o-rwx {} + 2>/dev/null || true
-                    done
-                    BASH,
+                input: self::CloseEnvironmentsScript,
             ));
-        } catch (Throwable) {
+        } catch (Throwable $exception) {
+            Log::warning('The agent converge could not close Instance environments.', ['node_id' => $node->getKey(), 'error' => $exception->getMessage()]);
+
             return;
+        }
+
+        if (! $result->succeeded()) {
+            Log::warning('The agent converge could not close Instance environments.', [
+                'node_id' => $node->getKey(),
+                'checkouts' => array_values(array_filter(explode("\n", trim($result->stderr)), static fn (string $line): bool => $line !== '')),
+            ]);
         }
     }
 

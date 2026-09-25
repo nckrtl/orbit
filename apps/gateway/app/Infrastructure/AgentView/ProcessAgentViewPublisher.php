@@ -14,15 +14,21 @@ use Throwable;
  * workspaces and Process usage have separate lanes, so a slow Prometheus never delays a commit's
  * notice. Each lane runs one child at a time. A run that passes `DeadlineSeconds` is stopped.
  *
- * Work is never lost. When a workspace run fails, is stopped, or cannot start, its workspaces go
- * back into the queue and run again after `BackoffSeconds`; the child reads the current view, so a
- * retry is safe. A usage sample is not retried, because the next one replaces it.
+ * When a workspace run fails, is stopped, or cannot start, its workspaces go back into the queue and
+ * run again after `BackoffSeconds`; the child reads the current view, so a retry is safe. A workspace
+ * that fails `MaxAttempts` runs in a row is dropped with an error in the log, until the agent reports
+ * a new change for it. A usage sample is not retried, because the next one replaces it.
  */
 final class ProcessAgentViewPublisher implements AgentViewPublisher
 {
     public const float DeadlineSeconds = 12.0;
 
     public const float BackoffSeconds = 15.0;
+
+    public const int MaxAttempts = 5;
+
+    /** @var array<string, int> Failed runs in a row, by `{node}:{instance}` pair. */
+    private array $failures = [];
 
     /** @var array<string, true> `{node}:{instance}` pairs waiting for a run. */
     private array $workspaces = [];
@@ -47,12 +53,15 @@ final class ProcessAgentViewPublisher implements AgentViewPublisher
         private readonly LoggerInterface $log,
         private readonly Closure $clock,
         private readonly float $deadlineSeconds = self::DeadlineSeconds,
+        private readonly ?string $workingDirectory = null,
     ) {}
 
     /** @param list<int> $instanceIds */
     public function queueWorkspaces(int $nodeId, array $instanceIds): void
     {
         foreach ($instanceIds as $instanceId) {
+            // A new change is new work: it gets a full set of attempts again.
+            unset($this->failures["{$nodeId}:{$instanceId}"]);
             $this->workspaces["{$nodeId}:{$instanceId}"] = true;
         }
     }
@@ -141,6 +150,7 @@ final class ProcessAgentViewPublisher implements AgentViewPublisher
         unset($this->running[$lane]);
 
         if ($lane === 'workspaces') {
+            $this->failures = array_diff_key($this->failures, $this->inFlight);
             $this->inFlight = [];
         }
     }
@@ -151,17 +161,46 @@ final class ProcessAgentViewPublisher implements AgentViewPublisher
         unset($this->running[$lane]);
         $this->notBefore[$lane] = $this->now() + self::BackoffSeconds;
 
-        if ($lane === 'workspaces') {
-            $this->workspaces += $this->inFlight;
-            $this->inFlight = [];
+        if ($lane !== 'workspaces') {
+            return;
         }
+
+        $dropped = [];
+
+        foreach (array_keys($this->inFlight) as $pair) {
+            $this->failures[$pair] = ($this->failures[$pair] ?? 0) + 1;
+
+            if ($this->failures[$pair] >= self::MaxAttempts) {
+                $dropped[] = $pair;
+                unset($this->failures[$pair]);
+
+                continue;
+            }
+
+            $this->workspaces[$pair] = true;
+        }
+
+        $this->inFlight = [];
+
+        if ($dropped !== []) {
+            $this->log->error('The agent view publish run gave up on task workspaces after repeated failures; their groups keep their stored counts until the next change.', [
+                'workspaces' => $dropped,
+                'attempts' => self::MaxAttempts,
+            ]);
+        }
+    }
+
+    /** @return array<string, int> Failed runs in a row, by pair still queued. */
+    public function failures(): array
+    {
+        return $this->failures;
     }
 
     /** @param list<string> $arguments */
     private function start(string $lane, array $arguments): void
     {
         try {
-            $process = new Process([...$this->command, ...$arguments]);
+            $process = new Process([...$this->command, ...$arguments], $this->workingDirectory);
             $process->setTimeout(null);
             $process->start();
             $this->running[$lane] = ['process' => $process, 'startedAt' => $this->now()];

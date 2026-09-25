@@ -22,8 +22,11 @@ use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Models\AppInstance;
 use App\Models\Node;
+use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Log;
+use Symfony\Component\Process\Process;
 
 it('pins agent v0.1.1 assets and checksums from its release manifest', function (): void {
     expect(NodeAgentFootprint::Version)->toBe('0.1.1')
@@ -344,6 +347,8 @@ final class AgentInstallSsh implements SshExecutor
         private ?string $installedChecksum,
         private string $candidateChecksum = NodeAgentFootprint::X8664Checksum,
         private bool $unitExists = false,
+        public bool $runScriptsLocally = false,
+        public ?CommandResult $scriptResult = null,
     ) {}
 
     public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
@@ -359,6 +364,18 @@ final class AgentInstallSsh implements SshExecutor
             return $checksum === null
                 ? new CommandResult(1, '', '', 1, false)
                 : new CommandResult(0, $checksum.'  '.$path."\n", '', 1, false);
+        }
+
+        if (($arguments[0] ?? null) === 'bash' && $this->scriptResult instanceof CommandResult) {
+            return $this->scriptResult;
+        }
+
+        if (($arguments[0] ?? null) === 'bash' && $this->runScriptsLocally) {
+            $process = new Process($arguments);
+            $process->setInput((string) $command->input);
+            $process->run();
+
+            return new CommandResult((int) $process->getExitCode(), $process->getOutput(), $process->getErrorOutput(), 1, false);
         }
 
         if (($arguments[1] ?? null) === 'test') {
@@ -405,6 +422,18 @@ final class AgentInstallStatefulSsh implements SshExecutor
             $this->checksums[$candidate] = NodeAgentFootprint::X8664Checksum;
 
             return new CommandResult(0, '', '', 1, false);
+        }
+
+        if (($arguments[0] ?? null) === 'bash' && $this->scriptResult instanceof CommandResult) {
+            return $this->scriptResult;
+        }
+
+        if (($arguments[0] ?? null) === 'bash' && $this->runScriptsLocally) {
+            $process = new Process($arguments);
+            $process->setInput((string) $command->input);
+            $process->run();
+
+            return new CommandResult((int) $process->getExitCode(), $process->getOutput(), $process->getErrorOutput(), 1, false);
         }
 
         if (($arguments[1] ?? null) === 'test') {
@@ -492,4 +521,68 @@ it('gets everything it needs to narrow the unit from the container', function ()
     expect(new ReflectionProperty($executor, 'storageRoots')->getValue($executor))->toBeInstanceOf(StorageRootResolver::class)
         ->and(new ReflectionProperty($executor, 'nodeSettings')->getValue($executor))->toBeInstanceOf(NodeSettingsNormalizer::class)
         ->and(new ReflectionProperty($executor, 'accounts')->getValue($executor))->toBeInstanceOf(ManagedUserAccountResolver::class);
+});
+
+/** @return array{string, Node} A temporary managed home and a saved Node whose Instances live under its `apps`. */
+function agent_env_home(): array
+{
+    $home = sys_get_temp_dir().'/orbit-agent-env-'.bin2hex(random_bytes(4));
+    mkdir($home.'/apps/shop/dev', 0o755, true);
+    mkdir($home.'/apps/shop/linked', 0o755, true);
+    mkdir($home.'/outside', 0o755, true);
+    $node = Node::query()->create([
+        'name' => 'agent-env', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'user' => 'orbit',
+        'architecture' => 'x86_64', 'public_ssh_host' => '192.0.2.45', 'wireguard_ip' => '10.44.0.45',
+    ]);
+    $app = App\Models\App::query()->create(['name' => 'Shop', 'slug' => 'shop', 'repository_url' => 'git@example.test:shop.git', 'default_branch' => 'main']);
+    foreach (['dev' => $home.'/apps/shop/dev', 'linked' => $home.'/apps/shop/linked', 'outside' => $home.'/outside'] as $name => $path) {
+        AppInstance::query()->create(['app_id' => $app->id, 'node_id' => $node->id, 'name' => $name, 'checkout_path' => $path, 'status' => 'source_resolved']);
+    }
+
+    return [$home, $node];
+}
+
+it('closes the environment of every Instance checkout in the Instance root on converge', function (): void {
+    [$home, $node] = agent_env_home();
+    file_put_contents($home.'/apps/shop/dev/.env', "APP_KEY=secret\n");
+    chmod($home.'/apps/shop/dev/.env', 0o664);
+    file_put_contents($home.'/outside/.env', "APP_KEY=secret\n");
+    chmod($home.'/outside/.env', 0o664);
+    file_put_contents($home.'/target.env', "APP_KEY=secret\n");
+    chmod($home.'/target.env', 0o664);
+    symlink($home.'/target.env', $home.'/apps/shop/linked/.env');
+    $ssh = new AgentInstallSsh(null, runScriptsLocally: true);
+
+    try {
+        nodeAgentExecutor($ssh, new ManagedUserAccount('orbit', 'orbit', $home))->converge($node);
+        clearstatcache();
+
+        $script = array_values(array_filter($ssh->commands, static fn (RemoteCommand $command): bool => ($command->arguments[0] ?? null) === 'bash'));
+        expect($script)->toHaveCount(1)
+            ->and($script[0]->arguments)->toBe(['bash', '-seu', '--', $home.'/apps/shop/dev', $home.'/apps/shop/linked'])
+            ->and(fileperms($home.'/apps/shop/dev/.env') & 0o777)->toBe(0o660)
+            ->and(fileperms($home.'/outside/.env') & 0o777)->toBe(0o664)
+            ->and(fileperms($home.'/target.env') & 0o777)->toBe(0o664);
+    } finally {
+        (new Filesystem)->deleteDirectory($home);
+    }
+});
+
+it('logs the checkouts whose environment it could not close and still converges', function (): void {
+    [$home, $node] = agent_env_home();
+    Log::spy();
+    $ssh = new AgentInstallSsh(null, scriptResult: new CommandResult(1, '', $home."/apps/shop/dev\n", 1, false));
+
+    try {
+        nodeAgentExecutor($ssh, new ManagedUserAccount('orbit', 'orbit', $home))->converge($node);
+
+        Log::shouldHaveReceived('warning')->withArgs(
+            static fn (string $message, array $context): bool => $message === 'The agent converge could not close Instance environments.'
+                && $context['checkouts'] === [$home.'/apps/shop/dev'],
+        )->once();
+        expect(array_map(static fn (RemoteCommand $command): array => $command->arguments, $ssh->commands))
+            ->toContain(['sudo', 'systemctl', 'enable', '--now', 'orbit-agent']);
+    } finally {
+        (new Filesystem)->deleteDirectory($home);
+    }
 });

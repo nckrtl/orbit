@@ -653,4 +653,15 @@ describe('the agent view subscriber', function (): void {
 
         expect($publisher->stopped)->toBeTrue();
     });
+
+    it('keeps polling the publisher while it has no Reverb connection', function (): void {
+        [$subscriber, $socket, , $publisher] = live_agent_view_subscriber();
+        $socket->refuse = true;
+
+        $subscriber->pass();
+        $subscriber->pass();
+
+        expect($socket->isConnected())->toBeFalse()
+            ->and($publisher->polls)->toBe(2);
+    });
 });

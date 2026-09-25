@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Infrastructure\AgentView\ProcessAgentViewPublisher;
+use Psr\Log\AbstractLogger;
 use Psr\Log\NullLogger;
 
 function publisher_clock(): object
@@ -134,5 +135,70 @@ describe('the agent view publisher', function (): void {
         expect(file_get_contents($out))->toBe('--workspace=2:5');
         $publisher->stop();
         unlink($out);
+    });
+
+    it('puts the workspaces back when a run cannot start', function (): void {
+        $clock = publisher_clock();
+        $log = new class extends AbstractLogger
+        {
+            /** @var list<string> */
+            public array $messages = [];
+
+            public function log($level, string|Stringable $message, array $context = []): void
+            {
+                $this->messages[] = "{$level}: {$message}";
+            }
+        };
+        $publisher = new ProcessAgentViewPublisher(
+            command: [PHP_BINARY, '-r', 'exit(0);', '--'],
+            log: $log,
+            clock: static fn (): float => $clock->now,
+            workingDirectory: sys_get_temp_dir().'/orbit-no-such-directory-'.bin2hex(random_bytes(4)),
+        );
+
+        $publisher->queueWorkspaces(2, [5]);
+        $publisher->poll();
+
+        expect($publisher->isRunning())->toBeFalse()
+            ->and($publisher->pendingWorkspaces())->toBe(['2:5'])
+            ->and($publisher->failures())->toBe(['2:5' => 1])
+            ->and($log->messages)->toContain('warning: The agent view publish run could not start.');
+    });
+
+    it('drops a workspace after repeated failures, logs it, and takes it again on its next change', function (): void {
+        $clock = publisher_clock();
+        $log = new class extends AbstractLogger
+        {
+            /** @var list<array{string, array<string, mixed>}> */
+            public array $errors = [];
+
+            public function log($level, string|Stringable $message, array $context = []): void
+            {
+                if ($level === 'error') {
+                    $this->errors[] = [(string) $message, $context];
+                }
+            }
+        };
+        $publisher = new ProcessAgentViewPublisher(
+            command: [PHP_BINARY, '-r', 'exit(0);', '--'],
+            log: $log,
+            clock: static fn (): float => $clock->now,
+            workingDirectory: sys_get_temp_dir().'/orbit-no-such-directory-'.bin2hex(random_bytes(4)),
+        );
+
+        $publisher->queueWorkspaces(2, [5]);
+
+        foreach (range(1, ProcessAgentViewPublisher::MaxAttempts) as $attempt) {
+            $publisher->poll();
+            $clock->now += ProcessAgentViewPublisher::BackoffSeconds;
+        }
+
+        expect($publisher->pendingWorkspaces())->toBe([])
+            ->and($publisher->failures())->toBe([])
+            ->and($log->errors)->toHaveCount(1)
+            ->and($log->errors[0][1])->toBe(['workspaces' => ['2:5'], 'attempts' => ProcessAgentViewPublisher::MaxAttempts]);
+
+        $publisher->queueWorkspaces(2, [5]);
+        expect($publisher->pendingWorkspaces())->toBe(['2:5']);
     });
 });
