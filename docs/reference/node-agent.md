@@ -324,9 +324,13 @@ When the subscriber sees a new `head` or new diff counts for the workspace of an
 
 ### Log relay
 
-The subscriber relays the lines of every [live log stream](/reference/live-logs). It accepts a `client-log` or `client-log-end` event on `presence-node-logs.{id}` only when Reverb's `user_id` is `agent.{id}` and the stream is open for Node `{id}`. It redacts each line again, with the Gateway's patterns and the stored environment values of the Instance or Process, cuts a line longer than 8 KiB, and drops lines above 64 KiB per second for each stream, with a 256 KiB burst. It then publishes `log.lines` on the stream's channel through the Reverb HTTP API, in parts under 10,000 bytes.
+The subscriber relays the lines of every [live log stream](/reference/live-logs) through a [publish run](#publish-runs), so a slow Reverb or database never stalls the view. In its socket loop it accepts a `client-log` or `client-log-end` event on `presence-node-logs.{id}` only when Reverb's `user_id` is `agent.{id}`. It cuts a line longer than 8 KiB, drops lines above 64 KiB per second for each stream, with a 256 KiB burst, and queues the rest in arrival order.
 
-The subscriber publishes `log.ended` when the agent ends a stream, when `agent.{id}` leaves the log channel, when a lease ends, and when the stream's opening Node loses its access edge. It checks leases and access edges every 5 seconds. It removes ended streams from the store and prompts the agent with `log-streams.changed`.
+A log run takes the queued events in order, at most 256 KiB of lines at a time. It drops lines unless the stream is open for Node `{id}`. It redacts each line again, with the Gateway's patterns and the stored environment values of the Instance or Process, and publishes `log.lines` on the stream's channel through the Reverb HTTP API, in parts under 10,000 bytes. After each part it saves how far it got, so a repeated run skips what it already published.
+
+A log run publishes `log.ended` when the agent ends a stream, when `agent.{id}` leaves the log channel, and when the subscriber's queue falls behind. While a stream may be open, a run every 5 seconds also ends streams whose lease ended and streams whose opening Node lost its access edge. A run removes ended streams from the store and prompts the agent with `log-streams.changed`.
+
+No line is lost silently. When a stream's queued lines pass 1 MiB, or all queued lines pass 16 MiB, or its lines wait through five failed runs in a row, the subscriber drops that stream's queued lines and ends it with `relay_behind`.
 
 ### Process usage
 
@@ -334,9 +338,11 @@ The subscriber also pushes the CPU and memory of every Process to browsers, so n
 
 ### Publish runs
 
-The subscriber never reads Prometheus, writes the database, or broadcasts in its socket loop. It starts `php artisan orbit:agent-view-publish` as a child process with the queued work, and does not wait for it. Task workspaces and Process usage have separate lanes, with one run at a time in each; work that arrives meanwhile waits for the next run in its lane. A run that takes longer than 12 seconds is stopped.
+The subscriber never reads Prometheus or the log stream store, writes the database, or broadcasts in its socket loop. It starts `php artisan orbit:agent-view-publish` as a child process with the queued work, and does not wait for it. Task workspaces, Process usage, and log lines have separate lanes, with one run at a time in each; work that arrives meanwhile waits for the next run in its lane. A log run reads its events as JSON on standard input. A run that takes longer than 12 seconds is stopped.
 
 When a workspace run fails, is stopped, or cannot start, its workspaces are queued again and retried 15 seconds later; the run reads the current view, so a retry is safe. After five failed runs in a row, a workspace is dropped with an error in the Gateway log, until the agent reports a new change for it.
+
+When a log run fails, is stopped, or cannot start, its events go back in front of the queue and run again 2 seconds later. A refused `log.lines` publish fails the run, so the lines wait instead of being lost.
 
 A failed usage sample is dropped, because the next one replaces it. After a subscriber restart, the first workspace list from each agent queues every workspace again. A hung Prometheus or Reverb HTTP API therefore costs a skipped sample or a delayed notice, and the view stays fresh. A failed run's error output goes to the Gateway log.
 

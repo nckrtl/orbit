@@ -176,7 +176,7 @@ orbit instance:logs <instance> [--lines=COUNT] [--follow] [--json]
 | `--lines=COUNT` | `100` | Number of lines, from 1 through 1,000. With `--follow`, the number of earlier lines to print first. |
 | `--follow` | off | Keep printing new lines until Ctrl-C. |
 
-`--follow` works as it does for [`process:logs`](/cli/process#orbit-processlogs): the CLI opens a [live log stream](/reference/live-logs), and it polls the one-shot read every 5 seconds when the Gateway cannot open one. The JSON output has the same shapes. Without `--follow`, `--json` returns `{ id, name, lines, logs, request_id }`.
+`--follow` works as it does for [`process:logs`](/cli/process#orbit-processlogs): the CLI opens a [live log stream](/reference/live-logs), and it polls the one-shot read every 5 seconds when the Gateway cannot open one. A production Instance log is always read over SSH: the CLI prints `Following over SSH; polling every 5 seconds.` and polls from the start. The JSON output has the same shapes, with reason `ssh_only` in the notice. Without `--follow`, `--json` returns `{ id, name, lines, logs, request_id }`.
 
 ```bash
 orbit instance:logs 12 --lines=50

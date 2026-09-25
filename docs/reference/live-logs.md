@@ -79,11 +79,11 @@ The Gateway publishes two server events on `private-log-stream.{stream}`, with t
 
 | Field | Contract |
 | --- | --- |
-| `sequence` | Increases by one with every `log.lines` event of the stream, from 1. |
+| `sequence` | Increases by one with every `log.lines` event of the stream, from 1. After a failed relay run, the Gateway can send a part again with the same `sequence`; ignore a `sequence` you already have. |
 | `lines` | Redacted log lines, oldest first, without line endings. |
 | `dropped` | Lines dropped by a rate limit since the previous event. Show it as `[orbit] 120 lines dropped`. |
 | `skipped` | Bytes the agent skipped because a file source fell more than 4 MiB behind. Show it as `[orbit] 5.0 MiB skipped`. |
-| `reason` | `closed`, `expired`, `revoked`, `agent_left`, or `source_unavailable`. |
+| `reason` | `closed`, `expired`, `revoked`, `agent_left`, `source_unavailable`, or `relay_behind`. |
 
 | Reason | Meaning | Client action |
 | --- | --- | --- |
@@ -92,6 +92,7 @@ The Gateway publishes two server events on `private-log-stream.{stream}`, with t
 | `revoked` | The opening Node lost its access edge to the serving Node. | Stop. |
 | `agent_left` | The Node's agent left its log channel, for example because it stopped. | Fall back to one-shot reads. |
 | `source_unavailable` | The agent could not open or keep reading the source. | Fall back to one-shot reads. |
+| `relay_behind` | The Gateway could not relay the lines fast enough, for example because Reverb was slow. It dropped the lines that waited. | Fall back to one-shot reads. |
 
 ## Sources
 
@@ -119,9 +120,10 @@ The agent and the Gateway bound every stream, so a busy log cannot exhaust eithe
 | Events | At most one `log.lines` event every 250 milliseconds from the agent, split into parts under 10,000 bytes |
 | Rate from the agent | 32 KiB per second for each stream, with a 256 KiB burst, and 256 KiB per second for each Node |
 | Rate from the Gateway | 64 KiB per second for each stream, with a 256 KiB burst |
+| Waiting lines in the Gateway | 1 MiB for each stream and 16 MiB in all, and at most five failed relay runs in a row |
 | Lease | 60 seconds, renewed every 20 seconds |
 
-Lines above a rate are dropped and counted in `dropped`. A stream never queues more than one burst, so a flood does not grow the agent's or the Gateway's memory.
+Lines above a rate are dropped and counted in `dropped`. The agent never queues more than one burst for each stream. The Gateway queues lines only while a relay run is slow or failing, up to its limit for waiting lines; past it, the stream ends with `relay_behind`. A flood therefore cannot grow the agent's or the Gateway's memory.
 
 ## Redaction
 
@@ -142,6 +144,7 @@ The Gateway refuses to open a stream with `logs.live_unavailable` (409) when it 
 
 | Reason | Meaning |
 | --- | --- |
+| `ssh_only` | The record is a production Instance. Its log is outside the directory the agent may read, so it is read over SSH only. |
 | `realtime_not_configured` | No `websocket` role is active. |
 | `subscriber_down` | The agent view subscriber is not running or not connected. |
 | `agent_unavailable` | The Gateway has no fresh [view](/reference/node-agent#freshness) of the serving Node, for example because its agent is stopped. |

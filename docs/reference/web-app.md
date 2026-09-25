@@ -90,7 +90,7 @@ The firewall list reads every Node's rules with one request, `GET /api/v1/firewa
 
 The Instance log pane and the Process log pane follow their log through a [live log stream](/reference/live-logs) while realtime is live. The pane opens a stream with the lines it shows, 500 for an Instance and 100 for a Process, renews it every 20 seconds, and closes it when the pane closes. It shows `[orbit] N lines dropped` and `[orbit] N MiB skipped` where the stream reports them.
 
-A pane does not poll while its stream runs. It polls the one-shot read every 10 seconds, as before, when the Gateway refuses the stream, when the stream ends with `agent_left` or `source_unavailable`, or when realtime is down. When the socket comes back, the pane opens a new stream.
+A pane does not poll while its stream runs. It polls the one-shot read every 10 seconds, as before, when the Gateway refuses the stream, when the stream ends with `agent_left`, `source_unavailable`, or `relay_behind`, or when realtime is down. None of these shows an error; a production Instance pane polls from the start. When the socket comes back, the pane opens a new stream.
 
 ## Web directory
 
