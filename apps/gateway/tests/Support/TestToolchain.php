@@ -65,7 +65,7 @@ final class TestToolchain
         }
 
         foreach (self::GnuTools as $tool => $formula) {
-            if (self::isGnu($tool, $inherited)) {
+            if (self::hasGnuOptions($tool, $inherited)) {
                 continue;
             }
 
@@ -87,7 +87,7 @@ final class TestToolchain
             $links['bash'] = $bash;
         }
 
-        $coreutils = self::isGnu('stat', $inherited) ? false : self::gnuCoreutils();
+        $coreutils = self::hasGnuOptions('stat', $inherited) ? false : self::gnuCoreutils();
 
         if ($coreutils === null) {
             $missing[] = 'coreutils';
@@ -229,7 +229,7 @@ final class TestToolchain
         foreach (self::homebrewPrefixes() as $prefix) {
             $directory = $prefix.'/opt/coreutils/libexec/gnubin';
 
-            if (self::isGnu('stat', $directory)) {
+            if (self::hasGnuOptions('stat', $directory)) {
                 return $directory;
             }
         }
@@ -247,7 +247,7 @@ final class TestToolchain
         $candidates[] = self::find('g'.$tool, $path);
 
         foreach ($candidates as $candidate) {
-            if ($candidate !== null && self::isGnu(basename($candidate), dirname($candidate))) {
+            if ($candidate !== null && self::hasGnuOptions(basename($candidate), dirname($candidate))) {
                 return $candidate;
             }
         }
@@ -295,7 +295,11 @@ final class TestToolchain
         ]));
     }
 
-    private static function isGnu(string $tool, string $path): bool
+    /**
+     * Tells whether a tool takes GNU-style options. GNU tools and the uutils coreutils on Ubuntu 26.04 accept
+     * `--version`; the BSD tools on macOS reject it.
+     */
+    private static function hasGnuOptions(string $tool, string $path): bool
     {
         $binary = self::find($tool, $path);
 
@@ -303,10 +307,9 @@ final class TestToolchain
             return false;
         }
 
-        $output = [];
-        exec(escapeshellarg($binary).' --version 2>/dev/null', $output, $status);
+        exec(escapeshellarg($binary).' --version >/dev/null 2>&1', result_code: $status);
 
-        return $status === 0 && str_contains(implode("\n", $output), 'GNU');
+        return $status === 0;
     }
 
     private static function find(string $tool, string $path): ?string
