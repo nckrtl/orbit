@@ -95,7 +95,7 @@ Check each checkpoint before you continue to the next step.
 
     `APP_URL` is the Gateway's WireGuard address; change it if the user chose another range. `ORBIT_GATEWAY_CHECKOUT` points at `apps/gateway`, not at the repository root.
 
-    Keep `CACHE_STORE=file`. The Gateway holds its locks in that cache store and has no cache tables, so it refuses to start with the `database` or `null` store. When a line is missing, the Gateway uses files for the cache, an in-memory session, and synchronous jobs.
+    Keep `CACHE_STORE=file`. The Gateway holds its locks in that cache store, and they must exclude other processes. It starts only with a `file`, `redis`, `memcached`, or `dynamodb` store; it has no cache tables for `database`, and `array` or `null` locks do not span processes. When a line is missing, the Gateway uses files for the cache, an in-memory session, and synchronous jobs.
 
     Create the state directory and the database:
 

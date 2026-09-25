@@ -837,7 +837,9 @@ final class AppServiceProvider extends ServiceProvider
     {
         /** @var array<string, mixed> $cache */
         $cache = config('cache');
-        GatewayCacheStore::assertSupported($cache);
+        if (! $this->app->runningConsoleCommand(GatewayCacheStore::RecoveryCommands)) {
+            GatewayCacheStore::assertSupported($cache, $this->app->environment(), $this->app->configurationIsCached());
+        }
         Activity::observe($activityPropertiesObserver);
         Relation::morphMap([
             'instance' => AppInstance::class,

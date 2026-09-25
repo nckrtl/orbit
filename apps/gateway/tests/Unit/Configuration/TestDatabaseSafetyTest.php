@@ -293,6 +293,7 @@ it('does not change non-test Gateway database selection', function (): void {
         orb247_gateway_root().'/tests/Fixtures/TestDatabase/NonTestDatabaseProbe.php',
     ], orb247_gateway_root(), [
         'APP_ENV' => 'production',
+        'CACHE_STORE' => false,
         'DB_DATABASE' => $database,
         'DB_URL' => false,
         'ORBIT_TEST_DATABASE' => false,
