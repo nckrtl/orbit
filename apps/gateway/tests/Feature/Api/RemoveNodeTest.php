@@ -8,7 +8,6 @@ use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Firewall\FirewallOperationException;
 use App\Domain\Firewall\RouterLanIngressReconciler;
-use App\Domain\Herdr\HerdrObserverPublisher;
 use App\Domain\Metrics\ExporterDegradationReason;
 use App\Domain\Metrics\ExporterDegradationRepository;
 use App\Domain\Metrics\MetricsAccessRevoker;
@@ -39,13 +38,11 @@ use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\Cluster;
 use App\Models\FirewallRule;
-use App\Models\HerdrSession;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Process;
 use App\Models\Schedule;
 use Illuminate\Support\Facades\Log;
-use Tests\Support\FakeHerdrObserverPublisher;
 use Tests\Support\FakeNodeAgentRuntime;
 use Tests\Support\FakeNodeRoleFirewallManager;
 use Tests\Support\FakeRouterLanIngressReconciler;
@@ -61,14 +58,12 @@ beforeEach(function (): void {
     $this->metricsAccess = new RemoveNodeFakeMetricsAccessRevoker;
     $this->firewall = new FakeNodeRoleFirewallManager;
     $this->processRuntime = new RemoveNodeFakeProcessRuntimeManager;
-    $this->herdrObservers = new FakeHerdrObserverPublisher;
     $this->agent = new FakeNodeAgentRuntime;
     app()->instance(NodeRoleFirewallManager::class, $this->firewall);
     app()->instance(PrivateDnsManager::class, $this->dns);
     app()->instance('App\\Domain\\WireGuard\\GatewayPeerProjectionManager', $this->peers);
     app()->instance(MetricsAccessRevoker::class, $this->metricsAccess);
     app()->instance(ProcessRuntimeManager::class, $this->processRuntime);
-    app()->instance(HerdrObserverPublisher::class, $this->herdrObservers);
     app()->instance(NodeAgentRuntime::class, $this->agent);
 });
 
@@ -429,48 +424,6 @@ it('lists the agent in retained_on_node', function (): void {
         ->and($this->agent->removedNodeIds)->toBeEmpty();
 });
 
-it('refuses Node removal before mutation while the Node owns a Herdr session', function (): void {
-    $caller = remove_node_record(name: 'operator', wireguardIp: '10.44.0.2');
-    $target = remove_node_record(name: 'retired', wireguardIp: '10.44.0.3');
-    $caller->accessibleNodes()->attach($target);
-    $target->update(['wireguard_public_key' => 'TARGET_PUBLIC_KEY']);
-    $process = remove_node_owned_process($target);
-    HerdrSession::query()->create([
-        'node_id' => $target->id,
-        'session' => 'commander-tasks',
-        'user' => 'orbit',
-        'process_id' => $process->id,
-        'observer_port' => 7411,
-        'observer_hostname' => 'commander-tasks.herdr.retired.orbit',
-        'observer_status' => 'published',
-        'status' => LifecycleStatus::Active,
-        'publish_observer' => true,
-    ]);
-
-    $this
-        ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
-        ->deleteJson("/api/v1/nodes/{$target->id}", ['offline' => false])
-        ->assertConflict()
-        ->assertJsonPath('error.code', 'node.has_herdr_sessions');
-
-    expect($target->refresh()->status)
-        ->toBe(LifecycleStatus::Active)
-        ->and($this->peers->removed)
-        ->toBeEmpty()
-        ->and($this->dns->convergences)
-        ->toBe(0)
-        ->and($this->metricsAccess->calls)
-        ->toBe(0)
-        ->and($this->firewall->commands)
-        ->toBeEmpty()
-        ->and($this->processRuntime->commands)
-        ->toBeEmpty()
-        ->and($this->herdrObservers->retracted)
-        ->toBeEmpty();
-    $this->assertDatabaseHas('herdr_sessions', ['session' => 'commander-tasks']);
-    $this->assertDatabaseHas('processes', ['id' => $process->id]);
-});
-
 it('refuses Node removal before mutation while the Node owns a Process', function (): void {
     $caller = remove_node_record(name: 'operator', wireguardIp: '10.44.0.2');
     $target = remove_node_record(name: 'retired', wireguardIp: '10.44.0.3');
@@ -495,41 +448,25 @@ it('refuses Node removal before mutation while the Node owns a Process', functio
         ->and($this->firewall->commands)
         ->toBeEmpty()
         ->and($this->processRuntime->commands)
-        ->toBeEmpty()
-        ->and($this->herdrObservers->retracted)
         ->toBeEmpty();
     $this->assertDatabaseHas('processes', ['id' => $process->id]);
 });
 
-it('forgets Node-owned Process and Herdr session records during offline removal without remote cleanup', function (): void {
+it('forgets Node-owned Process records during offline removal without remote cleanup', function (): void {
     $caller = remove_node_record(name: 'operator', wireguardIp: '10.44.0.2');
     $target = remove_node_record(name: 'retired', wireguardIp: '10.44.0.3');
     $caller->accessibleNodes()->attach($target);
     remove_node_offline_probe($target);
     $process = remove_node_owned_process($target);
-    HerdrSession::query()->create([
-        'node_id' => $target->id,
-        'session' => 'commander-tasks',
-        'user' => 'orbit',
-        'process_id' => $process->id,
-        'observer_port' => 7411,
-        'observer_hostname' => 'commander-tasks.herdr.retired.orbit',
-        'observer_status' => 'published',
-        'status' => LifecycleStatus::Active,
-        'publish_observer' => true,
-    ]);
 
     app(RemoveNodeAction::class)->execute($target, $caller, offline: true, force: true);
 
     expect($target->fresh())->toBeNull()
         ->and($this->processRuntime->commands)
         ->toBeEmpty()
-        ->and($this->herdrObservers->retracted)
-        ->toBeEmpty()
         ->and($this->firewall->commands)
         ->toBeEmpty();
     $this->assertDatabaseMissing('processes', ['id' => $process->id]);
-    $this->assertDatabaseMissing('herdr_sessions', ['session' => 'commander-tasks']);
 });
 
 it('refuses Node removal before mutation while a Schedule uses the Node', function (): void {
@@ -699,10 +636,6 @@ it('reopens public SSH over WireGuard before removing the WireGuard peer', funct
         ->and($this->firewall->commands)
         ->toBe(['firewall-recovery'])
         ->and($this->processRuntime->commands)
-        ->toBeEmpty()
-        ->and($this->herdrObservers->retracted)
-        ->toBeEmpty()
-        ->and($this->herdrObservers->published)
         ->toBeEmpty()
         ->and($peersRemovedAtRestore)
         ->toBe([])
@@ -988,17 +921,6 @@ it('removes an unreachable node holding a role in one command', function (): voi
         'status' => LifecycleStatus::Active,
     ]);
     $process = remove_node_owned_process($target);
-    HerdrSession::query()->create([
-        'node_id' => $target->id,
-        'session' => 'commander-tasks',
-        'user' => 'orbit',
-        'process_id' => $process->id,
-        'observer_port' => 7411,
-        'observer_hostname' => 'commander-tasks.herdr.retired.orbit',
-        'observer_status' => 'published',
-        'status' => LifecycleStatus::Active,
-        'publish_observer' => true,
-    ]);
     $metrics = Mockery::mock(MetricsFleetReconciler::class);
     $metrics->shouldReceive('reconcile')->atLeast()->once();
     $metrics->shouldReceive('retire')->once();
@@ -1033,11 +955,8 @@ it('removes an unreachable node holding a role in one command', function (): voi
         ->and($this->firewall->commands)
         ->toBeEmpty()
         ->and($this->processRuntime->commands)
-        ->toBeEmpty()
-        ->and($this->herdrObservers->retracted)
         ->toBeEmpty();
     $this->assertDatabaseMissing('processes', ['id' => $process->id]);
-    $this->assertDatabaseMissing('herdr_sessions', ['session' => 'commander-tasks']);
 });
 
 it('refuses an unreachable node without the offline claim and names the flag', function (): void {

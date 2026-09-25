@@ -42,13 +42,6 @@ use Orbit\Sdk\Requests\Environment\UpdateAppInstanceEnvironmentRequest;
 use Orbit\Sdk\Requests\GitHub\DestroyGitHubAppRequest;
 use Orbit\Sdk\Requests\GitHub\InstallGitHubAppRequest;
 use Orbit\Sdk\Requests\GitHub\ShowGitHubAppRequest;
-use Orbit\Sdk\Requests\Herdr\AdoptHerdrSessionRequest;
-use Orbit\Sdk\Requests\Herdr\CreateHerdrSessionRequest;
-use Orbit\Sdk\Requests\Herdr\DestroyHerdrSessionRequest;
-use Orbit\Sdk\Requests\Herdr\IssueObservationGrantRequest;
-use Orbit\Sdk\Requests\Herdr\ListHerdrSessionsRequest;
-use Orbit\Sdk\Requests\Herdr\RestartHerdrSessionRequest;
-use Orbit\Sdk\Requests\Herdr\ShowHerdrSessionRequest;
 use Orbit\Sdk\Requests\Instances\CreateProjectLifecycleStepRequest;
 use Orbit\Sdk\Requests\Instances\DestroyProjectLifecycleStepRequest;
 use Orbit\Sdk\Requests\Instances\ListProjectLifecycleStepsRequest;
@@ -203,15 +196,6 @@ describe('repository guidance bootstrap', function (): void {
             DestroyScheduleRequest::class,
             EnableScheduleRequest::class,
         ];
-        $herdrRequests = [
-            ListHerdrSessionsRequest::class,
-            CreateHerdrSessionRequest::class,
-            AdoptHerdrSessionRequest::class,
-            ShowHerdrSessionRequest::class,
-            RestartHerdrSessionRequest::class,
-            DestroyHerdrSessionRequest::class,
-            IssueObservationGrantRequest::class,
-        ];
         $databaseRequests = [
             ListDatabaseConnectionsRequest::class,
             ShowDatabaseConnectionRequest::class,
@@ -272,7 +256,7 @@ describe('repository guidance bootstrap', function (): void {
             ListProjectExcludedNodesRequest::class,
             RemoveProjectExcludedNodeRequest::class,
         ];
-        $expectedOperationCount = count($exclusionRequests) + count($lifecycleRequests) + $preScheduleOperationCount + count($scheduleRequests) + count($herdrRequests) + count($databaseRequests) + count($gitHubRequests) + count($proxycliRequests) + count($taskRequests);
+        $expectedOperationCount = count($exclusionRequests) + count($lifecycleRequests) + $preScheduleOperationCount + count($scheduleRequests) + count($databaseRequests) + count($gitHubRequests) + count($proxycliRequests) + count($taskRequests);
         $expectedRequests = [
             'Orbit\\Sdk\\Requests\\Tools\\ListToolManagersRequest',
             'Orbit\\Sdk\\Requests\\Tools\\ListToolsRequest',
@@ -404,13 +388,6 @@ describe('repository guidance bootstrap', function (): void {
 
         expect(array_values(array_filter(
             $requestClasses,
-            static fn (string $class): bool => str_starts_with($class, 'Orbit\\Sdk\\Requests\\Herdr\\'),
-        )))
-            ->toHaveCount(count($herdrRequests))
-            ->toEqualCanonicalizing($herdrRequests);
-
-        expect(array_values(array_filter(
-            $requestClasses,
             static fn (string $class): bool => str_starts_with($class, 'Orbit\\Sdk\\Requests\\DatabaseConnections\\'),
         )))
             ->toHaveCount(count($databaseRequests))
@@ -438,12 +415,12 @@ describe('repository guidance bootstrap', function (): void {
             ->toEqualCanonicalizing($taskRequests);
     });
 
-    it('documents the 169-operation SDK surface including proxycli transport', function (): void {
+    it('documents the 162-operation SDK surface including proxycli transport', function (): void {
         $publicContract = repository_guidance_contents('.ai/rules/public-contract.md');
         $normalizedPublicContract = repository_guidance_normalized_contents('.ai/rules/public-contract.md');
 
         expect($publicContract)
-            ->toContain('The SDK models exactly 169 concrete public Gateway API operations:')
+            ->toContain('The SDK models exactly 162 concrete public Gateway API operations:')
             ->toContain('- Analytics: pin the Plausible version, and show, set, and unset the Stats API key. The key is never returned.')
             ->toContain('- proxycli: enable, disable, status, provider list, provider show, and account update.')
             ->toContain('- Tasks: enable, disable, status, group list, show, create, update, cancel, and complete, subtask create, update, and destroy, comment create and list, and agent thread list.')
@@ -455,7 +432,6 @@ describe('repository guidance bootstrap', function (): void {
             )
             ->toContain('- Doctor: run the complete typed Gateway report.')
             ->toContain('- Schedule: list, add, show, run, logs, complete, remove, and activate.')
-            ->toContain('- Herdr: session list, add, adopt, show, restart, remove, and observation-grant.')
             ->toContain('- Database connection: list, show, add, update, remove, attach, detach, query, tables, schema, describe, user create, and user list.')
             ->toContain('- GitHub App: install, show, and destroy.')
             ->toContain(
@@ -500,9 +476,6 @@ describe('repository guidance bootstrap', function (): void {
                 'Keep Schedule transport limited to typed Node and AppInstance targets and the eight shipped operations.',
             )
             ->toContain(
-                'Keep Herdr transport limited to a numeric Node ID, a numeric session ID for item operations, explicit session name and Unix user on add or adopt, optional observer publication and restart handoff flags, optional removal termination acceptance, and pane, terminal, columns, rows, and an HTTPS browser origin for observation grants.',
-            )
-            ->toContain(
                 'Keep Database connection transport limited to slug identity, driver, optional Node ID, host, port, database name, sqlite path, username, and password.',
             )
             ->toContain(
@@ -519,14 +492,12 @@ describe('repository guidance bootstrap', function (): void {
 
         expect(repository_guidance_normalized_contents('README.md'))
             ->toContain(
-                'The SDK exposes exactly 169 public Gateway operations.',
+                'The SDK exposes exactly 162 public Gateway operations.',
                 'The SDK exposes typed enable, disable, status, provider list, provider show, and account update requests for the optional CLIProxyAPI quota collector.',
                 'The SDK exposes typed list, show, add, update, remove, attach, detach, query, tables, schema, describe, and user create requests for Gateway-owned database connection records.',
                 'The SDK exposes typed list, create, show, update, and destroy requests for App process and Schedule definitions.',
                 'The SDK exposes typed list, add, show, run, logs, complete, remove, and activate requests for Node and AppInstance Schedules.',
-                'Doctor accepts the current Gateway family set, including Schedule, Herdr, and Database connection.',
-                'The SDK exposes typed list, add, adopt, show, restart, remove, and observation-grant requests for Herdr sessions.',
-                'Observation grant URLs stay out of generic diagnostics.',
+                'Doctor accepts the current Gateway family set, including Schedule and Database connection.',
                 "Create and update requests send the caller's exact JSON document to the Gateway.",
                 'The SDK exposes typed deploy-step, deploy, rollback, and retained-release operations.',
                 'Deployment streams are incremental, closeable, bounded, correlated, and never retried or replayed.',

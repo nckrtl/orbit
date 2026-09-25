@@ -25,7 +25,7 @@ Proposed.
 
 ## Affects
 
-- Components: <apps/cli, apps/docs, apps/e2e, apps/gateway, packages/php-sdk, or none>
+- Components: <apps/cli, apps/docs, apps/e2e, apps/gateway, apps/web, packages/php-sdk, or none>
 - ADRs: <Links to decisions this extends or supersedes, or none>
 - Detail: <Documentation page path, or none>
 - Verify: <Tests or commands that verify the decision>

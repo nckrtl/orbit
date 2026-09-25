@@ -73,7 +73,7 @@ orbit tool:install [package] --node=ID --manager=MANAGER [--constraint=CONSTRAIN
 ```bash
 orbit tool:install @openai/codex --node=12 --manager=vp --constraint='^0.150'
 orbit tool:install laravel/installer --node=12 --manager=composer
-orbit tool:install herdr --node=12 --manager=brew
+orbit tool:install ripgrep --node=12 --manager=brew
 ```
 
 When the manager is `uninstalled` or `failed`, the Gateway provisions or retries it first and records it `active` before it changes Tool intent. A failed provisioning returns `tool.manager_provision_failed`, keeps the bounded failure on the manager, and creates no Tool row; repeating the command retries from live Node state. The result reports `applied` for a new install and `unchanged` when the package is already installed.
@@ -122,8 +122,6 @@ orbit tool:update <tool> [--json]
 
 The result reports `applied` when the package changed, `unchanged` when it is already current, and `blocked_by_constraint` with the stored constraint when the candidate falls outside it. A Homebrew update uses the verified bottle and keeps the installed Tool callable when no newer bottle exists.
 
-Updating the `herdr` formula changes package files only; it does not restart a managed [Herdr session](/cli/herdr).
-
 ## orbit tool:remove
 
 Remove one Tool and delete its record.
@@ -161,5 +159,4 @@ Retry the same command with the retained Tool ID; the Gateway probes live packag
 ## Related
 
 - [`node`](/cli/node) provisions the managed Node that hosts the managers.
-- [`herdr`](/cli/herdr) requires the `herdr` formula installed through `brew` on the target Node.
 - [`doctor`](/cli/doctor) reports Tool drift without changing packages.

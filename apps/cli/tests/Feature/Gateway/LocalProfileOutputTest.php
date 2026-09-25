@@ -80,9 +80,8 @@ describe('local profile and extension output channels', function (): void {
         'remove' => [['gateway:remove', 'secondary', '--yes'], ['profile' => 'secondary'], 0],
         'consent' => [['gateway:remove', 'secondary'], ['code' => 'input.confirmation_required'], 1],
         'force without consent' => [['gateway:remove', 'primary', '--force'], ['code' => 'input.confirmation_required'], 1],
-        'enable' => [['extension:enable', 'herdr'], ['extension' => 'herdr', 'enabled' => true], 0],
-        'disable' => [['extension:disable', 'herdr'], ['extension' => 'herdr', 'enabled' => false], 0],
-        'list' => [['extension:list'], ['extensions' => [['extension' => 'herdr', 'enabled' => false], ['extension' => 'proxycli', 'enabled' => false]]], 0],
+        'enable' => [['extension:enable', 'proxycli'], ['extension' => 'proxycli', 'enabled' => true], 0],
+        'list' => [['extension:list'], ['extensions' => [['extension' => 'proxycli', 'enabled' => false]]], 0],
         'status transport error' => [['gateway:status'], ['code' => 'gateway.unreachable'], 1],
         'missing profile argument' => [['gateway:use'], ['code' => 'input.invalid'], 1],
         'missing removal argument' => [['gateway:remove', '--yes'], ['code' => 'input.invalid'], 1],
@@ -102,9 +101,8 @@ describe('local profile and extension output channels', function (): void {
         'use' => [['gateway:use', 'secondary'], 'Gateway [secondary] is active.', 0],
         'remove' => [['gateway:remove', 'secondary', '--yes'], 'Gateway [secondary] removed.', 0],
         'refuse' => [['gateway:remove', 'secondary'], 'Supply --yes', 1],
-        'enable' => [['extension:enable', 'herdr'], 'Orbit extension [herdr] is enabled.', 0],
-        'disable' => [['extension:disable', 'herdr'], 'Orbit extension [herdr] is disabled.', 0],
-        'list' => [['extension:list'], 'herdr', 0],
+        'enable' => [['extension:enable', 'proxycli'], 'Orbit extension [proxycli] is enabled.', 0],
+        'list' => [['extension:list'], 'proxycli', 0],
         'status' => [['gateway:status'], 'Could not reach the gateway.', 1],
     ]);
 });

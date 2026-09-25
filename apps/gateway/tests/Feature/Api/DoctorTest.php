@@ -40,11 +40,11 @@ describe('Doctor API', function (): void {
             ->and(array_column($payload['data']['nodes'], 'node_id'))
             ->toBe([$selected->id])
             ->and(array_column($payload['data']['nodes'][0]['families'], 'family'))
-            ->toBe(['node', 'role', 'app', 'instance', 'schedule', 'tool', 'process', 'firewall', 'herdr', 'database_connection', 'route'])
+            ->toBe(['node', 'role', 'app', 'instance', 'schedule', 'tool', 'process', 'firewall', 'database_connection', 'route'])
             ->and($payload['data']['summary'])
             ->toBe([
                 'nodes' => 1,
-                'families' => 11,
+                'families' => 10,
                 'checks' => 1,
                 'drift' => 0,
                 'unverifiable' => 0,

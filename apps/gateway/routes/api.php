@@ -31,7 +31,6 @@ use App\Http\Controllers\Api\FirewallRulesController;
 use App\Http\Controllers\Api\GatewayStatusesController;
 use App\Http\Controllers\Api\GitHubAppController;
 use App\Http\Controllers\Api\GrafanaAccessAuthorizationController;
-use App\Http\Controllers\Api\HerdrSessionsController;
 use App\Http\Controllers\Api\InstanceAnalyticsController;
 use App\Http\Controllers\Api\MetricsController;
 use App\Http\Controllers\Api\NodeAccessController;
@@ -500,24 +499,6 @@ Route::prefix('v1')->group(function (): void {
             ->where('database_connection', '[a-z0-9]+(?:-[a-z0-9]+)*')
             ->where('table', '[A-Za-z_][A-Za-z0-9_]*')
             ->name('database:describe');
-        Route::get('herdr/sessions', [HerdrSessionsController::class, 'index'])
-            ->name('herdr:session:list');
-        Route::post('herdr/sessions', [HerdrSessionsController::class, 'store'])
-            ->name('herdr:session:create');
-        Route::post('herdr/sessions/adopt', [HerdrSessionsController::class, 'adopt'])
-            ->name('herdr:session:adopt');
-        Route::get('herdr/sessions/{session}', [HerdrSessionsController::class, 'show'])
-            ->whereNumber('session')
-            ->name('herdr:session:show');
-        Route::post('herdr/sessions/{session}/restart', [HerdrSessionsController::class, 'restart'])
-            ->whereNumber('session')
-            ->name('herdr:session:restart');
-        Route::delete('herdr/sessions/{session}', [HerdrSessionsController::class, 'destroy'])
-            ->whereNumber('session')
-            ->name('herdr:session:destroy');
-        Route::post('herdr/sessions/{session}/observation-grants', [HerdrSessionsController::class, 'storeGrant'])
-            ->whereNumber('session')
-            ->name('herdr:observe');
         Route::get('tool-managers', [ToolManagersController::class, 'index'])
             ->name('tool:manager:list');
         Route::get('tools', [ToolsController::class, 'index'])->name('tool:list');

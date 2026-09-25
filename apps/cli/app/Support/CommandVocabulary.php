@@ -32,7 +32,6 @@ final readonly class CommandVocabulary
         'env' => ['import', 'sync'],
         'firewall' => ['allow', 'deny'],
         'gateway' => ['status', 'trust', 'use'],
-        'herdr' => ['adopt', 'observe', 'restart'],
         'instance' => [
             'clone',
             'deploy',

@@ -42,5 +42,5 @@ it('hides and refuses proxycli commands until the extension is enabled', functio
 it('lists proxycli as an opt-in extension', function (): void {
     expect(app(LocalExtensionState::class)->enabled('proxycli'))->toBeFalse();
     expect(Artisan::call('extension:list', ['--json' => true]))->toBe(0);
-    expect(trim(Artisan::output()))->toBe('{"extensions":[{"extension":"herdr","enabled":false},{"extension":"proxycli","enabled":false}]}');
+    expect(trim(Artisan::output()))->toBe('{"extensions":[{"extension":"proxycli","enabled":false}]}');
 });

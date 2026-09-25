@@ -30,11 +30,11 @@ Register the gateway and verify the connection:
 
 Gateway profiles are stored in `$HOME/.orbit/config.json`. Set `ORBIT_HOME` to
 override that directory. `gateway:add` installs its root CA in the local operating-system trust store.
-
-Herdr integration is an optional extension. Its commands are hidden and refuse
-execution until you run `orbit extension:enable herdr`. Use
-`orbit extension:list` to inspect local extension state.
 It can ask for local administrator privileges.
+
+ProxyCli integration is an optional extension. Its commands are hidden and
+refuse execution until you run `orbit extension:enable proxycli`. Use
+`orbit extension:list` to inspect local extension state.
 
 ## Local DNS overrides
 
