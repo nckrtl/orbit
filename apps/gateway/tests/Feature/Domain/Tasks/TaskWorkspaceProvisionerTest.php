@@ -434,3 +434,57 @@ it('returns null for a planning group when no app-dev Node has access to itself'
     expect(app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent(provisioner_group($app), true, selfAccess: true)))->toBeNull();
     $this->assertDatabaseCount('app_instances', 0);
 });
+
+describe('a workspace an interrupted claim left unattached', function (): void {
+    it('resumes it on its own Node instead of the least loaded one', function (): void {
+        $app = provisioner_app('orbit');
+        provisioner_node('first', '10.44.0.130');
+        $second = provisioner_node('second', '10.44.0.131');
+        $group = provisioner_group($app);
+        $left = AppInstance::query()->create([
+            'app_id' => $app->id,
+            'node_id' => $second->id,
+            'name' => TaskWorkspaceName::for($group),
+            'checkout_path' => '/srv/orbit/apps/orbit/'.TaskWorkspaceName::for($group),
+            'branch_override' => TaskWorkspaceName::for($group),
+            'status' => AppInstanceState::CheckoutPrepared,
+        ]);
+        bind_task_workspace_fakes();
+
+        $instance = app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, false));
+
+        expect($instance?->id)->toBe($left->id)
+            ->and($instance?->status)->toBe(AppInstanceState::SourceResolved);
+        $this->assertDatabaseCount('app_instances', 1);
+    });
+
+    it('waits for capacity on its own Node', function (): void {
+        $app = provisioner_app('orbit');
+        provisioner_node('roomy', '10.44.0.132');
+        $full = provisioner_node('full', '10.44.0.133');
+        $occupied = AppInstance::query()->create([
+            'app_id' => $app->id,
+            'node_id' => $full->id,
+            'name' => 'occupied',
+            'checkout_path' => '/srv/orbit/apps/orbit/occupied',
+            'status' => AppInstanceState::SourceResolved,
+        ]);
+        for ($i = 0; $i < TaskCeilings::PerNode; $i++) {
+            $active = provisioner_group($app, "Active {$i}");
+            $active->taskable()->associate($occupied);
+            $active->save();
+        }
+        $group = provisioner_group($app);
+        AppInstance::query()->create([
+            'app_id' => $app->id,
+            'node_id' => $full->id,
+            'name' => TaskWorkspaceName::for($group),
+            'checkout_path' => '/srv/orbit/apps/orbit/'.TaskWorkspaceName::for($group),
+            'status' => AppInstanceState::Reserved,
+        ]);
+        bind_task_workspace_fakes();
+
+        expect(fn () => app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, false)))
+            ->toThrow(fn (TaskCapacityException $exception) => expect($exception->fleetFull)->toBeFalse());
+    });
+});

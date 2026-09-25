@@ -16,6 +16,8 @@ use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Task;
 use App\Models\TaskGroup;
+use Illuminate\Database\DeadlockException;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Exceptions;
 
 it('claimNext continues after provision null', function (): void {
@@ -320,5 +322,150 @@ function claim_hol_spawner(): void
         }
 
         public function requestReview(Task $task): void {}
+    });
+}
+
+describe('a start that fails after provisioning', function (): void {
+    it('returns the group to todo with its Instance and a fixed reason, then continues with the next group', function (): void {
+        Exceptions::fake();
+        claim_hol_enable();
+        $app = claim_hol_app();
+        $failing = claim_hol_group($app, 'Busy');
+        $next = claim_hol_group($app, 'Next');
+        $provisioning = claim_hol_recording_provisioning($app);
+        app()->instance(InstanceProvisioning::class, $provisioning);
+        claim_hol_spawner();
+        claim_hol_fail_first_start($failing->id);
+
+        $this->artisan('tasks:tick')->assertSuccessful();
+
+        Exceptions::assertReported(DeadlockException::class);
+        $group = $failing->fresh(['taskable']);
+        expect($group?->status)->toBe(TaskGroupStatus::Todo)
+            ->and($group?->assistance_reason)->toBe(TaskScheduler::StartFailedReason)
+            ->and($group?->taskable?->is($provisioning->instances[$failing->id]))->toBeTrue()
+            ->and($next->fresh()?->status)->toBe(TaskGroupStatus::Running)
+            ->and(TaskGroup::query()->where('status', TaskGroupStatus::Reserved)->count())->toBe(0)
+            ->and(app(TaskConcurrencyGuard::class)->activeForNode($provisioning->instances[$failing->id]->node_id))->toBe(1);
+    });
+
+    it('reuses the kept Instance on the next claim and clears the reason', function (): void {
+        Exceptions::fake();
+        claim_hol_enable();
+        $app = claim_hol_app();
+        $group = claim_hol_group($app, 'Retry');
+        $provisioning = claim_hol_recording_provisioning($app);
+        app()->instance(InstanceProvisioning::class, $provisioning);
+        claim_hol_spawner();
+        claim_hol_fail_first_start($group->id);
+
+        expect(app(TaskScheduler::class)->claimNext())->toBeNull();
+        $claimed = app(TaskScheduler::class)->claimNext();
+
+        expect($claimed?->status)->toBe(TaskGroupStatus::Running)
+            ->and($claimed?->assistance_reason)->toBeNull()
+            ->and($provisioning->attached)->toBe([null, $provisioning->instances[$group->id]->id])
+            ->and(AppInstance::query()->count())->toBe(1);
+    });
+});
+
+describe('the stale reservation sweep', function (): void {
+    it('returns a group stranded in reserved past the bound to todo and claims it again', function (): void {
+        claim_hol_enable();
+        $app = claim_hol_app();
+        $stranded = claim_hol_group($app, 'Stranded');
+        $stranded->forceFill(['status' => TaskGroupStatus::Reserved, 'reserved_at' => now()->subSeconds(3601)])->save();
+        app()->instance(InstanceProvisioning::class, claim_hol_recording_provisioning($app));
+        claim_hol_spawner();
+
+        expect(app(TaskScheduler::class)->releaseStaleReservations())->toBe(1)
+            ->and($stranded->fresh()?->status)->toBe(TaskGroupStatus::Todo)
+            ->and($stranded->fresh()?->assistance_reason)->toBe(TaskScheduler::ReservationExpiredReason);
+
+        $stranded->forceFill(['status' => TaskGroupStatus::Reserved])->save();
+        $this->artisan('tasks:tick')->assertSuccessful();
+
+        expect($stranded->fresh()?->status)->toBe(TaskGroupStatus::Running)
+            ->and($stranded->fresh()?->assistance_reason)->toBeNull();
+    });
+
+    it('leaves a group reserved within the bound', function (): void {
+        claim_hol_enable();
+        $fresh = claim_hol_group(claim_hol_app(), 'Provisioning');
+        $fresh->forceFill(['status' => TaskGroupStatus::Reserved, 'reserved_at' => now()->subSeconds(3599)])->save();
+
+        expect(app(TaskScheduler::class)->releaseStaleReservations())->toBe(0)
+            ->and($fresh->fresh()?->status)->toBe(TaskGroupStatus::Reserved)
+            ->and($fresh->fresh()?->assistance_reason)->toBeNull();
+    });
+
+    it('keeps a swept group in todo with its Instance when the late provision finishes', function (): void {
+        claim_hol_enable();
+        $app = claim_hol_app();
+        $slow = claim_hol_group($app, 'Slow');
+        $instance = claim_hol_instance($app, 'claim-hol-slow');
+        app()->instance(InstanceProvisioning::class, new class($instance) implements InstanceProvisioning
+        {
+            public function __construct(private AppInstance $instance) {}
+
+            public function provision(InstanceProvisionIntent $intent): ?AppInstance
+            {
+                test()->travel(3601)->seconds();
+                app(TaskScheduler::class)->releaseStaleReservations();
+
+                return $this->instance;
+            }
+        });
+        claim_hol_spawner();
+
+        expect(app(TaskScheduler::class)->claimNext())->toBeNull();
+
+        $group = $slow->fresh(['taskable', 'tasks']);
+        expect($group?->status)->toBe(TaskGroupStatus::Todo)
+            ->and($group?->assistance_reason)->toBe(TaskScheduler::ReservationExpiredReason)
+            ->and($group?->taskable?->is($instance))->toBeTrue()
+            ->and($group?->started_at)->toBeNull()
+            ->and($group?->tasks->sole()->status)->toBe(TaskStatus::Todo);
+    });
+});
+
+/**
+ * Provisions one Instance per group and returns the Instance a group already holds, as TaskWorkspaceProvisioner does.
+ */
+function claim_hol_recording_provisioning(OrbitApp $app): object
+{
+    return new class($app) implements InstanceProvisioning
+    {
+        /** @var array<int, AppInstance> */
+        public array $instances = [];
+
+        /** @var list<int|null> */
+        public array $attached = [];
+
+        public function __construct(private OrbitApp $app) {}
+
+        public function provision(InstanceProvisionIntent $intent): ?AppInstance
+        {
+            $held = $intent->group->taskable;
+            $this->attached[] = $held instanceof AppInstance ? $held->id : null;
+
+            return $this->instances[$intent->group->id] = $held instanceof AppInstance
+                ? $held
+                : claim_hol_instance($this->app, 'claim-hol-'.$intent->group->id);
+        }
+    };
+}
+
+/** Makes the first move of the group to running fail the way a busy SQLite database does. */
+function claim_hol_fail_first_start(int $groupId): void
+{
+    $failed = false;
+    TaskGroup::saving(static function (TaskGroup $group) use ($groupId, &$failed): void {
+        if ($failed || $group->id !== $groupId || $group->status !== TaskGroupStatus::Running) {
+            return;
+        }
+        $failed = true;
+
+        throw new QueryException('sqlite', 'update "task_groups" set "status" = ?', ['running'], new PDOException('database is locked'));
     });
 }

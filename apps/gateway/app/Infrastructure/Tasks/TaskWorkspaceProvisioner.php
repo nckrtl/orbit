@@ -65,7 +65,7 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
             return null;
         }
 
-        $node = $this->selectNode($group->app, [$intent->group->implementer_agent_driver, $intent->group->reviewer_agent_driver], $intent->selfAccess);
+        $node = $this->selectNode($group->app, [$intent->group->implementer_agent_driver, $intent->group->reviewer_agent_driver], $intent->selfAccess, $this->existingWorkspaceNodeId($group));
 
         if (! $node instanceof Node) {
             return null;
@@ -256,8 +256,25 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
         return is_string($app->root) && ProjectRoot::isValid($app->root, $app->type);
     }
 
-    /** @param list<string> $drivers Every driver the group uses must allow the Node. */
-    private function selectNode(OrbitApp $app, array $drivers, bool $selfAccess): ?Node
+    /**
+     * A workspace that an interrupted claim created but never attached keeps its Node, so a later claim resumes it
+     * there instead of creating a second one.
+     */
+    private function existingWorkspaceNodeId(TaskGroup $group): ?int
+    {
+        $nodeId = AppInstance::query()
+            ->where('app_id', $group->app_id)
+            ->where('name', TaskWorkspaceName::for($group))
+            ->value('node_id');
+
+        return is_numeric($nodeId) ? (int) $nodeId : null;
+    }
+
+    /**
+     * @param  list<string>  $drivers  Every driver the group uses must allow the Node.
+     * @param  int|null  $pinnedNodeId  The Node of the group's existing workspace. Only that Node can then fit.
+     */
+    private function selectNode(OrbitApp $app, array $drivers, bool $selfAccess, ?int $pinnedNodeId = null): ?Node
     {
         $nodes = Node::query()
             ->where('status', LifecycleStatus::Active)
@@ -276,6 +293,7 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
             ->get();
 
         $fitting = $nodes
+            ->filter(static fn (Node $node): bool => $pinnedNodeId === null || $node->id === $pinnedNodeId)
             ->filter(fn (Node $node): bool => array_all($drivers, fn (string $driver): bool => $this->drivers->get($driver)->allows($node)))
             ->filter(fn (Node $node): bool => ! $selfAccess || $this->access->allows($node, $node));
 

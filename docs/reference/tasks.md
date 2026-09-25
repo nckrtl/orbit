@@ -256,6 +256,12 @@ If no remaining Node fits, provisioning returns no Instance. The group returns t
 
 An unexpected provisioning error, such as a lock timeout or a failed lookup, has the same result. The Gateway writes the error to its application log, and the group returns to `todo` with the same reason. The reason never contains the error text. A group never stays `reserved` after a failed provision, so it does not count toward the Node ceiling.
 
+The provisioned Instance belongs to the group from then on. If the move to `running` fails after a successful provision, for example because the database is busy, the Gateway writes the error to its application log. The group returns to `todo` with the assistance reason `The group could not start after its workspace was provisioned.` and keeps its Instance. Claim processing continues with the next eligible group. The next claim reuses the kept Instance instead of provisioning a new one, and cancellation removes it. A group that returns to `todo` because the Node ceiling holds it back at start also keeps its Instance.
+
+A process that stops between the reserve and the move to `running` can leave a group `reserved`. Each tick returns a group that has stayed `reserved` longer than `ORBIT_TASKS_RESERVED_TIMEOUT_SECONDS` (default `3600`) to `todo` with the assistance reason `The group stayed reserved too long and returned to todo.`, and then claims `todo` groups as usual. The tick changes the group only while it is still `reserved` past the bound, so it never takes a group that a newer claim reserved. The start and timeout reasons clear in the same way as the provisioning reason.
+
+If the stopped claim created a workspace, provisioning finds it by its `task-{group id}` name and resumes it on its Node. When that Node is at the ceiling, the group waits for capacity. When that Node does not fit the group, provisioning returns no Instance. A claim whose provision outlasts the bound finds its group in `todo`. It attaches the Instance to the group and leaves the group in `todo` for the next claim.
+
 If Nodes fit but each is at the ceiling, the group waits for capacity. It returns to `todo` without a reason. When no `app-dev` Node has capacity, claim processing stops until capacity frees. Otherwise it continues with the next eligible group.
 
 When the assignment fits the Node ceiling, the group becomes `running`. AgentSpawner starts the first implementer through the selected driver. The shared reviewer starts at the first handoff. The Gateway stores an Orbit thread ID only after creation and the opening turn succeed.
@@ -482,6 +488,7 @@ When `notify_coder` is true, settle POSTs an HMAC-signed JSON body to Coder. Thi
 | `ORBIT_CODER_WEBHOOK_URL` | HTTPS endpoint that receives the settle POST |
 | `ORBIT_CODER_WEBHOOK_SECRET` | HMAC-SHA256 secret. The Gateway never returns it |
 | `ORBIT_TASKS_OBSERVATION_GRACE_SECONDS` | Seconds before one alert for an observation outage. Defaults to `120` |
+| `ORBIT_TASKS_RESERVED_TIMEOUT_SECONDS` | Seconds a group may stay `reserved` before the tick returns it to `todo`. Defaults to `3600`, with a minimum of `60`. Keep it above the slowest workspace provision |
 | `ORBIT_TASKS_AGENT_DRIVER` | Default driver key for both roles of new groups. Defaults to `t3` |
 | `ORBIT_TASKS_IMPLEMENTER_AGENT_DRIVER` | Driver key for implementers of new groups. Defaults to `ORBIT_TASKS_AGENT_DRIVER` |
 | `ORBIT_TASKS_REVIEWER_AGENT_DRIVER` | Driver key for the reviewer of new groups. Defaults to `ORBIT_TASKS_AGENT_DRIVER` |
@@ -528,7 +535,7 @@ These items stay unimplemented here and need a later feature PR.
 
 ## Cancel a stuck group
 
-Call `tasks-cancel` with `{ "group": 123 }`, or run `orbit tasks:cancel 123`, to cancel a `backlog`, `todo`, `reserved`, `running`, `reviewing`, or `failed` group, or a `settling` group without a `pr_url`. The API operation is `tasks:cancel`. A `backlog` or `todo` group has no Instance, so cancellation only marks it `cancelled`. For other groups, cancellation removes the shared Instance and clears both taskable fields before returning the group as `cancelled`. Repeating cancellation is safe and also cleans up an Instance still attached to a group already marked `cancelled`. Subtasks that are not completed or failed become `cancelled`. Cancellation clears `assistance_requested` on the group and its subtasks and keeps the last `assistance_reason`. Subtask records and agent thread identifiers stay as history.
+Call `tasks-cancel` with `{ "group": 123 }`, or run `orbit tasks:cancel 123`, to cancel a `backlog`, `todo`, `reserved`, `running`, `reviewing`, or `failed` group, or a `settling` group without a `pr_url`. The API operation is `tasks:cancel`. For a `backlog` or `todo` group without an Instance, cancellation only marks it `cancelled`. For other groups, cancellation removes the shared Instance and clears both taskable fields before returning the group as `cancelled`. Repeating cancellation is safe and also cleans up an Instance still attached to a group already marked `cancelled`. Subtasks that are not completed or failed become `cancelled`. Cancellation clears `assistance_requested` on the group and its subtasks and keeps the last `assistance_reason`. Subtask records and agent thread identifiers stay as history.
 
 A route-free Instance in `source_resolved` uses the Ops database cleanup contract: delete the Instance row and retain its checkout on disk. Other Instances use the existing forced Instance remover, including Route cleanup. Removal errors propagate and leave the group attached for retry. Cancellation does not interrupt the external agent conversation.
 
