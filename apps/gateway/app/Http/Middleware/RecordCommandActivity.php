@@ -38,6 +38,8 @@ use App\Models\Schedule;
 use Closure;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Validation\ValidationException;
 use JsonException;
@@ -48,8 +50,15 @@ use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Throwable;
 use UnexpectedValueException;
 
+/**
+ * Records one Activity per authorized command. Every request that can change something and every
+ * failed request is kept. A successful read is kept once per command and caller in each
+ * READ_SAMPLE_SECONDS, and always for a credential read (ADR 0151).
+ */
 final readonly class RecordCommandActivity
 {
+    public const int READ_SAMPLE_SECONDS = 60;
+
     public function __construct(
         private CommandDeadline $deadline,
         private CommandActivityInputSanitizer $inputSanitizer,
@@ -132,7 +141,7 @@ final readonly class RecordCommandActivity
 
         $toolCommand = str_starts_with((string) $command, 'tool:');
 
-        return Activity::query()->create([
+        $attributes = [
             'log_name' => 'commands',
             'description' => is_string($command) ? $command : 'unknown',
             'event' => 'command',
@@ -145,7 +154,45 @@ final readonly class RecordCommandActivity
             'caller_node_id' => $this->callerNodeId($callerIp),
             'caller_ip' => $callerIp,
             'status' => 'running',
-        ]);
+        ];
+
+        // A read is written once, when it ends, and only if it fails or is the sampled one.
+        if ($this->isRead($request)) {
+            return new Activity([...$attributes, 'created_at' => Carbon::now()]);
+        }
+
+        return Activity::query()->create($attributes);
+    }
+
+    private function isRead(Request $request): bool
+    {
+        return in_array($request->method(), ['GET', 'HEAD'], true);
+    }
+
+    /** @param  array<string, mixed>  $updates */
+    private function persist(Activity $activity, array $updates): void
+    {
+        $activity->fill($updates);
+
+        if (! $activity->exists && $activity->status === 'succeeded' && ! $this->samplesRead($activity)) {
+            return;
+        }
+
+        $activity->save();
+    }
+
+    /** Whether this successful read is the one kept for its command and caller in the current window. */
+    private function samplesRead(Activity $activity): bool
+    {
+        if (str_ends_with($activity->command, ':credentials')) {
+            return true;
+        }
+
+        return Cache::add(
+            'orbit:activity:read:'.sha1($activity->command.'|'.($activity->caller_ip ?? '')),
+            true,
+            self::READ_SAMPLE_SECONDS,
+        );
     }
 
     private function complete(
@@ -230,7 +277,7 @@ final readonly class RecordCommandActivity
             ];
         }
 
-        $activity->update($updates);
+        $this->persist($activity, $updates);
     }
 
     /** @return array<string, mixed>|null */
@@ -344,7 +391,7 @@ final readonly class RecordCommandActivity
 
         $updates = $this->withSchedule($activity, $request, $updates);
 
-        $activity->update($this->withTarget(
+        $this->persist($activity, $this->withTarget(
             $activity,
             $request,
             $this->withResult($activity, $request, $updates, $result),
