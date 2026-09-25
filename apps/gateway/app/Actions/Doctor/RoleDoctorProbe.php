@@ -347,6 +347,16 @@ final readonly class RoleDoctorProbe implements DoctorFamilyProbe
                 false,
             ));
         }
+        if ($state->privateDnsRouteMatches === false) {
+            $this->add($issues, $role, $this->issue(
+                $role,
+                RoleDoctorIssueCode::PrivateDnsRouteMismatch,
+                DoctorIssueKind::Drift,
+                'The Gateway machine does not route the private domain to VPN DNS.',
+                true,
+                false,
+            ));
+        }
         if (! $state->firewallProjectionMatches) {
             $this->add($issues, $role, $this->issue(
                 $role,

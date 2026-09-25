@@ -16,12 +16,14 @@ use App\Infrastructure\Firewall\UfwRuleShape;
 use App\Infrastructure\Firewall\UfwStatusParser;
 use App\Infrastructure\Firewall\UfwStoredRuleParser;
 use App\Infrastructure\Firewall\UfwStoredRuleProbe;
+use App\Infrastructure\Gateway\GatewayPrivateDnsResolver;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\Processes\SystemdVpnOrderingDropIn;
 use App\Models\Node;
 use Closure;
+use Illuminate\Support\Facades\Log;
 use InvalidArgumentException;
 
 final readonly class NativeGatewayVpnConverger implements GatewayVpnConverger
@@ -46,6 +48,7 @@ final readonly class NativeGatewayVpnConverger implements GatewayVpnConverger
         private SystemdVpnOrderingDropIn $vpnOrdering = new SystemdVpnOrderingDropIn,
         private RetiredDnsmasqSnippets $stockDnsSnippets = new RetiredDnsmasqSnippets,
         private UplinkDnsResolvers $uplinkResolvers = new UplinkDnsResolvers,
+        private GatewayPrivateDnsResolver $resolver = new GatewayPrivateDnsResolver,
     ) {}
 
     public function converge(Node $gateway, BootstrapGatewayData $data): void
@@ -55,6 +58,30 @@ final readonly class NativeGatewayVpnConverger implements GatewayVpnConverger
         });
         $this->convergeDns($data);
         $this->convergeFirewall($gateway, $data);
+        $this->convergeResolver($data);
+    }
+
+    /**
+     * Routes the private domain on this machine to its own VPN DNS listener, so clients on the
+     * Gateway resolve private names such as `reverb.orbit`. A failure never fails bootstrap; Doctor
+     * reports the missing route.
+     */
+    private function convergeResolver(BootstrapGatewayData $data): void
+    {
+        try {
+            $command = $this->resolver->convergeCommand($data->dnsServer, $data->domain);
+            $this->run(
+                step: 'gateway-private-dns-resolver',
+                errorCode: 'vpn.dns_resolver_failed',
+                arguments: $command->arguments,
+                input: $command->input,
+            );
+        } catch (NodeProvisioningException $exception) {
+            Log::warning('The Gateway private DNS route step failed; bootstrap continues.', [
+                'error_code' => $exception->errorCode,
+                'exit_code' => $exception->result?->exitCode,
+            ]);
+        }
     }
 
     private function convergeWireGuard(Node $gateway, BootstrapGatewayData $data): void

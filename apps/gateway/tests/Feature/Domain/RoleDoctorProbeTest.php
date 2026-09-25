@@ -214,6 +214,22 @@ it('reports the complete role and VPN drift matrix in stable field order', funct
         ->not->toContain('package-output', 'service-output', 'private-key', 'vpn-setting');
 });
 
+it('reports a Gateway machine without the private DNS route as drift', function (): void {
+    $node = role_probe_node('gateway-dns-route');
+    $role = role_probe_assignment($node, RoleName::Gateway);
+    $roleCalls = 0;
+    $vpnCalls = 0;
+    $report = new RoleDoctorProbe(
+        role_probe_state_inspector($roleCalls, new RoleInspectionData(true, true, true, privateDnsRouteMatches: false)),
+        role_probe_vpn_inspector($vpnCalls),
+    )->inspect(role_probe_context($node));
+
+    expect(array_map(static fn (DoctorIssueData $issue): string => $issue->code, $report->issues))
+        ->toBe(['role.private_dns_route_mismatch'])
+        ->and($report->issues[0]->kind)->toBe(DoctorIssueKind::Drift)
+        ->and($report->issues[0]->resourceId)->toBe($role->id);
+});
+
 it('reports a Caddy below the rendered floor as drift, naming the floor and the installed release', function (): void {
     $node = role_probe_node('caddy-old');
     $role = role_probe_assignment($node, RoleName::AppDev);
