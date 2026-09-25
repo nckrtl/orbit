@@ -76,7 +76,7 @@ export const SECTION_TITLES: Record<Section, string> = {
 
 export const FILTERED_SECTIONS: readonly string[] = ["instances", "processes", "schedules"];
 
-/** Where the screen can go. Every move clears the pane focus, as opening a page does in `orbit top`. */
+/** Where the screen can go. Every move clears the pane focus, as opening a page does. */
 export function useGo() {
     const router = useRouter();
 

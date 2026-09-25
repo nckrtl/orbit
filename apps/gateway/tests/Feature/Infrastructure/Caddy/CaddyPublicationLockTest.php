@@ -7,7 +7,6 @@ use App\Infrastructure\Analytics\AnalyticsCertificatePublisher;
 use App\Infrastructure\AppDev\AppDevCaddyPublisher;
 use App\Infrastructure\AppProd\AppProdCaddyPublisher;
 use App\Infrastructure\Caddy\CaddyPublicationLock;
-use App\Infrastructure\Herdr\RemoteHerdrObserverSitePublisher;
 use App\Infrastructure\Metrics\MetricsCaddyPublisher;
 use App\Infrastructure\Metrics\MetricsCertificatePublisher;
 use App\Infrastructure\Metrics\MetricsPublicationReceipt;
@@ -17,15 +16,11 @@ use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\ProxyCli\ProxyCliCaddyPublisher;
 use App\Infrastructure\ProxyCli\ProxyCliCertificatePublisher;
 use App\Infrastructure\Ssh\RemoteCommand;
-use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\WebSocket\WebSocketCaddyPublisher;
 use App\Infrastructure\WebSocket\WebSocketCertificatePublisher;
-use App\Models\HerdrSession;
-use App\Models\Node;
 use Illuminate\Filesystem\Filesystem;
 use Symfony\Component\Finder\Finder;
 use Symfony\Component\Process\Process;
-use Tests\Support\AppDevFakeSshExecutor;
 
 describe('every Caddy publisher', function (): void {
     it('serializes on the shared hardened lock before it reads live Caddy state', function (Closure $programs): void {
@@ -56,7 +51,6 @@ describe('every Caddy publisher', function (): void {
             new AppProdCaddyPublisher()->command('# app-prod', 'app-prod-version'),
             new AppProdCaddyPublisher()->removeCommand('app-prod-version'),
         ])],
-        'herdr observer' => [fn (): array => caddy_lock_herdr_programs()],
         'metrics' => [fn (): array => caddy_lock_metrics_programs()],
         'websocket' => [fn (): array => caddy_lock_remote_programs([
             new WebSocketCaddyPublisher()->command('# websocket', '8080', '10.44.0.8'),
@@ -82,7 +76,6 @@ describe('every Caddy publisher', function (): void {
             'Analytics/AnalyticsCaddyPublisher.php',
             'AppDev/AppDevCaddyPublisher.php',
             'AppProd/AppProdCaddyPublisher.php',
-            'Herdr/RemoteHerdrObserverSitePublisher.php',
             'Metrics/MetricsCaddyPublisher.php',
             'ProxyCli/ProxyCliCaddyPublisher.php',
             'WebSocket/WebSocketCaddyPublisher.php',
@@ -159,21 +152,6 @@ function caddy_lock_remote_programs(array $commands): array
         ],
         $commands,
     );
-}
-
-/** @return list<array{arguments: list<string>, program: string}> */
-function caddy_lock_herdr_programs(): array
-{
-    $transport = new AppDevFakeSshExecutor;
-    app()->instance(SshExecutor::class, $transport);
-    $node = new Node(['name' => 'beast', 'wireguard_ip' => '10.44.0.8', 'user' => 'nckrtl']);
-    $session = new HerdrSession(['session' => 'commander-tasks', 'user' => 'nckrtl', 'observer_port' => 7411]);
-    $session->id = 12;
-    $session->setRelation('node', $node);
-
-    app(RemoteHerdrObserverSitePublisher::class)->retract($session, $node);
-
-    return caddy_lock_remote_programs($transport->commands);
 }
 
 /** @return list<array{arguments: list<string>, program: string}> */

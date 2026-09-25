@@ -25,7 +25,7 @@ import type {
     TasksStatus,
 } from "./types";
 
-/** How often the lists reload while realtime is down. `orbit top --tick` has the same default. */
+/** How often the lists reload while realtime is down. */
 export const POLL_SECONDS = 10;
 
 const nodesQuery = queryOptions({

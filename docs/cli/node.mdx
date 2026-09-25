@@ -126,7 +126,7 @@ The Gateway reads the snapshot from the [Metrics role's](/reference/metrics) own
 
 The snapshot reports `cores` as a list of per-core busy ratios from 0 to 1, `memory` and `swap` as used and total bytes, `load` as the 1, 5, and 15-minute averages, `uptime_seconds`, `pressure` as the `some` `avg10` value from each of CPU, memory, and I/O pressure (`0` when the Node's kernel has no PSI support), and `disks` as a list of mount, used, and total bytes, with pseudo filesystems (`tmpfs`, `proc`, `sysfs`, and similar) excluded and `/` listed first. Human output renders bytes and durations in readable units; JSON keeps the raw numbers.
 
-`orbit top` reads the same Prometheus data directly from the Metrics role's Grafana, for every Node at once for the dashboard and filtered to one Node for its page, rather than calling `node:metrics` per Node; see [ADR 0088](/decisions/0088-cli-reads-display-metrics-from-grafana).
+The [web app](/reference/web-app) reads the same Prometheus data directly from the Metrics role's Grafana, for every Node at once, rather than calling `node:metrics` per Node; see [ADR 0088](/decisions/0088-cli-reads-display-metrics-from-grafana).
 
 ## orbit node:remove
 
@@ -145,7 +145,7 @@ orbit node:remove <node> [--force] [--offline] [--json]
 | `--force` | Skip the confirmation prompt. Required with `--offline`. |
 | `--offline` | Shed roles on the Gateway side and remove a Node that the Gateway cannot reach. The Gateway probes the Node first; a Node that answers keeps every ordinary guard. |
 
-The Gateway refuses the request while the Node still owns Instances, legacy instances, firewall rules, roles, Processes, or Herdr sessions. It never removes the Gateway or VPN Node, or the Node that sends the request.
+The Gateway refuses the request while the Node still owns Instances, legacy instances, firewall rules, roles, or Processes. It never removes the Gateway or VPN Node, or the Node that sends the request.
 
 ```bash
 orbit node:remove 7
@@ -171,7 +171,7 @@ orbit node:rename <node> <name> [--json]
 | `node` | yes | Node ID or registered name. |
 | `name` | yes | New unique registry name. ASCII letters, digits, dashes, and underscores. Maximum 63 characters. |
 
-A request that repeats the current name succeeds and writes nothing. The Gateway holds the provisioning lock for the current name and then for the new name so a concurrent `node:add` cannot claim the destination. It refuses with `node.has_herdr_sessions` when the Node still owns a Herdr session, because observer hostnames embed the Node name. Destroy those sessions, rename, then recreate them.
+A request that repeats the current name succeeds and writes nothing. The Gateway holds the provisioning lock for the current name and then for the new name so a concurrent `node:add` cannot claim the destination.
 
 ```bash
 orbit node:rename gateway vpn

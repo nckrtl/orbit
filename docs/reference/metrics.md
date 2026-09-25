@@ -65,7 +65,7 @@ Doctor does not expect an exporter service, exporter firewall rule, or exporter 
 
 ## Per-Process CPU and memory (cAdvisor)
 
-`node_exporter` exposes systemd unit *state* only, not per-unit CPU or memory, so every selected exporter Node also runs [cAdvisor](https://github.com/google/cadvisor), pinned to `v0.60.5` and verified by SHA256 checksum before install. cAdvisor reads cgroups directly, which covers both systemd Processes and Docker Processes, and it is what [`orbit top`](/cli/top)'s Processes pane and `GET /api/v1/processes` read CPU and memory from.
+`node_exporter` exposes systemd unit *state* only, not per-unit CPU or memory, so every selected exporter Node also runs [cAdvisor](https://github.com/google/cadvisor), pinned to `v0.60.5` and verified by SHA256 checksum before install. cAdvisor reads cgroups directly, which covers both systemd Processes and Docker Processes, and it is what `GET /api/v1/processes` reads CPU and memory from.
 
 Every Node that runs `prometheus-node-exporter` runs cAdvisor the same way: a pinned static binary at `/usr/local/bin/orbit-cadvisor`, not a Docker container, because the Gateway Node is itself an exporter Node and has no Docker. A systemd unit (`orbit-cadvisor.service`) binds it to the Node's WireGuard address on port 9102, `Restart=always`, and a UFW rule admits only the Metrics Node's WireGuard address to that port, mirroring the node exporter's own rule. Enabling and disabling the exporter on a Node enables and disables cAdvisor with it; disabling removes the unit, the firewall rule, and the binary.
 
@@ -148,11 +148,11 @@ A removal that the Gateway authorized and that finds no single active Gateway wh
 
 [`orbit node:metrics`](/cli/node#orbit-node-metrics) reads a Node's CPU, memory, swap, load, uptime, pressure, and disk snapshot from the Metrics role's own Prometheus. It reads through Grafana's datasource proxy, not from Prometheus directly. The Gateway authenticates each query with the stored Grafana credential, without verifying it first, resolves the Prometheus datasource, and runs four instant PromQL queries filtered to that Node's exporter instance.
 
-Prometheus scrapes every selected exporter every ten seconds and keeps samples for seven days, so a reading is at most ten seconds old. `orbit top` and the web dashboard refresh node metrics on the same ten seconds. Each rate the queries compute covers a forty-second window, wide enough to survive a dropped scrape and short enough to show a spike rather than average it away. A scrape costs the Node one read of `/proc` and `/sys`, measured between 0.08 and 0.18 seconds depending on how many cores and filesystems it has.
+Prometheus scrapes every selected exporter every ten seconds and keeps samples for seven days, so a reading is at most ten seconds old. The [web app](/reference/web-app) refreshes node metrics on the same ten seconds. Each rate the queries compute covers a forty-second window, wide enough to survive a dropped scrape and short enough to show a spike rather than average it away. A scrape costs the Node one read of `/proc` and `/sys`, measured between 0.08 and 0.18 seconds depending on how many cores and filesystems it has.
 
 No orbit software runs on the Node beyond the exporter this role already manages. The command does not depend on what CLI build the Node was provisioned with. A Node with no active exporter selection or no Prometheus samples yet answers `node.metrics_unreachable` instead of failing.
 
-[`orbit top`](/cli/top) reads the same way, directly from the CLI: one set of queries covers every Node for the dashboard, and a filtered set covers one Node for its page. See [ADR 0088](/decisions/0088-cli-reads-display-metrics-from-grafana) for why the CLI reads this way instead of through a Gateway endpoint.
+The [web app](/reference/web-app) reads the same way, through the Gateway's `/grafana` path: one set of queries covers every Node. See [ADR 0088](/decisions/0088-cli-reads-display-metrics-from-grafana) for why display metrics are read this way instead of through a Gateway endpoint.
 
 ## API surface
 

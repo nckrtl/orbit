@@ -70,14 +70,13 @@ it('exposes only API, MCP, and health routes in an HTTP runtime', function (
     foreach ($routes as $route) {
         expect(
             $route['uri'] === 'up'
-            || $route['uri'] === '.well-known/jwks.json'
             || in_array($route['uri'], ['mcp', 'mcp/search'], true)
             || str_starts_with($route['uri'], 'api/v1/'),
         )->toBeTrue("Unexpected HTTP route [{$route['uri']}].");
     }
 
     expect(array_column($routes, 'uri'))
-        ->toContain('.well-known/jwks.json', 'mcp', 'mcp/search')
+        ->toContain('mcp', 'mcp/search')
         ->not->toContain('_boost/browser-logs', 'storage/{path}');
     expect(array_column($routes, 'name'))
         ->not

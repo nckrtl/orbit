@@ -50,10 +50,8 @@ Commands are grouped by the record they manage. Each family has its own page wit
 | [`profile`](/cli/profile) | One local HTTP request profiler on the operator machine. |
 | [`activity`](/cli/activity) | The Gateway's log of who ran what. |
 | [`realtime`](/cli/realtime) | The Gateway's realtime Reverb connection details and event stream. |
-| [`top`](/cli/top) | The fleet as one live, sectioned screen. |
 | [`extension`](/cli/extension) | Optional local command extensions. |
 | [`tasks`](/cli/tasks) | Task groups, their subtasks and comments, and the Gateway tasks extension. |
-| [`herdr`](/cli/herdr) | Named Herdr terminal sessions and observation grants. |
 
 ## Select a Gateway
 
@@ -109,17 +107,20 @@ orbit activity:show 481
 
 Activity records identify the operation, target, caller, and result. They never contain commands, environment values, credentials, or remote output.
 
+## Retry after a connection failure
+
+A command that reads from the Gateway retries the read once. When the connection is refused, reset, or closed before any HTTP response, the CLI waits 250 milliseconds and sends the same read again with the same request ID. A Caddy reload on the Gateway can cause these failures. The CLI never retries a change, a read that received any HTTP response (including a `5xx` error), a timeout, or a deployment stream. A second failure ends the command with the error. The read and its retry share the 900-second request timeout, so the retry never extends it. A refused or reset connection usually fails within milliseconds, so the retry usually adds about 250 milliseconds.
+
 ## Exit status
 
 A successful command exits with `0`. A handled failure returns the command's documented nonzero status. Local commands do not need a Gateway request to succeed. Parser usage errors, product refusals, and failed streams keep their existing statuses; scripts should check the exit status as well as the result.
 
 ## Enable an extension
 
-Some command families are hidden until you enable them on the operator machine. Local extension state composes that client's command surface. The `herdr` family stays local. The `proxycli` family also has a fleet enable that deploys a collector; see [proxycli](/cli/proxycli).
+Some command families are hidden until you enable them on the operator machine. Local extension state composes that client's command surface. The `proxycli` family also has a fleet enable that deploys a collector; see [proxycli](/cli/proxycli).
 
 ```bash
 orbit extension:list
-orbit extension:enable herdr
 orbit extension:enable proxycli
 ```
 

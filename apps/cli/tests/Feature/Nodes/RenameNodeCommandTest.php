@@ -120,8 +120,8 @@ it('rejects an empty name before connector io', function (): void {
 it('renders gateway-owned rename failures through the shared boundary', function (): void {
     $expected = json_encode([
         'error' => [
-            'code' => 'node.has_herdr_sessions',
-            'message' => 'Node [gateway] still owns Herdr sessions. Observer hostnames embed the Node name. Destroy those sessions, then rename, then recreate them.',
+            'code' => 'node.provisioning_busy',
+            'message' => 'Node [gateway] is already changing.',
             'request_id' => rename_node_request_id(),
         ],
     ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
@@ -130,8 +130,8 @@ it('renders gateway-owned rename failures through the shared boundary', function
         RenameNodeRequest::class => MockResponse::make(
             [
                 'error' => [
-                    'code' => 'node.has_herdr_sessions',
-                    'message' => 'Node [gateway] still owns Herdr sessions. Observer hostnames embed the Node name. Destroy those sessions, then rename, then recreate them.',
+                    'code' => 'node.provisioning_busy',
+                    'message' => 'Node [gateway] is already changing.',
                 ],
             ],
             409,

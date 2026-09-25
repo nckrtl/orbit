@@ -10,8 +10,6 @@ use Orbit\Sdk\Responses\Doctor\DoctorIssueResponse;
 use Orbit\Sdk\Responses\Doctor\DoctorNodeResponse;
 use Orbit\Sdk\Responses\Doctor\DoctorReportResponse;
 use Orbit\Sdk\Responses\Firewall\FirewallRuleResponse;
-use Orbit\Sdk\Responses\Herdr\HerdrSessionResponse;
-use Orbit\Sdk\Responses\Herdr\ObservationGrantResponse;
 use Orbit\Sdk\Responses\Metrics\MetricsStatusResponse;
 use Orbit\Sdk\Responses\Nodes\AddedNodeAccessResponse;
 use Orbit\Sdk\Responses\Nodes\NodeAccessNodeResponse;
@@ -39,7 +37,6 @@ it('rejects unsafe success error codes across every response surface', function 
         FirewallRuleResponse::fromGatewayData(['error_code' => $unsafeCode], $requestId),
         NodeResponse::fromGatewayData(['error_code' => $unsafeCode], $requestId),
         ProcessResponse::fromGatewayData(['error_code' => $unsafeCode], $requestId),
-        HerdrSessionResponse::fromGatewayData(['error_code' => $unsafeCode], $requestId),
         ToolManagerResponse::fromGatewayData([
             'id' => 1,
             'node_id' => 1,
@@ -193,8 +190,6 @@ it('marks every public gateway DTO factory ingress as sensitive', function (): v
         RemovedNodeAccessResponse::class => ['fromGatewayData'],
         RemovedNodeResponse::class => ['fromGatewayData'],
         ProcessResponse::class => ['fromGatewayData'],
-        HerdrSessionResponse::class => ['fromGatewayData'],
-        ObservationGrantResponse::class => ['fromGatewayData'],
         ScheduleCompletionResponse::class => ['fromRequestId'],
         ScheduleLogsResponse::class => ['fromGatewayData'],
         ScheduleResponse::class => ['fromGatewayData'],
