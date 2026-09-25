@@ -4077,29 +4077,6 @@
             ]
         },
         {
-            "path": "docs/decisions/0158-continue-long-gateway-operations-across-bounded-requests.md",
-            "title": "ADR 0158: Continue long Gateway operations across bounded requests",
-            "kind": "decision",
-            "components": [
-                "apps/cli",
-                "apps/docs",
-                "apps/gateway",
-                "packages/php-sdk"
-            ],
-            "concepts": [
-                "Gateway",
-                "Instance",
-                "Node",
-                "Process",
-                "Tool"
-            ],
-            "governing_adrs": [
-                "0003",
-                "0128",
-                "0158"
-            ]
-        },
-        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -4285,8 +4262,7 @@
                 "0154",
                 "0155",
                 "0156",
-                "0157",
-                "0158"
+                "0157"
             ]
         },
         {
