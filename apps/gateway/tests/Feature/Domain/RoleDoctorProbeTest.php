@@ -113,6 +113,29 @@ it('reports lifecycle and each conflicting assignment once without leaking store
         ->not->toContain('secret-step', 'secret-code', 'failed_step', 'error_code');
 });
 
+it('reports an existing Gateway and Ingress on one Node as a role conflict', function (): void {
+    $node = role_probe_node('gateway-ingress');
+    $cluster = Cluster::query()->create(['name' => 'gateway-ingress']);
+    $node->update(['cluster_id' => $cluster->id]);
+    $gateway = role_probe_assignment($node, RoleName::Gateway);
+    role_probe_assignment($node, RoleName::Router, clusterId: $cluster->id);
+    $ingress = role_probe_assignment($node, RoleName::Ingress, clusterId: $cluster->id);
+    $roleCalls = 0;
+    $vpnCalls = 0;
+    $report = new RoleDoctorProbe(
+        role_probe_state_inspector($roleCalls),
+        role_probe_vpn_inspector($vpnCalls),
+    )->inspect(role_probe_context($node));
+
+    expect(array_map(
+        static fn (DoctorIssueData $issue): array => [$issue->resourceId, $issue->code],
+        $report->issues,
+    ))->toBe([
+        [$gateway->id, 'role.assignment_conflict'],
+        [$ingress->id, 'role.assignment_conflict'],
+    ]);
+});
+
 it('does not report a conflict when database shares a node with router', function (): void {
     $node = role_probe_node('database-router');
     $cluster = Cluster::query()->create(['name' => 'database-router']);

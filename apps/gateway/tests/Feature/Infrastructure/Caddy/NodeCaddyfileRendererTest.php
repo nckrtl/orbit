@@ -95,17 +95,16 @@ describe('the Node Caddyfile', function (): void {
         expect(caddy_adapt(caddy_build_renderer()->render($node)->content)->succeeded())->toBeTrue();
     });
 
-    it('validates a Gateway that is also the Router and the Ingress when a Caddy binary is installed', function (): void {
+    it('validates a Node that is the Router, the Ingress, and app-prod when a Caddy binary is installed', function (): void {
         if (new ExecutableFinder()->find('caddy') === null) {
             $this->markTestSkipped('Caddy is not installed.');
         }
 
-        $gateway = caddy_build_node('gateway', '10.44.0.1');
-        $gateway->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
-        CaddySiteCertificateFixtures::recordAll($gateway);
-        [, $route] = caddy_build_private_route($gateway, 'shop.test');
-        $gateway->roles()->create(['role' => RoleName::Ingress, 'status' => LifecycleStatus::Active, 'cluster_id' => $route->cluster_id]);
-        $caddyfile = caddy_build_renderer()->render($gateway->fresh() ?? $gateway);
+        $edge = caddy_build_node('app-prod', '10.44.0.3');
+        [, $route] = caddy_build_private_route($edge, 'shop.test');
+        $edge->roles()->create(['role' => RoleName::Ingress, 'status' => LifecycleStatus::Active, 'cluster_id' => $route->cluster_id]);
+        $edge->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
+        $caddyfile = caddy_build_renderer()->render($edge->fresh() ?? $edge);
 
         expect($caddyfile->problems)->toBe([])
             ->and(caddy_adapt($caddyfile->content)->succeeded())->toBeTrue();
@@ -358,24 +357,19 @@ describe('listener selection', function (): void {
             ->not->toContain('0.0.0.0');
     });
 
-    it('builds a Gateway that is also the Router and the Ingress, with only public sites on every address', function (): void {
-        $gateway = caddy_build_node('gateway', '10.44.0.1');
-        $gateway->update(['lan_ip' => '192.168.1.1']);
-        $gateway->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
-        CaddySiteCertificateFixtures::recordAll($gateway);
-        $gateway->roles()->create(['role' => RoleName::WebSocket, 'status' => LifecycleStatus::Active]);
-        CaddySiteCertificateFixtures::recordAll($gateway);
-        [, $route] = caddy_build_private_route($gateway, 'shop.test');
-        $gateway->roles()->create(['role' => RoleName::Ingress, 'status' => LifecycleStatus::Active, 'cluster_id' => $route->cluster_id]);
+    it('keeps the private sites of a Node that is the Router, the Ingress, and app-prod off every address', function (): void {
+        $edge = caddy_build_node('app-prod', '10.44.0.3');
+        $edge->update(['lan_ip' => '192.168.1.3']);
+        [, $route] = caddy_build_private_route($edge, 'shop.test');
+        $edge->roles()->create(['role' => RoleName::Ingress, 'status' => LifecycleStatus::Active, 'cluster_id' => $route->cluster_id]);
+        $edge->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
 
-        $caddyfile = caddy_build_renderer()->render($gateway->fresh() ?? $gateway);
+        $caddyfile = caddy_build_renderer()->render($edge->fresh() ?? $edge);
 
         expect($caddyfile->problems)->toBe([])
-            ->and($caddyfile->listenAddresses)->toBe(['10.44.0.1', '192.168.1.1'])
+            ->and($caddyfile->listenAddresses)->toBe(['10.44.0.3', '192.168.1.3'])
             ->and($caddyfile->content)
-            ->toContain("gateway.orbit, 10.44.0.1 {\n    bind 10.44.0.1\n    @orbit_outside not remote_ip 10.44.0.0/24\n    abort @orbit_outside\n")
-            ->toContain("# orbit: app-dev route-{$route->id}-router\nhttps://shop.test {\n    bind 10.44.0.1 192.168.1.1\n    @orbit_outside not remote_ip private_ranges 100.64.0.0/10 10.44.0.0/24\n    abort @orbit_outside\n")
-            ->toContain("reverb.orbit {\n    bind 10.44.0.1\n    @orbit_outside not remote_ip 10.44.0.0/24\n    abort @orbit_outside\n")
+            ->toContain("# orbit: app-dev route-{$route->id}-router\nhttps://shop.test {\n    bind 10.44.0.3 192.168.1.3\n    @orbit_outside not remote_ip private_ranges 100.64.0.0/10 10.44.0.0/24\n    abort @orbit_outside\n")
             ->not->toContain('0.0.0.0');
     });
 

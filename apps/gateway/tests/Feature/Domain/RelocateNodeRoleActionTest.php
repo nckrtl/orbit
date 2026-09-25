@@ -146,7 +146,7 @@ describe(RelocateNodeRoleAction::class, function (): void {
             ->toBe(1);
     });
 
-    it('refuses a target that already owns a conflicting role', function (): void {
+    it('refuses a target that already owns a conflicting role', function (RoleName $held): void {
         $source = relocate_role_node('gateway', '10.44.0.1');
         $target = relocate_role_node('beast', '10.44.0.11');
         $source->roles()->create([
@@ -154,7 +154,7 @@ describe(RelocateNodeRoleAction::class, function (): void {
             'status' => LifecycleStatus::Active,
         ]);
         $target->roles()->create([
-            'role' => RoleName::AppDev,
+            'role' => $held,
             'status' => LifecycleStatus::Active,
         ]);
 
@@ -162,10 +162,14 @@ describe(RelocateNodeRoleAction::class, function (): void {
             $target,
             RoleName::Gateway,
             force: true,
-        ))->toThrow(NodeRoleValidationException::class, 'Role [gateway] conflicts with assigned role [app-dev].');
+        ))->toThrow(NodeRoleValidationException::class, "Role [gateway] conflicts with assigned role [{$held->value}].");
 
-        expect($source->roles()->where('role', RoleName::Gateway)->exists())->toBeTrue();
-    });
+        expect($source->roles()->where('role', RoleName::Gateway)->exists())->toBeTrue()
+            ->and($target->roles()->where('role', RoleName::Gateway)->exists())->toBeFalse();
+    })->with([
+        'app-dev' => [RoleName::AppDev],
+        'Ingress' => [RoleName::Ingress],
+    ]);
 
     it('transfers websocket, copies credentials, and retracts the source baseline', function (): void {
         $source = relocate_role_node('beast', '10.44.0.1');
