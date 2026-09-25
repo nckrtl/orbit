@@ -51,7 +51,7 @@ final class PrivateDnsInheritedSockets
     {
         $raw = @fopen('php://fd/'.$descriptor, 'r+');
         $socket = is_resource($raw) ? @socket_import_stream($raw) : false;
-        if ($socket === false || $socket === null) {
+        if ($socket === false) {
             throw new RuntimeException("Could not import inherited socket descriptor {$descriptor}.");
         }
 
