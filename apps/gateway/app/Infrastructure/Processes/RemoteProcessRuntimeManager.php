@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Processes;
 
+use App\Domain\AgentView\AgentProcessView;
 use App\Domain\AppDev\ViteProcessLifecycle;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Processes\DesiredProcessState;
@@ -25,6 +26,8 @@ use SensitiveParameter;
 final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManager
 {
     private ProcessRuntimeLease $lease;
+
+    private AgentProcessView $agents;
 
     private const string DOCKER_INSPECT_FORMAT = '{{ index .Config.Labels "orbit.managed" }}{{ printf "\\n" }}{{ index .Config.Labels "orbit.container.kind" }}{{ printf "\\n" }}{{ index .Config.Labels "orbit.process.id" }}{{ printf "\\n" }}{{ index .Config.Labels "orbit.process.spec" }}{{ printf "\\n" }}{{ .State.Running }}';
 
@@ -50,8 +53,10 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
         private SystemdProcessRenderer $systemd,
         private DockerProcessRenderer $docker,
         ?ProcessRuntimeLease $lease = null,
+        ?AgentProcessView $agents = null,
     ) {
         $this->lease = $lease ?? app(ProcessRuntimeLease::class);
+        $this->agents = $agents ?? app(AgentProcessView::class);
     }
 
     public function assertCanStart(#[SensitiveParameter] Process $process): void
@@ -355,7 +360,11 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
 
     public function logs(#[SensitiveParameter] Process $process, int $lines): string
     {
-        $this->requireOwnedRuntime($process, 'logs', 'process.logs_failed');
+        // A fresh agent view that lists this exact unit or container stands in for the ownership
+        // check: only root on that Node can create an `orbit-process-*` unit (ADR 0148).
+        if ($this->agents->lists($process) !== true) {
+            $this->requireOwnedRuntime($process, 'logs', 'process.logs_failed');
+        }
 
         $arguments = match ($process->runtime) {
             ProcessRuntime::Systemd => [

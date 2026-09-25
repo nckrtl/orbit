@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Gateway;
 
+use App\Domain\AgentView\AgentViewConverger;
 use App\Domain\Certificates\GatewayCertificateIssuer;
 use App\Domain\Gateway\GatewayWebConverger;
 use App\Domain\Hibernation\RuntimeHibernatorConverger;
@@ -26,6 +27,7 @@ final readonly class NativeGatewayWebConverger implements GatewayWebConverger
         private string $checkoutPath,
         private string $webRoot,
         private RuntimeHibernatorConverger $hibernator,
+        private AgentViewConverger $agentView,
     ) {}
 
     /**
@@ -56,5 +58,6 @@ final readonly class NativeGatewayWebConverger implements GatewayWebConverger
         $this->fpm->converge($generatedFpmPool);
         $this->caddy->converge($generatedCaddy);
         $this->hibernator->converge();
+        $this->agentView->converge();
     }
 }

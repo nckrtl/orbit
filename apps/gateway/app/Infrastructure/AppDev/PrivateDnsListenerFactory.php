@@ -13,7 +13,7 @@ final readonly class PrivateDnsListenerFactory
         string $upstream,
     ): PrivateDnsTransportServer {
         $cache = new InMemoryPrivateDnsAnswerCache;
-        $store = new FilePrivateDnsCatalogStore($catalogPath, $cache);
+        $store = new FilePrivateDnsCatalogStore($catalogPath, $cache, FilePrivateDnsCatalogStore::loadedPath($catalogPath));
         [$host, $upstreamPort] = $this->upstream($upstream);
 
         return new PrivateDnsTransportServer(
@@ -25,6 +25,8 @@ final readonly class PrivateDnsListenerFactory
             ),
             listenAddress: $listenAddress,
             port: $port,
+            // A quiet listener still loads a new catalog within a second.
+            onIdle: static fn (): bool => $store->refresh(),
         );
     }
 

@@ -87,6 +87,36 @@ Orbit VPN DNS answers private names from the published requester catalog on the 
 
 The listener and the published catalog live on the node that holds the `vpn` role. When `gateway` and `vpn` share a node, the Gateway writes those files locally. After [relocate](/solutions/relocate-gateway-role) splits the roles, the serving Gateway SSHes the same publication to the `vpn` node.
 
+### Listener release and sockets
+
+The Gateway installs the listener itself. The listener is a small release: `serve.php` and the Gateway classes it uses, with no Composer dependencies. Every publication that activates the listener sends the release from the Gateway's own code to the Node that holds `vpn`, over SSH when the roles split. The release lands in `/var/lib/orbit/private-dns/releases/<id>/`, where `<id>` is a digest of its files. A Gateway deploy that changes the listener code produces a new id. The next publication installs it and points the unit at it. The publication keeps the previous release for rollback and removes older ones. [ADR 0149](/decisions/0149-install-the-private-dns-listener-from-the-gateway) records this decision.
+
+Each release holds a `.manifest` of file digests. Before a publication installs a release, it runs `serve.php --self-test`, which checks `ext-sockets` and `ext-pcntl` and loads every class. When an installed file differs from the manifest, the publication reinstalls the release and restarts the listener on it.
+
+`orbit-private-dns.socket` binds UDP and TCP port 53 on the VPN DNS address and passes both sockets to `orbit-private-dns.service`. A service restart never closes them. Queries that arrive during a restart wait in the socket until the next listener reads them, so they do not fail.
+
+| Unit | Content |
+| --- | --- |
+| `/etc/systemd/system/orbit-private-dns.socket` | `ListenDatagram` and `ListenStream` on the VPN DNS address, `FreeBind=yes`, and no ordering on the WireGuard tunnel, which would form a boot cycle |
+| `/etc/systemd/system/orbit-private-dns.service` | `php8.5 /var/lib/orbit/private-dns/releases/<id>/serve.php --listen=… --port=53 --catalog=… --upstream=127.0.0.55:53`, `Sockets=orbit-private-dns.socket`, and `After=wg-quick@orbit.service` without `Requires=` or `Wants=`, so a query never starts a stopped tunnel |
+
+The first publication after an upgrade moves the address from a listener that binds it itself to the socket unit. It stops the old listener and starts the socket unit right after, so lookups fail for a few milliseconds at most, once.
+
+### Catalog confirmation
+
+The listener rereads the catalog on every query and once a second while idle, and it reads the file contents, not cached file status. After each load it writes the catalog's SHA-256 digest to `/var/lib/orbit/private-dns/catalog.json.loaded`. A catalog change never restarts a current listener.
+
+Every publication checks that confirmation while the listener runs.
+
+| Listener state | Publication result |
+| --- | --- |
+| The confirmation matches the published catalog within 5 seconds | The listener keeps running. |
+| The catalog changed and the confirmation does not match within 5 seconds | The publication removes the confirmation and restarts the service behind its socket. |
+| The catalog is unchanged and the confirmation names another catalog | The publication removes the confirmation and restarts the service once. |
+| The catalog is unchanged and there is no confirmation | The listener keeps running. A listener that never writes confirmations loaded the catalog when it started. |
+
+A failed start or restart restores the previous units, DNS files, and services.
+
 A role converge marks its assignment `provisioning` while it runs. The Gateway still counts that Node as the role holder, and an active holder wins when both exist. So a `gateway` or `vpn` converge keeps the publication target, and a `gateway`, `metrics`, `websocket`, or `analytics` converge keeps `gateway.orbit`, `metrics.orbit`, `reverb.orbit`, `analytics.orbit`, and the analytics tracking hosts.
 
 A publication or listener-activation failure restores the previous working DNS files and services on that node. It does not remove a Metrics runtime that already converged.
@@ -115,10 +145,12 @@ Inspect the published catalog and the live listener on the `vpn` node, then quer
 | --- | --- |
 | `sudo cat /var/lib/orbit/private-dns/catalog.json` | `requesters` maps each registered WireGuard address to a Node id. `records` and `suffixes` hold WireGuard defaults. `overrides` lists LAN answers by `node:<id>`. |
 | `systemctl is-active orbit-private-dns.service` | The requester-aware listener is active on the VPN WireGuard DNS address. |
+| `sudo cat /var/lib/orbit/private-dns/catalog.json.loaded` | The digest equals `sudo sha256sum /var/lib/orbit/private-dns/catalog.json`, so the listener serves the published catalog. |
+| `systemctl is-active orbit-private-dns.socket` and `systemctl show -p ExecStart orbit-private-dns.service` | The socket unit holds the address. The service runs `serve.php` from the release that the Gateway's code builds. |
 | `ss -ulpn sport = :53` and `ss -tlpn sport = :53` | `orbit-private-dns` owns the WireGuard address on UDP and TCP port 53. dnsmasq owns `127.0.0.55:53`. |
 | `dig +noall +answer @<vpn-dns-address> <route-domain> A` | A direct query from that Node returns the address selected for its registered WireGuard source. |
 | `dig +tcp +noall +answer @<vpn-dns-address> <route-domain> A` | The TCP query returns the same selected address. |
 
-Remove incorrect LAN intent through the Node's existing provision operation by omitting or replacing `lan_ip`, then retry that operation. The Gateway republishes affected selection before the new Node, Cluster, Router, or Route state becomes authoritative. The live listener rereads the published catalog without a manual restart. A publication or listener-activation failure restores the previous working DNS files and services or retains explicit recovery state, and a refused Cluster or Router transition remains refused.
+Remove incorrect LAN intent through the Node's existing provision operation by omitting or replacing `lan_ip`, then retry that operation. The Gateway republishes affected selection before the new Node, Cluster, Router, or Route state becomes authoritative. The live listener rereads the published catalog without a manual restart. A publication restarts a listener that does not [confirm](#catalog-confirmation) the catalog, behind its socket. A publication or listener-activation failure restores the previous working DNS files and services or retains explicit recovery state, and a refused Cluster or Router transition remains refused.
 
 An unreachable configured LAN address stays selected; Orbit does not fall back to WireGuard. HTTPS connections fail until you repair the LAN path or remove the LAN setting and retry provisioning.

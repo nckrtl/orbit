@@ -67,4 +67,4 @@ bin/docs-openapi
 bin/mcp-tools
 ```
 
-`bin/mcp-tools --check` and `composer mcp-tools` report a stale manifest. The Gateway test suite fails when an API route has no tool or a tool has no route, so the MCP catalogue cannot trail the API.
+`bin/docs-openapi --check` reports a stale API reference, and `bin/mcp-tools --check` and `composer mcp-tools` report a stale manifest. Continuous integration runs both checks. The Gateway test suite fails when an API route has no tool or a tool has no route, so the MCP catalogue cannot trail the API.

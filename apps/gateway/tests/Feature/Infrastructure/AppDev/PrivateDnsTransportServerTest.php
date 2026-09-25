@@ -12,8 +12,8 @@ use App\Infrastructure\AppDev\PrivateDnsMessageCodec;
 use App\Infrastructure\AppDev\PrivateDnsRequestHandler;
 use App\Infrastructure\AppDev\PrivateDnsTransportServer;
 use App\Infrastructure\AppDev\SocketPrivateDnsUpstream;
-use App\Infrastructure\AppDev\WireGuardDnsRequesterResolver;
 use App\Models\Node;
+use Tests\Support\RegisteredNodeDnsRequesterResolver;
 
 it('answers UDP and TCP questions from the actual transport source', function (): void {
     $registered = Node::query()->create([
@@ -203,7 +203,7 @@ it('refuses an explicit port whose TCP side is taken and releases its UDP socket
     $port = (int) substr($name, strrpos($name, ':') + 1);
     $server = new PrivateDnsTransportServer(
         handler: new PrivateDnsRequestHandler(
-            requesters: new WireGuardDnsRequesterResolver,
+            requesters: new RegisteredNodeDnsRequesterResolver,
             selector: new CatalogPrivateDnsAnswerSelector(new PrivateDnsAnswerCatalog(exact: [], suffixes: [])),
             cache: new InMemoryPrivateDnsAnswerCache,
         ),
@@ -229,7 +229,7 @@ function orb258_transport_server(
 ): PrivateDnsTransportServer {
     return new PrivateDnsTransportServer(
         handler: new PrivateDnsRequestHandler(
-            requesters: new WireGuardDnsRequesterResolver,
+            requesters: new RegisteredNodeDnsRequesterResolver,
             selector: new CatalogPrivateDnsAnswerSelector($catalog),
             cache: $cache ?? new InMemoryPrivateDnsAnswerCache,
             upstream: $upstream,

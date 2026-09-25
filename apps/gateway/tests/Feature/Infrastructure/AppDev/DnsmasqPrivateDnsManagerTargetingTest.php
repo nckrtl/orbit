@@ -8,6 +8,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AppDev\AppDevDnsConfigRenderer;
 use App\Infrastructure\AppDev\AppDevSiteRepository;
 use App\Infrastructure\AppDev\DnsmasqPrivateDnsManager;
+use App\Infrastructure\AppDev\PrivateDnsListenerRelease;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
@@ -38,7 +39,13 @@ it('publishes private DNS on the VPN node when gateway and vpn are split', funct
         ->and($ssh->commands[0]->input)
         ->toContain('orbit-records.conf')
         ->toContain('catalog.json')
-        ->not->toContain('orbit-private-dns.service');
+        ->toContain('catalog.json.loaded')
+        ->toContain('listen_addr=10.44.0.1')
+        ->toContain('/var/lib/orbit/private-dns/releases/'.PrivateDnsListenerRelease::fromGateway()->id())
+        ->toContain('serve.php" --self-test')
+        ->toContain('systemctl start orbit-private-dns.socket')
+        ->toContain('systemctl restart orbit-private-dns.service')
+        ->not->toContain('orbit:private-dns-serve');
 });
 
 it('publishes on the VPN node while the gateway or vpn role converges', function (RoleName $converging): void {
@@ -59,30 +66,22 @@ it('publishes on the VPN node while the gateway or vpn role converges', function
     'vpn role converging' => [RoleName::Vpn],
 ]);
 
-it('does not rewrite the listener unit when publishing records to a remote vpn node', function (): void {
+it('installs the listener from its release on a remote vpn node, not from a Gateway checkout', function (): void {
     dns_target_node('vpn', '10.44.0.1', RoleName::Vpn);
     dns_target_node('gateway', '10.44.0.2', RoleName::Gateway);
     $processes = new DnsTargetProcessRunner;
     $ssh = new DnsTargetSshExecutor;
 
-    new DnsmasqPrivateDnsManager(
-        processes: $processes,
-        renderer: new AppDevDnsConfigRenderer(new AppDevSiteRepository),
-        activateListener: true,
-        checkoutPath: '/srv/orbit/gateway-new',
-        ssh: $ssh,
-        keys: new DnsTargetSshKeyProvider,
-        knownHosts: new DnsTargetKnownHostsStore,
-    )->converge();
+    dns_target_manager($processes, $ssh)->converge();
+    $input = $ssh->commands[0]->input;
+    $release = PrivateDnsListenerRelease::fromGateway();
 
-    expect($processes->calls)
-        ->toBe(0)
-        ->and($ssh->hosts)
-        ->toBe(['10.44.0.1'])
-        ->and($ssh->commands[0]->input)
-        ->toContain('orbit-records.conf')
-        ->not->toContain('/srv/orbit/gateway-new')
-        ->not->toContain('orbit-private-dns.service');
+    expect($processes->calls)->toBe(0)
+        ->and($input)
+        ->toContain(base64_encode($release->files()['serve.php']))
+        ->toContain(base64_encode($release->files()['app/Infrastructure/AppDev/PrivateDnsListenerProcess.php']))
+        ->not->toContain('artisan')
+        ->not->toContain(base_path());
 });
 
 it('keeps local publication when gateway and vpn share a node', function (): void {
@@ -123,6 +122,7 @@ function dns_target_manager(ProcessRunner $processes, SshExecutor $ssh): Dnsmasq
     return new DnsmasqPrivateDnsManager(
         processes: $processes,
         renderer: new AppDevDnsConfigRenderer(new AppDevSiteRepository),
+        activateListener: true,
         ssh: $ssh,
         keys: new DnsTargetSshKeyProvider,
         knownHosts: new DnsTargetKnownHostsStore,

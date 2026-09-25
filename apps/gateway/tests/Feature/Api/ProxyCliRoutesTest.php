@@ -23,13 +23,16 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Api\ProxyCliController;
+use App\Infrastructure\AppDev\AppDevDnsConfigRenderer;
 use App\Infrastructure\ProxyCli\RecordingProxyCliPublicationManager;
 use App\Infrastructure\ProxyCli\RecordingProxyCliRuntimeLifecycle;
+use App\Models\Activity;
 use App\Models\DatabaseConnection;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\Route as OrbitRoute;
 use Illuminate\Routing\Route;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 
 function proxycli_gateway(): Node
@@ -150,6 +153,43 @@ it('enables proxycli when shared Valkey sits on a database Node', function (): v
         ->and($environment['PROXYCLI_CACHE_HOST'])->toBe('10.44.0.8')
         ->and($environment['PROXYCLI_CACHE_PORT'])->toBe('6379');
 });
+
+it('keeps the management key out of activity for every enable outcome', function (bool $placed, int $status): void {
+    $gateway = proxycli_gateway();
+    $node = proxycli_node();
+    $key = 'management-'.Str::random(32);
+
+    if ($placed) {
+        proxycli_valkey($node);
+    }
+
+    $requestId = (string) Str::uuid();
+
+    $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
+        ->withHeader('X-Orbit-Request-Id', $requestId)
+        ->postJson('/api/v1/proxycli', [
+            'node_id' => $node->id,
+            'cache_connection' => 'valkey',
+            'cliproxy_url' => 'http://127.0.0.1:8317',
+            'cliproxy_management_key' => $key,
+        ])
+        ->assertStatus($status);
+
+    $activity = Activity::query()->where('request_id', $requestId)->sole();
+    $stored = (string) DB::table('activity_log')->where('id', $activity->id)->value('properties');
+
+    expect($activity->command)->toBe('proxycli:enable')
+        ->and($activity->properties?->get('input'))->toBe([
+            'node_id' => $node->id,
+            'cache_connection' => 'valkey',
+            'cliproxy_url' => 'http://127.0.0.1:8317',
+            'cliproxy_management_key' => '[REDACTED]',
+        ])
+        ->and($stored)->not->toContain($key);
+})->with([
+    'succeeded' => [true, 201],
+    'failed' => [false, 422],
+]);
 
 it('keeps the collector hostname on a second enable', function (): void {
     $gateway = proxycli_gateway();
@@ -429,6 +469,42 @@ it('disables the extension, stops the process, and hides provider reads', functi
         ->getJson('/api/v1/proxycli/providers')
         ->assertStatus(409)
         ->assertJsonPath('error.code', 'proxycli.disabled');
+});
+
+it('republishes private DNS without the collector name when the extension is disabled', function (): void {
+    $gateway = proxycli_gateway();
+    $node = proxycli_node();
+    proxycli_valkey($node);
+    $publication = new class implements ProxyCliPublicationManager
+    {
+        public ?string $dnsAtRemoval = null;
+
+        public function converge(Node $node, int $port = ProxyCliProcess::PORT, ?OrbitRoute $takeover = null): void {}
+
+        public function remove(Node $node): void
+        {
+            $this->dnsAtRemoval = app(AppDevDnsConfigRenderer::class)->render();
+        }
+    };
+    app()->instance(ProxyCliPublicationManager::class, $publication);
+
+    $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
+        ->postJson('/api/v1/proxycli', [
+            'node_id' => $node->id,
+            'cache_connection' => 'valkey',
+            'cliproxy_url' => 'http://127.0.0.1:8317',
+            'cliproxy_management_key' => 'management-key',
+        ])
+        ->assertCreated();
+
+    expect(app(AppDevDnsConfigRenderer::class)->render())->toContain('host-record=collector.cli-proxy-api.orbit,10.44.0.8');
+
+    $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
+        ->deleteJson('/api/v1/proxycli')
+        ->assertOk();
+
+    expect($publication->dnsAtRemoval)->toBeString()
+        ->not->toContain('collector.cli-proxy-api.orbit');
 });
 
 it('collects once under the distributed lock', function (): void {

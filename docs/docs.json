@@ -541,6 +541,8 @@
             "group": "Node callbacks",
             "openapi": "/openapi.json",
             "pages": [
+              "POST /api/v1/agent/broadcasting/auth",
+              "GET /api/v1/agent/realtime",
               "GET /api/v1/github/app/callback",
               "GET /api/v1/github/app/register",
               "GET /api/v1/metrics/grafana/authorize",
@@ -704,7 +706,9 @@
               "decisions/0144-migrate-waiting-connections-when-caddy-reloads",
               "decisions/0145-publish-the-proxycli-collector-on-collector-cli-proxy-api-orbit",
               "decisions/0146-retire-the-herdr-integration",
-              "decisions/0147-retire-orbit-top"
+              "decisions/0147-retire-orbit-top",
+              "decisions/0148-keep-a-gateway-view-of-node-agent-state",
+              "decisions/0150-keep-extension-commands-local-and-confirm-the-proxycli-fleet-stop"
             ]
           }
         ]

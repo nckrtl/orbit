@@ -165,6 +165,33 @@ jobs:
           path: ${{ matrix.directory }}/.orbit-tia
           key: ${{ steps.orbit-tia-key.outputs.prefix }}-${{ github.head_ref || github.ref_name }}-${{ github.sha }}
 
+  api-reference:
+    name: API reference
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.5'
+          coverage: none
+          tools: composer:v2
+
+      - name: Install Gateway and CLI dependencies
+        run: |
+          for project in apps/gateway apps/cli; do
+            (cd "$project" && { [ -e .env ] || [ ! -f .env.example ] || cp .env.example .env; } && composer install --no-interaction --prefer-dist)
+          done
+
+      - name: Check that the API reference matches the Gateway routes
+        run: bin/docs-openapi --check
+
+      - name: Check that the MCP tool manifest matches the API reference
+        run: bin/mcp-tools --check
+
   web:
     name: Web
     runs-on: ubuntu-latest
@@ -295,14 +322,15 @@ jobs:
   required:
     name: Required checks
     if: always()
-    needs: [project, web, agent-annotation, pi-server, agent]
+    needs: [project, api-reference, web, agent-annotation, pi-server, agent]
     runs-on: ubuntu-latest
     steps:
       - name: Require every project to pass
         env:
           PROJECT_RESULT: ${{ needs.project.result }}
+          API_REFERENCE_RESULT: ${{ needs.api-reference.result }}
           WEB_RESULT: ${{ needs.web.result }}
           ANNOTATION_RESULT: ${{ needs.agent-annotation.result }}
           PI_SERVER_RESULT: ${{ needs.pi-server.result }}
           AGENT_RESULT: ${{ needs.agent.result }}
-        run: test "$PROJECT_RESULT" = success && test "$WEB_RESULT" = success && test "$ANNOTATION_RESULT" = success && test "$PI_SERVER_RESULT" = success && test "$AGENT_RESULT" = success
+        run: test "$PROJECT_RESULT" = success && test "$API_REFERENCE_RESULT" = success && test "$WEB_RESULT" = success && test "$ANNOTATION_RESULT" = success && test "$PI_SERVER_RESULT" = success && test "$AGENT_RESULT" = success

@@ -3,7 +3,8 @@
 
 Run from any directory:
 
-    bin/docs-openapi
+    bin/docs-openapi            write docs/openapi.json and the API tab of docs/docs.json
+    bin/docs-openapi --check    exit 1 when either file differs from what the sources produce
 
 The script reads the Gateway route table through `php apps/gateway/artisan route:list --json`, parses the
 controllers, form requests, data classes, and enums under apps/gateway/app, the request and response classes
@@ -22,6 +23,9 @@ GW = ROOT / 'apps/gateway'
 SDK = ROOT / 'packages/php-sdk/src'
 DOCS = ROOT / 'docs'
 OUTPUT = DOCS / 'openapi.json'
+CHECK = sys.argv[1:] == ['--check']
+if sys.argv[1:] and not CHECK:
+    sys.exit('usage: bin/docs-openapi [--check]')
 
 
 # ---------------------------------------------------------------- source parsing
@@ -228,7 +232,7 @@ TAGS = [
     ('internal', 'Node callbacks', 'Endpoints that managed Nodes and Caddy call; operators do not call them.'),
 ]
 TAG_BY_PREFIX = {p: t for p, t, _ in TAGS}
-INTERNAL = {'tasks:agents', 'tasks:agent-stream', 'metrics:grafana:authorize', 'schedule:complete', 'runtime-activation:app-instance', 'github:app:register', 'github:app:callback'}
+INTERNAL = {'tasks:agents', 'tasks:agent-stream', 'agent:realtime', 'agent:realtime:auth', 'metrics:grafana:authorize', 'schedule:complete', 'runtime-activation:app-instance', 'github:app:register', 'github:app:callback'}
 DEFINITION_ROUTES = {
     'AppRuntimeDefinitionsController@processIndex': 'List process definitions',
     'AppRuntimeDefinitionsController@processStore': 'Create a process definition',
@@ -278,6 +282,7 @@ SUMMARIES = {
     'workspace:list': 'List Workspaces', 'workspace:show': 'Show a Workspace', 'workspace:new': 'Create a Workspace', 'workspace:php': 'Change the Workspace PHP version', 'workspace:remove': 'Remove a Workspace',
     'runtime-activation:app-instance': 'Wake an Instance',
     'realtime:auth': 'Authorize the orbit broadcast channel', 'realtime:show': 'Show the Reverb connection',
+    'agent:realtime': "Show the agent's Reverb connection", 'agent:realtime:auth': "Authorize the agent's presence channel",
     'tasks:enable': 'Enable Tasks', 'tasks:disable': 'Disable Tasks', 'tasks:status': 'Show Tasks status',
     'tasks:agents': 'List task agent sessions', 'tasks:agent-stream': 'Watch a task agent session',
     'tasks:list': 'List Task groups', 'tasks:create': 'Create a Task group', 'tasks:show': 'Show a Task group', 'tasks:update': 'Update a Task group',
@@ -288,6 +293,8 @@ DESCRIPTIONS = {
     'gateway:trust': 'Returns the PEM-encoded Orbit root certificate and its SHA-256 fingerprint so a client can pin it before it trusts the Gateway. This endpoint needs no WireGuard identity.',
     'gateway:status': 'Returns the Gateway name, version, and status. This endpoint needs no WireGuard identity.',
     'realtime:auth': 'A Pusher-protocol channel authorization endpoint. A client requests access to the private `orbit` channel with its `socket_id` and `channel_name`; any active WireGuard peer Node is authorized.',
+    'agent:realtime': "The `orbit-agent` on a managed Node calls this endpoint to find its Reverb connection. The Gateway identifies the Node from the WireGuard address and returns the Reverb URL, serving address, and app key, the Node's `presence-node.{id}` channel, and the agent's `agent.{id}` member ID. Connection values are null when broadcasting is not configured.",
+    'agent:realtime:auth': "The `orbit-agent` on a managed Node calls this endpoint to join its own presence channel. The Gateway signs member `agent.{id}` on `presence-node.{id}` only for a request from that Node's WireGuard address. The response carries the Pusher `auth` and `channel_data` values.",
     'realtime:show': 'Returns the Reverb WebSocket URL, app key, and channel name a client needs to subscribe to record-change events, or null values when broadcasting is not configured.',
     'metrics:grafana:authorize': 'Caddy on the Gateway calls this endpoint for each Grafana request. The Gateway identifies the caller from the connection address and answers 204 when the caller may reach Grafana.',
     'schedule:complete': 'The installed Schedule callback on the host Node reports the latest run. The Gateway accepts it only from the Schedule\'s recorded host Node and records `last_run_at` and `last_run_status`.',
@@ -319,7 +326,7 @@ DESCRIPTIONS = {
     'tasks:cancel': 'Cancels a backlog, todo, reserved, running, reviewing, or failed Task group and clears its shared Instance. Idempotent for cancelled groups. Route-free source_resolved Instances use database-only cleanup and retain their checkout; other Instances use the forced Instance remover. Requires Gateway access. Returns tasks.disabled while the extension is off and tasks.not_cancellable for settling or completed groups.',
     'tasks:complete': 'Marks a settling Task group completed and removes its shared Instance and any visitable Routes. Idempotent. Requires Gateway access. Returns `tasks.disabled` while the extension is off and `tasks.not_settling` when the group is not settling.',
     'proxycli:enable': 'Deploys one collector Process and publishes https://collector.cli-proxy-api.orbit after a Redis Database connection for shared Valkey is in place. Fails closed when that connection is missing, is not Redis, or names a Node without the database role. A custom proxy Route that already serves the collector hostname on that Node is withdrawn in the same Caddy reload and removed; any other Route on that name fails with proxycli.hostname_taken. The response never includes tokens or the management key.',
-    'proxycli:disable': 'Stops the collector Process, withdraws collector.cli-proxy-api.orbit, and hides provider reads. The Redis connection and Valkey data stay.',
+    'proxycli:disable': 'Stops the collector Process for the whole fleet, withdraws collector.cli-proxy-api.orbit and its certificate, deletes the stored CLIProxyAPI management key and the read and control tokens, and hides provider reads. Enabling again needs the management key. The Redis connection and Valkey data stay.',
     'proxycli:status': 'Returns whether the fleet feature is enabled, which Node and cache connection it uses, and when the snapshot was last written.',
     'proxycli:list': 'Returns provider pools from the Valkey snapshot. The request never calls CLIProxyAPI.',
     'proxycli:show': 'Returns one provider pool and its accounts from the Valkey snapshot. Window titles are duration labels. A missing window is omitted.',
@@ -332,7 +339,11 @@ def tag_for(route):
         return 'Tasks'
     if route['name'] in INTERNAL:
         return 'Node callbacks'
-    return TAG_BY_PREFIX[route['name'].split(':')[0]]
+    prefix = (route['name'] or '').split(':')[0]
+    if prefix not in TAG_BY_PREFIX:
+        sys.exit(f'bin/docs-openapi: route {route["name"]!r} ({route["method"]} {route["uri"]}) has no API tag. '
+                 f'Add its name prefix to TAGS, or its name to INTERNAL when only Nodes or Caddy call it.')
+    return TAG_BY_PREFIX[prefix]
 
 
 def summary_for(route):
@@ -1038,6 +1049,21 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
         responses['200'] = {'description': 'Instance annotation snapshots and status updates. Reconnect with a numeric Last-Event-ID or after query cursor.', 'content': {'text/event-stream': {'schema': {'type': 'string'}}}}
     elif route['name'] == 'tasks:agent-stream':
         responses['200'] = {'description': 'Normalized agent conversation snapshots and events. Reconnect with an opaque Last-Event-ID cursor. Requires Gateway access.', 'content': {'text/event-stream': {'schema': {'type': 'string'}}}}
+    elif route['name'] == 'agent:realtime':
+        connection = {'type': 'object', 'properties': {
+            'url': {'type': ['string', 'null'], 'description': 'Reverb WebSocket URL.'},
+            'address': {'type': ['string', 'null'], 'description': 'Address that serves Reverb on port 443.'},
+            'key': {'type': ['string', 'null'], 'description': 'Reverb app key.'},
+            'channel': {'type': 'string', 'description': "The Node's presence channel, `presence-node.{id}`."},
+            'member': {'type': 'string', 'description': "The agent's member ID, `agent.{id}`."},
+        }, 'required': ['url', 'address', 'key', 'channel', 'member']}
+        responses['200'] = envelope(connection, 'The request succeeded.')
+    elif route['name'] == 'agent:realtime:auth':
+        responses['200'] = {'description': 'The Pusher channel signature.', 'content': {'application/json': {'schema': {'type': 'object', 'properties': {
+            'auth': {'type': 'string', 'description': 'Pusher channel signature.'},
+            'channel_data': {'type': 'string', 'description': 'JSON-encoded presence member data.'},
+        }, 'required': ['auth', 'channel_data']}}}}
+        responses['404'] = error_response('Realtime is not configured (`realtime.not_configured`).')
     elif route['name'] == 'schedule:complete':
         responses['204'] = {'description': 'The Gateway recorded the latest run.'}
     elif route['name'] == 'metrics:grafana:authorize':
@@ -1058,7 +1084,11 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
             responses['200'] = envelope(data, 'The request succeeded.')
         if route['name'] == 'gateway:trust':
             responses['503'] = error_response('The Gateway root CA is unavailable (`ca.unavailable`).')
-    if route['name'] not in ('gateway:status', 'gateway:trust'):
+    if route['name'] == 'agent:realtime':
+        responses['403'] = error_response('The caller is not an active WireGuard peer (`peer.identity_unknown`) or its Node is not eligible for an agent (`agent.node_ineligible`).')
+    elif route['name'] == 'agent:realtime:auth':
+        responses['403'] = error_response('The caller is not an active WireGuard peer (`peer.identity_unknown`), its Node is not eligible for an agent (`agent.node_ineligible`), or it asked for another Node\'s channel (`agent.channel_forbidden`).')
+    elif route['name'] not in ('gateway:status', 'gateway:trust'):
         responses['403'] = error_response('The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).')
     if params and not stream and route['name'] not in INTERNAL:
         responses['404'] = error_response('No record matches the path parameters.')
@@ -1097,7 +1127,7 @@ spec['components']['schemas']['Annotation'] = {'type': 'object', 'properties': {
     'syncError': {'type': ['string', 'null']}, 'summary': {'type': ['string', 'null']},
 }}
 
-OUTPUT.write_text(json.dumps(spec, indent=2) + '\n')
+outputs = {OUTPUT: json.dumps(spec, indent=2) + '\n'}
 
 # keep docs.json navigation in sync with the operations
 config_path = DOCS / 'docs.json'
@@ -1110,7 +1140,17 @@ for tab in config['navigation']['tabs']:
         if nav_pages[t]:
             groups.append({'group': t, 'openapi': '/openapi.json', 'pages': nav_pages[t]})
     tab['groups'] = groups
-config_path.write_text(json.dumps(config, indent=2) + '\n')
+outputs[config_path] = json.dumps(config, indent=2) + '\n'
+
+if CHECK:
+    stale = [str(path.relative_to(ROOT)) for path, text in outputs.items() if path.read_text() != text]
+    if stale:
+        sys.exit(f'{" and ".join(stale)} {"is" if len(stale) == 1 else "are"} stale. Run bin/docs-openapi and commit the result.')
+    print(f'{OUTPUT.relative_to(ROOT)} and the API navigation match the Gateway sources')
+    sys.exit(0)
+
+for path, text in outputs.items():
+    path.write_text(text)
 
 print(f'wrote {OUTPUT.relative_to(ROOT)}: {sum(len(v) for v in spec["paths"].values())} operations, {len(spec["components"]["schemas"])} schemas')
 if unmatched:

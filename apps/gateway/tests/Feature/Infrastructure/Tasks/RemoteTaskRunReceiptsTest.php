@@ -21,10 +21,11 @@ use Illuminate\Support\Facades\File;
 use Symfony\Component\Process\Process;
 use Tests\Support\AppDevFakeSshExecutor;
 use Tests\Support\LocalShellSshExecutor;
+use Tests\Support\TestOrbitHome;
 
 function run_receipt_checkout(): string
 {
-    $checkout = sys_get_temp_dir().'/orbit-run-receipt-'.bin2hex(random_bytes(6));
+    $checkout = TestOrbitHome::scratch('orbit-run-receipt');
     (new Process(['git', 'init', '--quiet', $checkout]))->mustRun();
 
     return $checkout;
@@ -76,9 +77,7 @@ function run_receipt_script(string $checkout, array $arguments): Process
 }
 
 afterEach(function (): void {
-    foreach (glob(sys_get_temp_dir().'/orbit-run-receipt-*') ?: [] as $directory) {
-        File::deleteDirectory($directory);
-    }
+    TestOrbitHome::clearScratch();
 });
 
 it('installs the run script outside the tracked tree and reads the receipt it writes', function (): void {

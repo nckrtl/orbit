@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Hibernation;
 
+use App\Domain\AgentView\AgentProcessView;
 use App\Domain\AppDev\AgentationEndpoint;
 use App\Domain\AppDev\DevelopmentServerEndpoint;
 use App\Domain\AppDev\VitePortRuntime;
@@ -28,6 +29,7 @@ final readonly class RemoteAppInstanceRuntimeReadiness implements AppInstanceRun
         private SshKeyProvider $keys,
         private KnownHostsStore $knownHosts,
         private int $timeoutSeconds = RuntimeHibernation::DefaultWakeTimeoutSeconds,
+        private ?AgentProcessView $agents = null,
     ) {}
 
     /** @param list<Process> $processes */
@@ -71,7 +73,7 @@ final readonly class RemoteAppInstanceRuntimeReadiness implements AppInstanceRun
     private function waitUntilObservedRunning(Process $process, int $deadline): void
     {
         while (true) {
-            $status = $this->runtime->status($process);
+            $status = $this->observedStatus($process, $deadline);
 
             if (in_array($status, ['active', 'running'], true)) {
                 return;
@@ -93,6 +95,22 @@ final readonly class RemoteAppInstanceRuntimeReadiness implements AppInstanceRun
 
             usleep(500_000);
         }
+    }
+
+    /**
+     * The Process's state from a fresh agent view, without SSH. The Node answers instead when the
+     * view cannot, when the view reports `failed`, which may predate this start, and at the
+     * deadline, so a missed agent event never fails a wake on its own.
+     */
+    private function observedStatus(Process $process, int $deadline): string
+    {
+        $viewed = $this->agents?->status($process);
+
+        if ($viewed === null || $viewed === 'failed' || time() >= $deadline) {
+            return $this->runtime->status($process);
+        }
+
+        return $viewed;
     }
 
     private function waitUntilDevelopmentServerListens(Node $node, int $deadline): void

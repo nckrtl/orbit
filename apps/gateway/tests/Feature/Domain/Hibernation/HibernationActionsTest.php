@@ -154,6 +154,32 @@ it('halts idle desired-running Processes without changing desired state or Sched
         ->toBe('enabled');
 });
 
+it('skips the stop of a Process that a fresh agent view shows stopped', function (): void {
+    $vite = hibernation_action_process($this->instance, 'vite', DesiredProcessState::Running);
+    $queue = hibernation_action_process($this->instance, 'queue', DesiredProcessState::Running);
+    seed_agent_view($this->node->id, ["systemd:orbit-process-{$queue->id}-queue" => 'active']);
+    $this->markers->activity[RuntimeHibernation::key((int) $this->instance->id)] = Carbon::now()->subSeconds(3_601)->getTimestamp();
+
+    $result = app(SweepIdleAppDevRuntimesAction::class)->execute(Carbon::now());
+
+    expect($result->halted)
+        ->toBe(1)
+        ->and($this->runtime->stopped)
+        ->toBe([$queue->id])
+        ->and($this->markers->asleep)
+        ->toBe([RuntimeHibernation::key((int) $this->instance->id)]);
+});
+
+it('stops every Process when the agent view is stale', function (): void {
+    $vite = hibernation_action_process($this->instance, 'vite', DesiredProcessState::Running);
+    seed_agent_view($this->node->id, [], ageSeconds: 16);
+    $this->markers->activity[RuntimeHibernation::key((int) $this->instance->id)] = Carbon::now()->subSeconds(3_601)->getTimestamp();
+
+    app(SweepIdleAppDevRuntimesAction::class)->execute(Carbon::now());
+
+    expect($this->runtime->stopped)->toBe([$vite->id]);
+});
+
 it('leaves keep-alive Processes running while it hibernates the rest of the group', function (): void {
     $vite = hibernation_action_process($this->instance, 'vite', DesiredProcessState::Running);
     $queue = hibernation_action_process($this->instance, 'queue', DesiredProcessState::Running, keepAlive: true);

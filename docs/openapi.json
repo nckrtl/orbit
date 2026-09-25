@@ -269,6 +269,199 @@
         ]
       }
     },
+    "/api/v1/agent/broadcasting/auth": {
+      "post": {
+        "operationId": "agent-realtime-auth",
+        "summary": "Authorize the agent's presence channel",
+        "tags": [
+          "Node callbacks"
+        ],
+        "description": "The `orbit-agent` on a managed Node calls this endpoint to join its own presence channel. The Gateway signs member `agent.{id}` on `presence-node.{id}` only for a request from that Node's WireGuard address. The response carries the Pusher `auth` and `channel_data` values.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "socket_id": {
+                    "type": "string",
+                    "pattern": "^\\d+\\.\\d+$"
+                  },
+                  "channel_name": {
+                    "type": "string"
+                  },
+                  "version": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "pattern": "^[0-9A-Za-z.+-]{1,32}$"
+                  }
+                },
+                "required": [
+                  "socket_id",
+                  "channel_name"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The Pusher channel signature.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "auth": {
+                      "type": "string",
+                      "description": "Pusher channel signature."
+                    },
+                    "channel_data": {
+                      "type": "string",
+                      "description": "JSON-encoded presence member data."
+                    }
+                  },
+                  "required": [
+                    "auth",
+                    "channel_data"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Realtime is not configured (`realtime.not_configured`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`), its Node is not eligible for an agent (`agent.node_ineligible`), or it asked for another Node's channel (`agent.channel_forbidden`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/agent/broadcasting/auth\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"socket_id\": \"example\", \"channel_name\": \"example\", \"version\": \"example\"}'\n"
+          }
+        ]
+      }
+    },
+    "/api/v1/agent/realtime": {
+      "get": {
+        "operationId": "agent-realtime",
+        "summary": "Show the agent's Reverb connection",
+        "tags": [
+          "Node callbacks"
+        ],
+        "description": "The `orbit-agent` on a managed Node calls this endpoint to find its Reverb connection. The Gateway identifies the Node from the WireGuard address and returns the Reverb URL, serving address, and app key, the Node's `presence-node.{id}` channel, and the agent's `agent.{id}` member ID. Connection values are null when broadcasting is not configured.",
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "url": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "Reverb WebSocket URL."
+                        },
+                        "address": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "Address that serves Reverb on port 443."
+                        },
+                        "key": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "Reverb app key."
+                        },
+                        "channel": {
+                          "type": "string",
+                          "description": "The Node's presence channel, `presence-node.{id}`."
+                        },
+                        "member": {
+                          "type": "string",
+                          "description": "The agent's member ID, `agent.{id}`."
+                        }
+                      },
+                      "required": [
+                        "url",
+                        "address",
+                        "key",
+                        "channel",
+                        "member"
+                      ]
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or its Node is not eligible for an agent (`agent.node_ineligible`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS \"https://gateway.orbit/api/v1/agent/realtime\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+          }
+        ]
+      }
+    },
     "/api/v1/analytics/credentials": {
       "delete": {
         "operationId": "analytics-credentials-unset",
@@ -2446,6 +2639,25 @@
         "tags": [
           "Realtime"
         ],
+        "parameters": [
+          {
+            "name": "socket_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d+\\.\\d+$"
+            }
+          },
+          {
+            "name": "channel_name",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "description": "A Pusher-protocol channel authorization endpoint. A client requests access to the private `orbit` channel with its `socket_id` and `channel_name`; any active WireGuard peer Node is authorized.",
         "responses": {
           "200": {
@@ -2485,7 +2697,7 @@
           {
             "lang": "bash",
             "label": "curl",
-            "source": "curl -sS \"https://gateway.orbit/api/v1/broadcasting/auth\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+            "source": "curl -sS \"https://gateway.orbit/api/v1/broadcasting/auth?socket_id=1&channel_name=1\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
           }
         ]
       }
@@ -17187,7 +17399,7 @@
         "tags": [
           "proxycli"
         ],
-        "description": "Stops the collector Process, withdraws collector.cli-proxy-api.orbit, and hides provider reads. The Redis connection and Valkey data stay.",
+        "description": "Stops the collector Process for the whole fleet, withdraws collector.cli-proxy-api.orbit and its certificate, deletes the stored CLIProxyAPI management key and the read and control tokens, and hides provider reads. Enabling again needs the management key. The Redis connection and Valkey data stay.",
         "responses": {
           "200": {
             "description": "The request succeeded.",
