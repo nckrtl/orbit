@@ -59,9 +59,9 @@ A stream lives for 60 seconds after it opens or after its last renewal.
 
 | Method and path | Route name | Result |
 | --- | --- | --- |
-| `PUT /api/v1/instances/{instance}/log-streams/{stream}` | `instance:log-stream:renew` | Extends the lease to 60 seconds from now. The first renewal also starts the stream. |
+| `PUT /api/v1/instances/{instance}/log-streams/{stream}` | `instance:log-stream:renew` | Extends the lease to 60 seconds from now. The first renewal also starts the stream. Until the first line, each renewal prompts the agent again. |
 | `DELETE /api/v1/instances/{instance}/log-streams/{stream}` | `instance:log-stream:destroy` | Closes the stream at once. |
-| `PUT /api/v1/processes/{process}/log-streams/{stream}` | `process:log-stream:renew` | Extends the lease to 60 seconds from now. The first renewal also starts the stream. |
+| `PUT /api/v1/processes/{process}/log-streams/{stream}` | `process:log-stream:renew` | Extends the lease to 60 seconds from now. The first renewal also starts the stream. Until the first line, each renewal prompts the agent again. |
 | `DELETE /api/v1/processes/{process}/log-streams/{stream}` | `process:log-stream:destroy` | Closes the stream at once. |
 
 Each call checks the access edge again. Only the Node that opened a stream can renew or close it, and only through the record it was opened for. A renewal returns `{ id, lease_seconds }`, and a close returns `{ id, closed: true }`. Renewals do not record Activity.
