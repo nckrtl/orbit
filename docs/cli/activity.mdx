@@ -3,7 +3,7 @@ title: "activity"
 description: "Read the Gateway's log of every authorized command: who ran it, what it targeted, and how it ended."
 ---
 
-The Gateway records one Activity for every command it authorizes. The `activity` family lists recent records and shows one attempt in full. Use it to answer what changed, who changed it, and whether it succeeded, without rebuilding the story from several machines.
+The Gateway records an Activity for every command it authorizes that can change something or that fails. It samples successful reads, as [What the Gateway records](#what-the-gateway-records) explains. The `activity` family lists recent records and shows one attempt in full. Use it to answer what changed, who changed it, and whether it succeeded, without rebuilding the story from several machines.
 
 Every result that the CLI prints carries a Gateway request ID. That ID is the link between a command you ran and the Activity the Gateway kept for it.
 
@@ -56,6 +56,18 @@ orbit activity:show 481
 
 Human output uses a detail tree with the command and status, the request ID the Gateway assigned to that attempt, the time, duration, exit code, and error code. JSON output returns every field below.
 
+## What the Gateway records
+
+| Request | Activity |
+| --- | --- |
+| Any method other than `GET` or `HEAD` | Always. The record is `running` while the request is in flight. |
+| A `GET` or `HEAD` request that fails | Always, written when the request ends. |
+| A successful `GET` or `HEAD` request | Once per command, caller address, and target path in any 60 seconds. Other identical reads in that window write nothing. |
+| A `schedule:*` operation | Always. |
+| A successful read of a `:credentials` route | Always. |
+
+A polling client therefore adds about one record per command and target per minute. Reading the logs of two Processes keeps a record for each. If the sampling cache fails, the Gateway records the read. `--request-id` finds no record for a successful read that fell inside another read's window. [ADR 0152](/decisions/0152-sample-successful-read-activity) records this rule.
+
 ## What a record holds
 
 | Field | Meaning |
@@ -63,7 +75,7 @@ Human output uses a detail tree with the command and status, the request ID the 
 | `id` | Numeric Activity ID. |
 | `request_id` | The API request UUID that the Gateway assigned to the attempt. |
 | `command` | The Gateway operation name. |
-| `status` | `running` while the request is in flight, then `succeeded` or `failed`. |
+| `status` | `running` while a command that can change something is in flight, then `succeeded` or `failed`. A read is recorded only when it ends. |
 | `caller_node_id` | The Node that sent the request, or null. |
 | `caller_ip` | The address the request came from, or null. |
 | `target_node_id` | The Node the operation acted on, or null. |
@@ -97,7 +109,7 @@ php artisan orbit:activity-redact [--dry-run]
 The command rewrites only records that still hold a value the rules redact, and it prints how many it scanned and redacted. Records that are already redacted stay unchanged and are not counted, including records redacted by hand with `[redacted]` in any case. You can run it again safely. `--dry-run` counts the records without changing them.
 
 <Note>
-Doctor writes one ordinary Activity for each request and stores no findings in it. Schedule completion callbacks create no Activity at all.
+Doctor writes one ordinary Activity for each run and stores no findings in it. Schedule completion callbacks create no Activity at all.
 </Note>
 
 ## Related
