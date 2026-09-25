@@ -45,7 +45,7 @@ final readonly class RemoteTaskWorkspaceDiffReader implements TaskWorkspaceDiffR
                     input: <<<'BASH'
                     checkout=$1
                     base=$2
-                    git -C "$checkout" diff --numstat "$base"...HEAD
+                    git -C "$checkout" diff --shortstat "$base"...HEAD
                     BASH,
                 ),
                 'task-workspace-diff',
@@ -55,21 +55,11 @@ final readonly class RemoteTaskWorkspaceDiffReader implements TaskWorkspaceDiffR
             return null;
         }
 
-        $additions = 0;
-        $deletions = 0;
-
-        foreach (preg_split('/\R/', trim($result->stdout)) ?: [] as $line) {
-            if ($line === '') {
-                continue;
-            }
-
-            if (preg_match('/\A(\d+|-)\t(\d+|-)\t/D', $line, $matches) !== 1) {
-                continue;
-            }
-
-            $additions += $matches[1] === '-' ? 0 : (int) $matches[1];
-            $deletions += $matches[2] === '-' ? 0 : (int) $matches[2];
-        }
+        // `--shortstat` prints one summary line, so a diff of any size stays under the SSH output cap.
+        // Binary files count as changed with no lines, as they do in `--numstat`.
+        $summary = trim($result->stdout);
+        $additions = preg_match('/(\d+) insertions?\(\+\)/', $summary, $added) === 1 ? (int) $added[1] : 0;
+        $deletions = preg_match('/(\d+) deletions?\(-\)/', $summary, $deleted) === 1 ? (int) $deleted[1] : 0;
 
         return ['additions' => $additions, 'deletions' => $deletions];
     }

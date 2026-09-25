@@ -462,6 +462,87 @@
         ]
       }
     },
+    "/api/v1/agent/workspaces": {
+      "get": {
+        "operationId": "agent-workspaces",
+        "summary": "List the task checkouts the agent watches",
+        "tags": [
+          "Node callbacks"
+        ],
+        "description": "The `orbit-agent` on a managed Node calls this endpoint every 60 seconds to learn which task checkouts to watch. The Gateway identifies the Node from the WireGuard address and lists the Instances on that Node that hold the workspace of an unfinished task group, at most 64, with the checkout path, the Project's default branch as `base`, and the Instance's starting commit as `start`. The list is empty while the tasks extension is disabled.",
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "instance_id": {
+                            "type": "integer",
+                            "description": "The Instance that holds the task workspace."
+                          },
+                          "path": {
+                            "type": "string",
+                            "description": "The absolute checkout path on the Node."
+                          },
+                          "base": {
+                            "type": "string",
+                            "description": "The Project's default branch, which the diff counts are read against."
+                          },
+                          "start": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "description": "The Instance's starting commit, or null."
+                          }
+                        },
+                        "required": [
+                          "instance_id",
+                          "path",
+                          "base",
+                          "start"
+                        ]
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or its Node is not eligible for an agent (`agent.node_ineligible`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS \"https://gateway.orbit/api/v1/agent/workspaces\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+          }
+        ]
+      }
+    },
     "/api/v1/analytics/credentials": {
       "delete": {
         "operationId": "analytics-credentials-unset",

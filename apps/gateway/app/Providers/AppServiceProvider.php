@@ -163,6 +163,7 @@ use App\Infrastructure\Activity\ActivityPropertiesObserver;
 use App\Infrastructure\AgentView\AgentViewSubscriber;
 use App\Infrastructure\AgentView\CacheAgentStateView;
 use App\Infrastructure\AgentView\NativeAgentViewConverger;
+use App\Infrastructure\AgentView\ProcessAgentViewPublisher;
 use App\Infrastructure\AgentView\StreamWebSocketClient;
 use App\Infrastructure\Analytics\NativeAnalyticsClickhouseConfigurationManager;
 use App\Infrastructure\Analytics\NativeAnalyticsPublicationManager;
@@ -545,6 +546,11 @@ final class AppServiceProvider extends ServiceProvider
                 sleep: static function (float $seconds): void {
                     usleep((int) ($seconds * 1_000_000));
                 },
+                publisher: new ProcessAgentViewPublisher(
+                    command: [PHP_BINARY, base_path('artisan'), 'orbit:agent-view-publish'],
+                    log: $app->make(LoggerInterface::class),
+                    clock: CacheAgentStateView::now(...),
+                ),
             ),
         );
         $this->app->bind(

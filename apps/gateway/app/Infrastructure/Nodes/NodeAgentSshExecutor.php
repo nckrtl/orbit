@@ -5,8 +5,11 @@ declare(strict_types=1);
 namespace App\Infrastructure\Nodes;
 
 use App\Domain\Certificates\LeafCertificateSigner;
+use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\NodeAgentRuntime;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
+use App\Domain\Nodes\Storage\StorageRootResolver;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Processes\CommandResult;
@@ -16,6 +19,7 @@ use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Models\AppInstance;
 use App\Models\Node;
 use Throwable;
 
@@ -26,7 +30,85 @@ final readonly class NodeAgentSshExecutor implements NodeAgentRuntime
         private SshKeyProvider $keys,
         private KnownHostsStore $knownHosts,
         private LeafCertificateSigner $certificates,
+        private ManagedUserAccountResolver $accounts,
+        private StorageRootResolver $storageRoots,
+        private NodeSettingsNormalizer $nodeSettings,
     ) {}
+
+    /**
+     * The Node's Instance root, or null when the managed user or a safe path cannot be resolved.
+     */
+    private function instanceRoot(Node $node): ?string
+    {
+        try {
+            $account = $this->accounts->resolve($node);
+            $root = $this->storageRoots->resolveApps($this->nodeSettings->fromStored($node->settings), $account)->instance->value;
+        } catch (Throwable) {
+            return null;
+        }
+
+        if (preg_match('#\A(/[A-Za-z0-9._-]+)+\z#D', $root) !== 1 || str_contains($root, '/..') || str_contains($root, '/./')) {
+            return null;
+        }
+
+        return $root;
+    }
+
+    /**
+     * The unit lines that let the agent read the Node's task checkouts and nothing else under `/home` or
+     * `/root` (ADR 0151). `/home` and `/root` become empty, and only the Instance root is bound back
+     * read-only. Root without capabilities reads there only what other users may read. Without a
+     * resolvable root, the agent sees no home directory at all.
+     *
+     * @return list<string>
+     */
+    private function checkoutAccess(?string $root): array
+    {
+        if ($root === null) {
+            return ['ProtectHome=yes'];
+        }
+
+        $underHome = str_starts_with($root.'/', '/home/') || str_starts_with($root.'/', '/root/');
+
+        return ['ProtectHome=tmpfs', ...($underHome ? ['BindReadOnlyPaths=-'.$root] : [])];
+    }
+
+    /**
+     * Removes the world bits from the `.env` of every Instance checkout in the Instance root, so the
+     * agent, like every other local user, cannot read it. Best effort: a failure leaves the files as
+     * they are and does not fail the converge.
+     */
+    private function closeInstanceEnvironments(Node $node, ?string $root): void
+    {
+        if ($root === null) {
+            return;
+        }
+
+        $checkouts = AppInstance::query()
+            ->where('node_id', $node->getKey())
+            ->pluck('checkout_path')
+            ->filter(static fn (mixed $path): bool => is_string($path) && str_starts_with($path, $root.'/') && ! str_contains($path, '/..'))
+            ->values()
+            ->all();
+
+        if ($checkouts === []) {
+            return;
+        }
+
+        try {
+            $this->raw($node, new RemoteCommand(
+                arguments: ['bash', '-seu', '--', ...$checkouts],
+                input: <<<'BASH'
+                    for checkout in "$@"; do
+                      [ -d "$checkout" ] && [ ! -L "$checkout" ] || continue
+                      find "$checkout" -maxdepth 1 -name .env -type f -perm /o=rwx -exec chmod o-rwx {} + 2>/dev/null || true
+                    done
+                    BASH,
+            ));
+        } catch (Throwable) {
+            return;
+        }
+    }
 
     public function converge(Node $node): void
     {
@@ -44,6 +126,7 @@ final readonly class NodeAgentSshExecutor implements NodeAgentRuntime
             throw new ResourceOperationException('agent.install_failed', 'The active Gateway has no managed WireGuard address.', 409);
         }
 
+        $root = $this->instanceRoot($node);
         $configuration = "gateway_url = \"https://gateway.orbit\"\ngateway_address = \"{$gatewayAddress}\"\n";
         $certificate = $this->certificates->rootCertificate();
         $unit = implode("\n", [
@@ -62,9 +145,9 @@ final readonly class NodeAgentSshExecutor implements NodeAgentRuntime
             'CapabilityBoundingSet=',
             'NoNewPrivileges=yes',
             'ProtectSystem=strict',
-            'ProtectHome=yes',
+            ...$this->checkoutAccess($root),
             'PrivateTmp=yes',
-            'MemoryMax=64M',
+            'MemoryMax=128M',
             'RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6',
             '',
             '[Install]',
@@ -77,6 +160,7 @@ final readonly class NodeAgentSshExecutor implements NodeAgentRuntime
         $changed = $this->publishFile($node, NodeAgentFootprint::ConfigurationPath, $configuration, 0644) || $changed;
         $changed = $this->publishFile($node, NodeAgentFootprint::CertificatePath, $certificate, 0644) || $changed;
         $changed = $this->publishFile($node, NodeAgentFootprint::UnitPath, $unit, 0644) || $changed;
+        $this->closeInstanceEnvironments($node, $root);
 
         $this->run($node, new RemoteCommand(['sudo', 'systemctl', 'daemon-reload']), 'agent.install_failed');
         $this->run($node, new RemoteCommand(['sudo', 'systemctl', 'enable', '--now', NodeAgentFootprint::Service]), 'agent.install_failed');

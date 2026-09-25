@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Tasks;
 
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tasks\TaskBroadcasts;
 use App\Domain\Tasks\TaskCheckException;
 use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskCheckStatus;
@@ -22,6 +23,7 @@ final readonly class CancelTaskCheckAction
     public function __construct(
         private RequireTasksExtensionAction $requireExtension,
         private TaskCheckRunner $checks,
+        private TaskBroadcasts $broadcasts,
     ) {}
 
     public function execute(TaskGroup $group, Task $task): TaskCheck
@@ -46,6 +48,7 @@ final readonly class CancelTaskCheckAction
                 status: 409,
             );
         }
+        $this->broadcasts->groupChanged($group->id);
         try {
             $this->checks->cancel($instance, $check->process());
         } catch (TaskCheckException $exception) {

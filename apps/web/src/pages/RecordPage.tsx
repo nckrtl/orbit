@@ -1,4 +1,5 @@
 import { taskGroupsQuery, tasksForInstance } from "../api/tasks";
+import { useTaskPoll } from "../realtime/polling";
 import { TasksBoard } from "./Tasks";
 import { ProjectCodeEditor } from "../ui/ProjectCodeEditor";
 import { useQuery } from "@tanstack/react-query";
@@ -420,7 +421,7 @@ function analyticsProperties(analytics: InstanceAnalytics | undefined): Property
 
 function InstancePage({ fleet, instance }: { fleet: Fleet; instance: Instance }) {
     const [tab, setTab] = useState<"overview" | "tasks">("overview");
-    const groups = useQuery(taskGroupsQuery);
+    const groups = useQuery({ ...taskGroupsQuery, refetchInterval: useTaskPoll() });
     const taskCount = tasksForInstance(groups.data ?? [], instance.id).length;
     return (
         <div className={`flex h-full min-h-0 min-w-0 flex-row ${GAPS}`}>

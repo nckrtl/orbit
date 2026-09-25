@@ -4,6 +4,7 @@ import { QueryClient } from "@tanstack/react-query";
 import Pusher from "pusher-js";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import { setTransport, type Transport } from "../api/client";
+import { flushTaskRefetches } from "./apply";
 import { connectRealtime } from "./connect";
 import { downForMs, setLiveness } from "./liveness";
 
@@ -218,7 +219,7 @@ it.each([
     },
 );
 
-it("invalidates all queries only after a previously live connection subscribes again", async () => {
+it("reloads what stops polling on the first subscription and everything after a reconnect", async () => {
     const invalidate = vi.spyOn(client, "invalidateQueries");
     await connectRealtime(client, controller.signal);
     const pusher = sockets[0]!;
@@ -227,7 +228,12 @@ it("invalidates all queries only after a previously live connection subscribes a
     expect(setLiveness).toHaveBeenLastCalledWith("reconnecting");
     pusher.channel.emit("pusher:subscription_succeeded");
     expect(setLiveness).toHaveBeenLastCalledWith("live");
-    expect(invalidate).not.toHaveBeenCalled();
+    expect(invalidate.mock.calls.map(([filters]) => filters)).toEqual([
+        { queryKey: ["task-groups"] },
+        { queryKey: ["tasks-status"] },
+        { queryKey: ["processes"] },
+    ]);
+    invalidate.mockClear();
 
     pusher.connection.emit("state_change", { current: "unavailable" });
     expect(setLiveness).toHaveBeenLastCalledWith("reconnecting");
@@ -262,14 +268,18 @@ it("reloads every list when a retried realtime discovery finally connects", asyn
     expect(invalidate).toHaveBeenCalledExactlyOnceWith();
 });
 
-it("does not reload on a first subscription right after page load", async () => {
+it("reloads only the task and Process queries on a first subscription right after page load", async () => {
     const invalidate = vi.spyOn(client, "invalidateQueries");
     await connectRealtime(client, controller.signal);
 
     vi.mocked(downForMs).mockReturnValue(1_000);
     sockets[0]!.channel.emit("pusher:subscription_succeeded");
 
-    expect(invalidate).not.toHaveBeenCalled();
+    expect(invalidate.mock.calls.map(([filters]) => filters)).toEqual([
+        { queryKey: ["task-groups"] },
+        { queryKey: ["tasks-status"] },
+        { queryKey: ["processes"] },
+    ]);
 });
 
 it.each([event, JSON.stringify(event)])(
@@ -295,6 +305,7 @@ it("unbinds callbacks before disconnect and ignores callbacks already queued by 
     await connectRealtime(client, controller.signal);
     const pusher = sockets[0]!;
     pusher.channel.emit("pusher:subscription_succeeded");
+    invalidate.mockClear();
     const subscribed = pusher.channel.bind.mock.calls[0]![1];
     const received = pusher.channel.bind_global.mock.calls[0]![0];
     const changed = pusher.connection.bind.mock.calls[0]![1];
@@ -341,4 +352,45 @@ it("shares the existing socket with annotation subscribers and refreshes on reco
     unsubscribe();
     channel.emit("annotation.updated", { type: "annotation.updated", data: {} });
     expect(refresh).toHaveBeenCalledTimes(3);
+});
+
+it("forwards task notices and Process usage from the orbit channel to the query cache", async () => {
+    const invalidate = vi.spyOn(client, "invalidateQueries");
+    client.setQueryData(["tasks-status"], { enabled: true });
+    await connectRealtime(client, controller.signal);
+    const channel = sockets[0]!.channel;
+    channel.emit("pusher:subscription_succeeded");
+    invalidate.mockClear();
+
+    channel.emit(
+        "task_group.updated",
+        JSON.stringify({
+            type: "task_group.updated",
+            id: 5,
+            at: "",
+            data: { id: 5, status: "running" },
+        }),
+    );
+    channel.emit("tasks.updated", {
+        type: "tasks.updated",
+        id: 0,
+        at: "",
+        data: { enabled: false },
+    });
+    channel.emit("process.usage", {
+        type: "process.usage",
+        id: 1_790_000_000,
+        at: "",
+        data: { part: 1, parts: 1, processes: [[1, 7.5, 2_048]] },
+    });
+
+    flushTaskRefetches();
+    expect(invalidate.mock.calls.map(([filters]) => filters)).toEqual([
+        { queryKey: ["task-groups"], exact: true },
+        { queryKey: ["task-groups", "5"], exact: true },
+    ]);
+    expect(client.getQueryData(["tasks-status"])).toEqual({ enabled: false });
+    expect(client.getQueryData(["processes"])).toEqual([
+        { id: 1, runtime_status: "inactive", cpu: 7.5, memory_bytes: 2_048 },
+    ]);
 });

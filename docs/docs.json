@@ -544,6 +544,7 @@
             "pages": [
               "POST /api/v1/agent/broadcasting/auth",
               "GET /api/v1/agent/realtime",
+              "GET /api/v1/agent/workspaces",
               "GET /api/v1/github/app/callback",
               "GET /api/v1/github/app/register",
               "GET /api/v1/metrics/grafana/authorize",

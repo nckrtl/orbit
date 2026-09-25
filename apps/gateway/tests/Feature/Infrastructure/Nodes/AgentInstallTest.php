@@ -4,8 +4,12 @@ declare(strict_types=1);
 
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Nodes\ManagedNodeEligibility;
+use App\Domain\Nodes\ManagedUserAccount;
+use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\NodeAgentRuntime;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
+use App\Domain\Nodes\Storage\StorageRootResolver;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Nodes\NodeAgentFootprint;
@@ -118,13 +122,33 @@ it('writes the Gateway address into the agent configuration and restarts after a
     expect($contents)
         ->toContain('gateway_url = "https://gateway.orbit"'."\n".'gateway_address = "10.44.0.1"'."\n")
         ->and(implode("\n", $contents))
-        ->toContain(NodeAgentFootprint::Marker, 'Restart=always', 'RestartSec=2', 'CapabilityBoundingSet=', 'NoNewPrivileges=yes', 'ProtectSystem=strict', 'ProtectHome=yes', 'PrivateTmp=yes', 'MemoryMax=64M', 'RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6', '-----BEGIN CERTIFICATE-----');
+        ->toContain(NodeAgentFootprint::Marker, 'Restart=always', 'RestartSec=2', 'CapabilityBoundingSet=', 'NoNewPrivileges=yes', 'ProtectSystem=strict', 'ProtectHome=tmpfs', 'BindReadOnlyPaths=-/home/orbit/apps', 'PrivateTmp=yes', 'MemoryMax=128M', 'RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6', '-----BEGIN CERTIFICATE-----');
 
     expect($arguments)->toContain(
         ['sudo', 'systemctl', 'enable', '--now', 'orbit-agent'],
         ['sudo', 'systemctl', 'restart', 'orbit-agent'],
     );
 });
+
+function agent_unit_text(AgentInstallSsh $ssh): string
+{
+    return implode("\n", array_map(static fn (RemoteCommand $command): string => $command->protectedInput === null ? '' : (stream_get_contents($command->protectedInput->stream()) ?: ''), $ssh->commands));
+}
+
+it('binds back only the Instance root under an empty home', function (?ManagedUserAccount $account, array $settings, array $present, array $absent): void {
+    $ssh = new AgentInstallSsh(null);
+    $node = nodeAgentNode();
+    $node->settings = $settings;
+
+    nodeAgentExecutor($ssh, $account)->converge($node);
+
+    expect(agent_unit_text($ssh))->toContain('CapabilityBoundingSet=', ...$present)
+        ->not->toContain(...$absent);
+})->with([
+    'default root' => [new ManagedUserAccount('deploy', 'deploy', '/home/deploy'), [], ['ProtectHome=tmpfs', 'BindReadOnlyPaths=-/home/deploy/apps'], ['ProtectHome=read-only', 'ProtectHome=yes', 'SupplementaryGroups=']],
+    'unsafe home' => [new ManagedUserAccount('orbit', 'orbit', '/home/orbit dir'), [], ['ProtectHome=yes'], ['BindReadOnlyPaths=']],
+    'unknown account' => [null, [], ['ProtectHome=yes'], ['SupplementaryGroups=', 'BindReadOnlyPaths=']],
+]);
 
 it('writes the Gateway address while the gateway role itself converges', function (): void {
     $ssh = new AgentInstallSsh(null);
@@ -265,7 +289,7 @@ it('fails with agent.checksum_mismatch', function (): void {
         ->toContain(['sudo', 'rm', '-f', '--', '/usr/local/bin/orbit-agent.orbit-candidate']);
 });
 
-function nodeAgentExecutor(SshExecutor $ssh): NodeAgentSshExecutor
+function nodeAgentExecutor(SshExecutor $ssh, ?ManagedUserAccount $account = new ManagedUserAccount('orbit', 'orbit', '/home/orbit')): NodeAgentSshExecutor
 {
     if (! Node::query()->whereHas('roles', static fn ($query) => $query->where('role', RoleName::Gateway)->where('status', LifecycleStatus::Active))->exists()) {
         $gateway = Node::query()->create([
@@ -284,6 +308,17 @@ function nodeAgentExecutor(SshExecutor $ssh): NodeAgentSshExecutor
         new AgentInstallKeys,
         new AgentInstallKnownHosts,
         new AgentInstallCertificates,
+        new readonly class($account) implements ManagedUserAccountResolver
+        {
+            public function __construct(private ?ManagedUserAccount $account) {}
+
+            public function resolve(Node $node): ManagedUserAccount
+            {
+                return $this->account ?? throw new RuntimeException('getent failed');
+            }
+        },
+        app(StorageRootResolver::class),
+        app(NodeSettingsNormalizer::class),
     );
 }
 
@@ -450,3 +485,11 @@ final class AgentInstallCertificates implements LeafCertificateSigner
         return "-----BEGIN CERTIFICATE-----\nroot\n-----END CERTIFICATE-----\n";
     }
 }
+
+it('gets everything it needs to narrow the unit from the container', function (): void {
+    $executor = app(NodeAgentSshExecutor::class);
+
+    expect(new ReflectionProperty($executor, 'storageRoots')->getValue($executor))->toBeInstanceOf(StorageRootResolver::class)
+        ->and(new ReflectionProperty($executor, 'nodeSettings')->getValue($executor))->toBeInstanceOf(NodeSettingsNormalizer::class)
+        ->and(new ReflectionProperty($executor, 'accounts')->getValue($executor))->toBeInstanceOf(ManagedUserAccountResolver::class);
+});
