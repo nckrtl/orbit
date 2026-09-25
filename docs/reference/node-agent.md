@@ -1,13 +1,13 @@
 ---
 title: "Node agent"
-description: "What orbit-agent observes on a managed Node, including task checkouts. How the Gateway installs, connects, and removes it, keeps a view of its reports, pushes Process usage, and checks it with Doctor."
+description: "What orbit-agent observes on a managed Node, including task checkouts, and how it tails logs for live viewers. How the Gateway installs, connects, and removes it, keeps a view of its reports, relays log lines, pushes Process usage, and checks it with Doctor."
 ---
 
 # Node agent
 
-`orbit-agent` is a small Rust program that runs on every managed Linux Node. It reports whether it is running, the runtime state of the Node's Orbit Processes, and the Git state of the Node's task checkouts. The web app uses those reports to show Node presence and Process state live. The Gateway keeps a [view](#gateway-view) of them, so it can skip repeated SSH reads. The agent never runs commands, never changes the Node, and never listens on a port.
+`orbit-agent` is a small Rust program that runs on every managed Linux Node. It reports whether it is running, the runtime state of the Node's Orbit Processes, and the Git state of the Node's task checkouts. The web app uses those reports to show Node presence and Process state live. The Gateway keeps a [view](#gateway-view) of them, so it can skip repeated SSH reads. While someone watches a log live, the agent also [tails](#log-tails) that log and sends the lines to the Gateway. The agent never runs commands, never changes the Node, and never listens on a port.
 
-[ADR 0128](/decisions/0128-run-a-visibility-only-agent-on-managed-nodes) records why, [ADR 0129](/decisions/0129-publish-node-presence-and-process-state-on-per-node-presence-channels) defines the transport, [ADR 0130](/decisions/0130-publish-agent-binaries-as-github-releases) defines the releases, [ADR 0148](/decisions/0148-keep-a-gateway-view-of-node-agent-state) defines the Gateway view, [ADR 0151](/decisions/0151-push-task-and-process-usage-changes-over-realtime) adds task checkouts and Process usage, and [ADR 0155](/decisions/0155-authenticate-the-node-agent-with-a-per-node-secret) adds the agent secret.
+[ADR 0128](/decisions/0128-run-a-visibility-only-agent-on-managed-nodes) records why, [ADR 0129](/decisions/0129-publish-node-presence-and-process-state-on-per-node-presence-channels) defines the transport, [ADR 0130](/decisions/0130-publish-agent-binaries-as-github-releases) defines the releases, [ADR 0148](/decisions/0148-keep-a-gateway-view-of-node-agent-state) defines the Gateway view, [ADR 0151](/decisions/0151-push-task-and-process-usage-changes-over-realtime) adds task checkouts and Process usage, [ADR 0153](/decisions/0153-tail-instance-and-process-logs-live-through-the-node-agent) adds log tails, and [ADR 0155](/decisions/0155-authenticate-the-node-agent-with-a-per-node-secret) adds the agent secret.
 
 ## Where it runs
 
@@ -86,6 +86,74 @@ A checkout the agent cannot open or read, for example because its Git files are 
 
 The agent publishes the state as `client-workspaces` and `client-workspace` events on its channel. [Realtime events](/reference/events#events) defines them.
 
+## Log tails
+
+The agent reads an Instance log or a Process log only while a viewer watches it through a [live log stream](/reference/live-logs). It never reads a log on its own, and it sends the lines only to the Gateway.
+
+### Stream list
+
+The agent asks the Gateway which logs to read with `GET /api/v1/agent/log-streams`:
+
+```json
+{
+  "data": [
+    {
+      "id": "3f9c2a6b0d1e4f5a8b7c6d5e4f3a2b1c",
+      "lines": 100,
+      "source": { "type": "laravel", "path": "/home/orbit/apps/shop/main" }
+    },
+    {
+      "id": "8a1d0c2e4b6f4a3c9e7d5b1a0f2c4e6d",
+      "lines": 500,
+      "source": { "type": "journal", "unit": "orbit-process-41-queue.service" }
+    },
+    {
+      "id": "c0ffee00c0ffee00c0ffee00c0ffee00",
+      "lines": 100,
+      "source": { "type": "docker", "container": "orbit-process-42-web", "process_id": 42 }
+    }
+  ],
+  "meta": { "request_id": "..." }
+}
+```
+
+The list holds the active streams whose source is on the caller's Node, at most 16. A stream becomes active with its viewer's first renewal. The endpoint uses the same rules and errors as the other [agent endpoints](#how-it-connects).
+
+The agent fetches the list when it joins its log channel, when the Gateway publishes `log-streams.changed` on that channel, and every 15 seconds while it reads at least one stream. The event carries no data. It only prompts the fetch, so the agent reads only what the HTTPS response names. The agent stops every stream that the list does not name. When it cannot fetch the list for 60 seconds, it stops every stream.
+
+### Sources
+
+The agent accepts three source types and checks each one itself. It runs no program for any of them.
+
+| Type | Fields | What the agent reads | The agent refuses |
+| --- | --- | --- | --- |
+| `laravel` | `path`: the Instance checkout | `storage/logs/laravel.log`, or the newest `laravel-*.log` when it is absent. It follows a daily file to the next day's file. | A path that is not normalized and absolute. A link at `storage/logs` or at the file. A file that is not regular, or that `root` owns. |
+| `journal` | `unit`: the Process's systemd unit | The journal files in `/var/log/journal` and `/run/log/journal`. It returns the entries of the unit and systemd's own messages about it. | A unit that is not `orbit-process-{id}-{name}.service`, with a positive `id` and a name of lowercase letters, digits, and inner hyphens. |
+| `docker` | `container` and `process_id` | The container's standard output and standard error, through the Docker Engine API. | A name that is not `orbit-process-{id}-{name}` with those rules, and a container without the labels `orbit.managed=true` and `orbit.process.id` equal to `process_id`. |
+
+A normalized absolute path has at most 4,096 bytes and no `.`, `..`, empty parts, or control characters. Refusing a file that `root` owns means the agent reads only files that the `orbit` group can read. A link in the checkout therefore cannot point the read at a file of another user. The agent's own journal reader supports the compact and regular formats, keyed and unkeyed hashes, and zstd and lz4 compression. A journal field compressed with xz shows as `[orbit] entry not readable`.
+
+When the agent cannot open or keep reading a source, it ends the stream with `source_unavailable`.
+
+### Redaction and limits
+
+The agent redacts each line with the Gateway's secret patterns before it sends it. [Live logs](/reference/live-logs#redaction) lists the patterns and their limits. One table of cases in `apps/agent/tests/redaction_cases.json` holds the expected result of each pattern, and both the agent tests and the Gateway tests run it.
+
+| Limit | Value |
+| --- | --- |
+| Streams | 16 |
+| First lines | The stream's `lines`, at most 256 KiB. They do not count against the rates. |
+| Line length | 8 KiB; a longer line is cut and ends with `[truncated]` |
+| Events | One `client-log` event for each stream every 250 milliseconds at most, each under 10,000 bytes |
+| Rate | 32 KiB per second for each stream, with a 256 KiB burst, and 256 KiB per second for the agent |
+| Read ahead | 1 MiB for each read. When a file is more than 4 MiB behind, the agent skips to its newest 64 KiB. |
+
+The agent drops a line that exceeds a rate, counts it, and reports the count in the next event. It never queues more than one burst for each stream.
+
+### Log channel
+
+The agent sends log lines on a second presence channel, `presence-node-logs.{id}`, as member `agent.{id}`. Only the agent and the Gateway's subscriber join it; the browser auth endpoint refuses it. The agent publishes `client-log` and `client-log-end` events there. [Realtime events](/reference/events#log-channels) defines them.
+
 ## How it connects
 
 The agent connects to the Gateway at `https://gateway.orbit` and to Reverb at `wss://reverb.orbit`. It never uses system DNS: its configuration contains the Gateway's WireGuard address, and the realtime response contains Reverb's serving address. The agent connects to each address while verifying the certificate for the unchanged hostname against the Orbit root certificate that the Gateway installs with it. The Gateway identifies the agent by the Node's WireGuard address and by the [agent secret](#agent-secret), which the agent sends as `Authorization: Bearer {secret}` on every Gateway request.
@@ -101,6 +169,7 @@ The Gateway writes `gateway_address` to the agent's `config.toml` on every conve
        "address": "10.44.0.3",
        "key": "<reverb-app-key>",
        "channel": "presence-node.12",
+       "log_channel": "presence-node-logs.12",
        "member": "agent.12"
      },
      "meta": { "request_id": "..." }
@@ -112,13 +181,14 @@ The Gateway writes `gateway_address` to the agent's `config.toml` on every conve
 2. The agent opens a TCP connection to the Reverb `address` on port 443. It uses `reverb.orbit` as the TLS server name and verifies that certificate against `ca.pem`. It reads its `socket_id` from `pusher:connection_established`.
 3. The agent requests authorization at `POST /api/v1/agent/broadcasting/auth` with `socket_id`, `channel_name`, and `version`.
 
-   The `version` value is the agent's short version string, such as `1.2.3`. The Gateway signs membership `agent.{id}` on the caller's own channel only. The response has the Pusher `auth` and `channel_data` values.
+   The `version` value is the agent's short version string, such as `1.2.3`. The Gateway signs membership `agent.{id}` on the caller's own two channels only. The response has the Pusher `auth` and `channel_data` values.
 
 4. The agent subscribes to `presence-node.{id}` and sends its snapshot. Then it publishes the events in [Realtime events](/reference/events#node-agent-channels).
+5. The agent repeats steps 3 and 4 for `presence-node-logs.{id}` and fetches its [stream list](#stream-list). Agents before 0.3.0 skip this step.
 
 When the Gateway role moves, its WireGuard address changes, and every agent loses the Gateway until its configuration is rewritten. Run `orbit node:add <node>` or a role converge on each Node; a changed `gateway_address` restarts the agent. The Reverb address needs no converge, because the agent reads it from each realtime response when it connects.
 
-The agent endpoints, including the [watch list](#watch-list), require an active WireGuard peer and the Node's agent secret, but no Gateway access edge. They do not record Activity.
+The agent endpoints, including the [watch list](#watch-list) and the [stream list](#stream-list), require an active WireGuard peer and the Node's agent secret, but no Gateway access edge. They do not record Activity.
 
 | Code | HTTP | Meaning |
 | --- | --- | --- |
@@ -126,11 +196,11 @@ The agent endpoints, including the [watch list](#watch-list), require an active 
 | `agent.secret_required` | 401 | The request carries no bearer secret, and the Node is not [exempt](#rollout). |
 | `agent.secret_invalid` | 403 | The secret's SHA-256 hash differs from the one the Gateway stored for the Node, or the Gateway stored none. Another Node's secret is refused. |
 | `agent.node_ineligible` | 403 | The caller's Node is outside the managed-node boundary. |
-| `agent.channel_forbidden` | 403 | `channel_name` is not the caller's own `presence-node.{id}`. |
+| `agent.channel_forbidden` | 403 | `channel_name` is not the caller's own `presence-node.{id}` or `presence-node-logs.{id}`. |
 | `validation.failed` | 422 | `socket_id` is missing or not a Pusher socket ID, `channel_name` is missing, or `version` is not a short version string. |
 | `realtime.not_configured` | 404 | No `websocket` role is active, so there is nothing to sign. |
 
-When the connection drops, the agent reconnects with exponential backoff from 2 seconds to 30 seconds, with jitter. A session that stayed joined for 60 seconds starts the backoff again from 2 seconds. A session that fails sooner keeps backing off, so an agent that fails right after every join does not retry every 2 seconds. Every connection repeats all four steps, because Reverb gives each connection a new `socket_id`.
+When the connection drops, the agent reconnects with exponential backoff from 2 seconds to 30 seconds, with jitter. A session that stayed joined for 60 seconds starts the backoff again from 2 seconds. A session that fails sooner keeps backing off, so an agent that fails right after every join does not retry every 2 seconds. Every connection repeats all steps, because Reverb gives each connection a new `socket_id`.
 
 The agent bounds each step, so a peer that stops answering never holds it:
 
@@ -187,7 +257,7 @@ The subscriber is a Gateway process that runs next to PHP-FPM on the Gateway hos
 | Unit | `/etc/systemd/system/orbit-agent-view.service`, with `Restart=always` and `RestartSec=2` |
 | Installed by | `orbit:bootstrap` and `orbit:gateway-web`, which install, enable, and restart the unit |
 | Connection | One WebSocket to Reverb for all Nodes, to the `websocket` role's WireGuard address on port 443, verifying the `reverb.orbit` certificate against the Orbit root CA |
-| Channels | `presence-node.{id}` for every Node inside the [managed-node boundary](#where-it-runs) |
+| Channels | `presence-node.{id}` and `presence-node-logs.{id}` for every Node inside the [managed-node boundary](#where-it-runs) |
 | Member | `gateway.{socket id}`, with `user_info` `{ "kind": "gateway" }`, signed by the subscriber with the Reverb app secret |
 
 The subscriber joins each channel as a new member, so each agent sends it a full snapshot.
@@ -206,7 +276,8 @@ The view lives in its own file cache store in `ORBIT_HOME/cache/agent-view`. The
 
 | Entry | Contents | Kept for |
 | --- | --- | --- |
-| One for each Node | The agent's units, its `docker` state, its task workspaces, its last `sequence`, and the Gateway time at which the last agent event arrived | 60 seconds after its last write |
+| One for each Node | The agent's units, `docker` state, task workspaces, version, log channel membership, last `sequence`, and the Gateway time of its last event | 60 seconds after its last write |
+| One for each Node with open log streams | The Node's [live log streams](/reference/live-logs): each stream's ID, record, source, `lines`, opening Node, and lease end | Until its last lease ends |
 | One for the subscriber | Whether realtime is configured, whether the socket is connected, the number of joined channels, and the Gateway time of the last write | 30 seconds after its last write |
 
 The subscriber writes its own entry every 5 seconds, and at once when its connection drops or comes back. It removes the entry when it stops.
@@ -251,6 +322,12 @@ Reads that decide what the Gateway commits or tells an agent stay on SSH: the br
 
 When the subscriber sees a new `head` or new diff counts for the workspace of an unfinished task group, it hands the work to a [publish run](#publish-runs). The run stores the group's line counts when the diff is complete, and always broadcasts [`task_group.updated`](/reference/events#tasks), also for a truncated or unknown diff. The database is written only for such a change.
 
+### Log relay
+
+The subscriber relays the lines of every [live log stream](/reference/live-logs). It accepts a `client-log` or `client-log-end` event on `presence-node-logs.{id}` only when Reverb's `user_id` is `agent.{id}` and the stream is open for Node `{id}`. It redacts each line again, with the Gateway's patterns and the stored environment values of the Instance or Process, cuts a line longer than 8 KiB, and drops lines above 64 KiB per second for each stream, with a 256 KiB burst. It then publishes `log.lines` on the stream's channel through the Reverb HTTP API, in parts under 10,000 bytes.
+
+The subscriber publishes `log.ended` when the agent ends a stream, when `agent.{id}` leaves the log channel, when a lease ends, and when the stream's opening Node loses its access edge. It checks leases and access edges every 5 seconds. It removes ended streams from the store and prompts the agent with `log-streams.changed`.
+
 ### Process usage
 
 The subscriber also pushes the CPU and memory of every Process to browsers, so no browser polls the Process list for them. It counts the `viewer.*` members on the channels it joins. While at least one viewer is present, it queues a sample every 15 seconds. A [publish run](#publish-runs) reads CPU and memory for every Process from [Prometheus](/reference/metrics#process-runtime-status), with the two fleet-wide queries that the Process list uses, and broadcasts one [`process.usage`](/reference/events#process-usage) event on `orbit`. A Process without a sample has null values, as every Process has while Prometheus cannot answer. With no viewer, nothing is queried or broadcast.
@@ -293,6 +370,8 @@ What the agent can read:
 | The Instance root | Read-only. Without capabilities, root reads only files that other users may read: the tracked files and `.git` that Orbit checks out, but not an Instance `.env` |
 | Everything else | Read-only, as `ProtectSystem=strict` sets |
 
+From version 0.3.0 the agent refuses to start outside `orbit-agent.service`. A copy started by hand, for example from a shell on a Node, exits at once and never joins Reverb as that Node's agent.
+
 The Gateway restarts the agent only when the binary, configuration, certificate, secret, or unit changed. An unchanged converge leaves the running agent and its connection alone.
 
 The Gateway converges the agent at these points:
@@ -302,7 +381,7 @@ The Gateway converges the agent at these points:
 | `node:add`, for a new or an existing Node, after the Metrics exporters | Provisioning fails at step `agent` with `node.agent_install_failed`. A new Node becomes `failed`, and an existing active Node stays `active`. |
 | A role converge on the Node | The role converge continues. The Gateway logs a warning, and Doctor reports the drift. |
 
-To upgrade the fleet, publish a new release, update the pin in the Gateway, deploy the Gateway, and run `orbit node:add <node>` or a role converge on each Node. Doctor reports every Node that still runs another version. Version 0.1.1 requires `gateway_address` in its configuration. Version 0.2.0 reports task workspaces and needs the unit above. Version 0.3.0 requires the [agent secret](#agent-secret), which the converge writes before it installs the binary.
+To upgrade the fleet, publish a new release, update the pin in the Gateway, deploy the Gateway, and run `orbit node:add <node>` or a role converge on each Node. Doctor reports every Node that still runs another version. Version 0.1.1 requires `gateway_address` in its configuration. Version 0.2.0 reports task workspaces and needs the unit above. Version 0.3.0 requires the [agent secret](#agent-secret), which the converge writes before it installs the binary, and tails logs for [live log streams](/reference/live-logs); the Gateway refuses streams for a Node with an older agent.
 
 ## Failures
 
@@ -315,6 +394,9 @@ The agent recovers from each failure below without an operator.
 | The Node loses power or network | Heartbeats stop. The web app shows the Node offline after 15 seconds without a heartbeat, and the Gateway's view of the Node turns stale at the same time. |
 | The agent cannot read a task checkout | It leaves the checkout out of its reports, and the Gateway reads that checkout over SSH. |
 | The watch list request fails | The agent keeps its last list and asks again after 60 seconds. |
+| The stream list request fails | The agent keeps reading its current streams and asks again. After 60 seconds without a list, it stops every stream. |
+| A log source cannot be read | The agent ends that stream with `source_unavailable`. The viewer falls back to one-shot reads over SSH. |
+| The agent stops while it streams | It leaves the log channel. The subscriber ends each stream of that Node with `agent_left`, and viewers fall back to one-shot reads over SSH. |
 | Reverb is down or the `websocket` role is absent | The agent and the subscriber retry. The web app polls Prometheus, and Gateway reads use Prometheus and SSH. |
 | The agent view subscriber stops | systemd restarts it after 2 seconds. Until it rejoins, the view turns stale after 15 seconds, and Gateway reads use Prometheus and SSH. The web app reloads the Process list every 60 seconds. |
 | The Gateway is down | The agent cannot get a membership signed and retries. An agent that is already connected keeps publishing. |
@@ -325,7 +407,7 @@ The agent recovers from each failure below without an operator.
 | The secret file is missing or malformed | The agent exits with an error, and systemd restarts it every 2 seconds. Doctor reports `node.agent_secret_mismatch`. A converge writes a new secret. |
 | The secret differs from the Gateway's hash, for example after a Gateway database restore | The Gateway refuses the agent with `agent.secret_invalid`, and the agent keeps retrying with its backoff. Doctor reports `node.agent_secret_mismatch`, and a converge writes a new secret. |
 
-The agent logs to the systemd journal. Logs contain no Reverb key, signature, or agent secret.
+The agent logs to the systemd journal. Logs contain no Reverb key, signature, agent secret, or log line that it streams.
 
 ## Removal
 
@@ -379,6 +461,7 @@ The job refuses to replace the assets of an existing release. Pull requests and 
 The first version of the agent has these limits.
 
 - The agent reports presence, Process runtime state, and task checkout Git state. The Gateway uses them for the reads in [Gateway view](#gateway-view).
-- Task reads that gate an action, Instance logs, the Horizon queue, and `ufw status` still run over SSH.
+- The agent tails logs only for live log streams.
+- One-shot log reads, task reads that gate an action, the Horizon queue, and `ufw status` still run over SSH.
 - The agent does not report CPU or memory. The Gateway pushes them from Prometheus as [Process usage](#process-usage).
 - The agent supports Linux on `x86_64` and `aarch64` only.

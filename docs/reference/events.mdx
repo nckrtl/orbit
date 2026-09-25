@@ -17,7 +17,7 @@ Every broadcast happens synchronously, inside the same request that changed the 
 
 Every event broadcasts on one private channel, `orbit`. A client authorizes access the same way it calls the rest of the API: as an active WireGuard peer Node, identified by its source address, against `POST /api/v1/broadcasting/auth`. The endpoint requires Gateway access: the active Gateway peer, or a Node with an access edge to the Gateway. There is no per-Node scoping on this channel. An unauthenticated caller, or a caller whose peer address does not match an active Node, receives `403`, and a Node without Gateway access receives `403` with `node_access.required`.
 
-Node agents publish on separate per-Node presence channels, not on `orbit`. See [Node agent channels](#node-agent-channels).
+Node agents publish on separate per-Node presence channels, not on `orbit`. See [Node agent channels](#node-agent-channels). Live log lines use their own channels, which this endpoint never signs. See [Log channels](#log-channels).
 
 ## Discovery
 
@@ -220,7 +220,7 @@ Each Node has a presence channel, `presence-node.{id}`, where its [Node agent](/
 | `gateway.{socket id}` | The Gateway's agent view subscriber | The subscriber itself, with the Reverb app secret the Gateway holds. No HTTP request is involved. |
 | `viewer.{socket id}` | Any other subscriber, such as a browser | `POST /api/v1/broadcasting/auth`, with the same rules as `orbit`. |
 
-A member's `user_info` is `{ "kind": "agent", "node_id": 12, "version": "0.1.0" }` for the agent, `{ "kind": "gateway" }` for the subscriber, and `{ "kind": "viewer", "node_id": 7 }` for a viewer, where a viewer's `node_id` is the Node the viewer connects from. The existing auth endpoint never signs an `agent.*` or `gateway.*` member. It refuses any other `presence-*` channel, including a malformed `presence-node.*` name, with `broadcast.channel_forbidden` (403). Presence events tell a subscriber when the agent joins (`pusher:member_added`) and leaves (`pusher:member_removed`). A clean agent stop and an agent crash both close the connection, so the agent leaves at once. Reverb announces a member only when its first connection joins and its last connection leaves, so a second connection with the same member ID produces no presence event.
+A member's `user_info` is `{ "kind": "agent", "node_id": 12, "version": "0.1.0" }` for the agent, `{ "kind": "gateway" }` for the subscriber, and `{ "kind": "viewer", "node_id": 7 }` for a viewer, where a viewer's `node_id` is the Node the viewer connects from. The existing auth endpoint never signs an `agent.*` or `gateway.*` member. It refuses any other `presence-*` channel, including `presence-node-logs.*` and a malformed `presence-node.*` name, with `broadcast.channel_forbidden` (403). Presence events tell a subscriber when the agent joins (`pusher:member_added`) and leaves (`pusher:member_removed`). A clean agent stop and an agent crash both close the connection, so the agent leaves at once. Reverb announces a member only when its first connection joins and its last connection leaves, so a second connection with the same member ID produces no presence event.
 
 ### Events
 
@@ -255,3 +255,28 @@ A subscriber applies a `unit` entry to a Process only when the Process runs on N
 
 A subscriber treats the Node's agent as online while `agent.{id}` is a member and a heartbeat, snapshot, or change arrived in the last 15 seconds. It treats the agent as lost when the member leaves or the 15 seconds pass without an event. A subscriber that has not seen the agent since it subscribed knows nothing about the Node from this channel and uses another source, such as Prometheus.
 
+## Log channels
+
+[Live log streams](/reference/live-logs) use two kinds of channel. No log line is sent on `orbit` or on `presence-node.{id}`. [ADR 0153](/decisions/0153-tail-instance-and-process-logs-live-through-the-node-agent) records the design.
+
+| Channel | Members | Signed by |
+| --- | --- | --- |
+| `presence-node-logs.{id}` | `agent.{id}` and the Gateway's subscriber, `gateway.{socket id}` | `POST /api/v1/agent/broadcasting/auth` for the agent, only from Node `{id}`'s own address; the subscriber signs itself |
+| `private-log-stream.{stream}` | The one client that opened the stream | The response that opens the stream, for that client's `socket_id` only |
+
+`POST /api/v1/broadcasting/auth` refuses both kinds with `broadcast.channel_forbidden` (403).
+
+### Agent log events
+
+The agent publishes these client events on `presence-node-logs.{id}`. The subscriber ignores an event unless its `user_id` is `agent.{id}` and the stream is open for Node `{id}`.
+
+| Event | When | Data |
+| --- | --- | --- |
+| `client-log` | The first lines of a stream, then new lines, at most every 250 milliseconds for each stream | `{ stream, sequence, lines, dropped, skipped }` |
+| `client-log-end` | The agent cannot open or keep reading a stream's source | `{ stream, reason }` |
+
+The Gateway publishes one server event there, `log-streams.changed`, with empty data, when a stream of the Node becomes active or closes. It tells the agent to fetch its [stream list](/reference/node-agent#stream-list).
+
+### Stream events
+
+The Gateway publishes `log.lines` and `log.ended` on `private-log-stream.{stream}`, with the envelope above and the stream ID as `id`. [Live logs](/reference/live-logs#receive-events) defines their data. A client ignores every `client-*` event on that channel.

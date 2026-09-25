@@ -1,6 +1,6 @@
 ---
 title: "Instance logs"
-description: "How the Gateway reads the application log of an Instance, which file it reads, and what it redacts."
+description: "How the Gateway reads the application log of an Instance, which file it reads, what it redacts, and how a viewer follows it live."
 ---
 
 # Instance logs
@@ -11,7 +11,11 @@ This page tells an operator how the Gateway returns the application log of an In
 
 `GET /api/v1/instances/{instance}/logs` returns the end of the log as one newline-separated string in `data.logs`. `lines` sets the number of lines from 1 through 1,000, and the default is 100. The response also names the Instance in `data.id` and `data.name` and repeats `data.lines`. The read does not stream, so the Gateway refuses `follow`.
 
-The Orbit web page shows this log on the Instance page. The CLI and the PHP SDK have no counterpart yet.
+The Orbit web page shows this log on the Instance page. [`orbit instance:logs`](/cli/instance#orbit-instancelogs) returns it in the terminal, and the PHP SDK sends the same request.
+
+## Follow the log live
+
+A viewer can follow the log as the application writes it with a [live log stream](/reference/live-logs). The Node agent reads the same file with the same rules, and the Gateway relays new lines to that viewer only. The web app's log pane and `orbit instance:logs --follow` use a stream. When the Gateway cannot open one, they fall back to this one-shot read.
 
 ## Know which file the Gateway reads
 
