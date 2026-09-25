@@ -615,8 +615,6 @@ final class AppServiceProvider extends ServiceProvider
                 processes: app(ProcessRunner::class),
                 renderer: app(AppDevDnsConfigRenderer::class),
                 activateListener: true,
-                checkoutPath: rtrim(string: (string) config('orbit.gateway_checkout'), characters: '/'),
-                orbitHome: rtrim(string: (string) config('orbit.home'), characters: '/'),
                 vpnSettings: app(VpnSettings::class),
                 ssh: app(SshExecutor::class),
                 keys: app(SshKeyProvider::class),

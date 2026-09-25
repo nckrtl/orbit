@@ -40,12 +40,7 @@ it('publishes records and the requester catalog idempotently', function (): void
             ->and(json_decode((string) $catalog, true)['requesters'] ?? [])
             ->toBe(['10.44.0.30' => $node->id])
             ->and($harness->serviceCalls())
-            ->toBe([
-                'restart dnsmasq',
-                'is-active --quiet orbit-private-dns.service',
-                'is-active --quiet dnsmasq',
-                'is-active --quiet orbit-private-dns.service',
-            ]);
+            ->toBe(['restart dnsmasq', 'is-active --quiet dnsmasq']);
     } finally {
         $harness->cleanup();
     }

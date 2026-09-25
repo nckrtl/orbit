@@ -26,6 +26,7 @@ final class PrivateDnsPublishHarness
         $this->files->makeDirectory($this->root.'/var/lib/orbit/private-dns', 0755, true);
         $this->files->makeDirectory($this->root.'/etc/systemd/system', 0755, true);
         $this->files->put($this->root.'/etc/dnsmasq.conf', "conf-dir={$this->root}/etc/dnsmasq.d\n");
+        $this->files->put($this->root.'/state-listener-confirms', '1');
         $failTest = $this->root.'/state-fail-test';
         $failRestart = $this->root.'/state-fail-restart';
         $failListener = $this->root.'/state-fail-listener';
@@ -33,6 +34,8 @@ final class PrivateDnsPublishHarness
         $active = $this->root.'/state-active';
         $listenerActive = $this->root.'/state-listener-active';
         $listenerConfirms = $this->root.'/state-listener-confirms';
+        $socketActive = $this->root.'/state-socket-active';
+        $stale = $this->root.'/state-stale';
         $failListenerRestart = $this->root.'/state-fail-listener-restart';
         $catalog = $this->root.'/var/lib/orbit/private-dns/catalog.json';
         $serviceLog = $this->root.'/systemctl.log';
@@ -46,54 +49,81 @@ final class PrivateDnsPublishHarness
             fi
             exit 0
             BASH);
+        // A listener started from a release loads the catalog and confirms it; a stale one does not.
         $this->writeShim('systemctl', <<<BASH
             #!/bin/bash
             set -euo pipefail
             printf '%s\n' "\$*" >> '{$serviceLog}'
-            if [ "\${1:-}" = 'is-active' ]; then
-                if [ "\${3:-}" = 'orbit-private-dns.service' ]; then
-                    if [ -f '{$listenerActive}' ]; then
-                        exit 0
-                    fi
+            confirm() {
+                rm -f '{$stale}'
+                if [ -f '{$listenerConfirms}' ] && [ -f '{$catalog}' ]; then
+                    sha256sum -- '{$catalog}' | cut -d ' ' -f 1 > '{$catalog}.loaded'
+                fi
+            }
+            unit="\${*: -1}"
+            case "\$1" in
+                is-active)
+                    case "\$unit" in
+                        orbit-private-dns.service) state='{$listenerActive}' ;;
+                        orbit-private-dns.socket) state='{$socketActive}' ;;
+                        *) state='{$active}' ;;
+                    esac
+                    [ -f "\$state" ] && exit 0
                     exit 3
-                fi
-                if [ -f '{$active}' ]; then
+                    ;;
+                show)
+                    if [ -f '{$listenerActive}' ]; then
+                        printf '%s\n' '4242'
+                    else
+                        printf '%s\n' '0'
+                    fi
                     exit 0
-                fi
-                exit 3
-            fi
-            if [ "\${1:-}" = 'show' ]; then
-                if [ -f '{$listenerActive}' ]; then
-                    printf '%s\n' '4242'
-                    exit 0
-                fi
-                printf '%s\n' '0'
+                    ;;
+            esac
+            if [ "\$unit" = 'orbit-private-dns.socket' ]; then
+                case "\$1" in
+                    enable) [ "\${2:-}" = '--now' ] && touch '{$socketActive}' ;;
+                    start|restart) touch '{$socketActive}' ;;
+                    stop|disable) rm -f '{$socketActive}' ;;
+                esac
                 exit 0
             fi
-            if [ "\${1:-}" = 'restart' ] && [ "\${2:-}" = 'orbit-private-dns.service' ]; then
-                if [ -f '{$failListenerRestart}' ]; then
-                    echo 'orbit-private-dns failed to restart' >&2
-                    rm -f '{$listenerActive}'
-                    exit 1
-                fi
-                touch '{$listenerActive}'
+            if [ "\$unit" = 'orbit-private-dns.service' ]; then
+                case "\$1" in
+                    restart)
+                        if [ -f '{$failListenerRestart}' ]; then
+                            echo 'orbit-private-dns failed to restart' >&2
+                            rm -f '{$listenerActive}'
+                            exit 1
+                        fi
+                        touch '{$listenerActive}'
+                        confirm
+                        ;;
+                    start)
+                        if [ -f '{$failListener}' ]; then
+                            echo 'orbit-private-dns failed to start' >&2
+                            exit 1
+                        fi
+                        touch '{$listenerActive}'
+                        confirm
+                        ;;
+                    enable)
+                        if [ "\${2:-}" = '--now' ]; then
+                            touch '{$listenerActive}'
+                            confirm
+                        fi
+                        ;;
+                    stop) rm -f '{$listenerActive}' ;;
+                    disable) [ "\${2:-}" = '--now' ] && rm -f '{$listenerActive}' ;;
+                esac
                 exit 0
             fi
-            if [ "\${1:-}" = 'restart' ]; then
+            if [ "\$1" = 'restart' ]; then
                 if [ -f '{$failRestart}' ]; then
                     echo 'dnsmasq failed to restart' >&2
                     exit 1
                 fi
                 touch '{$active}'
-                exit 0
-            fi
-            if [ "\${1:-}" = 'enable' ]; then
-                if [ -f '{$failListener}' ]; then
-                    echo 'orbit-private-dns failed to start' >&2
-                    exit 1
-                fi
-                touch '{$listenerActive}'
-                exit 0
             fi
             exit 0
             BASH);
@@ -113,7 +143,7 @@ final class PrivateDnsPublishHarness
         $this->writeShim('sleep', <<<BASH
             #!/bin/bash
             set -euo pipefail
-            if [ -f '{$listenerConfirms}' ] && [ -f '{$listenerActive}' ] && [ -f '{$catalog}' ]; then
+            if [ -f '{$listenerConfirms}' ] && [ ! -f '{$stale}' ] && [ -f '{$listenerActive}' ] && [ -f '{$catalog}' ]; then
                 sha256sum -- '{$catalog}' | cut -d ' ' -f 1 > '{$catalog}.loaded'
             fi
             exit 0
@@ -154,10 +184,8 @@ final class PrivateDnsPublishHarness
             executablePath: $this->root.'/bin',
             activateListener: true,
             listenAddress: '10.44.0.1',
-            checkoutPath: $this->root.'/gateway',
             phpBinary: PHP_BINARY,
             unitDirectory: $this->root.'/etc/systemd/system',
-            orbitHome: $this->root.'/orbit-home',
         );
     }
 
@@ -211,9 +239,35 @@ final class PrivateDnsPublishHarness
         file_put_contents($this->root.'/state-listener-active', '1');
     }
 
-    public function confirmListenerLoads(): void
+    /**
+     * The running listener stops loading the catalog, like one whose code never rereads it. A restart replaces it.
+     */
+    public function staleListener(): void
     {
-        file_put_contents($this->root.'/state-listener-confirms', '1');
+        file_put_contents($this->root.'/state-stale', '1');
+    }
+
+    /**
+     * The listener never writes a confirmation, like one that predates it.
+     */
+    public function listenerNeverConfirms(): void
+    {
+        @unlink($this->root.'/state-listener-confirms');
+    }
+
+    public function markSocketActive(): void
+    {
+        file_put_contents($this->root.'/state-socket-active', '1');
+    }
+
+    public function socketPath(): string
+    {
+        return $this->root.'/etc/systemd/system/orbit-private-dns.socket';
+    }
+
+    public function releasesPath(): string
+    {
+        return $this->root.'/var/lib/orbit/private-dns/releases';
     }
 
     public function failListenerRestart(): void

@@ -4,10 +4,8 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
-use App\Infrastructure\AppDev\PrivateDnsListenerFactory;
-use App\Infrastructure\AppDev\PrivateDnsSocketBinder;
+use App\Infrastructure\AppDev\PrivateDnsListenerProcess;
 use Illuminate\Console\Command;
-use Throwable;
 
 final class ServePrivateDnsCommand extends Command
 {
@@ -21,36 +19,15 @@ final class ServePrivateDnsCommand extends Command
     #[\Override]
     protected $description = 'Serve requester-aware Orbit VPN DNS answers from the published catalog.';
 
-    public function handle(PrivateDnsListenerFactory $factory, PrivateDnsSocketBinder $binder): int
+    public function handle(): int
     {
-        $listen = $this->option('listen');
-        $catalog = $this->option('catalog');
-        $upstream = $this->option('upstream');
-        $port = $this->option('port');
+        $errors = fopen('php://stderr', 'w');
 
-        if (! is_string($listen) || $listen === '' || ! is_string($catalog) || $catalog === '' || ! is_string($upstream) || $upstream === '' || ! is_numeric($port)) {
-            $this->error('Private DNS listener arguments are invalid.');
-
-            return self::FAILURE;
-        }
-
-        $server = $factory->make($catalog, $listen, (int) $port, $upstream);
-
-        try {
-            $binder->bind($server);
-            while ($server->listening()) {
-                $server->serveOnce(1.0);
-            }
-        } catch (Throwable $exception) {
-            $this->error($exception->getMessage());
-
-            return self::FAILURE;
-        } finally {
-            $server->stop();
-        }
-
-        $this->error('The private DNS listener stopped unexpectedly.');
-
-        return self::FAILURE;
+        return new PrivateDnsListenerProcess()->run([
+            'listen' => is_string($this->option('listen')) ? $this->option('listen') : null,
+            'port' => is_scalar($this->option('port')) ? (string) $this->option('port') : null,
+            'catalog' => is_string($this->option('catalog')) ? $this->option('catalog') : null,
+            'upstream' => is_string($this->option('upstream')) ? $this->option('upstream') : null,
+        ], $errors === false ? STDERR : $errors) === 0 ? self::SUCCESS : self::FAILURE;
     }
 }

@@ -11,7 +11,7 @@ use App\Infrastructure\AppDev\InMemoryPrivateDnsAnswerCache;
 use App\Infrastructure\AppDev\PrivateDnsAnswerCatalog;
 use App\Infrastructure\AppDev\PrivateDnsMessageCodec;
 use App\Infrastructure\AppDev\PrivateDnsRequestHandler;
-use App\Infrastructure\AppDev\WireGuardDnsRequesterResolver;
+use App\Infrastructure\AppDev\RegisteredNodeDnsRequesterResolver;
 use App\Models\Node;
 
 it('selects configured answers from the transport source and ignores DNS-content identity', function (): void {
@@ -142,7 +142,7 @@ it('forwards names outside the catalog to the backend resolver and keeps catalog
         }
     };
     $handler = new PrivateDnsRequestHandler(
-        requesters: new WireGuardDnsRequesterResolver,
+        requesters: new RegisteredNodeDnsRequesterResolver,
         selector: new CatalogPrivateDnsAnswerSelector(new PrivateDnsAnswerCatalog(
             exact: ['gateway.orbit' => '10.44.0.1'],
             suffixes: [],
@@ -164,7 +164,7 @@ function orb258_handler(
     ?InMemoryPrivateDnsAnswerCache $cache = null,
 ): PrivateDnsRequestHandler {
     return new PrivateDnsRequestHandler(
-        requesters: new WireGuardDnsRequesterResolver,
+        requesters: new RegisteredNodeDnsRequesterResolver,
         selector: new CatalogPrivateDnsAnswerSelector($catalog),
         cache: $cache ?? new InMemoryPrivateDnsAnswerCache,
     );

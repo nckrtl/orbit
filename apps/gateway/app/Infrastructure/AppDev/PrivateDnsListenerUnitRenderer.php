@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\AppDev;
 
+/**
+ * Renders the listener's systemd units. `orbit-private-dns.socket` holds the UDP and TCP sockets, so a restart of
+ * `orbit-private-dns.service` never closes them. The service runs `serve.php` from an installed release. ADR 0148.
+ */
 final readonly class PrivateDnsListenerUnitRenderer
 {
     public function name(): string
@@ -11,47 +15,82 @@ final readonly class PrivateDnsListenerUnitRenderer
         return 'orbit-private-dns.service';
     }
 
+    public function socketName(): string
+    {
+        return 'orbit-private-dns.socket';
+    }
+
     public function path(string $unitDirectory = '/etc/systemd/system'): string
     {
         return rtrim($unitDirectory, '/').'/'.$this->name();
     }
 
+    public function socketPath(string $unitDirectory = '/etc/systemd/system'): string
+    {
+        return rtrim($unitDirectory, '/').'/'.$this->socketName();
+    }
+
     public function render(
         string $phpBinary,
-        string $artisan,
+        string $releaseDirectory,
         string $listenAddress,
         int $port,
         string $catalogPath,
         string $upstream,
-        string $orbitHome,
-        string $workingDirectory,
     ): string {
         return implode("\n", [
             '[Unit]',
             'Description=Orbit private DNS',
-            'After=network-online.target wg-quick@orbit.service dnsmasq.service',
+            'After=network-online.target wg-quick@orbit.service dnsmasq.service '.$this->socketName(),
             'Wants=network-online.target',
-            'Requires=wg-quick@orbit.service',
+            'Requires=wg-quick@orbit.service '.$this->socketName(),
             '',
             '[Service]',
             'Type=simple',
             'User=root',
-            'WorkingDirectory='.$this->escapeDirectivePath($workingDirectory),
-            'Environment=ORBIT_HOME='.$this->escapeDirectivePath($orbitHome),
+            'WorkingDirectory='.$this->escapeDirectivePath($releaseDirectory),
             'ExecStart='.implode(' ', array_map($this->quoteArgument(...), [
                 $phpBinary,
-                $artisan,
-                'orbit:private-dns-serve',
+                rtrim($releaseDirectory, '/').'/serve.php',
                 '--listen='.$listenAddress,
                 '--port='.(string) $port,
                 '--catalog='.$catalogPath,
                 '--upstream='.$upstream,
             ])),
+            'Sockets='.$this->socketName(),
+            'KillSignal=SIGTERM',
+            'TimeoutStopSec=5',
             'Restart=on-failure',
             'RestartSec=2',
             '',
             '[Install]',
             'WantedBy=multi-user.target',
+            '',
+        ]);
+    }
+
+    /**
+     * FreeBind lets the socket bind the WireGuard address before the tunnel is up and keep it while the tunnel
+     * restarts.
+     */
+    public function renderSocket(string $listenAddress, int $port): string
+    {
+        $address = $listenAddress.':'.(string) $port;
+
+        return implode("\n", [
+            '[Unit]',
+            'Description=Orbit private DNS sockets',
+            'After=wg-quick@orbit.service',
+            'Wants=wg-quick@orbit.service',
+            '',
+            '[Socket]',
+            'ListenDatagram='.$address,
+            'ListenStream='.$address,
+            'FreeBind=yes',
+            'Service='.$this->name(),
+            '',
+            '[Install]',
+            'WantedBy=sockets.target',
             '',
         ]);
     }

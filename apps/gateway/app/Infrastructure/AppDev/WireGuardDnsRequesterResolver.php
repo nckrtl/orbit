@@ -6,16 +6,18 @@ namespace App\Infrastructure\AppDev;
 
 use App\Domain\AppDev\DnsRequester;
 use App\Domain\AppDev\PrivateDnsRequesterResolver;
-use App\Domain\Shared\LifecycleStatus;
-use App\Models\Node;
 
+/**
+ * Resolves requesters from the published catalog. The listener release carries this class, so it uses no framework
+ * code (ADR 0148). RegisteredNodeDnsRequesterResolver reads the same identity from the database.
+ */
 final readonly class WireGuardDnsRequesterResolver implements PrivateDnsRequesterResolver
 {
     /**
-     * @param  array<string, int>|null  $requesters
+     * @param  array<string, int>  $requesters
      */
     public function __construct(
-        private ?array $requesters = null,
+        private array $requesters = [],
     ) {}
 
     /**
@@ -43,24 +45,12 @@ final readonly class WireGuardDnsRequesterResolver implements PrivateDnsRequeste
             return DnsRequester::unidentified($sourceAddress);
         }
 
-        $nodeId = $this->requesters === null
-            ? $this->registeredNodeId($normalized)
-            : $this->requesters[$normalized] ?? null;
+        $nodeId = $this->requesters[$normalized] ?? null;
 
         if ($nodeId === null) {
             return DnsRequester::unidentified($normalized);
         }
 
         return DnsRequester::registered($nodeId, $normalized);
-    }
-
-    private function registeredNodeId(string $sourceAddress): ?int
-    {
-        $node = Node::query()
-            ->where('status', LifecycleStatus::Active->value)
-            ->where('wireguard_ip', $sourceAddress)
-            ->first();
-
-        return $node instanceof Node ? $node->id : null;
     }
 }
