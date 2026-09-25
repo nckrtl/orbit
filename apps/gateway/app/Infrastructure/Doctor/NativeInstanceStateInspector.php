@@ -365,11 +365,17 @@ final readonly class NativeInstanceStateInspector implements InstanceStateInspec
                 case "\$start_after" in ''|*[!0-9]*) return 2 ;; esac
                 test "\$start_after" = "\$start_before" || return 2
             }
+            # A worker has exited when its /proc entry is gone, it is a zombie, or the kernel marks it
+            # exiting (PF_EXITING, 0x4, in the flags field 9 of /proc/PID/stat).
             worker_exited() {
                 test -d "\$proc_root/\$1" || return 0
                 worker_state=\$(awk '/^State:/ { print $2; exit }' "\$proc_root/\$1/status" 2>/dev/null)
                 case "\$worker_state" in Z|X) return 0 ;; esac
-                return 1
+                worker_flags=\$(sed 's/^[^)]*) //' "\$proc_root/\$1/stat" 2>/dev/null | awk '{ print $7 }')
+                case "\$worker_flags" in
+                    ''|*[!0-9]*) test -d "\$proc_root/\$1" && return 1 || return 0 ;;
+                esac
+                test \$((worker_flags & 4)) -ne 0
             }
             worker_matches() {
                 worker_pid=\$1
@@ -416,14 +422,17 @@ final readonly class NativeInstanceStateInspector implements InstanceStateInspec
                 socket_metadata=\$(stat -c '%U:%G:%a' -- "\$socket" 2>/dev/null) || return 2
                 test "\$socket_metadata" = "\$user:caddy:660" || return 1
 
-                socket_inodes=\$(awk -v expected="\$socket" '$8 == expected { print $7 }' "\$proc_root/net/unix" 2>/dev/null) || return 2
+                # Every accepted connection repeats the socket path in /proc/net/unix. Only the listening
+                # entry (flag __SO_ACCEPTCON, state SS_UNCONNECTED) identifies the socket the master owns.
+                socket_inodes=\$(awk -v expected="\$socket" '$8 == expected && $4 == "00010000" && $6 == "01" { print $7 }' "\$proc_root/net/unix" 2>/dev/null) || return 2
                 test -n "\$socket_inodes" || return 1
                 socket_count=\$(printf '%s\n' "\$socket_inodes" | wc -l) || return 2
                 test "\$socket_count" -eq 1 || return 2
                 case "\$socket_inodes" in *[!0-9]*) return 2 ;; esac
 
                 for descriptor in "\$proc_root/\$main_pid/fd/"*; do
-                    target=\$(readlink -- "\$descriptor" 2>/dev/null) || return 2
+                    # A descriptor the master closes during the scan is not the listening socket it holds.
+                    target=\$(readlink -- "\$descriptor" 2>/dev/null) || continue
                     if test "\$target" = "socket:[\$socket_inodes]"; then
                         return 0
                     fi
