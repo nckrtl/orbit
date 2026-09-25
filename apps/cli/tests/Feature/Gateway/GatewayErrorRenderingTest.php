@@ -1015,3 +1015,24 @@ it('keeps lifecycle failure names and safe outcomes without command output', fun
     expect($details)->toBe(['step' => 'bootstrap', 'teardown_step' => 'cleanup', 'outcome' => 'failed', 'cleanup' => 'incomplete'])
         ->and(GatewayFailureRenderer::safeDetails('instance.setup_step_failed', ['step' => "bad\nname", 'outcome' => 'secret']))->toBe([]);
 });
+
+it('keeps the details of a failed Node Caddy build for any error code and drops a partial or unsafe set', function (): void {
+    expect(GatewayFailureRenderer::safeDetails('app-dev.caddy_config_failed', [
+        'step' => 'app-dev-caddy',
+        'node' => 'app-prod',
+        'stage' => 'reload',
+        'message' => 'Caddy did not reload the new version; the previous configuration is live again.',
+        'command' => 'private-command',
+        'id' => 12,
+    ]))->toBe([
+        'id' => 12,
+        'step' => 'app-dev-caddy',
+        'node' => 'app-prod',
+        'stage' => 'reload',
+        'message' => 'Caddy did not reload the new version; the previous configuration is live again.',
+    ])
+        ->and(GatewayFailureRenderer::safeDetails('metrics.caddy_publication_failed', ['node' => 'gateway', 'stage' => 'validate']))->toBe([])
+        ->and(GatewayFailureRenderer::safeDetails('metrics.caddy_publication_failed', ['node' => "gate\nway", 'stage' => 'validate', 'message' => 'x']))->toBe([])
+        ->and(GatewayFailureRenderer::safeDetails('metrics.caddy_publication_failed', ['node' => 'gateway', 'stage' => 'Validate!', 'message' => 'x']))->toBe([])
+        ->and(GatewayFailureRenderer::safeDetails('metrics.caddy_publication_failed', ['node' => 'gateway', 'stage' => 'validate', 'message' => str_repeat('a', 2001)]))->toBe([]);
+});
