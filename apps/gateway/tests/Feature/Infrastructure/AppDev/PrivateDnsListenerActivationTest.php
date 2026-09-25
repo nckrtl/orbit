@@ -23,6 +23,7 @@ use App\Models\Node;
 use App\Models\Route;
 use Illuminate\Filesystem\Filesystem;
 use Symfony\Component\Process\Process;
+use Tests\Support\LoopbackRequesters;
 use Tests\Support\PrivateDnsPublishHarness;
 
 it('activates the listener from an installed release behind its socket without rewriting LAN into the shared fragment', function (): void {
@@ -320,12 +321,13 @@ it('restores the previous working dnsmasq VPN fragment when the listener is not 
 });
 
 it('answers UDP and TCP from a file-backed catalog after a republish without restarting the process', function (): void {
+    $sources = LoopbackRequesters::detect();
     $registered = Node::query()->create([
         'name' => 'file-peer',
         'status' => LifecycleStatus::Active,
         'platform' => 'linux',
         'public_ssh_host' => '192.0.2.40',
-        'wireguard_ip' => '127.0.0.2',
+        'wireguard_ip' => $sources->first,
         'user' => 'orbit',
     ]);
     $root = sys_get_temp_dir().'/orbit-listener-catalog-'.bin2hex(random_bytes(8));
@@ -333,34 +335,34 @@ it('answers UDP and TCP from a file-backed catalog after a republish without res
     $files->makeDirectory($root, 0755, true);
     $catalog = $root.'/catalog.json';
     $files->put($catalog, json_encode([
-        'requesters' => ['127.0.0.2' => $registered->id],
+        'requesters' => [$sources->first => $registered->id],
         'records' => ['commander.test' => '10.44.0.7'],
         'suffixes' => [],
         'overrides' => [
-            DnsRequester::registered($registered->id, '127.0.0.2')->cacheKey() => [
+            DnsRequester::registered($registered->id, $sources->first)->cacheKey() => [
                 'commander.test' => '192.168.6.20',
             ],
         ],
     ], JSON_THROW_ON_ERROR));
-    $server = new PrivateDnsListenerFactory()->make($catalog, '127.0.0.1', 0, '127.0.0.55:53535');
+    $server = new PrivateDnsListenerFactory()->make($catalog, $sources->listen, 0, '127.0.0.55:53535');
 
     try {
         $server->start();
-        $first = orb307_query($server, '127.0.0.2', 'udp', 'commander.test');
-        $unknown = orb307_query($server, '127.0.0.1', 'tcp', 'commander.test');
+        $first = orb307_query($server, $sources->first, 'udp', 'commander.test', $sources);
+        $unknown = orb307_query($server, $sources->second, 'tcp', 'commander.test', $sources);
         $files->put($catalog, json_encode([
-            'requesters' => ['127.0.0.2' => $registered->id],
+            'requesters' => [$sources->first => $registered->id],
             'records' => ['commander.test' => '10.44.0.7'],
             'suffixes' => [],
             'overrides' => [
-                DnsRequester::registered($registered->id, '127.0.0.2')->cacheKey() => [
+                DnsRequester::registered($registered->id, $sources->first)->cacheKey() => [
                     'commander.test' => '192.168.6.21',
                 ],
             ],
         ], JSON_THROW_ON_ERROR));
         touch($catalog, time() + 2);
         clearstatcache(true, $catalog);
-        $reloaded = orb307_query($server, '127.0.0.2', 'udp', 'commander.test');
+        $reloaded = orb307_query($server, $sources->first, 'udp', 'commander.test', $sources);
 
         expect($first)
             ->toBe('192.168.6.20')
@@ -557,15 +559,26 @@ function orb307_published_cluster(): array
     return [$route->fresh(), $member->fresh()];
 }
 
-function orb307_query(PrivateDnsTransportServer $server, string $source, string $transport, string $name): string
-{
+function orb307_query(
+    PrivateDnsTransportServer $server,
+    string $source,
+    string $transport,
+    string $name,
+    ?LoopbackRequesters $sources = null,
+): string {
     $query = new PrivateDnsMessageCodec()->encodeQuery($name);
+    $destination = $sources instanceof LoopbackRequesters ? $sources->destination : '127.0.0.1';
 
     if ($transport === 'tcp') {
-        $socket = socket_create(AF_INET, SOCK_STREAM, SOL_TCP);
-        expect($socket)->toBeInstanceOf(Socket::class);
-        socket_bind($socket, $source, 0);
-        socket_connect($socket, '127.0.0.1', $server->port());
+        if ($sources instanceof LoopbackRequesters) {
+            $socket = $sources->socket($source, SOCK_STREAM);
+        } else {
+            $socket = socket_create(AF_INET, SOCK_STREAM, SOL_TCP);
+            expect($socket)->toBeInstanceOf(Socket::class);
+            socket_bind($socket, $source, 0);
+        }
+
+        socket_connect($socket, $destination, $server->port());
         socket_write($socket, pack('n', strlen($query)).$query);
         $server->serveOnce(1.0);
         $header = socket_read($socket, 2);
@@ -574,10 +587,15 @@ function orb307_query(PrivateDnsTransportServer $server, string $source, string 
         $response = socket_read($socket, $length['len'] ?? 0);
         socket_close($socket);
     } else {
-        $socket = socket_create(AF_INET, SOCK_DGRAM, SOL_UDP);
-        expect($socket)->toBeInstanceOf(Socket::class);
-        socket_bind($socket, $source, 0);
-        socket_sendto($socket, $query, strlen($query), 0, '127.0.0.1', $server->port());
+        if ($sources instanceof LoopbackRequesters) {
+            $socket = $sources->socket($source, SOCK_DGRAM);
+        } else {
+            $socket = socket_create(AF_INET, SOCK_DGRAM, SOL_UDP);
+            expect($socket)->toBeInstanceOf(Socket::class);
+            socket_bind($socket, $source, 0);
+        }
+
+        socket_sendto($socket, $query, strlen($query), 0, $destination, $server->port());
         $server->serveOnce(1.0);
         $response = '';
         $from = '';

@@ -8,6 +8,7 @@ use App\Models\Node;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\Process;
+use Tests\Support\TestToolchain;
 
 it('uses existing network DNS only during packages and restores the retained owned resolver', function (): void {
     $result = run_bootstrap_dns_shell();
@@ -137,7 +138,7 @@ it('holds the real peer lock through restore before a concurrent DNS publisher p
     expect($result['exit'])->toBe(0);
     expect($result['contender'])->toBe('10.44.0.1|~.');
     expect($result['dns'])->toBe('192.0.2.53');
-})->skip(PHP_OS_FAMILY !== 'Linux', 'Uses the production Linux flock utility.');
+});
 
 /**
  * @param  array<string, mixed>  $options
@@ -257,8 +258,7 @@ function run_bootstrap_dns_shell(array $options = []): array
             fi
         }
         BASH;
-    $bash = is_executable('/opt/homebrew/bin/bash') ? '/opt/homebrew/bin/bash' : '/bin/bash';
-    $process = new Process([$bash, ...array_slice($command->arguments, 1)], $root, [
+    $process = new Process([TestToolchain::bash(), ...array_slice($command->arguments, 1)], $root, [
         'FAILURE' => $options['failure'] ?? '',
         'HEALTHY' => ($options['healthy'] ?? false) ? '1' : '0',
         'PROXY' => ($options['proxy'] ?? false) ? '1' : '0',

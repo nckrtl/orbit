@@ -28,6 +28,19 @@ describe('safe human display cells', function (): void {
             ->and(mb_check_encoding(TerminalText::safe("bad\xfftext"), 'UTF-8'))->toBeTrue();
     });
 
+    it('wraps detail values at spaces and breaks only words longer than a line', function (): void {
+        expect(TerminalText::wrapWords('Run bun install in the project root and commit bun.lock.', 20))
+            ->toBe(['Run bun install in', 'the project root and', 'commit bun.lock.'])
+            ->and(TerminalText::wrapWords('abcdefghij klm', 4))->toBe(['abcd', 'efgh', 'ij', 'klm'])
+            ->and(TerminalText::wrapWords('', 4))->toBe(['']);
+
+        $output = new HumanRenderer(human_layout_mode(40))->detail('JavaScript', ['Fix' => 'Run bun install in the project root and commit bun.lock.']);
+
+        expect($output)->toContain('Run bun install in the project', 'root and commit bun.lock.')
+            ->not->toContain('co'.PHP_EOL);
+        human_layout_assert_width($output, 40);
+    });
+
     it('wraps wide and combining graphemes without losing text', function (): void {
         $text = "A界e\u{0301}👩‍💻🇳🇱👍🏽1️⃣Z";
         $lines = TerminalText::wrap($text, 4);

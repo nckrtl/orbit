@@ -98,6 +98,8 @@ A detail tree uses the following shape, with one empty terminal line before and 
 
 The title uses the singular human entity label and its selector. Align property values, use title-case labels, and separate properties with a blank continuation row. The last property uses the closing connector and has no continuation row after it. Dim the connectors when decoration is enabled; keep the title, labels, and values at normal intensity. Each value is one concise summary that may wrap within the tree at narrow widths; lists use comma-separated values. Do not add nested section headings or a `Showing ...` introduction. A command may add a separate related-record table when its contract calls for one.
 
+Property values wrap at spaces. Only a word longer than the line breaks by width.
+
 ## Progress and liveness
 
 Show feedback before slow work starts. A human command that can take longer than one second uses a progress tree, except when its primary output is a log stream or its current contract defines a bespoke panel. A spinner serves a sub-second wait or an inner wait whose surrounding tree already supplies the context.
