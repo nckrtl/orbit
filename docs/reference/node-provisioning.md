@@ -143,12 +143,21 @@ Four kinds of lock guard work on one Node. They all live in a file cache store u
 
 | Lock | Guards | Term | When it is busy |
 | --- | --- | --- | --- |
-| Tool | One package of one tool manager | 10 minutes | Fails at once with `tool.operation_locked` |
-| Tool manager | The shared state of `vp`, `composer`, `apt`, or `brew` | 10 minutes | Fails at once with `tool.operation_locked` or `node_role.tool_manager_locked` |
-| Role | Role operations | 10 minutes | Waits up to 2 minutes, then `node_role.node_busy` |
-| Node agent | The [agent converge](/reference/node-agent#agent-secret) | 4 minutes, renewed before each step | Waits up to 2 minutes, then `agent.converge_busy` |
+| Tool | One package of one tool manager | Operation term | Fails at once with `tool.operation_locked` |
+| Tool manager | The shared state of `vp`, `composer`, `apt`, or `brew` | Operation term | Fails at once with `tool.operation_locked` or `node_role.tool_manager_locked` |
+| Role | Role operations | Operation term | Waits up to 2 minutes, then `node_role.node_busy` |
+| Node agent | The [agent converge](/reference/node-agent#agent-secret) | 4 minutes | Waits up to 2 minutes, then `agent.converge_busy` |
 
-The 10-minute term is the Gateway's PHP-FPM request limit. A request cannot outlive it, so a worker that is killed mid-operation blocks the Node for at most 10 minutes.
+The operation term depends on the process that holds the lock:
+
+| Process | Term | Why |
+| --- | --- | --- |
+| Gateway request | 10 minutes | The Gateway's PHP-FPM request limit. A request cannot outlive it. |
+| Artisan command, such as `orbit:node-provision` | 20 minutes | An Artisan command has no time limit. The longest single step, one command, is bounded at 15 minutes. |
+
+Every lock is renewed for its full term before each command that an operation runs, on the Node or on the Gateway. A long operation therefore keeps its locks for as long as it runs, whatever its total length. A process that dies mid-operation blocks the Node for at most one term after its last command started.
+
+A renewal fails when the lock expired and another operation took it. The command then does not run, and it fails with `node.lock_lost`. Every later command of the same operation fails in the same way, so the operation stops at its current step and reports that step's error. The other operation keeps the lock.
 
 An operation takes the locks it needs in one fixed order: tool, then tool manager (`vp` before `composer`), then role, then Node agent. No code takes an earlier lock while it holds a later one. The tool and tool manager locks fail at once instead of waiting, so an operation that holds the role lock never waits for a tool manager. The locks therefore cannot deadlock.
 
