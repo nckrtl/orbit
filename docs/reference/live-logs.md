@@ -106,9 +106,11 @@ Each record has one source, the same one that its one-shot read uses.
 
 The agent follows a daily log file to the next day's file. When an earlier file becomes the newest again, it continues where it left that file, so no line is sent twice. It starts from the beginning of a file that was truncated.
 
-Journal lines match the one-shot read over SSH, which uses `journalctl --output short-iso --utc`. The agent makes at most 256 KiB of lines from one journal entry, one stream's queue, so a huge message cannot exhaust its memory. The lines of a longer entry match the one-shot read up to that point, then end with the line `[orbit] message cut at 256 KiB`; a follow that switches between the reads there prints `[orbit] lines may be missing`.
+Journal lines match the one-shot read over SSH, which uses `journalctl --output short-iso --utc`. The agent makes at most 256 KiB of lines from one journal entry, one stream's queue, so a huge message cannot exhaust its memory.
 
-The one-shot read of a systemd Process reads the journal newest entry first and stops after 4 MiB, because `journalctl --lines` counts entries and one entry can hold millions of lines. The one-shot read of a Docker Process also returns both streams in one, in the same order.
+A longer entry ends with the line `[orbit] message cut at 256 KiB`. The one-shot read cuts each entry by the same rule, so the lines of a cut entry are the same in both reads, and a follow can switch between the reads there without a gap. Two rare entries still differ: a message whose terminal color codes make its text shorter than the indent that the lines add, and a message over 256 KiB that is not printable text. At such an entry, a follow that switches between the reads prints `[orbit] lines may be missing`.
+
+The one-shot read of a systemd Process reads the journal newest entry first and stops after 4 MiB, because `journalctl --lines` counts entries and one entry can hold millions of lines. It cuts each entry at 256 KiB before that limit, so a huge entry does not hide the older entries. The one-shot read of a Docker Process also returns both streams in one, in the same order.
 
 The agent refuses a log file that `root` owns, a link at `storage/logs` or at the log file, and a container without the labels `orbit.managed=true` and `orbit.process.id={id}`. The stream then ends with `source_unavailable`.
 

@@ -30,8 +30,27 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
     /**
      * Reads a unit's last entries newest first, as `journalctl --output short-iso --utc` prints them, in
      * UTC as the Node agent writes live lines (ADR 0153), and stops after a number of bytes.
+     *
+     * `awk` cuts each entry as the agent does: it counts bytes, indent included, keeps the first line,
+     * and stops at the first further line that would take the entry past 256 KiB. The entry then ends
+     * with the agent's cut marker, so a huge entry reads the same live and over SSH and cannot hide
+     * the older entries.
      */
-    public const string JournalLogsScript = 'journalctl --unit "$1" --lines "$2" --reverse --no-pager --output short-iso --utc | head -c "$3"';
+    public const string JournalLogsScript = <<<'SH'
+        journalctl --unit "$1" --lines "$2" --reverse --no-pager --output short-iso --utc | LC_ALL=C awk '
+        /^ / {
+            if (cut) next
+            if (used + length($0) > 262144) { print indent "[orbit] message cut at 256 KiB"; cut = 1; next }
+            used += length($0); print; next
+        }
+        {
+            cut = 0; used = length($0)
+            prefix = index($0, ": ") ? substr($0, 1, index($0, ": ") + 1) : ""
+            gsub(/[\200-\277]/, "", prefix)
+            indent = sprintf("%" length(prefix) "s", "")
+            print
+        }' | head -c "$3"
+        SH;
 
     public const string DockerLogsScript = 'exec docker container logs --tail "$1" "$2" 2>&1';
 

@@ -1461,6 +1461,30 @@ mod tests {
         }
     }
 
+    /// A 400 KB message of 400 lines. The Gateway's one-shot read cuts journalctl's lines of it to the
+    /// same text; its test reads the same file (`JournalLogsScriptTest`).
+    #[test]
+    fn a_message_over_256_kib_gives_the_lines_of_the_one_shot_read() {
+        let message: Vec<u8> = (0..400)
+            .flat_map(|i| format!("part {i:03} {}\n", "q".repeat(1000)).into_bytes())
+            .collect();
+        let expected: Vec<String> = include_str!("../../tests/journalctl_cut_message.txt")
+            .lines()
+            .map(str::to_owned)
+            .collect();
+        let entry = Entry {
+            realtime: 1_790_363_131_337_833,
+            source_realtime: Some(b"1790363131337825".to_vec()),
+            message: Some(message),
+            pid: Some(b"2773152".to_vec()),
+            identifier: Some(b"lvtbig".to_vec()),
+            hostname: Some(b"beast".to_vec()),
+            ..Entry::default()
+        };
+        assert_eq!(format_entry(&entry, "u.service"), expected);
+        assert_eq!(expected.last().unwrap().trim_start(), MESSAGE_CUT);
+    }
+
     #[test]
     fn a_message_over_256_kib_is_cut_there_and_marked() {
         let dir = TempDir::new();
