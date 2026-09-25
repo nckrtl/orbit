@@ -30,6 +30,7 @@ final readonly class NativeWebSocketPublicationManager implements WebSocketPubli
         private SshKeyProvider $keys,
         private KnownHostsStore $knownHosts,
         private ?CaddySiteCertificates $siteCertificates = null,
+        private WebSocketDnsTarget $dnsTarget = new WebSocketDnsTarget,
     ) {}
 
     /** Publishes the certificate first, because validation loads every certificate the build names. */
@@ -58,6 +59,8 @@ final readonly class NativeWebSocketPublicationManager implements WebSocketPubli
         $this->certificateRecords()->record($node->id, CaddySiteCertificates::Websocket);
 
         $this->build($node, fn () => $this->builds->build($node));
+        // Private DNS names this Node only once its build serves the site; during a move it keeps the old Node.
+        $this->dnsTarget->markServing($node->id);
         $this->dns->converge($node);
     }
 
@@ -76,8 +79,9 @@ final readonly class NativeWebSocketPublicationManager implements WebSocketPubli
     {
         $address = $this->address($node);
 
-        // Forgetting the record first withdraws the site in the build, also on the source of a move,
+        // Forgetting the records first withdraws the site in the build, also on the source of a move,
         // where the role row already names another Node.
+        $this->dnsTarget->forget($node->id);
         $this->certificateRecords()->forget($node->id, CaddySiteCertificates::Websocket);
         $this->build($node, fn () => $this->builds->build($node));
         $this->ssh->execute($this->connection($node, $address), $this->certificatePublisher->removeCommand());
@@ -87,6 +91,7 @@ final readonly class NativeWebSocketPublicationManager implements WebSocketPubli
     /** The certificate may stay on the Node, so a later convergence publishes it again before its site renders. */
     public function removeUnreachable(Node $node): void
     {
+        $this->dnsTarget->forget($node->id);
         $this->certificateRecords()->forget($node->id, CaddySiteCertificates::Websocket);
         $this->dns->converge();
     }
