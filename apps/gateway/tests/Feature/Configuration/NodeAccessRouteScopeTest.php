@@ -100,6 +100,7 @@ it('declares node access scope on every active-peer API route', function (): voi
         'env:update' => ServingNode::EnvironmentInstanceOwning,
         'firewall:allow' => ServingNode::Target,
         'firewall:deny' => ServingNode::Target,
+        'firewall:fleet:list' => ServingNode::Collection,
         'firewall:list' => ServingNode::Target,
         'firewall:live:list' => ServingNode::Target,
         'firewall:managed:list' => ServingNode::Target,

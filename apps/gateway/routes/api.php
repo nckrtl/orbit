@@ -28,6 +28,7 @@ use App\Http\Controllers\Api\DatabaseConnectionsController;
 use App\Http\Controllers\Api\DatabaseUsersController;
 use App\Http\Controllers\Api\DoctorRunsController;
 use App\Http\Controllers\Api\FirewallRulesController;
+use App\Http\Controllers\Api\FleetFirewallRulesController;
 use App\Http\Controllers\Api\GatewayStatusesController;
 use App\Http\Controllers\Api\GitHubAppController;
 use App\Http\Controllers\Api\GrafanaAccessAuthorizationController;
@@ -185,6 +186,8 @@ Route::prefix('v1')->group(function (): void {
         Route::delete('nodes/{node}/roles/{role}', [NodeRolesController::class, 'destroy'])
             ->whereNumber('node')
             ->name('node:role:remove');
+        Route::get('firewall-rules', [FleetFirewallRulesController::class, 'index'])
+            ->name('firewall:fleet:list');
         Route::get('nodes/{node}/firewall-rules', [FirewallRulesController::class, 'index'])
             ->name('firewall:list');
         Route::get('nodes/{node}/managed-firewall-rules', [FirewallRulesController::class, 'managed'])

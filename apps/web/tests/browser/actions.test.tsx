@@ -4,6 +4,7 @@ import { setTransport } from "../../src/api/client";
 import { queryClient } from "../../src/api/queryClient";
 import { applyEvent } from "../../src/realtime/apply";
 import { connectRealtime } from "../../src/realtime/connect";
+import { setLiveness } from "../../src/realtime/liveness";
 import { footer, openApp, pane, row } from "./app";
 
 it("runs an action from the menu and shows the row the Gateway answered with", async () => {
@@ -228,7 +229,7 @@ it("applies a realtime event to the open screen", async () => {
     await expect.element(row("Needs attention", "vite")).toBeVisible();
     await expect
         .element(page.getByRole("status"))
-        .toHaveAccessibleName(/Not connected to the WebSocket; refreshing every 10s/);
+        .toHaveAccessibleName(/Not connected to the WebSocket\. Lists refresh every 30 seconds/);
 
     applyEvent(queryClient, {
         type: "process.status",
@@ -245,7 +246,9 @@ it("keeps the reason it is not live in the status dot, not in the footer text", 
     const app = await openApp("/");
     await expect
         .element(page.getByRole("status"))
-        .toHaveAccessibleName("Not connected to the WebSocket; refreshing every 10s.");
+        .toHaveAccessibleName(
+            "Not connected to the WebSocket. Lists refresh every 30 seconds, then less often, up to every 5 minutes, and not while the tab is hidden.",
+        );
 
     const refuse: typeof app.gateway.transport = (method, path, body) =>
         path === "/api/v1/realtime"
@@ -263,4 +266,24 @@ it("keeps the reason it is not live in the status dot, not in the footer text", 
         .element(page.getByRole("status"))
         .toHaveAccessibleName(/Not connected to the WebSocket \(Node access is required\.\)/);
     await expect.element(footer()).not.toHaveTextContent("Node access is required.");
+});
+
+it("says live updates are paused while realtime is down, and refreshes on a click", async () => {
+    const app = await openApp("/");
+    const paused = footer().getByRole("button", { name: "live updates paused" });
+    await expect.element(paused).toHaveTextContent("live updates paused");
+
+    const before = app.gateway.requests.filter(
+        (request) => request.path === "/api/v1/nodes",
+    ).length;
+    await paused.click();
+    await vi.waitFor(() =>
+        expect(
+            app.gateway.requests.filter((request) => request.path === "/api/v1/nodes").length,
+        ).toBeGreaterThan(before),
+    );
+
+    setLiveness("live");
+    await expect.element(paused).not.toBeInTheDocument();
+    setLiveness("polling");
 });

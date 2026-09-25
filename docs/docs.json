@@ -261,6 +261,7 @@
             "group": "Firewall",
             "openapi": "/openapi.json",
             "pages": [
+              "GET /api/v1/firewall-rules",
               "GET /api/v1/nodes/{node}/firewall-rules",
               "POST /api/v1/nodes/{node}/firewall-rules/allow",
               "POST /api/v1/nodes/{node}/firewall-rules/deny",

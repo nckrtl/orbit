@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import type { Annotation } from "@nckrtl/annotate";
 import { api } from "../api/client";
+import { useFallbackPoll } from "../realtime/liveness";
 import { Frame, Note } from "../ui/Frame";
 
 export function AnnotationsPanel({ instanceId }: { instanceId: number }) {
@@ -9,7 +10,8 @@ export function AnnotationsPanel({ instanceId }: { instanceId: number }) {
     const query = useQuery({
         queryKey: key,
         queryFn: () => api<Annotation[]>("GET", endpoint),
-        refetchInterval: 15000,
+        // `annotation.updated` refreshes this list; it polls only while realtime is down.
+        refetchInterval: useFallbackPoll(),
     });
     return (
         <Frame

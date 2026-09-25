@@ -310,3 +310,60 @@ final class FirewallApiFakeManager implements FirewallManager
         return array_shift($this->removals) ?? FirewallBackendStatus::Absent;
     }
 }
+
+describe('fleet firewall list', function (): void {
+    beforeEach(function (): void {
+        $this->other = Node::query()->create([
+            'name' => 'app-prod',
+            'status' => LifecycleStatus::Active,
+            'platform' => 'linux',
+            'public_ssh_host' => '192.0.2.23',
+            'public_ssh_port' => 22,
+            'user' => 'orbit',
+            'wireguard_ip' => '10.44.0.6',
+        ]);
+
+        foreach ([$this->node, $this->other] as $node) {
+            $node->firewallRules()->create([
+                'name' => 'private-web',
+                'action' => 'allow',
+                'source' => 'any',
+                'protocol' => 'tcp',
+                'port' => '443',
+                'status' => LifecycleStatus::Active,
+            ]);
+        }
+    });
+
+    it('returns the rules of every Node the caller can reach in one request', function (): void {
+        $this->node->accessibleNodes()->attach($this->other);
+
+        $this
+            ->getJson('/api/v1/firewall-rules')
+            ->assertOk()
+            ->assertJsonCount(2, 'data')
+            ->assertJsonPath('data.0.node_id', $this->node->id)
+            ->assertJsonPath('data.0.node', 'app-dev')
+            ->assertJsonPath('data.1.node_id', $this->other->id)
+            ->assertJsonPath('data.1.node', 'app-prod')
+            ->assertJsonMissingPath('data.0.backend_status')
+            ->assertJsonStructure(['meta' => ['request_id']]);
+    });
+
+    it('leaves out the rules of Nodes the caller cannot reach', function (): void {
+        $this
+            ->getJson('/api/v1/firewall-rules')
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.node_id', $this->node->id);
+    });
+
+    it('refuses a caller without any Node access', function (): void {
+        $this->withServerVariables(['REMOTE_ADDR' => $this->other->wireguard_ip]);
+
+        $this
+            ->getJson('/api/v1/firewall-rules')
+            ->assertForbidden()
+            ->assertJsonPath('error.code', 'node_access.required');
+    });
+});

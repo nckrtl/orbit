@@ -621,6 +621,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/firewall-rules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List firewall rules on every Node
+         * @description Returns the operator firewall rules of every Node the caller can reach, in one response, ordered by Node and name. The web app uses it for the fleet list instead of one request per Node. The per-Node list stays for the CLI. The list does not SSH.
+         */
+        get: operations["firewall-fleet-list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/gateway/status": {
         parameters: {
             query?: never;
@@ -3086,6 +3106,20 @@ export interface components {
             expected?: string | null;
             observed?: string | null;
         };
+        FirewallRule: {
+            id?: number;
+            node_id?: number;
+            node?: string;
+            name?: string;
+            action?: string;
+            source?: string;
+            protocol?: string;
+            port?: string;
+            status?: string;
+            backend_status?: string | null;
+            failed_step?: string | null;
+            error_code?: string | null;
+        };
         GatewayStatus: {
             name?: string;
             status?: string;
@@ -3341,20 +3375,6 @@ export interface components {
             node_name?: string;
             development_instance_count?: number;
             already_exists?: boolean;
-        };
-        FirewallRule: {
-            id?: number;
-            node_id?: number;
-            node?: string;
-            name?: string;
-            action?: string;
-            source?: string;
-            protocol?: string;
-            port?: string;
-            status?: string;
-            backend_status?: string | null;
-            failed_step?: string | null;
-            error_code?: string | null;
         };
         NodeMetrics: {
             cores?: number[];
@@ -6109,6 +6129,38 @@ export interface operations {
             };
             /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "firewall-fleet-list": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["FirewallRule"][];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
