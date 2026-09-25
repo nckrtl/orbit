@@ -27,6 +27,12 @@ use SensitiveParameter;
 final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManager
 {
     /** Reads a container's last lines with standard error merged into standard output, in order. */
+    /**
+     * Reads a unit's last entries newest first, as `journalctl --output short-iso --utc` prints them, in
+     * UTC as the Node agent writes live lines (ADR 0153), and stops after a number of bytes.
+     */
+    public const string JournalLogsScript = 'journalctl --unit "$1" --lines "$2" --reverse --no-pager --output short-iso --utc | head -c "$3"';
+
     public const string DockerLogsScript = 'exec docker container logs --tail "$1" "$2" 2>&1';
 
     private ProcessRuntimeLease $lease;
@@ -371,18 +377,16 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
         }
 
         $arguments = match ($process->runtime) {
+            // Newest entry first, stopped after the byte limit, so the Node does bounded work.
             ProcessRuntime::Systemd => [
                 'sudo',
-                'journalctl',
-                '--unit',
+                'sh',
+                '-c',
+                self::JournalLogsScript,
+                'orbit-process-logs',
                 $this->systemd->unitName($process),
-                '--lines',
                 (string) $lines,
-                '--no-pager',
-                '--output',
-                'short-iso',
-                // UTC, as the Node agent writes the live lines, so both reads give the same text (ADR 0153).
-                '--utc',
+                (string) LogReadLimit::Bytes,
             ],
             // Standard output and standard error in one stream, in the order the container wrote
             // them, as the Node agent streams them live (ADR 0153).
@@ -397,13 +401,17 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
             ],
         };
 
-        return LogReadLimit::wholeLines($this->executeSuccessfully(
+        $output = $this->executeSuccessfully(
             $process,
             $arguments,
             'logs',
             'process.logs_failed',
             maxOutputBytes: LogReadLimit::Bytes,
-        )->stdout);
+        )->stdout;
+
+        return $process->runtime === ProcessRuntime::Systemd
+            ? LogReadLimit::journalInTimeOrder($output)
+            : LogReadLimit::wholeLines($output);
     }
 
     public function dockerSpecHash(#[SensitiveParameter] Process $process): string

@@ -25,4 +25,20 @@ describe(LogReadLimit::class, function (): void {
     it('returns nothing when one line fills the whole limit', function (): void {
         expect(LogReadLimit::wholeLines(str_repeat('z', LogReadLimit::Bytes)))->toBe('');
     });
+
+    it('puts journal entries read newest first back in time order with their continuation lines', function (): void {
+        $reversed = "T3 c: three\nT2 b: first\n      second\n      third\nT1 a: one\n";
+
+        expect(LogReadLimit::journalInTimeOrder($reversed))->toBe("T1 a: one\nT2 b: first\n      second\n      third\nT3 c: three\n")
+            ->and(LogReadLimit::journalInTimeOrder(''))->toBe('');
+    });
+
+    it('drops the oldest entry and a cut line when the byte limit stopped the read', function (): void {
+        $newest = "T9 n: newest\n";
+        $huge = 'T1 big: 0'."\n".implode('', array_map(static fn (int $i): string => "        {$i}\n", range(1, 600_000)));
+        $capped = substr($newest.$huge, 0, LogReadLimit::Bytes);
+
+        expect(LogReadLimit::journalInTimeOrder($capped))->toBe($newest)
+            ->and(LogReadLimit::journalInTimeOrder("T2 b: two\nT1 a: o"))->toBe("T2 b: two\n");
+    });
 });

@@ -104,7 +104,11 @@ Each record has one source, the same one that its one-shot read uses.
 | systemd Process | The journal entries of `orbit-process-{id}-{name}.service`, and systemd's own messages about that unit | `2026-09-25T10:15:02+00:00 host name[pid]: message`, as `journalctl --output short-iso --utc` prints it |
 | Docker Process | The output of container `orbit-process-{id}-{name}` | Each line of standard output and standard error, in the order the container wrote them |
 
-The agent follows a daily log file to the next day's file. When an earlier file becomes the newest again, it continues where it left that file, so no line is sent twice. It starts from the beginning of a file that was truncated. Journal lines match the one-shot read over SSH, which uses `journalctl --output short-iso --utc`. The agent reads at most 4 MiB of one journal message, as much as a one-shot read returns; a longer message is cut there and ends with the line `[orbit] message cut at 4 MiB`. The one-shot read of a Docker Process also returns both streams in one, in the same order.
+The agent follows a daily log file to the next day's file. When an earlier file becomes the newest again, it continues where it left that file, so no line is sent twice. It starts from the beginning of a file that was truncated.
+
+Journal lines match the one-shot read over SSH, which uses `journalctl --output short-iso --utc`. The agent makes at most 256 KiB of lines from one journal entry, one stream's queue, so a huge message cannot exhaust its memory. The lines of a longer entry match the one-shot read up to that point, then end with the line `[orbit] message cut at 256 KiB`; a follow that switches between the reads there prints `[orbit] lines may be missing`.
+
+The one-shot read of a systemd Process reads the journal newest entry first and stops after 4 MiB, because `journalctl --lines` counts entries and one entry can hold millions of lines. The one-shot read of a Docker Process also returns both streams in one, in the same order.
 
 The agent refuses a log file that `root` owns, a link at `storage/logs` or at the log file, and a container without the labels `orbit.managed=true` and `orbit.process.id={id}`. The stream then ends with `source_unavailable`.
 

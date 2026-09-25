@@ -26,4 +26,37 @@ final class LogReadLimit
 
         return $newline === false ? '' : substr($output, $newline + 1);
     }
+
+    /**
+     * Journal output read newest entry first and cut at `Bytes`, put back in time order. Reading
+     * backwards lets the Node stop after `Bytes`, because `journalctl --lines` counts entries, and
+     * one entry can have millions of lines. A line that starts with a space continues the entry
+     * above it. The oldest entry may have lost lines to the cut, so a cut output drops it, and a
+     * line without its newline is dropped too.
+     */
+    public static function journalInTimeOrder(string $reversed): string
+    {
+        $cut = strlen($reversed) >= self::Bytes;
+        $lines = explode("\n", $reversed);
+        // The part after the last newline is empty, or a line the cut ended early.
+        array_pop($lines);
+
+        $entries = [];
+
+        foreach ($lines as $line) {
+            if ($line !== '' && $line[0] === ' ' && $entries !== []) {
+                $entries[count($entries) - 1][] = $line;
+            } else {
+                $entries[] = [$line];
+            }
+        }
+
+        if ($cut) {
+            array_pop($entries);
+        }
+
+        $ordered = array_merge(...array_reverse($entries));
+
+        return $ordered === [] ? '' : implode("\n", $ordered)."\n";
+    }
 }

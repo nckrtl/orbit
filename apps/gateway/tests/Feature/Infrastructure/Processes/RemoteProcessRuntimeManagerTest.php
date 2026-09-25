@@ -95,7 +95,7 @@ it('installs and manages a systemd process through fixed SSH argv', function ():
         process_runtime_result(),
         process_runtime_result(),
         process_runtime_result(stdout: $ownedUnit),
-        process_runtime_result(stdout: "line one\nline two\n"),
+        process_runtime_result(stdout: "line two\nline one\n"),
         process_runtime_result(),
         process_runtime_result(stdout: $ownedUnit),
         process_runtime_result(),
@@ -137,7 +137,7 @@ it('installs and manages a systemd process through fixed SSH argv', function ():
             ['sudo', 'systemctl', 'disable', '--now', $unit],
             ['sudo', 'test', '-e', $path],
             ['sudo', 'cat', '--', $path],
-            ['sudo', 'journalctl', '--unit', $unit, '--lines', '50', '--no-pager', '--output', 'short-iso', '--utc'],
+            ['sudo', 'sh', '-c', RemoteProcessRuntimeManager::JournalLogsScript, 'orbit-process-logs', $unit, '50', (string) LogReadLimit::Bytes],
             ['sudo', 'test', '-e', $path],
             ['sudo', 'cat', '--', $path],
             ['sudo', 'systemctl', 'disable', '--now', $unit],
@@ -1528,7 +1528,7 @@ it('reads logs without the ownership check when a fresh agent view lists the exa
 
     expect($this->manager->logs($process, 20))->toBe("line one\n")
         ->and($this->ssh->commands)->toHaveCount(1)
-        ->and($this->ssh->commands[0]->arguments[1])->toBe('journalctl');
+        ->and($this->ssh->commands[0]->arguments[3])->toBe(RemoteProcessRuntimeManager::JournalLogsScript);
 });
 
 it('keeps the ownership check before logs when the agent view does not list the unit', function (string $case): void {

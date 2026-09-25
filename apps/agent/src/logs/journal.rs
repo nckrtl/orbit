@@ -20,15 +20,18 @@ pub const RESCAN_EVERY: u32 = 4;
 pub const MAX_NEW_ENTRIES: u64 = 10_000;
 /// Formatted bytes one poll reads at most; the rest is counted as dropped. The rates allow far less.
 pub const MAX_POLL_BYTES: usize = 512 * 1024;
-/// The most bytes of one message the agent reads, the same as the one-shot read over SSH returns. A
-/// longer message is cut there and ends with a line `[orbit] message cut at 4 MiB`.
-pub const MAX_MESSAGE_BYTES: usize = 4 * 1024 * 1024;
-pub const MESSAGE_CUT: &str = "[orbit] message cut at 4 MiB";
+/// The most bytes of one message the agent reads, and the most bytes of lines it makes from one
+/// entry: one stream queue. A stream's rate lets no more through at once, and the bound keeps a huge
+/// message of short lines from using more memory than that. The lines of a longer entry are cut
+/// there and end with the line `[orbit] message cut at 256 KiB`.
+pub const MAX_MESSAGE_BYTES: usize = 256 * 1024;
+pub const MAX_ENTRY_TEXT_BYTES: usize = 256 * 1024;
+pub const MESSAGE_CUT: &str = "[orbit] message cut at 256 KiB";
 const MAX_SMALL_FIELD: usize = 256;
 const MAX_ENTRY_ITEMS: u64 = 4_096;
 const MAX_CHAIN: u64 = 1 << 20;
-const MAX_COMPRESSED_READ: u64 = 4 * 1024 * 1024;
-const MAX_DECOMPRESSED: usize = 16 * 1024 * 1024;
+const MAX_COMPRESSED_READ: u64 = 1024 * 1024;
+const MAX_DECOMPRESSED: usize = 1024 * 1024;
 pub const UNREADABLE: &str = "[orbit] entry not readable";
 
 pub const SIGNATURE: &[u8; 8] = b"LPKSHHRH";
@@ -761,12 +764,24 @@ pub fn format_entry(entry: &Entry, _unit: &str) -> Vec<String> {
     };
     let message = message.strip_suffix('\n').unwrap_or(&message);
     let indent = " ".repeat(prefix.chars().count());
-    let mut lines = message.split('\n');
-    let first = format!("{prefix}{}", lines.next().unwrap_or_default());
-    let cut = entry.message_cut.then_some(MESSAGE_CUT);
-    std::iter::once(first)
-        .chain(lines.chain(cut).map(|line| format!("{indent}{line}")))
-        .collect()
+    // Lines are made one at a time and stop at the entry budget, so their memory stays bounded.
+    let mut out = Vec::new();
+    let mut used = 0;
+    let mut cut = entry.message_cut;
+    for (index, line) in message.split('\n').enumerate() {
+        let lead = if index == 0 { &prefix } else { &indent };
+        let size = lead.len() + line.len();
+        if index > 0 && used + size > MAX_ENTRY_TEXT_BYTES {
+            cut = true;
+            break;
+        }
+        used += size;
+        out.push(format!("{lead}{line}"));
+    }
+    if cut {
+        out.push(format!("{indent}{MESSAGE_CUT}"));
+    }
+    out
 }
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -1447,7 +1462,7 @@ mod tests {
     }
 
     #[test]
-    fn a_message_over_4_mib_is_cut_there_and_marked() {
+    fn a_message_over_256_kib_is_cut_there_and_marked() {
         let dir = TempDir::new();
         let mut w = Writer::new(Options::default());
         let message: Vec<u8> = (0..5000)
@@ -1467,6 +1482,53 @@ mod tests {
         let lines = tail.start(100_000);
         assert_eq!(lines.last().unwrap().trim_start(), MESSAGE_CUT);
         assert!(lines.len() < 5000);
+    }
+
+    /// A 4 MiB message of short lines once made two million strings and ran the agent out of memory.
+    #[test]
+    fn a_huge_message_of_short_lines_gives_at_most_256_kib_of_lines() {
+        let message: Vec<u8> = (0..1_000_000)
+            .flat_map(|i| format!("{i}\n").into_bytes())
+            .collect();
+        let mut entry = Entry {
+            realtime: T0,
+            message: Some(message),
+            identifier: Some(b"big".to_vec()),
+            hostname: Some(b"orbit-e2e-app-dev".to_vec()),
+            pid: Some(b"7".to_vec()),
+            ..Entry::default()
+        };
+        let lines = format_entry(&entry, UNIT);
+        let bytes: usize = lines.iter().map(String::len).sum();
+        assert!(bytes <= MAX_ENTRY_TEXT_BYTES + 100, "{bytes}");
+        assert!(lines.len() < 10_000, "{}", lines.len());
+        assert_eq!(lines.last().unwrap().trim_start(), MESSAGE_CUT);
+        // The lines before the cut are the ones journalctl prints.
+        let prefix = format!("{} orbit-e2e-app-dev big[7]: ", format_realtime(T0));
+        assert_eq!(lines[0], format!("{prefix}0"));
+        assert_eq!(lines[1], format!("{}1", " ".repeat(prefix.len())));
+        // Read from a journal file, the message is cut at 256 KiB before it is formatted.
+        let dir = TempDir::new();
+        let mut w = Writer::new(Options::default());
+        let big: Vec<u8> = (0..1_000_000)
+            .flat_map(|i| format!("{i}\n").into_bytes())
+            .collect();
+        w.append(
+            T0,
+            &[
+                ("_SYSTEMD_UNIT", UNIT.as_bytes()),
+                ("_PID", b"7"),
+                ("SYSLOG_IDENTIFIER", b"big"),
+                ("MESSAGE", &big),
+            ],
+        );
+        w.write(&dir.0.join("system.journal"));
+        let read = JournalTail::new(vec![dir.0.clone()], UNIT).start(1000);
+        let bytes: usize = read.iter().map(String::len).sum();
+        assert!(bytes <= MAX_ENTRY_TEXT_BYTES + 100, "{bytes}");
+        assert_eq!(read.last().unwrap().trim_start(), MESSAGE_CUT);
+        entry.message = None;
+        assert!(format_entry(&entry, UNIT).is_empty());
     }
 
     #[test]
