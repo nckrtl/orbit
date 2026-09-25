@@ -4,12 +4,15 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Processes;
 
+use App\Domain\Shared\ResourceOperationException;
 use Closure;
-use RuntimeException;
+use Throwable;
 
 final class CommandDeadline
 {
     private ?float $expiresAt = null;
+
+    private float $seconds = 0.0;
 
     /** @var Closure(): float */
     private readonly Closure $clock;
@@ -22,6 +25,7 @@ final class CommandDeadline
 
     public function start(float $seconds): void
     {
+        $this->seconds = $seconds;
         $this->expiresAt = ($this->clock)() + $seconds;
     }
 
@@ -39,9 +43,19 @@ final class CommandDeadline
         $remaining = $this->expiresAt - ($this->clock)();
 
         if ($remaining <= 0.0) {
-            throw new RuntimeException('The 900-second API command deadline was exceeded.');
+            throw $this->exceeded();
         }
 
         return min($localTimeout, $remaining);
+    }
+
+    public function exceeded(?Throwable $previous = null): ResourceOperationException
+    {
+        return new ResourceOperationException(
+            'command.deadline_exceeded',
+            sprintf('The %d-second API command deadline was exceeded.', (int) round($this->seconds)),
+            504,
+            $previous,
+        );
     }
 }

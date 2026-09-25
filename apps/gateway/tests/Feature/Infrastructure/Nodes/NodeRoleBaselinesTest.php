@@ -21,6 +21,7 @@ use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Metrics\MetricsGatewayResolver;
 use App\Domain\Metrics\MetricsPublicationManager;
 use App\Domain\Metrics\MetricsPublicationReport;
+use App\Domain\Metrics\MetricsReconcileDeferral;
 use App\Domain\Metrics\MetricsRuntimeLifecycle;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
@@ -1403,3 +1404,52 @@ function baseline_known_hosts(): KnownHostsStore
         public function put(string $host, int $port, HostKey $key): void {}
     };
 }
+
+it('holds back fleet reconciliation during a deferral and reports that one was requested', function (): void {
+    $events = [];
+    $metricsFleet = Mockery::mock(MetricsFleetReconciler::class);
+    $metricsFleet->shouldReceive('reconcile')->once();
+    $deferral = new MetricsReconcileDeferral;
+    $dispatcher = new NativeRoleBaselineConverger(
+        gateway_role_baseline($events),
+        new VpnRoleBaseline(
+            new NodeRolePrerequisiteCommandFactory,
+            baseline_ssh($events),
+            baseline_keys(),
+            baseline_known_hosts(),
+            baseline_firewall($events),
+            baseline_account_resolver(),
+        ),
+        app_dev_role_baseline($events),
+        app_prod_role_baseline($events),
+        new MetricsRoleBaseline(
+            Mockery::mock(MetricsRuntimeLifecycle::class)->shouldIgnoreMissing(),
+            Mockery::mock(MetricsExporterLifecycle::class)->shouldIgnoreMissing(),
+            Mockery::mock(MetricsPublicationManager::class)->shouldIgnoreMissing(),
+            new MetricsGatewayResolver,
+            new MetricsPublicationReport,
+            Mockery::mock(MetricsCadvisorLifecycle::class)->shouldIgnoreMissing(),
+        ),
+        $metricsFleet,
+        new NodeRoleOperatingSystemGuard(
+            baseline_guard_ssh($events),
+            baseline_keys(),
+            baseline_known_hosts(),
+        ),
+        metricsDeferral: $deferral,
+    );
+
+    [$appDevNode, $appDevAssignment] = role_baseline_models(RoleName::AppDev, 'deferred-app-dev');
+    [$appProdNode, $appProdAssignment] = role_baseline_models(RoleName::AppProd, 'deferred-app-prod');
+
+    $requested = $deferral->during(function () use ($dispatcher, $appDevNode, $appDevAssignment, $appProdNode, $appProdAssignment): void {
+        $dispatcher->removeUnreachable($appDevNode, $appDevAssignment);
+        $dispatcher->removeUnreachable($appProdNode, $appProdAssignment);
+    });
+
+    expect($requested)->toBeTrue()
+        ->and($deferral->during(static function (): void {}))->toBeFalse();
+
+    // Outside a deferral, each change reconciles again.
+    $dispatcher->removeUnreachable($appDevNode, $appDevAssignment);
+});

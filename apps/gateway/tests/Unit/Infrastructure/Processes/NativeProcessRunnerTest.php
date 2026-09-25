@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\NativeProcessRunner;
 use App\Infrastructure\Processes\ProcessCancelledException;
@@ -360,6 +362,27 @@ it('terminates its complete process group when the timeout expires', function ()
     }
 
     expect(is_int($childPid) && @posix_kill($childPid, 0))->toBeFalse();
+});
+
+it('reports the API command deadline when it cut a process short', function (): void {
+    $deadline = new CommandDeadline;
+    $deadline->start(0.2);
+    $runner = new NativeProcessRunner(deadline: $deadline);
+
+    expect(fn () => $runner->run(new ProcessInvocation(arguments: ['sleep', '5'], timeout: 60.0)))
+        ->toThrow(function (ResourceOperationException $exception): void {
+            expect($exception->errorCode)->toBe('command.deadline_exceeded')
+                ->and($exception->status)->toBe(504)
+                ->and($exception->getPrevious())->toBeInstanceOf(ProcessTimedOutException::class);
+        });
+});
+
+it('keeps its own timeout error when the process timeout is shorter than the deadline', function (): void {
+    $deadline = new CommandDeadline;
+    $deadline->start(60.0);
+
+    expect(fn () => new NativeProcessRunner(deadline: $deadline)->run(new ProcessInvocation(arguments: ['sleep', '5'], timeout: 0.2)))
+        ->toThrow(ProcessTimedOutException::class);
 });
 
 function native_process_group_ignoring_term_child(string $ready, string $later): array
