@@ -23,8 +23,6 @@ interface RouteDomainProjector
 
     public function prepareIngressCertificate(Route $candidate): void;
 
-    public function stageIngressCaddy(Route $candidate): void;
-
     public function prepareIngressFirewall(Route $candidate): void;
 
     public function verifyPublicEdge(Route $candidate): void;

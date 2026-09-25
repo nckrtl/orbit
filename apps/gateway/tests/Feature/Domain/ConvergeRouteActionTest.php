@@ -1378,7 +1378,6 @@ it('prepares public Ingress after Router Caddy and activates the handler only af
             'workload-verify',
             'router-caddy',
             'ingress-certificate',
-            'ingress-caddy',
             'public-edge-verified',
             'environment:candidate',
             'dns-publication',
@@ -1418,7 +1417,6 @@ it('rolls back the public edge before cutover and keeps the handler inactive', f
         ->toBeFalse();
 })->with([
     'ingress certificate' => ['ingress-certificate'],
-    'ingress Caddy' => ['ingress-caddy'],
     'public edge' => ['public-edge-verified'],
 ]);
 
@@ -2066,11 +2064,6 @@ final class RouteDomainChangeProjectorFake implements RouteDomainProjector
     public function prepareIngressCertificate(Route $candidate): void
     {
         $this->event('ingress-certificate');
-    }
-
-    public function stageIngressCaddy(Route $candidate): void
-    {
-        $this->event('ingress-caddy');
     }
 
     public function prepareIngressFirewall(Route $candidate): void

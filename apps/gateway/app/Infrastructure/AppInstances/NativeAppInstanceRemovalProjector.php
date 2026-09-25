@@ -106,7 +106,7 @@ final readonly class NativeAppInstanceRemovalProjector implements AppInstanceRem
             && ($removedTarget
             || $this->certificates->appInstanceCertificateExists($appInstance))
         ) {
-            $this->caddy->converge($this->servingNode($route, $appInstance));
+            $this->caddy->build($this->servingNode($route, $appInstance));
             $this->dns->converge();
         }
 
@@ -127,7 +127,7 @@ final readonly class NativeAppInstanceRemovalProjector implements AppInstanceRem
         } else {
             $this->php->converge($appInstance->node);
         }
-        $this->caddy->converge($appInstance->node);
+        $this->caddy->build($appInstance->node);
         $this->certificates->removeAppInstance($appInstance);
         $this->metrics?->reconcile();
     }
@@ -154,7 +154,7 @@ final readonly class NativeAppInstanceRemovalProjector implements AppInstanceRem
 
         foreach ($nodes as $node) {
             /** @var Node $node */
-            $this->caddy->converge($node);
+            $this->caddy->build($node);
         }
 
         $this->certificates->removeAppInstance($departing);
@@ -183,10 +183,10 @@ final readonly class NativeAppInstanceRemovalProjector implements AppInstanceRem
             ->filter(static fn (?Node $node): bool => $node instanceof Node && ! $node->is($appInstance->node))
             ->unique(static fn (Node $node): int => $node->id)
             ->values();
-        $this->caddy->converge($appInstance->node);
+        $this->caddy->build($appInstance->node);
 
         foreach ($routers as $serving) {
-            $this->caddy->converge($serving);
+            $this->caddy->build($serving);
         }
 
         $this->certificates->removeAppInstance($appInstance);
@@ -236,7 +236,7 @@ final readonly class NativeAppInstanceRemovalProjector implements AppInstanceRem
         $ingress = $route->cluster?->ingressAssignment?->node;
 
         if ($ingress instanceof Node) {
-            $this->caddy->converge($ingress);
+            $this->caddy->build($ingress);
         }
     }
 

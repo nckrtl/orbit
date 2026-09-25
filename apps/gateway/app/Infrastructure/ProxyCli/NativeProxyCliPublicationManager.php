@@ -9,8 +9,9 @@ use App\Domain\Certificates\GatewayCertificateIssuer;
 use App\Domain\ProxyCli\ProxyCliProcess;
 use App\Domain\ProxyCli\ProxyCliPublicationManager;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\Caddy\Build\NodeCaddyListenerResolver;
-use App\Infrastructure\Caddy\CaddyFragmentListeners;
+use App\Infrastructure\Caddy\Build\CaddySiteCertificates;
+use App\Infrastructure\Caddy\Build\NodeCaddyBuildException;
+use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
 use App\Infrastructure\Nodes\CaddyPackageSourceProgram;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\RemoteCommand;
@@ -25,14 +26,13 @@ final readonly class NativeProxyCliPublicationManager implements ProxyCliPublica
     public function __construct(
         private GatewayCertificateIssuer $certificates,
         private ProxyCliCertificatePublisher $certificatePublisher,
-        private ProxyCliCaddyPublisher $caddy,
-        private ProxyCliCaddySiteRenderer $site,
+        private NodeCaddyBuilds $builds,
         private PrivateDnsManager $dns,
         private SshExecutor $ssh,
         private SshKeyProvider $keys,
         private KnownHostsStore $knownHosts,
         private ?ProxyCliRouteTakeover $takeover = null,
-        private ?NodeCaddyListenerResolver $listeners = null,
+        private ?CaddySiteCertificates $siteCertificates = null,
     ) {}
 
     public function converge(Node $node, int $port = ProxyCliProcess::PORT, ?Route $takeover = null): void
@@ -49,29 +49,17 @@ final readonly class NativeProxyCliPublicationManager implements ProxyCliPublica
             'proxycli.certificate_publication_failed',
             "proxycli certificate publication failed on node [{$node->name}].",
         );
-        // Read inside the publication, so a takeover's withdrawn Route no longer counts.
-        $publish = fn (?string $appDevFragment = null) => $this->run(
-            $node,
-            $address,
-            $this->caddy->command(
-                $this->site->render($port),
-                (string) $port,
-                ($this->listeners ?? app(NodeCaddyListenerResolver::class))->fragments($node),
-                $appDevFragment,
-            ),
-            'proxycli.caddy_publication_failed',
-            "proxycli Caddy publication failed on node [{$node->name}].",
-        );
+        $this->certificateRecords()->record($node->id, CaddySiteCertificates::ProxyCli);
 
         if (! $takeover instanceof Route) {
-            $publish();
+            $this->build($node);
             $this->dns->converge($node);
 
             return;
         }
 
         $routes = $this->takeover ?? app(ProxyCliRouteTakeover::class);
-        $routes->publish($takeover, $node, $publish, $port);
+        $routes->publish($takeover, $node, fn () => $this->build($node), $port);
         $this->dns->converge($node);
         $routes->remove($takeover);
     }
@@ -79,9 +67,32 @@ final readonly class NativeProxyCliPublicationManager implements ProxyCliPublica
     public function remove(Node $node): void
     {
         $address = $this->address($node);
-        $this->ssh->execute($this->connection($node, $address), $this->caddy->removeCommand());
+        // The extension is already disabled, so the build withdraws the collector site before its certificate.
+        $this->build($node);
         $this->ssh->execute($this->connection($node, $address), $this->certificatePublisher->removeCommand());
+        $this->certificateRecords()->forget($node->id, CaddySiteCertificates::ProxyCli);
         $this->dns->converge();
+    }
+
+    private function certificateRecords(): CaddySiteCertificates
+    {
+        return $this->siteCertificates ?? new CaddySiteCertificates;
+    }
+
+    /** The build renders the collector site from the stored extension state. */
+    private function build(Node $node): void
+    {
+        try {
+            $this->builds->build($node);
+        } catch (NodeCaddyBuildException $exception) {
+            throw new ResourceOperationException(
+                'proxycli.caddy_publication_failed',
+                $exception->getMessage(),
+                422,
+                $exception,
+                $exception->details(),
+            );
+        }
     }
 
     private function ensureCaddy(Node $node, string $address): void
@@ -108,7 +119,7 @@ final readonly class NativeProxyCliPublicationManager implements ProxyCliPublica
         $result = $this->ssh->execute($this->connection($node, $address), $command);
 
         if (! $result->succeeded()) {
-            throw new ResourceOperationException($errorCode, CaddyFragmentListeners::refusal($result->stderr) ?? $message, 422);
+            throw new ResourceOperationException($errorCode, $message, 422);
         }
     }
 

@@ -17,6 +17,7 @@ use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AppDev\AppDevSshExecutor;
+use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
 use App\Infrastructure\Doctor\NativeAppStateInspector;
 use App\Infrastructure\Doctor\NativeInstanceStateInspector;
 use App\Infrastructure\Doctor\ProductionInstanceInspectionExpectationFactory;
@@ -596,6 +597,33 @@ it('maps each production projection without retaining protected diagnostics', fu
     'environment' => ["1\n1\n1\n0\n1\n1\n", 'environmentProjectionMatches'],
     'PHP-FPM' => ["1\n1\n1\n1\n0\n1\n", 'phpFpmProjectionMatches'],
     'Caddy' => ["1\n1\n1\n1\n1\n0\n", 'caddyProjectionMatches'],
+]);
+
+it('compares the live Caddy configuration of either layout with the Instance Node render', function (string $layout, string $expected): void {
+    $sandbox = sys_get_temp_dir().'/orbit-doctor-caddy-'.bin2hex(random_bytes(6));
+    $live = $layout === 'fragment' ? "{$sandbox}/v1/Caddyfile" : "{$sandbox}/v2/Caddyfile";
+    $program = application_production_observation_program('caddy_matches', "readlink() { printf '%s\\n' '{$live}'; }");
+    $instance = AppInstance::query()->latest('id')->firstOrFail();
+    $files = new Filesystem;
+    $files->ensureDirectoryExists(dirname($live).'/fragments');
+
+    try {
+        if ($layout === 'fragment') {
+            file_put_contents($live, "import {$sandbox}/v1/fragments/*.caddy\n");
+            file_put_contents("{$sandbox}/v1/fragments/app-dev.caddy", app(ProductionInstanceInspectionExpectationFactory::class)->make($instance)->caddy);
+        } else {
+            $render = app(NodeCaddyfileRenderer::class)->render($instance->node)->content;
+            file_put_contents($live, $layout === 'build drift' ? $render."# hand edit\n" : $render);
+        }
+
+        expect(application_run(['bash'], $program)->stdout)->toBe("{$expected}\n");
+    } finally {
+        $files->deleteDirectory($sandbox);
+    }
+})->with([
+    'a Node Caddy build that matches a fresh render' => ['build', '1'],
+    'a Node Caddy build edited after its push' => ['build drift', '0'],
+    'the fragment layout of a Node no build replaced yet' => ['fragment', '1'],
 ]);
 
 it('keeps an unavailable production runtime observation distinct from drift', function (): void {

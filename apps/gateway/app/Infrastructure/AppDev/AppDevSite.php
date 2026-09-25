@@ -39,6 +39,11 @@ final readonly class AppDevSite
          * Router selection names its Node.
          */
         public bool $secondary = false,
+        /**
+         * A proxied upstream answers with a public certificate, so the site verifies it against the Node's
+         * system roots, which also hold the Orbit root, and not against the Orbit root alone.
+         */
+        public bool $upstreamSystemRoots = false,
     ) {}
 
     public function asSecondary(): self

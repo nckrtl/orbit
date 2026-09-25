@@ -5,14 +5,21 @@ declare(strict_types=1);
 use App\Domain\AgentView\AgentViewConverger;
 use App\Domain\Certificates\GatewayCertificateIssuer;
 use App\Domain\Certificates\GatewayCertificatePaths;
+use App\Domain\Gateway\GatewayServingHost;
 use App\Domain\Hibernation\RuntimeHibernatorConverger;
 use App\Domain\Nodes\NodeProvisioningException;
+use App\Domain\Nodes\RoleName;
+use App\Domain\Shared\LifecycleStatus;
+use App\Infrastructure\Caddy\Build\NodeCaddyBuilder;
+use App\Infrastructure\Caddy\Build\NodeCaddyBuildLock;
+use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
+use App\Infrastructure\Caddy\Build\NodeCaddyTransport;
+use App\Infrastructure\Caddy\CaddyPublicationLock;
 use App\Infrastructure\Files\ProtectedFileWriter;
 use App\Infrastructure\Gateway\GatewayCaddyConfigRenderer;
 use App\Infrastructure\Gateway\GatewayCheckoutAccessConverger;
 use App\Infrastructure\Gateway\GatewayFpmConfigRenderer;
 use App\Infrastructure\Gateway\GatewayWebDirectoryConverger;
-use App\Infrastructure\Gateway\NativeGatewayCaddyConverger;
 use App\Infrastructure\Gateway\NativeGatewayCaddyInstaller;
 use App\Infrastructure\Gateway\NativeGatewayCertificatePublisher;
 use App\Infrastructure\Gateway\NativeGatewayFpmConverger;
@@ -21,6 +28,12 @@ use App\Infrastructure\Nodes\CaddyPackageSourceProgram;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
+use App\Infrastructure\Ssh\KnownHostsStore;
+use App\Infrastructure\Ssh\RemoteCommand;
+use App\Infrastructure\Ssh\SshConnection;
+use App\Infrastructure\Ssh\SshExecutor;
+use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Models\Node;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
@@ -43,7 +56,7 @@ it('repairs restrictive public permissions without exposing private files or sym
     chmod("{$root}/bin/chown", 0o700);
 
     try {
-        $converger->converge('gateway.orbit', '10.44.0.1');
+        $converger->converge(gateway_web_node(), 'gateway.orbit', '10.44.0.1');
         $publication = Collection::make($processes->calls)->first(
             static fn (ProcessInvocation $invocation): bool => $invocation->arguments === [
                 'sudo', 'bash', '-seu', '--', '/home/orbit/orbit-gateway/public',
@@ -87,7 +100,7 @@ it('publishes complete validated FPM Caddy and certificate configurations throug
     [$converger, $processes, $issuer, $orbitHome, $hibernator, $agentView] = gateway_web_converger();
 
     try {
-        $converger->converge('gateway.orbit', '10.44.0.1');
+        $converger->converge(gateway_web_node(), 'gateway.orbit', '10.44.0.1');
         $calls = Collection::make($processes->calls);
         $commands = $calls->map(static fn (ProcessInvocation $invocation): array => $invocation->arguments);
         $fpmStage = $calls->first(
@@ -118,34 +131,19 @@ it('publishes complete validated FPM Caddy and certificate configurations throug
                 '/etc/php/8.5/fpm/pool.d/orbit-gateway.conf',
             ],
         );
-        $caddyValidationIndex = $commands->search(
-            static fn (array $arguments): bool => (
-                $arguments[0] === 'sudo'
-                && $arguments[1] === 'caddy'
-                && $arguments[2] === 'validate'
-                && str_ends_with($arguments[4] ?? '', '/Caddyfile')
-                && str_contains($arguments[4], '/etc/caddy/orbit-versions/')
-            ),
-        );
-        $caddyPublishIndex = $commands->search(
-            static fn (array $arguments): bool => (
-                array_slice(array: $arguments, offset: 0, length: 4) === ['sudo', 'mv', '-Tf', '--']
-                && end($arguments) === '/etc/caddy/Caddyfile'
-            ),
-        );
-        $certificatePublish = $commands->first(
+        $certificatePublishIndex = $commands->search(
             static fn (array $arguments): bool => (
                 array_slice(array: $arguments, offset: 0, length: 4) === ['sudo', 'mv', '-Tf', '--']
                 && end($arguments) === '/etc/caddy/orbit-cert-current'
             ),
         );
-        $caddyStage = $calls->first(
-            static fn (ProcessInvocation $invocation): bool => (
-                $invocation->arguments[0] === 'sudo'
-                && $invocation->arguments[1] === 'bash'
-                && str_contains($invocation->input ?? '', 'orbit-versions')
-            ),
+        $certificateReloadIndex = $calls->search(
+            static fn (ProcessInvocation $invocation): bool => $invocation->arguments === ['sudo', 'bash', '-seu']
+                && str_contains($invocation->input ?? '', 'systemctl reload-or-restart caddy'),
         );
+        $buildIndex = $calls->search(gateway_web_is_build(...));
+        $certificatePublish = $commands->get($certificatePublishIndex);
+        $pushed = gateway_web_pushed($calls->get($buildIndex));
 
         expect($issuer->calls)
             ->toBe([['hostname' => 'gateway.orbit', 'address' => '10.44.0.1']])
@@ -159,8 +157,10 @@ it('publishes complete validated FPM Caddy and certificate configurations throug
                 'php_admin_value[max_execution_time] = 600',
                 'php_admin_value[opcache.validate_timestamps] = 1',
             )
-            ->and(file_get_contents($orbitHome.'/generated/gateway/Caddyfile'))
+            ->and($pushed)
+            ->toStartWith(NodeCaddyfileRenderer::Marker)
             ->toContain(
+                '# orbit: gateway gateway.orbit',
                 'gateway.orbit, 10.44.0.1',
                 'bind 10.44.0.1',
                 'root * /home/orbit/orbit-gateway/public',
@@ -173,9 +173,9 @@ it('publishes complete validated FPM Caddy and certificate configurations throug
                 'root * /home/orbit/web/current',
                 'reverse_proxy https://10.44.0.1',
             )
+            ->and(file_exists($orbitHome.'/generated/gateway/Caddyfile'))
+            ->toBeFalse()
             ->and(fileperms($orbitHome.'/generated/gateway/php-fpm-pool.conf') & 0o777)
-            ->toBe(0o644)
-            ->and(fileperms($orbitHome.'/generated/gateway/Caddyfile') & 0o777)
             ->toBe(0o644)
             ->and(fileperms($orbitHome.'/generated/gateway') & 0o777)
             ->toBe(0o700)
@@ -199,18 +199,22 @@ it('publishes complete validated FPM Caddy and certificate configurations throug
             ->and($fpmValidationIndex)
             ->toBeInt()
             ->toBeLessThan($fpmPublishIndex)
-            ->and($caddyStage?->input)
-            ->toContain(
-                'source_main=$(readlink -f /etc/caddy/Caddyfile)',
-                'previous_fragments=$(dirname "$source_main")/fragments',
-                'orbit-versions',
-                'printf \'import %s/fragments/*.caddy\\n\' "$version_directory" > "$candidate_directory/Caddyfile"',
-            )
-            ->not
-            ->toContain('"$source_main" > "$candidate_directory/Caddyfile"')
-            ->and($caddyValidationIndex)
+            ->and($certificatePublishIndex)
             ->toBeInt()
-            ->toBeLessThan($caddyPublishIndex)
+            ->toBeLessThan($certificateReloadIndex)
+            ->and($certificateReloadIndex)
+            ->toBeLessThan($buildIndex)
+            ->and($fpmPublishIndex)
+            ->toBeLessThan($buildIndex)
+            ->and($calls->get($certificateReloadIndex)->input)
+            ->toStartWith(CaddyPublicationLock::script(CaddyPublicationLock::Path))
+            ->and($calls->filter(gateway_web_is_build(...)))
+            ->toHaveCount(1)
+            ->and($calls->contains(
+                static fn (ProcessInvocation $invocation): bool => str_contains($invocation->input ?? '', 'orbit.d')
+                    || str_contains($invocation->input ?? '', 'fragments/*.caddy'),
+            ))
+            ->toBeFalse()
             ->and($certificatePublish)
             ->toBeArray()
             ->and($commands->contains(
@@ -412,7 +416,7 @@ it('preserves live FPM disk and does not reload when complete effective validati
     [$converger, $processes, , $orbitHome] = gateway_web_converger(failure: 'fpm-validation');
 
     try {
-        expect(fn () => $converger->converge('gateway.orbit', '10.44.0.1'))
+        expect(fn () => $converger->converge(gateway_web_node(), 'gateway.orbit', '10.44.0.1'))
             ->toThrow(function (NodeProvisioningException $exception): void {
                 expect($exception->step)
                     ->toBe('gateway-fpm-validate')
@@ -457,7 +461,7 @@ it('installs Caddy from the pinned source and orders it after WireGuard before a
     [$converger, $processes, , $orbitHome] = gateway_web_converger();
 
     try {
-        $converger->converge('gateway.orbit', '10.44.0.1');
+        $converger->converge(gateway_web_node(), 'gateway.orbit', '10.44.0.1');
         $calls = Collection::make($processes->calls);
         $commands = $calls->map(static fn (ProcessInvocation $invocation): array => $invocation->arguments);
         $installIndex = $commands->search(['sudo', 'bash', '-seu', '--', ...CaddyPackageSourceProgram::arguments()]);
@@ -465,10 +469,11 @@ it('installs Caddy from the pinned source and orders it after WireGuard before a
         $firstCaddyGroupIndex = $commands->search(
             static fn (array $arguments): bool => in_array(needle: 'orbit:caddy', haystack: $arguments, strict: true),
         );
-        $validationIndex = $commands->search(
-            static fn (array $arguments): bool => array_slice(array: $arguments, offset: 0, length: 3) === ['sudo', 'caddy', 'validate'],
+        $reloadIndex = $calls->search(
+            static fn (ProcessInvocation $invocation): bool => $invocation->arguments === ['sudo', 'bash', '-seu']
+                && str_contains($invocation->input ?? '', 'systemctl reload-or-restart caddy'),
         );
-        $reloadIndex = $commands->search(['sudo', 'systemctl', 'reload-or-restart', 'caddy']);
+        $validationIndex = $calls->search(gateway_web_is_build(...));
         $install = $calls->get($installIndex);
         $ordering = $calls->get($orderingIndex);
         $orderingInput = $ordering->input ?? '';
@@ -479,10 +484,10 @@ it('installs Caddy from the pinned source and orders it after WireGuard before a
             ->toBe($installIndex + 1)
             ->and($firstCaddyGroupIndex)
             ->toBeGreaterThan($orderingIndex)
-            ->and($validationIndex)
-            ->toBeGreaterThan($orderingIndex)
             ->and($reloadIndex)
-            ->toBeGreaterThan($validationIndex)
+            ->toBeGreaterThan($orderingIndex)
+            ->and($validationIndex)
+            ->toBeGreaterThan($reloadIndex)
             ->and($commands->filter(
                 static fn (array $arguments): bool => $arguments === ['sudo', 'bash', '-seu', '--', 'caddy', '/etc/systemd/system'],
             ))
@@ -514,10 +519,10 @@ it('repeats the same idempotent install step on every web convergence', function
     [$converger, $processes, , $orbitHome] = gateway_web_converger();
 
     try {
-        $converger->converge('gateway.orbit', '10.44.0.1');
+        $converger->converge(gateway_web_node(), 'gateway.orbit', '10.44.0.1');
         $first = array_slice(array: $processes->calls, offset: 0, length: 3);
         $processes->calls = [];
-        $converger->converge('gateway.orbit', '10.44.0.1');
+        $converger->converge(gateway_web_node(), 'gateway.orbit', '10.44.0.1');
         $second = array_slice(array: $processes->calls, offset: 0, length: 3);
 
         expect($second)
@@ -537,7 +542,7 @@ it('stops before any Caddy or certificate step when Caddy cannot be installed', 
     [$converger, $processes, $issuer, $orbitHome, $hibernator, $agentView] = gateway_web_converger(failure: 'caddy-install');
 
     try {
-        expect(fn () => $converger->converge('gateway.orbit', '10.44.0.1'))
+        expect(fn () => $converger->converge(gateway_web_node(), 'gateway.orbit', '10.44.0.1'))
             ->toThrow(function (NodeProvisioningException $exception): void {
                 expect($exception->step)
                     ->toBe('gateway-caddy-install')
@@ -560,6 +565,8 @@ it('stops before any Caddy or certificate step when Caddy cannot be installed', 
                     || end($arguments) === '/etc/caddy/Caddyfile',
             ))
             ->toBeFalse()
+            ->and(Collection::make($processes->calls)->contains(gateway_web_is_build(...)))
+            ->toBeFalse()
             ->and($issuer->calls)
             ->toBeEmpty()
             ->and($hibernator->calls)
@@ -571,46 +578,38 @@ it('stops before any Caddy or certificate step when Caddy cannot be installed', 
     }
 });
 
-it('preserves the prior aggregate Caddy configuration when staged final validation fails', function (): void {
-    [$converger, $processes, , $orbitHome] = gateway_web_converger(failure: 'caddy-validation');
+it('keeps its error codes and names the build stage and Caddy message when the Node Caddy build fails', function (string $stage, string $step, string $errorCode): void {
+    [$converger, $processes, , $orbitHome, $hibernator] = gateway_web_converger(failure: "caddy-build:{$stage}");
 
     try {
-        expect(fn () => $converger->converge('gateway.orbit', '10.44.0.1'))
-            ->toThrow(function (NodeProvisioningException $exception): void {
+        expect(fn () => $converger->converge(gateway_web_node(), 'gateway.orbit', '10.44.0.1'))
+            ->toThrow(function (NodeProvisioningException $exception) use ($stage, $step, $errorCode): void {
                 expect($exception->step)
-                    ->toBe('gateway-caddy-validate')
+                    ->toBe($step)
                     ->and($exception->errorCode)
-                    ->toBe('gateway.caddy_config_invalid');
+                    ->toBe($errorCode)
+                    ->and($exception->getMessage())
+                    ->toBe("The Caddy build for Node [gateway] failed at stage [{$stage}]: Error: aggregate route conflict");
             });
 
-        $commands = Collection::make($processes->calls)
-            ->map(static fn (ProcessInvocation $invocation): array => $invocation->arguments);
-
-        expect($commands->contains(
-            static fn (array $arguments): bool => (
-                array_slice(array: $arguments, offset: 0, length: 4) === ['sudo', 'mv', '-Tf', '--']
-                && end($arguments) === '/etc/caddy/Caddyfile'
-            ),
-        ))
-            ->toBeFalse()
-            ->and($commands->contains(['sudo', 'systemctl', 'reload-or-restart', 'caddy']))
-            ->toBeFalse()
-            ->and($commands->contains(
-                static fn (array $arguments): bool => $arguments[0] === 'sudo'
-                && $arguments[1] === 'rm'
-                && in_array(needle: '/etc/caddy/Caddyfile', haystack: $arguments, strict: true),
-            ))
-            ->toBeFalse();
+        expect(Collection::make($processes->calls)->filter(gateway_web_is_build(...)))
+            ->toHaveCount(1)
+            ->and($hibernator->calls)
+            ->toBe(0);
     } finally {
         new Filesystem()->deleteDirectory($orbitHome);
     }
-});
+})->with([
+    'validation' => ['validate', 'gateway-caddy-validate', 'gateway.caddy_config_invalid'],
+    'reload' => ['reload', 'gateway-caddy-reload', 'gateway.caddy_start_failed'],
+    'swap' => ['swap', 'gateway-caddy-publish', 'gateway.caddy_config_install_failed'],
+]);
 
 it('does not disturb the published Caddy certificate pair when its atomic link switch fails', function (): void {
     [$converger, $processes, , $orbitHome] = gateway_web_converger(failure: 'certificate-publication');
 
     try {
-        expect(fn () => $converger->converge('gateway.orbit', '10.44.0.1'))
+        expect(fn () => $converger->converge(gateway_web_node(), 'gateway.orbit', '10.44.0.1'))
             ->toThrow(function (NodeProvisioningException $exception): void {
                 expect($exception->step)
                     ->toBe('gateway-certificate-publish')
@@ -629,7 +628,9 @@ it('does not disturb the published Caddy certificate pair when its atomic link s
             ->toBeFalse()
             ->and($commands->contains(['sudo', 'systemctl', 'reload-or-restart', 'php8.5-fpm']))
             ->toBeFalse()
-            ->and($commands->contains(['sudo', 'systemctl', 'reload-or-restart', 'caddy']))
+            ->and(Collection::make($processes->calls)->contains(
+                static fn (ProcessInvocation $invocation): bool => str_contains($invocation->input ?? '', 'systemctl reload-or-restart caddy'),
+            ))
             ->toBeFalse();
     } finally {
         new Filesystem()->deleteDirectory($orbitHome);
@@ -642,7 +643,7 @@ it('rejects a checkout outside the configured Orbit home before certificate or s
     );
 
     try {
-        expect(fn () => $converger->converge('gateway.orbit', '10.44.0.1'))
+        expect(fn () => $converger->converge(gateway_web_node(), 'gateway.orbit', '10.44.0.1'))
             ->toThrow(function (NodeProvisioningException $exception): void {
                 expect($exception->step)
                     ->toBe('gateway-checkout-validate')
@@ -816,13 +817,10 @@ function gateway_web_converger(?string $failure = null, string $checkoutPath = '
                 return new CommandResult(1, '', 'duplicate pool listener', 2, false);
             }
 
-            if (
-                $this->failure === 'caddy-validation'
-                && $arguments[1] === 'caddy'
-                && $arguments[2] === 'validate'
-                && str_contains($arguments[4] ?? '', '/etc/caddy/orbit-versions/')
-            ) {
-                return new CommandResult(1, '', 'aggregate route conflict', 2, false);
+            if (is_string($this->failure) && str_starts_with($this->failure, 'caddy-build:') && gateway_web_is_build($invocation)) {
+                $stage = substr($this->failure, strlen('caddy-build:'));
+
+                return new CommandResult(1, '', "Error: aggregate route conflict\norbit-caddy-build-stage={$stage}\n", 2, false);
             }
 
             if (
@@ -833,11 +831,11 @@ function gateway_web_converger(?string $failure = null, string $checkoutPath = '
                 return new CommandResult(1, '', 'atomic link switch failed', 2, false);
             }
 
-            if ($arguments[1] === 'openssl' && in_array(needle: '-pubout', haystack: $arguments, strict: true)) {
+            if (($arguments[1] ?? null) === 'openssl' && in_array(needle: '-pubout', haystack: $arguments, strict: true)) {
                 return new CommandResult(0, "PUBLIC KEY\n", '', 2, false);
             }
 
-            if ($arguments[1] === 'openssl' && in_array(needle: '-pubkey', haystack: $arguments, strict: true)) {
+            if (($arguments[1] ?? null) === 'openssl' && in_array(needle: '-pubkey', haystack: $arguments, strict: true)) {
                 return new CommandResult(0, "PUBLIC KEY\n", '', 2, false);
             }
 
@@ -845,21 +843,39 @@ function gateway_web_converger(?string $failure = null, string $checkoutPath = '
         }
     };
 
+    config()->set('orbit.gateway_checkout', $checkoutPath);
+    config()->set('orbit.gateway_web', '/home/orbit/web');
+    gateway_web_node();
+
     return [
         new NativeGatewayWebConverger(
             certificates: $issuer,
-            caddyRenderer: new GatewayCaddyConfigRenderer,
             fpmRenderer: new GatewayFpmConfigRenderer,
             files: new ProtectedFileWriter,
             checkout: new GatewayCheckoutAccessConverger($processes, $checkoutPath),
             webDirectory: new GatewayWebDirectoryConverger($processes, '/home/orbit/web'),
             certificatePublisher: new NativeGatewayCertificatePublisher($processes, $orbitHome),
             fpm: new NativeGatewayFpmConverger($processes),
-            caddy: new NativeGatewayCaddyConverger($processes),
+            builds: new NodeCaddyBuilder(
+                app(NodeCaddyfileRenderer::class),
+                new NodeCaddyBuildLock($orbitHome.'/locks/caddy-build'),
+                new NodeCaddyTransport(
+                    $processes,
+                    new class implements SshExecutor
+                    {
+                        public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
+                        {
+                            throw new LogicException('The Gateway Node builds through local sudo.');
+                        }
+                    },
+                    app(SshKeyProvider::class),
+                    app(KnownHostsStore::class),
+                    app(GatewayServingHost::class),
+                ),
+            ),
             caddyInstaller: new NativeGatewayCaddyInstaller($processes),
             orbitHome: $orbitHome,
             checkoutPath: $checkoutPath,
-            webRoot: '/home/orbit/web',
             hibernator: $hibernator = new RecordingRuntimeHibernatorConverger,
             agentView: $agentView = new RecordingAgentViewConverger,
         ),
@@ -869,6 +885,33 @@ function gateway_web_converger(?string $failure = null, string $checkoutPath = '
         $hibernator,
         $agentView,
     ];
+}
+
+function gateway_web_node(): Node
+{
+    $node = Node::query()->firstOrCreate(['name' => 'gateway'], [
+        'status' => LifecycleStatus::Active,
+        'platform' => 'linux',
+        'public_ssh_host' => '192.0.2.1',
+        'user' => 'orbit',
+        'wireguard_ip' => '10.44.0.1',
+    ]);
+    $node->roles()->firstOrCreate(['role' => RoleName::Gateway], ['status' => LifecycleStatus::Active]);
+
+    return $node;
+}
+
+function gateway_web_is_build(ProcessInvocation $invocation): bool
+{
+    return array_slice(array: $invocation->arguments, offset: 0, length: 4) === ['sudo', 'bash', '-seu', '--']
+        && str_contains($invocation->input ?? '', 'orbit-caddy-build-result');
+}
+
+function gateway_web_pushed(ProcessInvocation $invocation): string
+{
+    preg_match("/printf '%s' '([A-Za-z0-9+\\/=]+)' \\| base64 --decode > \"\\\$candidate\\/Caddyfile\"/", (string) $invocation->input, $match);
+
+    return (string) base64_decode($match[1] ?? '', true);
 }
 
 final class RecordingRuntimeHibernatorConverger implements RuntimeHibernatorConverger

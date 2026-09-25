@@ -9,6 +9,7 @@ use App\Infrastructure\Analytics\AnalyticsCaddySiteRenderer;
 use App\Infrastructure\Analytics\AnalyticsFootprint;
 use App\Infrastructure\Caddy\Build\CaddyListenerRule;
 use App\Infrastructure\Caddy\Build\CaddySite;
+use App\Infrastructure\Caddy\Build\CaddySiteCertificates;
 use App\Infrastructure\Caddy\Build\CaddySiteRoles;
 use App\Infrastructure\Caddy\Build\NodeCaddySiteSource;
 use App\Infrastructure\Caddy\Build\NodeCaddySiteUnavailable;
@@ -18,11 +19,15 @@ final readonly class AnalyticsCaddySiteSource implements NodeCaddySiteSource
 {
     public function __construct(
         private AnalyticsCaddySiteRenderer $renderer = new AnalyticsCaddySiteRenderer,
+        private CaddySiteCertificates $certificates = new CaddySiteCertificates,
     ) {}
 
     public function sites(Node $node): array
     {
-        if (! CaddySiteRoles::nodeServes($node->id, RoleName::Analytics)) {
+        if (
+            ! CaddySiteRoles::nodeServes($node->id, RoleName::Analytics)
+            || ! $this->certificates->published($node->id, CaddySiteCertificates::Analytics)
+        ) {
             return [];
         }
 

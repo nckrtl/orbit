@@ -5,7 +5,7 @@ declare(strict_types=1);
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\Metrics\MetricsCaddyPublisher;
+use App\Infrastructure\Caddy\CaddyPublicationLock;
 use App\Infrastructure\Metrics\NativeMetricsAccessRevoker;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
@@ -23,12 +23,15 @@ it('reloads Caddy whenever a Metrics route may remain published', function (
     ]);
     $processes = new MetricsAccessRevokerProcessRunner;
 
-    new NativeMetricsAccessRevoker(new MetricsCaddyPublisher($processes))->revoke();
+    new NativeMetricsAccessRevoker($processes)->revoke();
 
     expect($processes->invocations)
         ->toHaveCount(1)
         ->and($processes->invocations[0]->arguments)
-        ->toBe(['sudo', 'systemctl', 'reload', 'caddy']);
+        ->toBe(['sudo', 'bash', '-seu'])
+        ->and($processes->invocations[0]->input)
+        ->toStartWith(CaddyPublicationLock::script(CaddyPublicationLock::Path))
+        ->toEndWith("systemctl reload caddy\n");
 })->with([
     'active assignment' => [LifecycleStatus::Active, LifecycleStatus::Active],
     'provisioning assignment' => [LifecycleStatus::Provisioning, LifecycleStatus::Active],
@@ -40,7 +43,7 @@ it('reloads Caddy whenever a Metrics route may remain published', function (
 it('does not touch Caddy without an active Metrics assignment', function (): void {
     $processes = new MetricsAccessRevokerProcessRunner;
 
-    new NativeMetricsAccessRevoker(new MetricsCaddyPublisher($processes))->revoke();
+    new NativeMetricsAccessRevoker($processes)->revoke();
 
     expect($processes->invocations)->toBeEmpty();
 });
@@ -53,7 +56,7 @@ it('fails closed when the stream-closing reload fails', function (): void {
     ]);
     $processes = new MetricsAccessRevokerProcessRunner(fail: true);
 
-    expect(fn () => new NativeMetricsAccessRevoker(new MetricsCaddyPublisher($processes))->revoke())
+    expect(fn () => new NativeMetricsAccessRevoker($processes)->revoke())
         ->toThrow(ResourceOperationException::class, 'Metrics Caddy publication did not complete.');
 });
 

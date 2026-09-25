@@ -15,7 +15,6 @@ use App\Domain\Routes\RouteRemovalProjector;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Routes\RouteTargetSetStep;
 use App\Domain\Shared\LifecycleStatus;
-use App\Infrastructure\AppDev\AppDevCaddyConfigRenderer;
 use App\Infrastructure\AppDev\AppDevDnsConfigRenderer;
 use App\Infrastructure\AppDev\AppDevSiteRepository;
 use App\Infrastructure\AppDev\AppDevSshExecutor;
@@ -41,6 +40,7 @@ use App\Models\Route;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Tests\Support\SshNodeCaddyBuilds;
 
 /*
  * ADR 0141: removal saves the state change, builds, and only then removes the certificate. Caddy
@@ -298,7 +298,7 @@ function certificate_order_bind_projectors(CertificateOrderNodes $nodes, Certifi
         },
     );
     $sites = new AppDevSiteRepository;
-    $caddy = new RemoteAppDevCaddyManager($sites, new AppDevCaddyConfigRenderer, $executor);
+    $caddy = new RemoteAppDevCaddyManager(SshNodeCaddyBuilds::over($nodes), $executor);
     $certificates = new RemoteAppDevCertificateManager(
         $executor,
         new class implements LeafCertificateSigner

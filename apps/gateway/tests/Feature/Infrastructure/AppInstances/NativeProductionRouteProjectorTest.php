@@ -26,7 +26,7 @@ use App\Infrastructure\AppDev\RemoteAppDevCaddyManager;
 use App\Infrastructure\AppDev\RemoteAppDevCertificateManager;
 use App\Infrastructure\AppDev\RemoteAppDevPhpFpmManager;
 use App\Infrastructure\AppInstances\NativeProductionRouteProjector;
-use App\Infrastructure\Caddy\Build\NodeCaddyListenerResolver;
+use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
 use App\Infrastructure\Nodes\RemotePhpPackageManager;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
@@ -43,6 +43,7 @@ use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\Route;
 use Illuminate\Support\Str;
+use Tests\Support\SshNodeCaddyBuilds;
 
 it('projects a production workload through a remote Router over LAN without public infrastructure', function (): void {
     [$appInstance, $route, $workload, $router] = orb199_production_route_models(
@@ -71,11 +72,12 @@ it('projects a production workload through a remote Router over LAN without publ
         ->pluck('command')
         ->first(static fn (RemoteCommand $command): bool => in_array('s_client', $command->arguments, true));
     $sites = new AppDevSiteRepository;
-    $renderer = new AppDevCaddyConfigRenderer;
-    $workloadConfiguration = $renderer->render($sites->forNode($workload), app(NodeCaddyListenerResolver::class)->fragments($workload)->routeBind());
-    $routerConfiguration = $renderer->render($sites->forNode($router), app(NodeCaddyListenerResolver::class)->fragments($router)->routeBind());
+    $workloadConfiguration = app(NodeCaddyfileRenderer::class)->render($workload)->content;
+    $routerConfiguration = app(NodeCaddyfileRenderer::class)->render($router)->content;
     $dnsConfiguration = new AppDevDnsConfigRenderer($sites)->render();
-    $publishedInputs = collect($ssh->commands)->pluck('command.input')->filter();
+    $pushed = collect($ssh->commands)
+        ->map(static fn (array $entry): ?string => SshNodeCaddyBuilds::pushed($entry['command']))
+        ->filter();
 
     expect($productionPhp->converged)->toBe([$appInstance->id])
         ->and($firewall->converged)->toBe([[$workload->id, RoleName::AppProd, 'orbit']])
@@ -118,12 +120,11 @@ it('projects a production workload through a remote Router over LAN without publ
             "tls_server_name {$route->domain}",
             "tls /etc/caddy/orbit-certificates/route-{$route->id}-router/current/cert.pem",
         )
-        ->and($publishedInputs->contains(
-            static fn (string $input): bool => str_contains($input, base64_encode($workloadConfiguration)),
-        ))->toBeTrue()
-        ->and($publishedInputs->contains(
-            static fn (string $input): bool => str_contains($input, base64_encode($routerConfiguration)),
-        ))->toBeTrue()
+        ->and($pushed->contains($workloadConfiguration))->toBeTrue()
+        ->and($pushed->contains($routerConfiguration))->toBeTrue()
+        ->and(collect($ssh->commands)->pluck('command')->contains(
+            static fn (RemoteCommand $command): bool => str_contains((string) $command->input, 'fragments/*.caddy') || str_contains((string) $command->input, 'app-dev.caddy'),
+        ))->toBeFalse()
         ->and($dnsConfiguration)->toContain("host-record={$route->domain},{$router->wireguard_ip}")
         ->and($processes->invocations)->toHaveCount(1)
         ->and(json_encode($ssh->commands, JSON_THROW_ON_ERROR))->not->toContain('ingress', 'acme');
@@ -205,10 +206,7 @@ it('refuses an invalid workload leaf before Router Caddy and DNS publication', f
     });
 
     $caddyPublications = collect($ssh->commands)->filter(
-        static fn (array $entry): bool => str_contains(
-            $entry['command']->input ?? '',
-            'caddy validate --config "$candidate/Caddyfile"',
-        ),
+        static fn (array $entry): bool => SshNodeCaddyBuilds::pushed($entry['command']) !== null,
     );
     expect($processes->invocations)->toBeEmpty()
         ->and($caddyPublications)->toHaveCount(1)
@@ -371,7 +369,7 @@ function orb199_production_route_projector(?Closure $failSsh = null): array
         ),
         new RemoteAppDevCertificateManager($executor, $signer, $accounts),
         $firewall,
-        new RemoteAppDevCaddyManager($sites, new AppDevCaddyConfigRenderer, $executor),
+        new RemoteAppDevCaddyManager(SshNodeCaddyBuilds::over($ssh), $executor),
         new DnsmasqPrivateDnsManager($processes, new AppDevDnsConfigRenderer($sites)),
         new Orb199ProductionReleaseLayout,
         $executor,

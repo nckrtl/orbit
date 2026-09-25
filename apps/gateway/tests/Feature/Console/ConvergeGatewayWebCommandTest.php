@@ -15,7 +15,7 @@ function recordingGatewayWebConverger(): GatewayWebConverger
         /** @var list<array{string, string}> */
         public array $calls = [];
 
-        public function converge(string $hostname, string $wireguardIp): void
+        public function converge(Node $node, string $hostname, string $wireguardIp): void
         {
             $this->calls[] = [$hostname, $wireguardIp];
         }

@@ -74,7 +74,7 @@ final readonly class NativeClusterRouterReplacementProjector implements ClusterR
             return;
         }
 
-        $this->caddy->converge($router);
+        $this->caddy->build($router);
     }
 
     public function publishDns(Route $route, Node $router): void
@@ -96,7 +96,7 @@ final readonly class NativeClusterRouterReplacementProjector implements ClusterR
      */
     public function cleanupOldRouter(Route $route, Node $oldRouter): void
     {
-        $this->caddy->converge($oldRouter);
+        $this->caddy->build($oldRouter);
 
         foreach ($this->workloads($route) as $workload) {
             if ($this->colocated($oldRouter, $workload)) {
@@ -116,7 +116,7 @@ final readonly class NativeClusterRouterReplacementProjector implements ClusterR
     public function restore(Route $route, Node $newRouter, ?Node $oldRouter): void
     {
         $clusterId = $route->cluster_id;
-        $this->caddy->converge($newRouter);
+        $this->caddy->build($newRouter);
 
         foreach ($this->workloads($route) as $workload) {
             if ($this->colocated($newRouter, $workload)) {

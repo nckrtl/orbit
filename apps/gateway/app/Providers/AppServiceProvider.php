@@ -210,7 +210,9 @@ use App\Infrastructure\AppProd\RemoteAppProdCaddyManager;
 use App\Infrastructure\AppProd\RemoteAppProdPhpFpmManager;
 use App\Infrastructure\Apps\NativeAppUpdateProjectionMutator;
 use App\Infrastructure\Apps\RemoteAppUpdateSourceMutator;
+use App\Infrastructure\Caddy\Build\NodeCaddyBuilder;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuildLock;
+use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
 use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
 use App\Infrastructure\Caddy\Build\Sources\AnalyticsCaddySiteSource;
 use App\Infrastructure\Caddy\Build\Sources\AppCaddySiteSource;
@@ -241,11 +243,9 @@ use App\Infrastructure\Firewall\NativeRouterLanIngressReconciler;
 use App\Infrastructure\Firewall\NativeUfwFirewallInspector;
 use App\Infrastructure\Firewall\NativeUfwFirewallManager;
 use App\Infrastructure\Firewall\UfwStatusParser;
-use App\Infrastructure\Gateway\GatewayCaddyConfigRenderer;
 use App\Infrastructure\Gateway\GatewayCheckoutAccessConverger;
 use App\Infrastructure\Gateway\GatewayFpmConfigRenderer;
 use App\Infrastructure\Gateway\GatewayWebDirectoryConverger;
-use App\Infrastructure\Gateway\NativeGatewayCaddyConverger;
 use App\Infrastructure\Gateway\NativeGatewayCaddyInstaller;
 use App\Infrastructure\Gateway\NativeGatewayCertificatePublisher;
 use App\Infrastructure\Gateway\NativeGatewayFpmConverger;
@@ -365,6 +365,7 @@ final class AppServiceProvider extends ServiceProvider
         AppInstanceTransferRouteProjector::class => NativeDevelopmentRouteProjector::class,
         AgentationSiteProjection::class => RemoteAgentationSiteProjection::class,
         AppDevCaddyManager::class => RemoteAppDevCaddyManager::class,
+        NodeCaddyBuilds::class => NodeCaddyBuilder::class,
         AppDevPhpFpmManager::class => RemoteAppDevPhpFpmManager::class,
         AppDevTldConverger::class => NativeAppDevTldConverger::class,
         AppDevTldRouteManager::class => RemoteAppDevTldRouteManager::class,
@@ -715,7 +716,6 @@ final class AppServiceProvider extends ServiceProvider
             GatewayWebConverger::class,
             static fn (): GatewayWebConverger => new NativeGatewayWebConverger(
                 certificates: app(GatewayCertificateIssuer::class),
-                caddyRenderer: app(GatewayCaddyConfigRenderer::class),
                 fpmRenderer: app(GatewayFpmConfigRenderer::class),
                 files: app(ProtectedFileWriter::class),
                 checkout: new GatewayCheckoutAccessConverger(
@@ -731,11 +731,10 @@ final class AppServiceProvider extends ServiceProvider
                     orbitHome: rtrim(string: (string) config('orbit.home'), characters: '/'),
                 ),
                 fpm: new NativeGatewayFpmConverger(app(ProcessRunner::class)),
-                caddy: new NativeGatewayCaddyConverger(app(ProcessRunner::class)),
+                builds: app(NodeCaddyBuilds::class),
                 caddyInstaller: new NativeGatewayCaddyInstaller(app(ProcessRunner::class)),
                 orbitHome: rtrim(string: (string) config('orbit.home'), characters: '/'),
                 checkoutPath: rtrim(string: (string) config('orbit.gateway_checkout'), characters: '/'),
-                webRoot: (string) config('orbit.gateway_web'),
                 hibernator: app(RuntimeHibernatorConverger::class),
                 agentView: app(AgentViewConverger::class),
             ),

@@ -8,8 +8,8 @@ use App\Domain\Nodes\RoleName;
 use App\Models\Node;
 
 /**
- * The listener addresses of one Node's sites under the ADR 0141 rules. The Node Caddy build and every
- * fragment publisher choose each `bind` here, so they cannot disagree about a Node's listeners.
+ * The listener addresses of one Node's sites under the ADR 0141 rules. The Node Caddy build and Doctor
+ * choose each `bind` here, so they cannot disagree about a Node's listeners.
  */
 final readonly class NodeCaddyListeners
 {

@@ -6,8 +6,11 @@ use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\Certificates\GatewayCertificateIssuer;
 use App\Domain\Certificates\GatewayCertificatePaths;
+use App\Domain\Nodes\RoleName;
+use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\Metrics\MetricsCaddyPublisher;
+use App\Infrastructure\Caddy\Build\CaddySiteCertificates;
+use App\Infrastructure\Caddy\Build\NodeCaddyBuildException;
 use App\Infrastructure\Metrics\MetricsCertificatePublisher;
 use App\Infrastructure\Metrics\MetricsPublicationManager;
 use App\Infrastructure\Metrics\MetricsPublicationSshExecutor;
@@ -21,8 +24,9 @@ use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
+use Tests\Support\RecordingNodeCaddyBuilds;
 
-it('unloads Caddy before verifying isolation and publishes DNS last', function (): void {
+it('publishes the certificate and firewall, requests a Gateway build, and publishes DNS last', function (): void {
     $events = [];
     $manager = metrics_publication_manager(
         $events,
@@ -39,15 +43,57 @@ it('unloads Caddy before verifying isolation and publishes DNS last', function (
         'projection:enter',
         'certificate:issue',
         'process:certificate',
-        'process:caddy-withdraw',
         'ssh:status',
-        'process:caddy-publish',
+        'build:gateway',
         'dns:metrics',
         'projection:leave',
-    ]);
+    ])
+        ->and(new CaddySiteCertificates()->published(metrics_publication_manager_node('gateway', '10.44.0.1')->id, CaddySiteCertificates::Metrics))->toBeTrue();
 });
 
-it('removes publication in DNS Caddy firewall certificate order', function (): void {
+it('writes no Caddy file on the Gateway itself', function (): void {
+    $events = [];
+    $invocations = [];
+    $manager = metrics_publication_manager(
+        $events,
+        [metrics_publication_manager_result(stdout: metrics_publication_manager_firewall())],
+        invocations: $invocations,
+    );
+
+    $manager->converge(
+        metrics_publication_manager_node('gateway', '10.44.0.1'),
+        metrics_publication_manager_node('metrics', '10.44.0.3'),
+    );
+
+    expect($invocations)->not->toBeEmpty();
+
+    foreach ($invocations as $invocation) {
+        expect(implode(' ', $invocation->arguments)."\n".($invocation->input ?? ''))
+            ->not->toContain('orbit-versions')
+            ->not->toContain('metrics.caddy');
+    }
+});
+
+it('keeps its error code, names the build failure, and keeps the certificate a failed role still names', function (): void {
+    $events = [];
+    $manager = metrics_publication_manager(
+        $events,
+        [metrics_publication_manager_result(stdout: metrics_publication_manager_firewall())],
+        buildFailure: new NodeCaddyBuildException('gateway', 'reload', 'Error: loading new config'),
+    );
+
+    expect(fn () => $manager->converge(
+        metrics_publication_manager_node('gateway', '10.44.0.1'),
+        metrics_publication_manager_node('metrics', '10.44.0.3'),
+    ))->toThrow(function (ResourceOperationException $exception): void {
+        expect($exception->errorCode)->toBe('metrics.caddy_publication_failed')
+            ->and($exception->details)->toBe(['node' => 'gateway', 'stage' => 'reload', 'message' => 'Error: loading new config']);
+    });
+
+    expect($events)->toBe(['certificate:issue', 'process:certificate', 'ssh:status', 'build:gateway']);
+});
+
+it('removes publication in DNS, build, firewall, certificate order', function (): void {
     $events = [];
     $manager = metrics_publication_manager(
         $events,
@@ -68,7 +114,7 @@ it('removes publication in DNS Caddy firewall certificate order', function (): v
     expect($events)->toBe([
         'projection:enter',
         'dns:none',
-        'process:caddy-withdraw',
+        'build:gateway',
         'ssh:status',
         'ssh:delete',
         'ssh:delete',
@@ -78,101 +124,47 @@ it('removes publication in DNS Caddy firewall certificate order', function (): v
     ]);
 });
 
-it('keeps isolation and restores only a prior authorized route when publication fails', function (): void {
+it('keeps the certificate when the Metrics role moved and its site still renders', function (): void {
+    new CaddySiteCertificates()->record(metrics_publication_manager_node('gateway', '10.44.0.1')->id, CaddySiteCertificates::Metrics);
+    $target = metrics_publication_manager_node('metrics-next', '10.44.0.4');
+    $target->roles()->create(['role' => RoleName::Metrics, 'status' => LifecycleStatus::Active]);
     $events = [];
-    $previous = "# Managed by Orbit: metrics\n# Orbit Metrics authorization: 1\nmetrics.orbit { respond old }\n";
     $manager = metrics_publication_manager(
         $events,
-        [metrics_publication_manager_result(stdout: metrics_publication_manager_firewall())],
-        withdrawResults: [metrics_publication_manager_replaced($previous)],
-        publishResults: [
-            new CommandResult(1, '', 'private failure detail', 1, false),
+        [
+            metrics_publication_manager_result(stdout: metrics_publication_manager_firewall()),
             metrics_publication_manager_result(),
-        ],
-    );
-
-    expect(fn () => $manager->converge(
-        metrics_publication_manager_node('gateway', '10.44.0.1'),
-        metrics_publication_manager_node('metrics', '10.44.0.3'),
-    ))->toThrow(ResourceOperationException::class, 'Metrics Caddy publication did not complete.');
-
-    expect($events)->toBe([
-        'certificate:issue',
-        'process:certificate',
-        'process:caddy-withdraw',
-        'ssh:status',
-        'process:caddy-publish',
-        'process:caddy-publish',
-        'process:certificate',
-    ])->not->toContain('ssh:delete');
-});
-
-it('never restores a legacy route after authorized publication fails', function (): void {
-    $events = [];
-    $manager = metrics_publication_manager(
-        $events,
-        [metrics_publication_manager_result(stdout: metrics_publication_manager_firewall())],
-        withdrawResults: [
             metrics_publication_manager_result(),
-            metrics_publication_manager_result(stdout: "orbit-metrics-publication:unchanged\n"),
+            metrics_publication_manager_result(stdout: metrics_publication_manager_wireguard_firewall()),
         ],
-        publishResults: [new CommandResult(1, '', 'private failure detail', 1, false)],
     );
 
-    expect(fn () => $manager->converge(
+    $manager->remove(
         metrics_publication_manager_node('gateway', '10.44.0.1'),
         metrics_publication_manager_node('metrics', '10.44.0.3'),
-    ))->toThrow(ResourceOperationException::class);
+    );
 
-    expect($events)->toBe([
-        'certificate:issue',
-        'process:certificate',
-        'process:caddy-withdraw',
-        'ssh:status',
-        'process:caddy-publish',
-        'process:caddy-withdraw',
-        'process:certificate',
-    ]);
+    expect($events)->toBe(['dns:none', 'build:gateway', 'ssh:status', 'ssh:delete', 'ssh:delete', 'ssh:status'])
+        ->and(new CaddySiteCertificates()->published(metrics_publication_manager_node('gateway', '10.44.0.1')->id, CaddySiteCertificates::Metrics))->toBeTrue();
 });
 
-it('removes a new route but retains isolation when DNS publication fails', function (): void {
+it('retracts the Gateway side by building the Gateway before it removes the certificate', function (): void {
+    $gateway = metrics_publication_manager_node('gateway', '10.44.0.1');
+    $gateway->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
+    new CaddySiteCertificates()->record($gateway->id, CaddySiteCertificates::Metrics);
+    $events = [];
+
+    metrics_publication_manager($events, [])->retract(metrics_publication_manager_node('metrics', '10.44.0.3'));
+
+    expect($events)->toBe(['dns:none', 'build:gateway', 'process:certificate'])
+        ->and(new CaddySiteCertificates()->published($gateway->id, CaddySiteCertificates::Metrics))->toBeFalse();
+});
+
+it('retains projection ownership when DNS publication fails', function (): void {
     $events = [];
     $manager = metrics_publication_manager(
         $events,
         [metrics_publication_manager_result(stdout: metrics_publication_manager_firewall())],
-        withdrawResults: [
-            metrics_publication_manager_result(stdout: "orbit-metrics-publication:unchanged\n"),
-            metrics_publication_manager_result(stdout: "orbit-metrics-publication:unchanged\n"),
-        ],
-        failDns: true,
-    );
-
-    expect(fn () => $manager->converge(
-        metrics_publication_manager_node('gateway', '10.44.0.1'),
-        metrics_publication_manager_node('metrics', '10.44.0.3'),
-    ))->toThrow(RuntimeException::class, 'DNS publication failed.');
-
-    expect($events)->toBe([
-        'certificate:issue',
-        'process:certificate',
-        'process:caddy-withdraw',
-        'ssh:status',
-        'process:caddy-publish',
-        'dns:metrics',
-        'process:caddy-withdraw',
-        'process:certificate',
-    ])->not->toContain('ssh:delete');
-});
-
-it('retains projection ownership through rollback', function (): void {
-    $events = [];
-    $manager = metrics_publication_manager(
-        $events,
-        [metrics_publication_manager_result(stdout: metrics_publication_manager_firewall())],
-        withdrawResults: [
-            metrics_publication_manager_result(stdout: "orbit-metrics-publication:unchanged\n"),
-            metrics_publication_manager_result(stdout: "orbit-metrics-publication:unchanged\n"),
-        ],
         failDns: true,
         projection: new MetricsPublicationManagerProjectionOwner($events),
     );
@@ -185,33 +177,29 @@ it('retains projection ownership through rollback', function (): void {
     expect($events[0])
         ->toBe('projection:enter')
         ->and($events[array_key_last($events)])
-        ->toBe('projection:leave');
+        ->toBe('projection:leave')
+        ->and($events)->not->toContain('ssh:delete');
 });
 
 /**
  * @param  list<string>  $events
  * @param  list<CommandResult>  $sshResults
- * @param  list<CommandResult>  $withdrawResults
- * @param  list<CommandResult>  $publishResults
+ * @param  list<ProcessInvocation>  $invocations
  */
 function metrics_publication_manager(
     array &$events,
     array $sshResults,
-    array $withdrawResults = [],
-    array $publishResults = [],
+    ?NodeCaddyBuildException $buildFailure = null,
     bool $failDns = false,
     ?DevelopmentProjectionOperationLock $projection = null,
+    array &$invocations = [],
 ): MetricsPublicationManager {
-    $processes = new MetricsPublicationManagerProcessRunner(
-        $events,
-        $withdrawResults,
-        $publishResults,
-    );
+    $processes = new MetricsPublicationManagerProcessRunner($events, $invocations);
 
     return new MetricsPublicationManager(
         certificates: new MetricsPublicationManagerCertificateIssuer($events),
         certificatePublisher: new MetricsCertificatePublisher($processes),
-        caddy: new MetricsCaddyPublisher($processes),
+        builds: new RecordingNodeCaddyBuilds($events, $buildFailure),
         firewall: new MetricsPublicationSshExecutor(
             new MetricsPublicationManagerSshExecutor($events, $sshResults),
             new MetricsPublicationManagerSshKeyProvider,
@@ -224,8 +212,10 @@ function metrics_publication_manager(
 
 function metrics_publication_manager_node(string $name, string $address): Node
 {
-    return new Node([
-        'name' => $name,
+    return Node::query()->firstOrCreate(['name' => $name], [
+        'status' => LifecycleStatus::Active,
+        'platform' => 'linux',
+        'public_ssh_host' => "{$name}.example.test",
         'wireguard_ip' => $address,
         'user' => 'orbit',
     ]);
@@ -234,13 +224,6 @@ function metrics_publication_manager_node(string $name, string $address): Node
 function metrics_publication_manager_result(string $stdout = "orbit-metrics-publication:created\n"): CommandResult
 {
     return new CommandResult(0, $stdout, '', 1, false);
-}
-
-function metrics_publication_manager_replaced(string $previous): CommandResult
-{
-    return metrics_publication_manager_result(
-        'orbit-metrics-publication:replaced:'.base64_encode($previous)."\n",
-    );
 }
 
 function metrics_publication_manager_firewall(): string
@@ -267,35 +250,19 @@ final class MetricsPublicationManagerProcessRunner implements ProcessRunner
 {
     /**
      * @param  list<string>  $events
-     * @param  list<CommandResult>  $withdrawResults
-     * @param  list<CommandResult>  $publishResults
+     * @param  list<ProcessInvocation>  $invocations
      */
     public function __construct(
         private array &$events,
-        private array $withdrawResults,
-        private array $publishResults,
+        private array &$invocations,
     ) {}
 
     public function run(ProcessInvocation $invocation): CommandResult
     {
-        $input = (string) $invocation->input;
+        $this->invocations[] = $invocation;
+        $this->events[] = str_contains((string) $invocation->input, 'orbit-metrics-cert') ? 'process:certificate' : 'process:other';
 
-        if (str_contains($input, 'orbit-metrics-cert-versions')) {
-            $this->events[] = 'process:certificate';
-
-            return metrics_publication_manager_result();
-        }
-
-        if (str_contains($input, "sed -n '2p'")) {
-            $this->events[] = 'process:caddy-withdraw';
-
-            return array_shift($this->withdrawResults)
-                ?? metrics_publication_manager_result(stdout: "orbit-metrics-publication:unchanged\n");
-        }
-
-        $this->events[] = 'process:caddy-publish';
-
-        return array_shift($this->publishResults) ?? metrics_publication_manager_result();
+        return metrics_publication_manager_result();
     }
 }
 

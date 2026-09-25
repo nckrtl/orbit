@@ -8,6 +8,8 @@ use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AppDev\AppDevSshExecutor;
+use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
+use App\Infrastructure\Caddy\CaddyGlobalOptions;
 use App\Infrastructure\Doctor\NativeCustomProxyRouteInspector;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Ssh\HostKey;
@@ -63,6 +65,18 @@ it('reports a custom proxy site missing from the live Caddy version', function (
     expect(custom_proxy_inspector($this->ssh, $this->caddy)->inspect($this->proxy)->caddyMatches)->toBeFalse();
 });
 
+it('reads a custom proxy site from the one Caddyfile a Node Caddy build writes', function (): void {
+    custom_proxy_inspector_build($this->caddy, "https://executor.orbit {\n    reverse_proxy 127.0.0.1:4788\n}\n");
+
+    expect(custom_proxy_inspector($this->ssh, $this->caddy)->inspect($this->proxy)->caddyMatches)->toBeTrue();
+});
+
+it('reports a custom proxy site missing from the one Caddyfile a Node Caddy build writes', function (): void {
+    custom_proxy_inspector_build($this->caddy, "reverb.orbit {\n    respond ok\n}\n");
+
+    expect(custom_proxy_inspector($this->ssh, $this->caddy)->inspect($this->proxy)->caddyMatches)->toBeFalse();
+});
+
 function custom_proxy_inspector(LocalRootShellSshExecutor $ssh, string $caddy): NativeCustomProxyRouteInspector
 {
     return new NativeCustomProxyRouteInspector(
@@ -93,6 +107,15 @@ function custom_proxy_inspector(LocalRootShellSshExecutor $ssh, string $caddy): 
         new CommandDeadline,
         liveCaddyfilePath: "{$caddy}/Caddyfile",
     );
+}
+
+/** Replaces the fragment layout with a build's single versioned Caddyfile. */
+function custom_proxy_inspector_build(string $caddy, string $sites): void
+{
+    File::ensureDirectoryExists("{$caddy}/orbit-versions/v2");
+    file_put_contents("{$caddy}/orbit-versions/v2/Caddyfile", NodeCaddyfileRenderer::Marker."\n".CaddyGlobalOptions::render()."\n".$sites);
+    unlink("{$caddy}/Caddyfile");
+    symlink("{$caddy}/orbit-versions/v2/Caddyfile", "{$caddy}/Caddyfile");
 }
 
 function custom_proxy_inspector_publish(string $caddy, string $sites): void

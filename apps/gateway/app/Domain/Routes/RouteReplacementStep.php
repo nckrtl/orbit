@@ -16,6 +16,7 @@ enum RouteReplacementStep: string
     case LaravelUrl = 'laravel-url';
     case EnvironmentSynchronized = 'environment-synchronized';
     case IngressCertificate = 'ingress-certificate';
+    /** No step runs it any more. Stored checkpoints of Routes published before the Node Caddy build keep it. */
     case IngressCaddy = 'ingress-caddy';
     case IngressFirewall = 'ingress-firewall';
     case PublicEdgeVerified = 'public-edge-verified';

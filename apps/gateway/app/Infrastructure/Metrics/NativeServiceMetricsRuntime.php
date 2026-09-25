@@ -4,20 +4,23 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Metrics;
 
+use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\AppInstances\ProductionPhpRuntimeIdentity;
+use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\AppProd\AppProdCaddyPublisher;
 use App\Infrastructure\AppProd\AppProdSshExecutor;
+use App\Infrastructure\Caddy\Build\CaddySiteRoles;
+use App\Infrastructure\Caddy\Build\NodeCaddyBuildException;
+use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Node;
 use JsonException;
 
 final readonly class NativeServiceMetricsRuntime implements ServiceMetricsRuntime
 {
-    private const string CaddyFragment = '00-metrics-service.caddy';
-
     public function __construct(
         private AppProdSshExecutor $ssh,
+        private NodeCaddyBuilds $builds,
         private ServiceMetricsConfigRenderer $renderer = new ServiceMetricsConfigRenderer,
     ) {}
 
@@ -29,31 +32,8 @@ final readonly class NativeServiceMetricsRuntime implements ServiceMetricsRuntim
             $identity = ProductionPhpRuntimeIdentity::from($instance);
             $pools[(string) $instance->id] = $this->pool($target->node, $identity, ['operation' => 'snapshot']);
         }
-        $result = $this->ssh->execute($target->node, new RemoteCommand(
-            ['sudo', 'python3', '-'],
-            input: <<<'PY'
-                import base64, json, pathlib, sys
-                result = {'caddy': None}
-                main = pathlib.Path('/etc/caddy/Caddyfile')
-                if main.exists():
-                    fragment = main.resolve().parent / 'fragments/00-metrics-service.caddy'
-                    if fragment.is_symlink():
-                        raise ValueError('Unowned Caddy fragment')
-                    if fragment.exists():
-                        contents = fragment.read_text()
-                        if fragment.stat().st_uid != 0 or not contents.startswith('# Managed by Orbit: service-metrics\n'):
-                            raise ValueError('Unowned Caddy fragment')
-                        result['caddy'] = contents
-                print(json.dumps(result))
-                PY,
-            maxOutputBytes: 524288,
-        ), 'service-metrics-inspect', 'metrics.service_inspection_failed');
-        if ($result->truncated) {
-            throw new ResourceOperationException('metrics.service_inspection_failed', 'Service metrics inspection was truncated.', 502);
-        }
-        $extra = json_decode($result->stdout, true, flags: JSON_THROW_ON_ERROR);
 
-        return json_encode(['exporter' => $state, 'pools' => $pools, ...$extra], JSON_THROW_ON_ERROR);
+        return json_encode(['exporter' => $state, 'pools' => $pools], JSON_THROW_ON_ERROR);
     }
 
     public function converge(ServiceMetricsNode $target, Node $metricsNode): void
@@ -87,9 +67,7 @@ final readonly class NativeServiceMetricsRuntime implements ServiceMetricsRuntim
             'enabled' => $fpm,
             'binary' => $fpm,
         ]]);
-        $this->publishCaddy($target->node, $target->caddy
-            ? $this->renderer->caddy((string) $target->node->wireguard_ip, (string) $metricsNode->wireguard_ip)
-            : null);
+        $this->build($target->node);
     }
 
     public function restore(ServiceMetricsNode $target, string $snapshot): void
@@ -99,7 +77,7 @@ final readonly class NativeServiceMetricsRuntime implements ServiceMetricsRuntim
             $this->pool($target->node, ProductionPhpRuntimeIdentity::from($instance), ['operation' => 'restore', 'state' => $state['pools'][(string) $instance->id]]);
         }
         $this->program($target->node, ['operation' => 'apply', 'state' => $state['exporter']]);
-        $this->publishCaddy($target->node, $state['caddy']);
+        $this->build($target->node);
     }
 
     /** @param array<string, mixed> $request
@@ -124,12 +102,28 @@ final readonly class NativeServiceMetricsRuntime implements ServiceMetricsRuntim
         return json_decode($result->stdout, true, flags: JSON_THROW_ON_ERROR);
     }
 
-    private function publishCaddy(Node $node, ?string $configuration): void
+    /**
+     * The scrape site renders from stored state (ADR 0141): the selected Metrics Node and the Node's
+     * `ingress` role and public Routes. The build reads that state; this runtime never writes Caddy files.
+     * Only an Ingress Node can render the site, so no other Node is built.
+     */
+    private function build(Node $node): void
     {
-        $publisher = new AppProdCaddyPublisher(ownedFragment: self::CaddyFragment, ownershipMarker: ServiceMetricsConfigRenderer::Marker);
-        $version = bin2hex(random_bytes(8));
-        $command = $configuration === null ? $publisher->removeCommand($version) : $publisher->command($configuration, $version);
-        $this->ssh->execute($node, $command, 'service-metrics-caddy', 'metrics.caddy_publication_failed');
+        if (! CaddySiteRoles::nodeServes($node->id, RoleName::Ingress)) {
+            return;
+        }
+
+        try {
+            $this->builds->build($node);
+        } catch (NodeCaddyBuildException $exception) {
+            throw new RuntimeConvergenceException(
+                step: 'service-metrics-caddy',
+                errorCode: 'metrics.caddy_publication_failed',
+                message: $exception->getMessage(),
+                previous: $exception,
+                result: $exception->result(),
+            );
+        }
     }
 
     /**
