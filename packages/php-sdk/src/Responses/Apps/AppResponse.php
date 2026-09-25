@@ -22,6 +22,7 @@ final readonly class AppResponse
         public string $requestId,
         /** @var list<array{project_id: int, project_slug: string, node_id: int, node_name: string, development_instance_count: int}>|null */
         public ?array $excludedNodes = null,
+        public ?string $taskCheck = null,
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -47,6 +48,7 @@ final readonly class AppResponse
             defaults: $defaults === null ? null : $redactor->redactTransportArray($defaults),
             requestId: $requestId,
             excludedNodes: self::exclusions($data['excluded_nodes'] ?? null),
+            taskCheck: is_string($data['task_check'] ?? null) ? $data['task_check'] : null,
         );
     }
 
@@ -61,6 +63,7 @@ final readonly class AppResponse
             'repository_url' => $this->repositoryUrl,
             'default_branch' => $this->defaultBranch,
             'root' => $this->root,
+            'task_check' => $this->taskCheck,
             'defaults' => $this->defaults,
             'request_id' => $this->requestId,
             ...($this->excludedNodes === null ? [] : ['excluded_nodes' => $this->excludedNodes]),

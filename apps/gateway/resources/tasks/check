@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """Orbit task check (ADR 0125). The Gateway installs this script in .git/orbit/ and runs it over SSH.
 
-check start CHECKOUT [SETUP|-] [DELIVERABLES]
-                                start `composer check` detached; print the process and the tree it checks.
+check start CHECKOUT [SETUP|-] [DELIVERABLES|-] [COMMAND]
+                                start the Project task check detached; print the process and the tree it checks.
                                 SETUP is a JSON file of setup steps to run first: [{"name", "command", "timeout_seconds"}]
                                 DELIVERABLES is a JSON file of the subtask's deliverables to verify after a passing check
                                 (ADR 0133): {"start", "tests": [{"id", "project", "file"}], "commands": [{"id", "command", "directory"}]}
-check run CHECKOUT HEAD TREE [SETUP|-] [DELIVERABLES]
-                                run the setup steps and the check, then write check.json (started by `start`)
+                                COMMAND is a file with the Project's task check command; an empty file runs no command.
+                                Without COMMAND, the check runs `composer check`.
+check run CHECKOUT HEAD TREE [SETUP|-] [DELIVERABLES|-] [COMMAND]
+                                run the setup steps and the command, then write check.json (started by `start`)
 check status PID STARTED        print running, finished (with the result), or lost
 check cancel PID STARTED        stop the check's process group
 """
@@ -65,8 +67,13 @@ def optional(path):
     return path if path and path != '-' else None
 
 
-def start(checkout, setup=None, deliverables=None):
+def start(checkout, setup=None, deliverables=None, command=None):
     setup, deliverables = optional(setup), optional(deliverables)
+    if command:
+        with open(command) as source:
+            command = source.read()
+    else:
+        command = 'composer check'
     head = git(checkout, 'rev-parse', 'HEAD')
     tree = working_tree(checkout)
     for path in (RESULT, LOG):
@@ -78,7 +85,7 @@ def start(checkout, setup=None, deliverables=None):
         null = os.open(os.devnull, os.O_RDWR)
         for descriptor in (0, 1, 2):
             os.dup2(null, descriptor)
-        os.execv(sys.executable, [sys.executable, os.path.abspath(__file__), 'run', checkout, head, tree, setup or '-', *([deliverables] if deliverables else [])])
+        os.execv(sys.executable, [sys.executable, os.path.abspath(__file__), 'run', checkout, head, tree, setup or '-', deliverables or '-', command])
     for _ in range(50):
         started = process_started(pid)
         if started:
@@ -193,23 +200,24 @@ def verify_deliverables(checkout, tree, deliverables, log):
     return evidence
 
 
-def run(checkout, head, tree, setup=None, deliverables=None):
+def run(checkout, head, tree, setup=None, deliverables=None, command='composer check'):
     setup, deliverables = optional(setup), optional(deliverables)
     started_at = time.time()
     evidence = None
     failed_step = None
+    exit_code = 0
     with open(LOG, 'wb') as log:
         if setup:
             failed_step, exit_code = run_setup(checkout, setup, log)
             # Setup steps install dependencies, so the tree after setup is the tree the check sees.
             tree = working_tree(checkout)
-        if failed_step is None:
-            log.write(b"$ composer check\n")
+        if failed_step is None and command:
+            log.write(f"$ {command}\n".encode())
             log.flush()
-            exit_code = subprocess.run(['bash', '-lc', 'composer check'], cwd=checkout, stdin=subprocess.DEVNULL,
+            exit_code = subprocess.run(['bash', '-lc', command], cwd=checkout, stdin=subprocess.DEVNULL,
                                        stdout=log, stderr=subprocess.STDOUT).returncode
-            if exit_code == 0 and deliverables:
-                evidence = verify_deliverables(checkout, tree, deliverables, log)
+        if failed_step is None and exit_code == 0 and deliverables:
+            evidence = verify_deliverables(checkout, tree, deliverables, log)
     head_after = git(checkout, 'rev-parse', 'HEAD')
     tree_after = working_tree(checkout)
     result = {
@@ -265,9 +273,9 @@ def cancel(pid, started):
 
 def main(arguments):
     command = arguments[0] if arguments else ''
-    if command == 'start' and len(arguments) in (2, 3, 4):
+    if command == 'start' and len(arguments) in (2, 3, 4, 5):
         start(*arguments[1:])
-    elif command == 'run' and len(arguments) in (4, 5, 6):
+    elif command == 'run' and len(arguments) in (4, 5, 6, 7):
         run(*arguments[1:])
     elif command == 'status' and len(arguments) == 3:
         status(int(arguments[1]), arguments[2])

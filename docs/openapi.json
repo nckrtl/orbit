@@ -1160,11 +1160,17 @@
                       "array",
                       "null"
                     ]
+                  },
+                  "task_check": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 4096
                   }
                 },
                 "required": [
                   "slug",
-                  "type",
                   "repository_url",
                   "root"
                 ],
@@ -1253,7 +1259,7 @@
           {
             "lang": "bash",
             "label": "curl",
-            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/apps\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"slug\": \"acme\", \"type\": \"monorepo\", \"repository_url\": \"https://github.com/acme/site.git\", \"root\": \"public\"}'\n"
+            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/apps\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"slug\": \"acme\", \"repository_url\": \"https://github.com/acme/site.git\", \"root\": \"public\"}'\n"
           }
         ]
       }
@@ -1478,15 +1484,15 @@
                   "root": {
                     "type": "string",
                     "maxLength": 255
+                  },
+                  "task_check": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 4096
                   }
                 },
-                "required": [
-                  "type",
-                  "slug",
-                  "repository_url",
-                  "default_branch",
-                  "root"
-                ],
                 "additionalProperties": false
               }
             }
@@ -1560,7 +1566,7 @@
           {
             "lang": "bash",
             "label": "curl",
-            "source": "curl -sS -X PATCH \"https://gateway.orbit/api/v1/apps/4\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"type\": \"monorepo\", \"slug\": \"acme\", \"repository_url\": \"https://github.com/acme/site.git\", \"default_branch\": \"main\", \"root\": \"public\"}'\n"
+            "source": "curl -sS -X PATCH \"https://gateway.orbit/api/v1/apps/4\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"code\": \"ACM\"}'\n"
           }
         ]
       }
@@ -15516,6 +15522,14 @@
                       "array",
                       "null"
                     ]
+                  },
+                  "task_check": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 4096,
+                    "description": "Task check command; defaults to composer check for Laravel types and none otherwise"
                   }
                 },
                 "required": [
@@ -15856,15 +15870,16 @@
                     "type": "string",
                     "maxLength": 255,
                     "description": "New repository-relative root; package types may use ."
+                  },
+                  "task_check": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 4096,
+                    "description": "New task check command for task baselines and handoffs"
                   }
                 },
-                "required": [
-                  "type",
-                  "slug",
-                  "repository_url",
-                  "default_branch",
-                  "root"
-                ],
                 "additionalProperties": false
               }
             }
@@ -15938,7 +15953,7 @@
           {
             "lang": "bash",
             "label": "curl",
-            "source": "curl -sS -X PATCH \"https://gateway.orbit/api/v1/projects/4\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"type\": \"monorepo\", \"slug\": \"acme\", \"repository_url\": \"https://github.com/acme/site.git\", \"default_branch\": \"main\", \"root\": \"public\"}'\n"
+            "source": "curl -sS -X PATCH \"https://gateway.orbit/api/v1/projects/4\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"code\": \"ACM\"}'\n"
           },
           {
             "lang": "php",
@@ -19419,10 +19434,6 @@
                     "description": "New publication intent"
                   }
                 },
-                "required": [
-                  "domain",
-                  "publication"
-                ],
                 "additionalProperties": false
               }
             }
@@ -23504,6 +23515,12 @@
               "null"
             ],
             "additionalProperties": true
+          },
+          "task_check": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },

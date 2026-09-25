@@ -59,6 +59,7 @@ final readonly class CreateAppAction
                 'default_branch' => $defaultBranch,
                 'root' => $root,
                 'defaults' => $data->defaults,
+                'task_check' => $data->resolvedTaskCheck(),
             ]);
             try {
                 $candidate->save();
@@ -139,6 +140,7 @@ final readonly class CreateAppAction
             || $app->default_branch === $defaultBranch)
             && $app->root === $root
             && $app->defaults === $data->defaults
+            && (! $data->taskCheckProvided || $app->task_check === $data->taskCheck)
         ) {
             return;
         }
