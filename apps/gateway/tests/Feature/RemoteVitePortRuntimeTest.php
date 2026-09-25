@@ -12,6 +12,7 @@ use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
 use Symfony\Component\Process\Process as LocalProcess;
+use Tests\Support\LinuxNodeProgram;
 
 function local_vite_port_runtime(): RemoteVitePortRuntime
 {
@@ -35,6 +36,7 @@ function local_vite_port_runtime(): RemoteVitePortRuntime
 }
 
 it('skips actual occupied TCP ports and explicit exclusions on Linux', function (string $address): void {
+    LinuxNodeProgram::require('/proc/net/tcp');
     $listener = stream_socket_server($address, $code, $message);
     expect($listener)->not->toBeFalse();
     $name = stream_socket_get_name($listener, false);
@@ -48,5 +50,6 @@ it('skips actual occupied TCP ports and explicit exclusions on Linux', function 
 })->with(['IPv4' => 'tcp://127.0.0.1:0', 'IPv6' => 'tcp://[::1]:0']);
 
 it('reports finite exhaustion when the final candidate is excluded', function (): void {
+    LinuxNodeProgram::require('/proc/net/tcp');
     expect(fn () => local_vite_port_runtime()->selectPort(new Node(['user' => 'orbit', 'wireguard_ip' => '192.0.2.1']), 65535, [65535]))->toThrow(ProcessOperationException::class, 'No available Vite port remains');
 });

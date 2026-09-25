@@ -15,6 +15,7 @@ use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
+use Tests\Support\LinuxNodeProgram;
 
 it('uses the same bounded remote check without reading environment contents', function (): void {
     $ssh = new EnvironmentObservationSshExecutor([
@@ -64,6 +65,7 @@ it('selects bounded write and required-capacity checks without environment input
 });
 
 it('checks a writable destination without reading its contents', function (): void {
+    LinuxNodeProgram::require('os.O_PATH and /proc/self/fd');
     $directory = environment_access_directory();
     file_put_contents("{$directory}/.env", "MUST_NOT_BE_OBSERVED=sentinel\n");
     chmod("{$directory}/.env", 0000);
@@ -166,6 +168,7 @@ it('refuses nonempty diagnostics while reading an otherwise valid remote value',
 });
 
 it('reads a maximum-size file through the explicit native output bound', function (): void {
+    LinuxNodeProgram::require('os.O_PATH and /proc/self/fd');
     $directory = environment_access_directory();
     $contents = str_repeat('x', 1_048_576);
     file_put_contents("{$directory}/.env", $contents);
