@@ -6,12 +6,16 @@ namespace App\Providers;
 
 use App\Actions\AppInstances\RemoveAppInstanceAction;
 use App\Actions\AppInstances\SynchronizeAppInstanceEnvironmentAction;
+use App\Actions\Broadcasting\PresenceChannelSigner;
 use App\Actions\Gateway\BootstrapGatewayAction;
 use App\Actions\Gateway\GatewayBootstrapIdentityValidator;
 use App\Actions\Gateway\GatewayOperatingSystemGuard;
 use App\Actions\Hibernation\SweepIdleAppDevRuntimesAction;
 use App\Actions\Nodes\AssignRoleAction;
 use App\Console\GatewayBoostInstallCommand;
+use App\Domain\AgentView\AgentProcessView;
+use App\Domain\AgentView\AgentStateView;
+use App\Domain\AgentView\AgentViewConverger;
 use App\Domain\Analytics\AnalyticsClickhouseConfigurationManager;
 use App\Domain\Analytics\AnalyticsPublicationManager;
 use App\Domain\Analytics\AnalyticsRoleSettingsRepository;
@@ -156,6 +160,10 @@ use App\Domain\WireGuard\WireGuardPeerDnsRepairer;
 use App\Http\Streaming\DeploymentStreamConnection;
 use App\Http\Streaming\NativeDeploymentStreamConnection;
 use App\Infrastructure\Activity\ActivityPropertiesObserver;
+use App\Infrastructure\AgentView\AgentViewSubscriber;
+use App\Infrastructure\AgentView\CacheAgentStateView;
+use App\Infrastructure\AgentView\NativeAgentViewConverger;
+use App\Infrastructure\AgentView\StreamWebSocketClient;
 use App\Infrastructure\Analytics\NativeAnalyticsClickhouseConfigurationManager;
 use App\Infrastructure\Analytics\NativeAnalyticsPublicationManager;
 use App\Infrastructure\Analytics\NativeAnalyticsRoleSettingsRepository;
@@ -286,6 +294,7 @@ use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\NativeProcessAdmissionLock;
 use App\Infrastructure\Processes\NativeProcessRunner;
 use App\Infrastructure\Processes\NativeProcessRuntimeLease;
+use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\Processes\PrometheusProcessRuntimeStatusIndex;
 use App\Infrastructure\Processes\PrometheusProcessUsageIndex;
@@ -334,10 +343,12 @@ use App\Infrastructure\WireGuard\WireGuardServerConfigRenderer;
 use App\Models\Activity;
 use App\Models\AppInstance;
 use App\Models\DatabaseConnection;
+use Illuminate\Cache\CacheManager;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Support\ServiceProvider;
 use Laravel\Boost\Console\InstallCommand;
 use Laravel\Boost\Install\GuidelineComposer;
+use Psr\Log\LoggerInterface;
 
 final class AppServiceProvider extends ServiceProvider
 {
@@ -429,6 +440,8 @@ final class AppServiceProvider extends ServiceProvider
         ManagedMysqlUserProvisioner::class => RemoteManagedMysqlUserProvisioner::class,
         ProcessRuntimeManager::class => RemoteProcessRuntimeManager::class,
         ProcessRuntimeStatusIndex::class => PrometheusProcessRuntimeStatusIndex::class,
+        AgentStateView::class => CacheAgentStateView::class,
+        AgentViewConverger::class => NativeAgentViewConverger::class,
         ProcessUsageIndex::class => PrometheusProcessUsageIndex::class,
         VitePortRuntime::class => RemoteVitePortRuntime::class,
         HibernationMarkerStore::class => RemoteHibernationMarkerStore::class,
@@ -502,6 +515,35 @@ final class AppServiceProvider extends ServiceProvider
                 checkouts: $app->make(AppInstanceCheckoutInspector::class),
                 idleSeconds: (int) config('orbit.hibernation.idle_seconds'),
                 dependencyIdleSeconds: (int) config('orbit.hibernation.dependency_idle_seconds'),
+                agents: $app->make(AgentProcessView::class),
+            ),
+        );
+        $this->app->singleton(
+            CacheAgentStateView::class,
+            static fn ($app): CacheAgentStateView => new CacheAgentStateView(
+                $app->make(CacheManager::class)->build(CacheAgentStateView::storeConfiguration((string) config('orbit.home'))),
+            ),
+        );
+        $this->app->bind(
+            AgentViewSubscriber::class,
+            static fn ($app): AgentViewSubscriber => new AgentViewSubscriber(
+                socket: new StreamWebSocketClient,
+                credentials: $app->make(WebSocketCredentialManager::class),
+                view: $app->make(CacheAgentStateView::class),
+                signer: $app->make(PresenceChannelSigner::class),
+                log: $app->make(LoggerInterface::class),
+                caPath: rtrim(string: (string) config('orbit.home'), characters: '/').'/ca/root.pem',
+                commit: static function () use ($app): ?string {
+                    $result = $app->make(ProcessRunner::class)->run(
+                        new ProcessInvocation(['git', '-C', base_path(), 'rev-parse', 'HEAD'], timeout: 10.0),
+                    );
+
+                    return $result->succeeded() ? trim($result->stdout) : null;
+                },
+                clock: CacheAgentStateView::now(...),
+                sleep: static function (float $seconds): void {
+                    usleep((int) ($seconds * 1_000_000));
+                },
             ),
         );
         $this->app->bind(
@@ -519,6 +561,7 @@ final class AppServiceProvider extends ServiceProvider
                 keys: $app->make(SshKeyProvider::class),
                 knownHosts: $app->make(KnownHostsStore::class),
                 timeoutSeconds: (int) config('orbit.hibernation.wake_timeout_seconds'),
+                agents: $app->make(AgentProcessView::class),
             ),
         );
         $this->app->bind(
@@ -696,6 +739,7 @@ final class AppServiceProvider extends ServiceProvider
                 checkoutPath: rtrim(string: (string) config('orbit.gateway_checkout'), characters: '/'),
                 webRoot: (string) config('orbit.gateway_web'),
                 hibernator: app(RuntimeHibernatorConverger::class),
+                agentView: app(AgentViewConverger::class),
             ),
         );
         $this->app->singleton(

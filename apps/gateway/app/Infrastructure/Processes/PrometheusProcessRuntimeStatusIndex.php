@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Processes;
 
+use App\Domain\AgentView\AgentProcessView;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Processes\ProcessRuntimeStatusIndex;
@@ -29,8 +30,10 @@ use Throwable;
  * Docker Process with a series is `running` and one without is `exited`, the words
  * `docker container inspect` uses.
  *
- * Only when Prometheus cannot answer at all does the index ask each Node, which is one SSH round
- * trip per Process and the fan-out this class exists to avoid.
+ * The Gateway's view of the Node agents answers first, for every Process whose Node it holds fresh
+ * (ADR 0148). Prometheus answers for the rest. Only when Prometheus cannot answer at all does the
+ * index ask each remaining Node, which is one SSH round trip per Process and the fan-out this class
+ * exists to avoid.
  */
 final readonly class PrometheusProcessRuntimeStatusIndex implements ProcessRuntimeStatusIndex
 {
@@ -56,21 +59,30 @@ final readonly class PrometheusProcessRuntimeStatusIndex implements ProcessRunti
         private ProcessRuntimeManager $runtime,
         private SystemdProcessRenderer $systemd,
         private DockerProcessRenderer $docker,
+        private AgentProcessView $agents,
     ) {}
 
     #[\Override]
     public function statuses(Collection $processes): array
     {
-        $states = $processes->isEmpty() ? [] : $this->runtimeStates();
-        $observed = $processes->isEmpty()
-            ? []
-            : Cache::many($processes->map(static fn (Process $process): string => self::OBSERVED_KEY.$process->id)->all());
+        if ($processes->isEmpty()) {
+            return [];
+        }
+
+        $observed = Cache::many($processes->map(static fn (Process $process): string => self::OBSERVED_KEY.$process->id)->all());
+        $viewed = $this->agents->statuses($processes);
+        $unanswered = $processes->contains(
+            static fn (Process $process): bool => ! is_string($observed[self::OBSERVED_KEY.$process->id] ?? null)
+                && ! isset($viewed[(int) $process->id]),
+        );
+        $states = $unanswered ? $this->runtimeStates() : [];
         $statuses = [];
 
         foreach ($processes as $process) {
             $recent = $observed[self::OBSERVED_KEY.$process->id] ?? null;
             $statuses[(int) $process->id] = match (true) {
                 is_string($recent) => $recent,
+                isset($viewed[(int) $process->id]) => $viewed[(int) $process->id],
                 $states === null => $this->fromNode($process),
                 default => $this->fromStates($process, $states),
             };
