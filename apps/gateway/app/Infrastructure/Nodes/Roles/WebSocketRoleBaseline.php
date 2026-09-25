@@ -57,8 +57,11 @@ final readonly class WebSocketRoleBaseline implements RoleBaseline
 
     public function remove(Node $node, NodeRole $assignment, bool $purgeData): void
     {
+        // Until the site is withdrawn and Reverb has stopped, the Gateway keeps publishing to this Node's
+        // Reverb, so a removal that fails part way never strands the clients still connected there.
         $this->publication->remove($node);
         $this->runtime->remove($node, $assignment, $purgeData);
+        $this->publication->retire($node);
         $this->credentials->purge($node);
     }
 

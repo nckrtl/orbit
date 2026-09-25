@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Domain\Tasks\TaskBroadcasts;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskPlannerObserver;
 use App\Domain\Tasks\TaskScheduler;
@@ -18,7 +19,7 @@ final class TickTaskSessionsCommand extends Command
     #[\Override]
     protected $description = 'Observe running task threads and waiting planners, ask Jev for the next action, and execute it.';
 
-    public function handle(TaskScheduler $scheduler, TaskExtensionState $extension, TaskPlannerObserver $planners): int
+    public function handle(TaskScheduler $scheduler, TaskExtensionState $extension, TaskPlannerObserver $planners, TaskBroadcasts $broadcasts): int
     {
         if (! $extension->enabled()) {
             $this->info('Tasks extension is disabled.');
@@ -35,13 +36,11 @@ final class TickTaskSessionsCommand extends Command
 
         try {
             $decisions = $scheduler->tick();
-            $started = 0;
-            while (($group = $scheduler->claimNext()) !== null) {
-                $started++;
-            }
+            $started = $scheduler->claimAvailable();
             $planners->observe();
         } finally {
             $lock->release();
+            $broadcasts->flush();
         }
         $this->info('Routed ['.count($decisions).'] tasks and started ['.$started.'] groups.');
 

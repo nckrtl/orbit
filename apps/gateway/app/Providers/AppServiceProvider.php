@@ -77,6 +77,7 @@ use App\Domain\Clusters\ClusterRouterOperationLock;
 use App\Domain\DatabaseConnections\DatabaseInspectionExecutor;
 use App\Domain\DatabaseConnections\ManagedMysqlUserProvisioner;
 use App\Domain\Doctor\AppStateInspector;
+use App\Domain\Doctor\CaddyBuildInspector;
 use App\Domain\Doctor\CustomProxyRouteInspector;
 use App\Domain\Doctor\GatewayVpnStateInspector;
 use App\Domain\Doctor\InstanceStateInspector;
@@ -163,6 +164,7 @@ use App\Infrastructure\Activity\ActivityPropertiesObserver;
 use App\Infrastructure\AgentView\AgentViewSubscriber;
 use App\Infrastructure\AgentView\CacheAgentStateView;
 use App\Infrastructure\AgentView\NativeAgentViewConverger;
+use App\Infrastructure\AgentView\ProcessAgentViewPublisher;
 use App\Infrastructure\AgentView\StreamWebSocketClient;
 use App\Infrastructure\Analytics\NativeAnalyticsClickhouseConfigurationManager;
 use App\Infrastructure\Analytics\NativeAnalyticsPublicationManager;
@@ -228,6 +230,7 @@ use App\Infrastructure\Clusters\NativeClusterRouterOperationLock;
 use App\Infrastructure\DatabaseConnections\RegisteredDatabaseInspectionExecutor;
 use App\Infrastructure\DatabaseConnections\RemoteManagedMysqlUserProvisioner;
 use App\Infrastructure\Doctor\NativeAppStateInspector;
+use App\Infrastructure\Doctor\NativeCaddyBuildInspector;
 use App\Infrastructure\Doctor\NativeCustomProxyRouteInspector;
 use App\Infrastructure\Doctor\NativeGatewayVpnStateInspector;
 use App\Infrastructure\Doctor\NativeInstanceStateInspector;
@@ -459,6 +462,7 @@ final class AppServiceProvider extends ServiceProvider
         DatabaseInspectionExecutor::class => RegisteredDatabaseInspectionExecutor::class,
         ClusterRouterDnsSelectionReconciler::class => NativeClusterRouterDnsSelectionReconciler::class,
         RoleStateInspector::class => NativeRoleStateInspector::class,
+        CaddyBuildInspector::class => NativeCaddyBuildInspector::class,
         ScheduleStateInspector::class => NativeScheduleStateInspector::class,
         ToolInspector::class => NativeToolInspector::class,
         ToolManagerMaterializer::class => NativeToolManagerMaterializer::class,
@@ -545,6 +549,12 @@ final class AppServiceProvider extends ServiceProvider
                 sleep: static function (float $seconds): void {
                     usleep((int) ($seconds * 1_000_000));
                 },
+                publisher: new ProcessAgentViewPublisher(
+                    command: [PHP_BINARY, base_path('artisan'), 'orbit:agent-view-publish'],
+                    log: $app->make(LoggerInterface::class),
+                    clock: CacheAgentStateView::now(...),
+                    workingDirectory: base_path(),
+                ),
             ),
         );
         $this->app->bind(

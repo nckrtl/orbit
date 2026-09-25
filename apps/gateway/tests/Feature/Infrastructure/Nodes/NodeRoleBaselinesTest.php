@@ -49,6 +49,7 @@ use App\Infrastructure\Nodes\Roles\AppDevRoleBaseline;
 use App\Infrastructure\Nodes\Roles\AppProdRoleBaseline;
 use App\Infrastructure\Nodes\Roles\DatabaseRoleBaseline;
 use App\Infrastructure\Nodes\Roles\GatewayRoleBaseline;
+use App\Infrastructure\Nodes\Roles\IngressRoleBaseline;
 use App\Infrastructure\Nodes\Roles\MetricsRoleBaseline;
 use App\Infrastructure\Nodes\Roles\NativeRoleBaselineConverger;
 use App\Infrastructure\Nodes\Roles\NodeRoleOperatingSystemGuard;
@@ -645,10 +646,16 @@ it('dispatches every assignment to its code-defined baseline', function (): void
     );
 });
 
-it('refreshes service metrics for Ingress lifecycle operations without installing a host baseline', function (): void {
+it('installs Caddy for an Ingress-only Node and keeps it on removal', function (): void {
     $events = [];
+    [$node, $assignment] = role_baseline_models(RoleName::Ingress, 'ingress-only');
     $metricsFleet = Mockery::mock(MetricsFleetReconciler::class);
-    $metricsFleet->shouldReceive('reconcile')->times(3);
+    $metricsFleet
+        ->shouldReceive('reconcile')
+        ->times(3)
+        ->andReturnUsing(static function () use (&$events): void {
+            $events[] = 'metrics';
+        });
     $dispatcher = new NativeRoleBaselineConverger(
         gateway_role_baseline($events),
         new VpnRoleBaseline(
@@ -675,18 +682,23 @@ it('refreshes service metrics for Ingress lifecycle operations without installin
             baseline_keys(),
             baseline_known_hosts(),
         ),
+        ingress: ingress_role_baseline($events),
     );
-    $node = new Node(['name' => 'ingress', 'public_ssh_host' => '192.0.2.86']);
-    $assignment = new NodeRole([
-        'role' => RoleName::Ingress,
-        'status' => LifecycleStatus::Provisioning,
-    ]);
 
     $dispatcher->converge($node, $assignment);
     $dispatcher->remove($node, $assignment, purgeData: false);
     $dispatcher->removeUnreachable($node, $assignment);
 
-    expect($events)->toBe([]);
+    expect($events)->toBe([
+        'guard:gateway',
+        'ssh:caddy-source',
+        'ssh:ingress',
+        'caddy:converge',
+        'metrics',
+        'caddy:remove',
+        'metrics',
+        'metrics',
+    ]);
 });
 
 it('dispatches removeUnreachable to the matching baseline and skips fleet reconciliation for Metrics', function (): void {
@@ -969,7 +981,7 @@ function baseline_guard_ssh(array &$events): SshExecutor
 function role_baseline_models(RoleName $role, string $name = 'role-node'): array
 {
     $address = '10.44.0.'.(Node::query()->count() + 2);
-    $cluster = $role === RoleName::Router
+    $cluster = in_array($role, [RoleName::Router, RoleName::Ingress], strict: true)
         ? Cluster::query()->create(['name' => "{$name}-cluster"])
         : null;
     $node = Node::query()->create([
@@ -1239,6 +1251,35 @@ function router_role_baseline(array &$events): RouterRoleBaseline
         new AppDevSshExecutor(baseline_ssh($events), baseline_keys(), baseline_known_hosts()),
         $caddy,
         baseline_firewall($events),
+        baseline_account_resolver(),
+    );
+}
+
+/** @param list<string> $events */
+function ingress_role_baseline(array &$events): IngressRoleBaseline
+{
+    $caddy = new class($events) implements AppDevCaddyManager
+    {
+        /** @param list<string> $events */
+        public function __construct(
+            private array &$events,
+        ) {}
+
+        public function converge(Node $node): void
+        {
+            $this->events[] = 'caddy:converge';
+        }
+
+        public function remove(Node $node): void
+        {
+            $this->events[] = 'caddy:remove';
+        }
+    };
+
+    return new IngressRoleBaseline(
+        new NodeRolePrerequisiteCommandFactory,
+        new AppDevSshExecutor(baseline_ssh($events), baseline_keys(), baseline_known_hosts()),
+        $caddy,
         baseline_account_resolver(),
     );
 }

@@ -195,6 +195,27 @@ it('creates missing Laravel environment configuration from its safe template', f
     }
 });
 
+it('keeps an Instance environment unreadable to other local users', function (bool $exists): void {
+    $directory = sys_get_temp_dir().'/orbit-laravel-env-mode-'.Str::uuid();
+    $files = new Filesystem;
+    $files->ensureDirectoryExists($directory);
+    $file = $directory.($exists ? '/.env' : '/.env.example');
+    file_put_contents($file, $exists ? "APP_URL=https://feature.acme.test\n" : "APP_NAME=Acme\n");
+    chmod($file, 0o664);
+
+    try {
+        [$configurator, $ssh, $appInstance] = orb127_laravel_configurator($directory);
+
+        $configurator->configureLaravelUrl($appInstance, 'https://feature.acme.test');
+        $result = orb127_run_laravel_command($ssh->commands[0]);
+
+        expect($result->isSuccessful())->toBeTrue($result->getErrorOutput())
+            ->and(fileperms($directory.'/.env') & 0o777)->toBe(0o660);
+    } finally {
+        $files->deleteDirectory($directory);
+    }
+})->with(['created from a template' => false, 'already present and unchanged' => true]);
+
 it('keeps the Laravel URL out of argv input state and debug output', function (): void {
     [$configurator, $ssh, $appInstance] = orb127_laravel_configurator('/srv/acme/feature');
     $url = 'https://secret-value.acme.test';

@@ -465,49 +465,9 @@ PHP
     mutation=$("$orbit" node:role:add "$node_id" metrics --converge --json)
     php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); if (($v["node_id"] ?? null) !== (int)$argv[1] || ($v["node_name"] ?? null) !== $argv[3] || ($v["role"] ?? null) !== "metrics" || ($v["assignment"]["id"] ?? null) !== (int)$argv[2] || ($v["assignment"]["role"] ?? null) !== "metrics" || ($v["assignment"]["status"] ?? null) !== "active") exit(1);' "$node_id" "$assignment_id" "$2" <<<"$mutation"
     ;;
-  internal-tls)
-    # The sample production site serves Orbit's own certificates, and every
-    # Orbit Caddy publisher writes the one global options block Caddy allows
-    # (`auto_https disable_certs`). An older snapshot carries a second global
-    # block, `local_certs`, as an unmanaged fragment of the managed version;
-    # the publisher copies it forward, so every changed publish on app-prod
-    # fails validation. This step removes that fragment and restores the
-    # product symlink. Runs before re-projection so the publisher validates a
-    # managed layout.
-    [[ $# -eq 1 ]] || exit 64
-    [[ "$(id -u)" -eq 0 ]] || exit 77
-    live=/etc/caddy/Caddyfile
-    legacy_wrapper=/etc/caddy/Caddyfile.orbit-e2e
-    target=$(readlink -f "$live")
-    if [[ "$target" == "$legacy_wrapper" ]]; then
-      # A promoted snapshot may still carry the retired e2e wrapper; resolve
-      # the managed version it imported and restore the product symlink.
-      target=$(sed -n 's#^import \(/etc/caddy/orbit-versions/[0-9a-f]\{16\}/Caddyfile\)$#\1#p' "$target" | tail -n 1)
-    fi
-    case "$target" in
-      /etc/caddy/orbit-versions/*/Caddyfile) ;;
-      *) printf 'internal-tls: unexpected Caddyfile target: %s\n' "$target" >&2; exit 65 ;;
-    esac
-    [[ -f "$target" ]]
-    fragment=$(dirname "$target")/fragments/00-orbit-e2e-global.caddy
-    changed=0
-    if [[ -e "$fragment" ]]; then
-      rm -f -- "$fragment"
-      changed=1
-    fi
-    if [[ "$(readlink -f "$live")" != "$target" ]]; then
-      ln -sfn "$target" "$live"
-      changed=1
-    fi
-    rm -f -- "$legacy_wrapper" /var/lib/orbit-e2e/caddy-rendered-path /var/lib/orbit-e2e/caddy-config-sha256
-    caddy validate --config "$live" --adapter caddyfile
-    if [[ "$changed" -eq 1 ]]; then
-      systemctl reload caddy
-    fi
-    ;;
   reproject)
     # Re-project every managed role and instance through the product so the
-    # rendered PHP-FPM pools, Caddy fragments, firewall rules, and DNS records
+    # rendered PHP-FPM pools, Caddy sites, firewall rules, and DNS records
     # match the Gateway code in the checkout. Roles first, then instances with
     # development last: the app-dev runtime converger publishes the Gateway
     # DNS records for every active site, so it must run after every other
@@ -663,12 +623,9 @@ PHP
       run_as_runtime php "$checkout/artisan" migrate --force --no-interaction
     done
     if [[ "$3" == app-prod ]]; then
-      # The product-managed Caddyfile serves the site with the internal CA that
-      # `internal-tls` placed inside the managed version.
-      ca=$(cat /var/lib/orbit-e2e/caddy-ca-path)
-      [[ -s "$ca" ]]
+      # The Node Caddy build serves the site with the Orbit CA leaf the Gateway publishes.
+      ca=/usr/local/share/ca-certificates/orbit-managed-root-ca.crt
       if [[ $# -eq 4 ]]; then
-        ca=/usr/local/share/ca-certificates/orbit-managed-root-ca.crt
         curl --fail --silent --show-error --retry 10 --retry-delay 2 --retry-connrefused --retry-all-errors --connect-timeout 10 --max-time 30 --cacert "$ca" --resolve "$production_domain:443:10.44.0.1" "https://$production_domain/" >/dev/null
       else
         curl --fail --silent --show-error --retry 10 --retry-delay 2 --retry-connrefused --retry-all-errors --connect-timeout 10 --max-time 30 --cacert "$ca" --resolve laravel.internal:443:127.0.0.1 https://laravel.internal/ >/dev/null

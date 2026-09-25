@@ -235,7 +235,7 @@ final readonly class AppDevSiteRepository
         }
 
         $ingress = $route->cluster !== null
-            ? $this->eligibility->activeIngress($route->cluster)
+            ? $this->eligibility->servingIngress($route->cluster)
             : null;
         $hasPublicIngress = $this->publishesIngress($route)
             && $ingress instanceof Node;
@@ -683,7 +683,7 @@ final readonly class AppDevSiteRepository
         }
 
         $ingress = $includeIngress && $route->cluster !== null && $this->publishesIngress($route)
-            ? $this->eligibility->activeIngress($route->cluster)
+            ? $this->eligibility->servingIngress($route->cluster)
             : null;
 
         if ($ingress instanceof Node && $ingress->is($router)) {

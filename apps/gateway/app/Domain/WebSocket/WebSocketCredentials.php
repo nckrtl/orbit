@@ -23,7 +23,24 @@ final readonly class WebSocketCredentials
         public string $laravelAppKey,
         /** WireGuard address of the node that serves Reverb, when read from an active assignment. */
         public ?string $servingAddress = null,
+        /**
+         * Every address whose Reverb holds clients, the serving address first. During a `websocket` move it
+         * also names the old Node until that Node withdraws, so the Gateway publishes to and listens on both.
+         *
+         * @var list<string>
+         */
+        public array $servingAddresses = [],
     ) {}
+
+    /** @return list<string> */
+    public function addresses(): array
+    {
+        if ($this->servingAddresses !== []) {
+            return $this->servingAddresses;
+        }
+
+        return $this->servingAddress === null || $this->servingAddress === '' ? [] : [$this->servingAddress];
+    }
 
     public function __debugInfo(): array
     {

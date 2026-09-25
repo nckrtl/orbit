@@ -232,7 +232,7 @@ TAGS = [
     ('internal', 'Node callbacks', 'Endpoints that managed Nodes and Caddy call; operators do not call them.'),
 ]
 TAG_BY_PREFIX = {p: t for p, t, _ in TAGS}
-INTERNAL = {'tasks:agents', 'tasks:agent-stream', 'agent:realtime', 'agent:realtime:auth', 'metrics:grafana:authorize', 'schedule:complete', 'runtime-activation:app-instance', 'github:app:register', 'github:app:callback'}
+INTERNAL = {'tasks:agents', 'tasks:agent-stream', 'agent:realtime', 'agent:realtime:auth', 'agent:workspaces', 'metrics:grafana:authorize', 'schedule:complete', 'runtime-activation:app-instance', 'github:app:register', 'github:app:callback'}
 DEFINITION_ROUTES = {
     'AppRuntimeDefinitionsController@processIndex': 'List process definitions',
     'AppRuntimeDefinitionsController@processStore': 'Create a process definition',
@@ -283,10 +283,11 @@ SUMMARIES = {
     'runtime-activation:app-instance': 'Wake an Instance',
     'realtime:auth': 'Authorize the orbit broadcast channel', 'realtime:show': 'Show the Reverb connection',
     'agent:realtime': "Show the agent's Reverb connection", 'agent:realtime:auth': "Authorize the agent's presence channel",
+    'agent:workspaces': "List the task checkouts the agent watches",
     'tasks:enable': 'Enable Tasks', 'tasks:disable': 'Disable Tasks', 'tasks:status': 'Show Tasks status',
     'tasks:agents': 'List task agent sessions', 'tasks:agent-stream': 'Watch a task agent session',
     'tasks:list': 'List Task groups', 'tasks:create': 'Create a Task group', 'tasks:show': 'Show a Task group', 'tasks:update': 'Update a Task group',
-    'tasks:subtask:create': 'Create a subtask', 'tasks:subtask:update': 'Update a subtask', 'tasks:subtask:destroy': 'Destroy a subtask',
+    'tasks:subtask:create': 'Create a subtask', 'tasks:subtask:update': 'Update a subtask', 'tasks:subtask:destroy': 'Destroy a subtask', 'tasks:subtask:cancel': 'Cancel a running subtask',
     'tasks:complete': 'Complete a Task group', 'tasks:cancel': 'Cancel a Task group',
 }
 DESCRIPTIONS = {
@@ -294,6 +295,7 @@ DESCRIPTIONS = {
     'gateway:status': 'Returns the Gateway name, version, and status. This endpoint needs no WireGuard identity.',
     'realtime:auth': 'A Pusher-protocol channel authorization endpoint. A client requests access to the private `orbit` channel with its `socket_id` and `channel_name`; any active WireGuard peer Node is authorized.',
     'agent:realtime': "The `orbit-agent` on a managed Node calls this endpoint to find its Reverb connection. The Gateway identifies the Node from the WireGuard address and returns the Reverb URL, serving address, and app key, the Node's `presence-node.{id}` channel, and the agent's `agent.{id}` member ID. Connection values are null when broadcasting is not configured.",
+    'agent:workspaces': "The `orbit-agent` on a managed Node calls this endpoint every 60 seconds to learn which task checkouts to watch. The Gateway identifies the Node from the WireGuard address and lists the Instances on that Node that hold the workspace of an unfinished task group, at most 64, with the checkout path, the Project's default branch as `base`, and the Instance's starting commit as `start`. The list is empty while the tasks extension is disabled.",
     'agent:realtime:auth': "The `orbit-agent` on a managed Node calls this endpoint to join its own presence channel. The Gateway signs member `agent.{id}` on `presence-node.{id}` only for a request from that Node's WireGuard address. The response carries the Pusher `auth` and `channel_data` values.",
     'realtime:show': 'Returns the Reverb WebSocket URL, app key, and channel name a client needs to subscribe to record-change events, or null values when broadcasting is not configured.',
     'metrics:grafana:authorize': 'Caddy on the Gateway calls this endpoint for each Grafana request. The Gateway identifies the caller from the connection address and answers 204 when the caller may reach Grafana.',
@@ -324,7 +326,8 @@ DESCRIPTIONS = {
     'tasks:subtask:destroy': 'Deletes a subtask while its group is in `backlog` (`tasks.not_in_backlog`) and closes the position gap. Returns the deleted subtask. Served by the Node that holds the group\'s Instance, or by the Gateway for a group without one. Returns `tasks.disabled` while the extension is off.',
     'tasks:list': 'Lists Task groups, newest first. Optional `app_id` and `status` filters. Returns `tasks.disabled` while the extension is off.',
     'tasks:show': 'Shows one Task group and its Tasks in position order. Returns `tasks.disabled` while the extension is off.',
-    'tasks:cancel': 'Cancels a backlog, todo, reserved, running, reviewing, or failed Task group and clears its shared Instance. Idempotent for cancelled groups. Route-free source_resolved Instances use database-only cleanup and retain their checkout; other Instances use the forced Instance remover. Requires Gateway access. Returns tasks.disabled while the extension is off and tasks.not_cancellable for settling or completed groups.',
+    'tasks:subtask:cancel': 'Cancels a `running` subtask. Stops its implementer and its running baseline or handoff check, keeps the group and its Instance, and starts the lowest-position `todo` subtask. That subtask runs the baseline check first when no implementer has started in the group. When no `todo` subtask remains, the group moves to `settling` without a pull request. Requires Gateway access. Returns `tasks.disabled` while the extension is off, `tasks.subtask_not_running` (409) when the subtask is not `running`, and `tasks.subtask_interrupt_failed` (502) when the implementer or check could not be stopped; the subtask then stays `running`.',
+    'tasks:cancel': 'Cancels a backlog, todo, reserved, running, reviewing, or failed Task group, or a settling group without a pull request, and clears its shared Instance. For a settling group with an approved subtask, the Gateway first pushes the workspace HEAD to `task-{group}` on origin; a failed push returns `tasks.push_failed` (502) and keeps the group and Instance. Idempotent for cancelled groups. Route-free source_resolved Instances use database-only cleanup and retain their checkout; other Instances use the forced Instance remover. Requires Gateway access. Returns tasks.disabled while the extension is off and tasks.not_cancellable for completed groups and settling groups with a pull request.',
     'tasks:complete': 'Marks a settling Task group completed and removes its shared Instance and any visitable Routes. Idempotent. Requires Gateway access. Returns `tasks.disabled` while the extension is off and `tasks.not_settling` when the group is not settling.',
     'proxycli:enable': 'Deploys one collector Process and publishes https://collector.cli-proxy-api.orbit after a Redis Database connection for shared Valkey is in place. Fails closed when that connection is missing, is not Redis, or names a Node without the database role. A custom proxy Route that already serves the collector hostname on that Node is withdrawn in the same Caddy reload and removed; any other Route on that name fails with proxycli.hostname_taken. The response never includes tokens or the management key.',
     'proxycli:disable': 'Stops the collector Process for the whole fleet, withdraws collector.cli-proxy-api.orbit and its certificate, deletes the stored CLIProxyAPI management key and the read and control tokens, and hides provider reads. Enabling again needs the management key. The Redis connection and Valkey data stay.',
@@ -1062,6 +1065,14 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
             'member': {'type': 'string', 'description': "The agent's member ID, `agent.{id}`."},
         }, 'required': ['url', 'address', 'key', 'channel', 'member']}
         responses['200'] = envelope(connection, 'The request succeeded.')
+    elif route['name'] == 'agent:workspaces':
+        workspace = {'type': 'object', 'properties': {
+            'instance_id': {'type': 'integer', 'description': 'The Instance that holds the task workspace.'},
+            'path': {'type': 'string', 'description': 'The absolute checkout path on the Node.'},
+            'base': {'type': 'string', 'description': "The Project's default branch, which the diff counts are read against."},
+            'start': {'type': ['string', 'null'], 'description': "The Instance's starting commit, or null."},
+        }, 'required': ['instance_id', 'path', 'base', 'start']}
+        responses['200'] = envelope({'type': 'array', 'items': workspace}, 'The request succeeded.')
     elif route['name'] == 'agent:realtime:auth':
         responses['200'] = {'description': 'The Pusher channel signature.', 'content': {'application/json': {'schema': {'type': 'object', 'properties': {
             'auth': {'type': 'string', 'description': 'Pusher channel signature.'},
@@ -1088,7 +1099,7 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
             responses['200'] = envelope(data, 'The request succeeded.')
         if route['name'] == 'gateway:trust':
             responses['503'] = error_response('The Gateway root CA is unavailable (`ca.unavailable`).')
-    if route['name'] == 'agent:realtime':
+    if route['name'] in ('agent:realtime', 'agent:workspaces'):
         responses['403'] = error_response('The caller is not an active WireGuard peer (`peer.identity_unknown`) or its Node is not eligible for an agent (`agent.node_ineligible`).')
     elif route['name'] == 'agent:realtime:auth':
         responses['403'] = error_response('The caller is not an active WireGuard peer (`peer.identity_unknown`), its Node is not eligible for an agent (`agent.node_ineligible`), or it asked for another Node\'s channel (`agent.channel_forbidden`).')
@@ -1101,7 +1112,11 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
     if route['name'] in ('tasks:list', 'tasks:show', 'tasks:agents', 'tasks:agent-stream'):
         responses['409'] = error_response('The tasks extension is disabled (`tasks.disabled`).')
     if route['name'] == 'tasks:cancel':
-        responses['409'] = error_response('The tasks extension is disabled (`tasks.disabled`) or the Task group is settling or completed (`tasks.not_cancellable`).')
+        responses['409'] = error_response('The tasks extension is disabled (`tasks.disabled`), or the Task group is completed or settling with a pull request (`tasks.not_cancellable`).')
+        responses['502'] = error_response('The approved commits of a settling group could not be pushed to its task branch (`tasks.push_failed`). The group and its Instance stay.')
+    if route['name'] == 'tasks:subtask:cancel':
+        responses['409'] = error_response('The tasks extension is disabled (`tasks.disabled`) or the subtask is not running (`tasks.subtask_not_running`).')
+        responses['502'] = error_response('The implementer or the running check could not be stopped (`tasks.subtask_interrupt_failed`). The subtask stays running.')
     if route['name'] == 'tasks:complete':
         responses['409'] = error_response('The tasks extension is disabled (`tasks.disabled`) or the Task group is not settling (`tasks.not_settling`).')
     if body_schema is not None or stream:

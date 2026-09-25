@@ -1537,6 +1537,8 @@ function tick_publishing(array $missing = [[]], int $failures = 0): object
 
             return 'https://github.com/acme/orbit/pull/42';
         }
+
+        public function push(TaskGroup $group): void {}
     };
     app()->instance(TaskBriefCoverage::class, $coverage);
     app()->instance(TaskPullRequestPublisher::class, $publisher);
@@ -1560,6 +1562,19 @@ it('commits the last approved subtask, opens the pull request with the reviewer 
         ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Settling)
         ->and($group->fresh()?->assistance_requested)->toBeFalse()
         ->and($task->fresh()?->status)->toBe(TaskStatus::Completed);
+});
+
+it('counts only the delivered subtasks in the pull request description', function (): void {
+    [$group, , , $signer] = tick_review([tick_final_approval()], last: true);
+    foreach ([TaskStatus::Completed, TaskStatus::Cancelled, TaskStatus::Failed] as $index => $status) {
+        Task::query()->create(['task_group_id' => $group->id, 'position' => $index + 2, 'title' => $status->value, 'brief' => 'Other subtask.', 'status' => $status]);
+    }
+    $publishing = tick_publishing();
+
+    app(TaskScheduler::class)->tick();
+
+    expect($signer->messages)->toHaveCount(1)
+        ->and($publishing->publisher->bodies)->toBe([TaskPullRequestDescription::render(new TaskRunPullRequest('Adds tick routing.', ['Tasks store their records.'], []), 2)]);
 });
 
 it('reminds the reviewer when the approval of the last subtask has no pull request fields', function (): void {

@@ -71,6 +71,44 @@ describe('project:create', function (): void {
             ]);
     });
 
+    it('creates a node-package Project through the typed SDK request', function (): void {
+        $mockClient = MockClient::global([
+            CreateAppRequest::class => app_mock_response(201),
+        ]);
+
+        $this->artisan('project:create', [
+            'slug' => 'node-kit',
+            'type' => 'node-package',
+            'repository' => 'https://github.com/acme/node-kit.git',
+            '--root' => '.',
+        ])->assertExitCode(0);
+
+        expect($mockClient->getLastRequest())
+            ->toBeInstanceOf(CreateAppRequest::class)
+            ->and($mockClient->getLastRequest()?->body()->all())
+            ->toMatchArray(['type' => 'node-package', 'root' => '.']);
+    });
+
+    it('defaults the root by Project type when --root is omitted', function (string $type, string $root): void {
+        $mockClient = MockClient::global([
+            CreateAppRequest::class => app_mock_response(201),
+        ]);
+
+        $this->artisan('project:create', [
+            'slug' => 'kit',
+            'type' => $type,
+            'repository' => 'https://github.com/acme/kit.git',
+        ])->assertExitCode(0);
+
+        expect($mockClient->getLastRequest()?->body()->all())
+            ->toMatchArray(['type' => $type, 'root' => $root]);
+    })->with([
+        'node-package' => ['node-package', '.'],
+        'laravel-package' => ['laravel-package', '.'],
+        'laravel-app' => ['laravel-app', 'public'],
+        'monorepo' => ['monorepo', 'public'],
+    ]);
+
     it('reports the created app for humans', function (): void {
         MockClient::global([CreateAppRequest::class => app_mock_response(201)]);
 
@@ -468,6 +506,24 @@ describe('project:update', function (): void {
 
         expect($clearClient->getLastRequest()?->body()->all())
             ->toBe(['task_baseline_check' => null]);
+    });
+
+    it('updates a Project to node-package through the typed SDK request', function (): void {
+        $mockClient = MockClient::global([
+            UpdateAppRequest::class => app_mock_response(),
+        ]);
+
+        $this->artisan('project:update', [
+            'project' => '3',
+            '--type' => 'node-package',
+            '--json' => true,
+        ])->expectsOutput(app_json())
+            ->assertExitCode(0);
+
+        expect($mockClient->getLastRequest())
+            ->toBeInstanceOf(UpdateAppRequest::class)
+            ->and($mockClient->getLastRequest()?->body()->all())
+            ->toBe(['type' => 'node-package']);
     });
 
     it('reports the updated app for humans', function (): void {

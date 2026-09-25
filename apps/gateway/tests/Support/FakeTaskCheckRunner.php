@@ -4,16 +4,23 @@ declare(strict_types=1);
 
 namespace Tests\Support;
 
+use App\Domain\Tasks\TaskCheckException;
 use App\Domain\Tasks\TaskCheckProcess;
 use App\Domain\Tasks\TaskCheckReading;
 use App\Domain\Tasks\TaskCheckRunner;
 use App\Models\AppInstance;
+use Illuminate\Support\Facades\DB;
 
 final class FakeTaskCheckRunner implements TaskCheckRunner
 {
     public int $starts = 0;
 
     public int $cancels = 0;
+
+    public bool $failNextCancel = false;
+
+    /** @var list<int> the database transaction level at each cancel */
+    public array $cancelTransactionLevels = [];
 
     /**
      * @param  list<TaskCheckReading>|null  $readings  one reading per read; null finishes every check with exit code 0
@@ -57,5 +64,11 @@ final class FakeTaskCheckRunner implements TaskCheckRunner
     public function cancel(AppInstance $instance, TaskCheckProcess $process): void
     {
         $this->cancels++;
+        $this->cancelTransactionLevels[] = DB::transactionLevel();
+        if ($this->failNextCancel) {
+            $this->failNextCancel = false;
+
+            throw new TaskCheckException('The Node is unreachable.');
+        }
     }
 }

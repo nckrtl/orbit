@@ -88,6 +88,6 @@ final readonly class NodeCaddyBuilder implements NodeCaddyBuilds
 
         $message = implode(' ', array_slice($lines, -5));
 
-        return $message === '' ? 'The push script failed without a message.' : mb_substr($message, 0, 2000);
+        return $message === '' ? 'The push script failed without a message.' : $message;
     }
 }

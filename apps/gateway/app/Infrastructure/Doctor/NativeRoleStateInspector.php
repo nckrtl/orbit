@@ -7,7 +7,6 @@ namespace App\Infrastructure\Doctor;
 use App\Domain\Doctor\DoctorInspectionException;
 use App\Domain\Doctor\RoleInspectionData;
 use App\Domain\Doctor\RoleStateInspector;
-use App\Domain\Nodes\RoleName;
 use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
 use App\Infrastructure\Nodes\NodeBootstrapPackageCatalog;
 use App\Infrastructure\Nodes\NodeRoleServiceCatalog;
@@ -72,10 +71,6 @@ final readonly class NativeRoleStateInspector implements RoleStateInspector
 
     public function inspect(NodeRole $role): RoleInspectionData
     {
-        if ($role->role === RoleName::Ingress) {
-            return new RoleInspectionData(true, true, true);
-        }
-
         try {
             $role->loadMissing('node');
             $node = $role->node;

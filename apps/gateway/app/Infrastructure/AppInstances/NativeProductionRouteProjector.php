@@ -78,7 +78,7 @@ final readonly class NativeProductionRouteProjector implements ProductionCloneRo
 
     private function publishPublicEdge(Route $route): void
     {
-        if ($route->publication !== RoutePublication::Public || ! $this->eligibility->canActivate($route)) {
+        if ($route->publication !== RoutePublication::Public || ! $this->eligibility->canStartActivation($route)) {
             return;
         }
 

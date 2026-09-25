@@ -13,6 +13,7 @@ enum RoleDoctorIssueCode: string implements DoctorIssueCode
     case ClusterCardinalityConflict = 'role.cluster_cardinality_conflict';
     case PackagesMissing = 'role.packages_missing';
     case CaddyVersionUnsupported = 'role.caddy_version_unsupported';
+    case CaddyBuildDrift = 'role.caddy_build_drift';
     case ServicesInactive = 'role.services_inactive';
     case FirewallProjectionMismatch = 'role.firewall_projection_mismatch';
     case VpnInactive = 'role.vpn_inactive';

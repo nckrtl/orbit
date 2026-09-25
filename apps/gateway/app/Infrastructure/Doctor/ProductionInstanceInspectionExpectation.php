@@ -8,8 +8,8 @@ use App\Domain\AppInstances\ProductionPhpRuntimeIdentity;
 use App\Infrastructure\AppInstances\ProductionPhpRuntimeConfiguration;
 
 /**
- * What Doctor expects of a production Instance. `caddy` is the Route fragment of a Node that no Node Caddy
- * build replaced yet; `caddyBuild` is the whole Caddyfile a build of the Node renders.
+ * What Doctor expects of a production Instance. `caddySites` holds the Instance's own site blocks exactly as a
+ * Node Caddy build renders them into the live Caddyfile. Drift elsewhere in that file is `role.caddy_build_drift`.
  */
 final readonly class ProductionInstanceInspectionExpectation
 {
@@ -19,11 +19,11 @@ final readonly class ProductionInstanceInspectionExpectation
         public string $root,
         #[\SensitiveParameter]
         private string $environment,
-        public string $caddy,
+        /** @var list<string> */
+        public array $caddySites,
         public bool $associationMatches,
         public ?ProductionPhpRuntimeIdentity $runtime,
         public ?ProductionPhpRuntimeConfiguration $runtimeConfiguration,
-        public string $caddyBuild = '',
     ) {}
 
     public function environment(): string

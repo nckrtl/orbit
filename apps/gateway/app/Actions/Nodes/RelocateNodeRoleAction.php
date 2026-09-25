@@ -10,6 +10,7 @@ use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Nodes\NodeRoleFirewallManager;
+use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Nodes\NodeRoleValidationException;
 use App\Domain\Nodes\RoleAssignmentException;
 use App\Domain\Nodes\RoleBaselineConverger;
@@ -20,10 +21,12 @@ use App\Domain\Settings\SettingScope;
 use App\Domain\Settings\SettingScopeType;
 use App\Domain\Settings\SettingValueProtection;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Metrics\NativeMetricsCredentialManager;
 use App\Infrastructure\WebSocket\WebSocketFootprint;
 use App\Models\Node;
 use App\Models\NodeRole;
+use Closure;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
@@ -111,8 +114,10 @@ final readonly class RelocateNodeRoleAction
         $this->prepareTarget($target, $role);
         $this->copyOwnedSettings($source, $target, $role);
         $assignment = $this->transfer($target, $source, $role);
-        $this->afterTransfer($target, $assignment, $role);
-        $this->retractSource($source, $role);
+        $this->finishOrReport($target, $source, $role, function () use ($target, $source, $assignment, $role): void {
+            $this->afterTransfer($target, $assignment, $role);
+            $this->retractSource($source, $role);
+        });
         $this->announce($source);
         $this->announce($target);
 
@@ -123,8 +128,10 @@ final readonly class RelocateNodeRoleAction
     {
         $this->copyOwnedSettings($from, $target, $role);
         $this->prepareTarget($target, $role);
-        $this->afterTransfer($target, $assignment, $role);
-        $this->retractSource($from, $role);
+        $this->finishOrReport($target, $from, $role, function () use ($target, $from, $assignment, $role): void {
+            $this->afterTransfer($target, $assignment, $role);
+            $this->retractSource($from, $role);
+        });
         $this->announce($from);
         $this->announce($target);
 
@@ -181,6 +188,28 @@ final readonly class RelocateNodeRoleAction
         }
 
         $this->baselines->converge($target, $assignment);
+    }
+
+    /**
+     * The assignment already names the target. When converging the target or withdrawing the source fails,
+     * the move is incomplete: the error keeps its codes, says so, and names the command that finishes it.
+     * For `websocket`, the Gateway keeps serving both Reverb servers until then.
+     *
+     * @param  Closure(): void  $steps
+     */
+    private function finishOrReport(Node $target, Node $source, RoleName $role, Closure $steps): void
+    {
+        try {
+            $steps();
+        } catch (NodeRoleOperationException|ResourceOperationException $exception) {
+            $message = "Role [{$role->value}] now runs on node [{$target->name}], but the move from node [{$source->name}] is incomplete: "
+                .$exception->getMessage()
+                ." Run `orbit node:role:relocate {$target->name} {$role->value} --from {$source->name} --force` to finish it once node [{$source->name}] is reachable.";
+
+            throw $exception instanceof NodeRoleOperationException
+                ? new NodeRoleOperationException($exception->step, $exception->errorCode, $exception->underlyingErrorCode, $message, $exception->result, $exception)
+                : new ResourceOperationException($exception->errorCode, $message, $exception->status, $exception, $exception->details);
+        }
     }
 
     private function retractSource(Node $source, RoleName $role): void

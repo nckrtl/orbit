@@ -40,9 +40,9 @@ beforeEach(function (): void {
     $route->customProxy()->create(['node_id' => $node->id, 'upstream' => 'http://127.0.0.1:4788']);
     $this->proxy = $route->customProxy()->sole();
     $this->caddy = sys_get_temp_dir().'/orbit-custom-proxy-'.bin2hex(random_bytes(4));
-    File::ensureDirectoryExists("{$this->caddy}/orbit-versions/v1/fragments");
+    File::ensureDirectoryExists("{$this->caddy}/orbit-versions/v1");
     symlink("{$this->caddy}/orbit-versions/v1/Caddyfile", "{$this->caddy}/Caddyfile");
-    file_put_contents("{$this->caddy}/orbit-versions/v1/Caddyfile", "import {$this->caddy}/orbit-versions/v1/fragments/*.caddy\n");
+    file_put_contents("{$this->caddy}/orbit-versions/v1/Caddyfile", '');
     $this->ssh = new LocalRootShellSshExecutor("{$this->caddy}/orbit-versions");
 });
 
@@ -51,7 +51,7 @@ afterEach(function (): void {
 });
 
 it('reads the root-only published Caddy version through sudo', function (): void {
-    custom_proxy_inspector_publish($this->caddy, "https://executor.orbit {\n    reverse_proxy 127.0.0.1:4788\n}\n");
+    custom_proxy_inspector_build($this->caddy, "https://executor.orbit {\n    reverse_proxy 127.0.0.1:4788\n}\n");
 
     $observation = custom_proxy_inspector($this->ssh, $this->caddy)->inspect($this->proxy);
 
@@ -59,20 +59,16 @@ it('reads the root-only published Caddy version through sudo', function (): void
         ->and($observation->caddyMatches)->toBeTrue();
 });
 
-it('reports a custom proxy site missing from the live Caddy version', function (): void {
-    custom_proxy_inspector_publish($this->caddy, "# Orbit has no active app development sites.\n");
+it('reports a custom proxy site missing from the one Caddyfile a Node Caddy build writes', function (): void {
+    custom_proxy_inspector_build($this->caddy, "reverb.orbit {\n    respond ok\n}\n");
 
     expect(custom_proxy_inspector($this->ssh, $this->caddy)->inspect($this->proxy)->caddyMatches)->toBeFalse();
 });
 
-it('reads a custom proxy site from the one Caddyfile a Node Caddy build writes', function (): void {
-    custom_proxy_inspector_build($this->caddy, "https://executor.orbit {\n    reverse_proxy 127.0.0.1:4788\n}\n");
-
-    expect(custom_proxy_inspector($this->ssh, $this->caddy)->inspect($this->proxy)->caddyMatches)->toBeTrue();
-});
-
-it('reports a custom proxy site missing from the one Caddyfile a Node Caddy build writes', function (): void {
-    custom_proxy_inspector_build($this->caddy, "reverb.orbit {\n    respond ok\n}\n");
+it('does not read a site that the live file only imports from a fragment of an earlier layout', function (): void {
+    File::ensureDirectoryExists("{$this->caddy}/orbit-versions/v1/fragments");
+    file_put_contents("{$this->caddy}/orbit-versions/v1/Caddyfile", "import {$this->caddy}/orbit-versions/v1/fragments/*.caddy\n");
+    file_put_contents("{$this->caddy}/orbit-versions/v1/fragments/app-dev.caddy", "https://executor.orbit {\n    reverse_proxy 127.0.0.1:4788\n}\n");
 
     expect(custom_proxy_inspector($this->ssh, $this->caddy)->inspect($this->proxy)->caddyMatches)->toBeFalse();
 });
@@ -109,16 +105,11 @@ function custom_proxy_inspector(LocalRootShellSshExecutor $ssh, string $caddy): 
     );
 }
 
-/** Replaces the fragment layout with a build's single versioned Caddyfile. */
+/** Publishes the one versioned Caddyfile a Node Caddy build writes. */
 function custom_proxy_inspector_build(string $caddy, string $sites): void
 {
     File::ensureDirectoryExists("{$caddy}/orbit-versions/v2");
     file_put_contents("{$caddy}/orbit-versions/v2/Caddyfile", NodeCaddyfileRenderer::Marker."\n".CaddyGlobalOptions::render()."\n".$sites);
     unlink("{$caddy}/Caddyfile");
     symlink("{$caddy}/orbit-versions/v2/Caddyfile", "{$caddy}/Caddyfile");
-}
-
-function custom_proxy_inspector_publish(string $caddy, string $sites): void
-{
-    file_put_contents("{$caddy}/orbit-versions/v1/fragments/app-dev.caddy", $sites);
 }

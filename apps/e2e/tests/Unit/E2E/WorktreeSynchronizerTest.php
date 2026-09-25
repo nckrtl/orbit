@@ -428,7 +428,7 @@ function synchronizerRequiredGuestScriptNames(): array
 {
     return [
         'converge-app-dev.sh',
-        'converge-app-prod-internal-tls.sh',
+        'converge-app-prod.sh',
         'converge-gateway.sh',
         'converge-sample-app.sh',
         'converge-sample-fixtures.sh',

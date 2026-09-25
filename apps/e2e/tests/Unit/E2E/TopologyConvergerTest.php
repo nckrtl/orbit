@@ -463,9 +463,9 @@ describe('TopologyConverger', function () {
         $all = implode("\n", $commands);
         expect($all)
             ->toContain(
-                $target->instance('gateway').' -- /usr/local/bin/converge-app-prod-internal-tls.sh app-prod ',
+                $target->instance('gateway').' -- /usr/local/bin/converge-app-prod.sh app-prod ',
                 ' aarch64 10.44.0.3',
-                $target->instance('gateway').' -- /usr/local/bin/converge-app-prod-internal-tls.sh app-prod-2 ',
+                $target->instance('gateway').' -- /usr/local/bin/converge-app-prod.sh app-prod-2 ',
                 ' aarch64 10.44.0.4',
                 $target->instance('app-dev')
                     .' -- /usr/local/bin/converge-sample-app.sh create-resources app-dev app-prod ',
@@ -524,7 +524,7 @@ describe('TopologyConverger', function () {
             ->all();
 
         expect($guestCommands)
-            ->toHaveCount(31)
+            ->toHaveCount(30)
             ->and(array_column(array_slice($guestCommands, 3, 3), 4))
             ->toBe([
                 'lab:orbit-e2e-tst-123-aaaaaaaa-gateway',
@@ -532,7 +532,7 @@ describe('TopologyConverger', function () {
                 'lab:orbit-e2e-tst-123-aaaaaaaa-gateway',
             ]);
 
-        expect(array_map(fn (array $command): array => array_slice($command, 6), array_slice($guestCommands, 0, 31)))
+        expect(array_map(fn (array $command): array => array_slice($command, 6), array_slice($guestCommands, 0, 30)))
             ->toBe([
                 ['/usr/local/bin/prepare-node.sh', 'align-identity'],
                 ['/usr/local/bin/prepare-node.sh', 'align-identity'],
@@ -548,7 +548,7 @@ describe('TopologyConverger', function () {
                 ['uname', '-m'],
                 ['/usr/local/bin/converge-app-dev.sh', 'app-dev', '192.0.2.11', 'x86_64'],
                 [
-                    '/usr/local/bin/converge-app-prod-internal-tls.sh',
+                    '/usr/local/bin/converge-app-prod.sh',
                     'app-prod',
                     '192.0.2.12',
                     'aarch64',
@@ -564,7 +564,6 @@ describe('TopologyConverger', function () {
                     str_repeat('b', 40),
                 ],
                 ['/usr/local/bin/converge-sample-app.sh', 'metrics', 'app-dev'],
-                ['/usr/local/bin/converge-sample-app.sh', 'internal-tls'],
                 ['/usr/local/bin/converge-sample-app.sh', 'reproject'],
                 ['/usr/local/bin/converge-sample-app.sh', 'metrics-publication', 'app-dev'],
                 ['/usr/local/bin/converge-sample-app.sh', 'instance-api-readiness'],
@@ -742,7 +741,6 @@ describe('TopologyConverger', function () {
                 'configure-cli' => 1,
                 'create-resources' => 2,
                 'metrics' => 1,
-                'internal-tls' => $typed ? null : 1,
                 'reproject' => 1,
                 'metrics-publication' => 1,
                 'instance-api-readiness' => 7,

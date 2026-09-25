@@ -92,6 +92,11 @@ Route::prefix('v1')->group(function (): void {
         ->withoutMiddleware(RecordCommandActivity::class)
         ->name('agent:realtime:auth');
 
+    Route::middleware(RequireActiveWireGuardPeer::class)
+        ->get('agent/workspaces', [AgentRealtimeController::class, 'workspaces'])
+        ->withoutMiddleware(RecordCommandActivity::class)
+        ->name('agent:workspaces');
+
     Route::middleware([
         RequireActiveWireGuardPeer::class,
         RequireNodeAccess::class,
@@ -563,6 +568,8 @@ Route::prefix('v1')->group(function (): void {
             ->whereNumber('group')->whereNumber('task')->name('tasks:subtask:update');
         Route::delete('task-groups/{group}/tasks/{task}', [TaskGroupsController::class, 'destroyTask'])
             ->whereNumber('group')->whereNumber('task')->name('tasks:subtask:destroy');
+        Route::post('task-groups/{group}/tasks/{task}/cancel', [TaskGroupsController::class, 'cancelSubtask'])
+            ->whereNumber('group')->whereNumber('task')->name('tasks:subtask:cancel');
         Route::post('task-groups/{group}/tasks/{task}/check/cancel', [TaskGroupsController::class, 'cancelCheck'])
             ->whereNumber('group')->whereNumber('task')->name('tasks:check:cancel');
         Route::post('task-groups/{group}/tasks/{task}/comments', [TaskGroupsController::class, 'storeComment'])

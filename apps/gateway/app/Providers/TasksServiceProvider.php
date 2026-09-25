@@ -11,6 +11,8 @@ use App\Domain\Tasks\InstanceProvisioning;
 use App\Domain\Tasks\LocalTaskSettleMetricsCollector;
 use App\Domain\Tasks\TaskAgentSpawner;
 use App\Domain\Tasks\TaskBriefCoverage;
+use App\Domain\Tasks\TaskBroadcastObserver;
+use App\Domain\Tasks\TaskBroadcasts;
 use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskPlannerMcp;
 use App\Domain\Tasks\TaskPlannerSpawner;
@@ -22,6 +24,7 @@ use App\Domain\Tasks\TaskSettleMetricsCollector;
 use App\Domain\Tasks\TaskWorkspaceDiffReader;
 use App\Domain\Tasks\TaskWorkspaceSigner;
 use App\Domain\Tasks\TaskWorkspaceStateReader;
+use App\Infrastructure\Tasks\AgentViewTaskWorkspaceDiffReader;
 use App\Infrastructure\Tasks\GitHubTaskPullRequestPublisher;
 use App\Infrastructure\Tasks\HttpCoderSettleNotifier;
 use App\Infrastructure\Tasks\HttpTaskPullRequestWatcher;
@@ -31,7 +34,6 @@ use App\Infrastructure\Tasks\Pi\PiDriver;
 use App\Infrastructure\Tasks\RemoteTaskCheckRunner;
 use App\Infrastructure\Tasks\RemoteTaskPlannerMcp;
 use App\Infrastructure\Tasks\RemoteTaskRunReceipts;
-use App\Infrastructure\Tasks\RemoteTaskWorkspaceDiffReader;
 use App\Infrastructure\Tasks\RemoteTaskWorkspaceSigner;
 use App\Infrastructure\Tasks\RemoteTaskWorkspaceStateReader;
 use App\Infrastructure\Tasks\T3\HttpT3Dispatcher;
@@ -42,6 +44,11 @@ use App\Infrastructure\Tasks\T3\T3Stream;
 use App\Infrastructure\Tasks\T3\T3TaskAgentStream;
 use App\Infrastructure\Tasks\T3\T3ThreadReader;
 use App\Infrastructure\Tasks\TaskWorkspaceProvisioner;
+use App\Models\AgentThread;
+use App\Models\Task;
+use App\Models\TaskCheck;
+use App\Models\TaskComment;
+use App\Models\TaskGroup;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Support\ServiceProvider;
 
@@ -57,7 +64,7 @@ final class TasksServiceProvider extends ServiceProvider
         T3Dispatcher::class => HttpT3Dispatcher::class,
         T3ThreadReader::class => HttpT3ThreadReader::class,
         TaskWorkspaceSigner::class => RemoteTaskWorkspaceSigner::class,
-        TaskWorkspaceDiffReader::class => RemoteTaskWorkspaceDiffReader::class,
+        TaskWorkspaceDiffReader::class => AgentViewTaskWorkspaceDiffReader::class,
         TaskWorkspaceStateReader::class => RemoteTaskWorkspaceStateReader::class,
         TaskRunReceipts::class => RemoteTaskRunReceipts::class,
         TaskCheckRunner::class => RemoteTaskCheckRunner::class,
@@ -75,6 +82,20 @@ final class TasksServiceProvider extends ServiceProvider
         parent::register();
 
         $this->app->bind(AgentDriverRegistry::class, fn (Application $app): AgentDriverRegistry => new AgentDriverRegistry([$app->make(T3Driver::class), $app->make(PiDriver::class)]));
+        $this->app->singleton(TaskBroadcasts::class);
+    }
 
+    public function boot(): void
+    {
+        foreach ([TaskGroup::class, Task::class, TaskCheck::class, TaskComment::class, AgentThread::class] as $model) {
+            $model::observe(TaskBroadcastObserver::class);
+        }
+
+        // One notice per changed record, when the request or command that changed it ends (ADR 0151).
+        $this->app->terminating(function (): void {
+            if ($this->app->resolved(TaskBroadcasts::class)) {
+                $this->app->make(TaskBroadcasts::class)->flush();
+            }
+        });
     }
 }

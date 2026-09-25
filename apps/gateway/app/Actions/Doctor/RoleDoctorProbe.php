@@ -6,6 +6,8 @@ namespace App\Actions\Doctor;
 
 use App\Data\Doctor\DoctorFamilyReportData;
 use App\Data\Doctor\DoctorIssueData;
+use App\Domain\Doctor\CaddyBuildInspector;
+use App\Domain\Doctor\CaddyBuildObservation;
 use App\Domain\Doctor\DoctorFamily;
 use App\Domain\Doctor\DoctorFamilyProbe;
 use App\Domain\Doctor\DoctorInspectionException;
@@ -25,10 +27,22 @@ use Illuminate\Database\Eloquent\Collection;
 
 final readonly class RoleDoctorProbe implements DoctorFamilyProbe
 {
+    /** Roles that publish Caddy sites; Caddy build drift is reported on the first active one. */
+    private const array CaddySiteRoles = [
+        RoleName::Gateway,
+        RoleName::Router,
+        RoleName::Ingress,
+        RoleName::AppDev,
+        RoleName::AppProd,
+        RoleName::WebSocket,
+        RoleName::Analytics,
+    ];
+
     public function __construct(
         private RoleStateInspector $inspector,
         private GatewayVpnStateInspector $vpnInspector,
         private RoleRegistry $registry = new RoleRegistry,
+        private ?CaddyBuildInspector $caddyBuilds = null,
     ) {}
 
     public function family(): DoctorFamily
@@ -62,10 +76,7 @@ final readonly class RoleDoctorProbe implements DoctorFamilyProbe
         $this->addIngressClusterIssues($issues, $roles);
 
         $needsLiveInspection = $roles->contains(
-            static fn (NodeRole $role): bool => (
-                $role->status === LifecycleStatus::Active
-                && $role->role !== RoleName::Ingress
-            ),
+            static fn (NodeRole $role): bool => $role->status === LifecycleStatus::Active,
         );
         if ($needsLiveInspection && ($context->inspectionFailed || ! $context->inspection->reachable)) {
             $ordered = $this->ordered($issues);
@@ -84,7 +95,7 @@ final readonly class RoleDoctorProbe implements DoctorFamilyProbe
         }
 
         foreach ($roles as $role) {
-            if ($role->status !== LifecycleStatus::Active || $role->role === RoleName::Ingress) {
+            if ($role->status !== LifecycleStatus::Active) {
                 continue;
             }
 
@@ -106,11 +117,77 @@ final readonly class RoleDoctorProbe implements DoctorFamilyProbe
             }
         }
 
+        if (! $context->inspectionFailed && $context->inspection->reachable) {
+            $this->addCaddyBuildIssue($issues, $context, $roles);
+        }
+
         return DoctorFamilyReportData::fromIssues(
             DoctorFamily::Role,
             $roles->count(),
             $this->ordered($issues),
         );
+    }
+
+    /**
+     * One Node Caddy build serves every role on the Node, so its drift is reported once, on the first
+     * active role that publishes Caddy sites (ADR 0141).
+     *
+     * @param  array<int, list<DoctorIssueData>>  $issues
+     * @param  Collection<int, NodeRole>  $roles
+     */
+    private function addCaddyBuildIssue(array &$issues, DoctorNodeContext $context, Collection $roles): void
+    {
+        $active = $roles->filter(static fn (NodeRole $role): bool => $role->status === LifecycleStatus::Active);
+        $role = $active->first(static fn (NodeRole $role): bool => in_array($role->role, self::CaddySiteRoles, strict: true))
+            ?? $active->first();
+
+        if (! $role instanceof NodeRole) {
+            return;
+        }
+
+        try {
+            $observation = ($this->caddyBuilds ?? app(CaddyBuildInspector::class))->inspect($context->node);
+        } catch (DoctorInspectionException) {
+            $this->add($issues, $role, $this->issue(
+                $role,
+                RoleDoctorIssueCode::InspectionFailed,
+                DoctorIssueKind::Unverifiable,
+                'Caddy build observation failed.',
+                'verifiable',
+                'unverifiable',
+            ));
+
+            return;
+        }
+
+        if (! $observation instanceof CaddyBuildObservation || $observation->matches) {
+            return;
+        }
+
+        if ($observation->building) {
+            $this->add($issues, $role, $this->issue(
+                $role,
+                RoleDoctorIssueCode::InspectionFailed,
+                DoctorIssueKind::Unverifiable,
+                'A Caddy build for this Node was running, so Doctor did not compare its Caddyfile.',
+                'verifiable',
+                'building',
+            ));
+
+            return;
+        }
+
+        $sources = $observation->sources === [] ? 'none' : implode(', ', $observation->sources);
+        $this->add($issues, $role, $this->issue(
+            $role,
+            RoleDoctorIssueCode::CaddyBuildDrift,
+            DoctorIssueKind::Drift,
+            $observation->expectedVersion === null
+                ? "Stored state does not render a buildable Caddyfile for this Node. Site sources: {$sources}."
+                : "The live Caddyfile differs from a fresh Node Caddy build. Site sources: {$sources}.",
+            $observation->expectedVersion ?? 'buildable',
+            $observation->expectedVersion === null ? 'refused' : ($observation->liveVersion ?? 'not_built'),
+        ));
     }
 
     /**

@@ -13,8 +13,7 @@ use InvalidArgumentException;
  * The one root script that pushes a rendered Node Caddyfile (ADR 0141). It takes the Node lock,
  * checks the Caddy release floor, writes and validates a new version, backs up a live Caddyfile
  * that no build wrote, swaps the live symlink, reloads Caddy, restores the previous target when
- * the reload fails, and keeps the live version plus the nine newest others. It removes the `staged`
- * directory that the retired public Ingress staging step wrote.
+ * the reload fails, and keeps the live version plus the nine newest others.
  *
  * It reports its last stage on stderr as `orbit-caddy-build-stage=<stage>` and its result on
  * stdout as `orbit-caddy-build-result=<published|unchanged>`.
@@ -300,8 +299,6 @@ final readonly class NodeCaddyPushScript
             rm -rf -- "\$replaced"
 
             stage=prune
-            # The retired public Ingress staging step left files here that nothing imports.
-            rm -rf -- "\$versions/staged" || printf 'Could not remove the old staged directory.\\n' >&2
             kept=0
             for directory in \$(ls -1dt -- "\$versions"/*/ 2>/dev/null); do
                 directory=\${directory%/}

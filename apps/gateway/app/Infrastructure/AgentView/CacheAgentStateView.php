@@ -61,6 +61,15 @@ final readonly class CacheAgentStateView implements AgentStateView
         /** @var array<string, string> $units */
         $units = array_filter($entry['units'], is_string(...));
         $docker = is_string($entry['docker'] ?? null) ? $entry['docker'] : null;
+        $workspaces = [];
+
+        foreach (is_array($entry['workspaces'] ?? null) ? $entry['workspaces'] : [] as $stored) {
+            $workspace = is_array($stored) ? AgentChannelState::workspace($stored) : null;
+
+            if ($workspace !== null) {
+                $workspaces[$workspace['instance_id']] = $workspace;
+            }
+        }
 
         return new AgentNodeView(
             nodeId: $nodeId,
@@ -68,6 +77,7 @@ final readonly class CacheAgentStateView implements AgentStateView
             units: $units,
             docker: $docker,
             receivedAt: $receivedAt,
+            workspaces: $workspaces,
         );
     }
 
@@ -96,8 +106,9 @@ final readonly class CacheAgentStateView implements AgentStateView
      * Writes one Node's complete state.
      *
      * @param  array<string, string>  $units
+     * @param  array<int, array<string, mixed>>  $workspaces  Task workspaces keyed by Instance id.
      */
-    public function putNode(int $nodeId, array $units, ?string $docker, int $sequence, float $receivedAt, ?string $agentAt): void
+    public function putNode(int $nodeId, array $units, ?string $docker, int $sequence, float $receivedAt, ?string $agentAt, array $workspaces = []): void
     {
         $this->cache->put(self::NODE_KEY.$nodeId, [
             'received_at' => $receivedAt,
@@ -105,6 +116,7 @@ final readonly class CacheAgentStateView implements AgentStateView
             'sequence' => $sequence,
             'docker' => $docker,
             'units' => $units,
+            'workspaces' => array_values($workspaces),
         ], self::NodeTtlSeconds);
     }
 

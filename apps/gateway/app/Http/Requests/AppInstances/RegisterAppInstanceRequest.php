@@ -5,9 +5,10 @@ declare(strict_types=1);
 namespace App\Http\Requests\AppInstances;
 
 use App\Data\AppInstances\RegisterAppInstanceData;
+use App\Domain\Projects\ProjectType;
 use App\Domain\Routes\RouteDomain;
 use App\Domain\SourceControl\GitBranchName;
-use App\Domain\SourceControl\RelativeWebRoot;
+use App\Domain\SourceControl\ProjectRoot;
 use App\Http\Requests\TopLevelJsonObjectInspector;
 use App\Models\App as OrbitApp;
 use Illuminate\Foundation\Http\FormRequest;
@@ -68,8 +69,12 @@ final class RegisterAppInstanceRequest extends FormRequest
             }
 
             $root = $this->input('root');
-            if (is_string($root) && ! RelativeWebRoot::isValid($root)) {
-                $validator->errors()->add('root', 'The root must be a normalized relative web path.');
+            $projectId = $this->input('project_id') ?? $this->input('app_id');
+            $project = is_numeric($projectId) ? OrbitApp::query()->find((int) $projectId) : null;
+            $type = $project instanceof OrbitApp ? $project->type : ProjectType::LaravelPackage;
+
+            if (is_string($root) && ! ProjectRoot::isValid($root, $type)) {
+                $validator->errors()->add('root', 'The root must be a normalized relative Project path.');
             }
 
             $domain = $this->input('domain');

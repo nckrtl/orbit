@@ -64,6 +64,7 @@ Use these operations after the extension is enabled. List and show accept any au
 | `tasks:subtask:create` | `POST /api/v1/task-groups/{group}/tasks` | Group workspace Node |
 | `tasks:subtask:update` | `PATCH /api/v1/task-groups/{group}/tasks/{task}` | Group workspace Node |
 | `tasks:subtask:destroy` | `DELETE /api/v1/task-groups/{group}/tasks/{task}` | Group workspace Node |
+| `tasks:subtask:cancel` | `POST /api/v1/task-groups/{group}/tasks/{task}/cancel` | Gateway |
 | `tasks:cancel` | `POST /api/v1/task-groups/{group}/cancel` | Gateway |
 | `tasks:comment:create` | `POST /api/v1/task-groups/{group}/tasks/{task}/comments` | Gateway |
 | `tasks:comment:list` | `GET /api/v1/task-groups/{group}/tasks/{task}/comments` | Gateway |
@@ -73,6 +74,18 @@ Create requires `app_id`, `title`, and `brief`. It may include an ordered `tasks
 Update changes a group's `title`, `brief`, or `status`. Title and brief change only while the group is in `backlog`. The status moves between `backlog` and `todo` in either direction. Moving to `todo` asks the scheduler to claim, as create does.
 
 Subtask create appends one subtask at the next position with status `todo`. It works in any group status, and it accepts `deliverables`. Outside `backlog`, a new subtask needs at least one deliverable. Subtask update changes `title`, `brief`, `position`, or `deliverables`, and the other subtasks shift to keep positions gapless from 1. A `deliverables` value replaces the whole list. Subtask destroy deletes the subtask and closes the gap. Subtask update and destroy work only while the group is in `backlog`, with one exception: the deliverables of a `todo` subtask can change in any group status.
+
+Cancel a `running` subtask with `tasks:subtask:cancel`. Only a `running` subtask can be cancelled; another status returns HTTP 409 `tasks.subtask_not_running`. Cancellation interrupts that subtask's implementer and stops its running [baseline or handoff check](#project-check). It keeps the group and its Instance and starts the lowest-position `todo` subtask. When no implementer has started in the group yet, that subtask runs the baseline check first. When no `todo` subtask remains, the group moves to `settling`.
+
+Orbit checks the subtask status before it stops anything. It interrupts the implementer first and then stops the check. It holds no database lock while it waits for the agent or the Node, so other Gateway writes continue. When the implementer or check cannot be stopped, cancellation returns HTTP 502 `tasks.subtask_interrupt_failed` and leaves the subtask and its check `running`, so an operator can retry. When the implementer's Node stays unreachable, cancel the group instead. A `cancelled` or `failed` subtask does not block the next subtask.
+
+When the check cannot be stopped, the implementer may already be interrupted. The subtask stays `running` without a working implementer, and the next tick may remind the implementer or fail the subtask. Retry the cancel, or cancel the group.
+
+After both stops succeed, Orbit records the cancel only when the subtask is still `running`. When a tick moved it on while Orbit stopped it, for example to `reviewing`, that new state stands and cancellation returns HTTP 409 `tasks.subtask_not_running`. The implementer and check were still stopped. Cancel the subtask again in its new state, or cancel the group.
+
+When cancellation leaves no `todo` subtask, the group moves to `settling` without a `pr_url`. Orbit opens a pull request only after the last subtask is approved, so the group asks for assistance. Use `tasks:cancel` to end it. For a group with an approved subtask, cancellation first pushes the workspace HEAD to `task-{group id}` on `origin`, so the approved commits stay on the branch. Open a pull request from that branch if you want to keep the work.
+
+Cancellation does not reset the shared checkout. The cancelled implementer's uncommitted edits stay in the shared checkout, and the next approval commits them.
 
 Moving a group to `todo`, by create or update, needs at least one deliverable on every subtask.
 
@@ -91,7 +104,7 @@ Moving a group to `todo`, by create or update, needs at least one deliverable on
 
 A status update and a scheduler claim cannot both succeed. When the claim wins, the update returns `tasks.already_claimed`.
 
-MCP tool names follow the API operation identifiers: `tasks-create`, `tasks-update`, `tasks-list`, `tasks-show`, `tasks-cancel`, `tasks-complete`, `tasks-subtask-create`, `tasks-subtask-update`, `tasks-subtask-destroy`, `tasks-comment-create`, `tasks-comment-list`, `tasks-agents`, `tasks-enable`, `tasks-disable`, and `tasks-status`. Each CLI command carries the operation's route name, such as `orbit tasks:subtask:create`.
+MCP tool names follow the API operation identifiers: `tasks-create`, `tasks-update`, `tasks-list`, `tasks-show`, `tasks-cancel`, `tasks-complete`, `tasks-subtask-create`, `tasks-subtask-update`, `tasks-subtask-destroy`, `tasks-subtask-cancel`, `tasks-comment-create`, `tasks-comment-list`, `tasks-agents`, `tasks-enable`, `tasks-disable`, and `tasks-status`. Each CLI command carries the operation's route name, such as `orbit tasks:subtask:create`.
 
 ## Deliverables
 
@@ -213,17 +226,21 @@ Select a card to read the task brief, its status, tokens, line diff, duration, a
 
 Select a subtask to open its own detail page with its title, brief, status, Project, shared Instance, tokens, line diff, and duration. The subtask detail omits the subtasks board. Use the parent task breadcrumb to return to the board.
 
-The board refreshes every ten seconds. Backlog contains groups that are still being prepared. Todo contains groups that wait for the scheduler. In progress contains reserved, running, reviewing, and settling groups. Settling means awaiting completion after review and merge. Done contains completed, failed, and cancelled groups; each card keeps its outcome visible. Failed and cancelled do not mean successful completion.
+The board stays current from [task events](/reference/web-app#live-tasks) while realtime is live, with a refetch every 5 minutes as a safety net, and polls every 30 seconds while realtime is not live. Backlog contains groups that are still being prepared. Todo contains groups that wait for the scheduler. In progress contains reserved, running, reviewing, and settling groups. Settling means awaiting completion after review and merge. Done contains completed, failed, and cancelled groups; each card keeps its outcome visible. Failed and cancelled do not mean successful completion.
 
 The board is read-only. Move a group from Backlog to Todo with `tasks:update`. The Gateway still owns scheduling and concurrency. When the extension is disabled, the page explains that tasks are unavailable. Request errors remain visible instead of appearing as an empty board.
 
 ### Tokens and line diff
 
-When the parent task is open, Tokens is the total for the current implementer of each subtask plus the shared reviewer. Line diff is the whole feature branch against the Project default branch. A subtask shows its current implementer's metrics. Showing an active group refreshes these values through the selected drivers and shared checkout. Missing runtime metrics remain unknown; failed reads preserve stored values.
+When the parent task is open, Tokens is the total for the current implementer of each subtask plus the shared reviewer. Line diff is the whole feature branch against the Project default branch. A subtask shows its current implementer's metrics. Showing an active group refreshes these values through the selected drivers and shared checkout.
+
+The line diff comes from the Node agent's [task workspace](/reference/node-agent#task-workspaces) state while the Gateway's view of that Node is fresh, and from `git diff --shortstat` over SSH otherwise or when the agent's diff is truncated. When the agent reports a new commit or new counts, the Gateway stores the group's line counts when the diff is complete and broadcasts `task_group.updated` in either case. Missing runtime metrics remain unknown; failed reads preserve stored values.
 
 ## Scheduler and ceilings
 
-After a create or update stores a `todo` group, the Gateway scheduler claims the oldest `todo` group that still fits the Node ceiling. It never claims a `backlog` group. It does not poll Nodes and it does not apply a per-Project ceiling.
+After a create or update stores a `todo` group, the Gateway scheduler claims the oldest `todo` group that still fits the Node ceiling. If provisioning fails, that group returns to `todo` with a visible assistance reason and the scheduler continues with the next eligible `todo` group. A group that waits for Node capacity returns to `todo` without a reason.
+
+It never claims a `backlog` group. It does not poll Nodes and it does not apply a per-Project ceiling.
 
 Active groups are those in `reserved`, `running`, `reviewing`, or `settling`.
 
@@ -233,7 +250,11 @@ Active groups are those in `reserved`, `running`, `reviewing`, or `settling`.
 
 The Node ceiling applies once `taskable` points at an Instance on that Node. A group without an Instance is not held by a Project ceiling.
 
-A fitting claimed group moves from `todo` to `reserved`. InstanceProvisioning assigns the shared Instance on an active Linux `app-dev` Node with capacity and a WireGuard address. Both of the group's drivers must allow the Node. T3 requires an active `t3-code` Process, and Pi requires an active `pi-server` Process, each with desired state `running`. This recorded state is the placement signal, not an HTTP health probe. A [development node exclusion](/reference/development-node-exclusions) removes that Node from the choice before the driver checks and the ceiling. If no remaining Node fits, provisioning returns no Instance and the group remains `queued` without a workspace.
+A fitting claimed group moves from `todo` to `reserved`. InstanceProvisioning assigns the shared Instance on an active Linux `app-dev` Node with capacity and a WireGuard address. Both of the group's drivers must allow the Node. T3 requires an active `t3-code` Process, and Pi requires an active `pi-server` Process, each with desired state `running`. This recorded state is the placement signal, not an HTTP health probe. A [development node exclusion](/reference/development-node-exclusions) removes that Node from the choice before the driver checks and the ceiling.
+
+If no remaining Node fits, provisioning returns no Instance. The group returns to `todo` with the assistance reason `Workspace provisioning did not return an instance.`, and claim processing continues with the next eligible group. The reason clears when the group moves to `running` or `backlog`, or when it later waits for capacity.
+
+If Nodes fit but each is at the ceiling, the group waits for capacity. It returns to `todo` without a reason. When no `app-dev` Node has capacity, claim processing stops until capacity frees. Otherwise it continues with the next eligible group.
 
 When the assignment fits the Node ceiling, the group becomes `running`. AgentSpawner starts the first implementer through the selected driver. The shared reviewer starts at the first handoff. The Gateway stores an Orbit thread ID only after creation and the opening turn succeed.
 
@@ -251,6 +272,8 @@ One fresh Instance belongs to the group. Every subtask reuses it. The instance n
 | `visitable: true` | A real Project | Usual development provisioner and inspect subdomain. The instance becomes `active` |
 
 The provisioner honors `visitable`. It does not invent a Route for a non-visitable workspace because an active Instance still requires exactly one Route.
+
+Doctor expects the same final state. A non-visitable task workspace is healthy in `source_resolved`, and a visitable one is healthy in `active`. Doctor reports `instance.lifecycle_not_active` for any other state, such as a workspace stuck in `reserved` or `checkout_prepared`, or a visitable workspace stuck in `source_resolved`. The [Doctor instance family](/cli/doctor#what-each-family-checks) owns the check.
 
 ## Agent viewer
 
@@ -288,7 +311,7 @@ Agents run on the T3 server of the Node that owns that Instance. The Gateway pos
 
 When `project.create` collides on an occupied workspace root, T3's receipt is `Active project '{uuid}' already exists for workspace root '{path}'`. HTTP dispatch may wrap that as `EnvironmentInternalError` / `orchestration_dispatch_failed` without the phrase. The Gateway parses the project id from that phrase when it appears in the error body, a nested cause, or a header, and otherwise adopts the active project for that workspace root from `GET /api/orchestration/snapshot`. After a successful `thread.create`, the Gateway starts the first turn. A refused `thread.turn.start` is retried once and logged at error. The spawn then returns null and stores no thread id.
 
-Each subtask gets a fresh implementer (`instanceId=codex`, `model=gpt-5.6-luna`, `reasoningEffort=high`). The group keeps one reviewer thread (`instanceId=claudeAgent`, `model=claude-opus-5`, `effort=high`). The T3 provider instance is selected from the model: Claude model names use `claudeAgent`; other configured models use `codex`. Role supplies default model and effort. The instance is fixed at `thread.create`. Subtasks run in position order. At most one Task in a group is `running`. Opening starts only the first `todo` subtask. The next `todo` subtask becomes `running` only after the approval completes the current one and no sibling is `running`. The scheduler refuses a second running task and does not spawn another implementer.
+Each subtask gets a fresh implementer (`instanceId=codex`, `model=gpt-5.6-luna`, `reasoningEffort=high`). The group keeps one reviewer thread (`instanceId=claudeAgent`, `model=claude-opus-5`, `effort=high`). The T3 provider instance is selected from the model: Claude model names use `claudeAgent`; other configured models use `codex`. Role supplies default model and effort. The instance is fixed at `thread.create`. Subtasks run in position order. At most one Task in a group is `running`. Opening starts only the first `todo` subtask. The next `todo` subtask becomes `running` only after the approval or [cancellation](#groups-and-subtasks) ends the current one and no sibling is `running`. The scheduler refuses a second running task and does not spawn another implementer.
 
 When an implementer is idle, done, or asking for input, the Gateway reads the implementer's run receipt and `composer.json` at the workspace root, which must define a `check` script. A pending input fails on its own. When these items pass, Orbit runs the Project check itself.
 
@@ -334,6 +357,8 @@ A scheduler tick checks every in-progress task in running and reviewing groups. 
 
 AgentThread state is authoritative. The thread that acts in the task's phase defers the task while it is `working`, including a starting T3 session. That thread is the task's implementer while the task is `running`, and the group's reviewer while the task is `reviewing`. The Gateway then does not inspect that task's messages or pending requests, check workspace commits, or call Jev. Other snapshot fields cannot override an active status. The tick still checks the remaining sessions and other in-progress tasks.
 
+Otherwise the tick checks for commits since the thread started. It reads the count from the Node agent's [task workspace](/reference/node-agent#task-workspaces) state while the Gateway's view of that Node is fresh, and runs `git` over SSH otherwise.
+
 The other thread's work does not defer the task. While the operator talks to the shared reviewer, the tick still reads the implementer's receipt, asks for assistance on `blocked`, runs the handoff check, and sends reminders to the implementer. The Gateway sends no turn to the working thread until it stops. [ADR 0132](/decisions/0132-pause-only-for-the-acting-thread-and-a-real-question) records the decision.
 
 The tick also reads `composer.json` at the workspace root over SSH. The `check_script` item passes only when `scripts.check` is a non-empty command or list. Composer resolves abbreviated command names, so without that script `composer check` runs the built-in `check-platform-reqs` command and exits 0. A missing file, invalid JSON, or a missing or empty `check` script fails `check_script`, and Orbit does not start the check.
@@ -378,7 +403,9 @@ Confidence below `ORBIT_TASKS_JEV_CONFIDENCE_THRESHOLD` (default `0.75`) becomes
 
 Gateway uses `laravel/ai` Classification with its official TypeSafe provider in `config/ai.php`. The package client posts to TypeSafe. Tests use the package fake and never call the network.
 
-Run the tick with `php artisan tasks:tick` while the extension is enabled. One Gateway lock protects scheduled and manual ticks. A held lock skips the invocation without routing or claiming work. After current work and merge checks, the tick fills available Node capacity with the oldest `todo` groups. Groups that are reserved, running, reviewing, settling, assisted, or awaiting merge count toward the limit of 10.
+Run the tick with `php artisan tasks:tick` while the extension is enabled. One Gateway lock protects scheduled and manual ticks. A held lock skips the invocation without routing or claiming work. After current work and merge checks, the tick fills available Node capacity with the oldest `todo` groups.
+
+A provisioning failure leaves the group in `todo` with its assistance reason visible, and the tick continues to the next eligible group. The tick tries each failing group once. A full fleet ends the claims for that tick without a reason on any group. Groups that are reserved, running, reviewing, settling, assisted, or awaiting merge count toward the limit of 10.
 
 The Gateway registers `tasks:tick` every ten seconds when the tasks extension is enabled. LIVE Ops must run Laravel's `php artisan schedule:work` process for this schedule to advance sessions; this feature does not provision that process or a fleet cron.
 
@@ -411,11 +438,13 @@ Call `tasks-check-cancel` with `{ "group": 123, "task": 456 }` to stop a running
 
 Orbit opens the pull request after the approval of the last subtask. That approval describes it with `--pr-summary`, at least one `--pr-change`, and at least one `--pr-breaking`, or `--pr-breaking=none`. The script accepts these flags only for that approval and refuses the approval without them. There is no limit on the number of changes.
 
-Before Orbit commits the last subtask, Jev checks that the change list covers every subtask of the group. Jev reads the group and subtask briefs and the pull request fields. For each subtask, it answers whether a listed change delivers it. A subtask counts as covered when Jev gives "yes" a probability of at least one half. Jev cannot read code, so this checks coverage, not correctness. Each missing subtask fails `brief_coverage`, and the reviewer's reminder names it. A failed Jev request counts as a communication failure.
+Before Orbit commits the last subtask, Jev checks that the change list covers every subtask of the group except cancelled and failed subtasks. Jev reads the group and subtask briefs and the pull request fields. For each checked subtask, it answers whether a listed change delivers it. A subtask counts as covered when Jev gives "yes" a probability of at least one half. Jev cannot read code, so this checks coverage, not correctness. Each missing subtask fails `brief_coverage`, and the reviewer's reminder names it. A failed Jev request counts as a communication failure.
 
-After the commit, the Gateway pushes the workspace HEAD to `task-{group id}` on `origin` and opens the pull request against the Project's default branch through the [Gateway GitHub App](/reference/github-app). The group title is the title. The description holds the summary, a Changes list, a Breaking changes list or `None.`, and one line that says each subtask passed `composer check` and reviewer approval. When an open pull request already has that head, the Gateway uses it. The Gateway stores the URL as the group's `pr_url` and moves the group to `settling`. A failed push or request counts as a communication failure and is retried.
+After the commit, the Gateway pushes the workspace HEAD to `task-{group id}` on `origin` and opens the pull request against the Project's default branch through the [Gateway GitHub App](/reference/github-app). When an open pull request already has that head, the Gateway uses it. The Gateway stores the URL as the group's `pr_url` and moves the group to `settling`. A failed push or request counts as a communication failure and is retried.
 
-Settling watches the stored pull request through the GitHub App until it merges. A merged pull request completes the group, and a pull request that closes without merging requests assistance. A settling group without a URL requests assistance and remains incomplete.
+The group title is the pull request title. The description holds the summary, a Changes list, a Breaking changes list or `None.`, and one line that says each delivered subtask passed `composer check` and reviewer approval. That line does not count cancelled or failed subtasks.
+
+Settling watches the stored pull request through the GitHub App until it merges. A merged pull request completes the group, and a pull request that closes without merging requests assistance. A settling group without a URL requests assistance and remains incomplete until an operator cancels it.
 
 While the pull request is open, each tick also checks it for problems ([ADR 0140](/decisions/0140-watch-settling-pull-requests-for-conflicts-and-failed-checks)). The pull request conflicts when GitHub reports it as not mergeable. A check fails when a check run on the head commit completes with `failure`, `timed_out`, `cancelled`, `startup_failure`, or `action_required`. Each problem adds one sentence to an assistance reason that starts with `The pull request needs attention: `, such as `It conflicts with main; merge main into the task branch and push.` or `Check Rust agent failed: <url>.`
 
@@ -493,8 +522,16 @@ These items stay unimplemented here and need a later feature PR.
 
 ## Cancel a stuck group
 
-Call `tasks-cancel` with `{ "group": 123 }`, or run `orbit tasks:cancel 123`, to cancel a `backlog`, `todo`, `reserved`, `running`, `reviewing`, or `failed` group. The API operation is `tasks:cancel`. A `backlog` or `todo` group has no Instance, so cancellation only marks it `cancelled`. For other groups, cancellation removes the shared Instance and clears both taskable fields before returning the group as `cancelled`. Repeating cancellation is safe and also cleans up an Instance still attached to a group already marked `cancelled`. Subtasks that are not completed or failed become `cancelled`. Cancellation clears `assistance_requested` on the group and its subtasks and keeps the last `assistance_reason`. Subtask records and agent thread identifiers stay as history.
+Call `tasks-cancel` with `{ "group": 123 }`, or run `orbit tasks:cancel 123`, to cancel a `backlog`, `todo`, `reserved`, `running`, `reviewing`, or `failed` group, or a `settling` group without a `pr_url`. The API operation is `tasks:cancel`. A `backlog` or `todo` group has no Instance, so cancellation only marks it `cancelled`. For other groups, cancellation removes the shared Instance and clears both taskable fields before returning the group as `cancelled`. Repeating cancellation is safe and also cleans up an Instance still attached to a group already marked `cancelled`. Subtasks that are not completed or failed become `cancelled`. Cancellation clears `assistance_requested` on the group and its subtasks and keeps the last `assistance_reason`. Subtask records and agent thread identifiers stay as history.
 
 A route-free Instance in `source_resolved` uses the Ops database cleanup contract: delete the Instance row and retain its checkout on disk. Other Instances use the existing forced Instance remover, including Route cleanup. Removal errors propagate and leave the group attached for retry. Cancellation does not interrupt the external agent conversation.
 
-A `settling` or `completed` group returns HTTP 409 with `tasks.not_cancellable` (an MCP error result). Use `tasks-complete` for a settling group after review and merge.
+Before it removes the Instance of a `settling` group with an approved subtask, cancellation pushes the workspace HEAD to `task-{group id}` on `origin`. A failed push returns HTTP 502 with `tasks.push_failed` and keeps the group and its Instance, so you can retry. Uncommitted workspace changes are not pushed. The push runs outside any database transaction.
+
+A group whose push keeps failing cannot be cancelled. Two causes do not clear on their own.
+
+When the workspace Node is gone, restore the Node at its recorded WireGuard address and cancel again. Without the Node, the approved commits are lost and the group stays `settling`.
+
+When `origin` already has an unrelated `task-{group id}` branch, Git rejects the push, because it is not a force push. A Gateway rebuild that reuses group IDs causes this. Keep that branch under another name if you need it. Then delete `task-{group id}` on `origin` and cancel again.
+
+A `completed` group, or a `settling` group with a `pr_url`, returns HTTP 409 with `tasks.not_cancellable` (an MCP error result). Use `tasks-complete` for a settling group after review and merge.

@@ -52,7 +52,7 @@ describe('Caddy package source', function (): void {
         'VPN' => [RoleName::Vpn, false],
         'database' => [RoleName::Database, false],
         'metrics' => [RoleName::Metrics, false],
-        'ingress' => [RoleName::Ingress, false],
+        'ingress' => [RoleName::Ingress, true],
     ]);
 
     it('passes the pinned source, key digest, fingerprint, version floor, and kernel setting as fixed argv', function (): void {

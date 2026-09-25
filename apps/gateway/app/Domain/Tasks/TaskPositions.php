@@ -21,5 +21,7 @@ final class TaskPositions
         foreach ($orderedIds as $index => $id) {
             Task::query()->whereKey($id)->update(['position' => $index + 1]);
         }
+
+        app(TaskBroadcasts::class)->groupChanged($group->id);
     }
 }

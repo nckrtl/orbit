@@ -12,6 +12,8 @@ Every managed Linux Node runs `orbit-agent`, a small Rust program that watches t
 
 Proposed.
 
+Amended by [ADR 0148](/decisions/0148-keep-a-gateway-view-of-node-agent-state) and [ADR 0151](/decisions/0151-push-task-and-process-usage-changes-over-realtime).
+
 This lifts the deferral of an Orbit agent in [ADR 0127](/decisions/0127-share-one-ssh-connection-per-node) for visibility only. The Gateway rule against agents that run commands stays in place.
 
 ## Context

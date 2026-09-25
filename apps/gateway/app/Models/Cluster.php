@@ -6,6 +6,7 @@ namespace App\Models;
 
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Shared\LifecycleStatus;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -51,13 +52,22 @@ final class Cluster extends Model
             ->where('status', LifecycleStatus::Active);
     }
 
-    /** @return HasOne<NodeRole, $this> */
+    /**
+     * The Ingress assignment while it serves public sites: active, converging, or after a failed convergence.
+     * PublicRouteEligibility::servingIngress applies the same rule.
+     *
+     * @return HasOne<NodeRole, $this>
+     */
     public function ingressAssignment(): HasOne
     {
         return $this
             ->hasOne(NodeRole::class)
             ->where('role', 'ingress')
-            ->where('status', LifecycleStatus::Active);
+            ->where(static fn (Builder $query): Builder => $query
+                ->whereIn('status', [LifecycleStatus::Active, LifecycleStatus::Provisioning])
+                ->orWhere(static fn (Builder $failed): Builder => $failed
+                    ->where('status', LifecycleStatus::Failed)
+                    ->where('failed_step', 'like', 'converge:%')));
     }
 
     /** @return HasMany<Route, $this> */
