@@ -16,7 +16,10 @@ it('renders a service that runs the installed release on the sockets of its sock
 
     expect($unit)
         ->toContain('Description=Orbit private DNS')
-        ->toContain('Requires=wg-quick@orbit.service orbit-private-dns.socket')
+        ->toContain('Requires=orbit-private-dns.socket')
+        ->not->toContain('Requires=wg-quick')
+        ->not->toContain('Wants=wg-quick')
+        ->not->toContain('BindsTo=')
         ->toContain('After=network-online.target wg-quick@orbit.service dnsmasq.service orbit-private-dns.socket')
         ->toContain('WorkingDirectory=/var/lib/orbit/private-dns/releases/0123456789abcdef')
         ->toContain('"/usr/bin/php8.5" "/var/lib/orbit/private-dns/releases/0123456789abcdef/serve.php" "--listen=10.44.0.1" "--port=53" "--catalog=/var/lib/orbit/private-dns/catalog.json" "--upstream=127.0.0.55:53"')

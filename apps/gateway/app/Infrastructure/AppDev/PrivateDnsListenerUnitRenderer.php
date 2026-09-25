@@ -43,7 +43,8 @@ final readonly class PrivateDnsListenerUnitRenderer
             'Description=Orbit private DNS',
             'After=network-online.target wg-quick@orbit.service dnsmasq.service '.$this->socketName(),
             'Wants=network-online.target',
-            'Requires=wg-quick@orbit.service '.$this->socketName(),
+            // Ordering only: a query that activates the listener must never start a tunnel an operator stopped.
+            'Requires='.$this->socketName(),
             '',
             '[Service]',
             'Type=simple',

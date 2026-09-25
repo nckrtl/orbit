@@ -8,6 +8,7 @@ use App\E2E\Value\GuestCommand;
 use App\E2E\Value\TopologyProfile;
 use App\E2E\Value\TopologyRecipe;
 use App\E2E\Value\TopologyTarget;
+use Illuminate\Filesystem\Filesystem;
 use Illuminate\Process\PendingProcess;
 use Illuminate\Support\Facades\Process;
 use Tests\TestCase;
@@ -118,7 +119,7 @@ describe('mount.source', function () {
             ->toBe([]);
     });
 
-    it('places the preserved gateway environment into the mounted worktree only when absent', function () {
+    it('places the preserved gateway environment and points it at the mounted checkout', function () {
         $batches = [];
         $execs = [];
         fakePreparerGuests([], $batches, $execs);
@@ -135,16 +136,59 @@ describe('mount.source', function () {
             ->and($execs[0]['argv'])
             ->toBe([
                 'sh',
-                '-c',
-                '[ -e "$1" ] || install -o 1000 -g 1000 -m 0600 -- "$2" "$1"',
+                '-ec',
+                DiscoveryGuestPreparer::GATEWAY_ENVIRONMENT_SCRIPT,
                 'orbit-e2e',
                 '/home/orbit/orbit/apps/gateway/.env',
                 '/var/lib/orbit-e2e/gateway.env',
+                '/home/orbit/orbit/apps/gateway',
             ])
             ->and($execs[0]['stdin'])
             ->toBeNull()
             ->and($execs[0]['timeout'])
             ->toBe(30);
+    });
+
+    it('rewrites only the checkout line of a bootstrapped gateway environment', function (string $contents) {
+        $directory = sys_get_temp_dir().'/orbit-e2e-env-'.bin2hex(random_bytes(4));
+        mkdir($directory);
+        $environment = $directory.'/.env';
+        file_put_contents($environment, $contents);
+        chmod($environment, 0o640);
+
+        try {
+            $result = Process::run(['sh', '-ec', DiscoveryGuestPreparer::GATEWAY_ENVIRONMENT_SCRIPT, 'orbit-e2e', $environment, $directory.'/missing-copy', '/home/orbit/orbit/apps/gateway']);
+
+            expect($result->successful())->toBeTrue()
+                ->and(file_get_contents($environment))->toBe("APP_ENV=local\nORBIT_HOME=/home/orbit/.orbit\nORBIT_GATEWAY_CHECKOUT=/home/orbit/orbit/apps/gateway\n")
+                ->and(fileperms($environment) & 0o777)->toBe(0o640)
+                ->and(glob($directory.'/.env.*'))->toBe([]);
+        } finally {
+            (new Filesystem)->deleteDirectory($directory);
+        }
+    })->with([
+        'bootstrap default' => ["APP_ENV=local\nORBIT_GATEWAY_CHECKOUT=/home/orbit/orbit-gateway\nORBIT_HOME=/home/orbit/.orbit\n"],
+        'no checkout line' => ["APP_ENV=local\nORBIT_HOME=/home/orbit/.orbit\n"],
+    ])->skip(PHP_OS_FAMILY !== 'Linux', 'The guest script uses GNU chown and chmod.');
+
+    it('leaves a gateway environment that already names the mounted checkout untouched', function () {
+        $directory = sys_get_temp_dir().'/orbit-e2e-env-'.bin2hex(random_bytes(4));
+        mkdir($directory);
+        $environment = $directory.'/.env';
+        file_put_contents($environment, "ORBIT_GATEWAY_CHECKOUT=/home/orbit/orbit/apps/gateway\nAPP_ENV=local\n");
+        $inode = fileinode($environment);
+
+        try {
+            $result = Process::run(['sh', '-ec', DiscoveryGuestPreparer::GATEWAY_ENVIRONMENT_SCRIPT, 'orbit-e2e', $environment, $directory.'/missing-copy', '/home/orbit/orbit/apps/gateway']);
+
+            clearstatcache();
+            expect($result->successful())->toBeTrue()
+                ->and(fileinode($environment))->toBe($inode)
+                ->and(file_get_contents($environment))->toBe("ORBIT_GATEWAY_CHECKOUT=/home/orbit/orbit/apps/gateway\nAPP_ENV=local\n");
+        } finally {
+            @unlink($environment);
+            @rmdir($directory);
+        }
     });
 
     it('names the refresh remedy when the preserved gateway environment is absent', function () {

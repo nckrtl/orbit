@@ -705,7 +705,8 @@
               "decisions/0145-publish-the-proxycli-collector-on-collector-cli-proxy-api-orbit",
               "decisions/0146-retire-the-herdr-integration",
               "decisions/0147-retire-orbit-top",
-              "decisions/0148-keep-a-gateway-view-of-node-agent-state"
+              "decisions/0148-keep-a-gateway-view-of-node-agent-state",
+              "decisions/0150-keep-extension-commands-local-and-confirm-the-proxycli-fleet-stop"
             ]
           }
         ]

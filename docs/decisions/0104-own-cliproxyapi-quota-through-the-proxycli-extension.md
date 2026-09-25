@@ -12,7 +12,7 @@ Orbit treats CLIProxyAPI quota collection as an optional extension named `proxyc
 
 Proposed.
 
-This decision extends [ADR 0069](/decisions/0069-allow-node-process-targets) for the collector Process, [ADR 0070](/decisions/0070-keep-the-database-role-as-a-docker-baseline) for Valkey placement, and [ADR 0080](/decisions/0080-add-node-owned-custom-proxy-routes) for the reserved private hostname shape. It does not add a Node role. [ADR 0109](/decisions/0109-publish-the-proxycli-collector-on-a-subdomain) amends the reserved hostname to `collector.proxycli.orbit` and leaves apex `proxycli.orbit` free for a management Route.
+This decision extends [ADR 0069](/decisions/0069-allow-node-process-targets) for the collector Process, [ADR 0070](/decisions/0070-keep-the-database-role-as-a-docker-baseline) for Valkey placement, and [ADR 0080](/decisions/0080-add-node-owned-custom-proxy-routes) for the reserved private hostname shape. It does not add a Node role. [ADR 0109](/decisions/0109-publish-the-proxycli-collector-on-a-subdomain) amends the reserved hostname to `collector.proxycli.orbit` and leaves apex `proxycli.orbit` free for a management Route. [ADR 0150](/decisions/0150-keep-extension-commands-local-and-confirm-the-proxycli-fleet-stop) amends the disable path: `extension:disable proxycli` changes only the local gate, and `proxycli:disable` needs explicit consent.
 
 ## Context
 

@@ -234,7 +234,6 @@
             "components": [],
             "concepts": [
                 "Gateway",
-                "Process",
                 "proxycli"
             ],
             "governing_adrs": []
@@ -418,6 +417,7 @@
             "concepts": [
                 "Database",
                 "Database connection",
+                "Gateway",
                 "Node",
                 "Process",
                 "Route",
@@ -2803,7 +2803,8 @@
                 "0080",
                 "0104",
                 "0108",
-                "0109"
+                "0109",
+                "0150"
             ]
         },
         {
@@ -3827,22 +3828,22 @@
             ]
         },
         {
-            "path": "docs/decisions/0149-install-the-private-dns-listener-from-the-gateway.md",
-            "title": "ADR 0149: Install the private DNS listener from the Gateway",
+            "path": "docs/decisions/0150-keep-extension-commands-local-and-confirm-the-proxycli-fleet-stop.md",
+            "title": "ADR 0150: Keep extension commands local and confirm the proxycli fleet stop",
             "kind": "decision",
             "components": [
-                "apps/docs",
-                "apps/gateway"
+                "apps/cli",
+                "apps/docs"
             ],
             "concepts": [
-                "Database",
                 "Gateway",
                 "Node",
-                "Process"
+                "Process",
+                "proxycli"
             ],
             "governing_adrs": [
-                "0092",
-                "0149"
+                "0104",
+                "0150"
             ]
         },
         {
@@ -4023,7 +4024,7 @@
                 "0146",
                 "0147",
                 "0148",
-                "0149"
+                "0150"
             ]
         },
         {
@@ -5053,8 +5054,7 @@
             ],
             "governing_adrs": [
                 "0061",
-                "0062",
-                "0149"
+                "0062"
             ]
         },
         {
@@ -5096,7 +5096,8 @@
                 "0104",
                 "0108",
                 "0109",
-                "0145"
+                "0145",
+                "0150"
             ]
         },
         {
@@ -5416,8 +5417,7 @@
                 "0091",
                 "0092",
                 "0094",
-                "0095",
-                "0149"
+                "0095"
             ]
         },
         {

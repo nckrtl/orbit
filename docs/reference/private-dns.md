@@ -98,7 +98,7 @@ Each release holds a `.manifest` of file digests. Before a publication installs 
 | Unit | Content |
 | --- | --- |
 | `/etc/systemd/system/orbit-private-dns.socket` | `ListenDatagram` and `ListenStream` on the VPN DNS address, `FreeBind=yes`, and no ordering on the WireGuard tunnel, which would form a boot cycle |
-| `/etc/systemd/system/orbit-private-dns.service` | `php8.5 /var/lib/orbit/private-dns/releases/<id>/serve.php --listen=… --port=53 --catalog=… --upstream=127.0.0.55:53`, `Sockets=orbit-private-dns.socket` |
+| `/etc/systemd/system/orbit-private-dns.service` | `php8.5 /var/lib/orbit/private-dns/releases/<id>/serve.php --listen=… --port=53 --catalog=… --upstream=127.0.0.55:53`, `Sockets=orbit-private-dns.socket`, and `After=wg-quick@orbit.service` without `Requires=` or `Wants=`, so a query never starts a stopped tunnel |
 
 The first publication after an upgrade moves the address from a listener that binds it itself to the socket unit. It stops the old listener and starts the socket unit right after, so lookups fail for a few milliseconds at most, once.
 

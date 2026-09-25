@@ -247,3 +247,41 @@ describe('listing the whole fleet', function (): void {
         expect($listed->pluck('name')->all())->toBe([$owned->name]);
     });
 });
+
+describe('the Process list with a Gateway view of the Node agents', function (): void {
+    it('answers from a fresh view without asking Prometheus or the Node', function (): void {
+        Http::fake(['*' => Http::response([], 503)]);
+        $node = agent_view_node();
+        $web = agent_view_instance_process($node, 'web');
+        $cache = agent_view_instance_process($node, 'cache', ProcessRuntime::Docker);
+        seed_agent_view($node->id, [
+            "systemd:orbit-process-{$web->id}-web" => 'active',
+            "docker:orbit-process-{$cache->id}-cache" => 'running',
+        ]);
+
+        $statuses = status_index_with_fake_node_reads()->statuses(Process::query()->get());
+
+        expect($statuses)->toBe([$web->id => 'active', $cache->id => 'running']);
+        Http::assertNothingSent();
+    });
+
+    it('keeps the status the Gateway observed after its own change ahead of the view', function (): void {
+        $node = agent_view_node();
+        $web = agent_view_instance_process($node, 'web');
+        seed_agent_view($node->id, ["systemd:orbit-process-{$web->id}-web" => 'inactive']);
+        $index = status_index_with_fake_node_reads();
+
+        $index->remember($web, 'active');
+
+        expect($index->statuses(new Collection([$web])))->toBe([$web->id => 'active']);
+    });
+
+    it('falls back to the Node when the view is stale and Prometheus cannot answer', function (): void {
+        Http::fake(['*' => Http::response([], 503)]);
+        $node = agent_view_node();
+        $web = agent_view_instance_process($node, 'web');
+        seed_agent_view($node->id, ["systemd:orbit-process-{$web->id}-web" => 'active'], ageSeconds: 16);
+
+        expect(status_index_with_fake_node_reads()->statuses(new Collection([$web])))->toBe([$web->id => 'nodes-were-asked']);
+    });
+});
