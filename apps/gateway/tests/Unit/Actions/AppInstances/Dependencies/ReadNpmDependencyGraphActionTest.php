@@ -222,6 +222,22 @@ JSON;
         ]);
     });
 
+    it('ignores peer metadata for names without a peer declaration', function (): void {
+        // debug and follow-redirects publish optional peer metadata without declaring the peer.
+        $manifest = '{"devDependencies":{"debug":"^4.4.3"},"peerDependenciesMeta":{"root-only":{"optional":true}}}';
+        $lock = <<<'JSON'
+{"lockfileVersion":3,"packages":{"":{"devDependencies":{"debug":"^4.4.3"},"peerDependenciesMeta":{"root-only":{"optional":true}}},"node_modules/debug":{"version":"4.4.3","dev":true,"dependencies":{"ms":"^2.1.3"},"peerDependenciesMeta":{"supports-color":{"optional":true}}},"node_modules/ms":{"version":"2.1.3","dev":true}}}
+JSON;
+
+        $graph = (new ReadNpmDependencyGraphAction)->execute($manifest, $lock);
+
+        expect($graph->resolutions)->toHaveCount(2);
+        expect($graph->requirements)->toEqualCanonicalizing([
+            new DependencyRequirement(null, 'node_modules/debug', 'debug', '^4.4.3', DependencyRequirementKind::Dependency, DependencyScope::Development, false),
+            new DependencyRequirement('node_modules/debug', 'node_modules/ms', 'ms', '^2.1.3', DependencyRequirementKind::Dependency, DependencyScope::Regular, false),
+        ]);
+    });
+
     it('ignores workspaces metadata on transitive package records', function (): void {
         $manifest = '{"devDependencies":{"lib":"1.0.0"}}';
         $lock = <<<'JSON'
@@ -272,7 +288,7 @@ JSON;
         'unsafe constraint' => ['{"dependencies":{"one":"https://fixture-user:fixture-secret@example.test/a.tgz"}}', '{"lockfileVersion":3,"packages":{"":{}}}'],
         'unsafe query' => ['{"optionalDependencies":{"one":"https://example.test/a.tgz?token=fixture-secret"}}', '{"lockfileVersion":3,"packages":{"":{}}}'],
         'malformed alias' => ['{"optionalDependencies":{"one":"npm:@invalid"}}', '{"lockfileVersion":3,"packages":{"":{}}}'],
-        'orphan peer metadata' => ['{"peerDependenciesMeta":{"missing":{"optional":true}}}', '{"lockfileVersion":3,"packages":{"":{}}}'],
+        'invalid undeclared peer metadata' => ['{"peerDependenciesMeta":{"missing":{"optional":"yes"}}}', '{"lockfileVersion":3,"packages":{"":{}}}'],
         'nonobject peer metadata' => ['{"peerDependenciesMeta":[]}', '{"lockfileVersion":3,"packages":{"":{}}}'],
         'unreachable record' => ['{}', '{"lockfileVersion":3,"packages":{"":{},"node_modules/unused":{"version":"1"}}}'],
         'missing parent record' => ['{}', '{"lockfileVersion":3,"packages":{"":{},"node_modules/missing/node_modules/one":{"version":"1"}}}'],
