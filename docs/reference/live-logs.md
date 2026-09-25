@@ -117,11 +117,13 @@ The agent and the Gateway bound every stream, so a busy log cannot exhaust eithe
 | Open streams | 16 for each serving Node |
 | First lines | `lines`, at most 256 KiB. They do not count against the rates below. |
 | Line length | 8 KiB; a longer line is cut and ends with `[truncated]` |
-| Events | At most one `log.lines` event every 250 milliseconds from the agent. The Gateway splits the lines into events that fit a Reverb request of 10,000 bytes, and cuts a line of many quotes or backslashes shorter so it fits one event. |
+| Events | At most one `log.lines` event every 250 milliseconds from the agent, split into events that fit a Reverb request of 10,000 bytes |
 | Rate from the agent | 32 KiB per second for each stream, with a 256 KiB burst, and 256 KiB per second for each Node |
 | Rate from the Gateway | 64 KiB per second for each stream, with a 256 KiB burst |
 | Waiting lines in the Gateway | 1 MiB for each stream and 16 MiB in all, and at most five failed relay runs in a row |
 | Lease | 60 seconds, renewed every 20 seconds |
+
+A line of many quotes or backslashes can be cut shorter than 8 KiB, because Reverb's request carries each quote and backslash twice and one line must fit one event.
 
 Lines above a rate are dropped and counted in `dropped`. The agent never queues more than one burst for each stream. The Gateway queues lines only while a relay run is slow or failing, up to its limit for waiting lines; past it, the stream ends with `relay_behind`. A flood therefore cannot grow the agent's or the Gateway's memory.
 
