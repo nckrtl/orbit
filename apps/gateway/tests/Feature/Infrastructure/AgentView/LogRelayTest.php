@@ -124,6 +124,23 @@ describe('a live log relay run', function (): void {
             ->and(array_all($events, static fn (LogStreamBroadcast $event): bool => strlen((string) json_encode($event->payload)) <= LogStreamBroadcaster::PayloadLimit))->toBeTrue();
     });
 
+    it('keeps every Reverb request under 10,000 bytes when lines hold quotes', function (): void {
+        $quoted = array_map(static fn (int $i): string => sprintf('{"n":%d,"msg":"%s"}', $i, str_repeat('\\"', 20)), range(1, 400));
+        $this->relay->relay(relay_batch([relay_lines(1, $this->node->id, $this->stream->id, [...$quoted, str_repeat('"', 8_000)])]));
+
+        $events = relayed('log.lines');
+        $lines = relayed_lines();
+        // The Reverb HTTP API body: the event JSON as an escaped string, with the event name and channel.
+        $bodies = array_map(static fn (LogStreamBroadcast $event): int => strlen((string) json_encode([
+            'name' => $event->name, 'data' => (string) json_encode($event->payload), 'channels' => [$event->channel],
+        ])), $events);
+
+        expect(count($lines))->toBe(401)
+            ->and(array_slice($lines, 0, 400))->toBe($quoted)
+            ->and($lines[400])->toEndWith('" [truncated]')
+            ->and(max($bodies))->toBeLessThanOrEqual(8_700);
+    });
+
     it('keeps the order of items and continues the sequence across runs', function (): void {
         $this->relay->relay(relay_batch([relay_lines(1, $this->node->id, $this->stream->id, ['one']), relay_lines(2, $this->node->id, $this->stream->id, ['two'])]));
         $this->relay->relay(relay_batch([relay_lines(3, $this->node->id, $this->stream->id, ['three'])]));

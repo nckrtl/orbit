@@ -25,8 +25,12 @@ use Throwable;
  */
 final readonly class LogStreamBroadcaster
 {
-    /** The largest JSON payload of one event, safely under Reverb's 10,000-byte message limit. */
-    public const int PayloadLimit = 9_000;
+    /**
+     * The largest payload of one event, measured as the JSON string it travels in: the Reverb HTTP API
+     * body carries the event's JSON as an escaped string. Reverb refuses a request over 10,000 bytes,
+     * headers and the rest of the body included, so this leaves them about 1,500 bytes.
+     */
+    public const int PayloadLimit = 8_500;
 
     public function __construct(private RealtimeConnection $realtime) {}
 
@@ -63,7 +67,8 @@ final readonly class LogStreamBroadcaster
     }
 
     /**
-     * The byte size of a `log.lines` payload for these lines, so the relay can split its parts.
+     * The byte size of a `log.lines` payload for these lines as it travels in the Reverb HTTP API body,
+     * so the relay can split its parts. Quotes and backslashes in a line count twice there.
      *
      * @param  list<string>  $lines
      */
@@ -76,7 +81,7 @@ final readonly class LogStreamBroadcaster
             'data' => ['sequence' => PHP_INT_MAX, 'lines' => $lines, 'dropped' => PHP_INT_MAX, 'skipped' => PHP_INT_MAX],
         ];
 
-        return strlen((string) json_encode($payload, JSON_INVALID_UTF8_SUBSTITUTE));
+        return strlen((string) json_encode((string) json_encode($payload, JSON_INVALID_UTF8_SUBSTITUTE)));
     }
 
     /**

@@ -123,6 +123,8 @@ final readonly class LogRelay
         $part = [];
 
         foreach ($lines as $line) {
+            $line = self::fitting($streamId, $line);
+
             if ($part !== [] && LogStreamBroadcaster::linesPayloadSize($streamId, [...$part, $line]) > LogStreamBroadcaster::PayloadLimit) {
                 $parts[] = $part;
                 $part = [];
@@ -144,6 +146,26 @@ final readonly class LogRelay
             $parts,
             array_keys($parts),
         );
+    }
+
+    /**
+     * The line, cut so that it fits one event on its own. An 8 KiB line of quotes grows to twice that
+     * in the Reverb request, which Reverb would refuse on every try.
+     */
+    private static function fitting(string $streamId, string $line): string
+    {
+        if (LogStreamBroadcaster::linesPayloadSize($streamId, [$line]) <= LogStreamBroadcaster::PayloadLimit) {
+            return $line;
+        }
+
+        $keep = strlen($line);
+
+        do {
+            $keep = intdiv($keep * 3, 4);
+            $cut = mb_strcut($line, 0, $keep, 'UTF-8').' [truncated]';
+        } while ($keep > 0 && LogStreamBroadcaster::linesPayloadSize($streamId, [$cut]) > LogStreamBroadcaster::PayloadLimit);
+
+        return $cut;
     }
 
     private function endStream(int $nodeId, string $streamId, LogStreamEndReason $reason): void
