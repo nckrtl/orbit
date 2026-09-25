@@ -39,6 +39,8 @@ Commit `docs/generated/context.json` when generation changes it. For Mintlify pa
 
 Build the feature and tests against the documented behavior. Keep proposed ADRs and documentation aligned with what the implementation delivers. Explain material changes in direction in the PR.
 
+`composer test:affected` selects tests with Pest test-impact analysis (TIA), which needs PCOV or Xdebug. Without a coverage driver, TIA is skipped and every test runs. On macOS, install PCOV with `brew install shivammathur/extensions/pcov@8.5`.
+
 Run these commands in each changed project, such as `apps/cli`:
 
 ```bash

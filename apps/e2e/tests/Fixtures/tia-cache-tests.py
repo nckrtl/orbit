@@ -783,7 +783,7 @@ class RealPestCacheTest(unittest.TestCase):
             0,
             coverage.returncode,
             'Real Pest TIA records a graph only with PCOV or Xdebug. Install one for the PHP on PATH, '
-            'for example `pecl install pcov`.',
+            'on macOS with `brew install shivammathur/extensions/pcov@8.5`.',
         )
         with tempfile.TemporaryDirectory(prefix='orbit-real-tia-') as temporary:
             root = Path(temporary).resolve() / 'primary'
