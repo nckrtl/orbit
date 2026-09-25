@@ -7,6 +7,7 @@ namespace App\Infrastructure\Tasks;
 use App\Domain\Tasks\TaskBriefCoverage;
 use App\Domain\Tasks\TaskRunPullRequest;
 use App\Domain\Tasks\TaskSessionClassificationException;
+use App\Domain\Tasks\TaskStatus;
 use App\Models\Task;
 use App\Models\TaskGroup;
 use Laravel\Ai\Classification;
@@ -21,7 +22,11 @@ final readonly class LaravelAiTaskBriefCoverage implements TaskBriefCoverage
 {
     public function missing(TaskGroup $group, TaskRunPullRequest $pullRequest): array
     {
-        $subtasks = $group->tasks()->orderBy('position')->orderBy('id')->get();
+        $subtasks = $group->tasks()
+            ->whereNotIn('status', [TaskStatus::Cancelled, TaskStatus::Failed])
+            ->orderBy('position')
+            ->orderBy('id')
+            ->get();
         $classification = Classification::of([
             'group_title' => $group->title,
             'group_brief' => $group->brief,
