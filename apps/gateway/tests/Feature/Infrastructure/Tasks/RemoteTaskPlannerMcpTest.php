@@ -11,13 +11,13 @@ use App\Infrastructure\Tasks\RemoteTaskPlannerMcp;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\Node;
-use Illuminate\Support\Facades\File;
 use Symfony\Component\Process\Process;
 use Tests\Support\LocalShellSshExecutor;
+use Tests\Support\TestOrbitHome;
 
 function planner_mcp_checkout(): string
 {
-    $checkout = sys_get_temp_dir().'/orbit-planner-mcp-'.bin2hex(random_bytes(6));
+    $checkout = TestOrbitHome::scratch('orbit-planner-mcp');
     (new Process(['git', 'init', '--quiet', $checkout]))->mustRun();
 
     return $checkout;
@@ -60,9 +60,7 @@ function planner_mcp(): RemoteTaskPlannerMcp
 }
 
 afterEach(function (): void {
-    foreach (glob(sys_get_temp_dir().'/orbit-planner-mcp-*') ?: [] as $directory) {
-        File::deleteDirectory($directory);
-    }
+    TestOrbitHome::clearScratch();
 });
 
 it('writes an untracked .mcp.json for this Gateway that Git ignores', function (): void {
