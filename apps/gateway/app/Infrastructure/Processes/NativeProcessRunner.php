@@ -88,7 +88,12 @@ final readonly class NativeProcessRunner implements ProcessRunner
 
                     if ($running) {
                         if (microtime(true) - $startedAt > $timeout) {
-                            throw new ProcessTimedOutException($process, ProcessTimedOutException::TYPE_GENERAL);
+                            $timedOut = new ProcessTimedOutException($process, ProcessTimedOutException::TYPE_GENERAL);
+
+                            // A process cut short by the API command deadline reports that deadline.
+                            throw $this->deadline instanceof CommandDeadline && $timeout < $invocation->timeout
+                                ? $this->deadline->exceeded($timedOut)
+                                : $timedOut;
                         }
 
                         usleep(10_000);

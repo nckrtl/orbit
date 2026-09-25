@@ -113,6 +113,7 @@ use App\Domain\Metrics\MetricsFirewallExpectationProvider;
 use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Metrics\MetricsPublicationManager as MetricsPublicationManagerContract;
 use App\Domain\Metrics\MetricsPublicationReport;
+use App\Domain\Metrics\MetricsReconcileDeferral;
 use App\Domain\Metrics\MetricsRoleManager;
 use App\Domain\Metrics\MetricsRuntimeLifecycle;
 use App\Domain\Metrics\MetricsStatusReader;
@@ -678,6 +679,7 @@ final class AppServiceProvider extends ServiceProvider
         );
         $this->app->singleton(PrivateDnsManager::class, static fn (): PrivateDnsManager => app(DnsmasqPrivateDnsManager::class));
         $this->app->singleton(CommandDeadline::class);
+        $this->app->scoped(MetricsReconcileDeferral::class);
         $this->app->singleton(
             ToolManagerRegistry::class,
             static fn (): ToolManagerRegistry => new ToolManagerRegistry([
