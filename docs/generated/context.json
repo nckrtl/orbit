@@ -5182,6 +5182,8 @@
                 "apps/gateway"
             ],
             "concepts": [
+                "Cluster",
+                "Database",
                 "Doctor",
                 "Gateway",
                 "Ingress",
@@ -5199,7 +5201,8 @@
                 "0094",
                 "0100",
                 "0138",
-                "0144"
+                "0144",
+                "0157"
             ]
         },
         {

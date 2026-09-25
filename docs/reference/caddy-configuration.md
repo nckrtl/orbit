@@ -73,7 +73,7 @@ A send to the old server gets 0.3 seconds to connect and 0.5 seconds in total, a
 | Service metrics scrape site on port 9103 | A selected Ingress Node | WireGuard address |
 | `reverb.orbit`, `analytics.orbit`, and `collector.cli-proxy-api.orbit` | The Node that runs the role or collector | WireGuard address |
 
-Only public Ingress sites bind `0.0.0.0`, so no private site joins the public listener. [ADR 0157](/decisions/0157-keep-private-caddy-sites-off-the-public-listener) records this rule.
+Only public Ingress sites bind `0.0.0.0`, so no private site joins the public listener. The `ingress` and `gateway` roles never share a Node, so `gateway.orbit` and `metrics.orbit` never run beside a public site. [ADR 0157](/decisions/0157-keep-private-caddy-sites-off-the-public-listener) records both rules.
 
 A Node gets at most one site for each domain, port, and listener. When a Route's current and transition placements render the same site on one Node, the build keeps the current one. Any other duplicate fails the build and names both sites.
 
@@ -81,27 +81,27 @@ A Node gets at most one site for each domain, port, and listener. When a Route's
 
 Caddy sends a connection for a specific address only to the sites bound to that address, and every other connection to the `0.0.0.0` sites. A public Ingress site therefore binds the WireGuard and LAN addresses as well as `0.0.0.0`: a Router forwards to those addresses, and public traffic can arrive on the LAN address behind NAT. Every other site binds only the addresses its clients use. Routers, Ingress, and private DNS clients reach Router and workload sites on a Node's LAN or WireGuard address, so those sites never bind `0.0.0.0`, on an Ingress Node or elsewhere.
 
-A Gateway that is also the Router and the Ingress then serves `gateway.orbit` and its Router sites on the WireGuard address, and only its public sites on every address:
+A production Node that is the Router, the Ingress, and app-prod then serves its private Router sites on the WireGuard and LAN addresses, and only its public sites on every address:
 
 ```caddy
-gateway.orbit, 10.44.0.1 {
-    bind 10.44.0.1
-    @orbit_outside not remote_ip 10.44.0.0/24
-    abort @orbit_outside
-    # Gateway web site
-}
-
 https://shop.test {
-    bind 10.44.0.1 192.168.1.1
+    bind 10.44.0.3 192.168.1.3
     @orbit_outside not remote_ip private_ranges 100.64.0.0/10 10.44.0.0/24
     abort @orbit_outside
-    # Router site
+    # Router site of a private Route
 }
 
 shop.example.com {
-    bind 0.0.0.0 10.44.0.1 192.168.1.1
+    bind 0.0.0.0 10.44.0.3 192.168.1.3
     tls force_automate
     # public Ingress site
+}
+
+http://10.44.0.3:9103 {
+    bind 10.44.0.3
+    @orbit_outside not remote_ip 10.44.0.0/24
+    abort @orbit_outside
+    # service metrics scrape site
 }
 ```
 

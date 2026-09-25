@@ -317,7 +317,7 @@ The Ingress serves public sites while its role is active, while it converges, an
 
 When Ingress shares a Node with the Router, with app-prod, or with both, one composed Caddy service serves the public Route. The composed site does not proxy to its own public listener.
 
-Ingress may also share the Gateway Node, which a small fleet makes its Router. Only the public sites bind every address. The Router's private sites, `gateway.orbit`, and `metrics.orbit` stay on the WireGuard and LAN addresses and answer no public client. [Caddy configuration](/reference/caddy-configuration#listener-addresses) describes the listeners.
+Ingress never shares a Node with the Gateway: Ingress is public and the Gateway is private. `node:role:add` refuses `ingress` on the Gateway Node, and `node:role:relocate` refuses `gateway` onto an Ingress Node, before either changes anything. A Gateway that is the Router works with an Ingress on another Node of the Cluster. On an Ingress Node, only the public sites bind every address; the Router's and workloads' private sites stay on the WireGuard and LAN addresses and answer no public client. [Caddy configuration](/reference/caddy-configuration#listener-addresses) describes the listeners.
 
 When the Ingress Node runs a target of the public Route, one site on the public listener serves that target directly, with `tls force_automate`, and replaces the target's private site for that host. A Router on another Node still forwards private traffic to that Node. It verifies the site against the Node's system roots, which also hold the Orbit root, so it accepts the public certificate. Until Let's Encrypt issues that certificate, the host does not complete TLS on that Node.
 

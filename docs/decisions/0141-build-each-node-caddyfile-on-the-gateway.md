@@ -10,7 +10,7 @@ The Gateway renders the complete Caddyfile for one Node from stored state in one
 
 ## Status
 
-Proposed. Amended by [ADR 0146](/decisions/0146-retire-the-herdr-integration), which removes the Herdr observer site source, and by [ADR 0157](/decisions/0157-keep-private-caddy-sites-off-the-public-listener), which keeps Router and workload sites off `0.0.0.0` on an Ingress Node and guards every site that is not public by client address. The Context keeps the Herdr publisher as it was surveyed.
+Proposed. Amended by [ADR 0146](/decisions/0146-retire-the-herdr-integration), which removes the Herdr observer site source, and by [ADR 0157](/decisions/0157-keep-private-caddy-sites-off-the-public-listener), which keeps Router and workload sites off `0.0.0.0` on an Ingress Node guards every site that is not public by client address, and keeps Ingress off the Gateway Node instead of failing its build. The Context keeps the Herdr publisher as it was surveyed.
 
 ## Context
 
