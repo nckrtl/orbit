@@ -256,6 +256,20 @@ If no remaining Node fits, provisioning returns no Instance. The group returns t
 
 An unexpected provisioning error, such as a lock timeout or a failed lookup, has the same result. The Gateway writes the error to its application log, and the group returns to `todo` with the same reason. The reason never contains the error text. A group never stays `reserved` after a failed provision, so it does not count toward the Node ceiling.
 
+The provisioned Instance belongs to the group from then on. If the move to `running` fails after a successful provision, for example because the database is busy, the Gateway writes the error to its application log. The group returns to `todo` with the assistance reason `The group could not start after its workspace was provisioned.` and keeps its Instance. Claim processing continues with the next eligible group. The next claim reuses the kept Instance instead of provisioning a new one, and cancellation removes it. A group that returns to `todo` because the Node ceiling holds it back at start also keeps its Instance.
+
+A process that stops between the reserve and the move to `running` can leave a group `reserved`. Each tick returns a group that has stayed `reserved` longer than `ORBIT_TASKS_RESERVED_TIMEOUT_SECONDS` (default `3600`) to `todo` with the assistance reason `The group stayed reserved too long and returned to todo.`, and then claims `todo` groups as usual. The tick changes the group only while it is still `reserved` past the bound, so it never takes a group that a newer claim reserved. A claim that fails likewise returns its group to `todo` only while it still holds that reservation. The start and timeout reasons clear in the same way as the provisioning reason.
+
+A claim can stop after it provisions the `task-{group id}` workspace and before it attaches it. That workspace keeps its name and its `task-{group id}` branch, so the next claim resumes it, and cancellation and completion find it by that name and branch when the group holds no Instance.
+
+An Instance that only shares the name, with another branch, is never resumed or removed. Provisioning refuses it, and the group returns to `todo` with the provisioning reason.
+
+When a group is cancelled while its claim runs, the claim removes the workspace it provisioned, or the part of it that exists when provisioning fails, and the group stays `cancelled`. When that claim stops before it can, each tick removes the `task-{group id}` workspace of a `cancelled` or `completed` group that holds no Instance and was reserved longer ago than `ORBIT_TASKS_RESERVED_TIMEOUT_SECONDS`, or never.
+
+A tick starts no new removal after it has spent 60 seconds on them, well inside its 300-second lock, and the rest wait for the next tick. A failed removal goes to the application log and backs off for that Instance only: 60 seconds after the first failure, doubling after each further failure, up to `ORBIT_TASKS_RESERVED_TIMEOUT_SECONDS`. A workspace that keeps failing therefore never blocks the removal of another one.
+
+If the stopped claim created a workspace, provisioning finds it by its `task-{group id}` name and resumes it on its Node. When that Node is at the ceiling, the group waits for capacity. When that Node does not fit the group, provisioning returns no Instance. A claim whose provision outlasts the bound finds its group in `todo`. It attaches the Instance to the group and leaves the group in `todo` for the next claim.
+
 If Nodes fit but each is at the ceiling, the group waits for capacity. It returns to `todo` without a reason. When no `app-dev` Node has capacity, claim processing stops until capacity frees. Otherwise it continues with the next eligible group.
 
 When the assignment fits the Node ceiling, the group becomes `running`. AgentSpawner starts the first implementer through the selected driver. The shared reviewer starts at the first handoff. The Gateway stores an Orbit thread ID only after creation and the opening turn succeed.
@@ -482,6 +496,7 @@ When `notify_coder` is true, settle POSTs an HMAC-signed JSON body to Coder. Thi
 | `ORBIT_CODER_WEBHOOK_URL` | HTTPS endpoint that receives the settle POST |
 | `ORBIT_CODER_WEBHOOK_SECRET` | HMAC-SHA256 secret. The Gateway never returns it |
 | `ORBIT_TASKS_OBSERVATION_GRACE_SECONDS` | Seconds before one alert for an observation outage. Defaults to `120` |
+| `ORBIT_TASKS_RESERVED_TIMEOUT_SECONDS` | Seconds a group may stay `reserved` before the tick returns it to `todo`. Defaults to `3600`, with a minimum of `60`. Keep it above the slowest workspace provision |
 | `ORBIT_TASKS_AGENT_DRIVER` | Default driver key for both roles of new groups. Defaults to `t3` |
 | `ORBIT_TASKS_IMPLEMENTER_AGENT_DRIVER` | Driver key for implementers of new groups. Defaults to `ORBIT_TASKS_AGENT_DRIVER` |
 | `ORBIT_TASKS_REVIEWER_AGENT_DRIVER` | Driver key for the reviewer of new groups. Defaults to `ORBIT_TASKS_AGENT_DRIVER` |
@@ -528,9 +543,11 @@ These items stay unimplemented here and need a later feature PR.
 
 ## Cancel a stuck group
 
-Call `tasks-cancel` with `{ "group": 123 }`, or run `orbit tasks:cancel 123`, to cancel a `backlog`, `todo`, `reserved`, `running`, `reviewing`, or `failed` group, or a `settling` group without a `pr_url`. The API operation is `tasks:cancel`. A `backlog` or `todo` group has no Instance, so cancellation only marks it `cancelled`. For other groups, cancellation removes the shared Instance and clears both taskable fields before returning the group as `cancelled`. Repeating cancellation is safe and also cleans up an Instance still attached to a group already marked `cancelled`. Subtasks that are not completed or failed become `cancelled`. Cancellation clears `assistance_requested` on the group and its subtasks and keeps the last `assistance_reason`. Subtask records and agent thread identifiers stay as history.
+Call `tasks-cancel` with `{ "group": 123 }`, or run `orbit tasks:cancel 123`, to cancel a `backlog`, `todo`, `reserved`, `running`, `reviewing`, or `failed` group, or a `settling` group without a `pr_url`. The API operation is `tasks:cancel`. Cancellation removes the group's workspace: the attached Instance, or the unattached `task-{group id}` workspace that an interrupted claim left behind. A group without either is only marked `cancelled`. A group `reserved` within `ORBIT_TASKS_RESERVED_TIMEOUT_SECONDS` has a claim in flight, so cancellation marks it `cancelled` and leaves the workspace to that claim, which removes it. A workspace that the claim attached before the cancel is removed by the cancel. Cancellation clears both taskable fields before it returns the group as `cancelled`.
 
-A route-free Instance in `source_resolved` uses the Ops database cleanup contract: delete the Instance row and retain its checkout on disk. Other Instances use the existing forced Instance remover, including Route cleanup. Removal errors propagate and leave the group attached for retry. Cancellation does not interrupt the external agent conversation.
+Repeating cancellation is safe and also cleans up an Instance still attached to a group already marked `cancelled`. Subtasks that are not completed or failed become `cancelled`. Cancellation clears `assistance_requested` on the group and its subtasks and keeps the last `assistance_reason`. Subtask records and agent thread identifiers stay as history.
+
+Cancellation removes the workspace with the forced Instance remover, which also deletes its checkout and cleans up its Routes. When the remover refuses a route-free workspace that never became active (`reserved`, `checkout_prepared`, or `source_resolved`), cancellation deletes the Instance row, retains any checkout on disk, and Doctor reports it. Removal errors propagate and leave the group attached for retry. Cancellation does not interrupt the external agent conversation.
 
 Before it removes the Instance of a `settling` group with an approved subtask, cancellation pushes the workspace HEAD to `task-{group id}` on `origin`. A failed push returns HTTP 502 with `tasks.push_failed` and keeps the group and its Instance, so you can retry. Uncommitted workspace changes are not pushed. The push runs outside any database transaction.
 

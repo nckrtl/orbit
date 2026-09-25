@@ -58,6 +58,8 @@ it('names what each app role leaves behind', function (RoleName $role, string $e
         'Caddy site, PHP-FPM pool and serving checkout for the gateway role',
     ],
     'gateway firewall' => [RoleName::Gateway, 'Orbit firewall rule for the gateway role'],
+    'ingress caddy' => [RoleName::Ingress, 'Caddy configuration that serves the ingress role on every address'],
+    'ingress firewall' => [RoleName::Ingress, 'Orbit firewall rules for public HTTP and HTTPS on the ingress role'],
 ]);
 
 it('merges several roles into one sorted list without repeating the exporter', function (): void {
@@ -77,7 +79,7 @@ it('leaves nothing behind for the roles that cannot be removed', function (RoleN
     expect(new NodeSideResidue()->describe([$role], nodeLeavesFleet: true))->toHaveCount(2);
 })->with([
     'vpn' => [RoleName::Vpn],
-    'ingress' => [RoleName::Ingress],
+    'router' => [RoleName::Router],
     'database' => [RoleName::Database],
 ]);
 

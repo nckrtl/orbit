@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Tasks;
 
 use App\Actions\Tasks\CompleteTaskGroupAction;
+use App\Actions\Tasks\RemoveTaskWorkspaceAction;
 use App\Domain\Projects\LifecyclePhase;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\AgentThread;
@@ -17,6 +18,7 @@ use App\Models\TaskGroup;
 use Closure;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Throwable;
@@ -24,6 +26,17 @@ use Throwable;
 final readonly class TaskScheduler
 {
     public const string ProvisioningFailedReason = 'Workspace provisioning did not return an instance.';
+
+    public const string StartFailedReason = 'The group could not start after its workspace was provisioned.';
+
+    public const string ReservationExpiredReason = 'The group stayed reserved too long and returned to todo.';
+
+    /** Reasons the scheduler sets when a claim returns a group to todo. A start, a capacity wait, or a move to backlog clears them. */
+    public const array ClaimFailureReasons = [
+        self::ProvisioningFailedReason,
+        self::StartFailedReason,
+        self::ReservationExpiredReason,
+    ];
 
     private const string BASELINE_COMPOSER_INSTALL_STEP = '[Orbit internal] Install Composer dependencies';
 
@@ -47,6 +60,7 @@ final readonly class TaskScheduler
         private TaskPullRequestPublisher $publisher,
         private TaskCheckRunner $checks,
         private TaskBroadcasts $broadcasts,
+        private RemoveTaskWorkspaceAction $workspaces,
     ) {}
 
     /**
@@ -779,8 +793,8 @@ final readonly class TaskScheduler
     /**
      * Claims the oldest todo group that fits, provisions its Instance, and starts its first task.
      *
-     * @param  list<int>  $skipped  Groups whose provisioning failed. A caller that passes the same list to later calls
-     *                              tries each failing group at most once.
+     * @param  list<int>  $skipped  Groups whose provisioning or start failed. A caller that passes the same list to later
+     *                              calls tries each failing group at most once.
      */
     public function claimNext(array &$skipped = []): ?TaskGroup
     {
@@ -800,6 +814,7 @@ final readonly class TaskScheduler
                     }
 
                     $group->status = TaskGroupStatus::Reserved;
+                    $group->reserved_at = now();
                     $group->save();
 
                     return $group->fresh(['tasks', 'app', 'taskable']) ?? $group;
@@ -815,11 +830,8 @@ final readonly class TaskScheduler
             try {
                 $instance = $this->provisioning->provision(InstanceProvisionIntent::for($reserved));
             } catch (TaskCapacityException $exception) {
-                $reserved->status = TaskGroupStatus::Todo;
-                if ($reserved->assistance_reason === self::ProvisioningFailedReason) {
-                    $reserved->assistance_reason = null;
-                }
-                $reserved->save();
+                $this->releaseReservation($reserved, self::isClaimFailureReason($reserved->assistance_reason) ? null : $reserved->assistance_reason);
+                $this->removeEndedWorkspace($reserved, null);
 
                 if ($exception->fleetFull) {
                     return null;
@@ -834,55 +846,273 @@ final readonly class TaskScheduler
                 $instance = null;
             }
 
-            if ($instance instanceof AppInstance) {
-                break;
+            if (! $instance instanceof AppInstance) {
+                $this->releaseReservation($reserved, self::ProvisioningFailedReason);
+                $this->removeEndedWorkspace($reserved, null);
+                $skipped[] = $reserved->id;
+
+                continue;
             }
 
-            $reserved->update([
-                'status' => TaskGroupStatus::Todo,
-                'assistance_reason' => self::ProvisioningFailedReason,
-            ]);
-            $skipped[] = $reserved->id;
+            try {
+                $started = DB::transaction(fn (): ?TaskGroup => $this->startReserved($reserved, $instance));
+            } catch (Throwable $exception) {
+                // A failed start must not strand the group in reserved or drop its Instance. The log keeps the detail.
+                report($exception);
+                $this->releaseFailedStart($reserved, $instance);
+                $this->removeEndedWorkspace($reserved, $instance);
+                $skipped[] = $reserved->id;
+
+                continue;
+            }
+
+            break;
         }
 
-        $started = DB::transaction(function () use ($reserved, $instance): TaskGroup {
-            $group = TaskGroup::query()->where('execution_mode', TaskExecutionMode::Managed)
-                ->with(['tasks', 'app', 'taskable'])
-                ->lockForUpdate()
-                ->findOrFail($reserved->id);
+        if (! $started instanceof TaskGroup) {
+            $this->removeEndedWorkspace($reserved, $instance);
 
-            $group->taskable()->associate($instance);
-            $group->load('taskable');
-
-            if (! $this->ceilings->canActivate($group)) {
-                $group->status = TaskGroupStatus::Todo;
-                // ADR 0124: a planning group keeps the workspace its planner prepared.
-                if (! $group->plan) {
-                    $group->taskable()->dissociate();
-                }
-                $group->save();
-
-                return $group->fresh(['tasks', 'app', 'taskable']) ?? $group;
-            }
-
-            $group->status = TaskGroupStatus::Running;
-            $group->started_at ??= now();
-            if ($group->assistance_reason === self::ProvisioningFailedReason) {
-                $group->assistance_requested = false;
-                $group->assistance_reason = null;
-            }
-            $group->save();
-
-            return $group->fresh(['tasks', 'app', 'taskable']) ?? $group;
-        });
-
-        if ($started->status !== TaskGroupStatus::Running) {
             return null;
         }
 
         $this->startFirstTask($started);
 
         return $started->fresh(['tasks', 'app', 'taskable']) ?? $started;
+    }
+
+    /**
+     * Attaches the provisioned Instance and moves the group from reserved to running. The group keeps the Instance
+     * whenever it cannot start, so a later claim reuses it and cancellation removes it.
+     *
+     * A group that is no longer the reservation this claim made, because the tick returned it to todo or cancellation
+     * ended it, keeps its status. It gains the Instance only when it holds none.
+     */
+    private function startReserved(TaskGroup $reserved, AppInstance $instance): ?TaskGroup
+    {
+        $group = TaskGroup::query()->where('execution_mode', TaskExecutionMode::Managed)
+            ->with(['tasks', 'app', 'taskable'])
+            ->lockForUpdate()
+            ->findOrFail($reserved->id);
+
+        if (! $this->holdsReservation($group, $reserved)) {
+            if ($group->taskable_id === null && ! self::hasEnded($group)) {
+                $group->taskable()->associate($instance);
+                $group->save();
+            }
+
+            return null;
+        }
+
+        $group->taskable()->associate($instance);
+        $group->load('taskable');
+
+        if (! $this->ceilings->canActivate($group)) {
+            $group->status = TaskGroupStatus::Todo;
+            $group->save();
+
+            return null;
+        }
+
+        $group->status = TaskGroupStatus::Running;
+        $group->started_at ??= now();
+        if (self::isClaimFailureReason($group->assistance_reason)) {
+            $group->assistance_requested = false;
+            $group->assistance_reason = null;
+        }
+        $group->save();
+
+        return $group->fresh(['tasks', 'app', 'taskable']) ?? $group;
+    }
+
+    /**
+     * Returns a group whose start failed to todo with a fixed reason and keeps its Instance. When this write fails
+     * too, the group stays reserved until the tick returns it to todo.
+     */
+    private function releaseFailedStart(TaskGroup $reserved, AppInstance $instance): void
+    {
+        try {
+            DB::transaction(function () use ($reserved, $instance): void {
+                $group = TaskGroup::query()->lockForUpdate()->find($reserved->id);
+                if (! $group instanceof TaskGroup) {
+                    return;
+                }
+                if ($group->taskable_id === null && ! self::hasEnded($group)) {
+                    $group->taskable()->associate($instance);
+                }
+                if ($this->holdsReservation($group, $reserved)) {
+                    $group->status = TaskGroupStatus::Todo;
+                    $group->assistance_reason = self::StartFailedReason;
+                }
+                $group->save();
+            });
+        } catch (Throwable $exception) {
+            report($exception);
+        }
+    }
+
+    /**
+     * Returns a group to todo only while this claim still holds its reservation, so a claim never overwrites a
+     * group that the tick released, a cancel ended, or a newer claim reserved.
+     */
+    private function releaseReservation(TaskGroup $reserved, ?string $reason): void
+    {
+        TaskGroup::query()->whereKey($reserved->id)
+            ->where('status', TaskGroupStatus::Reserved)
+            ->where('reserved_at', $reserved->reserved_at)
+            ->update(['status' => TaskGroupStatus::Todo, 'assistance_reason' => $reason]);
+    }
+
+    /**
+     * A group cancelled or completed while its claim ran holds no workspace, because the cancel left the
+     * workspace to the claim. The claim removes the Instance it provisioned, or the group's unattached
+     * `task-{group id}` workspace when provisioning failed part way.
+     */
+    private function removeEndedWorkspace(TaskGroup $reserved, ?AppInstance $instance): void
+    {
+        $group = TaskGroup::query()->with('taskable')->find($reserved->id);
+        if (! $group instanceof TaskGroup || ! self::hasEnded($group) || $group->taskable_id !== null) {
+            return;
+        }
+
+        try {
+            $leftover = $instance instanceof AppInstance ? AppInstance::query()->find($instance->id) : $this->workspaces->find($group);
+            if ($leftover instanceof AppInstance) {
+                $this->workspaces->remove($leftover);
+            }
+        } catch (Throwable $exception) {
+            // The workspace stays findable by name, so a repeated cancel removes it.
+            report($exception);
+        }
+    }
+
+    private static function hasEnded(TaskGroup $group): bool
+    {
+        return in_array($group->status, [TaskGroupStatus::Cancelled, TaskGroupStatus::Completed], true);
+    }
+
+    private function holdsReservation(TaskGroup $group, TaskGroup $reserved): bool
+    {
+        return $group->status === TaskGroupStatus::Reserved
+            && $group->reserved_at instanceof Carbon
+            && $reserved->reserved_at instanceof Carbon
+            && $group->reserved_at->equalTo($reserved->reserved_at);
+    }
+
+    /**
+     * Returns groups that stayed reserved longer than `orbit.tasks.reserved_timeout_seconds` to todo, for example after
+     * the process that claimed them stopped. Each update applies only while the group is still reserved and past the
+     * bound, so it never takes a group that a newer claim reserved.
+     */
+    public function releaseStaleReservations(): int
+    {
+        $cutoff = RemoveTaskWorkspaceAction::reservationCutoff();
+        $stale = static fn ($query) => $query->where('execution_mode', TaskExecutionMode::Managed)
+            ->where('status', TaskGroupStatus::Reserved)
+            ->where(static fn ($query) => $query->whereNull('reserved_at')->orWhere('reserved_at', '<=', $cutoff));
+        $released = 0;
+
+        foreach ($stale(TaskGroup::query())->orderBy('id')->pluck('id') as $id) {
+            $updated = $stale(TaskGroup::query()->whereKey($id))->update([
+                'status' => TaskGroupStatus::Todo,
+                'assistance_reason' => self::ReservationExpiredReason,
+            ]);
+            if ($updated === 0) {
+                continue;
+            }
+
+            Log::warning('Task group stayed reserved past the bound and returned to todo.', ['task_group_id' => $id]);
+            $this->broadcasts->groupChanged((int) $id);
+            $released++;
+        }
+
+        return $released;
+    }
+
+    /** Seconds one tick may spend removing abandoned workspaces, well inside the 300-second tick lock. */
+    public const int AbandonedWorkspaceBudgetSeconds = 60;
+
+    /** The first retry delay after a failed removal. Each further failure doubles it, up to the reservation timeout. */
+    public const int AbandonedWorkspaceBackoffSeconds = 60;
+
+    /**
+     * Removes the `task-{group id}` workspace (branch `task-{group id}`) of a cancelled or completed group that holds
+     * no Instance, once no claim can still own it: the group was never reserved, or its reservation is older than
+     * `orbit.tasks.reserved_timeout_seconds`. A cancel that lands during a live claim leaves the workspace to that
+     * claim, and this sweep removes it when the claim stopped first.
+     *
+     * One query selects the candidates. A failed removal is reported and backs off per Instance, so a workspace that
+     * keeps failing never blocks the others or costs a remote timeout on every tick. The sweep stops starting
+     * removals once it has spent its time budget; the rest wait for the next tick.
+     */
+    public function removeAbandonedWorkspaces(): int
+    {
+        $started = now();
+        $removed = 0;
+
+        foreach ($this->abandonedWorkspaces() as $workspace) {
+            if ($started->diffInSeconds(now(), true) >= self::AbandonedWorkspaceBudgetSeconds) {
+                break;
+            }
+
+            $backoffKey = 'tasks.workspace-removal.'.$workspace->id;
+            /** @var array{failures: int, due: int}|null $backoff */
+            $backoff = Cache::get($backoffKey);
+            if (is_array($backoff) && $backoff['due'] > now()->getTimestamp()) {
+                continue;
+            }
+
+            $instance = AppInstance::query()->find($workspace->id);
+            if (! $instance instanceof AppInstance) {
+                continue;
+            }
+
+            try {
+                $this->workspaces->remove($instance);
+                Cache::forget($backoffKey);
+                Log::warning('Removed the workspace of an ended task group.', ['task_group_id' => (int) $workspace->getAttribute('ended_task_group_id'), 'app_instance_id' => $workspace->id]);
+                $removed++;
+            } catch (Throwable $exception) {
+                report($exception);
+                $failures = (is_array($backoff) ? $backoff['failures'] : 0) + 1;
+                $delay = min(
+                    self::AbandonedWorkspaceBackoffSeconds * 2 ** min($failures - 1, 20),
+                    max(self::AbandonedWorkspaceBackoffSeconds, (int) config('orbit.tasks.reserved_timeout_seconds')),
+                );
+                Cache::put($backoffKey, ['failures' => $failures, 'due' => now()->addSeconds($delay)->getTimestamp()], now()->addSeconds($delay * 2));
+            }
+        }
+
+        return $removed;
+    }
+
+    /** @return Collection<int, AppInstance> */
+    private function abandonedWorkspaces(): Collection
+    {
+        $workspaceName = match (DB::connection()->getDriverName()) {
+            'mysql', 'mariadb' => "CONCAT('task-', task_groups.id)",
+            default => "'task-' || task_groups.id",
+        };
+
+        return AppInstance::query()
+            ->select('app_instances.*', 'task_groups.id as ended_task_group_id')
+            ->join('task_groups', static function ($join) use ($workspaceName): void {
+                $join->on('task_groups.app_id', '=', 'app_instances.app_id')
+                    ->whereRaw("app_instances.name = {$workspaceName}");
+            })
+            ->whereColumn('app_instances.branch_override', 'app_instances.name')
+            ->where('task_groups.execution_mode', TaskExecutionMode::Managed->value)
+            ->whereIn('task_groups.status', [TaskGroupStatus::Cancelled->value, TaskGroupStatus::Completed->value])
+            ->whereNull('task_groups.taskable_id')
+            ->where(static fn ($query) => $query
+                ->whereNull('task_groups.reserved_at')
+                ->orWhere('task_groups.reserved_at', '<=', RemoveTaskWorkspaceAction::reservationCutoff()))
+            ->orderBy('app_instances.id')
+            ->get();
+    }
+
+    public static function isClaimFailureReason(?string $reason): bool
+    {
+        return in_array($reason, self::ClaimFailureReasons, true);
     }
 
     /** Claims todo groups until none fits. A failing group is tried once. */
