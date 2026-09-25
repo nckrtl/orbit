@@ -146,6 +146,6 @@ return [
 
     'maintenance' => [
         'driver' => env(key: 'APP_MAINTENANCE_DRIVER', default: 'file'),
-        'store' => env(key: 'APP_MAINTENANCE_STORE', default: 'database'),
+        'store' => env(key: 'APP_MAINTENANCE_STORE', default: 'file'),
     ],
 ];
