@@ -6,6 +6,7 @@ use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Doctor\DoctorInspectionException;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Routes\PublicRouteEligibility;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteReplacementStep;
@@ -135,6 +136,27 @@ describe('an Ingress whose role is converging', function (): void {
         'active' => [LifecycleStatus::Active, null, true],
         'converging' => [LifecycleStatus::Provisioning, null, true],
         'failed convergence' => [LifecycleStatus::Failed, 'converge:caddy-config', true],
+        'being removed' => [LifecycleStatus::Removing, null, false],
+    ]);
+
+    it('starts a public activation only on an active Ingress', function (
+        LifecycleStatus $status,
+        ?string $failedStep,
+        bool $starts,
+    ): void {
+        $this->ingress->roles()->where('role', RoleName::Ingress)->update([
+            'status' => $status,
+            'failed_step' => $failedStep,
+            'error_code' => $failedStep === null ? null : 'node_role.convergence_failed',
+        ]);
+        $eligibility = new PublicRouteEligibility;
+
+        expect($eligibility->canStartActivation($this->route->refresh()))->toBe($starts)
+            ->and($eligibility->canActivate($this->route))->toBe($status !== LifecycleStatus::Removing);
+    })->with([
+        'active' => [LifecycleStatus::Active, null, true],
+        'converging' => [LifecycleStatus::Provisioning, null, false],
+        'failed convergence' => [LifecycleStatus::Failed, 'converge:caddy-config', false],
         'being removed' => [LifecycleStatus::Removing, null, false],
     ]);
 });

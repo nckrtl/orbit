@@ -312,7 +312,7 @@ Public TLS terminates on the Ingress Node with Let's Encrypt when the public edg
 
 Ingress forwards Orbit-CA HTTPS to the Router over the configured LAN address and uses WireGuard only when no LAN address is set. A configured but unreachable LAN path fails and does not fall back to WireGuard. Ingress preserves the original `Host` value, HTTPS scheme, and client address.
 
-The Ingress serves public sites while its role is active, while it converges, and after a failed convergence step. An Ingress role that is being removed serves none.
+The Ingress serves public sites while its role is active, while it converges, and after a failed convergence step. An Ingress role that is being removed serves none. A new public activation, or its repeat on deploy, starts only while the Ingress role is active.
 
 When Ingress shares a Node with the Router, with app-prod, or with both, one composed Caddy service serves the public Route. The composed site does not proxy to its own public listener.
 

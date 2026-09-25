@@ -73,7 +73,7 @@ final readonly class PublishPublicRouteAction
 
         if (
             ! in_array($route->status, [RouteStatus::Active, RouteStatus::Activating], true)
-            || ! $this->eligibility->canActivate($route)
+            || ! $this->eligibility->canStartActivation($route)
         ) {
             $route->update([
                 'replacement_step' => null,
