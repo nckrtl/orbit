@@ -66,6 +66,24 @@ it('touches only the Gateway-side DNS record when the node is unreachable', func
     expect($events)->toBe(['dns:converge-empty']);
 });
 
+it('reports the missing listen address when the Caddy publication refuses it', function (): void {
+    $events = [];
+    $manager = websocket_publication_manager($events, failCaddy: true);
+
+    expect(fn () => $manager->converge(websocket_publication_node()))
+        ->toThrow(NodeRoleOperationException::class, 'Caddy would bind 192.168.6.30, which is not an address on this Node.');
+});
+
+it('checks the listen addresses without changing anything and names a missing one', function (): void {
+    $events = [];
+
+    websocket_publication_manager($events)->checkListenAddresses(websocket_publication_node());
+
+    expect($events)->toBe(['ssh:caddy-remove'])
+        ->and(fn () => websocket_publication_manager($events, failCaddy: true)->checkListenAddresses(websocket_publication_node()))
+        ->toThrow(NodeRoleOperationException::class, 'Caddy would bind 192.168.6.30');
+});
+
 function websocket_publication_node(): Node
 {
     return new Node([
@@ -135,10 +153,10 @@ function websocket_publication_manager(
                     return new CommandResult($this->failCertificate ? 1 : 0, '', '', 1, false);
                 }
 
-                $isCaddyPublish = str_contains($command->input ?? '', 'bind_address');
+                $isCaddyPublish = str_contains($command->input ?? '', 'orbit_rewrite_listeners');
                 $this->events[] = $isCaddyPublish ? 'ssh:caddy' : 'ssh:caddy-remove';
 
-                return new CommandResult($this->failCaddy ? 1 : 0, '', '', 1, false);
+                return new CommandResult($this->failCaddy ? 1 : 0, '', $this->failCaddy ? "Caddy would bind 192.168.6.30, which is not an address on this Node. Correct the stored WireGuard or LAN address of the Node, then publish again.\n" : '', 1, false);
             }
         },
         keys: new class implements SshKeyProvider

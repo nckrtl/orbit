@@ -9,6 +9,8 @@ use App\Domain\Certificates\GatewayCertificateIssuer;
 use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\WebSocket\WebSocketHostname;
 use App\Domain\WebSocket\WebSocketPublicationManager;
+use App\Infrastructure\Caddy\Build\NodeCaddyListenerResolver;
+use App\Infrastructure\Caddy\CaddyFragmentListeners;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
@@ -27,6 +29,7 @@ final readonly class NativeWebSocketPublicationManager implements WebSocketPubli
         private SshKeyProvider $keys,
         private KnownHostsStore $knownHosts,
         private int $port = 0,
+        private ?NodeCaddyListenerResolver $listeners = null,
     ) {}
 
     public function converge(Node $node): void
@@ -54,7 +57,7 @@ final readonly class NativeWebSocketPublicationManager implements WebSocketPubli
         $configuration = $this->site->render($this->resolvedPort());
         $caddyResult = $this->ssh->execute(
             $this->connection($node, $address),
-            $this->caddy->command($configuration, (string) $this->resolvedPort(), $address),
+            $this->caddy->command($configuration, (string) $this->resolvedPort(), $this->listeners($node)),
         );
 
         if (! $caddyResult->succeeded()) {
@@ -62,12 +65,36 @@ final readonly class NativeWebSocketPublicationManager implements WebSocketPubli
                 'websocket-caddy',
                 'node_role.convergence_failed',
                 'websocket.caddy_publication_failed',
-                "WebSocket Caddy publication failed on node [{$node->name}].",
+                CaddyFragmentListeners::refusal($caddyResult->stderr)
+                    ?? "WebSocket Caddy publication failed on node [{$node->name}].",
                 $caddyResult,
             );
         }
 
         $this->dns->converge($node);
+    }
+
+    /**
+     * Refuses before the role changes anything when the Node lacks an address its Caddy sites would bind,
+     * so a refused converge leaves a running Reverb alone.
+     */
+    public function checkListenAddresses(Node $node): void
+    {
+        $result = $this->ssh->execute(
+            $this->connection($node, $this->address($node)),
+            $this->listeners($node)->preflight(),
+        );
+
+        if (! $result->succeeded()) {
+            throw new NodeRoleOperationException(
+                'websocket-caddy',
+                'node_role.convergence_failed',
+                'websocket.caddy_publication_failed',
+                CaddyFragmentListeners::refusal($result->stderr)
+                    ?? "WebSocket listen address check failed on node [{$node->name}].",
+                $result,
+            );
+        }
     }
 
     public function remove(Node $node): void
@@ -82,6 +109,11 @@ final readonly class NativeWebSocketPublicationManager implements WebSocketPubli
     public function removeUnreachable(Node $node): void
     {
         $this->dns->converge();
+    }
+
+    private function listeners(Node $node): CaddyFragmentListeners
+    {
+        return ($this->listeners ?? app(NodeCaddyListenerResolver::class))->fragments($node);
     }
 
     private function connection(Node $node, string $address): SshConnection

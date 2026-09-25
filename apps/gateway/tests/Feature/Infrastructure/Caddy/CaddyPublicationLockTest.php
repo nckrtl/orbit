@@ -6,6 +6,7 @@ use App\Infrastructure\Analytics\AnalyticsCaddyPublisher;
 use App\Infrastructure\Analytics\AnalyticsCertificatePublisher;
 use App\Infrastructure\AppDev\AppDevCaddyPublisher;
 use App\Infrastructure\AppProd\AppProdCaddyPublisher;
+use App\Infrastructure\Caddy\CaddyFragmentListeners;
 use App\Infrastructure\Caddy\CaddyPublicationLock;
 use App\Infrastructure\Metrics\MetricsCaddyPublisher;
 use App\Infrastructure\Metrics\MetricsCertificatePublisher;
@@ -53,17 +54,17 @@ describe('every Caddy publisher', function (): void {
         ])],
         'metrics' => [fn (): array => caddy_lock_metrics_programs()],
         'websocket' => [fn (): array => caddy_lock_remote_programs([
-            new WebSocketCaddyPublisher()->command('# websocket', '8080', '10.44.0.8'),
+            new WebSocketCaddyPublisher()->command('# websocket', '8080', new CaddyFragmentListeners(['10.44.0.8'], ['10.44.0.8'])),
             new WebSocketCaddyPublisher()->removeCommand(),
             new WebSocketCertificatePublisher()->command('certificate', 'key'),
         ])],
         'proxycli' => [fn (): array => caddy_lock_remote_programs([
-            new ProxyCliCaddyPublisher()->command('# proxycli', '8081', '10.44.0.8'),
+            new ProxyCliCaddyPublisher()->command('# proxycli', '8081', new CaddyFragmentListeners(['10.44.0.8'], ['10.44.0.8'])),
             new ProxyCliCaddyPublisher()->removeCommand(),
             new ProxyCliCertificatePublisher()->command('certificate', 'key'),
         ])],
         'analytics' => [fn (): array => caddy_lock_remote_programs([
-            new AnalyticsCaddyPublisher()->command('# analytics', '8082', '10.44.0.8'),
+            new AnalyticsCaddyPublisher()->command('# analytics', '8082', new CaddyFragmentListeners(['10.44.0.8'], ['10.44.0.8'])),
             new AnalyticsCaddyPublisher()->removeCommand(),
             new AnalyticsCertificatePublisher()->command('certificate', 'key'),
         ])],

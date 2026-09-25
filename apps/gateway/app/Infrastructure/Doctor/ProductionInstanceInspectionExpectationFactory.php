@@ -10,9 +10,11 @@ use App\Domain\AppInstances\ProductionPhpRuntimeIdentity;
 use App\Infrastructure\AppDev\AppDevCaddyConfigRenderer;
 use App\Infrastructure\AppDev\AppDevSiteRepository;
 use App\Infrastructure\AppInstances\ProductionPhpRuntimeConfigRenderer;
+use App\Infrastructure\Caddy\Build\NodeCaddyListenerResolver;
 use App\Infrastructure\Metrics\ServiceMetricsProjection;
 use App\Models\AppInstance;
 use App\Models\AppInstanceEnvironmentValue;
+use App\Models\Node;
 
 final readonly class ProductionInstanceInspectionExpectationFactory
 {
@@ -23,6 +25,7 @@ final readonly class ProductionInstanceInspectionExpectationFactory
         private AppDevCaddyConfigRenderer $caddyRenderer,
         private ProductionPhpRuntimeConfigRenderer $runtimeRenderer,
         private ?ServiceMetricsProjection $serviceMetrics = null,
+        private ?NodeCaddyListenerResolver $listeners = null,
     ) {}
 
     public function make(AppInstance $instance): ProductionInstanceInspectionExpectation
@@ -65,12 +68,21 @@ final readonly class ProductionInstanceInspectionExpectationFactory
             home: $home,
             root: $root,
             environment: $this->environmentRenderer->render($context, $values),
-            caddy: $this->caddyRenderer->render($this->sites->forNode($instance->node)),
+            caddy: $this->caddy($instance->node),
             associationMatches: $associationMatches,
             runtime: $runtime,
             runtimeConfiguration: $runtime instanceof ProductionPhpRuntimeIdentity
                 ? $this->runtimeRenderer->render($runtime, $this->serviceMetrics?->enabled($instance->node) ?? false)
                 : null,
         );
+    }
+
+    /** The `app-dev.caddy` fragment the Route publisher writes, with the Node's listeners. */
+    private function caddy(Node $node): string
+    {
+        $sites = $this->sites->forNode($node);
+        $listeners = ($this->listeners ?? app(NodeCaddyListenerResolver::class))->fragments($node, $sites);
+
+        return $this->caddyRenderer->render($sites, $listeners->routeBind());
     }
 }

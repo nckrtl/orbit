@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Analytics;
 
+use App\Infrastructure\Caddy\CaddyFragmentListeners;
 use App\Infrastructure\Caddy\CaddyGlobalOptions;
 use App\Infrastructure\Caddy\CaddyPublicationLock;
 use App\Infrastructure\Caddy\OwnsCaddyGlobalOptions;
@@ -20,10 +21,12 @@ final readonly class AnalyticsCaddyPublisher
 {
     use OwnsCaddyGlobalOptions;
 
-    public function command(string $configuration, string $port, string $wireguardIp): RemoteCommand
+    public function command(string $configuration, string $port, CaddyFragmentListeners $listeners): RemoteCommand
     {
         $lockScript = CaddyPublicationLock::script();
-        $encoded = base64_encode($configuration);
+        $listenerScript = $listeners->script();
+        $comparison = CaddyFragmentListeners::comparison();
+        $encoded = base64_encode(str_replace(AnalyticsFootprint::CaddyBindPlaceholder, $listeners->sharedBind(), $configuration));
         $version = bin2hex(random_bytes(8));
 
         return new RemoteCommand(
@@ -38,8 +41,6 @@ final readonly class AnalyticsCaddyPublisher
                 AnalyticsFootprint::CaddyfilePath,
                 AnalyticsFootprint::CaddyServiceName,
                 CaddyPublicationLock::Path,
-                $wireguardIp,
-                AnalyticsFootprint::CaddyBindPlaceholder,
             ],
             input: CaddyGlobalOptions::conflictGuard().<<<BASH
                 version=\$1
@@ -48,8 +49,6 @@ final readonly class AnalyticsCaddyPublisher
                 live_caddyfile=\$4
                 caddy_service=\$5
                 lock=\$6
-                wireguard_ip=\$7
-                bind_placeholder=\$8
                 {$lockScript}
                 candidate="\$versions/\$version.candidate"
                 published="\$versions/\$version"
@@ -68,28 +67,24 @@ final readonly class AnalyticsCaddyPublisher
                 elif [ -f "\$source_main" ] && [ "\$source_main" != "\$live_caddyfile" ]; then
                     cp --preserve=mode,ownership -- "\$source_main" "\$candidate/fragments/unmanaged.caddy"
                 fi
-                # Caddy refuses to mix a wildcard and a specific address on one port, so the
-                # site binds whatever this node's other sites already bind.
-                bind_address=\$wireguard_ip
-                if grep -qsE '^[[:space:]]*bind[[:space:]]+0\\.0\\.0\\.0' "\$candidate"/fragments/*.caddy; then
-                    bind_address=0.0.0.0
-                fi
-                printf '%s' '{$encoded}' | base64 --decode \\
-                    | sed "s/\$bind_placeholder/\$bind_address/" > "\$candidate/fragments/\$owned_fragment"
+                printf '%s' '{$encoded}' | base64 --decode > "\$candidate/fragments/\$owned_fragment"
+                {$listenerScript}
+                {$comparison}
                 printf '%s\n' '{$this->encodedGlobalOptions()}' | base64 --decode > "\$candidate/Caddyfile"
                 printf 'import %s/fragments/*.caddy\n' "\$candidate" >> "\$candidate/Caddyfile"
                 chown -R root:caddy "\$candidate"
                 find "\$candidate" -type d -exec chmod 0750 {} +
                 find "\$candidate" -type f -exec chmod 0640 {} +
-                if [ -d "\$current_fragments" ] \\
-                    && [ -f "\$current_fragments/\$owned_fragment" ] \\
-                    && cmp -s -- "\$candidate/fragments/\$owned_fragment" "\$current_fragments/\$owned_fragment" \\
+                # An identical candidate needs no new version and no reload, which would drop open streams.
+                if orbit_fragments_unchanged "\$candidate/fragments" "\$current_fragments" \\
                     && systemctl is-active --quiet "\$caddy_service"; then
                     rm -rf -- "\$candidate"
                     exit 0
                 fi
                 refuse_carried_global_options "\$candidate" "\$source_main"
                 caddy validate --config "\$candidate/Caddyfile" --adapter caddyfile
+                # Caddy validates syntax, not listeners; a missing address would fail the reload.
+                orbit_require_listen_addresses
                 printf '%s\n' '{$this->encodedGlobalOptions()}' | base64 --decode > "\$candidate/Caddyfile"
                 printf 'import %s/%s/fragments/*.caddy\n' "\$versions" "\$version" >> "\$candidate/Caddyfile"
                 mv -fT -- "\$candidate" "\$published"

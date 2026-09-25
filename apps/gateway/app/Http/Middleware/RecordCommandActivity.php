@@ -214,13 +214,23 @@ final readonly class RecordCommandActivity
         }
 
         $updates = $this->withSchedule($activity, $request, $updates);
-
-        $activity->update($this->withTarget(
+        $updates = $this->withTarget(
             $activity,
             $request,
             $this->withResult($activity, $request, $updates, $commandResult),
             $toolException instanceof ToolOperationException ? $toolException : null,
-        ));
+        );
+        $errorMessage = $request->attributes->get('orbit.error_message');
+
+        // The message the API returned, such as a Caddy publisher naming a listen address the Node lacks.
+        if ($statusCode >= 400 && is_string($errorMessage) && $errorMessage !== '') {
+            $updates['properties'] = [
+                ...($updates['properties'] ?? $activity->properties?->toArray() ?? []),
+                'error_message' => $this->redact($request, $errorMessage),
+            ];
+        }
+
+        $activity->update($updates);
     }
 
     /** @return array<string, mixed>|null */

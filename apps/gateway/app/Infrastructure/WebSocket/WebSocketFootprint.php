@@ -24,7 +24,7 @@ final readonly class WebSocketFootprint
 
     public const string CaddyFragmentMarker = '# Managed by Orbit: websocket';
 
-    /** Replaced on the node with the address its other Caddy sites already bind. */
+    /** Replaced on the Gateway with the listener the Node Caddy build rule chooses for a shared site. */
     public const string CaddyBindPlaceholder = '__ORBIT_WEBSOCKET_BIND__';
 
     public const string CertificateVersionsDirectory = '/etc/caddy/orbit-websocket-cert-versions';

@@ -26,6 +26,7 @@ use App\Infrastructure\AppDev\RemoteAppDevCaddyManager;
 use App\Infrastructure\AppDev\RemoteAppDevCertificateManager;
 use App\Infrastructure\AppDev\RemoteAppDevPhpFpmManager;
 use App\Infrastructure\AppInstances\NativeProductionRouteProjector;
+use App\Infrastructure\Caddy\Build\NodeCaddyListenerResolver;
 use App\Infrastructure\Nodes\RemotePhpPackageManager;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
@@ -71,8 +72,8 @@ it('projects a production workload through a remote Router over LAN without publ
         ->first(static fn (RemoteCommand $command): bool => in_array('s_client', $command->arguments, true));
     $sites = new AppDevSiteRepository;
     $renderer = new AppDevCaddyConfigRenderer;
-    $workloadConfiguration = $renderer->render($sites->forNode($workload));
-    $routerConfiguration = $renderer->render($sites->forNode($router));
+    $workloadConfiguration = $renderer->render($sites->forNode($workload), app(NodeCaddyListenerResolver::class)->fragments($workload)->routeBind());
+    $routerConfiguration = $renderer->render($sites->forNode($router), app(NodeCaddyListenerResolver::class)->fragments($router)->routeBind());
     $dnsConfiguration = new AppDevDnsConfigRenderer($sites)->render();
     $publishedInputs = collect($ssh->commands)->pluck('command.input')->filter();
 

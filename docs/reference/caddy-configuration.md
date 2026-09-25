@@ -44,6 +44,38 @@ The `websocket`, `proxycli`, `analytics`, and Metrics publishers also switch a c
 
 The `app-dev.caddy` publisher renders every Route site from stored state only, Route transitions included. Any publication on a Node therefore renders the same Route sites, whichever command requested it. [Stored transitions](/reference/routes#stored-transitions) lists the state each transition stores.
 
+## Listener addresses
+
+Each publisher chooses its `bind` addresses with the listener rule of the [Node Caddy build](#node-caddy-build), so the fragments and a build agree:
+
+| Sites | Node without `ingress` | Node with `ingress` |
+| --- | --- | --- |
+| Private Route sites in `app-dev.caddy`: workload and Router sites, custom proxy Routes, analytics tracking hosts, Agentation, and Vite | The WireGuard address, and the LAN address when the Node has one | `0.0.0.0` |
+| Public Ingress sites | None | `0.0.0.0` |
+| `reverb.orbit`, `analytics.orbit`, and `collector.cli-proxy-api.orbit` | The WireGuard address | `0.0.0.0` when the Node has a private Route site; otherwise the WireGuard address |
+| `gateway.orbit`, `metrics.orbit`, and the service metrics scrape site | The WireGuard address | The WireGuard address |
+
+Caddy sends a connection for a specific address only to the sites bound to that address. If one site binds the WireGuard address and another binds `0.0.0.0` on the same port, a WireGuard client that asks for the second hostname gets an empty response. The rule puts every site that WireGuard clients use on the same listener.
+
+The Gateway decides the addresses from stored state: the Node's `ingress` role, its WireGuard and LAN addresses, and its Route sites. The `app-dev`, `websocket`, `analytics`, and ProxyCli publishers also rewrite the `bind` lines of the fragments they carry to this rule:
+
+- The private `https://` sites in `app-dev.caddy`.
+- Every site in `websocket.caddy`, `analytics.caddy`, and `proxycli.caddy`.
+
+One publication therefore corrects a listener that another publisher wrote earlier. A fragment whose `bind` lines already follow the rule keeps its exact bytes. Public sites, Unix socket sites, and all other fragments keep their `bind` lines. The Metrics, service metrics, and Gateway web publishers bind the WireGuard address and carry other fragments unchanged.
+
+When every fragment of the new version matches the live version byte for byte, a publisher changes nothing. It writes no version and does not reload Caddy, so open WebSocket streams stay connected.
+
+Before the `app-dev`, `websocket`, `analytics`, and ProxyCli publishers swap the live Caddyfile, they check that every specific address they bind exists on the Node, as the [Node Caddy build](#how-a-build-is-pushed) does. When a stored LAN address is missing, for example after a DHCP lease changed, the publisher stops, leaves the live Caddyfile unchanged, and fails with its usual error code. The error message names the address. The command's activity record keeps it as `error_message`, and a Route or Instance command also keeps it in `stderr`:
+
+```text
+Caddy would bind 192.168.6.30, which is not an address on this Node. Correct the stored WireGuard or LAN address of the Node, then publish again.
+```
+
+The `websocket` role runs this check before it changes anything on the Node. A refused `orbit node:role:add NODE websocket --converge` leaves a running Reverb and its site as they were.
+
+Give a Node with a stored LAN address a fixed address or a DHCP reservation.
+
 ## Publication lock
 
 Every publisher holds `/run/lock/orbit/caddy.lock` from before it reads the live version until Caddy has reloaded. A second publisher waits up to 30 seconds for the lock and then fails without changing the Node. The fragment and certificate publishers above all use this lock.
@@ -106,7 +138,7 @@ The refusal message names the fragment, the options in the block, and the file t
 Caddy fragment 00-unmanaged.caddy opens its own global options block (local_certs, email). Orbit writes the only global options block. Remove that block from /etc/caddy/Caddyfile, then publish again.
 ```
 
-The activity record keeps that message when a Route or Instance command fails on an `app-dev` or `app-prod` site publication. Role convergence and the other publishers record only the error code, because they do not keep command output. After one of those codes, check the start of the adopted `/etc/caddy/Caddyfile` and of every fragment that Orbit did not write in the live version.
+The activity record keeps that message when a Route or Instance command fails on an `app-dev` or `app-prod` site publication. Role convergence and the other publishers keep the error code and their own error message, not this output. After one of those codes, check the start of the adopted `/etc/caddy/Caddyfile` and of every fragment that Orbit did not write in the live version.
 
 On first adoption the file to edit is the Node's own `/etc/caddy/Caddyfile`. When Orbit already carries the fragment, it is that fragment in the live version, under `/etc/caddy/orbit-versions/<version>/fragments/`. Remove the whole block, keep the site blocks, and repeat the command that failed. Orbit does not support operator global options; it never merges, strips, or rewrites them.
 

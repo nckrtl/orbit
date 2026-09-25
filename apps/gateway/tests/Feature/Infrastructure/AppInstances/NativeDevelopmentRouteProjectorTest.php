@@ -35,6 +35,7 @@ use App\Infrastructure\AppDev\RemoteAppDevCertificateManager;
 use App\Infrastructure\AppDev\RemoteAppDevPhpFpmManager;
 use App\Infrastructure\AppDev\RemoteAppDevRouteFirewallManager;
 use App\Infrastructure\AppInstances\NativeDevelopmentRouteProjector;
+use App\Infrastructure\Caddy\Build\NodeCaddyListenerResolver;
 use App\Infrastructure\Nodes\RemotePhpPackageManager;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
@@ -905,7 +906,8 @@ it('projects a dedicated Router over reachable LAN with separate keys and preser
                 static fn (RemoteCommand $command): bool => in_array('s_client', $command->arguments, true),
             );
         $routerConfiguration = new AppDevCaddyConfigRenderer()->render(
-            new AppDevSiteRepository()->forNode($router, $route),
+            new AppDevSiteRepository()->forNode($router),
+            app(NodeCaddyListenerResolver::class)->fragments($router)->routeBind(),
         );
 
         expect($arguments)
@@ -999,8 +1001,8 @@ it('retains active workload and Router sites while publishing a second Route on 
 
         $sites = new AppDevSiteRepository;
         $renderer = new AppDevCaddyConfigRenderer;
-        $workloadConfiguration = $renderer->render($sites->forNode($workload, $secondRoute));
-        $routerConfiguration = $renderer->render($sites->forNode($router, $secondRoute));
+        $workloadConfiguration = $renderer->render($sites->forNode($workload), app(NodeCaddyListenerResolver::class)->fragments($workload)->routeBind());
+        $routerConfiguration = $renderer->render($sites->forNode($router), app(NodeCaddyListenerResolver::class)->fragments($router)->routeBind());
         $publishedInputs = collect($ssh->commands)->pluck('input')->filter();
 
         expect($workloadConfiguration)
@@ -1275,7 +1277,7 @@ function orb_hostname_change_certificate_replay(Orb127RouteSshExecutor $ssh, arr
         }
 
         preg_match_all(
-            '#https://(\S+) \{\s+bind 0\.0\.0\.0\s+tls /etc/caddy/orbit-certificates/([^/]+)/current/cert\.pem#',
+            '#https://(\S+) \{\s+bind [^\n]+\s+tls /etc/caddy/orbit-certificates/([^/]+)/current/cert\.pem#',
             (string) base64_decode($encoded[1], true),
             $sites,
             PREG_SET_ORDER,

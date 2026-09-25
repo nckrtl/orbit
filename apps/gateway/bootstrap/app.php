@@ -140,6 +140,7 @@ return Application::configure(basePath: dirname(__DIR__))
             });
             $exceptions->render(function (NodeRoleOperationException $exception, Request $request): JsonResponse {
                 $request->attributes->set('orbit.error_code', $exception->errorCode);
+                $request->attributes->set('orbit.error_message', $exception->getMessage());
                 $request->attributes->set('orbit.command_result', $exception->result);
                 $requestId = $request->attributes->get('orbit.request_id');
 
@@ -314,6 +315,7 @@ return Application::configure(basePath: dirname(__DIR__))
             });
             $exceptions->render(function (ResourceOperationException $exception, Request $request): JsonResponse {
                 $request->attributes->set('orbit.error_code', $exception->errorCode);
+                $request->attributes->set('orbit.error_message', $exception->getMessage());
                 $requestId = $request->attributes->get('orbit.request_id');
 
                 if (! is_string($requestId) || $requestId === '') {

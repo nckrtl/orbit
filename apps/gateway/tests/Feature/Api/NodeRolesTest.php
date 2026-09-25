@@ -1162,6 +1162,27 @@ it('returns a safe correlated 502 for convergence failure', function (): void {
         ->toBe('node_role.convergence_failed');
 });
 
+it('records the message of a Caddy listen address refusal on the activity', function (): void {
+    $requestId = (string) Str::uuid();
+    $refusal = 'Caddy would bind 192.168.6.30, which is not an address on this Node. Correct the stored WireGuard or LAN address of the Node, then publish again.';
+    $this->roleLifecycle->convergenceFailure = new NodeRoleOperationException(
+        step: 'websocket-caddy',
+        errorCode: 'node_role.convergence_failed',
+        underlyingErrorCode: 'websocket.caddy_publication_failed',
+        message: $refusal,
+        result: new CommandResult(1, '', $refusal, 10, false),
+    );
+
+    $this
+        ->withHeader('X-Orbit-Request-Id', $requestId)
+        ->postJson("/api/v1/nodes/{$this->node->id}/roles", ['role' => 'app-dev'])
+        ->assertStatus(502)
+        ->assertJsonPath('error.message', $refusal);
+
+    expect(Activity::query()->where('request_id', $requestId)->sole()->properties?->get('error_message'))
+        ->toBe($refusal);
+});
+
 it('returns a safe correlated 502 for removal failure', function (): void {
     $sentinel = (string) Str::uuid();
     $requestId = (string) Str::uuid();

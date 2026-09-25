@@ -9,6 +9,8 @@ use App\Domain\Certificates\GatewayCertificateIssuer;
 use App\Domain\ProxyCli\ProxyCliProcess;
 use App\Domain\ProxyCli\ProxyCliPublicationManager;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Caddy\Build\NodeCaddyListenerResolver;
+use App\Infrastructure\Caddy\CaddyFragmentListeners;
 use App\Infrastructure\Nodes\CaddyPackageSourceProgram;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\RemoteCommand;
@@ -30,6 +32,7 @@ final readonly class NativeProxyCliPublicationManager implements ProxyCliPublica
         private SshKeyProvider $keys,
         private KnownHostsStore $knownHosts,
         private ?ProxyCliRouteTakeover $takeover = null,
+        private ?NodeCaddyListenerResolver $listeners = null,
     ) {}
 
     public function converge(Node $node, int $port = ProxyCliProcess::PORT, ?Route $takeover = null): void
@@ -46,10 +49,16 @@ final readonly class NativeProxyCliPublicationManager implements ProxyCliPublica
             'proxycli.certificate_publication_failed',
             "proxycli certificate publication failed on node [{$node->name}].",
         );
+        // Read inside the publication, so a takeover's withdrawn Route no longer counts.
         $publish = fn (?string $appDevFragment = null) => $this->run(
             $node,
             $address,
-            $this->caddy->command($this->site->render($port), (string) $port, $address, $appDevFragment),
+            $this->caddy->command(
+                $this->site->render($port),
+                (string) $port,
+                ($this->listeners ?? app(NodeCaddyListenerResolver::class))->fragments($node),
+                $appDevFragment,
+            ),
             'proxycli.caddy_publication_failed',
             "proxycli Caddy publication failed on node [{$node->name}].",
         );
@@ -99,7 +108,7 @@ final readonly class NativeProxyCliPublicationManager implements ProxyCliPublica
         $result = $this->ssh->execute($this->connection($node, $address), $command);
 
         if (! $result->succeeded()) {
-            throw new ResourceOperationException($errorCode, $message, 422);
+            throw new ResourceOperationException($errorCode, CaddyFragmentListeners::refusal($result->stderr) ?? $message, 422);
         }
     }
 
