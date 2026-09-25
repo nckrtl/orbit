@@ -109,14 +109,17 @@ final class DestroyInstanceCommand extends GatewayCommand
             $progress = AppInstanceRemovalProgressResponse::fromGatewayData($value);
         }
 
+        $code = $exception->errorCode() ?? 'gateway.request_failed';
+        $details = GatewayFailureRenderer::safeDetails($code, $exception->details());
+
         GatewayFailureRenderer::write(
             $this,
-            $exception->errorCode() ?? 'gateway.request_failed',
+            $code,
             $exception->getMessage(),
             $exception->requestId(),
             details: $progress instanceof AppInstanceRemovalProgressResponse
-                ? ['removal' => $progress->toArray()]
-                : [],
+                ? [...$details, 'removal' => $progress->toArray()]
+                : $details,
         );
 
         if ($this->option('json') !== true && $progress instanceof AppInstanceRemovalProgressResponse) {

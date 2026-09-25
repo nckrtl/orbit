@@ -321,7 +321,7 @@ Ingress may also share the Gateway Node, which a small fleet makes its Router. O
 
 When the Ingress Node runs a target of the public Route, one site on the public listener serves that target directly, with `tls force_automate`, and replaces the target's private site for that host. A Router on another Node still forwards private traffic to that Node. It verifies the site against the Node's system roots, which also hold the Orbit root, so it accepts the public certificate. Until Let's Encrypt issues that certificate, the host does not complete TLS on that Node.
 
-Firewall policy admits public HTTP and HTTPS only on the Ingress Node, and only while that Cluster has at least one active public Route. Router and workload listeners stay private. Direct public workload traffic is denied.
+Firewall policy admits public HTTP and HTTPS only on the Ingress Node, and only while that Cluster has at least one active public Route. When the last live public Route leaves the public edge, its Ingress firewall step closes both rules. Router and workload listeners stay private. Direct public workload traffic is denied.
 
 An exact client-local override can send the Route domain to the Router address and then to the workload address without changing public Ingress or DNS state. [Local resolver overrides](/reference/local-resolver-overrides) owns installing that caller-local resolver.
 
@@ -351,6 +351,14 @@ Doctor instance checks report public Ingress, private forwarding, TLS, and firew
 | `instance.public_firewall_mismatch` | The Ingress firewall is inactive, or it lacks an exact managed rule for public HTTP on port 80 or HTTPS on port 443. |
 
 Doctor builds the expected public site the same way the publisher does. An Ingress that runs a target of the Route expects the composed site that serves the Instance directly. Any other Ingress expects a reverse proxy to the Router. The forwarding check dials the Router, or the workload Nodes when the Ingress also holds the Router role. A composed site forwards nowhere, so it always passes that check. Related-node checks use only caller-authorized selected nodes. An unavailable observation reports `instance.related_node_unverifiable` without contacting an unselected Node.
+
+### Ingress removal
+
+`node:role:remove NODE ingress --force` is refused with `public_routes_attached` while any Route in the Node's Cluster has `publication=public`. Make each such Route private or remove it first. The Gateway checks the guard again when it claims the assignment.
+
+The claimed assignment is `removing`, so it serves nothing. The Gateway builds the Node Caddyfile from stored state: the public sites leave, and the Node's other sites return from the all-address listener to their private addresses. It then closes the `orbit:ingress-http` and `orbit:ingress-https` rules, including rules that outlived their last public Route, and reconciles service metrics. The Caddy package stays installed. When the Ingress was the Node's last role, the Gateway reopens public SSH before it deletes the assignment.
+
+The command also removes an Ingress whose convergence failed (`failed_step=converge:STEP`), for example after `converge:caddy-config`, through the same steps. A failed step leaves the assignment `failed` with `failed_step=remove:STEP` and a bounded `error_code`. The same command retries every step. When the Node has no Ingress assignment, the command succeeds and changes nothing. With `--offline`, the Gateway removes an unreachable Ingress on its side only and lists the Caddy configuration and firewall rules that stay on the Node under `retained_on_node`.
 
 ### Publication ownership
 

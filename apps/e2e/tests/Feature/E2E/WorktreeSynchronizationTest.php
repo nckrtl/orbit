@@ -68,16 +68,10 @@ describe('worktree source preparation', function () {
             $sha = $repository->commit();
             $bundle = $transfer.'/source.bundle';
             $repository->createBundle($bundle, $sha);
-            file_put_contents($transfer.'/blocked', "blocked\n");
-            new Process([
-                'tar',
-                '--mode=000',
-                '-cf',
-                $transfer.'/bad.tar',
-                '-C',
-                $transfer,
-                'blocked',
-            ])->mustRun();
+            $archive = new PharData($transfer.'/bad.tar');
+            $archive->addFromString('blocked', "blocked\n");
+            $archive['blocked']->chmod(0);
+            unset($archive);
             $manifest = $transfer.'/manifest';
             file_put_contents($manifest, "blocked\0");
             $deletions = $transfer.'/deletions';

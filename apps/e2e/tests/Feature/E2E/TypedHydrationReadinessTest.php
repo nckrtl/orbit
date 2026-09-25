@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Illuminate\Filesystem\Filesystem;
+use Symfony\Component\Process\ExecutableFinder;
 use Symfony\Component\Process\Process;
 
 /** @param list<array<string, mixed>> $instances */
@@ -113,11 +114,13 @@ function typedHydrationReadinessFixture(
         printf '%s\n' "$*" >>"$TYPED_HYDRATION_SLEEP_CALLS"
         BASH);
     foreach (['chmod', 'cp', 'install', 'touch'] as $command) {
-        $wrapper = str_replace('__COMMAND__', $command, <<<'BASH'
+        $executable = new ExecutableFinder()->find($command);
+        expect($executable)->toBeString();
+        $wrapper = str_replace(['__COMMAND__', '__EXECUTABLE__'], [$command, escapeshellarg((string) $executable)], <<<'BASH'
             #!/usr/bin/env bash
             set -euo pipefail
             printf '%s %s\n' '__COMMAND__' "$*" >>"$TYPED_HYDRATION_MUTATION_CALLS"
-            exec /usr/bin/__COMMAND__ "$@"
+            exec __EXECUTABLE__ "$@"
             BASH);
         file_put_contents("{$root}/bin/{$command}", $wrapper);
         chmod("{$root}/bin/{$command}", 0o700);

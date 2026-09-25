@@ -32,12 +32,8 @@ function npm_update_program_run(string $root, string $vp, string $deadline, ?Clo
 {
     return new NativeProcessRunner()->run(new ProcessInvocation(
         arguments: [
-            '/usr/bin/setsid',
-            '--wait',
-            '/usr/bin/bash',
-            '-eu',
-            '-c',
-            NpmDependencyUpdateProgram::render(),
+            ...dependency_update_supervisor_host()->launcher(),
+            NpmDependencyUpdateProgram::render(dependency_update_supervisor_host()),
             'npm-update',
             $root,
             $vp,

@@ -588,6 +588,11 @@ function deployment_serve_chunked_stream($server): never
  * silence tests exercise PHP's actual stream_set_timeout()/getMetadata('timed_out') behavior
  * instead of a synthetic double of it.
  *
+ * The parent returns only after the child reports that it is running. The silence tests use a
+ * read_timeout of 0.05 s, which Guzzle also applies to the response-header phase, so a child
+ * that is still being forked when the request arrives would fail the request. Forking a large
+ * test process is slow enough on macOS for that to happen.
+ *
  * @return array{0: string, 1: int} [server address, forked child pid]
  */
 function deployment_start_server(Closure $serve): array
@@ -606,15 +611,29 @@ function deployment_start_server(Closure $serve): array
         throw new RuntimeException('Could not resolve the test server address.');
     }
 
+    $readiness = stream_socket_pair(STREAM_PF_UNIX, STREAM_SOCK_STREAM, STREAM_IPPROTO_IP);
+
+    if ($readiness === false) {
+        fclose($server);
+
+        throw new RuntimeException('Could not create the test server readiness channel.');
+    }
+
+    [$ready, $announce] = $readiness;
     $processId = pcntl_fork();
 
     if ($processId === -1) {
         fclose($server);
+        fclose($ready);
+        fclose($announce);
 
         throw new RuntimeException('Could not start the test server.');
     }
 
     if ($processId === 0) {
+        fclose($ready);
+        fwrite($announce, 'r');
+        fclose($announce);
         $connection = stream_socket_accept($server, 5);
 
         if ($connection === false) {
@@ -628,6 +647,17 @@ function deployment_start_server(Closure $serve): array
     }
 
     fclose($server);
+    fclose($announce);
+    stream_set_timeout($ready, 5);
+    $signal = fread($ready, 1);
+    fclose($ready);
+
+    if ($signal !== 'r') {
+        posix_kill($processId, SIGKILL);
+        pcntl_waitpid($processId, $status);
+
+        throw new RuntimeException('The test server did not start.');
+    }
 
     return [$address, $processId];
 }

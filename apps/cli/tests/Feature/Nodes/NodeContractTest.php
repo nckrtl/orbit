@@ -67,4 +67,10 @@ describe('node contract', function () use ($addArguments): void {
         run_contract('nodes/node-add/fingerprint-required', 'node:add', $withoutFingerprint, 'nodes/node-add/fingerprint-required.human.txt', 1);
         run_contract('nodes/node-add/fingerprint-required', 'node:add', [...$withoutFingerprint, '--json' => true], 'nodes/node-add/fingerprint-required.json', 1);
     });
+
+    it('keeps the failed step of a role removal', function (): void {
+        $arguments = ['node' => '2', 'role' => 'app-dev', '--force' => true];
+        run_contract('nodes/node-role-remove/step-failed', 'node:role:remove', $arguments, 'nodes/node-role-remove/step-failed.human.txt', 1);
+        run_contract('nodes/node-role-remove/step-failed', 'node:role:remove', [...$arguments, '--json' => true], 'nodes/node-role-remove/step-failed.json', 1);
+    });
 });
