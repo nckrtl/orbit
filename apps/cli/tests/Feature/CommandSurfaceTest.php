@@ -205,6 +205,7 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'tasks:list',
         'tasks:show',
         'tasks:status',
+        'tasks:subtask:cancel',
         'tasks:subtask:create',
         'tasks:subtask:destroy',
         'tasks:subtask:update',
@@ -361,7 +362,7 @@ it('only hides Orbit commands that belong to disabled extensions', function (): 
     $orbitCommands = collect(app(Kernel::class)->all())
         ->filter(static fn (Command $command): bool => str_starts_with($command::class, 'App\\Commands\\'));
 
-    expect($orbitCommands)->toHaveCount(162);
+    expect($orbitCommands)->toHaveCount(163);
     expect($orbitCommands
         ->filter(static fn (Command $command): bool => $command->isHidden())
         ->keys()
@@ -957,6 +958,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         'tasks:list' => [[], ['project' => null, 'status' => null, 'json' => false]],
         'tasks:show' => [['group'], ['json' => false]],
         'tasks:status' => [[], ['json' => false]],
+        'tasks:subtask:cancel' => [['group', 'subtask'], ['yes' => false, 'json' => false]],
         'tasks:subtask:create' => [['group', 'title'], ['brief' => null, 'deliverables' => null, 'json' => false]],
         'tasks:subtask:destroy' => [['group', 'subtask'], ['yes' => false, 'json' => false]],
         'tasks:subtask:update' => [['group', 'subtask'], ['title' => null, 'brief' => null, 'position' => null, 'deliverables' => null, 'json' => false]],
@@ -996,7 +998,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
             'analytics:update' => ['version'],
             'route:create' => ['app', 'domain'],
             'tasks:agents', 'tasks:cancel', 'tasks:complete', 'tasks:show', 'tasks:update' => ['group'],
-            'tasks:comment:create', 'tasks:comment:list', 'tasks:subtask:destroy', 'tasks:subtask:update' => ['group', 'subtask'],
+            'tasks:comment:create', 'tasks:comment:list', 'tasks:subtask:cancel', 'tasks:subtask:destroy', 'tasks:subtask:update' => ['group', 'subtask'],
             'tasks:create' => ['title'],
             'tasks:subtask:create' => ['group', 'title'],
             default => [],
@@ -1298,6 +1300,7 @@ it('renders one exact json failure envelope for every Orbit product command', fu
         'tasks:list' => [[], ...$profileMissing],
         'tasks:show' => [['group' => '1'], ...$profileMissing],
         'tasks:status' => [[], ...$profileMissing],
+        'tasks:subtask:cancel' => [['group' => '1', 'subtask' => '1', '--yes' => true], ...$profileMissing],
         'tasks:subtask:create' => [['group' => '1', 'title' => 'Step', '--brief' => 'Brief'], ...$profileMissing],
         'tasks:subtask:destroy' => [['group' => '1', 'subtask' => '1', '--yes' => true], ...$profileMissing],
         'tasks:subtask:update' => [['group' => '1', 'subtask' => '1', '--title' => 'Step'], ...$profileMissing],

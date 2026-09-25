@@ -5,6 +5,7 @@ declare(strict_types=1);
 use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\GatewayRequest;
+use Orbit\Sdk\Requests\Tasks\CancelSubtaskRequest;
 use Orbit\Sdk\Requests\Tasks\CancelTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\CompleteTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\CreateSubtaskRequest;
@@ -50,6 +51,7 @@ describe('task transport', function (): void {
         'subtask create' => [new CreateSubtaskRequest(13, 'Title', 'Brief'), Method::POST, '/api/v1/task-groups/13/tasks'],
         'subtask update' => [new UpdateSubtaskRequest(13, 57), Method::PATCH, '/api/v1/task-groups/13/tasks/57'],
         'subtask destroy' => [new DestroySubtaskRequest(13, 57), Method::DELETE, '/api/v1/task-groups/13/tasks/57'],
+        'subtask cancel' => [new CancelSubtaskRequest(13, 57), Method::POST, '/api/v1/task-groups/13/tasks/57/cancel'],
         'comment create' => [new CreateTaskCommentRequest(13, 57, 'resolution', 'Done.', 'nick'), Method::POST, '/api/v1/task-groups/13/tasks/57/comments'],
         'comment list' => [new ListTaskCommentsRequest(13, 57), Method::GET, '/api/v1/task-groups/13/tasks/57/comments'],
         'agents' => [new ListTaskAgentsRequest(13), Method::GET, '/api/v1/task-groups/13/agents'],
@@ -118,6 +120,7 @@ describe('task transport', function (): void {
         'cancel' => [new CancelTaskGroupRequest(13)],
         'complete' => [new CompleteTaskGroupRequest(13)],
         'destroy' => [new DestroySubtaskRequest(13, 57)],
+        'subtask cancel' => [new CancelSubtaskRequest(13, 57)],
     ]);
 });
 
@@ -141,6 +144,7 @@ describe('task responses from recorded Gateway fixtures', function (): void {
         'subtask create' => ['tasks-subtask-create/created', new CreateSubtaskRequest(1, 'Document the commands', 'Brief'), SubtaskResponse::class],
         'subtask update' => ['tasks-subtask-update/updated', new UpdateSubtaskRequest(1, 1, position: 2), SubtaskResponse::class],
         'subtask destroy' => ['tasks-subtask-destroy/destroyed', new DestroySubtaskRequest(1, 1), SubtaskResponse::class],
+        'subtask cancel' => ['tasks-subtask-cancel/cancelled', new CancelSubtaskRequest(1, 1), SubtaskResponse::class],
         'comment create' => ['tasks-comment-create/created', new CreateTaskCommentRequest(1, 1, 'resolution', 'Body', 'nick'), TaskCommentResponse::class],
         'comment list' => ['tasks-comment-list/default', new ListTaskCommentsRequest(1, 1), TaskCommentsResponse::class],
         'agents' => ['tasks-agents/default', new ListTaskAgentsRequest(1), TaskAgentsResponse::class],
@@ -185,6 +189,8 @@ describe('task responses from recorded Gateway fixtures', function (): void {
     })->with([
         'no subtasks' => ['tasks-create/no-subtasks', new CreateTaskGroupRequest(1, 'Empty', 'No subtasks.', 'todo'), 'tasks.no_subtasks'],
         'not in backlog' => ['tasks-update/not-in-backlog', new UpdateTaskGroupRequest(1, 'Too late'), 'tasks.not_in_backlog'],
+        'subtask not running' => ['tasks-subtask-cancel/not-running', new CancelSubtaskRequest(1, 1), 'tasks.subtask_not_running'],
+        'subtask interrupt failed' => ['tasks-subtask-cancel/interrupt-failed', new CancelSubtaskRequest(2, 3), 'tasks.subtask_interrupt_failed'],
     ]);
 
     it('rejects malformed task records', function (GatewayRequest $request, mixed $data): void {

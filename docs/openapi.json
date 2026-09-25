@@ -21307,6 +21307,11 @@
             "lang": "bash",
             "label": "curl",
             "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/task-groups/1/tasks/1/cancel\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{}'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Tasks\\CancelSubtaskRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new CancelSubtaskRequest(groupId: 1, taskId: 1))->dto();\n"
           }
         ]
       }

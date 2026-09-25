@@ -1,0 +1,9 @@
+Cancelling subtask...
+
+┌  Cancel subtask
+│
+├  ● Cancelling subtask
+│
+└  Operation failed.
+
+Only a running subtask can be cancelled.

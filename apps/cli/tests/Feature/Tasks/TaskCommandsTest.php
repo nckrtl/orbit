@@ -18,6 +18,7 @@ use Laravel\Prompts\Key;
 use Laravel\Prompts\Prompt;
 use Laravel\Prompts\Terminal;
 use Orbit\Sdk\Requests\Apps\ListAppsRequest;
+use Orbit\Sdk\Requests\Tasks\CancelSubtaskRequest;
 use Orbit\Sdk\Requests\Tasks\CancelTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\CreateTaskCommentRequest;
 use Orbit\Sdk\Requests\Tasks\CreateTaskGroupRequest;
@@ -80,6 +81,8 @@ describe('omitted and invalid input', function (): void {
         'subtask update without subtask' => ['tasks:subtask:update', ['group' => '1', '--title' => 'T'], 'tasks.subtask_required'],
         'subtask update without a change' => ['tasks:subtask:update', ['group' => '1', 'subtask' => '2'], 'tasks.update_required'],
         'subtask update with position zero' => ['tasks:subtask:update', ['group' => '1', 'subtask' => '2', '--position' => '0'], 'tasks.position_invalid'],
+        'subtask cancel without consent' => ['tasks:subtask:cancel', ['group' => '1', 'subtask' => '2'], 'input.confirmation_required'],
+        'subtask cancel with an invalid subtask' => ['tasks:subtask:cancel', ['group' => '1', 'subtask' => 'x', '--yes' => true], 'tasks.subtask_invalid'],
         'subtask destroy without consent' => ['tasks:subtask:destroy', ['group' => '1', 'subtask' => '2'], 'input.confirmation_required'],
         'comment without type' => ['tasks:comment:create', ['group' => '1', 'subtask' => '2', '--body' => 'B', '--author' => 'nick'], 'tasks.comment_type_required'],
         'comment with an unknown type' => ['tasks:comment:create', ['group' => '1', 'subtask' => '2', '--type' => 'approved', '--body' => 'B', '--author' => 'nick'], 'tasks.comment_type_invalid'],
@@ -169,6 +172,27 @@ describe('requests', function (): void {
         $mock->assertSent(CancelTaskGroupRequest::class);
         $mock->assertNotSent(ShowTaskGroupRequest::class);
     });
+
+    it('cancels a running subtask with --yes without reading the group first', function (): void {
+        $mock = MockClient::global(gateway_fixture_mock('tasks/tasks-subtask-cancel/cancelled'));
+
+        expect(Artisan::call('tasks:subtask:cancel', ['group' => '13', 'subtask' => '57', '--yes' => true, '--json' => true]))->toBe(0)
+            ->and(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['status'])->toBe('cancelled');
+
+        $mock->assertSent(static fn (Request $request): bool => $request instanceof CancelSubtaskRequest
+            && $request->resolveEndpoint() === '/api/v1/task-groups/13/tasks/57/cancel');
+        $mock->assertNotSent(ShowTaskGroupRequest::class);
+    });
+
+    it('returns the Gateway error code when a subtask cannot be cancelled', function (string $fixture, string $code): void {
+        MockClient::global(gateway_fixture_mock($fixture));
+
+        expect(Artisan::call('tasks:subtask:cancel', ['group' => '1', 'subtask' => '1', '--yes' => true, '--json' => true]))->toBe(1)
+            ->and(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['error']['code'])->toBe($code);
+    })->with([
+        'not running' => ['tasks/tasks-subtask-cancel/not-running', 'tasks.subtask_not_running'],
+        'interrupt failed' => ['tasks/tasks-subtask-cancel/interrupt-failed', 'tasks.subtask_interrupt_failed'],
+    ]);
 });
 
 describe('prompts', function (): void {
