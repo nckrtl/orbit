@@ -2,7 +2,9 @@
 
 declare(strict_types=1);
 
+use App\Actions\Annotations\AnnotationStoreAction;
 use App\Actions\Doctor\InstanceDoctorProbe;
+use App\Data\Annotations\AnnotationInput;
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Doctor\DoctorInspectionException;
@@ -21,6 +23,7 @@ use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Tasks\TaskWorkspaceName;
 use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Cluster;
@@ -182,6 +185,20 @@ it('expects active for a visitable task workspace and for an Instance outside a 
     'visitable task workspace' => [fn (): App => instance_probe_app(), true],
     'Orbit Instance outside a task' => [fn (): App => instance_probe_orbit_app(), false],
 ]);
+
+it('keeps an annotated active Orbit Instance healthy after the annotation resolves', function (): void {
+    $node = instance_probe_node();
+    $instance = instance_probe_instance(instance_probe_orbit_app(), $node);
+    $store = app(AnnotationStoreAction::class);
+    $annotation = $store->create($instance, new AnnotationInput(['id' => 'doctor-annotation', 'comment' => 'Adjust heading', 'threadId' => 'annotation-thread']));
+    $store->transition($annotation, 'in_progress', null);
+    $store->transition($annotation, 'resolved', 'Done');
+
+    $report = new InstanceDoctorProbe(instance_probe_healthy_inspector())->inspect(instance_probe_context($node));
+
+    expect($instance->taskGroups()->count())->toBe(1)
+        ->and($report->issues)->toBe([]);
+});
 
 it('continues after a typed instance inspection failure', function (): void {
     $node = instance_probe_node();
@@ -703,13 +720,14 @@ function instance_probe_orbit_app(): App
 
 function instance_probe_task_workspace(App $app, Node $node, AppInstanceState $status): AppInstance
 {
-    $instance = instance_probe_instance($app, $node, $status);
     $group = TaskGroup::query()->create([
         'app_id' => $app->id,
         'title' => 'Task workspace',
         'brief' => 'Build the feature.',
         'status' => 'running',
     ]);
+    $instance = instance_probe_instance($app, $node, $status);
+    $instance->update(['name' => TaskWorkspaceName::for($group), 'branch_override' => TaskWorkspaceName::for($group)]);
     $group->taskable()->associate($instance);
     $group->save();
 
