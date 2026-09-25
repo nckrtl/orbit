@@ -342,10 +342,10 @@ Doctor instance checks report public Ingress, private forwarding, TLS, and firew
 | --- | --- |
 | `instance.public_ingress_mismatch` | The live Caddy version on the Ingress does not contain the public site that Orbit renders for it, apart from TLS lines. |
 | `instance.public_tls_mismatch` | The public site pins an Orbit CA leaf, or it lacks `tls force_automate` while the Node disables certificate management. |
-| `instance.private_forwarding_mismatch` | The Ingress cannot open a TCP connection to a private address that the public site forwards to: the Router, or the workload Nodes when the Ingress also holds the Router role. A composed site that serves the Instance directly forwards nowhere and always matches. |
+| `instance.private_forwarding_mismatch` | The Ingress cannot open a TCP connection to a private address that its public site forwards to. |
 | `instance.public_firewall_mismatch` | The Ingress firewall is inactive, or it lacks an exact managed rule for public HTTP on port 80 or HTTPS on port 443. |
 
-Doctor builds the expected public site the same way the publisher does. A separate Ingress expects a reverse proxy to the Router. An Ingress that shares its Node with the Router and the workload expects the composed site that serves the Instance directly. Related-node checks use only caller-authorized selected nodes. An unavailable observation reports `instance.related_node_unverifiable` without contacting an unselected Node.
+Doctor builds the expected public site the same way the publisher does. A separate Ingress expects a reverse proxy to the Router. An Ingress that shares its Node with the Router and the workload expects the composed site that serves the Instance directly. The forwarding check dials the Router, or the workload Nodes when the Ingress also holds the Router role. A composed site forwards nowhere, so it always passes that check. Related-node checks use only caller-authorized selected nodes. An unavailable observation reports `instance.related_node_unverifiable` without contacting an unselected Node.
 
 ### Publication ownership
 
