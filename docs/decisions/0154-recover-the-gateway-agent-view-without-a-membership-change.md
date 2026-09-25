@@ -20,7 +20,7 @@ On 2026-09-25 Doctor reported `node.agent_view_stale` with `missing` for one pro
 
 A test build of the agent had briefly run on that Node as a second agent process. An Incus reproduction showed that this leaves the view `missing`. The second process joined the channel as the same member, `agent.{id}`. Reverb announces a presence member only when its first connection joins and its last connection leaves, so neither the join nor the exit of the second process produced a member event. Both processes published into the channel. The second one started its `sequence` at 1, so the subscriber took each of its events as an agent restart and discarded the Node's state. After the second process exited, the real agent sent only heartbeats. No member joined, so no agent sent a snapshot, and the view stayed `missing`.
 
-The same rule leaves any lost snapshot unrepaired: a snapshot is sent only for a join. The reproduction also showed a slower problem. After several Reverb drops, every agent waited about 30 seconds before it reconnected, because it never reset its backoff after a successful connection. The agent also had no timeout on its Gateway requests, its WebSocket handshake, or a connection that Reverb stopped answering.
+The same rule leaves any lost snapshot unrepaired: a snapshot is sent only for a join. The reproduction also showed a slower problem. After several Reverb drops, every agent waited about 30 seconds before it reconnected, because it never reset its backoff, even after a long healthy connection. The agent also had no timeout on its Gateway requests, its WebSocket handshake, or a connection that Reverb stopped answering.
 
 Reverb client events carry the sender's member ID but no socket ID, and presence events count members, not connections. The subscriber therefore cannot tell two connections of one member apart.
 
@@ -40,7 +40,7 @@ The subscriber repairs a view without waiting for a member to join, and the agen
 - The agent holds an exclusive lock on `/etc/orbit/agent` while it runs. A second agent on the same Node exits with an error and publishes nothing.
 - After 15 seconds without a message from Reverb, the agent sends `pusher:ping`. When nothing arrives within 10 more seconds, it closes the connection and reconnects.
 - Each join, from the TCP connection to `pusher_internal:subscription_succeeded`, must finish within 30 seconds. Each Gateway request must finish within 30 seconds.
-- After a successful join, the agent starts its backoff again from 1 second.
+- The agent retries with backoff from 2 seconds to 30 seconds. A session that stayed joined for 60 seconds starts the backoff again from 2 seconds. A session that fails sooner keeps backing off.
 
 The agent version is 0.1.2. The subscriber change works with agent 0.1.1: it recovers a missing view, but the fleet keeps the slow reconnect and the unguarded second process until it runs 0.1.2.
 
@@ -55,7 +55,7 @@ The agent version is 0.1.2. The subscriber change works with agent 0.1.1: it rec
 
 - A lost, discarded, or corrupted Node view recovers within about 10 seconds, with agent 0.1.1 or 0.1.2.
 - Each request makes every member of that channel see the subscriber leave and join, and the agent sends one extra snapshot, as when a browser opens.
-- A Node that runs two agent processes still shows a changing view until one of them exits. Agent 0.1.2 prevents the second process.
+- While a second 0.1.1 agent process runs, its events keep resetting the subscriber's state, so the view stays `missing`. It turns fresh within about 10 seconds after that process exits. Agent 0.1.2 refuses the second process.
 - Every agent sends one snapshot a minute and one ping about every 15 seconds while its channel is quiet.
 
 ## Affects

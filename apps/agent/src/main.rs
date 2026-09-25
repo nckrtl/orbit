@@ -2,9 +2,9 @@ use bollard::{container::ListContainersOptions, system::EventsOptions, Docker};
 use futures_util::{SinkExt, StreamExt};
 use orbit_agent::{
     docker_container_name, docker_status, frame, gateway_client, iso_now, lock_single_instance,
-    process_unit_name, retry_delay, snapshot_frames, tls_config, ChangeBatch, Config, Envelope,
-    HeartbeatData, Liveness, LivenessCheck, Sequencer, Unit, CHANGE_MERGE_WINDOW, JOIN_TIMEOUT,
-    LOCK_PATH, SNAPSHOT_INTERVAL,
+    next_attempt, process_unit_name, retry_delay, snapshot_frames, tls_config, ChangeBatch, Config,
+    Envelope, HeartbeatData, Liveness, LivenessCheck, Sequencer, Unit, CHANGE_MERGE_WINDOW,
+    JOIN_TIMEOUT, LOCK_PATH, SNAPSHOT_INTERVAL,
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -93,6 +93,7 @@ async fn run() -> Result<(), Box<dyn Error + Send + Sync>> {
     });
     let mut sequence = Sequencer::default();
     let mut attempt = 0u32;
+    let mut joined_at: Option<Instant> = None;
     let mut docker_units = HashMap::new();
     let mut docker_available = false;
     let mut systemd = systemd_snapshot(&manager).await?;
@@ -143,14 +144,14 @@ async fn run() -> Result<(), Box<dyn Error + Send + Sync>> {
             &mut heartbeat,
             &mut systemd_poll,
             &mut shutdown_rx,
-            &mut attempt,
+            &mut joined_at,
         )
         .await
         {
             Ok(()) => return Ok(()),
             Err(error) => {
                 eprintln!("orbit-agent: realtime connection ended: {error}");
-                attempt = attempt.saturating_add(1);
+                attempt = next_attempt(attempt, joined_at.take().map(|joined| joined.elapsed()));
                 tokio::select! {_=shutdown_rx.changed()=>return Ok(()),_=tokio::time::sleep(retry_delay(attempt))=>{}}
             }
         }
@@ -208,7 +209,7 @@ async fn connected_session(
     heartbeat: &mut Interval,
     systemd_poll: &mut Interval,
     shutdown: &mut watch::Receiver<bool>,
-    attempt: &mut u32,
+    joined_at: &mut Option<Instant>,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     let mut parsed = reqwest::Url::parse(ws_url)?;
     if parsed.scheme() != "wss"
@@ -237,8 +238,8 @@ async fn connected_session(
     let mut socket = tokio::time::timeout(JOIN_TIMEOUT, join)
         .await
         .map_err(|_| "joining the Reverb channel timed out")??;
-    // A session that joined starts the backoff again, so the next drop reconnects at once.
-    *attempt = 0;
+    // The caller starts the backoff again only when this session stays joined long enough.
+    *joined_at = Some(Instant::now());
     // Re-read both runtimes for every successful join.
     *systemd = match systemd_snapshot(manager).await {
         Ok(units) => units,

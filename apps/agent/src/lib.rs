@@ -22,6 +22,8 @@ pub const PING_AFTER: std::time::Duration = std::time::Duration::from_secs(15);
 pub const PONG_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 /// Every step from the TCP connect to `pusher_internal:subscription_succeeded` fits in this time.
 pub const JOIN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+/// A session that stayed joined this long starts the backoff again.
+pub const HEALTHY_SESSION: std::time::Duration = std::time::Duration::from_secs(60);
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -258,6 +260,17 @@ pub fn iso_now() -> String {
         .format(&time::format_description::well_known::Rfc3339)
         .unwrap_or_else(|_| "1970-01-01T00:00:00Z".into())
 }
+/// The attempt number for the retry after a connection ended. `joined_for` is how long the session
+/// stayed joined, or `None` when it never joined. Only a session that stayed joined for
+/// `HEALTHY_SESSION` starts the backoff again, so a session that fails right after each join keeps
+/// backing off. The first retry waits `retry_delay(1)`, about 2 seconds.
+pub fn next_attempt(attempt: u32, joined_for: Option<std::time::Duration>) -> u32 {
+    if joined_for.is_some_and(|duration| duration >= HEALTHY_SESSION) {
+        1
+    } else {
+        attempt.saturating_add(1)
+    }
+}
 pub fn retry_delay(attempt: u32) -> std::time::Duration {
     let base = 1_u64.checked_shl(attempt.min(5)).unwrap_or(30).min(30);
     let jitter = rand::thread_rng().gen_range(0..=base / 4);
@@ -363,6 +376,30 @@ mod tests {
         drop(first);
         assert!(lock_single_instance(path).is_ok());
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+    #[test]
+    fn only_a_session_that_stayed_joined_starts_the_backoff_again() {
+        assert_eq!(next_attempt(5, None), 6);
+        assert_eq!(next_attempt(5, Some(std::time::Duration::from_secs(1))), 6);
+        assert_eq!(
+            next_attempt(
+                5,
+                Some(HEALTHY_SESSION - std::time::Duration::from_millis(1))
+            ),
+            6
+        );
+        assert_eq!(next_attempt(5, Some(HEALTHY_SESSION)), 1);
+        assert_eq!(next_attempt(u32::MAX, None), u32::MAX);
+        // A session that fails right after every join keeps backing off up to 30 seconds.
+        let mut attempt = 0;
+        for _ in 0..10 {
+            attempt = next_attempt(attempt, Some(std::time::Duration::from_secs(1)));
+        }
+        assert!(retry_delay(attempt) >= std::time::Duration::from_secs(30));
+        assert!(
+            retry_delay(next_attempt(attempt, Some(HEALTHY_SESSION)))
+                < std::time::Duration::from_secs(3)
+        );
     }
     #[test]
     fn liveness_pings_after_a_quiet_spell_and_gives_up_without_an_answer() {

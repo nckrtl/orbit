@@ -70,7 +70,7 @@ The two agent endpoints require an active WireGuard peer, but no Gateway access 
 | `validation.failed` | 422 | `socket_id` is missing or not a Pusher socket ID, `channel_name` is missing, or `version` is not a short version string. |
 | `realtime.not_configured` | 404 | No `websocket` role is active, so there is nothing to sign. |
 
-When the connection drops, the agent reconnects with exponential backoff from 1 second to 30 seconds, with jitter. After each successful join, the backoff starts again from 1 second. Every connection repeats all four steps, because Reverb gives each connection a new `socket_id`.
+When the connection drops, the agent reconnects with exponential backoff from 2 seconds to 30 seconds, with jitter. A session that stayed joined for 60 seconds starts the backoff again from 2 seconds. A session that fails sooner keeps backing off, so an agent that fails right after every join does not retry every 2 seconds. Every connection repeats all four steps, because Reverb gives each connection a new `socket_id`.
 
 The agent bounds each step, so a peer that stops answering never holds it:
 
@@ -190,7 +190,8 @@ The agent recovers from each failure below without an operator.
 | Reverb is down or the `websocket` role is absent | The agent and the subscriber retry. The web app polls Prometheus, and Gateway reads use Prometheus and SSH. |
 | The agent view subscriber stops | systemd restarts it after 2 seconds. Until it rejoins, the Gateway's view turns stale after 15 seconds, and Gateway reads use Prometheus and SSH. |
 | The Gateway is down | The agent cannot get a membership signed and retries. An agent that is already connected keeps publishing. |
-| A snapshot is lost, or a second agent process published on the channel | The subscriber asks for a new snapshot within about 10 seconds. Agent 0.1.2 also sends one every 60 seconds and refuses to run a second process. |
+| A snapshot is lost | The subscriber asks for a new snapshot within about 10 seconds. Agent 0.1.2 also sends one every 60 seconds. |
+| A second agent process runs on the Node | Agent 0.1.2 refuses to start it. A second 0.1.1 process keeps resetting the subscriber's state, so the view stays `missing` until about 10 seconds after it exits. |
 | Reverb stops answering without closing the connection | The agent reconnects within about 30 seconds. |
 | systemd D-Bus is unavailable | The agent exits with an error, and systemd restarts it. |
 
