@@ -7,7 +7,7 @@ use App\Infrastructure\AppInstances\DevelopmentCaddyAccessCommand;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\Process;
-use Tests\Support\LinuxContainer;
+use Tests\Support\LinuxHost;
 
 it('leaves out sites that have no checkout to grant access to', function (): void {
     $site = static fn (string $checkoutPath, ?string $localHttpUpstream = null): AppDevSite => new AppDevSite(
@@ -33,7 +33,7 @@ it('leaves out sites that have no checkout to grant access to', function (): voi
 });
 
 it('serves a nested Web root while protecting source and preserving shared parent modes', function (): void {
-    if (LinuxContainer::delegate($this)) {
+    if (LinuxHost::delegate($this)) {
         return;
     }
 
@@ -65,7 +65,7 @@ it('serves a nested Web root while protecting source and preserving shared paren
 });
 
 it('refuses unsafe Web root links before changing file access', function (string $kind): void {
-    if (LinuxContainer::delegate($this)) {
+    if (LinuxHost::delegate($this)) {
         return;
     }
 
@@ -91,7 +91,7 @@ it('refuses unsafe Web root links before changing file access', function (string
 })->with(['root', 'descendant']);
 
 it('permits only Laravel public storage without exposing private storage', function (): void {
-    if (LinuxContainer::delegate($this)) {
+    if (LinuxHost::delegate($this)) {
         return;
     }
 
@@ -116,7 +116,7 @@ it('permits only Laravel public storage without exposing private storage', funct
 });
 
 it('keeps both Web roots readable when a Git worktree is nested inside another checkout', function (): void {
-    if (LinuxContainer::delegate($this)) {
+    if (LinuxHost::delegate($this)) {
         return;
     }
 
@@ -145,7 +145,7 @@ it('keeps both Web roots readable when a Git worktree is nested inside another c
 });
 
 it('restores prior ACLs or retains its snapshot when recovery also fails', function (bool $failRecovery): void {
-    if (LinuxContainer::delegate($this)) {
+    if (LinuxHost::delegate($this)) {
         return;
     }
 
