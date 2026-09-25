@@ -209,6 +209,7 @@
                 "Project",
                 "Route",
                 "Schedule",
+                "Task",
                 "Tool"
             ],
             "governing_adrs": [
@@ -5312,6 +5313,7 @@
             "concepts": [
                 "Database",
                 "Development node exclusion",
+                "Doctor",
                 "Gateway",
                 "Instance",
                 "Node",

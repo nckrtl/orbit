@@ -20,6 +20,7 @@ use App\Domain\Doctor\PublicRouteEdgeInspector;
 use App\Domain\Routes\PublicRouteEligibility;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
+use App\Domain\Tasks\TaskWorkspaceLifecycle;
 use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Route;
@@ -41,7 +42,7 @@ final readonly class InstanceDoctorProbe implements DoctorFamilyProbe
 
     public function inspect(DoctorNodeContext $context): DoctorFamilyReportData
     {
-        $rows = AppInstance::query()->where('node_id', $context->node->id)->orderBy('id')->get();
+        $rows = AppInstance::query()->with(['app', 'taskGroups'])->where('node_id', $context->node->id)->orderBy('id')->get();
         if ($rows->isEmpty()) {
             return DoctorFamilyReportData::fromIssues(DoctorFamily::Instance, 0, []);
         }
@@ -59,15 +60,18 @@ final readonly class InstanceDoctorProbe implements DoctorFamilyProbe
         }
         $issues = [];
         foreach ($rows as $instance) {
-            if ($instance->status !== AppInstanceState::Active) {
+            $settled = TaskWorkspaceLifecycle::settledState($instance);
+            if ($instance->status !== $settled) {
                 $issues[] = new DoctorIssueData(
                     InstanceDoctorIssueCode::LifecycleNotActive,
                     DoctorIssueKind::Drift,
                     'instance',
                     $instance->id,
                     $instance->name,
-                    'Instance lifecycle is not active.',
-                    'active',
+                    $settled === AppInstanceState::Active
+                        ? 'Instance lifecycle is not active.'
+                        : 'Task workspace lifecycle is not source resolved.',
+                    $settled->value,
                     $instance->status->value,
                 );
             }
