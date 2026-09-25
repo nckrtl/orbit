@@ -14,7 +14,8 @@ use Symfony\Component\Process\Process;
  * Runs a test in a Linux container when the test host is not Linux.
  *
  * A few tests execute Node programs that depend on Linux kernel interfaces with no equivalent elsewhere, such as
- * `os.O_PATH` with `/proc/self/fd` reopening, or the `/proc/net/tcp` listener tables. On Linux the test runs
+ * `os.O_PATH` with `/proc/self/fd` reopening, the `/proc/net/tcp` listener tables, or POSIX ACLs. The image
+ * mirrors the Gateway CI host for them: it has `acl`, a `caddy` service account, and passwordless `sudo`. On Linux the test runs
  * directly. On another host, such as macOS, `delegate()` runs the same test in a Debian PHP container through the
  * local Docker runtime and asserts that it passed there. The Gateway directory is mounted at its host path, and
  * the test runs as the host user.
@@ -24,8 +25,11 @@ final class LinuxContainer
     private const string Dockerfile = <<<'DOCKERFILE'
         FROM php:8.5-cli
         RUN apt-get update \
-            && apt-get install --yes --no-install-recommends git procps python3 \
-            && rm -rf /var/lib/apt/lists/*
+            && apt-get install --yes --no-install-recommends acl git procps python3 sudo \
+            && rm -rf /var/lib/apt/lists/* \
+            && useradd --system --user-group --no-create-home --shell /usr/sbin/nologin caddy \
+            && printf 'ALL ALL=(ALL:ALL) NOPASSWD: ALL\n' > /etc/sudoers.d/orbit-test \
+            && chmod 0440 /etc/sudoers.d/orbit-test
         DOCKERFILE;
 
     private const float TimeoutSeconds = 300.0;
@@ -50,6 +54,8 @@ final class LinuxContainer
         $identity = posix_getuid().':'.posix_getgid();
         $script = implode(' && ', [
             'printf "orbit-test:x:%s:%s::/tmp:/bin/bash\n" "$HOST_UID" "$HOST_GID" >> /etc/passwd',
+            'printf "orbit-test:*:20000:0:99999:7:::\n" >> /etc/shadow',
+            '{ getent group "$HOST_GID" >/dev/null || printf "orbit-test:x:%s:\n" "$HOST_GID" >> /etc/group; }',
             'exec setpriv --reuid="$HOST_UID" --regid="$HOST_GID" --clear-groups env HOME=/tmp "$@"',
         ]);
         [$uid, $gid] = explode(':', $identity);
@@ -86,8 +92,8 @@ final class LinuxContainer
     }
 
     /**
-     * Pest filters by test description. A data set case prints as `… with dataset "name"` but filters as
-     * `… with data set "dataset "name""`, the PHPUnit form.
+     * Pest filters by test description. A data set case prints as `… with <data name>` but filters as
+     * `… with data set "<data name>"`, and the filter is a regular expression.
      */
     private static function filter(TestCase $test): string
     {
@@ -96,19 +102,19 @@ final class LinuxContainer
         }
 
         $description = (string) $test->getPrintableTestCaseMethodName();
-        $dataName = $test->dataName();
+        $dataName = (string) $test->dataName();
 
         if ($dataName === '') {
-            return $description;
+            return preg_quote($description, '/');
         }
 
-        $separator = strrpos($description, ' with dataset ');
+        $suffix = ' with '.$dataName;
 
-        if ($separator === false) {
+        if (! str_ends_with($description, $suffix)) {
             throw new RuntimeException("Could not find the data set in the test description [{$description}].");
         }
 
-        return substr($description, 0, $separator).' with data set "'.$dataName.'"';
+        return preg_quote(substr($description, 0, -strlen($suffix)).' with data set "'.$dataName.'"', '/');
     }
 
     /** Builds the test image once per Dockerfile version; parallel workers wait for the first build. */
