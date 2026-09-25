@@ -288,9 +288,11 @@ use App\Infrastructure\Nodes\NativeNodeConverger;
 use App\Infrastructure\Nodes\NativeNodeProvisioningLock;
 use App\Infrastructure\Nodes\NativeNodeRoleDependentCleaner;
 use App\Infrastructure\Nodes\NodeAgentSshExecutor;
+use App\Infrastructure\Nodes\NodeLocks;
 use App\Infrastructure\Nodes\RemoteNodeStorageRootPreparer;
 use App\Infrastructure\Nodes\Roles\NativeNodeRoleFirewallManager;
 use App\Infrastructure\Nodes\Roles\NativeRoleBaselineConverger;
+use App\Infrastructure\Nodes\Roles\NodeRoleConvergeLock;
 use App\Infrastructure\Nodes\SshManagedUserAccountResolver;
 use App\Infrastructure\Nodes\SshNodeReachabilityProbe;
 use App\Infrastructure\Processes\CommandDeadline;
@@ -523,6 +525,13 @@ final class AppServiceProvider extends ServiceProvider
                 agents: $app->make(AgentProcessView::class),
             ),
         );
+        $this->app->singleton(
+            NodeLocks::class,
+            static fn ($app): NodeLocks => new NodeLocks(
+                $app->make(CacheManager::class)->build(NodeLocks::storeConfiguration((string) config('orbit.home'))),
+            ),
+        );
+        $this->app->singleton(NodeRoleConvergeLock::class);
         $this->app->singleton(
             CacheAgentStateView::class,
             static fn ($app): CacheAgentStateView => new CacheAgentStateView(

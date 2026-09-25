@@ -5153,6 +5153,7 @@
                 "apps/gateway"
             ],
             "concepts": [
+                "Cluster",
                 "Doctor",
                 "Gateway",
                 "Ingress",

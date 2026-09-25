@@ -31,6 +31,7 @@ final readonly class NativeRoleBaselineConverger implements RoleBaselineConverge
         private ?AnalyticsRoleBaseline $analytics = null,
         private ?NodeAgentRoleConverger $agentConverger = null,
         private ?IngressRoleBaseline $ingress = null,
+        private ?NodeRoleConvergeLock $nodeLock = null,
     ) {}
 
     public function converge(Node $node, NodeRole $assignment): void
@@ -49,8 +50,10 @@ final readonly class NativeRoleBaselineConverger implements RoleBaselineConverge
 
     private function convergeOwned(Node $node, NodeRole $assignment): void
     {
-        $this->operatingSystem->assert($node, $assignment->role);
-        $this->baseline($assignment->role)->converge($node, $assignment);
+        $this->nodeLock()->run($node, function () use ($node, $assignment): void {
+            $this->operatingSystem->assert($node, $assignment->role);
+            $this->baseline($assignment->role)->converge($node, $assignment);
+        });
 
         if ($assignment->role !== RoleName::Metrics) {
             $this->metricsFleet->reconcile();
@@ -80,7 +83,11 @@ final readonly class NativeRoleBaselineConverger implements RoleBaselineConverge
 
     private function removeOwned(Node $node, NodeRole $assignment, bool $purgeData): void
     {
-        $this->baseline($assignment->role)->remove($node, $assignment, $purgeData);
+        $this->nodeLock()->run(
+            $node,
+            fn () => $this->baseline($assignment->role)->remove($node, $assignment, $purgeData),
+            'node_role.remove_failed',
+        );
 
         if ($assignment->role !== RoleName::Metrics) {
             $this->metricsFleet->reconcile();
@@ -133,6 +140,11 @@ final readonly class NativeRoleBaselineConverger implements RoleBaselineConverge
         }
 
         return $assignment->cluster_id;
+    }
+
+    private function nodeLock(): NodeRoleConvergeLock
+    {
+        return $this->nodeLock ?? app(NodeRoleConvergeLock::class);
     }
 
     private function routerOperations(): ClusterRouterOperationLock
