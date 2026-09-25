@@ -180,6 +180,51 @@ describe('app requests', function (): void {
             ->toBe('stable');
     });
 
+    it('transports a task check update and an explicit clear', function (): void {
+        $set = new UpdateAppRequest(appId: 3, taskCheck: 'vp run check', taskCheckProvided: true);
+        $clear = new UpdateAppRequest(appId: 3, taskCheckProvided: true);
+
+        expect($set->body()->all())
+            ->toBe(['task_check' => 'vp run check'])
+            ->and($clear->body()->all())
+            ->toBe(['task_check' => null])
+            ->and(new UpdateAppRequest(appId: 3, root: 'public')->body()->all())
+            ->toBe(['root' => 'public']);
+    });
+
+    it('sends a task check on create only when one is given, including an explicit null', function (): void {
+        $request = static fn (?string $taskCheck, bool $provided): CreateAppRequest => new CreateAppRequest(
+            slug: 'kit',
+            repositoryUrl: 'https://github.com/acme/kit.git',
+            root: '.',
+            type: 'node-package',
+            taskCheck: $taskCheck,
+            taskCheckProvided: $provided,
+        );
+
+        expect($request(null, false)->body()->all())->not->toHaveKey('task_check')
+            ->and($request('vp run check', true)->body()->all())->toMatchArray(['task_check' => 'vp run check'])
+            ->and($request(null, true)->body()->all())->toMatchArray(['task_check' => null]);
+    });
+
+    it('reads the task check from a Project response', function (): void {
+        $response = AppResponse::fromGatewayData([
+            'id' => 3,
+            'name' => 'kit',
+            'slug' => 'kit',
+            'type' => 'laravel-package',
+            'repository_url' => 'https://github.com/acme/kit.git',
+            'default_branch' => 'main',
+            'root' => '.',
+            'defaults' => null,
+            'task_check' => 'composer check',
+        ], 'request-id');
+
+        expect($response->taskCheck)->toBe('composer check')
+            ->and($response->toArray()['task_check'])->toBe('composer check')
+            ->and(AppResponse::fromGatewayData(['id' => 4], 'request-id')->taskCheck)->toBeNull();
+    });
+
     it('does not keep the replaced App request class name', function (): void {
         expect(class_exists('Orbit\\Sdk\\Requests\\Apps\\RemoveAppRequest'))->toBeFalse();
     });
@@ -204,6 +249,7 @@ function app_gateway_data(): array
         'repository_url' => 'git@github.com:nckrtl/orbit-docs.git',
         'default_branch' => 'main',
         'root' => 'public',
+        'task_check' => 'composer check',
         'defaults' => null,
     ];
 }

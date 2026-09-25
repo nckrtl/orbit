@@ -160,7 +160,7 @@ The script refuses a missing confirmation, an unknown ID, an ID given twice, emp
 
 ### Verify deliverables
 
-When every other item passes, Orbit runs its [Project check](#project-check) with the deliverables. After `composer check` passes, the check script records the diff, runs each `test` file with `vendor/bin/pest FILE --log-junit=…` in its project, and runs each `command` in a login shell. A run that names a file turns off Pest's test impact analysis, so a cached result never counts. The check keeps the end of each command's output.
+When every other item passes, Orbit runs its [Project check](#project-check) with the deliverables. After the Project's task check passes, or at once when the Project has none, the check script records the diff, runs each `test` file with `vendor/bin/pest FILE --log-junit=…` in its project, and runs each `command` in a login shell. A run that names a file turns off Pest's test impact analysis, so a cached result never counts. The check keeps the end of each command's output.
 
 The `deliverables` item fails when a confirmation is missing or a deliverable does not pass. The reminder names each failing deliverable and why, and the assistance reason repeats it. Like every item, it gets one reminder per completion attempt, then asks for assistance. The reviewer starts only when every deliverable passes.
 
@@ -363,7 +363,7 @@ Otherwise the tick checks for commits since the thread started. It reads the cou
 
 The other thread's work does not defer the task. While the operator talks to the shared reviewer, the tick still reads the implementer's receipt, asks for assistance on `blocked`, runs the handoff check, and sends reminders to the implementer. The Gateway sends no turn to the working thread until it stops. [ADR 0132](/decisions/0132-pause-only-for-the-acting-thread-and-a-real-question) records the decision.
 
-The tick also reads `composer.json` at the workspace root over SSH. The `check_script` item passes only when `scripts.check` is a non-empty command or list. Composer resolves abbreviated command names, so without that script `composer check` runs the built-in `check-platform-reqs` command and exits 0. A missing file, invalid JSON, or a missing or empty `check` script fails `check_script`, and Orbit does not start the check.
+When the Project's task check runs the `composer check` command, not a longer command such as `composer check-platform-reqs`, the tick also reads `composer.json` at the workspace root over SSH. The `check_script` item then passes only when `scripts.check` is a non-empty command or list. For any other task check, or none, `check_script` passes. Composer resolves abbreviated command names, so without that script `composer check` runs the built-in `check-platform-reqs` command and exits 0. A missing file, invalid JSON, or a missing or empty `check` script fails `check_script`, and Orbit does not start the check.
 
 A pending input fails `waiting_for_input` in code. A thread state the rubric does not recognize waits. The rubric makes no model call. When every item, the Project check, and the [deliverables](#verify-deliverables) pass, the Gateway sets the task to `reviewing`. [ADR 0114](/decisions/0114-judge-task-completion-as-separate-checks) owns this rubric.
 
@@ -413,7 +413,7 @@ The Gateway registers `tasks:tick` every ten seconds when the tasks extension is
 
 ### Project check
 
-Orbit runs the Project's `composer check` after each `ready_for_review` receipt whose items pass. The Gateway installs `.git/orbit/check` and starts it over SSH as a detached process group. The check records HEAD and the tree of the whole working tree, uncommitted and untracked files included, without touching the Git index. It runs `composer check` in a login shell in the workspace root, writes the output to `.git/orbit/check.log`, and writes `.git/orbit/check.json` when the command ends. [ADR 0125](/decisions/0125-run-the-project-check-when-the-implementer-hands-off) records the decision.
+Each Project stores a task check in `task_check`, such as `composer check`. Orbit runs it after each `ready_for_review` receipt whose items pass, and on the fresh workspace before the first implementer starts. The Gateway installs `.git/orbit/check` and starts it over SSH as a detached process group. The check records HEAD and the tree of the whole working tree, uncommitted and untracked files included, without touching the Git index. It runs the task check in a login shell in the workspace root, writes the output to `.git/orbit/check.log`, and writes `.git/orbit/check.json` when the command ends. [ADR 0125](/decisions/0125-run-the-project-check-when-the-implementer-hands-off) records the decision.
 
 The task stays `running` during the check. On each tick the scheduler reads the check. It identifies the process by its ID and its start time, so a reused process ID does not count. There is no time limit.
 
@@ -426,7 +426,17 @@ The task stays `running` during the check. On each tick the scheduler reads the 
 | The process is gone without a result | `lost`. The check runs again once. A second loss asks for assistance. |
 | Cancelled by an operator | `cancelled`. The implementer's reminder says so. |
 
-Before the first implementer of a group starts, Orbit runs a baseline check on the fresh workspace: the Project's setup steps in order, then `composer check`. The first implementer starts only when it passes. A failed setup step or check asks for assistance before any agent runs, and the reason names the failed step or says that `composer check` fails on a fresh checkout of `task-{group id}`. Fix the cause, then cancel and create the group again. Define the setup steps that install the Project's dependencies, such as `composer install`, with the Project's lifecycle steps. A task's `check` shows the latest run, with `kind` `baseline` or `handoff` and the `failed_step`.
+A new Project gets the task check of its type unless it sends one: `composer check` for `laravel-app` and `laravel-package`, and none for `monorepo` and `node-package`. The type defaults apply to new Projects only. The upgrade sets `composer check` on every existing Project, whatever its type, because every Project ran that check before. An existing Project without a Composer `check` script, such as a `node-package` Project, does not hand off until an operator changes or clears its task check. Change it with `PATCH /api/v1/projects/{project}` or `orbit project:update <project> --task-check=COMMAND`. Clear it with `task_check: null` in the API or `--clear-task-check` in the CLI. `project:show` shows it.
+
+When a Project has no task check, the baseline runs the setup steps and passes, and a handoff runs no command. A handoff still records the tree and verifies the deliverables. The implementer's instructions and the pull request description name the configured check, or leave it out when there is none.
+
+Before the first implementer of a group starts, Orbit runs the setup steps and the task check on the fresh workspace. Project setup runs before dependency preparation so it can configure credentials or install dependencies itself.
+
+Orbit prepares Composer dependencies when the task check runs `composer` or references `vendor/`: it walks tracked `composer.json` files and runs `composer install --no-interaction --prefer-dist` where `vendor/autoload.php` is missing and either the file is at the repository root or a sibling lockfile exists. A root package without a lockfile, such as a Laravel package, is installed too. Orbit then removes the `composer.lock` that the install wrote, so it cannot reach the task commit. Nested manifests without a lockfile are skipped because test fixtures use them.
+
+Orbit prepares JavaScript dependencies when the task check references Bun, npm, pnpm, Yarn, Node, Vite+, or `node_modules`: it walks tracked `package.json` files and runs `vp install --frozen-lockfile` where a supported lockfile exists and `node_modules` is missing. Both guards skip projects whose dependencies are already installed. Other task checks receive no automatic install prep. Handoff checks do not prepare dependencies.
+
+A failed setup or dependency install asks for assistance and names that step. A failed baseline command reports `The Project baseline check failed` with its exit code and output. If command output indicates missing `vendor/` or `node_modules` dependencies, assistance reports `Project dependencies appear to be missing` rather than calling the branch broken. Fix the cause, then cancel and create the group again. A task's `check` shows the latest run, with `kind` `baseline` or `handoff` and the `failed_step`.
 
 Call `tasks-check-cancel` with `{ "group": 123, "task": 456 }` to stop a running check. The API operation is `tasks:check:cancel`. A task without a running check answers `409` with `tasks.check_not_running`. A failed or cancelled check spends the reminder of that completion attempt, so a second failure asks for assistance. Each run is stored with its receipt, status, process, HEAD and trees, times, exit code, changed paths, and the last 16 KiB of output. The task's `check` field shows the latest run.
 
@@ -438,7 +448,7 @@ Before Orbit commits the last subtask, Jev checks that the change list covers ev
 
 After the commit, the Gateway pushes the workspace HEAD to `task-{group id}` on `origin` and opens the pull request against the Project's default branch through the [Gateway GitHub App](/reference/github-app). When an open pull request already has that head, the Gateway uses it. The Gateway stores the URL as the group's `pr_url` and moves the group to `settling`. A failed push or request counts as a communication failure and is retried.
 
-The group title is the pull request title. The description holds the summary, a Changes list, a Breaking changes list or `None.`, and one line that says each delivered subtask passed `composer check` and reviewer approval. That line does not count cancelled or failed subtasks.
+The group title is the pull request title. The description holds the summary, a Changes list, a Breaking changes list or `None.`, and one line that says each delivered subtask passed the Project's task check and reviewer approval. Without a task check, the line names only reviewer approval. That line does not count cancelled or failed subtasks.
 
 Settling watches the stored pull request through the GitHub App until it merges. A merged pull request completes the group, and a pull request that closes without merging requests assistance. A settling group without a URL requests assistance and remains incomplete until an operator cancels it.
 

@@ -20,6 +20,7 @@ final class CreateAppCommand extends GatewayCommand
         {--name= : Optional display name}
         {--default-branch= : Stored default branch; resolve the remote default when omitted}
         {--root= : Repository-relative root; defaults to . for package types and public otherwise}
+        {--task-check= : Task check command; defaults to composer check for Laravel types and none otherwise}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -75,6 +76,11 @@ final class CreateAppCommand extends GatewayCommand
         }
 
         $root = $this->stringOption('root') ?? $this->defaultRoot($type);
+        $taskCheck = $this->stringOption('task-check');
+
+        if ($taskCheck !== null && (trim($taskCheck) === '' || strlen($taskCheck) > 4096)) {
+            return $this->renderGatewayFailure('app.task_check_invalid', 'Task check command is invalid.');
+        }
 
         $app = $this->sendWithProgress(
             $connector,
@@ -85,6 +91,8 @@ final class CreateAppCommand extends GatewayCommand
                 type: $type,
                 name: $this->stringOption('name'),
                 defaultBranch: $this->stringOption('default-branch'),
+                taskCheck: $taskCheck,
+                taskCheckProvided: $taskCheck !== null,
             ),
             AppResponse::class,
             ['Create Project', 'Creating Project', 'Created Project'],

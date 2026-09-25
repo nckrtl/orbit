@@ -27,6 +27,7 @@ final class AppData extends Data
         public ?string $defaultBranch,
         public ?string $root,
         public ?array $defaults,
+        public ?string $taskCheck = null,
     ) {}
 
     public static function fromModel(OrbitApp $app): self
@@ -41,6 +42,7 @@ final class AppData extends Data
             defaultBranch: $app->default_branch,
             root: $app->root,
             defaults: self::publicDefaults($app->defaults),
+            taskCheck: $app->taskCheckCommand(),
         );
     }
 

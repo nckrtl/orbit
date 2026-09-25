@@ -559,7 +559,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         'project:list' => [[], ['json' => false]],
         'project:create' => [
             ['slug', 'type', 'repository'],
-            ['name' => null, 'default-branch' => null, 'root' => null, 'json' => false],
+            ['name' => null, 'default-branch' => null, 'root' => null, 'task-check' => null, 'json' => false],
         ],
         'project:destroy' => [['project'], ['yes' => false, 'json' => false]],
         'project:excluded-node:add' => [['node'], ['project' => null, 'json' => false]],
@@ -568,7 +568,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         'project:show' => [['project'], ['json' => false]],
         'project:update' => [
             ['project'],
-            ['type' => null, 'slug' => null, 'repository' => null, 'default-branch' => null, 'root' => null, 'json' => false],
+            ['type' => null, 'slug' => null, 'repository' => null, 'default-branch' => null, 'root' => null, 'task-check' => null, 'clear-task-check' => false, 'json' => false],
         ],
         'cluster:list' => [[], ['json' => false]],
         'cluster:create' => [['name'], ['tld' => null, 'json' => false]],

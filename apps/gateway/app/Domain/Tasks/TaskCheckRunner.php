@@ -7,7 +7,7 @@ namespace App\Domain\Tasks;
 use App\Models\AppInstance;
 
 /**
- * Runs the Project's `composer check` in a task workspace as a detached process
+ * Runs a Project task check in a workspace as a detached process
  * ([ADR 0125](/decisions/0125-run-the-project-check-when-the-implementer-hands-off)).
  */
 interface TaskCheckRunner
@@ -18,10 +18,11 @@ interface TaskCheckRunner
      *
      * @param  list<array{name: string, command: string, timeout_seconds: int}>  $setup
      * @param  array{start: string|null, tests: list<array{id: string, project: string, file: string}>, commands: list<array{id: string, command: string, directory: string}>}|null  $deliverables
+     * @param  string|null  $command  the Project task check command, or null to run no command
      *
      * @throws TaskCheckException
      */
-    public function start(AppInstance $instance, array $setup = [], ?array $deliverables = null): TaskCheckProcess;
+    public function start(AppInstance $instance, ?string $command, array $setup = [], ?array $deliverables = null): TaskCheckProcess;
 
     /** @throws TaskCheckException */
     public function read(AppInstance $instance, TaskCheckProcess $process): TaskCheckReading;

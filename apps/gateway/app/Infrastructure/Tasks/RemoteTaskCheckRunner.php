@@ -21,7 +21,7 @@ final readonly class RemoteTaskCheckRunner implements TaskCheckRunner
 {
     public function __construct(private AppDevSshExecutor $ssh) {}
 
-    public function start(AppInstance $instance, array $setup = [], ?array $deliverables = null): TaskCheckProcess
+    public function start(AppInstance $instance, ?string $command, array $setup = [], ?array $deliverables = null): TaskCheckProcess
     {
         $script = file_get_contents(resource_path('tasks/check'));
         if ($script === false) {
@@ -29,22 +29,24 @@ final readonly class RemoteTaskCheckRunner implements TaskCheckRunner
         }
         $steps = json_encode($setup, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
         $verify = $deliverables === null ? '' : json_encode($deliverables, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
-        $data = $this->run($instance, [], "script='".base64_encode($script)."'\nsetup='".base64_encode($steps)."'\ndeliverables='".base64_encode($verify)."'\n".<<<'BASH'
+        $checkCommand = base64_encode($command ?? '');
+        $data = $this->run($instance, [], "script='".base64_encode($script)."'\nsetup='".base64_encode($steps)."'\ndeliverables='".base64_encode($verify)."'\ncheck_command='{$checkCommand}'\n".<<<'BASH'
             install -d -m 0755 -- "$dir"
             printf '%s' "$script" | base64 -d > "$dir/check.new"
             chmod 0755 "$dir/check.new"
             mv -f -- "$dir/check.new" "$dir/check"
             printf '%s' "$setup" | base64 -d > "$dir/setup.json"
+            printf '%s' "$check_command" | base64 -d > "$dir/check-command"
             steps="$dir/setup.json"
             if [ "$(cat "$dir/setup.json")" = '[]' ]; then
                 steps=-
             fi
             if [ -n "$deliverables" ]; then
                 printf '%s' "$deliverables" | base64 -d > "$dir/deliverables.json"
-                python3 "$dir/check" start "$checkout" "$steps" "$dir/deliverables.json"
+                python3 "$dir/check" start "$checkout" "$steps" "$dir/deliverables.json" "$dir/check-command"
             else
                 rm -f -- "$dir/deliverables.json"
-                python3 "$dir/check" start "$checkout" "$steps"
+                python3 "$dir/check" start "$checkout" "$steps" - "$dir/check-command"
             fi
             BASH);
         $pid = $data['pid'] ?? null;

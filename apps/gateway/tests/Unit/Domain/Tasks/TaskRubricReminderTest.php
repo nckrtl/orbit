@@ -23,3 +23,11 @@ it('tells a reviewer how to end its turn with the run script', function (): void
 
     expect($reminder)->toBe('Orbit could not confirm the review is complete. No run receipt was found. '.TaskRunInstructions::reviewer());
 });
+
+it('tells the implementer to pass the Project task check, or only to finish the brief without one', function (): void {
+    expect(TaskRunInstructions::implementer([], 'vp run check'))
+        ->toContain('When the brief is complete and vp run check passes, end your turn')
+        ->and(TaskRunInstructions::implementer([], null))
+        ->toContain('When the brief is complete, end your turn')
+        ->not->toContain('composer check');
+});

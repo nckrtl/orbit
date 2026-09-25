@@ -23,6 +23,7 @@ use SensitiveParameter;
  * @property string|null $default_branch
  * @property string|null $root
  * @property array<string, mixed>|null $defaults
+ * @property string|null $task_check
  * @property-read Collection<int, TaskGroup> $taskGroups
  */
 final class App extends Model
@@ -35,7 +36,7 @@ final class App extends Model
 
     /** @var list<string> */
     #[\Override]
-    protected $fillable = ['name', 'code', 'slug', 'type', 'repository_url', 'default_branch', 'root', 'defaults'];
+    protected $fillable = ['name', 'code', 'slug', 'type', 'repository_url', 'default_branch', 'root', 'defaults', 'task_check'];
 
     /** @var list<string> */
     #[\Override]
@@ -103,6 +104,13 @@ final class App extends Model
     public function isWebServing(): bool
     {
         return $this->type->isWebServing();
+    }
+
+    public function taskCheckCommand(): ?string
+    {
+        $command = $this->task_check;
+
+        return is_string($command) && trim($command) !== '' ? trim($command) : null;
     }
 
     /** @return array<string, string> */

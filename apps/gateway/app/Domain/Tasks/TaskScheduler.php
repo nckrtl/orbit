@@ -25,6 +25,10 @@ final readonly class TaskScheduler
 {
     public const string ProvisioningFailedReason = 'Workspace provisioning did not return an instance.';
 
+    private const string BASELINE_COMPOSER_INSTALL_STEP = '[Orbit internal] Install Composer dependencies';
+
+    private const string BASELINE_JAVASCRIPT_INSTALL_STEP = '[Orbit internal] Install JavaScript dependencies';
+
     public function __construct(
         private TaskConcurrencyGuard $ceilings,
         private InstanceProvisioning $provisioning,
@@ -269,10 +273,13 @@ final readonly class TaskScheduler
         $repeats = $check instanceof TaskCheck
             ? TaskCheck::query()->where('task_comment_id', $receipt->id)->where('status', $check->status->value)->count()
             : 0;
+        $command = $group->app->taskCheckCommand();
+        $name = $command ?? 'the task check';
+        $owned = $command === null ? "Orbit's task check" : "Orbit's {$command}";
         $item = match (true) {
-            $check instanceof TaskCheck && $status === TaskCheckStatus::Failed => new TaskRubricItem('check_passed', false, "Orbit ran composer check, and it failed with exit code {$check->exit_code}. The end of its output:\n\n```\n".rtrim((string) $check->output)."\n```\n"),
-            $status === TaskCheckStatus::Cancelled => new TaskRubricItem('check_passed', false, "An operator cancelled Orbit's composer check before it finished."),
-            $check instanceof TaskCheck && $status === TaskCheckStatus::Changed && $repeats >= 2 => new TaskRubricItem('check_passed', false, 'The workspace changed while composer check ran, twice. Changed paths: '.implode(', ', $check->changed_paths ?? []).'. Make the check leave the tree unchanged, for example by ignoring the files it writes.'),
+            $check instanceof TaskCheck && $status === TaskCheckStatus::Failed => new TaskRubricItem('check_passed', false, "Orbit ran {$name}, and it failed with exit code {$check->exit_code}. The end of its output:\n\n```\n".rtrim((string) $check->output)."\n```\n"),
+            $status === TaskCheckStatus::Cancelled => new TaskRubricItem('check_passed', false, "An operator cancelled {$owned} before it finished."),
+            $check instanceof TaskCheck && $status === TaskCheckStatus::Changed && $repeats >= 2 => new TaskRubricItem('check_passed', false, "The workspace changed while {$name} ran, twice. Changed paths: ".implode(', ', $check->changed_paths ?? []).'. Make the check leave the tree unchanged, for example by ignoring the files it writes.'),
             default => null,
         };
         if ($item instanceof TaskRubricItem) {
@@ -284,13 +291,13 @@ final readonly class TaskScheduler
         }
         if ($status === TaskCheckStatus::Lost && $repeats >= 2) {
             $task->update(['completion_handoff_comment_id' => $receipt->id]);
-            $this->requestAssistance($task, $group, "Orbit's composer check stopped twice without a result.", $observation);
+            $this->requestAssistance($task, $group, "{$owned} stopped twice without a result.", $observation);
 
             return;
         }
 
         try {
-            $process = $this->checks->start($instance, [], $this->deliverableCheck($task));
+            $process = $this->checks->start($instance, $command, [], $this->deliverableCheck($task));
         } catch (TaskCheckException $exception) {
             $this->recordCommunicationFailure($task, $group, $exception->getMessage());
 
@@ -436,7 +443,7 @@ final readonly class TaskScheduler
         $receipt->update(['commit_sha' => $commit]);
         if ($pullRequest instanceof TaskRunPullRequest) {
             try {
-                $url = $this->publisher->publish($group, TaskPullRequestDescription::render($pullRequest, $group->tasks()->whereNotIn('status', [TaskStatus::Cancelled, TaskStatus::Failed])->count()));
+                $url = $this->publisher->publish($group, TaskPullRequestDescription::render($pullRequest, $group->tasks()->whereNotIn('status', [TaskStatus::Cancelled, TaskStatus::Failed])->count(), $group->app->taskCheckCommand()));
             } catch (TaskPullRequestException $exception) {
                 $this->recordCommunicationFailure($task, $group, $exception->getMessage());
 
@@ -491,7 +498,7 @@ final readonly class TaskScheduler
     {
         $instance = $group->taskable;
         $items = [
-            new TaskRubricItem('check_script', $instance instanceof AppInstance && $this->workspace->definesComposerCheckScript($instance), 'composer.json in the workspace does not define a check script, so Orbit cannot run composer check. Restore the check script.'),
+            new TaskRubricItem('check_script', ! self::runsComposerCheck($group->app->taskCheckCommand()) || $instance instanceof AppInstance && $this->workspace->definesComposerCheckScript($instance), 'composer.json in the workspace does not define a check script, so Orbit cannot run composer check. Restore the check script.'),
             $this->receiptItem($read, $receipt),
         ];
         $confirmation = $this->confirmationItem($task, $receipt, TaskThreadRole::Implementer);
@@ -656,7 +663,7 @@ final readonly class TaskScheduler
         if ($task->{$reminder} !== $task->{$attempt}) {
             try {
                 $this->prepareTurn($group, $task, $thread->role);
-                $this->actor->remindRubric($group, $thread, TaskRubricReminder::compose($thread->role, $failures, ! $implementer && $task->isLastSubtask(), $task->deliverableList()));
+                $this->actor->remindRubric($group, $thread, TaskRubricReminder::compose($thread->role, $failures, ! $implementer && $task->isLastSubtask(), $task->deliverableList(), $group->app->taskCheckCommand()));
             } catch (AgentDriverException|TaskRunReceiptException $exception) {
                 $this->recordCommunicationFailure($task, $group, $exception->getMessage());
 
@@ -1336,8 +1343,11 @@ final readonly class TaskScheduler
             : 0;
         $branch = 'task-'.$group->id;
         $reason = match (true) {
+            $check instanceof TaskCheck && $status === TaskCheckStatus::Failed && $check->failed_step === self::BASELINE_COMPOSER_INSTALL_STEP => "Composer dependency installation failed with exit code {$check->exit_code} on a fresh checkout of {$branch}, before any agent started. Restore the required dependencies, then cancel and create the group again. The task's check shows the install output.",
+            $check instanceof TaskCheck && $status === TaskCheckStatus::Failed && $check->failed_step === self::BASELINE_JAVASCRIPT_INSTALL_STEP => "JavaScript dependency installation failed with exit code {$check->exit_code} on a fresh checkout of {$branch}, before any agent started. Restore the required dependencies, then cancel and create the group again. The task's check shows the install output.",
+            $check instanceof TaskCheck && $status === TaskCheckStatus::Failed && $check->failed_step === null && $this->checkOutputShowsMissingDependencies($check) => "Project dependencies appear to be missing on a fresh checkout of {$branch}, before any agent started. Install the required dependencies, then cancel and create the group again. The task's check shows the missing-dependency output.",
             $check instanceof TaskCheck && $status === TaskCheckStatus::Failed && $check->failed_step !== null => "The Project setup step \"{$check->failed_step}\" failed with exit code {$check->exit_code} on a fresh checkout of {$branch}, before any agent started. Fix the setup or the branch, then cancel and create the group again. The task's check shows the output.",
-            $check instanceof TaskCheck && $status === TaskCheckStatus::Failed => "composer check failed with exit code {$check->exit_code} on a fresh checkout of {$branch}, before any agent started. The Project's default branch or the task branch is broken. Fix it, then cancel and create the group again. The task's check shows the output.",
+            $check instanceof TaskCheck && $status === TaskCheckStatus::Failed => "The Project baseline check failed with exit code {$check->exit_code} on a fresh checkout of {$branch}, before any agent started. Fix the configured check or the branch, then cancel and create the group again. The task's check shows the output.",
             $status === TaskCheckStatus::Cancelled => 'An operator cancelled the baseline check before any agent started.',
             $check instanceof TaskCheck && $status === TaskCheckStatus::Changed && $repeats >= 2 => 'The workspace changed while the baseline check ran, twice. Changed paths: '.implode(', ', $check->changed_paths ?? []).'.',
             $status === TaskCheckStatus::Lost && $repeats >= 2 => 'The baseline check stopped twice without a result.',
@@ -1350,6 +1360,22 @@ final readonly class TaskScheduler
         }
 
         $this->startBaseline($group, $task);
+    }
+
+    /**
+     * Only a task check that runs `composer check` needs the workspace's Composer `check` script.
+     */
+    private static function runsComposerCheck(?string $command): bool
+    {
+        return $command !== null && preg_match('/(?:^|[\s;&|(])composer\s+check(?=$|[\s;&|)])/', $command) === 1;
+    }
+
+    private function checkOutputShowsMissingDependencies(TaskCheck $check): bool
+    {
+        return preg_match(
+            '/(?:vendor\\/bin\\/[^:\\s]+|node_modules\\/\\.bin\\/[^:\\s]+):\\s*(?:not found|No such file or directory)|(?:vendor\\/autoload\\.php|node_modules\\/[^\\s]+).{0,160}(?:failed to open stream|Failed opening required|No such file|not found)|Failed opening required [\'\"][^\'\"]*(?:vendor\\/autoload\\.php|node_modules\\/)/i',
+            (string) $check->output,
+        ) === 1;
     }
 
     private function startBaseline(TaskGroup $group, Task $task): void
@@ -1369,8 +1395,23 @@ final readonly class TaskScheduler
             ->map(static fn (ProjectLifecycleStep $step): array => ['name' => $step->name, 'command' => $step->command, 'timeout_seconds' => $step->timeout_seconds])
             ->values()
             ->all();
+        $command = $instance->app->taskCheckCommand();
+        if ($command !== null && preg_match('/(?:^|[\\s;&|(])composer(?=$|\\s)|\\bvendor\\//i', $command) === 1) {
+            $setup[] = [
+                'name' => self::BASELINE_COMPOSER_INSTALL_STEP,
+                'command' => 'while IFS= read -r -d "" manifest; do project="${manifest%/composer.json}"; [ "$project" = "$manifest" ] && project="."; if { [ "$project" = "." ] || [ -f "$project/composer.lock" ]; } && [ ! -f "$project/vendor/autoload.php" ]; then (cd "$project" && if [ -f composer.lock ]; then composer install --no-interaction --prefer-dist; else composer install --no-interaction --prefer-dist && rm -f composer.lock; fi) || exit $?; fi; done < <(git ls-files -z -- "composer.json" ":(glob)**/composer.json")',
+                'timeout_seconds' => 600,
+            ];
+        }
+        if ($command !== null && preg_match('/\\b(?:bun|npm|pnpm|yarn|node|vp)\\b|node_modules/i', $command) === 1) {
+            $setup[] = [
+                'name' => self::BASELINE_JAVASCRIPT_INSTALL_STEP,
+                'command' => 'while IFS= read -r -d "" manifest; do project="${manifest%/package.json}"; [ "$project" = "$manifest" ] && project="."; if [ ! -d "$project/node_modules" ] && { [ -f "$project/pnpm-lock.yaml" ] || [ -f "$project/bun.lock" ] || [ -f "$project/bun.lockb" ] || [ -f "$project/package-lock.json" ] || [ -f "$project/yarn.lock" ]; }; then (cd "$project" && vp install --frozen-lockfile) || exit $?; fi; done < <(git ls-files -z -- "package.json" ":(glob)**/package.json")',
+                'timeout_seconds' => 600,
+            ];
+        }
         try {
-            $process = $this->checks->start($instance, $setup);
+            $process = $this->checks->start($instance, $command, $setup);
         } catch (TaskCheckException $exception) {
             $this->recordCommunicationFailure($task, $group, $exception->getMessage());
 

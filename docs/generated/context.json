@@ -411,6 +411,7 @@
                 "Repository identity",
                 "Route",
                 "Schedule",
+                "Task",
                 "Web root"
             ],
             "governing_adrs": []
@@ -3305,19 +3306,24 @@
             "title": "ADR 0125: Run the Project check when the implementer hands off",
             "kind": "decision",
             "components": [
+                "apps/cli",
                 "apps/docs",
-                "apps/gateway"
+                "apps/gateway",
+                "packages/php-sdk"
             ],
             "concepts": [
                 "Gateway",
+                "Instance",
                 "Node",
                 "Process",
                 "Project",
+                "Project type",
                 "Setup step",
                 "Task",
                 "Tool"
             ],
             "governing_adrs": [
+                "0106",
                 "0114",
                 "0121",
                 "0125"
@@ -4519,6 +4525,7 @@
                 "Repository identity",
                 "Route",
                 "Task",
+                "Tool",
                 "Web root"
             ],
             "governing_adrs": [
@@ -5411,7 +5418,6 @@
                 "Project",
                 "Route",
                 "Schedule",
-                "Setup step",
                 "Task",
                 "Task group",
                 "Tool"

@@ -14,7 +14,8 @@
                 "repository_url": "https://github.com/acme/site.git",
                 "default_branch": null,
                 "root": null,
-                "defaults": null
+                "defaults": null,
+                "task_check": null
             }
         ],
         "meta": {

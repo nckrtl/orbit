@@ -1,1 +1,1 @@
-{"id":1,"name":"Acme","slug":"acme","type":"laravel-app","repository_url":"https://github.com/acme/site.git","default_branch":null,"root":null,"defaults":null,"request_id":"0198e15c-bf97-7c23-8f1f-61b8fe67a844","excluded_nodes":[]}
+{"id":1,"name":"Acme","slug":"acme","type":"laravel-app","repository_url":"https://github.com/acme/site.git","default_branch":null,"root":null,"task_check":null,"defaults":null,"request_id":"0198e15c-bf97-7c23-8f1f-61b8fe67a844","excluded_nodes":[]}
