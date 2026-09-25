@@ -22,6 +22,7 @@ use App\Domain\Routes\RouteStateResolver;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\SourceControl\RelativeWebRoot;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\Cluster;
@@ -401,6 +402,15 @@ final readonly class CreateRouteAction
             throw new ResourceOperationException(
                 errorCode: 'route.target_inactive',
                 message: 'The Route target must be active.',
+                status: 409,
+            );
+        }
+
+        $root = $target->root ?? $target->app->root;
+        if (! is_string($root) || ! RelativeWebRoot::isValid($root)) {
+            throw new ResourceOperationException(
+                errorCode: 'route.target_web_root_unsupported',
+                message: 'A Route target requires a supported relative web root.',
                 status: 409,
             );
         }

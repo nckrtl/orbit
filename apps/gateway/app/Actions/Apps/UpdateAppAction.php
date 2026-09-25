@@ -484,6 +484,9 @@ final readonly class UpdateAppAction
     {
         $type = $data->typeProvided ? $data->type ?? $app->type : $app->type;
         $root = $data->rootProvided ? (string) $data->root : $app->root;
+        if (is_string($root)) {
+            $root = ProjectRoot::validate($root, $type);
+        }
 
         return [
             'slug' => $data->slugProvided ? $data->slug : $app->slug,
@@ -493,7 +496,7 @@ final readonly class UpdateAppAction
             'default_branch' => $data->defaultBranchProvided
                 ? GitBranchName::validate((string) $data->defaultBranch)
                 : $app->default_branch,
-            'root' => ProjectRoot::validate($root, $type),
+            'root' => $root,
         ];
     }
 

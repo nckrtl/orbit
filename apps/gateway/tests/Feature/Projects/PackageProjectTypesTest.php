@@ -46,6 +46,25 @@ it('covers package project types when creating and updating Projects', function 
     }
 });
 
+it('updates a legacy Project with a null root when root is omitted', function (): void {
+    $project = OrbitApp::query()->create([
+        'name' => 'legacy-project',
+        'slug' => 'legacy-project',
+        'type' => ProjectType::LaravelApp,
+        'repository_url' => 'https://github.com/acme/legacy-project.git',
+        'default_branch' => null,
+        'root' => null,
+    ]);
+
+    $this->patchJson('/api/v1/projects/'.$project->id, [
+        'slug' => 'legacy-renamed',
+        'default_branch' => 'stable',
+    ])->assertOk()
+        ->assertJsonPath('data.slug', 'legacy-renamed')
+        ->assertJsonPath('data.default_branch', 'stable')
+        ->assertJsonPath('data.root', null);
+});
+
 it('rejects a type change when the stored package root is invalid for that type', function (): void {
     $project = OrbitApp::query()->create([
         'name' => 'root-package',

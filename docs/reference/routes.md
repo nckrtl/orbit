@@ -74,7 +74,7 @@ The CLI names these operations `route:create`, `route:list`, `route:show`, `rout
 
 ## Change or clear a target
 
-The Gateway validates the complete proposed Route before it commits a target change.
+The Gateway validates the complete proposed Route before it commits a target change. A Route target must have a supported relative web root. A package Instance rooted at `.` is not a supported target and returns `route.target_web_root_unsupported` until an operator sets a web-root override.
 
 | Change | Result |
 | --- | --- |

@@ -22,7 +22,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitBranchName;
 use App\Domain\SourceControl\GitRepositoryOrigin;
-use App\Domain\SourceControl\RelativeWebRoot;
+use App\Domain\SourceControl\ProjectRoot;
 use App\Domain\Tasks\AgentDriverRegistry;
 use App\Domain\Tasks\InstanceProvisioning;
 use App\Domain\Tasks\InstanceProvisionIntent;
@@ -252,7 +252,7 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
             return true;
         }
 
-        return is_string($app->root) && RelativeWebRoot::isValid($app->root);
+        return is_string($app->root) && ProjectRoot::isValid($app->root, $app->type);
     }
 
     /** @param list<string> $drivers Every driver the group uses must allow the Node. */

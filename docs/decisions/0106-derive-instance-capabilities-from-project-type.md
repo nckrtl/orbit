@@ -28,7 +28,7 @@ Existing Projects have no type. The upgrade must assign a value to every row. Ex
 - Routing is derived from type, not from an Instance flag.
 - `laravel-app` is the only web-serving type in this decision. An active `laravel-app` Instance must have exactly one Route. Orbit creates that Route during provisioning and cloning onto app-prod, using the current preview-hostname rule for clones.
 - `monorepo`, `laravel-package`, and `node-package` Instances get no Route by default. An operator may attach a Route only with an explicit domain and a supported serving target (a web root Orbit can publish). Those types may stay active without a Route.
-- A Project root is a normalized path relative to its repository. Package types may use `.` to mean the repository root; web-serving Projects must use a valid relative web root.
+- A Project root is a normalized path relative to its repository. Package types may use `.` to mean the repository root; web-serving Projects must use a valid relative web root. A package Instance rooted at `.` is not a supported Route target; it needs an explicit relative web root first.
 - Every PHP Instance on an app-prod Node still receives a dedicated Unix user ([ADR 0045](/decisions/0045-isolate-production-php-fpm-by-unix-user) and [ADR 0107](/decisions/0107-key-isolation-and-releases-to-node-role)).
 - Orbit starts a dedicated FPM master only when that Instance serves PHP. `laravel-app` serves PHP. `laravel-package` and `node-package` do not start idle FPM. A `monorepo` Instance starts FPM only after an explicit supported serving target is attached.
 - The upgrade classifies existing Projects with no nulls:
