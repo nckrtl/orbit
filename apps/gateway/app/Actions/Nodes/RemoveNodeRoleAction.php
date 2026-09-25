@@ -58,8 +58,8 @@ final readonly class RemoveNodeRoleAction
     ): NodeRoleRemovalOutcome {
         $this->routeGuard()->assertRoleRemovable($node, $role);
 
-        if ($role === RoleName::Ingress) {
-            return $this->announceUpdated($node, $this->removeIngress($node, $force));
+        if ($role === RoleName::Ingress && $this->ingressAlreadyRemoved($node, $force)) {
+            return $this->announceUpdated($node, new NodeRoleRemovalOutcome(new NodeRoleDependencySet([], [], [], [])));
         }
 
         if ($role === RoleName::AppDev && $node->appInstances()->exists()) {
@@ -110,13 +110,21 @@ final readonly class RemoveNodeRoleAction
         return $outcome;
     }
 
-    private function removeIngress(Node $node, bool $force): NodeRoleRemovalOutcome
+    /**
+     * Whether a consented Ingress removal has nothing left to remove.
+     *
+     * Ingress removal repeats safely: once the assignment is gone, a repeated
+     * removal succeeds without touching the node. An assigned Ingress takes the
+     * same claimed path as every other role, so its baseline rebuilds the Node
+     * Caddyfile, closes the public HTTP and HTTPS rules, and reconciles metrics.
+     */
+    private function ingressAlreadyRemoved(Node $node, bool $force): bool
     {
+        if (NodeRole::query()->where('node_id', $node->id)->where('role', RoleName::Ingress)->exists()) {
+            return false;
+        }
+
         $this->guardMutableNode($node, RoleName::Ingress);
-        $assignment = NodeRole::query()
-            ->where('node_id', $node->id)
-            ->where('role', RoleName::Ingress)
-            ->first();
 
         if (! $force) {
             throw new NodeRoleValidationException(
@@ -130,13 +138,7 @@ final readonly class RemoveNodeRoleAction
             );
         }
 
-        if ($assignment instanceof NodeRole) {
-            DB::transaction(static function () use ($assignment): void {
-                NodeRole::query()->whereKey($assignment->id)->lockForUpdate()->sole()->delete();
-            });
-        }
-
-        return new NodeRoleRemovalOutcome(new NodeRoleDependencySet([], [], [], []));
+        return true;
     }
 
     private function removeAppRole(
