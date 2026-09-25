@@ -86,6 +86,14 @@ Some views have no event and poll on their own clock while the tab is visible:
 
 The firewall list reads every Node's rules with one request, `GET /api/v1/firewall-rules`. It returns only the Nodes that the browser's Node can reach. The CLI keeps the per-Node list.
 
+## Live logs
+
+The Instance log pane and the Process log pane follow their log through a [live log stream](/reference/live-logs) while realtime is live. The pane opens a stream with the lines it shows, 500 for an Instance and 100 for a Process, renews it every 20 seconds, and closes it when the pane closes. It shows `[orbit] N lines dropped` and `[orbit] N MiB skipped` where the stream reports them.
+
+A pane does not poll while its stream runs. It polls the one-shot read every 10 seconds, as before, when the Gateway refuses the stream, when the stream ends with `agent_left`, `source_unavailable`, or `relay_behind`, or when realtime is down. None of these shows an error; a production Instance pane polls from the start. When the socket comes back, the pane opens a new stream.
+
+For a reason that passes on its own, such as `agent_not_joined` during a `websocket` move, the pane also tries a new stream every 30 seconds while it polls. [Live logs](/reference/live-logs#when-the-live-path-is-not-available) lists these reasons. When the first renewal of a stream fails, the pane tries it again after one second, because the agent starts to read only after it.
+
 ## Web directory
 
 The web directory is `/home/orbit/web` unless `ORBIT_GATEWAY_WEB` sets another path under `/home/orbit/`. It belongs to the `orbit` user and the `caddy` group.

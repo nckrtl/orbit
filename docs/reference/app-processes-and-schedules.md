@@ -148,7 +148,7 @@ The CLI exposes these Process operations through the Gateway.
 | `orbit process:start PROCESS` | Start an installed Process and record the running desired state. |
 | `orbit process:stop PROCESS` | Stop an installed Process and record the stopped desired state. |
 | `orbit process:restart PROCESS` | Restart an installed Process and record the running desired state. |
-| `orbit process:logs PROCESS --lines=COUNT` | Return a non-streaming tail from 1 through 1,000 lines. |
+| `orbit process:logs PROCESS --lines=COUNT [--follow]` | Return a tail from 1 through 1,000 lines. With `--follow`, keep printing new lines from a [live log stream](/reference/live-logs). |
 | `orbit process:destroy PROCESS [--yes]` | Stop and remove the exact owned runtime artifacts, then delete the Process record. Interactive confirmation defaults to No. |
 | `orbit process:destroy NAME --app=APP [--yes]` | Destroy one process definition by name. Interactive confirmation defaults to No. |
 
