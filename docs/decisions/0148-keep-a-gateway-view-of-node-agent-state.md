@@ -37,7 +37,7 @@ The Gateway owns the subscriber, the view, and the read contract. Node agents an
 
 ### The subscriber
 
-- The Gateway runs `php artisan orbit:agent-view` as `orbit-agent-view.service` on the Gateway host. The unit runs as the `orbit` user, uses `Restart=always`, and waits 2 seconds before a restart. `orbit:bootstrap` and `orbit:gateway-web` install, enable, and restart it, as they install the hibernator timer.
+- The Gateway runs `php artisan orbit:agent-view` as `orbit-agent-view.service` on the Gateway host, with the PHP that PHP-FPM runs. The unit runs as the `orbit` user, uses `Restart=always`, and waits 2 seconds before a restart. `orbit:bootstrap` and `orbit:gateway-web` install, enable, and restart it, as they install the hibernator timer.
 - The subscriber is a Pusher-protocol client of the existing Reverb app. It opens one WebSocket to Reverb for all Nodes. It connects to the `websocket` role's WireGuard address on port 443 and verifies the `reverb.orbit` certificate against the Orbit root CA, as the Gateway's broadcaster does.
 - The subscriber joins `presence-node.{id}` for every Node that `ManagedNodeEligibility` allows. It signs each membership itself with the Reverb app secret the Gateway already holds, so no HTTP request is involved. Its member ID is `gateway.{socket id}` and its `user_info` is `{ "kind": "gateway" }`. The browser auth endpoint never signs a `gateway.*` member.
 - A new member makes each agent send a full snapshot, so the view fills within seconds of every connection.
@@ -129,7 +129,7 @@ Doctor reports `node.agent_view_stale` in the `node` family for an eligible Node
 
 - Wakes, log panes, and hibernator passes cost fewer SSH commands, and Process lists no longer need SSH during a Prometheus outage.
 - The API and the CLI report live `runtime_status` while the view is fresh. ADR 0129's statement that `runtime_status` keeps coming from Prometheus no longer holds.
-- The Gateway host runs one more long-running process, of about 40 MB, and holds one more WebSocket connection.
+- The Gateway host runs one more long-running process, of about 50 MB, and holds one more WebSocket connection.
 - Every subscriber connection makes every agent send a snapshot, as a new browser does.
 - The largest SSH cost in the trace, Doctor and converges, does not change.
 - A compromised Node can report false state about itself. False reports can end a wake early, make the hibernator skip a stop, or skip the ownership check before a log read on that Node. Root on that Node can already fake SSH answers, and no report affects another Node.
