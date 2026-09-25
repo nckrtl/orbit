@@ -595,6 +595,11 @@ final readonly class ReadBunDependencyGraphAction
 
     private function constraint(mixed $value): string
     {
+        // Bun keeps an empty specifier, which means any version, verbatim in the root record.
+        if ($value === '') {
+            return $value;
+        }
+
         if (! is_string($value) || trim($value) === '' || preg_match('/[\x00-\x1f\x7f\\\\]/', $value) === 1) {
             $this->invalid();
         }
