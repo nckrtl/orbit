@@ -39,7 +39,7 @@ it('activates the listener from an installed release behind its socket without r
         $release = PrivateDnsListenerRelease::fromGateway();
 
         $calls = $harness->serviceCalls();
-        $socketAt = array_search('enable --now orbit-private-dns.socket', $calls, true);
+        $socketAt = array_search('start orbit-private-dns.socket', $calls, true);
         $startAt = array_search('start orbit-private-dns.service', $calls, true);
         $restartAt = array_search('restart dnsmasq', $calls, true);
 
@@ -92,8 +92,8 @@ it('hands the address from a listener that binds it itself to the socket unit', 
         $calls = $harness->serviceCalls();
 
         expect(array_search('stop orbit-private-dns.service', $calls, true))
-            ->toBeLessThan(array_search('enable --now orbit-private-dns.socket', $calls, true))
-            ->and(array_search('enable --now orbit-private-dns.socket', $calls, true))
+            ->toBeLessThan(array_search('start orbit-private-dns.socket', $calls, true))
+            ->and(array_search('start orbit-private-dns.socket', $calls, true))
             ->toBeLessThan(array_search('start orbit-private-dns.service', $calls, true))
             ->and(file_get_contents($harness->unitPath()))->toContain('serve.php');
     } finally {

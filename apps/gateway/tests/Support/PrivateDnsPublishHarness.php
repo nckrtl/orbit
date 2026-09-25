@@ -61,6 +61,16 @@ final class PrivateDnsPublishHarness
                 fi
             }
             unit="\${*: -1}"
+            if [ "\$1" = 'enable' ] || [ "\$1" = 'stop' ]; then
+                if [ "\$#" -gt 2 ] && [ "\${2:-}" != '--now' ]; then
+                    verb=\$1
+                    shift
+                    for each in "\$@"; do
+                        "\$0" "\$verb" "\$each" > /dev/null
+                    done
+                    exit 0
+                fi
+            fi
             case "\$1" in
                 is-active)
                     case "\$unit" in

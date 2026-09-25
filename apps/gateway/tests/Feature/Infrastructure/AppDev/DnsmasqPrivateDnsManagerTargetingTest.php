@@ -43,7 +43,7 @@ it('publishes private DNS on the VPN node when gateway and vpn are split', funct
         ->toContain('listen_addr=10.44.0.1')
         ->toContain('/var/lib/orbit/private-dns/releases/'.PrivateDnsListenerRelease::fromGateway()->id())
         ->toContain('serve.php" --self-test')
-        ->toContain('systemctl enable --now orbit-private-dns.socket')
+        ->toContain('systemctl start orbit-private-dns.socket')
         ->toContain('systemctl restart orbit-private-dns.service')
         ->not->toContain('orbit:private-dns-serve');
 });

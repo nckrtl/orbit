@@ -446,11 +446,15 @@ final readonly class DnsmasqPrivateDnsManager implements PrivateDnsManager
             listener_started=0
             if ! systemctl is-active --quiet {$socketName} || [ "\$socket_changed" = 1 ]; then
                 # The address moves to the socket unit. A listener that binds the address itself must let go first.
+                # Enabling first keeps the gap between the stop and the socket bind to milliseconds.
                 listener_started=1
                 rm -f -- "\$catalog_loaded"
-                systemctl stop {$unitName} || true
-                systemctl stop {$socketName} || true
-                if ! systemctl enable --now {$socketName} || ! systemctl enable {$unitName} || ! systemctl start {$unitName}; then
+                if ! systemctl enable {$socketName} {$unitName}; then
+                    restore_listener
+                    exit 1
+                fi
+                systemctl stop {$unitName} {$socketName} || true
+                if ! systemctl start {$socketName} || ! systemctl start {$unitName}; then
                     restore_listener
                     exit 1
                 fi
