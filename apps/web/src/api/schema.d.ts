@@ -3735,7 +3735,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`), its Node is not eligible for an agent (`agent.node_ineligible`), or it asked for another Node's channel (`agent.channel_forbidden`). */
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or its Node is not eligible for an agent (`agent.node_ineligible`). */
             403: {
                 headers: {
                     [name: string]: unknown;

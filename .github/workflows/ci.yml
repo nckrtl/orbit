@@ -322,14 +322,15 @@ jobs:
   required:
     name: Required checks
     if: always()
-    needs: [project, web, agent-annotation, pi-server, agent]
+    needs: [project, api-reference, web, agent-annotation, pi-server, agent]
     runs-on: ubuntu-latest
     steps:
       - name: Require every project to pass
         env:
           PROJECT_RESULT: ${{ needs.project.result }}
+          API_REFERENCE_RESULT: ${{ needs.api-reference.result }}
           WEB_RESULT: ${{ needs.web.result }}
           ANNOTATION_RESULT: ${{ needs.agent-annotation.result }}
           PI_SERVER_RESULT: ${{ needs.pi-server.result }}
           AGENT_RESULT: ${{ needs.agent.result }}
-        run: test "$PROJECT_RESULT" = success && test "$WEB_RESULT" = success && test "$ANNOTATION_RESULT" = success && test "$PI_SERVER_RESULT" = success && test "$AGENT_RESULT" = success
+        run: test "$PROJECT_RESULT" = success && test "$API_REFERENCE_RESULT" = success && test "$WEB_RESULT" = success && test "$ANNOTATION_RESULT" = success && test "$PI_SERVER_RESULT" = success && test "$AGENT_RESULT" = success

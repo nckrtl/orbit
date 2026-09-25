@@ -1084,7 +1084,9 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
             responses['200'] = envelope(data, 'The request succeeded.')
         if route['name'] == 'gateway:trust':
             responses['503'] = error_response('The Gateway root CA is unavailable (`ca.unavailable`).')
-    if route['name'] in ('agent:realtime', 'agent:realtime:auth'):
+    if route['name'] == 'agent:realtime':
+        responses['403'] = error_response('The caller is not an active WireGuard peer (`peer.identity_unknown`) or its Node is not eligible for an agent (`agent.node_ineligible`).')
+    elif route['name'] == 'agent:realtime:auth':
         responses['403'] = error_response('The caller is not an active WireGuard peer (`peer.identity_unknown`), its Node is not eligible for an agent (`agent.node_ineligible`), or it asked for another Node\'s channel (`agent.channel_forbidden`).')
     elif route['name'] not in ('gateway:status', 'gateway:trust'):
         responses['403'] = error_response('The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).')
@@ -1143,7 +1145,7 @@ outputs[config_path] = json.dumps(config, indent=2) + '\n'
 if CHECK:
     stale = [str(path.relative_to(ROOT)) for path, text in outputs.items() if path.read_text() != text]
     if stale:
-        sys.exit(f'{", ".join(stale)} differ from the Gateway sources. Run bin/docs-openapi and commit the result.')
+        sys.exit(f'{" and ".join(stale)} {"is" if len(stale) == 1 else "are"} stale. Run bin/docs-openapi and commit the result.')
     print(f'{OUTPUT.relative_to(ROOT)} and the API navigation match the Gateway sources')
     sys.exit(0)
 
