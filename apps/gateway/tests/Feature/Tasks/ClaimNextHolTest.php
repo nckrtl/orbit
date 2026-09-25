@@ -488,6 +488,87 @@ describe('a group cancelled while its claim runs', function (): void {
     });
 });
 
+describe('the abandoned workspace sweep', function (): void {
+    it('removes the workspace of a group cancelled during a claim that then stopped, once the bound passes', function (): void {
+        claim_hol_enable();
+        $app = claim_hol_app();
+        $group = claim_hol_group($app, 'Orphaned');
+        $removed = claim_hol_recording_remover();
+        $workspace = claim_hol_workspace($app, $group);
+        $group->forceFill(['status' => TaskGroupStatus::Cancelled, 'reserved_at' => now()->subSeconds(30)])->save();
+
+        expect(app(TaskScheduler::class)->removeAbandonedWorkspaces())->toBe(0)
+            ->and($removed->ids)->toBe([]);
+
+        $this->travel(3600)->seconds();
+        $this->artisan('tasks:tick')->assertSuccessful();
+
+        expect($removed->ids)->toBe([$workspace->id])
+            ->and(AppInstance::query()->find($workspace->id))->toBeNull()
+            ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Cancelled)
+            ->and(app(TaskScheduler::class)->removeAbandonedWorkspaces())->toBe(0);
+    });
+
+    it('keeps workspaces of live groups and Instances that only share the name', function (): void {
+        claim_hol_enable();
+        $app = claim_hol_app();
+        $removed = claim_hol_recording_remover();
+        $todo = claim_hol_group($app, 'Waiting');
+        claim_hol_workspace($app, $todo);
+        $cancelled = claim_hol_group($app, 'Cancelled lookalike');
+        $cancelled->forceFill(['status' => TaskGroupStatus::Cancelled])->save();
+        claim_hol_instance($app, 'task-'.$cancelled->id);
+
+        expect(app(TaskScheduler::class)->removeAbandonedWorkspaces())->toBe(0)
+            ->and($removed->ids)->toBe([])
+            ->and(AppInstance::query()->count())->toBe(2);
+    });
+
+    it('attempts a bounded number of removals per tick and retries a failed one later', function (): void {
+        Exceptions::fake();
+        claim_hol_enable();
+        $app = claim_hol_app();
+        $failing = true;
+        app()->instance(AppInstanceRemover::class, new class($failing) implements AppInstanceRemover
+        {
+            public function __construct(private bool &$failing) {}
+
+            public function execute(AppInstance $instance, bool $force): AppInstanceRemoval
+            {
+                if ($this->failing) {
+                    throw new RuntimeException('The Node is unreachable.');
+                }
+                $instance->delete();
+
+                return new AppInstanceRemoval;
+            }
+        });
+        foreach (range(1, TaskScheduler::AbandonedWorkspacesPerTick + 2) as $index) {
+            $group = claim_hol_group($app, "Ended {$index}");
+            $group->forceFill(['status' => TaskGroupStatus::Cancelled])->save();
+            claim_hol_workspace($app, $group, 'source_resolved');
+        }
+
+        expect(app(TaskScheduler::class)->removeAbandonedWorkspaces())->toBe(0);
+        Exceptions::assertReportedCount(TaskScheduler::AbandonedWorkspacesPerTick);
+
+        $failing = false;
+        expect(app(TaskScheduler::class)->removeAbandonedWorkspaces())->toBe(TaskScheduler::AbandonedWorkspacesPerTick)
+            ->and(app(TaskScheduler::class)->removeAbandonedWorkspaces())->toBe(2)
+            ->and(AppInstance::query()->count())->toBe(0);
+    });
+});
+
+/** The group's deterministic workspace, as TaskWorkspaceProvisioner creates it. */
+function claim_hol_workspace(OrbitApp $app, TaskGroup $group, string $status = 'reserved'): AppInstance
+{
+    $name = 'task-'.$group->id;
+    $workspace = claim_hol_instance($app, $name);
+    $workspace->update(['branch_override' => $name, 'status' => $status]);
+
+    return $workspace;
+}
+
 /** Records each removal and deletes the row, as a completed removal does. */
 function claim_hol_recording_remover(): object
 {

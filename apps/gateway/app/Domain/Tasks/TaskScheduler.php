@@ -1027,6 +1027,62 @@ final readonly class TaskScheduler
         return $released;
     }
 
+    /** The most abandoned workspace removals one tick attempts, so a backlog of remote removals never stalls the tick. */
+    public const int AbandonedWorkspacesPerTick = 5;
+
+    /**
+     * Removes the `task-{group id}` workspace of a cancelled or completed group that holds no Instance, once no
+     * claim can still own it: the group was never reserved, or its reservation is older than
+     * `orbit.tasks.reserved_timeout_seconds`. A cancel that lands during a live claim leaves the workspace to that
+     * claim, and this sweep removes it when the claim stopped first. A removal that fails is reported and retried
+     * on a later tick.
+     */
+    public function removeAbandonedWorkspaces(): int
+    {
+        $cutoff = RemoveTaskWorkspaceAction::reservationCutoff();
+        $workspaces = AppInstance::query()
+            ->where('name', 'like', 'task-%')
+            ->whereColumn('branch_override', 'name')
+            ->orderBy('id')
+            ->get();
+        $removed = 0;
+        $attempts = 0;
+
+        foreach ($workspaces as $workspace) {
+            if ($attempts >= self::AbandonedWorkspacesPerTick) {
+                break;
+            }
+
+            $groupId = substr($workspace->name, strlen('task-'));
+            if (! ctype_digit($groupId)) {
+                continue;
+            }
+
+            $ended = TaskGroup::query()->whereKey((int) $groupId)
+                ->where('app_id', $workspace->app_id)
+                ->where('execution_mode', TaskExecutionMode::Managed)
+                ->whereIn('status', [TaskGroupStatus::Cancelled, TaskGroupStatus::Completed])
+                ->whereNull('taskable_id')
+                ->where(static fn ($query) => $query->whereNull('reserved_at')->orWhere('reserved_at', '<=', $cutoff))
+                ->exists();
+            if (! $ended) {
+                continue;
+            }
+
+            $attempts++;
+
+            try {
+                $this->workspaces->remove($workspace);
+                Log::warning('Removed the workspace of an ended task group.', ['task_group_id' => (int) $groupId, 'app_instance_id' => $workspace->id]);
+                $removed++;
+            } catch (Throwable $exception) {
+                report($exception);
+            }
+        }
+
+        return $removed;
+    }
+
     public static function isClaimFailureReason(?string $reason): bool
     {
         return in_array($reason, self::ClaimFailureReasons, true);
