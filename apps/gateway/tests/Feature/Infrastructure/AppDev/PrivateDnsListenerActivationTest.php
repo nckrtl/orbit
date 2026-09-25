@@ -22,8 +22,10 @@ use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\Route;
 use Illuminate\Filesystem\Filesystem;
+use Symfony\Component\Process\InputStream;
 use Symfony\Component\Process\Process;
 use Tests\Support\LoopbackRequesters;
+use Tests\Support\PrivateDnsPortPair;
 use Tests\Support\PrivateDnsPublishHarness;
 
 it('activates the listener from an installed release behind its socket without rewriting LAN into the shared fragment', function (): void {
@@ -412,36 +414,44 @@ it('retries bind after the previous holder releases the published address and an
         'suffixes' => [],
         'overrides' => [],
     ], JSON_THROW_ON_ERROR));
-    $port = orb314_free_port();
+    // The holder takes its own port pair from the kernel and keeps it until the test releases it. A process
+    // frees its sockets before it exits, so the listener can bind while the holder still runs: the test
+    // waits for the holder to exit instead of expecting that at the moment of the bind.
     $holder = new Process([
         PHP_BINARY,
         '-r',
-        ' $udp = stream_socket_server("udp://127.0.0.1:'.$port.'", $e, $m, STREAM_SERVER_BIND);'
-        .' $tcp = stream_socket_server("tcp://127.0.0.1:'.$port.'", $e, $m);'
-        .' fwrite(STDOUT, "held\n");'
-        .' usleep(400000);',
+        'require '.var_export(base_path('tests/Support/PrivateDnsPortPair.php'), true).';'
+        .' [$udp, $tcp, $port] = Tests\\Support\\PrivateDnsPortPair::hold("127.0.0.1");'
+        .' fwrite(STDOUT, "held {$port}\\n");'
+        .' fgets(STDIN);',
     ]);
-    $listener = new Process([
-        PHP_BINARY,
-        '-r',
-        'require '.var_export(base_path('vendor/autoload.php'), true).';'
-        .'$server = (new App\Infrastructure\AppDev\PrivateDnsListenerFactory)->make('
-        .var_export($catalog, true).', "127.0.0.1", '.$port.', "127.0.0.55:1");'
-        .'(new App\Infrastructure\AppDev\PrivateDnsSocketBinder(8.0, 0.05))->bind($server);'
-        .'fwrite(STDOUT, "bound\n");'
-        .'while ($server->listening()) { $server->serveOnce(0.2); }',
-    ]);
+    $release = new InputStream;
+    $holder->setInput($release);
+    $listener = null;
 
     try {
         $holder->start();
-        expect(orb314_wait_until(static fn (): bool => str_contains($holder->getOutput(), 'held'), 2.0))->toBeTrue();
+        expect(orb314_wait_until(static fn (): bool => preg_match('/^held \d+$/m', $holder->getOutput()) === 1, 5.0))
+            ->toBeTrue($holder->getErrorOutput());
+        $port = (int) substr(trim($holder->getOutput()), strlen('held '));
         expect(orb314_port_refuses('127.0.0.1', $port))->toBeFalse();
 
+        $listener = orb314_listener_process($catalog, $port);
         $listener->start();
+        expect(orb314_wait_until(static fn (): bool => str_contains($listener->getOutput(), 'binding'), 8.0))
+            ->toBeTrue($listener->getErrorOutput());
+        // Several retry intervals pass while the holder keeps the address, and none of them may bind.
+        usleep(300_000);
+        expect($listener->getOutput())->not->toContain('bound')
+            ->and($listener->isRunning())->toBeTrue();
+
+        $release->write("release\n");
+        $release->close();
+        $holder->wait();
         $bound = orb314_wait_until(static fn (): bool => str_contains($listener->getOutput(), 'bound'), 8.0);
         expect($listener->getErrorOutput()."\n".$listener->getOutput())->toContain('bound');
         expect($bound)->toBeTrue();
-        expect($holder->isRunning())->toBeFalse();
+        expect($holder->getExitCode())->toBe(0);
         expect($listener->isRunning())->toBeTrue();
 
         $udp = orb314_dig('127.0.0.1', $port, 'commander.test', 'udp');
@@ -452,7 +462,7 @@ it('retries bind after the previous holder releases the published address and an
             ->and($tcp)
             ->toBe('10.44.0.7');
     } finally {
-        if ($listener->isRunning()) {
+        if ($listener instanceof Process && $listener->isRunning()) {
             $listener->stop(0.5);
         }
         if ($holder->isRunning()) {
@@ -468,9 +478,7 @@ it('does not treat a bind retry as success while the published address stays occ
     $files->makeDirectory($root, 0755, true);
     $catalog = $root.'/catalog.json';
     $files->put($catalog, "{\"requesters\":{},\"records\":{\"commander.test\":\"10.44.0.7\"},\"suffixes\":{},\"overrides\":{}}\n");
-    $port = orb314_free_port();
-    $holderUdp = stream_socket_server('udp://127.0.0.1:'.$port, $udpError, $udpMessage, STREAM_SERVER_BIND);
-    $holderTcp = stream_socket_server('tcp://127.0.0.1:'.$port, $tcpError, $tcpMessage);
+    [$holderUdp, $holderTcp, $port] = PrivateDnsPortPair::hold('127.0.0.1');
     $server = new PrivateDnsListenerFactory()->make($catalog, '127.0.0.1', $port, '127.0.0.55:1');
 
     try {
@@ -609,15 +617,19 @@ function orb307_query(
     return long2ip($address['ip'] ?? 0) ?: '';
 }
 
-function orb314_free_port(): int
+function orb314_listener_process(string $catalog, int $port): Process
 {
-    $socket = stream_socket_server('tcp://127.0.0.1:0');
-    expect($socket)->toBeResource();
-    $name = stream_socket_get_name($socket, false);
-    expect($name)->toBeString();
-    fclose($socket);
-
-    return (int) substr($name, strrpos($name, ':') + 1);
+    return new Process([
+        PHP_BINARY,
+        '-r',
+        'require '.var_export(base_path('vendor/autoload.php'), true).';'
+        .'$server = (new App\\Infrastructure\\AppDev\\PrivateDnsListenerFactory)->make('
+        .var_export($catalog, true).', "127.0.0.1", '.$port.', "127.0.0.55:1");'
+        .'fwrite(STDOUT, "binding\\n");'
+        .'(new App\\Infrastructure\\AppDev\\PrivateDnsSocketBinder(8.0, 0.05))->bind($server);'
+        .'fwrite(STDOUT, "bound\\n");'
+        .'while ($server->listening()) { $server->serveOnce(0.2); }',
+    ]);
 }
 
 function orb314_wait_until(callable $ready, float $seconds): bool

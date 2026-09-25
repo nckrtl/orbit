@@ -359,6 +359,23 @@ describe('Bun dependency reader', function (): void {
         ],
     ]);
 
+    it('keeps an empty specifier the way Bun writes it', function (): void {
+        // Lock written by bun 1.4.2 install --lockfile-only for {"dependencies":{"ms":""}}.
+        $manifest = '{"name":"root","dependencies":{"ms":""}}';
+        $lock = '{"lockfileVersion":2,"configVersion":1,"workspaces":{"":{"name":"root","dependencies":{"ms":"",},},},"packages":{"ms":["ms@2.1.3","",{},"sha512-6FlzubTLZG3J2a/NVCAleEhjzq5oxgHyaCU9yYXvcLsvoVaHJq/s5xXI6/XXP6tz7R9xAOtHnSO/tXtF3WRTlA=="],}}';
+
+        $graph = (new ReadBunDependencyGraphAction)->execute($manifest, $lock);
+
+        expect($graph->requirements)->toEqual([
+            new DependencyRequirement(null, 'ms', 'ms', '', DependencyRequirementKind::Dependency, DependencyScope::Regular, false),
+        ]);
+    });
+
+    it('rejects a whitespace-only specifier', function (): void {
+        expect(fn () => (new ReadBunDependencyGraphAction)->execute('{"dependencies":{"ms":" "}}', bunReaderLock('{"dependencies":{"ms":" "}}')))
+            ->toThrow(DependencyParseException::class, 'dependencies.invalid_bun_input');
+    });
+
     it('treats root peer metadata without a declaration like Bun does', function (int $version): void {
         // Real bun.lock written by bun 1.4.2 and bun 1.3.14 for this manifest: only optional metadata becomes a peer.
         $manifest = '{"name":"root-meta","dependencies":{"ms":"^2.1.3"},"peerDependenciesMeta":{"a-peer":{"optional":false},"b-peer":{},"c-peer":{"optional":true}}}';

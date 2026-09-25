@@ -231,6 +231,15 @@ it('requires the preview failure in json mode and sends no forced retry', functi
         'error' => [
             'code' => 'validation.failed',
             'message' => 'Use --force to remove this node role.',
+            'details' => [
+                'field' => 'force',
+                'reason' => 'destructive_consent_required',
+                'role' => 'app-dev',
+                'dependents' => [
+                    '1 development instance record',
+                    '1 workspace record',
+                ],
+            ],
             'request_id' => node_role_remove_request_id(),
         ],
     ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
@@ -287,6 +296,7 @@ it('requires the preview failure in non-interactive mode and sends no forced ret
     $this
         ->artisan('node:role:remove', ['node' => '7', 'role' => 'app-dev', '--no-interaction' => true])
         ->expectsOutputToContain('Use --force to remove this node role.')
+        ->expectsOutputToContain('reason: destructive_consent_required')
         ->expectsOutput('Request ID: '.node_role_remove_request_id())
         ->assertExitCode(1);
 
@@ -401,6 +411,71 @@ it('renders unrelated gateway failures through the shared boundary without a for
         ->assertExitCode(1);
 
     $mockClient->assertSentCount(1, RemoveNodeRoleRequest::class);
+});
+
+it('keeps the failed step of a forced role removal in json and names it in human output', function (): void {
+    $response = static fn (): MockResponse => MockResponse::make(
+        [
+            'error' => [
+                'code' => 'node_role.remove_failed',
+                'message' => 'UFW is inactive on node [app-prod]. Retry with --offline if node [app-prod] is unreachable.',
+                'details' => ['step' => 'remove:host-firewall', 'stdout' => 'private-output'],
+            ],
+        ],
+        502,
+        ['X-Orbit-Request-Id' => node_role_remove_request_id()],
+    );
+    MockClient::global([RemoveNodeRoleRequest::class => $response]);
+
+    $this
+        ->artisan('node:role:remove', ['node' => '7', 'role' => 'ingress', '--force' => true, '--json' => true])
+        ->expectsOutput(json_encode([
+            'error' => [
+                'code' => 'node_role.remove_failed',
+                'message' => 'UFW is inactive on node [app-prod]. Retry with --offline if node [app-prod] is unreachable.',
+                'details' => ['step' => 'remove:host-firewall'],
+                'request_id' => node_role_remove_request_id(),
+            ],
+        ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES))
+        ->doesntExpectOutputToContain('private-output')
+        ->assertExitCode(1);
+
+    MockClient::destroyGlobal();
+    MockClient::global([RemoveNodeRoleRequest::class => $response]);
+    $exitCode = Artisan::call('node:role:remove', ['node' => '7', 'role' => 'ingress', '--force' => true]);
+    $output = Artisan::output();
+
+    expect($exitCode)->toBe(1)
+        ->and($output)->toContain('UFW is inactive on node [app-prod].', 'step: remove:host-firewall', 'Request ID: '.node_role_remove_request_id())
+        ->not->toContain('private-output');
+});
+
+it('keeps the failed step of a preview failure that is not a consent refusal', function (): void {
+    MockClient::global([
+        RemoveNodeRoleRequest::class => MockResponse::make(
+            [
+                'error' => [
+                    'code' => 'node_role.remove_failed',
+                    'message' => 'Role [app-dev] dependencies changed during removal from node [app-dev].',
+                    'details' => ['step' => 'dependency-race'],
+                ],
+            ],
+            502,
+            ['X-Orbit-Request-Id' => node_role_remove_request_id()],
+        ),
+    ]);
+
+    $this
+        ->artisan('node:role:remove', ['node' => '7', 'role' => 'app-dev', '--json' => true])
+        ->expectsOutput(json_encode([
+            'error' => [
+                'code' => 'node_role.remove_failed',
+                'message' => 'Role [app-dev] dependencies changed during removal from node [app-dev].',
+                'details' => ['step' => 'dependency-race'],
+                'request_id' => node_role_remove_request_id(),
+            ],
+        ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES))
+        ->assertExitCode(1);
 });
 
 function node_role_remove_command_options(?SymfonyCommand $command): array

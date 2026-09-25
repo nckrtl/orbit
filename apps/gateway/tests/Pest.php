@@ -52,6 +52,7 @@ require_once __DIR__.'/Helpers/AgentViewFixtures.php';
 require_once __DIR__.'/Helpers/AnalyticsRoleFixtures.php';
 require_once __DIR__.'/Helpers/AnalyticsConnectionFixtures.php';
 require_once __DIR__.'/Helpers/InstanceAnalyticsFixtures.php';
+require_once __DIR__.'/Helpers/ConfigFixtures.php';
 
 uses(TestCase::class, RefreshDatabase::class)
     ->beforeEach(function (): void {

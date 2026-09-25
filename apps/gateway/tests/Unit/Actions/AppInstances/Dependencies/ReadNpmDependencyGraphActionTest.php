@@ -257,6 +257,41 @@ describe('npm dependency reader', function (): void {
         'no spec' => ['', false],
     ]);
 
+    it('treats a missing or empty alias spec as any version like npm does', function (string $spec, bool $accepted): void {
+        // Hand-edited shape: an npm-written alias record carries "name", which is removed here so the locked
+        // identity differs from the alias target. npm 11.19 ci accepts this lock for the accepted specs and
+        // refuses it for the others.
+        $manifest = '{"name":"root","dependencies":{"x":"npm:ms'.$spec.'"}}';
+        $lock = '{"name":"root","lockfileVersion":3,"requires":true,"packages":{"":{"name":"root","dependencies":{"x":"npm:ms'.$spec.'"}},"node_modules/x":{"version":"3.0.0-canary.1","resolved":"https://registry.npmjs.org/ms/-/ms-3.0.0-canary.1.tgz","integrity":"sha512-kh8ARjh8rMN7Du2igDRO9QJnqCb2xYTJxyQYK7vJJS4TvLLmsbyhiKpSW+t+y26gyOyMd0riphX0GeWKU3ky5g==","license":"MIT","engines":{"node":">=12.13"}}}}';
+
+        if (! $accepted) {
+            expect(fn () => (new ReadNpmDependencyGraphAction)->execute($manifest, $lock))
+                ->toThrow(DependencyParseException::class, 'dependencies.invalid_npm_input');
+
+            return;
+        }
+
+        expect((new ReadNpmDependencyGraphAction)->execute($manifest, $lock)->resolutions[0]->version)->toBe('3.0.0-canary.1');
+    })->with([
+        'missing spec' => ['', true],
+        'empty spec' => ['@', true],
+        'any version' => ['@*', true],
+        'whitespace spec' => ['@ ', false],
+        'range excluding prereleases' => ['@^3.0.0', false],
+    ]);
+
+    it('reads a bare alias lock that npm wrote', function (): void {
+        // Written by npm 11.19 install --package-lock-only for {"name":"root","dependencies":{"x":"npm:ms"}}.
+        $manifest = '{"name":"root","dependencies":{"x":"npm:ms"}}';
+        $lock = '{"name":"root","lockfileVersion":3,"requires":true,"packages":{"":{"name":"root","dependencies":{"x":"npm:ms"}},"node_modules/x":{"name":"ms","version":"2.1.3","resolved":"https://registry.npmjs.org/ms/-/ms-2.1.3.tgz","integrity":"sha512-6FlzubTLZG3J2a/NVCAleEhjzq5oxgHyaCU9yYXvcLsvoVaHJq/s5xXI6/XXP6tz7R9xAOtHnSO/tXtF3WRTlA==","license":"MIT"}}}';
+
+        $graph = (new ReadNpmDependencyGraphAction)->execute($manifest, $lock);
+
+        expect($graph->resolutions[0]->package->name)->toBe('ms');
+        expect($graph->resolutions[0]->version)->toBe('2.1.3');
+        expect($graph->requirements[0])->toEqual(new DependencyRequirement(null, 'node_modules/x', 'x', 'npm:ms', DependencyRequirementKind::Dependency, DependencyScope::Regular, false));
+    });
+
     it('rejects an alias target that npm ci would refuse', function (string $constraint, string $record): void {
         $manifest = '{"devDependencies":{"vite":"'.$constraint.'"},"overrides":{"vite":"'.$constraint.'"}}';
         $lock = '{"lockfileVersion":3,"packages":{"":{"devDependencies":{"vite":"'.$constraint.'"}},"node_modules/vite":'.$record.'}}';

@@ -589,6 +589,7 @@
             "concepts": [
                 "Gateway",
                 "Node",
+                "Process",
                 "Project",
                 "Task",
                 "Tool"

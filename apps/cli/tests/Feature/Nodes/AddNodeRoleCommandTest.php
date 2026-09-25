@@ -298,6 +298,35 @@ it('keeps the Node, stage, and Caddy message of a failed Caddy build in json and
         ->not->toContain('stage:', 'private-output');
 });
 
+it('keeps the failed step of a convergence failure without a Caddy build', function (): void {
+    MockClient::global([
+        AddNodeRoleRequest::class => MockResponse::make(
+            [
+                'error' => [
+                    'code' => 'node_role.convergence_failed',
+                    'message' => 'Role [ingress] convergence failed on node [app-prod].',
+                    'details' => ['step' => 'converge:host-firewall', 'stderr' => 'private-output'],
+                ],
+            ],
+            502,
+            ['X-Orbit-Request-Id' => node_role_add_request_id()],
+        ),
+    ]);
+
+    $this
+        ->artisan('node:role:add', ['node' => '7', 'role' => 'ingress', '--converge' => true, '--json' => true])
+        ->expectsOutput(json_encode([
+            'error' => [
+                'code' => 'node_role.convergence_failed',
+                'message' => 'Role [ingress] convergence failed on node [app-prod].',
+                'details' => ['step' => 'converge:host-firewall'],
+                'request_id' => node_role_add_request_id(),
+            ],
+        ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES))
+        ->doesntExpectOutputToContain('private-output')
+        ->assertExitCode(1);
+});
+
 describe('the analytics role', function (): void {
     it('sends the two storage Process IDs with the role', function (): void {
         $mockClient = MockClient::global([

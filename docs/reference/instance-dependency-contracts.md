@@ -40,7 +40,9 @@ Installation locations identify resolutions, including nested and scoped package
 
 npm checks an alias edge only against the spec after the package name; it never compares that name with the locked package. A dist-tag spec such as `npm:@voidzero-dev/vite-plus-core@latest` accepts any registry tarball, with or without a matching `overrides` entry. npm can therefore lock and install the unaliased package under the declared name, for example plain `vite@8.0.2`, and `npm ci` accepts that lock.
 
-The reader applies the same check when the locked identity differs from the alias target: a dist-tag requires a registry tarball `resolved` URL, and a version or range must match the locked version under npm's loose semver rules. The resolution records the package npm installed, while the requirement keeps the alias constraint. A version or range that the locked version does not satisfy, which `npm ci` refuses, fails with `dependencies.invalid_npm_input`.
+The reader applies the same check when the locked identity differs from the alias target: a dist-tag requires a registry tarball `resolved` URL, and a version or range must match the locked version under npm's loose semver rules. The resolution records the package npm installed, while the requirement keeps the alias constraint. A version or range that the locked version does not satisfy, which `npm ci` refuses, fails with `dependencies.invalid_npm_input`. An alias without a spec, `npm:ms` or `npm:ms@`, means any version, as `*` does, and also accepts a locked prerelease. A whitespace-only spec is an empty range, which excludes prereleases.
+
+Version matching follows npm's loose semver rules for realistic specs, and a node-semver test set checks it. Exotic forms can differ from npm, for example `*.1.1`, an uppercase `V` prefix, or version numbers above 2^53.
 
 Root regular and development paths establish independent reachability through dependencies and resolved peers; lockfile `dev` flags do not replace those paths. A package's own development requirements do not introduce installed dependencies. Optional dependencies override regular declarations of the same name, while development paths remain separate. Missing optional and peer targets remain null; missing required dependency targets fail. Like npm, the reader applies `peerDependenciesMeta` only to declared peers. Metadata for an undeclared name, which published packages such as `debug` carry, must still be well formed but creates no edge.
 
@@ -52,7 +54,7 @@ Workspace declarations, local links, and package locations outside the root inst
 
 ## pnpm reader
 
-`ReadPnpmDependencyGraphAction` accepts root `package.json` JSON and `pnpm-lock.yaml` text. It reads pnpm lockfile version `9.0` with exactly one importer, `.`. The reader parses data in memory through Symfony YAML, which is a Gateway runtime dependency. It does not read files, execute package code, or contact registries.
+`ReadPnpmDependencyGraphAction` accepts root `package.json` JSON and `pnpm-lock.yaml` text. It reads pnpm lockfile version `9.0` with exactly one importer, `.`. The reader parses data in memory through Symfony YAML, which is a Gateway runtime dependency. It does not read files, execute package code, or contact registries. pnpm records no peer for root `peerDependenciesMeta` without a peer declaration; the reader ignores such a root entry once it is well formed. Lockfile package records keep the strict rule, because pnpm writes a peer for each of their metadata entries.
 
 Registry snapshot keys remain resolution IDs. Their peer suffixes remain intact, so the same package version can have separate peer contexts. Package metadata supplies identities, integrity, and peer constraints; snapshots supply resolved dependency links. Aliases keep the declared name while targeting the actual package identity. Root regular, optional, and development declarations establish separate reachability paths through cycles and resolved peers. Optional declarations override duplicate regular declarations. pnpm records each root package once, using optional, regular, then development precedence. The graph retains a development path when the manifest also declares that package for development.
 
@@ -70,11 +72,26 @@ Package paths remain resolution IDs, including nested and scoped paths. Tuple de
 
 When a name appears only in development and optional declarations, Bun saves the optional declaration in the root record. The reader validates that normalization and retains the manifest's development path to the optional target.
 
-Bun's `optionalPeers` list marks optional peer edges. Bun also records root `peerDependenciesMeta` marked `optional: true` without a peer declaration as an optional peer with constraint `*`, and the reader applies the same rule. Other undeclared metadata must be well formed but creates no edge.
+Bun's `optionalPeers` list marks optional peer edges. An empty specifier means any version; Bun keeps it verbatim in the root record, and the reader accepts it. Bun also records root `peerDependenciesMeta` marked `optional: true` without a peer declaration as an optional peer with constraint `*`, and the reader applies the same rule. Other undeclared metadata must be well formed but creates no edge.
 
 Missing optional dependencies and peers remain null targets without invented versions. The root workspace must agree with the normalized manifest's `name`, `version`, and dependency declarations; a difference means `package.json` changed without `bun install` and fails with `dependencies.stale_bun_lockfile`. Missing mandatory dependencies, unreachable records, missing parents, malformed tuples, duplicate keys, and invalid retained fields fail with `dependencies.invalid_bun_input`. Unsupported versions and binary locks use `dependencies.unsupported_format`; extra workspaces and local package links use `dependencies.unsupported_layout`. Errors contain only the stable code.
 
 Registry tuples preserve exact versions and valid integrity. Download URLs and executable metadata are omitted. Git and remote tarball tuples can end with an optional integrity hash, which the reader validates and retains. Remote tarball and Git tuples do not contain a package release version: their opaque locked reference represents the resolution. Source-bearing references are replaced by deterministic `bun:sha256:` values before output, preserving distinctions without retaining URLs or credentials. A hexadecimal Git revision is retained separately when available. No version constraint is solved during parsing.
+
+## Local file dependencies
+
+A `file:` or `link:` dependency inside the checkout, for example `"one": "file:packages/one"`, fails with `dependencies.unsupported_layout`. Supporting it safely is feasible, but it is a separate change for these reasons:
+
+- npm writes a `link` record plus a record at the target path, such as `packages/one`, that carries the version.
+- pnpm 11 writes a `directory` resolution without a version.
+- Bun 1.4 writes a tuple without a version for both directories and local tarballs.
+- A version from the linked `package.json` therefore needs a second collection step that reads files at lock-supplied paths.
+- That step must refuse absolute paths, `..` segments, and symlinks in every path component, as the root collector does.
+- It must also confirm those files in the same stable source observation as the root files.
+- The readers must accept installation locations outside `node_modules`, such as `packages/one/node_modules/ms`, and must map link records to their targets.
+- [ADR 0089](/decisions/0089-index-appinstance-dependencies) leaves monorepos out of scope, and local packages are its most common form. Support needs an ADR amendment.
+
+A dependency outside the checkout, such as `file:../shared`, stays unsupported.
 
 ## Unsupported Yarn inputs
 
