@@ -17,6 +17,7 @@ use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Projects\ProjectCode;
 use App\Domain\Projects\ProjectType;
+use App\Domain\Routes\RouteTargetWebRoot;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitBranchName;
 use App\Domain\SourceControl\GitRepositoryIdentity;
@@ -54,6 +55,11 @@ final readonly class UpdateAppAction
 
         if ($data->code !== null && ($data->hasReconcilableChanges() || $data->typeProvided)) {
             throw new ResourceOperationException('app.code_update_separate', 'Update the Project code separately from source settings.', 422);
+        }
+
+        if ($data->rootProvided || $data->typeProvided) {
+            $effectiveRoot = $data->rootProvided ? $data->root : $app->root;
+            $this->assertRouteTargetRootCompatibility($app, $effectiveRoot);
         }
 
         if ($data->code !== null) {
@@ -602,6 +608,18 @@ final readonly class UpdateAppAction
                     status: 409,
                 );
             }
+        }
+    }
+
+    private function assertRouteTargetRootCompatibility(OrbitApp $app, ?string $root): void
+    {
+        $hasInheritedRouteTarget = $app->appInstances()
+            ->whereNull('root')
+            ->whereHas('routeTargets')
+            ->exists();
+
+        if ($hasInheritedRouteTarget) {
+            RouteTargetWebRoot::assertSupportedRoot($root);
         }
     }
 

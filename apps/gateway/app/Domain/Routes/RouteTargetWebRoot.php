@@ -12,8 +12,11 @@ final readonly class RouteTargetWebRoot
 {
     public static function assertSupported(AppInstance $instance): void
     {
-        $root = $instance->root ?? $instance->app->root;
+        self::assertSupportedRoot($instance->root ?? $instance->app->root);
+    }
 
+    public static function assertSupportedRoot(?string $root): void
+    {
         if (! is_string($root) || ! RelativeWebRoot::isValid($root)) {
             throw new ResourceOperationException(
                 errorCode: 'route.target_web_root_unsupported',
