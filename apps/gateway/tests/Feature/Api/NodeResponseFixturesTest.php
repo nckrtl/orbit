@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\Nodes\NodeConverger;
 use App\Domain\Nodes\NodeObservation;
 use App\Domain\Nodes\NodeProvisioningIdentity;
+use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
@@ -14,6 +15,7 @@ use App\Models\Node;
 use App\Models\NodeRole;
 use Orbit\Sdk\Requests\Nodes\AddNodeRequest;
 use Orbit\Sdk\Requests\Nodes\ListNodesRequest;
+use Orbit\Sdk\Requests\Nodes\RemoveNodeRoleRequest;
 use Orbit\Sdk\Requests\Nodes\ShowNodeRequest;
 use Tests\Support\FakeToolManagerMaterializer;
 
@@ -100,6 +102,43 @@ describe('node response fixtures', function (): void {
         ])->assertCreated();
 
         record_fixture($response, 'nodes/node-add/created', AddNodeRequest::class, 'POST /api/v1/nodes');
+    });
+
+    it('records a role removal that fails at a named step', function (): void {
+        app()->instance(RoleBaselineConverger::class, new class implements RoleBaselineConverger
+        {
+            public function converge(Node $node, NodeRole $assignment): void {}
+
+            public function remove(Node $node, NodeRole $assignment, bool $purgeData): void
+            {
+                throw new NodeRoleOperationException(
+                    step: 'host-firewall',
+                    errorCode: 'node_role.remove_failed',
+                    underlyingErrorCode: 'firewall.inactive',
+                    message: "UFW is inactive on node [{$node->name}].",
+                );
+            }
+
+            public function removeUnreachable(Node $node, NodeRole $assignment): void {}
+        });
+        $node = Node::query()->create([
+            'name' => 'app-dev',
+            'status' => LifecycleStatus::Active,
+            'platform' => 'linux',
+            'architecture' => 'x86_64',
+            'tld' => 'app-dev.orbit',
+            'public_ssh_host' => '94.237.40.75',
+            'user' => 'orbit',
+            'wireguard_ip' => '10.44.0.3',
+            'ssh_host_fingerprint' => 'SHA256:4dxvKOYfyTcqJHYoxamTSu9bYYI5KE3xYWQPCAmeUTo',
+        ]);
+        NodeRole::query()->create(['node_id' => $node->id, 'role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
+
+        $response = $this->deleteJson("/api/v1/nodes/{$node->id}/roles/app-dev", ['force' => true, 'purge_data' => false, 'offline' => false])
+            ->assertStatus(502)
+            ->assertJsonPath('error.details.step', 'remove:host-firewall');
+
+        record_fixture($response, 'nodes/node-role-remove/step-failed', RemoveNodeRoleRequest::class, 'DELETE /api/v1/nodes/{node}/roles/{role}');
     });
 
     it('records the node:add refusals the CLI must explain', function (): void {

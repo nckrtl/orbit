@@ -1143,6 +1143,8 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
         responses['409'] = error_response('The tasks extension is disabled (`tasks.disabled`) or the Task group is not settling (`tasks.not_settling`).')
     if body_schema is not None or stream:
         responses['422'] = error_response('The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`).')
+    if route['name'] in ('node:role:add', 'node:role:remove', 'node:role:relocate'):
+        responses['502'] = error_response('A role step failed on the Node (`node_role.convergence_failed` or `node_role.remove_failed`). `error.details.step` names the failed step.')
     if route['name'] == 'node:metrics':
         responses['409'] = error_response('No Node has the Metrics role (`metrics.assignment_missing`).')
         responses['422'] = error_response('The Node is not an active, WireGuard-managed Node (`node.metrics_unavailable`).')

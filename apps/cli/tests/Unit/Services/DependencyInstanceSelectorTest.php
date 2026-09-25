@@ -44,7 +44,8 @@ describe('dependency domain selector hook', function (): void {
 });
 
 it('canonicalizes the current directory through symlinked ancestors', function (): void {
-    $root = sys_get_temp_dir().'/orbit-directory-'.bin2hex(random_bytes(8));
+    // The temporary directory can itself sit behind a symbolic link, such as /var on macOS.
+    $root = realpath(sys_get_temp_dir()).'/orbit-directory-'.bin2hex(random_bytes(8));
     mkdir($root.'/physical/child', 0700, true);
     symlink($root.'/physical', $root.'/alias');
     $previous = getcwd();

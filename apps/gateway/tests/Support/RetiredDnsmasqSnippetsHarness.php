@@ -143,19 +143,19 @@ final class RetiredDnsmasqSnippetsHarness
               esac
             done
 
-            exec /usr/bin/install "${args[@]}"
+            exec {{host:install}} "${args[@]}"
             BASH);
         $this->writeShim('mv', <<<'BASH'
             #!/usr/bin/env bash
             set -euo pipefail
             printf 'mv %s\n' "$*" >> "${HARNESS_COMMAND_LOG}"
-            exec /usr/bin/mv "$@"
+            exec {{host:mv}} "$@"
             BASH);
     }
 
     private function writeShim(string $name, string $contents): void
     {
-        file_put_contents(filename: $this->root.'/bin/'.$name, data: $contents);
+        file_put_contents(filename: $this->root.'/bin/'.$name, data: HostBinary::expand($contents));
         chmod($this->root.'/bin/'.$name, permissions: 0o755);
     }
 
