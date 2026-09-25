@@ -202,7 +202,7 @@ final readonly class NodeCaddyPushHarness
                     *) args+=("$arg") ;;
                 esac
             done
-            exec /usr/bin/install "${args[@]}"
+            exec {{host:install}} "${args[@]}"
             BASH);
         $this->shim('chown', "#!/usr/bin/env bash\nexit 0\n");
         $this->shim('ip', <<<'BASH'
@@ -231,7 +231,7 @@ final readonly class NodeCaddyPushHarness
 
     private function shim(string $name, string $contents): void
     {
-        file_put_contents($this->root.'/bin/'.$name, $contents.PHP_EOL);
+        file_put_contents($this->root.'/bin/'.$name, HostBinary::expand($contents).PHP_EOL);
         chmod($this->root.'/bin/'.$name, 0o755);
     }
 }
