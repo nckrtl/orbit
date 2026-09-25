@@ -18,9 +18,6 @@ use Illuminate\Contracts\Cache\LockTimeoutException;
  */
 final class NodeRoleConvergeLock
 {
-    /** How long one role operation may hold the lock (NodeLocks::RequestSeconds). */
-    public const int LockSeconds = NodeLocks::RequestSeconds;
-
     /** @var array<string, array{lock: Lock, depth: positive-int}> */
     private array $held = [];
 
@@ -52,7 +49,7 @@ final class NodeRoleConvergeLock
             }
         }
 
-        $lock = $this->locks->lock($name, self::LockSeconds);
+        $lock = $this->locks->lock($name, $this->locks->operationSeconds());
 
         try {
             $lock->block($this->waitSeconds);

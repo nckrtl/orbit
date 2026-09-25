@@ -22,7 +22,6 @@ use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\AppInstance;
 use App\Models\Node;
 use Closure;
-use Illuminate\Cache\Lock as CacheLockBase;
 use Illuminate\Contracts\Cache\Lock;
 use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Support\Facades\Log;
@@ -229,7 +228,7 @@ final readonly class NodeAgentSshExecutor implements NodeAgentRuntime
      * Before each step that changes the Node or the record, the converge renews its lock and stops
      * when another converge took it over after it expired.
      */
-    private function convergeLocked(Lock $lock, Node $node, string $checksum, string $architecture, ?string $root, string $configuration, string $certificate, string $unit): void
+    private function convergeLocked(NodeLock $lock, Node $node, string $checksum, string $architecture, ?string $root, string $configuration, string $certificate, string $unit): void
     {
         // Only root may enter the directory: `install` writes a candidate with its default mode before it
         // applies the final one, so the directory keeps the secret's candidate from other users (ADR 0155).
@@ -275,9 +274,9 @@ final readonly class NodeAgentSshExecutor implements NodeAgentRuntime
      * Renews the Node's agent lock for another full term, or stops the converge when the lock expired
      * and another converge now holds it, so two converges never write the secret or its record together.
      */
-    private function holdLock(Lock $lock): void
+    private function holdLock(NodeLock $lock): void
     {
-        if (! $lock instanceof CacheLockBase || ! $lock->refresh()) {
+        if (! $lock->refresh()) {
             throw new ResourceOperationException('agent.converge_lock_lost', 'The Node agent converge lost its lock to another converge.', 409);
         }
     }
