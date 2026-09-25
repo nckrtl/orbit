@@ -113,7 +113,9 @@ Every site that is not public aborts a client outside the ranges it serves, righ
 | Router and workload sites on an Ingress Node | Private and shared address space (`private_ranges` and `100.64.0.0/10`) and the VPN subnet |
 | Router and workload sites on any other Node, and public Ingress sites | Every client |
 
-The guard covers two paths that the listener alone leaves open. Linux accepts a packet for the WireGuard address on any interface, so a LAN neighbour can route to it through the LAN address when the firewall admits HTTPS to any destination, as an Ingress firewall does. A port forward can send public traffic to the LAN address of an Ingress Node. The TLS handshake still completes before the abort, and Caddy can present a private site's certificate for its hostname on any listener. The certificate names only the private hostname.
+The guard covers two paths that the listener alone leaves open. Linux accepts a packet for the WireGuard address on any interface, so a LAN neighbour can route to it through the LAN address when the firewall admits HTTPS to any destination, as an Ingress firewall does. A port forward can send public traffic to the LAN address of an Ingress Node.
+
+The TLS handshake still completes before the abort. Caddy's certificate cache is shared across listeners. A client that names a private hostname in SNI on the public listener therefore completes TLS with that site's certificate. It then gets Caddy's empty `200` response, because no private site is on that listener.
 
 A public Ingress site and another site for the same host and port share the WireGuard address, so the build fails on them as a duplicate address.
 

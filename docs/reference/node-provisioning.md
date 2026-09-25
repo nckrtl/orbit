@@ -62,7 +62,7 @@ Each identity or architecture failure names the boundary that stopped the reques
 
 ## Role compatibility
 
-Some roles never share a Node. The Gateway refuses a conflicting role before it claims or converges anything: `node:add` with both roles, `node:role:add`, and `node:role:relocate` fail with `Role [ROLE] conflicts with assigned role [OTHER].`, or `requested role` when one request names both. `node:role:add` and `node:role:relocate` answer `validation.failed`. Doctor reports each assignment of an existing conflicting pair as `role.assignment_conflict`.
+Some roles never share a Node. The Gateway refuses a conflicting role before it claims or converges anything. `node:role:add` and `node:role:relocate` answer `validation.failed` with `Role [ROLE] conflicts with assigned role [OTHER].`. `node:add` answers `node.role_conflict`, with `Role [ROLE] conflicts with requested role [OTHER].` when one request names both roles of a conflicting pair. For `gateway` and `ingress` it fails earlier: `ingress` cannot be assigned during provisioning (`Role [ingress] cannot be assigned during provisioning.`), and `gateway` is already assigned to the Gateway Node (`Role [gateway] is already assigned to node [NODE].`). Doctor reports each assignment of an existing conflicting pair as `role.assignment_conflict`.
 
 | Role | Never shares a Node with |
 | --- | --- |
