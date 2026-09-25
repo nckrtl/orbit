@@ -85,6 +85,7 @@
               "reference/instance-setup",
               "reference/development-node-exclusions",
               "reference/instance-logs",
+              "reference/live-logs",
               "reference/instance-queue",
               "reference/instance-analytics-stats",
               "reference/instance-dependencies",
@@ -714,6 +715,7 @@
               "decisions/0150-keep-extension-commands-local-and-confirm-the-proxycli-fleet-stop",
               "decisions/0151-push-task-and-process-usage-changes-over-realtime",
               "decisions/0152-sample-successful-read-activity",
+              "decisions/0153-tail-instance-and-process-logs-live-through-the-node-agent",
               "decisions/0154-recover-the-gateway-agent-view-without-a-membership-change",
               "decisions/0155-authenticate-the-node-agent-with-a-per-node-secret"
             ]

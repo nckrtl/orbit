@@ -30,6 +30,7 @@ Placement commands create, adopt, inspect, and remove an Instance on one Node.
 | [`instance:show`](#orbit-instanceshow) | Show one Instance with its Route, source, and deploy steps. |
 | [`instance:transfer`](#orbit-instancetransfer) | Move a development Instance to another Node. |
 | [`instance:destroy`](#orbit-instancedestroy) | Remove an Instance and its owned Processes, Schedules, and Route. |
+| [`instance:logs`](#orbit-instancelogs) | Return the application log tail, or follow new lines. |
 
 Release commands prepare and operate a production Instance.
 
@@ -157,6 +158,30 @@ orbit instance:show <instance> [--json]
 | Argument | Required | Meaning |
 | --- | --- | --- |
 | `instance` | yes | Numeric Instance ID. |
+
+## orbit instance:logs
+
+Return the end of the Instance's application log, `storage/logs/laravel.log` or the newest `laravel-*.log`, or follow new lines as they are written. Stored environment values and credential-shaped data are redacted. [Instance logs](/reference/instance-logs) describes the file and the redaction.
+
+```bash
+orbit instance:logs <instance> [--lines=COUNT] [--follow] [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `instance` | yes | Numeric Instance ID. |
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--lines=COUNT` | `100` | Number of lines, from 1 through 1,000. With `--follow`, the number of earlier lines to print first. |
+| `--follow` | off | Keep printing new lines until Ctrl-C. |
+
+`--follow` works as it does for [`process:logs`](/cli/process#orbit-processlogs): the CLI opens a [live log stream](/reference/live-logs), and it polls the one-shot read every 5 seconds when the Gateway cannot open one. A production Instance log is always read over SSH: the CLI prints `Following over SSH; polling every 5 seconds.` and polls from the start. The JSON output has the same shapes, with reason `ssh_only` in the notice. Without `--follow`, `--json` returns `{ id, name, lines, logs, request_id }`.
+
+```bash
+orbit instance:logs 12 --lines=50
+orbit instance:logs 12 --follow
+```
 
 ## orbit instance:destroy
 

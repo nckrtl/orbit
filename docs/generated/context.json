@@ -374,6 +374,7 @@
                 "Gateway",
                 "Instance",
                 "Node",
+                "Node agent",
                 "Process",
                 "Project",
                 "Route",
@@ -3939,6 +3940,36 @@
             ]
         },
         {
+            "path": "docs/decisions/0153-tail-instance-and-process-logs-live-through-the-node-agent.md",
+            "title": "ADR 0153: Tail Instance and Process logs live through the Node agent",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/gateway",
+                "apps/web",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Database",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Node agent",
+                "Process",
+                "Route",
+                "Task"
+            ],
+            "governing_adrs": [
+                "0128",
+                "0129",
+                "0148",
+                "0151",
+                "0153",
+                "0155"
+            ]
+        },
+        {
             "path": "docs/decisions/0154-recover-the-gateway-agent-view-without-a-membership-change.md",
             "title": "ADR 0154: Recover the Gateway agent view without a membership change",
             "kind": "decision",
@@ -4170,6 +4201,7 @@
                 "0150",
                 "0151",
                 "0152",
+                "0153",
                 "0154",
                 "0155"
             ]
@@ -4758,7 +4790,8 @@
             "governing_adrs": [
                 "0129",
                 "0148",
-                "0151"
+                "0151",
+                "0153"
             ]
         },
         {
@@ -4960,6 +4993,7 @@
                 "Gateway",
                 "Instance",
                 "Node",
+                "Node agent",
                 "Process",
                 "Project"
             ],
@@ -4998,6 +5032,23 @@
             ],
             "governing_adrs": [
                 "0115"
+            ]
+        },
+        {
+            "path": "docs/reference/live-logs.md",
+            "title": "Live logs",
+            "kind": "reference",
+            "components": [],
+            "concepts": [
+                "Gateway",
+                "Instance",
+                "Node",
+                "Node agent",
+                "Process",
+                "Route"
+            ],
+            "governing_adrs": [
+                "0153"
             ]
         },
         {
@@ -5083,6 +5134,7 @@
                 "0130",
                 "0148",
                 "0151",
+                "0153",
                 "0154",
                 "0155"
             ]

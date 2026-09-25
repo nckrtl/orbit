@@ -821,6 +821,10 @@ final readonly class TaskScheduler
                 $skipped[] = $reserved->id;
 
                 continue;
+            } catch (Throwable $exception) {
+                // An unexpected provisioning error must not strand the group in reserved. The log keeps the detail.
+                report($exception);
+                $instance = null;
             }
 
             if ($instance instanceof AppInstance) {
