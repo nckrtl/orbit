@@ -41,6 +41,25 @@ A Node without an agent, such as an operator client, always uses the last row. W
 
 CPU and memory still come from the Process list, which the web app polls every 15 seconds because no event carries them. The Gateway answers that list from its [view of the agents](/reference/node-agent#gateway-view) when the view is fresh, so the poll causes no SSH even when Prometheus is down.
 
+## Polling
+
+Realtime events keep the fleet lists, the deployment history, and the annotation list current. While the page is subscribed to `orbit`, those views do not poll. After a reconnect, the page reloads everything once, because events sent while the socket was down are lost.
+
+When realtime is down, or the Gateway offers none, those views poll with a backoff. The first poll comes 30 seconds after the loss. After that, the delay grows with the time realtime has been down, so it doubles each time until it reaches 5 minutes. A reconnect resets it. The footer shows `live updates paused` next to the Gateway name while the page polls. Clicking it reloads every view at once and starts the backoff again.
+
+A hidden tab never polls. When the tab is visible again, it reloads the views whose data is older than 30 seconds.
+
+Some views have no event and poll on their own clock while the tab is visible:
+
+| View | Interval |
+| --- | --- |
+| Process list, for CPU and memory | 15 seconds |
+| Task board, agents, and comments | 10 seconds |
+| Instance logs, queue, and analytics | 10 seconds |
+| Quota (`proxycli`) status and provider pools | 60 seconds |
+
+The firewall list reads every Node's rules with one request, `GET /api/v1/firewall-rules`. It returns only the Nodes that the browser's Node can reach. The CLI keeps the per-Node list.
+
 ## Web directory
 
 The web directory is `/home/orbit/web` unless `ORBIT_GATEWAY_WEB` sets another path under `/home/orbit/`. It belongs to the `orbit` user and the `caddy` group.

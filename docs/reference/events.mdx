@@ -144,9 +144,18 @@ A Route that Orbit creates implicitly while provisioning an Instance does not em
 
 A deploy step has no numeric id in its API shape, so `id` carries the step's name instead. `data` matches the deploy-step list and show endpoints exactly, so it does not include the owning Instance's id.
 
+### Deployment (`deployment`)
+
+| Type | Fires when | Data |
+| --- | --- | --- |
+| `deployment.created` | An `instance:deploy` or `instance:rollback` run starts and records its `running` row. | `AppInstanceDeploymentData` |
+| `deployment.updated` | That run finishes, whether it succeeded or failed. | `AppInstanceDeploymentData` |
+
+`data` matches one row of `GET /api/v1/instances/{instance}/deployments`, so it carries `app_instance_id`. It never carries the run's output events; a client fetches `GET /api/v1/deployments/{deployment}` for those. The Gateway keeps the 50 newest rows per Instance and removes older rows without an event, so a client that shows the history refetches it after `deployment.updated`.
+
 ## Limits
 
-An event broadcasts only when its triggering action returns successfully. An operation that fails after it already wrote failure evidence onto a record, such as a `failed_step` or `error_code`, does not broadcast that write: the action throws before it reaches the broadcast call, and the HTTP response already reports the failure.
+An event broadcasts only when its triggering action returns successfully. Deployment events are the exception: a failed run still records its outcome, so it still broadcasts `deployment.updated`. An operation that fails after it already wrote failure evidence onto a record, such as a `failed_step` or `error_code`, does not broadcast that write: the action throws before it reaches the broadcast call, and the HTTP response already reports the failure.
 
 An idempotent create call, such as adding a Process, Schedule, or firewall rule that already exists with identical configuration, returns the existing record without change and does not broadcast. Only a call that creates a genuinely new record broadcasts a `created` event.
 

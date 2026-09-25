@@ -1,8 +1,7 @@
 import { queryOptions, useQuery } from "@tanstack/react-query";
-import { useLiveness } from "../realtime/liveness";
+import { useFallbackPoll } from "../realtime/liveness";
 import { useAgentProcessStatuses } from "../realtime/agent-processes";
 import { get } from "./client";
-import { queryClient } from "./queryClient";
 import type {
     Database,
     DatabaseUser,
@@ -25,8 +24,11 @@ import type {
     TasksStatus,
 } from "./types";
 
-/** How often the lists reload while realtime is down. */
+/** How often views without record-change events reload, such as the task board and log panes. */
 export const POLL_SECONDS = 10;
+
+/** How often the proxycli quota reloads. The collector refreshes its snapshot about once a minute. */
+export const PROXYCLI_POLL_SECONDS = 60;
 
 const nodesQuery = queryOptions({
     queryKey: ["nodes"],
@@ -55,19 +57,10 @@ export const lists = {
         queryKey: ["databases"],
         queryFn: () => get<Database[]>("/api/v1/database-connections"),
     }),
-    // Firewall rules are scoped per Node, so the fleet's list is one request per Node.
+    // One request for every Node's rules; the per-Node list is for the CLI.
     firewall: queryOptions({
         queryKey: ["firewall"],
-        queryFn: async () => {
-            const nodes = await queryClient.ensureQueryData(nodesQuery);
-            const rules = await Promise.all(
-                nodes.map((node) =>
-                    get<FirewallRule[]>(`/api/v1/nodes/${node.id}/firewall-rules`).catch(() => []),
-                ),
-            );
-
-            return rules.flat();
-        },
+        queryFn: () => get<FirewallRule[]>("/api/v1/firewall-rules"),
     }),
 };
 
@@ -86,16 +79,15 @@ export type Fleet = {
 
 const EMPTY: never[] = [];
 
-/** Every fleet-wide list. Realtime events patch these caches; they poll only while it is down. */
 /** Projects in alphabetical order of their name, whatever order the Gateway lists them in. */
 const byName = (projects: Project[]): Project[] =>
     [...projects].sort((a, b) =>
         (a.name ?? "").localeCompare(b.name ?? "", undefined, { sensitivity: "base" }),
     );
 
+/** Every fleet-wide list. Realtime events patch these caches; they poll only while it is down, with a backoff. */
 export function useFleet(): Fleet {
-    const live = useLiveness() === "live";
-    const refetchInterval = live ? false : POLL_SECONDS * 1000;
+    const refetchInterval = useFallbackPoll();
     const nodes = useQuery({ ...lists.nodes, refetchInterval });
     const projects = useQuery({ ...lists.projects, refetchInterval, select: byName });
     const instances = useQuery({ ...lists.instances, refetchInterval });
@@ -119,11 +111,11 @@ export function useFleet(): Fleet {
     };
 }
 
+/** An Instance's deployment history. `deployment.*` events refresh it; pass `useFallbackPoll()` as its interval. */
 export const deploymentsQuery = (instanceId: number) =>
     queryOptions({
         queryKey: ["deployments", instanceId],
         queryFn: () => get<Deployment[]>(`/api/v1/instances/${instanceId}/deployments`),
-        refetchInterval: 15_000,
         retry: false,
     });
 
@@ -194,7 +186,7 @@ const disabledProxyCli = (): ProxyCliStatus => ({
 /** Fleet proxycli status. A disabled or unreachable feature hides the Quota section. */
 export const proxycliStatusQuery = queryOptions({
     queryKey: ["proxycli-status"],
-    refetchInterval: POLL_SECONDS * 1000,
+    refetchInterval: PROXYCLI_POLL_SECONDS * 1000,
     queryFn: () => get<ProxyCliStatus>("/api/v1/proxycli").catch(() => disabledProxyCli()),
     retry: false,
 });
@@ -211,7 +203,7 @@ export const tasksStatusQuery = queryOptions({
 export const proxycliProvidersQuery = queryOptions({
     queryKey: ["proxycli-providers"],
     queryFn: () => get<QuotaProvider[]>("/api/v1/proxycli/providers"),
-    refetchInterval: POLL_SECONDS * 1000,
+    refetchInterval: PROXYCLI_POLL_SECONDS * 1000,
     retry: false,
 });
 
@@ -220,7 +212,7 @@ export const proxycliProviderQuery = (provider: string) =>
         queryKey: ["proxycli-providers", provider],
         queryFn: () =>
             get<QuotaProvider>(`/api/v1/proxycli/providers/${encodeURIComponent(provider)}`),
-        refetchInterval: POLL_SECONDS * 1000,
+        refetchInterval: PROXYCLI_POLL_SECONDS * 1000,
         retry: false,
     });
 

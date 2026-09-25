@@ -1,4 +1,5 @@
 import { subscribeAnnotationUpdates } from "./realtime/annotations";
+import { isLive } from "./realtime/liveness";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider } from "@tanstack/react-router";
 import { StrictMode } from "react";
@@ -17,7 +18,11 @@ if (import.meta.env.VITE_ORBIT_DEMO) {
 // Do not createRoot/teardown from AnnotationChrome (StrictMode double-mount races).
 const annotation = mountAnnotation({
     serviceUrl: import.meta.env.VITE_ANNOTATION_SERVICE_URL,
-    realtime: { configUrl: "/api/v1/realtime", subscribe: subscribeAnnotationUpdates },
+    realtime: {
+        configUrl: "/api/v1/realtime",
+        subscribe: subscribeAnnotationUpdates,
+        live: isLive,
+    },
     thread: {
         id: import.meta.env.VITE_ANNOTATION_THREAD_ID,
         discoveryUrl: import.meta.env.DEV ? "/__annotate/thread" : undefined,

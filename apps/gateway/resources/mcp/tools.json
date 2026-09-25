@@ -2028,6 +2028,21 @@
       }
     },
     {
+      "name": "firewall-fleet-list",
+      "title": "List firewall rules on every Node",
+      "description": "Returns the operator firewall rules of every Node the caller can reach, in one response, ordered by Node and name. The web app uses it for the fleet list instead of one request per Node. The per-Node list stays for the CLI. The list does not SSH.",
+      "method": "GET",
+      "path": "/api/v1/firewall-rules",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
       "name": "firewall-list",
       "title": "List firewall rules",
       "description": "List named firewall rules for one node.",

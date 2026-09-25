@@ -55,6 +55,7 @@ import {
 } from "../fleet/fleet";
 import { firewallLineTone, firewallPort, firewallSource } from "../fleet/firewall";
 import { useNodeMetrics } from "../metrics/grafana";
+import { useFallbackPoll } from "../realtime/liveness";
 import { Bar } from "../ui/Bar";
 import { Frame, Note } from "../ui/Frame";
 import { useGo } from "../ui/go";
@@ -493,7 +494,10 @@ function InstancePage({ fleet, instance }: { fleet: Fleet; instance: Instance })
 
 function InstanceOverview({ fleet, instance }: { fleet: Fleet; instance: Instance }) {
     const go = useGo();
-    const deployments = useQuery(deploymentsQuery(instance.id));
+    const deployments = useQuery({
+        ...deploymentsQuery(instance.id),
+        refetchInterval: useFallbackPoll(),
+    });
     const logs = useQuery(instanceLogsQuery(instance.id));
     const hasDeployments = (deployments.data?.length ?? 0) > 0;
     const analytics = useQuery(instanceAnalyticsQuery(instance.id)).data;
@@ -870,7 +874,10 @@ export function RecordPage() {
 /** `/instances/$id/deployments/$deploymentId`: one deployment's properties and its recorded output. */
 export function DeploymentPage() {
     const { id, deploymentId } = useParams({ from: "/instances/$id/deployments/$deploymentId" });
-    const deployments = useQuery(deploymentsQuery(Number(id)));
+    const deployments = useQuery({
+        ...deploymentsQuery(Number(id)),
+        refetchInterval: useFallbackPoll(),
+    });
     const log = useQuery(deploymentLogQuery(Number(deploymentId)));
     const deployment = deployments.data?.find((candidate) => String(candidate.id) === deploymentId);
 

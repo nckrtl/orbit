@@ -4869,6 +4869,60 @@
         ]
       }
     },
+    "/api/v1/firewall-rules": {
+      "get": {
+        "operationId": "firewall-fleet-list",
+        "summary": "List firewall rules on every Node",
+        "tags": [
+          "Firewall"
+        ],
+        "description": "Returns the operator firewall rules of every Node the caller can reach, in one response, ordered by Node and name. The web app uses it for the fleet list instead of one request per Node. The per-Node list stays for the CLI. The list does not SSH.",
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/FirewallRule"
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS \"https://gateway.orbit/api/v1/firewall-rules\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+          }
+        ]
+      }
+    },
     "/api/v1/gateway/status": {
       "get": {
         "operationId": "gateway-status",
@@ -22698,6 +22752,56 @@
           }
         }
       },
+      "FirewallRule": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "node_id": {
+            "type": "integer"
+          },
+          "node": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "action": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "protocol": {
+            "type": "string"
+          },
+          "port": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "backend_status": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "failed_step": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "error_code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
       "GatewayStatus": {
         "type": "object",
         "properties": {
@@ -23728,56 +23832,6 @@
           },
           "already_exists": {
             "type": "boolean"
-          }
-        }
-      },
-      "FirewallRule": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "integer"
-          },
-          "node_id": {
-            "type": "integer"
-          },
-          "node": {
-            "type": "string"
-          },
-          "name": {
-            "type": "string"
-          },
-          "action": {
-            "type": "string"
-          },
-          "source": {
-            "type": "string"
-          },
-          "protocol": {
-            "type": "string"
-          },
-          "port": {
-            "type": "string"
-          },
-          "status": {
-            "type": "string"
-          },
-          "backend_status": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "failed_step": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "error_code": {
-            "type": [
-              "string",
-              "null"
-            ]
           }
         }
       },

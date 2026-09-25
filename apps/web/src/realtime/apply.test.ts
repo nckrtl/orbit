@@ -57,11 +57,12 @@ describe("applyEvent", () => {
     it("reloads instances for a deploy step and deployment history for a deployment", () => {
         const invalidate = vi.spyOn(client, "invalidateQueries");
         applyEvent(client, event("deploy_step.created", { id: 1 }));
-        applyEvent(client, event("deployment.updated", { id: 1 }));
+        applyEvent(client, event("deployment.updated", { id: 1, app_instance_id: 7 }));
 
         expect(invalidate.mock.calls.map(([filters]) => filters?.queryKey)).toEqual([
             ["instances"],
-            ["deployments"],
+            ["deployments", 7],
+            ["deployment-log", 1],
         ]);
     });
 });

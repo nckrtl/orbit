@@ -36,6 +36,8 @@ describe('RecordEventType', function (): void {
             'deploy_step.created',
             'deploy_step.updated',
             'deploy_step.deleted',
+            'deployment.created',
+            'deployment.updated',
         ]);
     });
 

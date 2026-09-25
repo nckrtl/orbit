@@ -52,7 +52,13 @@ export function applyEvent(client: QueryClient, event: RealtimeEvent): void {
         void client.invalidateQueries({ queryKey: ["instances"] });
     }
 
+    // The event carries the row; the history and the open log reload from the Gateway.
     if (family === "deployment") {
-        void client.invalidateQueries({ queryKey: ["deployments"] });
+        const instanceId = event.data.app_instance_id;
+        void client.invalidateQueries({
+            queryKey:
+                typeof instanceId === "number" ? ["deployments", instanceId] : ["deployments"],
+        });
+        void client.invalidateQueries({ queryKey: ["deployment-log", event.id] });
     }
 }
