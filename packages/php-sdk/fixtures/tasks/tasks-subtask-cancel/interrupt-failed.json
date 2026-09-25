@@ -1,0 +1,13 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\Tasks\\CancelSubtaskRequest",
+    "route": "POST /api/v1/task-groups/{group}/tasks/{task}/cancel",
+    "status": 502,
+    "body": {
+        "error": {
+            "code": "tasks.subtask_interrupt_failed",
+            "message": "The subtask remains running because its implementer or check could not be stopped: The interrupt request failed.",
+            "details": {}
+        }
+    }
+}
