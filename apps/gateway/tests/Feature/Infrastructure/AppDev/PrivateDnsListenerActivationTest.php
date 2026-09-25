@@ -203,6 +203,33 @@ it('installs a new release and restarts the listener behind its socket when the 
     }
 });
 
+it('reinstalls and restarts a release whose files no longer match its id', function (): void {
+    $harness = new PrivateDnsPublishHarness;
+    orb307_published_cluster();
+    $harness->putVpnFragment("# Managed by Orbit.\nlisten-address=127.0.0.55\nbind-interfaces\n");
+    $release = PrivateDnsListenerRelease::fromGateway();
+    $installed = $harness->releasesPath().'/'.$release->id().'/app/Infrastructure/AppDev/PrivateDnsListenerProcess.php';
+
+    try {
+        $manager = $harness->listenerManager();
+        $manager->converge();
+        file_put_contents($installed, "// damaged\n", FILE_APPEND);
+        $harness->clearServiceLog();
+        $manager->converge();
+        $calls = $harness->serviceCalls();
+        $harness->clearServiceLog();
+        $manager->converge();
+
+        expect(file_get_contents($installed))->toBe($release->files()['app/Infrastructure/AppDev/PrivateDnsListenerProcess.php'])
+            ->and($calls)->toContain('restart orbit-private-dns.service')
+            ->and($harness->serviceCalls())->not->toContain('restart orbit-private-dns.service')
+            ->and(file_get_contents($harness->releasesPath().'/'.$release->id().'/.manifest'))
+            ->toContain(hash('sha256', $release->files()['serve.php']).'  serve.php');
+    } finally {
+        $harness->cleanup();
+    }
+});
+
 it('restores the previous units and catalog when a stale listener fails to restart', function (): void {
     $harness = new PrivateDnsPublishHarness;
     orb307_published_cluster();

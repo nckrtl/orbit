@@ -229,6 +229,7 @@ final readonly class DnsmasqPrivateDnsManager implements PrivateDnsManager
         $unitEncoded = base64_encode($unit);
         $socketEncoded = base64_encode($socket);
         $releaseFiles = $this->releaseFiles($release);
+        $manifestEncoded = base64_encode($this->releaseManifest($release));
         $php = escapeshellarg($this->phpBinary);
         $loaded = FilePrivateDnsCatalogStore::loadedPath($catalogPath);
         $unitDirectory = $this->unitDirectory;
@@ -262,7 +263,7 @@ final readonly class DnsmasqPrivateDnsManager implements PrivateDnsManager
             had_unit=0
             had_socket=0
             had_vpn=0
-            trap 'rm -rf -- "\$validation" "\$release_candidate"; rm -f -- "\$candidate" "\$backup" "\$catalog_candidate" "\$catalog_backup" "\$unit_candidate" "\$socket_candidate" "\$vpn_candidate" "\$unit_backup" "\$socket_backup" "\$vpn_backup"' EXIT
+            trap 'rm -rf -- "\$validation" "\$release_candidate" "\$release_candidate.replaced"; rm -f -- "\$candidate" "\$backup" "\$catalog_candidate" "\$catalog_backup" "\$unit_candidate" "\$socket_candidate" "\$vpn_candidate" "\$unit_backup" "\$socket_backup" "\$vpn_backup"' EXIT
             if [ -f "\$unit_managed" ]; then
                 cp --preserve=mode,ownership -- "\$unit_managed" "\$unit_backup"
                 had_unit=1
@@ -277,15 +278,24 @@ final readonly class DnsmasqPrivateDnsManager implements PrivateDnsManager
                 printf '%s' '{$transformEncoded}' | base64 --decode > "\$validation/transform-vpn.py"
                 python3 "\$validation/transform-vpn.py" "\$vpn_managed" "\$validation/fragments/{$this->vpnFragmentFile}"
             fi
-            # The release is immutable: its id is the digest of its files, so an installed id is complete.
-            if [ ! -f "\$release_dir/serve.php" ]; then
+            # An installed release must match the manifest of its id file by file; anything else is reinstalled.
+            printf '%s' '{$manifestEncoded}' | base64 --decode > "\$validation/release.manifest"
+            release_installed=0
+            if ! cmp -s -- "\$validation/release.manifest" "\$release_dir/.manifest" \
+                || ! (cd -- "\$release_dir" && sha256sum -c --quiet .manifest) > /dev/null 2>&1; then
                 install -d -m 0755 -- "\$release_root"
                 rm -rf -- "\$release_candidate"
                 install -d -m 0755 -- "\$release_candidate"
             {$releaseFiles}
+                install -m 0644 -- "\$validation/release.manifest" "\$release_candidate/.manifest"
+                (cd -- "\$release_candidate" && sha256sum -c --quiet .manifest)
                 {$php} "\$release_candidate/serve.php" --self-test
-                rm -rf -- "\$release_dir"
+                if [ -e "\$release_dir" ]; then
+                    mv -T -- "\$release_dir" "\$release_candidate.replaced"
+                fi
                 mv -T -- "\$release_candidate" "\$release_dir"
+                rm -rf -- "\$release_candidate.replaced"
+                release_installed=1
             fi
             printf '%s' '{$unitEncoded}' | base64 --decode > "\$validation/{$unitName}"
             printf '%s' '{$socketEncoded}' | base64 --decode > "\$validation/{$socketName}"
@@ -422,7 +432,7 @@ final readonly class DnsmasqPrivateDnsManager implements PrivateDnsManager
                     systemctl restart {$unitName} || true
                 fi
             }
-            if [ "\$records_changed" = 0 ] && [ "\$catalog_changed" = 0 ] && [ "\$vpn_changed" = 0 ] && [ "\$unit_changed" = 0 ] && [ "\$socket_changed" = 0 ]; then
+            if [ "\$records_changed" = 0 ] && [ "\$catalog_changed" = 0 ] && [ "\$vpn_changed" = 0 ] && [ "\$unit_changed" = 0 ] && [ "\$socket_changed" = 0 ] && [ "\$release_installed" = 0 ]; then
                 if systemctl is-active --quiet dnsmasq && systemctl is-active --quiet {$socketName} && systemctl is-active --quiet {$unitName} && php_owns_vpn_dns && listener_confirms_catalog 0; then
                     exit 0
                 fi
@@ -458,7 +468,7 @@ final readonly class DnsmasqPrivateDnsManager implements PrivateDnsManager
                     restore_listener
                     exit 1
                 fi
-            elif [ "\$unit_changed" = 1 ] || ! listener_running; then
+            elif [ "\$unit_changed" = 1 ] || [ "\$release_installed" = 1 ] || ! listener_running; then
                 listener_started=1
                 rm -f -- "\$catalog_loaded"
                 if ! systemctl enable {$unitName} || ! systemctl restart {$unitName}; then
@@ -502,6 +512,19 @@ final readonly class DnsmasqPrivateDnsManager implements PrivateDnsManager
                 fi
             done
             BASH;
+    }
+
+    /**
+     * `sha256sum -c` input for the release files.
+     */
+    private function releaseManifest(PrivateDnsListenerRelease $release): string
+    {
+        $manifest = '';
+        foreach ($release->files() as $path => $contents) {
+            $manifest .= hash('sha256', $contents).'  '.$path."\n";
+        }
+
+        return $manifest;
     }
 
     /**

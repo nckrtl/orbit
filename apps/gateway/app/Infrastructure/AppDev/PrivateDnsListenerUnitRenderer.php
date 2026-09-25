@@ -71,7 +71,8 @@ final readonly class PrivateDnsListenerUnitRenderer
 
     /**
      * FreeBind lets the socket bind the WireGuard address before the tunnel is up and keep it while the tunnel
-     * restarts.
+     * restarts. The socket must not wait for the tunnel: sockets start before `basic.target`, and
+     * `wg-quick@orbit.service` starts after it, so that ordering would form a boot cycle.
      */
     public function renderSocket(string $listenAddress, int $port): string
     {
@@ -80,8 +81,6 @@ final readonly class PrivateDnsListenerUnitRenderer
         return implode("\n", [
             '[Unit]',
             'Description=Orbit private DNS sockets',
-            'After=wg-quick@orbit.service',
-            'Wants=wg-quick@orbit.service',
             '',
             '[Socket]',
             'ListenDatagram='.$address,

@@ -2,15 +2,16 @@
 
 declare(strict_types=1);
 
-namespace App\Infrastructure\AppDev;
+namespace Tests\Support;
 
 use App\Domain\AppDev\DnsRequester;
 use App\Domain\AppDev\PrivateDnsRequesterResolver;
+use App\Infrastructure\AppDev\DnsAddress;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\Node;
 
 /**
- * Resolves a requester from the active Nodes in the Gateway database.
+ * Resolves a requester from the active Nodes in the Gateway database, for handler tests without a catalog.
  */
 final readonly class RegisteredNodeDnsRequesterResolver implements PrivateDnsRequesterResolver
 {

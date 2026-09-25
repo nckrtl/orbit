@@ -11,7 +11,7 @@ use App\Infrastructure\AppDev\PrivateDnsAnswerCatalog;
 use App\Infrastructure\AppDev\PrivateDnsMessageCodec;
 use App\Infrastructure\AppDev\PrivateDnsRequestHandler;
 use App\Infrastructure\AppDev\PrivateDnsTransportServer;
-use App\Infrastructure\AppDev\RegisteredNodeDnsRequesterResolver;
+use Tests\Support\RegisteredNodeDnsRequesterResolver;
 use App\Infrastructure\AppDev\SocketPrivateDnsUpstream;
 use App\Models\Node;
 

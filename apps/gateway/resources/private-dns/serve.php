@@ -7,7 +7,7 @@ declare(strict_types=1);
  * /var/lib/orbit/private-dns/releases/<id>/ on the Node that holds `vpn`. It needs no Composer autoloader. ADR 0149.
  *
  * serve.php --listen=ADDRESS --port=53 --catalog=PATH --upstream=HOST:PORT
- * serve.php --self-test   loads every class in the release and exits 0
+ * serve.php --self-test   checks the PHP extensions, loads every class in the release, and exits 0
  */
 
 spl_autoload_register(static function (string $class): void {
@@ -24,6 +24,14 @@ spl_autoload_register(static function (string $class): void {
 $arguments = array_slice($argv, 1);
 
 if ($arguments === ['--self-test']) {
+    // The listener adopts systemd's sockets with ext-sockets and stops gracefully with ext-pcntl.
+    foreach (['sockets', 'pcntl'] as $extension) {
+        if (! extension_loaded($extension)) {
+            fwrite(STDERR, "Missing PHP extension {$extension}.".PHP_EOL);
+            exit(1);
+        }
+    }
+
     $files = new RecursiveIteratorIterator(new RecursiveDirectoryIterator(__DIR__.'/app', FilesystemIterator::SKIP_DOTS));
     foreach ($files as $file) {
         $class = 'App\\'.str_replace('/', '\\', substr($file->getPathname(), strlen(__DIR__.'/app/'), -4));

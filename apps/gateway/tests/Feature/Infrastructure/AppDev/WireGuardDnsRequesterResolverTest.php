@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\AppDev\DnsRequesterIdentity;
 use App\Domain\Shared\LifecycleStatus;
-use App\Infrastructure\AppDev\RegisteredNodeDnsRequesterResolver;
+use Tests\Support\RegisteredNodeDnsRequesterResolver;
 use App\Infrastructure\AppDev\WireGuardDnsRequesterResolver;
 use App\Models\Node;
 

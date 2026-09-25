@@ -11,7 +11,7 @@ use App\Infrastructure\AppDev\InMemoryPrivateDnsAnswerCache;
 use App\Infrastructure\AppDev\PrivateDnsAnswerCatalog;
 use App\Infrastructure\AppDev\PrivateDnsMessageCodec;
 use App\Infrastructure\AppDev\PrivateDnsRequestHandler;
-use App\Infrastructure\AppDev\RegisteredNodeDnsRequesterResolver;
+use Tests\Support\RegisteredNodeDnsRequesterResolver;
 use App\Models\Node;
 
 it('selects configured answers from the transport source and ignores DNS-content identity', function (): void {

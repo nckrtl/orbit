@@ -35,6 +35,9 @@ it('renders a socket unit that holds the UDP and TCP address across listener res
         ->toContain('FreeBind=yes')
         ->toContain('Service=orbit-private-dns.service')
         ->toContain('WantedBy=sockets.target')
+        ->not->toContain('wg-quick')
+        ->not->toContain('After=')
+        ->not->toContain('DefaultDependencies=no')
         ->and(new PrivateDnsListenerUnitRenderer()->socketPath())
         ->toBe('/etc/systemd/system/orbit-private-dns.socket');
 });
