@@ -28,7 +28,9 @@ return [
         string: env(key: 'ORBIT_APP_DEV_DOMAIN', default: 'orbit'),
         characters: '.',
     ),
-    'command_timeout' => 900.0,
+    // PHP-FPM and Caddy end a Gateway request after 600 seconds. The command deadline ends remote
+    // work 30 seconds earlier, so a slow command fails with an error and records its Activity.
+    'command_timeout' => 570.0,
     'websocket' => [
         'repository' => env(key: 'ORBIT_WEBSOCKET_REPOSITORY', default: 'https://github.com/nckrtl/orbit-reverb.git'),
         'ref' => env(key: 'ORBIT_WEBSOCKET_REF', default: 'main'),

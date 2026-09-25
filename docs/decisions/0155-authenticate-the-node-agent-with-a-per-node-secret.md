@@ -45,6 +45,10 @@ The Gateway owns the secret, its hash, and the check. The agent owns reading the
 - Every agent converge makes sure the Node has an agent secret in `/etc/orbit/agent/secret`, owned by `root:root` with mode `0600`. The converge also sets `/etc/orbit/agent` to `root:root` mode `0700`, because Ubuntu's `install` writes a candidate file with mode `0644` and applies `0600` only after the contents are written. The secret is 32 random bytes from the Gateway's CSPRNG, written as 64 lowercase hexadecimal characters.
 - The Gateway writes the file over SSH with the secret on standard input, never in a command's arguments. It stores only the SHA-256 hash of the secret in the Node record, and never logs or returns the secret or the hash.
 - A converge keeps the secret while the file's SHA-256 hash equals the stored hash. It writes a new secret when the file is missing or differs, or when the Gateway holds no hash. A new secret restarts the agent. There is no scheduled rotation. Removing a Node deletes the file with `/etc/orbit/agent`, and a new Node record starts without a hash.
+- The converge writes the secret file first, then installs the binary and every other file, and restarts the agent last. An agent older than 0.3.0 ignores the file, and the running agent reads its secret only at start, so a new file changes nothing before the restart. A 0.3.0 binary on disk always finds a secret, even when the converge stops right after the swap.
+- The converge stores a new hash only after the restart succeeded, both when it ends an exemption and when it replaces an older hash. Every earlier failure leaves the running agent with a secret the Gateway accepts, and leaves the file different from the stored hash. Doctor then reports `mismatch`, and the next converge writes a new secret and restarts the agent. Storing a replacement hash before the restart would refuse the running agent when the restart command fails, with a file that matches the record, so Doctor would report nothing and no converge would repair it.
+- A converge that installs an agent older than 0.3.0 sets the exemption right before it swaps the binary, and again before the restart. The exemption accepts both the agent that stops and the agent that starts, also when the older binary starts after a converge that failed past the swap.
+- One agent converge runs per Node at a time, under a lock in a file cache store under `ORBIT_HOME` that the Gateway pins whatever `CACHE_STORE` says. A second converge waits up to 2 minutes and then fails with `agent.converge_busy`. The lock expires after 4 minutes, so a converge that dies without releasing it, such as a PHP-FPM worker killed at its 600-second request limit, blocks the Node's agent converges for at most 4 minutes. A running converge renews the lock before each step that changes the Node or the record, and stops with `agent.converge_lock_lost` when another converge took it over after it expired. The binary download is bounded to 20 seconds to connect and 120 seconds in total, so one step fits inside the lock's term. Without the lock, two converges of one Node each write a secret, and one of them can store the other one's hash.
 - The agent reads the file at start and exits with an error when it is missing or malformed. It sends `Authorization: Bearer {secret}` on every Gateway request, over the TLS connection that already verifies `gateway.orbit` against the Orbit CA.
 
 ### The check
@@ -65,14 +69,14 @@ The Gateway compares the hashes in constant time.
 Agent 0.3.0 is the first release that sends the secret. The Gateway pins 0.2.0 until 0.3.0 is released, so the rollout must not refuse the agents that run today.
 
 - The Node record gains `agent_secret_exempt`. The migration sets it for every existing Node, because none of them runs an agent that sends a secret.
-- A converge that installs an agent older than 0.3.0 sets the exemption and clears the hash. A converge that installs 0.3.0 or a newer release writes the secret, stores its hash, and clears the exemption.
+- A converge that installs an agent older than 0.3.0 sets the exemption and clears the hash. A converge that installs 0.3.0 or a newer release writes the secret, and after the agent restarted, stores its hash and clears the exemption.
 - An exempt Node without a stored hash is accepted without a secret, as today. Every other Node must send its secret.
 
 Once the pin reaches 0.3.0, each converge moves one Node out of the exemption. A new Node is never exempt, because the Gateway converges its agent with the pinned release. The exemption ends for the whole fleet when every Node has converged once with 0.3.0 or a newer release. After that, a cleanup change removes the column and its branch.
 
 ### Doctor
 
-Doctor reports `node.agent_secret_mismatch` in the `node` family for an eligible, non-exempt Node that has an agent binary, when its secret file is missing (`missing`) or its hash differs from the stored one (`mismatch`). It reads only the file's SHA-256 hash with `sudo sha256sum`, within Doctor's existing 30-second Node inspection. The secret and both hashes stay out of the report.
+Doctor reports `node.agent_secret_mismatch` in the `node` family for an eligible, non-exempt Node that has an agent binary, when its secret file is missing (`missing`) or its hash differs from the stored one (`mismatch`). Once the pinned agent sends a secret, it also reports an exempt Node as `exempt`, so the end of the rollout is visible. While the pin is older than 0.3.0, the exemption is normal and Doctor does not report it; a Node without it reports `not_exempt` instead, because the Gateway refuses its agent. It reads only the file's SHA-256 hash with `sudo sha256sum`, within Doctor's existing 30-second Node inspection. The secret and both hashes stay out of the report.
 
 ## Rejected alternatives
 
@@ -86,7 +90,8 @@ Doctor reports `node.agent_secret_mismatch` in the `node` family for an eligible
 ## Consequences
 
 - A local user who is not root cannot act as the agent: the endpoints refuse it without the secret, and it cannot read the file. Root on a Node can still read the secret and report false state about its own Node, as ADR 0148 already accepts.
-- Until each Node converges with agent 0.3.0 or a newer release, it stays exempt and keeps today's gap. Doctor's `node.agent_outdated` names those Nodes.
+- Until each Node converges with agent 0.3.0 or a newer release, it stays exempt and keeps today's gap. Doctor names those Nodes with `node.agent_outdated` and `node.agent_secret_mismatch` (`exempt`).
+- A failed converge never locks out the running agent. A converge that stops between the restart and the record can leave a Node exempt while its agent sends the secret, or refuse the new agent until the next converge. Doctor reports both, as `exempt` or `mismatch`, and the next converge repairs them.
 - A converge that writes a new secret, such as after a manual file deletion, restarts the agent.
 - A Gateway database restore that predates a Node's secret makes that Node's agent fail with `agent.secret_invalid` until the next converge writes a new secret. Doctor reports `node.agent_secret_mismatch` meanwhile.
 - The other API routes keep identifying a caller by its WireGuard address. A local user on a Node that holds a Gateway access edge can still call those routes as that Node, as the node access model allows. This ADR covers the agent endpoints only.
