@@ -26,6 +26,7 @@ use App\Domain\SourceControl\RelativeWebRoot;
 use App\Domain\Tasks\AgentDriverRegistry;
 use App\Domain\Tasks\InstanceProvisioning;
 use App\Domain\Tasks\InstanceProvisionIntent;
+use App\Domain\Tasks\TaskCapacityException;
 use App\Domain\Tasks\TaskCeilings;
 use App\Domain\Tasks\TaskConcurrencyGuard;
 use App\Domain\Tasks\TaskWorkspaceName;
@@ -274,15 +275,43 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
             ->orderBy('id')
             ->get();
 
-        $eligible = $nodes
+        $fitting = $nodes
             ->filter(fn (Node $node): bool => array_all($drivers, fn (string $driver): bool => $this->drivers->get($driver)->allows($node)))
-            ->filter(fn (Node $node): bool => ! $selfAccess || $this->access->allows($node, $node))
-            ->filter(fn (Node $node): bool => $this->ceilings->activeForNode($node->id) < TaskCeilings::PerNode)
+            ->filter(fn (Node $node): bool => ! $selfAccess || $this->access->allows($node, $node));
+
+        $selected = $fitting
+            ->filter(fn (Node $node): bool => $this->hasCapacity($node))
             ->sortBy(fn (Node $node): array => [$this->ceilings->activeForNode($node->id), $node->id])
-            ->values();
+            ->first();
 
-        $selected = $eligible->first();
+        if ($selected instanceof Node) {
+            return $selected;
+        }
 
-        return $selected instanceof Node ? $selected : null;
+        if ($fitting->isNotEmpty()) {
+            throw new TaskCapacityException(fleetFull: ! $this->anyAppDevNodeHasCapacity());
+        }
+
+        return null;
+    }
+
+    private function hasCapacity(Node $node): bool
+    {
+        return $this->ceilings->activeForNode($node->id) < TaskCeilings::PerNode;
+    }
+
+    private function anyAppDevNodeHasCapacity(): bool
+    {
+        return Node::query()
+            ->where('status', LifecycleStatus::Active)
+            ->where('platform', 'linux')
+            ->whereHas(
+                'roles',
+                static fn ($query) => $query
+                    ->where('role', RoleName::AppDev)
+                    ->where('status', LifecycleStatus::Active),
+            )
+            ->get()
+            ->contains(fn (Node $node): bool => $this->hasCapacity($node));
     }
 }

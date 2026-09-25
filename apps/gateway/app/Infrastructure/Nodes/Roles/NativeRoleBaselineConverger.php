@@ -30,6 +30,7 @@ final readonly class NativeRoleBaselineConverger implements RoleBaselineConverge
         private ?WebSocketRoleBaseline $websocket = null,
         private ?AnalyticsRoleBaseline $analytics = null,
         private ?NodeAgentRoleConverger $agentConverger = null,
+        private ?IngressRoleBaseline $ingress = null,
     ) {}
 
     public function converge(Node $node, NodeRole $assignment): void
@@ -48,13 +49,6 @@ final readonly class NativeRoleBaselineConverger implements RoleBaselineConverge
 
     private function convergeOwned(Node $node, NodeRole $assignment): void
     {
-        if ($assignment->role === RoleName::Ingress) {
-            $this->metricsFleet->reconcile();
-            $this->convergeAgent($node);
-
-            return;
-        }
-
         $this->operatingSystem->assert($node, $assignment->role);
         $this->baseline($assignment->role)->converge($node, $assignment);
 
@@ -86,12 +80,6 @@ final readonly class NativeRoleBaselineConverger implements RoleBaselineConverge
 
     private function removeOwned(Node $node, NodeRole $assignment, bool $purgeData): void
     {
-        if ($assignment->role === RoleName::Ingress) {
-            $this->metricsFleet->reconcile();
-
-            return;
-        }
-
         $this->baseline($assignment->role)->remove($node, $assignment, $purgeData);
 
         if ($assignment->role !== RoleName::Metrics) {
@@ -115,12 +103,6 @@ final readonly class NativeRoleBaselineConverger implements RoleBaselineConverge
 
     private function removeUnreachableOwned(Node $node, NodeRole $assignment): void
     {
-        if ($assignment->role === RoleName::Ingress) {
-            $this->metricsFleet->reconcile();
-
-            return;
-        }
-
         $this->baseline($assignment->role)->removeUnreachable($node, $assignment);
 
         if ($assignment->role !== RoleName::Metrics) {
@@ -140,7 +122,7 @@ final readonly class NativeRoleBaselineConverger implements RoleBaselineConverge
             RoleName::Analytics => $this->analytics ?? app(AnalyticsRoleBaseline::class),
             RoleName::Router => $this->router ?? app(RouterRoleBaseline::class),
             RoleName::Database => $this->database ?? app(DatabaseRoleBaseline::class),
-            RoleName::Ingress => throw new LogicException('Ingress roles do not have a host baseline.'),
+            RoleName::Ingress => $this->ingress ?? app(IngressRoleBaseline::class),
         };
     }
 

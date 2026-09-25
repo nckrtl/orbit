@@ -17,6 +17,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\InstanceProvisioning;
 use App\Domain\Tasks\InstanceProvisionIntent;
+use App\Domain\Tasks\TaskCapacityException;
 use App\Domain\Tasks\TaskCeilings;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskStatus;
@@ -284,33 +285,36 @@ it('skips a non-T3 app-dev Node even when it has the lower id', function (): voi
     $this->assertDatabaseMissing('app_instances', ['node_id' => $incapable->id]);
 });
 
-it('returns null without creating a workspace when the only capable Node is full', function (): void {
+it('reports a capacity wait without creating a workspace when every capable Node is full', function (bool $otherNodeHasRoom): void {
     $app = provisioner_app('full');
     $incapable = provisioner_node('no-t3', '10.44.0.110');
     $incapable->processes()->delete();
     $capable = provisioner_node('full-t3', '10.44.0.111');
-    $occupied = AppInstance::query()->create([
-        'app_id' => $app->id,
-        'node_id' => $capable->id,
-        'name' => 'occupied',
-        'checkout_path' => '/srv/orbit/apps/full/occupied',
-        'status' => AppInstanceState::SourceResolved,
-    ]);
-    for ($i = 0; $i < TaskCeilings::PerNode; $i++) {
-        $active = provisioner_group($app, "Active {$i}");
-        $active->taskable()->associate($occupied);
-        $active->save();
+    foreach ($otherNodeHasRoom ? [$capable] : [$capable, $incapable] as $node) {
+        $occupied = AppInstance::query()->create([
+            'app_id' => $app->id,
+            'node_id' => $node->id,
+            'name' => "occupied-{$node->id}",
+            'checkout_path' => "/srv/orbit/apps/full/occupied-{$node->id}",
+            'status' => AppInstanceState::SourceResolved,
+        ]);
+        for ($i = 0; $i < TaskCeilings::PerNode; $i++) {
+            $active = provisioner_group($app, "Active {$node->id} {$i}");
+            $active->taskable()->associate($occupied);
+            $active->save();
+        }
     }
     $group = provisioner_group($app);
     $fakes = bind_task_workspace_fakes();
 
-    $instance = app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, false));
-
-    expect($instance)->toBeNull()
+    expect(fn () => app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, false)))
+        ->toThrow(fn (TaskCapacityException $exception) => expect($exception->fleetFull)->toBe(! $otherNodeHasRoom))
         ->and($fakes->source->calls)->toBe([]);
-    $this->assertDatabaseCount('app_instances', 1);
-    $this->assertDatabaseMissing('app_instances', ['node_id' => $incapable->id]);
-});
+    $this->assertDatabaseCount('app_instances', $otherNodeHasRoom ? 1 : 2);
+})->with([
+    'another app-dev Node has room' => [true],
+    'the whole fleet is full' => [false],
+]);
 
 it('places a group only on a Node that allows both its implementer and reviewer drivers', function (): void {
     $app = provisioner_app('mixed');

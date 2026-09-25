@@ -54,6 +54,9 @@ final readonly class UpdateTaskGroupAction
                 }
 
                 $locked->status = $data->status;
+                if ($locked->assistance_reason === TaskScheduler::ProvisioningFailedReason) {
+                    $locked->assistance_reason = null;
+                }
             }
 
             $locked->title = $data->title ?? $locked->title;

@@ -76,10 +76,7 @@ final readonly class RoleDoctorProbe implements DoctorFamilyProbe
         $this->addIngressClusterIssues($issues, $roles);
 
         $needsLiveInspection = $roles->contains(
-            static fn (NodeRole $role): bool => (
-                $role->status === LifecycleStatus::Active
-                && $role->role !== RoleName::Ingress
-            ),
+            static fn (NodeRole $role): bool => $role->status === LifecycleStatus::Active,
         );
         if ($needsLiveInspection && ($context->inspectionFailed || ! $context->inspection->reachable)) {
             $ordered = $this->ordered($issues);
@@ -98,7 +95,7 @@ final readonly class RoleDoctorProbe implements DoctorFamilyProbe
         }
 
         foreach ($roles as $role) {
-            if ($role->status !== LifecycleStatus::Active || $role->role === RoleName::Ingress) {
+            if ($role->status !== LifecycleStatus::Active) {
                 continue;
             }
 

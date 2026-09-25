@@ -36,10 +36,7 @@ final class TickTaskSessionsCommand extends Command
 
         try {
             $decisions = $scheduler->tick();
-            $started = 0;
-            while (($group = $scheduler->claimNext()) !== null) {
-                $started++;
-            }
+            $started = $scheduler->claimAvailable();
             $planners->observe();
         } finally {
             $lock->release();

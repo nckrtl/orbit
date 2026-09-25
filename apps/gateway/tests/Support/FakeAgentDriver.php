@@ -11,6 +11,8 @@ use App\Domain\Tasks\AgentObservation;
 use App\Domain\Tasks\AgentThreadStart;
 use App\Models\AgentThread;
 use App\Models\Node;
+use Closure;
+use Illuminate\Support\Facades\DB;
 
 final class FakeAgentDriver implements AgentDriver
 {
@@ -20,6 +22,16 @@ final class FakeAgentDriver implements AgentDriver
     public array $calls = [];
 
     public bool $eligible = true;
+
+    public bool $supportsInterruption = false;
+
+    public bool $failNextInterrupt = false;
+
+    /** @var list<int> the database transaction level at each interrupt */
+    public array $interruptTransactionLevels = [];
+
+    /** @var (Closure(AgentThread): void)|null runs while the interrupt is in flight */
+    public ?Closure $duringInterrupt = null;
 
     public function __construct(private readonly string $key = 'example') {}
 
@@ -52,7 +64,20 @@ final class FakeAgentDriver implements AgentDriver
 
     public function interrupt(AgentThread $thread): void
     {
-        throw AgentDriverException::unsupported('interruption');
+        $this->calls[] = ['operation' => 'interrupt', 'thread' => $thread->external_id];
+        $this->interruptTransactionLevels[] = DB::transactionLevel();
+        if ($this->duringInterrupt instanceof Closure) {
+            ($this->duringInterrupt)($thread);
+        }
+
+        if ($this->failNextInterrupt) {
+            $this->failNextInterrupt = false;
+
+            throw new AgentDriverException('The interrupt request failed.');
+        }
+        if (! $this->supportsInterruption) {
+            throw AgentDriverException::unsupported('interruption');
+        }
     }
 
     public function observe(AgentThread $thread): AgentObservation
