@@ -254,7 +254,8 @@ final readonly class MetricsExporterSshExecutor implements MetricsExporterRuntim
             .MetricsFootprint::ExporterService
             ." --web.listen-address={$this->address($node)}:"
             .MetricsFootprint::ExporterPort
-            ."\n";
+            // At boot the WireGuard address can appear after the exporter starts.
+            ."\nRestart=always\nRestartSec=2\n";
     }
 
     private function configuration(Node $node): ?string

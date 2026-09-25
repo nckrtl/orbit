@@ -180,6 +180,31 @@ it('stages the exporter drop-in beside its target and moves it into place', func
         ->toBe(metricsExporterConfiguration('10.44.0.4'));
 });
 
+it('keeps restarting the exporter until the WireGuard address exists at boot', function (): void {
+    $legacy = "# Managed by Orbit: metrics\n[Service]\nExecStart=\nExecStart=/usr/bin/prometheus-node-exporter --web.listen-address=10.44.0.4:9100\n";
+    $ssh = new MetricsExporterStatefulSsh(
+        configuration: $legacy,
+        serviceActive: true,
+        firewall: true,
+    );
+
+    metricsExporterExecutor($ssh)->converge(
+        metricsExporterNode('app-prod', '10.44.0.4'),
+        metricsExporterNode('metrics', '10.44.0.3'),
+    );
+
+    expect(explode("\n", (string) $ssh->configuration))
+        ->toContain('Restart=always', 'RestartSec=2')
+        ->and(array_map(
+            static fn (RemoteCommand $command): array => $command->arguments,
+            $ssh->commands,
+        ))
+        ->toContain(
+            ['sudo', 'systemctl', 'daemon-reload'],
+            ['sudo', 'systemctl', 'restart', 'prometheus-node-exporter'],
+        );
+});
+
 it('refuses foreign exporter configuration before any mutation', function (): void {
     $ssh = new MetricsExporterCapturingSsh([
         metricsExporterResult(),
@@ -463,7 +488,7 @@ function metricsExporterResult(int $exitCode = 0, string $stdout = ''): CommandR
 
 function metricsExporterConfiguration(string $address): string
 {
-    return "# Managed by Orbit: metrics\n[Service]\nExecStart=\nExecStart=/usr/bin/prometheus-node-exporter --web.listen-address={$address}:9100\n";
+    return "# Managed by Orbit: metrics\n[Service]\nExecStart=\nExecStart=/usr/bin/prometheus-node-exporter --web.listen-address={$address}:9100\nRestart=always\nRestartSec=2\n";
 }
 
 function metricsExporterFirewallStatus(string $destination): string
