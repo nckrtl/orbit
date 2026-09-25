@@ -131,7 +131,7 @@ The agent accepts three source types and checks each one itself. It runs no prog
 | `journal` | `unit`: the Process's systemd unit | The journal files in `/var/log/journal` and `/run/log/journal`. It returns the entries of the unit and systemd's own messages about it. | A unit that is not `orbit-process-{id}-{name}.service`, with a positive `id` and a name of lowercase letters, digits, and inner hyphens. |
 | `docker` | `container` and `process_id` | The container's standard output and standard error, through the Docker Engine API. | A name that is not `orbit-process-{id}-{name}` with those rules, and a container without the labels `orbit.managed=true` and `orbit.process.id` equal to `process_id`. |
 
-A normalized absolute path has at most 4,096 bytes and no `.`, `..`, empty parts, or control characters. Refusing a file that `root` owns means the agent reads only files that the `orbit` group can read. A link in the checkout therefore cannot point the read at a file of another user. The agent's own journal reader supports the compact and regular formats, keyed and unkeyed hashes, and zstd and lz4 compression. A journal field compressed with xz shows as `[orbit] entry not readable`.
+A normalized absolute path has at most 4,096 bytes and no `.`, `..`, empty parts, or control characters. Refusing a file that `root` owns means the agent reads only files that other users may read, and only inside the Instance root that its unit binds. A link in the checkout therefore cannot point the read at a file of another user. The agent's own journal reader supports the compact and regular formats, keyed and unkeyed hashes, and zstd and lz4 compression. A journal field compressed with xz shows as `[orbit] entry not readable`.
 
 When the agent cannot open or keep reading a source, it ends the stream with `source_unavailable`.
 
@@ -296,6 +296,8 @@ When the subscriber sees a new `head` or new diff counts for the workspace of an
 ### Log relay
 
 The subscriber relays the lines of every [live log stream](/reference/live-logs) through a [publish run](#publish-runs), so a slow Reverb or database never stalls the view. In its socket loop it accepts a `client-log` or `client-log-end` event on `presence-node-logs.{id}` only when Reverb's `user_id` is `agent.{id}`. It cuts a line longer than 8 KiB, drops lines above 64 KiB per second for each stream, with a 256 KiB burst, and queues the rest in arrival order.
+
+During a `websocket` move it joins the log channel on each Reverb server. A Node can stream while its agent is a member on either server, and its streams end with `agent_left` only when the agent has left both.
 
 A log run takes the queued events in order, at most 256 KiB of lines at a time. It drops lines unless the stream is open for Node `{id}`. It redacts each line again, with the Gateway's patterns and the stored environment values of the Instance or Process, and publishes `log.lines` on the stream's channel through the Reverb HTTP API, in parts under 10,000 bytes. After each part it saves how far it got, so a repeated run skips what it already published.
 
