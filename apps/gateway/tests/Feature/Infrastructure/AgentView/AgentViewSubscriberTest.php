@@ -723,6 +723,24 @@ describe('the agent view subscriber during a websocket move', function (): void 
             ->and($view->status(ProcessRuntime::Systemd, 'orbit-process-9-web'))->toBe('inactive');
     });
 
+    it('counts a browser watching on either server as a viewer', function (): void {
+        $extra = [];
+        [$subscriber] = agent_view_subscriber($extra);
+        $subscriber->pass();
+        $old = $extra[0];
+
+        expect($subscriber->hasViewers())->toBeFalse();
+
+        $old->push([
+            'event' => 'pusher_internal:member_added',
+            'channel' => "presence-node.{$this->node->id}",
+            'data' => json_encode(['user_id' => 'viewer.7.1']),
+        ]);
+        $subscriber->pass();
+
+        expect($subscriber->hasViewers())->toBeTrue();
+    });
+
     it('takes the state with the newest agent event when both servers hold one', function (): void {
         $extra = [];
         [$subscriber, $new, $state] = agent_view_subscriber($extra);
