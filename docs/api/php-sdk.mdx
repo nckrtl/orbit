@@ -41,11 +41,13 @@ $connector = new GatewayConnector(
 | --- | --- | --- |
 | `baseUrl` | required | HTTPS origin of the Gateway, such as `https://gateway.orbit` or `https://10.44.0.1`. |
 | `caPemPath` | `null` | Path to the pinned Gateway root CA. Omit it only when the operating system already trusts the certificate. |
-| `timeout` | `900` | Request timeout in seconds. Deployment streams run within it. |
+| `timeout` | `900` | Request timeout in seconds. A read and its one retry run within it. Deployment streams set their own limit. |
 | `clientName` | `cli` | Value of the `X-Orbit-Client` header. |
 | `requestIdResolver` | UUID generator | Closure that returns the `X-Orbit-Request-Id` for each request. |
 
 The connector adds `Accept: application/json`, the two Orbit headers, a 10-second connect timeout, and never follows redirects. It cannot be serialized, and its raw transport debugging is disabled so request bodies never reach a log.
+
+The connector retries a read once. When a `GET` or `HEAD` request fails because the connection was refused, reset, or closed before any HTTP response, it waits 250 milliseconds and sends the same request again with the same request ID. A Caddy reload on the Gateway can cause these failures. The connector never retries a request that changes state, a request that received any HTTP response (including a `5xx` error), a timeout, a certificate failure, or a deployment stream. The retry gets only the time left of `timeout`, so a read never takes longer than `timeout` in total. A refused or reset connection usually fails within milliseconds, so the retry usually adds about 250 milliseconds. The retry uses PHP's curl extension; with another Guzzle handler, reads are not retried.
 
 ## Send a request
 
