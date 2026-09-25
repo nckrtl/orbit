@@ -39,6 +39,7 @@ final readonly class NativePublicRouteEdgeInspector implements PublicRouteEdgeIn
         private NodeFirewallRuleCatalog $firewall = new NodeFirewallRuleCatalog,
         private UfwManagedRulesCheck $ufw = new UfwManagedRulesCheck,
         private string $liveCaddyfilePath = '/etc/caddy/Caddyfile',
+        private int $defaultForwardingPort = 443,
     ) {}
 
     public function inspect(Node $node, Route $route): PublicRouteEdgeObservation
@@ -57,6 +58,7 @@ final readonly class NativePublicRouteEdgeInspector implements PublicRouteEdgeIn
                         base64_encode($this->expectedBlock($site)),
                         $site->certificateDirectory(),
                         $this->liveCaddyfilePath,
+                        ...$this->forwardingTargets($site),
                     ],
                     input: <<<'BASH'
                         domain=$1
@@ -85,7 +87,15 @@ final readonly class NativePublicRouteEdgeInspector implements PublicRouteEdgeIn
                         else
                             printf 'tls=0\n'
                         fi
-                        printf 'forwarding=1\n'
+                        # The Ingress must reach every private address the public site forwards to. A composed
+                        # site that serves the Instance directly forwards nowhere and always matches.
+                        forwarding=1
+                        for target in "${@:5}"; do
+                            if ! timeout 1 bash -c 'echo >"/dev/tcp/${1%:*}/${1##*:}"' _ "$target" 2>/dev/null; then
+                                forwarding=0
+                            fi
+                        done
+                        printf 'forwarding=%s\n' "$forwarding"
                         BASH,
                 ),
                 step: 'doctor-public-route',
@@ -125,6 +135,35 @@ final readonly class NativePublicRouteEdgeInspector implements PublicRouteEdgeIn
         }
 
         return $site;
+    }
+
+    /**
+     * The `host:port` pairs the public site forwards to over TCP. Caddy proxies each address over HTTPS, so an
+     * address without a port uses the HTTPS port. Unix socket upstreams stay on the Node and are not forwarding
+     * targets.
+     *
+     * @return list<string>
+     */
+    private function forwardingTargets(AppDevSite $site): array
+    {
+        $targets = [];
+
+        foreach ($site->proxyAddresses() as $address) {
+            if (str_starts_with($address, 'unix/')) {
+                continue;
+            }
+
+            $host = parse_url("https://{$address}", PHP_URL_HOST);
+            $port = parse_url("https://{$address}", PHP_URL_PORT);
+
+            if (! is_string($host) || $host === '') {
+                throw new DoctorInspectionException;
+            }
+
+            $targets[] = trim($host, '[]').':'.(is_int($port) ? $port : $this->defaultForwardingPort);
+        }
+
+        return $targets;
     }
 
     /** The rendered site without its trailing newline and without TLS lines. */

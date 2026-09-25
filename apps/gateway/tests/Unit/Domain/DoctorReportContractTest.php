@@ -291,6 +291,7 @@ it('defines the exact stable issue-code catalog for every Doctor family', functi
             'database_connection.inspection_failed',
         ],
         'route' => [
+            'route.lifecycle_not_active',
             'route.dns_mismatch',
             'route.certificate_mismatch',
             'route.caddy_mismatch',

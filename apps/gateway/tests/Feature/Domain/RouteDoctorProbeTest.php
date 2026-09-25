@@ -26,7 +26,7 @@ use App\Models\Route;
 use App\Models\RouteCustomProxy;
 
 describe(RouteDoctorProbe::class, function (): void {
-    it('returns a healthy empty report without inspection when the Node has no custom proxies', function (): void {
+    it('checks only Route status without inspection when the Node has no custom proxies', function (): void {
         $node = route_doctor_node();
         route_doctor_app_route($node);
         $inspector = Mockery::mock(CustomProxyRouteInspector::class);
@@ -39,7 +39,7 @@ describe(RouteDoctorProbe::class, function (): void {
             ->and($report->status)
             ->toBe(DoctorFamilyStatus::Healthy)
             ->and($report->checked)
-            ->toBe(0)
+            ->toBe(1)
             ->and($report->issues)
             ->toBeEmpty();
     });
@@ -130,7 +130,7 @@ describe(RouteDoctorProbe::class, function (): void {
             ->toBe('grafana.internal');
     });
 
-    it('inspects custom proxies in route_id order and ignores App Routes', function (): void {
+    it('inspects custom proxies in route_id order and only counts App Routes', function (): void {
         $node = route_doctor_node();
         route_doctor_app_route($node);
         $second = route_doctor_custom_proxy($node, 'foo.bar');
@@ -149,7 +149,7 @@ describe(RouteDoctorProbe::class, function (): void {
         $report = new RouteDoctorProbe($inspector)->inspect(route_doctor_context($node));
 
         expect($report->checked)
-            ->toBe(2)
+            ->toBe(3)
             ->and($seen)
             ->toBe([$first->route_id < $second->route_id ? $first->route_id : $second->route_id,
                 $first->route_id < $second->route_id ? $second->route_id : $first->route_id])
@@ -157,7 +157,7 @@ describe(RouteDoctorProbe::class, function (): void {
             ->toBeEmpty();
     });
 
-    it('ignores an analytics tracking Route on its Router Node', function (): void {
+    it('checks only the status of an analytics tracking Route on its Router Node', function (): void {
         $router = route_doctor_node();
         $cluster = Cluster::query()->create(['name' => 'edge', 'tld' => null, 'state' => ClusterState::Active]);
         $router->update(['cluster_id' => $cluster->id]);
@@ -181,8 +181,91 @@ describe(RouteDoctorProbe::class, function (): void {
         $report = new RouteDoctorProbe($inspector)->inspect(route_doctor_context($router));
 
         expect($report->status)->toBe(DoctorFamilyStatus::Healthy)
-            ->and($report->checked)->toBe(0)
+            ->and($report->checked)->toBe(1)
             ->and($report->issues)->toBeEmpty();
+    });
+
+    it('reports a Route whose stored status is not active', function (RouteStatus $status): void {
+        $node = route_doctor_node();
+        $route = route_doctor_app_route($node);
+        $route->update([
+            'status' => $status,
+            'failed_step' => $status === RouteStatus::Failed ? 'caddy' : null,
+            'error_code' => $status === RouteStatus::Failed ? 'route.caddy_failed' : null,
+        ]);
+        $inspector = Mockery::mock(CustomProxyRouteInspector::class);
+        $inspector->shouldNotReceive('inspect');
+
+        $report = new RouteDoctorProbe($inspector)->inspect(route_doctor_context($node));
+
+        expect($report->status)->toBe(DoctorFamilyStatus::Drift)
+            ->and($report->checked)->toBe(1)
+            ->and($report->issues)->toHaveCount(1)
+            ->and($report->issues[0]->code)->toBe('route.lifecycle_not_active')
+            ->and($report->issues[0]->kind->value)->toBe('drift')
+            ->and($report->issues[0]->resourceType)->toBe('route')
+            ->and($report->issues[0]->resourceId)->toBe($route->id)
+            ->and($report->issues[0]->resourceName)->toBe($route->domain)
+            ->and($report->issues[0]->expected)->toBe('active')
+            ->and($report->issues[0]->observed)->toBe($status->value)
+            ->and($route->refresh()->status)->toBe($status);
+    })->with([
+        'pending' => [RouteStatus::Pending],
+        'activating' => [RouteStatus::Activating],
+        'retiring' => [RouteStatus::Retiring],
+        'failed' => [RouteStatus::Failed],
+    ]);
+
+    it('reports Route status on an unreachable Node before the node-unreachable finding', function (): void {
+        $node = route_doctor_node();
+        $proxy = route_doctor_custom_proxy($node, 'executor.orbit');
+        Route::query()->whereKey($proxy->route_id)->update([
+            'status' => RouteStatus::Failed,
+            'failed_step' => 'caddy',
+            'error_code' => 'route.caddy_failed',
+        ]);
+        $inspector = Mockery::mock(CustomProxyRouteInspector::class);
+        $inspector->shouldNotReceive('inspect');
+
+        $report = new RouteDoctorProbe($inspector)->inspect(
+            new DoctorNodeContext($node, new NodeInspectionData(false, null, null, null)),
+        );
+
+        expect(array_map(static fn ($issue): string => $issue->code, $report->issues))
+            ->toBe(['route.lifecycle_not_active', 'route.node_unreachable'])
+            ->and($report->issues[0]->observed)->toBe('failed');
+    });
+
+    it('reports a Cluster Route on the Node that holds the Cluster Router role only', function (): void {
+        $router = route_doctor_node();
+        $member = route_doctor_node();
+        $cluster = Cluster::query()->create(['name' => 'edge', 'tld' => null, 'state' => ClusterState::Active]);
+        $router->update(['cluster_id' => $cluster->id]);
+        $member->update(['cluster_id' => $cluster->id]);
+        $router->roles()->create([
+            'cluster_id' => $cluster->id,
+            'role' => RoleName::Router,
+            'status' => LifecycleStatus::Active,
+        ]);
+        $route = Route::query()->create([
+            'kind' => RouteKind::AnalyticsTracking,
+            'cluster_id' => $cluster->id,
+            'domain' => 'analytics.shop.example.com',
+            'provenance' => RouteProvenance::Explicit,
+            'publication' => RoutePublication::Public,
+            'status' => RouteStatus::Pending,
+        ]);
+        $inspector = Mockery::mock(CustomProxyRouteInspector::class);
+        $inspector->shouldNotReceive('inspect');
+        $probe = new RouteDoctorProbe($inspector);
+
+        $onRouter = $probe->inspect(route_doctor_context($router));
+        $onMember = $probe->inspect(route_doctor_context($member));
+
+        expect(collect($onRouter->issues)->pluck('resourceId')->all())->toBe([$route->id])
+            ->and($onRouter->issues[0]->code)->toBe('route.lifecycle_not_active')
+            ->and($onMember->checked)->toBe(0)
+            ->and($onMember->issues)->toBeEmpty();
     });
 });
 
@@ -223,6 +306,7 @@ function route_doctor_custom_proxy(Node $node, string $domain): RouteCustomProxy
         'process_id' => null,
         'upstream' => 'http://127.0.0.1:4788',
     ]);
+    $route->update(['status' => RouteStatus::Active]);
 
     return $route->customProxy()->sole();
 }

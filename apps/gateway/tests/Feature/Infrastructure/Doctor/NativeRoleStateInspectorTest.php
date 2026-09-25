@@ -23,21 +23,6 @@ use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\Process;
 
-it('reports the empty Ingress projection as healthy without remote inspection', function (): void {
-    $ssh = new RoleInspectorSshExecutor([]);
-
-    $state = role_state_inspector($ssh)->inspect(role_inspector_assignment(RoleName::Ingress));
-
-    expect($state->packagesPresent)
-        ->toBeTrue()
-        ->and($state->servicesActive)
-        ->toBeTrue()
-        ->and($state->firewallProjectionMatches)
-        ->toBeTrue()
-        ->and($ssh->calls)
-        ->toBe([]);
-});
-
 it('inspects each role with exact package service and firewall requirements', function (
     RoleName $role,
     array $packages,
@@ -113,6 +98,12 @@ it('inspects each role with exact package service and firewall requirements', fu
         ['caddy', 'docker'],
         [],
     ],
+    'Ingress needs the Caddy that serves its public sites' => [
+        RoleName::Ingress,
+        [],
+        ['caddy'],
+        [],
+    ],
 ]);
 
 it('returns independent false projections for one missing requirement', function (
@@ -146,6 +137,13 @@ it('returns independent false projections for one missing requirement', function
     ],
     'inactive service' => [
         RoleName::AppDev,
+        "1\n",
+        "0\n",
+        [],
+        [true, false, true],
+    ],
+    'stopped Ingress Caddy' => [
+        RoleName::Ingress,
         "1\n",
         "0\n",
         [],

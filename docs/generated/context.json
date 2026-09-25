@@ -202,6 +202,7 @@
                 "Database",
                 "Doctor",
                 "Gateway",
+                "Ingress",
                 "Instance",
                 "Node",
                 "Node agent",

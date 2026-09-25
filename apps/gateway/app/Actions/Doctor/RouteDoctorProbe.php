@@ -14,8 +14,14 @@ use App\Domain\Doctor\DoctorInspectionException;
 use App\Domain\Doctor\DoctorIssueKind;
 use App\Domain\Doctor\DoctorNodeContext;
 use App\Domain\Doctor\RouteDoctorIssueCode;
+use App\Domain\Nodes\RoleName;
+use App\Domain\Routes\RouteStatus;
+use App\Models\Node;
+use App\Models\NodeRole;
 use App\Models\Route;
 use App\Models\RouteCustomProxy;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Collection;
 
 final readonly class RouteDoctorProbe implements DoctorFamilyProbe
 {
@@ -30,6 +36,8 @@ final readonly class RouteDoctorProbe implements DoctorFamilyProbe
 
     public function inspect(DoctorNodeContext $context): DoctorFamilyReportData
     {
+        $routes = $this->servedRoutes($context->node);
+        $issues = $this->lifecycleIssues($routes);
         $proxies = RouteCustomProxy::query()
             ->with('route')
             ->where('node_id', $context->node->id)
@@ -37,11 +45,11 @@ final readonly class RouteDoctorProbe implements DoctorFamilyProbe
             ->get();
 
         if ($proxies->isEmpty()) {
-            return DoctorFamilyReportData::fromIssues(DoctorFamily::Route, 0, []);
+            return DoctorFamilyReportData::fromIssues(DoctorFamily::Route, $routes->count(), $issues);
         }
 
         if (! $context->inspection->reachable) {
-            return DoctorFamilyReportData::fromIssues(DoctorFamily::Route, $proxies->count(), [new DoctorIssueData(
+            return DoctorFamilyReportData::fromIssues(DoctorFamily::Route, $routes->count(), [...$issues, new DoctorIssueData(
                 RouteDoctorIssueCode::NodeUnreachable,
                 DoctorIssueKind::Unverifiable,
                 'route',
@@ -52,8 +60,6 @@ final readonly class RouteDoctorProbe implements DoctorFamilyProbe
                 'unreachable',
             )]);
         }
-
-        $issues = [];
 
         foreach ($proxies as $proxy) {
             $route = $proxy->route;
@@ -75,7 +81,54 @@ final readonly class RouteDoctorProbe implements DoctorFamilyProbe
             $issues = [...$issues, ...$this->issuesFor($proxy, $route, $observation)];
         }
 
-        return DoctorFamilyReportData::fromIssues(DoctorFamily::Route, $proxies->count(), $issues);
+        return DoctorFamilyReportData::fromIssues(DoctorFamily::Route, $routes->count(), $issues);
+    }
+
+    /**
+     * The Routes this Node serves: Node-scoped Routes on the Node, and Cluster-scoped Routes of every Cluster
+     * whose Router role the Node holds.
+     *
+     * @return Collection<int, Route>
+     */
+    private function servedRoutes(Node $node): Collection
+    {
+        $clusters = NodeRole::query()
+            ->where('node_id', $node->id)
+            ->where('role', RoleName::Router)
+            ->whereNotNull('cluster_id')
+            ->pluck('cluster_id');
+
+        return Route::query()
+            ->where(static fn (Builder $query): Builder => $query
+                ->where('node_id', $node->id)
+                ->orWhereIn('cluster_id', $clusters))
+            ->orderBy('id')
+            ->get();
+    }
+
+    /**
+     * Every Route is expected to be active. This reads only stored state, so it also runs when the Node is
+     * unreachable.
+     *
+     * @param  Collection<int, Route>  $routes
+     * @return list<DoctorIssueData>
+     */
+    private function lifecycleIssues(Collection $routes): array
+    {
+        return $routes
+            ->reject(static fn (Route $route): bool => $route->status === RouteStatus::Active)
+            ->map(static fn (Route $route): DoctorIssueData => new DoctorIssueData(
+                RouteDoctorIssueCode::LifecycleNotActive,
+                DoctorIssueKind::Drift,
+                'route',
+                $route->id,
+                $route->domain,
+                "Route [{$route->domain}] lifecycle is not active.",
+                RouteStatus::Active->value,
+                $route->status->value,
+            ))
+            ->values()
+            ->all();
     }
 
     /** @return list<DoctorIssueData> */

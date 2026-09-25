@@ -33,6 +33,12 @@ Active Cluster membership still selects Cluster scope for Project Routes, even w
 
 Creating the same explicit Project Route again with identical Project, domain, publication intent, scope, and target returns the existing Route. A retry that changes one of those values fails without changing the Route. Creating the same custom proxy Route again with identical domain, Node, and upstream or Process returns the existing Route.
 
+### Check Route status with Doctor
+
+Every Route is expected to be `active`. Doctor reports any other status as `route.lifecycle_not_active` drift in the `route` family, with `active` as the expected value and the stored status as the observed value. A Route that an operation leaves `pending`, `activating`, `retiring`, or `failed` therefore stays visible until a retry or cleanup finishes it. Doctor reads only the stored status, so the check also runs when the Node is unreachable.
+
+Doctor reports each Route on one Node. A Node-scoped Route belongs to its Node. A Cluster-scoped Route belongs to the Node that holds the Cluster Router role. A Route with neither a Node nor a Cluster Router is not reported.
+
 ## Select a domain and scope
 
 Supply a domain when creating an Instance to request an explicit Route. Otherwise, Orbit generates one from the effective top-level domain (TLD). Generation uses an active Cluster TLD first, then the Node TLD. If neither authority supplies a TLD, creation stops before source or runtime changes. An explicit domain stays as supplied. Instance responses derive the domain and URL from the authoritative Route.
@@ -336,6 +342,7 @@ Doctor instance checks report public Ingress, private forwarding, TLS, and firew
 | --- | --- |
 | `instance.public_ingress_mismatch` | The live Caddy version on the Ingress does not contain the public site that Orbit renders for it, apart from TLS lines. |
 | `instance.public_tls_mismatch` | The public site pins an Orbit CA leaf, or it lacks `tls force_automate` while the Node disables certificate management. |
+| `instance.private_forwarding_mismatch` | The Ingress cannot open a TCP connection to a private address that the public site forwards to: the Router, or the workload Nodes when the Ingress also holds the Router role. A composed site that serves the Instance directly forwards nowhere and always matches. |
 | `instance.public_firewall_mismatch` | The Ingress firewall is inactive, or it lacks an exact managed rule for public HTTP on port 80 or HTTPS on port 443. |
 
 Doctor builds the expected public site the same way the publisher does. A separate Ingress expects a reverse proxy to the Router. An Ingress that shares its Node with the Router and the workload expects the composed site that serves the Instance directly. Related-node checks use only caller-authorized selected nodes. An unavailable observation reports `instance.related_node_unverifiable` without contacting an unselected Node.
