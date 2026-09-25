@@ -4019,7 +4019,7 @@ export interface operations {
                     code?: string;
                     slug: string;
                     /** @enum {string} */
-                    type: "monorepo" | "laravel-app" | "laravel-package";
+                    type?: "monorepo" | "laravel-app" | "laravel-package";
                     repository_url: string;
                     default_branch?: string;
                     root: string;
@@ -4190,16 +4190,17 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody: {
+        requestBody?: {
             content: {
                 "application/json": {
                     code?: string;
                     /** @enum {string} */
-                    type: "monorepo" | "laravel-app" | "laravel-package";
-                    slug: string;
-                    repository_url: string;
-                    default_branch: string;
-                    root: string;
+                    type?: "monorepo" | "laravel-app" | "laravel-package";
+                    slug?: string;
+                    repository_url?: string;
+                    default_branch?: string;
+                    root?: string;
+                    task_baseline_check?: string | null;
                 };
             };
         };
@@ -11257,7 +11258,7 @@ export interface operations {
                      * @description Project type (monorepo, laravel-app, or laravel-package)
                      * @enum {string}
                      */
-                    type: "monorepo" | "laravel-app" | "laravel-package";
+                    type?: "monorepo" | "laravel-app" | "laravel-package";
                     repository_url: string;
                     /** @description Stored default branch; resolve the remote default when omitted */
                     default_branch?: string;
@@ -11430,7 +11431,7 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody: {
+        requestBody?: {
             content: {
                 "application/json": {
                     code?: string;
@@ -11438,14 +11439,15 @@ export interface operations {
                      * @description New Project type
                      * @enum {string}
                      */
-                    type: "monorepo" | "laravel-app" | "laravel-package";
+                    type?: "monorepo" | "laravel-app" | "laravel-package";
                     /** @description New Project slug */
-                    slug: string;
-                    repository_url: string;
+                    slug?: string;
+                    repository_url?: string;
                     /** @description New stored default branch */
-                    default_branch: string;
+                    default_branch?: string;
                     /** @description New relative web root */
-                    root: string;
+                    root?: string;
+                    task_baseline_check?: string | null;
                 };
             };
         };
@@ -13362,16 +13364,16 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody: {
+        requestBody?: {
             content: {
                 "application/json": {
                     /** @description New explicit domain */
-                    domain: string;
+                    domain?: string;
                     /**
                      * @description New publication intent
                      * @enum {string}
                      */
-                    publication: "private" | "public";
+                    publication?: "private" | "public";
                 };
             };
         };
