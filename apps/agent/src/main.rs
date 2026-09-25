@@ -1,9 +1,10 @@
 use bollard::{container::ListContainersOptions, system::EventsOptions, Docker};
 use futures_util::{SinkExt, StreamExt};
 use orbit_agent::{
-    docker_container_name, docker_status, frame, gateway_client, iso_now, process_unit_name,
-    retry_delay, snapshot_frames, tls_config, ChangeBatch, Config, Envelope, HeartbeatData,
-    Sequencer, Unit, CHANGE_MERGE_WINDOW,
+    docker_container_name, docker_status, frame, gateway_client, iso_now, lock_single_instance,
+    process_unit_name, retry_delay, snapshot_frames, tls_config, ChangeBatch, Config, Envelope,
+    HeartbeatData, Liveness, LivenessCheck, Sequencer, Unit, CHANGE_MERGE_WINDOW, JOIN_TIMEOUT,
+    LOCK_PATH, SNAPSHOT_INTERVAL,
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -62,6 +63,7 @@ async fn main() {
 
 async fn run() -> Result<(), Box<dyn Error + Send + Sync>> {
     let config = Config::load()?;
+    let _single_instance = lock_single_instance(LOCK_PATH)?;
     let client = gateway_client(config.gateway_address)?;
     let tls = tls_config()?;
     let connection = Connection::system().await?;
@@ -141,6 +143,7 @@ async fn run() -> Result<(), Box<dyn Error + Send + Sync>> {
             &mut heartbeat,
             &mut systemd_poll,
             &mut shutdown_rx,
+            &mut attempt,
         )
         .await
         {
@@ -205,6 +208,7 @@ async fn connected_session(
     heartbeat: &mut Interval,
     systemd_poll: &mut Interval,
     shutdown: &mut watch::Receiver<bool>,
+    attempt: &mut u32,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     let mut parsed = reqwest::Url::parse(ws_url)?;
     if parsed.scheme() != "wss"
@@ -217,15 +221,24 @@ async fn connected_session(
     parsed.set_query(Some(&format!(
         "protocol=7&client=orbit-agent&version={VERSION}&flash=false"
     )));
-    let stream = connect_by_address(ws_address.parse::<std::net::IpAddr>()?, 443).await?;
+    let address = ws_address.parse::<std::net::IpAddr>()?;
     let request = parsed.as_str().into_client_request()?;
-    let (socket, _) =
-        client_async_tls_with_config(request, stream, None, Some(Connector::Rustls(tls))).await?;
     let auth_url = format!(
         "{}/api/v1/agent/broadcasting/auth",
         gateway.trim_end_matches('/')
     );
-    let mut socket = protocol_handshake(socket, client, &auth_url, channel, VERSION).await?;
+    let join = async {
+        let stream = connect_by_address(address, 443).await?;
+        let (socket, _) =
+            client_async_tls_with_config(request, stream, None, Some(Connector::Rustls(tls)))
+                .await?;
+        protocol_handshake(socket, client, &auth_url, channel, VERSION).await
+    };
+    let mut socket = tokio::time::timeout(JOIN_TIMEOUT, join)
+        .await
+        .map_err(|_| "joining the Reverb channel timed out")??;
+    // A session that joined starts the backoff again, so the next drop reconnects at once.
+    *attempt = 0;
     // Re-read both runtimes for every successful join.
     *systemd = match systemd_snapshot(manager).await {
         Ok(units) => units,
@@ -250,10 +263,25 @@ async fn connected_session(
     let mut pending = ChangeBatch::default();
     let debounce = tokio::time::sleep(Duration::from_secs(86400));
     tokio::pin!(debounce);
+    // Every snapshot restarts this timer, so a complete snapshot goes out at least once a minute.
+    let snapshot_due = tokio::time::sleep(SNAPSHOT_INTERVAL);
+    tokio::pin!(snapshot_due);
+    let mut liveness = Liveness::new(Instant::now());
     loop {
         tokio::select! {
             _=shutdown.changed()=>{socket.close(None).await?;return Ok(())},
-            _=heartbeat.tick()=>{let payload=Envelope{sequence:sequence.advance(),at:iso_now(),data:HeartbeatData{}};send_client(&mut socket,channel,"client-heartbeat",serde_json::to_value(payload)?).await?;},
+            _=heartbeat.tick()=>{
+                let payload=Envelope{sequence:sequence.advance(),at:iso_now(),data:HeartbeatData{}};send_client(&mut socket,channel,"client-heartbeat",serde_json::to_value(payload)?).await?;
+                match liveness.check(Instant::now()) {
+                    LivenessCheck::Alive=>{},
+                    LivenessCheck::Ping=>send_control(&mut socket,"pusher:ping",json!({})).await?,
+                    LivenessCheck::Dead=>return Err("Reverb did not answer the ping".into()),
+                }
+            },
+            _=&mut snapshot_due=>{
+                let all=combined_units(systemd,docker_units);send_snapshots(&mut socket,channel,sequence,&all,if *docker_available{"available"}else{"absent"}).await?;
+                snapshot_due.as_mut().reset(Instant::now()+SNAPSHOT_INTERVAL);
+            },
             signal=systemd_rx.recv()=>match signal {
                 Some(())=>{
                     let fresh=match systemd_snapshot(manager).await{Ok(units)=>units,Err(error)=>{eprintln!("orbit-agent: systemd D-Bus watcher failed: {error}");std::process::exit(1)}};
@@ -266,21 +294,21 @@ async fn connected_session(
                 if let Some(deadline)=queue_changes(&mut pending,diff_units(systemd,&fresh)){debounce.as_mut().reset(deadline);} *systemd=fresh;
             },
             update=docker_rx.recv()=>match update {
-                Some(DockerUpdate::Connected(units))=>{docker_units.clear();docker_units.extend(units.into_iter().map(|unit|(unit.name.clone(),unit)));*docker_available=true;let all=combined_units(systemd,docker_units);send_snapshots(&mut socket,channel,sequence,&all,"available").await?;},
-                Some(DockerUpdate::Absent)=>{if *docker_available{*docker_available=false;docker_units.clear();let all=combined_units(systemd,docker_units);send_snapshots(&mut socket,channel,sequence,&all,"absent").await?;}},
+                Some(DockerUpdate::Connected(units))=>{docker_units.clear();docker_units.extend(units.into_iter().map(|unit|(unit.name.clone(),unit)));*docker_available=true;let all=combined_units(systemd,docker_units);send_snapshots(&mut socket,channel,sequence,&all,"available").await?;snapshot_due.as_mut().reset(Instant::now()+SNAPSHOT_INTERVAL);},
+                Some(DockerUpdate::Absent)=>{if *docker_available{*docker_available=false;docker_units.clear();let all=combined_units(systemd,docker_units);send_snapshots(&mut socket,channel,sequence,&all,"absent").await?;snapshot_due.as_mut().reset(Instant::now()+SNAPSHOT_INTERVAL);}},
                 Some(DockerUpdate::Changed(unit)) if docker_units.get(&unit.name)!=Some(&unit)=>{docker_units.insert(unit.name.clone(),unit.clone());if let Some(deadline)=queue_changes(&mut pending,[unit]){debounce.as_mut().reset(deadline);}},
                 Some(DockerUpdate::Changed(_))=>{},
                 None=>{},
             },
             _=&mut debounce,if !pending.is_empty()=>{if pending.due(Instant::now()){for unit in pending.take(){let event=orbit_agent::process_frame(channel,sequence.advance(),unit)?;send_raw_frame(&mut socket,event).await?;}}},
             message=socket.next()=>match message{
-                Some(Ok(Message::Text(text)))=>{let value:Value=serde_json::from_str(&text)?;match value["event"].as_str().unwrap_or(""){
+                Some(Ok(Message::Text(text)))=>{liveness.message(Instant::now());let value:Value=serde_json::from_str(&text)?;match value["event"].as_str().unwrap_or(""){
                     "pusher:ping"=>send_control(&mut socket,"pusher:pong",json!({})).await?,
                     "pusher:error"|"pusher_internal:subscription_error"=>return Err(format!("Pusher rejected subscription: {}",value["data"]).into()),
-                    "pusher_internal:member_added"=>{let all=combined_units(systemd,docker_units);send_snapshots(&mut socket,channel,sequence,&all,if *docker_available{"available"}else{"absent"}).await?;},
+                    "pusher_internal:member_added"=>{let all=combined_units(systemd,docker_units);send_snapshots(&mut socket,channel,sequence,&all,if *docker_available{"available"}else{"absent"}).await?;snapshot_due.as_mut().reset(Instant::now()+SNAPSHOT_INTERVAL);},
                     _=>{}
                 }},
-                Some(Ok(Message::Ping(data)))=>socket.send(Message::Pong(data)).await?,
+                Some(Ok(Message::Ping(data)))=>{liveness.message(Instant::now());socket.send(Message::Pong(data)).await?},
                 Some(Ok(Message::Close(_)))|None=>return Err("Pusher closed connection".into()),
                 Some(Err(error))=>return Err(error.into()),_=>{}
             }

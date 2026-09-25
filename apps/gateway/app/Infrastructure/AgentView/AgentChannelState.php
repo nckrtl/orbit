@@ -34,6 +34,16 @@ final class AgentChannelState
 
     public ?string $agentAt = null;
 
+    /**
+     * Since when, by the Gateway clock, the subscriber should ask the agent for a complete snapshot, or
+     * null when it need not. It is set while agent events arrive without a complete snapshot, and when
+     * the agent's sequence goes back without a membership change.
+     */
+    public ?float $snapshotWantedSince = null;
+
+    /** Whether the sequence went back since the subscriber last asked for a snapshot. */
+    private bool $sequenceWentBack = false;
+
     /** @var array{nextPart: int, parts: int, nextSequence: int, units: array<string, string>, docker: ?string}|null */
     private ?array $pending = null;
 
@@ -51,8 +61,10 @@ final class AgentChannelState
         }
 
         if ($sequence <= $this->sequence) {
-            // The agent restarted: its sequence starts again at 1. Rebase on the new run.
+            // A new agent run starts again at 1. Without a membership change, Reverb either kept the old
+            // member or a second connection publishes as the same member, so nothing here holds anymore.
             $this->reset();
+            $this->sequenceWentBack = true;
         }
 
         $this->lastEventAt = $receivedAt;
@@ -60,22 +72,33 @@ final class AgentChannelState
 
         if ($event === 'client-snapshot') {
             $this->applySnapshotPart($sequence, $data);
+        } else {
+            $this->sequence = $sequence;
+            $this->pending = null;
 
-            return true;
-        }
+            if ($event === 'client-process') {
+                $unit = is_array($data['unit'] ?? null) ? $this->unit($data['unit']) : null;
 
-        $this->sequence = $sequence;
-        $this->pending = null;
-
-        if ($event === 'client-process') {
-            $unit = is_array($data['unit'] ?? null) ? $this->unit($data['unit']) : null;
-
-            if ($unit !== null && (isset($this->units[$unit[0]]) || count($this->units) < self::MaxUnits)) {
-                $this->units[$unit[0]] = $unit[1];
+                if ($unit !== null && (isset($this->units[$unit[0]]) || count($this->units) < self::MaxUnits)) {
+                    $this->units[$unit[0]] = $unit[1];
+                }
             }
         }
 
+        if (! $this->hasSnapshot || $this->sequenceWentBack) {
+            $this->snapshotWantedSince ??= $receivedAt;
+        } else {
+            $this->snapshotWantedSince = null;
+        }
+
         return true;
+    }
+
+    /** The subscriber asked every agent connection for a snapshot: wait for the next event before asking again. */
+    public function snapshotRequested(): void
+    {
+        $this->snapshotWantedSince = null;
+        $this->sequenceWentBack = false;
     }
 
     /** Forgets everything, as when the agent leaves the channel or the connection drops. */
@@ -88,6 +111,8 @@ final class AgentChannelState
         $this->pending = null;
         $this->lastEventAt = null;
         $this->agentAt = null;
+        $this->snapshotWantedSince = null;
+        $this->sequenceWentBack = false;
     }
 
     /** @param array<string, mixed> $data */

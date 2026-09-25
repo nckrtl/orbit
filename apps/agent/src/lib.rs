@@ -10,8 +10,18 @@ use std::{
 
 pub const CONFIG_PATH: &str = "/etc/orbit/agent/config.toml";
 pub const CA_PATH: &str = "/etc/orbit/agent/ca.pem";
+/// The agent holds an exclusive lock on this directory, so one Node runs one agent.
+pub const LOCK_PATH: &str = "/etc/orbit/agent";
 pub const PUSHER_FRAME_LIMIT: usize = 9_900;
 pub const CHANGE_MERGE_WINDOW: std::time::Duration = std::time::Duration::from_millis(250);
+/// A complete snapshot also goes out this long after the last one, so a lost one heals.
+pub const SNAPSHOT_INTERVAL: std::time::Duration = std::time::Duration::from_secs(60);
+/// The agent pings Reverb after this long without a message from it.
+pub const PING_AFTER: std::time::Duration = std::time::Duration::from_secs(15);
+/// The agent reconnects when Reverb sends nothing for this long after its ping.
+pub const PONG_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+/// Every step from the TCP connect to `pusher_internal:subscription_succeeded` fits in this time.
+pub const JOIN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -275,6 +285,8 @@ pub fn gateway_client(
 ) -> Result<reqwest::Client, Box<dyn std::error::Error + Send + Sync>> {
     let mut reader = BufReader::new(File::open(CA_PATH)?);
     let mut builder = reqwest::Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(10))
+        .timeout(std::time::Duration::from_secs(30))
         .https_only(true)
         .redirect(reqwest::redirect::Policy::none())
         .tls_built_in_root_certs(false)
@@ -285,9 +297,92 @@ pub fn gateway_client(
     Ok(builder.build()?)
 }
 
+/// Takes the lock that keeps a second agent off the Node. A second agent would publish as the same
+/// Reverb member, and Reverb announces neither its join nor its exit, so subscribers would mix two
+/// event streams. The lock ends with the process.
+pub fn lock_single_instance(path: &str) -> Result<File, Box<dyn std::error::Error + Send + Sync>> {
+    let file = File::open(path)?;
+    match file.try_lock() {
+        Ok(()) => Ok(file),
+        Err(std::fs::TryLockError::WouldBlock) => {
+            Err("another orbit-agent already runs on this Node".into())
+        }
+        Err(std::fs::TryLockError::Error(error)) => Err(error.into()),
+    }
+}
+
+/// Tells a connected session when to ping Reverb and when to give its connection up. The agent
+/// only publishes, so on a quiet channel nothing else would show that the connection died.
+#[derive(Debug)]
+pub struct Liveness {
+    last_message: tokio::time::Instant,
+    ping_sent: Option<tokio::time::Instant>,
+}
+#[derive(Debug, PartialEq, Eq)]
+pub enum LivenessCheck {
+    Alive,
+    Ping,
+    Dead,
+}
+impl Liveness {
+    pub fn new(now: tokio::time::Instant) -> Self {
+        Self {
+            last_message: now,
+            ping_sent: None,
+        }
+    }
+    /// Reverb sent something: the connection is alive.
+    pub fn message(&mut self, now: tokio::time::Instant) {
+        self.last_message = now;
+        self.ping_sent = None;
+    }
+    pub fn check(&mut self, now: tokio::time::Instant) -> LivenessCheck {
+        match self.ping_sent {
+            Some(sent) if now >= sent + PONG_TIMEOUT => LivenessCheck::Dead,
+            Some(_) => LivenessCheck::Alive,
+            None if now >= self.last_message + PING_AFTER => {
+                self.ping_sent = Some(now);
+                LivenessCheck::Ping
+            }
+            None => LivenessCheck::Alive,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn a_second_agent_cannot_take_the_lock_until_the_first_one_ends() {
+        let dir = std::env::temp_dir().join(format!("orbit-agent-lock-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.to_str().unwrap();
+        let first = lock_single_instance(path).unwrap();
+        let refused = lock_single_instance(path).unwrap_err();
+        assert!(refused.to_string().contains("another orbit-agent"));
+        drop(first);
+        assert!(lock_single_instance(path).is_ok());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+    #[test]
+    fn liveness_pings_after_a_quiet_spell_and_gives_up_without_an_answer() {
+        let start = tokio::time::Instant::now();
+        let mut liveness = Liveness::new(start);
+        assert_eq!(liveness.check(start + PING_AFTER / 2), LivenessCheck::Alive);
+        assert_eq!(liveness.check(start + PING_AFTER), LivenessCheck::Ping);
+        assert_eq!(
+            liveness.check(start + PING_AFTER + PONG_TIMEOUT / 2),
+            LivenessCheck::Alive
+        );
+        liveness.message(start + PING_AFTER + PONG_TIMEOUT / 2);
+        assert_eq!(
+            liveness.check(start + PING_AFTER + PONG_TIMEOUT),
+            LivenessCheck::Alive
+        );
+        let pinged = start + PING_AFTER * 2 + PONG_TIMEOUT;
+        assert_eq!(liveness.check(pinged), LivenessCheck::Ping);
+        assert_eq!(liveness.check(pinged + PONG_TIMEOUT), LivenessCheck::Dead);
+    }
     fn unit(name: &str, status: &str, runtime: &str) -> Unit {
         Unit {
             name: name.into(),
