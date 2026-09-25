@@ -148,13 +148,14 @@ it('cancels a running or queued group through MCP and removes its shared Instanc
     'running' => TaskGroupStatus::Running,
 ]);
 
-it('returns a structured MCP error for canceling a settling group and still completes it', function (): void {
+it('returns a structured MCP error for canceling a settling group with a pull request and still completes it', function (): void {
     app(TaskExtensionState::class)->enable();
     $group = TaskGroup::query()->create([
         'app_id' => $this->appRecord->id,
         'title' => 'MCP settle',
         'brief' => 'Complete after review.',
         'status' => TaskGroupStatus::Settling,
+        'pr_url' => 'https://github.com/nckrtl/orbit/pull/7',
     ]);
 
     $cancelled = tasks_mcp_message(tasks_mcp_call($this, 'tools/call', [

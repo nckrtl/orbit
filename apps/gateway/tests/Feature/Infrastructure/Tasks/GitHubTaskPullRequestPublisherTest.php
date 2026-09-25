@@ -110,6 +110,22 @@ it('pushes the task branch with a pull request token and opens the pull request'
         && $request->hasHeader('Authorization', 'Bearer ghs_publish'));
 });
 
+it('pushes the task branch without opening a pull request', function (): void {
+    $root = TestOrbitHome::scratch('orbit-push');
+    (new Process(['git', 'init', '--quiet', '--bare', $root.'/origin.git']))->mustRun();
+    (new Process(['git', 'init', '--quiet', '-b', 'task-7', $root.'/checkout']))->mustRun();
+    publisher_git($root.'/checkout', ['commit', '--quiet', '--allow-empty', '-m', 'Approved subtask']);
+    publisher_git($root.'/checkout', ['remote', 'add', 'origin', $root.'/origin.git']);
+    GitHubTestSupport::storeApp();
+    publisher_github();
+    $group = publisher_group($root.'/checkout');
+
+    publisher(new LocalShellSshExecutor)->push($group);
+
+    expect(publisher_git($root.'/origin.git', ['rev-parse', 'refs/heads/task-'.$group->id]))->toBe(publisher_git($root.'/checkout', ['rev-parse', 'HEAD']));
+    Http::assertNotSent(static fn (Request $request): bool => str_contains($request->url(), '/pulls'));
+});
+
 it('sends the token only on the standard input of the push', function (): void {
     GitHubTestSupport::storeApp();
     publisher_github();
