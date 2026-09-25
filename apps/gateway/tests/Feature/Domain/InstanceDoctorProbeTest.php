@@ -26,6 +26,7 @@ use App\Models\AppInstance;
 use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\Route;
+use App\Models\TaskGroup;
 
 it('returns a healthy empty instance report and excludes other nodes', function (): void {
     $node = instance_probe_node();
@@ -138,6 +139,49 @@ it('reports lifecycle and every false instance field in stable order', function 
         ->and(json_encode($report))
         ->not->toContain($instance->checkout_path);
 });
+
+it('accepts source_resolved for a task workspace that is not visitable', function (): void {
+    $node = instance_probe_node();
+    instance_probe_task_workspace(instance_probe_orbit_app(), $node, AppInstanceState::SourceResolved);
+
+    $report = new InstanceDoctorProbe(instance_probe_healthy_inspector())->inspect(instance_probe_context($node));
+
+    expect($report->checked)->toBe(1)->and($report->issues)->toBe([]);
+});
+
+it('reports a task workspace that is not visitable and stuck before source resolution', function (AppInstanceState $status): void {
+    $node = instance_probe_node();
+    $instance = instance_probe_task_workspace(instance_probe_orbit_app(), $node, $status);
+
+    $report = new InstanceDoctorProbe(instance_probe_healthy_inspector())->inspect(instance_probe_context($node));
+
+    expect($report->issues)->toHaveCount(1)
+        ->and($report->issues[0]->code)->toBe('instance.lifecycle_not_active')
+        ->and($report->issues[0]->resourceId)->toBe($instance->id)
+        ->and($report->issues[0]->expected)->toBe('source_resolved')
+        ->and($report->issues[0]->observed)->toBe($status->value);
+})->with([
+    'reserved' => [AppInstanceState::Reserved],
+    'checkout_prepared' => [AppInstanceState::CheckoutPrepared],
+]);
+
+it('expects active for a visitable task workspace and for an Instance outside a task', function (App $app, bool $taskWorkspace): void {
+    $node = instance_probe_node();
+    $instance = $taskWorkspace
+        ? instance_probe_task_workspace($app, $node, AppInstanceState::SourceResolved)
+        : instance_probe_instance($app, $node, AppInstanceState::SourceResolved);
+
+    $report = new InstanceDoctorProbe(instance_probe_healthy_inspector())->inspect(instance_probe_context($node));
+
+    expect($report->issues)->toHaveCount(1)
+        ->and($report->issues[0]->code)->toBe('instance.lifecycle_not_active')
+        ->and($report->issues[0]->resourceId)->toBe($instance->id)
+        ->and($report->issues[0]->expected)->toBe('active')
+        ->and($report->issues[0]->observed)->toBe('source_resolved');
+})->with([
+    'visitable task workspace' => [fn (): App => instance_probe_app(), true],
+    'Orbit Instance outside a task' => [fn (): App => instance_probe_orbit_app(), false],
+]);
 
 it('continues after a typed instance inspection failure', function (): void {
     $node = instance_probe_node();
@@ -645,6 +689,31 @@ function instance_probe_instance(
         'starting_commit' => str_repeat((string) $suffix, 40),
         'status' => $status,
     ]);
+}
+
+function instance_probe_orbit_app(): App
+{
+    return App::query()->create([
+        'name' => 'Orbit',
+        'slug' => 'orbit',
+        'repository_url' => 'https://github.com/acme/orbit.git',
+        'default_branch' => 'main',
+    ]);
+}
+
+function instance_probe_task_workspace(App $app, Node $node, AppInstanceState $status): AppInstance
+{
+    $instance = instance_probe_instance($app, $node, $status);
+    $group = TaskGroup::query()->create([
+        'app_id' => $app->id,
+        'title' => 'Task workspace',
+        'brief' => 'Build the feature.',
+        'status' => 'running',
+    ]);
+    $group->taskable()->associate($instance);
+    $group->save();
+
+    return $instance;
 }
 
 function instance_probe_production_instance(App $app, Node $node): AppInstance

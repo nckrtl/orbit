@@ -254,6 +254,8 @@ One fresh Instance belongs to the group. Every subtask reuses it. The instance n
 
 The provisioner honors `visitable`. It does not invent a Route for a non-visitable workspace because an active Instance still requires exactly one Route.
 
+Doctor expects the same final state. A non-visitable task workspace is healthy in `source_resolved`, and a visitable one is healthy in `active`. Doctor reports `instance.lifecycle_not_active` for any other state, such as a workspace stuck in `reserved` or `checkout_prepared`, or a visitable workspace stuck in `source_resolved`. The [Doctor instance family](/cli/doctor#what-each-family-checks) owns the check.
+
 ## Agent viewer
 
 The task group page shows an Agents section below Subtasks. Vertical tabs select the shared reviewer or an implementer. A subtask page shows its implementer conversations and the shared reviewer. Finished conversations remain available. Activity and connection health have separate labels; a disconnected viewer retains the last known activity state.
