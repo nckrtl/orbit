@@ -180,6 +180,29 @@ it('renders gateway-owned relocate failures through the shared boundary', functi
         ->assertExitCode(1);
 });
 
+it('keeps the consent refusal details in json mode and sends no forced retry', function (): void {
+    $details = ['field' => 'force', 'reason' => 'destructive_consent_required', 'role' => 'websocket'];
+    $mockClient = MockClient::global([
+        RelocateNodeRoleRequest::class => MockResponse::make(
+            ['error' => ['code' => 'validation.failed', 'message' => 'Use --force to relocate this node role.', 'details' => $details]],
+            422,
+            ['X-Orbit-Request-Id' => relocate_node_role_request_id()],
+        ),
+    ]);
+
+    $this
+        ->artisan('node:role:relocate', ['node' => '7', 'role' => 'websocket', '--json' => true])
+        ->expectsOutput(json_encode(['error' => [
+            'code' => 'validation.failed',
+            'message' => 'Use --force to relocate this node role.',
+            'details' => $details,
+            'request_id' => relocate_node_role_request_id(),
+        ]], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES))
+        ->assertExitCode(1);
+
+    expect($mockClient->getRecordedResponses())->toHaveCount(1);
+});
+
 /** @return array<string, mixed> */
 function relocate_node_role_command_options(?SymfonyCommand $command): array
 {
