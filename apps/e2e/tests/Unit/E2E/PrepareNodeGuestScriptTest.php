@@ -77,7 +77,7 @@ describe('prepare node guest script', function () {
 
     /* ssh host pinning was removed; KnownHostsStore is authoritative. */
     it('moves the orbit account to uid and gid 1000 and re-owns stale files', function () {
-        $root = sys_get_temp_dir().'/orbit-align-identity-'.bin2hex(random_bytes(4));
+        $root = temporaryDirectory().'/orbit-align-identity-'.bin2hex(random_bytes(4));
         mkdir("{$root}/bin", 0o700, true);
         $shim = "#!/usr/bin/env bash\nprintf '%s\\n' \"\$(basename \"\$0\") \$*\" >> '{$root}/commands'\n";
         foreach (['userdel', 'groupmod', 'usermod', 'find', 'systemctl'] as $command) {

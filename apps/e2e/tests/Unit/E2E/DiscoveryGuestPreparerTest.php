@@ -150,7 +150,7 @@ describe('mount.source', function () {
     });
 
     it('rewrites only the checkout line of a bootstrapped gateway environment', function (string $contents) {
-        $directory = sys_get_temp_dir().'/orbit-e2e-env-'.bin2hex(random_bytes(4));
+        $directory = temporaryDirectory().'/orbit-e2e-env-'.bin2hex(random_bytes(4));
         mkdir($directory);
         $environment = $directory.'/.env';
         file_put_contents($environment, $contents);
@@ -172,7 +172,7 @@ describe('mount.source', function () {
     ])->skip(PHP_OS_FAMILY !== 'Linux', 'The guest script uses GNU chown and chmod.');
 
     it('leaves a gateway environment that already names the mounted checkout untouched', function () {
-        $directory = sys_get_temp_dir().'/orbit-e2e-env-'.bin2hex(random_bytes(4));
+        $directory = temporaryDirectory().'/orbit-e2e-env-'.bin2hex(random_bytes(4));
         mkdir($directory);
         $environment = $directory.'/.env';
         file_put_contents($environment, "ORBIT_GATEWAY_CHECKOUT=/home/orbit/orbit/apps/gateway\nAPP_ENV=local\n");
