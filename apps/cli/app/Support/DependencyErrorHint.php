@@ -8,9 +8,9 @@ namespace App\Support;
 final readonly class DependencyErrorHint
 {
     private const array HINTS = [
-        'dependencies.stale_npm_lockfile' => 'The npm lockfile does not match package.json. Run npm install in the project root, then commit the updated lockfile.',
-        'dependencies.stale_pnpm_lockfile' => 'pnpm-lock.yaml does not match package.json. Run pnpm install in the project root, then commit the updated lockfile.',
-        'dependencies.stale_bun_lockfile' => 'bun.lock does not match package.json. Run bun install in the project root, then commit the updated lockfile.',
+        'dependencies.stale_npm_lockfile' => 'Run npm install in the project root and commit the lockfile.',
+        'dependencies.stale_pnpm_lockfile' => 'Run pnpm install in the project root and commit pnpm-lock.yaml.',
+        'dependencies.stale_bun_lockfile' => 'Run bun install in the project root and commit bun.lock.',
     ];
 
     public static function for(?string $errorCode): ?string

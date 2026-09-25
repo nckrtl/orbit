@@ -104,7 +104,7 @@ Each ecosystem has a last successful observation and a latest scan outcome. A su
 | Both manifest and lockfile are absent | Record that the ecosystem is absent and clear its previous usage. |
 | Manifest exists but its lockfile is missing | Report an incomplete scan; preserve the last successful observation. |
 | Lockfile exists without its manifest | Report an incomplete scan; preserve the last successful observation. |
-| Lockfile root differs from the manifest | Report `dependencies.stale_npm_lockfile`, `dependencies.stale_pnpm_lockfile`, or `dependencies.stale_bun_lockfile`; preserve the last successful observation. Human output adds a `Fix` line: run the package manager's install in the project root and commit the updated lockfile. |
+| Lockfile root differs from the manifest | Report `dependencies.stale_npm_lockfile`, `dependencies.stale_pnpm_lockfile`, or `dependencies.stale_bun_lockfile`; preserve the last successful observation. Human output adds a short `Fix` line, such as `Run bun install in the project root and commit bun.lock.` |
 | Format is unsupported, files are invalid, or source is unreadable | Report failure and preserve the last successful observation. |
 | No production release is selected | Report unavailable source, not an empty inventory. |
 | Source changes during collection | Refuse to publish the mixed observation and report a retryable conflict. |

@@ -95,6 +95,39 @@ final class TerminalText
         return $lines;
     }
 
+    /**
+     * Wraps at spaces where a line allows it, so words stay whole; a word longer than a line still breaks by width.
+     *
+     * @return list<string>
+     */
+    public static function wrapWords(string $text, int $columns): array
+    {
+        $lines = [];
+        $line = '';
+
+        foreach (explode(' ', $text) as $word) {
+            $candidate = $line === '' ? $word : $line.' '.$word;
+
+            if (self::width($candidate) <= $columns) {
+                $line = $candidate;
+
+                continue;
+            }
+
+            if ($line !== '') {
+                $lines[] = $line;
+            }
+
+            $parts = self::wrap($word, $columns);
+            $line = (string) array_pop($parts);
+            array_push($lines, ...$parts);
+        }
+
+        $lines[] = $line;
+
+        return $lines;
+    }
+
     public static function pad(string $text, int $columns): string
     {
         return $text.str_repeat(' ', max(0, $columns - self::width($text)));
