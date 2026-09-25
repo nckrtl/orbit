@@ -21,6 +21,9 @@ use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\AppInstance;
 use App\Models\Node;
+use Closure;
+use Illuminate\Cache\Lock as CacheLockBase;
+use Illuminate\Contracts\Cache\Lock;
 use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Support\Facades\Log;
 use Throwable;
@@ -33,6 +36,11 @@ final readonly class NodeAgentSshExecutor implements NodeAgentRuntime
      * converge for at most this long.
      */
     private const int LockSeconds = 240;
+
+    /** How long the agent download may take to connect, and in total, so one step stays inside the lock term. */
+    private const int DownloadConnectSeconds = 20;
+
+    private const int DownloadSeconds = 120;
 
     /** Closes each named checkout's regular `.env` to other users, and names every checkout it could not close on stderr. */
     public const string CloseEnvironmentsScript = <<<'BASH'
@@ -197,7 +205,7 @@ final readonly class NodeAgentSshExecutor implements NodeAgentRuntime
         }
 
         try {
-            $this->convergeLocked($node, $checksum, $architecture, $root, $configuration, $certificate, $unit);
+            $this->convergeLocked($lock, $node, $checksum, $architecture, $root, $configuration, $certificate, $unit);
         } finally {
             $lock->release();
         }
@@ -214,17 +222,31 @@ final readonly class NodeAgentSshExecutor implements NodeAgentRuntime
      *   restarted from the new file. Every earlier failure leaves the file different from the record:
      *   the running agent keeps its accepted secret, Doctor reports `mismatch`, and the next converge
      *   writes a new secret and restarts the agent.
-     * - Entering the exemption, for an agent older than 0.3.0, happens right before the restart. The
-     *   exemption accepts both the agent that stops and the agent that starts.
+     * - Entering the exemption, for an agent older than 0.3.0, happens right before the binary swap and
+     *   again before the restart. The exemption accepts the agent that stops and the one that starts,
+     *   also when the older binary starts after a converge that failed past the swap.
+     *
+     * Before each step that changes the Node or the record, the converge renews its lock and stops
+     * when another converge took it over after it expired.
      */
-    private function convergeLocked(Node $node, string $checksum, string $architecture, ?string $root, string $configuration, string $certificate, string $unit): void
+    private function convergeLocked(Lock $lock, Node $node, string $checksum, string $architecture, ?string $root, string $configuration, string $certificate, string $unit): void
     {
         // Only root may enter the directory: `install` writes a candidate with its default mode before it
         // applies the final one, so the directory keeps the secret's candidate from other users (ADR 0155).
         $this->run($node, new RemoteCommand(['sudo', 'install', '-d', '-o', 'root', '-g', 'root', '-m', '0700', '/etc/orbit/agent']), 'agent.install_failed');
-        $hash = NodeAgentFootprint::sendsSecret($this->agentVersion) ? $this->convergeSecret($node) : null;
+        $sendsSecret = NodeAgentFootprint::sendsSecret($this->agentVersion);
+        $this->holdLock($lock);
+        $hash = $sendsSecret ? $this->convergeSecret($node) : null;
         $changed = $hash !== null && $hash->written;
-        $changed = $this->installBinary($node, $checksum, $architecture) || $changed;
+        $this->holdLock($lock);
+        $changed = $this->installBinary($node, $checksum, $architecture, function () use ($lock, $node, $sendsSecret): void {
+            $this->holdLock($lock);
+
+            if (! $sendsSecret) {
+                $this->recordSecret($node, null, exempt: true);
+            }
+        }) || $changed;
+        $this->holdLock($lock);
         $changed = $this->publishFile($node, NodeAgentFootprint::ConfigurationPath, $configuration, 0644) || $changed;
         $changed = $this->publishFile($node, NodeAgentFootprint::CertificatePath, $certificate, 0644) || $changed;
         $changed = $this->publishFile($node, NodeAgentFootprint::UnitPath, $unit, 0644) || $changed;
@@ -233,6 +255,7 @@ final readonly class NodeAgentSshExecutor implements NodeAgentRuntime
         $this->run($node, new RemoteCommand(['sudo', 'systemctl', 'daemon-reload']), 'agent.install_failed');
 
         if ($hash === null) {
+            $this->holdLock($lock);
             $this->recordSecret($node, null, exempt: true);
         }
 
@@ -243,7 +266,19 @@ final readonly class NodeAgentSshExecutor implements NodeAgentRuntime
         }
 
         if ($hash !== null) {
+            $this->holdLock($lock);
             $this->recordSecret($node, $hash->value, exempt: false);
+        }
+    }
+
+    /**
+     * Renews the Node's agent lock for another full term, or stops the converge when the lock expired
+     * and another converge now holds it, so two converges never write the secret or its record together.
+     */
+    private function holdLock(Lock $lock): void
+    {
+        if (! $lock instanceof CacheLockBase || ! $lock->refresh()) {
+            throw new ResourceOperationException('agent.converge_lock_lost', 'The Node agent converge lost its lock to another converge.', 409);
         }
     }
 
@@ -360,7 +395,8 @@ final readonly class NodeAgentSshExecutor implements NodeAgentRuntime
         return null;
     }
 
-    private function installBinary(Node $node, string $checksum, string $architecture): bool
+    /** @param  Closure(): void  $beforeSwap  Runs after the download passed its checksum and before the swap. */
+    private function installBinary(Node $node, string $checksum, string $architecture, Closure $beforeSwap): bool
     {
         $installed = $this->raw($node, new RemoteCommand(['sudo', 'sha256sum', '--', NodeAgentFootprint::BinaryPath]));
 
@@ -372,6 +408,7 @@ final readonly class NodeAgentSshExecutor implements NodeAgentRuntime
         $this->run($node, new RemoteCommand(['sudo', 'rm', '-f', '--', $candidate]), 'agent.binary_download_failed');
         $this->run($node, new RemoteCommand([
             'sudo', 'curl', '--fail', '--location', '--silent', '--show-error',
+            '--connect-timeout', (string) self::DownloadConnectSeconds, '--max-time', (string) self::DownloadSeconds,
             '--output', $candidate, '--', NodeAgentFootprint::downloadUrl($architecture),
         ]), 'agent.binary_download_failed');
         $downloaded = $this->run($node, new RemoteCommand(['sudo', 'sha256sum', '--', $candidate]), 'agent.binary_inspection_failed');
@@ -383,6 +420,7 @@ final readonly class NodeAgentSshExecutor implements NodeAgentRuntime
 
         $this->run($node, new RemoteCommand(['sudo', 'chown', 'root:root', '--', $candidate]), 'agent.install_failed');
         $this->run($node, new RemoteCommand(['sudo', 'chmod', '0755', '--', $candidate]), 'agent.install_failed');
+        $beforeSwap();
         $this->run($node, new RemoteCommand(['sudo', 'mv', '-fT', '--', $candidate, NodeAgentFootprint::BinaryPath]), 'agent.install_failed');
 
         return true;

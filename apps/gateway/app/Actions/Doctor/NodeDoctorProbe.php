@@ -184,9 +184,11 @@ final readonly class NodeDoctorProbe implements DoctorFamilyProbe
                     'node',
                     $node->id,
                     $node->name,
-                    $secret === 'exempt'
-                        ? 'Node agent is still exempt from its secret.'
-                        : 'Node agent secret does not match the Gateway record.',
+                    match ($secret) {
+                        'exempt' => 'Node agent is still exempt from its secret.',
+                        'not_exempt' => 'Node agent sends no secret, but the Gateway requires one.',
+                        default => 'Node agent secret does not match the Gateway record.',
+                    },
                     expected: 'match',
                     observed: $secret,
                 );
@@ -213,14 +215,21 @@ final readonly class NodeDoctorProbe implements DoctorFamilyProbe
      * Why the Node's agent secret does not protect the agent endpoints: `missing` when the file is
      * absent, `mismatch` when its hash differs from the stored one, and `exempt` when the pinned agent
      * sends a secret but the Node still accepts callers without one. While the pinned agent sends no
-     * secret, the exemption is normal and reports nothing (ADR 0155).
+     * secret, the exemption is normal and reports nothing, and a Node without it reports `not_exempt`,
+     * because the Gateway refuses its agent (ADR 0155).
      */
     private function agentSecretProblem(Node $node, NodeInspectionData $inspection): ?string
     {
         $stored = $node->agent_secret_hash;
 
-        if ((! is_string($stored) || $stored === '') && $node->agent_secret_exempt) {
-            return NodeAgentFootprint::sendsSecret($this->agentVersion) ? 'exempt' : null;
+        $exempt = (! is_string($stored) || $stored === '') && $node->agent_secret_exempt;
+
+        if (! NodeAgentFootprint::sendsSecret($this->agentVersion)) {
+            return $exempt ? null : 'not_exempt';
+        }
+
+        if ($exempt) {
+            return 'exempt';
         }
 
         if ($inspection->agentSecretChecksum === null) {

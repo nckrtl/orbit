@@ -75,18 +75,17 @@ it('skips the download when the installed checksum matches', function (): void {
         ]);
 });
 
-it('uses the SSH default timeout for the binary download', function (): void {
+it('bounds the binary download inside the lock term', function (): void {
     $ssh = new AgentInstallSsh(null);
     nodeAgentExecutor($ssh)->converge(nodeAgentNode());
 
     $downloadIndex = array_search(
-        ['sudo', 'curl', '--fail', '--location', '--silent', '--show-error', '--output', '/usr/local/bin/orbit-agent.orbit-candidate', '--', NodeAgentFootprint::downloadUrl('x86_64')],
+        ['sudo', 'curl', '--fail', '--location', '--silent', '--show-error', '--connect-timeout', '20', '--max-time', '120', '--output', '/usr/local/bin/orbit-agent.orbit-candidate', '--', NodeAgentFootprint::downloadUrl('x86_64')],
         array_map(static fn (RemoteCommand $command): array => $command->arguments, $ssh->commands),
         true,
     );
 
-    expect($downloadIndex)->toBeInt()
-        ->and($ssh->connections[$downloadIndex]->commandTimeout)->toBe(900.0);
+    expect($downloadIndex)->toBeInt();
 });
 
 it('leaves the running agent alone on an unchanged converge', function (): void {
@@ -532,6 +531,50 @@ describe('the agent secret', function (): void {
         expect($node->fresh()?->agent_secret_hash)->toBe(str_repeat('c', 64))
             ->and($node->fresh()?->agent_secret_exempt)->toBeFalse();
     });
+
+    it('enters the exemption before it swaps in an agent that sends no secret', function (): void {
+        $ssh = new AgentInstallStatefulSsh;
+        $node = nodeAgentStoredNode();
+        nodeAgentExecutor($ssh, version: NodeAgentFootprint::SecretSince)->converge($node);
+        $ssh->putChecksum(NodeAgentFootprint::BinaryPath, str_repeat('d', 64));
+        $atSwap = null;
+        $ssh->before = static function (array $arguments) use (&$atSwap, $node): void {
+            if ($arguments === ['sudo', 'mv', '-fT', '--', NodeAgentFootprint::BinaryPath.'.orbit-candidate', NodeAgentFootprint::BinaryPath]) {
+                $atSwap = Node::query()->whereKey($node->getKey())->first(['agent_secret_hash', 'agent_secret_exempt'])?->only(['agent_secret_hash', 'agent_secret_exempt']);
+            }
+        };
+        $ssh->fails = static fn (array $arguments): bool => $arguments === ['sudo', 'systemctl', 'daemon-reload'];
+
+        expect(fn () => nodeAgentExecutor($ssh)->converge($node->fresh() ?? $node))->toThrow(ResourceOperationException::class);
+
+        expect($atSwap)->toBe(['agent_secret_hash' => null, 'agent_secret_exempt' => true])
+            ->and($node->fresh()?->agent_secret_exempt)->toBeTrue();
+    });
+
+    it('stops without touching the record when another converge took over its expired lock', function (string $step): void {
+        $ssh = new AgentInstallStatefulSsh;
+        $node = nodeAgentStoredNode();
+        $name = 'node-agent:id:'.$node->getKey();
+        $ssh->before = static function (array $arguments) use ($step, $name): void {
+            if (($arguments[1] ?? null) === $step) {
+                app(NodeLocks::class)->lock($name, 1)->forceRelease();
+                app(NodeLocks::class)->lock($name, 60)->get();
+            }
+        };
+
+        try {
+            nodeAgentExecutor($ssh, version: NodeAgentFootprint::SecretSince)->converge($node);
+            test()->fail('Expected the converge to stop after it lost its lock.');
+        } catch (ResourceOperationException $exception) {
+            expect($exception->errorCode)->toBe('agent.converge_lock_lost');
+        } finally {
+            app(NodeLocks::class)->lock($name, 1)->forceRelease();
+        }
+
+        expect($node->fresh()?->agent_secret_exempt)->toBeTrue()
+            ->and($node->fresh()?->agent_secret_hash)->toBeNull()
+            ->and(nodeAgentArguments($ssh))->not->toContain(['sudo', 'systemctl', 'restart', 'orbit-agent']);
+    })->with(['install', 'curl', 'mv']);
 
     it('serializes converges of the same Node', function (): void {
         $node = nodeAgentStoredNode();
