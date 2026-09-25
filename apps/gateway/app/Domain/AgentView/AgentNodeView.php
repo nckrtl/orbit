@@ -15,13 +15,17 @@ use App\Domain\Processes\ProcessRuntime;
  */
 final readonly class AgentNodeView
 {
-    /** @param array<string, string> $units */
+    /**
+     * @param  array<string, string>  $units
+     * @param  array<int, array{instance_id: int, base: string, start: ?string, branch: ?string, head: ?string, dirty: ?bool, commits: ?int, diff: array{files: int, added: int, removed: int, truncated: bool}|null}>  $workspaces  Task workspaces keyed by Instance id.
+     */
     public function __construct(
         public int $nodeId,
         public AgentViewFreshness $freshness,
         public array $units = [],
         public ?string $docker = null,
         public ?float $receivedAt = null,
+        public array $workspaces = [],
     ) {}
 
     public static function missing(int $nodeId): self
@@ -59,6 +63,17 @@ final readonly class AgentNodeView
         }
 
         return isset($this->units[$runtime->value.':'.$name]);
+    }
+
+    /**
+     * The Git state the agent last reported for a task checkout, or null when the view is not fresh
+     * or the agent does not report that Instance (ADR 0151).
+     *
+     * @return array{instance_id: int, base: string, start: ?string, branch: ?string, head: ?string, dirty: ?bool, commits: ?int, diff: array{files: int, added: int, removed: int, truncated: bool}|null}|null
+     */
+    public function workspace(int $instanceId): ?array
+    {
+        return $this->isFresh() ? ($this->workspaces[$instanceId] ?? null) : null;
     }
 
     private function answers(ProcessRuntime $runtime): bool

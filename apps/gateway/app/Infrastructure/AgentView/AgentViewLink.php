@@ -30,6 +30,9 @@ final class AgentViewLink
     /** @var array<int, float> When the subscriber last asked each Node's agent on this server for a snapshot. */
     public array $snapshotRequestedAt = [];
 
+    /** @var array<int, array<string, true>> `viewer.*` members on each joined channel of this server, keyed by Node id. */
+    public array $viewers = [];
+
     public function __construct(
         public readonly string $address,
         public readonly WebSocketClient $socket,
@@ -46,6 +49,7 @@ final class AgentViewLink
         $this->socket->close();
         $this->channels = [];
         $this->snapshotRequestedAt = [];
+        $this->viewers = [];
         $this->socketId = null;
         $this->connection = null;
         $this->pingSentAt = null;

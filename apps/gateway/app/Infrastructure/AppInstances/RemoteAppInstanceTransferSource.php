@@ -331,6 +331,10 @@ final readonly class RemoteAppInstanceTransferSource implements AppInstanceTrans
                 git checkout --quiet -B "$branch" "$head"
               fi
             fi
+            # Other local users, the Node agent included, never read an Instance's environment (ADR 0151).
+            if [ -f .env ] && [ ! -L .env ]; then
+              chmod o-rwx .env
+            fi
             BASH;
     }
 

@@ -11,6 +11,7 @@ import {
 import { queryClient } from "../api/queryClient";
 import type { QuotaAccount, QuotaProvider, QuotaWindow } from "../api/types";
 import { quotaPace } from "../quota/pace";
+import { useTaskPoll } from "../realtime/polling";
 import { Frame, Note } from "../ui/Frame";
 import { useGo } from "../ui/go";
 import { PageHeader } from "../ui/PageHeader";
@@ -197,7 +198,7 @@ const providerColumns: Column<QuotaProvider>[] = [
 export function QuotaList() {
     const go = useGo();
     const status = useQuery(proxycliStatusQuery);
-    const tasks = useQuery(tasksStatusQuery);
+    const tasks = useQuery({ ...tasksStatusQuery, refetchInterval: useTaskPoll() });
     const providers = useQuery({
         ...proxycliProvidersQuery,
         enabled: status.data?.enabled === true && tasks.data?.enabled === true,
@@ -250,7 +251,7 @@ export function QuotaList() {
 export function QuotaProviderPage() {
     const { id } = useParams({ from: "/$section/$id" });
     const status = useQuery(proxycliStatusQuery);
-    const tasks = useQuery(tasksStatusQuery);
+    const tasks = useQuery({ ...tasksStatusQuery, refetchInterval: useTaskPoll() });
     const provider = useQuery({
         ...proxycliProviderQuery(id),
         enabled: status.data?.enabled === true && tasks.data?.enabled === true,

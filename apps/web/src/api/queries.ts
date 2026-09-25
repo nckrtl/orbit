@@ -1,5 +1,6 @@
 import { queryOptions, useQuery } from "@tanstack/react-query";
-import { useFallbackPoll } from "../realtime/liveness";
+import { useFallbackPoll, useLiveness } from "../realtime/liveness";
+import { lastProcessUsageAt, processPollInterval } from "../realtime/process-usage";
 import { useAgentProcessStatuses } from "../realtime/agent-processes";
 import { get } from "./client";
 import type {
@@ -87,12 +88,17 @@ const byName = (projects: Project[]): Project[] =>
 
 /** Every fleet-wide list. Realtime events patch these caches; they poll only while it is down, with a backoff. */
 export function useFleet(): Fleet {
+    const liveness = useLiveness();
     const refetchInterval = useFallbackPoll();
     const nodes = useQuery({ ...lists.nodes, refetchInterval });
     const projects = useQuery({ ...lists.projects, refetchInterval, select: byName });
     const instances = useQuery({ ...lists.instances, refetchInterval });
-    // No event carries a Process's CPU and memory, so this list reloads on its own clock.
-    const processes = useQuery({ ...lists.processes, refetchInterval: 15_000 });
+    // `process.usage` events write CPU and memory into this list while realtime is live. It reloads
+    // only when they stop, and every 15 seconds while realtime is down.
+    const processes = useQuery({
+        ...lists.processes,
+        refetchInterval: () => processPollInterval(liveness, lastProcessUsageAt(), Date.now()),
+    });
     const schedules = useQuery({ ...lists.schedules, refetchInterval });
     const databases = useQuery({ ...lists.databases, refetchInterval });
     const firewall = useQuery({ ...lists.firewall, refetchInterval });
@@ -191,11 +197,13 @@ export const proxycliStatusQuery = queryOptions({
     retry: false,
 });
 
-/** Task status gates token spend display; task payloads currently lack provider attribution. */
+/**
+ * Task status gates token spend display; task payloads currently lack provider attribution. A
+ * `tasks.updated` event stores a change, so callers poll it only with `useTaskPoll()`.
+ */
 export const tasksStatusQuery = queryOptions({
     queryKey: ["tasks-status"],
     queryFn: () => get<TasksStatus>("/api/v1/tasks/status").catch(() => ({ enabled: false })),
-    refetchInterval: POLL_SECONDS * 1000,
     retry: false,
 });
 

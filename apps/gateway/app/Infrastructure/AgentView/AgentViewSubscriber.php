@@ -35,6 +35,11 @@ use Throwable;
  * agent sends a snapshot only when a member joins. So when agent events keep arriving without a
  * complete snapshot, or the agent's sequence goes back without a membership change, the subscriber
  * leaves and joins that channel again: its new membership makes every agent connection send one.
+ *
+ * ADR 0151 adds three duties. It keeps each agent's task workspaces in the view, has a task group's
+ * line counts stored when its workspace reports new ones, and, while a browser (`viewer.*` member) is
+ * on any channel, has every Process's CPU and memory broadcast every `UsageSeconds`. The last two run
+ * in a child process through `AgentViewPublisher`, so the socket loop never waits for them.
  */
 final class AgentViewSubscriber
 {
@@ -61,6 +66,8 @@ final class AgentViewSubscriber
 
     public const int SnapshotRequestSeconds = 5;
 
+    public const int UsageSeconds = 15;
+
     private const float MaxBackoffSeconds = 30.0;
 
     private const string CHANNEL = '/\Apresence-node\.([1-9][0-9]*)\z/D';
@@ -85,6 +92,8 @@ final class AgentViewSubscriber
     private bool $configured = false;
 
     private float $carryUntil = 0.0;
+
+    private float $nextUsageAt = 0.0;
 
     private float $nextLinkCheckAt = 0.0;
 
@@ -115,6 +124,7 @@ final class AgentViewSubscriber
         private readonly Closure $sleep,
         private readonly ManagedNodeEligibility $eligibility = new ManagedNodeEligibility,
         private readonly int $reverbPort = 443,
+        private readonly ?AgentViewPublisher $publisher = null,
         ?Closure $sockets = null,
     ) {
         $this->idleSockets = [$socket];
@@ -151,6 +161,7 @@ final class AgentViewSubscriber
 
             return 'stopped';
         } finally {
+            $this->publisher?->stop();
             $this->closeAll();
 
             try {
@@ -164,6 +175,9 @@ final class AgentViewSubscriber
     /** One loop pass: keep a link to every serving Reverb, handle what arrived, and keep the view current. */
     public function pass(): void
     {
+        // Runs started before a disconnect still meet their deadline, and queued work keeps retrying.
+        $this->publisher?->poll();
+
         if ($this->links === [] || $this->now() >= $this->nextLinkCheckAt) {
             $this->syncLinks();
         }
@@ -206,6 +220,8 @@ final class AgentViewSubscriber
         }
 
         $this->flush();
+        $this->queueUsage();
+        $this->publisher?->poll();
 
         foreach ($live as $link) {
             $this->requestSnapshots($link);
@@ -229,6 +245,18 @@ final class AgentViewSubscriber
         }
 
         return array_keys($joined);
+    }
+
+    /** Whether any browser is subscribed to a joined channel on any server. */
+    public function hasViewers(): bool
+    {
+        foreach ($this->links as $link) {
+            if (array_any($link->viewers, static fn (array $members): bool => $members !== [])) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /** @return list<string> The Reverb addresses the subscriber keeps a link to, the serving address first. */
@@ -416,7 +444,7 @@ final class AgentViewSubscriber
 
             foreach (array_diff(array_keys($link->channels), $this->nodeIds) as $nodeId) {
                 $this->send($link, ['event' => 'pusher:unsubscribe', 'data' => ['channel' => "presence-node.{$nodeId}"]]);
-                unset($link->channels[$nodeId], $link->snapshotRequestedAt[$nodeId]);
+                unset($link->channels[$nodeId], $link->snapshotRequestedAt[$nodeId], $link->viewers[$nodeId]);
                 $this->dirty[$nodeId] = true;
             }
 
@@ -525,6 +553,13 @@ final class AgentViewSubscriber
         if ($event === 'pusher_internal:subscription_succeeded') {
             $presence = is_array($data['presence'] ?? null) ? $data['presence'] : [];
             $ids = is_array($presence['ids'] ?? null) ? $presence['ids'] : [];
+            $link->viewers[$nodeId] = [];
+
+            foreach ($ids as $id) {
+                if (is_string($id) && str_starts_with($id, 'viewer.')) {
+                    $link->viewers[$nodeId][$id] = true;
+                }
+            }
 
             if (! in_array($agent, $ids, strict: true)) {
                 $state->reset();
@@ -535,10 +570,18 @@ final class AgentViewSubscriber
         }
 
         if (in_array($event, ['pusher_internal:member_added', 'pusher_internal:member_removed'], strict: true)) {
+            $member = $data['user_id'] ?? null;
+
             // The agent joined again or left: its earlier state on this server no longer holds.
-            if (($data['user_id'] ?? null) === $agent) {
+            if ($member === $agent) {
                 $state->reset();
                 $this->dirty[$nodeId] = true;
+            } elseif (is_string($member) && str_starts_with($member, 'viewer.')) {
+                if ($event === 'pusher_internal:member_added') {
+                    $link->viewers[$nodeId][$member] = true;
+                } else {
+                    unset($link->viewers[$nodeId][$member]);
+                }
             }
 
             return;
@@ -546,7 +589,7 @@ final class AgentViewSubscriber
 
         // Reverb stamps every client event on a presence channel with the sender's signed member ID.
         if (
-            in_array($event, ['client-heartbeat', 'client-snapshot', 'client-process'], strict: true)
+            in_array($event, ['client-heartbeat', 'client-snapshot', 'client-process', 'client-workspaces', 'client-workspace'], strict: true)
             && ($message['user_id'] ?? null) === $agent
             && $state->apply($event, $data, $this->now())
         ) {
@@ -562,13 +605,31 @@ final class AgentViewSubscriber
     {
         foreach (array_keys($this->dirty) as $nodeId) {
             $newest = null;
+            $states = [];
 
             foreach ($this->links as $link) {
                 $state = $link->channels[$nodeId] ?? null;
 
-                if ($state !== null && $state->hasSnapshot && $state->lastEventAt !== null
+                if ($state === null) {
+                    continue;
+                }
+
+                $states[] = $state;
+
+                if ($state->hasSnapshot && $state->lastEventAt !== null
                     && ($newest === null || $state->lastEventAt > $newest->lastEventAt)) {
                     $newest = $state;
+                }
+            }
+
+            // Only the newest server's workspace changes count; the other server's are older or the same.
+            $changed = [];
+
+            foreach ($states as $state) {
+                $taken = $state->takeChangedWorkspaces();
+
+                if ($state === $newest) {
+                    $changed = $taken;
                 }
             }
 
@@ -581,14 +642,35 @@ final class AgentViewSubscriber
                     continue;
                 }
 
-                $this->view->putNode($nodeId, $newest->units, $newest->docker, $newest->sequence, (float) $newest->lastEventAt, $newest->agentAt);
+                $this->view->putNode($nodeId, $newest->units, $newest->docker, $newest->sequence, (float) $newest->lastEventAt, $newest->agentAt, $newest->workspaces);
                 $this->stored[$nodeId] = true;
+
+                if ($changed !== []) {
+                    // The publisher stores the counts of the groups whose workspace `head` or diff changed.
+                    $this->publisher?->queueWorkspaces($nodeId, $changed);
+                }
             } catch (Throwable $exception) {
                 $this->log->warning('The agent view subscriber could not write the view.', ['node_id' => $nodeId, 'error' => $exception->getMessage()]);
             }
         }
 
         $this->dirty = [];
+    }
+
+    /** Queues a Process usage sample every `UsageSeconds` while a browser watches. It never waits for it. */
+    private function queueUsage(): void
+    {
+        $live = array_filter($this->links, static fn (AgentViewLink $link): bool => $link->isLive());
+
+        if ($this->publisher === null || $live === [] || $this->now() < $this->nextUsageAt) {
+            return;
+        }
+
+        $this->nextUsageAt = $this->now() + self::UsageSeconds;
+
+        if ($this->hasViewers()) {
+            $this->publisher->queueUsage((int) $this->now());
+        }
     }
 
     private function keepAlive(AgentViewLink $link): void

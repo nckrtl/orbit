@@ -114,7 +114,10 @@ final readonly class RemoteDevelopmentAppInstanceConfigurator implements Develop
                         else:
                             separator = b'' if original == b'' or original.endswith(b'\n') else b'\n'
                             updated = original + separator + replacement + b'\n'
+                        # Other local users, the Node agent included, never read an Instance's environment.
+                        mode &= 0o770
                         if updated != original or not env.exists(): atomic(env, updated, mode)
+                        elif env.stat().st_mode & 0o007: os.chmod(env, mode)
 
                         cache = root / 'bootstrap' / 'cache' / 'config.php'
                         safe_regular(cache)

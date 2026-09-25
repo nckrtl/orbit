@@ -21,7 +21,7 @@ OPENAPI = ROOT / 'docs/openapi.json'
 OUTPUT = ROOT / 'apps/gateway/resources/mcp/tools.json'
 
 # Machine callbacks and browser pages, not operator actions: Pusher channel signatures, the Node agent's Reverb
-# discovery, Caddy forward-auth, the wake page a browser receives, the completion report a Node's schedule timer
+# discovery and watch list, Caddy forward-auth, the wake page a browser receives, the completion report a Node's schedule timer
 # posts, and the two pages that carry a GitHub App registration through the operator's browser.
 EXCLUDED = {
     'annotation-events',
@@ -29,6 +29,7 @@ EXCLUDED = {
     'realtime-auth',
     'agent-realtime',
     'agent-realtime-auth',
+    'agent-workspaces',
     'metrics-grafana-authorize',
     'runtime-activation-app-instance',
     'schedule-complete',

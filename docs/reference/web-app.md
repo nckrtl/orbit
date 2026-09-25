@@ -39,7 +39,24 @@ The web app subscribes to `presence-node.{id}` for every active Node, next to th
 
 A Node without an agent, such as an operator client, always uses the last row. When realtime is not configured, the web app polls as before and shows every Node from Prometheus.
 
-CPU and memory still come from the Process list, which the web app polls every 15 seconds because no event carries them. The Gateway answers that list from its [view of the agents](/reference/node-agent#gateway-view) when the view is fresh, so the poll causes no SSH even when Prometheus is down.
+CPU and memory come from [`process.usage`](/reference/events#process-usage) events, which the Gateway sends every 15 seconds while a browser is subscribed. The web app writes each sample into its cached Process list. While realtime is live, it reloads the Process list only when no `process.usage` event arrived for 60 seconds. While realtime is down or not configured, it polls the list every 15 seconds. The Gateway answers that list from its [view of the agents](/reference/node-agent#gateway-view) when the view is fresh, so a reload causes no SSH even when Prometheus is down.
+
+## Live tasks
+
+The web app keeps the task board, each task group, its agent threads, its comments, and the extension status current from [task events](/reference/events#tasks) on the `orbit` channel. [ADR 0151](/decisions/0151-push-task-and-process-usage-changes-over-realtime) records the design.
+
+| Event | The web app refetches |
+| --- | --- |
+| `task_group.created`, `task_group.updated` | The task list and that group |
+| `task_comment.created` | That subtask's comments |
+| `agent_thread.updated` | That group's agent threads and the group |
+| `tasks.updated` | Nothing; it stores the new `enabled` value |
+
+The web app waits 100 milliseconds after a task event and then refetches each named query once, so the notices of one Gateway change show a group once.
+
+While realtime is live, these queries refetch every 5 minutes as a safety net for a lost notice, and a refetch that an event starts replaces a request already in flight. When the socket first subscribes, the web app refetches the task and Process queries, because a change between their first load and the subscription sent no event to the page. When the socket comes back after a drop, it refetches every query, because events sent during the drop are lost.
+
+While realtime is down or not configured, the task queries poll every 30 seconds. An active group's duration counts forward on the page between refetches. Token and line counts change with the next event for the group, and the agent thread stream shows live tokens for each thread.
 
 ## Polling
 
@@ -49,14 +66,19 @@ When realtime is down, or the Gateway offers none, those views poll with a backo
 
 A hidden tab never polls. When the tab is visible again, it reloads the views whose data is older than 30 seconds.
 
+The task views and the Process list's CPU and memory have events of their own, as [Live tasks](#live-tasks) and [Live Node and Process state](#live-node-and-process-state) describe:
+
+| View | While realtime is live | While it is down |
+| --- | --- | --- |
+| Task board, agents, comments, and task status | Every 5 minutes | Every 30 seconds |
+| Process list, for CPU and memory | Only when no `process.usage` event arrived for 60 seconds | Every 15 seconds |
+
 Some views have no event and poll on their own clock while the tab is visible:
 
 | View | Interval |
 | --- | --- |
-| Process list, for CPU and memory | 15 seconds |
 | Database users, on a database page | 15 seconds |
 | Live UFW rules, on a Node page | 15 seconds |
-| Task board, agents, comments, and task status | 10 seconds |
 | Process logs, on a Process page | 10 seconds |
 | Instance logs, queue, and analytics, on an Instance page | 10 seconds |
 | Node metrics from Grafana, not the Gateway | 10 seconds |

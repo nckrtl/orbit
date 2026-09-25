@@ -38,6 +38,7 @@ final readonly class TaskScheduler
         private TaskBriefCoverage $coverage,
         private TaskPullRequestPublisher $publisher,
         private TaskCheckRunner $checks,
+        private TaskBroadcasts $broadcasts,
     ) {}
 
     /**
@@ -328,9 +329,13 @@ final readonly class TaskScheduler
                 'deliverable_evidence' => $reading->deliverables === null ? null : json_encode($reading->deliverables, JSON_THROW_ON_ERROR),
             ];
         $finishedAt = $reading->finishedAt === null ? now() : Carbon::createFromTimestamp($reading->finishedAt);
-        TaskCheck::query()->whereKey($check->id)->where('status', TaskCheckStatus::Running->value)
+        $updated = TaskCheck::query()->whereKey($check->id)->where('status', TaskCheckStatus::Running->value)
             ->update([...$values, 'finished_at' => $finishedAt, 'updated_at' => now()]);
         $check->refresh();
+        $groupId = Task::query()->whereKey($check->task_id)->value('task_group_id');
+        if ($updated === 1 && is_int($groupId)) {
+            $this->broadcasts->groupChanged($groupId);
+        }
     }
 
     private function handleReviewerOutcome(TaskGroup $group, Task $task, TaskSessionObservation $observation): bool

@@ -232,7 +232,7 @@ TAGS = [
     ('internal', 'Node callbacks', 'Endpoints that managed Nodes and Caddy call; operators do not call them.'),
 ]
 TAG_BY_PREFIX = {p: t for p, t, _ in TAGS}
-INTERNAL = {'tasks:agents', 'tasks:agent-stream', 'agent:realtime', 'agent:realtime:auth', 'metrics:grafana:authorize', 'schedule:complete', 'runtime-activation:app-instance', 'github:app:register', 'github:app:callback'}
+INTERNAL = {'tasks:agents', 'tasks:agent-stream', 'agent:realtime', 'agent:realtime:auth', 'agent:workspaces', 'metrics:grafana:authorize', 'schedule:complete', 'runtime-activation:app-instance', 'github:app:register', 'github:app:callback'}
 DEFINITION_ROUTES = {
     'AppRuntimeDefinitionsController@processIndex': 'List process definitions',
     'AppRuntimeDefinitionsController@processStore': 'Create a process definition',
@@ -283,6 +283,7 @@ SUMMARIES = {
     'runtime-activation:app-instance': 'Wake an Instance',
     'realtime:auth': 'Authorize the orbit broadcast channel', 'realtime:show': 'Show the Reverb connection',
     'agent:realtime': "Show the agent's Reverb connection", 'agent:realtime:auth': "Authorize the agent's presence channel",
+    'agent:workspaces': "List the task checkouts the agent watches",
     'tasks:enable': 'Enable Tasks', 'tasks:disable': 'Disable Tasks', 'tasks:status': 'Show Tasks status',
     'tasks:agents': 'List task agent sessions', 'tasks:agent-stream': 'Watch a task agent session',
     'tasks:list': 'List Task groups', 'tasks:create': 'Create a Task group', 'tasks:show': 'Show a Task group', 'tasks:update': 'Update a Task group',
@@ -294,6 +295,7 @@ DESCRIPTIONS = {
     'gateway:status': 'Returns the Gateway name, version, and status. This endpoint needs no WireGuard identity.',
     'realtime:auth': 'A Pusher-protocol channel authorization endpoint. A client requests access to the private `orbit` channel with its `socket_id` and `channel_name`; any active WireGuard peer Node is authorized.',
     'agent:realtime': "The `orbit-agent` on a managed Node calls this endpoint to find its Reverb connection. The Gateway identifies the Node from the WireGuard address and returns the Reverb URL, serving address, and app key, the Node's `presence-node.{id}` channel, and the agent's `agent.{id}` member ID. Connection values are null when broadcasting is not configured.",
+    'agent:workspaces': "The `orbit-agent` on a managed Node calls this endpoint every 60 seconds to learn which task checkouts to watch. The Gateway identifies the Node from the WireGuard address and lists the Instances on that Node that hold the workspace of an unfinished task group, at most 64, with the checkout path, the Project's default branch as `base`, and the Instance's starting commit as `start`. The list is empty while the tasks extension is disabled.",
     'agent:realtime:auth': "The `orbit-agent` on a managed Node calls this endpoint to join its own presence channel. The Gateway signs member `agent.{id}` on `presence-node.{id}` only for a request from that Node's WireGuard address. The response carries the Pusher `auth` and `channel_data` values.",
     'realtime:show': 'Returns the Reverb WebSocket URL, app key, and channel name a client needs to subscribe to record-change events, or null values when broadcasting is not configured.',
     'metrics:grafana:authorize': 'Caddy on the Gateway calls this endpoint for each Grafana request. The Gateway identifies the caller from the connection address and answers 204 when the caller may reach Grafana.',
@@ -1059,6 +1061,14 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
             'member': {'type': 'string', 'description': "The agent's member ID, `agent.{id}`."},
         }, 'required': ['url', 'address', 'key', 'channel', 'member']}
         responses['200'] = envelope(connection, 'The request succeeded.')
+    elif route['name'] == 'agent:workspaces':
+        workspace = {'type': 'object', 'properties': {
+            'instance_id': {'type': 'integer', 'description': 'The Instance that holds the task workspace.'},
+            'path': {'type': 'string', 'description': 'The absolute checkout path on the Node.'},
+            'base': {'type': 'string', 'description': "The Project's default branch, which the diff counts are read against."},
+            'start': {'type': ['string', 'null'], 'description': "The Instance's starting commit, or null."},
+        }, 'required': ['instance_id', 'path', 'base', 'start']}
+        responses['200'] = envelope({'type': 'array', 'items': workspace}, 'The request succeeded.')
     elif route['name'] == 'agent:realtime:auth':
         responses['200'] = {'description': 'The Pusher channel signature.', 'content': {'application/json': {'schema': {'type': 'object', 'properties': {
             'auth': {'type': 'string', 'description': 'Pusher channel signature.'},
@@ -1085,7 +1095,7 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
             responses['200'] = envelope(data, 'The request succeeded.')
         if route['name'] == 'gateway:trust':
             responses['503'] = error_response('The Gateway root CA is unavailable (`ca.unavailable`).')
-    if route['name'] == 'agent:realtime':
+    if route['name'] in ('agent:realtime', 'agent:workspaces'):
         responses['403'] = error_response('The caller is not an active WireGuard peer (`peer.identity_unknown`) or its Node is not eligible for an agent (`agent.node_ineligible`).')
     elif route['name'] == 'agent:realtime:auth':
         responses['403'] = error_response('The caller is not an active WireGuard peer (`peer.identity_unknown`), its Node is not eligible for an agent (`agent.node_ineligible`), or it asked for another Node\'s channel (`agent.channel_forbidden`).')

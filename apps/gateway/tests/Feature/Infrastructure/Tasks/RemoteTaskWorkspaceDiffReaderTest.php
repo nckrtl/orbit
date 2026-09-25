@@ -69,9 +69,9 @@ function remote_diff_ssh(AppDevFakeSshExecutor $transport): AppDevSshExecutor
     );
 }
 
-it('sums insertions and deletions from git numstat', function (): void {
+it('reads insertions and deletions from git shortstat', function (): void {
     $transport = new AppDevFakeSshExecutor([
-        new CommandResult(0, "10\t2\tapp/Models/Task.php\n-\t-\tlogo.png\n3\t1\tdocs/reference/tasks.md\n", '', 1, false),
+        new CommandResult(0, " 3 files changed, 13 insertions(+), 3 deletions(-)\n", '', 1, false),
     ]);
 
     $diff = new RemoteTaskWorkspaceDiffReader(remote_diff_ssh($transport))->lineChanges(
@@ -87,7 +87,7 @@ it('sums insertions and deletions from git numstat', function (): void {
             '/srv/orbit/apps/orbit/task-12',
             'main',
         ])
-        ->and((string) $transport->commands[0]->input)->toContain('git -C "$checkout" diff --numstat');
+        ->and((string) $transport->commands[0]->input)->toContain('git -C "$checkout" diff --shortstat');
 });
 
 it('reports commits after a revision or date', function (): void {
@@ -121,3 +121,13 @@ it('returns 0 when remote git cannot read the diff', function (): void {
         'main',
     ))->toBe(0);
 });
+
+it('reads a shortstat with only insertions or only deletions', function (string $output, array $expected): void {
+    $transport = new AppDevFakeSshExecutor([new CommandResult(0, $output, '', 1, false)]);
+
+    expect(new RemoteTaskWorkspaceDiffReader(remote_diff_ssh($transport))->lineChanges(remote_diff_instance(), 'main'))->toBe($expected);
+})->with([
+    'insertions' => [" 5500 files changed, 5500 insertions(+)\n", ['additions' => 5500, 'deletions' => 0]],
+    'one deletion' => [" 1 file changed, 1 deletion(-)\n", ['additions' => 0, 'deletions' => 1]],
+    'no change' => ['', ['additions' => 0, 'deletions' => 0]],
+]);

@@ -2,9 +2,13 @@ use bollard::{container::ListContainersOptions, system::EventsOptions, Docker};
 use futures_util::{SinkExt, StreamExt};
 use orbit_agent::{
     docker_container_name, docker_status, frame, gateway_client, iso_now, lock_single_instance,
-    next_attempt, process_unit_name, retry_delay, snapshot_frames, tls_config, ChangeBatch, Config,
-    Envelope, HeartbeatData, Liveness, LivenessCheck, Sequencer, Unit, CHANGE_MERGE_WINDOW,
-    JOIN_TIMEOUT, LOCK_PATH, SNAPSHOT_INTERVAL,
+    next_attempt, process_unit_name, retry_delay, snapshot_frames, tls_config,
+    workspace::{
+        configure_libgit2, lock_workspaces, watch_workspaces, SharedWorkspaces, WorkspaceUpdate,
+    },
+    workspace_frame, workspaces_frames, ChangeBatch, Config, Envelope, HeartbeatData, Liveness,
+    LivenessCheck, Sequencer, Unit, CHANGE_MERGE_WINDOW, JOIN_TIMEOUT, LOCK_PATH,
+    SNAPSHOT_INTERVAL,
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -86,6 +90,15 @@ async fn run() -> Result<(), Box<dyn Error + Send + Sync>> {
     });
     let (docker_tx, mut docker_rx) = mpsc::unbounded_channel();
     tokio::spawn(docker_watcher(docker_tx));
+    configure_libgit2()?;
+    let workspaces = SharedWorkspaces::default();
+    let (workspace_tx, mut workspace_rx) = mpsc::unbounded_channel();
+    tokio::spawn(watch_workspaces(
+        client.clone(),
+        config.gateway_url.clone(),
+        workspaces.clone(),
+        workspace_tx,
+    ));
     let (shutdown_tx, mut shutdown_rx) = watch::channel(false);
     tokio::spawn(async move {
         wait_for_os_shutdown().await;
@@ -113,10 +126,10 @@ async fn run() -> Result<(), Box<dyn Error + Send + Sync>> {
                 continue;
             }
         };
-        if !discovery
+        if discovery
             .member
             .strip_prefix("agent.")
-            .is_some_and(|id| discovery.channel == format!("presence-node.{id}"))
+            .is_none_or(|id| discovery.channel != format!("presence-node.{id}"))
         {
             return Err("Gateway returned an invalid agent channel identity".into());
         }
@@ -141,6 +154,8 @@ async fn run() -> Result<(), Box<dyn Error + Send + Sync>> {
             &mut docker_available,
             &mut docker_rx,
             &mut systemd_rx,
+            &workspaces,
+            &mut workspace_rx,
             &mut heartbeat,
             &mut systemd_poll,
             &mut shutdown_rx,
@@ -206,6 +221,8 @@ async fn connected_session(
     docker_available: &mut bool,
     docker_rx: &mut mpsc::UnboundedReceiver<DockerUpdate>,
     systemd_rx: &mut mpsc::UnboundedReceiver<()>,
+    workspaces: &SharedWorkspaces,
+    workspace_rx: &mut mpsc::UnboundedReceiver<WorkspaceUpdate>,
     heartbeat: &mut Interval,
     systemd_poll: &mut Interval,
     shutdown: &mut watch::Receiver<bool>,
@@ -248,6 +265,8 @@ async fn connected_session(
             std::process::exit(1);
         }
     };
+    // The snapshot below carries every current workspace, so queued notices are stale.
+    while workspace_rx.try_recv().is_ok() {}
     let units = combined_units(systemd, docker_units);
     send_snapshots(
         &mut socket,
@@ -259,6 +278,7 @@ async fn connected_session(
         } else {
             "absent"
         },
+        workspaces,
     )
     .await?;
     let mut pending = ChangeBatch::default();
@@ -280,7 +300,7 @@ async fn connected_session(
                 }
             },
             _=&mut snapshot_due=>{
-                let all=combined_units(systemd,docker_units);send_snapshots(&mut socket,channel,sequence,&all,if *docker_available{"available"}else{"absent"}).await?;
+                let all=combined_units(systemd,docker_units);send_snapshots(&mut socket,channel,sequence,&all,if *docker_available{"available"}else{"absent"},workspaces).await?;
                 snapshot_due.as_mut().reset(Instant::now()+SNAPSHOT_INTERVAL);
             },
             signal=systemd_rx.recv()=>match signal {
@@ -295,18 +315,23 @@ async fn connected_session(
                 if let Some(deadline)=queue_changes(&mut pending,diff_units(systemd,&fresh)){debounce.as_mut().reset(deadline);} *systemd=fresh;
             },
             update=docker_rx.recv()=>match update {
-                Some(DockerUpdate::Connected(units))=>{docker_units.clear();docker_units.extend(units.into_iter().map(|unit|(unit.name.clone(),unit)));*docker_available=true;let all=combined_units(systemd,docker_units);send_snapshots(&mut socket,channel,sequence,&all,"available").await?;snapshot_due.as_mut().reset(Instant::now()+SNAPSHOT_INTERVAL);},
-                Some(DockerUpdate::Absent)=>{if *docker_available{*docker_available=false;docker_units.clear();let all=combined_units(systemd,docker_units);send_snapshots(&mut socket,channel,sequence,&all,"absent").await?;snapshot_due.as_mut().reset(Instant::now()+SNAPSHOT_INTERVAL);}},
+                Some(DockerUpdate::Connected(units))=>{docker_units.clear();docker_units.extend(units.into_iter().map(|unit|(unit.name.clone(),unit)));*docker_available=true;let all=combined_units(systemd,docker_units);send_snapshots(&mut socket,channel,sequence,&all,"available",workspaces).await?;snapshot_due.as_mut().reset(Instant::now()+SNAPSHOT_INTERVAL);},
+                Some(DockerUpdate::Absent) if *docker_available=>{*docker_available=false;docker_units.clear();let all=combined_units(systemd,docker_units);send_snapshots(&mut socket,channel,sequence,&all,"absent",workspaces).await?;snapshot_due.as_mut().reset(Instant::now()+SNAPSHOT_INTERVAL);},
+                Some(DockerUpdate::Absent)=>{},
                 Some(DockerUpdate::Changed(unit)) if docker_units.get(&unit.name)!=Some(&unit)=>{docker_units.insert(unit.name.clone(),unit.clone());if let Some(deadline)=queue_changes(&mut pending,[unit]){debounce.as_mut().reset(deadline);}},
                 Some(DockerUpdate::Changed(_))=>{},
                 None=>{},
+            },
+            Some(update)=workspace_rx.recv()=>match update {
+                WorkspaceUpdate::Changed(id)=>{let state=lock_workspaces(workspaces).get(&id).cloned();if let Some(state)=state{send_raw_frame(&mut socket,workspace_frame(channel,sequence.advance(),state)?).await?;}},
+                WorkspaceUpdate::List=>send_workspaces(&mut socket,channel,sequence,workspaces).await?,
             },
             _=&mut debounce,if !pending.is_empty()=>{if pending.due(Instant::now()){for unit in pending.take(){let event=orbit_agent::process_frame(channel,sequence.advance(),unit)?;send_raw_frame(&mut socket,event).await?;}}},
             message=socket.next()=>match message{
                 Some(Ok(Message::Text(text)))=>{liveness.message(Instant::now());let value:Value=serde_json::from_str(&text)?;match value["event"].as_str().unwrap_or(""){
                     "pusher:ping"=>send_control(&mut socket,"pusher:pong",json!({})).await?,
                     "pusher:error"|"pusher_internal:subscription_error"=>return Err(format!("Pusher rejected subscription: {}",value["data"]).into()),
-                    "pusher_internal:member_added"=>{let all=combined_units(systemd,docker_units);send_snapshots(&mut socket,channel,sequence,&all,if *docker_available{"available"}else{"absent"}).await?;snapshot_due.as_mut().reset(Instant::now()+SNAPSHOT_INTERVAL);},
+                    "pusher_internal:member_added"=>{let all=combined_units(systemd,docker_units);send_snapshots(&mut socket,channel,sequence,&all,if *docker_available{"available"}else{"absent"},workspaces).await?;snapshot_due.as_mut().reset(Instant::now()+SNAPSHOT_INTERVAL);},
                     _=>{}
                 }},
                 Some(Ok(Message::Ping(data)))=>{liveness.message(Instant::now());socket.send(Message::Pong(data)).await?},
@@ -402,8 +427,25 @@ async fn send_snapshots(
     sequence: &mut Sequencer,
     units: &[Unit],
     docker: &'static str,
+    workspaces: &SharedWorkspaces,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     for event in snapshot_frames(channel, sequence, units, docker)? {
+        send_raw_frame(socket, event).await?;
+    }
+    // Every snapshot is followed by the complete workspace list, even when it is empty.
+    send_workspaces(socket, channel, sequence, workspaces).await
+}
+async fn send_workspaces(
+    socket: &mut Socket,
+    channel: &str,
+    sequence: &mut Sequencer,
+    workspaces: &SharedWorkspaces,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
+    let list = lock_workspaces(workspaces)
+        .values()
+        .cloned()
+        .collect::<Vec<_>>();
+    for event in workspaces_frames(channel, sequence, &list)? {
         send_raw_frame(socket, event).await?;
     }
     Ok(())

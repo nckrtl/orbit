@@ -744,6 +744,11 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
                 for member in members: cleanup(member)
                 for member in ordered: remove_original(member)
                 for member in members: verify(member['destination'], member)
+                # After the last verification: other local users, the Node agent included, never read an Instance's environment.
+                for member in members:
+                    env=os.path.join(member['destination'],'.env')
+                    if os.path.isfile(env) and not os.path.islink(env) and os.lstat(env).st_mode & 0o007:
+                        os.chmod(env, stat.S_IMODE(os.lstat(env).st_mode) & 0o770)
             else: raise SystemExit(42)
             PYTHON;
     }
