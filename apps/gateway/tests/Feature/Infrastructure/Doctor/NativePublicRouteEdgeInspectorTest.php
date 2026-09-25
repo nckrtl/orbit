@@ -14,10 +14,12 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AppDev\AppDevCaddyConfigRenderer;
 use App\Infrastructure\AppDev\AppDevSiteRepository;
 use App\Infrastructure\AppDev\AppDevSshExecutor;
+use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
 use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
 use App\Infrastructure\Caddy\CaddyGlobalOptions;
 use App\Infrastructure\Doctor\NativePublicRouteEdgeInspector;
 use App\Infrastructure\Processes\CommandDeadline;
+use App\Infrastructure\Routes\NativePublicRouteEdgeProjector;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshKeyProvider;
@@ -130,6 +132,14 @@ describe('an Ingress that runs the workload while the Router is on another Node'
 
         expect($ingress)->toContain("https://{$this->route->domain} {")
             ->not->toContain('tls force_automate');
+    });
+
+    it('builds the Router with the Ingress when the public edge activates', function (): void {
+        $builds = app(NodeCaddyBuilds::class);
+
+        app(NativePublicRouteEdgeProjector::class)->activatePublicHandler($this->route);
+
+        expect($builds->built)->toBe(['app-prod', 'gateway']);
     });
 
     it('accepts the published site', function (): void {

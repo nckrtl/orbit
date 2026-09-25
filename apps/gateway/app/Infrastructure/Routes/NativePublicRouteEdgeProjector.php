@@ -67,7 +67,7 @@ final readonly class NativePublicRouteEdgeProjector implements PublicRouteEdgePr
 
     public function activatePublicHandler(Route $route): void
     {
-        $this->caddy->build($this->sites->ingressNode($route));
+        $this->buildEdge($route);
     }
 
     public function prepareIngressFirewall(Route $route): void
@@ -78,8 +78,7 @@ final readonly class NativePublicRouteEdgeProjector implements PublicRouteEdgePr
 
     public function rollbackPublicEdge(Route $route): void
     {
-        $ingress = $this->sites->ingressNode($route);
-        $this->caddy->build($ingress);
+        $ingress = $this->buildEdge($route);
         $this->firewall->converge($ingress, RoleName::Ingress, $ingress->user);
         $this->certificates->removeRouteIngress($route, $ingress);
     }
@@ -87,6 +86,33 @@ final readonly class NativePublicRouteEdgeProjector implements PublicRouteEdgePr
     public function removePublicEdge(Route $route): void
     {
         $this->rollbackPublicEdge($route);
+    }
+
+    /**
+     * Builds the Ingress Node, and the Router when it is another Node: a Router that forwards to a target
+     * on the Ingress Node changes how it verifies that target while the Route is public.
+     */
+    private function buildEdge(Route $route): Node
+    {
+        $ingress = $this->sites->ingressNode($route);
+        $this->caddy->build($ingress);
+
+        try {
+            $router = $this->sites->routerNode($route);
+        } catch (RuntimeConvergenceException $exception) {
+            // A Cluster without an active Router has no Router site for this Route to build.
+            if ($exception->errorCode !== 'cluster.router_required') {
+                throw $exception;
+            }
+
+            return $ingress;
+        }
+
+        if (! $router->is($ingress)) {
+            $this->caddy->build($router);
+        }
+
+        return $ingress;
     }
 
     private function verifyHop(Node $from, string $address, string $domain, string $step): void
