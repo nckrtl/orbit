@@ -1,0 +1,114 @@
+#!/usr/bin/env perl
+# Test-only stand-in for util-linux flock(1) on hosts that lack it, such as macOS.
+# Supports: flock [options] fd
+#           flock [options] file|directory [-c command | command [arguments...]]
+# Options: -s|--shared, -x|-e|--exclusive, -u|--unlock, -n|--nb|--nonblock, -w|--wait|--timeout seconds,
+#          -E|--conflict-exit-code code, -o|--close.
+use strict;
+use warnings;
+no warnings qw(exec);
+use Fcntl qw(:flock O_RDONLY O_WRONLY O_CREAT O_NOCTTY);
+use POSIX ();
+use Time::HiRes qw(sleep time);
+
+my ($mode, $nonblock, $timeout, $conflict, $close, $shell) = (LOCK_EX, 0, undef, 1, 0, undef);
+
+sub option_value {
+    my ($option) = @_;
+    if (!@ARGV) {
+        print STDERR "flock: option $option requires an argument\n";
+        exit 64;
+    }
+
+    return shift @ARGV;
+}
+
+while (@ARGV) {
+    my $option = $ARGV[0];
+    last if $option !~ /\A-/;
+    shift @ARGV;
+    last if $option eq '--';
+
+    if ($option eq '-s' || $option eq '--shared') {
+        $mode = LOCK_SH;
+    } elsif ($option eq '-x' || $option eq '-e' || $option eq '--exclusive') {
+        $mode = LOCK_EX;
+    } elsif ($option eq '-u' || $option eq '--unlock') {
+        $mode = LOCK_UN;
+    } elsif ($option eq '-n' || $option eq '--nb' || $option eq '--nonblock') {
+        $nonblock = 1;
+    } elsif ($option eq '-w' || $option eq '--wait' || $option eq '--timeout') {
+        $timeout = option_value($option);
+    } elsif ($option =~ /\A--(?:wait|timeout)=(.*)\z/) {
+        $timeout = $1;
+    } elsif ($option eq '-E' || $option eq '--conflict-exit-code') {
+        $conflict = option_value($option);
+    } elsif ($option eq '-o' || $option eq '--close') {
+        $close = 1;
+    } elsif ($option eq '-c' || $option eq '--command') {
+        $shell = option_value($option);
+    } else {
+        print STDERR "flock: unsupported option $option\n";
+        exit 64;
+    }
+}
+
+if (!@ARGV) {
+    print STDERR "flock: requires a file descriptor, file, or directory\n";
+    exit 64;
+}
+
+my $target = shift @ARGV;
+my $handle;
+
+if ($target =~ /\A\d+\z/ && !@ARGV && !defined $shell) {
+    # The lock belongs to the caller's open file description, so it outlives this process.
+    my $opened = 0;
+    for my $open_mode ('+<&=', '>&=', '<&=') {
+        undef $handle;
+        $opened = open($handle, $open_mode, $target);
+        last if $opened;
+    }
+    if (!$opened) {
+        print STDERR "flock: $target: bad file descriptor\n";
+        exit 1;
+    }
+} else {
+    if (!sysopen($handle, $target, O_RDONLY | O_NOCTTY | O_CREAT, 0666)
+        && !sysopen($handle, $target, O_WRONLY | O_NOCTTY | O_CREAT, 0666)) {
+        print STDERR "flock: cannot open lock file $target: $!\n";
+        exit 66;
+    }
+}
+
+if ($mode == LOCK_UN) {
+    flock($handle, LOCK_UN) or exit 1;
+} else {
+    my $deadline = defined $timeout ? time() + $timeout : undef;
+    my $blocking = !$nonblock && !defined $deadline;
+
+    while (!flock($handle, $mode | ($blocking ? 0 : LOCK_NB))) {
+        exit $conflict if $nonblock || (defined $deadline && time() >= $deadline);
+        sleep 0.05;
+    }
+}
+
+exit 0 if !@ARGV && !defined $shell;
+
+my @command = defined $shell ? ($ENV{SHELL} // '/bin/sh', '-c', $shell) : @ARGV;
+my $pid = fork();
+if (!defined $pid) {
+    print STDERR "flock: fork failed: $!\n";
+    exit 71;
+}
+
+if ($pid == 0) {
+    close($handle) if $close;
+    exec { $command[0] } @command;
+    print STDERR "flock: failed to execute $command[0]: $!\n";
+    POSIX::_exit($!{ENOENT} ? 127 : 126);
+}
+
+waitpid($pid, 0);
+exit POSIX::WEXITSTATUS($?) if POSIX::WIFEXITED($?);
+exit(128 + ($? & 0x7f));

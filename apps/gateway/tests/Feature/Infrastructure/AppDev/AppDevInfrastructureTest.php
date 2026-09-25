@@ -56,6 +56,7 @@ use Tests\Support\AppDevFakeProcessRunner;
 use Tests\Support\AppDevFakeSshExecutor;
 use Tests\Support\FakeNodeCaddyBuilds;
 use Tests\Support\FpmPublishHarness;
+use Tests\Support\TestToolchain;
 
 function app_dev_account_resolver(
     ManagedUserAccount $account = new ManagedUserAccount('orbit', 'orbit', '/home/orbit'),
@@ -151,9 +152,9 @@ it('keeps the default resolver policy during an app development TLD convergence'
                 $command->input ?? '',
             );
             $process = new Process(
-                ['/bin/bash', '-seu', '--', ...array_slice($command->arguments, 4)],
+                [TestToolchain::bash(), '-seu', '--', ...array_slice($command->arguments, 4)],
                 cwd: $this->root,
-                env: ['PATH' => "{$this->root}/bin:/usr/bin:/bin"],
+                env: ['PATH' => "{$this->root}/bin:".TestToolchain::path()],
             );
             $process->setInput($input);
             $process->run();

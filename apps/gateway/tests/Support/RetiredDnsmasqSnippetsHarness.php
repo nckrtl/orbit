@@ -155,7 +155,7 @@ final class RetiredDnsmasqSnippetsHarness
 
     private function writeShim(string $name, string $contents): void
     {
-        file_put_contents(filename: $this->root.'/bin/'.$name, data: $contents);
+        file_put_contents(filename: $this->root.'/bin/'.$name, data: TestToolchain::script($contents));
         chmod($this->root.'/bin/'.$name, permissions: 0o755);
     }
 

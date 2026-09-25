@@ -11,6 +11,7 @@ use App\Infrastructure\Processes\ProtectedInput;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\Process;
+use Tests\Support\TestToolchain;
 
 function composer_update_program_directory(string $suffix = ''): string
 {
@@ -22,6 +23,8 @@ function composer_update_program_directory(string $suffix = ''): string
 
 function composer_update_program_fixture(string $path, string $preUpdate): void
 {
+    TestToolchain::requireLinux('The supervisor runs /usr/bin/setsid and /usr/bin/bash and watches its owner through /proc.');
+
     file_put_contents($path.'/composer.json', json_encode([
         'name' => 'orbit/composer-update-program-fixture',
         'require' => new stdClass,
@@ -48,6 +51,8 @@ function composer_update_program_fixture(string $path, string $preUpdate): void
 
 function composer_update_program_run(string $path, string $deadline, ?Closure $cancelled, float $timeout): CommandResult
 {
+    TestToolchain::requireLinux('The supervisor runs /usr/bin/setsid and /usr/bin/bash and watches its owner through /proc.');
+
     return new NativeProcessRunner()->run(new ProcessInvocation(
         arguments: [
             '/usr/bin/setsid',

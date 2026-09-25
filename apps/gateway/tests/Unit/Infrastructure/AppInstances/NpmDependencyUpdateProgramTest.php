@@ -10,6 +10,7 @@ use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProtectedInput;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
+use Tests\Support\TestToolchain;
 
 function npm_update_program_directory(string $suffix = ''): string
 {
@@ -30,6 +31,8 @@ function npm_update_program_vp(string $body): string
 
 function npm_update_program_run(string $root, string $vp, string $deadline, ?Closure $cancelled, float $timeout): CommandResult
 {
+    TestToolchain::requireLinux('The supervisor runs /usr/bin/setsid and /usr/bin/bash and watches its owner through /proc.');
+
     return new NativeProcessRunner()->run(new ProcessInvocation(
         arguments: [
             '/usr/bin/setsid',

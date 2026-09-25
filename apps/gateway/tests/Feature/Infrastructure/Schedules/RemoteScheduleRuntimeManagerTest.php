@@ -22,6 +22,7 @@ use App\Models\Schedule;
 use Illuminate\Filesystem\Filesystem;
 use Symfony\Component\Process\Process;
 use Tests\Support\Schedules\FakeScheduleRuntimeAccountResolver;
+use Tests\Support\TestToolchain;
 
 beforeEach(function (): void {
     $this->ssh = new ScheduleRuntimeFakeSshExecutor;
@@ -325,7 +326,7 @@ function schedule_runtime_write_root_identity_commands(string $bin): void
         mkdir -m 0711 -- "$directory"
         BASH);
     chmod($bin.'/install', 0700);
-    file_put_contents($bin.'/stat', <<<'BASH'
+    file_put_contents($bin.'/stat', TestToolchain::script(<<<'BASH'
         #!/bin/sh
         if [ "$1" = -c ] && [ "$2" = %U:%G ]; then
             printf 'root:root\n'
@@ -338,6 +339,6 @@ function schedule_runtime_write_root_identity_commands(string $bin): void
             exit 0
         fi
         exec /usr/bin/stat "$@"
-        BASH);
+        BASH));
     chmod($bin.'/stat', 0700);
 }

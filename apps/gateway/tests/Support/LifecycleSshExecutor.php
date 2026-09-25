@@ -38,8 +38,9 @@ final class LifecycleSshExecutor implements SshExecutor
         $this->shells[] = $command->shellCommand();
 
         if ($this->local) {
+            // The runner's program starts `/usr/bin/bash`, which the toolchain supplies on a non-Linux host.
             return (new NativeProcessRunner)->run(new ProcessInvocation(
-                arguments: $command->arguments,
+                arguments: array_map(TestToolchain::script(...), $command->arguments),
                 protectedInput: $command->protectedInput,
                 timeout: $command->timeout ?? 10.0,
             ));

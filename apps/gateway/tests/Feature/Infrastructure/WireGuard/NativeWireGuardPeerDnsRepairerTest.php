@@ -19,6 +19,7 @@ use App\Infrastructure\WireGuard\VpnConfigurationRepository;
 use App\Models\Node;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
+use Tests\Support\TestToolchain;
 
 it('repairs live and persisted DNS repeatedly without restarting the tunnel', function (): void {
     $harness = wireguard_peer_dns_repair_harness();
@@ -547,7 +548,7 @@ function wireguard_peer_dns_repair_harness(
                 $command->input ?? '',
             );
             $process = proc_open(
-                ['/bin/bash', '-seu', '--', ...array_slice($command->arguments, 4)],
+                [TestToolchain::bash(), '-seu', '--', ...array_slice($command->arguments, 4)],
                 [
                     0 => ['pipe', 'r'],
                     1 => ['pipe', 'w'],
@@ -556,7 +557,7 @@ function wireguard_peer_dns_repair_harness(
                 $pipes,
                 $this->root,
                 [
-                    'PATH' => "{$this->root}/bin:/usr/bin:/bin",
+                    'PATH' => "{$this->root}/bin:".TestToolchain::path(),
                     'ORBIT_TEST_ROOT' => $this->root,
                 ],
             );
@@ -736,7 +737,7 @@ function wireguard_peer_dns_repair_harness(
 function wireguard_peer_dns_repair_shim(string $root, string $name, string $body): void
 {
     $path = "{$root}/bin/{$name}";
-    file_put_contents($path, "#!/bin/bash\nset -eu\n{$body}\n");
+    file_put_contents($path, TestToolchain::script('#!'.TestToolchain::bash()."\nset -eu\n{$body}\n"));
     chmod($path, 0o700);
 }
 

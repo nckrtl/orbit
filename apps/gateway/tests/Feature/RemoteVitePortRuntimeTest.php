@@ -12,9 +12,12 @@ use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
 use Symfony\Component\Process\Process as LocalProcess;
+use Tests\Support\TestToolchain;
 
 function local_vite_port_runtime(): RemoteVitePortRuntime
 {
+    TestToolchain::requireLinux('The port probe reads /proc/net/tcp and /proc/net/tcp6.');
+
     $ssh = Mockery::mock(SshExecutor::class);
     $ssh->shouldReceive('execute')->andReturnUsing(function (SshConnection $connection, RemoteCommand $command): CommandResult {
         expect(array_slice($command->arguments, 0, 2))->toBe(['python3', '-c']);
