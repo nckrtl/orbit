@@ -19,6 +19,9 @@ pub const AGENT_BURST: f64 = 256.0 * 1024.0;
 pub const QUEUE_BYTES: usize = 256 * 1024;
 pub const BATCH_INTERVAL: Duration = Duration::from_millis(250);
 pub const SOURCE_UNAVAILABLE: &str = "source_unavailable";
+/// The agent stopped the stream because it had no stream list for 60 seconds. The Gateway ends the
+/// stream with `agent_left`, and the viewer opens a new one that catches up on the lines it missed.
+pub const LIST_UNAVAILABLE: &str = "list_unavailable";
 
 /// Cuts a line to `max` bytes at a character boundary so that it ends with `[truncated]`.
 pub fn cut_line(line: &str, max: usize) -> String {
@@ -202,6 +205,10 @@ impl StreamQueue {
     /// Marks the source as ended; the end is sent after the queued lines.
     pub fn end(&self, reason: &'static str) {
         lock(&self.state).ended.get_or_insert(reason);
+    }
+    /// The reason the stream ends with, once `end` was called.
+    pub fn end_reason(&self) -> Option<&'static str> {
+        lock(&self.state).ended
     }
     pub fn queued_bytes(&self) -> usize {
         lock(&self.state).bytes

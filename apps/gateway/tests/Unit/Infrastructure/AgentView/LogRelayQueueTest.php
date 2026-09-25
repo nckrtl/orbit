@@ -56,6 +56,14 @@ describe('the log relay queue', function (): void {
             ->and(array_column($batch['items'], 'item'))->toBe([1, 2, 3, 4]);
     });
 
+    it('ends a stream the agent stopped without a stream list with agent_left, and any other end with source_unavailable', function (): void {
+        [$queue] = relay_queue();
+        $queue->end(3, ['stream' => STREAM_A, 'reason' => 'list_unavailable']);
+        $queue->end(3, ['stream' => STREAM_B, 'reason' => 'anything else']);
+
+        expect(batch_summary($queue->take()))->toBe(['a:end:agent_left', 'b:end:source_unavailable']);
+    });
+
     it('drops malformed events and cleans each line', function (): void {
         [$queue] = relay_queue();
         $queue->lines(3, queue_event('not-a-stream', ['x']));

@@ -50,7 +50,7 @@ The Gateway refuses a stream with `logs.live_unavailable` (409) and a reason whe
 
 - The agent learns what to read only from `GET /api/v1/agent/log-streams`. It sends that request over HTTPS to `gateway.orbit` and verifies the Orbit CA, as for every agent request. The response lists at most 16 active streams, each with its ID, `lines`, and one source.
 - When a stream becomes active or closes, and at each renewal until the stream relays its first line, the Gateway publishes a server event, `log-streams.changed`, with no data on the Node's log channel. The event only prompts the agent to fetch the list. A forged or lost event cannot start a read, because the agent reads only what the list names.
-- The agent fetches the list when it joins, after every prompt, and every 15 seconds while it reads at least one stream. It stops every stream that the list does not name. When it cannot fetch the list for 60 seconds, it stops every stream.
+- The agent fetches the list when it joins, after every prompt, and every 15 seconds while it reads at least one stream. It stops every stream that the list does not name. When it cannot fetch the list for 60 seconds, it stops reading every stream and ends each one with `client-log-end` and reason `list_unavailable`, after the lines it already read. It never reads such a stream again. While the list still names it, the agent sends the end again, in case the first one was lost. The Gateway ends the stream with `agent_left`, and the viewer opens a new stream that catches up.
 
 ### Read only listed sources
 
@@ -97,7 +97,7 @@ We chose the relay over direct publishing by the agent. With direct publishing, 
 
 - The agent applies the Gateway's secret patterns to each line before it sends it: PEM blocks, URL credentials, `Authorization` headers, `Bearer` tokens, and values after a secret-named key in `KEY=value`, JSON, and `key: value` form. A PEM block that spans lines is redacted from its `BEGIN` line to its `END` line, for at most 200 lines.
 - One table of test cases in `apps/agent` holds the expected result of each pattern. The agent tests and a Gateway test both run it, so the two implementations stay the same.
-- The Gateway applies the patterns again and replaces the stored environment values of eight characters or more, as the one-shot reads do. It skips the values of setting keys, such as `APP_ENV` and `LOG_CHANNEL`, which would otherwise hide ordinary words such as `production` in `production.INFO`.
+- The Gateway applies the patterns again and replaces the stored environment values of eight characters or more, as the one-shot reads do. It skips the values of an exact list of setting keys, such as `APP_ENV` and `LOG_CHANNEL`, which would otherwise hide ordinary words such as `production` in `production.INFO`. The list has no wildcards, so a secret under a similar key, such as `LOG_SLACK_WEBHOOK_URL`, stays redacted.
 - Redaction is a safety net, not access control. It misses a secret with no recognizable shape or key name, a secret split across lines or encoded, a short environment value that the Gateway skips, and personal data such as email addresses. Access to the Node decides who may read a log.
 
 ### Bound rate and memory
@@ -174,7 +174,7 @@ The rest of the boundary stays. The agent runs no program, opens no port, writes
 - A slow or stopped Reverb delays lines, not the agent view. Lines wait in the subscriber's memory, up to the relay backlog. A stream that falls further behind ends with `relay_behind`.
 - Production Instance logs never stream. Their panes and `--follow` use SSH reads every 10 or 5 seconds.
 - The Node reads log content only while someone watches it. Redaction happens twice, and it still misses what no pattern recognizes.
-- The agent gains a journal reader and a file reader. A journal field that uses xz compression shows as `[orbit] entry not readable`. The journal view shows the unit's entries and systemd's own messages about the unit, in the form `2026-09-25T10:15:02+00:00 name[pid]: message`, which differs from `journalctl --output short-iso` by the missing host name.
+- The agent gains a journal reader and a file reader. A journal field that uses xz compression shows as `[orbit] entry not readable`. The journal view shows the unit's entries and systemd's own messages about the unit, exactly as `journalctl --output short-iso --utc` prints them, for example `2026-09-25T10:15:02+00:00 app-dev name[pid]: message`. The one-shot read over SSH uses the same options, so a viewer that switches between the two reads finds the lines it printed.
 - A log file that `root` owns, for example one written by `sudo php artisan`, cannot stream. A `laravel.log` that is a symbolic link also cannot stream, while the one-shot read skips it and reads the newest daily file. Both streams end with `source_unavailable`, and the viewer falls back to SSH reads.
 - Nodes need agent 0.3.0 for the live path. Older agents never join the log channel, so the Gateway refuses streams for their Nodes with `agent_outdated` and clients use SSH reads.
 - The `websocket` role Node sees log lines in transit.

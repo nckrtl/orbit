@@ -90,7 +90,7 @@ The Gateway publishes two server events on `private-log-stream.{stream}`, with t
 | `closed` | The client closed the stream. | None. |
 | `expired` | The lease ended without a renewal. | Open a new stream to keep watching. |
 | `revoked` | The opening Node lost its access edge to the serving Node. | Stop. |
-| `agent_left` | The Node's agent left its log channel, for example because it stopped. | Fall back to one-shot reads. |
+| `agent_left` | The Node's agent left its log channel, for example because it stopped, or it had no stream list for 60 seconds. | Fall back to one-shot reads. |
 | `source_unavailable` | The agent could not open or keep reading the source. | Fall back to one-shot reads. |
 | `relay_behind` | The Gateway could not relay the lines fast enough, for example because Reverb was slow. It dropped the lines that waited. | Fall back to one-shot reads. |
 
@@ -101,10 +101,10 @@ Each record has one source, the same one that its one-shot read uses.
 | Record | Source | Lines |
 | --- | --- | --- |
 | Instance | `storage/logs/laravel.log` in the checkout, or the newest `laravel-*.log` when it is absent, as [Instance logs](/reference/instance-logs#know-which-file-the-gateway-reads) describes | Each line of the file |
-| systemd Process | The journal entries of `orbit-process-{id}-{name}.service`, and systemd's own messages about that unit | `2026-09-25T10:15:02+00:00 name[pid]: message` |
+| systemd Process | The journal entries of `orbit-process-{id}-{name}.service`, and systemd's own messages about that unit | `2026-09-25T10:15:02+00:00 host name[pid]: message`, as `journalctl --output short-iso --utc` prints it |
 | Docker Process | The output of container `orbit-process-{id}-{name}` | Each line of standard output and standard error |
 
-The agent follows a daily log file to the next day's file. When an earlier file becomes the newest again, it continues where it left that file, so no line is sent twice. It starts from the beginning of a file that was truncated. The journal format differs from `journalctl --output short-iso` only by the missing host name.
+The agent follows a daily log file to the next day's file. When an earlier file becomes the newest again, it continues where it left that file, so no line is sent twice. It starts from the beginning of a file that was truncated. Journal lines match the one-shot read over SSH, which uses `journalctl --output short-iso --utc`.
 
 The agent refuses a log file that `root` owns, a link at `storage/logs` or at the log file, and a container without the labels `orbit.managed=true` and `orbit.process.id={id}`. The stream then ends with `source_unavailable`.
 
@@ -136,7 +136,7 @@ The agent redacts each line before it leaves the Node. The Gateway redacts it ag
 | Agent and Gateway | PEM blocks, credentials in URLs such as `https://user:pass@host`, `Authorization` and `Proxy-Authorization` header values, `Bearer` tokens, and the value after a secret-named key, such as `API_KEY=...`, `"password": "..."`, or `db_password: ...` |
 | Gateway | Each stored environment value of the Instance, or each environment value of a Docker Process, of eight characters or more, except the values of setting keys |
 
-The setting keys are `APP_ENV`, `APP_NAME`, `APP_URL`, `APP_LOCALE`, `APP_FALLBACK_LOCALE`, `DB_CONNECTION`, `DB_HOST`, `DB_PORT`, `LOG_*`, and every key that ends in `_DRIVER`, `_CONNECTION`, or `_STORE`. Their values, such as `production`, would otherwise hide ordinary words in the log.
+The setting keys are exactly `APP_ENV`, `APP_NAME`, `APP_DEBUG`, `APP_LOCALE`, `APP_FALLBACK_LOCALE`, `APP_FAKER_LOCALE`, `APP_TIMEZONE`, `APP_MAINTENANCE_DRIVER`, `APP_MAINTENANCE_STORE`, `BCRYPT_ROUNDS`, `LOG_CHANNEL`, `LOG_STACK`, `LOG_LEVEL`, `LOG_DEPRECATIONS_CHANNEL`, `DB_CONNECTION`, `DB_PORT`, `SESSION_DRIVER`, `SESSION_LIFETIME`, `SESSION_ENCRYPT`, `BROADCAST_CONNECTION`, `FILESYSTEM_DISK`, `QUEUE_CONNECTION`, `CACHE_STORE`, `CACHE_DRIVER`, `MAIL_MAILER`, `MAIL_PORT`, and `MAIL_ENCRYPTION`. Their values, such as `production`, would otherwise hide ordinary words in the log. The list names each key in full, so a secret under a similar key, such as `LOG_SLACK_WEBHOOK_URL`, stays redacted. Hosts and URLs, such as `APP_URL` and `DB_HOST`, stay redacted too.
 
 A PEM block that spans lines is redacted from its `BEGIN` line through its `END` line, for at most 200 lines. When no `END` line comes within 200 lines, the 200th line becomes `[orbit] 199 lines redacted after a PEM BEGIN line without END`, and the lines after it show again.
 

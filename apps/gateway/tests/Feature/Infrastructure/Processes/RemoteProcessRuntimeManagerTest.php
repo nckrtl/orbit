@@ -136,7 +136,7 @@ it('installs and manages a systemd process through fixed SSH argv', function ():
             ['sudo', 'systemctl', 'disable', '--now', $unit],
             ['sudo', 'test', '-e', $path],
             ['sudo', 'cat', '--', $path],
-            ['sudo', 'journalctl', '--unit', $unit, '--lines', '50', '--no-pager', '--output', 'short-iso'],
+            ['sudo', 'journalctl', '--unit', $unit, '--lines', '50', '--no-pager', '--output', 'short-iso', '--utc'],
             ['sudo', 'test', '-e', $path],
             ['sudo', 'cat', '--', $path],
             ['sudo', 'systemctl', 'disable', '--now', $unit],

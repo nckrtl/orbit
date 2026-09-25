@@ -179,7 +179,10 @@ final class LogRelayQueue
 
         if (! $this->isEnded($stream)) {
             $this->ended[$stream] = $this->now() + self::EndedSeconds;
-            $this->items[] = ['type' => 'end', 'item' => $this->nextItem++, 'node' => $nodeId, 'stream' => $stream, 'reason' => LogStreamEndReason::SourceUnavailable->value];
+            // An agent that lost its stream list for 60 seconds ends its streams like an agent that
+            // left; viewers open new streams. Every other end means the source could not be read.
+            $reason = ($data['reason'] ?? null) === 'list_unavailable' ? LogStreamEndReason::AgentLeft : LogStreamEndReason::SourceUnavailable;
+            $this->items[] = ['type' => 'end', 'item' => $this->nextItem++, 'node' => $nodeId, 'stream' => $stream, 'reason' => $reason->value];
         }
     }
 

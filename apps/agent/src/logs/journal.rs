@@ -230,8 +230,11 @@ struct Cursor {
 enum Wanted {
     Message,
     Pid,
+    SyslogPid,
     Identifier,
     Comm,
+    Hostname,
+    SourceRealtime,
 }
 impl Wanted {
     fn of(name: &[u8]) -> Option<Self> {
@@ -240,6 +243,9 @@ impl Wanted {
             b"_PID" => Some(Self::Pid),
             b"SYSLOG_IDENTIFIER" => Some(Self::Identifier),
             b"_COMM" => Some(Self::Comm),
+            b"SYSLOG_PID" => Some(Self::SyslogPid),
+            b"_HOSTNAME" => Some(Self::Hostname),
+            b"_SOURCE_REALTIME_TIMESTAMP" => Some(Self::SourceRealtime),
             _ => None,
         }
     }
@@ -266,8 +272,11 @@ pub struct Entry {
     pub realtime: u64,
     pub message: Option<Vec<u8>>,
     pub pid: Option<Vec<u8>>,
+    pub syslog_pid: Option<Vec<u8>>,
     pub identifier: Option<Vec<u8>>,
     pub comm: Option<Vec<u8>>,
+    pub hostname: Option<Vec<u8>>,
+    pub source_realtime: Option<Vec<u8>>,
     pub unreadable: bool,
 }
 
@@ -564,6 +573,9 @@ impl JournalFile {
                     Wanted::Pid => &mut entry.pid,
                     Wanted::Identifier => &mut entry.identifier,
                     Wanted::Comm => &mut entry.comm,
+                    Wanted::SyslogPid => &mut entry.syslog_pid,
+                    Wanted::Hostname => &mut entry.hostname,
+                    Wanted::SourceRealtime => &mut entry.source_realtime,
                 };
                 slot.get_or_insert(value);
             }
@@ -623,34 +635,118 @@ pub fn format_realtime(realtime: u64) -> String {
         .unwrap_or_else(|| "1970-01-01T00:00:00+00:00".into())
 }
 
-/// `time identifier[pid]: message`, one line for each line of the message. Entries without a message
-/// produce no line, unless a field could not be read.
-pub fn format_entry(entry: &Entry, unit: &str) -> Vec<String> {
+/// Whether journalctl prints a field as text: valid UTF-8 without control characters.
+fn printable(value: &[u8]) -> bool {
+    std::str::from_utf8(value).is_ok_and(|text| !text.chars().any(char::is_control))
+}
+
+/// A message as journalctl 259 prints it, or None when it prints `[… blob data]` instead: invalid
+/// UTF-8, a control character other than a newline or a tab, or an escape that starts no ANSI CSI
+/// or OSC sequence. It removes CSI and OSC sequences and turns each tab into eight spaces.
+fn render_message(message: &[u8]) -> Option<String> {
+    let text = std::str::from_utf8(message).ok()?;
+    let mut out = String::with_capacity(text.len());
+    let mut chars = text.chars().peekable();
+    while let Some(c) = chars.next() {
+        match c {
+            '\n' => out.push('\n'),
+            '\t' => out.push_str("        "),
+            '\u{1b}' => match chars.next()? {
+                // CSI: parameter and intermediate bytes, then one final byte.
+                '[' => loop {
+                    match chars.next()? {
+                        '\u{20}'..='\u{3f}' => {}
+                        '\u{40}'..='\u{7e}' => break,
+                        _ => return None,
+                    }
+                },
+                // OSC: up to BEL or ESC \.
+                ']' => loop {
+                    match chars.next()? {
+                        '\u{7}' => break,
+                        '\u{1b}' if chars.next_if_eq(&'\\').is_some() => break,
+                        '\u{1b}' => return None,
+                        _ => {}
+                    }
+                },
+                _ => return None,
+            },
+            c if c.is_control() => return None,
+            c => out.push(c),
+        }
+    }
+    Some(out)
+}
+
+/// journalctl's `format_bytes`: `35B`, then one decimal with a binary unit, such as `1.4K`.
+fn format_bytes(bytes: usize) -> String {
+    let t = bytes as u64;
+    for (suffix, shift) in [
+        ("E", 60),
+        ("P", 50),
+        ("T", 40),
+        ("G", 30),
+        ("M", 20),
+        ("K", 10),
+    ] {
+        let factor = 1u64 << shift;
+        if t >= factor {
+            return format!("{}.{}{suffix}", t / factor, (t * 10 / factor) % 10);
+        }
+    }
+    format!("{t}B")
+}
+
+/// One journal entry exactly as `journalctl --output short-iso --utc` prints it, so a live line and a
+/// line of the one-shot read over SSH are the same text: `time host identifier[pid]: message`. The time
+/// is `_SOURCE_REALTIME_TIMESTAMP` when the entry has one. Each further line of the message is indented
+/// to the column where the message starts. Entries without a message produce no line, unless a field
+/// could not be read.
+pub fn format_entry(entry: &Entry, _unit: &str) -> Vec<String> {
     let message = match (&entry.message, entry.unreadable) {
-        (Some(message), _) => String::from_utf8_lossy(message).into_owned(),
-        (None, true) => UNREADABLE.to_owned(),
+        (Some(message), _) => message.clone(),
+        (None, true) => UNREADABLE.as_bytes().to_vec(),
         (None, false) => return Vec::new(),
     };
-    let identifier = entry
-        .identifier
+    let text = |value: &Option<Vec<u8>>| {
+        value
+            .as_ref()
+            .filter(|value| printable(value))
+            .map(|value| String::from_utf8_lossy(value).into_owned())
+    };
+    let realtime = entry
+        .source_realtime
         .as_ref()
-        .or(entry.comm.as_ref())
-        .map(|value| String::from_utf8_lossy(value).into_owned())
-        .unwrap_or_else(|| unit.to_owned());
-    let pid = entry
-        .pid
-        .as_ref()
-        .map(|pid| format!("[{}]", String::from_utf8_lossy(pid)))
-        .unwrap_or_default();
-    let message = message.strip_suffix('\n').unwrap_or(&message);
-    let mut lines = message.split('\n');
-    let first = format!(
-        "{} {identifier}{pid}: {}",
-        format_realtime(entry.realtime),
-        lines.next().unwrap_or_default()
+        .and_then(|value| std::str::from_utf8(value).ok()?.parse::<u64>().ok())
+        .filter(|usec| *usec > 0)
+        .unwrap_or(entry.realtime);
+    let mut prefix = format_realtime(realtime);
+    if let Some(host) = text(&entry.hostname) {
+        prefix.push(' ');
+        prefix.push_str(&host);
+    }
+    prefix.push(' ');
+    prefix.push_str(
+        &text(&entry.identifier)
+            .or_else(|| text(&entry.comm))
+            .unwrap_or_else(|| "unknown".into()),
     );
+    if let Some(pid) = text(&entry.pid).or_else(|| text(&entry.syslog_pid)) {
+        prefix.push_str(&format!("[{pid}]"));
+    }
+    prefix.push_str(": ");
+    let Some(message) = render_message(&message) else {
+        return vec![format!(
+            "{prefix}[{} blob data]",
+            format_bytes(message.len())
+        )];
+    };
+    let message = message.strip_suffix('\n').unwrap_or(&message);
+    let indent = " ".repeat(prefix.chars().count());
+    let mut lines = message.split('\n');
+    let first = format!("{prefix}{}", lines.next().unwrap_or_default());
     std::iter::once(first)
-        .chain(lines.map(str::to_owned))
+        .chain(lines.map(|line| format!("{indent}{line}")))
         .collect()
 }
 
@@ -1017,17 +1113,36 @@ mod tests {
     }
 
     #[test]
-    fn entry_lines_use_identifier_pid_and_split_messages() {
+    fn entry_lines_match_journalctl_short_iso() {
         let entry = Entry {
             realtime: 1_790_331_302_000_000,
             message: Some(b"first\nsecond\n".to_vec()),
             pid: Some(b"42".to_vec()),
             comm: Some(b"php".to_vec()),
+            hostname: Some(b"app-dev".to_vec()),
+            ..Entry::default()
+        };
+        // Further lines are indented to the column where the message starts, as journalctl does.
+        assert_eq!(
+            format_entry(&entry, "u.service"),
+            [
+                "2026-09-25T10:15:02+00:00 app-dev php[42]: first",
+                format!("{}second", " ".repeat(43)).as_str()
+            ]
+        );
+        let syslog = Entry {
+            realtime: 1_790_331_302_000_000,
+            source_realtime: Some(b"1790331301999999".to_vec()),
+            message: Some(b"from syslog".to_vec()),
+            syslog_pid: Some(b"7".to_vec()),
+            identifier: Some(b"cron".to_vec()),
+            comm: Some(b"ignored".to_vec()),
+            hostname: Some(b"app-dev".to_vec()),
             ..Entry::default()
         };
         assert_eq!(
-            format_entry(&entry, "u.service"),
-            ["2026-09-25T10:15:02+00:00 php[42]: first", "second"]
+            format_entry(&syslog, "u.service"),
+            ["2026-09-25T10:15:01+00:00 app-dev cron[7]: from syslog"]
         );
         let bare = Entry {
             realtime: 1_790_331_302_000_000,
@@ -1036,7 +1151,17 @@ mod tests {
         };
         assert_eq!(
             format_entry(&bare, "u.service"),
-            ["2026-09-25T10:15:02+00:00 u.service: \u{fffd}ok"]
+            ["2026-09-25T10:15:02+00:00 unknown: [3B blob data]"]
+        );
+        let blob = Entry {
+            realtime: 1_790_331_302_000_000,
+            message: Some([&[b'x'; 1500][..], b"\x1b"].concat()),
+            identifier: Some(b"app".to_vec()),
+            ..Entry::default()
+        };
+        assert_eq!(
+            format_entry(&blob, "u.service"),
+            ["2026-09-25T10:15:02+00:00 app: [1.4K blob data]"]
         );
         let unreadable = Entry {
             unreadable: true,
@@ -1048,6 +1173,53 @@ mod tests {
             ["1970-01-01T00:00:00+00:00 app: [orbit] entry not readable"]
         );
         assert!(format_entry(&Entry::default(), "u").is_empty());
+    }
+
+    /// Messages and the lines `journalctl --output short-iso --utc` (systemd 259, Ubuntu 26.04) printed
+    /// for them on a Node with host name `beast`. The live stream must print the same lines.
+    #[test]
+    fn live_lines_equal_the_one_shot_journalctl_lines() {
+        let cases: [(&[u8], &[&str]); 11] = [
+            (b"lone esc \x1b end", &["[14B blob data]"]),
+            (b"csi \x1b[1;32mgreen\x1b[0m end", &["csi green end"]),
+            (b"osc \x1b]0;title\x07 end", &["osc  end"]),
+            (b"soh \x01 end", &["[9B blob data]"]),
+            (b"cr a\rb end", &["[10B blob data]"]),
+            (b"del \x7f end", &["[9B blob data]"]),
+            ("c1 \u{85} end".as_bytes(), &["[9B blob data]"]),
+            (b"tab\tx\ty", &["tab        x        y"]),
+            (b"bad \xff utf8", &["[10B blob data]"]),
+            (
+                b"first\nsecond\tt\n\x1b[1mthird\x1b[0m\n",
+                &["first", "second        t", "third"],
+            ),
+            (b"x", &["x"]),
+        ];
+        // `_PID` wins over `SYSLOG_PID`, and further lines are indented to the message column.
+        let prefix = "2026-09-25T10:15:02+00:00 beast p[7]: ";
+        for (message, lines) in cases {
+            let entry = Entry {
+                realtime: 1_790_331_302_000_000,
+                message: Some(message.to_vec()),
+                pid: Some(b"7".to_vec()),
+                syslog_pid: Some(b"77".to_vec()),
+                identifier: Some(b"p".to_vec()),
+                hostname: Some(b"beast".to_vec()),
+                ..Entry::default()
+            };
+            let expected: Vec<String> = lines
+                .iter()
+                .enumerate()
+                .map(|(index, line)| {
+                    if index == 0 {
+                        format!("{prefix}{line}")
+                    } else {
+                        format!("{}{line}", " ".repeat(prefix.len()))
+                    }
+                })
+                .collect();
+            assert_eq!(format_entry(&entry, "u.service"), expected, "{message:?}");
+        }
     }
 
     struct TempDir(PathBuf);

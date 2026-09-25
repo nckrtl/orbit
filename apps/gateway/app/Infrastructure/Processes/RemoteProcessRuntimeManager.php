@@ -377,6 +377,8 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
                 '--no-pager',
                 '--output',
                 'short-iso',
+                // UTC, as the Node agent writes the live lines, so both reads give the same text (ADR 0153).
+                '--utc',
             ],
             ProcessRuntime::Docker => [
                 'sudo',

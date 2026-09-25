@@ -3,7 +3,9 @@
 use super::{
     docker, journal, laravel,
     laravel::Unavailable,
-    limits::{agent_bucket, AgentBucket, LineSink, StreamQueue, SOURCE_UNAVAILABLE},
+    limits::{
+        agent_bucket, AgentBucket, LineSink, StreamQueue, LIST_UNAVAILABLE, SOURCE_UNAVAILABLE,
+    },
     parse_stream_list, Source, StreamSpec,
 };
 use crate::ClientFrame;
@@ -29,8 +31,9 @@ pub const FETCH_TIMEOUT: Duration = Duration::from_secs(10);
 #[derive(Debug, Default)]
 struct Registry {
     streams: BTreeMap<String, Arc<StreamQueue>>,
-    /// Streams whose end was sent. They are not started again while the list still names them.
-    ended: BTreeSet<String>,
+    /// Streams whose end was sent, with its reason. They are not started again while the list still
+    /// names them; the end is sent again instead, in case it was lost.
+    ended: BTreeMap<String, &'static str>,
 }
 
 /// Shared between the controller and the realtime connection. It outlives reconnects.
@@ -83,7 +86,8 @@ impl LogHub {
             if flush.finished {
                 let mut registry = self.registry();
                 registry.streams.remove(&queue.id);
-                registry.ended.insert(queue.id.clone());
+                let reason = queue.end_reason().unwrap_or(SOURCE_UNAVAILABLE);
+                registry.ended.insert(queue.id.clone(), reason);
             }
         }
         Ok(frames)
@@ -161,16 +165,32 @@ impl<F: FnMut(StreamSpec, Arc<StreamQueue>) -> JoinHandle<()>> Controller<F> {
         for id in unlisted {
             self.stop(&id);
         }
-        self.hub.registry().ended.retain(|id| listed.contains(id));
+        {
+            let mut registry = self.hub.registry();
+            // An end still waiting to be sent for a stream the Gateway no longer lists is not needed.
+            registry.streams.retain(|id, _| listed.contains(id));
+            registry.ended.retain(|id, _| listed.contains(id));
+        }
         for spec in specs {
-            if self.running.contains_key(&spec.id) || self.hub.registry().ended.contains(&spec.id) {
+            if self.running.contains_key(&spec.id) {
+                continue;
+            }
+            let mut registry = self.hub.registry();
+            if registry.streams.contains_key(&spec.id) {
+                // Its end waits to be sent.
+                continue;
+            }
+            if let Some(reason) = registry.ended.remove(&spec.id) {
+                // The Gateway still lists a stream whose end was sent, so the end may have been lost:
+                // send it again instead of reading the source again.
+                let queue = Arc::new(StreamQueue::new(spec.id.clone(), self.hub.agent.clone()));
+                queue.end(reason);
+                registry.streams.insert(spec.id.clone(), queue);
                 continue;
             }
             let queue = Arc::new(StreamQueue::new(spec.id.clone(), self.hub.agent.clone()));
-            self.hub
-                .registry()
-                .streams
-                .insert(spec.id.clone(), queue.clone());
+            registry.streams.insert(spec.id.clone(), queue.clone());
+            drop(registry);
             let id = spec.id.clone();
             let handle = (self.start)(spec, queue);
             self.running.insert(id, handle);
@@ -188,6 +208,20 @@ impl<F: FnMut(StreamSpec, Arc<StreamQueue>) -> JoinHandle<()>> Controller<F> {
         let ids: Vec<String> = self.running.keys().cloned().collect();
         for id in ids {
             self.stop(&id);
+        }
+    }
+
+    /// Stops reading every stream after 60 seconds without a list, and ends each one after the lines
+    /// it already read. The viewer opens a new stream that catches up, so no line is lost or repeated;
+    /// reading the same stream again later would send its first lines a second time.
+    fn fail_closed(&mut self) {
+        let running = std::mem::take(&mut self.running);
+        let registry = self.hub.registry();
+        for (id, handle) in running {
+            handle.abort();
+            if let Some(queue) = registry.streams.get(&id) {
+                queue.end(LIST_UNAVAILABLE);
+            }
         }
     }
 }
@@ -221,8 +255,8 @@ pub async fn run_controller<L: ListSource>(
                 continue;
             },
             _ = tokio::time::sleep_until(deadline.unwrap_or_else(Instant::now)), if armed => {
-                eprintln!("orbit-agent: no log stream list for 60 seconds; stopping every stream");
-                controller.stop_all();
+                eprintln!("orbit-agent: no log stream list for 60 seconds; ending every stream");
+                controller.fail_closed();
                 continue;
             },
         }
@@ -246,9 +280,9 @@ pub async fn run_controller<L: ListSource>(
                     let stale = last_ok.is_none_or(|at| at.elapsed() >= FAIL_CLOSED);
                     if stale && !controller.running.is_empty() {
                         eprintln!(
-                            "orbit-agent: no log stream list for 60 seconds; stopping every stream"
+                            "orbit-agent: no log stream list for 60 seconds; ending every stream"
                         );
-                        controller.stop_all();
+                        controller.fail_closed();
                     }
                 }
             }
@@ -397,7 +431,47 @@ mod tests {
         tokio::time::sleep(Duration::from_secs(59)).await;
         assert_eq!(hub.running(), 1);
         tokio::time::sleep(Duration::from_secs(2)).await;
+        let frames = hub.flush("presence-node-logs.1", Instant::now()).unwrap();
+        assert_eq!(frames.len(), 1);
+        assert_eq!(frames[0].event, "client-log-end");
+        assert_eq!(frames[0].data["reason"], "list_unavailable");
         assert_eq!(hub.running(), 0);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_stream_ended_without_a_list_is_never_read_again_and_its_end_is_repeated() {
+        let fake = FakeList::default();
+        fake.set(list(&[&id(1)]));
+        let (hub, started, _controller) = setup(fake.clone());
+        hub.prompt();
+        settle().await;
+        hub.registry().streams[&id(1)].push("read before the outage".into());
+        fake.set(Err("gateway down".into()));
+        tokio::time::sleep(Duration::from_secs(61)).await;
+        // The Gateway comes back and still lists the stream before the end reached it.
+        fake.set(list(&[&id(1)]));
+        hub.prompt();
+        settle().await;
+        assert_eq!(*started.lock().unwrap(), [id(1)], "never started again");
+        // The lines read before the outage go out first, then the end.
+        let frames = hub.flush("presence-node-logs.1", Instant::now()).unwrap();
+        assert_eq!(lines_of(&frames), ["read before the outage"]);
+        assert_eq!(frames.last().unwrap().data["reason"], "list_unavailable");
+        // Listed again after the end was sent: the end is sent again, the source is not read.
+        hub.prompt();
+        settle().await;
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        let frames = hub.flush("presence-node-logs.1", Instant::now()).unwrap();
+        assert_eq!(frames.len(), 1);
+        assert_eq!(frames[0].event, "client-log-end");
+        assert_eq!(frames[0].data["reason"], "list_unavailable");
+        assert_eq!(*started.lock().unwrap(), [id(1)]);
+        // Once the Gateway closed it, nothing is left.
+        fake.set(list(&[]));
+        hub.prompt();
+        settle().await;
+        assert_eq!(hub.running(), 0);
+        assert!(hub.registry().ended.is_empty());
     }
 
     #[tokio::test(start_paused = true)]
@@ -545,6 +619,8 @@ mod tests {
         settle().await;
         fake.set(Ok(json!({"data": "nope"})));
         tokio::time::sleep(Duration::from_secs(61)).await;
+        let frames = hub.flush("presence-node-logs.1", Instant::now()).unwrap();
+        assert_eq!(frames[0].data["reason"], "list_unavailable");
         assert_eq!(hub.running(), 0);
     }
 }
