@@ -11,8 +11,11 @@ use App\E2E\Value\AttemptId;
 use App\E2E\Value\TopologyConstructionInputs;
 use App\E2E\Value\TopologyRecipe;
 use App\E2E\Value\TopologyTarget;
+use Tests\Support\GuestScripts;
 use Tests\Support\TemporaryPaths;
 use Tests\TestCase;
+
+GuestScripts::useGnuUserland();
 
 uses(TestCase::class)->in('Feature');
 uses(TestCase::class)->beforeEach(function (): void {
@@ -100,3 +103,13 @@ function temporaryFile(string $prefix): string
 }
 
 pest()->afterEach(fn () => TemporaryPaths::cleanup());
+
+function guestScriptSource(string $name): string
+{
+    return GuestScripts::source($name);
+}
+
+function guestScriptPath(string $name): string
+{
+    return GuestScripts::path($name);
+}
