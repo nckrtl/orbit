@@ -53,7 +53,7 @@ use UnexpectedValueException;
 /**
  * Records one Activity per authorized command. Every request that can change something and every
  * failed request is kept. A successful read is kept once per command and caller in each
- * READ_SAMPLE_SECONDS, and always for a credential read (ADR 0151).
+ * READ_SAMPLE_SECONDS, and always for a credential read (ADR 0152).
  */
 final readonly class RecordCommandActivity
 {

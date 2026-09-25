@@ -1,10 +1,10 @@
 ---
-title: "ADR 0151: Sample successful read activity"
-sidebarTitle: "0151 Sample successful read activity"
+title: "ADR 0152: Sample successful read activity"
+sidebarTitle: "0152 Sample successful read activity"
 description: "Proposed. The Gateway records every mutating request and every failed request as before, but keeps a successful read only once per command, caller, and minute. Credential reads are always kept."
 ---
 
-# ADR 0151: Sample successful read activity
+# ADR 0152: Sample successful read activity
 
 The Gateway keeps an Activity for every request that can change something and for every request that fails. A successful read (`GET` or `HEAD`) is kept only when it is the first read of that command from that caller in the last 60 seconds. A successful read of a credential is always kept.
 

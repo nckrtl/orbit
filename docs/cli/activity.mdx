@@ -65,7 +65,7 @@ Human output uses a detail tree with the command and status, the request ID the 
 | A successful `GET` or `HEAD` request | Once per command and caller address in any 60 seconds. Other identical reads in that window write nothing. |
 | A successful read of a `:credentials` route | Always. |
 
-A polling client therefore adds about one record per command per minute. `--request-id` finds no record for a successful read that fell inside another read's window. [ADR 0151](/decisions/0151-sample-successful-read-activity) records this rule.
+A polling client therefore adds about one record per command per minute. `--request-id` finds no record for a successful read that fell inside another read's window. [ADR 0152](/decisions/0152-sample-successful-read-activity) records this rule.
 
 ## What a record holds
 

@@ -115,7 +115,7 @@
                 "Schedule"
             ],
             "governing_adrs": [
-                "0151"
+                "0152"
             ]
         },
         {
@@ -3869,8 +3869,8 @@
             ]
         },
         {
-            "path": "docs/decisions/0151-sample-successful-read-activity.md",
-            "title": "ADR 0151: Sample successful read activity",
+            "path": "docs/decisions/0152-sample-successful-read-activity.md",
+            "title": "ADR 0152: Sample successful read activity",
             "kind": "decision",
             "components": [
                 "apps/docs",
@@ -3888,7 +3888,7 @@
             ],
             "governing_adrs": [
                 "0086",
-                "0151"
+                "0152"
             ]
         },
         {
@@ -4092,7 +4092,7 @@
                 "0148",
                 "0149",
                 "0150",
-                "0151",
+                "0152",
                 "0154"
             ]
         },
