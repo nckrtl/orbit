@@ -30,7 +30,7 @@ The [Project process and Schedule definitions](/reference/app-processes-and-sche
 | [`process:start`](#orbit-processstart) | Start one Process and record the running desired state. |
 | [`process:stop`](#orbit-processstop) | Stop one Process and record the stopped desired state. |
 | [`process:restart`](#orbit-processrestart) | Restart one Process. |
-| [`process:logs`](#orbit-processlogs) | Return a bounded log tail. |
+| [`process:logs`](#orbit-processlogs) | Return a bounded log tail, or follow new lines. |
 | [`process:destroy`](#orbit-processdestroy) | Remove one Process and its artifacts, or one definition. |
 
 Every command accepts `--json`. Human and JSON output include the Gateway request ID. Human output uses the shared table, detail tree, and progress helpers. Process list and detail include lifecycle state, failed step, and error code. JSON output also carries `cpu` (a 0..1 ratio of one core) and `memory_bytes`, read from the Metrics role's cAdvisor (see [Metrics role](/reference/metrics#per-process-cpu-and-memory-cadvisor)); `process:list` populates both, and either is null when a Process is not running or usage could not be read. Human definition show, create, update, and destroy include the complete specification, including `command`. Process lists still omit `spec.command`. Process environment values stay redacted. `process:destroy` requires default-No confirmation or `--yes`.
@@ -222,10 +222,10 @@ orbit process:restart <process> [--json]
 
 ## orbit process:logs
 
-Return one non-streaming log tail for a Process. Docker environment values and credential-shaped data are redacted.
+Return one log tail for a Process, or follow new lines as they are written. Docker environment values and credential-shaped data are redacted.
 
 ```bash
-orbit process:logs <process> [--lines=COUNT] [--json]
+orbit process:logs <process> [--lines=COUNT] [--follow] [--json]
 ```
 
 | Argument | Required | Meaning |
@@ -234,10 +234,18 @@ orbit process:logs <process> [--lines=COUNT] [--json]
 
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `--lines=COUNT` | `100` | Number of lines, from 1 through 1,000. |
+| `--lines=COUNT` | `100` | Number of lines, from 1 through 1,000. With `--follow`, the number of earlier lines to print first. |
+| `--follow` | off | Keep printing new lines until Ctrl-C. |
+
+Without `--follow`, the Gateway reads the tail once over SSH. With `--follow`, the CLI opens a [live log stream](/reference/live-logs): the Node agent reads the log, and the Gateway relays new lines to this CLI only. The CLI prints `[orbit] N lines dropped` or `[orbit] N MiB skipped` where the stream reports them.
+
+When the Gateway cannot open a stream, for example because the Node's agent is older than 0.3.0 or realtime is not configured, the CLI prints a notice on stderr and polls the one-shot read every 5 seconds. It does the same when it cannot connect to Reverb within 15 seconds, with reason `realtime_unreachable`, for example on a host that does not resolve `reverb.orbit`. It prints only the lines after the last line it printed. When a live stream ends because the agent stopped or the source became unreadable, the CLI switches to polling in the same way.
+
+With `--json` and `--follow`, the CLI prints one JSON object on each line: `{"type":"lines","lines":[...],"dropped":0,"skipped":0}` for new lines, and `{"type":"notice","code":"logs.live_unavailable","reason":"agent_outdated"}` when it switches to polling. Ctrl-C ends the command with exit code 0 and closes the stream.
 
 ```bash
 orbit process:logs 41 --lines=250
+orbit process:logs 41 --follow
 ```
 
 ## orbit process:destroy
