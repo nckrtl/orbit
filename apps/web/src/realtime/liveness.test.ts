@@ -20,10 +20,10 @@ afterEach(() => {
 describe("fallbackPollMs", () => {
     it("does not poll while realtime is live", () => {
         expect(isLive()).toBe(true);
-        expect(fallbackPollMs()).toBe(false);
+        expect(fallbackPollMs(Date.now())).toBe(false);
     });
 
-    it("backs off from 30 seconds to 5 minutes while realtime is down", () => {
+    it("backs off from 30 seconds to 5 minutes with the time realtime was down at the last fetch", () => {
         const lost = Date.now();
         setLiveness("reconnecting");
 
@@ -33,6 +33,14 @@ describe("fallbackPollMs", () => {
         expect(fallbackPollMs(lost + 120_000)).toBe(120_000);
         expect(fallbackPollMs(lost + 240_000)).toBe(240_000);
         expect(fallbackPollMs(lost + 3_600_000)).toBe(POLL_MAX_MS);
+    });
+
+    it("waits 30 seconds after a fetch made while realtime was still live", () => {
+        const fetched = Date.now();
+        vi.advanceTimersByTime(600_000);
+        setLiveness("reconnecting");
+
+        expect(fallbackPollMs(fetched)).toBe(POLL_MIN_MS);
     });
 
     it("keeps the backoff across a change from reconnecting to polling", () => {
@@ -54,6 +62,6 @@ describe("fallbackPollMs", () => {
         vi.advanceTimersByTime(600_000);
         setLiveness("reconnecting");
 
-        expect(fallbackPollMs()).toBe(POLL_MIN_MS);
+        expect(fallbackPollMs(Date.now())).toBe(POLL_MIN_MS);
     });
 });

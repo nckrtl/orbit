@@ -39,16 +39,21 @@ export function resetPollBackoff(now = Date.now()): void {
 export const isLive = (): boolean => current.liveness === "live";
 
 /**
- * The delay before the next fallback poll. There is none while realtime is live. Without it, the
- * delay is the time realtime has been down, from 30 seconds up to 5 minutes, so it doubles with
- * each poll: 30 s, 30 s, 1 min, 2 min, 4 min, then every 5 min.
+ * The delay before the next fallback poll, given when the query last fetched. There is none while
+ * realtime is live. Without it, the delay is how long realtime had been down at that fetch, from
+ * 30 seconds up to 5 minutes, so it doubles with each poll: 30 s, 30 s, 1 min, 2 min, 4 min, then
+ * every 5 min. It depends on the last fetch, not on the clock, so it stays the same between
+ * fetches and a re-render does not restart the countdown.
  */
-export function fallbackPollMs(now = Date.now()): number | false {
+export function fallbackPollMs(lastFetchedAt: number): number | false {
     if (current.liveness === "live") {
         return false;
     }
 
-    return Math.min(POLL_MAX_MS, Math.max(POLL_MIN_MS, now - (downSince ?? now)));
+    return Math.min(
+        POLL_MAX_MS,
+        Math.max(POLL_MIN_MS, lastFetchedAt - (downSince ?? lastFetchedAt)),
+    );
 }
 
 const subscribe = (listener: () => void) => {
@@ -61,15 +66,19 @@ export const useLiveness = (): Liveness => useSyncExternalStore(subscribe, () =>
 export const usePollingReason = (): string | null =>
     useSyncExternalStore(subscribe, () => current.reason);
 
+type Fetched = { state: { dataUpdatedAt: number; errorUpdatedAt: number } };
+
 /**
  * The `refetchInterval` for a query that realtime events keep current. The component re-renders
  * when liveness changes, so the query starts or stops polling at once; TanStack Query reads the
  * delay again after every fetch, which is what makes it back off.
  */
-export function useFallbackPoll(): () => number | false {
+export function useFallbackPoll(): typeof fallbackPoll {
     useLiveness();
 
     return fallbackPoll;
 }
 
-const fallbackPoll = () => fallbackPollMs();
+/** The interval function itself, for a query outside React. */
+export const fallbackPoll = (query: Fetched): number | false =>
+    fallbackPollMs(Math.max(query.state.dataUpdatedAt, query.state.errorUpdatedAt));

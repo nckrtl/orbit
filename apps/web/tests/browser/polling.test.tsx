@@ -1,6 +1,6 @@
 import { focusManager, QueryClient, QueryObserver } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
-import { fallbackPollMs, setLiveness } from "../../src/realtime/liveness";
+import { fallbackPoll, setLiveness } from "../../src/realtime/liveness";
 
 // TanStack Query schedules interval timers only in a browser, so this runs in the browser project.
 beforeEach(() => {
@@ -20,7 +20,7 @@ describe("a list that realtime keeps current", () => {
         const observer = new QueryObserver(client, {
             queryKey: ["nodes"],
             queryFn,
-            refetchInterval: () => fallbackPollMs(),
+            refetchInterval: fallbackPoll,
         });
         const stop = observer.subscribe(() => {});
 
@@ -44,7 +44,10 @@ describe("a list that realtime keeps current", () => {
 
             return [];
         });
+        // The page re-renders every few seconds; that must not restart the countdown.
+        const rerender = setInterval(() => observer.setOptions({ ...observer.options }), 5_000);
         await vi.advanceTimersByTimeAsync(1_200_000);
+        clearInterval(rerender);
         stop();
 
         expect(times.slice(0, 5)).toEqual([30_000, 60_000, 120_000, 240_000, 480_000]);
