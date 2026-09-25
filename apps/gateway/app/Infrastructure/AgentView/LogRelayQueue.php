@@ -20,10 +20,12 @@ use Closure;
  * ends with `relay_behind`, and later events for it are ignored.
  *
  * Every `SweepSeconds` while streams may be open, a run also ends streams whose lease ran out or
- * whose viewer lost access.
+ * whose viewer lost access. Every `PromptSeconds`, that sweep also prompts again each Node with an
+ * active stream that has not relayed a line yet: an agent that reads no stream fetches its list only
+ * when prompted, so a prompt lost while Reverb was unreachable would leave the stream silent.
  *
  * @phpstan-type Item array{type: 'lines', item: int, node: int, stream: string, lines: list<string>, dropped: int, skipped: int}|array{type: 'end', item: int, node: int, stream: string, reason: string}|array{type: 'agent_left', item: int, node: int}
- * @phpstan-type Batch array{relay: string, items: list<Item>, sweep: bool}
+ * @phpstan-type Batch array{relay: string, items: list<Item>, sweep: bool, prompt: bool}
  */
 final class LogRelayQueue
 {
@@ -47,6 +49,8 @@ final class LogRelayQueue
     public const int MaxLines = 2_000;
 
     public const int SweepSeconds = 5;
+
+    public const int PromptSeconds = 15;
 
     /** Failed runs in a row after which the streams with waiting lines end with `relay_behind`. */
     public const int MaxAttempts = 5;
@@ -82,6 +86,8 @@ final class LogRelayQueue
     private int $sealedBelow = 1;
 
     private float $nextSweepAt = 0.0;
+
+    private float $nextPromptAt = 0.0;
 
     /** Whether a stream may be open: true after any log event, and until a run finds none. */
     private bool $streamsMayBeOpen = false;
@@ -213,8 +219,14 @@ final class LogRelayQueue
             return null;
         }
 
+        $prompt = $sweep && $now >= $this->nextPromptAt;
+
         if ($sweep) {
             $this->nextSweepAt = $now + self::SweepSeconds;
+        }
+
+        if ($prompt) {
+            $this->nextPromptAt = $now + self::PromptSeconds;
         }
 
         $this->sealedBelow = $this->nextItem;
@@ -241,7 +253,7 @@ final class LogRelayQueue
 
         $this->eventDuringRun = false;
 
-        return ['relay' => $this->relay, 'items' => $this->inFlight, 'sweep' => $sweep];
+        return ['relay' => $this->relay, 'items' => $this->inFlight, 'sweep' => $sweep, 'prompt' => $prompt];
     }
 
     /** The run relayed its items. `$openStreams` is how many streams it found open, when it said. */

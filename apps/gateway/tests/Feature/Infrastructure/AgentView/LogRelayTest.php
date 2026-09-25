@@ -30,11 +30,11 @@ function relay_node(string $name, string $address): Node
 
 /**
  * @param  list<array<string, mixed>>  $items
- * @return array{relay: string, items: list<array<string, mixed>>, sweep: bool}
+ * @return array{relay: string, items: list<array<string, mixed>>, sweep: bool, prompt: bool}
  */
-function relay_batch(array $items, bool $sweep = false, string $relay = 'relay-1'): array
+function relay_batch(array $items, bool $sweep = false, string $relay = 'relay-1', bool $prompt = false): array
 {
-    return ['relay' => $relay, 'items' => $items, 'sweep' => $sweep];
+    return ['relay' => $relay, 'items' => $items, 'sweep' => $sweep, 'prompt' => $prompt];
 }
 
 /**
@@ -210,6 +210,28 @@ describe('a live log relay run', function (): void {
             ->and($ended)->toBe([$this->stream->id => 'expired', $revoked->id => 'revoked'])
             ->and(app(LogStreamStore::class)->all())->toBe([])
             ->and(collect(relayed('log-streams.changed'))->pluck('channel')->all())->toContain("presence-node-logs.{$this->node->id}");
+    });
+
+    it('prompts a Node again when asked, while an active stream there has relayed no line yet', function (): void {
+        $other = relay_node('app-dev-2', '10.44.0.4');
+        $this->viewer->accessibleNodes()->attach($other->id);
+        $quiet = new LogStream(str_repeat('cd', 16), LogStreamRecordType::Instance, (int) $this->instance->id, (int) $other->id, (int) $this->viewer->id, LogStreamSource::laravel(StoragePath::parse('/home/orbit/apps/shop/main')), 100, 1_060.0);
+        app(LogStreamStore::class)->open($quiet);
+        app(LogStreamStore::class)->renew($quiet->id, 1_060.0);
+        app(LogStreamStore::class)->renew($this->stream->id, 1_060.0);
+        $this->relay->relay(relay_batch([relay_lines(1, $this->node->id, $this->stream->id, ['started'])]));
+
+        $this->relay->relay(relay_batch([], sweep: true));
+        expect(relayed('log-streams.changed'))->toBe([]);
+
+        $this->relay->relay(relay_batch([], sweep: true, prompt: true));
+        expect(collect(relayed('log-streams.changed'))->pluck('channel')->all())->toBe(["presence-node-logs.{$other->id}"]);
+    });
+
+    it('does not prompt for a stream that is not active yet', function (): void {
+        $this->relay->relay(relay_batch([], sweep: true, prompt: true));
+
+        expect(relayed('log-streams.changed'))->toBe([]);
     });
 
     it('fails when no websocket role is active instead of dropping the lines', function (): void {

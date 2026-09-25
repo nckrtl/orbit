@@ -119,7 +119,7 @@ final class AgentViewPublishCommand extends Command
             $items[] = $item;
         }
 
-        return ['relay' => $batch['relay'], 'items' => $items, 'sweep' => $batch['sweep']];
+        return ['relay' => $batch['relay'], 'items' => $items, 'sweep' => $batch['sweep'], 'prompt' => ($batch['prompt'] ?? false) === true];
     }
 
     /** @return Item|null */

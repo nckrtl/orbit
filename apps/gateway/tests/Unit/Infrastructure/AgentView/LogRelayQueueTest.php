@@ -178,6 +178,21 @@ describe('the log relay queue', function (): void {
         expect($queue->take()['sweep'] ?? null)->toBeTrue();
     });
 
+    it('asks a sweep to prompt again every fifteen seconds', function (): void {
+        [$queue, $clock] = relay_queue();
+        $queue->streamsChanged();
+        $prompts = [];
+
+        foreach (range(0, 6) as $step) {
+            $batch = $queue->take();
+            $prompts[] = $batch === null ? null : $batch['prompt'];
+            $queue->succeeded(1);
+            $clock->now += LogRelayQueue::SweepSeconds;
+        }
+
+        expect($prompts)->toBe([true, false, false, true, false, false, true]);
+    });
+
     it('keeps sweeping when a stream may have opened while the run counted none', function (): void {
         [$queue, $clock] = relay_queue();
         $queue->streamsChanged();

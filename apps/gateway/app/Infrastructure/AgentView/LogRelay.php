@@ -28,7 +28,9 @@ use Psr\Log\LoggerInterface;
  * publish or store read throws, and the subscriber runs the items again.
  *
  * It also ends streams: when the agent reports its source unavailable, when the agent leaves, when the
- * queue fell behind, and, when asked to sweep, when a lease ran out or a viewer lost access.
+ * queue fell behind, and, when asked to sweep, when a lease ran out or a viewer lost access. When
+ * asked to prompt, it sends `log-streams.changed` again to each Node with an active stream that has
+ * not relayed a line yet, because that Node's agent may have missed the first prompt.
  *
  * Log lines are never logged.
  *
@@ -63,7 +65,7 @@ final readonly class LogRelay
         }
 
         if ($batch['sweep']) {
-            $this->sweep();
+            $this->sweep($batch['prompt']);
         }
 
         return count($this->streams->all());
@@ -162,8 +164,8 @@ final readonly class LogRelay
         }
     }
 
-    /** Ends streams whose lease ran out or whose viewer lost access to the Node. */
-    private function sweep(): void
+    /** Ends streams whose lease ran out or whose viewer lost access to the Node, and prompts again when asked. */
+    private function sweep(bool $prompt): void
     {
         $changed = [];
 
@@ -175,6 +177,8 @@ final readonly class LogRelay
         foreach ($this->streams->all() as $stream) {
             if (! $this->allowed($stream)) {
                 $this->finish($stream, LogStreamEndReason::Revoked, prompt: false);
+                $changed[$stream->nodeId] = true;
+            } elseif ($prompt && $stream->active && $this->streams->cursor($stream->id) === null) {
                 $changed[$stream->nodeId] = true;
             }
         }
@@ -204,12 +208,16 @@ final readonly class LogRelay
     private function finish(LogStream $stream, LogStreamEndReason $reason, bool $prompt = true): void
     {
         $this->streams->close($stream->id);
+        $this->logEnd($stream, $reason);
         $this->broadcaster->ended($stream->id, $reason);
 
         if ($prompt) {
             $this->broadcaster->changed($stream->nodeId);
         }
+    }
 
+    private function logEnd(LogStream $stream, LogStreamEndReason $reason): void
+    {
         $context = ['stream' => $stream->id, 'node_id' => $stream->nodeId, 'reason' => $reason->value];
 
         if ($reason === LogStreamEndReason::RelayBehind) {
