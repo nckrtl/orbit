@@ -376,7 +376,7 @@ it('maps a typed VPN inspection failure to the role row and does not stop later 
         ->toBe($vpn->id);
 });
 
-it('checks active Ingress from persisted state without live inspection or reachability', function (): void {
+it('inspects an active Ingress live like every other role', function (): void {
     $cluster = Cluster::query()->create(['name' => 'doctor-healthy-ingress']);
     $node = role_probe_node('healthy-ingress');
     $node->update(['cluster_id' => $cluster->id]);
@@ -387,15 +387,34 @@ it('checks active Ingress from persisted state without live inspection or reacha
     $report = new RoleDoctorProbe(
         role_probe_state_inspector($roleCalls),
         role_probe_vpn_inspector($vpnCalls),
-    )->inspect(role_probe_context($node, reachable: false));
+    )->inspect(role_probe_context($node));
 
     expect($report->checked)
         ->toBe(1)
         ->and($report->issues)
         ->toBeEmpty()
         ->and($roleCalls)
-        ->toBe(0)
+        ->toBe(1)
         ->and($vpnCalls)
+        ->toBe(0);
+});
+
+it('reports an unreachable Node that holds only an active Ingress', function (): void {
+    $cluster = Cluster::query()->create(['name' => 'doctor-unreachable-ingress']);
+    $node = role_probe_node('unreachable-ingress');
+    $node->update(['cluster_id' => $cluster->id]);
+    role_probe_assignment($node, RoleName::Ingress, clusterId: $cluster->id);
+    $roleCalls = 0;
+    $vpnCalls = 0;
+
+    $report = new RoleDoctorProbe(
+        role_probe_state_inspector($roleCalls),
+        role_probe_vpn_inspector($vpnCalls),
+    )->inspect(role_probe_context($node, reachable: false));
+
+    expect(array_map(static fn (DoctorIssueData $issue): string => $issue->code, $report->issues))
+        ->toBe(['role.node_unreachable'])
+        ->and($roleCalls)
         ->toBe(0);
 });
 
@@ -447,7 +466,7 @@ it('reports bounded Ingress Cluster ownership drift for every persisted lifecycl
             'mismatch',
         ])
         ->and($roleCalls)
-        ->toBe(0)
+        ->toBe($status === LifecycleStatus::Active ? 1 : 0)
         ->and($vpnCalls)
         ->toBe(0);
 })->with([
@@ -497,7 +516,7 @@ it('reports every active Ingress in a persisted Cluster cardinality conflict', f
             [$secondRole->id, 'role.cluster_cardinality_conflict'],
         ])
         ->and($roleCalls)
-        ->toBe(0)
+        ->toBe(1)
         ->and($vpnCalls)
         ->toBe(0);
 });

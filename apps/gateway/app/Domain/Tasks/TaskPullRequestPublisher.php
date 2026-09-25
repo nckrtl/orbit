@@ -17,4 +17,11 @@ interface TaskPullRequestPublisher
      * @throws TaskPullRequestException
      */
     public function publish(TaskGroup $group, string $body): string;
+
+    /**
+     * Pushes the workspace HEAD to the task branch without opening a pull request.
+     *
+     * @throws TaskPullRequestException
+     */
+    public function push(TaskGroup $group): void;
 }

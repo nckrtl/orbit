@@ -6,6 +6,7 @@ use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Doctor\DoctorInspectionException;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Routes\PublicRouteEligibility;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteReplacementStep;
@@ -56,8 +57,10 @@ afterEach(function (): void {
 
 describe('a separate Ingress', function (): void {
     beforeEach(function (): void {
+        $this->router = public_edge_listener();
+        $this->forwardingPort = (int) substr((string) stream_socket_get_name($this->router, false), strlen('127.0.0.1:'));
         $cluster = Cluster::query()->create(['name' => 'edge', 'tld' => 'edge.test', 'state' => ClusterState::Active]);
-        public_edge_node('edge-router', '10.44.0.20', '10.10.0.20', $cluster, [RoleName::Router]);
+        public_edge_node('edge-router', '10.44.0.20', '127.0.0.1', $cluster, [RoleName::Router]);
         $this->ingress = public_edge_node('edge-ingress', '10.44.0.30', '10.10.0.30', $cluster, [RoleName::Ingress]);
         $workload = public_edge_node('edge-workload', '10.44.0.40', '10.10.0.40', $cluster, [RoleName::AppProd]);
         $this->route = public_edge_route($cluster, $workload);
@@ -66,12 +69,21 @@ describe('a separate Ingress', function (): void {
     it('accepts the published reverse proxy to the Router', function (): void {
         public_edge_publish($this->caddy, $this->ingress);
 
-        expect(public_edge_observe($this))->toBe([true, true, true]);
+        expect(public_edge_observe($this))->toBe([true, true, true])
+            ->and(public_edge_forwarding($this))->toBeTrue();
+    });
+
+    it('reports a Router address that the Ingress cannot reach', function (): void {
+        public_edge_publish($this->caddy, $this->ingress);
+        fclose($this->router);
+
+        expect(public_edge_forwarding($this))->toBeFalse()
+            ->and(public_edge_observe($this))->toBe([true, true, true]);
     });
 
     it('reports a public site that no longer proxies to the Router', function (): void {
         public_edge_publish($this->caddy, $this->ingress, static fn (string $site): string => str_replace(
-            'reverse_proxy https://10.10.0.20',
+            'reverse_proxy https://127.0.0.1',
             'reverse_proxy https://10.10.0.99',
             $site,
         ));
@@ -95,6 +107,58 @@ describe('a separate Ingress', function (): void {
 
         expect(public_edge_observe($this))->toBe([true, true, false]);
     });
+});
+
+describe('an Ingress whose role is converging', function (): void {
+    beforeEach(function (): void {
+        $cluster = Cluster::query()->create(['name' => 'edge', 'tld' => 'edge.test', 'state' => ClusterState::Active]);
+        public_edge_node('edge-router', '10.44.0.20', '10.10.0.20', $cluster, [RoleName::Router]);
+        $this->ingress = public_edge_node('edge-ingress', '10.44.0.30', '10.10.0.30', $cluster, [RoleName::Ingress]);
+        $workload = public_edge_node('edge-workload', '10.44.0.40', '10.10.0.40', $cluster, [RoleName::AppProd]);
+        $this->route = public_edge_route($cluster, $workload);
+    });
+
+    it('keeps the public site in a Node Caddy build while the role serves', function (
+        LifecycleStatus $status,
+        ?string $failedStep,
+        bool $serves,
+    ): void {
+        $this->ingress->roles()->where('role', RoleName::Ingress)->update([
+            'status' => $status,
+            'failed_step' => $failedStep,
+            'error_code' => $failedStep === null ? null : 'node_role.convergence_failed',
+        ]);
+
+        $caddyfile = app(NodeCaddyfileRenderer::class)->render($this->ingress)->content;
+
+        expect(str_contains($caddyfile, "{$this->route->domain} {"))->toBe($serves);
+    })->with([
+        'active' => [LifecycleStatus::Active, null, true],
+        'converging' => [LifecycleStatus::Provisioning, null, true],
+        'failed convergence' => [LifecycleStatus::Failed, 'converge:caddy-config', true],
+        'being removed' => [LifecycleStatus::Removing, null, false],
+    ]);
+
+    it('starts a public activation only on an active Ingress', function (
+        LifecycleStatus $status,
+        ?string $failedStep,
+        bool $starts,
+    ): void {
+        $this->ingress->roles()->where('role', RoleName::Ingress)->update([
+            'status' => $status,
+            'failed_step' => $failedStep,
+            'error_code' => $failedStep === null ? null : 'node_role.convergence_failed',
+        ]);
+        $eligibility = new PublicRouteEligibility;
+
+        expect($eligibility->canStartActivation($this->route->refresh()))->toBe($starts)
+            ->and($eligibility->canActivate($this->route))->toBe($status !== LifecycleStatus::Removing);
+    })->with([
+        'active' => [LifecycleStatus::Active, null, true],
+        'converging' => [LifecycleStatus::Provisioning, null, false],
+        'failed convergence' => [LifecycleStatus::Failed, 'converge:caddy-config', false],
+        'being removed' => [LifecycleStatus::Removing, null, false],
+    ]);
 });
 
 describe('an Ingress that runs the workload while the Router is on another Node', function (): void {
@@ -166,6 +230,7 @@ describe('an Ingress that shares the Router and the workload', function (): void
         public_edge_publish($this->caddy, $this->ingress);
 
         expect(public_edge_observe($this))->toBe([true, true, true])
+            ->and(public_edge_forwarding($this))->toBeTrue()
             ->and(file_get_contents("{$this->caddy}/orbit-versions/v1/Caddyfile"))
             ->toContain('php_fastcgi unix//run/php/orbit-app-')
             ->not->toContain('reverse_proxy');
@@ -277,7 +342,8 @@ it('fails closed when the Node publishes no public site for the Route', function
 /** @return array{?bool, ?bool, ?bool} */
 function public_edge_observe(object $test): array
 {
-    $observation = public_edge_inspector($test->ssh, $test->caddy)->inspect($test->ingress, $test->route);
+    $observation = public_edge_inspector($test->ssh, $test->caddy, $test->forwardingPort ?? 443)
+        ->inspect($test->ingress, $test->route);
 
     return [
         $observation->ingressProjectionMatches,
@@ -286,8 +352,30 @@ function public_edge_observe(object $test): array
     ];
 }
 
-function public_edge_inspector(LocalRootShellSshExecutor $ssh, string $caddy): NativePublicRouteEdgeInspector
+function public_edge_forwarding(object $test): ?bool
 {
+    return public_edge_inspector($test->ssh, $test->caddy, $test->forwardingPort ?? 443)
+        ->inspect($test->ingress, $test->route)
+        ->privateForwardingMatches;
+}
+
+/** Listens on a free loopback port that stands in for the Router's HTTPS listener. */
+function public_edge_listener(): mixed
+{
+    $server = stream_socket_server('tcp://127.0.0.1:0');
+
+    if ($server === false) {
+        throw new RuntimeException('The test Router listener could not start.');
+    }
+
+    return $server;
+}
+
+function public_edge_inspector(
+    LocalRootShellSshExecutor $ssh,
+    string $caddy,
+    int $forwardingPort = 443,
+): NativePublicRouteEdgeInspector {
     return new NativePublicRouteEdgeInspector(
         new AppDevSshExecutor(
             $ssh,
@@ -315,6 +403,7 @@ function public_edge_inspector(LocalRootShellSshExecutor $ssh, string $caddy): N
         ),
         new CommandDeadline,
         liveCaddyfilePath: "{$caddy}/Caddyfile",
+        defaultForwardingPort: $forwardingPort,
     );
 }
 

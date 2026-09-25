@@ -47,6 +47,13 @@ it('combines metrics preferences with applicable roles', function (): void {
     $published = $projection->forNode($metrics, $node);
     expect($published->caddy)->toBeTrue();
     expect($published->hosts)->toBe(['app.example.test']);
+    $node->roles()->where('role', 'ingress')->update([
+        'status' => 'failed', 'failed_step' => 'converge:caddy-config', 'error_code' => 'node_role.convergence_failed',
+    ]);
+    expect($projection->forNode($metrics, $node)->caddy)->toBeTrue();
+    $node->roles()->where('role', 'ingress')->update(['status' => 'removing', 'failed_step' => null, 'error_code' => null]);
+    expect($projection->forNode($metrics, $node)->caddy)->toBeFalse();
+    $node->roles()->where('role', 'ingress')->update(['status' => 'active']);
     app(ExporterPreferenceRepository::class)->put($node->id, ExporterPreference::Disabled);
     $disabled = $projection->forNode($metrics, $node);
     expect([$disabled->caddy, $disabled->fpm])->toBe([false, false]);
