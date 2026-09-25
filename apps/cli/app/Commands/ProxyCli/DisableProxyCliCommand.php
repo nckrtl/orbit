@@ -26,7 +26,7 @@ final class DisableProxyCliCommand extends ProxyCliCommand
         }
 
         if (! $this->confirmAction(
-            'Disable ProxyCli for the whole fleet? This stops the collector, withdraws collector.cli-proxy-api.orbit and its certificate, and deletes the stored management key and read tokens.',
+            'Disable ProxyCli for the whole fleet? This stops the collector, withdraws collector.cli-proxy-api.orbit and its certificate, and deletes the stored management key and tokens.',
             'ProxyCli disable cancelled.',
             requiredMessage: 'Non-interactive ProxyCli disable requires --yes.',
         )) {

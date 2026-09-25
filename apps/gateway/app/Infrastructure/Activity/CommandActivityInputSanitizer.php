@@ -15,7 +15,7 @@ final readonly class CommandActivityInputSanitizer
     private const string INVALID_PROPERTY_NAME = '[INVALID_PROPERTY_NAME]';
 
     /**
-     * A field is secret when one of its name segments ends with one of these words.
+     * A field is secret when one of its name segments is one of these words.
      *
      * @var list<string>
      */
@@ -34,6 +34,11 @@ final readonly class CommandActivityInputSanitizer
         'credentials',
         'bearer',
         'pem',
+        'apikey',
+        'appkey',
+        'authtoken',
+        'accesstoken',
+        'privatekey',
     ];
 
     /**
@@ -48,7 +53,7 @@ final readonly class CommandActivityInputSanitizer
     ];
 
     private const string SECRET_KEY_CORE =
-        '(?:[A-Za-z0-9]*(?:KEYS?|TOKENS?|SECRETS?|PASSWORDS?|PASSWD|PASSPHRASE|CREDENTIALS?|BEARER))';
+        '(?:KEYS?|TOKENS?|SECRETS?|PASSWORDS?|PASSWD|PASSPHRASE|CREDENTIALS?|BEARER|APIKEY|APPKEY|AUTHTOKEN|ACCESSTOKEN|PRIVATEKEY)';
 
     private const string SECRET_KEY_IDENTIFIER = '(?:[A-Za-z][A-Za-z0-9]*[_-])*'.self::SECRET_KEY_CORE;
 
@@ -167,12 +172,7 @@ final readonly class CommandActivityInputSanitizer
             return false;
         }
 
-        $words = implode('|', self::SECRET_WORDS);
-
-        return array_any(
-            explode('_', $normalized),
-            static fn (string $segment): bool => preg_match('/(?:'.$words.')\z/D', $segment) === 1,
-        );
+        return array_intersect(explode('_', $normalized), self::SECRET_WORDS) !== [];
     }
 
     /**

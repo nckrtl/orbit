@@ -86,6 +86,9 @@ it('keeps ordinary fields for audit', function (): void {
         'cliproxy_url' => 'http://127.0.0.1:8317',
         'secretary' => 'active',
         'keyboard' => 'us',
+        'valkey_connection' => 'e2e-valkey',
+        'image' => 'valkey/valkey:8.1',
+        'monkey' => 'patch',
     ];
 
     expect($sanitizer->sanitizeProperties($input))->toBe($input);

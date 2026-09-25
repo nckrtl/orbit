@@ -80,7 +80,7 @@ A record identifies the operation, its target, its caller, and its result. It ne
 
 The Gateway redacts `properties` before it stores a record, for every command:
 
-- A text or structured field is stored as `[REDACTED]` when any segment of its name ends with `key`, `token`, `secret`, `password`, `passwd`, `passphrase`, `credential`, `bearer`, or `pem`, in any case or separator style. For example, `cliproxy_management_key`, `api_key`, and `webhookSecret` are redacted. A new field that matches this rule is redacted without a code change.
+- A text or structured field is stored as `[REDACTED]` when any word of its name is `key`, `token`, `secret`, `password`, `passwd`, `passphrase`, `credential`, `bearer`, or `pem`, singular or plural, in any case or separator style. The joined forms `apikey`, `appkey`, `authtoken`, `accesstoken`, and `privatekey` count too. For example, `cliproxy_management_key`, `api_key`, and `webhookSecret` are redacted, and `valkey_connection` is not. A new field that matches this rule is redacted without a code change.
 - Only audited public fields are exempt: `public_key`, `wireguard_public_key`, and `host_key_fingerprint`. Numbers, booleans, and null stay, because they hold counts and flags such as token usage.
 - Environment maps keep variable names and replace every value.
 - Inside other text values, the Gateway redacts secret assignments such as `MANAGEMENT_KEY=value`, URL user information, `Authorization` headers, bearer tokens, and PEM blocks.
