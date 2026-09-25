@@ -17,12 +17,12 @@ use App\Infrastructure\AppDev\InMemoryPrivateDnsAnswerCache;
 use App\Infrastructure\AppDev\PrivateDnsAnswerCatalog;
 use App\Infrastructure\AppDev\PrivateDnsMessageCodec;
 use App\Infrastructure\AppDev\PrivateDnsRequestHandler;
-use Tests\Support\RegisteredNodeDnsRequesterResolver;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\Route;
+use Tests\Support\RegisteredNodeDnsRequesterResolver;
 
 it('returns the Router LAN address to an eligible Cluster member for the TLD and Cluster-scoped Routes', function (): void {
     [$route, $outside, $eligible] = orb260_cluster_routes();

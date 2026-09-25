@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 use App\Domain\AppDev\DnsRequesterIdentity;
 use App\Domain\Shared\LifecycleStatus;
-use Tests\Support\RegisteredNodeDnsRequesterResolver;
 use App\Infrastructure\AppDev\WireGuardDnsRequesterResolver;
 use App\Models\Node;
+use Tests\Support\RegisteredNodeDnsRequesterResolver;
 
 it('normalizes a registered Node from its WireGuard source address', function (): void {
     $node = Node::query()->create([

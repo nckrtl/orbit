@@ -6,8 +6,8 @@ namespace Tests\Support;
 
 use App\Domain\AppDev\DnsRequester;
 use App\Domain\AppDev\PrivateDnsRequesterResolver;
-use App\Infrastructure\AppDev\DnsAddress;
 use App\Domain\Shared\LifecycleStatus;
+use App\Infrastructure\AppDev\DnsAddress;
 use App\Models\Node;
 
 /**

@@ -11,9 +11,9 @@ use App\Infrastructure\AppDev\PrivateDnsAnswerCatalog;
 use App\Infrastructure\AppDev\PrivateDnsMessageCodec;
 use App\Infrastructure\AppDev\PrivateDnsRequestHandler;
 use App\Infrastructure\AppDev\PrivateDnsTransportServer;
-use Tests\Support\RegisteredNodeDnsRequesterResolver;
 use App\Infrastructure\AppDev\SocketPrivateDnsUpstream;
 use App\Models\Node;
+use Tests\Support\RegisteredNodeDnsRequesterResolver;
 
 it('answers UDP and TCP questions from the actual transport source', function (): void {
     $registered = Node::query()->create([

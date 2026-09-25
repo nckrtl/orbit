@@ -11,8 +11,8 @@ use App\Infrastructure\AppDev\InMemoryPrivateDnsAnswerCache;
 use App\Infrastructure\AppDev\PrivateDnsAnswerCatalog;
 use App\Infrastructure\AppDev\PrivateDnsMessageCodec;
 use App\Infrastructure\AppDev\PrivateDnsRequestHandler;
-use Tests\Support\RegisteredNodeDnsRequesterResolver;
 use App\Models\Node;
+use Tests\Support\RegisteredNodeDnsRequesterResolver;
 
 it('selects configured answers from the transport source and ignores DNS-content identity', function (): void {
     $registered = Node::query()->create([
