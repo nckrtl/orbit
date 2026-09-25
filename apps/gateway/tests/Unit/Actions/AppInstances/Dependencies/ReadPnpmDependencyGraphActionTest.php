@@ -361,6 +361,41 @@ describe('pnpm v9 dependency graph reader', function (): void {
         'credentials in a Git URL' => 'git+ssh://fixture-user:fixture-secret@example.test/a.git',
     ]);
 
+    it('ignores root peer metadata without a declaration like pnpm does', function (): void {
+        // Lock written by pnpm 11.28 install --lockfile-only for this manifest: the importer records no peer.
+        $manifest = '{"name":"root","dependencies":{"ms":"^2.1.3"},"peerDependenciesMeta":{"a-peer":{"optional":false},"b-peer":{},"c-peer":{"optional":true}}}';
+        $lock = <<<'YAML'
+lockfileVersion: '9.0'
+
+settings:
+  autoInstallPeers: true
+  excludeLinksFromLockfile: false
+
+importers:
+
+  .:
+    dependencies:
+      ms:
+        specifier: ^2.1.3
+        version: 2.1.3
+
+packages:
+
+  ms@2.1.3:
+    resolution: {integrity: sha512-6FlzubTLZG3J2a/NVCAleEhjzq5oxgHyaCU9yYXvcLsvoVaHJq/s5xXI6/XXP6tz7R9xAOtHnSO/tXtF3WRTlA==}
+
+snapshots:
+
+  ms@2.1.3: {}
+YAML;
+
+        $graph = (new ReadPnpmDependencyGraphAction)->execute($manifest, $lock);
+
+        expect($graph->requirements)->toEqual([
+            new DependencyRequirement(null, 'ms@2.1.3', 'ms', '^2.1.3', DependencyRequirementKind::Dependency, DependencyScope::Regular, false),
+        ]);
+    });
+
     it('rejects inconsistent graph records', function (Closure $mutate): void {
         [$manifest, $lock] = pnpmReaderRecords();
         $mutate($manifest, $lock);
@@ -390,7 +425,7 @@ describe('pnpm v9 dependency graph reader', function (): void {
         'missing optional target' => fn ($manifest, $lock) => $lock->snapshots->{'plugin@1.0.0(host@1.0.0)'}->optionalDependencies->native = '2.0.0',
         'invalid peer declaration' => fn ($manifest, $lock) => $lock->packages->{'plugin@1.0.0'}->peerDependencies->host = 1,
         'invalid peer optional flag' => fn ($manifest, $lock) => $lock->packages->{'plugin@1.0.0'}->peerDependenciesMeta->{'missing-peer'}->optional = 'true',
-        'orphan peer metadata' => fn ($manifest, $lock) => $manifest->peerDependenciesMeta = (object) ['unknown' => (object) []],
+        'malformed undeclared peer metadata' => fn ($manifest, $lock) => $manifest->peerDependenciesMeta = (object) ['unknown' => (object) ['optional' => 'yes']],
         'invalid integrity' => fn ($manifest, $lock) => $lock->packages->{'app-one@1.0.0'}->resolution->integrity = 'fixture-secret',
         'null resolution metadata' => fn ($manifest, $lock) => $lock->packages->{'app-one@1.0.0'}->resolution = null,
         'invalid tarball metadata' => fn ($manifest, $lock) => $lock->packages->{'app-one@1.0.0'}->resolution->tarball = 1,

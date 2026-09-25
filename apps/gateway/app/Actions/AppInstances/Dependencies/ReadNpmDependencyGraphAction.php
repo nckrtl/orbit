@@ -391,7 +391,8 @@ final readonly class ReadNpmDependencyGraphAction
         preg_match('{^npm:(?:@[^/]+/)?[^@]+(?:@(.+))?$}D', $constraint, $match);
         $spec = trim($match[1] ?? '');
 
-        if ($spec === '*') {
+        // npm-package-arg reads a bare alias without a spec as `*`, which dep-valid accepts without a semver check.
+        if ($spec === '' || $spec === '*') {
             return true;
         }
 

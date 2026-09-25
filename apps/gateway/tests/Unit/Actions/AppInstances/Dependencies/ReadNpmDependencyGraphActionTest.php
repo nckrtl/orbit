@@ -257,6 +257,21 @@ describe('npm dependency reader', function (): void {
         'no spec' => ['', false],
     ]);
 
+    it('accepts a bare alias for a locked prerelease like npm does', function (string $spec): void {
+        // npm 11.19 ci installs this lock for `npm:ms` and `npm:ms@*` and refuses it for `npm:ms@^3.0.0`.
+        $manifest = '{"name":"root","dependencies":{"x":"npm:ms'.$spec.'"}}';
+        $lock = '{"name":"root","lockfileVersion":3,"requires":true,"packages":{"":{"name":"root","dependencies":{"x":"npm:ms'.$spec.'"}},"node_modules/x":{"version":"3.0.0-canary.1","resolved":"https://registry.npmjs.org/ms/-/ms-3.0.0-canary.1.tgz","integrity":"sha512-kh8ARjh8rMN7Du2igDRO9QJnqCb2xYTJxyQYK7vJJS4TvLLmsbyhiKpSW+t+y26gyOyMd0riphX0GeWKU3ky5g==","license":"MIT","engines":{"node":">=12.13"}}}}';
+
+        if ($spec === '@^3.0.0') {
+            expect(fn () => (new ReadNpmDependencyGraphAction)->execute($manifest, $lock))
+                ->toThrow(DependencyParseException::class, 'dependencies.invalid_npm_input');
+
+            return;
+        }
+
+        expect((new ReadNpmDependencyGraphAction)->execute($manifest, $lock)->resolutions[0]->version)->toBe('3.0.0-canary.1');
+    })->with(['bare alias' => '', 'any version' => '@*', 'range excluding prereleases' => '@^3.0.0']);
+
     it('rejects an alias target that npm ci would refuse', function (string $constraint, string $record): void {
         $manifest = '{"devDependencies":{"vite":"'.$constraint.'"},"overrides":{"vite":"'.$constraint.'"}}';
         $lock = '{"lockfileVersion":3,"packages":{"":{"devDependencies":{"vite":"'.$constraint.'"}},"node_modules/vite":'.$record.'}}';

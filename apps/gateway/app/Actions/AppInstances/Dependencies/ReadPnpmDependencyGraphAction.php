@@ -191,12 +191,14 @@ final readonly class ReadPnpmDependencyGraphAction
         $peers = array_fill_keys(array_keys($this->links($record, 'peerDependencies')), false);
 
         foreach ($this->map($record, 'peerDependenciesMeta') as $name => $meta) {
-            if (! array_key_exists($name, $peers) || ! $meta instanceof stdClass
-                || (property_exists($meta, 'optional') && ! is_bool($meta->optional))) {
+            if (! $meta instanceof stdClass || (property_exists($meta, 'optional') && ! is_bool($meta->optional))) {
                 $this->invalid();
             }
 
-            $peers[$name] = $meta->optional ?? false;
+            // pnpm records no peer for metadata without a declaration; the entry must still be well formed.
+            if (array_key_exists($name, $peers)) {
+                $peers[$name] = $meta->optional ?? false;
+            }
         }
 
         return $peers;
