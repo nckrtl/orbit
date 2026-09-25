@@ -28,6 +28,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\ToolManagerScopeLock;
 use App\Domain\Tools\ToolManagerScopeLockException;
+use App\Infrastructure\Nodes\Roles\NodeRoleConvergeLock;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Process;
@@ -47,6 +48,7 @@ final readonly class RemoveNodeRoleAction
         private NodeRoleFirewallManager $firewall,
         private ?RouteRemovalGuard $routes = null,
         private ?RecordEventBroadcaster $broadcaster = null,
+        private ?NodeRoleConvergeLock $nodeLock = null,
     ) {}
 
     public function execute(
@@ -171,7 +173,24 @@ final readonly class RemoveNodeRoleAction
         }
     }
 
+    /**
+     * Takes the per-Node role lock before it claims the assignment, so a busy Node returns an error
+     * and leaves the assignment as it was.
+     */
     private function removeClaimedRole(
+        Node $node,
+        RoleName $role,
+        bool $purgeData,
+        ?ExporterDegradationReason $degradation,
+    ): NodeRoleRemovalOutcome {
+        return ($this->nodeLock ?? app(NodeRoleConvergeLock::class))->run(
+            $node,
+            fn (): NodeRoleRemovalOutcome => $this->removeClaimedRoleLocked($node, $role, $purgeData, $degradation),
+            'node_role.remove_failed',
+        );
+    }
+
+    private function removeClaimedRoleLocked(
         Node $node,
         RoleName $role,
         bool $purgeData,

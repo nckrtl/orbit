@@ -109,12 +109,22 @@ A Node that was never `active` still becomes `failed` at the step that stopped. 
 
 ## Role operations on one Node
 
-The Gateway runs one role convergence or removal per Node at a time, so two operations never run package, firewall, or service steps on the same machine together. A `node:role:add`, `node:role:remove`, `node:role:relocate`, Cluster Router change, or `node:add` that reaches a role step while another one runs on that Node waits up to 2 minutes.
+The Gateway runs one role operation per Node at a time. The lock covers these steps on that Node:
 
-| Result | Meaning |
+- the role's baseline convergence or removal, including its package, firewall, and service steps
+- the app manager setup for `app-dev` and `app-prod`
+- the [Node agent](/reference/node-agent) converge that follows a role convergence
+
+The Metrics fleet reconcile runs after a role convergence and outside this lock. It converges exporters on every Node, and holding one Node's lock while it waits for another's could deadlock two operations. An exporter converge can therefore still run beside a role operation on the same Node.
+
+`node:role:add`, `node:role:remove`, and the role steps of `node:add` take the lock before they claim the assignment. A second operation waits up to 2 minutes. If the Node is still busy, it fails and leaves the assignment as it was:
+
+| Command | Error |
 | --- | --- |
-| The other operation finishes within 2 minutes | This operation continues. |
-| It is still running after 2 minutes | Convergence fails at step `node-lock` with error code `node_role.node_busy`, and the role becomes `failed`. Run `orbit node:role:add <node> <role> --converge` again. A removal fails with `node_role.remove_failed` and the same code. |
+| `node:role:add` | `node_role.convergence_failed` at step `converge:node-lock`, error code `node_role.node_busy` |
+| `node:role:remove` | `node_role.remove_failed` at step `node-lock`, error code `node_role.node_busy` |
+
+Run the command again. `node:role:relocate` and Cluster Router changes take the lock only around the baseline step, so a busy Node fails that step as their other baseline failures do.
 
 The lock lives in a file cache store under `ORBIT_HOME`, whatever `CACHE_STORE` says. It expires after 10 minutes, the Gateway's PHP-FPM request limit, so an operation whose worker dies without releasing it blocks that Node's role operations for at most 10 minutes. Operations on different Nodes run in parallel.
 
