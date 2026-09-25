@@ -76,6 +76,25 @@ final class PrivateDnsTransportServer
         $this->tcp = $tcp;
     }
 
+    /**
+     * Serves sockets that systemd already bound, so a listener restart never closes them.
+     *
+     * @param  resource  $udp
+     * @param  resource  $tcp
+     */
+    public function adopt($udp, $tcp): void
+    {
+        $name = stream_socket_get_name($udp, false);
+        if (is_string($name) && str_contains($name, ':')) {
+            $this->port = (int) substr($name, strrpos($name, ':') + 1);
+        }
+
+        stream_set_blocking($udp, false);
+        stream_set_blocking($tcp, false);
+        $this->udp = $udp;
+        $this->tcp = $tcp;
+    }
+
     public function port(): int
     {
         return $this->port;
@@ -95,7 +114,8 @@ final class PrivateDnsTransportServer
         $read = [$this->udp, $this->tcp];
         $write = null;
         $except = null;
-        $ready = stream_select($read, $write, $except, (int) $timeoutSeconds, (int) (($timeoutSeconds - (int) $timeoutSeconds) * 1_000_000));
+        // A stop signal interrupts the wait; the caller then ends its loop.
+        $ready = @stream_select($read, $write, $except, (int) $timeoutSeconds, (int) (($timeoutSeconds - (int) $timeoutSeconds) * 1_000_000));
         if ($ready === false || $ready === 0) {
             $this->onIdle?->__invoke();
 

@@ -23,6 +23,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Api\ProxyCliController;
+use App\Infrastructure\AppDev\AppDevDnsConfigRenderer;
 use App\Infrastructure\ProxyCli\RecordingProxyCliPublicationManager;
 use App\Infrastructure\ProxyCli\RecordingProxyCliRuntimeLifecycle;
 use App\Models\Activity;
@@ -468,6 +469,42 @@ it('disables the extension, stops the process, and hides provider reads', functi
         ->getJson('/api/v1/proxycli/providers')
         ->assertStatus(409)
         ->assertJsonPath('error.code', 'proxycli.disabled');
+});
+
+it('republishes private DNS without the collector name when the extension is disabled', function (): void {
+    $gateway = proxycli_gateway();
+    $node = proxycli_node();
+    proxycli_valkey($node);
+    $publication = new class implements ProxyCliPublicationManager
+    {
+        public ?string $dnsAtRemoval = null;
+
+        public function converge(Node $node, int $port = ProxyCliProcess::PORT, ?OrbitRoute $takeover = null): void {}
+
+        public function remove(Node $node): void
+        {
+            $this->dnsAtRemoval = app(AppDevDnsConfigRenderer::class)->render();
+        }
+    };
+    app()->instance(ProxyCliPublicationManager::class, $publication);
+
+    $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
+        ->postJson('/api/v1/proxycli', [
+            'node_id' => $node->id,
+            'cache_connection' => 'valkey',
+            'cliproxy_url' => 'http://127.0.0.1:8317',
+            'cliproxy_management_key' => 'management-key',
+        ])
+        ->assertCreated();
+
+    expect(app(AppDevDnsConfigRenderer::class)->render())->toContain('host-record=collector.cli-proxy-api.orbit,10.44.0.8');
+
+    $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
+        ->deleteJson('/api/v1/proxycli')
+        ->assertOk();
+
+    expect($publication->dnsAtRemoval)->toBeString()
+        ->not->toContain('collector.cli-proxy-api.orbit');
 });
 
 it('collects once under the distributed lock', function (): void {

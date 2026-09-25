@@ -6,6 +6,7 @@ use App\Domain\AppDev\DnsRequesterIdentity;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AppDev\WireGuardDnsRequesterResolver;
 use App\Models\Node;
+use Tests\Support\RegisteredNodeDnsRequesterResolver;
 
 it('normalizes a registered Node from its WireGuard source address', function (): void {
     $node = Node::query()->create([
@@ -17,7 +18,7 @@ it('normalizes a registered Node from its WireGuard source address', function ()
         'user' => 'orbit',
     ]);
 
-    $requester = new WireGuardDnsRequesterResolver()->resolve('10.44.0.8');
+    $requester = new RegisteredNodeDnsRequesterResolver()->resolve('10.44.0.8');
 
     expect($requester->identity)
         ->toBe(DnsRequesterIdentity::Registered)
@@ -39,7 +40,7 @@ it('treats an unknown or inactive WireGuard source as unidentified', function (s
         ]);
     }
 
-    $requester = new WireGuardDnsRequesterResolver()->resolve($source);
+    $requester = new RegisteredNodeDnsRequesterResolver()->resolve($source);
 
     expect($requester->identity)
         ->toBe(DnsRequesterIdentity::Unidentified)
