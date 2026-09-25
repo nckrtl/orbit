@@ -237,8 +237,9 @@ final readonly class ReadNpmDependencyGraphAction
             $this->invalid();
         }
 
+        // npm reads metadata only for declared peers; published packages such as debug carry metadata alone.
         foreach (get_object_vars($metadata) as $name => $meta) {
-            if (! isset($peers[$name]) || ! $meta instanceof stdClass
+            if (! $meta instanceof stdClass
                 || (property_exists($meta, 'optional') && ! is_bool($meta->optional))) {
                 $this->invalid();
             }
