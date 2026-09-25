@@ -89,7 +89,7 @@ On the typed `instances` envelope, sample convergence uses the Orbit CLI to keep
 
 The rendered pools, Caddy sites, firewall rules, and DNS records then match the checkout. The harness writes no Caddy file on any Node: `converge-app-prod.sh` only provisions `app-prod`, and every Caddyfile comes from a [Node Caddy build](/reference/caddy-configuration#node-caddy-build). The sample production site answers over TLS with the Orbit CA leaf that the Gateway publishes, so hydration and verification trust the Orbit root CA. Doctor then reports no `role.caddy_build_drift`.
 
-Every Node in the promoted snapshot serves a built Caddyfile, so discovery starts from that layout without converging. Readiness verification requires it: the `metrics.orbit` probe and the production Caddy probes read only the live Caddyfile and fail on a Node whose live file no build wrote. The Nodes still keep the fragment-layout versions and backups that their first builds retained, and `app-prod` keeps an unused `/etc/caddy/orbit-e2e-global.caddy`; no build imports them.
+Every Node in the promoted snapshot serves a built Caddyfile, so discovery starts from that layout without converging. Readiness verification requires it: the `metrics.orbit` probe, the `app-dev` Caddy probe, and the production Caddy probe read only the live Caddyfile and fail on a Node whose live file no build wrote. The production probe also requires exactly one copy of each production site directive. The Nodes still keep the fragment-layout versions and backups that their first builds retained, and `app-prod` keeps an unused `/etc/caddy/orbit-e2e-global.caddy`; no build imports them.
 
 ### Sample compatibility
 

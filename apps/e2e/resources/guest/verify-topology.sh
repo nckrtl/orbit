@@ -111,9 +111,9 @@ assert_production_caddy() {
   [[ "$caddy_state" == active ]]
   caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null 2>&1
   caddyfile=$(built_caddyfile)
-  grep -Fq -- "https://$production_domain {" "$caddyfile"
-  grep -Fq -- "root * $production_root" "$caddyfile"
-  grep -Fq -- "php_fastcgi unix/$production_socket" "$caddyfile"
+  [[ "$(grep -Fc -- "https://$production_domain {" "$caddyfile")" -eq 1 ]]
+  [[ "$(grep -Fc -- "root * $production_root" "$caddyfile")" -eq 1 ]]
+  [[ "$(grep -Fc -- "php_fastcgi unix/$production_socket" "$caddyfile")" -eq 1 ]]
 }
 repo_git() {
   if [[ "$(id -u)" -eq 0 ]]; then
@@ -309,7 +309,8 @@ case "$probe" in
       caddy_state=$(systemctl is-active caddy 2>/dev/null); caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null 2>&1; expected='caddy=active,config=valid'; observed="caddy=$caddy_state,config=valid"; [[ "$observed" == "$expected" ]]
     fi
     ;;
-  caddy.app-dev|caddy.app-prod-2) caddy_state=$(systemctl is-active caddy 2>/dev/null); caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null 2>&1; expected='caddy=active,config=valid'; observed="caddy=$caddy_state,config=valid"; [[ "$observed" == "$expected" ]] ;;
+  caddy.app-dev) built_caddyfile >/dev/null; caddy_state=$(systemctl is-active caddy 2>/dev/null); caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null 2>&1; expected='caddy=active,config=valid'; observed="caddy=$caddy_state,config=valid"; [[ "$observed" == "$expected" ]] ;;
+  caddy.app-prod-2) caddy_state=$(systemctl is-active caddy 2>/dev/null); caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null 2>&1; expected='caddy=active,config=valid'; observed="caddy=$caddy_state,config=valid"; [[ "$observed" == "$expected" ]] ;;
   laravel.dev)
     laravel_checkout=${typed_checkout:-/home/orbit/apps/laravel}
     [[ -f "$laravel_checkout/artisan" ]] && php "$laravel_checkout/artisan" --version >/dev/null

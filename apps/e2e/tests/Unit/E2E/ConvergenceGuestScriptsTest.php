@@ -2318,12 +2318,50 @@ describe('convergence guest scripts', function () {
             expect($evidence['passed'])->toBeTrue()
                 ->and($evidence['observed'])->toBe("caddy=active,domain=e2e-prod.test,root={$home}/public,socket={$socket}");
 
+            file_put_contents("{$version}/Caddyfile", "# Managed by Orbit: Node Caddy build\n{\n    auto_https disable_certs\n}\n\n{$site}\n{$site}");
+            expect(new Process($command, env: $environment)->run())->not->toBe(0);
+
             mkdir("{$version}/fragments", 0o700);
             file_put_contents("{$version}/fragments/app-prod.caddy", $site);
             file_put_contents("{$version}/Caddyfile", "{\n    auto_https disable_certs\n}\nimport {$version}/fragments/*.caddy\n");
             expect(new Process($command, env: $environment)->run())->not->toBe(0);
 
             fclose($server);
+        } finally {
+            new Filesystem()->deleteDirectory($root);
+        }
+    });
+
+    it('requires the Node Caddy build on app-dev', function (): void {
+        $root = temporaryPath('orbit-app-dev-caddy-probe-', 5);
+        $version = "{$root}/etc/caddy/orbit-versions/0123456789abcdef0123456789abcdef";
+        mkdir("{$root}/bin", 0o700, true);
+        mkdir($version, 0o700, true);
+        try {
+            file_put_contents("{$root}/bin/systemctl", "#!/usr/bin/env bash\nprintf 'active\\n'\n");
+            file_put_contents("{$root}/bin/caddy", "#!/usr/bin/env bash\nexit 0\n");
+            chmod("{$root}/bin/systemctl", 0o700);
+            chmod("{$root}/bin/caddy", 0o700);
+            file_put_contents("{$version}/Caddyfile", "# Managed by Orbit: Node Caddy build\n{\n    auto_https disable_certs\n}\n");
+            symlink("{$version}/Caddyfile", "{$root}/etc/caddy/Caddyfile");
+            $script = str_replace(
+                ['/etc/caddy/Caddyfile', '/etc/caddy/orbit-versions'],
+                ["{$root}/etc/caddy/Caddyfile", "{$root}/etc/caddy/orbit-versions"],
+                (string) file_get_contents(dirname(__DIR__, 3).'/resources/guest/verify-topology.sh'),
+            );
+            file_put_contents("{$root}/verify.sh", $script);
+            $command = ['bash', "{$root}/verify.sh", 'caddy.app-dev', 'readiness', str_repeat('a', 40), 'orbit-e2e-topology-snapshot-app-dev'];
+            $environment = ['PATH' => "{$root}/bin:".getenv('PATH')];
+
+            $evidence = json_decode(new Process($command, env: $environment)->mustRun()->getOutput(), true, 16, JSON_THROW_ON_ERROR);
+
+            expect($evidence['passed'])->toBeTrue()
+                ->and($evidence['observed'])->toBe('caddy=active,config=valid');
+
+            file_put_contents("{$version}/Caddyfile", "{\n    auto_https disable_certs\n}\nimport {$version}/fragments/*.caddy\n");
+            $unbuilt = new Process($command, env: $environment);
+            expect($unbuilt->run())->not->toBe(0)
+                ->and(trim($unbuilt->getOutput()))->toBe('');
         } finally {
             new Filesystem()->deleteDirectory($root);
         }
