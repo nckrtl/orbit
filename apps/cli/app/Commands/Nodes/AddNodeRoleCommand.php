@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace App\Commands\Nodes;
 
 use App\Repositories\GatewayConfigRepository;
-use App\Support\Console\ConsoleWriter;
 use App\Services\GatewayConnectorFactory;
+use App\Support\Console\ConsoleWriter;
 use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\Requests\Nodes\AddNodeRoleRequest;
 use Orbit\Sdk\Requests\Processes\ListProcessesRequest;
