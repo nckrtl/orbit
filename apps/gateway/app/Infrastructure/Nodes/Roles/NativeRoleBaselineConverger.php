@@ -6,6 +6,7 @@ namespace App\Infrastructure\Nodes\Roles;
 
 use App\Domain\Clusters\ClusterRouterOperationLock;
 use App\Domain\Metrics\MetricsFleetReconciler;
+use App\Domain\Metrics\MetricsReconcileDeferral;
 use App\Domain\Nodes\RoleBaseline;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
@@ -31,6 +32,7 @@ final readonly class NativeRoleBaselineConverger implements RoleBaselineConverge
         private ?AnalyticsRoleBaseline $analytics = null,
         private ?NodeAgentRoleConverger $agentConverger = null,
         private ?IngressRoleBaseline $ingress = null,
+        private ?MetricsReconcileDeferral $metricsDeferral = null,
     ) {}
 
     public function converge(Node $node, NodeRole $assignment): void
@@ -52,11 +54,22 @@ final readonly class NativeRoleBaselineConverger implements RoleBaselineConverge
         $this->operatingSystem->assert($node, $assignment->role);
         $this->baseline($assignment->role)->converge($node, $assignment);
 
-        if ($assignment->role !== RoleName::Metrics) {
-            $this->metricsFleet->reconcile();
-        }
+        $this->reconcileMetrics($assignment);
 
         $this->convergeAgent($node);
+    }
+
+    private function reconcileMetrics(NodeRole $assignment): void
+    {
+        if ($assignment->role === RoleName::Metrics) {
+            return;
+        }
+
+        if (($this->metricsDeferral ?? app(MetricsReconcileDeferral::class))->defers()) {
+            return;
+        }
+
+        $this->metricsFleet->reconcile();
     }
 
     private function convergeAgent(Node $node): void
@@ -82,9 +95,7 @@ final readonly class NativeRoleBaselineConverger implements RoleBaselineConverge
     {
         $this->baseline($assignment->role)->remove($node, $assignment, $purgeData);
 
-        if ($assignment->role !== RoleName::Metrics) {
-            $this->metricsFleet->reconcile();
-        }
+        $this->reconcileMetrics($assignment);
     }
 
     public function removeUnreachable(Node $node, NodeRole $assignment): void
@@ -105,9 +116,7 @@ final readonly class NativeRoleBaselineConverger implements RoleBaselineConverge
     {
         $this->baseline($assignment->role)->removeUnreachable($node, $assignment);
 
-        if ($assignment->role !== RoleName::Metrics) {
-            $this->metricsFleet->reconcile();
-        }
+        $this->reconcileMetrics($assignment);
     }
 
     private function baseline(RoleName $role): RoleBaseline

@@ -6,6 +6,8 @@ use App\Actions\Nodes\RelocateNodeRoleAction;
 use App\Domain\AppDev\PrivateDnsAnswerExpiry;
 use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\Gateway\GatewayServingHost;
+use App\Domain\Metrics\MetricsFleetReconciler;
+use App\Domain\Metrics\MetricsReconcileDeferral;
 use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Nodes\NodeRoleValidationException;
@@ -213,6 +215,50 @@ describe(RelocateNodeRoleAction::class, function (): void {
             ->toBe($credentials->laravelAppKey)
             ->and(Setting::query()->where('scope_type', 'node')->where('scope_id', $source->id)->count())
             ->toBe(0);
+    });
+
+    it('reconciles Metrics once, after the target converges and the source withdraws', function (): void {
+        $source = relocate_role_node('beast', '10.44.0.1');
+        $target = relocate_role_node('services', '10.44.0.11');
+        $source->roles()->create(['role' => RoleName::WebSocket, 'status' => LifecycleStatus::Active]);
+        app(WebSocketCredentialManager::class)->ensure($source);
+        Sleep::fake();
+        $metrics = new RelocateNodeRoleMetricsFake($this->baselines);
+        app()->instance(MetricsFleetReconciler::class, $metrics);
+        $this->baselines->metrics = $metrics;
+
+        app(RelocateNodeRoleAction::class)->execute($target, RoleName::WebSocket, force: true);
+
+        expect($metrics->reconciles)->toBe([[
+            'converged' => ["websocket:{$target->name}"],
+            'removed' => [['role' => 'websocket', 'node' => $source->name, 'purge_data' => false]],
+        ]]);
+    });
+
+    it('leaves the source withdrawal ahead of a failing Metrics reconcile and names the command that retries it', function (): void {
+        $source = relocate_role_node('beast', '10.44.0.1');
+        $target = relocate_role_node('services', '10.44.0.11');
+        $source->roles()->create(['role' => RoleName::WebSocket, 'status' => LifecycleStatus::Active]);
+        app(WebSocketCredentialManager::class)->ensure($source);
+        Sleep::fake();
+        $metrics = new RelocateNodeRoleMetricsFake($this->baselines);
+        $metrics->failure = new ResourceOperationException(
+            'metrics.prometheus_configuration_check_timed_out',
+            'A Metrics command on node [app-dev] did not finish within 60 seconds.',
+            504,
+        );
+        app()->instance(MetricsFleetReconciler::class, $metrics);
+        $this->baselines->metrics = $metrics;
+
+        expect(fn () => app(RelocateNodeRoleAction::class)->execute($target, RoleName::WebSocket, force: true))
+            ->toThrow(function (ResourceOperationException $exception) use ($source, $target): void {
+                expect($exception->errorCode)->toBe('metrics.prometheus_configuration_check_timed_out')
+                    ->and($exception->status)->toBe(504)
+                    ->and($exception->getMessage())->toEndWith("Run `orbit node:role:relocate {$target->name} websocket --from {$source->name} --force` to finish it once node [{$source->name}] is reachable.");
+            });
+
+        expect($this->baselines->removed)->toBe([['role' => 'websocket', 'node' => $source->name, 'purge_data' => false]])
+            ->and(app(MetricsReconcileDeferral::class)->defers())->toBeFalse();
     });
 
     it('withdraws websocket from the source only after the target serves and cached DNS answers expire', function (): void {
@@ -499,6 +545,9 @@ final class RelocateNodeRoleBaselineFake implements RoleBaselineConverger
 
     public ?ResourceOperationException $convergeFailure = null;
 
+    /** Requests a fleet Metrics reconcile after each change, as the native converger does. */
+    public ?MetricsFleetReconciler $metrics = null;
+
     public function converge(Node $node, NodeRole $assignment): void
     {
         if ($this->convergeFailure instanceof ResourceOperationException) {
@@ -506,6 +555,14 @@ final class RelocateNodeRoleBaselineFake implements RoleBaselineConverger
         }
 
         $this->converged[] = "{$assignment->role->value}:{$node->name}";
+        $this->reconcileMetrics();
+    }
+
+    private function reconcileMetrics(): void
+    {
+        if ($this->metrics instanceof MetricsFleetReconciler && ! app(MetricsReconcileDeferral::class)->defers()) {
+            $this->metrics->reconcile();
+        }
     }
 
     public ?NodeRoleOperationException $removeFailure = null;
@@ -524,7 +581,29 @@ final class RelocateNodeRoleBaselineFake implements RoleBaselineConverger
             'node' => $node->name,
             'purge_data' => $purgeData,
         ];
+        $this->reconcileMetrics();
     }
 
     public function removeUnreachable(Node $node, NodeRole $assignment): void {}
+}
+
+final class RelocateNodeRoleMetricsFake implements MetricsFleetReconciler
+{
+    /** @var list<array{converged: list<string>, removed: list<array{role: string, node: string, purge_data: bool}>}> */
+    public array $reconciles = [];
+
+    public ?ResourceOperationException $failure = null;
+
+    public function __construct(private readonly RelocateNodeRoleBaselineFake $baselines) {}
+
+    public function reconcile(): void
+    {
+        $this->reconciles[] = ['converged' => $this->baselines->converged, 'removed' => $this->baselines->removed];
+
+        if ($this->failure instanceof ResourceOperationException) {
+            throw $this->failure;
+        }
+    }
+
+    public function retire(Node $node): void {}
 }
