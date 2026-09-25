@@ -39,9 +39,10 @@ final class NodeRoleConvergeLock
      *
      * @param  Closure(): T  $callback
      * @param  string  $errorCode  The operation's error code when the lock stays busy.
+     * @param  string  $step  The operation's step name when the lock stays busy.
      * @return T
      */
-    public function run(Node $node, Closure $callback, string $errorCode = 'node_role.convergence_failed'): mixed
+    public function run(Node $node, Closure $callback, string $errorCode = 'node_role.convergence_failed', string $step = 'node-lock'): mixed
     {
         $name = 'node-role:'.($node->exists ? 'id:'.$node->getKey() : 'name:'.$node->name);
 
@@ -61,7 +62,7 @@ final class NodeRoleConvergeLock
             $lock->block($this->waitSeconds);
         } catch (LockTimeoutException $exception) {
             throw new NodeRoleOperationException(
-                step: 'node-lock',
+                step: $step,
                 errorCode: $errorCode,
                 underlyingErrorCode: 'node_role.node_busy',
                 message: "Another role operation is still running on node [{$node->name}].",

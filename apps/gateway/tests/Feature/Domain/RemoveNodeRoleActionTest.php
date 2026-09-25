@@ -24,6 +24,8 @@ use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\ToolManagerScopeLock;
 use App\Domain\Tools\ToolStatus;
 use App\Infrastructure\Nodes\NativeNodeRoleDependentCleaner;
+use App\Infrastructure\Nodes\NodeLocks;
+use App\Infrastructure\Nodes\Roles\NodeRoleConvergeLock;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Process;
@@ -63,6 +65,35 @@ describe(RemoveNodeRoleAction::class, function (): void {
             ->toBe(0)
             ->and($baseline->calls)
             ->toBe(0);
+    });
+
+    it('returns node_role.node_busy and keeps the role when another role operation holds the Node', function (): void {
+        [$node, $assignment] = removal_role_fixture();
+        $cleaner = new RemovalCleanerFake;
+        $baseline = new RemovalBaselineFake;
+        app()->instance(NodeRoleConvergeLock::class, new NodeRoleConvergeLock(app(NodeLocks::class), waitSeconds: 0));
+        $held = app(NodeLocks::class)->lock("node-role:id:{$node->id}", 60);
+        expect($held->get())->toBeTrue();
+
+        try {
+            expect(fn () => removal_action(
+                new RemovalInspectorFake(new NodeRoleDependencySet([], [], [], [])),
+                $cleaner,
+                $baseline,
+            )->execute($node, RoleName::AppDev, force: true))
+                ->toThrow(function (NodeRoleOperationException $exception): void {
+                    expect($exception->step)->toBe('node-lock')
+                        ->and($exception->errorCode)->toBe('node_role.remove_failed')
+                        ->and($exception->underlyingErrorCode)->toBe('node_role.node_busy');
+                });
+        } finally {
+            $held->release();
+        }
+
+        expect($assignment->refresh()->status)->toBe(LifecycleStatus::Active)
+            ->and($assignment->failed_step)->toBeNull()
+            ->and($cleaner->calls)->toBe(0)
+            ->and($baseline->calls)->toBe(0);
     });
 
     it('locks app role removal even when another app role row exists', function (LifecycleStatus $otherStatus): void {
