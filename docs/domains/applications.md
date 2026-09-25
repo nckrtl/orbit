@@ -11,7 +11,7 @@ Create an Instance on a Node you choose, or register an existing checkout. The P
 
 ## Create a Project
 
-New Projects require a type, a repository URL, and a normalized relative web root. The `project:create` command accepts an optional default branch:
+New Projects require a type, a repository URL, and a normalized relative root: `.` for `laravel-package` and `node-package`, or a web root such as `public` for other types. The `project:create` command accepts an optional default branch:
 
 ```text
 orbit project:create \

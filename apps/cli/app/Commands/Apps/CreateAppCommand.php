@@ -15,11 +15,11 @@ final class CreateAppCommand extends GatewayCommand
     #[\Override]
     protected $signature = 'project:create
         {slug : Unique project slug}
-        {type : Project type (monorepo, laravel-app, or laravel-package)}
+        {type : Project type (monorepo, laravel-app, laravel-package, or node-package)}
         {repository : Git repository URL}
         {--name= : Optional display name}
         {--default-branch= : Stored default branch; resolve the remote default when omitted}
-        {--root=public : Relative web root}
+        {--root= : Repository-relative root; defaults to . for package types and public otherwise}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -61,24 +61,20 @@ final class CreateAppCommand extends GatewayCommand
             return self::FAILURE;
         }
 
-        $root = $this->stringOption('root');
-
-        if ($root === null) {
-            return $this->renderGatewayFailure('app.root_required', 'Project root is required.');
-        }
-
         $type = $this->stringArgument('type', 'Project type', 'project.type_required');
 
         if ($type === null) {
             return self::FAILURE;
         }
 
-        if (! in_array($type, ['monorepo', 'laravel-app', 'laravel-package'], true)) {
+        if (! in_array($type, ['monorepo', 'laravel-app', 'laravel-package', 'node-package'], true)) {
             return $this->renderGatewayFailure(
                 'project.type_invalid',
-                'Project type must be monorepo, laravel-app, or laravel-package.',
+                'Project type must be monorepo, laravel-app, laravel-package, or node-package.',
             );
         }
+
+        $root = $this->stringOption('root') ?? $this->defaultRoot($type);
 
         $app = $this->sendWithProgress(
             $connector,
@@ -108,6 +104,11 @@ final class CreateAppCommand extends GatewayCommand
         $this->writeHumanMessage("Request ID: {$app->requestId}");
 
         return self::SUCCESS;
+    }
+
+    private function defaultRoot(string $type): string
+    {
+        return in_array($type, ['laravel-package', 'node-package'], true) ? '.' : 'public';
     }
 
     private function hasSafeRepositoryInput(string $repositoryUrl): bool

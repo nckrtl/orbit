@@ -88,6 +88,12 @@ describe('tasks contract', function (): void {
         run_task_contract('tasks-subtask-destroy/destroyed', 'tasks:subtask:destroy', ['group' => '1', 'subtask' => '1', '--yes' => true], 0);
     });
 
+    it('renders a cancelled subtask, a subtask that is not running, and a failed interrupt', function (): void {
+        run_task_contract('tasks-subtask-cancel/cancelled', 'tasks:subtask:cancel', ['group' => '1', 'subtask' => '1', '--yes' => true], 0);
+        run_task_contract('tasks-subtask-cancel/not-running', 'tasks:subtask:cancel', ['group' => '1', 'subtask' => '1', '--yes' => true], 1);
+        run_task_contract('tasks-subtask-cancel/interrupt-failed', 'tasks:subtask:cancel', ['group' => '2', 'subtask' => '3', '--yes' => true], 1);
+    });
+
     it('refuses a deliverables file that is not a list of objects with string fields', function (string $contents): void {
         $deliverables = $this->orbitHome.'/deliverables.json';
         file_put_contents($deliverables, $contents);

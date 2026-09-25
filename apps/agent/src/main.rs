@@ -6,9 +6,9 @@ use orbit_agent::{
     workspace::{
         configure_libgit2, lock_workspaces, watch_workspaces, SharedWorkspaces, WorkspaceUpdate,
     },
-    workspace_frame, workspaces_frames, ChangeBatch, Config, Envelope, HeartbeatData, Liveness,
-    LivenessCheck, Sequencer, Unit, CHANGE_MERGE_WINDOW, JOIN_TIMEOUT, LOCK_PATH,
-    SNAPSHOT_INTERVAL,
+    workspace_frame, workspaces_frames, AgentSecret, ChangeBatch, Config, Envelope, HeartbeatData,
+    Liveness, LivenessCheck, Sequencer, Unit, CHANGE_MERGE_WINDOW, JOIN_TIMEOUT, LOCK_PATH,
+    SECRET_PATH, SNAPSHOT_INTERVAL,
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -68,7 +68,8 @@ async fn main() {
 async fn run() -> Result<(), Box<dyn Error + Send + Sync>> {
     let config = Config::load()?;
     let _single_instance = lock_single_instance(LOCK_PATH)?;
-    let client = gateway_client(config.gateway_address)?;
+    let secret = AgentSecret::load(SECRET_PATH)?;
+    let client = gateway_client(config.gateway_address, &secret)?;
     let tls = tls_config()?;
     let connection = Connection::system().await?;
     let manager = Proxy::new(
@@ -708,14 +709,28 @@ mod protocol_tests {
         Arc,
     };
     use tokio_tungstenite::connect_async;
+    const TEST_SECRET: &str = "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff";
     #[derive(Clone)]
     struct FakeState {
         auths: Arc<AtomicUsize>,
         subscriptions: Arc<AtomicUsize>,
     }
-    async fn auth(State(state): State<FakeState>) -> Json<Value> {
+    async fn auth(
+        State(state): State<FakeState>,
+        headers: axum::http::HeaderMap,
+    ) -> Result<Json<Value>, axum::http::StatusCode> {
+        // The Gateway signs the membership only for the agent's secret (ADR 0155).
+        if headers
+            .get(axum::http::header::AUTHORIZATION)
+            .and_then(|value| value.to_str().ok())
+            != Some(format!("Bearer {TEST_SECRET}").as_str())
+        {
+            return Err(axum::http::StatusCode::UNAUTHORIZED);
+        }
         state.auths.fetch_add(1, Ordering::SeqCst);
-        Json(json!({"auth":"signed","channel_data":"{\"user_id\":\"agent.12\"}"}))
+        Ok(Json(
+            json!({"auth":"signed","channel_data":"{\"user_id\":\"agent.12\"}"}),
+        ))
     }
     async fn ws_route(
         State(state): State<FakeState>,
@@ -792,7 +807,23 @@ mod protocol_tests {
     #[tokio::test]
     async fn fake_pusher_auth_subscribe_events_and_reconnect() {
         let (base, state) = fake_server().await;
-        let http = reqwest::Client::new();
+        let unauthenticated = reqwest::Client::new();
+        let (socket, _) = connect_async(format!("{}/socket", base.replacen("http://", "ws://", 1)))
+            .await
+            .unwrap();
+        assert!(protocol_handshake(
+            socket,
+            &unauthenticated,
+            &format!("{base}/auth"),
+            "presence-node.12",
+            VERSION,
+        )
+        .await
+        .is_err());
+        let http = reqwest::Client::builder()
+            .default_headers(AgentSecret::parse(TEST_SECRET).unwrap().headers())
+            .build()
+            .unwrap();
         for _ in 0..2 {
             let (socket, _) =
                 connect_async(format!("{}/socket", base.replacen("http://", "ws://", 1)))

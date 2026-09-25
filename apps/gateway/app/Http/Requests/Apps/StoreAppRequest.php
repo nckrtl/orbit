@@ -8,7 +8,7 @@ use App\Data\Apps\CreateAppData;
 use App\Domain\Projects\ProjectType;
 use App\Domain\SourceControl\GitBranchName;
 use App\Domain\SourceControl\GitRepositoryOrigin;
-use App\Domain\SourceControl\RelativeWebRoot;
+use App\Domain\SourceControl\ProjectRoot;
 use App\Http\Requests\TopLevelJsonObjectInspector;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -99,9 +99,10 @@ final class StoreAppRequest extends FormRequest
         }
 
         $root = $this->input('root');
+        $type = ProjectType::tryFrom((string) $this->input('type')) ?? ProjectType::LaravelApp;
 
-        if (is_string($root) && ! RelativeWebRoot::isValid($root)) {
-            $validator->errors()->add('root', 'The root must be a normalized relative web path.');
+        if (is_string($root) && ! ProjectRoot::isValid($root, $type)) {
+            $validator->errors()->add('root', ProjectRoot::message($root, $type));
         }
     }
 }

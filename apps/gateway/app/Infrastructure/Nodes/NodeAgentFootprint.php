@@ -18,6 +18,12 @@ final readonly class NodeAgentFootprint
 
     public const string CertificatePath = '/etc/orbit/agent/ca.pem';
 
+    /** The agent's secret, `root:root` mode `0600`; the Gateway keeps only its SHA-256 hash (ADR 0155). */
+    public const string SecretPath = '/etc/orbit/agent/secret';
+
+    /** The first agent release that sends its secret on every Gateway request. */
+    public const string SecretSince = '0.3.0';
+
     public const string UnitPath = '/etc/systemd/system/orbit-agent.service';
 
     public const string Service = 'orbit-agent';
@@ -33,6 +39,12 @@ final readonly class NodeAgentFootprint
             'aarch64' => self::Aarch64Checksum,
             default => throw new \InvalidArgumentException('Unsupported Node agent architecture.'),
         };
+    }
+
+    /** Whether the given agent release sends its secret, so the Gateway must give it one. */
+    public static function sendsSecret(string $version = self::Version): bool
+    {
+        return version_compare($version, self::SecretSince, '>=');
     }
 
     public static function downloadUrl(string $architecture): string

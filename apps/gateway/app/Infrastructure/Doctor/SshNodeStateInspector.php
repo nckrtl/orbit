@@ -34,8 +34,12 @@ final readonly class SshNodeStateInspector implements NodeStateInspector
         fi
         if test -f /etc/systemd/system/orbit-agent.service; then unit_exists=1; fi
         if systemctl is-active --quiet orbit-agent.service; then agent_active=1; fi
-        printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n' \
-            "$platform" "$architecture" "$wireguard" "$binary_exists" "$unit_exists" "$agent_active" "$checksum"
+        secret_checksum=''
+        if sudo -n test -f /etc/orbit/agent/secret 2>/dev/null; then
+            secret_checksum=$(sudo -n sha256sum -- /etc/orbit/agent/secret | cut -d ' ' -f 1)
+        fi
+        printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n' \
+            "$platform" "$architecture" "$wireguard" "$binary_exists" "$unit_exists" "$agent_active" "$checksum" "$secret_checksum"
         BASH;
 
     public function __construct(
@@ -74,7 +78,7 @@ final readonly class SshNodeStateInspector implements NodeStateInspector
             throw new DoctorInspectionException;
         }
         $lines = explode("\n", $result->stdout);
-        if (count($lines) !== 8 || $lines[7] !== '') {
+        if (count($lines) !== 9 || $lines[8] !== '') {
             throw new DoctorInspectionException;
         }
         $platform = strtolower($lines[0]);
@@ -83,6 +87,7 @@ final readonly class SshNodeStateInspector implements NodeStateInspector
         $unitExists = $lines[4];
         $agentActive = $lines[5];
         $checksum = $lines[6];
+        $secretChecksum = $lines[7];
         if (
             ! in_array($platform, ['linux', 'darwin', 'freebsd'], strict: true)
             || ! in_array($wireguard, ['0', '1'], strict: true)
@@ -91,6 +96,7 @@ final readonly class SshNodeStateInspector implements NodeStateInspector
             || ! in_array($agentActive, ['0', '1'], strict: true)
             || ($binaryExists === '1' && preg_match('/\A[a-f0-9]{64}\z/', $checksum) !== 1)
             || ($binaryExists === '0' && $checksum !== '')
+            || ($secretChecksum !== '' && preg_match('/\A[a-f0-9]{64}\z/', $secretChecksum) !== 1)
         ) {
             throw new DoctorInspectionException;
         }
@@ -117,6 +123,7 @@ final readonly class SshNodeStateInspector implements NodeStateInspector
             $agentArchitecture === null
                 ? null
                 : hash_equals(NodeAgentFootprint::checksum($agentArchitecture), $checksum),
+            $secretChecksum === '' ? null : $secretChecksum,
         );
     }
 }

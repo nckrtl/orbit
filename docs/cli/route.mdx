@@ -62,6 +62,7 @@ The Project form refuses `--target` together with a scope option (`route.scope_c
 | `route.domain_conflict` | Another Route owns the domain, or the name is reserved (`gateway.orbit`, `metrics.orbit`, `reverb.orbit`). |
 | `route.target_app_conflict` | The target Instance belongs to another Project. |
 | `route.target_inactive` | The target Instance is not active. |
+| `route.target_web_root_unsupported` | The target Instance has no supported relative web root, such as a package rooted at `.`. |
 | `route.target_conflict` | The target Instance already belongs to another Route. |
 | `route.router_required` | The Cluster scope has no active Router. |
 | `route.upstream_invalid` | The upstream is not a loopback HTTP URL on the serving Node. |

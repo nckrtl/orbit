@@ -12,6 +12,8 @@ use workspace::WorkspaceState;
 
 pub const CONFIG_PATH: &str = "/etc/orbit/agent/config.toml";
 pub const CA_PATH: &str = "/etc/orbit/agent/ca.pem";
+/// The agent's secret, written by the Gateway as `root:root` mode `0600` (ADR 0155).
+pub const SECRET_PATH: &str = "/etc/orbit/agent/secret";
 /// The agent holds an exclusive lock on this directory, so one Node runs one agent.
 pub const LOCK_PATH: &str = "/etc/orbit/agent";
 pub const PUSHER_FRAME_LIMIT: usize = 9_900;
@@ -44,6 +46,42 @@ impl Config {
             return Err("gateway_url must be https://gateway.orbit".into());
         }
         Ok(config)
+    }
+}
+
+/// The secret the agent sends on every Gateway request, so the Gateway can tell the agent apart from
+/// any other process on the Node (ADR 0155). Neither `Debug` nor an error ever prints it.
+pub struct AgentSecret(String);
+impl std::fmt::Debug for AgentSecret {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("AgentSecret(redacted)")
+    }
+}
+impl AgentSecret {
+    pub fn load(path: &str) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        let contents = std::fs::read_to_string(path)
+            .map_err(|error| format!("cannot read the agent secret at {path}: {error}"))?;
+        Self::parse(&contents)
+    }
+    pub fn parse(contents: &str) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        let secret = contents.trim();
+        if secret.len() != 64
+            || !secret
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        {
+            return Err("the agent secret must be 64 lowercase hexadecimal characters".into());
+        }
+        Ok(Self(secret.to_owned()))
+    }
+    /// The `Authorization` header for every Gateway request, marked sensitive so it is never logged.
+    pub fn headers(&self) -> reqwest::header::HeaderMap {
+        let mut value = reqwest::header::HeaderValue::from_str(&format!("Bearer {}", self.0))
+            .expect("a hexadecimal secret is a valid header value");
+        value.set_sensitive(true);
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert(reqwest::header::AUTHORIZATION, value);
+        headers
     }
 }
 
@@ -369,9 +407,11 @@ pub fn tls_config(
 }
 pub fn gateway_client(
     address: IpAddr,
+    secret: &AgentSecret,
 ) -> Result<reqwest::Client, Box<dyn std::error::Error + Send + Sync>> {
     let mut reader = BufReader::new(File::open(CA_PATH)?);
     let mut builder = reqwest::Client::builder()
+        .default_headers(secret.headers())
         .connect_timeout(std::time::Duration::from_secs(10))
         .timeout(std::time::Duration::from_secs(30))
         .https_only(true)
@@ -439,6 +479,40 @@ impl Liveness {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn loads_a_hexadecimal_secret_and_never_prints_it() {
+        let secret = "0123456789abcdef".repeat(4);
+        let parsed = AgentSecret::parse(&format!("{secret}\n")).unwrap();
+        assert!(!format!("{parsed:?}").contains(&secret));
+        let headers = parsed.headers();
+        let value = headers.get(reqwest::header::AUTHORIZATION).unwrap();
+        assert_eq!(value.to_str().unwrap(), format!("Bearer {secret}"));
+        assert!(value.is_sensitive());
+        assert!(!format!("{headers:?}").contains(&secret));
+    }
+    #[test]
+    fn refuses_a_missing_or_malformed_secret_without_echoing_it() {
+        for bad in [
+            "",
+            "short",
+            &"A".repeat(64),
+            &"g".repeat(64),
+            &"a".repeat(65),
+            &format!("{} x", "a".repeat(62)),
+        ] {
+            let error = AgentSecret::parse(bad).unwrap_err().to_string();
+            assert!(error.contains("64 lowercase hexadecimal"));
+            if !bad.is_empty() {
+                assert!(!error.contains(bad));
+            }
+        }
+        let missing =
+            std::env::temp_dir().join(format!("orbit-agent-no-secret-{}", std::process::id()));
+        let error = AgentSecret::load(missing.to_str().unwrap())
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("cannot read the agent secret"));
+    }
     #[test]
     fn a_second_agent_cannot_take_the_lock_until_the_first_one_ends() {
         let dir = std::env::temp_dir().join(format!("orbit-agent-lock-{}", std::process::id()));

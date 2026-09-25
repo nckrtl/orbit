@@ -20,6 +20,7 @@ use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStateResolver;
 use App\Domain\Routes\RouteStatus;
+use App\Domain\Routes\RouteTargetWebRoot;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\App as OrbitApp;
@@ -339,6 +340,10 @@ final readonly class CreateRouteAction
         ?int $generationBasisNodeId,
         ?AppInstance $appInstance,
     ): Route {
+        if ($appInstance instanceof AppInstance) {
+            RouteTargetWebRoot::assertSupported($appInstance);
+        }
+
         try {
             /** @var Route $route */
             $route = DB::transaction(function () use (

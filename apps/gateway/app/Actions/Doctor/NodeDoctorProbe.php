@@ -13,6 +13,7 @@ use App\Domain\Doctor\DoctorFamilyProbe;
 use App\Domain\Doctor\DoctorIssueKind;
 use App\Domain\Doctor\DoctorNodeContext;
 use App\Domain\Doctor\NodeDoctorIssueCode;
+use App\Domain\Doctor\NodeInspectionData;
 use App\Domain\Nodes\ManagedNodeEligibility;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\WebSocket\WebSocketCredentialManager;
@@ -173,6 +174,19 @@ final readonly class NodeDoctorProbe implements DoctorFamilyProbe
                     observed: false,
                 );
             }
+            $secret = $inspection->agentBinaryExists === true ? $this->agentSecretProblem($node, $inspection) : null;
+            if ($secret !== null) {
+                $issues[] = new DoctorIssueData(
+                    NodeDoctorIssueCode::AgentSecretMismatch,
+                    DoctorIssueKind::Drift,
+                    'node',
+                    $node->id,
+                    $node->name,
+                    'Node agent secret does not match the Gateway record.',
+                    expected: 'match',
+                    observed: $secret,
+                );
+            }
             $view = $inspection->agentActive === true ? $this->agentViewProblem($node) : null;
             if ($view !== null) {
                 $issues[] = new DoctorIssueData(
@@ -189,6 +203,25 @@ final readonly class NodeDoctorProbe implements DoctorFamilyProbe
         }
 
         return DoctorFamilyReportData::fromIssues(DoctorFamily::Node, 1, $issues);
+    }
+
+    /**
+     * Why the Node's agent secret cannot pass the agent endpoints: `missing` when the file is absent,
+     * `mismatch` when its hash differs from the stored one. Null for an exempt Node (ADR 0155).
+     */
+    private function agentSecretProblem(Node $node, NodeInspectionData $inspection): ?string
+    {
+        $stored = $node->agent_secret_hash;
+
+        if ((! is_string($stored) || $stored === '') && $node->agent_secret_exempt) {
+            return null;
+        }
+
+        if ($inspection->agentSecretChecksum === null) {
+            return 'missing';
+        }
+
+        return is_string($stored) && $stored !== '' && hash_equals($stored, $inspection->agentSecretChecksum) ? null : 'mismatch';
     }
 
     /**
