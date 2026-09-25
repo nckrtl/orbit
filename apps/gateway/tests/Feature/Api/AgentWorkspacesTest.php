@@ -47,7 +47,8 @@ function agent_workspace_group(Node $node, string $name, TaskGroupStatus $status
 describe('agent workspaces endpoint', function (): void {
     beforeEach(function (): void {
         $this->node = agent_workspace_node('workspace-node', '10.44.0.41');
-        $this->withServerVariables(['REMOTE_ADDR' => $this->node->wireguard_ip]);
+        $this->node->forceFill(['agent_secret_hash' => hash('sha256', 'workspace-secret')])->save();
+        $this->withServerVariables(['REMOTE_ADDR' => $this->node->wireguard_ip])->withToken('workspace-secret');
         app(TaskExtensionState::class)->enable();
     });
 

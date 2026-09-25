@@ -6,6 +6,7 @@ use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Middleware\RequireActiveWireGuardPeer;
 use App\Http\Middleware\RequireNodeAccess;
+use App\Http\Middleware\RequireNodeAgentSecret;
 use Illuminate\Routing\Route as IlluminateRoute;
 use Illuminate\Support\Facades\Route;
 
@@ -335,10 +336,14 @@ it('keeps only bootstrap routes outside peer and node access middleware', functi
         if (in_array($route->getName(), ['agent:realtime', 'agent:realtime:auth', 'agent:workspaces'], strict: true)) {
             expect($middleware)
                 ->toContain(RequireActiveWireGuardPeer::class)
+                ->toContain(RequireNodeAgentSecret::class)
                 ->not->toContain(RequireNodeAccess::class);
 
             continue;
         }
+
+        // Every agent endpoint needs the agent's secret as well as the Node's address (ADR 0155).
+        expect(str_starts_with($route->uri(), 'api/v1/agent/'))->toBeFalse();
 
         expect($middleware)
             ->toContain(RequireActiveWireGuardPeer::class)

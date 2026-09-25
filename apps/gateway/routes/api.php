@@ -59,6 +59,7 @@ use App\Http\Controllers\Api\ToolsController;
 use App\Http\Middleware\RecordCommandActivity;
 use App\Http\Middleware\RequireActiveWireGuardPeer;
 use App\Http\Middleware\RequireNodeAccess;
+use App\Http\Middleware\RequireNodeAgentSecret;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1')->group(function (): void {
@@ -82,20 +83,14 @@ Route::prefix('v1')->group(function (): void {
     ])->match(['get', 'post'], 'broadcasting/auth', [RealtimeAuthController::class, 'authenticate'])
         ->name('realtime:auth');
 
-    Route::middleware(RequireActiveWireGuardPeer::class)
-        ->get('agent/realtime', [AgentRealtimeController::class, 'show'])
+    // Every agent endpoint requires the agent's secret as well as the Node's address (ADR 0155).
+    Route::middleware([RequireActiveWireGuardPeer::class, RequireNodeAgentSecret::class])
         ->withoutMiddleware(RecordCommandActivity::class)
-        ->name('agent:realtime');
-
-    Route::middleware(RequireActiveWireGuardPeer::class)
-        ->post('agent/broadcasting/auth', [AgentRealtimeController::class, 'authenticate'])
-        ->withoutMiddleware(RecordCommandActivity::class)
-        ->name('agent:realtime:auth');
-
-    Route::middleware(RequireActiveWireGuardPeer::class)
-        ->get('agent/workspaces', [AgentRealtimeController::class, 'workspaces'])
-        ->withoutMiddleware(RecordCommandActivity::class)
-        ->name('agent:workspaces');
+        ->prefix('agent')->group(function (): void {
+            Route::get('realtime', [AgentRealtimeController::class, 'show'])->name('agent:realtime');
+            Route::post('broadcasting/auth', [AgentRealtimeController::class, 'authenticate'])->name('agent:realtime:auth');
+            Route::get('workspaces', [AgentRealtimeController::class, 'workspaces'])->name('agent:workspaces');
+        });
 
     Route::middleware([
         RequireActiveWireGuardPeer::class,
