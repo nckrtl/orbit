@@ -578,17 +578,23 @@ describe('process:logs --follow', function (): void {
             }
 
             if ($count === 3) {
+                $file[] = 'after';
+            }
+
+            if ($count === 5) {
                 InterruptIntent::record(SIGINT);
             }
         });
 
         Artisan::call('process:logs', ['process' => '41', '--follow' => true, '--lines' => '2', '--json' => true]);
 
+        // After the gap the follow finds its place again, so later polls print only new lines.
         expect(log_follow_json_lines(Artisan::output()))->toBe([
             ['type' => 'notice', 'code' => 'logs.live_unavailable', 'reason' => 'ssh_only'],
             ['type' => 'lines', 'lines' => ['start'], 'dropped' => 0, 'skipped' => 0],
             ['type' => 'missing'],
             ['type' => 'lines', 'lines' => ['burst 1499', 'burst 1500'], 'dropped' => 0, 'skipped' => 0],
+            ['type' => 'lines', 'lines' => ['after'], 'dropped' => 0, 'skipped' => 0],
         ]);
     });
 

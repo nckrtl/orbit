@@ -370,17 +370,22 @@ final class LogFollower
     private function emitWithGap(array $lines, int $dropped, int $skipped): void
     {
         $this->output->missing();
-        $this->emit(array_slice($lines, -$this->lines), $dropped, $skipped);
+        // The read follows on from itself, not from the lines printed before the gap.
+        $this->overlap->restart($lines);
+        $this->emit(array_slice($lines, -$this->lines), $dropped, $skipped, remember: false);
     }
 
     /** @param  list<string>  $lines */
-    private function emit(array $lines, int $dropped, int $skipped): void
+    private function emit(array $lines, int $dropped, int $skipped, bool $remember = true): void
     {
         if ($lines === [] && $dropped === 0 && $skipped === 0) {
             return;
         }
 
-        $this->overlap->remember($lines);
+        if ($remember) {
+            $this->overlap->remember($lines);
+        }
+
         // Once lines are printed, a reopened stream sends the window so its first lines can be matched to them.
         $this->opener->requestHistory(self::WINDOW_LINES);
         $this->output->lines($lines, $dropped, $skipped);

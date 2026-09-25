@@ -27,6 +27,17 @@ final class LogTailOverlap
         $this->recent = array_slice([...$this->recent, ...$lines], -self::CONTEXT);
     }
 
+    /**
+     * Start the context again from the newest of $lines, which follow each other in the log, after a
+     * gap: the lines printed before the gap no longer lead up to the new ones.
+     *
+     * @param  list<string>  $lines
+     */
+    public function restart(array $lines): void
+    {
+        $this->recent = array_slice($lines, -self::CONTEXT);
+    }
+
     public function hasContext(): bool
     {
         return $this->recent !== [];
