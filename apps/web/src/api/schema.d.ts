@@ -44,6 +44,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/agent/broadcasting/auth": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Authorize the agent's presence channel
+         * @description The `orbit-agent` on a managed Node calls this endpoint to join its own presence channel. The Gateway signs member `agent.{id}` on `presence-node.{id}` only for a request from that Node's WireGuard address. The response carries the Pusher `auth` and `channel_data` values.
+         */
+        post: operations["agent-realtime-auth"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent/realtime": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show the agent's Reverb connection
+         * @description The `orbit-agent` on a managed Node calls this endpoint to find its Reverb connection. The Gateway identifies the Node from the WireGuard address and returns the Reverb URL, serving address, and app key, the Node's `presence-node.{id}` channel, and the agent's `agent.{id}` member ID. Connection values are null when broadcasting is not configured.
+         */
+        get: operations["agent-realtime"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/analytics/credentials": {
         parameters: {
             query?: never;
@@ -3603,6 +3643,109 @@ export interface operations {
             };
         };
     };
+    "agent-realtime-auth": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    socket_id: string;
+                    channel_name: string;
+                    version?: string | null;
+                };
+            };
+        };
+        responses: {
+            /** @description The Pusher channel signature. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @description Pusher channel signature. */
+                        auth: string;
+                        /** @description JSON-encoded presence member data. */
+                        channel_data: string;
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`), its Node is not eligible for an agent (`agent.node_ineligible`), or it asked for another Node's channel (`agent.channel_forbidden`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Realtime is not configured (`realtime.not_configured`). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "agent-realtime": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            /** @description Reverb WebSocket URL. */
+                            url: string | null;
+                            /** @description Address that serves Reverb on port 443. */
+                            address: string | null;
+                            /** @description Reverb app key. */
+                            key: string | null;
+                            /** @description The Node's presence channel, `presence-node.{id}`. */
+                            channel: string;
+                            /** @description The agent's member ID, `agent.{id}`. */
+                            member: string;
+                        };
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or its Node is not eligible for an agent (`agent.node_ineligible`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     "analytics-credentials": {
         parameters: {
             query?: never;
@@ -4737,7 +4880,10 @@ export interface operations {
     };
     "realtime-auth": {
         parameters: {
-            query?: never;
+            query: {
+                socket_id: string;
+                channel_name: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;

@@ -8,7 +8,7 @@ description: "A map of the maintained documentation corpus and the commands that
 These pages explain what Orbit can do, how its main parts work together, and
 how to use it.
 
-The same pages publish as the Orbit documentation site through Mintlify. `docs.json` holds the site navigation and theme, `style.css` holds the site styling, and the pages under `cli/` and `api/` exist for the site only. `openapi.json` describes the Gateway API for the site's API tab; `composer docs-openapi` regenerates it from the Gateway routes, form requests, data classes, and the PHP SDK.
+The same pages publish as the Orbit documentation site through Mintlify. `docs.json` holds the site navigation and theme, `style.css` holds the site styling, and the pages under `cli/` and `api/` exist for the site only. `openapi.json` describes the Gateway API for the site's API tab; `composer docs-openapi` regenerates it from the Gateway routes, form requests, data classes, and the PHP SDK, and `bin/docs-openapi --check` reports when it is stale.
 
 If you are new to Orbit, start with the mission and architecture. Keep the
 concepts page nearby for any Orbit terms you do not know yet.

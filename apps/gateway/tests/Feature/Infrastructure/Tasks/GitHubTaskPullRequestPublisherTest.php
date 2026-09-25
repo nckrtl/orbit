@@ -16,12 +16,12 @@ use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\TaskGroup;
 use Illuminate\Http\Client\Request;
-use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
 use Symfony\Component\Process\Process;
 use Tests\Feature\GitHub\GitHubTestSupport;
 use Tests\Support\AppDevFakeSshExecutor;
 use Tests\Support\LocalShellSshExecutor;
+use Tests\Support\TestOrbitHome;
 
 /** @param list<string> $arguments */
 function publisher_git(string $directory, array $arguments): string
@@ -86,13 +86,11 @@ beforeEach(function (): void {
 });
 
 afterEach(function (): void {
-    foreach (glob(sys_get_temp_dir().'/orbit-publish-*') ?: [] as $directory) {
-        File::deleteDirectory($directory);
-    }
+    TestOrbitHome::clearScratch();
 });
 
 it('pushes the task branch with a pull request token and opens the pull request', function (): void {
-    $root = sys_get_temp_dir().'/orbit-publish-'.bin2hex(random_bytes(6));
+    $root = TestOrbitHome::scratch('orbit-publish');
     (new Process(['git', 'init', '--quiet', '--bare', $root.'/origin.git']))->mustRun();
     (new Process(['git', 'init', '--quiet', '-b', 'task-7', $root.'/checkout']))->mustRun();
     publisher_git($root.'/checkout', ['commit', '--quiet', '--allow-empty', '-m', 'Models']);
