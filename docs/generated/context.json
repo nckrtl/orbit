@@ -4026,8 +4026,8 @@
             ]
         },
         {
-            "path": "docs/decisions/0157-serve-wildcard-sites-on-the-wireguard-address-beside-wireguard-only-sites.md",
-            "title": "ADR 0157: Serve wildcard sites on the WireGuard address beside WireGuard-only sites",
+            "path": "docs/decisions/0157-keep-private-caddy-sites-off-the-public-listener.md",
+            "title": "ADR 0157: Keep private Caddy sites off the public listener",
             "kind": "decision",
             "components": [
                 "apps/docs",

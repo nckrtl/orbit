@@ -12,8 +12,6 @@ use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
-use App\Infrastructure\AppDev\AppDevCaddyConfigRenderer;
-use App\Infrastructure\AppDev\AppDevSiteRepository;
 use App\Infrastructure\AppDev\AppDevSshExecutor;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
 use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
@@ -177,7 +175,7 @@ describe('an Ingress that runs the workload while the Router is on another Node'
         expect($ingress->problems)->toBe([])
             ->and(substr_count($ingress->content, "{$domain} {"))->toBe(1)
             ->and($ingress->content)
-            ->toContain("# orbit: ingress route-{$this->route->id}-ingress\n{$domain} {\n    bind 0.0.0.0\n    tls force_automate")
+            ->toContain("# orbit: ingress route-{$this->route->id}-ingress\n{$domain} {\n    bind 0.0.0.0 10.44.0.3\n    tls force_automate")
             ->toContain('php_fastcgi unix//run/php/orbit-app-')
             ->not->toContain("https://{$domain} {")
             ->not->toContain('reverse_proxy https://10.44.0.1');
@@ -223,12 +221,12 @@ describe('an Ingress on the Gateway Node that is also the Router', function (): 
         $this->route = public_edge_route($cluster, $workload);
     });
 
-    it('builds the public site on every address and on the WireGuard address beside gateway.orbit', function (): void {
+    it('builds the public site on every address and the WireGuard address, and keeps gateway.orbit on WireGuard', function (): void {
         $caddyfile = app(NodeCaddyfileRenderer::class)->render($this->ingress);
 
         expect($caddyfile->problems)->toBe([])
             ->and($caddyfile->content)
-            ->toContain("gateway.orbit, 10.44.0.1 {\n    bind 10.44.0.1\n")
+            ->toContain("gateway.orbit, 10.44.0.1 {\n    bind 10.44.0.1\n    @orbit_outside not remote_ip 10.44.0.0/24\n    abort @orbit_outside\n")
             ->toContain("# orbit: ingress route-{$this->route->id}-ingress\n{$this->route->domain} {\n    bind 0.0.0.0 10.44.0.1\n    tls force_automate");
     });
 
@@ -450,7 +448,13 @@ function public_edge_inspector(
  */
 function public_edge_publish(string $caddy, Node $ingress, ?Closure $edit = null, ?string $globalOptions = null): void
 {
-    $sites = new AppDevCaddyConfigRenderer()->render(new AppDevSiteRepository()->forNode($ingress));
+    $sites = implode(PHP_EOL, array_map(
+        static fn (array $block): string => $block['block'],
+        array_values(array_filter(
+            app(NodeCaddyfileRenderer::class)->render($ingress)->blocks,
+            static fn (array $block): bool => $block['source'] !== 'gateway',
+        )),
+    ));
     file_put_contents(
         "{$caddy}/orbit-versions/v1/Caddyfile",
         ($globalOptions ?? CaddyGlobalOptions::render()).($edit instanceof Closure ? $edit($sites) : $sites),

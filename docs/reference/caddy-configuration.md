@@ -15,6 +15,7 @@ Each build writes one file, `/etc/caddy/orbit-versions/<version>/Caddyfile`, and
 # Managed by Orbit: Node Caddy build
 {
     auto_https disable_certs
+    order abort first
     metrics {
         per_host
     }
@@ -29,11 +30,15 @@ https://e2e-dev.test {
 # orbit: websocket reverb.orbit
 reverb.orbit {
     bind 10.44.0.3
+    @orbit_outside not remote_ip 10.44.0.0/24
+    abort @orbit_outside
     ...
 }
 ```
 
-The global options block is Orbit's, and it is the same on every Node. `auto_https disable_certs` keeps Caddy's HTTP-to-HTTPS redirects but stops Caddy from obtaining certificates on its own. A private site serves the Orbit CA certificate Orbit publishes for it. A public Ingress site opts back in, as [public Ingress certificates](#public-ingress-certificates) describes.
+The global options block is Orbit's, and it is the same on every Node. A change to it changes every Node's file, and Doctor reports `role.caddy_build_drift` on a Node until its next build. `auto_https disable_certs` keeps Caddy's HTTP-to-HTTPS redirects but stops Caddy from obtaining certificates on its own. A private site serves the Orbit CA certificate Orbit publishes for it. A public Ingress site opts back in, as [public Ingress certificates](#public-ingress-certificates) describes.
+
+`order abort first` runs `abort` before every other handler, so the client guard of a site runs first, as [listener addresses](#listener-addresses) describes.
 
 `metrics { per_host }` makes Caddy count requests, errors, and durations per hostname. On the Node, `curl http://localhost:2019/metrics` shows them. Prometheus scrapes them only on Ingress, as [service metrics](/reference/service-metrics#caddy-traffic) describes. [ADR 0139](/decisions/0139-collect-caddy-http-metrics-on-every-node) records this choice and its cost.
 
@@ -61,44 +66,56 @@ A send to the old server gets 0.3 seconds to connect and 0.5 seconds in total, a
 
 | Site source | Nodes | Listener |
 | --- | --- | --- |
-| `app-dev` and `app-prod` workload and Router sites, custom proxy Routes, analytics tracking hosts, Agentation, Vite, and hibernation wake sites | Workload and Router Nodes | `0.0.0.0` on a Node with `ingress`; otherwise the WireGuard address and the LAN address when the Node has one |
-| Public Ingress sites | The Cluster's Ingress Node | `0.0.0.0` |
+| `app-dev` and `app-prod` workload and Router sites, custom proxy Routes, analytics tracking hosts, Agentation, Vite, and hibernation wake sites | Workload and Router Nodes | The WireGuard address and the LAN address when the Node has one |
+| Public Ingress sites | The Cluster's Ingress Node | `0.0.0.0`, the WireGuard address, and the LAN address when the Node has one |
 | `gateway.orbit` | The Node with the `gateway` role | WireGuard address |
 | `metrics.orbit` | The Node with the `gateway` role, while a Metrics role renders | WireGuard address |
 | Service metrics scrape site on port 9103 | A selected Ingress Node | WireGuard address |
-| `reverb.orbit`, `analytics.orbit`, and `collector.cli-proxy-api.orbit` | The Node that runs the role or collector | WireGuard address, or `0.0.0.0` when a site from the first row binds `0.0.0.0` on the same port |
+| `reverb.orbit`, `analytics.orbit`, and `collector.cli-proxy-api.orbit` | The Node that runs the role or collector | WireGuard address |
 
-On a port that also carries a WireGuard-only site, every site that binds `0.0.0.0` binds the WireGuard address too. [ADR 0157](/decisions/0157-serve-wildcard-sites-on-the-wireguard-address-beside-wireguard-only-sites) records this rule.
+Only public Ingress sites bind `0.0.0.0`, so no private site joins the public listener. [ADR 0157](/decisions/0157-keep-private-caddy-sites-off-the-public-listener) records this rule.
 
 A Node gets at most one site for each domain, port, and listener. When a Route's current and transition placements render the same site on one Node, the build keeps the current one. Any other duplicate fails the build and names both sites.
 
 ### Listener addresses
 
-Caddy sends a connection for the WireGuard address only to the sites bound to that address, and every other connection to the `0.0.0.0` sites. If one site bound the WireGuard address and another bound `0.0.0.0` on the same port, a WireGuard client that asked for the second hostname would get an empty response. The listener rule above puts every site that WireGuard clients use on the same listener.
+Caddy sends a connection for a specific address only to the sites bound to that address, and every other connection to the `0.0.0.0` sites. A public Ingress site therefore binds the WireGuard and LAN addresses as well as `0.0.0.0`: a Router forwards to those addresses, and public traffic can arrive on the LAN address behind NAT. Every other site binds only the addresses its clients use. Routers, Ingress, and private DNS clients reach Router and workload sites on a Node's LAN or WireGuard address, so those sites never bind `0.0.0.0`, on an Ingress Node or elsewhere.
 
-Routers, Ingress, and private DNS clients reach first-row sites only on a Node's LAN or WireGuard address, so a Node without `ingress` binds them there and has no wildcard listener. A Gateway that is also a Router therefore serves `gateway.orbit` and its Router sites on the same port. On a Node with `ingress`, first-row sites bind `0.0.0.0` and `gateway.orbit` stays off that public listener.
-
-When a WireGuard-only site shares a port with them, as on a Gateway that is also the Router and the Ingress, each site on `0.0.0.0` also binds the WireGuard address. WireGuard clients then reach every site on that port, and public clients reach every site except the WireGuard-only ones:
+A Gateway that is also the Router and the Ingress then serves `gateway.orbit` and its Router sites on the WireGuard address, and only its public sites on every address:
 
 ```caddy
 gateway.orbit, 10.44.0.1 {
     bind 10.44.0.1
+    @orbit_outside not remote_ip 10.44.0.0/24
+    abort @orbit_outside
     # Gateway web site
 }
 
 https://shop.test {
-    bind 0.0.0.0 10.44.0.1
+    bind 10.44.0.1 192.168.1.1
+    @orbit_outside not remote_ip private_ranges 100.64.0.0/10 10.44.0.0/24
+    abort @orbit_outside
     # Router site
 }
 
 shop.example.com {
-    bind 0.0.0.0 10.44.0.1
+    bind 0.0.0.0 10.44.0.1 192.168.1.1
     tls force_automate
     # public Ingress site
 }
 ```
 
-A WireGuard-only site and another site for the same host and port then share the WireGuard address, so the build fails on them as a duplicate address.
+Every site that is not public aborts a client outside the ranges it serves, right after its `bind` line. Orbit's global options order `abort` before every other handler, so the guard runs first.
+
+| Site | Admitted clients |
+| --- | --- |
+| `gateway.orbit`, `metrics.orbit`, the service metrics scrape site, `reverb.orbit`, `analytics.orbit`, and `collector.cli-proxy-api.orbit` | The VPN subnet |
+| Router and workload sites on an Ingress Node | Private and shared address space (`private_ranges` and `100.64.0.0/10`) and the VPN subnet |
+| Router and workload sites on any other Node, and public Ingress sites | Every client |
+
+The guard covers two paths that the listener alone leaves open. Linux accepts a packet for the WireGuard address on any interface, so a LAN neighbour can route to it through the LAN address when the firewall admits HTTPS to any destination, as an Ingress firewall does. A port forward can send public traffic to the LAN address of an Ingress Node. The TLS handshake still completes before the abort, and Caddy can present a private site's certificate for its hostname on any listener. The certificate names only the private hostname.
+
+A public Ingress site and another site for the same host and port share the WireGuard address, so the build fails on them as a duplicate address.
 
 The Gateway decides the addresses from stored state: the Node's `ingress` role, its WireGuard and LAN addresses, and its Route sites. Caddy cannot start with a missing listen address, so every build first checks that each specific address it binds exists on the Node. When a stored LAN address is missing, for example after a DHCP lease changed, the build stops at stage `addresses`, leaves the live Caddyfile unchanged, and names the address:
 
