@@ -25,6 +25,7 @@ use App\Models\Node;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\Process as SymfonyProcess;
+use Tests\Support\SeparateFilesystem;
 
 it('resumes relocation from each durable cross-filesystem checkpoint', function (string $checkpoint): void {
     $fixture = orb105_relocation_fixture();
@@ -580,7 +581,7 @@ function orb105_relocation_fixture(bool $crossFilesystem = true): array
 {
     $token = (string) Str::uuid();
     $sourceRoot = $crossFilesystem
-        ? '/dev/shm/orbit-orb105-'.$token
+        ? SeparateFilesystem::path('orbit-orb105-'.$token)
         : sys_get_temp_dir().'/orbit-orb105-'.$token;
     $destinationRoot = $crossFilesystem
         ? sys_get_temp_dir().'/orbit-orb105-'.$token
@@ -665,6 +666,22 @@ function orb105_relocation_fixture(bool $crossFilesystem = true): array
         ];
 }
 
+/**
+ * Returns the group that owns the fixture files: the test process's primary group.
+ *
+ * Ubuntu gives each managed account a private group with the account's name, but macOS puts users in staff.
+ */
+function orb105_primary_group(): string
+{
+    $group = posix_getgrgid(posix_getegid());
+
+    if (! is_array($group) || ! is_string($group['name'] ?? null)) {
+        throw new RuntimeException('The test process group is unavailable.');
+    }
+
+    return $group['name'];
+}
+
 function orb105_registration_manager(
     SshExecutor $executor,
     ?string $managedGroup = null,
@@ -698,7 +715,7 @@ function orb105_registration_manager(
 
         public function resolve(Node $node): ManagedUserAccount
         {
-            return new ManagedUserAccount($node->user, $this->managedGroup ?? $node->user, '/tmp');
+            return new ManagedUserAccount($node->user, $this->managedGroup ?? orb105_primary_group(), '/tmp');
         }
     };
     $manager = new RemoteRegistrationSourceManager(

@@ -19,6 +19,7 @@ use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Collection;
 use Symfony\Component\Process\Process;
 use Tests\Support\AppDevFakeSshExecutor;
+use Tests\Support\HostBinary;
 
 it('converges the pinned Sury Resolute source before package installation', function (): void {
     $transport = new AppDevFakeSshExecutor;
@@ -1246,13 +1247,13 @@ it('removes root-owned candidates and restores managed state when publication fa
             array_slice($transport->commands[0]->arguments, 3),
         );
         php_package_write_source_binaries($root, 'resolute', null);
-        file_put_contents($root.'/bin/install', <<<'BASH'
+        file_put_contents($root.'/bin/install', HostBinary::expand(<<<'BASH'
             #!/usr/bin/env bash
             case "${@: -1}" in
                 *.orbit.*) : > "${@: -1}"; exit 42 ;;
             esac
-            exec /usr/bin/install "$@"
-            BASH);
+            exec {{host:install}} "$@"
+            BASH));
         chmod($root.'/bin/install', 0755);
         $process = new Process(['bash', '-seu', '--', ...$arguments], $root, ['PATH' => $root.'/bin:'.getenv('PATH')]);
         $process->setInput($script);
@@ -1303,11 +1304,11 @@ it('restores key state when source publication mv fails', function (): void {
             array_slice($transport->commands[0]->arguments, 3),
         );
         php_package_write_source_binaries($root, 'resolute', null);
-        file_put_contents($root.'/bin/mv', <<<'BASH'
+        file_put_contents($root.'/bin/mv', HostBinary::expand(<<<'BASH'
             #!/usr/bin/env bash
             case "$2" in *orbit-php.sources) exit 42;; esac
-            exec /usr/bin/mv "$@"
-            BASH);
+            exec {{host:mv}} "$@"
+            BASH));
         chmod($root.'/bin/mv', 0755);
         $process = new Process(['bash', '-seu', '--', ...$arguments], $root, ['PATH' => $root.'/bin:'.getenv('PATH')]);
         $process->setInput($script);
@@ -1336,14 +1337,14 @@ function php_package_write_source_binaries(
     string $architecture = 'amd64',
 ): void {
     $write = static function (string $name, string $body) use ($root): void {
-        file_put_contents($root.'/bin/'.$name, "#!/usr/bin/env bash\n{$body}\n");
+        file_put_contents($root.'/bin/'.$name, HostBinary::expand("#!/usr/bin/env bash\n{$body}\n"));
         chmod($root.'/bin/'.$name, 0755);
     };
 
     $write('sudo', 'exec "$@"');
     $write(
         'install',
-        'args=(); skip=0; for arg in "$@"; do if [ "$skip" = 1 ]; then skip=0; continue; fi; case "$arg" in -o|-g) skip=1;; *) args+=("$arg");; esac; done; exec /usr/bin/install "${args[@]}"',
+        'args=(); skip=0; for arg in "$@"; do if [ "$skip" = 1 ]; then skip=0; continue; fi; case "$arg" in -o|-g) skip=1;; *) args+=("$arg");; esac; done; exec {{host:install}} "${args[@]}"',
     );
     $write(
         'curl',
@@ -1354,7 +1355,7 @@ function php_package_write_source_binaries(
         'gpg',
         'printf "%s\\nfpr:::::::::%s:\\nfpr:::::::::%s:\\n" x 15058500A0235D97F5D10063B188E2B695BD4743 45BEA3E529112086C622F8A4B214EAC28059B8AC',
     );
-    $write('mktemp', 'exec /usr/bin/mktemp "$@"');
+    $write('mktemp', 'exec {{host:mktemp}} "$@"');
     $write('apt-get', 'exit 0');
     $write('dpkg', 'if [ "$1" = --print-architecture ]; then printf "amd64\\n"; fi');
     $write(
@@ -1373,8 +1374,8 @@ function php_package_write_source_binaries(
         )
         .';; esac',
     );
-    $write('awk', 'exec /usr/bin/awk "$@"');
-    $write('grep', 'exec /usr/bin/grep "$@"');
+    $write('awk', 'exec {{host:awk}} "$@"');
+    $write('grep', 'exec {{host:grep}} "$@"');
 }
 
 function php_package_node(RoleName $role): Node
