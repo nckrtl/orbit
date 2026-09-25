@@ -39,6 +39,8 @@ A Node can stand alone or belong to one Cluster. Roles define its work: `app-dev
 
 The Gateway manages Nodes over SSH. After setup, WireGuard provides the private network used for those connections. The Gateway keeps one shared connection per Node and runs each command as a channel on it, as [ADR 0127](/decisions/0127-share-one-ssh-connection-per-node) records. Orbit manages the files and services needed by each Node's assigned roles.
 
+Each managed Node also runs a [Node agent](/reference/node-agent) that reports Process state over Reverb. The Gateway keeps a view of those reports and uses it for some repeated reads instead of SSH. The agent never changes a Node.
+
 ## Applications and traffic
 
 A Project stores shared source defaults and owns Routes. An Instance is one copy of that Project on a Node, used for development or production. A Route gives it a domain. Related Nodes can share a Cluster, but this is optional.
