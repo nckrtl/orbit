@@ -47,6 +47,7 @@ final readonly class NodeAgentSshExecutor implements NodeAgentRuntime
         private ManagedUserAccountResolver $accounts,
         private StorageRootResolver $storageRoots,
         private NodeSettingsNormalizer $nodeSettings,
+        private string $agentVersion = NodeAgentFootprint::Version,
     ) {}
 
     /**
@@ -175,7 +176,10 @@ final readonly class NodeAgentSshExecutor implements NodeAgentRuntime
         ]);
 
         $this->run($node, new RemoteCommand(['sudo', 'install', '-d', '-o', 'root', '-g', 'root', '-m', '0755', '/etc/orbit/agent']), 'agent.install_failed');
-        $changed = $this->installBinary($node, $checksum, $architecture);
+        $changed = NodeAgentFootprint::sendsSecret($this->agentVersion)
+            ? $this->convergeSecret($node)
+            : $this->exemptFromSecret($node);
+        $changed = $this->installBinary($node, $checksum, $architecture) || $changed;
         $changed = $this->publishFile($node, NodeAgentFootprint::ConfigurationPath, $configuration, 0644) || $changed;
         $changed = $this->publishFile($node, NodeAgentFootprint::CertificatePath, $certificate, 0644) || $changed;
         $changed = $this->publishFile($node, NodeAgentFootprint::UnitPath, $unit, 0644) || $changed;
@@ -186,6 +190,55 @@ final readonly class NodeAgentSshExecutor implements NodeAgentRuntime
 
         if ($changed) {
             $this->run($node, new RemoteCommand(['sudo', 'systemctl', 'restart', NodeAgentFootprint::Service]), 'agent.install_failed');
+        }
+    }
+
+    /**
+     * Keeps the Node's agent secret while its file matches the stored hash, and otherwise writes a new
+     * one through standard input and stores only its SHA-256 hash (ADR 0155). The secret never enters
+     * argv, and the Gateway never reads it back. Returns whether the agent must restart.
+     */
+    private function convergeSecret(Node $node): bool
+    {
+        $stored = $node->exists
+            ? Node::query()->whereKey($node->getKey())->value('agent_secret_hash')
+            : $node->agent_secret_hash;
+
+        if (is_string($stored) && preg_match('/\A[0-9a-f]{64}\z/D', $stored) === 1) {
+            $installed = $this->raw($node, new RemoteCommand(['sudo', 'sha256sum', '--', NodeAgentFootprint::SecretPath]));
+
+            if ($installed->succeeded() && hash_equals($stored, $this->checksum($installed->stdout))) {
+                $this->recordSecret($node, $stored, exempt: false);
+
+                return false;
+            }
+        }
+
+        $secret = bin2hex(random_bytes(32));
+        $this->writeFile($node, NodeAgentFootprint::SecretPath, $secret, 0600);
+        $this->recordSecret($node, hash('sha256', $secret), exempt: false);
+
+        return true;
+    }
+
+    /**
+     * The pinned agent sends no secret, so the Gateway accepts this Node's agent without one until a
+     * converge installs a release that does (ADR 0155).
+     */
+    private function exemptFromSecret(Node $node): bool
+    {
+        $this->recordSecret($node, null, exempt: true);
+
+        return false;
+    }
+
+    private function recordSecret(Node $node, ?string $hash, bool $exempt): void
+    {
+        $attributes = ['agent_secret_hash' => $hash, 'agent_secret_exempt' => $exempt];
+        $node->forceFill($attributes)->syncOriginalAttributes(array_keys($attributes));
+
+        if ($node->exists) {
+            Node::query()->whereKey($node->getKey())->update($attributes);
         }
     }
 
@@ -300,6 +353,14 @@ final readonly class NodeAgentSshExecutor implements NodeAgentRuntime
             return false;
         }
 
+        $this->writeFile($node, $path, $contents, $mode);
+
+        return true;
+    }
+
+    /** Writes a root-owned candidate from standard input with its final mode, then moves it into place. */
+    private function writeFile(Node $node, string $path, string $contents, int $mode): void
+    {
         $candidate = $path.NodeAgentFootprint::CandidateSuffix;
         $this->run($node, new RemoteCommand(['sudo', 'rm', '-f', '--', $candidate]), 'agent.install_failed');
         $this->run($node, new RemoteCommand(
@@ -307,8 +368,6 @@ final readonly class NodeAgentSshExecutor implements NodeAgentRuntime
             protectedInput: ProtectedInput::fromString($contents),
         ), 'agent.install_failed');
         $this->run($node, new RemoteCommand(['sudo', 'mv', '-fT', '--', $candidate, $path]), 'agent.install_failed');
-
-        return true;
     }
 
     private function readFile(Node $node, string $path): ?string

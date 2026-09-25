@@ -7,7 +7,7 @@ description: "What orbit-agent observes on a managed Node, including task checko
 
 `orbit-agent` is a small Rust program that runs on every managed Linux Node. It reports whether it is running, the runtime state of the Node's Orbit Processes, and the Git state of the Node's task checkouts. The web app uses those reports to show Node presence and Process state live. The Gateway keeps a [view](#gateway-view) of them, so it can skip repeated SSH reads. The agent never runs commands, never changes the Node, and never listens on a port.
 
-[ADR 0128](/decisions/0128-run-a-visibility-only-agent-on-managed-nodes) records why, [ADR 0129](/decisions/0129-publish-node-presence-and-process-state-on-per-node-presence-channels) defines the transport, [ADR 0130](/decisions/0130-publish-agent-binaries-as-github-releases) defines the releases, [ADR 0148](/decisions/0148-keep-a-gateway-view-of-node-agent-state) defines the Gateway view, and [ADR 0151](/decisions/0151-push-task-and-process-usage-changes-over-realtime) adds task checkouts and Process usage.
+[ADR 0128](/decisions/0128-run-a-visibility-only-agent-on-managed-nodes) records why, [ADR 0129](/decisions/0129-publish-node-presence-and-process-state-on-per-node-presence-channels) defines the transport, [ADR 0130](/decisions/0130-publish-agent-binaries-as-github-releases) defines the releases, [ADR 0148](/decisions/0148-keep-a-gateway-view-of-node-agent-state) defines the Gateway view, [ADR 0151](/decisions/0151-push-task-and-process-usage-changes-over-realtime) adds task checkouts and Process usage, and [ADR 0155](/decisions/0155-authenticate-the-node-agent-with-a-per-node-secret) adds the agent secret.
 
 ## Where it runs
 
@@ -88,7 +88,7 @@ The agent publishes the state as `client-workspaces` and `client-workspace` even
 
 ## How it connects
 
-The agent connects to the Gateway at `https://gateway.orbit` and to Reverb at `wss://reverb.orbit`. It never uses system DNS: its configuration contains the Gateway's WireGuard address, and the realtime response contains Reverb's serving address. The agent connects to each address while verifying the certificate for the unchanged hostname against the Orbit root certificate that the Gateway installs with it. The Gateway identifies the agent by the Node's WireGuard address, as it identifies every other caller.
+The agent connects to the Gateway at `https://gateway.orbit` and to Reverb at `wss://reverb.orbit`. It never uses system DNS: its configuration contains the Gateway's WireGuard address, and the realtime response contains Reverb's serving address. The agent connects to each address while verifying the certificate for the unchanged hostname against the Orbit root certificate that the Gateway installs with it. The Gateway identifies the agent by the Node's WireGuard address and by the [agent secret](#agent-secret), which the agent sends as `Authorization: Bearer {secret}` on every Gateway request.
 
 The Gateway writes `gateway_address` to the agent's `config.toml` on every converge. This is the WireGuard address that Orbit's private DNS answers for `gateway.orbit`, also while the `gateway` role itself converges. The agent sends every Gateway request to `gateway_address` on port 443, with `gateway.orbit` as the TLS server name, and verifies the certificate against `ca.pem` without resolving the hostname.
 
@@ -118,11 +118,13 @@ The Gateway writes `gateway_address` to the agent's `config.toml` on every conve
 
 When the Gateway role moves, its WireGuard address changes, and every agent loses the Gateway until its configuration is rewritten. Run `orbit node:add <node>` or a role converge on each Node; a changed `gateway_address` restarts the agent. The Reverb address needs no converge, because the agent reads it from each realtime response when it connects.
 
-The agent endpoints, including the [watch list](#watch-list), require an active WireGuard peer, but no Gateway access edge. They do not record Activity.
+The agent endpoints, including the [watch list](#watch-list), require an active WireGuard peer and the Node's agent secret, but no Gateway access edge. They do not record Activity.
 
 | Code | HTTP | Meaning |
 | --- | --- | --- |
 | `peer.identity_unknown` | 403 | The caller's address does not belong to an active Node. |
+| `agent.secret_required` | 401 | The request carries no bearer secret, and the Node is not [exempt](#rollout). |
+| `agent.secret_invalid` | 403 | The secret's SHA-256 hash differs from the one the Gateway stored for the Node, or the Gateway stored none. Another Node's secret is refused. |
 | `agent.node_ineligible` | 403 | The caller's Node is outside the managed-node boundary. |
 | `agent.channel_forbidden` | 403 | `channel_name` is not the caller's own `presence-node.{id}`. |
 | `validation.failed` | 422 | `socket_id` is missing or not a Pusher socket ID, `channel_name` is missing, or `version` is not a short version string. |
@@ -143,6 +145,33 @@ The agent answers Reverb's `pusher:ping` with `pusher:pong`.
 One Node runs one agent. The agent holds an exclusive lock on `/etc/orbit/agent` while it runs, and a second agent process exits with `another orbit-agent already runs on this Node`. A second process would join as the same member, and Reverb announces neither its join nor its exit, so it would mix two event streams on the channel.
 
 Agent 0.1.1 has none of the limits above, no lock, and no 60-second snapshot. [ADR 0154](/decisions/0154-recover-the-gateway-agent-view-without-a-membership-change) added them, and 0.2.0 is the first release that has them.
+
+## Agent secret
+
+Every Unix user on a Node reaches the Gateway from the Node's WireGuard address. Production Nodes run customer code as unprivileged users. The agent secret keeps those users from acting as the agent: without it they cannot sign the agent's channel membership, publish as `agent.{id}`, or read the watch list.
+
+| Item | Value |
+| --- | --- |
+| File | `/etc/orbit/agent/secret`, owned by `root:root`, mode `0600` |
+| Contents | 64 lowercase hexadecimal characters: 32 random bytes from the Gateway |
+| Stored on the Gateway | Only the SHA-256 hash of the secret, in the Node record. The API never returns it. |
+| Sent by the agent | `Authorization: Bearer {secret}` on every Gateway request, over the verified TLS connection to `gateway.orbit` |
+
+The agent runs as `root`, so it reads the file as its owner without capabilities. No other local user can read it. The agent reads the file when it starts. It exits with an error when the file is missing or is not 64 lowercase hexadecimal characters, and systemd starts it again after 2 seconds.
+
+Each agent converge checks the file's SHA-256 hash with `sudo sha256sum` and keeps the secret while the hash matches the stored one. Otherwise it writes a new secret to a candidate file through standard input, moves it into place, stores the new hash, and restarts the agent. The secret never appears in a command's arguments, and the Gateway never reads it back. There is no scheduled rotation. To rotate a secret, delete the file on the Node and converge it.
+
+### Rollout
+
+Agent 0.3.0 is the first release that sends the secret. Each Node record has `agent_secret_exempt`:
+
+| Node | Agent endpoints |
+| --- | --- |
+| Converged with an agent older than 0.3.0, or existing before the secret was introduced | Exempt: accepted without a secret. The converge sets the exemption and clears any stored hash. |
+| Converged with agent 0.3.0 or later | Requires its own secret. The converge stores the hash and clears the exemption. |
+| No stored hash and not exempt, such as a Node whose agent never converged | Refused |
+
+A new Node is never exempt once the pin reaches 0.3.0, because `node:add` converges its agent with the pinned release. The exemption ends for the fleet when every Node has converged once with 0.3.0 or later. Until then, an exempt Node keeps accepting a caller without a secret, and Doctor reports its older agent as `node.agent_outdated`.
 
 ## Gateway view
 
@@ -243,6 +272,7 @@ The Gateway pins one agent version and one SHA-256 checksum for each architectur
 | Binary | `/usr/local/bin/orbit-agent`, owned by `root`, mode `0755` |
 | Configuration | `/etc/orbit/agent/config.toml`, with `gateway_url = "https://gateway.orbit"` and required `gateway_address` (the Gateway's WireGuard address) |
 | Orbit root certificate | `/etc/orbit/agent/ca.pem` |
+| Agent secret | `/etc/orbit/agent/secret`, owned by `root`, mode `0600`; see [Agent secret](#agent-secret) |
 | Unit | `/etc/systemd/system/orbit-agent.service`, marked `# Managed by Orbit: agent` |
 | Download | `https://github.com/nckrtl/orbit/releases/download/agent-v{version}/orbit-agent-{version}-linux-{arch}` |
 
@@ -262,7 +292,7 @@ What the agent can read:
 | The Instance root | Read-only. Without capabilities, root reads only files that other users may read: the tracked files and `.git` that Orbit checks out, but not an Instance `.env` |
 | Everything else | Read-only, as `ProtectSystem=strict` sets |
 
-The Gateway restarts the agent only when the binary, configuration, certificate, or unit changed. An unchanged converge leaves the running agent and its connection alone.
+The Gateway restarts the agent only when the binary, configuration, certificate, secret, or unit changed. An unchanged converge leaves the running agent and its connection alone.
 
 The Gateway converges the agent at these points:
 
@@ -271,7 +301,7 @@ The Gateway converges the agent at these points:
 | `node:add`, for a new or an existing Node, after the Metrics exporters | Provisioning fails at step `agent` with `node.agent_install_failed`. A new Node becomes `failed`, and an existing active Node stays `active`. |
 | A role converge on the Node | The role converge continues. The Gateway logs a warning, and Doctor reports the drift. |
 
-To upgrade the fleet, publish a new release, update the pin in the Gateway, deploy the Gateway, and run `orbit node:add <node>` or a role converge on each Node. Doctor reports every Node that still runs another version. Version 0.1.1 requires `gateway_address` in its configuration. Version 0.2.0 reports task workspaces and needs the unit above.
+To upgrade the fleet, publish a new release, update the pin in the Gateway, deploy the Gateway, and run `orbit node:add <node>` or a role converge on each Node. Doctor reports every Node that still runs another version. Version 0.1.1 requires `gateway_address` in its configuration. Version 0.2.0 reports task workspaces and needs the unit above. Version 0.3.0 requires the [agent secret](#agent-secret), which the converge writes before it installs the binary.
 
 ## Failures
 
@@ -291,27 +321,32 @@ The agent recovers from each failure below without an operator.
 | A second agent process runs on the Node | Agent 0.2.0 refuses to start it. A second 0.1.1 process keeps resetting the subscriber's state, so the view stays `missing` until about 10 seconds after it exits. |
 | Reverb stops answering without closing the connection | The agent reconnects within about 30 seconds. |
 | systemd D-Bus is unavailable | The agent exits with an error, and systemd restarts it. |
+| The secret file is missing or malformed | The agent exits with an error, and systemd restarts it every 2 seconds. Doctor reports `node.agent_secret_mismatch`. A converge writes a new secret. |
+| The secret differs from the Gateway's hash, for example after a Gateway database restore | The Gateway refuses the agent with `agent.secret_invalid`. The agent retries at its backoff limit. Doctor reports `node.agent_secret_mismatch`, and a converge writes a new secret. |
 
-The agent logs to the systemd journal. Logs contain no Reverb key or signature.
+The agent logs to the systemd journal. Logs contain no Reverb key, signature, or agent secret.
 
 ## Removal
 
-Online `orbit node:remove` stops and disables `orbit-agent.service` and deletes the unit, the binary, and `/etc/orbit/agent`. This step is best-effort: a failure does not stop the removal, and the Gateway logs a warning. [Remove a Node](/reference/node-provisioning#remove-a-node) lists every removal step.
+Online `orbit node:remove` stops and disables `orbit-agent.service` and deletes the unit, the binary, and `/etc/orbit/agent`, including the secret. This step is best-effort: a failure does not stop the removal, and the Gateway logs a warning. [Remove a Node](/reference/node-provisioning#remove-a-node) lists every removal step.
 
 `--offline` on a Node that still answers the probe removes the agent as online removal does. Removing an unreachable Node with `--offline --force` changes nothing on the machine. The agent stays installed, and the response lists it under `retained_on_node`. Once its Node record is gone, the Gateway refuses its requests with `peer.identity_unknown`, and the agent keeps retrying at the 30-second backoff limit.
 
 ## Doctor
 
-Doctor checks the agent in the `node` family on every eligible Node. It checks the binary, the unit, and the version on the machine, and whether the Gateway has a fresh view of the Node.
+Doctor checks the agent in the `node` family on every eligible Node. It checks the binary, the unit, the version, and the secret on the machine, and whether the Gateway has a fresh view of the Node.
 
 | Issue code | Meaning |
 | --- | --- |
 | `node.agent_missing` | The binary or the unit is absent. |
 | `node.agent_inactive` | The unit exists but is not active. |
 | `node.agent_outdated` | The binary's checksum differs from the pinned checksum for the Node's architecture. |
+| `node.agent_secret_mismatch` | The Node is not [exempt](#rollout), and its secret file is missing (`missing`) or differs from the Gateway's hash (`mismatch`). |
 | `node.agent_view_stale` | The agent unit is active and a `websocket` role is active, but the Gateway has no fresh view of the Node. |
 
-Run `orbit node:add <node>` to repair the first three. `node:add` refuses a Node that owns Instances; repair such a Node by converging one of its roles with `orbit node:role:add <node> <role> --converge`.
+Run `orbit node:add <node>` to repair the first four. `node:add` refuses a Node that owns Instances; repair such a Node by converging one of its roles with `orbit node:role:add <node> <role> --converge`.
+
+Doctor checks the secret only on a Node with an agent binary. It reads the file's SHA-256 hash, and the report shows neither the secret nor a hash.
 
 `node.agent_view_stale` reports what it observed:
 

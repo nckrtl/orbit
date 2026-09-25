@@ -44,7 +44,12 @@ it('maps a bounded successful SSH observation', function (): void {
                 ->and($command->input)
                 ->not->toContain('10.44.0.7');
 
-            return new CommandResult(0, "Linux\nx86_64\n1\n1\n1\n1\n".NodeAgentFootprint::X8664Checksum."\n", 'secret stderr', 1, false);
+            // The script reads only the secret file's hash, never its contents (ADR 0155).
+            expect($command->input)
+                ->toContain('sudo -n sha256sum -- /etc/orbit/agent/secret')
+                ->not->toContain('cat');
+
+            return new CommandResult(0, "Linux\nx86_64\n1\n1\n1\n1\n".NodeAgentFootprint::X8664Checksum."\n".str_repeat('b', 64)."\n", 'secret stderr', 1, false);
         }
     };
     $keys = new class implements SshKeyProvider
@@ -87,7 +92,9 @@ it('maps a bounded successful SSH observation', function (): void {
         ->and($result->agentActive)
         ->toBeTrue()
         ->and($result->agentChecksumMatches)
-        ->toBeTrue();
+        ->toBeTrue()
+        ->and($result->agentSecretChecksum)
+        ->toBe(str_repeat('b', 64));
 });
 
 it('rejects malformed successful output and bounds architecture aliases', function (): void {
@@ -135,7 +142,7 @@ it('rejects truncated successful output', function (): void {
             SshConnection $connection,
             RemoteCommand $command,
         ): CommandResult {
-            return new CommandResult(0, "Linux\nx86_64\n1\n1\n1\n1\n".NodeAgentFootprint::X8664Checksum."\n", '', 1, true);
+            return new CommandResult(0, "Linux\nx86_64\n1\n1\n1\n1\n".NodeAgentFootprint::X8664Checksum."\n\n", '', 1, true);
         }
     };
     expect(fn (): mixed => new SshNodeStateInspector(
@@ -173,7 +180,7 @@ it('returns reachable with a missing interface and maps arm aliases', function (
             SshConnection $connection,
             RemoteCommand $command,
         ): CommandResult {
-            return new CommandResult(0, "Linux\narm64\n0\n0\n0\n0\n\n", '', 1, false);
+            return new CommandResult(0, "Linux\narm64\n0\n0\n0\n0\n\n\n", '', 1, false);
         }
     };
     $keys = new class implements SshKeyProvider
@@ -206,7 +213,9 @@ it('returns reachable with a missing interface and maps arm aliases', function (
         ->and($result->architecture)
         ->toBe('aarch64')
         ->and($result->wireGuardAddressMatches)
-        ->toBeFalse();
+        ->toBeFalse()
+        ->and($result->agentSecretChecksum)
+        ->toBeNull();
 });
 
 it('maps transport exceptions and missing addresses to unreachable', function (): void {
@@ -335,4 +344,38 @@ it('maps command failures to an unreachable bounded observation', function (): v
         ->toBeNull()
         ->and($result->wireGuardAddressMatches)
         ->toBeNull();
+});
+
+it('rejects a secret line that is not a SHA-256 hash', function (): void {
+    $ssh = new class implements SshExecutor
+    {
+        public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
+        {
+            return new CommandResult(0, "Linux\nx86_64\n1\n1\n1\n1\n".NodeAgentFootprint::X8664Checksum."\nnot-a-hash\n", '', 1, false);
+        }
+    };
+    $keys = new class implements SshKeyProvider
+    {
+        public function privateKeyPath(): string
+        {
+            return '/key';
+        }
+
+        public function publicKey(): string
+        {
+            return 'key';
+        }
+    };
+    $hosts = new class implements KnownHostsStore
+    {
+        public function path(): string
+        {
+            return '/known';
+        }
+
+        public function put(string $host, int $port, HostKey $key): void {}
+    };
+
+    expect(fn (): mixed => new SshNodeStateInspector($ssh, $keys, $hosts, new CommandDeadline)->inspect(new Node(['user' => 'orbit', 'wireguard_ip' => '10.44.0.7'])))
+        ->toThrow(DoctorInspectionException::class);
 });
