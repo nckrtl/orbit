@@ -11,6 +11,7 @@ use App\Models\Node;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\Process;
+use Tests\Support\HostBinary;
 
 it('uses fixed package lists for every role', function (): void {
     expect(class_exists(NodeRolePrerequisiteCommandFactory::class))->toBeTrue();
@@ -1164,7 +1165,7 @@ function role_composer_harness(?string $conflict = null, string $mode = 'success
         $ln = "{$root}/ln";
         $filesystem->put(
             $ln,
-            "#!/bin/sh\nif [ \"\$2\" = \"{$manifest}\" ]; then printf '%s\\n' '{\"require\":{\"winner\":true}}' > \"\$2\"; fi\nexec /usr/bin/ln \"\$@\"\n",
+            HostBinary::expand("#!/bin/sh\nif [ \"\$2\" = \"{$manifest}\" ]; then printf '%s\\n' '{\"require\":{\"winner\":true}}' > \"\$2\"; fi\nexec {{host:ln}} \"\$@\"\n"),
         );
         chmod(filename: $ln, permissions: 0o755);
     }

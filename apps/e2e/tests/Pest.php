@@ -89,6 +89,11 @@ function topologyConstructionFixture(
     return TopologyConstructionInputs::forGeneration($target, 'fixture-generation', 2);
 }
 
+function temporaryDirectory(): string
+{
+    return TemporaryPaths::directory();
+}
+
 function temporaryPath(string $prefix, int $randomBytes = 8): string
 {
     return TemporaryPaths::path($prefix, $randomBytes);

@@ -7,7 +7,7 @@ describe('console bootstrap', function () {
         $artisan = dirname(__DIR__, levels: 3).'/artisan';
         $command = sprintf(
             'cd %s && APP_ENV=local APP_DEBUG=true %s %s list --raw 2>&1',
-            escapeshellarg(sys_get_temp_dir()),
+            escapeshellarg(temporaryDirectory()),
             escapeshellarg(PHP_BINARY),
             escapeshellarg($artisan),
         );
