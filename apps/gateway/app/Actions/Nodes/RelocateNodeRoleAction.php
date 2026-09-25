@@ -208,12 +208,35 @@ final readonly class RelocateNodeRoleAction
             return;
         }
 
-        $this->baselines->converge($target, $assignment);
+        try {
+            $this->baselines->converge($target, $assignment);
+        } catch (NodeRoleOperationException $exception) {
+            throw self::namespaced($exception, 'converge:');
+        }
+    }
+
+    /** Names a baseline step the way a role row records it: `converge:STEP` on the target, `remove:STEP` on the source. */
+    private static function namespaced(NodeRoleOperationException $exception, string $prefix): NodeRoleOperationException
+    {
+        if (str_starts_with($exception->step, 'converge:') || str_starts_with($exception->step, 'remove:')) {
+            return $exception;
+        }
+
+        return new NodeRoleOperationException(
+            $prefix.$exception->step,
+            $exception->errorCode,
+            $exception->underlyingErrorCode,
+            $exception->getMessage(),
+            $exception->result,
+            $exception,
+        );
     }
 
     /**
      * The assignment already names the target. When converging the target or withdrawing the source fails,
-     * the move is incomplete: the error keeps its codes, says so, and names the command that finishes it.
+     * the move is incomplete: the error says so and names the command that finishes it. A step failure reports the
+     * step's own error code, such as `metrics.exporter_firewall_ownership_drift`, with `converge:STEP` or
+     * `remove:STEP`, because relocate records no failed step on a role row.
      * For `websocket`, the Gateway keeps serving both Reverb servers until then.
      *
      * @param  Closure(): void  $steps
@@ -228,7 +251,7 @@ final readonly class RelocateNodeRoleAction
                 ." Run `orbit node:role:relocate {$target->name} {$role->value} --from {$source->name} --force` to finish it once node [{$source->name}] is reachable.";
 
             throw $exception instanceof NodeRoleOperationException
-                ? new NodeRoleOperationException($exception->step, $exception->errorCode, $exception->underlyingErrorCode, $message, $exception->result, $exception)
+                ? new NodeRoleOperationException($exception->step, $exception->underlyingErrorCode, $exception->underlyingErrorCode, $message, $exception->result, $exception)
                 : new ResourceOperationException($exception->errorCode, $message, $exception->status, $exception, $exception->details);
         }
     }
@@ -248,7 +271,11 @@ final readonly class RelocateNodeRoleAction
             return;
         }
 
-        $this->baselines->remove($source, $this->ghostAssignment($source, $assignment), false);
+        try {
+            $this->baselines->remove($source, $this->ghostAssignment($source, $assignment), false);
+        } catch (NodeRoleOperationException $exception) {
+            throw self::namespaced($exception, 'remove:');
+        }
         $this->forgetOwnedSettings($source, $role);
     }
 

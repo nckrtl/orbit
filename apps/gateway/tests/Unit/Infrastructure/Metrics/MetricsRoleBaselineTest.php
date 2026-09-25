@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Domain\AppDev\RuntimeConvergenceException;
+use App\Domain\Firewall\FirewallOperationException;
 use App\Domain\Metrics\MetricsCadvisorLifecycle;
 use App\Domain\Metrics\MetricsExporterLifecycle;
 use App\Domain\Metrics\MetricsGatewayResolver;
@@ -9,6 +11,7 @@ use App\Domain\Metrics\MetricsPublicationCleanup;
 use App\Domain\Metrics\MetricsPublicationManager;
 use App\Domain\Metrics\MetricsPublicationReport;
 use App\Domain\Metrics\MetricsRuntimeLifecycle;
+use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
@@ -126,6 +129,39 @@ it('names the failing Metrics step and its error code', function (string $failur
     'cadvisor' => ['cadvisors:converge', 'metrics-cadvisor'],
     'runtime' => ['runtime:converge', 'metrics-runtime'],
     'publication' => ['publication:converge', 'metrics-publication'],
+]);
+
+it('reports a failure without a Metrics code as metrics.convergence_failed with a fixed message', function (): void {
+    [$metrics, $assignment] = metricsBaselineTopology();
+    $baseline = metricsBaselineFailingExporters(new RuntimeException('raw command output: secret-token'));
+
+    expect(fn () => $baseline->converge($metrics, $assignment))
+        ->toThrow(function (NodeRoleOperationException $exception) use ($metrics): void {
+            expect($exception->step)->toBe('metrics-exporters')
+                ->and($exception->errorCode)->toBe('node_role.convergence_failed')
+                ->and($exception->underlyingErrorCode)->toBe('metrics.convergence_failed')
+                ->and($exception->getMessage())->toBe("Metrics step [metrics-exporters] failed on node [{$metrics->name}].")
+                ->and($exception->getMessage())->not->toContain('secret-token');
+        });
+});
+
+it('passes through a failure that already names its step', function (Throwable $failure): void {
+    [$metrics, $assignment] = metricsBaselineTopology();
+    $baseline = metricsBaselineFailingExporters($failure);
+
+    try {
+        $baseline->converge($metrics, $assignment);
+        $caught = null;
+    } catch (Throwable $exception) {
+        $caught = $exception;
+    }
+
+    expect($caught)->toBe($failure);
+})->with([
+    'runtime convergence' => fn (): Throwable => new RuntimeConvergenceException('private-dns', 'app-dev.dns_config_failed', 'DNS failed.'),
+    'firewall' => fn (): Throwable => new FirewallOperationException('host-firewall', 'node.firewall_convergence_failed', 'UFW failed.'),
+    'node role operation' => fn (): Throwable => new NodeRoleOperationException('role-prerequisites', 'node_role.convergence_failed', 'packages.failed', 'Packages failed.'),
+    'node provisioning' => fn (): Throwable => new NodeProvisioningException('role-prerequisites', 'packages.failed', 'Packages failed.'),
 ]);
 
 it('removes publication, exporters, and runtime in that order', function (): void {
@@ -449,4 +485,20 @@ final class MetricsBaselinePublication implements MetricsPublicationManager
             throw new ResourceOperationException('metrics.test_'.str_replace(':', '_', $event), "{$event} failed", 502);
         }
     }
+}
+
+function metricsBaselineFailingExporters(Throwable $failure): MetricsRoleBaseline
+{
+    $exporters = Mockery::mock(MetricsExporterLifecycle::class);
+    $exporters->shouldReceive('converge')->andThrow($failure);
+    $exporters->shouldIgnoreMissing();
+
+    return new MetricsRoleBaseline(
+        Mockery::mock(MetricsRuntimeLifecycle::class)->shouldIgnoreMissing(),
+        $exporters,
+        Mockery::mock(MetricsPublicationManager::class)->shouldIgnoreMissing(),
+        new MetricsGatewayResolver,
+        new MetricsPublicationReport,
+        Mockery::mock(MetricsCadvisorLifecycle::class)->shouldIgnoreMissing(),
+    );
 }

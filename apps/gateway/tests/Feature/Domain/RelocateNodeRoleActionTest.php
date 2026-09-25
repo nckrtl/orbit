@@ -6,11 +6,18 @@ use App\Actions\Nodes\RelocateNodeRoleAction;
 use App\Domain\AppDev\PrivateDnsAnswerExpiry;
 use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\Gateway\GatewayServingHost;
+use App\Domain\Metrics\MetricsCadvisorLifecycle;
+use App\Domain\Metrics\MetricsExporterLifecycle;
 use App\Domain\Metrics\MetricsFleetReconciler;
+use App\Domain\Metrics\MetricsGatewayResolver;
+use App\Domain\Metrics\MetricsPublicationManager;
+use App\Domain\Metrics\MetricsPublicationReport;
 use App\Domain\Metrics\MetricsReconcileDeferral;
+use App\Domain\Metrics\MetricsRuntimeLifecycle;
 use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Nodes\NodeRoleValidationException;
+use App\Domain\Nodes\RoleBaseline;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Settings\SettingRepository;
@@ -21,6 +28,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WebSocket\WebSocketCredentialManager;
 use App\Infrastructure\Metrics\NativeMetricsCredentialManager;
+use App\Infrastructure\Nodes\Roles\MetricsRoleBaseline;
 use App\Infrastructure\WebSocket\WebSocketFootprint;
 use App\Models\Cluster;
 use App\Models\Node;
@@ -334,6 +342,54 @@ describe(RelocateNodeRoleAction::class, function (): void {
         expect($this->baselines->removed)->toBe([]);
     });
 
+    it('reports the Metrics code and the converge step when the real Metrics baseline fails on the target', function (): void {
+        $gateway = relocate_role_node('gateway', '10.44.0.1');
+        $gateway->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
+        $source = relocate_role_node('app-dev', '10.44.0.2');
+        $target = relocate_role_node('app-prod-2', '10.44.0.4');
+        $source->roles()->create(['role' => RoleName::Metrics, 'status' => LifecycleStatus::Active]);
+        $exporters = Mockery::mock(MetricsExporterLifecycle::class);
+        $exporters->shouldReceive('converge')->andThrow(new ResourceOperationException(
+            'metrics.exporter_firewall_ownership_drift',
+            'Metrics exporter firewall ownership cannot be proved.',
+            409,
+        ));
+        $exporters->shouldIgnoreMissing();
+        $baseline = new MetricsRoleBaseline(
+            Mockery::mock(MetricsRuntimeLifecycle::class)->shouldIgnoreMissing(),
+            $exporters,
+            Mockery::mock(MetricsPublicationManager::class)->shouldIgnoreMissing(),
+            new MetricsGatewayResolver,
+            new MetricsPublicationReport,
+            Mockery::mock(MetricsCadvisorLifecycle::class)->shouldIgnoreMissing(),
+        );
+        $this->baselines->delegate = $baseline;
+
+        expect(fn () => app(RelocateNodeRoleAction::class)->execute($target, RoleName::Metrics, force: true))
+            ->toThrow(function (NodeRoleOperationException $exception) use ($source, $target): void {
+                expect($exception->errorCode)->toBe('metrics.exporter_firewall_ownership_drift')
+                    ->and($exception->step)->toBe('converge:metrics-exporters')
+                    ->and($exception->getMessage())->toStartWith("Role [metrics] now runs on node [{$target->name}], but the move from node [{$source->name}] is incomplete: Metrics exporter firewall ownership cannot be proved.");
+            });
+
+        expect($this->baselines->removed)->toBe([]);
+    });
+
+    it('prefixes a source withdrawal step with remove and keeps its code', function (): void {
+        $source = relocate_role_node('beast', '10.44.0.1');
+        $target = relocate_role_node('services', '10.44.0.11');
+        $source->roles()->create(['role' => RoleName::WebSocket, 'status' => LifecycleStatus::Active]);
+        app(WebSocketCredentialManager::class)->ensure($source);
+        Sleep::fake();
+        $this->baselines->removeFailure = new NodeRoleOperationException('websocket-caddy', 'node_role.convergence_failed', 'websocket.caddy_publication_failed', 'The Caddy build failed.');
+
+        expect(fn () => app(RelocateNodeRoleAction::class)->execute($target, RoleName::WebSocket, force: true))
+            ->toThrow(function (NodeRoleOperationException $exception): void {
+                expect($exception->errorCode)->toBe('websocket.caddy_publication_failed')
+                    ->and($exception->step)->toBe('remove:websocket-caddy');
+            });
+    });
+
     it('transfers metrics and copies missing grafana credentials', function (): void {
         $source = relocate_role_node('beast', '10.44.0.1');
         $target = relocate_role_node('services', '10.44.0.11');
@@ -553,11 +609,16 @@ final class RelocateNodeRoleBaselineFake implements RoleBaselineConverger
     /** Requests a fleet Metrics reconcile after each change, as the native converger does. */
     public ?MetricsFleetReconciler $metrics = null;
 
+    /** A real baseline that converges the role instead of this fake. */
+    public ?RoleBaseline $delegate = null;
+
     public function converge(Node $node, NodeRole $assignment): void
     {
         if ($this->convergeFailure instanceof ResourceOperationException) {
             throw $this->convergeFailure;
         }
+
+        $this->delegate?->converge($node, $assignment);
 
         $this->converged[] = "{$assignment->role->value}:{$node->name}";
         $this->reconcileMetrics();
