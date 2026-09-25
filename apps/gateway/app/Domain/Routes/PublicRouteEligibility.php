@@ -19,6 +19,23 @@ final readonly class PublicRouteEligibility
         return $this->reason($route) === null;
     }
 
+    /**
+     * Starting a public activation, or repeating one on deploy, needs an Ingress whose role is active. A converging
+     * or failed Ingress keeps serving the public sites it has, but no activation starts on it until it is active.
+     */
+    public function canStartActivation(Route $route): bool
+    {
+        if (! $this->canActivate($route)) {
+            return false;
+        }
+
+        $cluster = $route->relationLoaded('cluster')
+            ? $route->cluster
+            : Cluster::query()->find($route->cluster_id);
+
+        return $cluster instanceof Cluster && $this->activeIngress($cluster) instanceof Node;
+    }
+
     public function reason(Route $route): ?string
     {
         if ($route->publication !== RoutePublication::Public) {
@@ -41,7 +58,7 @@ final readonly class PublicRouteEligibility
             return 'router-missing';
         }
 
-        if (! $this->activeIngress($cluster) instanceof Node) {
+        if (! $this->servingIngress($cluster) instanceof Node) {
             return 'ingress-missing';
         }
 
@@ -71,6 +88,34 @@ final readonly class PublicRouteEligibility
         return $this->publicActivationRank($step) >= $this->publicActivationRank(RouteReplacementStep::PublicActivated);
     }
 
+    /**
+     * The Cluster's Ingress Node while its role serves public sites. A role serves while it is active, while it
+     * converges, and after a failed convergence, because its public sites are already live. This is the same
+     * rule Node Caddy builds apply to every other role, so a build during an Ingress converge keeps the public
+     * sites. A role that is being removed, or whose removal failed, serves nothing.
+     */
+    public function servingIngress(Cluster $cluster): ?Node
+    {
+        $assignment = NodeRole::query()
+            ->with('node')
+            ->where('cluster_id', $cluster->id)
+            ->where('role', RoleName::Ingress)
+            ->orderBy('id')
+            ->get()
+            ->first(static fn (NodeRole $role): bool => match ($role->status) {
+                LifecycleStatus::Active, LifecycleStatus::Provisioning => true,
+                LifecycleStatus::Failed => is_string($role->failed_step) && str_starts_with($role->failed_step, 'converge:'),
+                LifecycleStatus::Removing => false,
+            });
+
+        $node = $assignment?->node;
+
+        return $node instanceof Node && $node->status === LifecycleStatus::Active
+            ? $node
+            : null;
+    }
+
+    /** The Cluster's Ingress Node only while its role is active. */
     public function activeIngress(Cluster $cluster): ?Node
     {
         $assignment = NodeRole::query()
@@ -79,7 +124,6 @@ final readonly class PublicRouteEligibility
             ->where('role', RoleName::Ingress)
             ->where('status', LifecycleStatus::Active)
             ->first();
-
         $node = $assignment?->node;
 
         return $node instanceof Node && $node->status === LifecycleStatus::Active

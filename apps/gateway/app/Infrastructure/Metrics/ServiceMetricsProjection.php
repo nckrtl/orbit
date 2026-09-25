@@ -9,6 +9,7 @@ use App\Domain\AppInstances\ProductionPhpRuntimeIdentity;
 use App\Domain\Metrics\MetricsExporterProjection;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
+use App\Infrastructure\Caddy\Build\CaddySiteRoles;
 use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\NodeRole;
@@ -35,9 +36,7 @@ final readonly class ServiceMetricsProjection
         $selected = $enabled && ($item?->selection->selected ?? false);
         $node = $item->node ?? $node;
         $node->loadMissing('roles');
-        $roles = $node->roles->filter(static fn (NodeRole $role): bool => in_array(
-            $role->status, [LifecycleStatus::Active, LifecycleStatus::Provisioning], true,
-        ))->pluck('role');
+        $roles = $node->roles->filter(static fn (NodeRole $role): bool => CaddySiteRoles::serves($role))->pluck('role');
         $caddy = $selected && $roles->contains(RoleName::Ingress);
         $fpm = $selected && $roles->contains(RoleName::AppProd);
         $instances = AppInstance::query()->where('node_id', $node->id)
