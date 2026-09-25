@@ -11,8 +11,8 @@ use App\Infrastructure\AppDev\PrivateDnsAnswerCatalog;
 use App\Infrastructure\AppDev\PrivateDnsMessageCodec;
 use App\Infrastructure\AppDev\PrivateDnsRequestHandler;
 use App\Infrastructure\AppDev\PrivateDnsTransportServer;
-use App\Infrastructure\AppDev\SocketPrivateDnsUpstream;
 use App\Infrastructure\AppDev\RegisteredNodeDnsRequesterResolver;
+use App\Infrastructure\AppDev\SocketPrivateDnsUpstream;
 use App\Models\Node;
 
 it('answers UDP and TCP questions from the actual transport source', function (): void {

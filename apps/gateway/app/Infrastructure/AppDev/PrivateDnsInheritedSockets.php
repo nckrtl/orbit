@@ -15,7 +15,7 @@ final class PrivateDnsInheritedSockets
 
     /**
      * @param  array<string, string|false>|null  $environment
-     * @return array{0: resource, 1: resource}|null  The UDP and TCP streams, or null when systemd passed none.
+     * @return array{0: resource, 1: resource}|null The UDP and TCP streams, or null when systemd passed none.
      */
     public static function fromEnvironment(?array $environment = null, ?int $pid = null): ?array
     {
