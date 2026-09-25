@@ -114,11 +114,7 @@ final class InstallGitHubAppCommand extends GitHubCommand
                 return null;
             }
 
-            $this->renderGatewayFailure(
-                $exception->errorCode() ?? 'gateway.request_failed',
-                $exception->getMessage(),
-                $exception->requestId(),
-            );
+            $this->renderApiFailure($exception);
 
             return false;
         }
@@ -215,11 +211,7 @@ final class InstallGitHubAppCommand extends GitHubCommand
             $progress->complete('install', ProgressState::Failure);
             $progress->finish('Stopped waiting for the installation.');
 
-            return $this->renderGatewayFailure(
-                $failure->errorCode() ?? 'gateway.request_failed',
-                $failure->getMessage(),
-                $failure->requestId(),
-            );
+            return $this->renderApiFailure($failure);
         }
 
         if ($account === null) {

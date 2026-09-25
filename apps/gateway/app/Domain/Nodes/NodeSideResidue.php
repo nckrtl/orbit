@@ -89,9 +89,13 @@ final readonly class NodeSideResidue
                 'Caddy site, PHP-FPM pool and serving checkout for the gateway role',
                 'Orbit firewall rule for the gateway role',
             ],
-            // VPN stays protected from removal. Router, Ingress, and Database
-            // leave no role-owned host projection; Docker stays installed.
-            RoleName::Vpn, RoleName::Router, RoleName::Ingress, RoleName::Database => [],
+            RoleName::Ingress => [
+                'Caddy configuration that serves the ingress role on every address',
+                'Orbit firewall rules for public HTTP and HTTPS on the ingress role',
+            ],
+            // VPN stays protected from removal. Router and Database leave no
+            // role-owned host projection; Docker stays installed.
+            RoleName::Vpn, RoleName::Router, RoleName::Database => [],
         };
     }
 }
