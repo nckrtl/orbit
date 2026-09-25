@@ -12,8 +12,6 @@ use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
-use App\Infrastructure\AppDev\AppDevCaddyConfigRenderer;
-use App\Infrastructure\AppDev\AppDevSiteRepository;
 use App\Infrastructure\AppDev\AppDevSshExecutor;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
 use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
@@ -176,7 +174,7 @@ describe('an Ingress that runs the workload while the Router is on another Node'
         expect($ingress->problems)->toBe([])
             ->and(substr_count($ingress->content, "{$domain} {"))->toBe(1)
             ->and($ingress->content)
-            ->toContain("# orbit: ingress route-{$this->route->id}-ingress\n{$domain} {\n    bind 0.0.0.0\n    tls force_automate")
+            ->toContain("# orbit: ingress route-{$this->route->id}-ingress\n{$domain} {\n    bind 0.0.0.0 10.44.0.3\n    tls force_automate")
             ->toContain('php_fastcgi unix//run/php/orbit-app-')
             ->not->toContain("https://{$domain} {")
             ->not->toContain('reverse_proxy https://10.44.0.1');
@@ -210,6 +208,39 @@ describe('an Ingress that runs the workload while the Router is on another Node'
         public_edge_publish_build($this->caddy, $this->ingress);
 
         expect(public_edge_observe($this))->toBe([true, true, true]);
+    });
+});
+
+describe('an Ingress that is also the Router, with the workload on another Node', function (): void {
+    beforeEach(function (): void {
+        $cluster = Cluster::query()->create(['name' => 'edge', 'tld' => 'edge.test', 'state' => ClusterState::Active]);
+        $this->ingress = public_edge_node('edge', '10.44.0.1', null, $cluster, [RoleName::Router, RoleName::Ingress]);
+        $workload = public_edge_node('app-prod', '10.44.0.3', null, $cluster, [RoleName::AppProd]);
+        $this->route = public_edge_route($cluster, $workload);
+    });
+
+    it('builds the public site on every address and on the WireGuard address', function (): void {
+        $caddyfile = app(NodeCaddyfileRenderer::class)->render($this->ingress);
+
+        expect($caddyfile->problems)->toBe([])
+            ->and($caddyfile->content)
+            ->toContain("# orbit: ingress route-{$this->route->id}-ingress\n{$this->route->domain} {\n    bind 0.0.0.0 10.44.0.1\n    tls force_automate");
+    });
+
+    it('accepts the public site in the one Caddyfile a Node Caddy build writes', function (): void {
+        public_edge_publish_build($this->caddy, $this->ingress);
+
+        expect(public_edge_observe($this))->toBe([true, true, true]);
+    });
+
+    it('reports a public site that left the WireGuard address', function (): void {
+        public_edge_publish_build($this->caddy, $this->ingress, fn (string $file): string => str_replace(
+            "{$this->route->domain} {\n    bind 0.0.0.0 10.44.0.1\n",
+            "{$this->route->domain} {\n    bind 0.0.0.0\n",
+            $file,
+        ));
+
+        expect(public_edge_observe($this)[0])->toBeFalse();
     });
 });
 
@@ -414,7 +445,13 @@ function public_edge_inspector(
  */
 function public_edge_publish(string $caddy, Node $ingress, ?Closure $edit = null, ?string $globalOptions = null): void
 {
-    $sites = new AppDevCaddyConfigRenderer()->render(new AppDevSiteRepository()->forNode($ingress));
+    $sites = implode(PHP_EOL, array_map(
+        static fn (array $block): string => $block['block'],
+        array_values(array_filter(
+            app(NodeCaddyfileRenderer::class)->render($ingress)->blocks,
+            static fn (array $block): bool => $block['source'] !== 'gateway',
+        )),
+    ));
     file_put_contents(
         "{$caddy}/orbit-versions/v1/Caddyfile",
         ($globalOptions ?? CaddyGlobalOptions::render()).($edit instanceof Closure ? $edit($sites) : $sites),

@@ -60,6 +60,22 @@ Each identity or architecture failure names the boundary that stopped the reques
 | `node.architecture_unavailable` | The Gateway could not read a machine architecture from the Node as the managed user. |
 | `node.architecture_mismatch` | The request names an architecture that differs from the observed one for a Node without a record. The Gateway records no architecture and converges no role. |
 
+## Role compatibility
+
+Some roles never share a Node. The Gateway refuses a conflicting role before it claims or converges anything. `node:role:add` and `node:role:relocate` answer `validation.failed` with `Role [ROLE] conflicts with assigned role [OTHER].`. `node:add` answers `node.role_conflict`, with `Role [ROLE] conflicts with requested role [OTHER].` when one request names both roles of a conflicting pair. For `gateway` and `ingress` it fails earlier: `ingress` cannot be assigned during provisioning (`Role [ingress] cannot be assigned during provisioning.`), and `gateway` is already assigned to the Gateway Node (`Role [gateway] is already assigned to node [NODE].`). Doctor reports each assignment of an existing conflicting pair as `role.assignment_conflict`.
+
+| Role | Never shares a Node with |
+| --- | --- |
+| `gateway` | `ingress`, `app-dev`, `app-prod`, `database`, `analytics` |
+| `ingress` | `gateway`, `app-dev`, `database` |
+| `vpn` | `database` |
+| `app-dev` | `gateway`, `ingress`, `app-prod` |
+| `app-prod` | `gateway`, `app-dev`, `database` |
+| `database` | `gateway`, `vpn`, `ingress`, `app-prod` |
+| `analytics` | `gateway` |
+
+`router`, `metrics`, and `websocket` share a Node with any role. Ingress is public and the Gateway is private, so a Gateway that is the Router places Ingress on another Node of the Cluster. [ADR 0157](/decisions/0157-keep-private-caddy-sites-off-the-public-listener) records that rule.
+
 ## Package sources
 
 A role installs its packages from the Ubuntu archive, except for the two Orbit pins.
@@ -73,7 +89,7 @@ Both sources work the same way. The Gateway downloads the publisher's signing ke
 
 Orbit installs Caddy this way because the Ubuntu archive ships Caddy 2.6.2, which does not know `log_skip` — a directive an `app-dev` site renders for every hibernating Instance — or `tls force_automate`, which every public Ingress site renders. A Node below **Caddy 2.9.0** fails the `caddy-package-source` step of role convergence with the installed and required release named. [ADR 0100](/decisions/0100-install-caddy-from-the-pinned-caddy-apt-source) records the decision and [ADR 0138](/decisions/0138-opt-public-ingress-sites-into-caddy-certificate-automation) raises the floor to 2.9.0.
 
-Roles that serve through Caddy are `gateway`, `router`, `ingress`, `app-dev`, `app-prod`, `websocket`, and `analytics`. Each one installs Caddy when it converges, so an Ingress-only Node can serve its public sites. An Ingress keeps serving its public sites while its role converges, so a converge keeps the public sites the Node already serves. Removing the `ingress` role rebuilds the Node Caddyfile without it, so the Node serves no public site and its other sites leave the all-address listener. The removal then closes the Orbit public HTTP and HTTPS rules and reconciles service metrics. The Caddy package stays installed. [Routes](/reference/routes#ingress-removal) describes the removal guard and retry.
+Roles that serve through Caddy are `gateway`, `router`, `ingress`, `app-dev`, `app-prod`, `websocket`, and `analytics`. Each one installs Caddy when it converges, so an Ingress-only Node can serve its public sites. An Ingress keeps serving its public sites while its role converges, so a converge keeps the public sites the Node already serves. Removing the `ingress` role rebuilds the Node Caddyfile without it, so the Node serves no public site and nothing listens on every address. The removal then closes the Orbit public HTTP and HTTPS rules and reconciles service metrics. The Caddy package stays installed. [Routes](/reference/routes#ingress-removal) describes the removal guard and retry.
 
 Converging a role on a Node that still carries the archive package upgrades it in place. Orbit owns `/etc/caddy/Caddyfile` as a symlink into its own versions directory, and the install keeps the existing file, so the live configuration survives the upgrade.
 

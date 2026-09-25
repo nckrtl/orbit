@@ -32,7 +32,8 @@ final readonly class RoleRegistry
                 assignableDuringProvisioning: true,
                 mutable: true,
                 relocatable: true,
-                conflicts: [RoleName::AppDev, RoleName::AppProd, RoleName::Database, RoleName::Analytics],
+                // Ingress is public and the Gateway is private, so they never share a Node (ADR 0157).
+                conflicts: [RoleName::AppDev, RoleName::AppProd, RoleName::Database, RoleName::Analytics, RoleName::Ingress],
             ),
             RoleName::Vpn => new RoleDefinition(
                 name: $role,

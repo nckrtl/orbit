@@ -206,6 +206,8 @@ orbit node:role:add services analytics --postgres-process=41 --clickhouse-proces
 
 The `analytics` role needs both Process options. In a terminal the command lists the Docker Processes that run the right image and asks you to pick each one you left out; with `--json` or `--no-interaction` it refuses. The [Analytics role](/reference/analytics) page owns what the role runs and publishes.
 
+The command refuses a role that conflicts with one the Node holds, before it converges anything, with `validation.failed` and `Role [ingress] conflicts with assigned role [gateway].`. For example, `ingress` never runs on the Gateway Node. [Role compatibility](/reference/node-provisioning#role-compatibility) lists every conflicting pair.
+
 `gateway`, `websocket`, and `metrics` are mutable singletons. Prefer [`node:role:relocate`](#orbit-noderolerelocate) when the assignment already exists. Adding `gateway` grants directed access from that Node to the active `vpn` node and the active `metrics` node when those nodes exist and are not the Gateway itself. `vpn` is refused.
 
 ## orbit node:role:list
@@ -219,6 +221,8 @@ orbit node:role:list <node> [--json]
 ## orbit node:role:relocate
 
 Move a relocatable singleton role (`gateway`, `websocket`, or `metrics`) from its current Node onto the named Node. The command keeps one active assignment for the whole request.
+
+The target must not hold a conflicting role. `gateway` is refused onto a Node that holds `ingress`, `app-dev`, `app-prod`, `database`, or `analytics`, with `validation.failed` and `Role [gateway] conflicts with assigned role [ROLE].`.
 
 ```bash
 orbit node:role:relocate <node> <role> [--from] [--force] [--json]

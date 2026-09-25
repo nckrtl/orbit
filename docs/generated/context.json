@@ -3686,7 +3686,8 @@
                 "0138",
                 "0139",
                 "0141",
-                "0146"
+                "0146",
+                "0157"
             ]
         },
         {
@@ -4052,6 +4053,29 @@
             ]
         },
         {
+            "path": "docs/decisions/0157-keep-private-caddy-sites-off-the-public-listener.md",
+            "title": "ADR 0157: Keep private Caddy sites off the public listener",
+            "kind": "decision",
+            "components": [
+                "apps/docs",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Cluster",
+                "Doctor",
+                "Gateway",
+                "Ingress",
+                "Node",
+                "Route",
+                "Router",
+                "proxycli"
+            ],
+            "governing_adrs": [
+                "0141",
+                "0157"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -4236,7 +4260,8 @@
                 "0153",
                 "0154",
                 "0155",
-                "0156"
+                "0156",
+                "0157"
             ]
         },
         {
@@ -4620,7 +4645,8 @@
             "governing_adrs": [
                 "0138",
                 "0139",
-                "0141"
+                "0141",
+                "0157"
             ]
         },
         {
@@ -5181,6 +5207,8 @@
                 "apps/gateway"
             ],
             "concepts": [
+                "Cluster",
+                "Database",
                 "Doctor",
                 "Gateway",
                 "Ingress",
@@ -5198,7 +5226,8 @@
                 "0094",
                 "0100",
                 "0138",
-                "0144"
+                "0144",
+                "0157"
             ]
         },
         {
