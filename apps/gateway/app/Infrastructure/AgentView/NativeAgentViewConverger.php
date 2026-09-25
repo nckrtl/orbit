@@ -13,7 +13,7 @@ use Throwable;
 
 /**
  * Installs `orbit-agent-view.service` on the Gateway host, enables it, and restarts it so it runs
- * the checkout's current code.
+ * the checkout's current code. It runs the PHP that PHP-FPM runs, as the private DNS listener does.
  */
 final readonly class NativeAgentViewConverger implements AgentViewConverger
 {
@@ -22,7 +22,7 @@ final readonly class NativeAgentViewConverger implements AgentViewConverger
     public function __construct(
         private ProcessRunner $processes,
         private AgentViewUnitRenderer $units = new AgentViewUnitRenderer,
-        private string $phpBinary = PHP_BINARY,
+        private string $phpBinary = '/usr/bin/php8.5',
         private string $artisan = '',
         private string $orbitHome = '',
         private string $workingDirectory = '',
