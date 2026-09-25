@@ -55,7 +55,7 @@ Between those commands `gateway.orbit` has no active role, so private DNS omits 
 6. The leftover serving-host setting still names the original Node, so that Node keeps implicit control-plane authority until you re-bootstrap or write `gateway.serving_node_id` to the new Node.
 7. Stop leftover Caddy and PHP-FPM on the old Node after the new `/up` is healthy.
 
-Private DNS publication now SSHes to the `vpn` node when that node is not the serving Gateway. Inspect the catalog and listener there, not on the new Gateway. A Metrics `--converge` that fails while publishing DNS leaves Grafana, Prometheus, and `/etc/orbit/metrics` in place.
+Private DNS publication now SSHes to the `vpn` node when that node is not the serving Gateway. Inspect the catalog and listener there, not on the new Gateway. The publication also installs the listener release from the new Gateway's code there, so the `vpn` node needs no Orbit checkout. [ADR 0148](/decisions/0148-install-the-private-dns-listener-from-the-gateway) records this. A Metrics `--converge` that fails while publishing DNS leaves Grafana, Prometheus, and `/etc/orbit/metrics` in place.
 
 Peer converge and `node:add` project the WireGuard hub `PrivateKey` and `Address` onto the `vpn` node. After the roles split, that install SSHes to the `vpn` node and does not write those hub credentials onto the Gateway PHP host. The Gateway host keeps the peer configuration that already joined the mesh. Inspect `/etc/wireguard/orbit.conf` on the `vpn` node for hub identity. [ADR 0094](/decisions/0094-project-wireguard-hub-config-onto-the-vpn-node) owns that target.
 

@@ -87,29 +87,33 @@ Orbit VPN DNS answers private names from the published requester catalog on the 
 
 The listener and the published catalog live on the node that holds the `vpn` role. When `gateway` and `vpn` share a node, the Gateway writes those files locally. After [relocate](/solutions/relocate-gateway-role) splits the roles, the serving Gateway SSHes the same publication to the `vpn` node.
 
+### Listener release and sockets
+
+The Gateway installs the listener itself. The listener is a small release: `serve.php` and the Gateway classes it uses, with no Composer dependencies. Every publication that activates the listener sends the release from the Gateway's own code to the Node that holds `vpn`, over SSH when the roles split. The release lands in `/var/lib/orbit/private-dns/releases/<id>/`, where `<id>` is a digest of its files. A Gateway deploy that changes the listener code produces a new id. The next publication installs it, checks it with `serve.php --self-test`, and points the unit at it. The publication keeps the previous release for rollback and removes older ones. [ADR 0148](/decisions/0148-install-the-private-dns-listener-from-the-gateway) records this decision.
+
+`orbit-private-dns.socket` binds UDP and TCP port 53 on the VPN DNS address and passes both sockets to `orbit-private-dns.service`. A service restart never closes them. Queries that arrive during a restart wait in the socket until the next listener reads them, so they do not fail.
+
+| Unit | Content |
+| --- | --- |
+| `/etc/systemd/system/orbit-private-dns.socket` | `ListenDatagram` and `ListenStream` on the VPN DNS address, `FreeBind=yes` |
+| `/etc/systemd/system/orbit-private-dns.service` | `php8.5 /var/lib/orbit/private-dns/releases/<id>/serve.php --listen=… --port=53 --catalog=… --upstream=127.0.0.55:53`, `Sockets=orbit-private-dns.socket` |
+
+The first publication after an upgrade moves the address from a listener that binds it itself to the socket unit. It stops the old listener and starts the socket unit right after, so lookups fail for a few milliseconds at most, once.
+
 ### Catalog confirmation
 
-The listener rereads the catalog on every query and once a second while it is idle. After each load it writes the catalog's SHA-256 digest to `/var/lib/orbit/private-dns/catalog.json.loaded`. [ADR 0146](/decisions/0146-confirm-the-catalog-that-the-private-dns-listener-serves) records this contract.
+The listener rereads the catalog on every query and once a second while idle, and it reads the file contents, not cached file status. After each load it writes the catalog's SHA-256 digest to `/var/lib/orbit/private-dns/catalog.json.loaded`. A catalog change never restarts a current listener.
 
-Every publication checks that confirmation while the listener runs. A listener that the publication just started loads the catalog at startup, so the publication does not check it.
+Every publication checks that confirmation while the listener runs.
 
 | Listener state | Publication result |
 | --- | --- |
 | The confirmation matches the published catalog within 5 seconds | The listener keeps running. |
-| The catalog changed and the confirmation does not match within 5 seconds | The publication restarts `orbit-private-dns.service` and waits until it owns the DNS address again. |
-| The catalog is unchanged and the confirmation names an older catalog | The publication restarts the listener. |
-| The catalog is unchanged and there is no confirmation | The listener keeps running. Code that predates the confirmation never writes it. |
+| The catalog changed and the confirmation does not match within 5 seconds | The publication removes the confirmation and restarts the service behind its socket. |
+| The catalog is unchanged and the confirmation names another catalog | The publication removes the confirmation and restarts the service once. |
+| The catalog is unchanged and there is no confirmation | The listener keeps running. A listener that never writes confirmations loaded the catalog when it started. |
 
-When `gateway` and `vpn` share a node, a failed restart restores the previous DNS files and services. On a separate `vpn` node the publication does not manage the listener unit. A failed restart there fails the publication and keeps the new catalog.
-
-On a separate `vpn` node, the listener runs from that node's own Orbit checkout, which a Gateway deploy does not update. The confirmation keeps its answers current with that older code, but the older code restarts the listener on every catalog change. Update the `vpn` checkout to the Gateway's commit, then restart the listener once.
-
-```bash
-cd /home/orbit/orbit && git fetch origin && git merge --ff-only <gateway-commit>
-cd apps/gateway && composer install --no-interaction
-sudo systemctl restart orbit-private-dns.service
-test "$(sudo cat /var/lib/orbit/private-dns/catalog.json.loaded)" = "$(sudo sha256sum /var/lib/orbit/private-dns/catalog.json | cut -d ' ' -f 1)"
-```
+A failed start or restart restores the previous units, DNS files, and services.
 
 A role converge marks its assignment `provisioning` while it runs. The Gateway still counts that Node as the role holder, and an active holder wins when both exist. So a `gateway` or `vpn` converge keeps the publication target, and a `gateway`, `metrics`, `websocket`, or `analytics` converge keeps `gateway.orbit`, `metrics.orbit`, `reverb.orbit`, `analytics.orbit`, and the analytics tracking hosts.
 
@@ -140,10 +144,11 @@ Inspect the published catalog and the live listener on the `vpn` node, then quer
 | `sudo cat /var/lib/orbit/private-dns/catalog.json` | `requesters` maps each registered WireGuard address to a Node id. `records` and `suffixes` hold WireGuard defaults. `overrides` lists LAN answers by `node:<id>`. |
 | `systemctl is-active orbit-private-dns.service` | The requester-aware listener is active on the VPN WireGuard DNS address. |
 | `sudo cat /var/lib/orbit/private-dns/catalog.json.loaded` | The digest equals `sudo sha256sum /var/lib/orbit/private-dns/catalog.json`, so the listener serves the published catalog. |
+| `systemctl is-active orbit-private-dns.socket` and `systemctl show -p ExecStart orbit-private-dns.service` | The socket unit holds the address. The service runs `serve.php` from the release that the Gateway's code builds. |
 | `ss -ulpn sport = :53` and `ss -tlpn sport = :53` | `orbit-private-dns` owns the WireGuard address on UDP and TCP port 53. dnsmasq owns `127.0.0.55:53`. |
 | `dig +noall +answer @<vpn-dns-address> <route-domain> A` | A direct query from that Node returns the address selected for its registered WireGuard source. |
 | `dig +tcp +noall +answer @<vpn-dns-address> <route-domain> A` | The TCP query returns the same selected address. |
 
-Remove incorrect LAN intent through the Node's existing provision operation by omitting or replacing `lan_ip`, then retry that operation. The Gateway republishes affected selection before the new Node, Cluster, Router, or Route state becomes authoritative. The live listener rereads the published catalog without a manual restart. A publication restarts a listener that does not [confirm](#catalog-confirmation) the catalog. A publication or listener-activation failure restores the previous working DNS files and services or retains explicit recovery state, and a refused Cluster or Router transition remains refused.
+Remove incorrect LAN intent through the Node's existing provision operation by omitting or replacing `lan_ip`, then retry that operation. The Gateway republishes affected selection before the new Node, Cluster, Router, or Route state becomes authoritative. The live listener rereads the published catalog without a manual restart. A publication restarts a listener that does not [confirm](#catalog-confirmation) the catalog, behind its socket. A publication or listener-activation failure restores the previous working DNS files and services or retains explicit recovery state, and a refused Cluster or Router transition remains refused.
 
 An unreachable configured LAN address stays selected; Orbit does not fall back to WireGuard. HTTPS connections fail until you repair the LAN path or remove the LAN setting and retry provisioning.
