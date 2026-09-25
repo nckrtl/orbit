@@ -201,4 +201,47 @@ describe('the agent view publisher', function (): void {
         $publisher->queueWorkspaces(2, [5]);
         expect($publisher->pendingWorkspaces())->toBe(['2:5']);
     });
+
+    it('counts failures in a row: a successful run and a new change both start the count again', function (): void {
+        $marker = sys_get_temp_dir().'/orbit-publish-marker-'.bin2hex(random_bytes(4));
+        $clock = publisher_clock();
+        $publisher = new ProcessAgentViewPublisher(
+            // Fails the first run, then succeeds.
+            command: [PHP_BINARY, '-r', 'if (! file_exists($argv[1])) { touch($argv[1]); exit(1); }', '--', $marker],
+            log: new NullLogger,
+            clock: static fn (): float => $clock->now,
+        );
+        $finish = static function () use ($publisher): void {
+            $deadline = microtime(true) + 5;
+            while ($publisher->isRunning() && microtime(true) < $deadline) {
+                usleep(20_000);
+            }
+            $publisher->poll();
+        };
+
+        try {
+            $publisher->queueWorkspaces(2, [5]);
+            $publisher->poll();
+            $finish();
+            expect($publisher->failures())->toBe(['2:5' => 1]);
+
+            $clock->now += ProcessAgentViewPublisher::BackoffSeconds;
+            $publisher->poll();
+            $finish();
+            expect($publisher->failures())->toBe([])
+                ->and($publisher->pendingWorkspaces())->toBe([]);
+
+            unlink($marker);
+            $publisher->queueWorkspaces(2, [5]);
+            $clock->now += ProcessAgentViewPublisher::BackoffSeconds;
+            $publisher->poll();
+            $finish();
+            expect($publisher->failures())->toBe(['2:5' => 1]);
+
+            $publisher->queueWorkspaces(2, [5]);
+            expect($publisher->failures())->toBe([]);
+        } finally {
+            @unlink($marker);
+        }
+    });
 });
