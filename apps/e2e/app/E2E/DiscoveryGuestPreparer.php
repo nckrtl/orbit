@@ -43,19 +43,39 @@ final readonly class DiscoveryGuestPreparer
     }
 
     /**
-     * The mount hides the snapshot checkout, so the gateway `.env` the topology snapshot
-     * build preserved is placed into the mounted worktree when it is absent there.
-     * It lands in the host worktree (gitignored) and is never overwritten.
+     * Makes the mounted worktree's gateway `.env` name the mounted checkout.
+     *
+     * The mount hides the snapshot checkout, so the `.env` the topology snapshot build
+     * preserved is placed into the mounted worktree when it is absent there. A worktree
+     * that `bin/bootstrap` prepared already has a `.env` from `.env.example`, whose
+     * `ORBIT_GATEWAY_CHECKOUT` names a checkout the guest does not have; the script then
+     * rewrites only that line, so `orbit:gateway-web` and bootstrap validate the mounted
+     * checkout. Every other line, the owner, and the mode stay as they were.
      */
+    public const string GATEWAY_ENVIRONMENT_SCRIPT = <<<'SH'
+        environment=$1
+        copy=$2
+        checkout=$3
+        [ -e "$environment" ] || install -o 1000 -g 1000 -m 0600 -- "$copy" "$environment"
+        grep -qx "ORBIT_GATEWAY_CHECKOUT=$checkout" "$environment" && exit 0
+        candidate=$(mktemp "$environment.XXXXXX")
+        grep -v '^ORBIT_GATEWAY_CHECKOUT=' "$environment" > "$candidate" || true
+        printf 'ORBIT_GATEWAY_CHECKOUT=%s\n' "$checkout" >> "$candidate"
+        chown --reference="$environment" "$candidate"
+        chmod --reference="$environment" "$candidate"
+        mv -f -- "$candidate" "$environment"
+        SH;
+
     public function placeGatewayEnvironment(TopologyTarget $target): void
     {
         $environment = $this->host->exec($target->instance('gateway'), new GuestCommand([
             'sh',
-            '-c',
-            '[ -e "$1" ] || install -o 1000 -g 1000 -m 0600 -- "$2" "$1"',
+            '-ec',
+            self::GATEWAY_ENVIRONMENT_SCRIPT,
             'orbit-e2e',
             MountPath::GUEST_SOURCE.'/apps/gateway/.env',
             WorktreeSynchronizer::GATEWAY_ENV_COPY,
+            MountPath::GUEST_SOURCE.'/apps/gateway',
         ], 30));
         if (! $environment->successful()) {
             throw new RuntimeException(
