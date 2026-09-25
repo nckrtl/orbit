@@ -492,8 +492,21 @@ def parse_rule_entries(text):
     return entries
 
 
-def tokens_for(value):
-    v = strip_closures(value)
+ROUTE_TERNARY = re.compile(
+    r"str_starts_with\(\s*\(string\)\s*\$this->route\(\)\?->getName\(\)\s*,\s*'([^']*)'\s*\)\s*\?\s*'([^']*)'\s*:\s*'([^']*)'"
+)
+
+
+def resolve_route_ternaries(value, route_name):
+    """Resolve rules chosen by the route name, such as `str_starts_with($this->route()?->getName(), 'project:') ? 'required' : 'sometimes'`."""
+    return ROUTE_TERNARY.sub(
+        lambda m: "'" + (m.group(2) if (route_name or '').startswith(m.group(1)) else m.group(3)) + "'",
+        value,
+    )
+
+
+def tokens_for(value, route_name=None):
+    v = strip_closures(resolve_route_ternaries(value, route_name))
     toks = []
     for m in re.finditer(r'Rule::enum\((\w+)::class\)', v):
         toks.append(('enum', m.group(1)))
@@ -516,6 +529,7 @@ TYPE_RULES = {'string': 'string', 'integer': 'integer', 'int': 'integer', 'numer
 def schema_from_tokens(toks):
     sch = {}
     required = False
+    sometimes = False
     nullable = False
     notes = []
     type_ = None
@@ -538,6 +552,8 @@ def schema_from_tokens(toks):
                 sch['format'] = 'uri'
             elif base == 'required':
                 required = True
+            elif base == 'sometimes':
+                sometimes = True
             elif base == 'nullable':
                 nullable = True
             elif base == 'alpha_dash':
@@ -581,7 +597,8 @@ def schema_from_tokens(toks):
     sch = {'type': [type_, 'null'] if nullable else type_, **sch}
     if notes:
         sch['description'] = ' '.join(notes)
-    return sch, required
+    # A `sometimes|required` field is optional, but the request still needs a body with at least one field.
+    return sch, required and not sometimes, required and sometimes
 
 
 def clean_schema(s):
@@ -598,10 +615,12 @@ def clean_schema(s):
     return s
 
 
-def rules_to_schema(rules_text):
+def rules_to_schema(rules_text, route_name=None):
     root = {'type': 'object', 'properties': {}, 'required': []}
+    body_required = False
     for key, value in parse_rule_entries(rules_text).items():
-        sch, req = schema_from_tokens(tokens_for(value))
+        sch, req, required_when_sent = schema_from_tokens(tokens_for(value, route_name))
+        body_required = body_required or ('.' not in key and required_when_sent)
         parts = key.split('.')
         node = root
         for idx, part in enumerate(parts):
@@ -637,7 +656,7 @@ def rules_to_schema(rules_text):
                         for drop in ('items', 'maxItems', 'minItems'):
                             child.pop(drop, None)
                     node = child
-    return clean_schema(root)
+    return clean_schema(root), body_required
 
 
 # ---------------------------------------------------------------- data classes -> component schemas
@@ -749,7 +768,7 @@ def route_key(route):
 
 NAME_BY_TAG = {'Nodes': 'beast', 'Apps': 'acme', 'Database connections': 'app', 'Processes': 'vite', 'Schedules': 'daily-report', 'Clusters': 'lab', 'Firewall': 'office-postgres', 'Workspaces': 'feature-search', 'Instances': 'default'}
 EXAMPLE_BY_NAME = {
-    'slug': 'acme', 'domain': 'app.example.test', 'repository_url': 'https://github.com/acme/site.git', 'default_branch': 'main', 'root': 'public',
+    'code': 'ACM', 'slug': 'acme', 'domain': 'app.example.test', 'repository_url': 'https://github.com/acme/site.git', 'default_branch': 'main', 'root': 'public',
     'public_ssh_host': 'beast.example.com', 'public_ssh_port': 22, 'user': 'root', 'orbit_user': 'orbit', 'platform': 'linux', 'architecture': 'x86_64', 'tld': 'test', 'roles': ['app-dev'], 'role': 'app-dev',
     'cluster_id': 3, 'node_id': 7, 'app_id': 4, 'app_instance_id': 12, 'target_id': 12, 'wireguard_ip': '10.44.0.7', 'lan_ip': '192.168.6.20', 'branch': 'main', 'preview_name': 'shop.com',
     'publication': 'private', 'driver': 'mysql', 'host': 'db.example.test', 'port': 3306, 'database': 'app', 'username': 'app', 'password': 'secret', 'path': '/var/lib/app/database.sqlite', 'sql': 'SELECT id, email FROM users', 'table': 'users', 'prefix': 'DB',
@@ -832,7 +851,7 @@ def php_sample(sdkreq, stream, tag):
     return '\n'.join(lines) + '\n'
 
 
-def example_from_schema(sch, name, tag, depth=0):
+def example_from_schema(sch, name, tag, depth=0, update=False):
     if not isinstance(sch, dict):
         return None
     if '$ref' in sch:
@@ -851,6 +870,10 @@ def example_from_schema(sch, name, tag, depth=0):
         for k, v in props.items():
             if k in (sch.get('required') or []) or (depth == 0 and len(props) <= 4):
                 out[k] = example_from_schema(v, k, tag, depth + 1)
+        if depth == 0 and not out and props and update:
+            # An update needs at least one field, so its example sends the first one.
+            k, v = next(iter(props.items()))
+            out[k] = example_from_schema(v, k, tag, depth + 1)
         return out
     if t == 'array':
         return [example_from_schema(sch.get('items', {}), None, tag, depth + 1)] if sch.get('items') else []
@@ -873,7 +896,7 @@ def bash_sample(route, path, body_schema, query, tag):
     lines = [f'curl -sS {method}"{url}" \\', '  --cacert /path/to/orbit-root-ca.pem \\', "  -H 'Accept: application/json' \\", "  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'"]
     if body_schema is not None:
         lines[-1] += ' \\'
-        lines += ["  -H 'Content-Type: application/json' \\", "  -d '" + json.dumps(example_from_schema(body_schema, None, tag) or {}) + "'"]
+        lines += ["  -H 'Content-Type: application/json' \\", "  -d '" + json.dumps(example_from_schema(body_schema, None, tag, update=route['method'] in ('PATCH', 'PUT')) or {}) + "'"]
     return '\n'.join(lines) + '\n'
 
 
@@ -1011,7 +1034,7 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
     query = []
     cmd = commands.get(route['name'])
     if rules_text:
-        sch = rules_to_schema(rules_text)
+        sch, body_required = rules_to_schema(rules_text, route['name'])
         if route['method'] == 'GET':
             for k, v in (sch.get('properties') or {}).items():
                 if k in params:
@@ -1039,7 +1062,7 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
                 v['description'] = d
     if body_schema is not None:
         body_schema['additionalProperties'] = False
-        op['requestBody'] = {'required': bool(body_schema.get('required')), 'content': {'application/json': {'schema': body_schema}}}
+        op['requestBody'] = {'required': body_required or bool(body_schema.get('required')), 'content': {'application/json': {'schema': body_schema}}}
     stream = route['name'] in ('instance:deploy', 'instance:rollback')
     responses = {}
     if stream:

@@ -34,6 +34,7 @@ final class StoreAppRequest extends FormRequest
             'default_branch' => ['sometimes', 'string', 'max:255'],
             'root' => ['required', 'string', 'max:255'],
             'defaults' => ['nullable', 'array'],
+            'task_check' => ['sometimes', 'nullable', 'string', 'max:4096'],
         ];
     }
 
@@ -43,7 +44,7 @@ final class StoreAppRequest extends FormRequest
         try {
             return app(TopLevelJsonObjectInspector::class)->inspect(
                 $this->getContent(),
-                ['code', 'name', 'slug', 'type', 'repository_url', 'default_branch', 'root', 'defaults'],
+                ['code', 'name', 'slug', 'type', 'repository_url', 'default_branch', 'root', 'defaults', 'task_check'],
             );
         } catch (UnexpectedValueException $exception) {
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
@@ -87,6 +88,8 @@ final class StoreAppRequest extends FormRequest
             defaultBranch: is_string($validated['default_branch'] ?? null) ? $validated['default_branch'] : null,
             root: (string) $validated['root'],
             defaults: $defaults,
+            taskCheckProvided: array_key_exists('task_check', $validated),
+            taskCheck: is_string($validated['task_check'] ?? null) ? $validated['task_check'] : null,
         );
     }
 

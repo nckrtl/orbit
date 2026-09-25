@@ -124,7 +124,7 @@ final readonly class TaskAgentSpawner implements AgentSpawner, TaskPlannerSpawne
         $deliverables = $task->deliverableList();
 
         return implode("\n\n", array_filter([
-            'Implement this subtask in the shared workspace. '.TaskRunInstructions::implementer($deliverables),
+            'Implement this subtask in the shared workspace. '.TaskRunInstructions::implementer($deliverables, $group->app->taskCheckCommand()),
             'Orbit task group #'.$group->id,
             'Feature: '.$group->title,
             'Orbit subtask #'.$task->id,

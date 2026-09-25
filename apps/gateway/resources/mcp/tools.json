@@ -453,12 +453,18 @@
               "array",
               "null"
             ]
+          },
+          "task_check": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 4096
           }
         },
         "additionalProperties": false,
         "required": [
           "slug",
-          "type",
           "repository_url",
           "root"
         ]
@@ -1193,16 +1199,18 @@
           "root": {
             "type": "string",
             "maxLength": 255
+          },
+          "task_check": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 4096
           }
         },
         "additionalProperties": false,
         "required": [
-          "app",
-          "type",
-          "slug",
-          "repository_url",
-          "default_branch",
-          "root"
+          "app"
         ]
       }
     },
@@ -4689,6 +4697,14 @@
               "array",
               "null"
             ]
+          },
+          "task_check": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 4096,
+            "description": "Task check command; defaults to composer check for Laravel types and none otherwise"
           }
         },
         "additionalProperties": false,
@@ -5521,16 +5537,19 @@
             "type": "string",
             "maxLength": 255,
             "description": "New repository-relative root; package types may use ."
+          },
+          "task_check": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 4096,
+            "description": "New task check command for task baselines and handoffs"
           }
         },
         "additionalProperties": false,
         "required": [
-          "app",
-          "type",
-          "slug",
-          "repository_url",
-          "default_branch",
-          "root"
+          "app"
         ]
       }
     },
@@ -5918,9 +5937,7 @@
         },
         "additionalProperties": false,
         "required": [
-          "route",
-          "domain",
-          "publication"
+          "route"
         ]
       }
     },

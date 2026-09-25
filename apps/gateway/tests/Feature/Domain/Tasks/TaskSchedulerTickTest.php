@@ -64,6 +64,7 @@ function tick_group(): TaskGroup
         'slug' => 'tick-app',
         'repository_url' => 'git@example.test:tick.git',
         'default_branch' => 'main',
+        'task_check' => 'composer check',
     ]);
     $node = Node::query()->create([
         'name' => 'tick-node',
@@ -522,8 +523,9 @@ it('advances the current subtask when Jev marks it done', function (): void {
         ->and($spawner->reviews)->toBe(1);
 });
 
-it('hands off only when Orbit can run the workspace check script', function (bool $definesCheckScript, TaskStatus $status): void {
+it('hands off only when Orbit can run the workspace check script', function (bool $definesCheckScript, TaskStatus $status, string $taskCheck = 'composer check'): void {
     $group = tick_group();
+    $group->app->update(['task_check' => $taskCheck]);
     $task = $group->tasks->sole();
     app(TaskExtensionState::class)->enable();
     tick_workspace($definesCheckScript);
@@ -548,6 +550,33 @@ it('hands off only when Orbit can run the workspace check script', function (boo
 })->with([
     'project check script' => [true, TaskStatus::Reviewing],
     'missing check script' => [false, TaskStatus::Running],
+    'composer check with arguments after cd' => [false, TaskStatus::Running, 'cd app && composer check --no-ansi'],
+    'longer composer command' => [false, TaskStatus::Reviewing, 'composer check-platform-reqs'],
+]);
+
+it('hands off with the Project task check, and runs no command when the Project has none', function (?string $taskCheck): void {
+    $group = tick_group();
+    $group->app->update(['task_check' => $taskCheck]);
+    $task = $group->tasks->sole();
+    app(TaskExtensionState::class)->enable();
+    tick_workspace(false);
+    app()->instance(T3Dispatcher::class, tick_dispatcher());
+    app()->instance(T3ThreadReader::class, new class implements T3ThreadReader
+    {
+        public function snapshot(Node $node, string $threadId): ?array
+        {
+            return tick_checked_thread('done');
+        }
+    });
+
+    app(TaskScheduler::class)->tick();
+    app(TaskScheduler::class)->tick();
+
+    expect($task->fresh()?->status)->toBe(TaskStatus::Reviewing)
+        ->and(app(TaskCheckRunner::class)->commands)->toBe([$taskCheck]);
+})->with([
+    'no task check' => [null],
+    'custom task check' => ['vp run check'],
 ]);
 
 it('records an unreachable workspace as a communication failure without aborting the tick', function (): void {

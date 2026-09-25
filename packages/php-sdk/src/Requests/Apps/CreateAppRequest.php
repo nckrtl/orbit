@@ -31,6 +31,8 @@ final class CreateAppRequest extends GatewayRequest implements HasBody
         private readonly ?string $defaultBranch = null,
         #[\SensitiveParameter]
         private readonly ?array $defaults = null,
+        private readonly ?string $taskCheck = null,
+        private readonly bool $taskCheckProvided = false,
     ) {}
 
     public function resolveEndpoint(): string
@@ -58,8 +60,10 @@ final class CreateAppRequest extends GatewayRequest implements HasBody
                 'default_branch' => $this->defaultBranch,
                 'root' => $this->root,
                 'defaults' => $this->defaults,
+                ...($this->taskCheckProvided ? ['task_check' => $this->taskCheck] : []),
             ],
-            static fn (mixed $value): bool => $value !== null,
+            static fn (mixed $value, string $key): bool => $key === 'task_check' || $value !== null,
+            ARRAY_FILTER_USE_BOTH,
         );
     }
 }

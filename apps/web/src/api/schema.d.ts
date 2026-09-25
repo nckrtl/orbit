@@ -3048,6 +3048,7 @@ export interface components {
             defaults?: {
                 [key: string]: unknown;
             } | null;
+            task_check?: string | null;
         };
         DevelopmentNodeExclusion: {
             project_id?: number;
@@ -4127,11 +4128,12 @@ export interface operations {
                     code?: string;
                     slug: string;
                     /** @enum {string} */
-                    type: "monorepo" | "laravel-app" | "laravel-package" | "node-package";
+                    type?: "monorepo" | "laravel-app" | "laravel-package" | "node-package";
                     repository_url: string;
                     default_branch?: string;
                     root: string;
                     defaults?: unknown[] | null;
+                    task_check?: string | null;
                 };
             };
         };
@@ -4303,11 +4305,12 @@ export interface operations {
                 "application/json": {
                     code?: string;
                     /** @enum {string} */
-                    type: "monorepo" | "laravel-app" | "laravel-package" | "node-package";
-                    slug: string;
-                    repository_url: string;
-                    default_branch: string;
-                    root: string;
+                    type?: "monorepo" | "laravel-app" | "laravel-package" | "node-package";
+                    slug?: string;
+                    repository_url?: string;
+                    default_branch?: string;
+                    root?: string;
+                    task_check?: string | null;
                 };
             };
         };
@@ -11372,6 +11375,8 @@ export interface operations {
                     /** @description Repository-relative root; defaults to . for package types and public otherwise */
                     root: string;
                     defaults?: unknown[] | null;
+                    /** @description Task check command; defaults to composer check for Laravel types and none otherwise */
+                    task_check?: string | null;
                 };
             };
         };
@@ -11546,14 +11551,16 @@ export interface operations {
                      * @description New Project type
                      * @enum {string}
                      */
-                    type: "monorepo" | "laravel-app" | "laravel-package" | "node-package";
+                    type?: "monorepo" | "laravel-app" | "laravel-package" | "node-package";
                     /** @description New Project slug */
-                    slug: string;
-                    repository_url: string;
+                    slug?: string;
+                    repository_url?: string;
                     /** @description New stored default branch */
-                    default_branch: string;
+                    default_branch?: string;
                     /** @description New repository-relative root; package types may use . */
-                    root: string;
+                    root?: string;
+                    /** @description New task check command for task baselines and handoffs */
+                    task_check?: string | null;
                 };
             };
         };
@@ -13474,12 +13481,12 @@ export interface operations {
             content: {
                 "application/json": {
                     /** @description New explicit domain */
-                    domain: string;
+                    domain?: string;
                     /**
                      * @description New publication intent
                      * @enum {string}
                      */
-                    publication: "private" | "public";
+                    publication?: "private" | "public";
                 };
             };
         };
