@@ -42,6 +42,7 @@ use Illuminate\Support\Carbon;
  * @property int|null $lines_deleted
  * @property int|null $line_diff
  * @property int|null $duration_ms
+ * @property Carbon|null $reserved_at
  * @property Carbon|null $started_at
  * @property Carbon|null $settled_at
  * @property-read App $app
@@ -90,6 +91,7 @@ final class TaskGroup extends Model
         'lines_added',
         'lines_deleted',
         'duration_ms',
+        'reserved_at',
         'started_at',
         'settled_at',
     ];
@@ -141,6 +143,7 @@ final class TaskGroup extends Model
             'lines_added' => 'integer',
             'lines_deleted' => 'integer',
             'duration_ms' => 'integer',
+            'reserved_at' => 'datetime',
             'started_at' => 'immutable_datetime',
             'settled_at' => 'immutable_datetime',
         ];
