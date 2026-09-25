@@ -152,7 +152,7 @@ The first form stores the loopback URL. The second form stores the Node-owned Pr
 | Caddy | Callers cannot supply a Caddyfile. The serving Node site terminates Orbit-CA TLS and reverse-proxies HTTP to the local upstream. It preserves `Host` and admits streaming and WebSocket upgrades. |
 | DNS | An exact private `host-record` answers with the serving Node under Node-scoped private Route rules. The Cluster Router is not a hop. |
 | Create | Persist, issue the Orbit CA leaf, publish Caddy, then publish DNS. Success returns an active Route. An identical retry returns the existing Route. |
-| Destroy | Run untargeted private cleanup for that Route only. Instance Routes stay unchanged. |
+| Destroy | Clear the site publication, publish DNS and Caddy without it, then remove the Orbit CA leaf. A failure before the certificate step keeps the leaf; destroy again to retry. |
 | Node removal | Refuse while the Node still owns a custom proxy Route (`node.has_routes` or `route.reconciliation_required`). |
 | Process removal | Refuse while a custom proxy Route still targets that Process (`process.has_routes`). Destroy the Route first. |
 

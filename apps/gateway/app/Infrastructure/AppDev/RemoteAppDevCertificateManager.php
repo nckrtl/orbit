@@ -19,6 +19,7 @@ final readonly class RemoteAppDevCertificateManager
         private AppDevSshExecutor $ssh,
         private LeafCertificateSigner $signer,
         private ManagedUserAccountResolver $accounts,
+        private AppDevSiteRepository $sites = new AppDevSiteRepository,
     ) {}
 
     public function convergeAppInstance(AppInstance $appInstance, Route $route): void
@@ -338,8 +339,23 @@ final readonly class RemoteAppDevCertificateManager
             BASH;
     }
 
+    /**
+     * Caddy loads every certificate its Caddyfile names, so a certificate is removed only after the
+     * build that withdraws its last site. While a site in the Gateway's stored state still renders
+     * the scope on the Node, the removal fails and keeps the certificate, so the caller can retry.
+     */
     private function remove(Node $node, string $scope): void
     {
+        $site = $this->sites->forNode($node)->first(static fn (AppDevSite $site): bool => $site->loadsCertificate($scope));
+
+        if ($site instanceof AppDevSite) {
+            throw new RuntimeConvergenceException(
+                step: 'certificate-remove',
+                errorCode: 'app-dev.certificate_in_use',
+                message: "Certificate [{$scope}] is still named by the stored Caddy site [{$site->domain}] on node [{$node->name}].",
+            );
+        }
+
         $account = $this->accounts->resolve($node);
         $this->ssh->execute(
             $node,
