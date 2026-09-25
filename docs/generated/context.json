@@ -3798,6 +3798,25 @@
             ]
         },
         {
+            "path": "docs/decisions/0148-install-the-private-dns-listener-from-the-gateway.md",
+            "title": "ADR 0148: Install the private DNS listener from the Gateway",
+            "kind": "decision",
+            "components": [
+                "apps/docs",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Database",
+                "Gateway",
+                "Node",
+                "Process"
+            ],
+            "governing_adrs": [
+                "0092",
+                "0148"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -3972,7 +3991,8 @@
                 "0144",
                 "0145",
                 "0146",
-                "0147"
+                "0147",
+                "0148"
             ]
         },
         {
@@ -4997,7 +5017,8 @@
             ],
             "governing_adrs": [
                 "0061",
-                "0062"
+                "0062",
+                "0148"
             ]
         },
         {
@@ -5359,7 +5380,8 @@
                 "0091",
                 "0092",
                 "0094",
-                "0095"
+                "0095",
+                "0148"
             ]
         },
         {
