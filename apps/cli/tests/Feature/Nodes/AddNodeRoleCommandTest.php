@@ -463,6 +463,39 @@ it('shows deterministic human output for a converged existing node role assignme
         ->assertExitCode(0);
 });
 
+it('warns with the follow-up of a convergence step that failed without failing the role', function (): void {
+    $followUp = 'The Gateway machine does not route the private domain to Orbit VPN DNS (vpn.dns_resolver_failed). '
+        .'The gateway role stays active. Fix the cause, then run `orbit node:role:add app-1 gateway --converge` again.';
+    MockClient::global([
+        AddNodeRoleRequest::class => MockResponse::make([
+            'data' => [...added_node_role_payload(), 'role' => 'gateway', 'follow_up' => $followUp],
+            'meta' => ['request_id' => node_role_add_request_id()],
+        ], 200),
+    ]);
+
+    $this
+        ->artisan('node:role:add', ['node' => '7', 'role' => 'gateway', '--converge' => true])
+        ->expectsOutput('Role [gateway] added to node [app-1] (#7).')
+        ->expectsOutputToContain('Warning: The Gateway machine does not route the private domain to Orbit VPN DNS')
+        ->expectsOutputToContain('orbit node:role:add app-1 gateway --converge')
+        ->expectsOutput('Request ID: '.node_role_add_request_id())
+        ->assertExitCode(0);
+
+    MockClient::destroyGlobal();
+    MockClient::global([
+        AddNodeRoleRequest::class => MockResponse::make([
+            'data' => [...added_node_role_payload(), 'role' => 'gateway', 'follow_up' => $followUp],
+            'meta' => ['request_id' => node_role_add_request_id()],
+        ], 200),
+    ]);
+
+    $this
+        ->artisan('node:role:add', ['node' => '7', 'role' => 'gateway', '--converge' => true, '--json' => true])
+        ->expectsOutputToContain('"follow_up":"The Gateway machine does not route the private domain')
+        ->doesntExpectOutputToContain('Warning:')
+        ->assertExitCode(0);
+});
+
 /** @return array<string, mixed> */
 function node_role_add_node_payload(int $id, string $name): array
 {

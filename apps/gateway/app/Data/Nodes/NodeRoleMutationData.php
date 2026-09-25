@@ -30,7 +30,8 @@ final class NodeRoleMutationData extends Data
         public ?string $followUp = null,
     ) {}
 
-    public static function added(Node $node, NodeRole $assignment): self
+    /** A `followUp` names a convergence step that failed without failing the role. */
+    public static function added(Node $node, NodeRole $assignment, ?string $followUp = null): self
     {
         return new self(
             nodeId: $node->id,
@@ -38,6 +39,7 @@ final class NodeRoleMutationData extends Data
             role: $assignment->role->value,
             assignment: NodeRoleAssignmentData::fromModel($assignment),
             removed: false,
+            followUp: $followUp,
         );
     }
 

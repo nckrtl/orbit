@@ -65,7 +65,7 @@ final class NodeRolesController extends Controller
 
         return response()->json(
             [
-                'data' => NodeRoleMutationData::added($node, $result['assignment'])->toArray(),
+                'data' => NodeRoleMutationData::added($node, $result['assignment'], $result['follow_up'])->toArray(),
                 'meta' => $this->meta($request),
             ],
             $result['created'] ? 201 : 200,

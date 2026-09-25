@@ -8,6 +8,7 @@ use App\Actions\Nodes\GrantGatewayRoleAccessAction;
 use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Nodes\NodeProvisioningException;
+use App\Domain\Nodes\NodeRoleFollowUpReport;
 use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Nodes\RoleBaseline;
@@ -19,11 +20,14 @@ use App\Infrastructure\Processes\SystemdVpnOrderingDropIn;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Node;
 use App\Models\NodeRole;
-use Closure;
 use Illuminate\Support\Facades\Log;
 
 final readonly class GatewayRoleBaseline implements RoleBaseline
 {
+    private const string RESOLVER_STEP = 'gateway-private-dns-resolver';
+
+    private const string RESOLVER_ERROR = 'vpn.dns_resolver_failed';
+
     public function __construct(
         private NodeRoleFirewallManager $firewall,
         private PrivateDnsManager $dns,
@@ -33,6 +37,7 @@ final readonly class GatewayRoleBaseline implements RoleBaseline
         private SystemdVpnOrderingDropIn $vpnOrdering = new SystemdVpnOrderingDropIn,
         private ?VpnSettings $vpnSettings = null,
         private GatewayPrivateDnsResolver $resolver = new GatewayPrivateDnsResolver,
+        private ?NodeRoleFollowUpReport $followUps = null,
     ) {}
 
     /**
@@ -62,8 +67,9 @@ final readonly class GatewayRoleBaseline implements RoleBaseline
 
     /**
      * Routes the private domain to VPN DNS without failing the role: a `failed` gateway role would
-     * drop implicit Gateway authority, which realtime and metrics authorization rely on. Doctor
-     * reports a missing route as `role.private_dns_route_mismatch`.
+     * drop implicit Gateway authority, which realtime and metrics authorization rely on. The role
+     * response reports the failure as `follow_up`, the log keeps its underlying error code, and
+     * Doctor reports a missing route as `role.private_dns_route_mismatch`.
      */
     private function convergeResolver(Node $node): void
     {
@@ -74,20 +80,27 @@ final readonly class GatewayRoleBaseline implements RoleBaseline
             return;
         }
 
-        $this->runResolverStep($node, fn (): RemoteCommand => $this->resolver->convergeCommand($address, $settings->domain()));
-    }
-
-    /** @param  Closure(): RemoteCommand  $command */
-    private function runResolverStep(Node $node, Closure $command): void
-    {
         try {
-            $this->run($node, $command(), 'gateway-private-dns-resolver', 'vpn.dns_resolver_failed', 60.0);
+            $this->run(
+                $node,
+                $this->resolver->convergeCommand($address, $settings->domain()),
+                self::RESOLVER_STEP,
+                self::RESOLVER_ERROR,
+                60.0,
+            );
         } catch (NodeRoleOperationException|NodeProvisioningException $exception) {
+            $errorCode = $exception instanceof NodeRoleOperationException
+                ? $exception->underlyingErrorCode
+                : $exception->errorCode;
             Log::warning('The Gateway private DNS route step failed; the gateway role stays converged.', [
                 'node' => $node->name,
-                'error_code' => $exception->errorCode,
+                'error_code' => $errorCode,
                 'exit_code' => $exception->result?->exitCode,
             ]);
+            ($this->followUps ?? app(NodeRoleFollowUpReport::class))->record(
+                "The Gateway machine does not route the private domain to Orbit VPN DNS ({$errorCode}). "
+                ."The gateway role stays active. Fix the cause, then run `orbit node:role:add {$node->name} gateway --converge` again.",
+            );
         }
     }
 
@@ -121,9 +134,13 @@ final readonly class GatewayRoleBaseline implements RoleBaseline
         return $this->access ?? app(GrantGatewayRoleAccessAction::class);
     }
 
+    /**
+     * Removes the private DNS route first. Its failure fails the removal like any other step, so
+     * the drop-in never stays behind unreported on a machine that no longer holds `gateway`.
+     */
     public function remove(Node $node, NodeRole $assignment, bool $purgeData): void
     {
-        $this->runResolverStep($node, fn (): RemoteCommand => $this->resolver->removeCommand());
+        $this->ssh->execute($node, $this->resolver->removeCommand(), self::RESOLVER_STEP, self::RESOLVER_ERROR, 60.0);
         $this->firewall->remove($node, RoleName::Gateway, $node->user);
         $this->dns->converge();
     }

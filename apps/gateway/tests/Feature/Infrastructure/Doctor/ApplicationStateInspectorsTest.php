@@ -571,6 +571,10 @@ it('executes socket and service association outcomes from the production program
     if ($condition === 'unavailable') {
         unlink("{$procRoot}/net/unix");
     }
+    if ($condition === 'master exited') {
+        // The master exits after systemd reported its PID, so its /proc entry is gone before the descriptor scan.
+        $files->deleteDirectory("{$procRoot}/{$mainPid}");
+    }
     $identity = posix_getpwuid(posix_geteuid());
     $groupIdentity = posix_getgrgid(posix_getegid());
     $user = is_array($identity) && is_string($identity['name'] ?? null) ? $identity['name'] : 'orbit';
@@ -606,6 +610,7 @@ it('executes socket and service association outcomes from the production program
     'accepted connections in flight' => ['connections in flight', '1'],
     'two listening entries' => ['two listeners', '2'],
     'descriptor closed during the scan' => ['closed descriptor', '1'],
+    'master that exited during the scan' => ['master exited', '2'],
 ]);
 
 it('maps each production projection without retaining protected diagnostics', function (

@@ -42,7 +42,7 @@ The Gateway machine is not a managed peer. When it also holds `vpn`, its tunnel 
 
 Gateway bootstrap and every `gateway` role convergence send queries for the private VPN domain to Orbit VPN DNS over the `orbit` link. The address is the configured VPN DNS server, or the WireGuard address of the `vpn` Node. Other queries, including names under Node and Cluster TLDs, stay on the uplink resolvers, so the Gateway still resolves ordinary names while Orbit VPN DNS is down. The Orbit CLI on the Gateway machine then resolves `reverb.orbit` and stays live.
 
-The drop-in `/etc/systemd/system/wg-quick@orbit.service.d/orbit-gateway-dns.conf` reapplies the route whenever the tunnel starts. It sets the routing domain and turns off the link's default DNS route before it sets the server, so the link never routes every name. A failure there never fails the tunnel. Removing the `gateway` role removes the drop-in and reverts the `orbit` link.
+The drop-in `/etc/systemd/system/wg-quick@orbit.service.d/orbit-gateway-dns.conf` reapplies the route whenever the tunnel starts. It sets the routing domain and turns off the link's default DNS route before it sets the server, so the link never routes every name. A failure there never fails the tunnel. Removing the `gateway` role removes the drop-in and reverts the `orbit` link. When that step fails, the removal fails like any other removal step: the role stays `failed` with `failed_step=remove:gateway-private-dns-resolver`, and running the removal again finishes it. `--offline` removal changes nothing on the machine and lists the drop-in under `retained_on_node`.
 
 When `/etc/wireguard/orbit.dns-link` exists, the machine is a managed peer, and the step leaves the peer's resolver policy in place. That policy routes every name (`~.`), so a VPN DNS outage there also affects ordinary names.
 
@@ -56,7 +56,7 @@ If Orbit VPN DNS is unreachable, a private-name lookup on the Gateway machine ta
 | `getent hosts reverb.orbit` | The address of the Node that holds `websocket`. |
 | `getent ahostsv4 example.com` | An ordinary name resolves through the uplink resolvers. |
 
-To add the route to an existing Gateway, run `orbit node:role:add <gateway-node> gateway --converge`. A failure of this step does not fail the role. The Gateway logs a warning with `vpn.dns_resolver_failed`, and `orbit doctor --family=role` reports `role.private_dns_route_mismatch` until the route matches. After [relocating the gateway role](/solutions/relocate-gateway-role), converge the role on the target the same way.
+To add the route to an existing Gateway, run `orbit node:role:add <gateway-node> gateway --converge`. A failure of this step does not fail the role. The role stays `active`, and the response's `follow_up` names the failed route and the command that retries it. The CLI prints that `follow_up` as a warning. The Gateway also logs a warning with the underlying error code, `vpn.dns_resolver_failed` when the command fails on the machine, and `orbit doctor --family=role` reports `role.private_dns_route_mismatch` until the route matches. After [relocating the gateway role](/solutions/relocate-gateway-role), converge the role on the target the same way.
 
 ## Repair one peer
 

@@ -210,6 +210,8 @@ The command refuses a role that conflicts with one the Node holds, before it con
 
 Role operations on one Node run one at a time, as [Node provisioning](/reference/node-provisioning#role-operations-on-one-node) describes. A command that waits too long fails with `node_role.convergence_failed` at step `converge:node-lock` and error code `node_role.node_busy`, and leaves the assignment as it was; run it again.
 
+A convergence step that does not fail the role still reports its failure. The role stays `active`, and `follow_up` in the response names what failed and how to retry it. The command prints it as a warning after the result. Today only the `gateway` role's [private DNS route](/reference/private-dns#the-gateway-machine) reports this way.
+
 `gateway`, `websocket`, and `metrics` are mutable singletons. Prefer [`node:role:relocate`](#orbit-noderolerelocate) when the assignment already exists. Adding `gateway` grants directed access from that Node to the active `vpn` node and the active `metrics` node when those nodes exist and are not the Gateway itself. `vpn` is refused.
 
 ## orbit node:role:list

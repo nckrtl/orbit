@@ -127,6 +127,7 @@ use App\Domain\Nodes\NodeReachabilityProbe;
 use App\Domain\Nodes\NodeRoleDependencyInspector;
 use App\Domain\Nodes\NodeRoleDependentCleaner;
 use App\Domain\Nodes\NodeRoleFirewallManager;
+use App\Domain\Nodes\NodeRoleFollowUpReport;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\Storage\NodeStorageRootPreparer;
 use App\Domain\Processes\ProcessAdmissionLock;
@@ -659,6 +660,7 @@ final class AppServiceProvider extends ServiceProvider
         // Shared for one request so the Metrics baseline's removal outcome
         // reaches the disable response instead of being inferred a second time.
         $this->app->scoped(MetricsPublicationReport::class);
+        $this->app->scoped(NodeRoleFollowUpReport::class);
         // Scoped so the websocket role lookup it performs happens at most
         // once per request, and only when something actually asks for it.
         $this->app->scoped(
