@@ -79,6 +79,27 @@ it('refuses a package Instance whose repository root is not a supported Route we
     $this->assertDatabaseCount('route_targets', 0);
 });
 
+it('refuses to attach a package Instance with repository root . to an existing Route', function (): void {
+    $this->orbitApp->update([
+        'type' => ProjectType::NodePackage,
+        'root' => '.',
+    ]);
+
+    $route = $this->postJson('/api/v1/routes', [
+        'app_id' => $this->orbitApp->id,
+        'domain' => 'targetless.example.test',
+        'publication' => 'private',
+        'node_id' => $this->node->id,
+    ])->assertCreated()->json('data.id');
+
+    $this->putJson("/api/v1/routes/{$route}/target", [
+        'app_instance_id' => $this->target->id,
+    ])->assertConflict()
+        ->assertJsonPath('error.code', 'route.target_web_root_unsupported');
+
+    $this->assertDatabaseCount('route_targets', 0);
+});
+
 it('creates, retries, lists, shows, updates, clears, and removes an explicit Route', function (): void {
     $requestId = (string) Str::uuid();
     $payload = [
