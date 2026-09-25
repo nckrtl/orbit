@@ -62,7 +62,14 @@ final readonly class RoleDoctorProbe implements DoctorFamilyProbe
             if ($role->status === LifecycleStatus::Active) {
                 continue;
             }
-            $this->add($issues, $role, $this->issue(
+            $this->add($issues, $role, $role->isStaleClaim() ? $this->issue(
+                $role,
+                RoleDoctorIssueCode::ClaimStale,
+                DoctorIssueKind::Drift,
+                'Role operation stopped without finishing.',
+                'active',
+                $role->status->value,
+            ) : $this->issue(
                 $role,
                 RoleDoctorIssueCode::LifecycleNotActive,
                 DoctorIssueKind::Drift,

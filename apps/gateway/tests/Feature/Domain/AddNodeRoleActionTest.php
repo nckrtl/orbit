@@ -111,6 +111,40 @@ describe(AddNodeRoleAction::class, function (): void {
             ->and($node->roles()->sole()->status)->toBe(LifecycleStatus::Active);
     })->with(['new role' => [false], 'active role' => [true]]);
 
+    it('converges a role whose provisioning claim went stale, and refuses a fresh one', function (): void {
+        $baseline = new AddNodeRoleBaselineFake;
+        app()->instance(RoleBaselineConverger::class, $baseline);
+        $node = add_role_node();
+        $assignment = $node->roles()->create(['role' => RoleName::Metrics, 'status' => LifecycleStatus::Provisioning]);
+
+        expect(fn () => app(AddNodeRoleAction::class)->execute($node, RoleName::Metrics, convergeExisting: true))
+            ->toThrow(RoleAssignmentException::class, 'Role [metrics] cannot converge from status [provisioning].');
+
+        $this->travel(NodeRole::StaleClaimSeconds + 1)->seconds();
+        app(AddNodeRoleAction::class)->execute($node, RoleName::Metrics, convergeExisting: true);
+
+        expect($baseline->convergedRoles)->toBe([RoleName::Metrics])
+            ->and($assignment->refresh()->status)->toBe(LifecycleStatus::Active);
+    });
+
+    it('lets only one operation take a stale claim', function (): void {
+        $node = add_role_node();
+        $assignment = $node->roles()->create(['role' => RoleName::Metrics, 'status' => LifecycleStatus::Provisioning]);
+        $this->travel(NodeRole::StaleClaimSeconds + 1)->seconds();
+        $first = NodeRole::query()->findOrFail($assignment->id);
+        $second = NodeRole::query()->findOrFail($assignment->id);
+        $this->travel(1)->seconds();
+
+        expect($first->canClaimConvergence())->toBeTrue()
+            ->and($second->canClaimConvergence())->toBeTrue();
+
+        $first->claimConvergence();
+
+        expect(fn () => $second->claimConvergence())
+            ->toThrow(RoleAssignmentException::class, 'Role [metrics] changed while it was being claimed.')
+            ->and($first->isStaleClaim())->toBeFalse();
+    });
+
     it('materializes app managers after baseline while the assignment is provisioning', function (): void {
         $baseline = new AddNodeRoleBaselineFake;
         $materializer = new FakeToolManagerMaterializer;

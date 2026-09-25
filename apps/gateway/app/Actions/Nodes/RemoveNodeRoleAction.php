@@ -433,7 +433,8 @@ final readonly class RemoveNodeRoleAction
         }
 
         return
-            $assignment->status === LifecycleStatus::Failed
+            $assignment->isStaleClaim()
+            || $assignment->status === LifecycleStatus::Failed
             && is_string($assignment->failed_step)
             && (str_starts_with($assignment->failed_step, 'converge:') || str_starts_with($assignment->failed_step, 'remove:'));
     }

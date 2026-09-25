@@ -804,3 +804,21 @@ function role_probe_caddy_builds(?CaddyBuildObservation $observation, bool $thro
         }
     };
 }
+
+it('reports a provisioning or removing claim that went stale as role.claim_stale', function (LifecycleStatus $status): void {
+    $node = role_probe_node('stale-claim');
+    $role = role_probe_assignment($node, RoleName::Metrics, $status);
+    $roleCalls = 0;
+    $vpnCalls = 0;
+    $probe = new RoleDoctorProbe(role_probe_state_inspector($roleCalls), role_probe_vpn_inspector($vpnCalls));
+    $codes = static fn (): array => array_map(
+        static fn (DoctorIssueData $issue): array => [$issue->resourceId, $issue->code, $issue->observed],
+        $probe->inspect(role_probe_context($node))->issues,
+    );
+
+    expect($codes())->toBe([[$role->id, 'role.lifecycle_not_active', $status->value]]);
+
+    $this->travel(NodeRole::StaleClaimSeconds + 1)->seconds();
+
+    expect($codes())->toBe([[$role->id, 'role.claim_stale', $status->value]]);
+})->with([LifecycleStatus::Provisioning, LifecycleStatus::Removing]);

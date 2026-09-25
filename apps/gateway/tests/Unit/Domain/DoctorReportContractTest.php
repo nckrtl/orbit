@@ -207,6 +207,7 @@ it('defines the exact stable issue-code catalog for every Doctor family', functi
         ],
         'role' => [
             'role.lifecycle_not_active',
+            'role.claim_stale',
             'role.assignment_conflict',
             'role.singleton_conflict',
             'role.cluster_ownership_mismatch',

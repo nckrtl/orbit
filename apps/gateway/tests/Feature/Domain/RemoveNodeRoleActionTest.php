@@ -231,6 +231,20 @@ describe(RemoveNodeRoleAction::class, function (): void {
             });
     });
 
+    it('removes a role whose provisioning or removing claim went stale, and refuses a fresh one', function (LifecycleStatus $status): void {
+        [$node, $assignment] = removal_role_fixture(role: RoleName::Metrics);
+        $assignment->forceFill(['status' => $status])->save();
+        $action = removal_action(new RemovalInspectorFake(new NodeRoleDependencySet([], [], [], [])), new RemovalCleanerFake, new RemovalBaselineFake);
+
+        expect(fn () => $action->execute($node, RoleName::Metrics, force: true))
+            ->toThrow(NodeRoleValidationException::class, "Role [metrics] cannot be removed from status [{$status->value}].");
+
+        $this->travel(NodeRole::StaleClaimSeconds + 1)->seconds();
+        $action->execute($node->refresh(), RoleName::Metrics, force: true);
+
+        expect(NodeRole::query()->whereKey($assignment->id)->exists())->toBeFalse();
+    })->with([LifecycleStatus::Provisioning, LifecycleStatus::Removing]);
+
     it('removes either final app role while retaining Tool intent', function (RoleName $role): void {
         [$node, $assignment] = removal_role_fixture(role: $role);
         $composer = $node->toolManagers()->create([
