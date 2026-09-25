@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Tests\Support;
 
-use PHPUnit\Framework\Assert;
 use RuntimeException;
 
 /**
@@ -137,46 +136,6 @@ final class TestToolchain
         self::bootstrap();
 
         return self::$bash ?? throw new RuntimeException('The test Bash interpreter is not bootstrapped.');
-    }
-
-    /**
-     * Points a fixture script's absolute tool paths, such as `exec /usr/bin/stat "$@"`, at the toolchain's
-     * copies. On Linux it returns the script unchanged.
-     */
-    public static function script(string $script): string
-    {
-        $directories = self::directories();
-
-        if ($directories === []) {
-            return $script;
-        }
-
-        return (string) preg_replace_callback(
-            '~(?<![\w./-])/(?:usr/)?bin/([a-z][\w.+-]*)(?![\w./-])~',
-            static function (array $match) use ($directories): string {
-                foreach ($directories as $directory) {
-                    if (is_executable($directory.DIRECTORY_SEPARATOR.$match[1])) {
-                        return $directory.DIRECTORY_SEPARATOR.$match[1];
-                    }
-                }
-
-                return $match[0];
-            },
-            $script,
-        );
-    }
-
-    /**
-     * Fails a test that runs a production Node program on a Linux kernel interface, such as /proc or O_PATH,
-     * that no package can add to another host. The test fails with the reason instead of being skipped.
-     */
-    public static function requireLinux(string $reason): void
-    {
-        if (PHP_OS_FAMILY === 'Linux') {
-            return;
-        }
-
-        Assert::fail("This test needs Linux: {$reason} Run it on a Linux host. CI runs it on every pull request.");
     }
 
     /** Returns the path of a host tool that a test needs, or fails with the command that installs it. */

@@ -19,8 +19,8 @@ use App\Models\Node;
 use App\Models\Schedule;
 use Illuminate\Filesystem\Filesystem;
 use Symfony\Component\Process\Process;
+use Tests\Support\HostBinary;
 use Tests\Support\Schedules\FakeScheduleRuntimeAccountResolver;
-use Tests\Support\TestToolchain;
 
 it('reports inaccessible script traversal without changing artifacts or exposing diagnostics', function (): void {
     $node = Node::query()->create([
@@ -140,7 +140,7 @@ function native_schedule_inspector_run(string $program, array $arguments, string
 
 function native_schedule_inspector_write_commands(string $bin): void
 {
-    file_put_contents($bin.'/stat', TestToolchain::script(<<<'BASH'
+    file_put_contents($bin.'/stat', HostBinary::expand(<<<'BASH'
         #!/bin/sh
         if [ "$1" = -c ] && [ "$2" = %U:%G:%a ]; then
             shift 2
@@ -151,7 +151,7 @@ function native_schedule_inspector_write_commands(string $bin): void
             esac
             exit 0
         fi
-        exec /usr/bin/stat "$@"
+        exec {{host:stat}} "$@"
         BASH));
     chmod($bin.'/stat', 0700);
     file_put_contents($bin.'/systemctl', <<<'BASH'
@@ -163,12 +163,12 @@ function native_schedule_inspector_write_commands(string $bin): void
         esac
         BASH);
     chmod($bin.'/systemctl', 0700);
-    file_put_contents($bin.'/sudo', TestToolchain::script(<<<'BASH'
+    file_put_contents($bin.'/sudo', HostBinary::expand(<<<'BASH'
         #!/bin/sh
         [ "$1" = -u ] || exit 97
         shift 2
         [ "$1" = -- ] && shift
-        case "$(/usr/bin/stat -c %a -- "$ORBIT_TEST_PARENT")" in
+        case "$({{host:stat}} -c %a -- "$ORBIT_TEST_PARENT")" in
             *[1357]) exec "$@" ;;
             *) exit 1 ;;
         esac

@@ -19,6 +19,7 @@ use App\Infrastructure\WireGuard\VpnConfigurationRepository;
 use App\Models\Node;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
+use Tests\Support\HostBinary;
 use Tests\Support\TestToolchain;
 
 it('repairs live and persisted DNS repeatedly without restarting the tunnel', function (): void {
@@ -499,7 +500,7 @@ function wireguard_peer_dns_repair_harness(
             && [ "${4:-}" = "$ORBIT_TEST_ROOT/wireguard/orbit.dns-link" ]; then
             exit 1
         fi
-        exec /bin/mv "$@"
+        exec {{host:mv}} "$@"
         SH);
 
     $settings = new VpnSettings(app(SettingRepository::class));
@@ -737,7 +738,7 @@ function wireguard_peer_dns_repair_harness(
 function wireguard_peer_dns_repair_shim(string $root, string $name, string $body): void
 {
     $path = "{$root}/bin/{$name}";
-    file_put_contents($path, TestToolchain::script('#!'.TestToolchain::bash()."\nset -eu\n{$body}\n"));
+    file_put_contents($path, HostBinary::expand('#!'.TestToolchain::bash()."\nset -eu\n{$body}\n"));
     chmod($path, 0o700);
 }
 

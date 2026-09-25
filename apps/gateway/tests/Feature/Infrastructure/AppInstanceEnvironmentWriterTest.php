@@ -16,10 +16,8 @@ use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
-use Tests\Support\TestToolchain;
 
 it('creates and atomically replaces a complete protected environment file', function (): void {
-    TestToolchain::requireLinux('The environment program opens the file with O_PATH and reads it through /proc/self/fd.');
     $directory = writer_environment_directory();
     file_put_contents("{$directory}/source.php", 'source');
     file_put_contents("{$directory}/database.sqlite", 'database');
@@ -61,7 +59,6 @@ it('creates and atomically replaces a complete protected environment file', func
 });
 
 it('retains file identity for an identical protected repeat and repairs mode drift', function (): void {
-    TestToolchain::requireLinux('The environment program opens the file with O_PATH and reads it through /proc/self/fd.');
     $directory = writer_environment_directory();
     $contents = "KEY=same\n";
     file_put_contents("{$directory}/.env", $contents);
@@ -137,7 +134,6 @@ it('preserves the destination and unrelated candidates on confirmed writer failu
 ]);
 
 it('refuses a placement boundary change after preflight before writer effects', function (): void {
-    TestToolchain::requireLinux('The environment program opens the file with O_PATH and reads it through /proc/self/fd.');
     $parent = writer_environment_directory();
     $recorded = "{$parent}/recorded";
     $original = "{$parent}/original";
@@ -175,7 +171,6 @@ it('refuses a placement boundary change after preflight before writer effects', 
 });
 
 it('returns an unconfirmed result after a lost acknowledgement and accepts the protected retry', function (): void {
-    TestToolchain::requireLinux('The environment program opens the file with O_PATH and reads it through /proc/self/fd.');
     $directory = writer_environment_directory();
     file_put_contents("{$directory}/.env", "KEY=previous\n");
     chmod("{$directory}/.env", 0600);
@@ -210,7 +205,6 @@ it('returns an unconfirmed result after a lost acknowledgement and accepts the p
 });
 
 it('returns an unconfirmed result when directory sync fails after atomic replacement', function (): void {
-    TestToolchain::requireLinux('The environment program opens the file with O_PATH and reads it through /proc/self/fd.');
     $directory = writer_environment_directory();
     file_put_contents("{$directory}/.env", "KEY=previous\n");
     chmod("{$directory}/.env", 0600);

@@ -46,7 +46,7 @@ composer test:affected
 composer check
 ```
 
-Gateway tests run the shell programs that Orbit installs on Ubuntu Nodes. On macOS, install the Linux tools they need with `brew install bash coreutils gnu-sed findutils caddy`. The test bootstrap puts these tools first on `PATH`, supplies `setsid` and `flock`, and stops with the missing package names when a tool is absent. A few tests need a Linux kernel interface such as `/proc`. They fail on macOS with that reason, and CI runs them on Linux.
+Gateway tests run the shell programs that Orbit installs on Ubuntu Nodes. On macOS, install the Linux tools they need with `brew install bash coreutils gnu-sed findutils caddy`. The test bootstrap puts these tools first on `PATH`, supplies `setsid` and `flock`, and stops with the missing package names when a tool is absent.
 
 Add regression coverage for behavior changes and their important failure modes. Confirm that the tests exercising the new behavior ran.
 
