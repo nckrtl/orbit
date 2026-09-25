@@ -108,7 +108,7 @@ function subscriber_managed_node(string $name, string $address): Node
  * @param  list<FakeAgentViewSocket>  $extra  Receives each socket the subscriber makes for a second link.
  * @return array{AgentViewSubscriber, FakeAgentViewSocket, object{now: float, commit: string}}
  */
-function agent_view_subscriber(array &$extra = []): array
+function agent_view_subscriber(array &$extra = [], ?AgentViewPublisher $publisher = null): array
 {
     $socket = new FakeAgentViewSocket;
     $state = new class
@@ -131,6 +131,7 @@ function agent_view_subscriber(array &$extra = []): array
         sleep: static function (float $seconds) use ($state): void {
             $state->now += $seconds;
         },
+        publisher: $publisher,
         sockets: static function () use (&$extra): FakeAgentViewSocket {
             return $extra[] = new FakeAgentViewSocket;
         },
@@ -745,6 +746,38 @@ describe('the agent view subscriber during a websocket move', function (): void 
         new CaddySiteCertificates()->record($this->target->id, CaddySiteCertificates::Websocket);
         new WebSocketDnsTarget()->markServing($this->target->id);
         $this->node = subscriber_managed_node('app-dev', '10.44.0.3');
+    });
+
+    it('joins the log channel on both servers and ends log streams only when the agent left both', function (): void {
+        $extra = [];
+        $publisher = new FakeAgentViewPublisher;
+        [$subscriber, $new] = agent_view_subscriber($extra, $publisher);
+        $subscriber->pass();
+        $old = $extra[0];
+        $logChannel = "presence-node-logs.{$this->node->id}";
+        $member = fn (string $event): array => ['event' => $event, 'channel' => $logChannel, 'data' => json_encode(['user_id' => "agent.{$this->node->id}"])];
+
+        expect(collect($new->sent)->pluck('data.channel')->all())->toContain($logChannel)
+            ->and(collect($old->sent)->pluck('data.channel')->all())->toContain($logChannel);
+
+        $old->push(['event' => 'pusher_internal:subscription_succeeded', 'channel' => $logChannel, 'data' => json_encode(['presence' => ['ids' => ["agent.{$this->node->id}"]]])]);
+        $old->push(agent_snapshot($this->node->id, 3, []));
+        $subscriber->pass();
+        $subscriber->pass();
+        expect(app(AgentStateView::class)->node($this->node->id)->logs)->toBeTrue();
+
+        // The agent moves: it joins the new server before the old one reports it gone.
+        $new->push($member('pusher_internal:member_added'));
+        $subscriber->pass();
+        $old->push($member('pusher_internal:member_removed'));
+        $subscriber->pass();
+
+        expect($publisher->agentsLeft)->toBe([]);
+
+        $new->push($member('pusher_internal:member_removed'));
+        $subscriber->pass();
+
+        expect($publisher->agentsLeft)->toBe([$this->node->id]);
     });
 
     it('listens on both Reverb servers and keeps a Node fresh while its agent moves between them', function (): void {
