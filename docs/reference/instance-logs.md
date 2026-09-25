@@ -9,7 +9,7 @@ This page tells an operator how the Gateway returns the application log of an In
 
 ## Read the log
 
-`GET /api/v1/instances/{instance}/logs` returns the end of the log as one newline-separated string in `data.logs`. `lines` sets the number of lines from 1 through 1,000, and the default is 100. The response also names the Instance in `data.id` and `data.name` and repeats `data.lines`. The read does not stream, so the Gateway refuses `follow`.
+`GET /api/v1/instances/{instance}/logs` returns the end of the log as one newline-separated string in `data.logs`. `lines` sets the number of lines from 1 through 1,000, and the default is 100. The response also names the Instance in `data.id` and `data.name` and repeats `data.lines`. The read does not stream, so the Gateway refuses `follow`. It returns at most 4 MiB of the newest lines. When the lines asked for are larger, it returns fewer, and never a line cut at its start.
 
 The Orbit web page shows this log on the Instance page. [`orbit instance:logs`](/cli/instance#orbit-instancelogs) returns it in the terminal, and the PHP SDK sends the same request.
 

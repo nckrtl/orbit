@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\AppInstances\AppInstanceState;
+use App\Domain\Logs\LogReadLimit;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\NodeRoleDependencySet;
@@ -159,7 +160,9 @@ it('installs and manages a systemd process through fixed SSH argv', function ():
             "\"VITE_DEV_SERVER_KEY=/home/orbit/.orbit/certificates/app-instance-{$this->instance->id}/current/key.pem\"",
         )
         ->and($logs)
-        ->toBe("line one\nline two\n");
+        ->toBe("line one\nline two\n")
+        ->and($this->ssh->commands[15]->maxOutputBytes)
+        ->toBe(LogReadLimit::Bytes);
 });
 
 it('rejects leftover Workspace ownership before systemd convergence', function (): void {

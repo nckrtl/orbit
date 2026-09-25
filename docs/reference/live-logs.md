@@ -157,7 +157,7 @@ The Gateway refuses to open a stream with `logs.live_unavailable` (409) when it 
 | `agent_not_joined` | The Node's agent is 0.3.0 or newer and fresh, but it has not joined its log channel yet, for example while it reconnects during a `websocket` move. |
 | `agent_outdated` | The Node's agent is older than 0.3.0 and cannot stream logs. |
 
-Clients then use one-shot reads over SSH: the web app polls every 10 seconds, and `--follow` in the CLI polls every 5 seconds. They do the same when the Gateway refuses a stream with `logs.stream_limit`.
+Clients then use one-shot reads over SSH: the web app polls every 10 seconds, and `--follow` in the CLI polls every 5 seconds. A one-shot read returns at most 4 MiB of whole lines. They do the same when the Gateway refuses a stream with `logs.stream_limit`.
 
 Six reasons pass on their own: `subscriber_down`, `agent_unavailable`, `agent_not_joined`, `logs.stream_limit`, and the ends `agent_left` and `relay_behind`. For these, the web app and the CLI try to open a stream again every 30 seconds while they poll. They keep polling for `ssh_only`, `realtime_not_configured`, `agent_outdated`, and `source_unavailable`.
 

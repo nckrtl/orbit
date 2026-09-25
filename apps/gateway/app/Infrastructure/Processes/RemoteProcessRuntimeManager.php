@@ -6,6 +6,7 @@ namespace App\Infrastructure\Processes;
 
 use App\Domain\AgentView\AgentProcessView;
 use App\Domain\AppDev\ViteProcessLifecycle;
+use App\Domain\Logs\LogReadLimit;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessOperationException;
@@ -391,12 +392,13 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
             ],
         };
 
-        return $this->executeSuccessfully(
+        return LogReadLimit::wholeLines($this->executeSuccessfully(
             $process,
             $arguments,
             'logs',
             'process.logs_failed',
-        )->stdout;
+            maxOutputBytes: LogReadLimit::Bytes,
+        )->stdout);
     }
 
     public function dockerSpecHash(#[SensitiveParameter] Process $process): string
@@ -1437,6 +1439,7 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
         #[SensitiveParameter]
         ?ProtectedInput $protectedInput = null,
         ?ProcessTarget $target = null,
+        ?int $maxOutputBytes = null,
     ): CommandResult {
         try {
             $target ??= $this->targets->forInspection($process);
@@ -1457,7 +1460,7 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
                     identityFile: $this->keys->privateKeyPath(),
                     knownHostsFile: $this->knownHosts->path(),
                 ),
-                new RemoteCommand($arguments, $input, $protectedInput),
+                new RemoteCommand($arguments, $input, $protectedInput, $maxOutputBytes),
             );
         } finally {
             $protectedInput?->close();
@@ -1476,8 +1479,9 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
         #[SensitiveParameter]
         ?ProtectedInput $protectedInput = null,
         ?ProcessTarget $target = null,
+        ?int $maxOutputBytes = null,
     ): CommandResult {
-        $result = $this->execute($process, $arguments, $input, $protectedInput, $target);
+        $result = $this->execute($process, $arguments, $input, $protectedInput, $target, $maxOutputBytes);
 
         if ($result->succeeded()) {
             return $result;

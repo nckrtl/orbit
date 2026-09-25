@@ -56,4 +56,20 @@ describe(LogTailOverlap::class, function (): void {
         expect($overlap->find(['A', 'B']))->toBe([])
             ->and($overlap->find(['A', 'B', 'C']))->toBe(['C']);
     });
+
+    it('matches a line the live stream cut with the whole line of a one-shot read, both ways', function (): void {
+        $whole = '2026-09-25T10:15:02+00:00 app-dev sh[7]: r3long 13 '.str_repeat('y', 10_000);
+        $cut = substr($whole, 0, 8_180).' [truncated]';
+        $live = new LogTailOverlap;
+        $live->remember(['a', $cut, 'b']);
+        $ssh = new LogTailOverlap;
+        $ssh->remember(['a', $whole, 'b']);
+
+        expect($live->find(['a', $whole, 'b', 'c']))->toBe(['c'])
+            ->and($ssh->find(['a', $cut, 'b', 'c']))->toBe(['c'])
+            ->and(LogTailOverlap::sameLine($cut, $whole))->toBeTrue()
+            ->and(LogTailOverlap::sameLine($cut, $whole.'x'))->toBeTrue()
+            ->and(LogTailOverlap::sameLine($cut, 'other'.$whole))->toBeFalse()
+            ->and(LogTailOverlap::sameLine('short line [truncated]', 'short line and more'))->toBeFalse();
+    });
 });

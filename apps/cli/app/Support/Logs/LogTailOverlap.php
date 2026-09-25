@@ -9,10 +9,19 @@ namespace App\Support\Logs;
  * line once when it polls a one-shot read or reopens a stream. It keeps the last five printed
  * lines as context. The newest place where the whole context appears wins; failing that, a tail
  * that starts with at least two of the context's last lines continues after them.
+ *
+ * The live stream cuts a line longer than 8 KiB and ends it with ` [truncated]`, while a one-shot
+ * read returns it whole. Two lines are the same when they are equal, or when one is such a cut line
+ * and the other starts with its text.
  */
 final class LogTailOverlap
 {
     private const int CONTEXT = 5;
+
+    private const string TRUNCATED = ' [truncated]';
+
+    /** The shortest text a cut line keeps. The Node agent keeps about 8 KiB; redaction can shorten it. */
+    private const int CUT_TEXT_BYTES = 4096;
 
     /** @var list<string> */
     private array $recent = [];
@@ -59,17 +68,47 @@ final class LogTailOverlap
         }
 
         for ($start = count($tail) - $context; $start >= 0; $start--) {
-            if (array_slice($tail, $start, $context) === $this->recent) {
+            if (self::sameLines(array_slice($tail, $start, $context), $this->recent)) {
                 return array_slice($tail, $start + $context);
             }
         }
 
         for ($length = min($context - 1, count($tail)); $length >= 2; $length--) {
-            if (array_slice($tail, 0, $length) === array_slice($this->recent, -$length)) {
+            if (self::sameLines(array_slice($tail, 0, $length), array_slice($this->recent, -$length))) {
                 return array_slice($tail, $length);
             }
         }
 
         return null;
+    }
+
+    /**
+     * @param  list<string>  $first
+     * @param  list<string>  $second
+     */
+    private static function sameLines(array $first, array $second): bool
+    {
+        if (count($first) !== count($second)) {
+            return false;
+        }
+
+        return array_all($first, fn ($line, $index) => self::sameLine($line, $second[$index]));
+    }
+
+    public static function sameLine(string $first, string $second): bool
+    {
+        return $first === $second || self::cutFrom($first, $second) || self::cutFrom($second, $first);
+    }
+
+    /** Whether $cut is $whole cut short by the live stream. */
+    private static function cutFrom(string $cut, string $whole): bool
+    {
+        if (! str_ends_with($cut, self::TRUNCATED)) {
+            return false;
+        }
+
+        $text = substr($cut, 0, -strlen(self::TRUNCATED));
+
+        return strlen($text) >= self::CUT_TEXT_BYTES && strlen($whole) > strlen($text) && str_starts_with($whole, $text);
     }
 }

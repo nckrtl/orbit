@@ -640,42 +640,51 @@ fn printable(value: &[u8]) -> bool {
     std::str::from_utf8(value).is_ok_and(|text| !text.chars().any(char::is_control))
 }
 
-/// A message as journalctl 259 prints it, or None when it prints `[… blob data]` instead: invalid
-/// UTF-8, a control character other than a newline or a tab, or an escape that starts no ANSI CSI
-/// or OSC sequence. It removes CSI and OSC sequences and turns each tab into eight spaces.
-fn render_message(message: &[u8]) -> Option<String> {
-    let text = std::str::from_utf8(message).ok()?;
-    let mut out = String::with_capacity(text.len());
-    let mut chars = text.chars().peekable();
-    while let Some(c) = chars.next() {
-        match c {
-            '\n' => out.push('\n'),
-            '\t' => out.push_str("        "),
-            '\u{1b}' => match chars.next()? {
+/// journalctl's pass before it prints a message: each tab becomes eight spaces, and ANSI CSI and OSC
+/// sequences are removed. An escape that starts no complete sequence makes it keep the message as it
+/// is. This works on bytes, so it also runs on a message that is not valid UTF-8.
+fn strip_tab_ansi(message: &[u8]) -> Option<Vec<u8>> {
+    let mut out = Vec::with_capacity(message.len());
+    let mut bytes = message.iter().copied().peekable();
+    while let Some(b) = bytes.next() {
+        match b {
+            b'\t' => out.extend_from_slice(b"        "),
+            0x1b => match bytes.next()? {
                 // CSI: parameter and intermediate bytes, then one final byte.
-                '[' => loop {
-                    match chars.next()? {
-                        '\u{20}'..='\u{3f}' => {}
-                        '\u{40}'..='\u{7e}' => break,
+                b'[' => loop {
+                    match bytes.next()? {
+                        0x20..=0x3f => {}
+                        0x40..=0x7e => break,
                         _ => return None,
                     }
                 },
                 // OSC: up to BEL or ESC \.
-                ']' => loop {
-                    match chars.next()? {
-                        '\u{7}' => break,
-                        '\u{1b}' if chars.next_if_eq(&'\\').is_some() => break,
-                        '\u{1b}' => return None,
+                b']' => loop {
+                    match bytes.next()? {
+                        0x07 => break,
+                        0x1b if bytes.next_if_eq(&b'\\').is_some() => break,
+                        0x1b => return None,
                         _ => {}
                     }
                 },
                 _ => return None,
             },
-            c if c.is_control() => return None,
-            c => out.push(c),
+            b => out.push(b),
         }
     }
     Some(out)
+}
+
+/// A message as journalctl 259 prints it, or `Err(size)` when it prints `[size blob data]` instead:
+/// after `strip_tab_ansi`, the message is not valid UTF-8 or holds a control character other than a
+/// newline. The size counts the bytes after that pass, as journalctl does.
+fn render_message(message: &[u8]) -> Result<String, usize> {
+    let stripped = strip_tab_ansi(message).unwrap_or_else(|| message.to_vec());
+    match String::from_utf8(stripped) {
+        Ok(text) if !text.chars().any(|c| c.is_control() && c != '\n') => Ok(text),
+        Ok(text) => Err(text.len()),
+        Err(error) => Err(error.into_bytes().len()),
+    }
 }
 
 /// journalctl's `format_bytes`: `35B`, then one decimal with a binary unit, such as `1.4K`.
@@ -735,11 +744,9 @@ pub fn format_entry(entry: &Entry, _unit: &str) -> Vec<String> {
         prefix.push_str(&format!("[{pid}]"));
     }
     prefix.push_str(": ");
-    let Some(message) = render_message(&message) else {
-        return vec![format!(
-            "{prefix}[{} blob data]",
-            format_bytes(message.len())
-        )];
+    let message = match render_message(&message) {
+        Ok(message) => message,
+        Err(size) => return vec![format!("{prefix}[{} blob data]", format_bytes(size))],
     };
     let message = message.strip_suffix('\n').unwrap_or(&message);
     let indent = " ".repeat(prefix.chars().count());
@@ -1179,7 +1186,7 @@ mod tests {
     /// for them on a Node with host name `beast`. The live stream must print the same lines.
     #[test]
     fn live_lines_equal_the_one_shot_journalctl_lines() {
-        let cases: [(&[u8], &[&str]); 11] = [
+        let cases: [(&[u8], &[&str]); 18] = [
             (b"lone esc \x1b end", &["[14B blob data]"]),
             (b"csi \x1b[1;32mgreen\x1b[0m end", &["csi green end"]),
             (b"osc \x1b]0;title\x07 end", &["osc  end"]),
@@ -1194,6 +1201,15 @@ mod tests {
                 &["first", "second        t", "third"],
             ),
             (b"x", &["x"]),
+            // Captured from journalctl 259 for the round-3 review: sizes count the bytes after tabs
+            // become spaces and ANSI sequences go, unless an escape starts no complete sequence.
+            (b"r3bad 407 \xff\tend", &["[22B blob data]"]),
+            (b"\x1b[1mx\xff", &["[2B blob data]"]),
+            (b"lone \x1b\tx", &["[8B blob data]"]),
+            (b"\x1b]0;t\x07\xff", &["[1B blob data]"]),
+            (b"a\tb\x1b[31mc\x01", &["[12B blob data]"]),
+            (b"\x1b[12", &["[4B blob data]"]),
+            (b"ok\t\x1b[1mbold\x1b[0m", &["ok        bold"]),
         ];
         // `_PID` wins over `SYSLOG_PID`, and further lines are indented to the message column.
         let prefix = "2026-09-25T10:15:02+00:00 beast p[7]: ";
