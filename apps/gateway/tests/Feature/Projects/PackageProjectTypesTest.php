@@ -80,7 +80,7 @@ it('rejects a type change when the stored package root is invalid for that type'
             'type' => $type->value,
         ])->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation.failed')
-            ->assertJsonPath('error.details.root.0', fn (string $message): bool => $message !== '');
+            ->assertJsonPath('error.details.root.0', "The stored root [.] is not valid for a {$type->value} Project. Send a web root with the type change.");
 
         expect($project->refresh()->type)->toBe(ProjectType::NodePackage)
             ->and($project->root)->toBe('.');

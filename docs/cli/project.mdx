@@ -41,7 +41,7 @@ orbit project:create <slug> <type> <repository> [options]
 | --- | --- | --- |
 | `--name=NAME` | the slug | Display name. |
 | `--default-branch=BRANCH` | the remote default | Stored default branch. The Gateway verifies that an explicit branch exists. |
-| `--root=PATH` | `public` | Normalized repository-relative root that Instances inherit. Use `.` for a package at the repository root. |
+| `--root=PATH` | `.` for `laravel-package` and `node-package`; `public` otherwise | Normalized repository-relative root that Instances inherit. `.` means the repository root. |
 
 ```bash
 orbit project:create acme laravel-app https://github.com/acme/site.git

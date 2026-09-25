@@ -6,7 +6,7 @@ description: "Proposed. Project.type is a closed enum that decides whether an In
 
 # ADR 0106: Derive instance capabilities from Project type
 
-`Project.type` is a closed enum. It decides routing, PHP-FPM capability, and the meaning of the Project root. Operators do not pick those behaviors per Instance. The values are `monorepo`, `laravel-app`, `laravel-package`, and `node-package`. A Node package is a non-web Project and uses its package manager lockfiles for dependency refresh.
+`Project.type` is a closed enum. It decides routing, PHP-FPM capability, and the meaning of the Project root. Operators do not pick those behaviors per Instance. The values are `monorepo`, `laravel-app`, `laravel-package`, and `node-package`. A Node package serves no web root. Its root may be the repository root.
 
 ## Status
 
@@ -41,7 +41,7 @@ Existing Projects have no type. The upgrade must assign a value to every row. Ex
 
 - Keep one Route for every active Instance: rejected because packages and the Orbit monorepo would keep publishing hostnames they do not serve.
 - Store routing and FPM flags on each Instance: rejected because those capabilities belong to the repository kind, not a placement.
-- Add a generic desktop type: rejected because no distinct behavior is defined. `node-package` is included because its repository-root defaults and Node lockfile refresh behavior differ from web-serving Projects.
+- Add a generic desktop type: rejected because no distinct behavior is defined. `node-package` is included as a type label for a Node package with no web root. It behaves like `laravel-package`. Baseline and handoff behavior that differs for Node packages can key on it. Dependency refresh does not depend on type.
 - Infer type only from current Routes: rejected because [ADR 0028](/decisions/0028-require-one-route-per-active-appinstance) already forced Routes onto non-serving placements.
 
 ## Consequences

@@ -11261,7 +11261,7 @@ export interface operations {
                     repository_url: string;
                     /** @description Stored default branch; resolve the remote default when omitted */
                     default_branch?: string;
-                    /** @description Relative web root */
+                    /** @description Repository-relative root; defaults to . for package types and public otherwise */
                     root: string;
                     defaults?: unknown[] | null;
                 };
@@ -11444,7 +11444,7 @@ export interface operations {
                     repository_url: string;
                     /** @description New stored default branch */
                     default_branch: string;
-                    /** @description New relative web root */
+                    /** @description New repository-relative root; package types may use . */
                     root: string;
                 };
             };

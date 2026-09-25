@@ -15,12 +15,12 @@ final readonly class RouteTargetWebRoot
         self::assertSupportedRoot($instance->root ?? $instance->app->root);
     }
 
-    public static function assertSupportedRoot(?string $root): void
+    public static function assertSupportedRoot(?string $root, ?string $message = null): void
     {
         if (! is_string($root) || ! RelativeWebRoot::isValid($root)) {
             throw new ResourceOperationException(
                 errorCode: 'route.target_web_root_unsupported',
-                message: 'A Route target requires a supported relative web root.',
+                message: $message ?? 'A Route target requires a supported relative web root.',
                 status: 409,
             );
         }

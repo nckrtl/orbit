@@ -111,6 +111,7 @@ A failure before the association commit restores the original associations and r
 | `route.target_app_conflict` | A target or reassignment destination belongs to another Project. |
 | `route.target_scope_conflict` | A target or destination is outside the Route Cluster or is not an active app-prod Node. |
 | `route.target_inactive` | A target Instance is missing or not active. |
+| `route.target_web_root_unsupported` | A target Instance has no supported relative web root, such as a package rooted at `.`. |
 | `route.target_disposition_required` | A detached active Instance has no reassignment or authorized removal. |
 | `route.target_disposition_invalid` | A disposition names an invalid destination or combines reassignment with removal. |
 | `route.target_set_conflict` | Another target-set change is already recorded on the Route. |

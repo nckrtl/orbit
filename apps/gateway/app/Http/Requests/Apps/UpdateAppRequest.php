@@ -78,11 +78,13 @@ final class UpdateAppRequest extends FormRequest
             $routeApp = $this->route('app');
             $type = ProjectType::tryFrom((string) $this->input('type'))
                 ?? ($routeApp instanceof OrbitApp ? $routeApp->type : ProjectType::LaravelApp);
-            $root = $this->input('root');
-            $root = is_string($root) ? $root : ($routeApp instanceof OrbitApp ? $routeApp->root : null);
+            $sentRoot = $this->input('root');
+            $root = is_string($sentRoot) ? $sentRoot : ($routeApp instanceof OrbitApp ? $routeApp->root : null);
 
             if (is_string($root) && ! ProjectRoot::isValid($root, $type)) {
-                $validator->errors()->add('root', 'The root must be a normalized relative Project path.');
+                $validator->errors()->add('root', is_string($sentRoot)
+                    ? 'The root must be a normalized relative Project path.'
+                    : "The stored root [{$root}] is not valid for a {$type->value} Project. Send a web root with the type change.");
             }
         }];
     }

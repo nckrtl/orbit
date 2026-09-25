@@ -24,7 +24,7 @@ orbit project:create acme laravel-app https://github.com/acme/site.git
 
 `type` is required on the canonical surface. Allowed values are `monorepo`, `laravel-app`, `laravel-package`, and `node-package`. Compatibility `POST /api/v1/apps` callers that omit `type` receive `laravel-app`.
 
-The command-line interface (CLI) uses `public` as the root unless you set `--root`. Set `--root=.` for a package at the repository root. Laravel apps use their relative web root. Without `--default-branch`, the Gateway reads and saves the repository's default branch once. A later remote change does not update the Project.
+The command-line interface (CLI) uses `.` as the root for `laravel-package` and `node-package`, and `public` for other types, unless you set `--root`. Laravel apps use their relative web root. The API and SDK always require `root`. Without `--default-branch`, the Gateway reads and saves the repository's default branch once. A later remote change does not update the Project.
 
 Both source defaults can be explicit:
 
@@ -100,7 +100,9 @@ orbit project:update 3 --repository=https://github.com/acme/site.git --default-b
 | `slug` and `--slug` | Reconcile generated development Route domains and Laravel application URLs before the new slug is published. Existing checkout paths, production users, and homes stay as recorded. |
 | `repository_url` and `--repository` | Store the selected HTTPS or SSH access URL. Equivalent forms keep the same canonical repository identity. |
 | `default_branch` and `--default-branch` | Store the new Project default and switch every development `default` Instance that inherits it. An explicit `branch_override` stays unchanged even when it matched the old default. |
-| `root` and `--root` | Change the inherited web root of every Instance without its own override. Production resolves the new root inside the active release. |
+| `root` and `--root` | Change the inherited root of every Instance without its own override. Production resolves the new root inside the active release. |
+
+A type change must keep a root that the new type allows. When the stored root is `.` and the new type is `laravel-app` or `monorepo`, validation fails on `root` and the message names the type. Send a web root with the type change. A type or root change that leaves a Route target inheriting an unsupported root, such as `.`, returns `route.target_web_root_unsupported`.
 
 The Gateway treats the supplied fields as one operation. It inventories affected Instances and Routes, preflights every Orbit-owned checkout and generated domain, prepares reversible mutations, then publishes. A confirmed failure before publication rolls back origins, prepared Routes, stored Laravel `APP_URL` values, and runtime projections. The previous Project record stays authoritative. An identical retry resumes the recorded state from its last verified evidence. A conflicting update while one update is incomplete returns `app.update_in_progress`.
 

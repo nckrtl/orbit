@@ -59,7 +59,10 @@ final readonly class UpdateAppAction
 
         if ($data->rootProvided || $data->typeProvided) {
             $effectiveRoot = $data->rootProvided ? $data->root : $app->root;
-            $this->assertRouteTargetRootCompatibility($app, $effectiveRoot);
+            $message = ! $data->rootProvided && $data->type instanceof ProjectType
+                ? "A {$data->type->value} Project cannot keep root [{$effectiveRoot}] while a Route targets an Instance that inherits it. Send a web root with the type change."
+                : null;
+            $this->assertRouteTargetRootCompatibility($app, $effectiveRoot, $message);
         }
 
         if ($data->code !== null) {
@@ -611,7 +614,7 @@ final readonly class UpdateAppAction
         }
     }
 
-    private function assertRouteTargetRootCompatibility(OrbitApp $app, ?string $root): void
+    private function assertRouteTargetRootCompatibility(OrbitApp $app, ?string $root, ?string $message = null): void
     {
         $hasInheritedRouteTarget = $app->appInstances()
             ->whereNull('root')
@@ -619,7 +622,7 @@ final readonly class UpdateAppAction
             ->exists();
 
         if ($hasInheritedRouteTarget) {
-            RouteTargetWebRoot::assertSupportedRoot($root);
+            RouteTargetWebRoot::assertSupportedRoot($root, $message);
         }
     }
 

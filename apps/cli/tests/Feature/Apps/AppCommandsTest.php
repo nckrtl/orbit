@@ -89,6 +89,26 @@ describe('project:create', function (): void {
             ->toMatchArray(['type' => 'node-package', 'root' => '.']);
     });
 
+    it('defaults the root by Project type when --root is omitted', function (string $type, string $root): void {
+        $mockClient = MockClient::global([
+            CreateAppRequest::class => app_mock_response(201),
+        ]);
+
+        $this->artisan('project:create', [
+            'slug' => 'kit',
+            'type' => $type,
+            'repository' => 'https://github.com/acme/kit.git',
+        ])->assertExitCode(0);
+
+        expect($mockClient->getLastRequest()?->body()->all())
+            ->toMatchArray(['type' => $type, 'root' => $root]);
+    })->with([
+        'node-package' => ['node-package', '.'],
+        'laravel-package' => ['laravel-package', '.'],
+        'laravel-app' => ['laravel-app', 'public'],
+        'monorepo' => ['monorepo', 'public'],
+    ]);
+
     it('reports the created app for humans', function (): void {
         MockClient::global([CreateAppRequest::class => app_mock_response(201)]);
 

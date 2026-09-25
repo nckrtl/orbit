@@ -4682,7 +4682,7 @@
           "root": {
             "type": "string",
             "maxLength": 255,
-            "description": "Relative web root"
+            "description": "Repository-relative root; defaults to . for package types and public otherwise"
           },
           "defaults": {
             "type": [
@@ -5520,7 +5520,7 @@
           "root": {
             "type": "string",
             "maxLength": 255,
-            "description": "New relative web root"
+            "description": "New repository-relative root; package types may use ."
           }
         },
         "additionalProperties": false,

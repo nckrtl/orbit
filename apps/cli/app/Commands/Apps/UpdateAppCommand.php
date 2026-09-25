@@ -19,7 +19,7 @@ final class UpdateAppCommand extends GatewayCommand
         {--slug= : New Project slug}
         {--repository= : New repository access URL}
         {--default-branch= : New stored default branch}
-        {--root= : New relative web root}
+        {--root= : New repository-relative root; package types may use .}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
