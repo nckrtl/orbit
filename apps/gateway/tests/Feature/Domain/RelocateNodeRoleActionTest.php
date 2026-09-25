@@ -16,6 +16,7 @@ use App\Domain\Settings\SettingScope;
 use App\Domain\Settings\SettingScopeType;
 use App\Domain\Settings\SettingValueProtection;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WebSocket\WebSocketCredentialManager;
 use App\Infrastructure\Metrics\NativeMetricsCredentialManager;
 use App\Infrastructure\WebSocket\WebSocketFootprint;
@@ -246,7 +247,7 @@ describe(RelocateNodeRoleAction::class, function (): void {
         expect(fn () => app(RelocateNodeRoleAction::class)->execute($target, RoleName::WebSocket, force: true))
             ->toThrow(function (NodeRoleOperationException $exception) use ($source, $target): void {
                 expect($exception->underlyingErrorCode)->toBe('websocket.caddy_publication_failed')
-                    ->and($exception->getMessage())->toStartWith("Role [websocket] now runs on node [{$target->name}], but withdrawing it from node [{$source->name}] failed, so the move is incomplete:")
+                    ->and($exception->getMessage())->toStartWith("Role [websocket] now runs on node [{$target->name}], but the move from node [{$source->name}] is incomplete:")
                     ->and($exception->getMessage())->toEndWith("Run `orbit node:role:relocate {$target->name} websocket --from {$source->name} --force` to finish it once node [{$source->name}] is reachable.");
             });
 
@@ -255,6 +256,26 @@ describe(RelocateNodeRoleAction::class, function (): void {
         app(RelocateNodeRoleAction::class)->execute($target, RoleName::WebSocket, force: true, from: $source);
 
         expect($this->baselines->removed)->toBe([['role' => 'websocket', 'node' => $source->name, 'purge_data' => false]]);
+    });
+
+    it('names the command that finishes a move whose target converge fails', function (): void {
+        $source = relocate_role_node('beast', '10.44.0.1');
+        $target = relocate_role_node('services', '10.44.0.11');
+        $source->roles()->create(['role' => RoleName::WebSocket, 'status' => LifecycleStatus::Active]);
+        app(WebSocketCredentialManager::class)->ensure($source);
+        $this->baselines->convergeFailure = new ResourceOperationException('metrics.service_rollback_failed', 'Service metrics rollback failed.', 502);
+
+        expect(fn () => app(RelocateNodeRoleAction::class)->execute($target, RoleName::WebSocket, force: true))
+            ->toThrow(function (ResourceOperationException $exception) use ($source, $target): void {
+                expect($exception->errorCode)->toBe('metrics.service_rollback_failed')
+                    ->and($exception->status)->toBe(502)
+                    ->and($exception->getMessage())->toBe(
+                        "Role [websocket] now runs on node [{$target->name}], but the move from node [{$source->name}] is incomplete: Service metrics rollback failed."
+                        ." Run `orbit node:role:relocate {$target->name} websocket --from {$source->name} --force` to finish it once node [{$source->name}] is reachable.",
+                    );
+            });
+
+        expect($this->baselines->removed)->toBe([]);
     });
 
     it('transfers metrics and copies missing grafana credentials', function (): void {
@@ -468,8 +489,14 @@ final class RelocateNodeRoleBaselineFake implements RoleBaselineConverger
     /** @var list<array{role: string, node: string, purge_data: bool}> */
     public array $removed = [];
 
+    public ?ResourceOperationException $convergeFailure = null;
+
     public function converge(Node $node, NodeRole $assignment): void
     {
+        if ($this->convergeFailure instanceof ResourceOperationException) {
+            throw $this->convergeFailure;
+        }
+
         $this->converged[] = "{$assignment->role->value}:{$node->name}";
     }
 

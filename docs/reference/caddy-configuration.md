@@ -55,7 +55,9 @@ The two Reverb servers share nothing, so the Gateway serves both while they hold
 
 The withdrawal build reloads Caddy on the old Node, and the reload closes that Node's Reverb connections with a WebSocket close. Browsers reconnect at once through private DNS, which already names the new Node, and reload their data when they subscribe again. Agents reconnect after their own backoff, which [Node agent](/reference/node-agent) describes.
 
-The Gateway stops publishing to the old server, and its subscriber closes that link, only after the withdrawal build has succeeded and the old Node's Reverb has stopped. When either step fails, the move is incomplete: the command fails and names `orbit node:role:relocate NEW websocket --from OLD --force`, which needs the old Node reachable, and the Gateway keeps serving both servers until that command finishes the move. A send to the old server gets 0.3 seconds to connect and 0.5 seconds in total, and after a failure the Gateway skips that server for 30 seconds, so an unreachable old Node never slows broadcasts to the serving server.
+The Gateway stops publishing to the old server, and its subscriber closes that link, only after the withdrawal build has succeeded and the old Node's Reverb has stopped. When either step fails, or the new Node's convergence fails, the move is incomplete: the command fails and names `orbit node:role:relocate NEW websocket --from OLD --force`, which needs the old Node reachable, and the Gateway keeps serving both servers until that command finishes the move.
+
+A send to the old server gets 0.3 seconds to connect and 0.5 seconds in total, and after a failure the Gateway skips that server for 30 seconds, so an unreachable old Node never slows broadcasts to the serving server.
 
 | Site source | Nodes | Listener |
 | --- | --- | --- |

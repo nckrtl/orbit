@@ -81,6 +81,9 @@ final class AgentViewSubscriber
     /** @var array<int, true> Nodes whose stored view changed in this pass. */
     private array $dirty = [];
 
+    /** @var array<int, list<int>> Changed workspaces of each Node whose view write failed, for the next write. */
+    private array $unwrittenWorkspaces = [];
+
     /** @var array<int, true> Nodes with a stored entry this subscriber wrote. */
     private array $stored = [];
 
@@ -597,6 +600,8 @@ final class AgentViewSubscriber
      */
     private function flush(): void
     {
+        $retry = [];
+
         foreach (array_keys($this->dirty) as $nodeId) {
             $newest = null;
             $states = [];
@@ -636,19 +641,28 @@ final class AgentViewSubscriber
                     continue;
                 }
 
+                $changed = array_values(array_unique([...($this->unwrittenWorkspaces[$nodeId] ?? []), ...$changed]));
                 $this->view->putNode($nodeId, $newest->units, $newest->docker, $newest->sequence, (float) $newest->lastEventAt, $newest->agentAt, $newest->workspaces);
                 $this->stored[$nodeId] = true;
+                unset($this->unwrittenWorkspaces[$nodeId]);
 
+                // The publisher reads the stored workspaces and stores the counts of the groups whose `head`
+                // or diff changed.
                 if ($changed !== []) {
-                    // The publisher stores the counts of the groups whose workspace `head` or diff changed.
                     $this->publisher?->queueWorkspaces($nodeId, $changed);
                 }
             } catch (Throwable $exception) {
                 $this->log->warning('The agent view subscriber could not write the view.', ['node_id' => $nodeId, 'error' => $exception->getMessage()]);
+
+                // Keep the changes and write the Node again on the next pass, so a failed write loses no update.
+                if ($newest !== null) {
+                    $this->unwrittenWorkspaces[$nodeId] = $changed;
+                    $retry[$nodeId] = true;
+                }
             }
         }
 
-        $this->dirty = [];
+        $this->dirty = $retry;
     }
 
     /** Queues a Process usage sample every `UsageSeconds` while a browser watches. It never waits for it. */
@@ -712,6 +726,7 @@ final class AgentViewSubscriber
 
         $this->links = [];
         $this->dirty = [];
+        $this->unwrittenWorkspaces = [];
         $this->carryUntil = 0.0;
 
         foreach (array_keys($this->stored) as $nodeId) {
@@ -721,7 +736,7 @@ final class AgentViewSubscriber
 
     private function forget(int $nodeId): void
     {
-        unset($this->dirty[$nodeId], $this->stored[$nodeId]);
+        unset($this->dirty[$nodeId], $this->stored[$nodeId], $this->unwrittenWorkspaces[$nodeId]);
 
         try {
             $this->view->forgetNode($nodeId);

@@ -17,6 +17,8 @@ use App\Infrastructure\AgentView\WebSocketException;
 use App\Infrastructure\Caddy\Build\CaddySiteCertificates;
 use App\Infrastructure\WebSocket\WebSocketDnsTarget;
 use App\Models\Node;
+use Illuminate\Cache\ArrayStore;
+use Illuminate\Cache\Repository as CacheRepository;
 use Illuminate\Support\Carbon;
 use Psr\Log\NullLogger;
 
@@ -623,6 +625,41 @@ describe('the agent view subscriber', function (): void {
 
         expect($publisher->workspaces)->toBe([[$node->id, [31]], [$node->id, [31]]])
             ->and($publisher->polls)->toBeGreaterThan(0);
+    });
+
+    it('writes the view again after a failed write and still hands its workspace changes to the publisher', function (): void {
+        $cache = new class(new ArrayStore) extends CacheRepository
+        {
+            public int $failures = 1;
+
+            public function put($key, $value, $ttl = null): bool
+            {
+                if (str_starts_with((string) $key, 'agent-view.node.') && $this->failures-- > 0) {
+                    throw new RuntimeException('No space left on device.');
+                }
+
+                return parent::put($key, $value, $ttl);
+            }
+        };
+        app()->instance(CacheAgentStateView::class, new CacheAgentStateView($cache));
+        activate_websocket_role();
+        $node = subscriber_managed_node('app-dev', '10.44.0.3');
+        [$subscriber, $socket, , $publisher] = live_agent_view_subscriber();
+        $subscriber->pass();
+
+        $socket->push(
+            agent_snapshot($node->id, 1, []),
+            agent_event($node->id, 'client-workspaces', ['sequence' => 2, 'part' => 1, 'parts' => 1, 'workspaces' => [agent_workspace(31)]]),
+        );
+        $subscriber->pass();
+
+        expect($cache->failures)->toBe(0)
+            ->and($publisher->workspaces)->toBe([]);
+
+        $subscriber->pass();
+
+        expect($publisher->workspaces)->toBe([[$node->id, [31]]])
+            ->and(app(CacheAgentStateView::class)->node($node->id)->workspace(31)['head'] ?? null)->toBe(str_repeat('b', 40));
     });
 
     it('queues Process usage every fifteen seconds only while a browser watches', function (): void {
