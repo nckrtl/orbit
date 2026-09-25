@@ -175,7 +175,9 @@ final readonly class NodeAgentSshExecutor implements NodeAgentRuntime
             '',
         ]);
 
-        $this->run($node, new RemoteCommand(['sudo', 'install', '-d', '-o', 'root', '-g', 'root', '-m', '0755', '/etc/orbit/agent']), 'agent.install_failed');
+        // Only root may enter the directory: `install` writes a candidate with its default mode before it
+        // applies the final one, so the directory keeps the secret's candidate from other users (ADR 0155).
+        $this->run($node, new RemoteCommand(['sudo', 'install', '-d', '-o', 'root', '-g', 'root', '-m', '0700', '/etc/orbit/agent']), 'agent.install_failed');
         $changed = NodeAgentFootprint::sendsSecret($this->agentVersion)
             ? $this->convergeSecret($node)
             : $this->exemptFromSecret($node);

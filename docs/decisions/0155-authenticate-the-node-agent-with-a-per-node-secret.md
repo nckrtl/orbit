@@ -34,7 +34,7 @@ Production Nodes run customer application code as unprivileged users, such as `o
 
 The damage stays on the attacker's own Node. No endpoint signs another Node's channel, and the agent runs no command. It still breaks the promise that a Node's reports come from its agent, and the proposed live log tails ([PR #690](https://github.com/nckrtl/orbit/pull/690)) add an agent endpoint and channel for log lines, where the same gap would expose logs.
 
-The agent runs as `root` without capabilities. A file owned by `root` with mode `0600` is readable by the agent as its owner and by no other local user.
+The agent runs as `root` without capabilities. A file owned by `root` with mode `0600`, in a directory with mode `0700`, is readable by the agent as its owner and by no other local user.
 
 ## Decision
 
@@ -42,7 +42,7 @@ The Gateway owns the secret, its hash, and the check. The agent owns reading the
 
 ### The secret
 
-- Every agent converge makes sure the Node has an agent secret in `/etc/orbit/agent/secret`, owned by `root:root` with mode `0600`. The secret is 32 random bytes from the Gateway's CSPRNG, written as 64 lowercase hexadecimal characters.
+- Every agent converge makes sure the Node has an agent secret in `/etc/orbit/agent/secret`, owned by `root:root` with mode `0600`. The converge also sets `/etc/orbit/agent` to `root:root` mode `0700`, because Ubuntu's `install` writes a candidate file with mode `0644` and applies `0600` only after the contents are written. The secret is 32 random bytes from the Gateway's CSPRNG, written as 64 lowercase hexadecimal characters.
 - The Gateway writes the file over SSH with the secret on standard input, never in a command's arguments. It stores only the SHA-256 hash of the secret in the Node record, and never logs or returns the secret or the hash.
 - A converge keeps the secret while the file's SHA-256 hash equals the stored hash. It writes a new secret when the file is missing or differs, or when the Gateway holds no hash. A new secret restarts the agent. There is no scheduled rotation. Removing a Node deletes the file with `/etc/orbit/agent`, and a new Node record starts without a hash.
 - The agent reads the file at start and exits with an error when it is missing or malformed. It sends `Authorization: Bearer {secret}` on every Gateway request, over the TLS connection that already verifies `gateway.orbit` against the Orbit CA.

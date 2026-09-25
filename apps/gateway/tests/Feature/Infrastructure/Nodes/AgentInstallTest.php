@@ -335,12 +335,18 @@ describe('the agent secret', function (): void {
         $secret = (string) $ssh->file(NodeAgentFootprint::SecretPath);
         $fresh = $node->fresh();
 
+        $arguments = nodeAgentArguments($ssh);
+        $directory = array_search(['sudo', 'install', '-d', '-o', 'root', '-g', 'root', '-m', '0700', '/etc/orbit/agent'], $arguments, true);
+        $write = array_search(['sudo', 'install', '-D', '-o', 'root', '-g', 'root', '-m', '0600', '/dev/stdin', NodeAgentFootprint::SecretPath.'.orbit-candidate'], $arguments, true);
+
+        expect($directory)->toBeInt()->toBeLessThan($write);
         expect($secret)->toMatch('/\A[0-9a-f]{64}\z/')
             ->and($ssh->modes[NodeAgentFootprint::SecretPath])->toBe('-o root -g root -m 0600')
             ->and($fresh?->agent_secret_hash)->toBe(hash('sha256', $secret))
             ->and($fresh?->agent_secret_exempt)->toBeFalse()
             ->and(json_encode(nodeAgentArguments($ssh)))->not->toContain($secret)
             ->and(nodeAgentArguments($ssh))
+            ->toContain(['sudo', 'install', '-d', '-o', 'root', '-g', 'root', '-m', '0700', '/etc/orbit/agent'])
             ->toContain(['sudo', 'install', '-D', '-o', 'root', '-g', 'root', '-m', '0600', '/dev/stdin', NodeAgentFootprint::SecretPath.'.orbit-candidate'])
             ->toContain(['sudo', 'systemctl', 'restart', 'orbit-agent'])
             ->not->toContain(['sudo', 'cat', '--', NodeAgentFootprint::SecretPath]);

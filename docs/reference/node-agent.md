@@ -152,12 +152,12 @@ Every Unix user on a Node reaches the Gateway from the Node's WireGuard address.
 
 | Item | Value |
 | --- | --- |
-| File | `/etc/orbit/agent/secret`, owned by `root:root`, mode `0600` |
+| File | `/etc/orbit/agent/secret`, owned by `root:root`, mode `0600`, in `/etc/orbit/agent`, which is `root:root` mode `0700` |
 | Contents | 64 lowercase hexadecimal characters: 32 random bytes from the Gateway |
 | Stored on the Gateway | Only the SHA-256 hash of the secret, in the Node record. The API never returns it. |
 | Sent by the agent | `Authorization: Bearer {secret}` on every Gateway request, over the verified TLS connection to `gateway.orbit` |
 
-The agent runs as `root`, so it reads the file as its owner without capabilities. No other local user can read it. The agent reads the file when it starts. It exits with an error when the file is missing or is not 64 lowercase hexadecimal characters, and systemd starts it again after 2 seconds.
+The agent runs as `root`, so it reads the file as its owner without capabilities. No other local user can read it or enter its directory. The directory also hides the candidate file during a write: `install` creates the candidate with its default mode and applies `0600` only after it wrote the contents. The agent reads the file when it starts. It exits with an error when the file is missing or is not 64 lowercase hexadecimal characters, and systemd starts it again after 2 seconds.
 
 Each agent converge checks the file's SHA-256 hash with `sudo sha256sum` and keeps the secret while the hash matches the stored one. Otherwise it writes a new secret to a candidate file through standard input, moves it into place, stores the new hash, and restarts the agent. The secret never appears in a command's arguments, and the Gateway never reads it back. There is no scheduled rotation. To rotate a secret, delete the file on the Node and converge it.
 
@@ -270,6 +270,7 @@ The Gateway pins one agent version and one SHA-256 checksum for each architectur
 | Item | Path or value |
 | --- | --- |
 | Binary | `/usr/local/bin/orbit-agent`, owned by `root`, mode `0755` |
+| Directory | `/etc/orbit/agent`, owned by `root`, mode `0700` |
 | Configuration | `/etc/orbit/agent/config.toml`, with `gateway_url = "https://gateway.orbit"` and required `gateway_address` (the Gateway's WireGuard address) |
 | Orbit root certificate | `/etc/orbit/agent/ca.pem` |
 | Agent secret | `/etc/orbit/agent/secret`, owned by `root`, mode `0600`; see [Agent secret](#agent-secret) |
@@ -322,7 +323,7 @@ The agent recovers from each failure below without an operator.
 | Reverb stops answering without closing the connection | The agent reconnects within about 30 seconds. |
 | systemd D-Bus is unavailable | The agent exits with an error, and systemd restarts it. |
 | The secret file is missing or malformed | The agent exits with an error, and systemd restarts it every 2 seconds. Doctor reports `node.agent_secret_mismatch`. A converge writes a new secret. |
-| The secret differs from the Gateway's hash, for example after a Gateway database restore | The Gateway refuses the agent with `agent.secret_invalid`. The agent retries at its backoff limit. Doctor reports `node.agent_secret_mismatch`, and a converge writes a new secret. |
+| The secret differs from the Gateway's hash, for example after a Gateway database restore | The Gateway refuses the agent with `agent.secret_invalid`, and the agent keeps retrying with its backoff. Doctor reports `node.agent_secret_mismatch`, and a converge writes a new secret. |
 
 The agent logs to the systemd journal. Logs contain no Reverb key, signature, or agent secret.
 
