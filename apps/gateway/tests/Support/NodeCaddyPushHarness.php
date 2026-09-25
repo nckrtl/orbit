@@ -71,6 +71,24 @@ final readonly class NodeCaddyPushHarness
         ];
     }
 
+    /** @return array{exit: int, stdout: string, stderr: string} */
+    public function checkAddresses(NodeCaddyfile $caddyfile, string $present): array
+    {
+        $command = $this->script()->addressCheck($caddyfile);
+        $process = new Process($command->arguments, $this->root, [
+            'PATH' => $this->root.'/bin:'.getenv('PATH'),
+            'HARNESS_ADDRESSES' => $present,
+        ]);
+        $process->setInput($command->input);
+        $process->run();
+
+        return [
+            'exit' => $process->getExitCode() ?? 1,
+            'stdout' => $process->getOutput(),
+            'stderr' => $process->getErrorOutput(),
+        ];
+    }
+
     public function path(string $suffix): string
     {
         return $this->caddyDirectory.'/'.$suffix;
@@ -163,6 +181,13 @@ final readonly class NodeCaddyPushHarness
                 touch "$HARNESS_ROOT/reload-failed"
                 printf 'Job for caddy.service failed.\n' >&2
                 exit 1
+            fi
+            if [ "$HARNESS_FAIL_RELOAD" = always ] && { [ "$1" = reload-or-restart ] || [ "$1" = reload ]; }; then
+                printf 'Job for caddy.service failed.\n' >&2
+                exit 1
+            fi
+            if [ "$1" = is-active ] && [ "${HARNESS_CADDY_INACTIVE:-0}" = 1 ]; then
+                exit 3
             fi
             BASH);
         $this->shim('install', <<<'BASH'

@@ -5,7 +5,8 @@ declare(strict_types=1);
 namespace App\Infrastructure\Caddy;
 
 /**
- * The one Node-local lock every Caddy publisher holds while it snapshots the live fragments and swaps the Caddyfile.
+ * The one Node-local lock that a Node Caddy build holds while it swaps the Caddyfile and reloads, and that
+ * a certificate step holds while it reloads Caddy.
  */
 final readonly class CaddyPublicationLock
 {

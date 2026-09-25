@@ -17,7 +17,7 @@ use App\Models\RouteCustomProxy;
 use Throwable;
 
 /**
- * Reads the live Caddy version as root, because published versions under /etc/caddy/orbit-versions are root:caddy 0750.
+ * Reads the live Caddyfile as root, because published versions under /etc/caddy/orbit-versions are root:caddy 0750.
  */
 final readonly class NativeCustomProxyRouteInspector implements CustomProxyRouteInspector
 {
@@ -112,8 +112,9 @@ final readonly class NativeCustomProxyRouteInspector implements CustomProxyRoute
                 upstream_host=$5
                 upstream_port=$6
                 live=$(readlink -f "$7")
+                # A Node Caddy build keeps every site in the live file; a Node no build replaced yet keeps fragments.
                 fragment_dir=$(dirname "$live")/fragments
-                if grep -Rqs -- "$domain" "$fragment_dir" 2>/dev/null && grep -Rqs -- "$upstream" "$fragment_dir" 2>/dev/null; then
+                if grep -Rqs -- "$domain" "$live" "$fragment_dir" 2>/dev/null && grep -Rqs -- "$upstream" "$live" "$fragment_dir" 2>/dev/null; then
                     printf 'caddy=1\n'
                 else
                     printf 'caddy=0\n'

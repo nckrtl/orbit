@@ -160,7 +160,7 @@ Attaching the Node to a Cluster, detaching it, and changing the Cluster state or
 
 A Cluster TLD suffix still answers names that have no exact record. An exact custom proxy record wins for its domain, including a name under that TLD.
 
-The Executor example is a Node-owned Docker Process on Beast with a loopback publish such as `127.0.0.1:4788:4788`. Creating `executor.orbit` against that Node and Process is the supported replacement for an unmanaged `executor.test` Caddy fragment. [Migrate an unmanaged Executor hostname](/solutions/migrate-unmanaged-executor-hostname) owns that cutover. Orbit does not delete live unmanaged fragments from automation. Under the proposed [Node Caddy build](/reference/caddy-configuration#node-caddy-build) ([ADR 0141](/decisions/0141-build-each-node-caddyfile-on-the-gateway)), the first build on that Node backs up an unmanaged site and stops serving it, so migrate it before that build.
+The Executor example is a Node-owned Docker Process on Beast with a loopback publish such as `127.0.0.1:4788:4788`. Creating `executor.orbit` against that Node and Process is the supported replacement for an unmanaged `executor.test` Caddy fragment. [Migrate an unmanaged Executor hostname](/solutions/migrate-unmanaged-executor-hostname) owns that cutover. The first [Node Caddy build](/reference/caddy-configuration#node-caddy-build) on that Node backs up an unmanaged site and stops serving it, so migrate it before that build.
 
 Doctor inspects each custom proxy Route on its serving Node.
 
@@ -308,6 +308,8 @@ Ingress forwards Orbit-CA HTTPS to the Router over the configured LAN address an
 
 When Ingress shares a Node with the Router, with app-prod, or with both, one composed Caddy service serves the public Route. The composed site does not proxy to its own public listener.
 
+When the Ingress Node runs a target of the public Route, one site on the public listener serves that target directly, with `tls force_automate`, and replaces the target's private site for that host. A Router on another Node still forwards private traffic to that Node. It verifies the site against the Node's system roots, which also hold the Orbit root, so it accepts the public certificate. Until Let's Encrypt issues that certificate, the host does not complete TLS on that Node.
+
 Firewall policy admits public HTTP and HTTPS only on the Ingress Node, and only while that Cluster has at least one active public Route. Router and workload listeners stay private. Direct public workload traffic is denied.
 
 An exact client-local override can send the Route domain to the Router address and then to the workload address without changing public Ingress or DNS state. [Local resolver overrides](/reference/local-resolver-overrides) owns installing that caller-local resolver.
@@ -318,7 +320,7 @@ A stale application HTTP error does not block a valid public edge. The trusted r
 
 ### Publish the public edge
 
-A publication-only update on the same domain keeps the Route ID. The Gateway stages the Ingress Caddy site outside the live import, verifies the private hops, then installs the handler so Caddy can obtain Let's Encrypt for the public hostname. Firewall rules open after at least one public Route is live. The candidate handler stays unreachable until those checks succeed, including when another Route already keeps Ingress ports open. A Let's Encrypt failure stays on `failed_step` and Doctor; converge does not fall back to Orbit CA.
+A publication-only update on the same domain keeps the Route ID. The Gateway verifies the private hops, stores the activated step, and then builds the Ingress Node, so its Caddyfile gains the public site and Caddy can obtain Let's Encrypt for the public hostname. Firewall rules open after at least one public Route is live. The candidate handler stays unreachable until those checks succeed, including when another Route already keeps Ingress ports open. A Let's Encrypt failure stays on `failed_step` and Doctor; converge does not fall back to Orbit CA.
 
 A combined domain and publication change reserves a replacement Route with `publication=public`. The current Route stays authoritative until cutover. Environment synchronization and private infrastructure complete before public exposure. Cutover makes the replacement authoritative in one database transition. Successful cleanup deletes the preview Route and releases its domain.
 

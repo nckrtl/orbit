@@ -14,9 +14,12 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AppDev\AppDevCaddyConfigRenderer;
 use App\Infrastructure\AppDev\AppDevSiteRepository;
 use App\Infrastructure\AppDev\AppDevSshExecutor;
+use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
+use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
 use App\Infrastructure\Caddy\CaddyGlobalOptions;
 use App\Infrastructure\Doctor\NativePublicRouteEdgeInspector;
 use App\Infrastructure\Processes\CommandDeadline;
+use App\Infrastructure\Routes\NativePublicRouteEdgeProjector;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshKeyProvider;
@@ -91,6 +94,58 @@ describe('a separate Ingress', function (): void {
         $this->ssh->ufwStatus = "Status: inactive\n";
 
         expect(public_edge_observe($this))->toBe([true, true, false]);
+    });
+});
+
+describe('an Ingress that runs the workload while the Router is on another Node', function (): void {
+    beforeEach(function (): void {
+        $cluster = Cluster::query()->create(['name' => 'edge', 'tld' => 'edge.test', 'state' => ClusterState::Active]);
+        $this->router = public_edge_node('gateway', '10.44.0.1', null, $cluster, [RoleName::Router]);
+        $this->ingress = public_edge_node('app-prod', '10.44.0.3', null, $cluster, [RoleName::Ingress, RoleName::AppProd]);
+        $this->route = public_edge_route($cluster, $this->ingress);
+    });
+
+    it('builds one public site for the host that serves the local workload', function (): void {
+        $ingress = app(NodeCaddyfileRenderer::class)->render($this->ingress);
+        $domain = $this->route->domain;
+
+        expect($ingress->problems)->toBe([])
+            ->and(substr_count($ingress->content, "{$domain} {"))->toBe(1)
+            ->and($ingress->content)
+            ->toContain("# orbit: ingress route-{$this->route->id}-ingress\n{$domain} {\n    bind 0.0.0.0\n    tls force_automate")
+            ->toContain('php_fastcgi unix//run/php/orbit-app-')
+            ->not->toContain("https://{$domain} {")
+            ->not->toContain('reverse_proxy https://10.44.0.1');
+    });
+
+    it('lets the Router reach the public site through the Node system roots', function (): void {
+        $router = app(NodeCaddyfileRenderer::class)->render($this->router)->content;
+        $block = strstr((string) strstr($router, "# orbit: app-dev route-{$this->route->id}-router"), '# orbit:', true) ?: (string) strstr($router, "# orbit: app-dev route-{$this->route->id}-router");
+
+        expect($block)->toContain('reverse_proxy https://10.44.0.3')
+            ->not->toContain('tls_trusted_ca_certs');
+    });
+
+    it('builds the private workload site again once the Route is private', function (): void {
+        $this->route->update(['publication' => RoutePublication::Private, 'replacement_step' => null]);
+        $ingress = app(NodeCaddyfileRenderer::class)->render($this->ingress)->content;
+
+        expect($ingress)->toContain("https://{$this->route->domain} {")
+            ->not->toContain('tls force_automate');
+    });
+
+    it('builds the Router with the Ingress when the public edge activates', function (): void {
+        $builds = app(NodeCaddyBuilds::class);
+
+        app(NativePublicRouteEdgeProjector::class)->activatePublicHandler($this->route);
+
+        expect($builds->built)->toBe(['app-prod', 'gateway']);
+    });
+
+    it('accepts the published site', function (): void {
+        public_edge_publish_build($this->caddy, $this->ingress);
+
+        expect(public_edge_observe($this))->toBe([true, true, true]);
     });
 });
 
@@ -182,6 +237,32 @@ describe('an Ingress that shares the Router and the workload', function (): void
 
         expect(array_slice($this->ssh->commands[0]->arguments, 0, 3))->toBe(['sudo', 'bash', '-seu']);
     });
+    it('accepts the composed site in the one Caddyfile a Node Caddy build writes', function (): void {
+        public_edge_publish_build($this->caddy, $this->ingress);
+
+        expect(public_edge_observe($this))->toBe([true, true, true])
+            ->and(is_dir("{$this->caddy}/orbit-versions/v2/fragments"))->toBeFalse();
+    });
+
+    it('reports a composed site that no longer serves the Instance in a build', function (): void {
+        public_edge_publish_build($this->caddy, $this->ingress, static fn (string $file): string => preg_replace(
+            '/^(\s*)php_fastcgi .*$/m',
+            '$1php_fastcgi unix//run/php/other.sock {',
+            $file,
+        ) ?? $file);
+
+        expect(public_edge_observe($this)[0])->toBeFalse();
+    });
+
+    it('reports a build whose public site lost certificate automation', function (): void {
+        public_edge_publish_build($this->caddy, $this->ingress, static fn (string $file): string => str_replace(
+            "    tls force_automate\n",
+            '',
+            $file,
+        ));
+
+        expect(public_edge_observe($this))->toBe([true, false, true]);
+    });
 });
 
 it('fails closed when the Node publishes no public site for the Route', function (): void {
@@ -250,6 +331,20 @@ function public_edge_publish(string $caddy, Node $ingress, ?Closure $edit = null
         ($globalOptions ?? CaddyGlobalOptions::render())."import {$caddy}/orbit-versions/v1/fragments/*.caddy\n",
     );
     file_put_contents("{$caddy}/orbit-versions/v1/fragments/app-dev.caddy", $edit instanceof Closure ? $edit($sites) : $sites);
+}
+
+/**
+ * Publishes the Ingress Node's whole render as the one versioned Caddyfile a Node Caddy build writes.
+ *
+ * @param  (Closure(string): string)|null  $edit
+ */
+function public_edge_publish_build(string $caddy, Node $ingress, ?Closure $edit = null): void
+{
+    $file = app(NodeCaddyfileRenderer::class)->render($ingress)->content;
+    File::ensureDirectoryExists("{$caddy}/orbit-versions/v2");
+    file_put_contents("{$caddy}/orbit-versions/v2/Caddyfile", $edit instanceof Closure ? $edit($file) : $file);
+    unlink("{$caddy}/Caddyfile");
+    symlink("{$caddy}/orbit-versions/v2/Caddyfile", "{$caddy}/Caddyfile");
 }
 
 function public_edge_route(Cluster $cluster, Node $workload): Route

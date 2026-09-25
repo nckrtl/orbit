@@ -227,8 +227,9 @@ final readonly class NativePrivateRouteProjectionInspector implements PrivateRou
                 environment=$5
                 expected_dns=$6
                 live=$(readlink -f /etc/caddy/Caddyfile)
+                # A Node Caddy build keeps every site in the live file; a Node no build replaced yet keeps fragments.
                 fragment_dir=$(dirname "$live")/fragments
-                if grep -Rqs -- "$domain" "$fragment_dir" 2>/dev/null; then
+                if grep -Rqs -- "$domain" "$live" "$fragment_dir" 2>/dev/null; then
                     printf 'caddy=1\n'
                 else
                     printf 'caddy=0\n'
@@ -305,12 +306,13 @@ final readonly class NativePrivateRouteProjectionInspector implements PrivateRou
                 upstreams=$2
                 certificates=$3
                 live=$(readlink -f /etc/caddy/Caddyfile)
+                # A Node Caddy build keeps every site in the live file; a Node no build replaced yet keeps fragments.
                 fragment_dir=$(dirname "$live")/fragments
                 pool=1
                 if [ "$upstreams" != '' ]; then
                     while IFS= read -r upstream; do
                         [ "$upstream" = '' ] && continue
-                        if ! grep -Rqs -- "$upstream" "$fragment_dir" 2>/dev/null; then
+                        if ! grep -Rqs -- "$upstream" "$live" "$fragment_dir" 2>/dev/null; then
                             pool=0
                             break
                         fi
@@ -318,7 +320,7 @@ final readonly class NativePrivateRouteProjectionInspector implements PrivateRou
                 $upstreams
                 EOF
                 fi
-                if grep -Rqs -- "$domain" "$fragment_dir" 2>/dev/null && [ "$pool" = 1 ]; then
+                if grep -Rqs -- "$domain" "$live" "$fragment_dir" 2>/dev/null && [ "$pool" = 1 ]; then
                     printf 'caddy=1\n'
                     printf 'pool=1\n'
                 else

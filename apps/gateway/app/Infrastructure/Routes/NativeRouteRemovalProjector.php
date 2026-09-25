@@ -48,7 +48,7 @@ final readonly class NativeRouteRemovalProjector implements RouteRemovalProjecto
     public function cleanupCaddy(Route $route): void
     {
         foreach ($this->projectionNodes($route) as $node) {
-            $this->caddy->converge($node);
+            $this->caddy->build($node);
         }
     }
 

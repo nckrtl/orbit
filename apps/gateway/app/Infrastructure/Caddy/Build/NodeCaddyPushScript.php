@@ -13,7 +13,8 @@ use InvalidArgumentException;
  * The one root script that pushes a rendered Node Caddyfile (ADR 0141). It takes the Node lock,
  * checks the Caddy release floor, writes and validates a new version, backs up a live Caddyfile
  * that no build wrote, swaps the live symlink, reloads Caddy, restores the previous target when
- * the reload fails, and keeps the live version plus the nine newest others.
+ * the reload fails, and keeps the live version plus the nine newest others. It removes the `staged`
+ * directory that the retired public Ingress staging step wrote.
  *
  * It reports its last stage on stderr as `orbit-caddy-build-stage=<stage>` and its result on
  * stdout as `orbit-caddy-build-result=<published|unchanged>`.
@@ -68,9 +69,46 @@ final readonly class NodeCaddyPushScript
         );
     }
 
+    /**
+     * Only the push script's `addresses` stage: it checks that every specific address the render binds
+     * exists on the Node and changes nothing, so a caller can refuse before it changes anything else.
+     */
+    public function addressCheck(NodeCaddyfile $caddyfile): RemoteCommand
+    {
+        foreach ($caddyfile->listenAddresses as $address) {
+            if (filter_var($address, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false) {
+                throw new InvalidArgumentException('A Node Caddyfile listen address must be an IPv4 address.');
+            }
+        }
+
+        return new RemoteCommand(
+            arguments: ['bash', '-seu', '--', implode(' ', $caddyfile->listenAddresses)],
+            input: <<<'BASH'
+                listen_addresses=$1
+                trap 'status=$?; if [ "$status" != 0 ]; then printf "orbit-caddy-build-stage=addresses\n" >&2; fi; exit "$status"' EXIT
+                BASH.PHP_EOL.self::addressStage(),
+            timeout: 30.0,
+        );
+    }
+
+    /** Refuses, at stage `addresses`, a specific listen address that is not on the Node. */
+    private static function addressStage(): string
+    {
+        return <<<'BASH'
+            present=$(ip -o -4 addr show 2>/dev/null | awk '{ split($4, parts, "/"); print parts[1] }' || true)
+            for address in $listen_addresses; do
+                if ! printf '%s\n' "$present" | grep -Fxq -- "$address"; then
+                    printf 'The build binds %s, which is not an address on this Node. Correct the stored WireGuard or LAN address of the Node, then build again.\n' "$address" >&2
+                    exit 1
+                fi
+            done
+            BASH;
+    }
+
     private function script(string $encoded): string
     {
         $lock = CaddyPublicationLock::script();
+        $addresses = self::addressStage();
 
         return <<<BASH
             version=\$1
@@ -147,13 +185,7 @@ final readonly class NodeCaddyPushScript
             fi
 
             stage=addresses
-            present=\$(ip -o -4 addr show 2>/dev/null | awk '{ split(\$4, parts, "/"); print parts[1] }' || true)
-            for address in \$listen_addresses; do
-                if ! printf '%s\\n' "\$present" | grep -Fxq -- "\$address"; then
-                    printf 'The build binds %s, which is not an address on this Node. Correct the stored WireGuard or LAN address of the Node, then build again.\\n' "\$address" >&2
-                    exit 1
-                fi
-            done
+            {$addresses}
 
             stage=unchanged
             live_main=
@@ -251,8 +283,14 @@ final readonly class NodeCaddyPushScript
                 else
                     rm -f -- "\$live"
                 fi
+                # A failed reload leaves Caddy on the configuration it already runs. Caddy is asked to load
+                # the restored file again, and started only when it is not running, never restarted.
                 if [ "\$had_live" = 1 ]; then
-                    systemctl reload-or-restart "\$caddy_service" || systemctl restart "\$caddy_service" || true
+                    if systemctl is-active --quiet "\$caddy_service"; then
+                        systemctl reload "\$caddy_service" || true
+                    else
+                        systemctl start "\$caddy_service" || true
+                    fi
                 fi
                 journalctl -u "\$caddy_service" --since "@\$reload_started" --no-pager -o cat 2>/dev/null | grep '^Error:' | head -n 1 >&2 || true
                 printf 'Caddy did not reload the new version; the previous configuration is live again.\\n' >&2
@@ -262,12 +300,14 @@ final readonly class NodeCaddyPushScript
             rm -rf -- "\$replaced"
 
             stage=prune
+            # The retired public Ingress staging step left files here that nothing imports.
+            rm -rf -- "\$versions/staged" || printf 'Could not remove the old staged directory.\\n' >&2
             kept=0
             for directory in \$(ls -1dt -- "\$versions"/*/ 2>/dev/null); do
                 directory=\${directory%/}
                 name=\$(basename -- "\$directory")
                 case "\$name" in
-                    staged|.*) continue ;;
+                    .*) continue ;;
                 esac
                 if [ "\$directory" = "\$published" ] || [ ! -f "\$directory/Caddyfile" ]; then
                     continue

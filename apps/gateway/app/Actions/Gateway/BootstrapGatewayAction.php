@@ -92,7 +92,7 @@ final readonly class BootstrapGatewayAction
             $node->update(['wireguard_public_key' => $wireGuardPublicKey]);
             $this->ensureCertificateAuthority();
             $this->vpn->converge($node, $data);
-            $this->web->converge("{$data->name}.{$data->domain}", $data->wireguardIp);
+            $this->web->converge($node, "{$data->name}.{$data->domain}", $data->wireguardIp);
             $this->dns->converge($node);
         } catch (RuntimeConvergenceException $exception) {
             $failure = new NodeProvisioningException(

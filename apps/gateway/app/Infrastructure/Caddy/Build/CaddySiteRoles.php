@@ -11,8 +11,8 @@ use Illuminate\Database\Eloquent\Builder;
 
 /**
  * Decides which role rows serve their sites. A role serves while it converges or is active, and
- * after a failed reconvergence, because its sites were live before that attempt. A role that is
- * being removed, or that failed before it ever became active, serves nothing.
+ * after a failed convergence, because its sites may already be live. A role that is being removed,
+ * or whose removal failed, serves nothing.
  */
 final readonly class CaddySiteRoles
 {

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Nodes;
 
 use App\Data\Nodes\NodeData;
+use App\Domain\AppDev\PrivateDnsAnswerExpiry;
 use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
@@ -38,6 +39,7 @@ final readonly class RelocateNodeRoleAction
         private RoleBaselineConverger $baselines,
         private SettingRepository $settings,
         private ?RecordEventBroadcaster $broadcaster = null,
+        private PrivateDnsAnswerExpiry $dnsAnswers = new PrivateDnsAnswerExpiry,
     ) {}
 
     public function execute(Node $target, RoleName $role, bool $force = false, ?Node $from = null): NodeRole
@@ -183,6 +185,12 @@ final readonly class RelocateNodeRoleAction
 
     private function retractSource(Node $source, RoleName $role): void
     {
+        if ($role === RoleName::WebSocket) {
+            // The source still serves `reverb.orbit` until clients that resolved it before the target's
+            // DNS publication can have resolved it again, as a Route move waits before it withdraws.
+            $this->dnsAnswers->wait();
+        }
+
         if ($role === RoleName::Gateway) {
             $this->firewall->remove($source, $role, $source->user);
             $this->forgetOwnedSettings($source, $role);

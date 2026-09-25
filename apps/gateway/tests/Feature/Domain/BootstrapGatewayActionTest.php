@@ -37,7 +37,7 @@ it('initializes the portable gateway authority idempotently', function (): void 
         /** @var list<array{hostname: string, address: string}> */
         public array $calls = [];
 
-        public function converge(string $domain, string $wireguardIp): void
+        public function converge(Node $node, string $domain, string $wireguardIp): void
         {
             $this->calls[] = ['domain' => $domain, 'address' => $wireguardIp];
         }
@@ -156,7 +156,7 @@ it('activates private DNS after the VPN backend so the first peer can resolve or
             private array &$events,
         ) {}
 
-        public function converge(string $domain, string $wireguardIp): void
+        public function converge(Node $node, string $domain, string $wireguardIp): void
         {
             $this->events[] = 'web';
         }
@@ -329,7 +329,7 @@ it('fails closed without mutating a partial root CA containing only :filename', 
         vpn: gateway_vpn_noop(),
         web: new class implements GatewayWebConverger
         {
-            public function converge(string $domain, string $wireguardIp): void
+            public function converge(Node $node, string $domain, string $wireguardIp): void
             {
                 throw new LogicException('Web convergence must not run after CA generation fails.');
             }
@@ -420,7 +420,7 @@ it('rejects a mismatched complete root CA pair without replacing it', function (
         vpn: gateway_vpn_noop(),
         web: new class implements GatewayWebConverger
         {
-            public function converge(string $domain, string $wireguardIp): void
+            public function converge(Node $node, string $domain, string $wireguardIp): void
             {
                 throw new LogicException('Web convergence must not run for an invalid CA pair.');
             }
@@ -491,7 +491,7 @@ it('rejects an existing root CA that is not RSA 4096', function (): void {
         vpn: gateway_vpn_noop(),
         web: new class implements GatewayWebConverger
         {
-            public function converge(string $domain, string $wireguardIp): void {}
+            public function converge(Node $node, string $domain, string $wireguardIp): void {}
         },
         selfAccess: gateway_self_access_noop(),
         dns: gateway_dns_noop(),
@@ -539,7 +539,7 @@ it('rejects an invalid static identity before persistence or host side effects',
         vpn: gateway_vpn_noop(),
         web: new class implements GatewayWebConverger
         {
-            public function converge(string $domain, string $wireguardIp): void
+            public function converge(Node $node, string $domain, string $wireguardIp): void
             {
                 throw new LogicException('Web convergence must not run.');
             }
@@ -622,7 +622,7 @@ it('records provisioning and failed host convergence state and activates an idem
         /** @var list<array{node: LifecycleStatus, roles: array<string, array{status: LifecycleStatus, failed_step: ?string, error_code: ?string}>}> */
         public array $observedStates = [];
 
-        public function converge(string $domain, string $wireguardIp): void
+        public function converge(Node $node, string $domain, string $wireguardIp): void
         {
             $node = Node::query()->where('name', 'gateway')->firstOrFail();
             $this->observedStates[] = [
@@ -783,7 +783,7 @@ it('records stable gateway failure state when bootstrap throws an unexpected exc
         vpn: gateway_vpn_noop(),
         web: new class implements GatewayWebConverger
         {
-            public function converge(string $domain, string $wireguardIp): void
+            public function converge(Node $node, string $domain, string $wireguardIp): void
             {
                 throw new RuntimeException('Unexpected gateway web failure.');
             }
@@ -879,7 +879,7 @@ it('fails only bootstrap roles when VPN convergence fails', function (): void {
     {
         public int $calls = 0;
 
-        public function converge(string $domain, string $wireguardIp): void
+        public function converge(Node $node, string $domain, string $wireguardIp): void
         {
             $this->calls++;
         }
@@ -968,7 +968,7 @@ it('fails the assigned bootstrap role when the second role assignment fails', fu
     {
         public int $calls = 0;
 
-        public function converge(string $domain, string $wireguardIp): void
+        public function converge(Node $node, string $domain, string $wireguardIp): void
         {
             $this->calls++;
         }
@@ -1074,7 +1074,7 @@ it('rejects unsupported local gateway operating systems before any persistence o
     {
         public int $calls = 0;
 
-        public function converge(string $domain, string $wireguardIp): void
+        public function converge(Node $node, string $domain, string $wireguardIp): void
         {
             $this->calls++;
         }
@@ -1145,7 +1145,7 @@ function bootstrap_gateway_action(
         vpn: $vpn ?? gateway_vpn_noop(),
         web: $web ?? new class implements GatewayWebConverger
         {
-            public function converge(string $domain, string $wireguardIp): void {}
+            public function converge(Node $node, string $domain, string $wireguardIp): void {}
         },
         selfAccess: $selfAccess ?? gateway_self_access_noop(),
         dns: $dns ?? gateway_dns_noop(),

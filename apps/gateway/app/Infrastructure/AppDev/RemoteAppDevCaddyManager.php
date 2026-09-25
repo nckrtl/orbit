@@ -7,83 +7,64 @@ namespace App\Infrastructure\AppDev;
 use App\Domain\AppDev\AppDevCaddyManager;
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\AppDev\RuntimeConvergenceException;
-use App\Infrastructure\Caddy\Build\NodeCaddyListenerResolver;
-use App\Infrastructure\Caddy\CaddyFragmentListeners;
+use App\Infrastructure\Caddy\Build\NodeCaddyBuildException;
+use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
+use App\Infrastructure\Processes\SystemdVpnOrderingDropIn;
+use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Node;
 
+/**
+ * Publishes a Node's Route sites by requesting a Node Caddy build (ADR 0141). Every caller commits the
+ * Route state it changed first; the build renders every site on the Node from that state.
+ */
 final readonly class RemoteAppDevCaddyManager implements AppDevCaddyManager
 {
     public function __construct(
-        private AppDevSiteRepository $sites,
-        private AppDevCaddyConfigRenderer $renderer,
+        private NodeCaddyBuilds $builds,
         private AppDevSshExecutor $ssh,
-        private AppDevCaddyPublisher $publisher = new AppDevCaddyPublisher,
         private ?DevelopmentProjectionOperationLock $projection = null,
-        private ?NodeCaddyListenerResolver $listeners = null,
+        private SystemdVpnOrderingDropIn $vpnOrdering = new SystemdVpnOrderingDropIn,
     ) {}
 
+    /** Role convergence: orders Caddy after the WireGuard interface, then builds the Node. */
     public function converge(Node $node): void
     {
-        $this->owner()->run(fn () => $this->convergeSites($node));
-    }
-
-    /** The Node's `app-dev.caddy` fragment, rendered from stored state with the Node's listeners. */
-    public function render(Node $node): string
-    {
-        return $this->fragment($node)['configuration'];
-    }
-
-    /** @return array{configuration: string, listeners: CaddyFragmentListeners} */
-    private function fragment(Node $node): array
-    {
-        $sites = $this->sites->forNode($node);
-        $listeners = ($this->listeners ?? app(NodeCaddyListenerResolver::class))->fragments($node, $sites);
-
-        return [
-            'configuration' => $this->renderer->render($sites, $listeners->routeBind()),
-            'listeners' => $listeners,
-        ];
-    }
-
-    private function convergeSites(Node $node): void
-    {
-        ['configuration' => $configuration, 'listeners' => $listeners] = $this->fragment($node);
-        $version = bin2hex(random_bytes(8));
-
-        try {
+        $this->owner()->run(function () use ($node): void {
             $this->ssh->execute(
                 $node,
-                $this->publisher->command($configuration, $version, $listeners),
-                step: 'caddy-config',
+                new RemoteCommand($this->vpnOrdering->arguments('caddy'), $this->vpnOrdering->script()),
+                step: 'caddy-service-ordering',
                 errorCode: 'app-dev.caddy_config_failed',
             );
-        } catch (RuntimeConvergenceException $exception) {
-            $refusal = CaddyFragmentListeners::refusal($exception->result->stderr ?? '');
-
-            throw $refusal === null ? $exception : new RuntimeConvergenceException(
-                step: $exception->step,
-                errorCode: $exception->errorCode,
-                message: $refusal,
-                previous: $exception,
-                result: $exception->result,
-            );
-        }
-        $this->ssh->execute(
-            $node,
-            $this->publisher->serviceOrderingCommand(),
-            step: 'caddy-service-ordering',
-            errorCode: 'app-dev.caddy_config_failed',
-        );
+            $this->buildOwned($node);
+        });
     }
 
+    /** Builds the Node after a Route change that the caller already committed. */
+    public function build(Node $node): void
+    {
+        $this->owner()->run(fn () => $this->buildOwned($node));
+    }
+
+    /** Role removal: the build renders the Route sites that stored state still places on the Node. */
     public function remove(Node $node): void
     {
-        $this->owner()->run(fn () => $this->ssh->execute(
-            $node,
-            $this->publisher->removeCommand(bin2hex(random_bytes(8))),
-            step: 'caddy-config',
-            errorCode: 'app-dev.caddy_config_failed',
-        ));
+        $this->build($node);
+    }
+
+    private function buildOwned(Node $node): void
+    {
+        try {
+            $this->builds->build($node);
+        } catch (NodeCaddyBuildException $exception) {
+            throw new RuntimeConvergenceException(
+                step: 'caddy-config',
+                errorCode: 'app-dev.caddy_config_failed',
+                message: $exception->getMessage(),
+                previous: $exception,
+                result: $exception->result(),
+            );
+        }
     }
 
     private function owner(): DevelopmentProjectionOperationLock

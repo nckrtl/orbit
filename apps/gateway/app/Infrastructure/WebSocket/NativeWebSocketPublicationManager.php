@@ -9,29 +9,30 @@ use App\Domain\Certificates\GatewayCertificateIssuer;
 use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\WebSocket\WebSocketHostname;
 use App\Domain\WebSocket\WebSocketPublicationManager;
-use App\Infrastructure\Caddy\Build\NodeCaddyListenerResolver;
-use App\Infrastructure\Caddy\CaddyFragmentListeners;
+use App\Infrastructure\Caddy\Build\CaddySiteCertificates;
+use App\Infrastructure\Caddy\Build\NodeCaddyBuildException;
+use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
+use Closure;
 
 final readonly class NativeWebSocketPublicationManager implements WebSocketPublicationManager
 {
     public function __construct(
         private GatewayCertificateIssuer $certificates,
         private WebSocketCertificatePublisher $certificatePublisher,
-        private WebSocketCaddyPublisher $caddy,
-        private WebSocketCaddySiteRenderer $site,
+        private NodeCaddyBuilds $builds,
         private PrivateDnsManager $dns,
         private SshExecutor $ssh,
         private SshKeyProvider $keys,
         private KnownHostsStore $knownHosts,
-        private int $port = 0,
-        private ?NodeCaddyListenerResolver $listeners = null,
+        private ?CaddySiteCertificates $siteCertificates = null,
     ) {}
 
+    /** Publishes the certificate first, because validation loads every certificate the build names. */
     public function converge(Node $node): void
     {
         $address = $this->address($node);
@@ -54,23 +55,9 @@ final readonly class NativeWebSocketPublicationManager implements WebSocketPubli
             );
         }
 
-        $configuration = $this->site->render($this->resolvedPort());
-        $caddyResult = $this->ssh->execute(
-            $this->connection($node, $address),
-            $this->caddy->command($configuration, (string) $this->resolvedPort(), $this->listeners($node)),
-        );
+        $this->certificateRecords()->record($node->id, CaddySiteCertificates::Websocket);
 
-        if (! $caddyResult->succeeded()) {
-            throw new NodeRoleOperationException(
-                'websocket-caddy',
-                'node_role.convergence_failed',
-                'websocket.caddy_publication_failed',
-                CaddyFragmentListeners::refusal($caddyResult->stderr)
-                    ?? "WebSocket Caddy publication failed on node [{$node->name}].",
-                $caddyResult,
-            );
-        }
-
+        $this->build($node, fn () => $this->builds->build($node));
         $this->dns->converge($node);
     }
 
@@ -80,40 +67,50 @@ final readonly class NativeWebSocketPublicationManager implements WebSocketPubli
      */
     public function checkListenAddresses(Node $node): void
     {
-        $result = $this->ssh->execute(
-            $this->connection($node, $this->address($node)),
-            $this->listeners($node)->preflight(),
-        );
-
-        if (! $result->succeeded()) {
-            throw new NodeRoleOperationException(
-                'websocket-caddy',
-                'node_role.convergence_failed',
-                'websocket.caddy_publication_failed',
-                CaddyFragmentListeners::refusal($result->stderr)
-                    ?? "WebSocket listen address check failed on node [{$node->name}].",
-                $result,
-            );
-        }
+        $this->address($node);
+        $this->build($node, fn () => $this->builds->checkListenAddresses($node));
     }
 
+    /** The role is already `removing` or has moved, so the build withdraws the site before the certificate goes. */
     public function remove(Node $node): void
     {
         $address = $this->address($node);
 
-        $this->ssh->execute($this->connection($node, $address), $this->caddy->removeCommand());
+        // Forgetting the record first withdraws the site in the build, also on the source of a move,
+        // where the role row already names another Node.
+        $this->certificateRecords()->forget($node->id, CaddySiteCertificates::Websocket);
+        $this->build($node, fn () => $this->builds->build($node));
         $this->ssh->execute($this->connection($node, $address), $this->certificatePublisher->removeCommand());
         $this->dns->converge();
     }
 
+    /** The certificate may stay on the Node, so a later convergence publishes it again before its site renders. */
     public function removeUnreachable(Node $node): void
     {
+        $this->certificateRecords()->forget($node->id, CaddySiteCertificates::Websocket);
         $this->dns->converge();
     }
 
-    private function listeners(Node $node): CaddyFragmentListeners
+    private function certificateRecords(): CaddySiteCertificates
     {
-        return ($this->listeners ?? app(NodeCaddyListenerResolver::class))->fragments($node);
+        return $this->siteCertificates ?? new CaddySiteCertificates;
+    }
+
+    /** @param Closure(): mixed $operation */
+    private function build(Node $node, Closure $operation): void
+    {
+        try {
+            $operation();
+        } catch (NodeCaddyBuildException $exception) {
+            throw new NodeRoleOperationException(
+                'websocket-caddy',
+                'node_role.convergence_failed',
+                'websocket.caddy_publication_failed',
+                $exception->getMessage(),
+                $exception->result(),
+                $exception,
+            );
+        }
     }
 
     private function connection(Node $node, string $address): SshConnection
@@ -157,10 +154,5 @@ final readonly class NativeWebSocketPublicationManager implements WebSocketPubli
         }
 
         return $contents;
-    }
-
-    private function resolvedPort(): int
-    {
-        return $this->port > 0 ? $this->port : (int) config('orbit.websocket.port');
     }
 }

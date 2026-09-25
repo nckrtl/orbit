@@ -32,7 +32,7 @@ final readonly class NativeCustomProxyRouteProjector implements CustomProxyRoute
         // Creation stores the publication record once its certificate exists, before its first build.
         $this->certificates->convergeCustomProxy($route, $node);
         $route->publishSites();
-        $this->caddy->converge($node);
+        $this->caddy->build($node);
         $this->dns->converge();
     }
 }

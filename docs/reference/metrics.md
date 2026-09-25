@@ -59,7 +59,7 @@ orbit metrics:exporter:disable <node>
 
 Both commands answer `metrics.exporter_node_inactive` for a Node that is not active, and `metrics:exporter:disable` answers `node.role_conflict` for the Metrics Node. The enable command answers `metrics.exporter_node_ineligible` (HTTP 409) for a Node outside Gateway-owned SSH management before it saves the preference or starts remote work. A stored enabled preference cannot make an ineligible record an exporter target.
 
-A selected node runs the packaged `prometheus-node-exporter` unit with the Orbit drop-in at `/etc/systemd/system/prometheus-node-exporter.service.d/orbit.conf`. The drop-in binds the exporter to the node's WireGuard address on port 9100, and a UFW rule that the Metrics role owns admits that port only from the Metrics node's WireGuard address.
+A selected node runs the packaged `prometheus-node-exporter` unit with the Orbit drop-in at `/etc/systemd/system/prometheus-node-exporter.service.d/orbit.conf`. The drop-in binds the exporter to the node's WireGuard address on port 9100. At boot the exporter can start before WireGuard adds that address, so the drop-in sets `Restart=always` and `RestartSec=2`, like cAdvisor, and the exporter retries until the address exists. A UFW rule that the Metrics role owns admits that port only from the Metrics node's WireGuard address.
 
 Doctor does not expect an exporter service, exporter firewall rule, or exporter SSH reachability on an exporter-ineligible record. The Node family separately keeps lifecycle, reachability, and identity findings for a Node that the Gateway manages over SSH, even when that Node is not active. A stored fingerprint proves this observation contract in every lifecycle state. For a legacy Node without a stored fingerprint, any remaining managed role preserves the contract until the Gateway deletes that role. Doctor suppresses these Node-family findings only for records that the Gateway does not manage over SSH.
 
@@ -121,7 +121,7 @@ orbit metrics:disable --force
 orbit metrics:disable --force --purge-data
 ```
 
-Metrics reconvergence and removal preserve Caddy global options and unrelated site fragments when withdrawing the Metrics route. Under the proposed [Node Caddy build](/reference/caddy-configuration#node-caddy-build) ([ADR 0141](/decisions/0141-build-each-node-caddyfile-on-the-gateway)), they change the stored Metrics publication and build the Gateway's Node instead.
+Metrics convergence and removal change the stored Metrics role and then [build the Gateway's Node](/reference/caddy-configuration#node-caddy-build), which renders `metrics.orbit` while a Metrics role converges or is active. The build keeps every other site on that Node. Convergence publishes the certificate before the build; removal builds first and removes the certificate only when no Metrics site renders any more. A failed convergence keeps the certificate, because the failed role still renders the site.
 
 Interactive disable shows a preview and asks for confirmation, defaulting to No. Interactive decline, Ctrl-C, or EOF exits with `input.cancelled` and makes no changes. Non-interactive disable without `--force` fails with `metrics.force_required`, and so does `--purge-data` without `--force`, in every mode.
 

@@ -240,6 +240,10 @@ final readonly class AppDevSiteRepository
         $hasPublicIngress = $this->publishesIngress($route)
             && $ingress instanceof Node;
         $ingressSharesRouter = $hasPublicIngress && $router instanceof Node && $ingress->is($router);
+        // Caddy serves one site for a host on the public listener, so an Ingress Node that runs a target
+        // serves the public Route from that target itself, as a Node with Ingress and the Router does.
+        $ingressServesTarget = $hasPublicIngress
+            && $targets->contains(static fn (AppInstance $target): bool => $ingress->is($target->node));
         $localTargets = $router instanceof Node
             ? $targets->filter(static fn (AppInstance $target): bool => $router->is($target->node))
             : collect();
@@ -258,7 +262,7 @@ final readonly class AppDevSiteRepository
         && ! $ingressSharesRouter;
 
         foreach ($targets as $target) {
-            if ($hasPublicIngress && $ingress->is($target->node) && $ingressSharesRouter) {
+            if ($hasPublicIngress && $ingress->is($target->node)) {
                 $sites[] = $this->composedPublicSite($target, $route, $ingress);
 
                 continue;
@@ -287,6 +291,7 @@ final readonly class AppDevSiteRepository
                 $route,
                 $router,
                 domainChange: $stagesRouter,
+                publicUpstream: $ingressServesTarget,
             );
         }
 
@@ -302,7 +307,7 @@ final readonly class AppDevSiteRepository
             $sites[] = $this->unavailableRouteSite($route, $router);
         }
 
-        if ($hasPublicIngress && ! $ingressSharesRouter) {
+        if ($hasPublicIngress && ! $ingressSharesRouter && ! $ingressServesTarget) {
             $sites[] = $this->ingressSite($route, $ingress, $router);
         }
 
@@ -480,12 +485,18 @@ final readonly class AppDevSiteRepository
         );
     }
 
-    /** @param list<AppInstance> $instances */
+    /**
+     * @param  list<AppInstance>  $instances
+     * @param  bool  $publicUpstream  A target answers on the Ingress Node's public site, so the Router trusts
+     *                                the Node's system roots, which hold the Orbit root, and not the Orbit
+     *                                root alone.
+     */
     private function routerSite(
         array $instances,
         Route $route,
         Node $router,
         bool $domainChange = false,
+        bool $publicUpstream = false,
     ): AppDevSite {
         $addresses = collect($instances)
             ->map(static fn (AppInstance $instance): ?string => is_string($instance->node->lan_ip)
@@ -508,6 +519,7 @@ final readonly class AppDevSiteRepository
             domain: $route->domain,
             upstreamAddresses: $addresses,
             certificateScope: $domainChange ? "route-{$route->id}-router-hostname-change" : null,
+            upstreamSystemRoots: $publicUpstream,
         );
     }
 

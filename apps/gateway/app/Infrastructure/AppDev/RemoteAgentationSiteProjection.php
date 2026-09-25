@@ -21,7 +21,7 @@ final readonly class RemoteAgentationSiteProjection implements AgentationSitePro
             $instance->loadMissing(['routes', 'node']);
 
             if ($instance->routes->isNotEmpty()) {
-                $this->caddy->converge($instance->node);
+                $this->caddy->build($instance->node);
             }
         });
     }

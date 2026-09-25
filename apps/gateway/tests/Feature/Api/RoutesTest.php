@@ -15,6 +15,7 @@ use App\Domain\Clusters\ClusterState;
 use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\PublicRouteEdgeProjector;
+use App\Domain\Routes\PublicRouteEligibility;
 use App\Domain\Routes\RouteDomainProjector;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteRemovalProjector;
@@ -791,6 +792,32 @@ it('creates and shows a public Route without a Node public-IP field', function (
         ->toBe('public');
 });
 
+it('rolls a failed public activation back to the verified edge so the Ingress Node builds as before', function (bool $rollbackFails): void {
+    $metrics = Mockery::mock(MetricsFleetReconciler::class);
+    $metrics->shouldReceive('reconcile')->zeroOrMoreTimes();
+    app()->instance(MetricsFleetReconciler::class, $metrics);
+    [, , , , , $route] = route_public_topology($this->orbitApp);
+    $edge = new FakePublicRouteEdgeProjector;
+    $edge->failures = ['public-activated' => 1, 'rollback-public-edge' => $rollbackFails ? 1 : 0];
+    app()->instance(PublicRouteEdgeProjector::class, $edge);
+    app()->instance(DevelopmentProjectionOperationLock::class, new RouteApiProjectionOwner);
+    $renders = [];
+    $edge->onRollback = function (Route $route) use (&$renders): void {
+        $renders[] = new PublicRouteEligibility()->publicEdgeIsLive($route->refresh());
+    };
+
+    $this->patchJson("/api/v1/routes/{$route->id}", ['publication' => 'public'])
+        ->assertStatus(502)
+        ->assertJsonPath('error.code', 'route.test_public-activated');
+
+    $route->refresh();
+
+    expect($edge->calls)->toBe(['ingress-certificate', 'public-edge-verified', 'public-activated', 'rollback-public-edge'])
+        ->and($route->replacement_step)->toBe(RouteReplacementStep::PublicEdgeVerified)
+        ->and($renders)->toBe([false])
+        ->and(new PublicRouteEligibility()->publicEdgeIsLive($route))->toBeFalse();
+})->with(['rollback builds' => [false], 'rollback also fails' => [true]]);
+
 it('publishes an eligible public Route on the same ID and names only the Ingress domain and Router upstream', function (): void {
     $metrics = Mockery::mock(MetricsFleetReconciler::class);
     $metrics->shouldReceive('reconcile')->once();
@@ -809,7 +836,7 @@ it('publishes an eligible public Route on the same ID and names only the Ingress
     expect($updated->json('data'))
         ->not->toHaveKey('public_ip')
         ->and($edge->calls)
-        ->toBe(['ingress-certificate', 'ingress-caddy', 'public-edge-verified', 'public-activated', 'ingress-firewall']);
+        ->toBe(['ingress-certificate', 'public-edge-verified', 'public-activated', 'ingress-firewall']);
 
     $artifact = new IngressSiteRepository()->forRoute($route->refresh());
     expect($artifact->artifact())
@@ -1332,7 +1359,6 @@ function route_api_domain_projector(bool $rollback = false, bool $cleanup = fals
         'prepareFirewallPolicy',
         'prepareRouterCaddy',
         'prepareIngressCertificate',
-        'stageIngressCaddy',
         'prepareIngressFirewall',
         'verifyPublicEdge',
         'activatePublicHandler',

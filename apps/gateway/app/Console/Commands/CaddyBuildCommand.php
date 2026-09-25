@@ -6,6 +6,8 @@ namespace App\Console\Commands;
 
 use App\Infrastructure\Caddy\Build\CaddyfileSiteDiff;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuildException;
+use App\Infrastructure\Caddy\Build\NodeCaddyBuildResult;
+use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
 use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
 use App\Infrastructure\Caddy\Build\NodeCaddyLiveReader;
 use App\Models\Node;
@@ -13,8 +15,8 @@ use Illuminate\Console\Command;
 use Symfony\Component\Console\Output\OutputInterface;
 
 /**
- * Renders a Node's Caddy build without pushing it (ADR 0141). The build is not live yet, so the
- * command only runs with `--dry-run`. `--diff` compares the render with the live file site by site.
+ * Builds a Node's Caddyfile from stored state and pushes it (ADR 0141), for operators and repair.
+ * `--dry-run` renders without pushing, and `--diff` compares that render with the live file site by site.
  */
 final class CaddyBuildCommand extends Command
 {
@@ -22,15 +24,15 @@ final class CaddyBuildCommand extends Command
     protected $signature = 'orbit:caddy-build
         {node : Node name}
         {--dry-run : Render the Caddyfile without pushing it}
-        {--diff : Compare the render with the live Caddyfile site by site}';
+        {--diff : With --dry-run, compare the render with the live Caddyfile site by site}';
 
     #[\Override]
-    protected $description = 'Render a Node Caddy build without pushing it.';
+    protected $description = 'Build a Node Caddyfile from stored state and push it, or render it with --dry-run.';
 
-    public function handle(NodeCaddyfileRenderer $renderer, NodeCaddyLiveReader $live): int
+    public function handle(NodeCaddyfileRenderer $renderer, NodeCaddyLiveReader $live, NodeCaddyBuilds $builds): int
     {
-        if (! $this->option('dry-run')) {
-            $this->error('The Node Caddy build is not live yet. Pass --dry-run to render it without pushing.');
+        if ($this->option('diff') && ! $this->option('dry-run')) {
+            $this->error('--diff only compares a render. Pass --dry-run --diff.');
 
             return self::FAILURE;
         }
@@ -42,6 +44,10 @@ final class CaddyBuildCommand extends Command
             $this->error("Node [{$name}] does not exist.");
 
             return self::FAILURE;
+        }
+
+        if (! $this->option('dry-run')) {
+            return $this->build($builds, $node);
         }
 
         $caddyfile = $renderer->render($node);
@@ -65,6 +71,23 @@ final class CaddyBuildCommand extends Command
         }
 
         return $caddyfile->buildable() ? self::SUCCESS : self::FAILURE;
+    }
+
+    private function build(NodeCaddyBuilds $builds, Node $node): int
+    {
+        try {
+            $result = $builds->build($node);
+        } catch (NodeCaddyBuildException $exception) {
+            $this->error($exception->getMessage());
+
+            return self::FAILURE;
+        }
+
+        $this->line($result === NodeCaddyBuildResult::Published
+            ? "Published a new Caddyfile on Node [{$node->name}] and reloaded Caddy."
+            : "The Caddyfile on Node [{$node->name}] is current. Nothing changed.");
+
+        return self::SUCCESS;
     }
 
     private function diff(string $live, string $build): void

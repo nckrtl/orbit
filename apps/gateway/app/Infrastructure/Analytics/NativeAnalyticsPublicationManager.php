@@ -10,8 +10,9 @@ use App\Domain\Analytics\PlausibleProcess;
 use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\Certificates\GatewayCertificateIssuer;
 use App\Domain\Nodes\NodeRoleOperationException;
-use App\Infrastructure\Caddy\Build\NodeCaddyListenerResolver;
-use App\Infrastructure\Caddy\CaddyFragmentListeners;
+use App\Infrastructure\Caddy\Build\CaddySiteCertificates;
+use App\Infrastructure\Caddy\Build\NodeCaddyBuildException;
+use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
 use App\Infrastructure\Nodes\CaddyPackageSourceProgram;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\RemoteCommand;
@@ -25,13 +26,12 @@ final readonly class NativeAnalyticsPublicationManager implements AnalyticsPubli
     public function __construct(
         private GatewayCertificateIssuer $certificates,
         private AnalyticsCertificatePublisher $certificatePublisher,
-        private AnalyticsCaddyPublisher $caddy,
-        private AnalyticsCaddySiteRenderer $site,
+        private NodeCaddyBuilds $builds,
         private PrivateDnsManager $dns,
         private SshExecutor $ssh,
         private SshKeyProvider $keys,
         private KnownHostsStore $knownHosts,
-        private ?NodeCaddyListenerResolver $listeners = null,
+        private ?CaddySiteCertificates $siteCertificates = null,
     ) {}
 
     public function converge(Node $node): void
@@ -58,23 +58,9 @@ final readonly class NativeAnalyticsPublicationManager implements AnalyticsPubli
             );
         }
 
-        $configuration = $this->site->render($address);
-        $caddyResult = $this->ssh->execute(
-            $this->connection($node, $address),
-            $this->caddy->command($configuration, (string) PlausibleProcess::PORT, $this->listeners($node)),
-        );
+        $this->certificateRecords()->record($node->id, CaddySiteCertificates::Analytics);
 
-        if (! $caddyResult->succeeded()) {
-            throw new NodeRoleOperationException(
-                'analytics-caddy',
-                'node_role.convergence_failed',
-                'analytics.caddy_publication_failed',
-                CaddyFragmentListeners::refusal($caddyResult->stderr)
-                    ?? "Analytics Caddy publication failed on node [{$node->name}].",
-                $caddyResult,
-            );
-        }
-
+        $this->build($node);
         $this->dns->converge($node);
     }
 
@@ -137,23 +123,43 @@ final readonly class NativeAnalyticsPublicationManager implements AnalyticsPubli
         }
     }
 
+    /** The role is already `removing`, so the build withdraws its site before the certificate goes. */
     public function remove(Node $node): void
     {
         $address = $this->address($node);
 
-        $this->ssh->execute($this->connection($node, $address), $this->caddy->removeCommand());
+        $this->build($node);
         $this->ssh->execute($this->connection($node, $address), $this->certificatePublisher->removeCommand());
+        $this->certificateRecords()->forget($node->id, CaddySiteCertificates::Analytics);
         $this->dns->converge();
     }
 
+    /** The certificate may stay on the Node, so a later convergence publishes it again before its site renders. */
     public function removeUnreachable(Node $node): void
     {
+        $this->certificateRecords()->forget($node->id, CaddySiteCertificates::Analytics);
         $this->dns->converge();
     }
 
-    private function listeners(Node $node): CaddyFragmentListeners
+    private function certificateRecords(): CaddySiteCertificates
     {
-        return ($this->listeners ?? app(NodeCaddyListenerResolver::class))->fragments($node);
+        return $this->siteCertificates ?? new CaddySiteCertificates;
+    }
+
+    private function build(Node $node): void
+    {
+        try {
+            $this->builds->build($node);
+        } catch (NodeCaddyBuildException $exception) {
+            throw new NodeRoleOperationException(
+                'analytics-caddy',
+                'node_role.convergence_failed',
+                'analytics.caddy_publication_failed',
+                $exception->getMessage(),
+                $exception->result(),
+                $exception,
+            );
+        }
     }
 
     private function connection(Node $node, string $address): SshConnection

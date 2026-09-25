@@ -8,10 +8,10 @@ use App\Models\Node;
 
 /**
  * Builds and pushes one Node's whole Caddyfile (ADR 0141). A caller commits its state change first
- * and never calls this inside a database transaction. Nothing calls it yet: the role publishers
- * still write their own fragments until the cutover.
+ * and never calls this inside a database transaction, so a concurrent build on the same Node reads
+ * the change and a rollback never leaves a pushed site without a record.
  */
-final readonly class NodeCaddyBuilder
+final readonly class NodeCaddyBuilder implements NodeCaddyBuilds
 {
     public function __construct(
         private NodeCaddyfileRenderer $renderer,
@@ -50,6 +50,25 @@ final readonly class NodeCaddyBuilder
                 ? NodeCaddyBuildResult::Unchanged
                 : NodeCaddyBuildResult::Published;
         });
+    }
+
+    public function checkListenAddresses(Node $node): void
+    {
+        $caddyfile = $this->renderer->render($node);
+
+        if (! $caddyfile->buildable()) {
+            throw new NodeCaddyBuildException($node->name, 'render', implode(' ', $caddyfile->problems));
+        }
+
+        if ($caddyfile->listenAddresses === []) {
+            return;
+        }
+
+        $result = $this->transport->run($node, $this->script->addressCheck($caddyfile));
+
+        if (! $result->succeeded()) {
+            throw new NodeCaddyBuildException($node->name, self::stage($result->stderr), self::message($result->stderr));
+        }
     }
 
     private static function stage(string $stderr): string

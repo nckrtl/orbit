@@ -117,7 +117,7 @@ final readonly class AppDevCaddyConfigRenderer
                 $site->proxyAddresses(),
                 static fn (string $address): bool => ! str_starts_with($address, 'unix/'),
             );
-            $trust = $site->publicListener || $site->preserveForwardedIdentity || $hasRemoteHttps
+            $trust = ! $site->upstreamSystemRoots && ($site->publicListener || $site->preserveForwardedIdentity || $hasRemoteHttps)
                 ? <<<CADDY
 
                         tls_trusted_ca_certs {$root}

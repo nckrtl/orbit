@@ -8,6 +8,7 @@ use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
+use App\Infrastructure\Caddy\CaddyPublicationLock;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\AppInstance;
 use App\Models\Node;
@@ -275,6 +276,7 @@ final readonly class RemoteAppDevCertificateManager
                     $account->user,
                     $account->group,
                     $account->home,
+                    CaddyPublicationLock::script(CaddyPublicationLock::Path).PHP_EOL.'systemctl reload-or-restart caddy'.PHP_EOL,
                 ],
                 input: $certificate.$rootCertificate,
             ),
@@ -294,6 +296,7 @@ final readonly class RemoteAppDevCertificateManager
             managed_user=$6
             managed_group=$7
             managed_home=$8
+            locked_reload=$9
             root="$managed_home/.orbit/certificates/$scope"
             candidate="$root/versions/$version.candidate"
             published="$root/versions/$version"
@@ -333,8 +336,10 @@ final readonly class RemoteAppDevCertificateManager
             caddy_link="$caddy_root/.current-$version"
             sudo ln -s -- "$caddy_published" "$caddy_link"
             sudo mv -fT -- "$caddy_link" "$caddy_root/current"
+            # A live site may already name this certificate, and a build whose render did not change does
+            # not reload, so Caddy reloads here under the Node Caddy lock that builds hold.
             if sudo systemctl is-active --quiet caddy; then
-                sudo systemctl reload-or-restart caddy
+                sudo bash -ceu "$locked_reload"
             fi
             BASH;
     }

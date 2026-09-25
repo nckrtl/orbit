@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\Certificates\GatewayCertificateIssuer;
 use App\Domain\Certificates\GatewayCertificatePaths;
+use App\Domain\ProxyCli\ProxyCliState;
 use App\Domain\Routes\RouteKind;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
@@ -12,11 +13,13 @@ use App\Domain\Routes\RouteRemovalProjector;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Caddy\Build\NodeCaddyBuildException;
+use App\Infrastructure\Caddy\Build\NodeCaddyBuildResult;
+use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
+use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
 use App\Infrastructure\Nodes\CaddyPackageSourceProgram;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\ProxyCli\NativeProxyCliPublicationManager;
-use App\Infrastructure\ProxyCli\ProxyCliCaddyPublisher;
-use App\Infrastructure\ProxyCli\ProxyCliCaddySiteRenderer;
 use App\Infrastructure\ProxyCli\ProxyCliCertificatePublisher;
 use App\Infrastructure\ProxyCli\ProxyCliRouteTakeover;
 use App\Infrastructure\Ssh\HostKey;
@@ -42,32 +45,33 @@ beforeEach(function (): void {
     ]);
     $this->management = proxycli_takeover_route($this->node, 'cli-proxy-api.orbit', 'http://127.0.0.1:8317');
     $this->collector = proxycli_takeover_route($this->node, 'collector.cli-proxy-api.orbit', 'http://127.0.0.1:8787');
+    app(ProxyCliState::class)->enable($this->node->id, 'cache', 'http://127.0.0.1:8317', 'management', 'read', 'control');
 });
 
-it('withdraws the Route site in the collector Caddy reload, then removes the Route', function (): void {
+it('swaps the Route site for the collector site in one Node Caddy build, then removes the Route', function (): void {
     $events = [];
     $manager = proxycli_takeover_manager($events);
 
     $manager->converge($this->node, takeover: $this->collector);
 
-    $caddy = collect($events)->where('event', 'ssh:caddy')->values();
+    $builds = collect($events)->where('event', 'build')->values();
 
     expect(collect($events)->pluck('event')->all())
-        ->toBe(['ssh:caddy-source', 'certificate:issue', 'ssh:certificate', 'ssh:caddy', 'dns:converge'])
-        ->and($caddy)->toHaveCount(1)
-        ->and($caddy[0]['replaced'])->toBe('app-dev.caddy')
-        ->and($caddy[0]['app_dev'])->toContain('cli-proxy-api.orbit')
-        ->not->toContain('collector.cli-proxy-api.orbit')
-        ->and($caddy[0]['collector_route'])->toBe(['status' => RouteStatus::Retiring, 'sites_published' => false])
+        ->toBe(['ssh:caddy-source', 'certificate:issue', 'ssh:certificate', 'build', 'dns:converge'])
+        ->and($builds)->toHaveCount(1)
+        ->and($builds[0]['caddyfile'])->toContain('# orbit: proxycli collector.cli-proxy-api.orbit')
+        ->toContain('https://cli-proxy-api.orbit {')
+        ->not->toContain('https://collector.cli-proxy-api.orbit {')
+        ->and($builds[0]['collector_route'])->toBe(['status' => RouteStatus::Retiring, 'sites_published' => false])
         ->and($this->removal->events)->toBe(['dns', 'caddy', 'certificates', 'firewall'])
         ->and($this->removal->routeIds)->each->toBe($this->collector->id)
         ->and(Route::query()->whereKey($this->collector->id)->exists())->toBeFalse()
         ->and(Route::query()->whereKey($this->management->id)->exists())->toBeTrue();
 });
 
-it('restores the Route and keeps it when the Caddy reload fails', function (): void {
+it('restores the Route and keeps it when the build fails', function (): void {
     $events = [];
-    $manager = proxycli_takeover_manager($events, failCaddy: true);
+    $manager = proxycli_takeover_manager($events, failBuild: true);
 
     expect(fn () => $manager->converge($this->node, takeover: $this->collector))
         ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('proxycli.caddy_publication_failed'));
@@ -75,7 +79,7 @@ it('restores the Route and keeps it when the Caddy reload fails', function (): v
     $route = $this->collector->refresh();
 
     expect(collect($events)->pluck('event')->all())
-        ->toBe(['ssh:caddy-source', 'certificate:issue', 'ssh:certificate', 'ssh:caddy'])
+        ->toBe(['ssh:caddy-source', 'certificate:issue', 'ssh:certificate', 'build'])
         ->and($route->status)->toBe(RouteStatus::Active)
         ->and($route->sites_published)->toBeTrue()
         ->and($this->removal->events)->toBe([]);
@@ -89,22 +93,22 @@ it('refuses a Route that stopped matching before the takeover and changes nothin
     expect(fn () => $manager->converge($this->node, takeover: $this->collector))
         ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('proxycli.hostname_taken'));
 
-    expect(collect($events)->pluck('event')->all())->not->toContain('ssh:caddy')
+    expect(collect($events)->pluck('event')->all())->not->toContain('build')
         ->and($this->collector->refresh()->status)->toBe(RouteStatus::Active)
         ->and($this->removal->events)->toBe([]);
 });
 
-it('leaves the Route fragment to its own publisher when no Route holds the name', function (): void {
+it('builds the Node once without a takeover when no Route holds the name', function (): void {
     $events = [];
     $manager = proxycli_takeover_manager($events);
     $this->collector->delete();
 
     $manager->converge($this->node);
 
-    $caddy = collect($events)->where('event', 'ssh:caddy')->values();
+    $builds = collect($events)->where('event', 'build')->values();
 
-    expect($caddy)->toHaveCount(1)
-        ->and($caddy[0]['replaced'])->toBe('')
+    expect($builds)->toHaveCount(1)
+        ->and($builds[0]['caddyfile'])->toContain('# orbit: proxycli collector.cli-proxy-api.orbit')
         ->and($this->removal->events)->toBe([]);
 });
 
@@ -127,7 +131,7 @@ function proxycli_takeover_route(Node $node, string $domain, string $upstream): 
 /**
  * @param  list<array<string, mixed>>  $events
  */
-function proxycli_takeover_manager(array &$events, bool $failCaddy = false): NativeProxyCliPublicationManager
+function proxycli_takeover_manager(array &$events, bool $failBuild = false): NativeProxyCliPublicationManager
 {
     $certificateDirectory = sys_get_temp_dir().'/orbit-proxycli-takeover-'.bin2hex(random_bytes(4));
     mkdir($certificateDirectory);
@@ -150,8 +154,32 @@ function proxycli_takeover_manager(array &$events, bool $failCaddy = false): Nat
             }
         },
         certificatePublisher: new ProxyCliCertificatePublisher,
-        caddy: new ProxyCliCaddyPublisher,
-        site: new ProxyCliCaddySiteRenderer,
+        builds: new class($events, $failBuild) implements NodeCaddyBuilds
+        {
+            public function __construct(private array &$events, private bool $fail) {}
+
+            public function build(Node $node): NodeCaddyBuildResult
+            {
+                $route = Route::query()->where('domain', 'collector.cli-proxy-api.orbit')->first();
+                $caddyfile = app(NodeCaddyfileRenderer::class)->render($node);
+                $this->events[] = [
+                    'event' => 'build',
+                    'caddyfile' => $caddyfile->content,
+                    'problems' => $caddyfile->problems,
+                    'collector_route' => $route instanceof Route
+                        ? ['status' => $route->status, 'sites_published' => $route->sites_published]
+                        : null,
+                ];
+
+                if ($this->fail || ! $caddyfile->buildable()) {
+                    throw new NodeCaddyBuildException($node->name, 'validate', implode(' ', $caddyfile->problems) ?: 'Error: test failure');
+                }
+
+                return NodeCaddyBuildResult::Published;
+            }
+
+            public function checkListenAddresses(Node $node): void {}
+        },
         dns: new class($events) implements PrivateDnsManager
         {
             public function __construct(private array &$events) {}
@@ -161,9 +189,9 @@ function proxycli_takeover_manager(array &$events, bool $failCaddy = false): Nat
                 $this->events[] = ['event' => 'dns:converge'];
             }
         },
-        ssh: new class($events, $failCaddy) implements SshExecutor
+        ssh: new class($events) implements SshExecutor
         {
-            public function __construct(private array &$events, private bool $failCaddy) {}
+            public function __construct(private array &$events) {}
 
             public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
             {
@@ -173,25 +201,9 @@ function proxycli_takeover_manager(array &$events, bool $failCaddy = false): Nat
                     return new CommandResult(0, '', '', 1, false);
                 }
 
-                if ($command->protectedInput !== null) {
-                    $this->events[] = ['event' => 'ssh:certificate'];
+                $this->events[] = ['event' => $command->protectedInput !== null ? 'ssh:certificate' : 'ssh:other'];
 
-                    return new CommandResult(0, '', '', 1, false);
-                }
-
-                $input = (string) $command->input;
-                preg_match('#printf \'%s\' \'([A-Za-z0-9+/=]*)\' \| base64 --decode > "\$candidate/fragments/\$replaced_fragment"#', $input, $replacement);
-                $route = Route::query()->where('domain', 'collector.cli-proxy-api.orbit')->first();
-                $this->events[] = [
-                    'event' => 'ssh:caddy',
-                    'replaced' => $command->arguments[array_key_last($command->arguments)],
-                    'app_dev' => base64_decode($replacement[1] ?? '', true),
-                    'collector_route' => $route instanceof Route
-                        ? ['status' => $route->status, 'sites_published' => $route->sites_published]
-                        : null,
-                ];
-
-                return new CommandResult($this->failCaddy ? 1 : 0, '', '', 1, false);
+                return new CommandResult(0, '', '', 1, false);
             }
         },
         keys: new class implements SshKeyProvider

@@ -39,7 +39,7 @@ final readonly class ConvergeGatewayWebAction
             );
         }
 
-        $this->web->converge("{$node->name}.{$this->vpnSettings->domain()}", $node->wireguard_ip);
+        $this->web->converge($node, "{$node->name}.{$this->vpnSettings->domain()}", $node->wireguard_ip);
 
         return $node;
     }

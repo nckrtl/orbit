@@ -27,7 +27,7 @@ final readonly class NativeAnalyticsTrackingRouteProjector implements AnalyticsT
         // Creation stores the publication record once its certificate exists, before its first build.
         $this->certificates->convergeRouteRouter($route, $router);
         $route->publishSites();
-        $this->caddy->converge($router);
+        $this->caddy->build($router);
         $this->dns->converge();
     }
 
@@ -38,7 +38,7 @@ final readonly class NativeAnalyticsTrackingRouteProjector implements AnalyticsT
 
     public function buildHost(Route $placement): void
     {
-        $this->caddy->converge($this->sites->routerNode($placement));
+        $this->caddy->build($this->sites->routerNode($placement));
     }
 
     public function publishDns(): void
@@ -49,7 +49,7 @@ final readonly class NativeAnalyticsTrackingRouteProjector implements AnalyticsT
     public function withdrawHost(Route $retired, Route $current): void
     {
         $host = $this->sites->routerNode($retired);
-        $this->caddy->converge($host);
+        $this->caddy->build($host);
 
         if (! $host->is($this->sites->routerNode($current))) {
             $this->certificates->removeRouteRouter($retired, $host);

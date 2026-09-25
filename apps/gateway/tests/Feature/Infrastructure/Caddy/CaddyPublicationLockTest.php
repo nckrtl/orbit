@@ -2,85 +2,92 @@
 
 declare(strict_types=1);
 
-use App\Infrastructure\Analytics\AnalyticsCaddyPublisher;
+use App\Domain\Nodes\RoleName;
 use App\Infrastructure\Analytics\AnalyticsCertificatePublisher;
-use App\Infrastructure\AppDev\AppDevCaddyPublisher;
-use App\Infrastructure\AppProd\AppProdCaddyPublisher;
-use App\Infrastructure\Caddy\CaddyFragmentListeners;
+use App\Infrastructure\Caddy\Build\NodeCaddyfile;
+use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
+use App\Infrastructure\Caddy\Build\NodeCaddyPushScript;
 use App\Infrastructure\Caddy\CaddyPublicationLock;
-use App\Infrastructure\Metrics\MetricsCaddyPublisher;
 use App\Infrastructure\Metrics\MetricsCertificatePublisher;
 use App\Infrastructure\Metrics\MetricsPublicationReceipt;
+use App\Infrastructure\Metrics\NativeMetricsAccessRevoker;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
-use App\Infrastructure\ProxyCli\ProxyCliCaddyPublisher;
 use App\Infrastructure\ProxyCli\ProxyCliCertificatePublisher;
 use App\Infrastructure\Ssh\RemoteCommand;
-use App\Infrastructure\WebSocket\WebSocketCaddyPublisher;
 use App\Infrastructure\WebSocket\WebSocketCertificatePublisher;
+use App\Models\Node;
 use Illuminate\Filesystem\Filesystem;
 use Symfony\Component\Finder\Finder;
 use Symfony\Component\Process\Process;
 
-describe('every Caddy publisher', function (): void {
-    it('serializes on the shared hardened lock before it reads live Caddy state', function (Closure $programs): void {
+describe('every Caddy writer', function (): void {
+    it('serializes on the shared hardened lock before it changes or reloads Caddy', function (Closure $programs): void {
         foreach ($programs() as ['arguments' => $arguments, 'program' => $program]) {
             $lock = mb_strpos(haystack: $program, needle: 'flock -w 30 9');
-            $firstRead = min(array_filter([
+            $firstChange = min(array_filter([
                 mb_strpos(haystack: $program, needle: 'readlink -f'),
                 mb_strpos(haystack: $program, needle: 'mv -f'),
                 mb_strpos(haystack: $program, needle: 'if [ ! -e "$versions" ]'),
+                mb_strpos(haystack: $program, needle: 'systemctl'),
             ], is_int(...)));
 
             expect($program)
                 ->toContain(CaddyPublicationLock::script())
                 ->not->toContain('orbit-caddy.lock')
                 ->and(mb_substr_count(haystack: $program, needle: 'flock -w 30 9'))->toBe(1)
-                ->and($lock)->toBeLessThan($firstRead)
+                ->and($lock)->toBeLessThan($firstChange)
                 ->and(
                     in_array(CaddyPublicationLock::Path, $arguments, true)
                     || str_contains($program, 'lock='.escapeshellarg(CaddyPublicationLock::Path)),
                 )->toBeTrue();
         }
     })->with([
-        'app-dev' => [fn (): array => caddy_lock_remote_programs([
-            new AppDevCaddyPublisher()->command('# app-dev', 'app-dev-version'),
-            new AppDevCaddyPublisher()->removeCommand('app-dev-version'),
+        'node caddy build' => [fn (): array => caddy_lock_remote_programs([
+            new NodeCaddyPushScript()->command(caddy_lock_caddyfile()),
         ])],
-        'app-prod' => [fn (): array => caddy_lock_remote_programs([
-            new AppProdCaddyPublisher()->command('# app-prod', 'app-prod-version'),
-            new AppProdCaddyPublisher()->removeCommand('app-prod-version'),
-        ])],
-        'metrics' => [fn (): array => caddy_lock_metrics_programs()],
-        'websocket' => [fn (): array => caddy_lock_remote_programs([
-            new WebSocketCaddyPublisher()->command('# websocket', '8080', new CaddyFragmentListeners(['10.44.0.8'], ['10.44.0.8'])),
-            new WebSocketCaddyPublisher()->removeCommand(),
+        'metrics certificate' => [fn (): array => caddy_lock_metrics_programs()],
+        'metrics access reload' => [fn (): array => caddy_lock_access_programs()],
+        'websocket certificate' => [fn (): array => caddy_lock_remote_programs([
             new WebSocketCertificatePublisher()->command('certificate', 'key'),
         ])],
-        'proxycli' => [fn (): array => caddy_lock_remote_programs([
-            new ProxyCliCaddyPublisher()->command('# proxycli', '8081', new CaddyFragmentListeners(['10.44.0.8'], ['10.44.0.8'])),
-            new ProxyCliCaddyPublisher()->removeCommand(),
+        'proxycli certificate' => [fn (): array => caddy_lock_remote_programs([
             new ProxyCliCertificatePublisher()->command('certificate', 'key'),
         ])],
-        'analytics' => [fn (): array => caddy_lock_remote_programs([
-            new AnalyticsCaddyPublisher()->command('# analytics', '8082', new CaddyFragmentListeners(['10.44.0.8'], ['10.44.0.8'])),
-            new AnalyticsCaddyPublisher()->removeCommand(),
+        'analytics certificate' => [fn (): array => caddy_lock_remote_programs([
             new AnalyticsCertificatePublisher()->command('certificate', 'key'),
         ])],
     ]);
 
-    it('is listed above whenever its program swaps the live Caddyfile', function (): void {
-        $swappers = caddy_lock_source_files(fn (string $source): bool => str_contains($source, 'live_caddyfile'));
+    it('is listed above whenever its program reloads Caddy', function (): void {
+        $reloaders = caddy_lock_source_files(
+            fn (string $source): bool => preg_match('/systemctl (reload|reload-or-restart)[^\n]*caddy/', $source) === 1,
+        );
 
-        expect($swappers)->toEqualCanonicalizing([
-            'Analytics/AnalyticsCaddyPublisher.php',
-            'AppDev/AppDevCaddyPublisher.php',
-            'AppProd/AppProdCaddyPublisher.php',
-            'Metrics/MetricsCaddyPublisher.php',
-            'ProxyCli/ProxyCliCaddyPublisher.php',
-            'WebSocket/WebSocketCaddyPublisher.php',
+        expect($reloaders)->toEqualCanonicalizing([
+            'Analytics/AnalyticsCertificatePublisher.php',
+            'AppDev/RemoteAppDevCertificateManager.php',
+            'Caddy/Build/NodeCaddyPushScript.php',
+            'Gateway/NativeGatewayCertificatePublisher.php',
+            'Metrics/MetricsCertificatePublisher.php',
+            'Metrics/NativeMetricsAccessRevoker.php',
+            'ProxyCli/ProxyCliCertificatePublisher.php',
+            'WebSocket/WebSocketCertificatePublisher.php',
         ]);
+
+        foreach ($reloaders as $reloader) {
+            expect(str_contains((string) file_get_contents(app_path('Infrastructure/'.$reloader)), 'CaddyPublicationLock'))->toBeTrue($reloader);
+        }
+    });
+
+    it('is the only program that swaps the live Caddyfile', function (): void {
+        $swappers = caddy_lock_source_files(
+            fn (string $source): bool => str_contains($source, 'Caddyfile')
+                && preg_match('/mv -fT -- \S+ "\\\\?\$(live|live_caddyfile)"/', $source) === 1,
+        );
+
+        expect($swappers)->toBe(['Caddy/Build/NodeCaddyPushScript.php']);
     });
 
     it('names no Caddy lock other than the shared one', function (): void {
@@ -155,10 +162,46 @@ function caddy_lock_remote_programs(array $commands): array
     );
 }
 
+function caddy_lock_caddyfile(): NodeCaddyfile
+{
+    $content = NodeCaddyfileRenderer::Marker."\n";
+
+    return new NodeCaddyfile('app-dev', $content, NodeCaddyfileRenderer::version($content), [], []);
+}
+
 /** @return list<array{arguments: list<string>, program: string}> */
 function caddy_lock_metrics_programs(): array
 {
-    $processes = new class implements ProcessRunner
+    $processes = caddy_lock_process_runner();
+    $certificate = new MetricsCertificatePublisher($processes);
+
+    $certificate->restore(MetricsPublicationReceipt::created());
+    $certificate->remove();
+
+    return caddy_lock_invocation_programs($processes->invocations);
+}
+
+/** @return list<array{arguments: list<string>, program: string}> */
+function caddy_lock_access_programs(): array
+{
+    $processes = caddy_lock_process_runner();
+    Node::query()->create([
+        'name' => 'metrics',
+        'status' => 'active',
+        'platform' => 'linux',
+        'public_ssh_host' => '192.0.2.3',
+        'user' => 'orbit',
+        'wireguard_ip' => '10.44.0.3',
+    ])->roles()->create(['role' => RoleName::Metrics, 'status' => 'active']);
+
+    new NativeMetricsAccessRevoker($processes)->revoke();
+
+    return caddy_lock_invocation_programs($processes->invocations);
+}
+
+function caddy_lock_process_runner(): object
+{
+    return new class implements ProcessRunner
     {
         /** @var list<ProcessInvocation> */
         public array $invocations = [];
@@ -170,20 +213,20 @@ function caddy_lock_metrics_programs(): array
             return new CommandResult(0, 'orbit-metrics-publication:unchanged', '', 1, false);
         }
     };
-    $caddy = new MetricsCaddyPublisher($processes);
-    $certificate = new MetricsCertificatePublisher($processes);
+}
 
-    $caddy->publish("# Managed by Orbit: metrics\n");
-    $caddy->withdrawForCutover();
-    $certificate->restore(MetricsPublicationReceipt::created());
-    $certificate->remove();
-
+/**
+ * @param  list<ProcessInvocation>  $invocations
+ * @return list<array{arguments: list<string>, program: string}>
+ */
+function caddy_lock_invocation_programs(array $invocations): array
+{
     return array_map(
         fn (ProcessInvocation $invocation): array => [
             'arguments' => $invocation->arguments,
             'program' => (string) $invocation->input,
         ],
-        $processes->invocations,
+        $invocations,
     );
 }
 

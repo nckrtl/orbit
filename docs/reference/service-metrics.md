@@ -26,7 +26,7 @@ The **Orbit Caddy Traffic** dashboard shows request rate, 5xx responses, request
 
 The dashboard selects Caddy's outer `subroute` handler, as observed with Orbit's site configuration on Caddy 2.6.2 and 2.11.4. It includes direct and proxied responses without adding the nested handler observations. These are requests seen by the selected Caddy site, not deduplicated requests across the entire fleet. Private traffic to a shared site can also be included.
 
-Every Node that runs Caddy collects per-host metrics, because Orbit's [Caddy global options](/reference/caddy-configuration#published-layout) turn them on. The service metrics fragment adds only the WireGuard scrape site on a selected Ingress Node. Prometheus retains published public host labels and metrics without a host label. Per-host collection applies to the shared Caddy process, so the Prometheus host filter bounds stored series, not Caddy's own in-memory series.
+Every Node that runs Caddy collects per-host metrics, because Orbit's [Caddy global options](/reference/caddy-configuration#published-layout) turn them on. Service metrics adds only the WireGuard scrape site on a selected Ingress Node. Prometheus retains published public host labels and metrics without a host label. Per-host collection applies to the shared Caddy process, so the Prometheus host filter bounds stored series, not Caddy's own in-memory series.
 
 Ingress normally proxies to the Router. Its upstream-health metrics do not establish the health of each Instance. Traffic that never reaches Caddy requires an external probe.
 
@@ -64,7 +64,7 @@ Changing the Metrics node replaces its scrape access. When a node is unreachable
 
 ### Recovery and inspection
 
-FPM updates validate a candidate and recover the prior pool file on reload failure. Caddy uses the shared publisher's lock, validation, and rollback. Under the proposed [Node Caddy build](/reference/caddy-configuration#node-caddy-build) ([ADR 0141](/decisions/0141-build-each-node-caddyfile-on-the-gateway)), the scrape site is rendered from stored state, and service metrics does not read or restore Caddy files on the Node.
+FPM updates validate a candidate and recover the prior pool file on reload failure. The scrape site renders from stored state in the [Node Caddy build](/reference/caddy-configuration#node-caddy-build), which owns validation and rollback. Service metrics does not read or restore Caddy files on the Node. It requests a build of each selected Ingress Node, and when its lifecycle fails, it restores its exporter and pool state and builds that Node again.
 
 Exporter and firewall updates retain a recovery journal; retry recovers an interrupted update. A failed fleet convergence restores touched service snapshots in reverse order, including when Prometheus publication fails. Ownership conflicts stop mutation, and recovery failures remain explicit errors.
 

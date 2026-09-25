@@ -6,13 +6,12 @@ namespace App\Infrastructure\Caddy\Build;
 
 use App\Infrastructure\AppDev\AppDevSite;
 use App\Infrastructure\Caddy\Build\Sources\AppCaddySiteSource;
-use App\Infrastructure\Caddy\CaddyFragmentListeners;
 use App\Models\Node;
 use Illuminate\Support\Collection;
 
 /**
- * Gives the fragment publishers the Node Caddy build's listener rule. Only Route sites use the
- * first-row rule, so they alone decide where a shared site joins the wildcard listener.
+ * The Node Caddy build's listeners for a Node's Route sites. Only Route sites use the first-row rule, so
+ * they alone decide where a shared site joins the wildcard listener.
  */
 final readonly class NodeCaddyListenerResolver
 {
@@ -30,11 +29,5 @@ final readonly class NodeCaddyListenerResolver
         };
 
         return NodeCaddyListeners::forSites($node, $routeSites);
-    }
-
-    /** @param Collection<int, AppDevSite>|null $sites */
-    public function fragments(Node $node, ?Collection $sites = null): CaddyFragmentListeners
-    {
-        return CaddyFragmentListeners::from($this->forNode($node, $sites));
     }
 }

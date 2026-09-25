@@ -10,7 +10,10 @@ use App\Domain\AppInstances\ProductionPhpRuntimeIdentity;
 use App\Infrastructure\AppDev\AppDevCaddyConfigRenderer;
 use App\Infrastructure\AppDev\AppDevSiteRepository;
 use App\Infrastructure\AppInstances\ProductionPhpRuntimeConfigRenderer;
+use App\Infrastructure\Caddy\Build\CaddyListenerRule;
+use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
 use App\Infrastructure\Caddy\Build\NodeCaddyListenerResolver;
+use App\Infrastructure\Caddy\Build\NodeCaddyListeners;
 use App\Infrastructure\Metrics\ServiceMetricsProjection;
 use App\Models\AppInstance;
 use App\Models\AppInstanceEnvironmentValue;
@@ -26,6 +29,7 @@ final readonly class ProductionInstanceInspectionExpectationFactory
         private ProductionPhpRuntimeConfigRenderer $runtimeRenderer,
         private ?ServiceMetricsProjection $serviceMetrics = null,
         private ?NodeCaddyListenerResolver $listeners = null,
+        private ?NodeCaddyfileRenderer $builds = null,
     ) {}
 
     public function make(AppInstance $instance): ProductionInstanceInspectionExpectation
@@ -68,7 +72,8 @@ final readonly class ProductionInstanceInspectionExpectationFactory
             home: $home,
             root: $root,
             environment: $this->environmentRenderer->render($context, $values),
-            caddy: $this->caddy($instance->node),
+            caddy: $this->caddyFragment($instance->node),
+            caddyBuild: ($this->builds ?? app(NodeCaddyfileRenderer::class))->render($instance->node)->content,
             associationMatches: $associationMatches,
             runtime: $runtime,
             runtimeConfiguration: $runtime instanceof ProductionPhpRuntimeIdentity
@@ -77,12 +82,15 @@ final readonly class ProductionInstanceInspectionExpectationFactory
         );
     }
 
-    /** The `app-dev.caddy` fragment the Route publisher writes, with the Node's listeners. */
-    private function caddy(Node $node): string
+    /**
+     * The `app-dev.caddy` fragment of a Node that no build replaced yet, with the Node's Route listeners.
+     */
+    private function caddyFragment(Node $node): string
     {
         $sites = $this->sites->forNode($node);
-        $listeners = ($this->listeners ?? app(NodeCaddyListenerResolver::class))->fragments($node, $sites);
+        $listeners = ($this->listeners ?? app(NodeCaddyListenerResolver::class))->forNode($node, $sites);
+        $bind = $listeners->bind(CaddyListenerRule::Wildcard, 443) ?: [NodeCaddyListeners::Wildcard];
 
-        return $this->caddyRenderer->render($sites, $listeners->routeBind());
+        return $this->caddyRenderer->render($sites, implode(' ', $bind));
     }
 }

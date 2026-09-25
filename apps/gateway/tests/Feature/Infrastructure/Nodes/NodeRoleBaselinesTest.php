@@ -14,6 +14,7 @@ use App\Domain\AppDev\AppDevCaddyManager;
 use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\AppProd\AppProdCaddyManager;
 use App\Domain\Clusters\ClusterRouterOperationLock;
+use App\Domain\Hibernation\RuntimeHibernation;
 use App\Domain\Metrics\MetricsCadvisorLifecycle;
 use App\Domain\Metrics\MetricsExporterLifecycle;
 use App\Domain\Metrics\MetricsFleetReconciler;
@@ -83,6 +84,7 @@ it('converges and removes only app development role-owned infrastructure', funct
         "dns:{$node->id}",
         'ssh:caddy-source',
         'ssh:app-dev',
+        'ssh:'.RuntimeHibernation::MarkerDirectory,
         'caddy:converge',
         'firewall:converge:app-dev',
         'caddy:remove',
@@ -148,7 +150,7 @@ it('rebuilds shared publications when removing Router from a workload Node', fun
 
     router_role_baseline($events)->remove($node, $assignment, purgeData: false);
 
-    expect($events)->toBe(['caddy:converge', 'firewall:remove:router']);
+    expect($events)->toBe(['caddy:remove', 'firewall:remove:router']);
     expect($node->roles()->where('role', $role)->where('status', LifecycleStatus::Active)->exists())->toBeTrue();
 })->with([RoleName::AppDev, RoleName::AppProd, RoleName::Ingress]);
 
@@ -165,7 +167,7 @@ it('converges removes and dispatches the dedicated Router-only baseline', functi
         'ssh:router',
         'caddy:converge',
         'firewall:converge:router',
-        'caddy:converge',
+        'caddy:remove',
         'firewall:remove:router',
     ]);
 
@@ -222,7 +224,7 @@ it('converges removes and dispatches the dedicated Router-only baseline', functi
         'metrics',
         "owner:exit:{$assignment->cluster_id}",
         "owner:enter:{$assignment->cluster_id}",
-        'caddy:converge',
+        'caddy:remove',
         'firewall:remove:router',
         'metrics',
         "owner:exit:{$assignment->cluster_id}",
@@ -859,6 +861,7 @@ it('checks the remote operating system before every role convergence', function 
         'dns:3',
         'ssh:caddy-source',
         'ssh:app-dev',
+        'ssh:'.RuntimeHibernation::MarkerDirectory,
         'caddy:converge',
         'firewall:converge:app-dev',
         'guard:app-prod',
