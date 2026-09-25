@@ -17,9 +17,20 @@ use Illuminate\Support\Facades\Broadcast;
  */
 final class RealtimeConnection
 {
+    /** Connect and request limits for the old server of a `websocket` move, in seconds. */
+    public const float OldServerConnectSeconds = 0.3;
+
+    public const float OldServerRequestSeconds = 0.5;
+
+    /** After a failed send, the old server is skipped this long, so an unreachable Node costs one short wait. */
+    public const int OldServerRetrySeconds = 30;
+
     private bool $resolved = false;
 
     private ?RealtimeConnectionData $connection = null;
+
+    /** @var list<RealtimeConnectionData> The old Node's Reverb during a `websocket` move. */
+    private array $others = [];
 
     public function __construct(
         private readonly WebSocketCredentialManager $credentials,
@@ -39,16 +50,68 @@ final class RealtimeConnection
             return $this->connection = null;
         }
 
-        return $this->connection = new RealtimeConnectionData(
-            host: WebSocketHostname::Value,
-            port: 443,
-            scheme: 'https',
-            appId: $credentials->appId,
-            key: $credentials->appKey,
-            secret: $credentials->appSecret,
-            caCertificatePath: rtrim($this->orbitHome, '/').'/ca/root.pem',
-            resolveAddress: $credentials->servingAddress,
+        $connections = array_map(
+            fn (?string $address): RealtimeConnectionData => new RealtimeConnectionData(
+                host: WebSocketHostname::Value,
+                port: 443,
+                scheme: 'https',
+                appId: $credentials->appId,
+                key: $credentials->appKey,
+                secret: $credentials->appSecret,
+                caCertificatePath: rtrim($this->orbitHome, '/').'/ca/root.pem',
+                resolveAddress: $address,
+            ),
+            $credentials->addresses() === [] ? [$credentials->servingAddress] : $credentials->addresses(),
         );
+        $this->others = array_slice($connections, 1);
+
+        return $this->connection = $connections[0];
+    }
+
+    /**
+     * Every Reverb server that holds clients, the serving one first. During a `websocket` move the old
+     * Node's server still holds the clients that connected before DNS moved, so a broadcast goes to both.
+     *
+     * @return list<RealtimeConnectionData>
+     */
+    public function all(): array
+    {
+        $connection = $this->resolve();
+
+        return $connection === null ? [] : [$connection, ...$this->others];
+    }
+
+    /** Whether a recent send to this old server failed, so broadcasts skip it for a while. */
+    public function oldServerSkipped(RealtimeConnectionData $connection): bool
+    {
+        $marker = $this->oldServerMarker($connection);
+        $failedAt = is_file($marker) ? filemtime($marker) : false;
+
+        return $failedAt !== false && time() - $failedAt < self::OldServerRetrySeconds;
+    }
+
+    public function recordOldServer(RealtimeConnectionData $connection, bool $reached): void
+    {
+        $marker = $this->oldServerMarker($connection);
+
+        if ($reached) {
+            if (is_file($marker)) {
+                @unlink($marker);
+            }
+
+            return;
+        }
+
+        $directory = dirname($marker);
+
+        if (is_dir($directory) || @mkdir($directory, 0o700, true)) {
+            @touch($marker);
+        }
+    }
+
+    private function oldServerMarker(RealtimeConnectionData $connection): string
+    {
+        return rtrim($this->orbitHome, '/').'/cache/reverb-old-server/'.hash('sha256', (string) $connection->resolveAddress);
     }
 
     /**
@@ -57,9 +120,9 @@ final class RealtimeConnection
      * use it. Returns false, leaving the connection unconfigured, when no
      * websocket role is active.
      */
-    public function configureBroadcasting(): bool
+    public function configureBroadcasting(?RealtimeConnectionData $connection = null, bool $oldServer = false): bool
     {
-        $connection = $this->resolve();
+        $connection ??= $this->resolve();
 
         if ($connection === null) {
             return false;
@@ -75,6 +138,10 @@ final class RealtimeConnection
             'broadcasting.connections.reverb.options.scheme' => $connection->scheme,
             'broadcasting.connections.reverb.options.useTLS' => $connection->scheme === 'https',
             'broadcasting.connections.reverb.client_options.verify' => $connection->caCertificatePath,
+            // A broadcast runs inside the request that changed the record, so a stuck server must not hold it.
+            // The old server of a `websocket` move gets a much shorter limit, so it never slows the serving one.
+            'broadcasting.connections.reverb.client_options.connect_timeout' => $oldServer ? self::OldServerConnectSeconds : 2,
+            'broadcasting.connections.reverb.client_options.timeout' => $oldServer ? self::OldServerRequestSeconds : 5,
             'broadcasting.connections.reverb.client_options.curl' => $connection->resolveAddress === null
                 ? []
                 : [CURLOPT_RESOLVE => ["{$connection->host}:{$connection->port}:{$connection->resolveAddress}"]],

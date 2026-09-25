@@ -11,6 +11,8 @@ use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AppDev\AppDevDnsConfigRenderer;
 use App\Infrastructure\AppDev\AppDevSiteRepository;
+use App\Infrastructure\Caddy\Build\CaddySiteCertificates;
+use App\Infrastructure\WebSocket\WebSocketDnsTarget;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\Cluster;
@@ -174,6 +176,51 @@ it('keeps reverb.orbit on the websocket role own node, not the Gateway', functio
         ->not
         ->toContain('host-record=reverb.orbit,10.44.0.1');
 });
+
+describe('reverb.orbit during a websocket move', function (): void {
+    beforeEach(function (): void {
+        $this->source = app_dev_dns_websocket_node('services', '10.44.0.4');
+        $this->target = app_dev_dns_websocket_node('app-dev', '10.44.0.3');
+        // The move stored the role row on the target; the source still serves the site.
+        $this->target->roles()->create(['role' => RoleName::WebSocket, 'status' => LifecycleStatus::Active]);
+        new CaddySiteCertificates()->record($this->source->id, CaddySiteCertificates::Websocket);
+    });
+
+    it('keeps answering with the old Node until the new Node build serves the site', function (): void {
+        new CaddySiteCertificates()->record($this->target->id, CaddySiteCertificates::Websocket);
+
+        expect(new AppDevDnsConfigRenderer(new AppDevSiteRepository)->render())
+            ->toContain('host-record=reverb.orbit,10.44.0.4')
+            ->not->toContain('host-record=reverb.orbit,10.44.0.3');
+    });
+
+    it('answers with the new Node once its build serves the site', function (): void {
+        new WebSocketDnsTarget()->markServing($this->target->id);
+
+        expect(new AppDevDnsConfigRenderer(new AppDevSiteRepository)->render())
+            ->toContain('host-record=reverb.orbit,10.44.0.3')
+            ->not->toContain('host-record=reverb.orbit,10.44.0.4');
+    });
+
+    it('answers with the role Node when no other active Node holds the site', function (): void {
+        $this->source->update(['status' => LifecycleStatus::Removing]);
+
+        expect(new AppDevDnsConfigRenderer(new AppDevSiteRepository)->render())
+            ->toContain('host-record=reverb.orbit,10.44.0.3');
+    });
+});
+
+function app_dev_dns_websocket_node(string $name, string $wireguardIp): Node
+{
+    return Node::query()->create([
+        'name' => $name,
+        'status' => LifecycleStatus::Active,
+        'platform' => 'linux',
+        'public_ssh_host' => "{$name}.example.test",
+        'ssh_user' => 'orbit',
+        'wireguard_ip' => $wireguardIp,
+    ]);
+}
 
 it('keeps analytics.orbit on the analytics role own node, not the Gateway', function (): void {
     $gateway = Node::query()->create([

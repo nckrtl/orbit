@@ -13,6 +13,7 @@ final readonly class NodeCaddyfile
      * @param  list<CaddySite>  $sites
      * @param  list<string>  $problems
      * @param  list<string>  $listenAddresses  Every specific IP address a site binds; the push script checks each exists.
+     * @param  list<array{source: string, name: string, block: string}>  $blocks  Each rendered site block exactly as the file holds it.
      */
     public function __construct(
         public string $nodeName,
@@ -21,7 +22,21 @@ final readonly class NodeCaddyfile
         public array $sites,
         public array $problems,
         public array $listenAddresses = [],
+        public array $blocks = [],
     ) {}
+
+    /**
+     * The rendered blocks of one site source and name, such as the workload site `app-instance-12`.
+     *
+     * @return list<string>
+     */
+    public function blocksFor(string $name): array
+    {
+        return array_values(array_map(
+            static fn (array $block): string => $block['block'],
+            array_filter($this->blocks, static fn (array $block): bool => $block['name'] === $name),
+        ));
+    }
 
     public function buildable(): bool
     {

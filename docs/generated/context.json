@@ -4508,6 +4508,7 @@
                 "Ingress",
                 "Instance",
                 "Node",
+                "Node agent",
                 "Process",
                 "Route",
                 "Router",

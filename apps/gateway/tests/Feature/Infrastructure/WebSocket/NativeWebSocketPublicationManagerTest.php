@@ -6,6 +6,9 @@ use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\Certificates\GatewayCertificateIssuer;
 use App\Domain\Certificates\GatewayCertificatePaths;
 use App\Domain\Nodes\NodeRoleOperationException;
+use App\Domain\Settings\SettingRepository;
+use App\Domain\Settings\SettingScope;
+use App\Domain\Settings\SettingScopeType;
 use App\Infrastructure\Caddy\Build\CaddySiteCertificates;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuildException;
 use App\Infrastructure\Processes\CommandResult;
@@ -17,6 +20,7 @@ use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\WebSocket\NativeWebSocketPublicationManager;
 use App\Infrastructure\WebSocket\WebSocketCertificatePublisher;
+use App\Infrastructure\WebSocket\WebSocketDnsTarget;
 use App\Models\Node;
 use Tests\Support\RecordingNodeCaddyBuilds;
 
@@ -27,7 +31,8 @@ it('publishes the certificate, requests a Node Caddy build, then converges DNS l
     $manager->converge(websocket_publication_node());
 
     expect($events)->toBe(['certificate:issue', 'ssh:certificate', 'build:websocket', 'dns:converge'])
-        ->and(new CaddySiteCertificates()->published(websocket_publication_node()->id, CaddySiteCertificates::Websocket))->toBeTrue();
+        ->and(new CaddySiteCertificates()->published(websocket_publication_node()->id, CaddySiteCertificates::Websocket))->toBeTrue()
+        ->and(websocket_publication_serving())->toBeTrue();
 });
 
 it('writes no Caddy file on the Node itself', function (): void {
@@ -68,7 +73,8 @@ it('keeps its error code and names the Node, stage, and Caddy message when the b
                 ->and($exception->getMessage())->toBe('The Caddy build for Node [websocket] failed at stage [validate]: Error: loading certificates');
         });
 
-    expect($events)->toBe(['certificate:issue', 'ssh:certificate', 'build:websocket']);
+    expect($events)->toBe(['certificate:issue', 'ssh:certificate', 'build:websocket'])
+        ->and(websocket_publication_serving())->toBeFalse();
 });
 
 it('builds the Node before it removes the certificate, then converges DNS without the node', function (): void {
@@ -76,11 +82,29 @@ it('builds the Node before it removes the certificate, then converges DNS withou
     $manager = websocket_publication_manager($events);
 
     new CaddySiteCertificates()->record(websocket_publication_node()->id, CaddySiteCertificates::Websocket);
+    new WebSocketDnsTarget()->markServing(websocket_publication_node()->id);
 
     $manager->remove(websocket_publication_node());
 
     expect($events)->toBe(['build:websocket', 'ssh:certificate-remove', 'dns:converge-empty'])
-        ->and(new CaddySiteCertificates()->published(websocket_publication_node()->id, CaddySiteCertificates::Websocket))->toBeFalse();
+        ->and(new CaddySiteCertificates()->published(websocket_publication_node()->id, CaddySiteCertificates::Websocket))->toBeFalse()
+        ->and(websocket_publication_serving())->toBeTrue();
+
+    $manager->retire(websocket_publication_node());
+
+    expect(websocket_publication_serving())->toBeFalse();
+});
+
+it('keeps the Node published to when the build that withdraws its site fails', function (): void {
+    $events = [];
+    new CaddySiteCertificates()->record(websocket_publication_node()->id, CaddySiteCertificates::Websocket);
+    new WebSocketDnsTarget()->markServing(websocket_publication_node()->id);
+    $manager = websocket_publication_manager($events, buildFailure: new NodeCaddyBuildException('websocket', 'gateway-lock', 'Another Caddy build for this Node held the lock for 30 seconds.'));
+
+    expect(fn () => $manager->remove(websocket_publication_node()))->toThrow(NodeRoleOperationException::class);
+
+    expect($events)->toBe(['build:websocket'])
+        ->and(websocket_publication_serving())->toBeTrue();
 });
 
 it('touches only the Gateway-side DNS record when the node is unreachable', function (): void {
@@ -88,11 +112,13 @@ it('touches only the Gateway-side DNS record when the node is unreachable', func
     $manager = websocket_publication_manager($events);
 
     new CaddySiteCertificates()->record(websocket_publication_node()->id, CaddySiteCertificates::Websocket);
+    new WebSocketDnsTarget()->markServing(websocket_publication_node()->id);
 
     $manager->removeUnreachable(websocket_publication_node());
 
     expect($events)->toBe(['dns:converge-empty'])
-        ->and(new CaddySiteCertificates()->published(websocket_publication_node()->id, CaddySiteCertificates::Websocket))->toBeFalse();
+        ->and(new CaddySiteCertificates()->published(websocket_publication_node()->id, CaddySiteCertificates::Websocket))->toBeFalse()
+        ->and(websocket_publication_serving())->toBeFalse();
 });
 
 it('checks the listen addresses of the Node render without changing anything and names a missing one', function (): void {
@@ -108,6 +134,15 @@ it('checks the listen addresses of the Node render without changing anything and
         ))->checkListenAddresses(websocket_publication_node()))
         ->toThrow(NodeRoleOperationException::class, 'The build binds 192.168.6.30');
 });
+
+/** Whether private DNS may name the test Node for `reverb.orbit`. */
+function websocket_publication_serving(): bool
+{
+    return new SettingRepository()->get(
+        new SettingScope(SettingScopeType::Node, websocket_publication_node()->id),
+        WebSocketDnsTarget::SettingKey,
+    ) !== null;
+}
 
 function websocket_publication_node(): Node
 {

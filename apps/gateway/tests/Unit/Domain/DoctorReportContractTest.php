@@ -212,6 +212,7 @@ it('defines the exact stable issue-code catalog for every Doctor family', functi
             'role.cluster_cardinality_conflict',
             'role.packages_missing',
             'role.caddy_version_unsupported',
+            'role.caddy_build_drift',
             'role.services_inactive',
             'role.firewall_projection_mismatch',
             'role.vpn_inactive',

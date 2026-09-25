@@ -104,9 +104,24 @@ it('removes publication and runtime before purging credentials', function (): vo
     expect($events)->toBe([
         'publication:remove',
         'runtime:remove:purge',
+        'publication:retire',
         'credentials:purge',
     ]);
 });
+
+it('keeps publishing to the Node when its withdrawal or its Reverb stop fails', function (string $failure, array $expected): void {
+    [$node, $assignment] = websocketBaselineTopology();
+    $events = [];
+    $baseline = websocketBaseline($events, failure: $failure);
+
+    expect(fn () => $baseline->remove($node, $assignment, false))->toThrow(RuntimeException::class);
+
+    expect($events)->toBe($expected)
+        ->and($events)->not->toContain('publication:retire');
+})->with([
+    'withdrawal build fails' => ['publication:remove', ['publication:remove']],
+    'Reverb stop fails' => ['runtime:remove', ['publication:remove', 'runtime:remove']],
+]);
 
 it('touches only the Gateway-side publication and credentials when the node is unreachable', function (): void {
     [$node, $assignment] = websocketBaselineTopology();
@@ -196,6 +211,11 @@ final class WebSocketBaselinePublication implements WebSocketPublicationManager
     public function converge(Node $node): void
     {
         $this->record('publication:converge');
+    }
+
+    public function retire(Node $node): void
+    {
+        $this->record('publication:retire');
     }
 
     public function checkListenAddresses(Node $node): void

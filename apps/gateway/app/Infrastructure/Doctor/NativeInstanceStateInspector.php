@@ -11,7 +11,6 @@ use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\Storage\CheckoutRemovalBoundary;
 use App\Domain\SourceControl\GitRepositoryOrigin;
 use App\Infrastructure\AppDev\AppDevSshExecutor;
-use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProtectedInput;
@@ -237,9 +236,7 @@ final readonly class NativeInstanceStateInspector implements InstanceStateInspec
             'home' => $expectation->home,
             'root' => $expectation->root,
             'environment' => base64_encode($expectation->environment()),
-            'caddy' => base64_encode($expectation->caddy),
-            'caddy_build' => base64_encode($expectation->caddyBuild),
-            'caddy_build_marker' => NodeCaddyfileRenderer::Marker,
+            'caddy_sites' => implode(' ', array_map(base64_encode(...), $expectation->caddySites)),
             'association' => $expectation->associationMatches ? '1' : '0',
             'runtime_expected' => $runtimeExpected ? '1' : '0',
             ...$runtimeValues,
@@ -451,14 +448,15 @@ final readonly class NativeInstanceStateInspector implements InstanceStateInspec
             caddy_matches() {
                 source=\$(readlink -f -- /etc/caddy/Caddyfile 2>/dev/null) || return 1
                 test -f "\$source" || return 1
-                # A Node Caddy build writes one file; it must match a fresh render of the Node.
-                if test "\$(head -n 1 -- "\$source")" = "\$caddy_build_marker"; then
-                    printf '%s' "\$caddy_build" | base64 --decode | cmp -s -- "\$source" -
-                    return
-                fi
-                fragment="\$(dirname -- "\$source")/fragments/app-dev.caddy"
-                test -f "\$fragment" && test ! -L "\$fragment" || return 1
-                printf '%s' "\$caddy" | base64 --decode | cmp -s -- "\$fragment" -
+                # The Node Caddy build keeps every site in the live file; each of this Instance's blocks must be there unchanged.
+                live_caddyfile=\$(cat -- "\$source") || return 2
+                for encoded_site in \$caddy_sites; do
+                    site=\$(printf '%s' "\$encoded_site" | base64 --decode) || return 2
+                    case "\$live_caddyfile" in
+                        *"\$site"*) ;;
+                        *) return 1 ;;
+                    esac
+                done
             }
 
             emit home_matches

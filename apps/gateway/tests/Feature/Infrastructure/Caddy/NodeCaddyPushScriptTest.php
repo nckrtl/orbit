@@ -176,13 +176,12 @@ describe('a later build', function (): void {
             ->and(file_get_contents($this->harness->path('orbit-backups/20260101T000000Z/Caddyfile')))->toBe("kept\n");
     });
 
-    it('keeps the live version and the nine newest others and removes the retired staged directory', function (): void {
+    it('keeps the live version and the nine newest others', function (): void {
         foreach (range(1, 12) as $age) {
             $name = sprintf('%016x', $age);
             $this->harness->write("orbit-versions/{$name}/Caddyfile", "# old {$age}\n");
             touch($this->harness->path("orbit-versions/{$name}"), time() - ($age * 60));
         }
-        $this->harness->write('orbit-versions/staged/route-1-ingress.caddy', "staged\n");
         $this->harness->link($this->harness->path('orbit-versions/000000000000000c/Caddyfile'));
         $caddyfile = node_caddy_push_file('shop.test');
 

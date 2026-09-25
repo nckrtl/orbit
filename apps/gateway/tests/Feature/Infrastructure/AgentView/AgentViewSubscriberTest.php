@@ -14,7 +14,11 @@ use App\Infrastructure\AgentView\CacheAgentStateView;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Infrastructure\AgentView\WebSocketException;
+use App\Infrastructure\Caddy\Build\CaddySiteCertificates;
+use App\Infrastructure\WebSocket\WebSocketDnsTarget;
 use App\Models\Node;
+use Illuminate\Cache\ArrayStore;
+use Illuminate\Cache\Repository as CacheRepository;
 use Illuminate\Support\Carbon;
 use Psr\Log\NullLogger;
 
@@ -99,8 +103,11 @@ function subscriber_managed_node(string $name, string $address): Node
     ]);
 }
 
-/** @return array{AgentViewSubscriber, FakeAgentViewSocket, object{now: float, commit: string}} */
-function agent_view_subscriber(): array
+/**
+ * @param  list<FakeAgentViewSocket>  $extra  Receives each socket the subscriber makes for a second link.
+ * @return array{AgentViewSubscriber, FakeAgentViewSocket, object{now: float, commit: string}}
+ */
+function agent_view_subscriber(array &$extra = []): array
 {
     $socket = new FakeAgentViewSocket;
     $state = new class
@@ -122,6 +129,9 @@ function agent_view_subscriber(): array
         clock: static fn (): float => $state->now,
         sleep: static function (float $seconds) use ($state): void {
             $state->now += $seconds;
+        },
+        sockets: static function () use (&$extra): FakeAgentViewSocket {
+            return $extra[] = new FakeAgentViewSocket;
         },
     );
 
@@ -617,6 +627,41 @@ describe('the agent view subscriber', function (): void {
             ->and($publisher->polls)->toBeGreaterThan(0);
     });
 
+    it('writes the view again after a failed write and still hands its workspace changes to the publisher', function (): void {
+        $cache = new class(new ArrayStore) extends CacheRepository
+        {
+            public int $failures = 1;
+
+            public function put($key, $value, $ttl = null): bool
+            {
+                if (str_starts_with((string) $key, 'agent-view.node.') && $this->failures-- > 0) {
+                    throw new RuntimeException('No space left on device.');
+                }
+
+                return parent::put($key, $value, $ttl);
+            }
+        };
+        app()->instance(CacheAgentStateView::class, new CacheAgentStateView($cache));
+        activate_websocket_role();
+        $node = subscriber_managed_node('app-dev', '10.44.0.3');
+        [$subscriber, $socket, , $publisher] = live_agent_view_subscriber();
+        $subscriber->pass();
+
+        $socket->push(
+            agent_snapshot($node->id, 1, []),
+            agent_event($node->id, 'client-workspaces', ['sequence' => 2, 'part' => 1, 'parts' => 1, 'workspaces' => [agent_workspace(31)]]),
+        );
+        $subscriber->pass();
+
+        expect($cache->failures)->toBe(0)
+            ->and($publisher->workspaces)->toBe([]);
+
+        $subscriber->pass();
+
+        expect($publisher->workspaces)->toBe([[$node->id, [31]]])
+            ->and(app(CacheAgentStateView::class)->node($node->id)->workspace(31)['head'] ?? null)->toBe(str_repeat('b', 40));
+    });
+
     it('queues Process usage every fifteen seconds only while a browser watches', function (): void {
         activate_websocket_role();
         $node = subscriber_managed_node('app-dev', '10.44.0.3');
@@ -663,5 +708,115 @@ describe('the agent view subscriber', function (): void {
 
         expect($socket->isConnected())->toBeFalse()
             ->and($publisher->polls)->toBe(2);
+    });
+});
+
+describe('the agent view subscriber during a websocket move', function (): void {
+    afterEach(fn () => Carbon::setTestNow());
+
+    beforeEach(function (): void {
+        $this->source = subscriber_managed_node('websocket-source', '10.44.0.89');
+        new CaddySiteCertificates()->record($this->source->id, CaddySiteCertificates::Websocket);
+        [$this->target] = activate_websocket_role();
+        new CaddySiteCertificates()->record($this->target->id, CaddySiteCertificates::Websocket);
+        new WebSocketDnsTarget()->markServing($this->target->id);
+        $this->node = subscriber_managed_node('app-dev', '10.44.0.3');
+    });
+
+    it('listens on both Reverb servers and keeps a Node fresh while its agent moves between them', function (): void {
+        $extra = [];
+        [$subscriber, $new] = agent_view_subscriber($extra);
+        $subscriber->pass();
+        $old = $extra[0];
+
+        expect($subscriber->linkedAddresses())->toBe(['10.44.0.90', '10.44.0.89'])
+            ->and($new->connects[0]->address)->toBe('10.44.0.90')
+            ->and($old->connects[0]->address)->toBe('10.44.0.89');
+
+        $old->push(agent_snapshot($this->node->id, 7, [
+            ['name' => 'orbit-process-9-web', 'runtime' => 'systemd', 'runtime_status' => 'active'],
+        ]));
+        $subscriber->pass();
+
+        expect(app(AgentStateView::class)->node($this->node->id)->freshness)->toBe(AgentViewFreshness::Fresh);
+
+        // The old server closes the agent's connection; the agent has not reached the new one yet.
+        $old->push([
+            'event' => 'pusher_internal:member_removed',
+            'channel' => "presence-node.{$this->node->id}",
+            'data' => json_encode(['user_id' => "agent.{$this->node->id}"]),
+        ]);
+        $subscriber->pass();
+
+        expect(app(AgentStateView::class)->node($this->node->id)->freshness)->toBe(AgentViewFreshness::Fresh);
+
+        $new->push(agent_snapshot($this->node->id, 1, [
+            ['name' => 'orbit-process-9-web', 'runtime' => 'systemd', 'runtime_status' => 'inactive'],
+        ]));
+        $subscriber->pass();
+
+        $view = app(AgentStateView::class)->node($this->node->id);
+        expect($view->freshness)->toBe(AgentViewFreshness::Fresh)
+            ->and($view->status(ProcessRuntime::Systemd, 'orbit-process-9-web'))->toBe('inactive');
+    });
+
+    it('counts a browser watching on either server as a viewer', function (): void {
+        $extra = [];
+        [$subscriber] = agent_view_subscriber($extra);
+        $subscriber->pass();
+        $old = $extra[0];
+
+        expect($subscriber->hasViewers())->toBeFalse();
+
+        $old->push([
+            'event' => 'pusher_internal:member_added',
+            'channel' => "presence-node.{$this->node->id}",
+            'data' => json_encode(['user_id' => 'viewer.7.1']),
+        ]);
+        $subscriber->pass();
+
+        expect($subscriber->hasViewers())->toBeTrue();
+    });
+
+    it('takes the state with the newest agent event when both servers hold one', function (): void {
+        $extra = [];
+        [$subscriber, $new, $state] = agent_view_subscriber($extra);
+        $subscriber->pass();
+        $old = $extra[0];
+
+        $new->push(agent_snapshot($this->node->id, 3, [
+            ['name' => 'orbit-process-9-web', 'runtime' => 'systemd', 'runtime_status' => 'active'],
+        ]));
+        $subscriber->pass();
+        $state->now += 2;
+        $old->push(agent_snapshot($this->node->id, 9, [
+            ['name' => 'orbit-process-9-web', 'runtime' => 'systemd', 'runtime_status' => 'failed'],
+        ]));
+        $subscriber->pass();
+
+        expect(app(AgentStateView::class)->node($this->node->id)->status(ProcessRuntime::Systemd, 'orbit-process-9-web'))->toBe('failed');
+    });
+
+    it('closes the old link once the old Node withdraws, and keeps the stored view while the agent reconnects', function (): void {
+        $extra = [];
+        [$subscriber, $new, $state] = agent_view_subscriber($extra);
+        $subscriber->pass();
+        $old = $extra[0];
+        $old->push(agent_snapshot($this->node->id, 4, []));
+        $subscriber->pass();
+
+        new CaddySiteCertificates()->forget($this->source->id, CaddySiteCertificates::Websocket);
+        new WebSocketDnsTarget()->forget($this->source->id);
+        $state->now += AgentViewSubscriber::LinkCheckSeconds;
+        $subscriber->pass();
+
+        expect($subscriber->linkedAddresses())->toBe(['10.44.0.90'])
+            ->and($old->isConnected())->toBeFalse()
+            ->and(app(AgentStateView::class)->node($this->node->id)->freshness)->toBe(AgentViewFreshness::Fresh);
+
+        $new->push(agent_snapshot($this->node->id, 1, []));
+        $subscriber->pass();
+
+        expect(app(AgentStateView::class)->node($this->node->id)->freshness)->toBe(AgentViewFreshness::Fresh);
     });
 });

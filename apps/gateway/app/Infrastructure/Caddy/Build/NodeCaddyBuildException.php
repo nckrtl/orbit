@@ -14,12 +14,31 @@ use Throwable;
  */
 final class NodeCaddyBuildException extends RuntimeException
 {
+    /** The detail of every stage is at most this many bytes of UTF-8, so API and CLI details keep it whole. */
+    public const int MaxDetailBytes = 2000;
+
+    public readonly string $detail;
+
     public function __construct(
         public readonly string $nodeName,
         public readonly string $stage,
-        public readonly string $detail,
+        string $detail,
     ) {
-        parent::__construct("The Caddy build for Node [{$nodeName}] failed at stage [{$stage}]: {$detail}");
+        $this->detail = self::bounded($detail);
+
+        parent::__construct("The Caddy build for Node [{$nodeName}] failed at stage [{$stage}]: {$this->detail}");
+    }
+
+    /** Cuts a detail to MaxDetailBytes on a character boundary and marks the cut with an ellipsis. */
+    public static function bounded(string $detail): string
+    {
+        $detail = mb_scrub($detail, 'UTF-8');
+
+        if (strlen($detail) <= self::MaxDetailBytes) {
+            return $detail;
+        }
+
+        return mb_strcut($detail, 0, self::MaxDetailBytes - strlen('…'), 'UTF-8').'…';
     }
 
     /** A failed result that carries this message, for a caller that records a step's standard error. */

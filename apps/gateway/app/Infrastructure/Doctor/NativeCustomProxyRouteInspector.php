@@ -111,10 +111,9 @@ final readonly class NativeCustomProxyRouteInspector implements CustomProxyRoute
                 expected_dns=$4
                 upstream_host=$5
                 upstream_port=$6
+                # A Node Caddy build keeps every site in the one live file.
                 live=$(readlink -f "$7")
-                # A Node Caddy build keeps every site in the live file; a Node no build replaced yet keeps fragments.
-                fragment_dir=$(dirname "$live")/fragments
-                if grep -Rqs -- "$domain" "$live" "$fragment_dir" 2>/dev/null && grep -Rqs -- "$upstream" "$live" "$fragment_dir" 2>/dev/null; then
+                if grep -qs -- "$domain" "$live" && grep -qs -- "$upstream" "$live"; then
                     printf 'caddy=1\n'
                 else
                     printf 'caddy=0\n'

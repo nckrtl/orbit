@@ -112,7 +112,7 @@ final readonly class TopologyConverger
             $this->runAll([
                 $node->key => [
                     'instance' => $instances[$gatewayNode],
-                    'script' => 'converge-app-prod-internal-tls.sh',
+                    'script' => 'converge-app-prod.sh',
                     'arguments' => [
                         $node->key,
                         $addresses[$node->key],
@@ -154,12 +154,7 @@ final readonly class TopologyConverger
         $steps['converge.metrics'] = true;
         // Rolling refreshes restore snapshots and skip provisioning, so the
         // product must re-render every projection from the checked-out code.
-        // The internal-TLS step first removes the retired `local_certs` global
-        // fragment an older snapshot carries, so the product publisher's own
-        // global options block stays the only one.
-        if ($typedCheckoutPath === null || $productionPlacement !== null) {
-            $this->run($instances[$appProdNode], 'converge-sample-app.sh', ['internal-tls']);
-        }
+        // Each Node Caddy build writes the whole Caddyfile; the harness writes none.
         $this->run($instances[$appDevNode], 'converge-sample-app.sh', ['reproject']);
         $steps['reproject.product-state'] = true;
         $this->run($instances[$appDevNode], 'converge-sample-app.sh', ['metrics-publication', $appDevNode]);
@@ -504,7 +499,7 @@ final readonly class TopologyConverger
     {
         $pattern = match (true) {
             $script === 'converge-gateway.sh' && $result->exitCode === 71 => '/(?:\A|\R)Gateway bootstrap failed at step \[([a-z0-9:-]+)\] with error \[([a-z0-9._-]+)\]\.(?:\R|\z)/D',
-            in_array($script, ['converge-app-dev.sh', 'converge-app-prod-internal-tls.sh'], true)
+            in_array($script, ['converge-app-dev.sh', 'converge-app-prod.sh'], true)
                 && $result->exitCode === 1 => '/(?:\A|\R)Node provisioning failed at step \[([a-z0-9:-]+)\] with error \[([a-z0-9._-]+)\]\.(?:\R|\z)/D',
             default => null,
         };
