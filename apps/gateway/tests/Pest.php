@@ -16,6 +16,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskRunReceipts;
 use App\Infrastructure\AgentView\CacheAgentStateView;
+use App\Infrastructure\AppInstances\DependencyUpdateSupervisorHost;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\NativeProcessRunner;
@@ -210,6 +211,16 @@ function app_instance_removal_migration_boundary(): Migration
             );
         }
     };
+}
+
+/**
+ * Returns the host variant for running a dependency update supervisor program in a test. Linux runs the exact
+ * Node program. Other hosts, such as macOS, have no /proc, so they run the same program logic with the
+ * Portable variant, which reads process state with ps.
+ */
+function dependency_update_supervisor_host(): DependencyUpdateSupervisorHost
+{
+    return PHP_OS_FAMILY === 'Linux' ? DependencyUpdateSupervisorHost::Node : DependencyUpdateSupervisorHost::Portable;
 }
 
 /**
