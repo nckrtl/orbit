@@ -871,7 +871,7 @@ it('publishes private Caddy and DNS configurations through complete preserved va
             'ensure_hibernation_ancestor "$hibernation_logs"',
             'install -d -o root -g caddy -m 2775 -- "$hibernation_logs"',
             'install -d -m 0755 -- "$current"',
-            'cmp -s -- "$candidate/fragments/app-dev.caddy" "$previous_fragments/app-dev.caddy"',
+            'orbit_fragments_unchanged "$candidate/fragments" "$previous_fragments"',
             'mv -fT -- "$candidate_link" "$live_caddyfile"',
             'if ! systemctl enable "$caddy_service" || ! systemctl reload-or-restart "$caddy_service"; then',
             'mv -fT -- "$rollback_link" "$live_caddyfile"',

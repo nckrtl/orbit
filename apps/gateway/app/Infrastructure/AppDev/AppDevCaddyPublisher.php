@@ -138,8 +138,9 @@ final readonly class AppDevCaddyPublisher
                 fi
 
                 refuse_carried_global_options "\$candidate" "\$source_main"
-                orbit_require_listen_addresses
                 runuser -u caddy -- caddy validate --config "\$candidate/Caddyfile" --adapter caddyfile
+                # Caddy validates syntax, not listeners; a missing address would fail the reload.
+                orbit_require_listen_addresses
                 printf '%s\n' '{$this->encodedGlobalOptions()}' | base64 --decode > "\$candidate/Caddyfile"
                 printf 'import %s/%s/fragments/*.caddy\n' "\$versions" "\$version" >> "\$candidate/Caddyfile"
                 mv -fT -- "\$candidate" "\$published"

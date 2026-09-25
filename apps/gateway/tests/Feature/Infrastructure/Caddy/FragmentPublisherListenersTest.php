@@ -227,8 +227,15 @@ describe('fragment publishers on one Node', function (): void {
         $this->harness->seed(fragment_listener_incident_fragments($node));
         $live = $this->harness->fragments();
 
-        expect(fn () => fragment_listener_publishers($this->harness, $node)[$publisher]())
-            ->toThrow(Throwable::class)
+        $refused = null;
+
+        try {
+            fragment_listener_publishers($this->harness, $node)[$publisher]();
+        } catch (Throwable $exception) {
+            $refused = $exception;
+        }
+
+        expect($refused)->toBeInstanceOf(Throwable::class)
             ->and($this->harness->lastError())->toContain('Caddy would bind 192.168.6.30, which is not an address on this Node.')
             ->and($this->harness->fragments())->toBe($live)
             ->and(fragment_listener_reloads($this->harness))->toBe(0);
