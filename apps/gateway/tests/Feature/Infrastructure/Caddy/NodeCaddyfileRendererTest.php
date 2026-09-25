@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Clusters\ClusterState;
-use App\Domain\Herdr\HerdrSessionManagement;
 use App\Domain\Nodes\RoleName;
 use App\Domain\ProxyCli\ProxyCliState;
 use App\Domain\Routes\RouteProvenance;
@@ -23,7 +22,6 @@ use App\Infrastructure\Caddy\Build\NodeCaddySiteSource;
 use App\Infrastructure\Caddy\Build\Sources\AnalyticsCaddySiteSource;
 use App\Infrastructure\Caddy\Build\Sources\AppCaddySiteSource;
 use App\Infrastructure\Caddy\Build\Sources\GatewayWebCaddySiteSource;
-use App\Infrastructure\Caddy\Build\Sources\HerdrObserverCaddySiteSource;
 use App\Infrastructure\Caddy\Build\Sources\MetricsCaddySiteSource;
 use App\Infrastructure\Caddy\Build\Sources\ProxyCliCaddySiteSource;
 use App\Infrastructure\Caddy\Build\Sources\ServiceMetricsCaddySiteSource;
@@ -36,7 +34,6 @@ use App\Infrastructure\WebSocket\WebSocketCaddySiteRenderer;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\Cluster;
-use App\Models\HerdrSession;
 use App\Models\Node;
 use App\Models\Route;
 use Symfony\Component\Process\ExecutableFinder;
@@ -205,19 +202,6 @@ describe('site sources', function (): void {
             ->toContain("analytics.orbit {\n    bind 10.44.0.7\n")
             ->toContain("collector.cli-proxy-api.orbit {\n    bind 10.44.0.7\n")
             ->not->toContain('__ORBIT_');
-    });
-
-    it('renders a Herdr observer while it is published and not being removed', function (): void {
-        $node = caddy_build_node('agents', '10.44.0.8');
-        $published = caddy_build_herdr_session($node, 'main', 'published');
-        caddy_build_herdr_session($node, 'failed', 'failed');
-        $removing = caddy_build_herdr_session($node, 'leaving', 'published');
-        $removing->update(['status' => LifecycleStatus::Removing]);
-
-        $caddyfile = caddy_build_renderer()->render($node);
-
-        expect(array_map(static fn (CaddySite $site): string => $site->name, $caddyfile->sites))->toBe(['main'])
-            ->and($caddyfile->content)->toContain("https://{$published->observer_hostname} {\n    bind 10.44.0.8\n");
     });
 
     it('renders a role while it converges, is active, or failed a reconvergence, but not while it is removed', function (): void {
@@ -401,7 +385,6 @@ function caddy_build_renderer(): NodeCaddyfileRenderer
         new WebSocketCaddySiteSource(new WebSocketCaddySiteRenderer, 8080),
         new AnalyticsCaddySiteSource,
         app(ProxyCliCaddySiteSource::class),
-        new HerdrObserverCaddySiteSource,
     ]);
 }
 
@@ -512,19 +495,4 @@ function caddy_build_private_route(Node $router, string $domain): array
     $route->update(['status' => RouteStatus::Active]);
 
     return [$instance->fresh('node') ?? $instance, $route];
-}
-
-function caddy_build_herdr_session(Node $node, string $session, string $observerStatus): HerdrSession
-{
-    return HerdrSession::query()->create([
-        'node_id' => $node->id,
-        'session' => $session,
-        'user' => 'orbit',
-        'management' => HerdrSessionManagement::Managed,
-        'observer_port' => 7400 + HerdrSession::query()->count(),
-        'observer_hostname' => "{$session}.herdr.orbit",
-        'observer_status' => $observerStatus,
-        'status' => LifecycleStatus::Active,
-        'publish_observer' => true,
-    ]);
 }

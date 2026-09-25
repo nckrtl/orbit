@@ -1,6 +1,6 @@
 # Public contract
 
-The SDK models exactly 169 concrete public Gateway API operations:
+The SDK models exactly 162 concrete public Gateway API operations:
 
 - Gateway: status and root trust.
 - Activity: list and show.
@@ -16,7 +16,6 @@ The SDK models exactly 169 concrete public Gateway API operations:
 - Firewall: list, allow, deny, and remove.
 - Tool: manager list, tool list, show, install, update, and remove.
 - Doctor: run the complete typed Gateway report.
-- Herdr: session list, add, adopt, show, restart, remove, and observation-grant.
 - Database connection: list, show, add, update, remove, attach, detach, query, tables, schema, describe, user create, and user list.
 - Metrics: enable, disable, status, credentials, credential reset, exporter enable, and exporter disable.
 - Analytics: pin the Plausible version, and show, set, and unset the Stats API key. The key is never returned.
@@ -82,14 +81,6 @@ operations. Keep the public API typed and small.
   seven operations, and completion's validated response-header request ID with
   no response body. The Gateway owns target resolution, validation, execution,
   and lifecycle policy.
-- Keep Herdr transport limited to a numeric Node ID, a numeric session ID for
-  item operations, explicit session name and Unix user on add or adopt, optional
-  observer publication and restart handoff flags, optional removal termination
-  acceptance, and pane, terminal, columns, rows, and an HTTPS browser origin
-  for observation grants.
-  Preserve omitted optional flags as explicit `false` and the returned managed or external lifecycle mode. Observation grant URLs
-  stay out of generic diagnostics. The Gateway owns session lifecycle,
-  publication, trust, and grant policy.
 - Keep Database connection transport limited to slug identity, driver, optional
   Node ID, host, port, database name, sqlite path, username, and password.
   Preserve omitted optional fields as absence. Item and collection responses
@@ -115,7 +106,7 @@ operations. Keep the public API typed and small.
   and destroy requests are bodyless. The Gateway owns the lifecycle, scheduling,
   and every status rule. The agent conversation stream stays outside the SDK.
 - Accept only the current Doctor family tokens: node, role, app, instance,
-  schedule, tool, process, firewall, herdr, database_connection, and route.
+  schedule, tool, process, firewall, database_connection, and route.
   Keep Doctor verify-only and policy-free.
 - Model binary node access add/remove and node-show access lists. Do not model
   granular permissions, presets, wildcards, permission editing, or legacy

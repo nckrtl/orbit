@@ -30,7 +30,7 @@ The [CLI standard](/reference/cli-ux#consent) requires a destructive command to 
 
 ## Rejected alternatives
 
-- Keep the coupling and add a confirmation to `extension:disable proxycli`: rejected because one command would still mean a local toggle for `herdr` and a fleet stop for `proxycli`. Operators toggle local gates without expecting fleet changes.
+- Keep the coupling and add a confirmation to `extension:disable proxycli`: rejected because a command that manages the local gate would still stop the fleet. Operators toggle local gates without expecting fleet changes.
 - Make `extension:enable proxycli` also enable the fleet feature: rejected because the fleet enable needs a Node, a cache connection, a CLIProxyAPI URL, and a management key file, which a local gate command does not take.
 - Leave `proxycli:disable` without confirmation: rejected because it deletes stored credentials that the Gateway cannot recreate without the operator.
 

@@ -153,5 +153,5 @@ The job refuses to replace the assets of an existing release. Pull requests and 
 The first version of the agent has these limits.
 
 - The agent reports presence and Process runtime state only. It does not replace SSH, the task workspace probes, or the hibernation probes.
-- The Gateway API, the CLI, and `orbit top` do not see agent reports. They read `runtime_status` from Prometheus.
+- The Gateway API and the CLI do not see agent reports. They read `runtime_status` from Prometheus.
 - The agent supports Linux on `x86_64` and `aarch64` only.

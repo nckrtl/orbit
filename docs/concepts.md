@@ -32,7 +32,6 @@ These terms describe the parts of Orbit. Follow the links for commands and detai
 - **Node agent** — `orbit-agent`, a visibility-only program on every managed Linux Node. It publishes presence and Process runtime state for the web app and never runs commands. See [Node agent](/reference/node-agent).
 - **Process** — A systemd service or Docker container that Orbit manages for an Instance or Node. See [Project processes and schedules](/reference/app-processes-and-schedules).
 - **Runtime hibernation** — Pausing idle development processes and removing rebuildable dependencies after longer idle periods. An HTTP request restores dependencies and wakes configured processes. Keep-alive workers stay running. See [App-dev runtime hibernation](/reference/app-dev-runtime-hibernation).
-- **Herdr session** — A named headless Herdr server on a Node. View its panes through a private, read-only connection with temporary access. See [Herdr sessions](/reference/herdr-sessions).
 - **Task group** — One parent feature stored by the Gateway `tasks` extension. See [Tasks](/reference/tasks).
 - **Task** — An ordered subtask of a Task group. See [Tasks](/reference/tasks).
 - **Schedule** — A recurring command for a Node or Instance. A systemd timer runs it on the host Node. See [Schedules](/reference/schedules).

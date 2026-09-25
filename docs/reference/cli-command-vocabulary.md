@@ -30,7 +30,6 @@ An operator selects `create` and `destroy` when the Gateway owns the resource li
 | `database` | `create` and `destroy` | A [Database connection](/reference/database-connections) record |
 | `database:user` | `create` | A MySQL user and database on a Node Docker Process, then a connection record |
 | `gateway` | `add` and `remove` | A Gateway profile in the CLI configuration |
-| `herdr:session` | `create` and `destroy` | A [Herdr session](/reference/herdr-sessions) |
 | `instance` | `create` and `destroy` | An Instance |
 | `instance:database` | `add` and `remove` | A Database connection on an Instance |
 | `instance:deploy-step` | `create` and `destroy` | A named [deploy step](/reference/deployments) |
@@ -63,7 +62,6 @@ Some families expose actions that are not the pairs above. Those last segments b
 | `env` | `import`, `sync` | The CLI imports or synchronizes Instance environment values. |
 | `firewall` | `allow`, `deny` | The CLI writes an allow or deny firewall rule. |
 | `gateway` | `status`, `trust`, `use` | The CLI reports Gateway status, pins the root certificate, or selects a profile. |
-| `herdr` | `observe`, `adopt`, `restart` | The CLI observes a session, adopts an existing server, or restarts a session. |
 | `instance` | `clone`, `deploy`, `register`, `rollback`, `scan`, `setup`, `transfer` | The CLI clones, deploys, registers, rolls back, or transfers an Instance, scans its dependencies, or runs its Project setup steps. |
 | `metrics` | `status` | The CLI reports Metrics role status. |
 | `proxycli` | `status` | The CLI reports the fleet CLIProxyAPI quota collector. |
@@ -73,9 +71,8 @@ Some families expose actions that are not the pairs above. Those last segments b
 | `realtime` | `tail` | The CLI streams decoded realtime Gateway events as they arrive. |
 | `schedule` | `logs`, `run` | The CLI reads Schedule logs or runs a Schedule once. |
 | `tasks` | `cancel`, `complete`, `status` | The CLI cancels or completes a task group, or reports whether the tasks extension is on. |
-| `top` | `top` | The CLI shows the fleet as a live screen. |
 
-`doctor`, `profile`, and `top` are one-segment commands. Each family name is the command.
+`doctor` and `profile` are one-segment commands. Each family name is the command.
 
 ## Noun-ending commands
 

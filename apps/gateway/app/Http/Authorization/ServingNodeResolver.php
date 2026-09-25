@@ -11,7 +11,6 @@ use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\AppInstanceDeployment;
 use App\Models\Cluster;
-use App\Models\HerdrSession;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\Route;
@@ -36,7 +35,6 @@ final readonly class ServingNodeResolver
             ServingNode::InstanceTransfer => $this->instanceTransfer($request),
             ServingNode::EnvironmentInstanceOwning => $this->environmentInstanceOwning($request),
             ServingNode::ProcessOwning => $this->processOwning($request),
-            ServingNode::HerdrSessionOwning => $this->herdrSessionOwning($request),
             ServingNode::ScheduleOwning => $this->scheduleOwning($request),
             ServingNode::ScheduleHost => $this->scheduleHost($request),
             ServingNode::AppInstanceHost => $this->appInstanceHost($request),
@@ -265,26 +263,6 @@ final readonly class ServingNodeResolver
         $request->route()?->setParameter('instance', $instance);
 
         return [Node::query()->findOrFail($instance->node_id)];
-    }
-
-    /**
-     * @return list<Node>
-     */
-    private function herdrSessionOwning(Request $request): array
-    {
-        $session = $request->route('session');
-
-        if ($session instanceof HerdrSession) {
-            return [Node::query()->findOrFail($session->node_id)];
-        }
-
-        $nodeId = $this->positiveInteger($request->input('node_id'));
-
-        if ($nodeId === null) {
-            return [];
-        }
-
-        return [Node::query()->findOrFail($nodeId)];
     }
 
     /**

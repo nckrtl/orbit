@@ -2,12 +2,10 @@
 
 declare(strict_types=1);
 
-use App\Domain\Herdr\HerdrSessionManagement;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\Nodes\NativeNodeProvisioningLock;
 use App\Models\Activity;
-use App\Models\HerdrSession;
 use App\Models\Node;
 use Illuminate\Support\Str;
 
@@ -121,34 +119,6 @@ describe('PATCH /api/v1/nodes/{node}/name', function (): void {
             ->patchJson("/api/v1/nodes/{$node->id}/name", ['name' => 'not valid'])
             ->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation.failed');
-
-        expect($node->refresh()->name)->toBe('gateway');
-    });
-
-    it('refuses rename while the node owns a herdr session', function (): void {
-        $node = Node::query()->create([
-            'name' => 'gateway',
-            'status' => LifecycleStatus::Active,
-            'public_ssh_host' => '192.0.2.10',
-            'user' => 'orbit',
-            'wireguard_ip' => '10.44.0.1',
-        ]);
-        HerdrSession::query()->create([
-            'node_id' => $node->id,
-            'session' => 'commander-tasks',
-            'user' => 'orbit',
-            'observer_port' => 7411,
-            'observer_hostname' => 'commander-tasks.herdr.gateway.orbit',
-            'observer_status' => 'pending',
-            'status' => LifecycleStatus::Active,
-            'management' => HerdrSessionManagement::Managed,
-            'publish_observer' => false,
-        ]);
-
-        $this
-            ->patchJson("/api/v1/nodes/{$node->id}/name", ['name' => 'vpn'])
-            ->assertConflict()
-            ->assertJsonPath('error.code', 'node.has_herdr_sessions');
 
         expect($node->refresh()->name)->toBe('gateway');
     });

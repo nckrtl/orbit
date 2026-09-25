@@ -81,7 +81,7 @@ A record is not an implementation task, an issue lifecycle rule, or an agent ins
 | [0069](/decisions/0069-allow-node-process-targets) | Allow Process targets of AppInstance or managed Node | Accepted 2026-09-13 |
 | [0070](/decisions/0070-keep-the-database-role-as-a-docker-baseline) | Keep the database role as a Docker baseline | Accepted 2026-09-14; amended by 0077 |
 | [0071](/decisions/0071-use-one-verb-vocabulary-across-cli-routes-and-sdk) | Use one verb vocabulary across the CLI, route names, and SDK | Accepted 2026-09-14 |
-| [0072](/decisions/0072-add-and-remove-nodes-without-changing-the-machine) | Add and remove Nodes without changing the machine | Accepted 2026-09-14 |
+| [0072](/decisions/0072-add-and-remove-nodes-without-changing-the-machine) | Add and remove Nodes without changing the machine | Accepted 2026-09-14; amended by 0146 |
 | [0073](/decisions/0073-store-deploy-steps-as-named-appinstance-records) | Store deploy steps as named AppInstance records | Accepted 2026-09-14 |
 | [0074](/decisions/0074-hibernate-idle-app-dev-appinstance-processes) | Hibernate idle app-dev AppInstance Processes | Accepted 2026-09-14 |
 | [0075](/decisions/0075-prune-idle-app-dev-checkout-dependencies) | Prune idle app-dev checkout dependencies | Accepted 2026-09-14 |
@@ -94,13 +94,13 @@ A record is not an implementation task, an issue lifecycle rule, or an agent ins
 | [0082](/decisions/0082-wire-agentation-watch-mode-through-appinstance-processes) | Wire Agentation watch mode through App instance Processes | Proposed |
 | [0083](/decisions/0083-default-sqlite-journal-mode-to-wal) | Default SQLite journal_mode to WAL | Proposed |
 | [0084](/decisions/0084-broadcast-record-changes-through-reverb) | Broadcast record changes through Reverb | Proposed; amended by 0087; extended by 0129 |
-| [0085](/decisions/0085-build-orbit-top-as-a-thin-tui-client) | Build orbit top as a thin TUI client | Proposed; amended by 0123 |
+| [0085](/decisions/0085-build-orbit-top-as-a-thin-tui-client) | Build orbit top as a thin TUI client | Proposed; amended by 0123; superseded by 0147 |
 | [0086](/decisions/0086-offer-the-api-as-mcp-tools) | Offer the API as MCP tools | Proposed |
 | [0087](/decisions/0087-run-reverb-through-a-websocket-role) | Run Reverb through a websocket role | Proposed; amended by 0095 |
-| [0088](/decisions/0088-cli-reads-display-metrics-from-grafana) | CLI reads display metrics from Grafana | Proposed |
+| [0088](/decisions/0088-cli-reads-display-metrics-from-grafana) | CLI reads display metrics from Grafana | Proposed; amended by 0147 |
 | [0089](/decisions/0089-index-appinstance-dependencies) | Index App instance dependencies | Proposed |
 | [0090](/decisions/0090-relocate-the-gateway-role-independently-of-vpn) | Relocate the gateway role independently of vpn | Proposed; amended by 0092, 0094, and 0095 |
-| [0091](/decisions/0091-rename-a-node-without-changing-wireguard-identity) | Rename a Node without changing WireGuard identity | Proposed |
+| [0091](/decisions/0091-rename-a-node-without-changing-wireguard-identity) | Rename a Node without changing WireGuard identity | Proposed; amended by 0146 |
 | [0092](/decisions/0092-publish-private-dns-on-the-vpn-node-after-gateway-relocate) | Publish private DNS on the VPN node after gateway relocate | Proposed |
 | [0093](/decisions/0093-show-live-ufw-and-desired-rules-that-match-converge) | Show live UFW and desired rules that match converge | Proposed |
 | [0094](/decisions/0094-project-wireguard-hub-config-onto-the-vpn-node) | Project WireGuard hub config onto the VPN node | Proposed |
@@ -128,7 +128,7 @@ A record is not an implementation task, an issue lifecycle rule, or an agent ins
 | [0120](/decisions/0120-extract-agent-annotation-package) | Extract the agent annotation package | Proposed |
 | [0121](/decisions/0121-end-agent-turns-with-a-run-receipt) | End agent turns with a run receipt | Proposed; amended by 0132; extended by 0133 |
 | [0122](/decisions/0122-hold-task-groups-in-backlog-until-ready) | Hold task groups in Backlog until they are ready | Proposed; extended by 0124 |
-| [0123](/decisions/0123-serve-the-web-app-from-the-gateway-origin) | Serve the web app from the Gateway origin | Proposed; amended by 0126 |
+| [0123](/decisions/0123-serve-the-web-app-from-the-gateway-origin) | Serve the web app from the Gateway origin | Proposed; amended by 0126 and 0147 |
 | [0124](/decisions/0124-plan-backlog-groups-with-a-t3-planner) | Plan Backlog groups with a T3 planner | Proposed; extended by 0133 |
 | [0125](/decisions/0125-run-the-project-check-when-the-implementer-hands-off) | Run the Project check when the implementer hands off | Proposed; extended by 0133 |
 | [0126](/decisions/0126-limit-browser-api-calls-to-orbit-origins) | Limit browser API calls to Orbit origins | Proposed |
@@ -146,9 +146,11 @@ A record is not an implementation task, an issue lifecycle rule, or an agent ins
 | [0138](/decisions/0138-opt-public-ingress-sites-into-caddy-certificate-automation) | Opt public Ingress sites into Caddy certificate automation | Proposed |
 | [0139](/decisions/0139-collect-caddy-http-metrics-on-every-node) | Collect Caddy HTTP metrics on every Node | Proposed |
 | [0140](/decisions/0140-watch-settling-pull-requests-for-conflicts-and-failed-checks) | Watch settling pull requests for conflicts and failed checks | Proposed |
-| [0141](/decisions/0141-build-each-node-caddyfile-on-the-gateway) | Build each Node's Caddyfile on the Gateway | Proposed |
+| [0141](/decisions/0141-build-each-node-caddyfile-on-the-gateway) | Build each Node's Caddyfile on the Gateway | Proposed; amended by 0146 |
 | [0142](/decisions/0142-apply-plausibles-clickhouse-configuration-from-the-analytics-role) | Apply Plausible's ClickHouse configuration from the analytics role | Proposed |
 | [0143](/decisions/0143-record-topology-evidence-and-sync-without-verification) | Record topology evidence and sync without verification | Proposed |
 | [0144](/decisions/0144-migrate-waiting-connections-when-caddy-reloads) | Migrate waiting connections when Caddy reloads | Proposed |
 | [0145](/decisions/0145-publish-the-proxycli-collector-on-collector-cli-proxy-api-orbit) | Publish the proxycli collector on collector.cli-proxy-api.orbit | Proposed |
+| [0146](/decisions/0146-retire-the-herdr-integration) | Retire the Herdr integration | Proposed |
+| [0147](/decisions/0147-retire-orbit-top) | Retire orbit top | Proposed |
 | [0150](/decisions/0150-keep-extension-commands-local-and-confirm-the-proxycli-fleet-stop) | Keep extension commands local and confirm the proxycli fleet stop | Proposed |

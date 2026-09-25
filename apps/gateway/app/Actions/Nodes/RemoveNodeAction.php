@@ -26,7 +26,6 @@ use App\Domain\Schedules\ScheduleTargetUseGuard;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WireGuard\GatewayPeerProjectionManager;
-use App\Models\HerdrSession;
 use App\Models\Node;
 use App\Models\Process;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -410,13 +409,6 @@ final readonly class RemoveNodeAction
 
     private function guardOwnedRuntime(Node $node): void
     {
-        if ($node->herdrSessions()->exists()) {
-            throw $this->conflict(
-                'node.has_herdr_sessions',
-                "Node [{$node->name}] still owns Herdr sessions.",
-            );
-        }
-
         if ($node->processes()->exists()) {
             throw $this->conflict(
                 'node.has_processes',
@@ -427,15 +419,6 @@ final readonly class RemoveNodeAction
 
     private function forgetOwnedRuntimeRecords(Node $node): void
     {
-        HerdrSession::query()
-            ->where('node_id', $node->id)
-            ->orderBy('id')
-            ->get()
-            ->each(function (HerdrSession $session): void {
-                $session->update(['process_id' => null]);
-                $session->delete();
-            });
-
         Process::query()
             ->where('owner_type', Node::class)
             ->where('owner_id', $node->id)

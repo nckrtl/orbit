@@ -17,7 +17,7 @@ final class DoctorCommand extends GatewayCommand
     #[\Override]
     protected $signature = 'doctor
         {--node= : Numeric node ID; omit to check all registered nodes}
-        {--family=* : Limit checks to node, role, app, instance, schedule, tool, process, firewall, herdr, database_connection, or route}
+        {--family=* : Limit checks to node, role, app, instance, schedule, tool, process, firewall, database_connection, or route}
         {--json : Return machine-readable JSON}';
 
     #[\Override]

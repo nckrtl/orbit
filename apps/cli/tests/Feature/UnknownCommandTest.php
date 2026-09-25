@@ -52,7 +52,7 @@ describe('unknown command', function (): void {
             ->not->toContain('scheduled tasks');
     })->with(['schedule:finish', 'schedule:complete']);
 
-    it('treats replaced process, schedule, and Herdr session names as unknown commands', function (string $command): void {
+    it('treats replaced process and schedule names as unknown commands', function (string $command): void {
         [$status, $output] = run_orbit($command);
 
         expect($status)
@@ -68,7 +68,5 @@ describe('unknown command', function (): void {
         'schedule:add',
         'schedule:remove',
         'schedule:activate',
-        'herdr:session:add',
-        'herdr:session:remove',
     ]);
 });

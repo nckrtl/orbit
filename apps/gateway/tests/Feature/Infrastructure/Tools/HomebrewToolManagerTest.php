@@ -46,18 +46,18 @@ describe(HomebrewToolManager::class, function (): void {
 
         expect($manager->validatePackage($package))->toBe($valid);
     })->with([
-        'simple' => ['herdr', true],
+        'simple' => ['ripgrep', true],
         'versioned formula' => ['php@8.5', true],
         'punctuation' => ['libc++_tool.1', true],
         'empty' => ['', false],
-        'uppercase' => ['Herdr', false],
-        'tap' => ['homebrew/core/herdr', false],
-        'other tap' => ['example/tap/herdr', false],
+        'uppercase' => ['Ripgrep', false],
+        'tap' => ['homebrew/core/ripgrep', false],
+        'other tap' => ['example/tap/ripgrep', false],
         'cask option' => ['--cask', false],
-        'URL' => ['https://example.com/herdr.rb', false],
-        'local formula' => ['./herdr.rb', false],
-        'Git ref' => ['herdr#main', false],
-        'whitespace' => ['herdr service', false],
+        'URL' => ['https://example.com/ripgrep.rb', false],
+        'local formula' => ['./ripgrep.rb', false],
+        'Git ref' => ['ripgrep#main', false],
+        'whitespace' => ['ripgrep service', false],
         'oversized' => [str_repeat('a', times: 256), false],
     ]);
 
@@ -211,7 +211,7 @@ describe(HomebrewToolManager::class, function (): void {
             homebrew_result("Homebrew 7.0.0\n"),
             homebrew_result("x86_64\n"),
             homebrew_result(homebrew_formula()),
-            homebrew_result("herdr 0.8.2\n"),
+            homebrew_result("ripgrep 0.8.2\n"),
             homebrew_result("x86_64\n"),
             homebrew_result(homebrew_formula()),
             homebrew_result(),
@@ -223,26 +223,26 @@ describe(HomebrewToolManager::class, function (): void {
         $node = homebrew_tool_node();
 
         expect($manager->managerVersion($node))->toBe('Homebrew 7.0.0');
-        expect($manager->candidateVersion($node, 'herdr', ToolOperation::Install))->toBe('0.9.0');
-        expect($manager->installedVersion($node, 'herdr'))->toBe('0.8.2');
-        $manager->install($node, 'herdr');
-        $manager->update($node, 'herdr');
-        expect($manager->planRemoval($node, 'herdr')->packages)->toBe(['herdr']);
-        $manager->remove($node, 'herdr');
+        expect($manager->candidateVersion($node, 'ripgrep', ToolOperation::Install))->toBe('0.9.0');
+        expect($manager->installedVersion($node, 'ripgrep'))->toBe('0.8.2');
+        $manager->install($node, 'ripgrep');
+        $manager->update($node, 'ripgrep');
+        expect($manager->planRemoval($node, 'ripgrep')->packages)->toBe(['ripgrep']);
+        $manager->remove($node, 'ripgrep');
 
         $prefix = homebrew_arguments();
         expect($ssh->arguments())->toBe([
             [...$prefix, '--version'],
             ['/usr/bin/uname', '-m'],
-            [...$prefix, 'info', '--json=v2', '--formula', 'homebrew/core/herdr'],
-            [...$prefix, 'list', '--versions', '--formula', 'homebrew/core/herdr'],
+            [...$prefix, 'info', '--json=v2', '--formula', 'homebrew/core/ripgrep'],
+            [...$prefix, 'list', '--versions', '--formula', 'homebrew/core/ripgrep'],
             ['/usr/bin/uname', '-m'],
-            [...$prefix, 'info', '--json=v2', '--formula', 'homebrew/core/herdr'],
-            [...$prefix, 'install', '--formula', '--force-bottle', 'homebrew/core/herdr'],
+            [...$prefix, 'info', '--json=v2', '--formula', 'homebrew/core/ripgrep'],
+            [...$prefix, 'install', '--formula', '--force-bottle', 'homebrew/core/ripgrep'],
             ['/usr/bin/uname', '-m'],
-            [...$prefix, 'info', '--json=v2', '--formula', 'homebrew/core/herdr'],
-            [...$prefix, 'upgrade', '--formula', '--force-bottle', 'homebrew/core/herdr'],
-            [...$prefix, 'uninstall', '--formula', 'homebrew/core/herdr'],
+            [...$prefix, 'info', '--json=v2', '--formula', 'homebrew/core/ripgrep'],
+            [...$prefix, 'upgrade', '--formula', '--force-bottle', 'homebrew/core/ripgrep'],
+            [...$prefix, 'uninstall', '--formula', 'homebrew/core/ripgrep'],
         ]);
     });
 
@@ -252,7 +252,7 @@ describe(HomebrewToolManager::class, function (): void {
             homebrew_result(homebrew_formula(architecture: 'arm64_linux')),
         ]);
 
-        expect($manager->candidateVersion(homebrew_tool_node(), 'herdr', ToolOperation::Update))
+        expect($manager->candidateVersion(homebrew_tool_node(), 'ripgrep', ToolOperation::Update))
             ->toBe('0.9.0')
             ->and($manager->normalizeVersion('v0.9'))
             ->toBe('0.9.0')
@@ -282,11 +282,11 @@ describe(HomebrewToolManager::class, function (): void {
             homebrew_result(homebrew_formula($changes)),
         ]);
 
-        expect(fn () => $manager->candidateVersion(homebrew_tool_node(), 'herdr', ToolOperation::Install))
+        expect(fn () => $manager->candidateVersion(homebrew_tool_node(), 'ripgrep', ToolOperation::Install))
             ->toThrow(ToolManagerException::class, 'compatible verified bottle');
     })->with([
         'wrong name' => [['name' => 'other']],
-        'qualified full name' => [['full_name' => 'other/tap/herdr']],
+        'qualified full name' => [['full_name' => 'other/tap/ripgrep']],
         'wrong tap' => [['tap' => 'other/tap']],
         'no stable version' => [['stable' => null]],
         'no bottle declaration' => [['has_bottle' => false]],
@@ -294,7 +294,7 @@ describe(HomebrewToolManager::class, function (): void {
         'missing checksum' => [['sha256' => null]],
         'mismatched checksum URL' => [['url_sha256' => str_repeat('b', times: 64)]],
         'disabled formula' => [['disabled' => true]],
-        'cask response' => [['casks' => [['name' => 'herdr']]]],
+        'cask response' => [['casks' => [['name' => 'ripgrep']]]],
     ]);
 
     it('rejects unsupported operations, nodes, packages, and architectures before mutation', function (): void {
@@ -303,15 +303,15 @@ describe(HomebrewToolManager::class, function (): void {
         [$packageManager, $packageSsh] = homebrew_tool_manager([]);
         [$architectureManager] = homebrew_tool_manager([homebrew_result("riscv64\n")]);
 
-        expect(fn () => $removeManager->candidateVersion(homebrew_tool_node(), 'herdr', ToolOperation::Remove))
+        expect(fn () => $removeManager->candidateVersion(homebrew_tool_node(), 'ripgrep', ToolOperation::Remove))
             ->toThrow(ToolManagerException::class)
-            ->and(fn () => $nodeManager->install(homebrew_tool_node('darwin'), 'herdr'))
+            ->and(fn () => $nodeManager->install(homebrew_tool_node('darwin'), 'ripgrep'))
             ->toThrow(ToolManagerException::class)
-            ->and(fn () => $packageManager->install(homebrew_tool_node(), 'other/tap/herdr'))
+            ->and(fn () => $packageManager->install(homebrew_tool_node(), 'other/tap/ripgrep'))
             ->toThrow(ToolManagerException::class)
             ->and(fn () => $architectureManager->candidateVersion(
                 homebrew_tool_node(),
-                'herdr',
+                'ripgrep',
                 ToolOperation::Install,
             ))
             ->toThrow(ToolManagerException::class, 'no supported Homebrew bottle');
@@ -362,7 +362,7 @@ describe(HomebrewToolManager::class, function (): void {
                 expect($exception->result?->stdout)->toBeEmpty();
                 expect($exception->result?->stderr)->toBeEmpty();
             });
-        expect(fn () => $formulaManager->install(homebrew_tool_node(), 'herdr'))
+        expect(fn () => $formulaManager->install(homebrew_tool_node(), 'ripgrep'))
             ->toThrow(function (ToolManagerException $exception): void {
                 expect($exception->step)->toBe('candidate-version');
                 expect($exception->result?->stdout)->toBeEmpty();
@@ -372,18 +372,18 @@ describe(HomebrewToolManager::class, function (): void {
         expect($formulaSsh->arguments())
             ->not
             ->toContain(
-                [...homebrew_arguments(), 'install', '--formula', '--force-bottle', 'homebrew/core/herdr'],
+                [...homebrew_arguments(), 'install', '--formula', '--force-bottle', 'homebrew/core/ripgrep'],
             );
     });
 
     it('rejects malformed installed state instead of adopting it', function (CommandResult $result): void {
         [$manager] = homebrew_tool_manager([$result]);
 
-        expect(fn () => $manager->installedVersion(homebrew_tool_node(), 'herdr'))
+        expect(fn () => $manager->installedVersion(homebrew_tool_node(), 'ripgrep'))
             ->toThrow(ToolManagerException::class);
     })->with([
         'wrong package' => [homebrew_result("other 0.9.0\n")],
-        'multiple versions' => [homebrew_result("herdr 0.8.2 0.9.0\n")],
+        'multiple versions' => [homebrew_result("ripgrep 0.8.2 0.9.0\n")],
         'unknown failure' => [homebrew_result(exitCode: 1, stderr: 'unexpected')],
         'truncated' => [homebrew_result('secret', truncated: true)],
     ]);
@@ -438,14 +438,14 @@ function homebrew_formula(array $changes = [], string $architecture = 'x86_64_li
     $sha256 = array_key_exists('sha256', $changes) ? $changes['sha256'] : str_repeat('a', times: 64);
     $urlSha256 = is_string($changes['url_sha256'] ?? null) ? $changes['url_sha256'] : $sha256;
     $file = [
-        'url' => "https://ghcr.io/v2/homebrew/core/herdr/blobs/sha256:{$urlSha256}",
+        'url' => "https://ghcr.io/v2/homebrew/core/ripgrep/blobs/sha256:{$urlSha256}",
         'sha256' => $sha256,
     ];
 
     return json_encode([
         'formulae' => [[
-            'name' => $changes['name'] ?? 'herdr',
-            'full_name' => $changes['full_name'] ?? 'herdr',
+            'name' => $changes['name'] ?? 'ripgrep',
+            'full_name' => $changes['full_name'] ?? 'ripgrep',
             'tap' => $changes['tap'] ?? 'homebrew/core',
             'versions' => [
                 'stable' => array_key_exists('stable', $changes) ? $changes['stable'] : '0.9.0',
@@ -453,7 +453,7 @@ function homebrew_formula(array $changes = [], string $architecture = 'x86_64_li
             ],
             'bottle' => ['stable' => ['files' => [$architecture => $file]]],
             'disabled' => $changes['disabled'] ?? false,
-            'service' => ['run' => ['herdr', 'server']],
+            'service' => ['run' => ['ripgrep', 'server']],
         ]],
         'casks' => $changes['casks'] ?? [],
     ], JSON_THROW_ON_ERROR);
