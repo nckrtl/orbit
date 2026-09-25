@@ -1428,8 +1428,6 @@ function run_app_dev_certificate_probe_locally(RemoteCommand $command, string $r
             'install -o root -g root ',
             'sudo ',
             'openssl ',
-            'date -d "$not_before" +%s',
-            'date -d "$not_after" +%s',
         ],
         [
             $root,
@@ -1440,12 +1438,6 @@ function run_app_dev_certificate_probe_locally(RemoteCommand $command, string $r
             'install ',
             '',
             app_dev_test_openssl_binary().' ',
-            PHP_OS_FAMILY === 'Darwin'
-                ? 'date -j -f "%b %e %T %Y %Z" "$not_before" +%s'
-                : 'date -d "$not_before" +%s',
-            PHP_OS_FAMILY === 'Darwin'
-                ? 'date -j -f "%b %e %T %Y %Z" "$not_after" +%s'
-                : 'date -d "$not_after" +%s',
         ],
         $command->input ?? '',
     );
