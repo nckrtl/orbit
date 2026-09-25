@@ -12,8 +12,8 @@ use Throwable;
 /**
  * Ends a `running` Activity when PHP shuts its request down before the middleware records the outcome
  * (ADR 0158). PHP runs shutdown code after a fatal error, such as exhausted memory or an exceeded
- * execution time, and after a client abort. A SIGKILL, including the kernel OOM killer and the PHP-FPM
- * request limit, runs nothing; the scheduled sweep ends those rows.
+ * execution time. A worker killed by a signal, from the kernel OOM killer or the PHP-FPM request
+ * limit, runs nothing; the scheduled sweep ends those rows.
  *
  * The Gateway's exception handler calls finalizeArmed() when it reports a fatal error, before it
  * builds log context that can exhaust memory again and stop every later shutdown function.
@@ -44,6 +44,16 @@ final class ActivityShutdownFinalizer
         foreach (self::$armed as $finalizer) {
             $finalizer->finalize();
         }
+    }
+
+    /**
+     * The Activity IDs whose requests have not recorded an outcome yet.
+     *
+     * @return list<int>
+     */
+    public static function armedActivityIds(): array
+    {
+        return array_values(array_map(static fn (self $finalizer): int => $finalizer->activityId, self::$armed));
     }
 
     public function disarm(): void
@@ -86,8 +96,11 @@ final class ActivityShutdownFinalizer
 
         $limit = ini_parse_quantity((string) ini_get('memory_limit'));
 
-        if ($limit > 0 && memory_get_usage() + self::SHUTDOWN_MEMORY_BYTES > $limit) {
-            ini_set('memory_limit', (string) (memory_get_usage() + self::SHUTDOWN_MEMORY_BYTES));
+        // PHP enforces the limit against the memory it holds from the system, not the memory in use.
+        $held = memory_get_usage(true);
+
+        if ($limit > 0 && $held + self::SHUTDOWN_MEMORY_BYTES > $limit) {
+            ini_set('memory_limit', (string) ($held + self::SHUTDOWN_MEMORY_BYTES));
         }
     }
 }

@@ -70,10 +70,11 @@ A polling client therefore adds about one record per command and target per minu
 
 ## Interrupted requests
 
-A request can end before it records its outcome. PHP-FPM ends every Gateway request after 600 seconds, the kernel can kill a worker that runs out of memory, and a Gateway deploy restarts its workers. The Gateway then ends the record as `failed` with the error code `activity.interrupted`. Its duration and exit code stay null.
+A request can end before it records its outcome. PHP-FPM ends a Gateway request that passes its 600-second limit, the kernel can kill a worker that runs out of memory, and a Gateway deploy restarts its workers. The Gateway then ends the record as `failed` with the error code `activity.interrupted`. Its duration and exit code stay null.
 
-- After a fatal error in PHP, such as exhausted memory, or a client abort, the Gateway ends the record when the request shuts down.
-- A killed worker runs no code. The Gateway scheduler runs `php artisan orbit:activity-finalize-interrupted` every five minutes. It ends every record still `running` 900 seconds after it started, at most 500 records per run, oldest first. No request can run that long, so the sweep never ends a command that is still working.
+- After a fatal error in PHP, such as exhausted memory or an exceeded execution time, the Gateway ends the record when the request shuts down.
+- A killed worker runs no code. The Gateway scheduler runs `php artisan orbit:activity-finalize-interrupted` every five minutes. It ends every record still `running` 900 seconds after it started, at most 500 records per run, oldest first. PHP-FPM checks its 600-second limit every 200 seconds, so a request ends by about 800 seconds. The sweep therefore never ends a command that is still working.
+- The sweep runs only while the Gateway scheduler, `php artisan schedule:work` in the Gateway checkout, is running. The Gateway install does not start the scheduler. Without it, a killed request stays `running`.
 
 `activity.interrupted` means the Gateway lost the request, not that the operation failed on its target. The operation may have finished on the Node, so check the target before you run the command again. [ADR 0158](/decisions/0158-end-interrupted-activity) records this rule.
 

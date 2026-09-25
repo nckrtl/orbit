@@ -6,9 +6,12 @@ use App\Actions\Activities\FinalizeInterruptedActivitiesAction;
 use App\Infrastructure\Activity\ActivityShutdownFinalizer;
 use App\Infrastructure\Gateway\GatewayFpmConfigRenderer;
 use App\Models\Activity;
+use Illuminate\Console\Scheduling\Event;
+use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\Process;
 
@@ -91,14 +94,20 @@ describe('the interrupted Activity sweep', function (): void {
     it('waits longer than PHP-FPM lets any Gateway request run', function (): void {
         preg_match('/request_terminate_timeout = (\d+)s/', new GatewayFpmConfigRenderer()->renderPool('/checkout', '/home/orbit/.orbit'), $fpm);
 
+        // PHP-FPM checks the limit on a heartbeat of a third of it, so a request can live four thirds of it.
         expect($fpm[1] ?? null)->not->toBeNull()
-            ->and(config('orbit.activity_interrupted_after'))->toBeGreaterThanOrEqual((int) $fpm[1] + 60);
+            ->and(config('orbit.activity_interrupted_after'))->toBeGreaterThan((int) ceil((int) $fpm[1] * 4 / 3) + 60);
     });
 
-    it('runs on the Gateway scheduler every five minutes without overlapping', function (): void {
+    it('runs on the Gateway scheduler every five minutes with a lock that expires after ten minutes', function (): void {
         Artisan::call('schedule:list');
+        $event = collect(app(Schedule::class)->events())
+            ->first(fn (Event $event): bool => str_contains((string) $event->command, 'orbit:activity-finalize-interrupted'));
 
-        expect(Artisan::output())->toMatch('/\*\/5 \* \* \* \*\s+php artisan orbit:activity-finalize-interrupted/');
+        expect($event)->not->toBeNull()
+            ->and($event->expression)->toBe('*/5 * * * *')
+            ->and($event->withoutOverlapping)->toBeTrue()
+            ->and($event->expiresAt)->toBe(10);
     });
 });
 
@@ -149,4 +158,63 @@ describe('the shutdown finalizer', function (): void {
         'killed by the memory limit' => ['armed', 'failed', 'activity.interrupted'],
         'after the outcome was recorded' => ['disarmed', 'succeeded', null],
     ]);
+});
+
+describe('the command activity middleware', function (): void {
+    beforeEach(function (): void {
+        Route::middleware('api')->group(function (): void {
+            Route::post('/api/v1/activity-probe', fn () => response()->json([
+                'armed' => ActivityShutdownFinalizer::armedActivityIds(),
+            ]))->name('activity:probe');
+            Route::post('/api/v1/activity-probe/fail', function (): never {
+                throw new RuntimeException('probe failure');
+            })->name('activity:probe-fail');
+            Route::post('/api/v1/activity-probe/stream', fn () => response()->stream(function (): void {
+                echo json_encode(['armed' => ActivityShutdownFinalizer::armedActivityIds()], JSON_THROW_ON_ERROR);
+            }))->name('activity:probe-stream');
+        });
+        Route::getRoutes()->refreshNameLookups();
+    });
+
+    it('arms the finalizer while a command runs and disarms it once the outcome is recorded', function (): void {
+        $response = $this->postJson('/api/v1/activity-probe');
+        $activity = Activity::query()->where('command', 'activity:probe')->sole();
+
+        expect($response->json('armed'))->toContain($activity->id)
+            ->and($activity->status)->toBe('succeeded')
+            ->and(ActivityShutdownFinalizer::armedActivityIds())->not->toContain($activity->id);
+    });
+
+    it('disarms the finalizer after recording a failed command', function (): void {
+        $this->withoutExceptionHandling();
+
+        expect(fn () => $this->postJson('/api/v1/activity-probe/fail'))->toThrow(RuntimeException::class, 'probe failure')
+            ->and($activity = Activity::query()->where('command', 'activity:probe-fail')->sole())->status->toBe('failed')
+            ->and(ActivityShutdownFinalizer::armedActivityIds())->not->toContain($activity->id);
+    });
+
+    it('keeps the finalizer armed until a streamed response ends', function (): void {
+        $response = $this->postJson('/api/v1/activity-probe/stream');
+        $activity = Activity::query()->where('command', 'activity:probe-stream')->sole();
+
+        expect($activity->status)->toBe('running')
+            ->and(ActivityShutdownFinalizer::armedActivityIds())->toContain($activity->id);
+
+        $streamed = json_decode($response->streamedContent(), true, flags: JSON_THROW_ON_ERROR);
+
+        expect($streamed['armed'])->toContain($activity->id)
+            ->and($activity->refresh()->status)->toBe('succeeded')
+            ->and(ActivityShutdownFinalizer::armedActivityIds())->not->toContain($activity->id);
+    });
+
+    it('does not arm the finalizer for a read, which has no running row', function (): void {
+        Route::middleware('api')->get('/api/v1/activity-probe', fn () => response()->json([
+            'armed' => ActivityShutdownFinalizer::armedActivityIds(),
+        ]))->name('activity:probe-read');
+        Route::getRoutes()->refreshNameLookups();
+
+        $before = ActivityShutdownFinalizer::armedActivityIds();
+
+        expect($this->getJson('/api/v1/activity-probe')->json('armed'))->toBe($before);
+    });
 });

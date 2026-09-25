@@ -4090,7 +4090,8 @@
                 "Gateway",
                 "Instance",
                 "Node",
-                "Process"
+                "Process",
+                "Schedule"
             ],
             "governing_adrs": [
                 "0152",

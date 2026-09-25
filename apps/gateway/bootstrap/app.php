@@ -57,7 +57,7 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withSchedule(function (Schedule $schedule): void {
         app(TaskSchedule::class)->register($schedule);
         $schedule->command('annotations:dispatch')->everyTenSeconds()->withoutOverlapping();
-        $schedule->command('orbit:activity-finalize-interrupted')->everyFiveMinutes()->withoutOverlapping();
+        $schedule->command('orbit:activity-finalize-interrupted')->everyFiveMinutes()->withoutOverlapping(10);
     })
     ->withCommands()
     ->withMiddleware(function (Middleware $middleware): void {
