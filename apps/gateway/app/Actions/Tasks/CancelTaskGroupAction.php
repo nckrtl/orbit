@@ -8,6 +8,7 @@ use App\Domain\AppInstances\AppInstanceRemover;
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskStatus;
 use App\Models\AppInstance;
 use App\Models\TaskGroup;
@@ -43,6 +44,9 @@ final readonly class CancelTaskGroupAction
         $group->taskable()->dissociate();
         $group->status = TaskGroupStatus::Cancelled;
         $group->assistance_requested = false;
+        if ($group->assistance_reason === TaskScheduler::ProvisioningFailedReason) {
+            $group->assistance_reason = null;
+        }
         $group->save();
 
         $group->tasks()

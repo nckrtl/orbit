@@ -21,7 +21,7 @@ use Throwable;
 
 final readonly class TaskScheduler
 {
-    private const string ProvisioningUnavailableReason = 'Workspace provisioning did not return an instance.';
+    public const string ProvisioningFailedReason = 'Workspace provisioning did not return an instance.';
 
     public function __construct(
         private TaskConcurrencyGuard $ceilings,
@@ -762,16 +762,20 @@ final readonly class TaskScheduler
         }
     }
 
-    public function claimNext(): ?TaskGroup
+    /**
+     * Claims the oldest todo group that fits, provisions its Instance, and starts its first task.
+     *
+     * @param  list<int>  $skipped  Groups whose provisioning failed. A caller that passes the same list to later calls
+     *                              tries each failing group at most once.
+     */
+    public function claimNext(array &$skipped = []): ?TaskGroup
     {
-        $unprovisionableGroupIds = [];
-
         while (true) {
-            $reserved = DB::transaction(function () use ($unprovisionableGroupIds): ?TaskGroup {
+            $reserved = DB::transaction(function () use ($skipped): ?TaskGroup {
                 $candidates = TaskGroup::query()->where('execution_mode', TaskExecutionMode::Managed)
                     ->with(['tasks', 'taskable'])
                     ->where('status', TaskGroupStatus::Todo)
-                    ->when($unprovisionableGroupIds !== [], fn ($query) => $query->whereNotIn('id', $unprovisionableGroupIds))
+                    ->when($skipped !== [], fn ($query) => $query->whereNotIn('id', $skipped))
                     ->orderBy('id')
                     ->lockForUpdate()
                     ->get();
@@ -794,19 +798,33 @@ final readonly class TaskScheduler
                 return null;
             }
 
-            $instance = $this->provisioning->provision(InstanceProvisionIntent::for($reserved));
+            try {
+                $instance = $this->provisioning->provision(InstanceProvisionIntent::for($reserved));
+            } catch (TaskCapacityException $exception) {
+                $reserved->status = TaskGroupStatus::Todo;
+                if ($reserved->assistance_reason === self::ProvisioningFailedReason) {
+                    $reserved->assistance_reason = null;
+                }
+                $reserved->save();
 
-            if (! $instance instanceof AppInstance) {
-                $reserved->update([
-                    'status' => TaskGroupStatus::Todo,
-                    'assistance_reason' => self::ProvisioningUnavailableReason,
-                ]);
-                $unprovisionableGroupIds[] = $reserved->id;
+                if ($exception->fleetFull) {
+                    return null;
+                }
+
+                $skipped[] = $reserved->id;
 
                 continue;
             }
 
-            break;
+            if ($instance instanceof AppInstance) {
+                break;
+            }
+
+            $reserved->update([
+                'status' => TaskGroupStatus::Todo,
+                'assistance_reason' => self::ProvisioningFailedReason,
+            ]);
+            $skipped[] = $reserved->id;
         }
 
         $started = DB::transaction(function () use ($reserved, $instance): TaskGroup {
@@ -831,7 +849,7 @@ final readonly class TaskScheduler
 
             $group->status = TaskGroupStatus::Running;
             $group->started_at ??= now();
-            if ($group->assistance_reason === self::ProvisioningUnavailableReason) {
+            if ($group->assistance_reason === self::ProvisioningFailedReason) {
                 $group->assistance_requested = false;
                 $group->assistance_reason = null;
             }
@@ -847,6 +865,19 @@ final readonly class TaskScheduler
         $this->startFirstTask($started);
 
         return $started->fresh(['tasks', 'app', 'taskable']) ?? $started;
+    }
+
+    /** Claims todo groups until none fits. A failing group is tried once. */
+    public function claimAvailable(): int
+    {
+        $skipped = [];
+        $started = 0;
+
+        while ($this->claimNext($skipped) instanceof TaskGroup) {
+            $started++;
+        }
+
+        return $started;
     }
 
     /**

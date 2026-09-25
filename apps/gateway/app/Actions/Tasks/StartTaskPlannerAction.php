@@ -6,6 +6,7 @@ namespace App\Actions\Tasks;
 
 use App\Domain\Tasks\InstanceProvisioning;
 use App\Domain\Tasks\InstanceProvisionIntent;
+use App\Domain\Tasks\TaskCapacityException;
 use App\Domain\Tasks\TaskGroupGuard;
 use App\Domain\Tasks\TaskPlannerMcp;
 use App\Domain\Tasks\TaskPlannerSpawner;
@@ -27,7 +28,11 @@ final readonly class StartTaskPlannerAction
     /** A group whose Instance or planner cannot start is removed, so create stores no group. */
     public function execute(TaskGroup $group): TaskGroup
     {
-        $instance = $this->provisioning->provision(InstanceProvisionIntent::for($group, selfAccess: true));
+        try {
+            $instance = $this->provisioning->provision(InstanceProvisionIntent::for($group, selfAccess: true));
+        } catch (TaskCapacityException) {
+            $instance = null;
+        }
 
         if (! $instance instanceof AppInstance) {
             $group->delete();
