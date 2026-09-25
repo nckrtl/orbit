@@ -33,7 +33,7 @@ Ops also hits leftover state: the destination already holds the assignment after
 - Destination settings win. Relocate never overwrites a non-empty destination credential or setting with the source value.
 - `gateway` still opens `orbit:gateway-https` on the target, grants access to the `vpn` and `metrics` nodes, republishes private DNS, and retracts that firewall on the source. It still does not stop Caddy, PHP-FPM, or copy the serving checkout. [ADR 0092](/decisions/0092-publish-private-dns-on-the-vpn-node-after-gateway-relocate) still owns the DNS target and the granted access set.
 - `websocket` copies the Reverb identity onto the destination when the destination is missing it, converges the destination baseline, and retracts the source publication, runtime, and leftover settings. It does not purge the Reverb checkout (`purge-data` stays a remove flag).
-- `metrics` copies Grafana passwords onto the destination when the destination is missing them, converges the destination baseline, and retracts the source publication, exporters, cAdvisor, runtime, and leftover settings. It does not purge Prometheus or Grafana volumes.
+- `metrics` copies Grafana passwords onto the destination when the destination is missing them, converges the destination baseline, and retracts the source publication, runtime, and leftover settings. The destination convergence re-points the fleet's exporter and cAdvisor firewall rules at the destination, so the source retraction keeps those fleet agents. It does not purge Prometheus or Grafana volumes.
 - MCP `node-role-relocate` and the PHP SDK expose the same role set and optional `from` node ID.
 
 ## Rejected alternatives

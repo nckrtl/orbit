@@ -200,6 +200,8 @@ describe(RelocateNodeRoleAction::class, function (): void {
             ->toBe(["websocket:{$target->name}"])
             ->and($this->baselines->removed)
             ->toBe([['role' => 'websocket', 'node' => $source->name, 'purge_data' => false]])
+            ->and($this->baselines->removedAssignmentIds)
+            ->toBe([$assignment->id])
             ->and($this->firewall->events)
             ->toBeEmpty();
 
@@ -543,6 +545,9 @@ final class RelocateNodeRoleBaselineFake implements RoleBaselineConverger
     /** @var list<array{role: string, node: string, purge_data: bool}> */
     public array $removed = [];
 
+    /** @var list<int|null> */
+    public array $removedAssignmentIds = [];
+
     public ?ResourceOperationException $convergeFailure = null;
 
     /** Requests a fleet Metrics reconcile after each change, as the native converger does. */
@@ -581,6 +586,7 @@ final class RelocateNodeRoleBaselineFake implements RoleBaselineConverger
             'node' => $node->name,
             'purge_data' => $purgeData,
         ];
+        $this->removedAssignmentIds[] = $assignment->id;
         $this->reconcileMetrics();
     }
 

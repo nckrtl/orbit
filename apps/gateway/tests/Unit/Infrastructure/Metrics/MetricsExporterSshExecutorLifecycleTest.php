@@ -254,6 +254,82 @@ it('removes only proven exporter configuration and firewall state', function ():
     );
 });
 
+describe('a firewall rule that admits a former Metrics Node', function (): void {
+    it('re-points the rule at the Metrics Node on convergence', function (): void {
+        $ssh = new MetricsExporterStatefulSsh(
+            configuration: metricsExporterConfiguration('10.44.0.4'),
+            serviceActive: true,
+            firewall: true,
+            firewallSource: '10.44.0.2',
+        );
+
+        metricsExporterExecutor($ssh)->converge(
+            metricsExporterNode('app-prod', '10.44.0.4'),
+            metricsExporterNode('metrics', '10.44.0.3'),
+        );
+
+        $arguments = array_map(static fn (RemoteCommand $command): array => $command->arguments, $ssh->commands);
+
+        expect($ssh->firewall)->toBeTrue()
+            ->and($ssh->firewallSource)->toBe('10.44.0.3')
+            ->and(array_search(['sudo', 'ufw', '--force', 'delete', '5'], $arguments, true))
+            ->toBeLessThan(array_search(metricsExporterFirewallArguments('10.44.0.3'), $arguments, true));
+    });
+
+    it('removes the rule on removal', function (): void {
+        $ssh = new MetricsExporterStatefulSsh(
+            configuration: metricsExporterConfiguration('10.44.0.4'),
+            serviceActive: true,
+            firewall: true,
+            firewallSource: '10.44.0.2',
+        );
+
+        metricsExporterExecutor($ssh)->remove(
+            metricsExporterNode('app-prod', '10.44.0.4'),
+            metricsExporterNode('metrics', '10.44.0.3'),
+        );
+
+        expect($ssh->firewall)->toBeFalse()
+            ->and($ssh->configuration)->toBeNull();
+    });
+
+    it('restores the former source when convergence fails after re-pointing', function (): void {
+        $ssh = new MetricsExporterStatefulSsh(
+            configuration: metricsExporterConfiguration('10.44.0.4'),
+            serviceActive: true,
+            firewall: true,
+            failArguments: ['sudo', 'ufw', 'status', 'numbered'],
+            failOccurrence: 2,
+            firewallSource: '10.44.0.2',
+        );
+
+        expect(fn () => metricsExporterExecutor($ssh)->converge(
+            metricsExporterNode('app-prod', '10.44.0.4'),
+            metricsExporterNode('metrics', '10.44.0.3'),
+        ))->toThrow(ResourceOperationException::class);
+
+        expect($ssh->firewall)->toBeTrue()
+            ->and($ssh->firewallSource)->toBe('10.44.0.2')
+            ->and(array_map(static fn (RemoteCommand $command): array => $command->arguments, $ssh->commands))
+            ->toContain(metricsExporterFirewallArguments('10.44.0.3'), metricsExporterFirewallArguments('10.44.0.2'));
+    });
+
+    it('still refuses a rule that differs in more than its source', function (): void {
+        $ssh = new MetricsExporterCapturingSsh([
+            metricsExporterResult(exitCode: 1),
+            metricsExporterResult(stdout: "Status: active\n\n[ 5] 10.44.0.4 9100/tcp on orbit ALLOW IN 10.44.0.0/24 # orbit:metrics-node-exporter\n"),
+        ]);
+
+        expect(fn () => metricsExporterExecutor($ssh)->converge(
+            metricsExporterNode('app-prod', '10.44.0.4'),
+            metricsExporterNode('metrics', '10.44.0.3'),
+        ))
+            ->toThrow(ResourceOperationException::class, 'firewall ownership cannot be proved')
+            ->and($ssh->commands)
+            ->toHaveCount(2);
+    });
+});
+
 it('restores absent exporter state when convergence verification fails', function (): void {
     $ssh = new MetricsExporterStatefulSsh(
         configuration: null,
@@ -491,13 +567,22 @@ function metricsExporterConfiguration(string $address): string
     return "# Managed by Orbit: metrics\n[Service]\nExecStart=\nExecStart=/usr/bin/prometheus-node-exporter --web.listen-address={$address}:9100\nRestart=always\nRestartSec=2\n";
 }
 
-function metricsExporterFirewallStatus(string $destination): string
+function metricsExporterFirewallStatus(string $destination, string $source = '10.44.0.3'): string
 {
     return <<<STATUS
         Status: active
 
-        [ 5] {$destination} 9100/tcp on orbit ALLOW IN 10.44.0.3 # orbit:metrics-node-exporter
+        [ 5] {$destination} 9100/tcp on orbit ALLOW IN {$source} # orbit:metrics-node-exporter
         STATUS;
+}
+
+/** @return list<string> */
+function metricsExporterFirewallArguments(string $source): array
+{
+    return [
+        'sudo', 'ufw', 'allow', 'in', 'on', 'orbit', 'proto', 'tcp',
+        'from', $source, 'to', '10.44.0.4', 'port', '9100', 'comment', 'orbit:metrics-node-exporter',
+    ];
 }
 
 /** @return list<string> */
@@ -602,6 +687,7 @@ final class MetricsExporterStatefulSsh implements SshExecutor
         private bool $disableChangesState = true,
         public bool $retiredArtifacts = true,
         private bool $removeFirewallChangesState = true,
+        public string $firewallSource = '10.44.0.3',
     ) {}
 
     public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
@@ -615,6 +701,12 @@ final class MetricsExporterStatefulSsh implements SshExecutor
             return metricsExporterResult(exitCode: 1);
         }
 
+        if (array_slice($command->arguments, 0, 3) === ['sudo', 'ufw', 'allow']) {
+            return $command->arguments === metricsExporterFirewallArguments($command->arguments[9])
+                ? $this->addFirewall($command->arguments[9])
+                : metricsExporterResult(exitCode: 1);
+        }
+
         return match ($command->arguments) {
             ['sudo', 'test', '-e', '/etc/systemd/system/prometheus-node-exporter.service.d/orbit.conf'] => metricsExporterResult(
                 exitCode: $this->configuration === null ? 1 : 0,
@@ -624,7 +716,7 @@ final class MetricsExporterStatefulSsh implements SshExecutor
             ),
             ['sudo', 'ufw', 'status', 'numbered'] => metricsExporterResult(
                 stdout: $this->firewall
-                    ? metricsExporterFirewallStatus($connection->host)
+                    ? metricsExporterFirewallStatus($connection->host, $this->firewallSource)
                     : "Status: active\n",
             ),
             ['sudo', 'apt-get', 'install', '--yes', '--no-install-recommends', '--', 'prometheus-node-exporter'] => metricsExporterResult(),
@@ -665,24 +757,6 @@ final class MetricsExporterStatefulSsh implements SshExecutor
                 exitCode: $this->serviceActive ? 0 : 3,
                 stdout: $this->serviceActive ? "active\n" : "inactive\n",
             ),
-            [
-                'sudo',
-                'ufw',
-                'allow',
-                'in',
-                'on',
-                'orbit',
-                'proto',
-                'tcp',
-                'from',
-                '10.44.0.3',
-                'to',
-                '10.44.0.4',
-                'port',
-                '9100',
-                'comment',
-                'orbit:metrics-node-exporter',
-            ] => $this->addFirewall(),
             ['sudo', 'ufw', '--force', 'delete', '5'] => $this->removeFirewall(),
             [
                 'sudo',
@@ -745,9 +819,14 @@ final class MetricsExporterStatefulSsh implements SshExecutor
         return metricsExporterResult();
     }
 
-    private function addFirewall(): CommandResult
+    private function addFirewall(string $source): CommandResult
     {
+        if ($this->firewall) {
+            return metricsExporterResult(exitCode: 1);
+        }
+
         $this->firewall = true;
+        $this->firewallSource = $source;
 
         return metricsExporterResult();
     }
