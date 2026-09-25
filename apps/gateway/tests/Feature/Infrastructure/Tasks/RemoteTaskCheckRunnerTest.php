@@ -124,7 +124,7 @@ it('runs composer check detached and reports running, then the exit code and out
     $runner = check_runner(new LocalShellSshExecutor);
     $status = (new Process(['git', 'status', '--porcelain'], $checkout))->mustRun()->getOutput();
 
-    $process = $runner->start($instance);
+    $process = $runner->start($instance, 'composer check');
     $first = $runner->read($instance, $process);
     $reading = check_runner_wait($runner, $instance, $process);
 
@@ -149,7 +149,7 @@ it('reports the paths a check changed in the working tree, but not ignored files
     $instance = check_runner_instance($checkout);
     $runner = check_runner(new LocalShellSshExecutor);
 
-    $reading = check_runner_wait($runner, $instance, $runner->start($instance));
+    $reading = check_runner_wait($runner, $instance, $runner->start($instance, 'composer check'));
 
     expect($reading->exitCode)->toBe(0)
         ->and($reading->changedPaths)->toBe(['written.txt']);
@@ -159,7 +159,7 @@ it('stops the check process group on cancel, which leaves the check without a re
     $checkout = check_runner_checkout('sleep 30');
     $instance = check_runner_instance($checkout);
     $runner = check_runner(new LocalShellSshExecutor);
-    $process = $runner->start($instance);
+    $process = $runner->start($instance, 'composer check');
 
     $runner->cancel($instance, $process);
 
@@ -170,7 +170,7 @@ it('does not take a reused process ID for the check', function (): void {
     $checkout = check_runner_checkout('sleep 30');
     $instance = check_runner_instance($checkout);
     $runner = check_runner(new LocalShellSshExecutor);
-    $process = $runner->start($instance);
+    $process = $runner->start($instance, 'composer check');
 
     $reading = $runner->read($instance, new TaskCheckProcess($process->pid, 'Thu Jan  1 00:00:00 1970', $process->head, $process->tree));
     $runner->cancel($instance, $process);
@@ -193,7 +193,7 @@ it('runs setup steps in order before composer check, and records the tree after 
     $instance = check_runner_instance($checkout);
     $runner = check_runner(new LocalShellSshExecutor);
 
-    $reading = check_runner_wait($runner, $instance, $runner->start($instance, [
+    $reading = check_runner_wait($runner, $instance, $runner->start($instance, 'composer check', [
         ['name' => 'Install', 'command' => 'mkdir -p ignored && touch ignored/installed', 'timeout_seconds' => 60],
         ['name' => 'Notes', 'command' => 'echo notes > notes.txt', 'timeout_seconds' => 60],
     ]));
@@ -211,7 +211,7 @@ it('stops at the first failing setup step without running composer check', funct
     $instance = check_runner_instance($checkout);
     $runner = check_runner(new LocalShellSshExecutor);
 
-    $reading = check_runner_wait($runner, $instance, $runner->start($instance, [
+    $reading = check_runner_wait($runner, $instance, $runner->start($instance, 'composer check', [
         ['name' => 'Install', 'command' => 'echo cannot install && exit 5', 'timeout_seconds' => 60],
         ['name' => 'Never', 'command' => 'touch never-ran', 'timeout_seconds' => 60],
     ]));
@@ -273,7 +273,7 @@ describe('deliverable evidence', function (): void {
         $instance = check_runner_instance($checkout);
         $runner = check_runner(new LocalShellSshExecutor);
 
-        $reading = check_runner_wait($runner, $instance, $runner->start($instance, [], [
+        $reading = check_runner_wait($runner, $instance, $runner->start($instance, 'composer check', [], [
             'start' => $start,
             'tests' => [['id' => 'export-test', 'project' => 'app', 'file' => 'tests/ExportTest.php']],
             'commands' => [
@@ -306,7 +306,7 @@ describe('deliverable evidence', function (): void {
         $instance = check_runner_instance($checkout);
         $runner = check_runner(new LocalShellSshExecutor);
 
-        $reading = check_runner_wait($runner, $instance, $runner->start($instance, [], ['start' => $start, 'tests' => [], 'commands' => [['id' => 'lint', 'command' => 'touch ran', 'directory' => '.']]]));
+        $reading = check_runner_wait($runner, $instance, $runner->start($instance, 'composer check', [], ['start' => $start, 'tests' => [], 'commands' => [['id' => 'lint', 'command' => 'touch ran', 'directory' => '.']]]));
 
         expect($reading->exitCode)->toBe(1)
             ->and($reading->deliverables)->toBeNull()
@@ -318,7 +318,7 @@ describe('deliverable evidence', function (): void {
         $instance = check_runner_instance($checkout);
         $runner = check_runner(new LocalShellSshExecutor);
 
-        $reading = check_runner_wait($runner, $instance, $runner->start($instance, [], ['start' => $start, 'tests' => [], 'commands' => [['id' => 'escape', 'command' => 'touch escaped', 'directory' => '../..']]]));
+        $reading = check_runner_wait($runner, $instance, $runner->start($instance, 'composer check', [], ['start' => $start, 'tests' => [], 'commands' => [['id' => 'escape', 'command' => 'touch escaped', 'directory' => '../..']]]));
 
         expect($reading->deliverables['commands'])->toBe(['escape' => ['exit_code' => 127, 'output' => 'The directory is outside the workspace.']]);
     });
