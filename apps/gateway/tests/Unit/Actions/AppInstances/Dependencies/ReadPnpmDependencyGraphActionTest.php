@@ -326,6 +326,76 @@ describe('pnpm v9 dependency graph reader', function (): void {
         'multiple YAML documents' => ['{}', "lockfileVersion: '9.0'\nimporters: {.: {}}\n---\nfixture-secret"],
     ]);
 
+    it('reports an importer that no longer matches package.json as stale', function (Closure $mutate): void {
+        [$manifest, $lock] = pnpmReaderRecords();
+        $mutate($manifest, $lock);
+
+        try {
+            (new ReadPnpmDependencyGraphAction)->execute(json_encode($manifest, JSON_THROW_ON_ERROR), json_encode($lock, JSON_THROW_ON_ERROR));
+            test()->fail('A stale lock was accepted.');
+        } catch (DependencyParseException $exception) {
+            expect($exception->errorCode)->toBe('dependencies.stale_pnpm_lockfile');
+            expect($exception->getMessage())->toBe('dependencies.stale_pnpm_lockfile');
+        }
+    })->with([
+        'missing root declaration' => fn ($manifest, $lock) => unsetPnpmProperty($manifest->dependencies, 'app-one'),
+        'missing importer declaration' => fn ($manifest, $lock) => unsetPnpmProperty($lock->importers->{'.'}->dependencies, 'app-one'),
+        'mismatched scope' => function ($manifest, $lock): void {
+            unset($manifest->dependencies->{'app-two'});
+            $manifest->devDependencies->{'app-two'} = '^1';
+        },
+        'mismatched specifier' => fn ($manifest, $lock) => $lock->importers->{'.'}->dependencies->{'app-one'}->specifier = '^2',
+        // pnpm supports authenticated tarball specs; the reader hashes them, so only the mismatch fails.
+        'specifier changed to an authenticated tarball' => fn ($manifest, $lock) => $manifest->dependencies->{'app-one'} = 'https://fixture-user:fixture-secret@example.test/a.tgz',
+    ]);
+
+    it('rejects a malformed manifest specifier before comparing it with the importer', function (string $specifier): void {
+        [$manifest, $lock] = pnpmReaderRecords();
+        $manifest->dependencies->{'app-one'} = $specifier;
+
+        expect(fn () => (new ReadPnpmDependencyGraphAction)->execute(json_encode($manifest, JSON_THROW_ON_ERROR), json_encode($lock, JSON_THROW_ON_ERROR)))
+            ->toThrow(DependencyParseException::class, 'dependencies.invalid_pnpm_input');
+    })->with([
+        'tarball without host' => 'https://',
+        'control character' => "^1\n",
+        'credentials in a Git URL' => 'git+ssh://fixture-user:fixture-secret@example.test/a.git',
+    ]);
+
+    it('ignores root peer metadata without a declaration like pnpm does', function (): void {
+        // Lock written by pnpm 11.28 install --lockfile-only for this manifest: the importer records no peer.
+        $manifest = '{"name":"root","dependencies":{"ms":"^2.1.3"},"peerDependenciesMeta":{"a-peer":{"optional":false},"b-peer":{},"c-peer":{"optional":true}}}';
+        $lock = <<<'YAML'
+lockfileVersion: '9.0'
+
+settings:
+  autoInstallPeers: true
+  excludeLinksFromLockfile: false
+
+importers:
+
+  .:
+    dependencies:
+      ms:
+        specifier: ^2.1.3
+        version: 2.1.3
+
+packages:
+
+  ms@2.1.3:
+    resolution: {integrity: sha512-6FlzubTLZG3J2a/NVCAleEhjzq5oxgHyaCU9yYXvcLsvoVaHJq/s5xXI6/XXP6tz7R9xAOtHnSO/tXtF3WRTlA==}
+
+snapshots:
+
+  ms@2.1.3: {}
+YAML;
+
+        $graph = (new ReadPnpmDependencyGraphAction)->execute($manifest, $lock);
+
+        expect($graph->requirements)->toEqual([
+            new DependencyRequirement(null, 'ms@2.1.3', 'ms', '^2.1.3', DependencyRequirementKind::Dependency, DependencyScope::Regular, false),
+        ]);
+    });
+
     it('rejects inconsistent graph records', function (Closure $mutate): void {
         [$manifest, $lock] = pnpmReaderRecords();
         $mutate($manifest, $lock);
@@ -344,13 +414,6 @@ describe('pnpm v9 dependency graph reader', function (): void {
         'missing snapshot' => fn ($manifest, $lock) => unsetPnpmProperty($lock->snapshots, 'app-one@1.0.0'),
         'metadata identity mismatch' => fn ($manifest, $lock) => $lock->packages->{'app-one@1.0.0'}->name = 'other',
         'metadata version mismatch' => fn ($manifest, $lock) => $lock->packages->{'app-one@1.0.0'}->version = '2.0.0',
-        'missing root declaration' => fn ($manifest, $lock) => unsetPnpmProperty($manifest->dependencies, 'app-one'),
-        'missing importer declaration' => fn ($manifest, $lock) => unsetPnpmProperty($lock->importers->{'.'}->dependencies, 'app-one'),
-        'mismatched scope' => function ($manifest, $lock): void {
-            unset($manifest->dependencies->{'app-two'});
-            $manifest->devDependencies->{'app-two'} = '^1';
-        },
-        'mismatched specifier' => fn ($manifest, $lock) => $lock->importers->{'.'}->dependencies->{'app-one'}->specifier = '^2',
         'numeric specifier' => fn ($manifest, $lock) => $lock->importers->{'.'}->dependencies->{'app-one'}->specifier = 1,
         'wrong alias identity' => fn ($manifest, $lock) => $lock->importers->{'.'}->dependencies->renamed->version = 'app-one@1.0.0',
         'numeric resolved version' => fn ($manifest, $lock) => $lock->importers->{'.'}->dependencies->{'app-one'}->version = 1,
@@ -362,11 +425,12 @@ describe('pnpm v9 dependency graph reader', function (): void {
         'missing optional target' => fn ($manifest, $lock) => $lock->snapshots->{'plugin@1.0.0(host@1.0.0)'}->optionalDependencies->native = '2.0.0',
         'invalid peer declaration' => fn ($manifest, $lock) => $lock->packages->{'plugin@1.0.0'}->peerDependencies->host = 1,
         'invalid peer optional flag' => fn ($manifest, $lock) => $lock->packages->{'plugin@1.0.0'}->peerDependenciesMeta->{'missing-peer'}->optional = 'true',
-        'orphan peer metadata' => fn ($manifest, $lock) => $manifest->peerDependenciesMeta = (object) ['unknown' => (object) []],
+        'malformed undeclared peer metadata' => fn ($manifest, $lock) => $manifest->peerDependenciesMeta = (object) ['unknown' => (object) ['optional' => 'yes']],
+        // pnpm writes a peer declaration for every package record's metadata entry.
+        'undeclared package peer metadata' => fn ($manifest, $lock) => $lock->packages->{'plugin@1.0.0'}->peerDependenciesMeta->{'undeclared'} = (object) ['optional' => true],
         'invalid integrity' => fn ($manifest, $lock) => $lock->packages->{'app-one@1.0.0'}->resolution->integrity = 'fixture-secret',
         'null resolution metadata' => fn ($manifest, $lock) => $lock->packages->{'app-one@1.0.0'}->resolution = null,
         'invalid tarball metadata' => fn ($manifest, $lock) => $lock->packages->{'app-one@1.0.0'}->resolution->tarball = 1,
-        'unsafe specifier' => fn ($manifest, $lock) => $manifest->dependencies->{'app-one'} = 'https://fixture-user:fixture-secret@example.test/a.tgz',
         'unreachable package' => function ($manifest, $lock): void {
             $lock->packages->{'orphan@1.0.0'} = (object) [];
             $lock->snapshots->{'orphan@1.0.0'} = (object) [];

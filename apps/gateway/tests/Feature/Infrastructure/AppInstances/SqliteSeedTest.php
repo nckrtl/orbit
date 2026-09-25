@@ -984,15 +984,15 @@ function sqlite_seed_user(): string
     return $account['name'];
 }
 
+/**
+ * Returns the Node home that the seeder requires for a production target.
+ *
+ * Ubuntu Nodes keep managed accounts under /home. The local executor redirects the target to the sandbox, so
+ * the test host's own home directory, such as /Users/<name> on macOS, is never used.
+ */
 function sqlite_seed_home(): string
 {
-    $account = posix_getpwuid(posix_geteuid());
-
-    if (! is_array($account) || ! is_string($account['dir'] ?? null)) {
-        throw new RuntimeException('The test home is unavailable.');
-    }
-
-    return $account['dir'];
+    return '/home/'.sqlite_seed_user();
 }
 
 function sqlite_seed_seeder(

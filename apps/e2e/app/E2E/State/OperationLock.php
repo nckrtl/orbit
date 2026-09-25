@@ -7,6 +7,7 @@ namespace App\E2E\State;
 use App\E2E\Value\OperationId;
 use Closure;
 use RuntimeException;
+use Symfony\Component\Process\Process;
 use Throwable;
 
 final class OperationLock
@@ -172,6 +173,10 @@ final class OperationLock
             return is_string($identity) && $identity !== '' ? $identity : null;
         }
 
+        if (! is_dir('/proc/self')) {
+            return self::processStartTimeFromPs($pid);
+        }
+
         $path = '/proc/'.$pid.'/stat';
 
         if (! is_file($path)) {
@@ -190,5 +195,17 @@ final class OperationLock
             : preg_split('/\s+/', trim(substr($stat, $closingParenthesis + 1)));
 
         return is_array($fields) && isset($fields[19]) ? $fields[19] : null;
+    }
+
+    /**
+     * Reads the process start time on hosts without procfs, such as macOS.
+     */
+    private static function processStartTimeFromPs(int $pid): ?string
+    {
+        $process = new Process(['ps', '-o', 'lstart=', '-p', (string) $pid], null, ['LC_ALL' => 'C', 'TZ' => 'UTC']);
+        $process->run();
+        $started = trim($process->getOutput());
+
+        return $process->isSuccessful() && $started !== '' ? 'lstart:'.$started : null;
     }
 }

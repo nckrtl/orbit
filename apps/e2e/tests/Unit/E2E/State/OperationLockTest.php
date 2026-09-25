@@ -50,6 +50,21 @@ describe('OperationLock', function () {
         $lock->release();
     });
 
+    it('reads the process start with ps on hosts without procfs', function () {
+        $fromPs = Closure::bind(
+            fn (int $pid): ?string => OperationLock::processStartTimeFromPs($pid),
+            null,
+            OperationLock::class,
+        );
+
+        expect($fromPs(getmypid()))
+            ->toStartWith('lstart:')
+            ->and($fromPs(getmypid()))
+            ->toBe($fromPs(getmypid()))
+            ->and($fromPs(2_147_483_646))
+            ->toBeNull();
+    });
+
     it('uses an injected process identity when proc is unavailable', function () {
         $paths = new StatePaths(temporaryPath('orbit-lock-', 4));
         $lock = new OperationLock($paths, fn (int $pid): string => 'portable-start-'.$pid);

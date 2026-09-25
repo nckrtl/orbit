@@ -28,6 +28,8 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\Exception\ProcessTimedOutException;
 use Symfony\Component\Process\Process as SymfonyProcess;
+use Tests\Support\HostBinary;
+use Tests\Support\TestToolchain;
 
 it('validates a candidate config under /etc/wireguard before replacing the live server config', function (): void {
     $orbitHome = sys_get_temp_dir().'/orbit-vpn-'.Str::uuid();
@@ -2344,11 +2346,10 @@ final class RemoteWireGuardPeerShellFixtureTransport
                 throw new RuntimeException('Could not rewind the remote peer shell fixture input.');
             }
 
-            $bash = is_executable('/opt/homebrew/bin/bash') ? '/opt/homebrew/bin/bash' : '/bin/bash';
             $environment = array_fill_keys(array_keys(getenv()), false);
-            $environment['PATH'] = "{$this->root}/bin:/usr/bin:/bin";
+            $environment['PATH'] = "{$this->root}/bin:".TestToolchain::path();
             $arguments = array_merge(
-                [$bash, '-seu', '--'],
+                [TestToolchain::bash(), '-seu', '--'],
                 array_slice(array: $command->arguments, offset: 4),
             );
             $this->process = new SymfonyProcess(
@@ -2522,9 +2523,9 @@ function remote_wireguard_peer_install_harness(
         body: <<<SH
             if [ "\${4:-}" = "{$root}/wireguard/.orbit.peer-transaction" ] && [ -f "{$root}/state/transaction-failure" ]; then exit 1; fi
             if [ "\${1:-}" = '-fT' ] && [ "\${2:-}" = '--' ]; then
-                exec /bin/mv -f "\$3" "\$4"
+                exec {{host:mv}} -f "\$3" "\$4"
             fi
-            exec /bin/mv "\$@"
+            exec {{host:mv}} "\$@"
             SH,
     );
     remote_wireguard_peer_write_shim(
@@ -2532,9 +2533,9 @@ function remote_wireguard_peer_install_harness(
         name: 'cp',
         body: <<<'SH'
             if [ "${1:-}" = '-a' ] && [ "${2:-}" = '--no-dereference' ] && [ "${3:-}" = '--' ]; then
-                exec /bin/cp -a "$4" "$5"
+                exec {{host:cp}} -a "$4" "$5"
             fi
-            exec /bin/cp "$@"
+            exec {{host:cp}} "$@"
             SH,
     );
     remote_wireguard_peer_write_shim(
@@ -2624,7 +2625,7 @@ function remote_wireguard_peer_install_harness(
             printf '%s\n' "wg-quick \$*" >> "{$root}/commands.log"
             if [ "\$1" = 'strip' ]; then
                 [ ! -f "{$root}/state/strip-failure" ] || exit 1
-                /bin/cat -- "\$2"
+                {{host:cat}} -- "\$2"
             fi
             SH,
     );
@@ -2713,12 +2714,12 @@ function remote_wireguard_peer_install_harness(
             if [ -f "{$root}/state/commit-cleanup-failure" ]; then
                 for argument in "\$@"; do
                     if [ "\$argument" = "{$root}/wireguard/.orbit.peer-transaction" ]; then
-                        /bin/rm -f -- "{$root}/state/commit-cleanup-failure"
+                        {{host:rm}} -f -- "{$root}/state/commit-cleanup-failure"
                         exit 1
                     fi
                 done
             fi
-            exec /bin/rm "\$@"
+            exec {{host:rm}} "\$@"
             SH,
     );
 
@@ -3030,7 +3031,7 @@ function remote_wireguard_peer_install_harness(
 
 function remote_wireguard_peer_write_shim(string $root, string $name, string $body): void
 {
-    file_put_contents("{$root}/bin/{$name}", "#!/bin/sh\n{$body}\n");
+    file_put_contents("{$root}/bin/{$name}", HostBinary::expand("#!/bin/sh\n{$body}\n"));
     chmod(filename: "{$root}/bin/{$name}", permissions: 0o700);
 }
 

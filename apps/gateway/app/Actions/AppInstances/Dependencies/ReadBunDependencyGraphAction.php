@@ -36,6 +36,46 @@ final readonly class ReadBunDependencyGraphAction
         throw new DependencyParseException('dependencies.invalid_bun_input');
     }
 
+    private function stale(): never
+    {
+        throw new DependencyParseException('dependencies.stale_bun_lockfile');
+    }
+
+    /** @return array<string, mixed> */
+    private function declarations(stdClass $record): array
+    {
+        $declarations = [];
+
+        foreach (['dependencies', 'devDependencies', 'optionalDependencies', 'peerDependencies'] as $field) {
+            $declarations[$field] = $this->links($record, $field);
+        }
+
+        // Like npm, Bun drops a regular declaration that optionalDependencies repeats.
+        $declarations['dependencies'] = array_diff_key($declarations['dependencies'], $declarations['optionalDependencies']);
+
+        $metadata = $record->peerDependenciesMeta ?? null;
+
+        foreach (array_keys($declarations['peerDependencies']) as $name) {
+            $declarations['optionalPeers'][$name] = $metadata instanceof stdClass && ($metadata->{$name}->optional ?? false) === true;
+        }
+
+        return $declarations;
+    }
+
+    /**
+     * Bun 1.4 writes version 2: the version 1 format with stricter content that this reader enforces.
+     */
+    private function lockfileVersion(stdClass $lock): int
+    {
+        $version = $lock->lockfileVersion ?? null;
+
+        if (! in_array($version, [1, 2], true)) {
+            throw new DependencyParseException('dependencies.unsupported_format');
+        }
+
+        return $version;
+    }
+
     private function decode(string $contents): stdClass
     {
         $value = json_decode($contents, false, 512, JSON_THROW_ON_ERROR);
@@ -117,7 +157,7 @@ final readonly class ReadBunDependencyGraphAction
         return implode(' ', $tokens);
     }
 
-    private function packageRecord(mixed $tuple): stdClass
+    private function packageRecord(mixed $tuple, int $version): stdClass
     {
         if (! is_array($tuple) || ! is_string($tuple[0] ?? null)
             || preg_match('{^((?:@[^/]+/)?[^@]+)@(.+)$}D', $tuple[0], $match) !== 1) {
@@ -131,8 +171,10 @@ final readonly class ReadBunDependencyGraphAction
         $isGit = preg_match('{^(?:git(?:\+[^:]+)?:|github:|gitlab:|bitbucket:|git@)}i', $reference) === 1;
         $info = $tuple[$isSource ? 1 : 2] ?? null;
         $expected = $isSource ? ($isGit ? 3 : 2) : 4;
+        // Bun appends an optional integrity hash to Git and tarball tuples.
+        $hasSourceIntegrity = $isSource && count($tuple) === $expected + 1;
 
-        if (count($tuple) !== $expected || ! $info instanceof stdClass
+        if ((count($tuple) !== $expected && ! $hasSourceIntegrity) || ! $info instanceof stdClass
             || (! $isSource && ! is_string($tuple[1]))
             || ($isGit && ! is_string($tuple[2]))) {
             $this->invalid();
@@ -151,16 +193,36 @@ final readonly class ReadBunDependencyGraphAction
         $record->version = $isSource ? $this->sourceId($reference) : $this->version($reference);
         $record->sourceReference = null;
 
+        // Bun rejects an unsafe .bun-tag for GitHub at every version and for any Git source from version 2.
+        if ($isGit && (str_starts_with(strtolower($reference), 'github:') || $version >= 2) && ! $this->safeTag($tuple[2])) {
+            $this->invalid();
+        }
+
         if ($isGit && preg_match('/#([a-f0-9]{40})$/iD', $reference, $revision) === 1) {
             $record->sourceReference = $revision[1];
         }
 
-        if (! $isSource) {
-            $record->integrity = $tuple[3];
+        if ($hasSourceIntegrity) {
+            $record->integrity = $tuple[$expected];
             $this->integrity($record);
         }
 
+        if (! $isSource) {
+            $record->integrity = $tuple[3];
+
+            // From version 2, Bun requires integrity for a tarball outside the default registry.
+            if ($this->integrity($record) === null && $version >= 2 && $tuple[1] !== ''
+                && ! str_starts_with($tuple[1], 'https://registry.npmjs.org/')) {
+                $this->invalid();
+            }
+        }
+
         return $record;
+    }
+
+    private function safeTag(string $tag): bool
+    {
+        return preg_match('/\A(?!-)(?!\.\.?\z)[A-Za-z0-9._-]{1,256}\z/D', $tag) === 1;
     }
 
     private function optionalPeers(stdClass $record): void
@@ -191,9 +253,7 @@ final readonly class ReadBunDependencyGraphAction
 
     private function read(stdClass $manifest, stdClass $lock): DependencyGraph
     {
-        if (($lock->lockfileVersion ?? null) !== 1) {
-            throw new DependencyParseException('dependencies.unsupported_format');
-        }
+        $version = $this->lockfileVersion($lock);
 
         if (! ($lock->workspaces ?? null) instanceof stdClass) {
             $this->invalid();
@@ -222,21 +282,27 @@ final readonly class ReadBunDependencyGraphAction
 
         foreach (get_object_vars($rawPackages) as $path => $tuple) {
             $this->pathParts((string) $path);
-            $packages[$path] = $this->packageRecord($tuple);
+            $packages[$path] = $this->packageRecord($tuple, $version);
         }
 
         $this->validateRecord($manifest);
         $this->validateRecord($root);
+        $manifest = $this->declareOptionalPeers($manifest);
 
         foreach (['name', 'version'] as $field) {
             if (property_exists($manifest, $field) && property_exists($root, $field) && $manifest->{$field} !== $root->{$field}) {
-                $this->invalid();
+                $this->stale();
             }
         }
 
-        $requirements = $this->requirements($manifest, null, $packages);
-
         $normalized = $this->normalizeRoot($manifest);
+
+        // bun install rewrites the root workspace from package.json, so any declaration difference is a stale lock.
+        if ($this->declarations($normalized) !== $this->declarations($root)) {
+            $this->stale();
+        }
+
+        $requirements = $this->requirements($manifest, null, $packages);
 
         if (array_map(get_object_vars(...), $this->requirements($normalized, null, $packages)) !== array_map(get_object_vars(...), $this->requirements($root, null, $packages))) {
             $this->invalid();
@@ -281,6 +347,35 @@ final readonly class ReadBunDependencyGraphAction
         return new DependencyGraph(DependencyEcosystem::Npm, $resolutions, $requirements);
     }
 
+    /**
+     * Bun records optional peer metadata without a declaration as an optional peer on any version; other metadata alone is ignored.
+     */
+    private function declareOptionalPeers(stdClass $manifest): stdClass
+    {
+        $metadata = $manifest->peerDependenciesMeta ?? null;
+
+        if (! $metadata instanceof stdClass) {
+            return $manifest;
+        }
+
+        $peers = get_object_vars($manifest->peerDependencies ?? new stdClass);
+
+        foreach (get_object_vars($metadata) as $name => $meta) {
+            if ($meta instanceof stdClass && ($meta->optional ?? false) === true && ! array_key_exists($name, $peers)) {
+                $peers[$name] = '*';
+            }
+        }
+
+        if ($peers === get_object_vars($manifest->peerDependencies ?? new stdClass)) {
+            return $manifest;
+        }
+
+        $manifest = clone $manifest;
+        $manifest->peerDependencies = (object) $peers;
+
+        return $manifest;
+    }
+
     private function normalizeRoot(stdClass $manifest): stdClass
     {
         $root = clone $manifest;
@@ -297,6 +392,11 @@ final readonly class ReadBunDependencyGraphAction
         $root->devDependencies = (object) array_intersect_key(
             get_object_vars($manifest->devDependencies ?? new stdClass),
             $development,
+        );
+        // Bun drops a regular declaration that optionalDependencies repeats.
+        $root->dependencies = (object) array_diff_key(
+            get_object_vars($manifest->dependencies ?? new stdClass),
+            $this->links($manifest, 'optionalDependencies'),
         );
 
         return $root;
@@ -372,8 +472,9 @@ final readonly class ReadBunDependencyGraphAction
             $this->invalid();
         }
 
+        // Like npm, Bun reads metadata only for declared peers; metadata alone must be well formed but creates no edge.
         foreach (get_object_vars($metadata) as $name => $meta) {
-            if (! isset($peers[$name]) || ! $meta instanceof stdClass
+            if (! $meta instanceof stdClass
                 || (property_exists($meta, 'optional') && ! is_bool($meta->optional))) {
                 $this->invalid();
             }
@@ -494,6 +595,11 @@ final readonly class ReadBunDependencyGraphAction
 
     private function constraint(mixed $value): string
     {
+        // Bun keeps an empty specifier, which means any version, verbatim in the root record.
+        if ($value === '') {
+            return $value;
+        }
+
         if (! is_string($value) || trim($value) === '' || preg_match('/[\x00-\x1f\x7f\\\\]/', $value) === 1) {
             $this->invalid();
         }

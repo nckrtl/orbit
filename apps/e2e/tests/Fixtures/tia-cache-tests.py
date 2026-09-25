@@ -775,6 +775,16 @@ class RealPestCacheTest(unittest.TestCase):
         repository = Path(cache.__file__).resolve().parent.parent
         sdk = repository / 'packages/php-sdk'
         self.assertTrue((sdk / 'vendor/autoload.php').is_file(), 'Run bin/bootstrap --skip-checks first.')
+        coverage = subprocess.run(
+            ['php', '-r', 'exit(extension_loaded("pcov") || extension_loaded("xdebug") ? 0 : 1);'],
+            check=False,
+        )
+        self.assertEqual(
+            0,
+            coverage.returncode,
+            'Real Pest TIA records a graph only with PCOV or Xdebug. Install one for the PHP on PATH, '
+            'on macOS with `brew install shivammathur/extensions/pcov@8.5`.',
+        )
         with tempfile.TemporaryDirectory(prefix='orbit-real-tia-') as temporary:
             root = Path(temporary).resolve() / 'primary'
             project = 'apps/docs'

@@ -24,6 +24,22 @@ final class GatewayFailureRenderer
     /** The fields a failed Node Caddy build adds to any error it causes: the Node, the failed stage, and Caddy's message. */
     private const array BUILD_FIELDS = ['node', 'stage', 'message'];
 
+    /** A step name, such as `remove:host-firewall`, `converge:caddy`, or `tool-manager-vp`. */
+    private const string STEP_PATTERN = '/\A[a-z0-9](?:[a-z0-9:._-]{0,126}[a-z0-9])?\z/D';
+
+    /**
+     * The bounded operation fields any error may carry, each with the pattern its value must match.
+     * They name what failed and why in closed tokens, never remote output or a raw value.
+     */
+    private const array OPERATION_FIELDS = [
+        'step' => self::STEP_PATTERN,
+        'outcome' => '/\A[a-z][a-z0-9_]{0,63}\z/D',
+        'reason' => '/\A[a-z][a-z0-9_]{0,63}\z/D',
+        'cleanup' => '/\A[a-z][a-z0-9_]{0,63}\z/D',
+        'role' => '/\A[a-z][a-z0-9-]{0,63}\z/D',
+        'field' => '/\A[a-z][a-z0-9_.-]{0,63}\z/D',
+    ];
+
     /**
      * @param  array<string,mixed>  $details
      * @return array<string,mixed>
@@ -55,11 +71,33 @@ final class GatewayFailureRenderer
             return $safe;
         }
 
-        $safe = self::buildDetails($details);
+        $safe = [];
         $id = $details['id'] ?? null;
 
         if (is_int($id) && $id > 0) {
-            $safe = ['id' => $id, ...$safe];
+            $safe['id'] = $id;
+        }
+
+        return [...$safe, ...self::operationDetails($details), ...self::buildDetails($details)];
+    }
+
+    /**
+     * Keeps the operation fields whose values match their closed patterns, such as the failed `step` of a role operation
+     * or the `outcome` of a tool operation. A malformed value drops.
+     *
+     * @param  array<string,mixed>  $details
+     * @return array<string,string>
+     */
+    public static function operationDetails(array $details): array
+    {
+        $safe = [];
+
+        foreach (self::OPERATION_FIELDS as $field => $pattern) {
+            $value = $details[$field] ?? null;
+
+            if (is_string($value) && preg_match($pattern, $value) === 1) {
+                $safe[$field] = $value;
+            }
         }
 
         return $safe;
@@ -91,7 +129,7 @@ final class GatewayFailureRenderer
         $safe = [];
         $step = $details['step'] ?? null;
 
-        if (is_string($step) && preg_match('/\A[a-z0-9](?:[a-z0-9:-]{0,62}[a-z0-9])?\z/D', $step) === 1) {
+        if (is_string($step) && preg_match(self::STEP_PATTERN, $step) === 1) {
             $safe['step'] = $step;
         }
 
