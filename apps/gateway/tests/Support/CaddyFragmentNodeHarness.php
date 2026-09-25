@@ -74,6 +74,8 @@ final class CaddyFragmentNodeHarness implements SshExecutor
     /** @return array<string, string> The live fragments by file name. */
     public function fragments(): array
     {
+        // Each publication swaps the symlink, so a cached resolution would name an older version.
+        clearstatcache(true);
         $main = realpath($this->root.'/etc/caddy/Caddyfile');
 
         if ($main === false) {

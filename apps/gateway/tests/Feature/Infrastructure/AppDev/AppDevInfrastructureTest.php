@@ -29,6 +29,7 @@ use App\Infrastructure\AppDev\RemoteAppDevCaddyManager;
 use App\Infrastructure\AppDev\RemoteAppDevCertificateManager;
 use App\Infrastructure\AppDev\RemoteAppDevPhpFpmManager;
 use App\Infrastructure\AppDev\RemoteAppDevTldRouteManager;
+use App\Infrastructure\Caddy\Build\NodeCaddyListenerResolver;
 use App\Infrastructure\Nodes\RemotePhpPackageManager;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\CommandResult;
@@ -850,7 +851,7 @@ it('publishes private Caddy and DNS configurations through complete preserved va
     $caddy->converge($node);
     $dns->converge();
 
-    $expectedCaddy = $caddyRenderer->render(new AppDevSiteRepository()->forNode($node));
+    $expectedCaddy = $caddyRenderer->render(new AppDevSiteRepository()->forNode($node), app(NodeCaddyListenerResolver::class)->fragments($node)->routeBind());
 
     expect($ssh->commands[0]->input)
         ->toContain(
