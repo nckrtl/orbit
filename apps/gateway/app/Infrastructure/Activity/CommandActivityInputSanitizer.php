@@ -56,7 +56,7 @@ final readonly class CommandActivityInputSanitizer
 
     public function sanitize(mixed $value, ?string $key = null): mixed
     {
-        if (is_string($key) && $this->isSensitiveKey($key)) {
+        if (is_string($key) && $this->canCarrySecret($value) && $this->isSensitiveKey($key)) {
             return self::REDACTED;
         }
 
@@ -146,6 +146,14 @@ final readonly class CommandActivityInputSanitizer
                 replacement: '$1: '.self::REDACTED,
                 subject: $redacted,
             ) ?? $redacted;
+    }
+
+    /**
+     * Numbers, booleans, and null carry counts and flags such as token usage, never a credential.
+     */
+    private function canCarrySecret(mixed $value): bool
+    {
+        return ! is_int($value) && ! is_float($value) && ! is_bool($value) && $value !== null;
     }
 
     private function isSensitiveKey(string $key): bool

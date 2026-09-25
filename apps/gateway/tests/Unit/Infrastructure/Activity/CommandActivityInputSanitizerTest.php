@@ -65,6 +65,13 @@ it('fails closed for any field named like a key, token, secret, or password', fu
     'certificate_pem',
 ]);
 
+it('keeps numbers, booleans, and null under secret-named fields', function (): void {
+    $sanitizer = new CommandActivityInputSanitizer;
+    $counts = ['tokens' => 300, 'input_tokens' => 12, 'cost_per_token' => 0.5, 'password_set' => true, 'api_key' => null];
+
+    expect($sanitizer->sanitizeProperties($counts))->toBe($counts);
+});
+
 it('keeps audited non-secret fields whose names contain a secret word', function (string $name): void {
     $sanitizer = new CommandActivityInputSanitizer;
 
