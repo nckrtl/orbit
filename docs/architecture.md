@@ -51,10 +51,6 @@ See [Applications](/domains/applications) for source, branch, and setup details;
 
 Instance commands manage Instances and Routes. Runtime publication, Caddy, DNS, certificates, PHP-FPM, and firewall intent use Instances and Routes only. Doctor inspects Instances and Routes.
 
-## Herdr sessions
-
-A [Herdr session](/reference/herdr-sessions) runs a named headless Herdr server on a Node. Orbit can manage its process or adopt an existing server whose lifecycle stays external. Both modes let Commander view recorded panes through temporary, read-only `terminal.observe` access.
-
 ## Tasks
 
 The optional [tasks](/reference/tasks) extension stores Commander-style feature groups on the Gateway. A Task group has ordered Task subtasks and one shared Instance. A new group waits in Backlog while its branch, ADRs, documentation, and subtasks are prepared. Once the group moves to Todo, the Gateway claims it, provisions that instance on an `app-dev` Node, and starts the T3 reviewer and the first implementer on the instance-owning Node.
@@ -65,7 +61,7 @@ Orbit monorepo groups use a non-visitable checkout with no Route. [ADR 0103](/de
 
 ## proxycli
 
-The optional [proxycli](/reference/proxycli) extension collects CLIProxyAPI account quota into shared Valkey on a `database` Node and publishes `https://collector.proxycli.orbit` for CodexBar. The Orbit web app reads the same snapshot. Apex `proxycli.orbit` stays free for a CLIProxyAPI management Route. [ADR 0104](/decisions/0104-own-cliproxyapi-quota-through-the-proxycli-extension) owns the extension boundary. [ADR 0109](/decisions/0109-publish-the-proxycli-collector-on-a-subdomain) owns the hostname split.
+The optional [proxycli](/reference/proxycli) extension collects CLIProxyAPI account quota into shared Valkey on a `database` Node and publishes `https://collector.cli-proxy-api.orbit` for CodexBar. The Orbit web app reads the same snapshot. Apex `cli-proxy-api.orbit` stays free for a CLIProxyAPI management Route. [ADR 0104](/decisions/0104-own-cliproxyapi-quota-through-the-proxycli-extension) owns the extension boundary. [ADR 0109](/decisions/0109-publish-the-proxycli-collector-on-a-subdomain) and [ADR 0145](/decisions/0145-publish-the-proxycli-collector-on-collector-cli-proxy-api-orbit) own the hostname.
 
 ## Database connections
 

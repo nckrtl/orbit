@@ -97,7 +97,8 @@ describe('custom proxy Route create', function (): void {
         'grafana.internal',
         'foo.bar',
         'something.test',
-        'proxycli.orbit',
+        'cli-proxy-api.orbit',
+        'collector.proxycli.orbit',
     ]);
 
     it('creates a custom proxy from a Node Process listener', function (): void {
@@ -131,7 +132,7 @@ describe('custom proxy Route refusals', function (): void {
     })->with([
         'gateway.orbit',
         'metrics.orbit',
-        'collector.proxycli.orbit',
+        'collector.cli-proxy-api.orbit',
     ]);
 
     it('refuses stealing an App Route domain', function (): void {

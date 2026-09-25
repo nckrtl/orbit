@@ -145,16 +145,18 @@ The first form stores the loopback URL. The second form stores the Node-owned Pr
 | Rule | Result |
 | --- | --- |
 | Domain | Any unique DNS domain. `executor.orbit`, `grafana.internal`, `foo.bar`, and `something.test` are valid. Orbit does not require a Cluster TLD, a Node TLD, or `.orbit`. |
-| Uniqueness | Fleet-global across Project Routes, custom proxy Routes, `gateway.orbit`, `metrics.orbit`, `reverb.orbit`, `analytics.orbit`, and `collector.proxycli.orbit`. A conflict leaves the existing name in place. Apex `proxycli.orbit` is not reserved. |
+| Uniqueness | Fleet-global across Project Routes, custom proxy Routes, `gateway.orbit`, `metrics.orbit`, `reverb.orbit`, `analytics.orbit`, and `collector.cli-proxy-api.orbit`. A conflict leaves the existing name in place. Apex `cli-proxy-api.orbit` is not reserved. |
 | Owner | The serving Node. Cluster membership does not move the Route to Cluster scope. |
 | Publication | Private only. The Gateway refuses public intent. |
 | Upstream | HTTP on loopback (`127.0.0.1`, `localhost`, or `::1`) or the resolved listener of a Node-owned Process on that Node. A remote URL is refused. |
 | Caddy | Callers cannot supply a Caddyfile. The serving Node site terminates Orbit-CA TLS and reverse-proxies HTTP to the local upstream. It preserves `Host` and admits streaming and WebSocket upgrades. |
 | DNS | An exact private `host-record` answers with the serving Node under Node-scoped private Route rules. The Cluster Router is not a hop. |
 | Create | Persist, issue the Orbit CA leaf, publish Caddy, then publish DNS. Success returns an active Route. An identical retry returns the existing Route. |
-| Destroy | Run untargeted private cleanup for that Route only. Instance Routes stay unchanged. |
+| Destroy | Clear the site publication, publish DNS and Caddy without it, then remove the Orbit CA leaf. A failure before the certificate step keeps the leaf; destroy again to retry. |
 | Node removal | Refuse while the Node still owns a custom proxy Route (`node.has_routes` or `route.reconciliation_required`). |
 | Process removal | Refuse while a custom proxy Route still targets that Process (`process.has_routes`). Destroy the Route first. |
+
+Attaching the Node to a Cluster, detaching it, and changing the Cluster state or TLD leave a custom proxy Route on its Node. The Route keeps serving through the change.
 
 A Cluster TLD suffix still answers names that have no exact record. An exact custom proxy record wins for its domain, including a name under that TLD.
 
@@ -376,7 +378,7 @@ Old projections are removed only after the replacement domain is authoritative.
 
 ### Change Cluster activation
 
-The Gateway reconciles every private Route whose current target Node, Cluster scope, or retained generation basis depends on the Cluster before activation or deactivation becomes authoritative. It inventories those Routes, validates every resulting domain, routing scope, target, and required Router, and refuses the complete change when any result is invalid. Cluster TLD, membership, and Instance placement stay unchanged.
+The Gateway reconciles every private Route whose current target Node, Cluster scope, or retained generation basis depends on the Cluster before activation or deactivation becomes authoritative. It inventories those Routes, validates every resulting domain, routing scope, target, and required Router, and refuses the complete change when any result is invalid. It checks every Route it moves before the first one moves. Cluster TLD, membership, and Instance placement stay unchanged. An analytics tracking host moves with its Instance's Route.
 
 Activation prepares and verifies the Cluster Router serving path before publication. Deactivation prepares usable direct Node scope before it removes authoritative Cluster routing. Workload and Router Caddy, Route-scoped certificates, firewall policy, DNS, and detected Laravel URLs agree with the published scope, including a TLD-less Cluster that already owns Routes.
 
@@ -409,6 +411,8 @@ Clearing a Router that would leave Cluster-owned Routes without a serving path s
 ### Change Cluster membership
 
 The Gateway reconciles every private Route whose current target Node or retained generation basis uses the Node before attach or detach becomes authoritative. It inventories those Routes, validates the complete proposed domains, routing scopes, targets, and required Router, and refuses an invalid or occupied result before it changes membership, a Route record, environment configuration, or traffic. Cluster TLD, Cluster state, and Instance placement stay unchanged.
+
+The Gateway checks every Route it moves, and the Node's LAN address against the Cluster, before the first Route moves. A refusal therefore leaves every Route in place. Custom proxy Routes on the Node are not reconciled; they keep Node scope and keep serving. An [analytics tracking host](/reference/analytics#publish-a-tracking-host) moves with its Instance's Route.
 
 Attach to an active Cluster prepares and verifies the Cluster serving path before publication, including a TLD-less active Cluster that still uses Cluster scope and a Router. Detach prepares usable direct Node scope before it removes authoritative Cluster routing. Workload and Router Caddy, Route-scoped certificates, firewall policy, private DNS, and detected Laravel URLs agree with the published scope.
 

@@ -31,7 +31,6 @@ final readonly class RunDoctorAction
         private ToolDoctorProbe $toolProbe,
         private ProcessDoctorProbe $processProbe,
         private FirewallDoctorProbe $firewallProbe,
-        private HerdrSessionDoctorProbe $herdrProbe,
         private DatabaseConnectionDoctorProbe $databaseConnectionProbe,
         private RouteDoctorProbe $routeProbe,
     ) {}
@@ -129,7 +128,6 @@ final readonly class RunDoctorAction
             DoctorFamily::Tool => $this->toolProbe,
             DoctorFamily::Process => $this->processProbe,
             DoctorFamily::Firewall => $this->firewallProbe,
-            DoctorFamily::Herdr => $this->herdrProbe,
             DoctorFamily::DatabaseConnection => $this->databaseConnectionProbe,
             DoctorFamily::Route => $this->routeProbe,
         };

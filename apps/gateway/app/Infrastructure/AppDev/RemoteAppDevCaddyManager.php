@@ -23,9 +23,15 @@ final readonly class RemoteAppDevCaddyManager implements AppDevCaddyManager
         $this->owner()->run(fn () => $this->convergeSites($node));
     }
 
+    /** The Node's `app-dev.caddy` fragment, rendered from stored state. */
+    public function render(Node $node): string
+    {
+        return $this->renderer->render($this->sites->forNode($node));
+    }
+
     private function convergeSites(Node $node): void
     {
-        $configuration = $this->renderer->render($this->sites->forNode($node));
+        $configuration = $this->render($node);
         $version = bin2hex(random_bytes(8));
         $this->ssh->execute(
             $node,

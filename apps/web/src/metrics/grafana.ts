@@ -11,7 +11,7 @@ import {
 } from "./prometheus";
 
 /**
- * Node metrics, read the way `orbit top` reads them: straight from the Metrics role's Grafana,
+ * Node metrics, read straight from the Metrics role's Grafana,
  * whose datasource proxy re-serves Prometheus, authorized by the Grafana credential the Gateway
  * stores. The Gateway names the Nodes; Prometheus only has samples for the Nodes whose exporter
  * is enabled, so a Node it does not answer for simply has no metrics. No request is sent per

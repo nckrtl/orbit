@@ -25,9 +25,6 @@ use App\Models\DatabaseConnectionTarget;
 use App\Models\DatabaseUser;
 use App\Models\DependencyPackage;
 use App\Models\FirewallRule;
-use App\Models\HerdrObservationNonce;
-use App\Models\HerdrSession;
-use App\Models\JwksKey;
 use App\Models\Node;
 use App\Models\NodeAccess;
 use App\Models\NodeRole;
@@ -59,7 +56,6 @@ it('partitions every persisted model across doctor dispositions', function (): v
         Tool::class => DoctorFamily::Tool,
         Process::class => DoctorFamily::Process,
         FirewallRule::class => DoctorFamily::Firewall,
-        HerdrSession::class => DoctorFamily::Herdr,
         DatabaseConnection::class => DoctorFamily::DatabaseConnection,
         RouteCustomProxy::class => DoctorFamily::Route,
     ];
@@ -73,7 +69,6 @@ it('partitions every persisted model across doctor dispositions', function (): v
         RouteAnalyticsTracking::class,
         ProcessDefinition::class,
         ScheduleDefinition::class,
-        JwksKey::class,
         DatabaseConnectionTarget::class,
     ];
     $excluded = [
@@ -94,7 +89,6 @@ it('partitions every persisted model across doctor dispositions', function (): v
         AppInstanceTransfer::class,
         AppUpdate::class,
         DatabaseUser::class,
-        HerdrObservationNonce::class,
         Task::class,
         AgentThread::class,
         TaskGroup::class,

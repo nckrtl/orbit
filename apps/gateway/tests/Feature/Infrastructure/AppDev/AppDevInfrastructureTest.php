@@ -735,6 +735,8 @@ it('uses a nondefault managed home for app-dev certificate converge and removal'
     $manager = new RemoteAppDevCertificateManager(app_dev_ssh($ssh), $signer, app_dev_account_resolver($account));
 
     $manager->convergeAppInstance($appInstance, $route);
+    // Removal withdraws the Route's sites before it removes their certificate.
+    $route->update(['status' => RouteStatus::Retiring, 'sites_published' => false]);
     $manager->removeAppInstance($appInstance);
 
     expect($ssh->commands)

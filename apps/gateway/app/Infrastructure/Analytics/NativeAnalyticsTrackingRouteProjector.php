@@ -30,4 +30,29 @@ final readonly class NativeAnalyticsTrackingRouteProjector implements AnalyticsT
         $this->caddy->converge($router);
         $this->dns->converge();
     }
+
+    public function prepareHost(Route $candidate): void
+    {
+        $this->certificates->convergeRouteRouter($candidate, $this->sites->routerNode($candidate));
+    }
+
+    public function buildHost(Route $placement): void
+    {
+        $this->caddy->converge($this->sites->routerNode($placement));
+    }
+
+    public function publishDns(): void
+    {
+        $this->dns->converge();
+    }
+
+    public function withdrawHost(Route $retired, Route $current): void
+    {
+        $host = $this->sites->routerNode($retired);
+        $this->caddy->converge($host);
+
+        if (! $host->is($this->sites->routerNode($current))) {
+            $this->certificates->removeRouteRouter($retired, $host);
+        }
+    }
 }

@@ -97,7 +97,7 @@ Each `gateway` role convergence that installs a newer Caddy restarts it, and Cad
 
 A failed `gateway` role convergence leaves the role `failed`. `php artisan orbit:gateway-web` then refuses with `gateway.web_node_missing`, because it needs an active `gateway` role. Fix the cause, then run `orbit node:role:add <node> gateway --converge` again. A successful run returns the role to `active`.
 
-Proposed in [ADR 0141](/decisions/0141-build-each-node-caddyfile-on-the-gateway), not live yet: every Node with Caddy sites installs Caddy through this step before its first [Node Caddy build](/reference/caddy-configuration#node-caddy-build). The `ingress` role gains the `caddy` package. ProxyCli and Herdr observer publication run the step on their Node, and the build uses only the packaged `/usr/bin/caddy`, never a Linuxbrew Caddy. The step orders the Caddy service after `wg-quick@orbit` on every Node. Each build checks the floor again.
+Proposed in [ADR 0141](/decisions/0141-build-each-node-caddyfile-on-the-gateway), not live yet: every Node with Caddy sites installs Caddy through this step before its first [Node Caddy build](/reference/caddy-configuration#node-caddy-build). The `ingress` role gains the `caddy` package. ProxyCli publication runs the step on its Node, and the build uses only the packaged `/usr/bin/caddy`. The step orders the Caddy service after `wg-quick@orbit` on every Node. Each build checks the floor again.
 
 ## Converge an existing Node
 
@@ -119,7 +119,7 @@ After [relocate](/solutions/relocate-gateway-role) splits `gateway` from `vpn`, 
 
 ## Remove a Node
 
-`orbit node:remove <node> [--offline] [--force]` removes the Node record and Gateway configuration. Online removal restores public SSH so you can recover or provision the machine again. First remove its Instances, Orbit firewall rules, roles, processes, and Herdr sessions. Orbit refuses to remove the caller's Node or one with the Gateway or VPN role. Other units, containers, and checkouts stay on the machine. See [ADR 0072](/decisions/0072-add-and-remove-nodes-without-changing-the-machine).
+`orbit node:remove <node> [--offline] [--force]` removes the Node record and Gateway configuration. Online removal restores public SSH so you can recover or provision the machine again. First remove its Instances, Orbit firewall rules, roles, and processes. Orbit refuses to remove the caller's Node or one with the Gateway or VPN role. Other units, containers, and checkouts stay on the machine. See [ADR 0072](/decisions/0072-add-and-remove-nodes-without-changing-the-machine).
 
 The online removal runs these steps in order and reports success only after the last step completes.
 
@@ -137,13 +137,13 @@ The Gateway skips the public SSH step for a Node without a WireGuard peer, becau
 
 Use `--offline` only for an unreachable Node. The Gateway probes it first and keeps all normal guards if it answers. The flag skips public SSH recovery even for a reachable Node, so omit it for online removal.
 
-For an unreachable Node, `--offline --force` sheds every remaining role on the Gateway side, deletes Node-owned Herdr session and Process records without remote runtime cleanup, removes the WireGuard peer, and deletes the record. It changes nothing on the machine: the roles' Caddy sites, checkouts, containers, Process units or containers, Orbit UFW rules, the Metrics exporter, and the Node agent stay in place, public SSH stays closed, and the response lists what remains under `retained_on_node`.
+For an unreachable Node, `--offline --force` sheds every remaining role on the Gateway side, deletes Node-owned Process records without remote runtime cleanup, removes the WireGuard peer, and deletes the record. It changes nothing on the machine: the roles' Caddy sites, checkouts, containers, Process units or containers, Orbit UFW rules, the Metrics exporter, and the Node agent stay in place, public SSH stays closed, and the response lists what remains under `retained_on_node`.
 
 A failed step rolls the Gateway back and returns the Node record to the status it had before removal, so a `failed` Node stays `failed`. Each failure names the step that stopped and the state the Gateway leaves behind.
 
 | Code | Step | Result |
 | --- | --- | --- |
-| `node.has_app_instances`, `node.has_instances`, `node.has_firewall_rules`, `node.has_roles`, `node.has_processes`, `node.has_herdr_sessions` | guard | The Gateway changes nothing. |
+| `node.has_app_instances`, `node.has_instances`, `node.has_firewall_rules`, `node.has_roles`, `node.has_processes` | guard | The Gateway changes nothing. |
 | `node.self_removal_forbidden`, `node.gateway_removal_forbidden`, `node.vpn_removal_forbidden` | guard | The Gateway changes nothing. |
 | `node.confirmation_required` | guard | The Gateway changes nothing; `--offline` needs `--force`. |
 | `node.provisioning_busy` | lifecycle owner | The Gateway changes nothing; another lifecycle operation holds the Node name. |

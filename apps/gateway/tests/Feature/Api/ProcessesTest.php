@@ -185,16 +185,16 @@ it('adds a Node-targeted systemd process without an AppInstance environment file
     $response = $this->postJson('/api/v1/processes', [
         'target_type' => 'node',
         'target_id' => $this->node->id,
-        'name' => 'herdr-observer',
+        'name' => 'log-shipper',
         'runtime' => 'systemd',
-        'command' => ['/usr/local/bin/herdr-observer'],
+        'command' => ['/usr/local/bin/log-shipper'],
     ]);
 
     $response
         ->assertCreated()
         ->assertJsonPath('data.target_type', 'node')
         ->assertJsonPath('data.working_directory', '/home/orbit')
-        ->assertJsonPath('data.runtime_config.command', ['/usr/local/bin/herdr-observer']);
+        ->assertJsonPath('data.runtime_config.command', ['/usr/local/bin/log-shipper']);
 
     $process = Process::query()->sole();
 

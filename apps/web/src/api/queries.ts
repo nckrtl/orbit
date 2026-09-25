@@ -25,7 +25,7 @@ import type {
     TasksStatus,
 } from "./types";
 
-/** How often the lists reload while realtime is down. `orbit top --tick` has the same default. */
+/** How often the lists reload while realtime is down. */
 export const POLL_SECONDS = 10;
 
 const nodesQuery = queryOptions({
@@ -185,7 +185,7 @@ export const liveFirewallQuery = (nodeId: number) =>
 
 const disabledProxyCli = (): ProxyCliStatus => ({
     enabled: false,
-    hostname: "collector.proxycli.orbit",
+    hostname: "collector.cli-proxy-api.orbit",
     node_id: null,
     cache_connection: null,
     collected_at: null,

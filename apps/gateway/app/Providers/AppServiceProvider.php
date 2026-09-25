@@ -90,9 +90,6 @@ use App\Domain\Gateway\GatewaySelfAccessConverger;
 use App\Domain\Gateway\GatewayVpnConverger;
 use App\Domain\Gateway\GatewayWebConverger;
 use App\Domain\GitHub\GitHubApi;
-use App\Domain\Herdr\HerdrObserverPublisher;
-use App\Domain\Herdr\HerdrSessionInspector;
-use App\Domain\Herdr\ObservationGrantSigner;
 use App\Domain\Hibernation\AppDevHibernationPolicy;
 use App\Domain\Hibernation\AppInstanceCheckoutInspector;
 use App\Domain\Hibernation\AppInstanceRuntimeReadiness;
@@ -210,7 +207,6 @@ use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
 use App\Infrastructure\Caddy\Build\Sources\AnalyticsCaddySiteSource;
 use App\Infrastructure\Caddy\Build\Sources\AppCaddySiteSource;
 use App\Infrastructure\Caddy\Build\Sources\GatewayWebCaddySiteSource;
-use App\Infrastructure\Caddy\Build\Sources\HerdrObserverCaddySiteSource;
 use App\Infrastructure\Caddy\Build\Sources\MetricsCaddySiteSource;
 use App\Infrastructure\Caddy\Build\Sources\ProxyCliCaddySiteSource;
 use App\Infrastructure\Caddy\Build\Sources\ServiceMetricsCaddySiteSource;
@@ -248,11 +244,6 @@ use App\Infrastructure\Gateway\NativeGatewayFpmConverger;
 use App\Infrastructure\Gateway\NativeGatewaySelfAccessConverger;
 use App\Infrastructure\Gateway\NativeGatewayWebConverger;
 use App\Infrastructure\GitHub\HttpGitHubApi;
-use App\Infrastructure\Herdr\ComposedHerdrObserverPublisher;
-use App\Infrastructure\Herdr\HerdrObserverSitePublisher;
-use App\Infrastructure\Herdr\NativeHerdrSessionInspector;
-use App\Infrastructure\Herdr\OpenSslObservationGrantSigner;
-use App\Infrastructure\Herdr\RemoteHerdrObserverSitePublisher;
 use App\Infrastructure\Hibernation\CacheHibernationWakeFailureStore;
 use App\Infrastructure\Hibernation\NativeRuntimeHibernatorConverger;
 use App\Infrastructure\Hibernation\RemoteAppInstanceCheckoutInspector;
@@ -445,10 +436,6 @@ final class AppServiceProvider extends ServiceProvider
         AppInstanceLogReader::class => RemoteAppInstanceLogReader::class,
         AppInstanceQueueReader::class => RemoteAppInstanceQueueReader::class,
         HibernationWakeFailureStore::class => CacheHibernationWakeFailureStore::class,
-        HerdrObserverPublisher::class => ComposedHerdrObserverPublisher::class,
-        HerdrObserverSitePublisher::class => RemoteHerdrObserverSitePublisher::class,
-        HerdrSessionInspector::class => NativeHerdrSessionInspector::class,
-        ObservationGrantSigner::class => OpenSslObservationGrantSigner::class,
         ScheduleRuntimeAccountResolver::class => SshScheduleRuntimeAccountResolver::class,
         ScheduleRuntimeManager::class => RemoteScheduleRuntimeManager::class,
         GitHubApi::class => HttpGitHubApi::class,
@@ -572,7 +559,6 @@ final class AppServiceProvider extends ServiceProvider
                 app(WebSocketCaddySiteSource::class),
                 app(AnalyticsCaddySiteSource::class),
                 app(ProxyCliCaddySiteSource::class),
-                app(HerdrObserverCaddySiteSource::class),
             ]),
         );
         $this->app->scoped(

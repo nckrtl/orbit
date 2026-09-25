@@ -5,12 +5,20 @@ declare(strict_types=1);
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Processes\DesiredProcessState;
+use App\Domain\Processes\ProcessRuntime;
 use App\Domain\ProxyCli\ProxyCliAccount;
 use App\Domain\ProxyCli\ProxyCliCache;
 use App\Domain\ProxyCli\ProxyCliProcess;
+use App\Domain\ProxyCli\ProxyCliPublicationManager;
+use App\Domain\ProxyCli\ProxyCliRuntimeLifecycle;
 use App\Domain\ProxyCli\ProxyCliSnapshotStore;
 use App\Domain\ProxyCli\ProxyCliState;
 use App\Domain\ProxyCli\ProxyCliWindow;
+use App\Domain\Routes\RouteKind;
+use App\Domain\Routes\RouteProvenance;
+use App\Domain\Routes\RoutePublication;
+use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
@@ -20,6 +28,7 @@ use App\Infrastructure\ProxyCli\RecordingProxyCliRuntimeLifecycle;
 use App\Models\DatabaseConnection;
 use App\Models\Node;
 use App\Models\Process;
+use App\Models\Route as OrbitRoute;
 use Illuminate\Routing\Route;
 use Illuminate\Support\Facades\Http;
 
@@ -46,6 +55,22 @@ function proxycli_node(string $name = 'beast', string $ip = '10.44.0.8'): Node
         'public_ssh_host' => '192.0.2.8',
         'wireguard_ip' => $ip,
     ]);
+}
+
+function proxycli_hostname_route(Node $node, string $upstream, ?int $processId = null): OrbitRoute
+{
+    $route = OrbitRoute::query()->create([
+        'kind' => RouteKind::CustomProxy,
+        'node_id' => $node->id,
+        'domain' => 'collector.cli-proxy-api.orbit',
+        'provenance' => RouteProvenance::Explicit,
+        'publication' => RoutePublication::Private,
+        'status' => RouteStatus::Pending,
+    ]);
+    $route->customProxy()->create(['node_id' => $node->id, 'process_id' => $processId, 'upstream' => $upstream]);
+    $route->update(['status' => RouteStatus::Active]);
+
+    return $route;
 }
 
 function proxycli_valkey(Node $node, string $slug = 'valkey'): DatabaseConnection
@@ -102,7 +127,7 @@ it('enables proxycli when shared Valkey sits on a database Node', function (): v
         ])
         ->assertCreated()
         ->assertJsonPath('data.enabled', true)
-        ->assertJsonPath('data.hostname', 'collector.proxycli.orbit')
+        ->assertJsonPath('data.hostname', 'collector.cli-proxy-api.orbit')
         ->assertJsonPath('data.node_id', $node->id)
         ->assertJsonPath('data.cache_connection', 'valkey')
         ->assertJsonMissingPath('data.cliproxy_management_key')
@@ -140,14 +165,116 @@ it('keeps the collector hostname on a second enable', function (): void {
     $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
         ->postJson('/api/v1/proxycli', $payload)
         ->assertCreated()
-        ->assertJsonPath('data.hostname', 'collector.proxycli.orbit');
+        ->assertJsonPath('data.hostname', 'collector.cli-proxy-api.orbit');
 
     $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
         ->postJson('/api/v1/proxycli', $payload)
         ->assertCreated()
         ->assertJsonPath('data.enabled', true)
-        ->assertJsonPath('data.hostname', 'collector.proxycli.orbit');
+        ->assertJsonPath('data.hostname', 'collector.cli-proxy-api.orbit');
 });
+
+it('hands the collector custom proxy Route to the publication takeover', function (): void {
+    $gateway = proxycli_gateway();
+    $node = proxycli_node();
+    proxycli_valkey($node);
+    $route = proxycli_hostname_route($node, 'http://127.0.0.1:8787');
+
+    $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
+        ->postJson('/api/v1/proxycli', [
+            'node_id' => $node->id,
+            'cache_connection' => 'valkey',
+            'cliproxy_url' => 'http://127.0.0.1:8317',
+            'cliproxy_management_key' => 'management-key',
+        ])
+        ->assertCreated()
+        ->assertJsonPath('data.hostname', 'collector.cli-proxy-api.orbit');
+
+    expect(app(RecordingProxyCliPublicationManager::class)->takeoverRouteId)->toBe($route->id);
+});
+
+it('takes over the Route before it restarts the collector', function (): void {
+    $gateway = proxycli_gateway();
+    $node = proxycli_node();
+    proxycli_valkey($node);
+    $route = proxycli_hostname_route($node, 'http://127.0.0.1:8787');
+    $events = new ArrayObject;
+    app()->instance(ProxyCliPublicationManager::class, new class($events) implements ProxyCliPublicationManager
+    {
+        public function __construct(private ArrayObject $events) {}
+
+        public function converge(Node $node, int $port = ProxyCliProcess::PORT, ?OrbitRoute $takeover = null): void
+        {
+            $this->events->append("publication:route-{$takeover?->id}");
+        }
+
+        public function remove(Node $node): void {}
+    });
+    app()->instance(ProxyCliRuntimeLifecycle::class, new class($events) implements ProxyCliRuntimeLifecycle
+    {
+        public function __construct(private ArrayObject $events) {}
+
+        public function converge(Node $node, array $environment, int $port = ProxyCliProcess::PORT): void
+        {
+            $this->events->append('runtime');
+        }
+
+        public function remove(Node $node): void {}
+    });
+
+    $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
+        ->postJson('/api/v1/proxycli', [
+            'node_id' => $node->id,
+            'cache_connection' => 'valkey',
+            'cliproxy_url' => 'http://127.0.0.1:8317',
+            'cliproxy_management_key' => 'management-key',
+        ])
+        ->assertCreated();
+
+    expect($events->getArrayCopy())->toBe(["publication:route-{$route->id}", 'runtime']);
+});
+
+it('refuses to enable while another Route holds the collector hostname', function (Closure $route): void {
+    $gateway = proxycli_gateway();
+    $node = proxycli_node();
+    proxycli_valkey($node);
+    $holder = $route($node);
+
+    $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
+        ->postJson('/api/v1/proxycli', [
+            'node_id' => $node->id,
+            'cache_connection' => 'valkey',
+            'cliproxy_url' => 'http://127.0.0.1:8317',
+            'cliproxy_management_key' => 'management-key',
+        ])
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'proxycli.hostname_taken');
+
+    expect(app(ProxyCliState::class)->enabled())->toBeFalse()
+        ->and(app(RecordingProxyCliRuntimeLifecycle::class)->converged)->toBeFalse()
+        ->and(app(RecordingProxyCliPublicationManager::class)->converged)->toBeFalse()
+        ->and(OrbitRoute::query()->whereKey($holder->id)->exists())->toBeTrue();
+})->with([
+    'another Node' => [fn (Node $node): OrbitRoute => proxycli_hostname_route(proxycli_node('services', '10.44.0.17'), 'http://127.0.0.1:8787')],
+    'another port' => [fn (Node $node): OrbitRoute => proxycli_hostname_route($node, 'http://127.0.0.1:8317')],
+    'a Process target' => [fn (Node $node): OrbitRoute => proxycli_hostname_route($node, 'http://127.0.0.1:8787', Process::query()->create([
+        'owner_type' => Node::class,
+        'owner_id' => $node->id,
+        'name' => 'collector-copy',
+        'runtime' => ProcessRuntime::Docker,
+        'working_directory' => '/app',
+        'runtime_config' => [
+            'image' => 'collector:latest',
+            'command' => ['collector'],
+            'environment' => [],
+            'ports' => ['127.0.0.1:8787:8787/tcp'],
+            'volumes' => [],
+        ],
+        'restart_policy' => 'unless-stopped',
+        'desired_state' => DesiredProcessState::Running,
+        'status' => LifecycleStatus::Active,
+    ])->id)],
+]);
 
 it('fails closed when the cache connection is missing, not redis, or unplaced', function (string $setup, string $code): void {
     $gateway = proxycli_gateway();
@@ -268,7 +395,7 @@ it('toggles an account through the collector using its auth index', function ():
 
     Http::assertSent(fn ($request): bool => $request->url() === 'https://10.44.0.8/v1/accounts/auth-index-42'
         && $request->method() === 'PATCH'
-        && $request->hasHeader('Host', 'collector.proxycli.orbit')
+        && $request->hasHeader('Host', 'collector.cli-proxy-api.orbit')
         && $request->hasHeader('Authorization', 'Bearer '.app(ProxyCliState::class)->controlToken())
         && $request['disabled'] === true);
 

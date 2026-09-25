@@ -185,9 +185,7 @@ it('observes only AppInstance source evidence through the fixed SSH boundary', f
             'nckrtl',
             'nckrtl',
             $appInstance->source_layout,
-            $appInstance->branch,
             $appInstance->starting_commit,
-            '0',
         ])
         ->and($ssh->commands[0]->input)
         ->toContain('repository_layout_matches', 'origin_matches', 'source_identity_matches')
@@ -662,9 +660,7 @@ it('reports shared AppInstance Git administration as non-independent', function 
                 $fixture['user'],
                 $fixture['group'],
                 'checkout',
-                'development',
                 $fixture['startingCommit'],
-                '0',
             ],
             $script,
         );
@@ -675,29 +671,72 @@ it('reports shared AppInstance Git administration as non-independent', function 
     }
 });
 
-it('keeps a wrong branch false when the ancestry check succeeds', function (): void {
+it('accepts a development checkout that switched branches within the recorded history', function (
+    Closure $switch,
+): void {
     $appInstance = application_app_instance(application_inspector_app(), application_inspector_node());
     $script = application_instance_remote_script($appInstance);
     $fixture = application_instance_repository_fixture($appInstance->app->repository_url);
+    $switch($fixture);
 
     try {
-        $result = application_run(
-            [
-                'bash',
-                '-seu',
-                '--',
-                $appInstance->app->repository_url,
-                $fixture['checkout'],
-                $fixture['allowedRoot'],
-                $fixture['user'],
-                $fixture['group'],
-                'checkout',
-                'wrong-branch',
-                $fixture['startingCommit'],
-                '0',
-            ],
-            $script,
-        );
+        $result = application_run(application_instance_source_arguments($appInstance, $fixture), $script);
+
+        expect($result->stdout)->toBe("1\n1\n1\n1\n");
+    } finally {
+        new Filesystem()->deleteDirectory($fixture['sandbox']);
+    }
+})->with([
+    'feature branch with new commits' => [function (array $fixture): void {
+        application_run(['git', '-C', $fixture['checkout'], 'switch', '--quiet', '--create', 'fix/feature']);
+        application_commit($fixture['checkout'], 'feature.md');
+    }],
+    'branch that starts before the starting commit' => [function (array $fixture): void {
+        application_run(['git', '-C', $fixture['checkout'], 'switch', '--quiet', '--create', 'maintenance/older', "{$fixture['startingCommit']}~1"]);
+        application_commit($fixture['checkout'], 'maintenance.md');
+    }],
+    'detached HEAD' => [function (array $fixture): void {
+        application_run(['git', '-C', $fixture['checkout'], 'switch', '--quiet', '--detach', "{$fixture['startingCommit']}~1"]);
+    }],
+]);
+
+it('reports a development checkout whose history was replaced', function (Closure $replace): void {
+    $appInstance = application_app_instance(application_inspector_app(), application_inspector_node());
+    $script = application_instance_remote_script($appInstance);
+    $fixture = application_instance_repository_fixture($appInstance->app->repository_url);
+    $replace($fixture);
+
+    try {
+        $result = application_run(application_instance_source_arguments($appInstance, $fixture), $script);
+
+        expect($result->stdout)->toBe("1\n1\n1\n0\n");
+    } finally {
+        new Filesystem()->deleteDirectory($fixture['sandbox']);
+    }
+})->with([
+    'unrelated history in the same checkout' => [function (array $fixture): void {
+        application_run(['git', '-C', $fixture['checkout'], 'switch', '--quiet', '--orphan', 'unrelated']);
+        application_commit($fixture['checkout'], 'unrelated.md');
+    }],
+    'another repository with the same origin' => [function (array $fixture): void {
+        $files = new Filesystem;
+        $files->deleteDirectory($fixture['checkout']);
+        application_run(['git', 'init', '--quiet', '--initial-branch=development', $fixture['checkout']]);
+        application_run(['git', '-C', $fixture['checkout'], 'config', 'user.name', 'Orbit Test']);
+        application_run(['git', '-C', $fixture['checkout'], 'config', 'user.email', 'orbit@example.test']);
+        application_run(['git', '-C', $fixture['checkout'], 'remote', 'add', 'origin', $fixture['repository']]);
+        application_commit($fixture['checkout'], 'other.md');
+    }],
+]);
+
+it('reports a development checkout without a recorded starting commit', function (): void {
+    $appInstance = application_app_instance(application_inspector_app(), application_inspector_node());
+    $script = application_instance_remote_script($appInstance);
+    $fixture = application_instance_repository_fixture($appInstance->app->repository_url);
+    $fixture['startingCommit'] = '';
+
+    try {
+        $result = application_run(application_instance_source_arguments($appInstance, $fixture), $script);
 
         expect($result->stdout)->toBe("1\n1\n1\n0\n");
     } finally {
@@ -723,9 +762,7 @@ it('compares the configured Instance origin, not the insteadOf rewrite Git appli
                 $fixture['user'],
                 $fixture['group'],
                 'checkout',
-                'development',
                 $fixture['startingCommit'],
-                '0',
             ],
             $script,
         );
@@ -802,9 +839,7 @@ it('still reports a truly different Instance origin despite an insteadOf rule', 
                 $fixture['user'],
                 $fixture['group'],
                 'checkout',
-                'development',
                 $fixture['startingCommit'],
-                '0',
             ],
             $script,
         );
@@ -876,9 +911,7 @@ it('keeps a symlink checkout false when ownership lookup succeeds', function ():
                 $fixture['user'],
                 $fixture['group'],
                 'checkout',
-                'development',
                 $fixture['startingCommit'],
-                '0',
             ],
             $script,
         );
@@ -907,9 +940,7 @@ it('keeps a non-canonical checkout false when ownership lookup succeeds', functi
                 $fixture['user'],
                 $fixture['group'],
                 'checkout',
-                'development',
                 $fixture['startingCommit'],
-                '0',
             ],
             $script,
         );
@@ -1025,7 +1056,7 @@ function application_process_stat(int $pid, int $parentPid, int $startTime): str
     ])."\n";
 }
 
-/** @return array{sandbox: string, allowedRoot: string, checkout: string, startingCommit: string, user: string, group: string} */
+/** @return array{sandbox: string, repository: string, allowedRoot: string, checkout: string, startingCommit: string, user: string, group: string} */
 function application_instance_repository_fixture(string $repository): array
 {
     $sandbox = sys_get_temp_dir().'/orbit-doctor-instance-'.Str::uuid();
@@ -1036,9 +1067,8 @@ function application_instance_repository_fixture(string $repository): array
     application_run(['git', 'init', '--initial-branch=development', $checkout]);
     application_run(['git', '-C', $checkout, 'config', 'user.name', 'Orbit Test']);
     application_run(['git', '-C', $checkout, 'config', 'user.email', 'orbit@example.test']);
-    file_put_contents("{$checkout}/README.md", "managed\n");
-    application_run(['git', '-C', $checkout, 'add', 'README.md']);
-    application_run(['git', '-C', $checkout, 'commit', '-m', 'Managed']);
+    application_commit($checkout, 'CHANGELOG.md');
+    application_commit($checkout, 'README.md');
     application_run(['git', '-C', $checkout, 'remote', 'add', 'origin', $repository]);
     $startingCommit = trim(application_run(['git', '-C', $checkout, 'rev-parse', 'HEAD'])->stdout);
     $identity = posix_getpwuid(posix_geteuid());
@@ -1050,11 +1080,39 @@ function application_instance_repository_fixture(string $repository): array
 
     return [
         'sandbox' => $sandbox,
+        'repository' => $repository,
         'allowedRoot' => $allowedRoot,
         'checkout' => $checkout,
         'startingCommit' => $startingCommit,
         'user' => $user,
         'group' => $group,
+    ];
+}
+
+function application_commit(string $checkout, string $file): void
+{
+    file_put_contents("{$checkout}/{$file}", "{$file}\n");
+    application_run(['git', '-C', $checkout, 'add', $file]);
+    application_run(['git', '-C', $checkout, 'commit', '--quiet', '-m', "Add {$file}"]);
+}
+
+/**
+ * @param  array{sandbox: string, repository: string, allowedRoot: string, checkout: string, startingCommit: string, user: string, group: string}  $fixture
+ * @return non-empty-list<string>
+ */
+function application_instance_source_arguments(AppInstance $appInstance, array $fixture): array
+{
+    return [
+        'bash',
+        '-seu',
+        '--',
+        $appInstance->app->repository_url,
+        $fixture['checkout'],
+        $fixture['allowedRoot'],
+        $fixture['user'],
+        $fixture['group'],
+        'checkout',
+        $fixture['startingCommit'],
     ];
 }
 

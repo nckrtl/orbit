@@ -1826,7 +1826,6 @@
                 "tool",
                 "process",
                 "firewall",
-                "herdr",
                 "database_connection",
                 "route"
               ]
@@ -2225,260 +2224,6 @@
         "type": "object",
         "properties": {},
         "additionalProperties": false
-      }
-    },
-    {
-      "name": "herdr-observe",
-      "title": "Issue an observation grant",
-      "description": "Issue one short-lived receive-only Herdr observation grant.",
-      "method": "POST",
-      "path": "/api/v1/herdr/sessions/{session}/observation-grants",
-      "path_inputs": [
-        "session"
-      ],
-      "query_inputs": [],
-      "streams": false,
-      "input_schema": {
-        "type": "object",
-        "properties": {
-          "session": {
-            "type": "integer",
-            "minimum": 1,
-            "description": "Numeric Herdr session ID."
-          },
-          "pane": {
-            "type": "string",
-            "pattern": "^[A-Za-z0-9._:-]+$",
-            "maxLength": 64,
-            "description": "Recorded pane identity"
-          },
-          "terminal": {
-            "type": "string",
-            "pattern": "^[A-Za-z0-9._:-]+$",
-            "maxLength": 64,
-            "description": "Expected terminal identity"
-          },
-          "cols": {
-            "type": "integer",
-            "maximum": 400,
-            "minimum": 20,
-            "description": "Viewport columns"
-          },
-          "rows": {
-            "type": "integer",
-            "maximum": 200,
-            "minimum": 5,
-            "description": "Viewport rows"
-          },
-          "origin": {
-            "type": "string",
-            "pattern": "^https:\\/\\/[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?(?::[1-9][0-9]{0,4})?$",
-            "maxLength": 255,
-            "description": "HTTPS browser origin allowed to use the grant"
-          }
-        },
-        "additionalProperties": false,
-        "required": [
-          "session",
-          "pane",
-          "terminal",
-          "cols",
-          "rows",
-          "origin"
-        ]
-      }
-    },
-    {
-      "name": "herdr-session-adopt",
-      "title": "herdr:session:adopt",
-      "description": "Adopt an existing Herdr session for observation without taking over its service lifecycle.",
-      "method": "POST",
-      "path": "/api/v1/herdr/sessions/adopt",
-      "path_inputs": [],
-      "query_inputs": [],
-      "streams": false,
-      "input_schema": {
-        "type": "object",
-        "properties": {
-          "node_id": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "session": {
-            "type": "string",
-            "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$",
-            "maxLength": 48,
-            "description": "Existing named Herdr session"
-          },
-          "user": {
-            "type": "string",
-            "pattern": "^[a-z_][a-z0-9_-]*$",
-            "maxLength": 32,
-            "description": "Unix user that owns the Herdr session and socket"
-          },
-          "publish_observer": {
-            "type": "boolean",
-            "description": "Publish the private receive-only observer"
-          }
-        },
-        "additionalProperties": false,
-        "required": [
-          "node_id",
-          "session",
-          "user"
-        ]
-      }
-    },
-    {
-      "name": "herdr-session-create",
-      "title": "Create a Herdr session",
-      "description": "Create or ensure one named Herdr session on a managed Node.",
-      "method": "POST",
-      "path": "/api/v1/herdr/sessions",
-      "path_inputs": [],
-      "query_inputs": [],
-      "streams": false,
-      "input_schema": {
-        "type": "object",
-        "properties": {
-          "node_id": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "session": {
-            "type": "string",
-            "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$",
-            "maxLength": 48,
-            "description": "Named Herdr session"
-          },
-          "user": {
-            "type": "string",
-            "pattern": "^[a-z_][a-z0-9_-]*$",
-            "maxLength": 32,
-            "description": "Unix user that owns the Herdr session and socket"
-          },
-          "publish_observer": {
-            "type": "boolean",
-            "description": "Publish the private receive-only observer"
-          }
-        },
-        "additionalProperties": false,
-        "required": [
-          "node_id",
-          "session",
-          "user"
-        ]
-      }
-    },
-    {
-      "name": "herdr-session-destroy",
-      "title": "Remove a Herdr session",
-      "description": "Remove one Herdr session from Orbit and destroy its Process only when Orbit manages it.",
-      "method": "DELETE",
-      "path": "/api/v1/herdr/sessions/{session}",
-      "path_inputs": [
-        "session"
-      ],
-      "query_inputs": [],
-      "streams": false,
-      "input_schema": {
-        "type": "object",
-        "properties": {
-          "session": {
-            "type": "integer",
-            "minimum": 1,
-            "description": "Numeric Herdr session ID."
-          },
-          "accept_termination": {
-            "type": "boolean",
-            "description": "Accept termination of live panes"
-          }
-        },
-        "additionalProperties": false,
-        "required": [
-          "session"
-        ]
-      }
-    },
-    {
-      "name": "herdr-session-list",
-      "title": "List Herdr sessions",
-      "description": "List named Herdr sessions on one managed Node.",
-      "method": "GET",
-      "path": "/api/v1/herdr/sessions",
-      "path_inputs": [],
-      "query_inputs": [
-        "node_id"
-      ],
-      "streams": false,
-      "input_schema": {
-        "type": "object",
-        "properties": {
-          "node_id": {
-            "type": "integer",
-            "minimum": 1
-          }
-        },
-        "additionalProperties": false,
-        "required": [
-          "node_id"
-        ]
-      }
-    },
-    {
-      "name": "herdr-session-restart",
-      "title": "Restart a Herdr session",
-      "description": "Restart one named Herdr session on a managed Node.",
-      "method": "POST",
-      "path": "/api/v1/herdr/sessions/{session}/restart",
-      "path_inputs": [
-        "session"
-      ],
-      "query_inputs": [],
-      "streams": false,
-      "input_schema": {
-        "type": "object",
-        "properties": {
-          "session": {
-            "type": "integer",
-            "minimum": 1,
-            "description": "Numeric Herdr session ID."
-          },
-          "handoff": {
-            "type": "boolean",
-            "description": "Use Herdr live handoff when the inspected server reports support"
-          }
-        },
-        "additionalProperties": false,
-        "required": [
-          "session"
-        ]
-      }
-    },
-    {
-      "name": "herdr-session-show",
-      "title": "Show a Herdr session",
-      "description": "Show one named Herdr session on a managed Node.",
-      "method": "GET",
-      "path": "/api/v1/herdr/sessions/{session}",
-      "path_inputs": [
-        "session"
-      ],
-      "query_inputs": [],
-      "streams": false,
-      "input_schema": {
-        "type": "object",
-        "properties": {
-          "session": {
-            "type": "integer",
-            "minimum": 1,
-            "description": "Numeric Herdr session ID."
-          }
-        },
-        "additionalProperties": false,
-        "required": [
-          "session"
-        ]
       }
     },
     {
@@ -5773,7 +5518,7 @@
     {
       "name": "proxycli-disable",
       "title": "Disable proxycli",
-      "description": "Stops the collector Process, withdraws collector.proxycli.orbit, and hides provider reads. The Redis connection and Valkey data stay.",
+      "description": "Stops the collector Process, withdraws collector.cli-proxy-api.orbit, and hides provider reads. The Redis connection and Valkey data stay.",
       "method": "DELETE",
       "path": "/api/v1/proxycli",
       "path_inputs": [],
@@ -5788,7 +5533,7 @@
     {
       "name": "proxycli-enable",
       "title": "Enable proxycli",
-      "description": "Deploys one collector Process and publishes https://collector.proxycli.orbit after a Redis Database connection for shared Valkey is in place. Fails closed when that connection is missing, is not Redis, or names a Node without the database role. The response never includes tokens or the management key.",
+      "description": "Deploys one collector Process and publishes https://collector.cli-proxy-api.orbit after a Redis Database connection for shared Valkey is in place. Fails closed when that connection is missing, is not Redis, or names a Node without the database role. A custom proxy Route that already serves the collector hostname on that Node is withdrawn in the same Caddy reload and removed; any other Route on that name fails with proxycli.hostname_taken. The response never includes tokens or the management key.",
       "method": "POST",
       "path": "/api/v1/proxycli",
       "path_inputs": [],

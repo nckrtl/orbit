@@ -6,8 +6,8 @@ import { join } from "node:path";
 export type GatewayProfile = { name: string; url: string; ca: string | undefined };
 
 /**
- * The Gateway the dev server proxies to: the CLI's active profile in `~/.orbit/config.json`, the
- * same one `orbit top` uses. `ORBIT_GATEWAY_URL` and `ORBIT_CA_PATH` override it.
+ * The Gateway the dev server proxies to: the CLI's active profile in `~/.orbit/config.json`.
+ * `ORBIT_GATEWAY_URL` and `ORBIT_CA_PATH` override it.
  */
 export function gatewayProfile(): GatewayProfile {
     const home = process.env.ORBIT_HOME ?? join(homedir(), ".orbit");

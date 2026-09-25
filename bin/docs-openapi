@@ -222,7 +222,6 @@ TAGS = [
     ('tasks', 'Tasks', 'Enable-gated Commander feature groups and ordered subtasks.'),
     ('doctor', 'Doctor', 'Verify-only drift checks across the fleet.'),
     ('activity', 'Activities', 'The Gateway log of authorized commands.'),
-    ('herdr', 'Herdr sessions', 'Named Herdr terminal sessions and observation grants.'),
     ('proxycli', 'proxycli', 'CLIProxyAPI quota snapshots, provider pools, and account controls.'),
     ('workspace', 'Workspaces', 'Git worktrees owned by legacy Instances.'),
     ('realtime', 'Realtime', 'The record-change event feed broadcast to Reverb, its channel authorization, and Reverb connection discovery.'),
@@ -275,7 +274,6 @@ SUMMARIES = {
     'process:list': 'List Processes', 'process:create': 'Create a Process', 'process:start': 'Start a Process', 'process:stop': 'Stop a Process', 'process:restart': 'Restart a Process', 'process:logs': 'Read Process logs', 'instance:logs': 'Read Instance logs', 'instance:analytics:show': 'Show Instance analytics', 'instance:analytics:enable': 'Publish Instance tracking hosts', 'instance:analytics:disable': 'Remove Instance tracking hosts', 'instance:analytics:stats': 'Read Instance analytics stats', 'instance:queue': 'Read the Instance queue', 'process:destroy': 'Remove a Process',
     'schedule:list': 'List Schedules', 'schedule:show': 'Show a Schedule', 'schedule:create': 'Create a Schedule', 'schedule:run': 'Run a Schedule', 'schedule:logs': 'Read Schedule logs', 'schedule:enable': 'Enable a Schedule', 'schedule:destroy': 'Remove a Schedule', 'schedule:complete': 'Complete a Schedule run',
     'doctor': 'Run Doctor', 'activity:list': 'List Activities', 'activity:show': 'Show an Activity', 'analytics:update': 'Pin the Plausible version', 'analytics:credentials': 'Show analytics Stats API credentials', 'analytics:credentials:set': 'Store the analytics Stats API key', 'analytics:credentials:unset': 'Clear the analytics Stats API key',
-    'herdr:session:list': 'List Herdr sessions', 'herdr:session:show': 'Show a Herdr session', 'herdr:session:create': 'Create a Herdr session', 'herdr:session:restart': 'Restart a Herdr session', 'herdr:session:destroy': 'Remove a Herdr session', 'herdr:observe': 'Issue an observation grant',
     'proxycli:enable': 'Enable proxycli', 'proxycli:disable': 'Disable proxycli', 'proxycli:status': 'Show proxycli status', 'proxycli:list': 'List proxycli providers', 'proxycli:show': 'Show a proxycli provider', 'proxycli:update': 'Update a proxycli account',
     'workspace:list': 'List Workspaces', 'workspace:show': 'Show a Workspace', 'workspace:new': 'Create a Workspace', 'workspace:php': 'Change the Workspace PHP version', 'workspace:remove': 'Remove a Workspace',
     'runtime-activation:app-instance': 'Wake an Instance',
@@ -320,8 +318,8 @@ DESCRIPTIONS = {
     'tasks:show': 'Shows one Task group and its Tasks in position order. Returns `tasks.disabled` while the extension is off.',
     'tasks:cancel': 'Cancels a backlog, todo, reserved, running, reviewing, or failed Task group and clears its shared Instance. Idempotent for cancelled groups. Route-free source_resolved Instances use database-only cleanup and retain their checkout; other Instances use the forced Instance remover. Requires Gateway access. Returns tasks.disabled while the extension is off and tasks.not_cancellable for settling or completed groups.',
     'tasks:complete': 'Marks a settling Task group completed and removes its shared Instance and any visitable Routes. Idempotent. Requires Gateway access. Returns `tasks.disabled` while the extension is off and `tasks.not_settling` when the group is not settling.',
-    'proxycli:enable': 'Deploys one collector Process and publishes https://collector.proxycli.orbit after a Redis Database connection for shared Valkey is in place. Fails closed when that connection is missing, is not Redis, or names a Node without the database role. The response never includes tokens or the management key.',
-    'proxycli:disable': 'Stops the collector Process, withdraws collector.proxycli.orbit, and hides provider reads. The Redis connection and Valkey data stay.',
+    'proxycli:enable': 'Deploys one collector Process and publishes https://collector.cli-proxy-api.orbit after a Redis Database connection for shared Valkey is in place. Fails closed when that connection is missing, is not Redis, or names a Node without the database role. A custom proxy Route that already serves the collector hostname on that Node is withdrawn in the same Caddy reload and removed; any other Route on that name fails with proxycli.hostname_taken. The response never includes tokens or the management key.',
+    'proxycli:disable': 'Stops the collector Process, withdraws collector.cli-proxy-api.orbit, and hides provider reads. The Redis connection and Valkey data stay.',
     'proxycli:status': 'Returns whether the fleet feature is enabled, which Node and cache connection it uses, and when the snapshot was last written.',
     'proxycli:list': 'Returns provider pools from the Valkey snapshot. The request never calls CLIProxyAPI.',
     'proxycli:show': 'Returns one provider pool and its accounts from the Valkey snapshot. Window titles are duration labels. A missing window is omitted.',
@@ -372,7 +370,7 @@ PARAM_SCHEMAS = {
     'tool': ({'type': 'integer', 'minimum': 1}, 'Numeric Tool ID.'),
     'workspace': ({'type': 'integer', 'minimum': 1}, 'Numeric Workspace ID.'),
     'process': ({'type': 'integer', 'minimum': 1}, 'Numeric Process ID.'),
-    'session': ({'type': 'integer', 'minimum': 1}, 'Numeric Herdr session ID.'),
+    'session': ({'type': 'integer', 'minimum': 1}, 'Numeric task agent session ID within this group.'),
     'group': ({'type': 'integer', 'minimum': 1}, 'Numeric Task group ID.'),
     'schedule': ({'type': 'string', 'format': 'uuid'}, 'Schedule UUID.'),
     'step': ({'type': 'string', 'pattern': '^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$'}, 'Deploy step name.'),
@@ -734,7 +732,7 @@ def route_key(route):
     return (route['method'], '/' + re.sub(r'\{[^}]+\}', '{}', route['uri']))
 
 
-NAME_BY_TAG = {'Nodes': 'beast', 'Apps': 'acme', 'Database connections': 'app', 'Processes': 'vite', 'Schedules': 'daily-report', 'Clusters': 'lab', 'Firewall': 'office-postgres', 'Herdr sessions': 'commander-tasks', 'Workspaces': 'feature-search', 'Instances': 'default'}
+NAME_BY_TAG = {'Nodes': 'beast', 'Apps': 'acme', 'Database connections': 'app', 'Processes': 'vite', 'Schedules': 'daily-report', 'Clusters': 'lab', 'Firewall': 'office-postgres', 'Workspaces': 'feature-search', 'Instances': 'default'}
 EXAMPLE_BY_NAME = {
     'slug': 'acme', 'domain': 'app.example.test', 'repository_url': 'https://github.com/acme/site.git', 'default_branch': 'main', 'root': 'public',
     'public_ssh_host': 'beast.example.com', 'public_ssh_port': 22, 'user': 'root', 'orbit_user': 'orbit', 'platform': 'linux', 'architecture': 'x86_64', 'tld': 'test', 'roles': ['app-dev'], 'role': 'app-dev',
@@ -742,17 +740,17 @@ EXAMPLE_BY_NAME = {
     'publication': 'private', 'driver': 'mysql', 'host': 'db.example.test', 'port': 3306, 'database': 'app', 'username': 'app', 'password': 'secret', 'path': '/var/lib/app/database.sqlite', 'sql': 'SELECT id, email FROM users', 'table': 'users', 'prefix': 'DB',
     'runtime': 'systemd', 'command': ['/usr/bin/php', 'artisan', 'queue:work'], 'restart_policy': 'on-failure', 'keep_alive': True, 'start': True, 'image': 'postgres:18', 'working_directory': '/app',
     'calendar': 'daily', 'timeout_seconds': 3600, 'target_type': 'node', 'families': ['node', 'instance'], 'limit': 25, 'lines': 100,
-    'session': 'commander-tasks', 'pane': 'w1:p1', 'terminal': 'term-abc', 'cols': 120, 'rows': 40, 'origin': 'https://tasks.example.test', 'manager': 'vp', 'package': '@openai/codex', 'version_constraint': '^0.150',
+    'manager': 'vp', 'package': '@openai/codex', 'version_constraint': '^0.150',
     'php_version': '8.5', 'source_path': '/srv/orbit/apps/acme/main', 'environments': ['production'], 'phase': 'before_activation', 'release': '20260914T101500Z', 'value': 'log', 'status': 'success', 'state': 'active',
-    'force': True, 'offline': False, 'replace': True, 'converge': False, 'purge_data': False, 'handoff': False, 'accept_termination': True, 'publish_observer': True, 'include_worktrees': False, 'recover_source_profile': False,
+    'force': True, 'offline': False, 'replace': True, 'converge': False, 'purge_data': False, 'include_worktrees': False, 'recover_source_profile': False,
     'source': '10.6.0.0/24', 'protocol': 'tcp', 'instance_id': 4, 'sqlite_source_path': '/home/acme/database/database.sqlite', 'apps': {'path': '/srv/orbit/apps'}, 'settings': {'apps': {'path': '/srv/orbit/apps'}},
     'title': 'Absorb Commander', 'brief': 'Persist groups. Accept when create and list work.',
 }
 PHP_EXAMPLES = {
     'nodeId': 7, 'appId': 4, 'appInstanceId': 12, 'appInstance': 12, 'clusterId': 3, 'routeId': 9, 'toolId': 41, 'processId': 41, 'workspaceId': 9, 'activityId': 481, 'sessionId': 2, 'candidateId': 12, 'instanceId': 4,
-    'servingNodeId': 7, 'consumerNodeId': 3, 'scheduleId': '9a1f0c2e-6b7d-4e5f-8a9b-0c1d2e3f4a5b', 'slug': 'acme', 'session': 'commander-tasks', 'user': 'orbit', 'role': 'app-dev', 'driver': 'mysql',
+    'servingNodeId': 7, 'consumerNodeId': 3, 'scheduleId': '9a1f0c2e-6b7d-4e5f-8a9b-0c1d2e3f4a5b', 'slug': 'acme', 'user': 'orbit', 'role': 'app-dev', 'driver': 'mysql',
     'domain': 'app.example.test', 'repositoryUrl': 'https://github.com/acme/site.git', 'publication': 'private', 'key': 'MAIL_MAILER', 'value': 'log', 'branch': 'main', 'release': '20260914T101500Z', 'manager': 'vp',
-    'package': '@openai/codex', 'calendar': 'daily', 'command': 'php artisan report:send', 'phpVersion': '8.5', 'tld': 'test', 'pane': 'w1:p1', 'terminal': 'term-abc', 'cols': 120, 'rows': 40, 'origin': 'https://tasks.example.test',
+    'package': '@openai/codex', 'calendar': 'daily', 'command': 'php artisan report:send', 'phpVersion': '8.5', 'tld': 'test',
     'status': 'success', 'sourcePath': '/srv/orbit/apps/acme/main', 'publicSshHost': 'beast.example.com', 'previewName': 'shop.com', 'lines': 100, 'limit': 25, 'phase': 'before_activation', 'timeoutSeconds': 300,
     'prefix': 'DB', 'port': 3306, 'host': 'db.example.test', 'database': 'app', 'username': 'app', 'password': 'secret', 'path': '/var/lib/app/database.sqlite', 'sql': 'SELECT id, email FROM users', 'table': 'users', 'source': '10.6.0.0/24', 'protocol': 'tcp',
     'definition': '{"name": "queue", "environments": ["production"], "spec": {"runtime": "systemd", "command": ["/usr/bin/php", "artisan", "queue:work"]}}', 'families': ['node'], 'environments': ['production'], 'roles': ['app-dev'],
@@ -915,7 +913,6 @@ CTRL_DATA_OVERRIDES = {
     'NodeAccessController@store': ('AddedNodeAccessData', False), 'NodeAccessController@destroy': ('RemovedNodeAccessData', False),
     'DatabaseConnectionAttachmentsController@store': ('DatabaseConnectionAttachmentData', False), 'DatabaseConnectionAttachmentsController@destroy': ('DatabaseConnectionAttachmentData', False),
     'ProcessesController@index': ('ProcessData', True), 'ProcessesController@start': ('ProcessData', False), 'ProcessesController@stop': ('ProcessData', False), 'ProcessesController@restart': ('ProcessData', False),
-    'HerdrSessionsController@storeGrant': ('ObservationGrantData', False),
     'DatabaseConnectionsController@users': ('DatabaseUserData', True),
     'TaskGroupsController@comments': ('TaskCommentData', True),
 }
@@ -988,8 +985,6 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
     env_route = '/environment/' in path or ('/database-connections/' in path and '/instances/' in path)
     for p in params:
         sch, desc = PARAM_SCHEMAS.get(p, ({'type': 'string'}, ''))
-        if p == 'session' and route['name'] == 'tasks:agent-stream':
-            desc = 'Numeric task agent session ID within this group.'
         if p == 'instance' and env_route:
             sch, desc = ENV_INSTANCE
         op['parameters'].append({'name': p, 'in': 'path', 'required': True, 'schema': sch, 'description': desc})
