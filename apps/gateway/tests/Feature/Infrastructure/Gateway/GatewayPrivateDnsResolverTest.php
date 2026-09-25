@@ -13,12 +13,12 @@ describe('GatewayPrivateDnsResolver', function (): void {
         expect(new GatewayPrivateDnsResolver()->dropIn('10.44.0.1', 'orbit'))->toBe(implode("\n", [
             '# Managed by Orbit.',
             '[Service]',
-            "ExecStartPost=-/bin/sh -c 'test -e /etc/wireguard/orbit.dns-link || { resolvectl dns orbit 10.44.0.1 && resolvectl domain orbit \"~orbit\"; }'",
+            "ExecStartPost=-/bin/sh -c 'test -e /etc/wireguard/orbit.dns-link || { resolvectl domain orbit \"~orbit\" && resolvectl default-route orbit false && resolvectl dns orbit 10.44.0.1; }'",
             '',
         ]));
     });
 
-    it('passes the routing domain to resolvectl without tilde expansion', function (): void {
+    it('sets the routing domain and no default route before the server, without tilde expansion', function (): void {
         $directory = sys_get_temp_dir().'/orbit-gateway-dns-'.bin2hex(random_bytes(6));
         mkdir($directory);
         $log = "{$directory}/calls";
@@ -33,8 +33,9 @@ describe('GatewayPrivateDnsResolver', function (): void {
             $process->mustRun();
 
             expect(file($log, FILE_IGNORE_NEW_LINES))->toBe([
-                'dns orbit 10.44.0.1',
                 'domain orbit ~root',
+                'default-route orbit false',
+                'dns orbit 10.44.0.1',
             ]);
         } finally {
             new Filesystem()->deleteDirectory($directory);
@@ -53,11 +54,53 @@ describe('GatewayPrivateDnsResolver', function (): void {
                 'mv -fT -- "$candidate" "$managed"',
                 'systemctl daemon-reload',
                 'if [ -e /etc/wireguard/orbit.dns-link ] || ! ip link show dev orbit >/dev/null 2>&1; then',
-                'resolvectl dns orbit 10.44.0.1',
-                "resolvectl domain orbit '~orbit'",
+                "resolvectl domain orbit '~orbit'\nresolvectl default-route orbit false\nresolvectl dns orbit 10.44.0.1",
             )
             ->and($command->input)->not->toContain('~.');
     });
+
+    it('verifies the drop-in and a suffix-only, non-default live route', function (
+        string $domain,
+        string $defaultRoute,
+        string $dns,
+        bool $dropInMatches,
+        string $expected,
+    ): void {
+        $directory = sys_get_temp_dir().'/orbit-gateway-dns-probe-'.bin2hex(random_bytes(6));
+        mkdir($directory);
+        $resolver = new GatewayPrivateDnsResolver;
+        file_put_contents("{$directory}/drop-in", $dropInMatches ? $resolver->dropIn('10.44.0.1', 'orbit') : "# edited\n");
+        file_put_contents("{$directory}/resolvectl", <<<SH
+            #!/bin/sh
+            case "\$1" in
+                domain) printf 'Link 3 (orbit): %s\\n' '{$domain}' ;;
+                default-route) printf 'Link 3 (orbit): %s\\n' '{$defaultRoute}' ;;
+                dns) printf 'Link 3 (orbit): %s\\n' '{$dns}' ;;
+            esac
+            SH);
+        chmod("{$directory}/resolvectl", 0o755);
+
+        try {
+            $command = $resolver->inspectCommand('10.44.0.1', 'orbit');
+            $arguments = array_slice($command->arguments, 4);
+            $arguments[0] = "{$directory}/drop-in";
+            $process = new Process(['bash', '-seu', '--', ...$arguments], env: ['PATH' => "{$directory}:/usr/bin:/bin"]);
+            $process->setInput($command->input);
+            $process->mustRun();
+
+            expect($command->arguments[0])->toBe('sudo')
+                ->and($process->getOutput())->toBe("{$expected}\n");
+        } finally {
+            new Filesystem()->deleteDirectory($directory);
+        }
+    })->with([
+        'the managed route' => ['~orbit', 'no', '10.44.0.1', true, '1'],
+        'a default DNS route' => ['~orbit', 'yes', '10.44.0.1', true, '0'],
+        'a route-everything domain' => ['~.', 'no', '10.44.0.1', true, '0'],
+        'no routing domain' => ['', 'no', '10.44.0.1', true, '0'],
+        'another DNS server' => ['~orbit', 'no', '10.44.0.9', true, '0'],
+        'an edited drop-in' => ['~orbit', 'no', '10.44.0.1', false, '0'],
+    ]);
 
     it('removes the drop-in and reverts only the link it configured', function (): void {
         $command = new GatewayPrivateDnsResolver()->removeCommand();

@@ -29,6 +29,8 @@ The Gateway is the control plane. It must still resolve ordinary names, such as 
 - The VPN DNS address is the configured VPN DNS server, or the WireGuard address of the `vpn` Node when none is configured.
 - A `wg-quick@orbit` drop-in reapplies the route whenever the tunnel starts. A failure there never fails the tunnel.
 - A machine whose tunnel is a managed peer keeps the resolver policy that peer convergence owns. The step changes nothing on its `orbit` link.
+- The step sets the routing domain and turns off the link's default DNS route before it sets the server, so the link never becomes a route for every name.
+- A failure in this step never fails bootstrap or the `gateway` role. A failed role would drop implicit Gateway authority, which realtime and metrics authorization rely on. The Gateway logs a warning instead, and Doctor reports the missing route.
 - Removing the `gateway` role removes the drop-in and reverts the `orbit` link it configured.
 
 ## Rejected alternatives
@@ -43,7 +45,9 @@ The Gateway is the control plane. It must still resolve ordinary names, such as 
 - The Orbit CLI on the Gateway machine stays live, and other clients there resolve every private name that Orbit VPN DNS answers.
 - Names under Node or Cluster top-level domains still use the uplink resolvers on the Gateway machine.
 - An existing Gateway gets the route at its next `gateway` role convergence. After `node:role:relocate`, converge the role on the target to add it there.
-- A Gateway without systemd-resolved or without a `wg-quick@orbit` tunnel cannot use this route.
+- A Gateway without systemd-resolved or without a `wg-quick@orbit` tunnel cannot use this route. Doctor reports it as `role.private_dns_route_mismatch`.
+- When Orbit VPN DNS is unreachable, a private-name lookup on the Gateway machine waits for systemd-resolved to give up, which takes about 40 seconds. Before this route it failed within about 100 ms. systemd-resolved has no per-link timeout to shorten this. Ordinary names are not affected.
+- A Gateway that runs on a machine that is already a managed peer keeps that peer's route-everything policy (`~.`). It does not get the suffix-only protection, so a VPN DNS outage there also affects ordinary names, as on every managed peer.
 
 ## Affects
 

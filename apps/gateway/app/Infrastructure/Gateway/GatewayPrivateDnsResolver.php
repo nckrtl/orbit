@@ -5,7 +5,11 @@ declare(strict_types=1);
 namespace App\Infrastructure\Gateway;
 
 use App\Domain\Nodes\NodeProvisioningException;
+use App\Domain\Nodes\RoleName;
+use App\Domain\Shared\LifecycleStatus;
+use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\Ssh\RemoteCommand;
+use App\Models\Node;
 
 /**
  * Routes the private VPN domain on the Gateway machine to Orbit VPN DNS, so the Orbit CLI and other
@@ -18,6 +22,9 @@ use App\Infrastructure\Ssh\RemoteCommand;
  * the route whenever the tunnel starts; its `-` prefix keeps a resolver failure from failing the
  * tunnel. A machine whose tunnel is a managed peer (`/etc/wireguard/orbit.dns-link` exists) keeps
  * the resolver policy that peer convergence owns, and this step leaves it alone.
+ *
+ * The routing domain and `default-route false` are set before the DNS server, so the link never
+ * becomes a default DNS route, not even for a moment or after a later command fails.
  */
 final readonly class GatewayPrivateDnsResolver
 {
@@ -36,7 +43,7 @@ final readonly class GatewayPrivateDnsResolver
         return implode("\n", [
             '# Managed by Orbit.',
             '[Service]',
-            "ExecStartPost=-/bin/sh -c 'test -e {$peerState} || { resolvectl dns orbit {$address} && resolvectl domain orbit \"~{$domain}\"; }'",
+            "ExecStartPost=-/bin/sh -c 'test -e {$peerState} || { resolvectl domain orbit \"~{$domain}\" && resolvectl default-route orbit false && resolvectl dns orbit {$address}; }'",
             '',
         ]);
     }
@@ -75,9 +82,73 @@ final readonly class GatewayPrivateDnsResolver
             if [ -e {$peerState} ] || ! ip link show dev orbit >/dev/null 2>&1; then
                 exit 0
             fi
-            resolvectl dns orbit {$address}
             resolvectl domain orbit '~{$domain}'
+            resolvectl default-route orbit false
+            resolvectl dns orbit {$address}
             BASH;
+    }
+
+    /**
+     * The Orbit VPN DNS address: the configured VPN DNS server, or the WireGuard address of the Node
+     * that holds an active `vpn` role. Null while no Node serves VPN DNS.
+     */
+    public function vpnDnsAddress(VpnSettings $settings): ?string
+    {
+        $configured = $settings->dnsServer();
+
+        if (is_string($configured) && $configured !== '') {
+            return $configured;
+        }
+
+        $address = Node::query()
+            ->where('status', LifecycleStatus::Active)
+            ->whereHas(
+                'roles',
+                static fn ($query) => $query
+                    ->where('role', RoleName::Vpn->value)
+                    ->where('status', LifecycleStatus::Active),
+            )
+            ->value('wireguard_ip');
+
+        return is_string($address) && $address !== '' ? $address : null;
+    }
+
+    /**
+     * A read-only probe that prints `1` when the drop-in matches and the live `orbit` link routes only
+     * `~<domain>` to the address without being a default DNS route, or when the machine is a managed
+     * peer whose policy peer convergence owns. It prints `0` otherwise.
+     */
+    public function inspectCommand(string $address, string $domain): RemoteCommand
+    {
+        [$address, $domain] = $this->validated($address, $domain);
+        $peerState = self::PEER_DNS_STATE;
+
+        return new RemoteCommand(
+            ['sudo', 'bash', '-seu', '--', self::DROP_IN, base64_encode($this->dropIn($address, $domain)), $address, "~{$domain}"],
+            <<<BASH
+                managed=\$1
+                expected=\$2
+                address=\$3
+                domain=\$4
+                if [ -e {$peerState} ]; then
+                    printf '1\n'
+                    exit 0
+                fi
+                link_value() {
+                    output=\$(resolvectl "\$1" orbit 2>/dev/null) || return 1
+                    printf '%s' "\${output#*: }"
+                }
+                if [ -f "\$managed" ] \
+                    && printf '%s' "\$expected" | base64 --decode | cmp -s -- - "\$managed" \
+                    && [ "\$(link_value domain)" = "\$domain" ] \
+                    && [ "\$(link_value default-route)" = no ] \
+                    && [ "\$(link_value dns)" = "\$address" ]; then
+                    printf '1\n'
+                else
+                    printf '0\n'
+                fi
+                BASH,
+        );
     }
 
     public function removeScript(): string

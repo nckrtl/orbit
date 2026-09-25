@@ -72,6 +72,7 @@ use App\Models\Node;
 use App\Models\NodeAccess;
 use App\Models\NodeRole;
 use App\Models\Process;
+use Illuminate\Support\Facades\Log;
 
 it('converges and removes only app development role-owned infrastructure', function (): void {
     expect(class_exists(AppDevRoleBaseline::class))->toBeTrue();
@@ -587,7 +588,8 @@ it('routes the private domain on the Gateway machine to the configured VPN DNS a
     string $expectedAddress,
 ): void {
     $events = [];
-    [$vpnNode] = role_baseline_models(RoleName::Vpn, name: 'vpn-dns-holder');
+    [$vpnNode, $vpnAssignment] = role_baseline_models(RoleName::Vpn, name: 'vpn-dns-holder');
+    $vpnAssignment->update(['status' => LifecycleStatus::Active]);
     [$node, $assignment] = role_baseline_models(RoleName::Gateway, name: 'gateway-dns');
     app(VpnSettings::class)->configure(subnet: '10.44.0.0/24', dnsServer: $configuredDnsServer, domain: 'mesh');
     $ssh = gateway_resolver_ssh($events, failResolver: false);
@@ -610,9 +612,11 @@ it('routes the private domain on the Gateway machine to the configured VPN DNS a
     'the configured VPN DNS server' => ['10.44.0.53', '10.44.0.53'],
 ]);
 
-it('fails the gateway role convergence when the resolver step fails', function (): void {
+it('keeps the gateway role converged and logs a warning when the resolver step fails', function (): void {
+    Log::spy();
     $events = [];
-    role_baseline_models(RoleName::Vpn, name: 'vpn-dns-holder');
+    [$vpnNode, $vpnAssignment] = role_baseline_models(RoleName::Vpn, name: 'vpn-dns-holder');
+    $vpnAssignment->update(['status' => LifecycleStatus::Active]);
     [$node, $assignment] = role_baseline_models(RoleName::Gateway, name: 'gateway-dns');
     $gateway = new GatewayRoleBaseline(
         baseline_firewall($events),
@@ -621,17 +625,24 @@ it('fails the gateway role convergence when the resolver step fails', function (
         new AppDevSshExecutor(gateway_resolver_ssh($events, failResolver: true), baseline_keys(), baseline_known_hosts()),
     );
 
-    expect(fn () => $gateway->converge($node, $assignment))
-        ->toThrow(function (NodeRoleOperationException $exception): void {
-            expect($exception->step)->toBe('gateway-private-dns-resolver')
-                ->and($exception->errorCode)->toBe('node_role.convergence_failed')
-                ->and($exception->underlyingErrorCode)->toBe('vpn.dns_resolver_failed');
-        })
-        ->and(array_slice($events, -2))->toBe(['dns:none', 'ssh:resolver']);
+    $gateway->converge($node, $assignment);
+    $gateway->remove($node, $assignment, purgeData: false);
+
+    expect($events)->toContain('ssh:resolver', 'firewall:remove:gateway')
+        ->and(array_count_values($events)['ssh:resolver'])->toBe(2);
+    Log::shouldHaveReceived('warning')
+        ->twice()
+        ->withArgs(static fn (string $message, array $context): bool => $context === [
+            'node' => 'gateway-dns',
+            'error_code' => 'node_role.convergence_failed',
+            'exit_code' => 1,
+        ]);
 });
 
-it('skips the resolver step while no Node serves VPN DNS', function (): void {
+it('skips the resolver step while no Node holds an active vpn role', function (): void {
     $events = [];
+    // A vpn assignment that is still provisioning does not serve VPN DNS yet.
+    role_baseline_models(RoleName::Vpn, name: 'vpn-provisioning');
     [$node, $assignment] = role_baseline_models(RoleName::Gateway, name: 'gateway-dns');
     $ssh = gateway_resolver_ssh($events, failResolver: false);
     $gateway = new GatewayRoleBaseline(

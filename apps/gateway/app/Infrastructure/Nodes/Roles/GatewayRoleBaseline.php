@@ -7,11 +7,11 @@ namespace App\Infrastructure\Nodes\Roles;
 use App\Actions\Nodes\GrantGatewayRoleAccessAction;
 use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\AppDev\RuntimeConvergenceException;
+use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Nodes\RoleBaseline;
 use App\Domain\Nodes\RoleName;
-use App\Domain\Shared\LifecycleStatus;
 use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\AppDev\AppDevSshExecutor;
 use App\Infrastructure\Gateway\GatewayPrivateDnsResolver;
@@ -19,6 +19,8 @@ use App\Infrastructure\Processes\SystemdVpnOrderingDropIn;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Node;
 use App\Models\NodeRole;
+use Closure;
+use Illuminate\Support\Facades\Log;
 
 final readonly class GatewayRoleBaseline implements RoleBaseline
 {
@@ -58,33 +60,35 @@ final readonly class GatewayRoleBaseline implements RoleBaseline
         $this->convergeResolver($node);
     }
 
+    /**
+     * Routes the private domain to VPN DNS without failing the role: a `failed` gateway role would
+     * drop implicit Gateway authority, which realtime and metrics authorization rely on. Doctor
+     * reports a missing route as `role.private_dns_route_mismatch`.
+     */
     private function convergeResolver(Node $node): void
     {
         $settings = $this->vpnSettings ?? app(VpnSettings::class);
-        $address = $settings->dnsServer() ?? $this->vpnAddress();
+        $address = $this->resolver->vpnDnsAddress($settings);
 
         if ($address === null) {
             return;
         }
 
-        $this->run(
-            $node,
-            $this->resolver->convergeCommand($address, $settings->domain()),
-            'gateway-private-dns-resolver',
-            'vpn.dns_resolver_failed',
-            60.0,
-        );
+        $this->runResolverStep($node, fn (): RemoteCommand => $this->resolver->convergeCommand($address, $settings->domain()));
     }
 
-    /** The WireGuard address of the active `vpn` Node, which serves Orbit VPN DNS. */
-    private function vpnAddress(): ?string
+    /** @param  Closure(): RemoteCommand  $command */
+    private function runResolverStep(Node $node, Closure $command): void
     {
-        $address = Node::query()
-            ->where('status', LifecycleStatus::Active)
-            ->whereHas('roles', static fn ($query) => $query->where('role', RoleName::Vpn->value))
-            ->value('wireguard_ip');
-
-        return is_string($address) && $address !== '' ? $address : null;
+        try {
+            $this->run($node, $command(), 'gateway-private-dns-resolver', 'vpn.dns_resolver_failed', 60.0);
+        } catch (NodeRoleOperationException|NodeProvisioningException $exception) {
+            Log::warning('The Gateway private DNS route step failed; the gateway role stays converged.', [
+                'node' => $node->name,
+                'error_code' => $exception->errorCode,
+                'exit_code' => $exception->result?->exitCode,
+            ]);
+        }
     }
 
     /**
@@ -119,13 +123,7 @@ final readonly class GatewayRoleBaseline implements RoleBaseline
 
     public function remove(Node $node, NodeRole $assignment, bool $purgeData): void
     {
-        $this->run(
-            $node,
-            $this->resolver->removeCommand(),
-            'gateway-private-dns-resolver',
-            'vpn.dns_resolver_failed',
-            60.0,
-        );
+        $this->runResolverStep($node, fn (): RemoteCommand => $this->resolver->removeCommand());
         $this->firewall->remove($node, RoleName::Gateway, $node->user);
         $this->dns->converge();
     }

@@ -23,6 +23,7 @@ use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\Processes\SystemdVpnOrderingDropIn;
 use App\Models\Node;
 use Closure;
+use Illuminate\Support\Facades\Log;
 use InvalidArgumentException;
 
 final readonly class NativeGatewayVpnConverger implements GatewayVpnConverger
@@ -62,17 +63,25 @@ final readonly class NativeGatewayVpnConverger implements GatewayVpnConverger
 
     /**
      * Routes the private domain on this machine to its own VPN DNS listener, so clients on the
-     * Gateway resolve private names such as `reverb.orbit`.
+     * Gateway resolve private names such as `reverb.orbit`. A failure never fails bootstrap; Doctor
+     * reports the missing route.
      */
     private function convergeResolver(BootstrapGatewayData $data): void
     {
-        $command = $this->resolver->convergeCommand($data->dnsServer, $data->domain);
-        $this->run(
-            step: 'gateway-private-dns-resolver',
-            errorCode: 'vpn.dns_resolver_failed',
-            arguments: $command->arguments,
-            input: $command->input,
-        );
+        try {
+            $command = $this->resolver->convergeCommand($data->dnsServer, $data->domain);
+            $this->run(
+                step: 'gateway-private-dns-resolver',
+                errorCode: 'vpn.dns_resolver_failed',
+                arguments: $command->arguments,
+                input: $command->input,
+            );
+        } catch (NodeProvisioningException $exception) {
+            Log::warning('The Gateway private DNS route step failed; bootstrap continues.', [
+                'error_code' => $exception->errorCode,
+                'exit_code' => $exception->result?->exitCode,
+            ]);
+        }
     }
 
     private function convergeWireGuard(Node $gateway, BootstrapGatewayData $data): void
