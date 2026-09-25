@@ -250,13 +250,7 @@ final class AgentViewSubscriber
     /** Whether any browser is subscribed to a joined channel on any server. */
     public function hasViewers(): bool
     {
-        foreach ($this->links as $link) {
-            if (array_any($link->viewers, static fn (array $members): bool => $members !== [])) {
-                return true;
-            }
-        }
-
-        return false;
+        return array_any($this->links, fn ($link) => array_any($link->viewers, static fn (array $members): bool => $members !== []));
     }
 
     /** @return list<string> The Reverb addresses the subscriber keeps a link to, the serving address first. */
