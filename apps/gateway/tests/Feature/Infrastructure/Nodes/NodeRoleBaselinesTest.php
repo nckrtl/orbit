@@ -680,7 +680,9 @@ it('fails gateway role removal before any other step when the resolver drop-in c
     expect(static fn () => $gateway->remove($node, $assignment, purgeData: false))
         ->toThrow(static function (RuntimeConvergenceException $exception): void {
             expect($exception->step)->toBe('gateway-private-dns-resolver')
-                ->and($exception->errorCode)->toBe('vpn.dns_resolver_failed');
+                ->and($exception->errorCode)->toBe('vpn.dns_resolver_failed')
+                ->and($exception->getMessage())->toBe('Gateway role step [gateway-private-dns-resolver] failed on node [gateway-dns].')
+                ->and($exception->result?->exitCode)->toBe(1);
         })
         ->and($events)->toBe(['ssh:resolver']);
 });

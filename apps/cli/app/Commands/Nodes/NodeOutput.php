@@ -79,7 +79,7 @@ final class NodeOutput
         }
 
         return TerminalText::style(
-            implode("\n", TerminalText::wrap(TerminalText::safe("Warning: {$followUp}"), $mode->columns)),
+            implode("\n", TerminalText::wrapWords(TerminalText::safe("Warning: {$followUp}"), $mode->columns)),
             'orange',
             $mode->decorated,
         )."\n";

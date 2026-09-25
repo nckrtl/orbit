@@ -140,7 +140,17 @@ final readonly class GatewayRoleBaseline implements RoleBaseline
      */
     public function remove(Node $node, NodeRole $assignment, bool $purgeData): void
     {
-        $this->ssh->execute($node, $this->resolver->removeCommand(), self::RESOLVER_STEP, self::RESOLVER_ERROR, 60.0);
+        try {
+            $this->ssh->execute($node, $this->resolver->removeCommand(), self::RESOLVER_STEP, self::RESOLVER_ERROR, 60.0);
+        } catch (RuntimeConvergenceException $exception) {
+            throw new RuntimeConvergenceException(
+                step: self::RESOLVER_STEP,
+                errorCode: self::RESOLVER_ERROR,
+                message: 'Gateway role step ['.self::RESOLVER_STEP."] failed on node [{$node->name}].",
+                previous: $exception,
+                result: $exception->result,
+            );
+        }
         $this->firewall->remove($node, RoleName::Gateway, $node->user);
         $this->dns->converge();
     }
