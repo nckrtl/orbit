@@ -77,6 +77,14 @@ it('touches only the Gateway-side DNS record when the node is unreachable', func
     expect($events)->toBe(['dns:converge-empty']);
 });
 
+it('reports the missing listen address when the Caddy publication refuses it', function (): void {
+    $events = [];
+    $manager = analytics_publication_manager($events, failCaddy: true);
+
+    expect(fn () => $manager->converge(analytics_publication_node()))
+        ->toThrow(NodeRoleOperationException::class, 'Caddy would bind 192.168.6.30, which is not an address on this Node.');
+});
+
 function analytics_publication_node(): Node
 {
     return new Node([
@@ -163,7 +171,7 @@ function analytics_publication_manager(
                 $isCaddyPublish = ! str_contains($command->input ?? '', 'if [ ! -d');
                 $this->events[] = $isCaddyPublish ? 'ssh:caddy' : 'ssh:caddy-remove';
 
-                return new CommandResult($this->failCaddy ? 1 : 0, '', '', 1, false);
+                return new CommandResult($this->failCaddy ? 1 : 0, '', $this->failCaddy ? "Caddy would bind 192.168.6.30, which is not an address on this Node. Correct the stored WireGuard or LAN address of the Node, then publish again.\n" : '', 1, false);
             }
         },
         keys: new class implements SshKeyProvider

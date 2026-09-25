@@ -10,6 +10,7 @@ use App\Domain\ProxyCli\ProxyCliProcess;
 use App\Domain\ProxyCli\ProxyCliPublicationManager;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Caddy\Build\NodeCaddyListenerResolver;
+use App\Infrastructure\Caddy\CaddyFragmentListeners;
 use App\Infrastructure\Nodes\CaddyPackageSourceProgram;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\RemoteCommand;
@@ -107,7 +108,7 @@ final readonly class NativeProxyCliPublicationManager implements ProxyCliPublica
         $result = $this->ssh->execute($this->connection($node, $address), $command);
 
         if (! $result->succeeded()) {
-            throw new ResourceOperationException($errorCode, $message, 422);
+            throw new ResourceOperationException($errorCode, CaddyFragmentListeners::refusal($result->stderr) ?? $message, 422);
         }
     }
 

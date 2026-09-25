@@ -6,6 +6,7 @@ namespace App\Infrastructure\AppDev;
 
 use App\Domain\AppDev\AppDevCaddyManager;
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
+use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Infrastructure\Caddy\Build\NodeCaddyListenerResolver;
 use App\Infrastructure\Caddy\CaddyFragmentListeners;
 use App\Models\Node;
@@ -48,12 +49,25 @@ final readonly class RemoteAppDevCaddyManager implements AppDevCaddyManager
     {
         ['configuration' => $configuration, 'listeners' => $listeners] = $this->fragment($node);
         $version = bin2hex(random_bytes(8));
-        $this->ssh->execute(
-            $node,
-            $this->publisher->command($configuration, $version, $listeners),
-            step: 'caddy-config',
-            errorCode: 'app-dev.caddy_config_failed',
-        );
+
+        try {
+            $this->ssh->execute(
+                $node,
+                $this->publisher->command($configuration, $version, $listeners),
+                step: 'caddy-config',
+                errorCode: 'app-dev.caddy_config_failed',
+            );
+        } catch (RuntimeConvergenceException $exception) {
+            $refusal = CaddyFragmentListeners::refusal($exception->result->stderr ?? '');
+
+            throw $refusal === null ? $exception : new RuntimeConvergenceException(
+                step: $exception->step,
+                errorCode: $exception->errorCode,
+                message: $refusal,
+                previous: $exception,
+                result: $exception->result,
+            );
+        }
         $this->ssh->execute(
             $node,
             $this->publisher->serviceOrderingCommand(),

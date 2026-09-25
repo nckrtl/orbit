@@ -65,12 +65,36 @@ final readonly class NativeWebSocketPublicationManager implements WebSocketPubli
                 'websocket-caddy',
                 'node_role.convergence_failed',
                 'websocket.caddy_publication_failed',
-                "WebSocket Caddy publication failed on node [{$node->name}].",
+                CaddyFragmentListeners::refusal($caddyResult->stderr)
+                    ?? "WebSocket Caddy publication failed on node [{$node->name}].",
                 $caddyResult,
             );
         }
 
         $this->dns->converge($node);
+    }
+
+    /**
+     * Refuses before the role changes anything when the Node lacks an address its Caddy sites would bind,
+     * so a refused converge leaves a running Reverb alone.
+     */
+    public function checkListenAddresses(Node $node): void
+    {
+        $result = $this->ssh->execute(
+            $this->connection($node, $this->address($node)),
+            $this->listeners($node)->preflight(),
+        );
+
+        if (! $result->succeeded()) {
+            throw new NodeRoleOperationException(
+                'websocket-caddy',
+                'node_role.convergence_failed',
+                'websocket.caddy_publication_failed',
+                CaddyFragmentListeners::refusal($result->stderr)
+                    ?? "WebSocket listen address check failed on node [{$node->name}].",
+                $result,
+            );
+        }
     }
 
     public function remove(Node $node): void

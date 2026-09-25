@@ -70,6 +70,14 @@ it('renders a site that proxies collector.cli-proxy-api.orbit to the loopback co
         ->toContain("reverse_proxy 127.0.0.1:8787 {\n        lb_try_duration 5s\n    }");
 });
 
+it('reports the missing listen address when the Caddy publication refuses it', function (): void {
+    $events = [];
+    $manager = proxycli_publication_manager($events, failCaddy: true);
+
+    expect(fn () => $manager->converge(proxycli_publication_node()))
+        ->toThrow(ResourceOperationException::class, 'Caddy would bind 192.168.6.30, which is not an address on this Node.');
+});
+
 function proxycli_publication_node(): Node
 {
     return new Node([
@@ -148,7 +156,7 @@ function proxycli_publication_manager(
                 $isCaddyPublish = str_contains($command->input ?? '', 'orbit_rewrite_listeners');
                 $this->events[] = $isCaddyPublish ? 'ssh:caddy' : 'ssh:caddy-remove';
 
-                return new CommandResult($this->failCaddy ? 1 : 0, '', '', 1, false);
+                return new CommandResult($this->failCaddy ? 1 : 0, '', $this->failCaddy ? "Caddy would bind 192.168.6.30, which is not an address on this Node. Correct the stored WireGuard or LAN address of the Node, then publish again.\n" : '', 1, false);
             }
         },
         keys: new class implements SshKeyProvider

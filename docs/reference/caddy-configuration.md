@@ -66,11 +66,13 @@ One publication therefore corrects a listener that another publisher wrote earli
 
 When every fragment of the new version matches the live version byte for byte, a publisher changes nothing. It writes no version and does not reload Caddy, so open WebSocket streams stay connected.
 
-Before the `app-dev`, `websocket`, `analytics`, and ProxyCli publishers swap the live Caddyfile, they check that every specific address they bind exists on the Node, as the [Node Caddy build](#how-a-build-is-pushed) does. When a stored LAN address is missing, for example after a DHCP lease changed, the publisher stops, leaves the live Caddyfile unchanged, and fails with its usual error code. The message names the address:
+Before the `app-dev`, `websocket`, `analytics`, and ProxyCli publishers swap the live Caddyfile, they check that every specific address they bind exists on the Node, as the [Node Caddy build](#how-a-build-is-pushed) does. When a stored LAN address is missing, for example after a DHCP lease changed, the publisher stops, leaves the live Caddyfile unchanged, and fails with its usual error code. The error message names the address. The command's activity record keeps it as `error_message`, and a Route or Instance command also keeps it in `stderr`:
 
 ```text
 Caddy would bind 192.168.6.30, which is not an address on this Node. Correct the stored WireGuard or LAN address of the Node, then publish again.
 ```
+
+The `websocket` role runs this check before it changes anything on the Node. A refused `orbit node:role:add NODE websocket --converge` leaves a running Reverb and its site as they were.
 
 Give a Node with a stored LAN address a fixed address or a DHCP reservation.
 
@@ -136,7 +138,7 @@ The refusal message names the fragment, the options in the block, and the file t
 Caddy fragment 00-unmanaged.caddy opens its own global options block (local_certs, email). Orbit writes the only global options block. Remove that block from /etc/caddy/Caddyfile, then publish again.
 ```
 
-The activity record keeps that message when a Route or Instance command fails on an `app-dev` or `app-prod` site publication. Role convergence and the other publishers record only the error code, because they do not keep command output. After one of those codes, check the start of the adopted `/etc/caddy/Caddyfile` and of every fragment that Orbit did not write in the live version.
+The activity record keeps that message when a Route or Instance command fails on an `app-dev` or `app-prod` site publication. Role convergence and the other publishers keep the error code and their own error message, not this output. After one of those codes, check the start of the adopted `/etc/caddy/Caddyfile` and of every fragment that Orbit did not write in the live version.
 
 On first adoption the file to edit is the Node's own `/etc/caddy/Caddyfile`. When Orbit already carries the fragment, it is that fragment in the live version, under `/etc/caddy/orbit-versions/<version>/fragments/`. Remove the whole block, keep the site blocks, and repeat the command that failed. Orbit does not support operator global options; it never merges, strips, or rewrites them.
 

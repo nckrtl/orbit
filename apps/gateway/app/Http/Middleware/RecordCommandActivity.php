@@ -333,13 +333,22 @@ final readonly class RecordCommandActivity
         }
 
         $updates = $this->withSchedule($activity, $request, $updates);
-
-        $activity->update($this->withTarget(
+        $updates = $this->withTarget(
             $activity,
             $request,
             $this->withResult($activity, $request, $updates, $result),
             $exception instanceof ToolOperationException ? $exception : null,
-        ));
+        );
+
+        // These messages are the ones the API returns, such as a Caddy publisher naming a missing listen address.
+        if ($exception instanceof NodeRoleOperationException || $exception instanceof ResourceOperationException) {
+            $updates['properties'] = [
+                ...($updates['properties'] ?? $activity->properties?->toArray() ?? []),
+                'error_message' => $this->redact($request, $exception->getMessage()),
+            ];
+        }
+
+        $activity->update($updates);
     }
 
     /** @return array<string, mixed> */

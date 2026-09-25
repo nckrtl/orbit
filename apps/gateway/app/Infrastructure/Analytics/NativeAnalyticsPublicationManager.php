@@ -69,7 +69,8 @@ final readonly class NativeAnalyticsPublicationManager implements AnalyticsPubli
                 'analytics-caddy',
                 'node_role.convergence_failed',
                 'analytics.caddy_publication_failed',
-                "Analytics Caddy publication failed on node [{$node->name}].",
+                CaddyFragmentListeners::refusal($caddyResult->stderr)
+                    ?? "Analytics Caddy publication failed on node [{$node->name}].",
                 $caddyResult,
             );
         }

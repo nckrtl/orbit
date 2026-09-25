@@ -236,6 +236,7 @@ describe('fragment publishers on one Node', function (): void {
         }
 
         expect($refused)->toBeInstanceOf(Throwable::class)
+            ->and($refused?->getMessage())->toContain('Caddy would bind 192.168.6.30, which is not an address on this Node.')
             ->and($this->harness->lastError())->toContain('Caddy would bind 192.168.6.30, which is not an address on this Node.')
             ->and($this->harness->fragments())->toBe($live)
             ->and(fragment_listener_reloads($this->harness))->toBe(0);

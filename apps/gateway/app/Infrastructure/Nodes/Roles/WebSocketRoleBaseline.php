@@ -23,6 +23,8 @@ final readonly class WebSocketRoleBaseline implements RoleBaseline
 
     public function converge(Node $node, NodeRole $assignment): void
     {
+        // A refusal here leaves a running Reverb alone; the rollback below would stop it.
+        $this->publication->checkListenAddresses($node);
         $credentials = $this->credentials->ensure($node);
         $runtimeConverged = false;
 

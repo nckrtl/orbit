@@ -10,6 +10,9 @@ interface WebSocketPublicationManager
 {
     public function converge(Node $node): void;
 
+    /** Refuses when the Node lacks an address its Caddy sites would bind. It changes nothing. */
+    public function checkListenAddresses(Node $node): void;
+
     public function remove(Node $node): void;
 
     /**

@@ -6,6 +6,7 @@ namespace App\Infrastructure\Caddy;
 
 use App\Infrastructure\Caddy\Build\CaddyListenerRule;
 use App\Infrastructure\Caddy\Build\NodeCaddyListeners;
+use App\Infrastructure\Ssh\RemoteCommand;
 use InvalidArgumentException;
 
 /**
@@ -72,7 +73,7 @@ final readonly class CaddyFragmentListeners
         $shared = $this->sharedBind();
         $route = self::RouteFragment;
         $sharedPatterns = implode('|', self::SharedFragments);
-        $addresses = implode(' ', $this->listenAddresses());
+        $require = $this->requireScript();
 
         return <<<BASH
             listeners_rewritten=0
@@ -97,16 +98,7 @@ final readonly class CaddyFragmentListeners
                 fi
                 rm -f -- "\$rewritten"
             }
-            orbit_require_listen_addresses() {
-                local present address
-                present=\$(ip -o -4 addr show 2>/dev/null | awk '{ split(\$4, parts, "/"); print parts[1] }' || true)
-                for address in {$addresses}; do
-                    if ! printf '%s\\n' "\$present" | grep -Fxq -- "\$address"; then
-                        printf 'Caddy would bind %s, which is not an address on this Node. Correct the stored WireGuard or LAN address of the Node, then publish again.\\n' "\$address" >&2
-                        exit 1
-                    fi
-                done
-            }
+            {$require}
             for listener_fragment in "{$fragments}"/*.caddy; do
                 if [ ! -f "\$listener_fragment" ] || [ -L "\$listener_fragment" ]; then
                     continue
@@ -117,6 +109,54 @@ final readonly class CaddyFragmentListeners
                 esac
             done
             BASH;
+    }
+
+    /** The line a publisher prints when it refuses a listen address that is not on the Node. */
+    public const string RefusalPrefix = 'Caddy would bind ';
+
+    /**
+     * Shell function `orbit_require_listen_addresses`. It refuses a listener that is not an address on the
+     * Node, as the Node Caddy build does, and prints one line that starts with `RefusalPrefix`.
+     */
+    public function requireScript(): string
+    {
+        $addresses = implode(' ', $this->listenAddresses());
+
+        return <<<BASH
+            orbit_require_listen_addresses() {
+                local present address
+                present=\$(ip -o -4 addr show 2>/dev/null | awk '{ split(\$4, parts, "/"); print parts[1] }' || true)
+                for address in {$addresses}; do
+                    if ! printf '%s\\n' "\$present" | grep -Fxq -- "\$address"; then
+                        printf 'Caddy would bind %s, which is not an address on this Node. Correct the stored WireGuard or LAN address of the Node, then publish again.\\n' "\$address" >&2
+                        exit 1
+                    fi
+                done
+            }
+            BASH;
+    }
+
+    /**
+     * A command that only runs the address check, so a caller can refuse before it changes anything.
+     */
+    public function preflight(): RemoteCommand
+    {
+        return new RemoteCommand(
+            arguments: ['bash', '-seu', '--'],
+            input: $this->requireScript().PHP_EOL.'orbit_require_listen_addresses'.PHP_EOL,
+        );
+    }
+
+    /** The refusal line in a publisher's standard error, which names the missing address. */
+    public static function refusal(string $stderr): ?string
+    {
+        foreach (explode("\n", $stderr) as $line) {
+            if (str_starts_with($line, self::RefusalPrefix)) {
+                return trim($line);
+            }
+        }
+
+        return null;
     }
 
     /**

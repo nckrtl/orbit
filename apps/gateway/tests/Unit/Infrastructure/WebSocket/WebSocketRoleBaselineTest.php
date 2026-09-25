@@ -25,6 +25,7 @@ it('generates credentials, then converges runtime before publication', function 
     $baseline->converge($node, $assignment);
 
     expect($events)->toBe([
+        'publication:check',
         'credentials:ensure',
         'runtime:converge',
         'publication:converge',
@@ -40,11 +41,23 @@ it('rolls the runtime back when publication fails', function (): void {
         ->toThrow(RuntimeException::class, 'publication:converge failed')
         ->and($events)
         ->toBe([
+            'publication:check',
             'credentials:ensure',
             'runtime:converge',
             'publication:converge',
             'runtime:remove',
         ]);
+});
+
+it('refuses a missing listen address before it touches a running Reverb', function (): void {
+    [$node, $assignment] = websocketBaselineTopology();
+    $events = [];
+    $baseline = websocketBaseline($events, failure: 'publication:check');
+
+    expect(fn () => $baseline->converge($node, $assignment))
+        ->toThrow(RuntimeException::class, 'publication:check failed')
+        ->and($events)
+        ->toBe(['publication:check']);
 });
 
 it('does not roll back a runtime that never converged', function (): void {
@@ -55,7 +68,7 @@ it('does not roll back a runtime that never converged', function (): void {
     expect(fn () => $baseline->converge($node, $assignment))
         ->toThrow(RuntimeException::class, 'runtime:converge failed')
         ->and($events)
-        ->toBe(['credentials:ensure', 'runtime:converge']);
+        ->toBe(['publication:check', 'credentials:ensure', 'runtime:converge']);
 });
 
 it('fails closed when convergence rollback does not complete', function (): void {
@@ -183,6 +196,11 @@ final class WebSocketBaselinePublication implements WebSocketPublicationManager
     public function converge(Node $node): void
     {
         $this->record('publication:converge');
+    }
+
+    public function checkListenAddresses(Node $node): void
+    {
+        $this->record('publication:check');
     }
 
     public function remove(Node $node): void
