@@ -32,12 +32,8 @@ function bun_update_program_run(string $root, string $vp, string $deadline, ?Clo
 {
     return new NativeProcessRunner()->run(new ProcessInvocation(
         arguments: [
-            '/usr/bin/setsid',
-            '--wait',
-            '/usr/bin/bash',
-            '-eu',
-            '-c',
-            BunDependencyUpdateProgram::render(),
+            ...dependency_update_supervisor_host()->launcher(),
+            BunDependencyUpdateProgram::render(dependency_update_supervisor_host()),
             'bun-update',
             $root,
             $vp,
