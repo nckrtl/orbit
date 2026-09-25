@@ -10,6 +10,7 @@ use App\Domain\Settings\SettingScopeType;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\Caddy\Build\CaddySiteCertificates;
 use App\Models\Node;
+use App\Models\Setting;
 use Carbon\CarbonImmutable;
 
 /**
@@ -63,6 +64,46 @@ final readonly class WebSocketDnsTarget
             ->whereNotNull('wireguard_ip')
             ->orderBy('id')
             ->first() ?? $roleNode;
+    }
+
+    /**
+     * Every Node whose Reverb serves `reverb.orbit` clients, the DNS target first. During a move that is the
+     * new Node once its build is live, and the old Node until its withdrawal ends: the old Node keeps its
+     * serving mark until the build that closes its connections, and a Node from before the mark counts
+     * while it holds the certificate record. The role's Node counts only once its own build is live.
+     *
+     * @return list<Node>
+     */
+    public function servingNodes(?Node $roleNode): array
+    {
+        $target = $this->node($roleNode);
+
+        if (! $target instanceof Node) {
+            return [];
+        }
+
+        $roleServes = $roleNode instanceof Node && $this->settings->get($this->scope($roleNode->id), self::SettingKey) !== null;
+        $marked = Setting::query()
+            ->where('scope_type', SettingScopeType::Node->value)
+            ->where('key', self::SettingKey)
+            ->whereNotNull('value')
+            ->pluck('scope_id')
+            ->map(static fn (mixed $id): int => (int) $id)
+            ->all();
+        $candidates = array_values(array_filter(
+            array_unique([...$marked, ...$this->certificates->nodeIds(CaddySiteCertificates::Websocket)]),
+            static fn (int $id): bool => $id !== $target->id && ($roleServes || $id !== $roleNode?->id),
+        ));
+
+        $others = $candidates === [] ? [] : Node::query()
+            ->whereIn('id', $candidates)
+            ->where('status', LifecycleStatus::Active->value)
+            ->whereNotNull('wireguard_ip')
+            ->orderBy('id')
+            ->get()
+            ->all();
+
+        return [$target, ...$others];
     }
 
     private function scope(int $nodeId): SettingScope

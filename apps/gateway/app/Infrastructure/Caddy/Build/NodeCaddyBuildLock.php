@@ -93,6 +93,53 @@ final class NodeCaddyBuildLock
         }
     }
 
+    /**
+     * Runs `$operation` under the Node's lock only when no build holds it now; otherwise returns `$busy`
+     * at once. A reader such as Doctor uses it, so it never waits for a build and never makes one wait long.
+     *
+     * @template T
+     * @template B
+     *
+     * @param  Closure(): T  $operation
+     * @param  B  $busy
+     * @return T|B
+     */
+    public function runIfFree(int $nodeId, Closure $operation, mixed $busy = null): mixed
+    {
+        if (array_key_exists($nodeId, $this->depths)) {
+            return $operation();
+        }
+
+        $this->prepareDirectory();
+        $path = "{$this->directory}/node-{$nodeId}.lock";
+        $handle = fopen(filename: $path, mode: 'c+');
+
+        if ($handle === false) {
+            throw new RuntimeException("Could not open the Node Caddy build lock [{$path}].");
+        }
+
+        try {
+            if (! chmod(filename: $path, permissions: 0o600)) {
+                throw new RuntimeException("Could not protect the Node Caddy build lock [{$path}].");
+            }
+
+            if (! flock($handle, LOCK_EX | LOCK_NB)) {
+                return $busy;
+            }
+
+            $this->depths[$nodeId] = 1;
+
+            try {
+                return $operation();
+            } finally {
+                unset($this->depths[$nodeId]);
+            }
+        } finally {
+            flock($handle, LOCK_UN);
+            fclose($handle);
+        }
+    }
+
     private function prepareDirectory(): void
     {
         if ($this->directory === '') {

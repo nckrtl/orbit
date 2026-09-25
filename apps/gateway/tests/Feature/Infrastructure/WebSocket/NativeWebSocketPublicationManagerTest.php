@@ -91,6 +91,21 @@ it('builds the Node before it removes the certificate, then converges DNS withou
         ->and(websocket_publication_serving())->toBeFalse();
 });
 
+it('keeps the Node published to while the build that withdraws its site runs', function (): void {
+    $events = [];
+    $servingDuringBuild = null;
+    new CaddySiteCertificates()->record(websocket_publication_node()->id, CaddySiteCertificates::Websocket);
+    new WebSocketDnsTarget()->markServing(websocket_publication_node()->id);
+    $manager = websocket_publication_manager($events, onBuild: static function () use (&$servingDuringBuild): void {
+        $servingDuringBuild = websocket_publication_serving();
+    });
+
+    $manager->remove(websocket_publication_node());
+
+    expect($servingDuringBuild)->toBeTrue()
+        ->and(websocket_publication_serving())->toBeFalse();
+});
+
 it('touches only the Gateway-side DNS record when the node is unreachable', function (): void {
     $events = [];
     $manager = websocket_publication_manager($events);
@@ -145,6 +160,7 @@ function websocket_publication_manager(
     bool $failCertificate = false,
     ?NodeCaddyBuildException $buildFailure = null,
     array &$commands = [],
+    ?Closure $onBuild = null,
 ): NativeWebSocketPublicationManager {
     $certificateDirectory = sys_get_temp_dir().'/orbit-websocket-test-'.bin2hex(random_bytes(4));
     mkdir($certificateDirectory);
@@ -167,7 +183,7 @@ function websocket_publication_manager(
             }
         },
         certificatePublisher: new WebSocketCertificatePublisher,
-        builds: new RecordingNodeCaddyBuilds($events, $buildFailure),
+        builds: new RecordingNodeCaddyBuilds($events, $buildFailure, $onBuild),
         dns: new class($events) implements PrivateDnsManager
         {
             public function __construct(private array &$events) {}

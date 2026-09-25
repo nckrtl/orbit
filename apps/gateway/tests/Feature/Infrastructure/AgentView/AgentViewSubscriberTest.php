@@ -13,6 +13,8 @@ use App\Infrastructure\AgentView\CacheAgentStateView;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Infrastructure\AgentView\WebSocketException;
+use App\Infrastructure\Caddy\Build\CaddySiteCertificates;
+use App\Infrastructure\WebSocket\WebSocketDnsTarget;
 use App\Models\Node;
 use Illuminate\Support\Carbon;
 use Psr\Log\NullLogger;
@@ -98,8 +100,11 @@ function subscriber_managed_node(string $name, string $address): Node
     ]);
 }
 
-/** @return array{AgentViewSubscriber, FakeAgentViewSocket, object{now: float, commit: string}} */
-function agent_view_subscriber(): array
+/**
+ * @param  list<FakeAgentViewSocket>  $extra  Receives each socket the subscriber makes for a second link.
+ * @return array{AgentViewSubscriber, FakeAgentViewSocket, object{now: float, commit: string}}
+ */
+function agent_view_subscriber(array &$extra = []): array
 {
     $socket = new FakeAgentViewSocket;
     $state = new class
@@ -121,6 +126,9 @@ function agent_view_subscriber(): array
         clock: static fn (): float => $state->now,
         sleep: static function (float $seconds) use ($state): void {
             $state->now += $seconds;
+        },
+        sockets: static function () use (&$extra): FakeAgentViewSocket {
+            return $extra[] = new FakeAgentViewSocket;
         },
     );
 
@@ -369,5 +377,97 @@ describe('the agent view subscriber', function (): void {
             ->and($socket->isConnected())->toBeFalse()
             ->and(app(AgentStateView::class)->node($node->id)->freshness)->toBe(AgentViewFreshness::Missing)
             ->and(app(AgentStateView::class)->subscriber())->toBeNull();
+    });
+});
+
+describe('the agent view subscriber during a websocket move', function (): void {
+    afterEach(fn () => Carbon::setTestNow());
+
+    beforeEach(function (): void {
+        $this->source = subscriber_managed_node('websocket-source', '10.44.0.89');
+        new CaddySiteCertificates()->record($this->source->id, CaddySiteCertificates::Websocket);
+        [$this->target] = activate_websocket_role();
+        new CaddySiteCertificates()->record($this->target->id, CaddySiteCertificates::Websocket);
+        new WebSocketDnsTarget()->markServing($this->target->id);
+        $this->node = subscriber_managed_node('app-dev', '10.44.0.3');
+    });
+
+    it('listens on both Reverb servers and keeps a Node fresh while its agent moves between them', function (): void {
+        $extra = [];
+        [$subscriber, $new] = agent_view_subscriber($extra);
+        $subscriber->pass();
+        $old = $extra[0];
+
+        expect($subscriber->linkedAddresses())->toBe(['10.44.0.90', '10.44.0.89'])
+            ->and($new->connects[0]->address)->toBe('10.44.0.90')
+            ->and($old->connects[0]->address)->toBe('10.44.0.89');
+
+        $old->push(agent_snapshot($this->node->id, 7, [
+            ['name' => 'orbit-process-9-web', 'runtime' => 'systemd', 'runtime_status' => 'active'],
+        ]));
+        $subscriber->pass();
+
+        expect(app(AgentStateView::class)->node($this->node->id)->freshness)->toBe(AgentViewFreshness::Fresh);
+
+        // The old server closes the agent's connection; the agent has not reached the new one yet.
+        $old->push([
+            'event' => 'pusher_internal:member_removed',
+            'channel' => "presence-node.{$this->node->id}",
+            'data' => json_encode(['user_id' => "agent.{$this->node->id}"]),
+        ]);
+        $subscriber->pass();
+
+        expect(app(AgentStateView::class)->node($this->node->id)->freshness)->toBe(AgentViewFreshness::Fresh);
+
+        $new->push(agent_snapshot($this->node->id, 1, [
+            ['name' => 'orbit-process-9-web', 'runtime' => 'systemd', 'runtime_status' => 'inactive'],
+        ]));
+        $subscriber->pass();
+
+        $view = app(AgentStateView::class)->node($this->node->id);
+        expect($view->freshness)->toBe(AgentViewFreshness::Fresh)
+            ->and($view->status(ProcessRuntime::Systemd, 'orbit-process-9-web'))->toBe('inactive');
+    });
+
+    it('takes the state with the newest agent event when both servers hold one', function (): void {
+        $extra = [];
+        [$subscriber, $new, $state] = agent_view_subscriber($extra);
+        $subscriber->pass();
+        $old = $extra[0];
+
+        $new->push(agent_snapshot($this->node->id, 3, [
+            ['name' => 'orbit-process-9-web', 'runtime' => 'systemd', 'runtime_status' => 'active'],
+        ]));
+        $subscriber->pass();
+        $state->now += 2;
+        $old->push(agent_snapshot($this->node->id, 9, [
+            ['name' => 'orbit-process-9-web', 'runtime' => 'systemd', 'runtime_status' => 'failed'],
+        ]));
+        $subscriber->pass();
+
+        expect(app(AgentStateView::class)->node($this->node->id)->status(ProcessRuntime::Systemd, 'orbit-process-9-web'))->toBe('failed');
+    });
+
+    it('closes the old link once the old Node withdraws, and keeps the stored view while the agent reconnects', function (): void {
+        $extra = [];
+        [$subscriber, $new, $state] = agent_view_subscriber($extra);
+        $subscriber->pass();
+        $old = $extra[0];
+        $old->push(agent_snapshot($this->node->id, 4, []));
+        $subscriber->pass();
+
+        new CaddySiteCertificates()->forget($this->source->id, CaddySiteCertificates::Websocket);
+        new WebSocketDnsTarget()->forget($this->source->id);
+        $state->now += AgentViewSubscriber::LinkCheckSeconds;
+        $subscriber->pass();
+
+        expect($subscriber->linkedAddresses())->toBe(['10.44.0.90'])
+            ->and($old->isConnected())->toBeFalse()
+            ->and(app(AgentStateView::class)->node($this->node->id)->freshness)->toBe(AgentViewFreshness::Fresh);
+
+        $new->push(agent_snapshot($this->node->id, 1, []));
+        $subscriber->pass();
+
+        expect(app(AgentStateView::class)->node($this->node->id)->freshness)->toBe(AgentViewFreshness::Fresh);
     });
 });

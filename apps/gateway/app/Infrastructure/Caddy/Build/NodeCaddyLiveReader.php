@@ -18,9 +18,9 @@ final readonly class NodeCaddyLiveReader
         private string $caddyDirectory = '/etc/caddy',
     ) {}
 
-    public function read(Node $node): string
+    public function read(Node $node, float $timeout = 60.0): string
     {
-        $result = $this->transport->run($node, $this->command());
+        $result = $this->transport->run($node, $this->command($timeout));
 
         if (! $result->succeeded() || $result->truncated) {
             throw new NodeCaddyBuildException($node->name, 'read-live', trim($result->stderr) ?: 'The live Caddyfile could not be read.');
@@ -29,7 +29,7 @@ final readonly class NodeCaddyLiveReader
         return $result->stdout;
     }
 
-    public function command(): RemoteCommand
+    public function command(float $timeout = 60.0): RemoteCommand
     {
         return new RemoteCommand(
             arguments: ['sudo', 'bash', '-seu', '--', $this->caddyDirectory.'/Caddyfile'],
@@ -40,7 +40,7 @@ final readonly class NodeCaddyLiveReader
                 fi
                 BASH,
             maxOutputBytes: 4_194_304,
-            timeout: 60.0,
+            timeout: $timeout,
         );
     }
 }

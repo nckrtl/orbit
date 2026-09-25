@@ -119,29 +119,29 @@ it('fails closed when the live Caddyfile cannot be read', function (CommandResul
     'a truncated read' => [new CommandResult(0, 'partial', '', 1, true)],
 ]);
 
-it('waits for a running build of the Node and reports its read as failed when the build keeps the lock', function (): void {
+it('skips the comparison at once while a build holds the Node lock, and reads with a short timeout', function (): void {
     $node = caddy_build_inspector_websocket_node();
     $this->ssh->live = app(NodeCaddyfileRenderer::class)->render($node)->content;
-    $now = 0.0;
-    $lock = new NodeCaddyBuildLock($this->lockDirectory, clock: function () use (&$now): float {
-        return $now += 31.0;
-    }, wait: static function (int $microseconds): void {});
     mkdir($this->lockDirectory, 0o700, true);
     $held = fopen("{$this->lockDirectory}/node-{$node->id}.lock", 'c+');
     flock($held, LOCK_EX);
 
     try {
-        expect(fn () => caddy_build_inspector($this, $lock)->inspect($node))->toThrow(DoctorInspectionException::class)
+        $started = microtime(true);
+
+        expect(caddy_build_inspector($this)->inspect($node))->toBeNull()
+            ->and(microtime(true) - $started)->toBeLessThan(1.0)
             ->and($this->ssh->commands)->toBe([]);
     } finally {
         flock($held, LOCK_UN);
         fclose($held);
     }
 
-    expect(caddy_build_inspector($this, $lock)->inspect($node)?->matches)->toBeTrue();
+    expect(caddy_build_inspector($this)->inspect($node)?->matches)->toBeTrue()
+        ->and($this->ssh->commands[0]->timeout)->toBe(NativeCaddyBuildInspector::ReadTimeoutSeconds);
 });
 
-function caddy_build_inspector(object $test, ?NodeCaddyBuildLock $lock = null): NativeCaddyBuildInspector
+function caddy_build_inspector(object $test): NativeCaddyBuildInspector
 {
     return new NativeCaddyBuildInspector(
         app(NodeCaddyfileRenderer::class),
@@ -152,7 +152,7 @@ function caddy_build_inspector(object $test, ?NodeCaddyBuildLock $lock = null): 
             new CaddyBuildInspectorKnownHosts,
             app(GatewayServingHost::class),
         )),
-        $lock ?? new NodeCaddyBuildLock($test->lockDirectory),
+        new NodeCaddyBuildLock($test->lockDirectory),
     );
 }
 

@@ -89,11 +89,26 @@ it('points the Gateway realtime client at the Node that serves reverb.orbit duri
     $manager = app(WebSocketCredentialManager::class);
     $manager->ensure($target);
 
-    expect($manager->current()?->servingAddress)->toBe('10.44.0.89');
+    expect($manager->current()?->servingAddress)->toBe('10.44.0.89')
+        ->and($manager->current()?->addresses())->toBe(['10.44.0.89']);
 
     new WebSocketDnsTarget()->markServing($target->id);
 
-    expect($manager->current()?->servingAddress)->toBe('10.44.0.90');
+    expect($manager->current()?->servingAddress)->toBe('10.44.0.90')
+        ->and($manager->current()?->addresses())->toBe(['10.44.0.90', '10.44.0.89']);
+
+    // The old Node's withdrawal forgets its certificate record before its build and its mark after it.
+    new CaddySiteCertificates()->forget($source->id, CaddySiteCertificates::Websocket);
+
+    expect($manager->current()?->addresses())->toBe(['10.44.0.90']);
+
+    new WebSocketDnsTarget()->markServing($source->id);
+
+    expect($manager->current()?->addresses())->toBe(['10.44.0.90', '10.44.0.89']);
+
+    new WebSocketDnsTarget()->forget($source->id);
+
+    expect($manager->current()?->addresses())->toBe(['10.44.0.90']);
 });
 
 it('purges every stored credential', function (): void {

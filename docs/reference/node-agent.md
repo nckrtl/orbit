@@ -89,9 +89,9 @@ The subscriber is a Gateway process that runs next to PHP-FPM on the Gateway hos
 | Channels | `presence-node.{id}` for every Node inside the [managed-node boundary](#where-it-runs) |
 | Member | `gateway.{socket id}`, with `user_info` `{ "kind": "gateway" }`, signed by the subscriber with the Reverb app secret |
 
-The subscriber joins each channel as a new member, so each agent sends it a full snapshot. Every 30 seconds it reads the Node list and the Reverb connection again: it joins new Nodes, leaves removed Nodes, and reconnects when the Reverb key or address changes. Without an active `websocket` role, it checks again every 60 seconds.
+The subscriber joins each channel as a new member, so each agent sends it a full snapshot. Every 5 seconds it reads the Reverb connection again, and every 30 seconds the Node list: it joins new Nodes, leaves removed Nodes, and reconnects when the Reverb key changes. During a `websocket` move it keeps one link to each Reverb server that holds clients and takes each Node's state from the link with the newest agent event, as [Caddy configuration](/reference/caddy-configuration#node-caddy-build) describes. Without an active `websocket` role, it checks again every 60 seconds.
 
-When the connection drops, the subscriber clears the view and reconnects with exponential backoff from 1 second to 30 seconds, with jitter. It answers `pusher:ping`, sends its own ping after 30 quiet seconds, and reconnects when no answer arrives within 30 more seconds. It ignores a message larger than 64 KB and keeps at most 4,096 units for each Node.
+When the connection drops, the subscriber clears the view and reconnects with exponential backoff from 1 second to 30 seconds, with jitter. While a second link is open, or for 15 seconds after one closed, it keeps a Node's stored view instead of clearing it. It answers `pusher:ping`, sends its own ping after 30 quiet seconds, and reconnects when no answer arrives within 30 more seconds. It ignores a message larger than 64 KB and keeps at most 4,096 units for each Node.
 
 Every 60 seconds the subscriber compares the Gateway checkout's commit with the commit it started from. When they differ, it exits, and systemd starts it again with the new code. It writes connection changes and failures to the Gateway log.
 

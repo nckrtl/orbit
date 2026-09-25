@@ -35,6 +35,9 @@ final readonly class NativeCaddyBuildInspector implements CaddyBuildInspector
         RoleName::Analytics,
     ];
 
+    /** Well below the 30 seconds a build waits for the lock that Doctor holds while it reads. */
+    public const float ReadTimeoutSeconds = 10.0;
+
     public function __construct(
         private NodeCaddyfileRenderer $renderer,
         private NodeCaddyLiveReader $live,
@@ -52,15 +55,21 @@ final readonly class NativeCaddyBuildInspector implements CaddyBuildInspector
                 return null;
             }
 
-            // Under the Gateway's build lock for the Node, a build that is running finishes first, so Doctor
-            // never compares the stored state of a build with the file that build is still replacing.
-            [$caddyfile, $live] = $this->lock->run($node->id, $node->name, fn (): array => [
+            // Only while no build holds the Gateway's lock for the Node: a running build is replacing the file,
+            // so Doctor skips the comparison instead of waiting. The short read keeps a build's wait short.
+            $compared = $this->lock->runIfFree($node->id, fn (): array => [
                 $this->renderer->render($node),
-                $this->live->read($node),
+                $this->live->read($node, self::ReadTimeoutSeconds),
             ]);
         } catch (Throwable) {
             throw new DoctorInspectionException;
         }
+
+        if ($compared === null) {
+            return null;
+        }
+
+        [$caddyfile, $live] = $compared;
 
         $built = str_starts_with($live, NodeCaddyfileRenderer::Marker.PHP_EOL);
 

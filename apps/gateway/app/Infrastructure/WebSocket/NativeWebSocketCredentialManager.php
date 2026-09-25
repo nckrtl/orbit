@@ -80,15 +80,19 @@ final readonly class NativeWebSocketCredentialManager implements WebSocketCreden
 
         // The Gateway's own realtime client reaches `reverb.orbit` where private DNS sends every other client:
         // during a move, the old Node until the new Node's build serves the site.
-        $serving = $this->dnsTarget->node($node);
-        $address = $serving?->wireguard_ip;
+        // During a move it also publishes to and listens on the old Node until that Node withdraws.
+        $addresses = array_values(array_filter(
+            array_map(static fn (Node $serving): ?string => $serving->wireguard_ip, $this->dnsTarget->servingNodes($node)),
+            static fn (?string $address): bool => is_string($address) && $address !== '',
+        ));
 
         return new WebSocketCredentials(
             $appId,
             $appKey,
             $appSecret,
             $laravelAppKey,
-            is_string($address) && $address !== '' ? $address : null,
+            $addresses[0] ?? null,
+            $addresses,
         );
     }
 
