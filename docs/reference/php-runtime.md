@@ -137,7 +137,7 @@ These observations establish the current configuration and the directly observab
 
 Doctor reports bounded drift when a current file or reliable live association does not match. It reports `instance.inspection_failed` as unverifiable when a required service, process, worker, or socket observation cannot be read or parsed, while retaining other findings that it established independently. Inspection does not invoke PHP-FPM, create a FastCGI or application request, reload or signal a service, reset a cache, or rewrite a file.
 
-Processes can exit while Doctor reads them. An `ondemand` pool ends idle workers at any time, so a worker that exits while Doctor reads it is skipped. A master that exits while Doctor looks for its listening socket makes the observation unverifiable, not drift.
+When a process exits during inspection, Doctor does not report drift for it. An `ondemand` pool ends idle workers at any time, so Doctor skips a worker that exits while Doctor reads it. A master that exits while Doctor looks for its listening socket makes the observation unverifiable.
 
 ## Verification
 
