@@ -6,6 +6,7 @@ use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\Certificates\GatewayCertificateIssuer;
 use App\Domain\Certificates\GatewayCertificatePaths;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Caddy\Build\CaddySiteCertificates;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuildException;
 use App\Infrastructure\Nodes\CaddyPackageSourceProgram;
 use App\Infrastructure\Processes\CommandResult;
@@ -27,7 +28,8 @@ it('installs Caddy, publishes the certificate, requests a Node Caddy build, then
 
     $manager->converge(proxycli_publication_node());
 
-    expect($events)->toBe(['ssh:caddy-source', 'certificate:issue', 'ssh:certificate', 'build:beast', 'dns:converge']);
+    expect($events)->toBe(['ssh:caddy-source', 'certificate:issue', 'ssh:certificate', 'build:beast', 'dns:converge'])
+        ->and(new CaddySiteCertificates()->published(proxycli_publication_node()->id, CaddySiteCertificates::ProxyCli))->toBeTrue();
 });
 
 it('throws when the certificate SSH push fails', function (): void {
@@ -62,9 +64,12 @@ it('builds the Node before it removes the certificate, then converges DNS withou
     $events = [];
     $manager = proxycli_publication_manager($events);
 
+    new CaddySiteCertificates()->record(proxycli_publication_node()->id, CaddySiteCertificates::ProxyCli);
+
     $manager->remove(proxycli_publication_node());
 
-    expect($events)->toBe(['build:beast', 'ssh:certificate-remove', 'dns:converge-empty']);
+    expect($events)->toBe(['build:beast', 'ssh:certificate-remove', 'dns:converge-empty'])
+        ->and(new CaddySiteCertificates()->published(proxycli_publication_node()->id, CaddySiteCertificates::ProxyCli))->toBeFalse();
 });
 
 it('renders a site that proxies collector.cli-proxy-api.orbit to the loopback collector and waits for its restart', function (): void {
@@ -81,9 +86,10 @@ it('renders a site that proxies collector.cli-proxy-api.orbit to the loopback co
 
 function proxycli_publication_node(): Node
 {
-    return new Node([
-        'name' => 'beast',
-        'public_ssh_port' => 22,
+    return Node::query()->firstOrCreate(['name' => 'beast'], [
+        'status' => 'active',
+        'platform' => 'linux',
+        'public_ssh_host' => '192.0.2.9',
         'user' => 'orbit',
         'wireguard_ip' => '10.44.0.8',
     ]);

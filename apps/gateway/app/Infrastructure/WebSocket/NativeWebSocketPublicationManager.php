@@ -9,6 +9,7 @@ use App\Domain\Certificates\GatewayCertificateIssuer;
 use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\WebSocket\WebSocketHostname;
 use App\Domain\WebSocket\WebSocketPublicationManager;
+use App\Infrastructure\Caddy\Build\CaddySiteCertificates;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuildException;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
 use App\Infrastructure\Ssh\KnownHostsStore;
@@ -28,6 +29,7 @@ final readonly class NativeWebSocketPublicationManager implements WebSocketPubli
         private SshExecutor $ssh,
         private SshKeyProvider $keys,
         private KnownHostsStore $knownHosts,
+        private ?CaddySiteCertificates $siteCertificates = null,
     ) {}
 
     /** Publishes the certificate first, because validation loads every certificate the build names. */
@@ -53,6 +55,8 @@ final readonly class NativeWebSocketPublicationManager implements WebSocketPubli
             );
         }
 
+        $this->certificateRecords()->record($node->id, CaddySiteCertificates::Websocket);
+
         $this->build($node, fn () => $this->builds->build($node));
         $this->dns->converge($node);
     }
@@ -74,12 +78,20 @@ final readonly class NativeWebSocketPublicationManager implements WebSocketPubli
 
         $this->build($node, fn () => $this->builds->build($node));
         $this->ssh->execute($this->connection($node, $address), $this->certificatePublisher->removeCommand());
+        $this->certificateRecords()->forget($node->id, CaddySiteCertificates::Websocket);
         $this->dns->converge();
     }
 
+    /** The certificate may stay on the Node, so a later convergence publishes it again before its site renders. */
     public function removeUnreachable(Node $node): void
     {
+        $this->certificateRecords()->forget($node->id, CaddySiteCertificates::Websocket);
         $this->dns->converge();
+    }
+
+    private function certificateRecords(): CaddySiteCertificates
+    {
+        return $this->siteCertificates ?? new CaddySiteCertificates;
     }
 
     /** @param Closure(): mixed $operation */

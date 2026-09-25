@@ -7,6 +7,7 @@ namespace App\Infrastructure\Caddy\Build\Sources;
 use App\Domain\Nodes\RoleName;
 use App\Infrastructure\Caddy\Build\CaddyListenerRule;
 use App\Infrastructure\Caddy\Build\CaddySite;
+use App\Infrastructure\Caddy\Build\CaddySiteCertificates;
 use App\Infrastructure\Caddy\Build\CaddySiteRoles;
 use App\Infrastructure\Caddy\Build\NodeCaddySiteSource;
 use App\Infrastructure\Caddy\Build\NodeCaddySiteUnavailable;
@@ -14,17 +15,22 @@ use App\Infrastructure\Metrics\MetricsPublicationRenderer;
 use App\Models\Node;
 
 /**
- * `metrics.orbit` on the Node that holds the `gateway` role, proxied to the Node that runs Metrics.
+ * `metrics.orbit` on the Node that holds the `gateway` role, proxied to the Node that runs Metrics, once
+ * the Metrics certificate is on that Node.
  */
 final readonly class MetricsCaddySiteSource implements NodeCaddySiteSource
 {
     public function __construct(
         private MetricsPublicationRenderer $renderer = new MetricsPublicationRenderer,
+        private CaddySiteCertificates $certificates = new CaddySiteCertificates,
     ) {}
 
     public function sites(Node $node): array
     {
-        if (! CaddySiteRoles::nodeServes($node->id, RoleName::Gateway)) {
+        if (
+            ! CaddySiteRoles::nodeServes($node->id, RoleName::Gateway)
+            || ! $this->certificates->published($node->id, CaddySiteCertificates::Metrics)
+        ) {
             return [];
         }
 

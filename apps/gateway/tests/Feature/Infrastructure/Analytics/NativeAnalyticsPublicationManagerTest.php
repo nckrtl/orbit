@@ -9,6 +9,7 @@ use App\Domain\Nodes\NodeRoleOperationException;
 use App\Infrastructure\Analytics\AnalyticsCaddySiteRenderer;
 use App\Infrastructure\Analytics\AnalyticsCertificatePublisher;
 use App\Infrastructure\Analytics\NativeAnalyticsPublicationManager;
+use App\Infrastructure\Caddy\Build\CaddySiteCertificates;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuildException;
 use App\Infrastructure\Nodes\CaddyPackageSourceProgram;
 use App\Infrastructure\Processes\CommandResult;
@@ -27,7 +28,8 @@ it('waits for Plausible, issues the certificate, publishes the Caddy site, then 
 
     $manager->converge(analytics_publication_node());
 
-    expect($events)->toBe(['ssh:health', 'ssh:caddy-source', 'certificate:issue', 'ssh:certificate', 'build:services', 'dns:converge']);
+    expect($events)->toBe(['ssh:health', 'ssh:caddy-source', 'certificate:issue', 'ssh:certificate', 'build:services', 'dns:converge'])
+        ->and(new CaddySiteCertificates()->published(analytics_publication_node()->id, CaddySiteCertificates::Analytics))->toBeTrue();
 });
 
 it('publishes nothing when Plausible does not become healthy', function (): void {
@@ -68,9 +70,12 @@ it('builds the Node before it removes the certificate, then converges DNS withou
     $events = [];
     $manager = analytics_publication_manager($events);
 
+    new CaddySiteCertificates()->record(analytics_publication_node()->id, CaddySiteCertificates::Analytics);
+
     $manager->remove(analytics_publication_node());
 
-    expect($events)->toBe(['build:services', 'ssh:certificate-remove', 'dns:converge-empty']);
+    expect($events)->toBe(['build:services', 'ssh:certificate-remove', 'dns:converge-empty'])
+        ->and(new CaddySiteCertificates()->published(analytics_publication_node()->id, CaddySiteCertificates::Analytics))->toBeFalse();
 });
 
 it('touches only the Gateway-side DNS record when the node is unreachable', function (): void {
@@ -84,9 +89,10 @@ it('touches only the Gateway-side DNS record when the node is unreachable', func
 
 function analytics_publication_node(): Node
 {
-    return new Node([
-        'name' => 'services',
-        'public_ssh_port' => 22,
+    return Node::query()->firstOrCreate(['name' => 'services'], [
+        'status' => 'active',
+        'platform' => 'linux',
+        'public_ssh_host' => '192.0.2.9',
         'user' => 'orbit',
         'wireguard_ip' => '10.44.0.9',
     ]);

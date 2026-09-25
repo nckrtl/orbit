@@ -8,6 +8,7 @@ use App\Domain\ProxyCli\ProxyCliProcess;
 use App\Domain\ProxyCli\ProxyCliState;
 use App\Infrastructure\Caddy\Build\CaddyListenerRule;
 use App\Infrastructure\Caddy\Build\CaddySite;
+use App\Infrastructure\Caddy\Build\CaddySiteCertificates;
 use App\Infrastructure\Caddy\Build\NodeCaddySiteSource;
 use App\Infrastructure\ProxyCli\ProxyCliCaddySiteRenderer;
 use App\Infrastructure\ProxyCli\ProxyCliFootprint;
@@ -21,11 +22,16 @@ final readonly class ProxyCliCaddySiteSource implements NodeCaddySiteSource
     public function __construct(
         private ProxyCliState $state,
         private ProxyCliCaddySiteRenderer $renderer = new ProxyCliCaddySiteRenderer,
+        private CaddySiteCertificates $certificates = new CaddySiteCertificates,
     ) {}
 
     public function sites(Node $node): array
     {
-        if (! $this->state->enabled() || $this->state->nodeId() !== $node->id) {
+        if (
+            ! $this->state->enabled()
+            || $this->state->nodeId() !== $node->id
+            || ! $this->certificates->published($node->id, CaddySiteCertificates::ProxyCli)
+        ) {
             return [];
         }
 

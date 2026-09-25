@@ -16,6 +16,7 @@ use App\Infrastructure\AppDev\AppDevSite;
 use App\Infrastructure\AppDev\AppDevSiteRepository;
 use App\Infrastructure\Caddy\Build\CaddyListenerRule;
 use App\Infrastructure\Caddy\Build\CaddySite;
+use App\Infrastructure\Caddy\Build\CaddySiteCertificates;
 use App\Infrastructure\Caddy\Build\NodeCaddyfile;
 use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
 use App\Infrastructure\Caddy\Build\NodeCaddySiteSource;
@@ -37,6 +38,7 @@ use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\Route;
 use Symfony\Component\Process\ExecutableFinder;
+use Tests\Support\CaddySiteCertificateFixtures;
 
 describe('the Node Caddyfile', function (): void {
     it('starts with the Orbit marker line and Orbit global options', function (): void {
@@ -52,6 +54,7 @@ describe('the Node Caddyfile', function (): void {
     it('renders the same bytes for the same state and names the version by their digest', function (): void {
         $node = caddy_build_node('ws', '10.44.0.2');
         $node->roles()->create(['role' => RoleName::WebSocket, 'status' => LifecycleStatus::Active]);
+        CaddySiteCertificateFixtures::recordAll($node);
 
         $first = caddy_build_renderer()->render($node);
         $second = caddy_build_renderer()->render($node->fresh() ?? $node);
@@ -61,6 +64,7 @@ describe('the Node Caddyfile', function (): void {
             ->and($first->version)->toBe(substr(hash('sha256', $first->content), 0, 32));
 
         $node->roles()->create(['role' => RoleName::Analytics, 'status' => LifecycleStatus::Active]);
+        CaddySiteCertificateFixtures::recordAll($node);
 
         expect(caddy_build_renderer()->render($node)->version)->not->toBe($first->version);
     });
@@ -68,6 +72,7 @@ describe('the Node Caddyfile', function (): void {
     it('turns a site source that cannot render into a build problem', function (): void {
         $node = caddy_build_node('analytics', null);
         $node->roles()->create(['role' => RoleName::Analytics, 'status' => LifecycleStatus::Active]);
+        CaddySiteCertificateFixtures::recordAll($node);
 
         $caddyfile = caddy_build_renderer()->render($node);
 
@@ -84,6 +89,7 @@ describe('the Node Caddyfile', function (): void {
 
         $node = caddy_build_node('ws', '10.44.0.2');
         $node->roles()->create(['role' => RoleName::WebSocket, 'status' => LifecycleStatus::Active]);
+        CaddySiteCertificateFixtures::recordAll($node);
         caddy_build_private_route($node, 'shop.test');
 
         expect(caddy_adapt(caddy_build_renderer()->render($node)->content)->succeeded())->toBeTrue();
@@ -94,6 +100,7 @@ describe('site sources', function (): void {
     it('renders the Gateway web site on the gateway Node, bound to its WireGuard address', function (): void {
         $node = caddy_build_node('gateway', '10.44.0.1');
         $node->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
+        CaddySiteCertificateFixtures::recordAll($node);
         $expected = new GatewayCaddyConfigRenderer()->render('gateway.orbit', '10.44.0.1', '/srv/gateway', '/srv/web');
 
         $caddyfile = caddy_build_renderer()->render($node);
@@ -106,6 +113,7 @@ describe('site sources', function (): void {
     it('renders metrics.orbit on the gateway Node for the Metrics Node', function (): void {
         $gateway = caddy_build_node('gateway', '10.44.0.1');
         $gateway->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
+        CaddySiteCertificateFixtures::recordAll($gateway);
         $metrics = caddy_build_node('metrics', '10.44.0.5');
         $metrics->roles()->create(['role' => RoleName::Metrics, 'status' => LifecycleStatus::Provisioning]);
 
@@ -192,7 +200,9 @@ describe('site sources', function (): void {
     it('renders the websocket, analytics, and ProxyCli sites on their Node', function (): void {
         $node = caddy_build_node('services', '10.44.0.7');
         $node->roles()->create(['role' => RoleName::WebSocket, 'status' => LifecycleStatus::Active]);
+        CaddySiteCertificateFixtures::recordAll($node);
         $node->roles()->create(['role' => RoleName::Analytics, 'status' => LifecycleStatus::Active]);
+        CaddySiteCertificateFixtures::recordAll($node);
         app(ProxyCliState::class)->enable($node->id, 'cache', 'https://cliproxy.test', 'management', 'read', 'control');
 
         $content = caddy_build_renderer()->render($node)->content;
@@ -204,9 +214,28 @@ describe('site sources', function (): void {
             ->not->toContain('__ORBIT_');
     });
 
+    it('leaves a role site out until its certificate is recorded on the Node, and after it is forgotten', function (): void {
+        $node = caddy_build_node('ws', '10.44.0.2');
+        $node->roles()->create(['role' => RoleName::WebSocket, 'status' => LifecycleStatus::Provisioning]);
+        $node->roles()->create(['role' => RoleName::Analytics, 'status' => LifecycleStatus::Active]);
+        $certificates = new CaddySiteCertificates;
+        $render = static fn (): string => caddy_build_renderer()->render($node)->content;
+
+        expect($render())->not->toContain('reverb.orbit')->not->toContain('analytics.orbit');
+
+        $certificates->record($node->id, CaddySiteCertificates::Websocket);
+
+        expect($render())->toContain('reverb.orbit')->not->toContain('analytics.orbit');
+
+        $certificates->forget($node->id, CaddySiteCertificates::Websocket);
+
+        expect($render())->not->toContain('reverb.orbit');
+    });
+
     it('renders a role while it converges, is active, or failed a reconvergence, but not while it is removed', function (): void {
         $node = caddy_build_node('ws', '10.44.0.2');
         $role = $node->roles()->create(['role' => RoleName::WebSocket, 'status' => LifecycleStatus::Provisioning]);
+        CaddySiteCertificateFixtures::recordAll($node);
         $serves = static fn (): bool => str_contains(caddy_build_renderer()->render($node)->content, 'reverb.orbit');
 
         expect($serves())->toBeTrue();
@@ -288,7 +317,9 @@ describe('listener selection', function (): void {
         $gateway = caddy_build_node('gateway', '10.44.0.1');
         $gateway->update(['lan_ip' => '192.168.1.1']);
         $gateway->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
+        CaddySiteCertificateFixtures::recordAll($gateway);
         $gateway->roles()->create(['role' => RoleName::WebSocket, 'status' => LifecycleStatus::Active]);
+        CaddySiteCertificateFixtures::recordAll($gateway);
         [, $route] = caddy_build_private_route($gateway, 'shop.test');
 
         $caddyfile = caddy_build_renderer()->render($gateway->fresh() ?? $gateway);
@@ -305,6 +336,7 @@ describe('listener selection', function (): void {
     it('refuses a WireGuard-only site beside a first-row site on an Ingress Node and names both', function (): void {
         $gateway = caddy_build_node('gateway', '10.44.0.1');
         $gateway->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
+        CaddySiteCertificateFixtures::recordAll($gateway);
         [, $route] = caddy_build_private_route($gateway, 'shop.test');
         $gateway->roles()->create(['role' => RoleName::Ingress, 'status' => LifecycleStatus::Active, 'cluster_id' => $route->cluster_id]);
 
@@ -331,6 +363,7 @@ describe('duplicate addresses', function (): void {
     it('refuses two sites with the same address and names both sources', function (): void {
         $gateway = caddy_build_node('gateway', '10.44.0.1');
         $gateway->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
+        CaddySiteCertificateFixtures::recordAll($gateway);
         caddy_build_node('metrics-a', '10.44.0.5')->roles()->create(['role' => RoleName::Metrics, 'status' => LifecycleStatus::Active]);
         caddy_build_node('metrics-b', '10.44.0.6')->roles()->create(['role' => RoleName::Metrics, 'status' => LifecycleStatus::Active]);
 

@@ -335,6 +335,7 @@
         "apps/gateway/app/Infrastructure/AppProd/RemoteAppProdUserManager.php",
         "apps/gateway/app/Infrastructure/Caddy/Build/CaddyListenerRule.php",
         "apps/gateway/app/Infrastructure/Caddy/Build/CaddySite.php",
+        "apps/gateway/app/Infrastructure/Caddy/Build/CaddySiteCertificates.php",
         "apps/gateway/app/Infrastructure/Caddy/Build/CaddySiteRoles.php",
         "apps/gateway/app/Infrastructure/Caddy/Build/CaddyfileSiteDiff.php",
         "apps/gateway/app/Infrastructure/Caddy/Build/NodeCaddyBuildException.php",

@@ -9,6 +9,7 @@ use App\Domain\Certificates\GatewayCertificateIssuer;
 use App\Domain\ProxyCli\ProxyCliProcess;
 use App\Domain\ProxyCli\ProxyCliPublicationManager;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Caddy\Build\CaddySiteCertificates;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuildException;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
 use App\Infrastructure\Nodes\CaddyPackageSourceProgram;
@@ -31,6 +32,7 @@ final readonly class NativeProxyCliPublicationManager implements ProxyCliPublica
         private SshKeyProvider $keys,
         private KnownHostsStore $knownHosts,
         private ?ProxyCliRouteTakeover $takeover = null,
+        private ?CaddySiteCertificates $siteCertificates = null,
     ) {}
 
     public function converge(Node $node, int $port = ProxyCliProcess::PORT, ?Route $takeover = null): void
@@ -47,6 +49,7 @@ final readonly class NativeProxyCliPublicationManager implements ProxyCliPublica
             'proxycli.certificate_publication_failed',
             "proxycli certificate publication failed on node [{$node->name}].",
         );
+        $this->certificateRecords()->record($node->id, CaddySiteCertificates::ProxyCli);
 
         if (! $takeover instanceof Route) {
             $this->build($node);
@@ -67,7 +70,13 @@ final readonly class NativeProxyCliPublicationManager implements ProxyCliPublica
         // The extension is already disabled, so the build withdraws the collector site before its certificate.
         $this->build($node);
         $this->ssh->execute($this->connection($node, $address), $this->certificatePublisher->removeCommand());
+        $this->certificateRecords()->forget($node->id, CaddySiteCertificates::ProxyCli);
         $this->dns->converge();
+    }
+
+    private function certificateRecords(): CaddySiteCertificates
+    {
+        return $this->siteCertificates ?? new CaddySiteCertificates;
     }
 
     /** The build renders the collector site from the stored extension state. */

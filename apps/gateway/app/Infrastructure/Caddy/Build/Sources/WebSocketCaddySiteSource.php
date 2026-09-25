@@ -7,6 +7,7 @@ namespace App\Infrastructure\Caddy\Build\Sources;
 use App\Domain\Nodes\RoleName;
 use App\Infrastructure\Caddy\Build\CaddyListenerRule;
 use App\Infrastructure\Caddy\Build\CaddySite;
+use App\Infrastructure\Caddy\Build\CaddySiteCertificates;
 use App\Infrastructure\Caddy\Build\CaddySiteRoles;
 use App\Infrastructure\Caddy\Build\NodeCaddySiteSource;
 use App\Infrastructure\WebSocket\WebSocketCaddySiteRenderer;
@@ -18,11 +19,15 @@ final readonly class WebSocketCaddySiteSource implements NodeCaddySiteSource
     public function __construct(
         private WebSocketCaddySiteRenderer $renderer = new WebSocketCaddySiteRenderer,
         private int $port = 0,
+        private CaddySiteCertificates $certificates = new CaddySiteCertificates,
     ) {}
 
     public function sites(Node $node): array
     {
-        if (! CaddySiteRoles::nodeServes($node->id, RoleName::WebSocket)) {
+        if (
+            ! CaddySiteRoles::nodeServes($node->id, RoleName::WebSocket)
+            || ! $this->certificates->published($node->id, CaddySiteCertificates::Websocket)
+        ) {
             return [];
         }
 

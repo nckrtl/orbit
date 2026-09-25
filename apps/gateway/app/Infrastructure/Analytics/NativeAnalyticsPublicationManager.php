@@ -10,6 +10,7 @@ use App\Domain\Analytics\PlausibleProcess;
 use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\Certificates\GatewayCertificateIssuer;
 use App\Domain\Nodes\NodeRoleOperationException;
+use App\Infrastructure\Caddy\Build\CaddySiteCertificates;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuildException;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
 use App\Infrastructure\Nodes\CaddyPackageSourceProgram;
@@ -30,6 +31,7 @@ final readonly class NativeAnalyticsPublicationManager implements AnalyticsPubli
         private SshExecutor $ssh,
         private SshKeyProvider $keys,
         private KnownHostsStore $knownHosts,
+        private ?CaddySiteCertificates $siteCertificates = null,
     ) {}
 
     public function converge(Node $node): void
@@ -55,6 +57,8 @@ final readonly class NativeAnalyticsPublicationManager implements AnalyticsPubli
                 $certificateResult,
             );
         }
+
+        $this->certificateRecords()->record($node->id, CaddySiteCertificates::Analytics);
 
         $this->build($node);
         $this->dns->converge($node);
@@ -126,12 +130,20 @@ final readonly class NativeAnalyticsPublicationManager implements AnalyticsPubli
 
         $this->build($node);
         $this->ssh->execute($this->connection($node, $address), $this->certificatePublisher->removeCommand());
+        $this->certificateRecords()->forget($node->id, CaddySiteCertificates::Analytics);
         $this->dns->converge();
     }
 
+    /** The certificate may stay on the Node, so a later convergence publishes it again before its site renders. */
     public function removeUnreachable(Node $node): void
     {
+        $this->certificateRecords()->forget($node->id, CaddySiteCertificates::Analytics);
         $this->dns->converge();
+    }
+
+    private function certificateRecords(): CaddySiteCertificates
+    {
+        return $this->siteCertificates ?? new CaddySiteCertificates;
     }
 
     private function build(Node $node): void

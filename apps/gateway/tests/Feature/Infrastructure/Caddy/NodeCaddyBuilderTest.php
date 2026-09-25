@@ -28,6 +28,7 @@ use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
 use Illuminate\Filesystem\Filesystem;
+use Tests\Support\CaddySiteCertificateFixtures;
 
 beforeEach(function (): void {
     $this->lockDirectory = sys_get_temp_dir().'/orbit-caddy-build-lock-'.bin2hex(random_bytes(6));
@@ -57,6 +58,7 @@ describe('building a Node', function (): void {
     it('runs the same script through local sudo on the Node that holds the gateway role', function (): void {
         $node = node_caddy_builder_node('gateway', '10.44.0.1');
         $node->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
+        CaddySiteCertificateFixtures::recordAll($node);
         $this->local->results = [new CommandResult(0, "orbit-caddy-build-result=unchanged\n", '', 1, false)];
 
         $result = node_caddy_builder($this)->build($node);
@@ -69,6 +71,7 @@ describe('building a Node', function (): void {
     it('builds locally on the recorded serving Node even while its gateway role reconverges', function (): void {
         $node = node_caddy_builder_node('gateway', '10.44.0.1');
         $node->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Failed, 'failed_step' => 'gateway-web']);
+        CaddySiteCertificateFixtures::recordAll($node);
         app(GatewayServingHost::class)->remember($node);
 
         node_caddy_builder($this)->build($node);
@@ -81,6 +84,7 @@ describe('building a Node', function (): void {
         $serving = node_caddy_builder_node('gateway', '10.44.0.1');
         $candidate = node_caddy_builder_node('gateway-next', '10.44.0.5');
         $candidate->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
+        CaddySiteCertificateFixtures::recordAll($candidate);
         app(GatewayServingHost::class)->remember($serving);
 
         node_caddy_builder($this)->build($candidate);
@@ -92,6 +96,7 @@ describe('building a Node', function (): void {
     it('builds locally during bootstrap, before a serving Node is recorded', function (): void {
         $node = node_caddy_builder_node('gateway', '10.44.0.1');
         $node->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Provisioning]);
+        CaddySiteCertificateFixtures::recordAll($node);
 
         node_caddy_builder($this)->build($node);
 
@@ -193,6 +198,7 @@ describe('two publishers on one Node', function (): void {
     it('keep both sites when the second commits while the first build holds the Node', function (): void {
         $node = node_caddy_builder_node('app-dev', '10.44.0.3');
         $node->roles()->create(['role' => RoleName::WebSocket, 'status' => LifecycleStatus::Provisioning]);
+        CaddySiteCertificateFixtures::recordAll($node);
         mkdir($this->lockDirectory, 0o700, true);
         // The first publisher's build holds the Node and pushes the state it read: only its own site.
         $first = fopen($this->lockDirectory."/node-{$node->id}.lock", 'c+');
@@ -200,6 +206,7 @@ describe('two publishers on one Node', function (): void {
         $firstPush = app(NodeCaddyfileRenderer::class)->render($node)->content;
         // The second publisher commits its state, then requests a build that waits for the first.
         $node->roles()->create(['role' => RoleName::Analytics, 'status' => LifecycleStatus::Provisioning]);
+        CaddySiteCertificateFixtures::recordAll($node);
         $waits = 0;
         $lock = new NodeCaddyBuildLock(
             directory: $this->lockDirectory,
@@ -234,6 +241,7 @@ describe('two publishers on one Node', function (): void {
 
             foreach ($order as $role) {
                 $node->roles()->create(['role' => $role, 'status' => LifecycleStatus::Provisioning]);
+                CaddySiteCertificateFixtures::recordAll($node);
                 new NodeCaddyBuilder(app(NodeCaddyfileRenderer::class), new NodeCaddyBuildLock($this->lockDirectory), node_caddy_builder_transport($this))->build($node);
             }
 
@@ -382,6 +390,7 @@ describe('the build command', function (): void {
     it('prints the render of a Node without contacting it', function (): void {
         $node = node_caddy_builder_node('app-dev', '10.44.0.3');
         $node->roles()->create(['role' => RoleName::WebSocket, 'status' => LifecycleStatus::Active]);
+        CaddySiteCertificateFixtures::recordAll($node);
 
         $this->artisan('orbit:caddy-build', ['node' => 'app-dev', '--dry-run' => true])
             ->expectsOutputToContain(NodeCaddyfileRenderer::Marker)
@@ -391,6 +400,7 @@ describe('the build command', function (): void {
     it('prints each refusal and fails when the render has a problem', function (): void {
         $node = node_caddy_builder_node('app-dev', null);
         $node->roles()->create(['role' => RoleName::Analytics, 'status' => LifecycleStatus::Active]);
+        CaddySiteCertificateFixtures::recordAll($node);
 
         $this->artisan('orbit:caddy-build', ['node' => 'app-dev', '--dry-run' => true])
             ->expectsOutputToContain('Build refused: The analytics site source needs the WireGuard IPv4 address of Node [app-dev].')
@@ -400,6 +410,7 @@ describe('the build command', function (): void {
     it('compares the render with the live file read over SSH', function (): void {
         $node = node_caddy_builder_node('app-dev', '10.44.0.3');
         $node->roles()->create(['role' => RoleName::WebSocket, 'status' => LifecycleStatus::Active]);
+        CaddySiteCertificateFixtures::recordAll($node);
         $this->ssh->results = [new CommandResult(0, "{\n    auto_https disable_certs\n    metrics {\n        per_host\n    }\n}\nold.test {\n    respond old\n}\n", '', 1, false)];
         app()->instance(NodeCaddyTransport::class, node_caddy_builder_transport($this));
 

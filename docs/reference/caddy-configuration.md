@@ -43,7 +43,7 @@ A version holds only its `Caddyfile`. It has no fragments and imports nothing. T
 
 The Gateway renders the sites from committed database state only, so the same state always gives the same file. Route transitions are [stored state](/reference/routes#stored-transitions): a Route that is being published or withdrawn, an Instance that is being removed, a placement change, and a Router replacement each have a database record that the build reads.
 
-A role's sites render while the role is provisioning or active, and after a failed convergence, because they may already be live. They stop rendering when the role's removal starts.
+A role's sites render while the role is provisioning or active, and after a failed convergence, because they may already be live. They stop rendering when the role's removal starts. The `websocket`, `analytics`, ProxyCli, and Metrics sites also wait for their certificate: the Gateway records when the role's certificate step has placed the certificate on the Node, and forgets it when removal takes the certificate away. A build during a role's first convergence or relocation therefore leaves that site out instead of failing for every site on the Node.
 
 | Site source | Nodes | Listener |
 | --- | --- | --- |
@@ -134,7 +134,7 @@ The Caddy build for Node [app-prod] failed at stage [validate]: Error: loading c
 
 The failed stage is one of `lock`, `release`, `addresses`, `write`, `validate`, `backup`, `swap`, or `reload` on the Node. On the Gateway it is `render` or `gateway-lock` before the Gateway contacts the Node, `connect` when the Gateway cannot reach the Node or the Node has no WireGuard address, and `read-live` when `--diff` cannot read the live file.
 
-One broken site blocks every Caddy change on its Node until it is fixed, because each build renders every site. A missing certificate file fails validation. This happens, for example, when a role's first convergence failed before it published its certificate: the failed role still renders its site. Converge the role or Route that owns the site again to publish the certificate, or remove the role.
+One broken site blocks every Caddy change on its Node until it is fixed, because each build renders every site. A certificate file removed by hand fails validation, for example. Converge the role or Route that owns the site again to publish the certificate.
 
 ## Public Ingress certificates
 

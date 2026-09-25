@@ -11,6 +11,7 @@ use App\Domain\Metrics\MetricsGatewayResolver;
 use App\Domain\Metrics\MetricsPublicationManager as PublicationManager;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Caddy\Build\CaddySiteCertificates;
 use App\Infrastructure\Caddy\Build\CaddySiteRoles;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuildException;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
@@ -32,6 +33,7 @@ final readonly class MetricsPublicationManager implements PublicationManager
         private PrivateDnsManager $dns,
         private ?DevelopmentProjectionOperationLock $projection = null,
         private ?MetricsGatewayResolver $gateways = null,
+        private ?CaddySiteCertificates $siteCertificates = null,
     ) {}
 
     /**
@@ -45,6 +47,7 @@ final readonly class MetricsPublicationManager implements PublicationManager
             $this->address($metrics);
             $certificate = $this->certificates->issue('metrics.orbit', $gatewayAddress);
             $this->certificatePublisher->publish($certificate);
+            $this->certificateRecords()->record($gateway->id, CaddySiteCertificates::Metrics);
             $this->firewall->converge($metrics, $gatewayAddress);
             $this->build($gateway);
             $this->dns->converge($metrics);
@@ -63,7 +66,7 @@ final readonly class MetricsPublicationManager implements PublicationManager
             $this->dns->converge();
             $this->build($gateway);
             $this->firewall->remove($metrics, $gatewayAddress);
-            $this->removeUnusedCertificate();
+            $this->removeUnusedCertificate($gateway);
         });
     }
 
@@ -79,16 +82,22 @@ final readonly class MetricsPublicationManager implements PublicationManager
             $this->dns->converge();
             $gateway = ($this->gateways ?? new MetricsGatewayResolver)->resolve();
             $this->build($gateway);
-            $this->removeUnusedCertificate();
+            $this->removeUnusedCertificate($gateway);
         });
     }
 
     /** Every build of the Gateway validates the certificate a rendered Metrics site names. */
-    private function removeUnusedCertificate(): void
+    private function removeUnusedCertificate(Node $gateway): void
     {
         if (CaddySiteRoles::serving(RoleName::Metrics) === []) {
             $this->certificatePublisher->remove();
+            $this->certificateRecords()->forget($gateway->id, CaddySiteCertificates::Metrics);
         }
+    }
+
+    private function certificateRecords(): CaddySiteCertificates
+    {
+        return $this->siteCertificates ?? new CaddySiteCertificates;
     }
 
     private function build(Node $gateway): void
