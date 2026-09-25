@@ -168,7 +168,7 @@ orbit tasks:cancel [group] [--yes] [--json]
 | --- | --- |
 | `--yes` | Confirm without a prompt. Required for `--json` and `-n` calls. |
 
-In a terminal, the group list leaves out `settling` and `completed` groups. Before it asks, the CLI reads the group and names it and its Instance in the question. The question defaults to No. A `--json` or `-n` call without `--yes` fails with `input.confirmation_required`. Declining fails with `input.cancelled`. Neither changes the group. A `settling` or `completed` group fails with `tasks.not_cancellable`; complete a settling group instead.
+In a terminal, the group list leaves out `settling` and `completed` groups. Before it asks, the CLI reads the group and names it and its Instance in the question. The question defaults to No. A `--json` or `-n` call without `--yes` fails with `input.confirmation_required`. Declining fails with `input.cancelled`. Neither changes the group. A `completed` group, or a `settling` group with a pull request, fails with `tasks.not_cancellable`; complete a settling group instead. Pass the group ID to cancel a `settling` group without a pull request. The Gateway first pushes its approved commits to the task branch; a failed push fails with `tasks.push_failed` and keeps the group.
 
 ## orbit tasks:complete
 

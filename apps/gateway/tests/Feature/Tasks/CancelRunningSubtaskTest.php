@@ -7,6 +7,9 @@ use App\Domain\Tasks\AgentDriverRegistry;
 use App\Domain\Tasks\AgentSpawner;
 use App\Domain\Tasks\CoderSettleNotifier;
 use App\Domain\Tasks\NullCoderSettleNotifier;
+use App\Domain\Tasks\TaskCheckKind;
+use App\Domain\Tasks\TaskCheckRunner;
+use App\Domain\Tasks\TaskCheckStatus;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskRunReceipts;
@@ -17,9 +20,121 @@ use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Task;
+use App\Models\TaskCheck;
 use App\Models\TaskGroup;
 use Tests\Support\FakeAgentDriver;
+use Tests\Support\FakeTaskCheckRunner;
 use Tests\Support\FakeTaskRunReceipts;
+
+/**
+ * A running group on an Instance whose first subtask is in its baseline check and whose second waits.
+ *
+ * @return array{TaskGroup, Task, Task, TaskCheck, FakeTaskCheckRunner, object, Node}
+ */
+function cancel_subtask_in_baseline(int $suffix): array
+{
+    $gateway = Node::query()->create([
+        'name' => 'cancel-baseline-gateway-'.$suffix,
+        'status' => LifecycleStatus::Active,
+        'platform' => 'linux',
+        'public_ssh_host' => '192.0.2.'.$suffix,
+        'wireguard_ip' => '10.44.1.'.$suffix,
+    ]);
+    app(TaskExtensionState::class)->enable();
+    $app = OrbitApp::query()->create([
+        'name' => 'Cancel baseline',
+        'slug' => 'cancel-baseline-'.$suffix,
+        'repository_url' => 'git@example.test:cancel-baseline.git',
+        'default_branch' => 'main',
+    ]);
+    $node = Node::query()->create([
+        'name' => 'cancel-baseline-node-'.$suffix,
+        'status' => LifecycleStatus::Active,
+        'platform' => 'linux',
+        'public_ssh_host' => '192.0.3.'.$suffix,
+        'wireguard_ip' => '10.44.2.'.$suffix,
+    ]);
+    $instance = AppInstance::query()->create([
+        'app_id' => $app->id,
+        'node_id' => $node->id,
+        'name' => 'task-workspace',
+        'checkout_path' => '/srv/orbit/apps/cancel-baseline/task-workspace',
+        'status' => 'source_resolved',
+    ]);
+    $group = TaskGroup::query()->create([
+        'app_id' => $app->id,
+        'title' => 'Cancel during baseline',
+        'brief' => 'Stop the baseline check.',
+        'status' => TaskGroupStatus::Running,
+    ]);
+    $group->taskable()->associate($instance);
+    $group->save();
+    $running = Task::query()->create([
+        'task_group_id' => $group->id,
+        'position' => 1,
+        'title' => 'Checking subtask',
+        'brief' => 'Its baseline check runs.',
+        'status' => TaskStatus::Running,
+    ]);
+    $next = Task::query()->create([
+        'task_group_id' => $group->id,
+        'position' => 2,
+        'title' => 'Next subtask',
+        'brief' => 'Needs its own baseline.',
+        'status' => TaskStatus::Todo,
+    ]);
+    $check = TaskCheck::query()->create([
+        'task_id' => $running->id,
+        'kind' => TaskCheckKind::Baseline,
+        'status' => TaskCheckStatus::Running,
+        'pid' => 4100,
+        'process_started' => 'Wed Sep 23 12:00:00 2026',
+        'head_before' => str_repeat('a', 40),
+        'tree_before' => str_repeat('b', 40),
+        'started_at' => now(),
+    ]);
+    $checks = new FakeTaskCheckRunner;
+    app()->instance(TaskCheckRunner::class, $checks);
+    app()->instance(CoderSettleNotifier::class, new NullCoderSettleNotifier);
+    app()->instance(TaskWorkspaceStateReader::class, new class implements TaskWorkspaceStateReader
+    {
+        public function headCommit(AppInstance $instance): ?string
+        {
+            return 'baseline-head';
+        }
+
+        public function currentBranch(AppInstance $instance): ?string
+        {
+            return 'task-test';
+        }
+
+        public function definesComposerCheckScript(AppInstance $instance): bool
+        {
+            return true;
+        }
+    });
+    $spawner = new class implements AgentSpawner
+    {
+        public int $implementers = 0;
+
+        public function spawnReviewer(Task $task): ?int
+        {
+            return null;
+        }
+
+        public function spawnImplementer(Task $task): ?int
+        {
+            $this->implementers++;
+
+            return null;
+        }
+
+        public function requestReview(Task $task): void {}
+    };
+    app()->instance(AgentSpawner::class, $spawner);
+
+    return [$group, $running, $next, $check, $checks, $spawner, $gateway];
+}
 
 it('cancel running subtask preserves its group and Instance', function (): void {
     $gateway = Node::query()->create([
@@ -315,4 +430,67 @@ it('returns a conflict when the subtask is not running', function (): void {
 
     expect($task->fresh()->status)->toBe(TaskStatus::Todo)
         ->and($group->fresh()->status)->toBe(TaskGroupStatus::Running);
+});
+
+it('stops the baseline check and runs the next subtask through its own baseline', function (): void {
+    [$group, $running, $next, $check, $checks, $spawner, $gateway] = cancel_subtask_in_baseline(110);
+    $this->markAsGateway($gateway);
+    $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip]);
+
+    $this->postJson("/api/v1/task-groups/{$group->id}/tasks/{$running->id}/cancel")
+        ->assertOk()
+        ->assertJsonPath('data.status', 'cancelled');
+
+    $nextCheck = TaskCheck::query()->where('task_id', $next->id)->sole();
+    expect($checks->cancels)->toBe(1)
+        ->and($check->fresh()->status)->toBe(TaskCheckStatus::Cancelled)
+        ->and($next->fresh()->status)->toBe(TaskStatus::Running)
+        ->and($next->fresh()->subtask_start_commit)->toBe('baseline-head')
+        ->and($next->fresh()->implementer_agent_thread_id)->toBeNull()
+        ->and($spawner->implementers)->toBe(0)
+        ->and($checks->starts)->toBe(1)
+        ->and($nextCheck->kind)->toBe(TaskCheckKind::Baseline)
+        ->and($nextCheck->status)->toBe(TaskCheckStatus::Running)
+        ->and($group->fresh()->status)->toBe(TaskGroupStatus::Running);
+});
+
+it('leaves the subtask and its baseline check running when the check cannot be stopped', function (): void {
+    [$group, $running, $next, $check, $checks, $spawner, $gateway] = cancel_subtask_in_baseline(111);
+    $this->markAsGateway($gateway);
+    $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip]);
+    $checks->failNextCancel = true;
+
+    $this->postJson("/api/v1/task-groups/{$group->id}/tasks/{$running->id}/cancel")
+        ->assertStatus(502)
+        ->assertJsonPath('error.code', 'tasks.subtask_interrupt_failed');
+
+    expect($running->fresh()->status)->toBe(TaskStatus::Running)
+        ->and($check->fresh()->status)->toBe(TaskCheckStatus::Running)
+        ->and($next->fresh()->status)->toBe(TaskStatus::Todo)
+        ->and($checks->starts)->toBe(0);
+});
+
+it('sends no interrupt when the subtask stopped running before the lock', function (): void {
+    [$group, $running, $next, $check, $checks, $spawner, $gateway] = cancel_subtask_in_baseline(112);
+    $this->markAsGateway($gateway);
+    $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip]);
+    AgentThread::query()->create([
+        'task_group_id' => $group->id,
+        'task_id' => $running->id,
+        'driver' => 'fake',
+        'runtime_key' => 'handed-off-runtime',
+        'external_id' => 'handed-off-session',
+        'role' => 'implementer',
+    ]);
+    $driver = new FakeAgentDriver('fake');
+    $driver->supportsInterruption = true;
+    app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
+    $running->update(['status' => TaskStatus::Reviewing]);
+
+    $this->postJson("/api/v1/task-groups/{$group->id}/tasks/{$running->id}/cancel")
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'tasks.subtask_not_running');
+
+    expect($driver->calls)->toBe([])
+        ->and($running->fresh()->status)->toBe(TaskStatus::Reviewing);
 });

@@ -2690,7 +2690,7 @@ export interface paths {
         put?: never;
         /**
          * Cancel a Task group
-         * @description Cancels a backlog, todo, reserved, running, reviewing, or failed Task group and clears its shared Instance. Idempotent for cancelled groups. Route-free source_resolved Instances use database-only cleanup and retain their checkout; other Instances use the forced Instance remover. Requires Gateway access. Returns tasks.disabled while the extension is off and tasks.not_cancellable for settling or completed groups.
+         * @description Cancels a backlog, todo, reserved, running, reviewing, or failed Task group, or a settling group without a pull request, and clears its shared Instance. For a settling group with an approved subtask, the Gateway first pushes the workspace HEAD to `task-{group}` on origin; a failed push returns `tasks.push_failed` (502) and keeps the group and Instance. Idempotent for cancelled groups. Route-free source_resolved Instances use database-only cleanup and retain their checkout; other Instances use the forced Instance remover. Requires Gateway access. Returns tasks.disabled while the extension is off and tasks.not_cancellable for completed groups and settling groups with a pull request.
          */
         post: operations["tasks-cancel"];
         delete?: never;
@@ -2772,7 +2772,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** tasks:subtask:cancel */
+        /**
+         * Cancel a running subtask
+         * @description Cancels a `running` subtask. Stops its implementer and its running baseline or handoff check, keeps the group and its Instance, and starts the lowest-position `todo` subtask. That subtask runs the baseline check first when no implementer has started in the group. When no `todo` subtask remains, the group moves to `settling` without a pull request. Requires Gateway access. Returns `tasks.disabled` while the extension is off, `tasks.subtask_not_running` (409) when the subtask is not `running`, and `tasks.subtask_interrupt_failed` (502) when the implementer or check could not be stopped; the subtask then stays `running`.
+         */
         post: operations["tasks-subtask-cancel"];
         delete?: never;
         options?: never;
@@ -14493,7 +14496,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description The tasks extension is disabled (`tasks.disabled`) or the Task group is settling or completed (`tasks.not_cancellable`). */
+            /** @description The tasks extension is disabled (`tasks.disabled`), or the Task group is completed or settling with a pull request (`tasks.not_cancellable`). */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -14504,6 +14507,15 @@ export interface operations {
             };
             /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The approved commits of a settling group could not be pushed to its task branch (`tasks.push_failed`). The group and its Instance stay. */
+            502: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -14896,7 +14908,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            /** @description The tasks extension is disabled (`tasks.disabled`) or the subtask is not running (`tasks.subtask_not_running`). */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -14907,6 +14919,15 @@ export interface operations {
             };
             /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The implementer or the running check could not be stopped (`tasks.subtask_interrupt_failed`). The subtask stays running. */
+            502: {
                 headers: {
                     [name: string]: unknown;
                 };

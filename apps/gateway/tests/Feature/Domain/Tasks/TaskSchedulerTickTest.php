@@ -1537,6 +1537,8 @@ function tick_publishing(array $missing = [[]], int $failures = 0): object
 
             return 'https://github.com/acme/orbit/pull/42';
         }
+
+        public function push(TaskGroup $group): void {}
     };
     app()->instance(TaskBriefCoverage::class, $coverage);
     app()->instance(TaskPullRequestPublisher::class, $publisher);

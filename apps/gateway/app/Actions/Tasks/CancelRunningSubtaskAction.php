@@ -7,17 +7,26 @@ namespace App\Actions\Tasks;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\AgentDriverException;
 use App\Domain\Tasks\AgentDriverRegistry;
+use App\Domain\Tasks\TaskCheckException;
+use App\Domain\Tasks\TaskCheckRunner;
+use App\Domain\Tasks\TaskCheckStatus;
 use App\Domain\Tasks\TaskScheduler;
-use App\Domain\Tasks\TaskStatus;
 use App\Models\AgentThread;
+use App\Models\AppInstance;
 use App\Models\Task;
+use App\Models\TaskCheck;
 use App\Models\TaskGroup;
 
+/**
+ * Stops a running subtask's implementer and its running check, then lets the scheduler start the next
+ * subtask. Both stops happen after the status check in the scheduler's lock.
+ */
 final readonly class CancelRunningSubtaskAction
 {
     public function __construct(
         private RequireTasksExtensionAction $requireExtension,
         private AgentDriverRegistry $drivers,
+        private TaskCheckRunner $checks,
         private TaskScheduler $scheduler,
     ) {}
 
@@ -26,34 +35,63 @@ final readonly class CancelRunningSubtaskAction
         $group->requireManagedExecution();
         $this->requireExtension->execute();
 
-        $current = Task::query()->where('task_group_id', $group->id)->findOrFail($task->id);
-        if ($current->status !== TaskStatus::Running) {
-            throw new ResourceOperationException(
-                errorCode: 'tasks.subtask_not_running',
-                message: __('Only a running subtask can be cancelled.'),
-                status: 409,
-            );
-        }
+        $this->scheduler->cancelRunningSubtask($group, $task, function (Task $running) use ($group): void {
+            $this->interruptImplementer($running);
+            $this->stopCheck($group, $running);
+        });
 
-        $thread = $current->implementerThread ?? AgentThread::query()
-            ->where('task_id', $current->id)
+        return $task->fresh() ?? $task;
+    }
+
+    private function interruptImplementer(Task $task): void
+    {
+        $thread = $task->implementerThread ?? AgentThread::query()
+            ->where('task_id', $task->id)
             ->where('role', 'implementer')
             ->first();
 
-        if ($thread instanceof AgentThread) {
-            try {
-                $this->drivers->get($thread->driver)->interrupt($thread);
-            } catch (AgentDriverException $exception) {
-                throw new ResourceOperationException(
-                    errorCode: 'tasks.subtask_interrupt_failed',
-                    message: __('The subtask remains running because its implementer could not be stopped: :reason', ['reason' => $exception->getMessage()]),
-                    status: 502,
-                );
-            }
+        if (! $thread instanceof AgentThread) {
+            return;
         }
 
-        $this->scheduler->cancelRunningSubtask($group, $current);
+        try {
+            $this->drivers->get($thread->driver)->interrupt($thread);
+        } catch (AgentDriverException $exception) {
+            throw $this->stopFailed($exception->getMessage());
+        }
+    }
 
-        return $task->fresh() ?? $task;
+    /**
+     * A subtask without an implementer is in its baseline check, and one that handed off may be in
+     * its handoff check. Either check stops with the subtask.
+     */
+    private function stopCheck(TaskGroup $group, Task $task): void
+    {
+        /** @var TaskCheck|null $check */
+        $check = $task->checks()->where('status', TaskCheckStatus::Running->value)->latest('id')->first();
+        if (! $check instanceof TaskCheck) {
+            return;
+        }
+
+        $check->update(['status' => TaskCheckStatus::Cancelled, 'finished_at' => now()]);
+        $instance = $group->fresh()?->taskable;
+        if (! $instance instanceof AppInstance) {
+            return;
+        }
+
+        try {
+            $this->checks->cancel($instance, $check->process());
+        } catch (TaskCheckException $exception) {
+            throw $this->stopFailed($exception->getMessage());
+        }
+    }
+
+    private function stopFailed(string $reason): ResourceOperationException
+    {
+        return new ResourceOperationException(
+            errorCode: 'tasks.subtask_interrupt_failed',
+            message: __('The subtask remains running because its implementer or check could not be stopped: :reason', ['reason' => $reason]),
+            status: 502,
+        );
     }
 }

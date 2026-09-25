@@ -6160,7 +6160,7 @@
     {
       "name": "tasks-cancel",
       "title": "Cancel a Task group",
-      "description": "Cancels a backlog, todo, reserved, running, reviewing, or failed Task group and clears its shared Instance. Idempotent for cancelled groups. Route-free source_resolved Instances use database-only cleanup and retain their checkout; other Instances use the forced Instance remover. Requires Gateway access. Returns tasks.disabled while the extension is off and tasks.not_cancellable for settling or completed groups.",
+      "description": "Cancels a backlog, todo, reserved, running, reviewing, or failed Task group, or a settling group without a pull request, and clears its shared Instance. For a settling group with an approved subtask, the Gateway first pushes the workspace HEAD to `task-{group}` on origin; a failed push returns `tasks.push_failed` (502) and keeps the group and Instance. Idempotent for cancelled groups. Route-free source_resolved Instances use database-only cleanup and retain their checkout; other Instances use the forced Instance remover. Requires Gateway access. Returns tasks.disabled while the extension is off and tasks.not_cancellable for completed groups and settling groups with a pull request.",
       "method": "POST",
       "path": "/api/v1/task-groups/{group}/cancel",
       "path_inputs": [
@@ -6581,8 +6581,8 @@
     },
     {
       "name": "tasks-subtask-cancel",
-      "title": "tasks:subtask:cancel",
-      "description": "tasks:subtask:cancel",
+      "title": "Cancel a running subtask",
+      "description": "Cancels a `running` subtask. Stops its implementer and its running baseline or handoff check, keeps the group and its Instance, and starts the lowest-position `todo` subtask. That subtask runs the baseline check first when no implementer has started in the group. When no `todo` subtask remains, the group moves to `settling` without a pull request. Requires Gateway access. Returns `tasks.disabled` while the extension is off, `tasks.subtask_not_running` (409) when the subtask is not `running`, and `tasks.subtask_interrupt_failed` (502) when the implementer or check could not be stopped; the subtask then stays `running`.",
       "method": "POST",
       "path": "/api/v1/task-groups/{group}/tasks/{task}/cancel",
       "path_inputs": [

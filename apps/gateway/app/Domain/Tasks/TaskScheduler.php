@@ -14,6 +14,7 @@ use App\Models\Task;
 use App\Models\TaskCheck;
 use App\Models\TaskComment;
 use App\Models\TaskGroup;
+use Closure;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -934,12 +935,19 @@ final readonly class TaskScheduler
         return $group->fresh(['tasks', 'app', 'taskable']) ?? $group;
     }
 
-    public function cancelRunningSubtask(TaskGroup $taskGroup, Task $task): TaskGroup
+    /**
+     * Cancels a running subtask and starts the next one. `$stop` runs inside the lock, after the status
+     * check and before any state changes, so an interrupt is never sent for a subtask that is no longer
+     * running. An exception from `$stop` leaves the subtask running.
+     *
+     * @param  Closure(Task): void  $stop
+     */
+    public function cancelRunningSubtask(TaskGroup $taskGroup, Task $task, Closure $stop): TaskGroup
     {
         $taskGroup->requireManagedExecution();
         /** @var Task|null $next */
         $next = null;
-        $group = DB::transaction(function () use ($taskGroup, $task, &$next): TaskGroup {
+        $group = DB::transaction(function () use ($taskGroup, $task, $stop, &$next): TaskGroup {
             $locked = Task::query()->where('task_group_id', $taskGroup->id)->lockForUpdate()->findOrFail($task->id);
             $group = TaskGroup::query()->where('execution_mode', TaskExecutionMode::Managed)
                 ->lockForUpdate()
@@ -952,6 +960,8 @@ final readonly class TaskScheduler
                     status: 409,
                 );
             }
+
+            $stop($locked);
 
             $assistanceReason = $locked->assistance_reason;
             $locked->update([
@@ -995,8 +1005,7 @@ final readonly class TaskScheduler
         });
 
         if ($next instanceof Task && $next->status === TaskStatus::Running) {
-            $this->recordSubtaskStart($next);
-            $this->assignImplementer($next);
+            $this->beginRunningTask($next);
         }
 
         if ($group->status === TaskGroupStatus::Settling) {
@@ -1099,7 +1108,7 @@ final readonly class TaskScheduler
             return;
         }
 
-        $reason = 'The settling group has no reviewed pull request URL.';
+        $reason = 'The settling group has no reviewed pull request URL. Cancel the group to push its approved commits to task-'.$group->id.' and remove its workspace.';
         $group->update(['assistance_requested' => true, 'assistance_reason' => $reason]);
         $this->coder->assistance($group, $reason);
     }
@@ -1183,6 +1192,21 @@ final readonly class TaskScheduler
         $task->status = TaskStatus::Running;
         $task->started_at ??= now();
         $task->save();
+    }
+
+    /**
+     * Starts a subtask the way startTask does: records the start commit, then runs the baseline check
+     * when no implementer has started in the group yet, or starts the implementer.
+     */
+    private function beginRunningTask(Task $task): void
+    {
+        $this->recordSubtaskStart($task);
+        if ($this->needsBaseline($task)) {
+            $group = $task->taskGroup()->with(['app', 'taskable'])->firstOrFail();
+            $this->startBaseline($group, $task);
+        } else {
+            $this->assignImplementer($task);
+        }
     }
 
     /**
