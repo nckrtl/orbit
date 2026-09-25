@@ -7,6 +7,7 @@ use App\Domain\Doctor\DoctorNodeContext;
 use App\Domain\Doctor\NodeInspectionData;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AgentView\CacheAgentStateView;
+use App\Infrastructure\Nodes\NodeAgentFootprint;
 use App\Models\Node;
 
 it('reports node.agent_missing when the binary or unit is absent', function (bool $binaryExists, bool $unitExists): void {
@@ -236,11 +237,27 @@ describe('the agent secret', function (): void {
             ->and(node_agent_secret_codes($node, null))->toBe(['node.agent_secret_mismatch="missing"']);
     });
 
-    it('skips an exempt Node whose agent sends no secret', function (): void {
+    it('skips an exempt Node while the pinned agent sends no secret', function (): void {
         [$context] = node_agent_view_doctor_context();
         $node = $context->node->forceFill(['agent_secret_hash' => null, 'agent_secret_exempt' => true]);
 
-        expect(node_agent_secret_codes($node, null))->toBe([]);
+        expect(NodeAgentFootprint::sendsSecret())->toBeFalse()
+            ->and(node_agent_secret_codes($node, null))->toBe([]);
+    });
+
+    it('reports a Node that is still exempt once the pinned agent sends a secret', function (): void {
+        [$context] = node_agent_view_doctor_context();
+        $node = $context->node->forceFill(['agent_secret_hash' => null, 'agent_secret_exempt' => true]);
+        $probe = new NodeDoctorProbe(agentVersion: NodeAgentFootprint::SecretSince);
+
+        foreach ([null, hash('sha256', 'any')] as $checksum) {
+            $issues = $probe->inspect(new DoctorNodeContext($node, new NodeInspectionData(true, 'linux', 'x86_64', true, true, true, true, true, $checksum)))->issues;
+            $secret = array_values(array_filter($issues, static fn ($issue): bool => $issue->code === 'node.agent_secret_mismatch'));
+
+            expect($secret)->toHaveCount(1)
+                ->and($secret[0]->observed)->toBe('exempt')
+                ->and($secret[0]->summary)->toBe('Node agent is still exempt from its secret.');
+        }
     });
 
     it('never puts the secret hash in the report', function (): void {

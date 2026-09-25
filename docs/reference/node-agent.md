@@ -161,6 +161,18 @@ The agent runs as `root`, so it reads the file as its owner without capabilities
 
 Each agent converge checks the file's SHA-256 hash with `sudo sha256sum` and keeps the secret while the hash matches the stored one. Otherwise it writes a new secret to a candidate file through standard input, moves it into place, stores the new hash, and restarts the agent. The secret never appears in a command's arguments, and the Gateway never reads it back. There is no scheduled rotation. To rotate a secret, delete the file on the Node and converge it.
 
+The converge changes the Gateway's record only when the agent that matches it can run, so a failed converge never locks out the running agent. The running agent reads its secret only when it starts.
+
+| Step | Gateway record |
+| --- | --- |
+| Install the binary, configuration, root certificate, and unit | Unchanged. A failure here, such as a failed download, leaves the old agent running with its old record. |
+| Write the secret file | Unchanged. The running agent keeps sending what it read at start. |
+| Replace a stored hash with a new one | Stored right before the restart. Every agent that starts from then on reads the new file. |
+| Restart the agent | An exempt Node stays exempt until the restart succeeds, and the exemption accepts both the old agent and the new one. |
+| After the restart | Stores the hash and ends the exemption. For an agent older than 0.3.0, sets the exemption and clears the hash. |
+
+If a converge stops after the restart but before it stores the record, the Node stays exempt while an agent that sends the secret runs. Doctor reports it as `exempt`, and the next converge ends the exemption. One converge runs per Node at a time: a second converge of the same Node waits up to 5 minutes and then fails with `agent.converge_busy`.
+
 ### Rollout
 
 Agent 0.3.0 is the first release that sends the secret. Each Node record has `agent_secret_exempt`:
@@ -171,7 +183,7 @@ Agent 0.3.0 is the first release that sends the secret. Each Node record has `ag
 | Converged with agent 0.3.0 or later | Requires its own secret. The converge stores the hash and clears the exemption. |
 | No stored hash and not exempt, such as a Node whose agent never converged | Refused |
 
-A new Node is never exempt once the pin reaches 0.3.0, because `node:add` converges its agent with the pinned release. The exemption ends for the fleet when every Node has converged once with 0.3.0 or later. Until then, an exempt Node keeps accepting a caller without a secret, and Doctor reports its older agent as `node.agent_outdated`.
+A new Node is never exempt once the pin reaches 0.3.0, because `node:add` converges its agent with the pinned release. The exemption ends for the fleet when every Node has converged once with 0.3.0 or later. Until then, an exempt Node keeps accepting a caller without a secret. Doctor reports its older agent as `node.agent_outdated` and the exemption as `node.agent_secret_mismatch` with `exempt`. While the pin is older than 0.3.0, the exemption is normal and Doctor does not report it.
 
 ## Gateway view
 
@@ -302,7 +314,7 @@ The Gateway converges the agent at these points:
 | `node:add`, for a new or an existing Node, after the Metrics exporters | Provisioning fails at step `agent` with `node.agent_install_failed`. A new Node becomes `failed`, and an existing active Node stays `active`. |
 | A role converge on the Node | The role converge continues. The Gateway logs a warning, and Doctor reports the drift. |
 
-To upgrade the fleet, publish a new release, update the pin in the Gateway, deploy the Gateway, and run `orbit node:add <node>` or a role converge on each Node. Doctor reports every Node that still runs another version. Version 0.1.1 requires `gateway_address` in its configuration. Version 0.2.0 reports task workspaces and needs the unit above. Version 0.3.0 requires the [agent secret](#agent-secret), which the converge writes before it installs the binary.
+To upgrade the fleet, publish a new release, update the pin in the Gateway, deploy the Gateway, and run `orbit node:add <node>` or a role converge on each Node. Doctor reports every Node that still runs another version. Version 0.1.1 requires `gateway_address` in its configuration. Version 0.2.0 reports task workspaces and needs the unit above. Version 0.3.0 requires the [agent secret](#agent-secret), which the converge writes before it restarts the agent.
 
 ## Failures
 
@@ -323,6 +335,7 @@ The agent recovers from each failure below without an operator.
 | Reverb stops answering without closing the connection | The agent reconnects within about 30 seconds. |
 | systemd D-Bus is unavailable | The agent exits with an error, and systemd restarts it. |
 | The secret file is missing or malformed | The agent exits with an error, and systemd restarts it every 2 seconds. Doctor reports `node.agent_secret_mismatch`. A converge writes a new secret. |
+| An agent converge fails, for example because the download fails | The old agent keeps running, and the Gateway keeps accepting it. The next converge repairs the Node. |
 | The secret differs from the Gateway's hash, for example after a Gateway database restore | The Gateway refuses the agent with `agent.secret_invalid`, and the agent keeps retrying with its backoff. Doctor reports `node.agent_secret_mismatch`, and a converge writes a new secret. |
 
 The agent logs to the systemd journal. Logs contain no Reverb key, signature, or agent secret.
@@ -342,7 +355,7 @@ Doctor checks the agent in the `node` family on every eligible Node. It checks t
 | `node.agent_missing` | The binary or the unit is absent. |
 | `node.agent_inactive` | The unit exists but is not active. |
 | `node.agent_outdated` | The binary's checksum differs from the pinned checksum for the Node's architecture. |
-| `node.agent_secret_mismatch` | The Node is not [exempt](#rollout), and its secret file is missing (`missing`) or differs from the Gateway's hash (`mismatch`). |
+| `node.agent_secret_mismatch` | The secret file is missing (`missing`) or differs from the Gateway's hash (`mismatch`), or the Node is still [exempt](#rollout) although the pinned agent sends a secret (`exempt`). |
 | `node.agent_view_stale` | The agent unit is active and a `websocket` role is active, but the Gateway has no fresh view of the Node. |
 
 Run `orbit node:add <node>` to repair the first four. `node:add` refuses a Node that owns Instances; repair such a Node by converging one of its roles with `orbit node:role:add <node> <role> --converge`.

@@ -45,6 +45,8 @@ The Gateway owns the secret, its hash, and the check. The agent owns reading the
 - Every agent converge makes sure the Node has an agent secret in `/etc/orbit/agent/secret`, owned by `root:root` with mode `0600`. The converge also sets `/etc/orbit/agent` to `root:root` mode `0700`, because Ubuntu's `install` writes a candidate file with mode `0644` and applies `0600` only after the contents are written. The secret is 32 random bytes from the Gateway's CSPRNG, written as 64 lowercase hexadecimal characters.
 - The Gateway writes the file over SSH with the secret on standard input, never in a command's arguments. It stores only the SHA-256 hash of the secret in the Node record, and never logs or returns the secret or the hash.
 - A converge keeps the secret while the file's SHA-256 hash equals the stored hash. It writes a new secret when the file is missing or differs, or when the Gateway holds no hash. A new secret restarts the agent. There is no scheduled rotation. Removing a Node deletes the file with `/etc/orbit/agent`, and a new Node record starts without a hash.
+- The converge changes the Gateway's record only when an agent that matches it can run. It installs the binary and every other file first, then writes the secret file, and restarts the agent last. The running agent reads its secret only at start, so a failure before the restart leaves it working. Ending the exemption waits until the restart succeeded, because the exemption accepts both the old agent and the new one. Replacing a stored hash happens right before the restart, because every agent that starts from then on reads the new file; storing it after the restart would leave the Gateway expecting the old secret when the restart fails. Setting the exemption for an older agent also waits until the restart.
+- One agent converge runs per Node at a time, under a Gateway cache lock. A second converge waits up to 5 minutes and then fails with `agent.converge_busy`. Without the lock, two converges of one Node each write a secret, and one of them can store the other one's hash.
 - The agent reads the file at start and exits with an error when it is missing or malformed. It sends `Authorization: Bearer {secret}` on every Gateway request, over the TLS connection that already verifies `gateway.orbit` against the Orbit CA.
 
 ### The check
@@ -65,14 +67,14 @@ The Gateway compares the hashes in constant time.
 Agent 0.3.0 is the first release that sends the secret. The Gateway pins 0.2.0 until 0.3.0 is released, so the rollout must not refuse the agents that run today.
 
 - The Node record gains `agent_secret_exempt`. The migration sets it for every existing Node, because none of them runs an agent that sends a secret.
-- A converge that installs an agent older than 0.3.0 sets the exemption and clears the hash. A converge that installs 0.3.0 or a newer release writes the secret, stores its hash, and clears the exemption.
+- A converge that installs an agent older than 0.3.0 sets the exemption and clears the hash. A converge that installs 0.3.0 or a newer release writes the secret, and after the agent restarted, stores its hash and clears the exemption.
 - An exempt Node without a stored hash is accepted without a secret, as today. Every other Node must send its secret.
 
 Once the pin reaches 0.3.0, each converge moves one Node out of the exemption. A new Node is never exempt, because the Gateway converges its agent with the pinned release. The exemption ends for the whole fleet when every Node has converged once with 0.3.0 or a newer release. After that, a cleanup change removes the column and its branch.
 
 ### Doctor
 
-Doctor reports `node.agent_secret_mismatch` in the `node` family for an eligible, non-exempt Node that has an agent binary, when its secret file is missing (`missing`) or its hash differs from the stored one (`mismatch`). It reads only the file's SHA-256 hash with `sudo sha256sum`, within Doctor's existing 30-second Node inspection. The secret and both hashes stay out of the report.
+Doctor reports `node.agent_secret_mismatch` in the `node` family for an eligible, non-exempt Node that has an agent binary, when its secret file is missing (`missing`) or its hash differs from the stored one (`mismatch`). Once the pinned agent sends a secret, it also reports an exempt Node as `exempt`, so the end of the rollout is visible. While the pin is older than 0.3.0, the exemption is normal and Doctor does not report it. It reads only the file's SHA-256 hash with `sudo sha256sum`, within Doctor's existing 30-second Node inspection. The secret and both hashes stay out of the report.
 
 ## Rejected alternatives
 
@@ -86,7 +88,8 @@ Doctor reports `node.agent_secret_mismatch` in the `node` family for an eligible
 ## Consequences
 
 - A local user who is not root cannot act as the agent: the endpoints refuse it without the secret, and it cannot read the file. Root on a Node can still read the secret and report false state about its own Node, as ADR 0148 already accepts.
-- Until each Node converges with agent 0.3.0 or a newer release, it stays exempt and keeps today's gap. Doctor's `node.agent_outdated` names those Nodes.
+- Until each Node converges with agent 0.3.0 or a newer release, it stays exempt and keeps today's gap. Doctor names those Nodes with `node.agent_outdated` and `node.agent_secret_mismatch` (`exempt`).
+- A failed converge never locks out the running agent. A converge that stops right after the restart can leave a Node exempt while its agent sends the secret, until the next converge; Doctor reports it.
 - A converge that writes a new secret, such as after a manual file deletion, restarts the agent.
 - A Gateway database restore that predates a Node's secret makes that Node's agent fail with `agent.secret_invalid` until the next converge writes a new secret. Doctor reports `node.agent_secret_mismatch` meanwhile.
 - The other API routes keep identifying a caller by its WireGuard address. A local user on a Node that holds a Gateway access edge can still call those routes as that Node, as the node access model allows. This ADR covers the agent endpoints only.
