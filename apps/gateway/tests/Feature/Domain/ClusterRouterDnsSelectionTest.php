@@ -17,7 +17,7 @@ use App\Infrastructure\AppDev\InMemoryPrivateDnsAnswerCache;
 use App\Infrastructure\AppDev\PrivateDnsAnswerCatalog;
 use App\Infrastructure\AppDev\PrivateDnsMessageCodec;
 use App\Infrastructure\AppDev\PrivateDnsRequestHandler;
-use App\Infrastructure\AppDev\WireGuardDnsRequesterResolver;
+use App\Infrastructure\AppDev\RegisteredNodeDnsRequesterResolver;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\Cluster;
@@ -343,7 +343,7 @@ function orb260_handler(
     ?InMemoryPrivateDnsAnswerCache $cache = null,
 ): PrivateDnsRequestHandler {
     return new PrivateDnsRequestHandler(
-        requesters: new WireGuardDnsRequesterResolver,
+        requesters: new RegisteredNodeDnsRequesterResolver,
         selector: new CatalogPrivateDnsAnswerSelector($catalog),
         cache: $cache ?? new InMemoryPrivateDnsAnswerCache,
     );
