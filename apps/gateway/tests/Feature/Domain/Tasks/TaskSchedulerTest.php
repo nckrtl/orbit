@@ -864,7 +864,7 @@ it('runs the Project setup steps and check on the fresh workspace before the fir
         ->and($checks->commands)->toBe(['composer check'])
         ->and($check->kind)->toBe(TaskCheckKind::Baseline)
         ->and($check->task_comment_id)->toBeNull()
-        ->and($checks->setups)->toBe([[['name' => 'Install', 'command' => 'composer install', 'timeout_seconds' => 600], ['name' => '[Orbit internal] Install Composer dependencies', 'command' => 'while IFS= read -r -d "" manifest; do project="${manifest%/composer.json}"; [ "$project" = "$manifest" ] && project="."; if { [ "$project" = "." ] || [ -f "$project/composer.lock" ]; } && [ ! -f "$project/vendor/autoload.php" ]; then (cd "$project" && composer install --no-interaction --prefer-dist) || exit $?; fi; done < <(git ls-files -z -- "composer.json" ":(glob)**/composer.json")', 'timeout_seconds' => 600]]]);
+        ->and($checks->setups)->toBe([[['name' => 'Install', 'command' => 'composer install', 'timeout_seconds' => 600], ['name' => '[Orbit internal] Install Composer dependencies', 'command' => 'while IFS= read -r -d "" manifest; do project="${manifest%/composer.json}"; [ "$project" = "$manifest" ] && project="."; if { [ "$project" = "." ] || [ -f "$project/composer.lock" ]; } && [ ! -f "$project/vendor/autoload.php" ]; then (cd "$project" && if [ -f composer.lock ]; then composer install --no-interaction --prefer-dist; else composer install --no-interaction --prefer-dist && rm -f composer.lock; fi) || exit $?; fi; done < <(git ls-files -z -- "composer.json" ":(glob)**/composer.json")', 'timeout_seconds' => 600]]]);
 
     test_pass_baseline();
 
@@ -889,6 +889,27 @@ it('prepares Composer and JavaScript dependencies referenced by a custom baselin
         '[Orbit internal] Install JavaScript dependencies',
     ])->and($checks->commands)->toBe(['composer test && bun run check']);
 });
+
+it('prepares Composer dependencies only when the baseline command runs composer or uses vendor', function (string $command, bool $installs): void {
+    $app = scheduler_app('composer-trigger');
+    $app->update(['task_check' => $command]);
+    $instance = scheduler_instance($app, scheduler_node('composer-trigger-node', '10.44.0.99'), 'composer-trigger');
+    queued_group($app, 'Composer trigger', $instance);
+    scheduler_bind_claim($instance, scheduler_recording_spawner());
+    $checks = new FakeTaskCheckRunner([TaskCheckReading::running()]);
+    app()->instance(TaskCheckRunner::class, $checks);
+
+    app(TaskScheduler::class)->claimNext();
+    test_pass_baseline();
+
+    expect(in_array('[Orbit internal] Install Composer dependencies', array_column($checks->setups[0], 'name'), true))->toBe($installs);
+})->with([
+    'composer command' => ['composer test', true],
+    'composer after a shell operator' => ['cd app&&composer', true],
+    'vendor binary' => ['vendor/bin/pest', true],
+    'composer.json file name' => ['test -f composer.json && echo ok', false],
+    'composer in another word' => ['./mycomposer check', false],
+]);
 
 it('passes an unset Project baseline without a command and starts the first implementer', function (): void {
     $app = scheduler_app('no-baseline-command');

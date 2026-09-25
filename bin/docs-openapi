@@ -597,7 +597,8 @@ def schema_from_tokens(toks):
     sch = {'type': [type_, 'null'] if nullable else type_, **sch}
     if notes:
         sch['description'] = ' '.join(notes)
-    return sch, required and not sometimes
+    # A `sometimes|required` field is optional, but the request still needs a body with at least one field.
+    return sch, required and not sometimes, required and sometimes
 
 
 def clean_schema(s):
@@ -616,8 +617,10 @@ def clean_schema(s):
 
 def rules_to_schema(rules_text, route_name=None):
     root = {'type': 'object', 'properties': {}, 'required': []}
+    body_required = False
     for key, value in parse_rule_entries(rules_text).items():
-        sch, req = schema_from_tokens(tokens_for(value, route_name))
+        sch, req, required_when_sent = schema_from_tokens(tokens_for(value, route_name))
+        body_required = body_required or ('.' not in key and required_when_sent)
         parts = key.split('.')
         node = root
         for idx, part in enumerate(parts):
@@ -653,7 +656,7 @@ def rules_to_schema(rules_text, route_name=None):
                         for drop in ('items', 'maxItems', 'minItems'):
                             child.pop(drop, None)
                     node = child
-    return clean_schema(root)
+    return clean_schema(root), body_required
 
 
 # ---------------------------------------------------------------- data classes -> component schemas
@@ -1031,7 +1034,7 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
     query = []
     cmd = commands.get(route['name'])
     if rules_text:
-        sch = rules_to_schema(rules_text, route['name'])
+        sch, body_required = rules_to_schema(rules_text, route['name'])
         if route['method'] == 'GET':
             for k, v in (sch.get('properties') or {}).items():
                 if k in params:
@@ -1059,7 +1062,7 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
                 v['description'] = d
     if body_schema is not None:
         body_schema['additionalProperties'] = False
-        op['requestBody'] = {'required': bool(body_schema.get('required')), 'content': {'application/json': {'schema': body_schema}}}
+        op['requestBody'] = {'required': body_required or bool(body_schema.get('required')), 'content': {'application/json': {'schema': body_schema}}}
     stream = route['name'] in ('instance:deploy', 'instance:rollback')
     responses = {}
     if stream:

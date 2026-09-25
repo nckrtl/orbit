@@ -47,6 +47,8 @@ The public Project contract uses these source fields.
 | `root` and `--root` | Required API and SDK field. A normalized repository-relative path; `.` is allowed for package types and means the repository root. |
 | `task_check` and `--task-check` | Optional command that task baselines and handoffs run ([Project check](/reference/tasks#project-check)). When omitted, `laravel-app` and `laravel-package` get `composer check`, and `monorepo` and `node-package` get null, which runs no check command. An explicit null also stores no command. |
 
+The type defaults apply to new Projects only. The upgrade gives every existing Project `composer check`, whatever its type. An operator clears it with `project:update --clear-task-check`, for example on an existing `node-package` Project without a Composer `check` script.
+
 SDK Project responses and the `project:list` and `project:show` commands expose the stored type, repository, default branch, root, and task check. The task check is an ordinary setting, like setup steps, so activity records it as sent. The API, SDK, CLI, activity, Doctor, and validation contracts expose no `main_branch` or `--main-branch` compatibility name.
 
 ## Keep one repository owner

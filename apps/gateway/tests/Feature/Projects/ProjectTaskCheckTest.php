@@ -74,7 +74,7 @@ it('still refuses a Project create without a type', function (): void {
     expect(OrbitApp::query()->where('slug', 'untyped')->exists())->toBeFalse();
 });
 
-it('backfills existing Projects with the task check of their type', function (): void {
+it('gives every existing Project the composer check task check whatever its type', function (): void {
     $migration = require database_path('migrations/2026_09_25_140000_add_task_check_to_apps.php');
     assert($migration instanceof Migration);
     $migration->down();
@@ -97,7 +97,7 @@ it('backfills existing Projects with the task check of their type', function ():
     expect(DB::table('apps')->orderBy('slug')->pluck('task_check', 'type')->all())->toBe([
         'laravel-app' => 'composer check',
         'laravel-package' => 'composer check',
-        'monorepo' => null,
-        'node-package' => null,
+        'monorepo' => 'composer check',
+        'node-package' => 'composer check',
     ]);
 });

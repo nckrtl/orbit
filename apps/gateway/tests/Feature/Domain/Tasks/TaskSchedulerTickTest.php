@@ -523,8 +523,9 @@ it('advances the current subtask when Jev marks it done', function (): void {
         ->and($spawner->reviews)->toBe(1);
 });
 
-it('hands off only when Orbit can run the workspace check script', function (bool $definesCheckScript, TaskStatus $status): void {
+it('hands off only when Orbit can run the workspace check script', function (bool $definesCheckScript, TaskStatus $status, string $taskCheck = 'composer check'): void {
     $group = tick_group();
+    $group->app->update(['task_check' => $taskCheck]);
     $task = $group->tasks->sole();
     app(TaskExtensionState::class)->enable();
     tick_workspace($definesCheckScript);
@@ -549,6 +550,8 @@ it('hands off only when Orbit can run the workspace check script', function (boo
 })->with([
     'project check script' => [true, TaskStatus::Reviewing],
     'missing check script' => [false, TaskStatus::Running],
+    'composer check with arguments after cd' => [false, TaskStatus::Running, 'cd app && composer check --no-ansi'],
+    'longer composer command' => [false, TaskStatus::Reviewing, 'composer check-platform-reqs'],
 ]);
 
 it('hands off with the Project task check, and runs no command when the Project has none', function (?string $taskCheck): void {

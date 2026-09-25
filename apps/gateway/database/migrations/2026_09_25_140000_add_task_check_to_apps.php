@@ -15,10 +15,8 @@ return new class extends Migration
             $table->text('task_check')->nullable();
         });
 
-        // ADR 0125: Laravel Projects keep the `composer check` gate; monorepo and node-package Projects run no check command.
-        DB::table('apps')
-            ->whereIn('type', ['laravel-app', 'laravel-package'])
-            ->update(['task_check' => 'composer check']);
+        // ADR 0125: every existing Project keeps the `composer check` gate it had; type defaults apply to new Projects only.
+        DB::table('apps')->update(['task_check' => 'composer check']);
     }
 
     public function down(): void

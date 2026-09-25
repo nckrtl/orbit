@@ -81,7 +81,7 @@ it('baseline installs vendor before check on a fresh workspace', function (): vo
         ],
         [
             'name' => '[Orbit internal] Install Composer dependencies',
-            'command' => 'while IFS= read -r -d "" manifest; do project="${manifest%/composer.json}"; [ "$project" = "$manifest" ] && project="."; if { [ "$project" = "." ] || [ -f "$project/composer.lock" ]; } && [ ! -f "$project/vendor/autoload.php" ]; then (cd "$project" && composer install --no-interaction --prefer-dist) || exit $?; fi; done < <(git ls-files -z -- "composer.json" ":(glob)**/composer.json")',
+            'command' => 'while IFS= read -r -d "" manifest; do project="${manifest%/composer.json}"; [ "$project" = "$manifest" ] && project="."; if { [ "$project" = "." ] || [ -f "$project/composer.lock" ]; } && [ ! -f "$project/vendor/autoload.php" ]; then (cd "$project" && if [ -f composer.lock ]; then composer install --no-interaction --prefer-dist; else composer install --no-interaction --prefer-dist && rm -f composer.lock; fi) || exit $?; fi; done < <(git ls-files -z -- "composer.json" ":(glob)**/composer.json")',
             'timeout_seconds' => 600,
         ],
     ])->and(TaskCheck::query()->sole()->kind)->toBe(TaskCheckKind::Baseline);
@@ -154,7 +154,7 @@ it('reports missing dependencies instead of claiming the default branch is broke
     'nested project vendor tools missing' => [null, 'sh: 1: vendor/bin/pest: not found', 'Project dependencies appear to be missing'],
 ]);
 
-it('installs the root Composer package without a lockfile and skips nested manifests without one', function (): void {
+it('installs the root Composer package without a lockfile, removes the lockfile it writes, and skips nested manifests without one', function (): void {
     $directory = sys_get_temp_dir().'/orbit-baseline-install-'.bin2hex(random_bytes(6));
     $checkout = $directory.'/checkout';
     $bin = $directory.'/bin';
@@ -166,7 +166,7 @@ it('installs the root Composer package without a lockfile and skips nested manif
         file_put_contents($checkout.'/'.$file, '{}');
     }
     (new Process(['git', 'add', '.'], $checkout))->mustRun();
-    file_put_contents($bin.'/composer', "#!/usr/bin/env bash\nmkdir -p vendor && touch vendor/autoload.php && pwd >> \"{$directory}/installs\"\n");
+    file_put_contents($bin.'/composer', "#!/usr/bin/env bash\nmkdir -p vendor && touch vendor/autoload.php && echo '{\"written\":true}' > composer.lock && pwd >> \"{$directory}/installs\"\n");
     chmod($bin.'/composer', 0755);
 
     try {
@@ -216,7 +216,11 @@ it('installs the root Composer package without a lockfile and skips nested manif
         (new Process(['bash', '-c', $install['command']], $checkout, ['PATH' => $bin.':'.getenv('PATH')]))->mustRun();
 
         $installs = array_map(realpath(...), file($directory.'/installs', FILE_IGNORE_NEW_LINES) ?: []);
-        expect($installs)->toBe([realpath($checkout), realpath($checkout.'/packages/locked')]);
+        expect($installs)->toBe([realpath($checkout), realpath($checkout.'/packages/locked')])
+            ->and(file_exists($checkout.'/composer.lock'))->toBeFalse()
+            ->and(file_get_contents($checkout.'/packages/locked/composer.lock'))->toContain('written');
+        $status = (new Process(['git', 'status', '--porcelain', '--untracked-files=all', '--', '*.lock'], $checkout))->mustRun()->getOutput();
+        expect($status)->toBe('AM packages/locked/composer.lock'.PHP_EOL);
     } finally {
         (new Process(['rm', '-rf', $directory]))->run();
     }

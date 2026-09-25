@@ -63,13 +63,13 @@ Each Project stores the command in `task_check`. It is an ordinary Project setti
 | `monorepo` | none |
 | `node-package` | none |
 
-The upgrade gives existing Projects the same defaults by type. An operator sets another command with `project:update --task-check=COMMAND`, or removes it with `project:update --clear-task-check`. A type change keeps the stored value.
+The type defaults apply to new Projects only. The upgrade sets `composer check` on every existing Project, whatever its type, because every Project runs that check today. An operator sets another command with `project:update --task-check=COMMAND`, or removes it with `project:update --clear-task-check`, for example on an existing `node-package` Project without a Composer `check` script. A type change keeps the stored value.
 
 The baseline and the handoff use the same setting. When it is null, the baseline runs only the setup steps, and the handoff runs no command. The handoff still compares the trees and verifies the deliverables. The `check_script` item applies only when the task check runs `composer check`.
 
 ### Baseline check
 
-Before the first implementer of a group starts, Orbit runs the task check on the fresh workspace. The detached check runs Project setup steps first. Orbit installs Composer dependencies when the command references Composer or `vendor/`. It walks tracked `composer.json` files and runs `composer install --no-interaction --prefer-dist` where `vendor/autoload.php` is missing and either the file is at the repository root or a sibling lockfile exists. A root package without a lockfile is installed too. Orbit skips nested manifests without a lockfile, because test fixtures use them. Orbit installs JavaScript dependencies when the command references a JavaScript runtime, package manager, Vite+, or `node_modules`. It walks tracked `package.json` files and runs `vp install --frozen-lockfile` where a supported lockfile exists and `node_modules` is missing. These guards skip projects whose dependencies are already installed. Project setup runs first so it can prepare credentials or configuration, and it may install dependencies itself.
+Before the first implementer of a group starts, Orbit runs the task check on the fresh workspace. The detached check runs Project setup steps first. Orbit installs Composer dependencies when the command runs `composer` or references `vendor/`. It walks tracked `composer.json` files and runs `composer install --no-interaction --prefer-dist` where `vendor/autoload.php` is missing and either the file is at the repository root or a sibling lockfile exists. A root package without a lockfile is installed too, and Orbit then removes the `composer.lock` that the install wrote, so it cannot reach the task commit. Orbit skips nested manifests without a lockfile, because test fixtures use them. Orbit installs JavaScript dependencies when the command references a JavaScript runtime, package manager, Vite+, or `node_modules`. It walks tracked `package.json` files and runs `vp install --frozen-lockfile` where a supported lockfile exists and `node_modules` is missing. These guards skip projects whose dependencies are already installed. Project setup runs first so it can prepare credentials or configuration, and it may install dependencies itself.
 
 An agent never starts until the baseline passes. A failed setup or dependency install asks for assistance and names the failed step. A check failure includes its exit code and real output. When the output identifies missing Composer or JavaScript dependencies, assistance says that Project dependencies appear to be missing instead of calling the branch broken. The operator fixes the setup, dependencies, command, or branch, then cancels and creates the group again. A group whose implementer already started skips the baseline.
 
@@ -103,7 +103,8 @@ The Gateway keeps one record per check run, linked to the `ready_for_review` rec
 - One check decides for every driver, because it does not depend on tool output.
 - A handoff takes as long as the Project's check. The implementer is idle during that time.
 - A Project whose task check is `composer check` cannot pass without a Composer `check` script. A Project without a task check hands off after its deliverables pass.
-- A `monorepo` Project, such as Orbit itself, has no task check until an operator sets one.
+- Existing Projects, Orbit itself included, keep `composer check` after the upgrade. An existing Project without a Composer `check` script does not hand off until an operator changes or clears its task check.
+- A new `monorepo` or `node-package` Project has no task check until an operator sets one.
 - Orbit's own `composer check` runs on uncommitted work, and its report says so.
 
 ## Affects
@@ -111,4 +112,4 @@ The Gateway keeps one record per check run, linked to the `ready_for_review` rec
 - Components: apps/gateway, apps/cli, packages/php-sdk, apps/docs
 - ADRs: [ADR 0106](/decisions/0106-derive-instance-capabilities-from-project-type), [ADR 0114](/decisions/0114-judge-task-completion-as-separate-checks), [ADR 0121](/decisions/0121-end-agent-turns-with-a-run-receipt)
 - Detail: [Tasks](/reference/tasks), [Projects](/reference/apps), and `bin/review-check` for uncommitted work
-- Verify: tests for the task check defaults by type, the upgrade backfill, and a null task check at baseline and handoff; scheduler tests for each check state, the lost-check restart and assistance, cancellation, and the changed-tree rerun; a test that runs the real check script against a local Git checkout; a `bin/review-check` test on an uncommitted tree; and an Incus run where Orbit's check gates the handoff
+- Verify: tests for the task check defaults by type, the upgrade that sets `composer check` on every existing Project, and a null task check at baseline and handoff; scheduler tests for each check state, the lost-check restart and assistance, cancellation, and the changed-tree rerun; a test that runs the real check script against a local Git checkout; a `bin/review-check` test on an uncommitted tree; and an Incus run where Orbit's check gates the handoff

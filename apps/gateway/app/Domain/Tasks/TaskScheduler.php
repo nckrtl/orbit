@@ -1363,7 +1363,7 @@ final readonly class TaskScheduler
      */
     private static function runsComposerCheck(?string $command): bool
     {
-        return $command !== null && preg_match('/\bcomposer\s+check\b/', $command) === 1;
+        return $command !== null && preg_match('/(?:^|[\s;&|(])composer\s+check(?=$|[\s;&|)])/', $command) === 1;
     }
 
     private function checkOutputShowsMissingDependencies(TaskCheck $check): bool
@@ -1392,10 +1392,10 @@ final readonly class TaskScheduler
             ->values()
             ->all();
         $command = $instance->app->taskCheckCommand();
-        if ($command !== null && preg_match('/\\bcomposer\\b|\\bvendor\\//i', $command) === 1) {
+        if ($command !== null && preg_match('/(?:^|[\\s;&|(])composer(?=$|\\s)|\\bvendor\\//i', $command) === 1) {
             $setup[] = [
                 'name' => self::BASELINE_COMPOSER_INSTALL_STEP,
-                'command' => 'while IFS= read -r -d "" manifest; do project="${manifest%/composer.json}"; [ "$project" = "$manifest" ] && project="."; if { [ "$project" = "." ] || [ -f "$project/composer.lock" ]; } && [ ! -f "$project/vendor/autoload.php" ]; then (cd "$project" && composer install --no-interaction --prefer-dist) || exit $?; fi; done < <(git ls-files -z -- "composer.json" ":(glob)**/composer.json")',
+                'command' => 'while IFS= read -r -d "" manifest; do project="${manifest%/composer.json}"; [ "$project" = "$manifest" ] && project="."; if { [ "$project" = "." ] || [ -f "$project/composer.lock" ]; } && [ ! -f "$project/vendor/autoload.php" ]; then (cd "$project" && if [ -f composer.lock ]; then composer install --no-interaction --prefer-dist; else composer install --no-interaction --prefer-dist && rm -f composer.lock; fi) || exit $?; fi; done < <(git ls-files -z -- "composer.json" ":(glob)**/composer.json")',
                 'timeout_seconds' => 600,
             ];
         }

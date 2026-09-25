@@ -51,6 +51,24 @@ describe('app updates', function (): void {
         expect($this->fixture->app->refresh()->taskCheckCommand())->toBeNull();
     });
 
+    it('records the task check in activity on the compatibility path', function (): void {
+        $this->patchJson('/api/v1/apps/'.$this->fixture->app->id, [
+            'task_check' => 'composer test',
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.task_check', 'composer test');
+
+        expect(Activity::query()->latest('id')->first()?->properties['input'] ?? null)
+            ->toBe(['task_check' => 'composer test']);
+
+        $this->patchJson('/api/v1/apps/'.$this->fixture->app->id, [
+            'task_check' => null,
+        ])->assertOk();
+
+        expect(Activity::query()->latest('id')->first()?->properties['input'] ?? null)
+            ->toBe(['task_check' => null]);
+    });
+
     it('stores the task check inside the update operation lock', function (): void {
         $lock = new class($this->fixture->app->id) implements AppInstanceEnvironmentOperationLock
         {
