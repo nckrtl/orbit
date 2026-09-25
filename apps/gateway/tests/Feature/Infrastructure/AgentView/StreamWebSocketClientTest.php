@@ -210,6 +210,37 @@ describe(StreamWebSocketClient::class, function (): void {
         }
     });
 
+    it('treats a connection reset as a closed connection', function (): void {
+        $server = ScriptedWebSocketServer::start('reset');
+
+        try {
+            $client = new StreamWebSocketClient;
+            $client->connect($server->endpoint(), 5.0);
+            $client->send(['event' => 'pusher:ping', 'data' => []]);
+
+            expect($server->waitFor('reset='))->toBe('reset=yes')
+                ->and(websocket_messages($client, 1, 3.0))->toBe([])
+                ->and($client->isConnected())->toBeFalse();
+        } finally {
+            $server->stop();
+        }
+    });
+
+    it('refuses a handshake that the server resets', function (): void {
+        $server = ScriptedWebSocketServer::start('reset-handshake');
+
+        try {
+            $client = new StreamWebSocketClient;
+
+            expect(fn () => $client->connect($server->endpoint(), 5.0))
+                ->toThrow(WebSocketException::class, 'Reverb refused the WebSocket handshake.')
+                ->and($client->isConnected())->toBeFalse()
+                ->and($server->waitFor('reset='))->toBe('reset=yes');
+        } finally {
+            $server->stop();
+        }
+    });
+
     it('subscribes with a signed membership, fills the view, and reconnects after Reverb drops it', function (): void {
         [$websocketNode, $credentials] = activate_websocket_role(Node::query()->create([
             'name' => 'websocket-node',

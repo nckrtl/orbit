@@ -123,13 +123,17 @@ final class StreamWebSocketClient implements WebSocketClient
         }
 
         while (is_resource($this->stream)) {
-            $chunk = fread($this->stream, 65_536);
+            // A peer that resets the connection makes `fread()` warn and return false. That is a lost
+            // connection like any other, so it closes the client instead of raising the warning.
+            $chunk = @fread($this->stream, 65_536);
 
-            if ($chunk === false || $chunk === '') {
-                if (feof($this->stream)) {
-                    $this->close();
-                }
+            if ($chunk === false || ($chunk === '' && feof($this->stream))) {
+                $this->close();
 
+                break;
+            }
+
+            if ($chunk === '') {
                 break;
             }
 
@@ -240,14 +244,15 @@ final class StreamWebSocketClient implements WebSocketClient
             "\r\n",
         ]);
 
-        if (fwrite($this->stream(), $request) === false) {
+        // A reset connection makes `fwrite()` and `fgets()` warn; the handshake then fails as refused.
+        if (@fwrite($this->stream(), $request) === false) {
             throw new WebSocketException('Could not send the WebSocket handshake.');
         }
 
         $response = '';
 
         while (! str_contains($response, "\r\n\r\n") && strlen($response) < 16_384) {
-            $line = fgets($this->stream());
+            $line = @fgets($this->stream());
 
             if ($line === false) {
                 break;

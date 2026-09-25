@@ -15,7 +15,8 @@ $secret = $argv[4] ?? '';
 $nodeId = (int) ($argv[5] ?? 0);
 
 $context = stream_context_create(['ssl' => ['local_cert' => $cert, 'local_pk' => $key, 'verify_peer' => false]]);
-$server = stream_socket_server('tls://127.0.0.1:0', $errno, $error, STREAM_SERVER_BIND | STREAM_SERVER_LISTEN, $context);
+// The server accepts plain TCP and starts TLS itself, so the `reset` mode can keep the raw socket.
+$server = stream_socket_server('tcp://127.0.0.1:0', $errno, $error, STREAM_SERVER_BIND | STREAM_SERVER_LISTEN, $context);
 
 if ($server === false) {
     fwrite(STDERR, "listen failed: {$error}\n");
@@ -29,6 +30,14 @@ function say(string $line): void
 {
     fwrite(STDOUT, $line."\n");
     fflush(STDOUT);
+}
+
+/** Closes with a TCP reset and no close frame or TLS close_notify, as a crashed or restarted Reverb can. */
+function reset_connection(Socket $socket): void
+{
+    socket_set_option($socket, SOL_SOCKET, SO_LINGER, ['l_onoff' => 1, 'l_linger' => 0]);
+    socket_close($socket);
+    say('reset=yes');
 }
 
 function frame(int $opcode, string $payload, bool $final = true): string
@@ -121,10 +130,38 @@ for ($connection = 1; $connection <= $connections; $connection++) {
         exit(1);
     }
 
+    $socket = str_starts_with($mode, 'reset') ? socket_import_stream($client) : null;
+
+    if (stream_socket_enable_crypto($client, true, STREAM_CRYPTO_METHOD_TLS_SERVER) !== true) {
+        fclose($client);
+
+        continue;
+    }
+
     say('accepted='.microtime(true));
+
+    if ($mode === 'reset-handshake') {
+        // Read the whole handshake request, then reset instead of answering it.
+        while (($line = fgets($client)) !== false && $line !== "\r\n") {
+        }
+
+        reset_connection($socket);
+
+        continue;
+    }
 
     if (! handshake($client, $mode)) {
         fclose($client);
+
+        continue;
+    }
+
+    if ($mode === 'reset') {
+        // Wait for the client's first frame, which proves its handshake is done, then reset.
+        $read = [$client];
+        $write = $except = null;
+        stream_select($read, $write, $except, 10);
+        reset_connection($socket);
 
         continue;
     }
