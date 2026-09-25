@@ -43,13 +43,19 @@ Enable fails closed when the cache connection is missing, is not Redis, or names
 
 ## orbit proxycli:disable
 
-Stop the collector, remove the Process, and withdraw `collector.cli-proxy-api.orbit`.
+Stop the collector for the whole fleet, remove the Process, and withdraw `collector.cli-proxy-api.orbit` and its certificate. The Gateway also deletes the stored CLIProxyAPI management key and the read and control tokens. Enabling again needs the management key file, and CodexBar needs the new read token.
 
 ```bash
-orbit proxycli:disable [--json]
+orbit proxycli:disable [--yes] [--json]
 ```
 
-Disabling an already disabled feature succeeds. The Redis connection and Valkey data stay.
+| Option | Required | Meaning |
+| --- | --- | --- |
+| `--yes` | in noninteractive and JSON modes | Confirm the fleet-wide stop without a prompt. |
+
+In a terminal the command asks a default-No question that names the fleet effect. Noninteractive and JSON calls without `--yes` fail with `input.confirmation_required` before any Gateway request. Declining or cancelling fails with `input.cancelled` and changes nothing.
+
+Disabling an already disabled feature succeeds. The Redis connection and Valkey data stay. `extension:disable proxycli` does not run this command; it only hides the commands on one machine.
 
 ## orbit proxycli:status
 
@@ -105,6 +111,8 @@ The command updates CLIProxyAPI status and rewrites the snapshot from cache. It 
 | Code | Meaning |
 | --- | --- |
 | `extension.disabled` | The `proxycli` extension is disabled on this machine. |
+| `input.confirmation_required` | `proxycli:disable` ran without `--yes` where it cannot prompt. |
+| `input.cancelled` | The operator declined or cancelled the `proxycli:disable` question. |
 | `proxycli.disabled` | The fleet feature is disabled. |
 | `proxycli.cache_missing` | Enable names no Redis Database connection. |
 | `proxycli.cache_invalid` | The named connection is not Redis. |

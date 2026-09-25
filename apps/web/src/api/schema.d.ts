@@ -2222,7 +2222,7 @@ export interface paths {
         post: operations["proxycli-enable"];
         /**
          * Disable proxycli
-         * @description Stops the collector Process, withdraws collector.cli-proxy-api.orbit, and hides provider reads. The Redis connection and Valkey data stay.
+         * @description Stops the collector Process for the whole fleet, withdraws collector.cli-proxy-api.orbit and its certificate, deletes the stored CLIProxyAPI management key and the read and control tokens, and hides provider reads. Enabling again needs the management key. The Redis connection and Valkey data stay.
          */
         delete: operations["proxycli-disable"];
         options?: never;

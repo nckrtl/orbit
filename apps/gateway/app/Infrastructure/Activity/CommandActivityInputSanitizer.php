@@ -14,39 +14,71 @@ final readonly class CommandActivityInputSanitizer
 
     private const string INVALID_PROPERTY_NAME = '[INVALID_PROPERTY_NAME]';
 
-    /** @var list<string> */
-    private const array FORBIDDEN_KEYS = [
-        'app_key',
-        'appkey',
-        'application_key',
-        'operation_token',
-        'executor_secret',
-        'password',
-        'password_hash',
-        'secret',
+    /**
+     * A field is secret when one of its name segments is one of these words.
+     *
+     * @var list<string>
+     */
+    private const array SECRET_WORDS = [
+        'key',
+        'keys',
         'token',
-        'api_key',
-        'api_token',
-        'access_token',
-        'refresh_token',
-        'private_key',
-        'pre_shared_key',
+        'tokens',
+        'secret',
+        'secrets',
+        'password',
+        'passwords',
+        'passwd',
+        'passphrase',
+        'credential',
+        'credentials',
         'bearer',
-        'bearer_token',
+        'pem',
+        'apikey',
+        'appkey',
+        'authtoken',
+        'accesstoken',
+        'privatekey',
+        'authorization',
+        'cookie',
+        'cookies',
     ];
 
-    private const string SECRET_KEY_CORE =
-        '(?:APP[_-]?KEY|APPLICATION[_-]?KEY|APPKEY|API[_-]?KEY|API[_-]?TOKEN|ACCESS[_-]?TOKEN|'
-        .'REFRESH[_-]?TOKEN|OPERATION[_-]?TOKEN|EXECUTOR[_-]?SECRET|PRIVATE[_-]?KEY|'
-        .'PRE[_-]?SHARED[_-]?KEY|PASSWORD[_-]?HASH|PASSWORD|SECRET|TOKEN|BEARER[_-]?TOKEN|BEARER)';
+    /**
+     * Audited fields whose names contain a secret word but whose values are public.
+     *
+     * @var list<string>
+     */
+    private const array NON_SECRET_KEYS = [
+        'public_key',
+        'wireguard_public_key',
+        'ssh_public_key',
+        'public_pem',
+        'host_key_fingerprint',
+        'runtime_key',
+        'env_key',
+        'idempotency_key',
+        'token_expires_at',
+    ];
 
-    private const string SECRET_KEY_IDENTIFIER = '(?:[A-Za-z][A-Za-z0-9]*[_-])*'.self::SECRET_KEY_CORE;
+    /** Secret-named fields whose numeric values are usage counts, such as `tokens` or `token_count`. */
+    private const array NUMERIC_METRIC_SUFFIXES = ['tokens', 'count'];
+
+    private const string SECRET_KEY_PREFIX = '(?:[A-Za-z][A-Za-z0-9]*[_-])';
+
+    private const string SECRET_KEY_SUFFIX = '(?:[_-](?:HASH|BASE))?';
+
+    /** A bare `key` in text is prose such as `Missing key: name`, so a key word needs a prefix such as `API_KEY`. */
+    private const string SECRET_KEY_IDENTIFIER =
+        '(?:'.self::SECRET_KEY_PREFIX.'*'
+        .'(?:TOKENS?|SECRETS?|PASSWORDS?|PASSWD|PASSPHRASE|CREDENTIALS?|BEARER|APIKEY|APPKEY|AUTHTOKEN|ACCESSTOKEN|PRIVATEKEY)'
+        .'|'.self::SECRET_KEY_PREFIX.'+KEYS?)'.self::SECRET_KEY_SUFFIX;
 
     private const string PEM_BLOCK_PATTERN = '/-----BEGIN [A-Z0-9 ]+-----[\s\S]*?-----END [A-Z0-9 ]+-----/';
 
     public function sanitize(mixed $value, ?string $key = null): mixed
     {
-        if (is_string($key) && $this->isSensitiveKey($key)) {
+        if (is_string($key) && $this->isSensitiveKey($key) && ! $this->isNumericMetric($key, $value)) {
             return self::REDACTED;
         }
 
@@ -106,7 +138,7 @@ final readonly class CommandActivityInputSanitizer
             ) ?? $redacted;
         $redacted =
             preg_replace(
-                pattern: '/\b((?:Proxy-)?Authorization)\s*:\s*[^\s\'\"]+(?:\s+[^\s\'\"]+)?/i',
+                pattern: '/\b((?:Proxy-)?Authorization)\s*:\s*(?!\[REDACTED\])[^\s\'\"]+(?:\s+[^\s\'\"]+)?/i',
                 replacement: '$1: '.self::REDACTED,
                 subject: $redacted,
             ) ?? $redacted;
@@ -138,22 +170,40 @@ final readonly class CommandActivityInputSanitizer
             ) ?? $redacted;
     }
 
-    private function isSensitiveKey(string $key): bool
+    /**
+     * Booleans and null carry no secret. Numbers stay only under usage-count names.
+     */
+    private function isNumericMetric(string $key, mixed $value): bool
     {
-        $underscored = str_replace(search: '-', replace: '_', subject: $key);
-        $normalized = preg_match('/\A[A-Z0-9_]+\z/D', $underscored) === 1
-            ? strtolower($underscored)
-            : Str::snake($underscored);
-
-        if (in_array($normalized, self::FORBIDDEN_KEYS, strict: true)) {
+        if (is_bool($value) || $value === null) {
             return true;
         }
 
-        return
-            preg_match(
-                '/(?:^|_)(app_?key|password(?:_hash)?|secret|token|api_?key|api_?token|access_?token|refresh_?token|private_?key|pre_?shared_?key|bearer(?:_?token)?)$/',
-                $normalized,
-            ) === 1;
+        if (! is_int($value) && ! is_float($value)) {
+            return false;
+        }
+
+        $segments = explode('_', $this->normalizeKey($key));
+
+        return in_array(end($segments), self::NUMERIC_METRIC_SUFFIXES, strict: true);
+    }
+
+    private function normalizeKey(string $key): string
+    {
+        $separated = preg_replace('/(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])/', '_', $key) ?? $key;
+
+        return trim(strtolower(preg_replace('/[^A-Za-z0-9]+/', '_', $separated) ?? $separated), '_');
+    }
+
+    private function isSensitiveKey(string $key): bool
+    {
+        $normalized = $this->normalizeKey($key);
+
+        if (in_array($normalized, self::NON_SECRET_KEYS, strict: true)) {
+            return false;
+        }
+
+        return array_intersect(explode('_', $normalized), self::SECRET_WORDS) !== [];
     }
 
     /**

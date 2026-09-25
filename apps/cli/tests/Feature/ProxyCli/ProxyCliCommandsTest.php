@@ -135,19 +135,33 @@ it('updates an account from cache after the status patch', function (): void {
         ->and($mock->getLastPendingRequest()->body()->all())->toBe(['disabled' => true]);
 });
 
-it('disables the fleet collector', function (): void {
-    MockClient::global([
+it('disables the fleet collector with explicit consent', function (): void {
+    $mock = MockClient::global([
         DisableProxyCliRequest::class => proxycli_cli_status_response(payload: [
             'enabled' => false,
             'collected_at' => null,
         ]),
     ]);
 
-    [$exit, $output] = proxycli_cli_display('proxycli:disable', ['--json' => true]);
+    [$exit, $output] = proxycli_cli_display('proxycli:disable', ['--yes' => true, '--json' => true]);
 
     expect($exit)->toBe(0)
-        ->and(json_decode($output, true)['enabled'])->toBeFalse();
+        ->and(json_decode($output, true)['enabled'])->toBeFalse()
+        ->and($mock->getLastPendingRequest())->not->toBeNull();
 });
+
+it('refuses to disable the fleet collector without --yes when it cannot prompt', function (array $options, string $expected): void {
+    $mock = MockClient::global();
+
+    [$exit, $output] = proxycli_cli_display('proxycli:disable', $options);
+
+    expect($exit)->toBe(1)
+        ->and($output)->toContain($expected)
+        ->and($mock->getLastPendingRequest())->toBeNull();
+})->with([
+    'json' => [['--json' => true], '"code":"input.confirmation_required"'],
+    'noninteractive human' => [[], 'Non-interactive ProxyCli disable requires --yes.'],
+]);
 
 it('shows fleet status including a null collected_at', function (): void {
     MockClient::global([

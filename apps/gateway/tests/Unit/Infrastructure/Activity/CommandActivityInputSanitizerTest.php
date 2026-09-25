@@ -23,7 +23,6 @@ it('redacts nested structured secret keys without matching ordinary siblings', f
         'pre_shared_key' => $secret,
         'nested' => ['user_password' => $secret],
         'public_key' => 'peer-public',
-        'token_count' => 3,
         'secretary' => $active,
     ]))->toBe([
         'APP_KEY' => $redacted,
@@ -37,9 +36,135 @@ it('redacts nested structured secret keys without matching ordinary siblings', f
         'pre_shared_key' => $redacted,
         'nested' => ['user_password' => $redacted],
         'public_key' => 'peer-public',
-        'token_count' => 3,
         'secretary' => $active,
     ]);
+});
+
+it('fails closed for any field named like a key, token, secret, or password', function (string $name): void {
+    $sanitizer = new CommandActivityInputSanitizer;
+    $secret = (string) Str::uuid();
+
+    expect($sanitizer->sanitizeProperties([$name => $secret, 'nested' => [$name => ['value' => $secret]]]))
+        ->toBe([$name => '[REDACTED]', 'nested' => [$name => '[REDACTED]']]);
+})->with([
+    'cliproxy_management_key',
+    'cliproxyManagementKey',
+    'CLIPROXY-MANAGEMENT-KEY',
+    'signing_keys',
+    'webhookSecret',
+    'client_secrets',
+    'auth_token',
+    'authtoken',
+    'refresh_tokens',
+    'token_count',
+    'db_password',
+    'passwd',
+    'ssh_passphrase',
+    'service_credentials',
+    'credential',
+    'certificate_pem',
+    'managementKEY',
+    'clientSECRET',
+    'apiToken',
+    'APIToken',
+    'X-Api-Key',
+    'authorization',
+]);
+
+it('keeps usage counts, booleans, and null under secret-named fields', function (): void {
+    $sanitizer = new CommandActivityInputSanitizer;
+    $counts = ['tokens' => 300, 'input_tokens' => 12, 'usedTokens' => 40, 'token_count' => 3, 'password_set' => true, 'api_key' => null];
+
+    expect($sanitizer->sanitizeProperties($counts))->toBe($counts);
+});
+
+it('redacts numeric secrets under secret-named fields', function (): void {
+    $sanitizer = new CommandActivityInputSanitizer;
+
+    expect($sanitizer->sanitizeProperties(['password' => 12345678, 'api_key' => 9876543210, 'pin_secret' => 1.5]))
+        ->toBe(['password' => '[REDACTED]', 'api_key' => '[REDACTED]', 'pin_secret' => '[REDACTED]']);
+});
+
+it('redacts header maps', function (): void {
+    $sanitizer = new CommandActivityInputSanitizer;
+
+    expect($sanitizer->sanitizeProperties(['headers' => [
+        'Authorization' => 'Basic dXNlcjpwYXNz',
+        'Proxy-Authorization' => 'Basic dXNlcjpwYXNz',
+        'Cookie' => 'session=abc',
+        'Set-Cookie' => 'session=abc; HttpOnly',
+        'Accept' => 'application/json',
+    ]]))->toBe(['headers' => [
+        'Authorization' => '[REDACTED]',
+        'Proxy-Authorization' => '[REDACTED]',
+        'Cookie' => '[REDACTED]',
+        'Set-Cookie' => '[REDACTED]',
+        'Accept' => 'application/json',
+    ]]);
+});
+
+it('keeps secret words in text assignments beyond the name rule', function (): void {
+    $sanitizer = new CommandActivityInputSanitizer;
+
+    expect($sanitizer->redactText('PASSWORD_HASH=abc123 SECRET_KEY_BASE=def456 status=ok'))
+        ->toBe('PASSWORD_HASH=[REDACTED] SECRET_KEY_BASE=[REDACTED] status=ok')
+        ->and($sanitizer->redactText('{"password_hash":"abc123"}'))
+        ->toBe('{"password_hash":"[REDACTED]"}')
+        ->and($sanitizer->redactText('API_KEY: abc123'))
+        ->toBe('API_KEY: [REDACTED]');
+});
+
+it('keeps prose that mentions a bare key', function (): void {
+    $sanitizer = new CommandActivityInputSanitizer;
+
+    expect($sanitizer->redactText('Missing key: APP_NAME'))->toBe('Missing key: APP_NAME')
+        ->and($sanitizer->redactText('Duplicate keys: APP_NAME, APP_ENV'))->toBe('Duplicate keys: APP_NAME, APP_ENV');
+});
+
+it('keeps audited non-secret fields whose names contain a secret word', function (string $name): void {
+    $sanitizer = new CommandActivityInputSanitizer;
+
+    expect($sanitizer->sanitizeProperties([$name => 'public-value']))->toBe([$name => 'public-value']);
+})->with([
+    'public_key',
+    'wireguard_public_key',
+    'wireguardPublicKey',
+    'ssh_public_key',
+    'public_pem',
+    'host_key_fingerprint',
+    'runtime_key',
+    'env_key',
+    'idempotency_key',
+    'token_expires_at',
+]);
+
+it('keeps ordinary fields for audit', function (): void {
+    $sanitizer = new CommandActivityInputSanitizer;
+    $input = [
+        'node_id' => 4,
+        'cache_connection' => 'valkey',
+        'cliproxy_url' => 'http://127.0.0.1:8317',
+        'secretary' => 'active',
+        'keyboard' => 'us',
+        'valkey_connection' => 'e2e-valkey',
+        'image' => 'valkey/valkey:8.1',
+        'monkey' => 'patch',
+    ];
+
+    expect($sanitizer->sanitizeProperties($input))->toBe($input);
+});
+
+it('returns already redacted properties unchanged', function (): void {
+    $sanitizer = new CommandActivityInputSanitizer;
+    $once = $sanitizer->sanitizeProperties([
+        'cliproxy_management_key' => (string) Str::uuid(),
+        'message' => 'Authorization: Bearer '.Str::random(32).' then continued APP_KEY=abc cliproxy_management_key=def',
+        'repository_url' => 'https://alice:secret@example.com/acme/site.git',
+        'environment' => ['APP_ENV' => 'production'],
+    ]);
+
+    expect($sanitizer->sanitizeProperties($once))->toBe($once)
+        ->and($once['message'])->toBe('Authorization: [REDACTED] then continued APP_KEY=[REDACTED] cliproxy_management_key=[REDACTED]');
 });
 
 it('redacts secret assignments and authorization credentials from text', function (): void {
