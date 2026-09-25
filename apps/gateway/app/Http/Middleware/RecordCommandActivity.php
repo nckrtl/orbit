@@ -71,7 +71,7 @@ final readonly class RecordCommandActivity
 
     public function handle(Request $request, Closure $next): Response
     {
-        $this->deadline->start(Config::float('orbit.command_timeout', 900.0));
+        $this->deadline->start(Config::float('orbit.command_timeout', 570.0), CommandDeadline::CleanupReserveSeconds);
 
         try {
             $response = $this->record($request, $next);

@@ -30,6 +30,44 @@ it('shares one decreasing budget across sequential process work', function (): v
     expect($deadline->cap(900.0))->toBe(900.0);
 });
 
+it('ends forward work early and keeps the reserve for cleanup after the deadline cuts it short', function (): void {
+    $now = 0.0;
+    $deadline = new CommandDeadline(static function () use (&$now): float {
+        return $now;
+    });
+    $deadline->start(570.0, CommandDeadline::CleanupReserveSeconds);
+    $now = 500.0;
+
+    expect($deadline->cap(900.0))->toBe(50.0);
+
+    $now = 550.0;
+
+    expect(fn () => $deadline->cap(60.0))->toThrow(ResourceOperationException::class);
+
+    // Rollback after the failure runs inside the reserve, up to the deadline itself.
+    expect($deadline->cap(60.0))->toBe(20.0);
+
+    $now = 570.0;
+
+    expect(fn () => $deadline->cap(60.0))->toThrow(ResourceOperationException::class);
+});
+
+it('never lets a nested operation extend the running deadline', function (): void {
+    $now = 0.0;
+    $deadline = new CommandDeadline(static function () use (&$now): float {
+        return $now;
+    });
+    $deadline->start(570.0);
+    $now = 100.0;
+    $deadline->start(1_500.0);
+
+    expect($deadline->cap(9_999.0))->toBe(470.0);
+
+    $deadline->start(60.0);
+
+    expect($deadline->cap(9_999.0))->toBe(60.0);
+});
+
 it('fails an expired command with a stable error that names the deadline', function (): void {
     $now = 100.0;
     $deadline = new CommandDeadline(static function () use (&$now): float {
@@ -41,6 +79,6 @@ it('fails an expired command with a stable error that names the deadline', funct
     expect(fn () => $deadline->cap(60.0))->toThrow(function (ResourceOperationException $exception): void {
         expect($exception->errorCode)->toBe('command.deadline_exceeded')
             ->and($exception->status)->toBe(504)
-            ->and($exception->getMessage())->toBe('The 570-second API command deadline was exceeded.');
+            ->and($exception->getMessage())->toBe('The 570-second command deadline was exceeded.');
     });
 });

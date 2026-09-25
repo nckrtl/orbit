@@ -38,10 +38,12 @@ orbit instance:teardown-step:create drop-sqlite --project=4 --command='rm -f dat
 | --- | --- |
 | `name` | Unique within that Project list. The same pattern as a deploy step name. |
 | `command` | One nonempty UTF-8 command of at most 16 KiB with no NUL byte. The operating agent owns this command. |
-| `timeout_seconds` | Whole seconds from 1 through 900. The default is 600. |
+| `timeout_seconds` | Whole seconds from 1 through 540. The default is 240. |
 | `before`, `after` | Exclusive placement by step name within the same list. Omit both to append. |
 
-The Gateway refuses a duplicate name, a placement that names an unknown step, both placement options, a thirty-third step, a timeout over 900 seconds, or a list whose timeouts sum to more than 3,600 seconds. It stores no change. The setup list and the teardown list each have their own count and timeout total. The API command also has a shared 570-second deadline, including provisioning and cleanup. A configured list total does not extend that deadline. Keep normal setup and teardown comfortably below it. Authorized reads return commands. Activity records omit command text and command output.
+The Gateway refuses a duplicate name, a placement that names an unknown step, both placement options, a thirty-third step, a timeout over 540 seconds, or a list whose timeouts sum to more than 540 seconds. It stores no change. The setup list and the teardown list each have their own count and timeout total.
+
+One API request runs a whole list, so both limits fit inside its 570-second deadline, whose forward work ends 20 seconds early to leave time for cleanup. Provisioning shares that deadline, so keep normal setup and teardown well below the limit. Authorized reads return commands. Activity records omit command text and command output.
 
 An empty list skips that phase.
 

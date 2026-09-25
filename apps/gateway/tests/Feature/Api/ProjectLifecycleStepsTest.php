@@ -33,7 +33,7 @@ it('records ordered setup steps and keeps the command out of activity', function
         'command' => 'composer install --no-interaction',
     ])->assertCreated()
         ->assertJsonPath('data.name', 'install-php')
-        ->assertJsonPath('data.timeout_seconds', 600);
+        ->assertJsonPath('data.timeout_seconds', 240);
 
     $this->postJson($this->url, [
         'name' => 'install-js',
@@ -65,7 +65,11 @@ it('refuses a duplicate name and a timeout above the cap without storing a chang
     $this->postJson($this->url, ['name' => 'install-php', 'command' => 'composer update'])
         ->assertUnprocessable();
 
-    $this->postJson($this->url, ['name' => 'slow', 'command' => 'composer install', 'timeout_seconds' => 901])
+    $this->postJson($this->url, ['name' => 'slow', 'command' => 'composer install', 'timeout_seconds' => 541])
+        ->assertUnprocessable();
+
+    // One API request runs the whole list, so the list must fit the request too.
+    $this->postJson($this->url, ['name' => 'slow', 'command' => 'composer install', 'timeout_seconds' => 301])
         ->assertUnprocessable();
 
     expect(ProjectLifecycleStep::query()->where('app_id', $this->project->id)->count())->toBe(1);
@@ -79,4 +83,23 @@ it('records a teardown step on its own list', function (): void {
         ->assertJsonPath('data.name', 'drop-sqlite');
 
     $this->getJson($this->url)->assertOk()->assertJsonCount(0, 'data');
+});
+
+it('lowers stored step timeouts that one request could never honor', function (): void {
+    foreach ([['slow', 900, 0], ['default', 600, 1], ['fits', 120, 2]] as [$name, $timeout, $position]) {
+        ProjectLifecycleStep::query()->create([
+            'app_id' => $this->project->id,
+            'phase' => 'setup',
+            'name' => $name,
+            'command' => 'true',
+            'timeout_seconds' => $timeout,
+            'position' => $position,
+        ]);
+    }
+
+    (require database_path('migrations/2026_09_26_090000_cap_project_lifecycle_step_timeouts.php'))->up();
+
+    expect(ProjectLifecycleStep::query()->orderBy('position')->pluck('timeout_seconds')->all())->toBe([540, 540, 120]);
+
+    $this->getJson($this->url)->assertOk()->assertJsonPath('data.0.timeout_seconds', 540);
 });

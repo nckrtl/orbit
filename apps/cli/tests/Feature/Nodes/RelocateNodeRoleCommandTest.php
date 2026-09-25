@@ -114,6 +114,23 @@ it('shows deterministic human output for a relocated gateway role', function ():
         ->assertExitCode(0);
 });
 
+it('warns with the follow-up when Metrics was not reconciled after the move', function (): void {
+    $followUp = 'Metrics on node [app-dev] was not reconciled after the move: A Metrics command on node [app-dev] did not finish within 120 seconds. Run `orbit node:role:add app-dev metrics --converge` once node [app-dev] is healthy.';
+    MockClient::global([
+        RelocateNodeRoleRequest::class => MockResponse::make([
+            'data' => [...relocated_gateway_role_payload(), 'follow_up' => $followUp],
+            'meta' => ['request_id' => relocate_node_role_request_id()],
+        ]),
+    ]);
+
+    $this
+        ->artisan('node:role:relocate', ['node' => '7', 'role' => 'gateway', '--force' => true])
+        ->expectsOutputToContain('Relocated Node role')
+        ->expectsOutputToContain('Warning: Metrics on node [app-dev] was not reconciled after the move')
+        ->expectsOutputToContain('Request ID: '.relocate_node_role_request_id())
+        ->assertExitCode(0);
+});
+
 it('resolves a node name through the node list before relocating the role', function (): void {
     $mockClient = MockClient::global([
         ListNodesRequest::class => MockResponse::make([

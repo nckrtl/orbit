@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Metrics\MetricsExporterSshExecutor;
+use App\Infrastructure\Metrics\MetricsRemoteCommand;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
@@ -61,6 +62,7 @@ it('converges protected exporter configuration and exact Metrics-owned firewall 
         metricsExporterResult(stdout: "Status: active\n"),
         metricsExporterResult(exitCode: 3, stdout: "inactive\n"),
         metricsExporterResult(),
+        metricsExporterResult(exitCode: 1),
         metricsExporterResult(),
         metricsExporterResult(),
         metricsExporterResult(),
@@ -88,7 +90,7 @@ it('converges protected exporter configuration and exact Metrics-owned firewall 
 
     expect($arguments)
         ->toContain(
-            ['sudo', 'apt-get', 'install', '--yes', '--no-install-recommends', '--', 'prometheus-node-exporter'],
+            ['sudo', 'apt-get', '-o', 'DPkg::Lock::Timeout=60', 'install', '--yes', '--no-install-recommends', '--', 'prometheus-node-exporter'],
             ['sudo', 'systemctl', 'daemon-reload'],
             ['sudo', 'systemctl', 'restart', 'prometheus-node-exporter'],
             [
@@ -403,6 +405,31 @@ it('fails removal when the exporter service remains active', function (): void {
         ->toThrow(ResourceOperationException::class, 'service remained active');
 });
 
+it('only verifies an installed exporter package and bounds a missing one by the download limit', function (bool $installed): void {
+    $ssh = new MetricsExporterStatefulSsh(
+        configuration: null,
+        serviceActive: false,
+        firewall: false,
+        packageInstalled: $installed,
+    );
+
+    metricsExporterExecutor($ssh)->converge(
+        metricsExporterNode('app-prod', '10.44.0.4'),
+        metricsExporterNode('metrics', '10.44.0.3'),
+    );
+
+    $installs = array_values(array_filter(
+        $ssh->commands,
+        static fn (RemoteCommand $command): bool => in_array('apt-get', $command->arguments, true),
+    ));
+
+    expect($installs)->toHaveCount($installed ? 0 : 1);
+
+    if (! $installed) {
+        expect($installs[0]->timeout)->toBe(MetricsRemoteCommand::DownloadTimeoutSeconds);
+    }
+})->with(['installed' => [true], 'missing' => [false]]);
+
 it('deletes both retired artifacts without inspecting them before convergence mutation', function (): void {
     $ssh = new MetricsExporterStatefulSsh(
         configuration: null,
@@ -423,7 +450,7 @@ it('deletes both retired artifacts without inspecting them before convergence mu
     $cleanup = metricsExporterRetiredArtifactCleanupArguments();
     $cleanupIndex = array_search($cleanup, $arguments, strict: true);
     $mutationIndex = array_search(
-        ['sudo', 'apt-get', 'install', '--yes', '--no-install-recommends', '--', 'prometheus-node-exporter'],
+        ['sudo', 'apt-get', '-o', 'DPkg::Lock::Timeout=60', 'install', '--yes', '--no-install-recommends', '--', 'prometheus-node-exporter'],
         $arguments,
         strict: true,
     );
@@ -501,7 +528,7 @@ it('maps a convergence cleanup failure before exporter mutation', function (): v
         ->toBeTrue()
         ->and($arguments)
         ->not->toContain(
-            ['sudo', 'apt-get', 'install', '--yes', '--no-install-recommends', '--', 'prometheus-node-exporter'],
+            ['sudo', 'apt-get', '-o', 'DPkg::Lock::Timeout=60', 'install', '--yes', '--no-install-recommends', '--', 'prometheus-node-exporter'],
         );
 });
 
@@ -688,6 +715,7 @@ final class MetricsExporterStatefulSsh implements SshExecutor
         public bool $retiredArtifacts = true,
         private bool $removeFirewallChangesState = true,
         public string $firewallSource = '10.44.0.3',
+        private bool $packageInstalled = false,
     ) {}
 
     public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
@@ -708,6 +736,9 @@ final class MetricsExporterStatefulSsh implements SshExecutor
         }
 
         return match ($command->arguments) {
+            ['dpkg-query', '--show', '--showformat=${Status}', '--', 'prometheus-node-exporter'] => $this->packageInstalled
+                ? metricsExporterResult(stdout: 'install ok installed')
+                : metricsExporterResult(exitCode: 1),
             ['sudo', 'test', '-e', '/etc/systemd/system/prometheus-node-exporter.service.d/orbit.conf'] => metricsExporterResult(
                 exitCode: $this->configuration === null ? 1 : 0,
             ),
@@ -719,7 +750,7 @@ final class MetricsExporterStatefulSsh implements SshExecutor
                     ? metricsExporterFirewallStatus($connection->host, $this->firewallSource)
                     : "Status: active\n",
             ),
-            ['sudo', 'apt-get', 'install', '--yes', '--no-install-recommends', '--', 'prometheus-node-exporter'] => metricsExporterResult(),
+            ['sudo', 'apt-get', '-o', 'DPkg::Lock::Timeout=60', 'install', '--yes', '--no-install-recommends', '--', 'prometheus-node-exporter'] => metricsExporterResult(),
             [
                 'sudo',
                 'install',

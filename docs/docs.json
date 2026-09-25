@@ -719,7 +719,8 @@
               "decisions/0154-recover-the-gateway-agent-view-without-a-membership-change",
               "decisions/0155-authenticate-the-node-agent-with-a-per-node-secret",
               "decisions/0156-route-the-private-domain-on-the-gateway-machine-to-vpn-dns",
-              "decisions/0157-keep-private-caddy-sites-off-the-public-listener"
+              "decisions/0157-keep-private-caddy-sites-off-the-public-listener",
+              "decisions/0158-continue-long-gateway-operations-across-bounded-requests"
             ]
           }
         ]

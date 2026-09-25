@@ -39,6 +39,9 @@ final readonly class MetricsCadvisorSshExecutor implements MetricsCadvisorRuntim
 
     private const string OwnershipMarker = MetricsFootprint::CadvisorUnitMarker;
 
+    /** The longest the pinned binary may take to download; the command itself gets 30 seconds more. */
+    public const int DownloadMaxSeconds = 120;
+
     public function __construct(
         private SshExecutor $ssh,
         private SshKeyProvider $keys,
@@ -275,8 +278,9 @@ final readonly class MetricsCadvisorSshExecutor implements MetricsCadvisorRuntim
             $node,
             new RemoteCommand([
                 'sudo', 'curl', '--fail', '--location', '--silent', '--show-error',
+                '--connect-timeout', '10', '--max-time', (string) self::DownloadMaxSeconds,
                 '--output', $candidate, '--', MetricsFootprint::CadvisorDownloadUrl,
-            ]),
+            ], timeout: self::DownloadMaxSeconds + 30.0),
             'metrics.cadvisor_binary_download_failed',
             'The cAdvisor binary could not be downloaded.',
         );
@@ -659,7 +663,7 @@ final readonly class MetricsCadvisorSshExecutor implements MetricsCadvisorRuntim
 
     private function raw(Node $node, RemoteCommand $command): CommandResult
     {
-        return $this->ssh->execute($this->connection($node), $command);
+        return MetricsRemoteCommand::execute($this->ssh, $this->connection($node), $node, $command);
     }
 
     private function run(

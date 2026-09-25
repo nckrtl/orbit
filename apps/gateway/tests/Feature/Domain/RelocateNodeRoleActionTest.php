@@ -53,7 +53,7 @@ describe(RelocateNodeRoleAction::class, function (): void {
         ]);
         app(GatewayServingHost::class)->remember($source);
 
-        $result = app(RelocateNodeRoleAction::class)->execute($target, RoleName::Gateway, force: true);
+        $result = app(RelocateNodeRoleAction::class)->execute($target, RoleName::Gateway, force: true)->assignment;
 
         expect($result->is($assignment))
             ->toBeTrue()
@@ -141,7 +141,7 @@ describe(RelocateNodeRoleAction::class, function (): void {
         ]);
         app(GatewayServingHost::class)->remember($source);
 
-        app(RelocateNodeRoleAction::class)->execute($target, RoleName::Gateway, force: true);
+        app(RelocateNodeRoleAction::class)->execute($target, RoleName::Gateway, force: true)->assignment;
 
         expect(NodeAccess::query()->where('consumer_node_id', $target->id)->pluck('serving_node_id')->all())
             ->toEqualCanonicalizing([$source->id, $metrics->id])
@@ -186,7 +186,7 @@ describe(RelocateNodeRoleAction::class, function (): void {
         ]);
         $credentials = app(WebSocketCredentialManager::class)->ensure($source);
 
-        $result = app(RelocateNodeRoleAction::class)->execute($target, RoleName::WebSocket, force: true);
+        $result = app(RelocateNodeRoleAction::class)->execute($target, RoleName::WebSocket, force: true)->assignment;
 
         expect($result->is($assignment))
             ->toBeTrue()
@@ -237,30 +237,45 @@ describe(RelocateNodeRoleAction::class, function (): void {
         ]]);
     });
 
-    it('leaves the source withdrawal ahead of a failing Metrics reconcile and names the command that retries it', function (): void {
+    it('finishes the move when the final Metrics reconcile fails and names the Metrics Node', function (): void {
+        $source = relocate_role_node('beast', '10.44.0.1');
+        $target = relocate_role_node('services', '10.44.0.11');
+        $metricsNode = relocate_role_node('app-dev', '10.44.0.2');
+        $metricsNode->roles()->create(['role' => RoleName::Metrics, 'status' => LifecycleStatus::Active]);
+        $source->roles()->create(['role' => RoleName::WebSocket, 'status' => LifecycleStatus::Active]);
+        app(WebSocketCredentialManager::class)->ensure($source);
+        Sleep::fake();
+        $metrics = new RelocateNodeRoleMetricsFake($this->baselines);
+        $metrics->failure = new ResourceOperationException(
+            'metrics.remote_command_timed_out',
+            'A Metrics command on node [app-dev] did not finish within 120 seconds.',
+            504,
+        );
+        app()->instance(MetricsFleetReconciler::class, $metrics);
+        $this->baselines->metrics = $metrics;
+
+        $outcome = app(RelocateNodeRoleAction::class)->execute($target, RoleName::WebSocket, force: true);
+
+        expect($outcome->assignment->node_id)->toBe($target->id)
+            ->and($this->baselines->removed)->toBe([['role' => 'websocket', 'node' => $source->name, 'purge_data' => false]])
+            ->and($outcome->followUp)->toBe(
+                'Metrics on node [app-dev] was not reconciled after the move: A Metrics command on node [app-dev] did not finish within 120 seconds. '
+                .'Run `orbit node:role:add app-dev metrics --converge` once node [app-dev] is healthy.',
+            )
+            ->and(app(MetricsReconcileDeferral::class)->defers())->toBeFalse();
+    });
+
+    it('reports no follow-up when the final Metrics reconcile succeeds', function (): void {
         $source = relocate_role_node('beast', '10.44.0.1');
         $target = relocate_role_node('services', '10.44.0.11');
         $source->roles()->create(['role' => RoleName::WebSocket, 'status' => LifecycleStatus::Active]);
         app(WebSocketCredentialManager::class)->ensure($source);
         Sleep::fake();
         $metrics = new RelocateNodeRoleMetricsFake($this->baselines);
-        $metrics->failure = new ResourceOperationException(
-            'metrics.prometheus_configuration_check_timed_out',
-            'A Metrics command on node [app-dev] did not finish within 60 seconds.',
-            504,
-        );
         app()->instance(MetricsFleetReconciler::class, $metrics);
         $this->baselines->metrics = $metrics;
 
-        expect(fn () => app(RelocateNodeRoleAction::class)->execute($target, RoleName::WebSocket, force: true))
-            ->toThrow(function (ResourceOperationException $exception) use ($source, $target): void {
-                expect($exception->errorCode)->toBe('metrics.prometheus_configuration_check_timed_out')
-                    ->and($exception->status)->toBe(504)
-                    ->and($exception->getMessage())->toEndWith("Run `orbit node:role:relocate {$target->name} websocket --from {$source->name} --force` to finish it once node [{$source->name}] is reachable.");
-            });
-
-        expect($this->baselines->removed)->toBe([['role' => 'websocket', 'node' => $source->name, 'purge_data' => false]])
-            ->and(app(MetricsReconcileDeferral::class)->defers())->toBeFalse();
+        expect(app(RelocateNodeRoleAction::class)->execute($target, RoleName::WebSocket, force: true)->followUp)->toBeNull();
     });
 
     it('withdraws websocket from the source only after the target serves and cached DNS answers expire', function (): void {
@@ -349,7 +364,7 @@ describe(RelocateNodeRoleAction::class, function (): void {
             SettingValueProtection::Secret,
         );
 
-        $result = app(RelocateNodeRoleAction::class)->execute($target, RoleName::Metrics, force: true);
+        $result = app(RelocateNodeRoleAction::class)->execute($target, RoleName::Metrics, force: true)->assignment;
 
         expect($result->is($assignment))
             ->toBeTrue()
@@ -378,7 +393,7 @@ describe(RelocateNodeRoleAction::class, function (): void {
             RoleName::WebSocket,
             force: true,
             from: $source,
-        );
+        )->assignment;
 
         expect($result->node_id)->toBe($target->id);
     });
@@ -441,7 +456,7 @@ describe(RelocateNodeRoleAction::class, function (): void {
             RoleName::WebSocket,
             force: true,
             from: $leftover,
-        );
+        )->assignment;
 
         expect($result->is($assignment))
             ->toBeTrue()

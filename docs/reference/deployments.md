@@ -172,7 +172,7 @@ Each application command emits its standard output and standard error as events 
 
 The final command result retains the latest 64 KiB, or 65,536 bytes, from standard output and the latest 64 KiB from standard error. Output at the exact limit is complete. When either stream exceeds its limit, the result discards that stream's older bytes and reports `truncated: true`. Orbit keeps events and the final result only for the invocation. It creates no deployment-run row, output history, or earlier step-configuration snapshot.
 
-Each step uses its recorded timeout. Timeout or cancellation terminates the process group owned by that step and stops later steps. Orbit never resumes or automatically replays an interrupted command. The complete operation deadline is the accepted sum of step timeouts plus no more than 900 seconds for release, environment, activation, and runtime work.
+Each step uses its recorded timeout. Timeout or cancellation terminates the process group owned by that step and stops later steps. Orbit never resumes or automatically replays an interrupted command. The operation deadline is the accepted sum of step timeouts plus no more than 900 seconds for release, environment, activation, and runtime work. It never extends the 570-second deadline of the request that runs the deployment, so a deployment that runs out of either fails with `deployment.deadline_exceeded` before PHP-FPM ends the request.
 
 The deployment result identifies the failed boundary and the release selected when the invocation ends. Its code-selection outcome depends on when failure occurs.
 

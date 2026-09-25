@@ -81,7 +81,7 @@ final class NodeRolesController extends Controller
         $outcome = $action->execute($node, $request->role(), $request->force(), $request->from());
 
         return response()->json([
-            'data' => NodeRoleMutationData::added($node, $outcome)->toArray(),
+            'data' => NodeRoleMutationData::relocated($node, $outcome)->toArray(),
             'meta' => $this->meta($request),
         ]);
     }

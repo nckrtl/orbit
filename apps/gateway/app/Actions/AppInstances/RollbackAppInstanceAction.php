@@ -17,7 +17,6 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\ProcessCancelledException;
 use App\Models\AppInstance;
-use RuntimeException;
 use Symfony\Component\Process\Exception\ProcessTimedOutException;
 use Throwable;
 
@@ -133,6 +132,10 @@ final readonly class RollbackAppInstanceAction
 
     private function errorCode(Throwable $exception): string
     {
+        if ($exception instanceof ResourceOperationException && $exception->errorCode === 'command.deadline_exceeded') {
+            return 'deployment.deadline_exceeded';
+        }
+
         if ($exception instanceof ResourceOperationException || $exception instanceof RuntimeConvergenceException) {
             return $exception->errorCode;
         }
@@ -143,10 +146,6 @@ final readonly class RollbackAppInstanceAction
 
         if ($exception instanceof ProcessTimedOutException) {
             return 'deployment.command_timed_out';
-        }
-
-        if ($exception instanceof RuntimeException && str_contains($exception->getMessage(), 'deadline was exceeded')) {
-            return 'deployment.deadline_exceeded';
         }
 
         return 'deployment.interrupted';

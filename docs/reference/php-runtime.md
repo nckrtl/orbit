@@ -111,7 +111,9 @@ The [service metrics](/reference/service-metrics) extension observes each dedica
 
 ## Process management
 
-Both roles use `pm = ondemand` with `pm.process_idle_timeout = 10s` and `pm.max_requests = 500`. `pm.max_children` is 10 on an app-dev pool and 20 on an app-prod pool. The Gateway's own `orbit-gateway` pool uses 8, because its host runs the scheduler and task ticks beside it, and each open agent stream holds one worker. A Gateway request ends after 600 seconds, and Caddy's FastCGI timeouts match. The Gateway ends an API command's remote work after 570 seconds, so a slow command fails with `command.deadline_exceeded` and records its Activity before PHP-FPM ends the request. The longest recorded operation, `instance:register`, took 522 seconds. An agent stream reconnects when its request ends. [ADR 0021](/decisions/0021-pin-sury-php-fpm-with-opcache-profiles-per-role) records why both roles use `ondemand`.
+Both roles use `pm = ondemand` with `pm.process_idle_timeout = 10s` and `pm.max_requests = 500`. `pm.max_children` is 10 on an app-dev pool and 20 on an app-prod pool. The Gateway's own `orbit-gateway` pool uses 8, because its host runs the scheduler and task ticks beside it, and each open agent stream holds one worker. A Gateway request ends after 600 seconds, and Caddy's FastCGI timeouts match.
+
+The Gateway gives an API command's remote work a 570-second deadline. Forward work ends 20 seconds before it, so rollback and cleanup still run, and a slow command fails with `command.deadline_exceeded` and records its Activity before PHP-FPM ends the request. A deployment or rollback reports the same event as `deployment.deadline_exceeded`. The longest recorded operation, `instance:register`, took 522 seconds. An agent stream reconnects when its request ends. [ADR 0021](/decisions/0021-pin-sury-php-fpm-with-opcache-profiles-per-role) records why both roles use `ondemand`.
 
 ## Caddy
 

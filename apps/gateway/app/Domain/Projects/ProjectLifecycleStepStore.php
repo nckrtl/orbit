@@ -181,7 +181,7 @@ final readonly class ProjectLifecycleStepStore
             $steps,
         ));
 
-        if ($totalTimeout > 3_600) {
+        if ($totalTimeout > LifecycleStep::MaxTotalTimeoutSeconds) {
             $this->invalid('The lifecycle list timeout total is too large.');
         }
     }

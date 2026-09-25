@@ -9,7 +9,15 @@ use SensitiveParameter;
 
 final readonly class LifecycleStep
 {
-    public const int DefaultTimeoutSeconds = 600;
+    public const int DefaultTimeoutSeconds = 240;
+
+    /**
+     * Setup and teardown run inside one API request, whose remote work ends 550 seconds in (the
+     * 570-second command deadline less its cleanup reserve). One step, and one whole list, must fit.
+     */
+    public const int MaxTimeoutSeconds = 540;
+
+    public const int MaxTotalTimeoutSeconds = self::MaxTimeoutSeconds;
 
     public function __construct(
         public string $name,
@@ -29,7 +37,7 @@ final readonly class LifecycleStep
             throw new InvalidArgumentException('The lifecycle step command is invalid.');
         }
 
-        if ($timeoutSeconds < 1 || $timeoutSeconds > 900) {
+        if ($timeoutSeconds < 1 || $timeoutSeconds > self::MaxTimeoutSeconds) {
             throw new InvalidArgumentException('The lifecycle step timeout is invalid.');
         }
     }

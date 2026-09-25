@@ -18,6 +18,7 @@ use App\Domain\Nodes\RoleAssignmentException;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\RoleRegistry;
+use App\Domain\Nodes\RoleRelocationOutcome;
 use App\Domain\Settings\SettingRepository;
 use App\Domain\Settings\SettingScope;
 use App\Domain\Settings\SettingScopeType;
@@ -31,7 +32,9 @@ use App\Models\NodeRole;
 use Closure;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use RuntimeException;
+use Throwable;
 
 final readonly class RelocateNodeRoleAction
 {
@@ -49,7 +52,7 @@ final readonly class RelocateNodeRoleAction
         private ?MetricsReconcileDeferral $metricsDeferral = null,
     ) {}
 
-    public function execute(Node $target, RoleName $role, bool $force = false, ?Node $from = null): NodeRole
+    public function execute(Node $target, RoleName $role, bool $force = false, ?Node $from = null): RoleRelocationOutcome
     {
         if (! $this->registry->definition($role)->relocatable) {
             throw new NodeRoleValidationException(
@@ -118,26 +121,30 @@ final readonly class RelocateNodeRoleAction
         $this->prepareTarget($target, $role);
         $this->copyOwnedSettings($source, $target, $role);
         $assignment = $this->transfer($target, $source, $role);
-        $this->finishOrReport($target, $source, $role, function () use ($target, $source, $assignment, $role): void {
-            $this->moveOwnedState($target, $source, $assignment, $role);
+        $reconcileMetrics = false;
+        $this->finishOrReport($target, $source, $role, function () use ($target, $source, $assignment, $role, &$reconcileMetrics): void {
+            $reconcileMetrics = $this->moveOwnedState($target, $source, $assignment, $role);
         });
+        $followUp = $reconcileMetrics ? $this->reconcileMetricsAfterMove() : null;
         $this->announce($source);
         $this->announce($target);
 
-        return $assignment;
+        return new RoleRelocationOutcome($assignment, $followUp);
     }
 
-    private function reconcileLeftovers(Node $target, Node $from, RoleName $role, NodeRole $assignment): NodeRole
+    private function reconcileLeftovers(Node $target, Node $from, RoleName $role, NodeRole $assignment): RoleRelocationOutcome
     {
         $this->copyOwnedSettings($from, $target, $role);
         $this->prepareTarget($target, $role);
-        $this->finishOrReport($target, $from, $role, function () use ($target, $from, $assignment, $role): void {
-            $this->moveOwnedState($target, $from, $assignment, $role);
+        $reconcileMetrics = false;
+        $this->finishOrReport($target, $from, $role, function () use ($target, $from, $assignment, $role, &$reconcileMetrics): void {
+            $reconcileMetrics = $this->moveOwnedState($target, $from, $assignment, $role);
         });
+        $followUp = $reconcileMetrics ? $this->reconcileMetricsAfterMove() : null;
         $this->announce($from);
         $this->announce($target);
 
-        return $assignment->refresh();
+        return new RoleRelocationOutcome($assignment->refresh(), $followUp);
     }
 
     private function guardActiveNode(Node $node): void
@@ -181,21 +188,48 @@ final readonly class RelocateNodeRoleAction
     }
 
     /**
-     * Converges the destination and retracts the source, then reconciles Metrics once against the
-     * finished move. Each role converge and removal would otherwise reconcile Metrics on its own, so a
-     * slow Metrics Node could hold the source retraction behind a check that has nothing to do with it.
+     * Converges the destination and retracts the source with the Metrics reconcile that each step
+     * would run held back, so a slow Metrics Node cannot hold the source retraction behind it.
+     *
+     * @return bool Whether a step asked for a Metrics reconcile.
      */
-    private function moveOwnedState(Node $target, Node $source, NodeRole $assignment, RoleName $role): void
+    private function moveOwnedState(Node $target, Node $source, NodeRole $assignment, RoleName $role): bool
     {
-        $reconcileMetrics = ($this->metricsDeferral ?? app(MetricsReconcileDeferral::class))->during(
+        return ($this->metricsDeferral ?? app(MetricsReconcileDeferral::class))->during(
             function () use ($target, $source, $assignment, $role): void {
                 $this->afterTransfer($target, $assignment, $role);
                 $this->retractSource($source, $assignment, $role);
             },
         );
+    }
 
-        if ($reconcileMetrics) {
+    /**
+     * Reconciles Metrics once against the finished move. The move is complete by now, so a failure
+     * does not fail it: the outcome names the Metrics Node and the command that reconciles it.
+     */
+    private function reconcileMetricsAfterMove(): ?string
+    {
+        try {
             ($this->metrics ?? app(MetricsFleetReconciler::class))->reconcile();
+
+            return null;
+        } catch (Throwable $exception) {
+            $metricsNode = NodeRole::query()
+                ->with('node')
+                ->where('role', RoleName::Metrics)
+                ->first()
+                ?->node;
+            $name = $metricsNode instanceof Node ? $metricsNode->name : null;
+            Log::warning('Metrics reconciliation failed after a role relocation.', [
+                'metrics_node' => $name,
+                'error' => $exception instanceof ResourceOperationException ? $exception->errorCode : $exception::class,
+                'message' => $exception->getMessage(),
+            ]);
+
+            return $name === null
+                ? "Metrics was not reconciled after the move: {$exception->getMessage()}"
+                : "Metrics on node [{$name}] was not reconciled after the move: {$exception->getMessage()} "
+                    ."Run `orbit node:role:add {$name} metrics --converge` once node [{$name}] is healthy.";
         }
     }
 
