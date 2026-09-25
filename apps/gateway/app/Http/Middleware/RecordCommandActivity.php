@@ -41,6 +41,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 use JsonException;
 use stdClass;
@@ -52,8 +53,9 @@ use UnexpectedValueException;
 
 /**
  * Records one Activity per authorized command. Every request that can change something and every
- * failed request is kept. A successful read is kept once per command and caller in each
- * READ_SAMPLE_SECONDS, and always for a credential read (ADR 0152).
+ * failed request is kept. A successful read is kept once per command, caller, and target path in
+ * each READ_SAMPLE_SECONDS. Schedule operations (ADR 0013) and credential reads are always kept
+ * (ADR 0152).
  */
 final readonly class RecordCommandActivity
 {
@@ -170,29 +172,42 @@ final readonly class RecordCommandActivity
     }
 
     /** @param  array<string, mixed>  $updates */
-    private function persist(Activity $activity, array $updates): void
+    private function persist(Activity $activity, Request $request, array $updates): void
     {
         $activity->fill($updates);
 
-        if (! $activity->exists && $activity->status === 'succeeded' && ! $this->samplesRead($activity)) {
+        if (! $activity->exists && $activity->status === 'succeeded' && ! $this->samplesRead($activity, $request)) {
             return;
         }
 
         $activity->save();
     }
 
-    /** Whether this successful read is the one kept for its command and caller in the current window. */
-    private function samplesRead(Activity $activity): bool
+    /**
+     * Whether this successful read is the one kept for its command, caller, and target in the
+     * current window. The request path names the target, such as the Process whose logs were read.
+     * A cache failure keeps the row: sampling must never fail a read that worked.
+     */
+    private function samplesRead(Activity $activity, Request $request): bool
     {
-        if (str_ends_with($activity->command, ':credentials')) {
+        if (str_starts_with($activity->command, 'schedule:') || str_ends_with($activity->command, ':credentials')) {
             return true;
         }
 
-        return Cache::add(
-            'orbit:activity:read:'.sha1($activity->command.'|'.($activity->caller_ip ?? '')),
-            true,
-            self::READ_SAMPLE_SECONDS,
-        );
+        try {
+            return Cache::add(
+                'orbit:activity:read:'.sha1($activity->command.'|'.($activity->caller_ip ?? '').'|'.$request->path()),
+                true,
+                self::READ_SAMPLE_SECONDS,
+            );
+        } catch (Throwable $exception) {
+            Log::warning('Read activity sampling failed; recording the read.', [
+                'command' => $activity->command,
+                'exception' => $exception::class,
+            ]);
+
+            return true;
+        }
     }
 
     private function complete(
@@ -277,7 +292,7 @@ final readonly class RecordCommandActivity
             ];
         }
 
-        $this->persist($activity, $updates);
+        $this->persist($activity, $request, $updates);
     }
 
     /** @return array<string, mixed>|null */
@@ -391,7 +406,7 @@ final readonly class RecordCommandActivity
 
         $updates = $this->withSchedule($activity, $request, $updates);
 
-        $this->persist($activity, $this->withTarget(
+        $this->persist($activity, $request, $this->withTarget(
             $activity,
             $request,
             $this->withResult($activity, $request, $updates, $result),

@@ -7,6 +7,8 @@ use App\Http\Middleware\RecordCommandActivity;
 use App\Models\Activity;
 use App\Models\Node;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 beforeEach(function (): void {
@@ -60,6 +62,44 @@ describe('read activity sampling', function (): void {
         expect(Activity::query()->where('command', 'node:list')->pluck('caller_ip')->all())
             ->toBe(['10.44.0.1', '10.44.0.2'])
             ->and(Activity::query()->where('command', 'cluster:list')->count())->toBe(1);
+    });
+
+    it('keeps one successful read per target of the same command', function (): void {
+        $this->operator->accessibleNodes()->attach($this->operator);
+
+        foreach ([1, 2] as $round) {
+            $this->getJson('/api/v1/nodes/'.$this->gateway->id)->assertOk();
+            $this->getJson('/api/v1/nodes/'.$this->operator->id)->assertOk();
+        }
+
+        expect(Activity::query()->where('command', 'node:show')->pluck('properties')->map(
+            static fn ($properties): mixed => $properties?->get('path'),
+        )->all())->toBe([
+            'api/v1/nodes/'.$this->gateway->id,
+            'api/v1/nodes/'.$this->operator->id,
+        ]);
+    });
+
+    it('always records Schedule operations, as ADR 0013 requires', function (): void {
+        $this->getJson('/api/v1/schedules')->assertOk();
+        $this->getJson('/api/v1/schedules')->assertOk();
+        $this->getJson('/api/v1/schedules')->assertOk();
+
+        expect(Activity::query()->where('command', 'schedule:list')->pluck('status')->all())
+            ->toBe(['succeeded', 'succeeded', 'succeeded']);
+    });
+
+    it('records the read and logs a warning when the sampling cache fails', function (): void {
+        Cache::partialMock()->shouldReceive('add')->andThrow(new RuntimeException('database is locked'));
+        Log::spy();
+
+        $this->getJson('/api/v1/nodes')->assertOk();
+
+        expect(Activity::query()->where('command', 'node:list')->pluck('status')->all())->toBe(['succeeded']);
+        Log::shouldHaveReceived('warning')
+            ->withArgs(static fn (string $message, array $context): bool => str_contains($message, 'sampling failed')
+                && $context['command'] === 'node:list')
+            ->once();
     });
 
     it('keeps every failed read', function (): void {

@@ -3878,15 +3878,19 @@
             ],
             "concepts": [
                 "Database",
+                "Database connection",
                 "Doctor",
                 "Gateway",
                 "Node",
                 "Node agent",
+                "Process",
                 "Route",
                 "Schedule",
                 "Tool"
             ],
             "governing_adrs": [
+                "0004",
+                "0013",
                 "0086",
                 "0152"
             ]
