@@ -100,7 +100,7 @@ it('inspects each role with exact package service and firewall requirements', fu
     ],
     'Ingress needs the Caddy that serves its public sites' => [
         RoleName::Ingress,
-        [],
+        ['caddy'],
         ['caddy'],
         [],
     ],

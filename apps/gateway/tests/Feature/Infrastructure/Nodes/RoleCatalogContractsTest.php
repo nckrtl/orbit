@@ -92,12 +92,12 @@ it('gives Database no firewall projection', function (): void {
         ->toBe([]);
 });
 
-it('gives Ingress no packages or firewall rules of its own but needs the Caddy that serves its sites', function (): void {
+it('gives Ingress the Caddy that serves its sites and no firewall rules of its own', function (): void {
     $node = new Node(['public_ssh_port' => 22, 'wireguard_ip' => '10.0.0.1']);
     $role = RoleName::Ingress;
 
     expect(new NodeBootstrapPackageCatalog()->forRole($node, $role))
-        ->toBe([])
+        ->toBe(['caddy'])
         ->and(new NodeRoleServiceCatalog()->forRole($role))
         ->toBe(['caddy'])
         ->and(new NodeFirewallRuleCatalog()->forRole($node, $role))
