@@ -69,7 +69,7 @@ final readonly class NativeNodeRoleFirewallManager implements NodeRoleFirewallMa
 
     public function remove(Node $node, RoleName $role, string $managedUser): void
     {
-        $rules = $this->roleRules($node, $role);
+        $rules = $this->roleRules($node, $role, owned: true);
 
         if ($rules !== []) {
             $this->removeRules($node, $rules, $managedUser);
@@ -352,8 +352,13 @@ final readonly class NativeNodeRoleFirewallManager implements NodeRoleFirewallMa
         return $this->catalog->forNode($node)[1];
     }
 
-    /** @return list<UfwManagedRule> */
-    private function roleRules(Node $node, RoleName $role): array
+    /**
+     * The role's rules without the Node baseline and Router LAN rules. `$owned` selects every rule the role can
+     * own, which removal closes, instead of the rules its current condition requires.
+     *
+     * @return list<UfwManagedRule>
+     */
+    private function roleRules(Node $node, RoleName $role, bool $owned = false): array
     {
         $baselineComments = array_map(
             static fn (UfwManagedRule $rule): string => $rule->shape->comment,
@@ -363,7 +368,7 @@ final readonly class NativeNodeRoleFirewallManager implements NodeRoleFirewallMa
         $policy = new RouterLanIngressPolicy;
 
         return array_values(array_filter(
-            $this->catalog->forRole($node, $role),
+            $owned ? $this->catalog->ownedByRole($node, $role) : $this->catalog->forRole($node, $role),
             static fn (UfwManagedRule $rule): bool => ! in_array(
                 $rule->shape->comment,
                 $baselineComments,

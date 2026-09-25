@@ -261,6 +261,30 @@ it('retires public app production rules when leftover Instance tables are absent
         ->toBeTrue();
 });
 
+it('closes public Ingress HTTP and HTTPS on role removal without a live public Route', function (): void {
+    $ssh = new RoleFirewallSshExecutor;
+    $ssh->seed(['orbit:wireguard-members', 'orbit:ingress-http', 'orbit:ingress-https']);
+
+    role_firewall_manager($ssh)->remove(role_firewall_node(), RoleName::Ingress, 'nckrtl');
+
+    expect($ssh->comments())
+        ->toBe(['orbit:wireguard-members'])
+        ->and($ssh->operatorWebRulesPresent)
+        ->toBeTrue();
+});
+
+it('retires public Ingress HTTP and HTTPS when the Cluster has no live public Route', function (): void {
+    $ssh = new RoleFirewallSshExecutor;
+    $ssh->seed(['orbit:wireguard-members', 'orbit:ingress-http', 'orbit:ingress-https']);
+
+    role_firewall_manager($ssh)->converge(role_firewall_node(), RoleName::Ingress, 'nckrtl');
+
+    expect($ssh->comments())
+        ->toBe(['orbit:wireguard-members'])
+        ->and($ssh->operatorWebRulesPresent)
+        ->toBeTrue();
+});
+
 it('keeps a conflicting private production footprint private during role convergence', function (): void {
     $ssh = new RoleFirewallSshExecutor;
     $node = orb197_persisted_firewall_node('private-conflict');
@@ -615,6 +639,8 @@ final class RoleFirewallSshExecutor implements SshExecutor
                 'orbit:gateway-https',
                 'orbit:app-dev-direct-http',
                 'orbit:app-dev-direct-https',
+                'orbit:ingress-http',
+                'orbit:ingress-https',
             ],
             strict: true,
         )
@@ -677,6 +703,8 @@ final class RoleFirewallSshExecutor implements SshExecutor
             'orbit:app-dev-direct-https' => "[ {$number}] 443/tcp{$v6} ALLOW IN Anywhere{$v6} # {$comment}",
             'orbit:app-prod-http' => "[ {$number}] 80/tcp{$v6} ALLOW IN Anywhere{$v6} # {$comment}",
             'orbit:app-prod-https' => "[ {$number}] 443/tcp{$v6} ALLOW IN Anywhere{$v6} # {$comment}",
+            'orbit:ingress-http' => "[ {$number}] 80/tcp{$v6} ALLOW IN Anywhere{$v6} # {$comment}",
+            'orbit:ingress-https' => "[ {$number}] 443/tcp{$v6} ALLOW IN Anywhere{$v6} # {$comment}",
             'orbit:gateway-https' => "[ {$number}] 443/tcp{$v6} on orbit ALLOW IN Anywhere{$v6} # {$comment}",
             default => throw new LogicException("Unknown test comment [{$comment}]."),
         };

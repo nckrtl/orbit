@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace App\Actions\Tasks;
 
-use App\Domain\AppInstances\AppInstanceRemover;
-use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskPullRequestException;
@@ -14,12 +12,13 @@ use App\Domain\Tasks\TaskStatus;
 use App\Models\AppInstance;
 use App\Models\Task;
 use App\Models\TaskGroup;
+use Illuminate\Support\Facades\DB;
 
 final readonly class CancelTaskGroupAction
 {
     public function __construct(
         private RequireTasksExtensionAction $requireExtension,
-        private AppInstanceRemover $remover,
+        private RemoveTaskWorkspaceAction $workspace,
         private TaskPullRequestPublisher $publisher,
     ) {}
 
@@ -39,19 +38,35 @@ final readonly class CancelTaskGroupAction
             );
         }
 
-        $instance = $group->taskable;
+        // A live claim owns the workspace it is provisioning. It removes that workspace once it finds the group
+        // cancelled, so cancel leaves it alone and only removes what the claim attached before the cancel landed.
+        $claimInFlight = $this->workspace->claimInFlight($group) && $group->taskable_id === null;
+        $instance = $claimInFlight ? null : $this->workspace->find($group);
 
         if ($instance instanceof AppInstance) {
             if ($unpublished) {
                 $this->pushApprovedWork($group);
             }
-            $this->removeWorkspace($instance);
+            $this->workspace->remove($instance);
         }
 
-        $group->taskable()->dissociate();
-        $group->status = TaskGroupStatus::Cancelled;
-        $group->assistance_requested = false;
-        $group->save();
+        $removedId = $instance?->id;
+        $attachedByClaim = DB::transaction(static function () use ($group, $removedId): ?AppInstance {
+            $locked = TaskGroup::query()->with('taskable')->lockForUpdate()->findOrFail($group->id);
+            // A claim can attach an Instance between the checks above and this lock. Cancel removes whatever is still
+            // attached and was not removed above, whether or not it saw a claim in flight.
+            $attached = $locked->taskable instanceof AppInstance && $locked->taskable_id !== $removedId ? $locked->taskable : null;
+            $locked->taskable()->dissociate();
+            $locked->status = TaskGroupStatus::Cancelled;
+            $locked->assistance_requested = false;
+            $locked->save();
+
+            return $attached;
+        });
+
+        if ($attachedByClaim instanceof AppInstance) {
+            $this->workspace->remove($attachedByClaim);
+        }
 
         $group->tasks()
             ->whereNotIn('status', [TaskStatus::Completed, TaskStatus::Failed, TaskStatus::Cancelled])
@@ -79,26 +94,6 @@ final readonly class CancelTaskGroupAction
                 message: __('The group remains settling because its approved commits could not be pushed to task-:group: :reason', ['group' => $group->id, 'reason' => $exception->getMessage()]),
                 status: 502,
             );
-        }
-    }
-
-    /**
-     * Removal also deletes a never-active workspace's checkout from its Node. When removal refuses
-     * before it starts, for example on a half-created checkout or an unreachable Node, cancel still
-     * finishes: it deletes the record and leaves the checkout for Doctor to report.
-     */
-    private function removeWorkspace(AppInstance $instance): void
-    {
-        try {
-            $this->remover->execute($instance, true);
-        } catch (ResourceOperationException $exception) {
-            $instance->refresh();
-
-            if ($instance->status !== AppInstanceState::SourceResolved || $instance->routes()->exists()) {
-                throw $exception;
-            }
-
-            $instance->delete();
         }
     }
 }

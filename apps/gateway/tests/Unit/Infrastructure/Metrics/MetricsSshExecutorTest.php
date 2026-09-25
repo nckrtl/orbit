@@ -264,6 +264,41 @@ describe(MetricsSshExecutor::class, function (): void {
         expectMetricsDockerCommandsUsePrivilegedBoundary($ssh);
     });
 
+    it('removes nothing on a Node without Docker', function (): void {
+        $spec = new MetricsRuntimeSpec()->for(MetricsService::Prometheus, 41, '10.44.0.3', 'configuration');
+        $ssh = new MetricsCapturingSshExecutor([
+            metricsCommandResult(exitCode: 127),
+            metricsCommandResult(exitCode: 127),
+            metricsCommandResult(stdout: "absent\n"),
+            metricsCommandResult(exitCode: 127),
+            metricsCommandResult(exitCode: 127),
+            metricsCommandResult(stdout: "absent\n"),
+            metricsCommandResult(exitCode: 127),
+            metricsCommandResult(exitCode: 127),
+            metricsCommandResult(stdout: "absent\n"),
+        ]);
+
+        metricsSshExecutor($ssh)->removeContainers(metricsSshNode(), [$spec]);
+        metricsSshExecutor($ssh)->purgeVolumes(metricsSshNode(), [$spec]);
+
+        expect(array_filter(
+            $ssh->commands,
+            static fn (RemoteCommand $command): bool => in_array('rm', $command->arguments, true),
+        ))->toBeEmpty();
+    });
+
+    it('refuses a removal when Docker is installed but cannot report its containers', function (): void {
+        $spec = new MetricsRuntimeSpec()->for(MetricsService::Prometheus, 41, '10.44.0.3', 'configuration');
+        $ssh = new MetricsCapturingSshExecutor([
+            metricsCommandResult(exitCode: 1),
+            metricsCommandResult(exitCode: 1),
+            metricsCommandResult(stdout: "present\n"),
+        ]);
+
+        expect(fn () => metricsSshExecutor($ssh)->removeContainers(metricsSshNode(), [$spec]))
+            ->toThrow(ResourceOperationException::class, 'Metrics container state could not be inspected.');
+    });
+
     it('keeps an owned healthy container unchanged through privileged inspection', function (): void {
         $spec = new MetricsRuntimeSpec()->for(
             MetricsService::Prometheus,

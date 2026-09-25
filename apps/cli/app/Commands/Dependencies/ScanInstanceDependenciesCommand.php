@@ -71,7 +71,7 @@ final class ScanInstanceDependenciesCommand extends GatewayCommand
                 $connector, new ScanInstanceDependenciesRequest($target->instanceId), InstanceDependencyInventoryResponse::class,
             ));
         } catch (GatewayApiException $exception) {
-            return $this->renderGatewayFailure($exception->errorCode() ?? 'gateway.request_failed', $exception->getMessage(), $exception->requestId());
+            return $this->renderApiFailure($exception);
         } catch (FatalRequestException) {
             return $this->renderGatewayFailure('gateway.unreachable', 'Could not reach the gateway.');
         }
@@ -97,7 +97,7 @@ final class ScanInstanceDependenciesCommand extends GatewayCommand
         try {
             $list = $progress->during('targets', fn () => $this->captureAuthorizedInstances($connector));
         } catch (GatewayApiException $exception) {
-            return $this->renderGatewayFailure($exception->errorCode() ?? 'gateway.request_failed', $exception->getMessage(), $exception->requestId());
+            return $this->renderApiFailure($exception);
         } catch (ConsoleInterrupted) {
             return $this->renderGatewayFailure('input.cancelled', 'Instance listing was cancelled.');
         }
