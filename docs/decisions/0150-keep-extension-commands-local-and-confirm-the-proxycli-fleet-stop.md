@@ -1,10 +1,10 @@
 ---
-title: "ADR 0148: Keep extension commands local and confirm the proxycli fleet stop"
-sidebarTitle: "0148 Keep extension commands local and confirm the proxycli fleet stop"
+title: "ADR 0150: Keep extension commands local and confirm the proxycli fleet stop"
+sidebarTitle: "0150 Keep extension commands local and confirm the proxycli fleet stop"
 description: "Proposed. extension:enable and extension:disable change only the local CLI gate for every extension. proxycli:disable is the only CLI command that stops the proxycli fleet feature, and it requires a default-No confirmation or --yes."
 ---
 
-# ADR 0148: Keep extension commands local and confirm the proxycli fleet stop
+# ADR 0150: Keep extension commands local and confirm the proxycli fleet stop
 
 `extension:enable` and `extension:disable` change only the extension gate on the operator machine. They never call the Gateway, for any extension. `proxycli:disable` is the only CLI command that stops the proxycli fleet feature. It asks a default-No question that names the fleet effect, and noninteractive and JSON callers must pass `--yes`.
 

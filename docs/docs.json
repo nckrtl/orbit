@@ -718,7 +718,7 @@
               "decisions/0142-apply-plausibles-clickhouse-configuration-from-the-analytics-role",
               "decisions/0143-record-topology-evidence-and-sync-without-verification",
               "decisions/0144-migrate-waiting-connections-when-caddy-reloads",
-              "decisions/0148-keep-extension-commands-local-and-confirm-the-proxycli-fleet-stop"
+              "decisions/0150-keep-extension-commands-local-and-confirm-the-proxycli-fleet-stop"
             ]
           }
         ]
