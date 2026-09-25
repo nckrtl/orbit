@@ -13,8 +13,9 @@ use Illuminate\Support\Carbon;
 use Throwable;
 
 /**
- * Keeps the Gateway's view of the Node agents in the Gateway's default cache store, which the
- * agent view subscriber shares with every PHP-FPM worker.
+ * Keeps the Gateway's view of the Node agents in its own file cache store under `ORBIT_HOME`,
+ * which the agent view subscriber shares with every PHP-FPM worker. The store is pinned here,
+ * whatever `CACHE_STORE` says, so heartbeats never write the Gateway's SQLite database.
  *
  * Freshness uses only the Gateway clock: the time the subscriber received the agent's last event.
  * A Node whose own clock is wrong therefore still reads as fresh.
@@ -29,6 +30,18 @@ final readonly class CacheAgentStateView implements AgentStateView
     private const string SUBSCRIBER_KEY = 'agent-view.subscriber';
 
     public function __construct(private Repository $cache) {}
+
+    /**
+     * The file store the Gateway builds for the view.
+     *
+     * @return array{driver: string, path: string, lock_path: string}
+     */
+    public static function storeConfiguration(string $orbitHome): array
+    {
+        $path = rtrim($orbitHome, '/').'/cache/agent-view';
+
+        return ['driver' => 'file', 'path' => $path, 'lock_path' => $path];
+    }
 
     #[\Override]
     public function node(int $nodeId): AgentNodeView

@@ -38,6 +38,9 @@ final class StreamWebSocketClient implements WebSocketClient
     /** Text of a fragmented message, or null when no fragmented message is open. */
     private ?string $fragments = null;
 
+    /** Whether the open fragmented message passed the size limit and is being dropped. */
+    private bool $discarding = false;
+
     #[\Override]
     public function connect(WebSocketEndpoint $endpoint, float $timeoutSeconds): void
     {
@@ -146,6 +149,7 @@ final class StreamWebSocketClient implements WebSocketClient
         $this->stream = null;
         $this->buffer = '';
         $this->fragments = null;
+        $this->discarding = false;
     }
 
     #[\Override]
@@ -183,23 +187,27 @@ final class StreamWebSocketClient implements WebSocketClient
 
             if ($opcode === self::OPCODE_TEXT && ! $final) {
                 $this->fragments = $payload;
+                $this->discarding = strlen($payload) > self::MaxMessageBytes;
 
                 continue;
             }
 
-            if ($opcode === self::OPCODE_CONTINUATION && $this->fragments !== null) {
-                $this->fragments .= $payload;
-
-                if (strlen($this->fragments) > self::MaxMessageBytes) {
-                    $this->fragments = '';
+            if ($opcode === self::OPCODE_CONTINUATION) {
+                if ($this->fragments === null) {
+                    continue;
                 }
+
+                // A message over the limit is dropped whole: nothing of it is parsed, up to its final frame.
+                $this->discarding = $this->discarding || strlen($this->fragments) + strlen($payload) > self::MaxMessageBytes;
+                $this->fragments = $this->discarding ? '' : $this->fragments.$payload;
 
                 if (! $final) {
                     continue;
                 }
 
-                $payload = $this->fragments;
+                $payload = $this->discarding ? '' : $this->fragments;
                 $this->fragments = null;
+                $this->discarding = false;
                 $opcode = self::OPCODE_TEXT;
             }
 

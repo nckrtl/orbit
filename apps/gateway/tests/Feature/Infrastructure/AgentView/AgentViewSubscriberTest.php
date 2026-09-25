@@ -225,6 +225,43 @@ describe('the agent view subscriber', function (): void {
         expect(app(AgentStateView::class)->node($node->id)->status(ProcessRuntime::Systemd, 'orbit-process-9-web'))->toBe('inactive');
     });
 
+    it('keeps a Node missing until a complete snapshot arrives, whatever heartbeats come first', function (): void {
+        activate_websocket_role();
+        $node = subscriber_managed_node('app-dev', '10.44.0.3');
+        [$subscriber, $socket] = agent_view_subscriber();
+        $subscriber->pass();
+
+        $socket->push(agent_event($node->id, 'client-heartbeat', ['sequence' => 1]));
+        $subscriber->pass();
+
+        expect(app(AgentStateView::class)->node($node->id)->freshness)->toBe(AgentViewFreshness::Missing);
+
+        $socket->push(
+            agent_event($node->id, 'client-snapshot', ['sequence' => 2, 'docker' => 'available', 'part' => 1, 'parts' => 2, 'units' => []]),
+            agent_event($node->id, 'client-heartbeat', ['sequence' => 3]),
+        );
+        $subscriber->pass();
+
+        expect(app(AgentStateView::class)->node($node->id)->freshness)->toBe(AgentViewFreshness::Missing);
+    });
+
+    it('reports itself connected as soon as it reconnects', function (): void {
+        activate_websocket_role();
+        subscriber_managed_node('app-dev', '10.44.0.3');
+        [$subscriber, $socket, $state] = agent_view_subscriber();
+        $subscriber->pass();
+        $socket->close();
+        $subscriber->pass();
+
+        expect(app(AgentStateView::class)->subscriber()?->connected)->toBeFalse();
+
+        $state->now += 1.5;
+        $subscriber->pass();
+
+        expect($socket->isConnected())->toBeTrue()
+            ->and(app(AgentStateView::class)->subscriber()?->connected)->toBeTrue();
+    });
+
     it('drops a Node view when its agent leaves the channel', function (): void {
         activate_websocket_role();
         $node = subscriber_managed_node('app-dev', '10.44.0.3');

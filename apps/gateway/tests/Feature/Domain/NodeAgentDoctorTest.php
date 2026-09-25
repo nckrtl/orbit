@@ -177,6 +177,21 @@ describe('the Gateway view of an active agent', function (): void {
         expect(node_agent_view_codes($context))->toBe(['node.agent_view_stale="disconnected"']);
     });
 
+    it('does not report the view for a Node whose agent is missing or not running', function (bool $unitExists, bool $active): void {
+        activate_websocket_role();
+        [$context] = node_agent_view_doctor_context();
+        $inspection = $context->inspection;
+        app(CacheAgentStateView::class)->putSubscriber(configured: true, connected: true, channels: 2);
+
+        $codes = node_agent_view_codes(new DoctorNodeContext($context->node, new NodeInspectionData(true, 'linux', 'x86_64', true, $unitExists, $unitExists, $active, true)));
+
+        expect(array_filter($codes, static fn (string $code): bool => str_starts_with($code, 'node.agent_view_stale')))->toBe([])
+            ->and($inspection->agentActive)->toBeTrue();
+    })->with([
+        'agent missing' => [false, false],
+        'agent inactive' => [true, false],
+    ]);
+
     it('reports a missing or stale Node view and nothing for a fresh one', function (): void {
         activate_websocket_role();
         [$context, $nodeId] = node_agent_view_doctor_context();

@@ -15,6 +15,7 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskRunReceipts;
+use App\Infrastructure\AgentView\CacheAgentStateView;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\NativeProcessRunner;
 use App\Infrastructure\Processes\ProcessInvocation;
@@ -24,6 +25,7 @@ use App\Models\Cluster;
 use App\Models\Node;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Sleep;
 use Laravel\Ai\Classification;
 use Tests\Support\FakeAgentationSiteProjection;
@@ -55,6 +57,8 @@ uses(TestCase::class, RefreshDatabase::class)
         app()->instance(ClusterRouterDnsSelectionReconciler::class, new FakeClusterRouterDnsSelectionReconciler);
         app()->instance(TaskRunReceipts::class, new FakeTaskRunReceipts);
         app()->instance(TaskCheckRunner::class, new FakeTaskCheckRunner);
+        // The view's file store under ORBIT_HOME would outlive a test; each test gets its own.
+        app()->instance(CacheAgentStateView::class, new CacheAgentStateView(Cache::store('array')));
         Classification::fake();
         // Transitions wait for private DNS answers to expire; tests assert those waits instead.
         Sleep::fake(syncWithCarbon: true);

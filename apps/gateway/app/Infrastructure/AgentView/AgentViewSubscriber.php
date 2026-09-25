@@ -90,6 +90,7 @@ final class AgentViewSubscriber
         private readonly Closure $clock,
         private readonly Closure $sleep,
         private readonly ManagedNodeEligibility $eligibility = new ManagedNodeEligibility,
+        private readonly int $reverbPort = 443,
     ) {}
 
     /**
@@ -151,7 +152,8 @@ final class AgentViewSubscriber
             }
 
             $this->connect();
-            $this->writeHealth();
+            // Write at once, so the health never reports the old connection state beside fresh Nodes.
+            $this->writeHealth(force: true);
 
             return;
         }
@@ -193,7 +195,7 @@ final class AgentViewSubscriber
         try {
             $this->socket->connect(new WebSocketEndpoint(
                 address: $credentials->servingAddress,
-                port: 443,
+                port: $this->reverbPort,
                 serverName: WebSocketHostname::Value,
                 path: '/app/'.rawurlencode($credentials->appKey).'?protocol=7&client=orbit-gateway&version=1.0&flash=false',
                 caPath: $this->caPath,

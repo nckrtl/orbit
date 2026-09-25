@@ -343,6 +343,7 @@ use App\Infrastructure\WireGuard\WireGuardServerConfigRenderer;
 use App\Models\Activity;
 use App\Models\AppInstance;
 use App\Models\DatabaseConnection;
+use Illuminate\Cache\CacheManager;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Support\ServiceProvider;
 use Laravel\Boost\Console\InstallCommand;
@@ -515,6 +516,12 @@ final class AppServiceProvider extends ServiceProvider
                 idleSeconds: (int) config('orbit.hibernation.idle_seconds'),
                 dependencyIdleSeconds: (int) config('orbit.hibernation.dependency_idle_seconds'),
                 agents: $app->make(AgentProcessView::class),
+            ),
+        );
+        $this->app->singleton(
+            CacheAgentStateView::class,
+            static fn ($app): CacheAgentStateView => new CacheAgentStateView(
+                $app->make(CacheManager::class)->build(CacheAgentStateView::storeConfiguration((string) config('orbit.home'))),
             ),
         );
         $this->app->bind(

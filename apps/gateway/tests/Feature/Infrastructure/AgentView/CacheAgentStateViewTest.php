@@ -8,7 +8,10 @@ use App\Domain\AgentView\AgentViewFreshness;
 use App\Domain\Processes\ProcessRuntime;
 use App\Infrastructure\AgentView\CacheAgentStateView;
 use App\Models\Process;
+use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Str;
 
 describe('the Gateway view of Node agents', function (): void {
     afterEach(fn () => Carbon::setTestNow());
@@ -99,5 +102,20 @@ describe('the Gateway view of Node agents', function (): void {
 
         Carbon::setTestNow('2026-09-25 10:00:31');
         expect($health?->isCurrent())->toBeFalse();
+    });
+
+    it('keeps the view in its own file store under ORBIT_HOME, never the default store', function (): void {
+        config(['orbit.home' => $home = sys_get_temp_dir().'/orbit-agent-view-'.Str::random(8)]);
+        app()->forgetInstance(CacheAgentStateView::class);
+
+        try {
+            app(CacheAgentStateView::class)->putNode(7, [], 'available', 1, CacheAgentStateView::now(), null);
+
+            expect(glob($home.'/cache/agent-view/*/*/*'))->toHaveCount(1)
+                ->and(Cache::get('agent-view.node.7'))->toBeNull()
+                ->and(app(AgentStateView::class)->node(7)->freshness)->toBe(AgentViewFreshness::Fresh);
+        } finally {
+            (new Filesystem)->deleteDirectory($home);
+        }
     });
 });
