@@ -14,9 +14,7 @@ final readonly class AnalyticsFootprint
 {
     public const string Hostname = AnalyticsHostname::Value;
 
-    /** The first line of the Caddy fragment, and the only proof that Orbit wrote it. */
-    public const string CaddyFragment = 'analytics.caddy';
-
+    /** The first line of the rendered Caddy site. */
     public const string CaddyFragmentMarker = '# Managed by Orbit: analytics';
 
     /** Replaced on the Gateway with the listener the Node Caddy build rule chooses for a shared site. */
@@ -27,10 +25,6 @@ final readonly class AnalyticsFootprint
     public const string CertificateCurrentDirectory = '/etc/caddy/orbit-analytics-cert-current';
 
     public const string CertificateOwnershipMarker = 'analytics-certificate';
-
-    public const string CaddyVersionsDirectory = '/etc/caddy/orbit-versions';
-
-    public const string CaddyfilePath = '/etc/caddy/Caddyfile';
 
     public const string CaddyServiceName = 'caddy';
 

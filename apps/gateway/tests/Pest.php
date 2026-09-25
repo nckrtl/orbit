@@ -16,6 +16,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskRunReceipts;
 use App\Infrastructure\AgentView\CacheAgentStateView;
+use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\NativeProcessRunner;
 use App\Infrastructure\Processes\ProcessInvocation;
@@ -31,6 +32,7 @@ use Laravel\Ai\Classification;
 use Tests\Support\FakeAgentationSiteProjection;
 use Tests\Support\FakeClusterRouterDnsSelectionReconciler;
 use Tests\Support\FakeNodeAgentRuntime;
+use Tests\Support\FakeNodeCaddyBuilds;
 use Tests\Support\FakeRouterLanIngressReconciler;
 use Tests\Support\FakeTaskCheckRunner;
 use Tests\Support\FakeTaskRunReceipts;
@@ -57,6 +59,8 @@ uses(TestCase::class, RefreshDatabase::class)
         app()->instance(ClusterRouterDnsSelectionReconciler::class, new FakeClusterRouterDnsSelectionReconciler);
         app()->instance(TaskRunReceipts::class, new FakeTaskRunReceipts);
         app()->instance(TaskCheckRunner::class, new FakeTaskCheckRunner);
+        // A Node Caddy build runs local `sudo` on a Gateway Node; tests record build requests instead.
+        app()->instance(NodeCaddyBuilds::class, new FakeNodeCaddyBuilds);
         // The view's file store under ORBIT_HOME would outlive a test; each test gets its own.
         app()->instance(CacheAgentStateView::class, new CacheAgentStateView(Cache::store('array')));
         Classification::fake();

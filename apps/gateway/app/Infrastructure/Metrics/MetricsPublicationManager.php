@@ -7,75 +7,64 @@ namespace App\Infrastructure\Metrics;
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\Certificates\GatewayCertificateIssuer;
+use App\Domain\Metrics\MetricsGatewayResolver;
 use App\Domain\Metrics\MetricsPublicationManager as PublicationManager;
+use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Caddy\Build\CaddySiteRoles;
+use App\Infrastructure\Caddy\Build\NodeCaddyBuildException;
+use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
 use App\Models\Node;
 use InvalidArgumentException;
-use Throwable;
 
+/**
+ * Publishes `metrics.orbit` on the Gateway. The Metrics role row is the stored state: while it converges
+ * or is active, a Node Caddy build of the Gateway renders the site (ADR 0141). The certificate comes
+ * before the build, and the build withdraws the site before its certificate goes.
+ */
 final readonly class MetricsPublicationManager implements PublicationManager
 {
     public function __construct(
         private GatewayCertificateIssuer $certificates,
         private MetricsCertificatePublisher $certificatePublisher,
-        private MetricsCaddyPublisher $caddy,
+        private NodeCaddyBuilds $builds,
         private MetricsPublicationSshExecutor $firewall,
         private PrivateDnsManager $dns,
-        private MetricsPublicationRenderer $renderer = new MetricsPublicationRenderer,
         private ?DevelopmentProjectionOperationLock $projection = null,
+        private ?MetricsGatewayResolver $gateways = null,
     ) {}
 
+    /**
+     * A failure keeps the published certificate: a failed convergence still renders the site, and every
+     * later build of the Gateway validates the certificate it names.
+     */
     public function converge(Node $gateway, Node $metrics): void
     {
-        $this->owner()->run(fn () => $this->convergeOwned($gateway, $metrics));
-    }
-
-    private function convergeOwned(Node $gateway, Node $metrics): void
-    {
-        $gatewayAddress = $this->address($gateway);
-        $metricsAddress = $this->address($metrics);
-        $certificateReceipt = MetricsPublicationReceipt::unchanged();
-        $withdrawalReceipt = MetricsPublicationReceipt::unchanged();
-        $caddyReceipt = MetricsPublicationReceipt::unchanged();
-        $configuration = $this->renderer->caddy($metricsAddress, $gatewayAddress);
-
-        try {
+        $this->owner()->run(function () use ($gateway, $metrics): void {
+            $gatewayAddress = $this->address($gateway);
+            $this->address($metrics);
             $certificate = $this->certificates->issue('metrics.orbit', $gatewayAddress);
-            $certificateReceipt = $this->certificatePublisher->publish($certificate);
-            $withdrawalReceipt = $this->caddy->withdrawForCutover();
+            $this->certificatePublisher->publish($certificate);
             $this->firewall->converge($metrics, $gatewayAddress);
-            $caddyReceipt = $this->caddy->publish($configuration);
+            $this->build($gateway);
             $this->dns->converge($metrics);
-        } catch (Throwable $exception) {
-            try {
-                $this->caddy->restore($caddyReceipt);
-                $this->caddy->restore($withdrawalReceipt);
-                $this->certificatePublisher->restore($certificateReceipt);
-            } catch (Throwable) {
-                throw new ResourceOperationException(
-                    'metrics.publication_rollback_failed',
-                    'Metrics publication rollback did not complete.',
-                    502,
-                );
-            }
-
-            throw $exception;
-        }
+        });
     }
 
+    /**
+     * The Metrics role is already `removing`, or it moved to another Node, so the build withdraws the site
+     * or points it at the new Node. The certificate goes only when no Metrics site renders any more.
+     */
     public function remove(Node $gateway, Node $metrics): void
     {
-        $this->owner()->run(fn () => $this->removeOwned($gateway, $metrics));
-    }
-
-    private function removeOwned(Node $gateway, Node $metrics): void
-    {
-        $gatewayAddress = $this->address($gateway);
-        $this->address($metrics);
-        $this->dns->converge();
-        $this->caddy->remove();
-        $this->firewall->remove($metrics, $gatewayAddress);
-        $this->certificatePublisher->remove();
+        $this->owner()->run(function () use ($gateway, $metrics): void {
+            $gatewayAddress = $this->address($gateway);
+            $this->address($metrics);
+            $this->dns->converge();
+            $this->build($gateway);
+            $this->firewall->remove($metrics, $gatewayAddress);
+            $this->removeUnusedCertificate();
+        });
     }
 
     public function abandon(Node $metrics): void
@@ -85,15 +74,36 @@ final readonly class MetricsPublicationManager implements PublicationManager
 
     public function retract(Node $metrics): void
     {
-        $this->owner()->run(fn () => $this->retractOwned($metrics));
+        $this->owner()->run(function () use ($metrics): void {
+            $this->address($metrics);
+            $this->dns->converge();
+            $gateway = ($this->gateways ?? new MetricsGatewayResolver)->resolve();
+            $this->build($gateway);
+            $this->removeUnusedCertificate();
+        });
     }
 
-    private function retractOwned(Node $metrics): void
+    /** Every build of the Gateway validates the certificate a rendered Metrics site names. */
+    private function removeUnusedCertificate(): void
     {
-        $this->address($metrics);
-        $this->dns->converge();
-        $this->caddy->remove();
-        $this->certificatePublisher->remove();
+        if (CaddySiteRoles::serving(RoleName::Metrics) === []) {
+            $this->certificatePublisher->remove();
+        }
+    }
+
+    private function build(Node $gateway): void
+    {
+        try {
+            $this->builds->build($gateway);
+        } catch (NodeCaddyBuildException $exception) {
+            throw new ResourceOperationException(
+                'metrics.caddy_publication_failed',
+                $exception->getMessage(),
+                502,
+                $exception,
+                $exception->details(),
+            );
+        }
     }
 
     private function address(Node $node): string

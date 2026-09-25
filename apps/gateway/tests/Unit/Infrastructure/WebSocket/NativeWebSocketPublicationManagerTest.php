@@ -6,6 +6,7 @@ use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\Certificates\GatewayCertificateIssuer;
 use App\Domain\Certificates\GatewayCertificatePaths;
 use App\Domain\Nodes\NodeRoleOperationException;
+use App\Infrastructure\Caddy\Build\NodeCaddyBuildException;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
@@ -14,21 +15,36 @@ use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\WebSocket\NativeWebSocketPublicationManager;
-use App\Infrastructure\WebSocket\WebSocketCaddyPublisher;
-use App\Infrastructure\WebSocket\WebSocketCaddySiteRenderer;
 use App\Infrastructure\WebSocket\WebSocketCertificatePublisher;
 use App\Models\Node;
+use Tests\Support\RecordingNodeCaddyBuilds;
 
-it('issues the certificate, publishes the Caddy site, then converges DNS last', function (): void {
+it('publishes the certificate, requests a Node Caddy build, then converges DNS last', function (): void {
     $events = [];
     $manager = websocket_publication_manager($events);
 
     $manager->converge(websocket_publication_node());
 
-    expect($events)->toBe(['certificate:issue', 'ssh:certificate', 'ssh:caddy', 'dns:converge']);
+    expect($events)->toBe(['certificate:issue', 'ssh:certificate', 'build:websocket', 'dns:converge']);
 });
 
-it('throws when the certificate SSH push fails', function (): void {
+it('writes no Caddy file on the Node itself', function (): void {
+    $events = [];
+    $commands = [];
+    $manager = websocket_publication_manager($events, commands: $commands);
+
+    $manager->converge(websocket_publication_node());
+    $manager->remove(websocket_publication_node());
+
+    foreach ($commands as $command) {
+        expect(implode(' ', $command->arguments)."\n".($command->input ?? ''))
+            ->not->toContain('orbit-versions')
+            ->not->toContain('/etc/caddy/Caddyfile')
+            ->not->toContain('websocket.caddy');
+    }
+});
+
+it('stops before the build when the certificate SSH push fails', function (): void {
     $events = [];
     $manager = websocket_publication_manager($events, failCertificate: true);
 
@@ -38,23 +54,27 @@ it('throws when the certificate SSH push fails', function (): void {
     expect($events)->toBe(['certificate:issue', 'ssh:certificate']);
 });
 
-it('throws when the Caddy SSH push fails', function (): void {
+it('keeps its error code and names the Node, stage, and Caddy message when the build fails', function (): void {
     $events = [];
-    $manager = websocket_publication_manager($events, failCaddy: true);
+    $manager = websocket_publication_manager($events, buildFailure: new NodeCaddyBuildException('websocket', 'validate', 'Error: loading certificates'));
 
     expect(fn () => $manager->converge(websocket_publication_node()))
-        ->toThrow(NodeRoleOperationException::class);
+        ->toThrow(function (NodeRoleOperationException $exception): void {
+            expect($exception->underlyingErrorCode)->toBe('websocket.caddy_publication_failed')
+                ->and($exception->step)->toBe('websocket-caddy')
+                ->and($exception->getMessage())->toBe('The Caddy build for Node [websocket] failed at stage [validate]: Error: loading certificates');
+        });
 
-    expect($events)->toBe(['certificate:issue', 'ssh:certificate', 'ssh:caddy']);
+    expect($events)->toBe(['certificate:issue', 'ssh:certificate', 'build:websocket']);
 });
 
-it('removes the Caddy site and certificate over SSH, then converges DNS without the node', function (): void {
+it('builds the Node before it removes the certificate, then converges DNS without the node', function (): void {
     $events = [];
     $manager = websocket_publication_manager($events);
 
     $manager->remove(websocket_publication_node());
 
-    expect($events)->toBe(['ssh:caddy-remove', 'ssh:certificate-remove', 'dns:converge-empty']);
+    expect($events)->toBe(['build:websocket', 'ssh:certificate-remove', 'dns:converge-empty']);
 });
 
 it('touches only the Gateway-side DNS record when the node is unreachable', function (): void {
@@ -66,22 +86,18 @@ it('touches only the Gateway-side DNS record when the node is unreachable', func
     expect($events)->toBe(['dns:converge-empty']);
 });
 
-it('reports the missing listen address when the Caddy publication refuses it', function (): void {
-    $events = [];
-    $manager = websocket_publication_manager($events, failCaddy: true);
-
-    expect(fn () => $manager->converge(websocket_publication_node()))
-        ->toThrow(NodeRoleOperationException::class, 'Caddy would bind 192.168.6.30, which is not an address on this Node.');
-});
-
-it('checks the listen addresses without changing anything and names a missing one', function (): void {
+it('checks the listen addresses of the Node render without changing anything and names a missing one', function (): void {
     $events = [];
 
     websocket_publication_manager($events)->checkListenAddresses(websocket_publication_node());
 
-    expect($events)->toBe(['ssh:caddy-remove'])
-        ->and(fn () => websocket_publication_manager($events, failCaddy: true)->checkListenAddresses(websocket_publication_node()))
-        ->toThrow(NodeRoleOperationException::class, 'Caddy would bind 192.168.6.30');
+    expect($events)->toBe(['check:websocket'])
+        ->and(fn () => websocket_publication_manager($events, buildFailure: new NodeCaddyBuildException(
+            'websocket',
+            'addresses',
+            'The build binds 192.168.6.30, which is not an address on this Node.',
+        ))->checkListenAddresses(websocket_publication_node()))
+        ->toThrow(NodeRoleOperationException::class, 'The build binds 192.168.6.30');
 });
 
 function websocket_publication_node(): Node
@@ -94,10 +110,12 @@ function websocket_publication_node(): Node
     ]);
 }
 
+/** @param list<RemoteCommand> $commands */
 function websocket_publication_manager(
     array &$events,
     bool $failCertificate = false,
-    bool $failCaddy = false,
+    ?NodeCaddyBuildException $buildFailure = null,
+    array &$commands = [],
 ): NativeWebSocketPublicationManager {
     $certificateDirectory = sys_get_temp_dir().'/orbit-websocket-test-'.bin2hex(random_bytes(4));
     mkdir($certificateDirectory);
@@ -120,8 +138,7 @@ function websocket_publication_manager(
             }
         },
         certificatePublisher: new WebSocketCertificatePublisher,
-        caddy: new WebSocketCaddyPublisher,
-        site: new WebSocketCaddySiteRenderer,
+        builds: new RecordingNodeCaddyBuilds($events, $buildFailure),
         dns: new class($events) implements PrivateDnsManager
         {
             public function __construct(private array &$events) {}
@@ -131,32 +148,27 @@ function websocket_publication_manager(
                 $this->events[] = $pendingNode instanceof Node ? 'dns:converge' : 'dns:converge-empty';
             }
         },
-        ssh: new class($events, $failCertificate, $failCaddy) implements SshExecutor
+        ssh: new class($events, $failCertificate, $commands) implements SshExecutor
         {
             public function __construct(
                 private array &$events,
                 private bool $failCertificate,
-                private bool $failCaddy,
+                private array &$commands,
             ) {}
 
             public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
             {
+                $this->commands[] = $command;
+
                 if ($command->protectedInput !== null) {
                     $this->events[] = 'ssh:certificate';
 
                     return new CommandResult($this->failCertificate ? 1 : 0, '', '', 1, false);
                 }
 
-                if (in_array('rm', $command->arguments, true)) {
-                    $this->events[] = 'ssh:certificate-remove';
+                $this->events[] = in_array('rm', $command->arguments, true) ? 'ssh:certificate-remove' : 'ssh:other';
 
-                    return new CommandResult($this->failCertificate ? 1 : 0, '', '', 1, false);
-                }
-
-                $isCaddyPublish = str_contains($command->input ?? '', 'orbit_rewrite_listeners');
-                $this->events[] = $isCaddyPublish ? 'ssh:caddy' : 'ssh:caddy-remove';
-
-                return new CommandResult($this->failCaddy ? 1 : 0, '', $this->failCaddy ? "Caddy would bind 192.168.6.30, which is not an address on this Node. Correct the stored WireGuard or LAN address of the Node, then publish again.\n" : '', 1, false);
+                return new CommandResult(0, '', '', 1, false);
             }
         },
         keys: new class implements SshKeyProvider
@@ -180,6 +192,5 @@ function websocket_publication_manager(
 
             public function put(string $host, int $port, HostKey $key): void {}
         },
-        port: 8790,
     );
 }

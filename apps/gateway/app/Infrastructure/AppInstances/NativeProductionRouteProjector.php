@@ -84,7 +84,6 @@ final readonly class NativeProductionRouteProjector implements ProductionCloneRo
 
         $edge = $this->publicEdge ?? app(PublicRouteEdgeProjector::class);
         $edge->prepareIngressCertificate($route);
-        $edge->stageIngressCaddy($route);
         $edge->verifyPublicEdge($route);
         $edge->activatePublicHandler($route);
         $edge->prepareIngressFirewall($route);
@@ -95,7 +94,7 @@ final readonly class NativeProductionRouteProjector implements ProductionCloneRo
         $appInstance->loadMissing('node');
         // `prepareCertificate` has issued the certificate the site names.
         $route->publishSites();
-        $this->caddy->converge($appInstance->node);
+        $this->caddy->build($appInstance->node);
     }
 
     public function prepareRouterCertificate(AppInstance $appInstance, Route $route): void
@@ -201,7 +200,7 @@ final readonly class NativeProductionRouteProjector implements ProductionCloneRo
         $router = $this->router($appInstance, $route);
 
         if ($router instanceof Node) {
-            $this->caddy->converge($router);
+            $this->caddy->build($router);
         }
     }
 

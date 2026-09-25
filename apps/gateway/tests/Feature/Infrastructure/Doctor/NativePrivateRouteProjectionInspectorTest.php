@@ -39,6 +39,7 @@ it('observes private Route projections without application HTTP checks', functio
         ->toContain($route->domain)
         ->and(array_slice($ssh->commands[0]->arguments, 0, 3))->toBe(['sudo', 'bash', '-seu'])
         ->and($ssh->commands[0]->input)
+        ->toContain('grep -Rqs -- "$domain" "$live" "$fragment_dir"')
         ->toContain('getent ahostsv4')
         ->toContain('APP_URL=')
         ->not->toContain('curl')

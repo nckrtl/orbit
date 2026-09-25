@@ -97,7 +97,7 @@ Each `gateway` role convergence that installs a newer Caddy restarts it, and Cad
 
 A failed `gateway` role convergence leaves the role `failed`. `php artisan orbit:gateway-web` then refuses with `gateway.web_node_missing`, because it needs an active `gateway` role. Fix the cause, then run `orbit node:role:add <node> gateway --converge` again. A successful run returns the role to `active`.
 
-Proposed in [ADR 0141](/decisions/0141-build-each-node-caddyfile-on-the-gateway), not live yet: every Node with Caddy sites installs Caddy through this step before its first [Node Caddy build](/reference/caddy-configuration#node-caddy-build). The `ingress` role gains the `caddy` package. ProxyCli publication runs the step on its Node, and the build uses only the packaged `/usr/bin/caddy`. The step orders the Caddy service after `wg-quick@orbit` on every Node. Each build checks the floor again.
+Every Node with Caddy sites installs Caddy through this step before its first [Node Caddy build](/reference/caddy-configuration#node-caddy-build). Role convergence runs it for each role that lists the `caddy` package, `analytics` and ProxyCli publication run it on their Node, and Gateway bootstrap and web convergence run it on the Gateway machine. The build uses only the packaged `/usr/bin/caddy` and checks the floor again before it writes a version. A build on a Node without that Caddy fails at stage `release` and changes nothing.
 
 ## Converge an existing Node
 

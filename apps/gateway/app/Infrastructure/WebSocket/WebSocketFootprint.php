@@ -19,9 +19,7 @@ final readonly class WebSocketFootprint
 
     public const string EnvironmentPath = '.env';
 
-    /** The first line of the Caddy fragment, and the only proof that Orbit wrote it. */
-    public const string CaddyFragment = 'websocket.caddy';
-
+    /** The first line of the rendered Caddy site. */
     public const string CaddyFragmentMarker = '# Managed by Orbit: websocket';
 
     /** Replaced on the Gateway with the listener the Node Caddy build rule chooses for a shared site. */
@@ -32,10 +30,6 @@ final readonly class WebSocketFootprint
     public const string CertificateCurrentDirectory = '/etc/caddy/orbit-websocket-cert-current';
 
     public const string CertificateOwnershipMarker = 'websocket-certificate';
-
-    public const string CaddyVersionsDirectory = '/etc/caddy/orbit-versions';
-
-    public const string CaddyfilePath = '/etc/caddy/Caddyfile';
 
     public const string CaddyServiceName = 'caddy';
 

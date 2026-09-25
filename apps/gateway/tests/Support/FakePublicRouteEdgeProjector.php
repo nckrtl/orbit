@@ -43,11 +43,6 @@ final class FakePublicRouteEdgeProjector implements PublicRouteEdgeProjector
         $this->event('ingress-certificate');
     }
 
-    public function stageIngressCaddy(Route $route): void
-    {
-        $this->event('ingress-caddy');
-    }
-
     public function verifyPublicEdge(Route $route): void
     {
         $this->event('public-edge-verified');

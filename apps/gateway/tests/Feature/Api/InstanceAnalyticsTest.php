@@ -138,7 +138,6 @@ describe('instance:analytics:enable', function (): void {
             ->and($this->projector->routeIds)->toBe([$route->id])
             ->and($this->edge->calls)->toBe([
                 'ingress-certificate',
-                'ingress-caddy',
                 'public-edge-verified',
                 'public-activated',
                 'ingress-firewall',
@@ -186,7 +185,6 @@ describe('instance:analytics:enable', function (): void {
             ->and($route->status)->toBe(RouteStatus::Active)
             ->and($this->edge->calls)->toBe([
                 'ingress-certificate',
-                'ingress-caddy',
                 'public-edge-verified',
                 'public-activated',
                 'ingress-firewall',

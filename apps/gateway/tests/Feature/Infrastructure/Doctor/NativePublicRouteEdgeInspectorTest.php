@@ -14,6 +14,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AppDev\AppDevCaddyConfigRenderer;
 use App\Infrastructure\AppDev\AppDevSiteRepository;
 use App\Infrastructure\AppDev\AppDevSshExecutor;
+use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
 use App\Infrastructure\Caddy\CaddyGlobalOptions;
 use App\Infrastructure\Doctor\NativePublicRouteEdgeInspector;
 use App\Infrastructure\Processes\CommandDeadline;
@@ -182,6 +183,32 @@ describe('an Ingress that shares the Router and the workload', function (): void
 
         expect(array_slice($this->ssh->commands[0]->arguments, 0, 3))->toBe(['sudo', 'bash', '-seu']);
     });
+    it('accepts the composed site in the one Caddyfile a Node Caddy build writes', function (): void {
+        public_edge_publish_build($this->caddy, $this->ingress);
+
+        expect(public_edge_observe($this))->toBe([true, true, true])
+            ->and(is_dir("{$this->caddy}/orbit-versions/v2/fragments"))->toBeFalse();
+    });
+
+    it('reports a composed site that no longer serves the Instance in a build', function (): void {
+        public_edge_publish_build($this->caddy, $this->ingress, static fn (string $file): string => preg_replace(
+            '/^(\s*)php_fastcgi .*$/m',
+            '$1php_fastcgi unix//run/php/other.sock {',
+            $file,
+        ) ?? $file);
+
+        expect(public_edge_observe($this)[0])->toBeFalse();
+    });
+
+    it('reports a build whose public site lost certificate automation', function (): void {
+        public_edge_publish_build($this->caddy, $this->ingress, static fn (string $file): string => str_replace(
+            "    tls force_automate\n",
+            '',
+            $file,
+        ));
+
+        expect(public_edge_observe($this))->toBe([true, false, true]);
+    });
 });
 
 it('fails closed when the Node publishes no public site for the Route', function (): void {
@@ -250,6 +277,20 @@ function public_edge_publish(string $caddy, Node $ingress, ?Closure $edit = null
         ($globalOptions ?? CaddyGlobalOptions::render())."import {$caddy}/orbit-versions/v1/fragments/*.caddy\n",
     );
     file_put_contents("{$caddy}/orbit-versions/v1/fragments/app-dev.caddy", $edit instanceof Closure ? $edit($sites) : $sites);
+}
+
+/**
+ * Publishes the Ingress Node's whole render as the one versioned Caddyfile a Node Caddy build writes.
+ *
+ * @param  (Closure(string): string)|null  $edit
+ */
+function public_edge_publish_build(string $caddy, Node $ingress, ?Closure $edit = null): void
+{
+    $file = app(NodeCaddyfileRenderer::class)->render($ingress)->content;
+    File::ensureDirectoryExists("{$caddy}/orbit-versions/v2");
+    file_put_contents("{$caddy}/orbit-versions/v2/Caddyfile", $edit instanceof Closure ? $edit($file) : $file);
+    unlink("{$caddy}/Caddyfile");
+    symlink("{$caddy}/orbit-versions/v2/Caddyfile", "{$caddy}/Caddyfile");
 }
 
 function public_edge_route(Cluster $cluster, Node $workload): Route

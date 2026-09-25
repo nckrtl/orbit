@@ -14,8 +14,6 @@ interface PublicRouteEdgeProjector
 
     public function prepareIngressCertificate(Route $route): void;
 
-    public function stageIngressCaddy(Route $route): void;
-
     public function verifyPublicEdge(Route $route): void;
 
     public function activatePublicHandler(Route $route): void;

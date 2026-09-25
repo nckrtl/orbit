@@ -55,7 +55,7 @@ final readonly class NativeDevelopmentRouteProjector implements AppInstanceTrans
             errorCode: 'app-dev.source_access_failed',
         );
         $this->php->converge($appInstance->node);
-        $this->caddy->converge($appInstance->node);
+        $this->caddy->build($appInstance->node);
 
         $router = $route->cluster?->routerAssignment?->node;
 
@@ -77,7 +77,7 @@ final readonly class NativeDevelopmentRouteProjector implements AppInstanceTrans
             $this->certificates->convergeRouteRouter($route, $router);
             $this->convergeLanFirewall($appInstance, $route, $router);
             $this->verifyWorkloadLeaf($appInstance, $route, $router);
-            $this->caddy->converge($router);
+            $this->caddy->build($router);
         }
 
         // DNS is deliberately last. A failed earlier projection is never reachable by name.
@@ -115,7 +115,7 @@ final readonly class NativeDevelopmentRouteProjector implements AppInstanceTrans
         }
 
         foreach ($nodes->unique('id') as $node) {
-            $this->caddy->converge($node);
+            $this->caddy->build($node);
         }
         $this->php->converge($source);
         $this->dns->converge();
@@ -143,7 +143,7 @@ final readonly class NativeDevelopmentRouteProjector implements AppInstanceTrans
     public function prepareWorkloadCaddy(AppInstance $appInstance, Route $current, Route $candidate): void
     {
         $appInstance->loadMissing('node');
-        $this->caddy->converge($appInstance->node);
+        $this->caddy->build($appInstance->node);
     }
 
     public function prepareRouterCertificate(AppInstance $appInstance, Route $current, Route $candidate): void
@@ -178,7 +178,7 @@ final readonly class NativeDevelopmentRouteProjector implements AppInstanceTrans
         $router = $this->router($appInstance, $candidate);
 
         if ($router instanceof Node) {
-            $this->caddy->converge($router);
+            $this->caddy->build($router);
         }
     }
 
@@ -186,13 +186,6 @@ final readonly class NativeDevelopmentRouteProjector implements AppInstanceTrans
     {
         if ($candidate->publication === RoutePublication::Public) {
             $this->publicEdge()->prepareIngressCertificate($candidate);
-        }
-    }
-
-    public function stageIngressCaddy(Route $candidate): void
-    {
-        if ($candidate->publication === RoutePublication::Public) {
-            $this->publicEdge()->stageIngressCaddy($candidate);
         }
     }
 
@@ -258,10 +251,10 @@ final readonly class NativeDevelopmentRouteProjector implements AppInstanceTrans
         $route->loadMissing(['cluster.routerAssignment.node', 'transitionCluster.routerAssignment.node']);
         $router = $this->routeRouter($route);
         $built = [$appInstance->node];
-        $this->caddy->converge($appInstance->node);
+        $this->caddy->build($appInstance->node);
 
         if ($router instanceof Node && ! $router->is($appInstance->node)) {
-            $this->caddy->converge($router);
+            $this->caddy->build($router);
             $built[] = $router;
         }
 
@@ -286,7 +279,7 @@ final readonly class NativeDevelopmentRouteProjector implements AppInstanceTrans
         }
 
         if (! collect($built)->contains(static fn (Node $node): bool => $node->is($oldRouter))) {
-            $this->caddy->converge($oldRouter);
+            $this->caddy->build($oldRouter);
         }
 
         if (! $this->usesCertificate($oldRouter, "route-{$route->id}-router")) {
@@ -334,7 +327,7 @@ final readonly class NativeDevelopmentRouteProjector implements AppInstanceTrans
         }
 
         if (! collect($published)->contains(static fn (Node $node): bool => $node->is($router))) {
-            $this->caddy->converge($router);
+            $this->caddy->build($router);
         }
 
         if (! $this->usesCertificate($router, "route-{$retiring->id}-router")) {
@@ -350,11 +343,11 @@ final readonly class NativeDevelopmentRouteProjector implements AppInstanceTrans
     public function rollbackCaddy(AppInstance $appInstance, Route $route): void
     {
         $appInstance->loadMissing('node');
-        $this->caddy->converge($appInstance->node);
+        $this->caddy->build($appInstance->node);
         $router = $this->router($appInstance, $route);
 
         if ($router instanceof Node) {
-            $this->caddy->converge($router);
+            $this->caddy->build($router);
         }
     }
 

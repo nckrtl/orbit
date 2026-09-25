@@ -176,7 +176,7 @@ describe('a later build', function (): void {
             ->and(file_get_contents($this->harness->path('orbit-backups/20260101T000000Z/Caddyfile')))->toBe("kept\n");
     });
 
-    it('keeps the live version and the nine newest others and leaves staged files alone', function (): void {
+    it('keeps the live version and the nine newest others and removes the retired staged directory', function (): void {
         foreach (range(1, 12) as $age) {
             $name = sprintf('%016x', $age);
             $this->harness->write("orbit-versions/{$name}/Caddyfile", "# old {$age}\n");
@@ -187,7 +187,7 @@ describe('a later build', function (): void {
         $caddyfile = node_caddy_push_file('shop.test');
 
         $result = $this->harness->push($caddyfile);
-        $expected = [...array_map(static fn (int $age): string => sprintf('%016x', $age), range(1, 9)), $caddyfile->version, 'staged'];
+        $expected = [...array_map(static fn (int $age): string => sprintf('%016x', $age), range(1, 9)), $caddyfile->version];
         sort($expected);
 
         expect($result['exit'])->toBe(0, $result['stderr'])
@@ -269,6 +269,27 @@ describe('a failed build', function (): void {
         $result = $this->harness->push(node_caddy_push_file('shop.test'), ['HARNESS_CADDY_VERSION' => 'v2.9.0 h1:abc']);
 
         expect($result['exit'])->toBe(0, $result['stderr']);
+    });
+});
+
+describe('an address check', function (): void {
+    it('passes without a change when every bound address is on the Node', function (): void {
+        $result = $this->harness->checkAddresses(node_caddy_push_file('shop.test'), '127.0.0.1 10.44.0.9');
+
+        expect($result['exit'])->toBe(0, $result['stderr'])
+            ->and($this->harness->directories('orbit-versions'))->toBe([])
+            ->and($this->harness->serviceCalls())->toBe([]);
+    });
+
+    it('names a missing address at stage addresses without root', function (): void {
+        $command = $this->harness->script()->addressCheck(node_caddy_push_file('shop.test'));
+        $result = $this->harness->checkAddresses(node_caddy_push_file('shop.test'), '127.0.0.1');
+
+        expect($command->arguments[0])->toBe('bash')
+            ->and($result['exit'])->not->toBe(0)
+            ->and($result['stderr'])->toContain('The build binds 10.44.0.9, which is not an address on this Node.')
+            ->and($result['stderr'])->toContain('orbit-caddy-build-stage=addresses')
+            ->and($this->harness->directories('orbit-versions'))->toBe([]);
     });
 });
 

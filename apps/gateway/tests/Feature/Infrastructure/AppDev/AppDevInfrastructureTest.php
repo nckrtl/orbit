@@ -17,7 +17,6 @@ use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppDev\AppDevCaddyConfigRenderer;
-use App\Infrastructure\AppDev\AppDevCaddyPublisher;
 use App\Infrastructure\AppDev\AppDevDnsConfigRenderer;
 use App\Infrastructure\AppDev\AppDevPhpFpmConfigRenderer;
 use App\Infrastructure\AppDev\AppDevSite;
@@ -29,7 +28,8 @@ use App\Infrastructure\AppDev\RemoteAppDevCaddyManager;
 use App\Infrastructure\AppDev\RemoteAppDevCertificateManager;
 use App\Infrastructure\AppDev\RemoteAppDevPhpFpmManager;
 use App\Infrastructure\AppDev\RemoteAppDevTldRouteManager;
-use App\Infrastructure\Caddy\Build\NodeCaddyListenerResolver;
+use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
+use App\Infrastructure\Caddy\CaddyPublicationLock;
 use App\Infrastructure\Nodes\RemotePhpPackageManager;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\CommandResult;
@@ -52,10 +52,9 @@ use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\ExecutableFinder;
 use Symfony\Component\Process\Process;
-use Tests\Support\AppDevCaddyPublishHarness;
-use Tests\Support\AppDevCaddyPublishScenario;
 use Tests\Support\AppDevFakeProcessRunner;
 use Tests\Support\AppDevFakeSshExecutor;
+use Tests\Support\FakeNodeCaddyBuilds;
 use Tests\Support\FpmPublishHarness;
 
 function app_dev_account_resolver(
@@ -701,15 +700,17 @@ it('keeps leaf private keys on the target while publishing a gateway-signed cert
             'sudo install -o root -g root -m 0644',
             'sudo install -o root -g caddy -m 0640 -- "$published/key.pem"',
             'sudo mv -fT -- "$caddy_link" "$caddy_root/current"',
-            "if sudo systemctl is-active --quiet caddy; then\n    sudo systemctl reload-or-restart caddy\nfi",
+            "if sudo systemctl is-active --quiet caddy; then\n    sudo bash -ceu \"\$locked_reload\"\nfi",
         )
         ->not
         ->toContain('PRIVATE KEY')
-        ->and(mb_strpos($ssh->commands[1]->arguments[2], 'sudo systemctl reload-or-restart caddy'))
+        ->and(mb_strpos($ssh->commands[1]->arguments[2], 'sudo bash -ceu "$locked_reload"'))
         ->toBeGreaterThan((int) mb_strpos(
             $ssh->commands[1]->arguments[2],
             'sudo mv -fT -- "$caddy_link" "$caddy_root/current"',
-        ));
+        ))
+        ->and($ssh->commands[1]->arguments[array_key_last($ssh->commands[1]->arguments)])
+        ->toBe(CaddyPublicationLock::script(CaddyPublicationLock::Path)."\nsystemctl reload-or-restart caddy\n");
 });
 
 it('uses a nondefault managed home for app-dev certificate converge and removal', function (): void {
@@ -832,67 +833,29 @@ it('reuses only current app-dev leaves with the exact RSA extension policy', fun
     'Ed25519 with the approved usages' => ['digitalSignature,keyEncipherment', 'ED25519', 'reissue'],
 ]);
 
-it('publishes private Caddy and DNS configurations through complete preserved validation aggregates', function (): void {
+it('requests a Node Caddy build for Route sites and publishes DNS through its preserved validation aggregate', function (): void {
     [$node, $app] = app_dev_runtime_models();
     $appInstance = app_dev_supported_app_instance($node, $app->id);
     app_dev_supported_route($appInstance, 'acme.app-dev.orbit');
     $feature = app_dev_supported_app_instance($node, $app->id, 'feature');
     app_dev_supported_route($feature, 'feature.acme.app-dev.orbit');
     $ssh = new AppDevFakeSshExecutor;
-    $caddyRenderer = new AppDevCaddyConfigRenderer;
-    $caddy = new RemoteAppDevCaddyManager(
-        sites: new AppDevSiteRepository,
-        renderer: $caddyRenderer,
-        ssh: app_dev_ssh($ssh),
-    );
+    $builds = new FakeNodeCaddyBuilds;
+    $rendered = [];
+    $builds->onBuild = function (Node $node) use (&$rendered): void {
+        $rendered[] = app(NodeCaddyfileRenderer::class)->render($node)->content;
+    };
+    $caddy = new RemoteAppDevCaddyManager(builds: $builds, ssh: app_dev_ssh($ssh));
     $processes = new AppDevFakeProcessRunner;
     $dns = new DnsmasqPrivateDnsManager($processes, new AppDevDnsConfigRenderer(new AppDevSiteRepository));
 
-    $caddy->converge($node);
+    $caddy->build($node);
     $dns->converge();
 
-    $expectedCaddy = $caddyRenderer->render(new AppDevSiteRepository()->forNode($node), app(NodeCaddyListenerResolver::class)->fragments($node)->routeBind());
-
-    expect($ssh->commands[0]->input)
-        ->toContain(
-            base64_encode($expectedCaddy),
-            'exec 9>>"$lock"',
-            'flock -w 30 9',
-            'source_main=$(readlink -f "$live_caddyfile")',
-            'previous_fragments=$(dirname "$source_main")/fragments',
-            'destination="$candidate/fragments/$fragment_name"',
-            'destination="$candidate/fragments/00-unmanaged.caddy"',
-            'cp --preserve=mode,ownership -- "$fragment" "$destination"',
-            'app-dev.caddy',
-            "printf 'import %s/%s/fragments/*.caddy\n' \"\$versions\" \"\$version\"",
-            'caddy validate --config "$candidate/Caddyfile"',
-            'ensure_hibernation_ancestor "$hibernation_markers"',
-            'install -d -o root -g caddy -m 0755 -- "$hibernation_markers"',
-            'ensure_hibernation_ancestor "$hibernation_logs"',
-            'install -d -o root -g caddy -m 2775 -- "$hibernation_logs"',
-            'install -d -m 0755 -- "$current"',
-            'orbit_fragments_unchanged "$candidate/fragments" "$previous_fragments"',
-            'mv -fT -- "$candidate_link" "$live_caddyfile"',
-            'if ! systemctl enable "$caddy_service" || ! systemctl reload-or-restart "$caddy_service"; then',
-            'mv -fT -- "$rollback_link" "$live_caddyfile"',
-            'cp -a -- "$previous_main" "$rollback_file"',
-            'mv -fT -- "$rollback_file" "$live_caddyfile"',
-        )
-        ->and(array_slice(array: $ssh->commands[0]->arguments, offset: 0, length: 3))
-        ->toBe(['sudo', 'bash', '-seu'])
-        ->and($ssh->commands[0]->arguments)
-        ->toContain(
-            '/run/lock/orbit/caddy.lock',
-            '/dev/shm/orbit/hibernation',
-            '/data/caddy/orbit/hibernation',
-        );
-
-    $lockSetup = mb_strpos(haystack: $ssh->commands[0]->input, needle: 'lock_directory=$(dirname "$lock")');
-    $lockOpen = mb_strpos(haystack: $ssh->commands[0]->input, needle: 'exec 9>>"$lock"');
-
-    expect($lockSetup)
-        ->toBeInt()
-        ->toBeLessThan($lockOpen)
+    expect($builds->built)->toBe([$node->name])
+        ->and($rendered[0])
+        ->toContain('https://acme.app-dev.orbit {', 'https://feature.acme.app-dev.orbit {')
+        ->and($ssh->commands)->toBe([])
         ->and($processes->invocations)
         ->toHaveCount(1)
         ->and($processes->invocations[0]->input)
@@ -1165,8 +1128,7 @@ it('enters projection ownership before app-dev Caddy and DNS host publication', 
     $owner = new AppDevProjectionOwnerSpy;
     $ssh = new AppDevFakeSshExecutor;
     $caddy = new RemoteAppDevCaddyManager(
-        sites: new AppDevSiteRepository,
-        renderer: new AppDevCaddyConfigRenderer,
+        builds: new FakeNodeCaddyBuilds,
         ssh: app_dev_ssh($ssh),
         projection: $owner,
     );
@@ -1198,223 +1160,24 @@ it('enters projection ownership before app-dev Caddy and DNS host publication', 
         ->and($owner->active)
         ->toBeFalse()
         ->and($ssh->commands)
-        ->toHaveCount(3);
+        ->toHaveCount(1);
 });
 
-it('retires only the exact package-default caddyfile while preserving modified config and orbit fragments', function (): void {
-    $harness = new AppDevCaddyPublishHarness;
-
-    try {
-        $defaultResult = $harness->run(
-            publisher: zero_site_publisher($harness),
-            scenario: AppDevCaddyPublishScenario::packageDefault("package default\n", "package default\n"),
-        );
-
-        expect($defaultResult->exitCode)
-            ->toBe(0)
-            ->and($defaultResult->publishedFragments)
-            ->toHaveKey('app-dev.caddy')
-            ->not
-            ->toHaveKey('unmanaged.caddy')
-            ->and($defaultResult->liveMainAfter)
-            ->toBe("{\n    auto_https disable_certs\n    metrics {\n        per_host\n    }\n}\nimport ".$harness->etcCaddyPath('orbit-versions/test-version/fragments/*.caddy')."\n");
-        expect(fileperms($harness->etcCaddyPath('orbit-locks')) & 0o777)->toBe(0o700);
-        expect(fileperms($harness->etcCaddyPath('orbit-locks/caddy.lock')) & 0o777)->toBe(0o600);
-
-        $orbitResult = $harness->run(
-            publisher: zero_site_publisher($harness),
-            scenario: AppDevCaddyPublishScenario::orbitAggregate("import fragments/*.caddy\n", [
-                'unmanaged.caddy' => "legacy.test {\n}\n",
-                'custom.caddy' => "custom handler\n",
-                'app-dev.caddy' => "stale app-dev\n",
-            ]),
-        );
-
-        expect($orbitResult->exitCode)
-            ->toBe(0)
-            ->and($orbitResult->publishedFragments)
-            ->toHaveKey('app-dev.caddy')
-            ->toHaveKey('00-unmanaged.caddy')
-            ->toHaveKey('custom.caddy')
-            ->not
-            ->toHaveKey('unmanaged.caddy')
-            ->and($orbitResult->publishedFragments['custom.caddy'])
-            ->toBe("custom handler\n")
-            ->and($orbitResult->publishedFragments['00-unmanaged.caddy'])
-            ->toBe("legacy.test {\n}\n")
-            ->and($orbitResult->publishedFragments['app-dev.caddy'])
-            ->toBe("# Managed by Orbit.\n");
-
-        $modifiedResult = $harness->run(
-            publisher: zero_site_publisher($harness),
-            scenario: AppDevCaddyPublishScenario::modifiedConfig("modified config\n", "package default\n"),
-        );
-
-        expect($modifiedResult->exitCode)
-            ->toBe(0)
-            ->and($modifiedResult->publishedFragments)
-            ->toHaveKey('00-unmanaged.caddy')
-            ->not
-            ->toHaveKey('unmanaged.caddy')
-            ->and($modifiedResult->publishedFragments['00-unmanaged.caddy'])
-            ->toBe("modified config\n");
-    } finally {
-        $harness->cleanup();
-    }
-});
-
-it('leaves the live caddy aggregate unchanged when staged validation fails during zero-site publication', function (): void {
-    $harness = new AppDevCaddyPublishHarness;
-
-    try {
-        $result = $harness->run(
-            publisher: zero_site_publisher($harness),
-            scenario: AppDevCaddyPublishScenario::modifiedConfigWithValidationFailure(
-                "modified config\n",
-                "package default\n",
-            ),
-        );
-
-        expect($result->exitCode)
-            ->not
-            ->toBe(0)
-            ->and($result->liveMainAfter)
-            ->toBe("modified config\n")
-            ->and($result->publishedFragments)
-            ->toBeEmpty();
-    } finally {
-        $harness->cleanup();
-    }
-});
-
-it('fails closed when both unmanaged Caddy fragment names already exist', function (): void {
-    $harness = new AppDevCaddyPublishHarness;
-
-    try {
-        $result = $harness->run(
-            publisher: zero_site_publisher($harness),
-            scenario: AppDevCaddyPublishScenario::orbitAggregate("import fragments/*.caddy\n", [
-                'unmanaged.caddy' => "legacy\n",
-                '00-unmanaged.caddy' => "current\n",
-                'custom.caddy' => "custom\n",
-            ]),
-        );
-
-        expect($result->exitCode)
-            ->not
-            ->toBe(0)
-            ->and($result->liveMainAfter)
-            ->toBe("import fragments/*.caddy\n")
-            ->and($result->publishedFragments)
-            ->toBeEmpty();
-    } finally {
-        $harness->cleanup();
-    }
-});
-
-it('refuses to adopt a Caddyfile that opens its own global options block', function (): void {
-    $harness = new AppDevCaddyPublishHarness;
-    $adopted = "{\n    local_certs\n    email ops@example.test\n}\n\nlegacy.test {\n    respond ok\n}\n";
-
-    try {
-        $result = $harness->run(
-            publisher: zero_site_publisher($harness),
-            scenario: AppDevCaddyPublishScenario::modifiedConfig($adopted, "package default\n"),
-        );
-
-        expect($result->exitCode)
-            ->toBe(1)
-            ->and($result->stderr)
-            ->toBe('Caddy fragment 00-unmanaged.caddy opens its own global options block (local_certs, email). Orbit writes the only global options block. Remove that block from '.$harness->etcCaddyPath('Caddyfile').", then publish again.\n")
-            ->and($result->liveMainAfter)
-            ->toBe($adopted)
-            ->and($result->liveLinkTargetAfter)
-            ->toBeNull()
-            ->and($result->publishedFragments)
-            ->toBeEmpty()
-            ->and($result->serviceCalls)
-            ->toBeEmpty()
-            ->and(file_exists($harness->rootPath().'/validate.log'))
-            ->toBeFalse();
-    } finally {
-        $harness->cleanup();
-    }
-});
-
-it('refuses to carry a legacy unmanaged fragment that opens its own global options block', function (): void {
-    $harness = new AppDevCaddyPublishHarness;
-
-    try {
-        $result = $harness->run(
-            publisher: zero_site_publisher($harness),
-            scenario: AppDevCaddyPublishScenario::orbitAggregate("import fragments/*.caddy\n", [
-                'unmanaged.caddy' => "{\n    local_certs\n}\n",
-                'app-dev.caddy' => "stale app-dev\n",
-            ]),
-        );
-
-        expect($result->exitCode)
-            ->toBe(1)
-            ->and($result->stderr)
-            ->toContain('Caddy fragment 00-unmanaged.caddy opens its own global options block (local_certs).')
-            ->toContain('Remove that block from '.$harness->etcCaddyPath('orbit-versions/current/fragments/unmanaged.caddy').', then publish again.')
-            ->and($result->liveLinkTargetAfter)
-            ->toBe($harness->etcCaddyPath('orbit-versions/current/Caddyfile'))
-            ->and($result->publishedFragments)
-            ->toBeEmpty();
-    } finally {
-        $harness->cleanup();
-    }
-});
-
-it('restores the exact regular Caddyfile before the recovery reload when activation fails', function (): void {
-    $harness = new AppDevCaddyPublishHarness;
-
-    try {
-        $result = $harness->run(
-            publisher: zero_site_publisher($harness),
-            scenario: AppDevCaddyPublishScenario::modifiedConfigWithActivationFailure(
-                "modified config\n",
-                "package default\n",
-            ),
-        );
-
-        expect($result->exitCode)
-            ->not
-            ->toBe(0)
-            ->and($result->liveMainAfter)
-            ->toBe("modified config\n")
-            ->and($result->liveLinkTargetAfter)
-            ->toBeNull()
-            ->and($result->publishedFragments)
-            ->toBeEmpty()
-            ->and($result->serviceCalls)
-            ->toBe([
-                'enable caddy',
-                'reload-or-restart caddy',
-                'reload-or-restart caddy',
-            ]);
-    } finally {
-        $harness->cleanup();
-    }
-});
-
-it('orders the app-dev Caddy unit after the managed WireGuard interface', function (): void {
+it('orders the app-dev Caddy unit after the managed WireGuard interface before it builds the Node', function (): void {
     [$node] = app_dev_runtime_models();
     $ssh = new AppDevFakeSshExecutor;
-    $manager = new RemoteAppDevCaddyManager(
-        sites: new AppDevSiteRepository,
-        renderer: new AppDevCaddyConfigRenderer,
-        ssh: app_dev_ssh($ssh),
-    );
+    $builds = new FakeNodeCaddyBuilds;
+    $builds->onBuild = fn () => expect($ssh->commands)->toHaveCount(1);
+    $manager = new RemoteAppDevCaddyManager(builds: $builds, ssh: app_dev_ssh($ssh));
 
     $manager->converge($node);
 
-    expect($ssh->commands)
-        ->toHaveCount(2)
-        ->and($ssh->commands[1]->arguments)
+    expect($builds->built)->toBe([$node->name])
+        ->and($ssh->commands)
+        ->toHaveCount(1)
+        ->and($ssh->commands[0]->arguments)
         ->toBe(['sudo', 'bash', '-seu', '--', 'caddy', '/etc/systemd/system'])
-        ->and($ssh->commands[1]->input)
+        ->and($ssh->commands[0]->input)
         ->toContain(
             'managed=$directory/orbit-vpn.conf',
             'install -d -o root -g root -m 0755 -- "$directory"',
@@ -1426,57 +1189,28 @@ it('orders the app-dev Caddy unit after the managed WireGuard interface', functi
             'systemctl restart "$service"',
         )
         ->and(base64_decode(
-            Str::match('/\x27([A-Za-z0-9+\/=]+)\x27 \| base64 --decode/', $ssh->commands[1]->input ?? ''),
+            Str::match('/\x27([A-Za-z0-9+\/=]+)\x27 \| base64 --decode/', $ssh->commands[0]->input ?? ''),
             strict: true,
         ))
         ->toBe("# Managed by Orbit.\n[Unit]\nAfter=wg-quick@orbit.service\nWants=wg-quick@orbit.service\n");
 });
 
-it('keeps the live Caddy aggregate untouched when candidate validation fails', function (): void {
+it('keeps its error code and records the build stage and Caddy message when the build fails', function (): void {
     [$node] = app_dev_runtime_models();
-    $ssh = new AppDevFakeSshExecutor([
-        new CommandResult(1, '', 'invalid candidate', 1, false),
-    ]);
-    $manager = new RemoteAppDevCaddyManager(
-        sites: new AppDevSiteRepository,
-        renderer: new AppDevCaddyConfigRenderer,
-        ssh: app_dev_ssh($ssh),
-    );
+    $ssh = new AppDevFakeSshExecutor;
+    $builds = new FakeNodeCaddyBuilds;
+    $builds->failNext($node->name, 'validate', 'Error: adapting config using caddyfile: unrecognized directive');
+    $manager = new RemoteAppDevCaddyManager(builds: $builds, ssh: app_dev_ssh($ssh));
 
-    expect(fn () => $manager->converge($node))
-        ->toThrow(function (RuntimeConvergenceException $exception): void {
-            expect($exception->errorCode)->toBe('app-dev.caddy_config_failed');
+    expect(fn () => $manager->build($node))
+        ->toThrow(function (RuntimeConvergenceException $exception) use ($node): void {
+            expect($exception->errorCode)->toBe('app-dev.caddy_config_failed')
+                ->and($exception->step)->toBe('caddy-config')
+                ->and($exception->getMessage())->toBe("The Caddy build for Node [{$node->name}] failed at stage [validate]: Error: adapting config using caddyfile: unrecognized directive")
+                ->and($exception->result?->stderr)->toContain('failed at stage [validate]');
         });
 
-    $command = $ssh->commands[0];
-    $script = $command->input ?? '';
-    $validation = mb_strpos(haystack: $script, needle: 'caddy validate --config "$candidate/Caddyfile"');
-    $liveSwitch = mb_strpos(
-        haystack: $script,
-        needle: 'mv -fT -- "$candidate_link" "$live_caddyfile"',
-    );
-
-    expect($validation)
-        ->toBeInt()
-        ->and($liveSwitch)
-        ->toBeInt()
-        ->and($validation)
-        ->toBeLessThan($liveSwitch)
-        ->and($script)
-        ->toContain(
-            '/run/lock/orbit/caddy.lock',
-            'umask 0077',
-            'lock_directory=$(dirname "$lock")',
-            'if ! mkdir -m 0700 -- "$lock_directory" 2>/dev/null; then',
-            'test "$(stat -c %u:%g:%a -- "$lock_directory")" = 0:0:700',
-            'test ! -L "$lock_directory"',
-            'test ! -L "$lock"',
-            'test "$(stat -c %u:%g -- "$lock")" = 0:0',
-            'chmod 0600 -- "$lock"',
-            'test "$(stat -c %a -- "$lock")" = 600',
-            'rm -rf -- "$candidate"',
-            'rm -f -- "$candidate_link" "$rollback_link" "$rollback_file" "$previous_main"',
-        );
+    expect($ssh->commands)->toBe([]);
 });
 
 it('keeps the live DNS fragment untouched when effective validation fails', function (): void {
@@ -1824,168 +1558,16 @@ function app_dev_test_openssl_binary(): string
     return is_executable('/opt/homebrew/bin/openssl') ? '/opt/homebrew/bin/openssl' : 'openssl';
 }
 
-it('removes only the app development Caddy fragment through an atomic preserved aggregate', function (): void {
-    expect(method_exists(AppDevCaddyPublisher::class, 'removeCommand'))->toBeTrue();
-
+it('builds the Node on role removal, so the build keeps every Route site stored state still places there', function (): void {
     [$node] = app_dev_runtime_models();
     $ssh = new AppDevFakeSshExecutor;
-    $manager = new RemoteAppDevCaddyManager(
-        sites: new AppDevSiteRepository,
-        renderer: new AppDevCaddyConfigRenderer,
-        ssh: app_dev_ssh($ssh),
-    );
+    $builds = new FakeNodeCaddyBuilds;
 
-    $manager->remove($node);
+    new RemoteAppDevCaddyManager(builds: $builds, ssh: app_dev_ssh($ssh))->remove($node);
 
-    $command = $ssh->commands[0];
-    $script = $command->input ?? '';
-
-    expect($script)
-        ->toContain(
-            '/run/lock/orbit/caddy.lock',
-            'umask 0077',
-            'lock_directory=$(dirname "$lock")',
-            'if ! mkdir -m 0700 -- "$lock_directory" 2>/dev/null; then',
-            'test "$(stat -c %u:%g:%a -- "$lock_directory")" = 0:0:700',
-            'test ! -L "$lock_directory"',
-            'test ! -L "$lock"',
-            'test "$(stat -c %u:%g -- "$lock")" = 0:0',
-            'chmod 0600 -- "$lock"',
-            'test "$(stat -c %a -- "$lock")" = 600',
-            'exec 9>>"$lock"',
-            'flock -w 30 9',
-            'source_main=$(readlink -f "$live_caddyfile")',
-            'test ! -f "$current_fragments/app-dev.caddy"',
-            'destination="$candidate/fragments/$fragment_name"',
-            'destination="$candidate/fragments/00-unmanaged.caddy"',
-            'cp --preserve=mode,ownership -- "$fragment" "$destination"',
-            'caddy validate --config "$candidate/Caddyfile" --adapter caddyfile',
-            'mv -fT -- "$candidate_link" "$live_caddyfile"',
-            'mv -fT -- "$rollback_link" "$live_caddyfile"',
-        )
-        ->not->toContain(
-            'exec 9>"$lock"',
-            'apt-get remove',
-            'apt-get purge',
-            'rm -rf -- /home/orbit',
-            'rm -rf -- "$current_fragments"',
-        );
-
-    $setup = mb_strpos(haystack: $script, needle: 'lock_directory=$(dirname "$lock")');
-    $open = mb_strpos(haystack: $script, needle: 'exec 9>>"$lock"');
-    expect($setup)->toBeInt()->toBeLessThan($open);
+    expect($builds->built)->toBe([$node->name])
+        ->and($ssh->commands)->toBe([]);
 });
-
-it('removes an app development fragment from a direct Caddyfile and restores that file on activation failure', function (): void {
-    $success = run_app_dev_direct_caddy_removal(failActivation: false);
-
-    expect($success['exitCode'])
-        ->toBe(0, $success['stderr'])
-        ->and($success['liveIsLink'])
-        ->toBeTrue()
-        ->and($success['publishedFragments'])
-        ->toBe(['custom.caddy' => "custom handler\n"]);
-
-    $failure = run_app_dev_direct_caddy_removal(failActivation: true);
-
-    expect($failure['exitCode'])
-        ->not
-        ->toBe(0)
-        ->and($failure['liveIsLink'])
-        ->toBeFalse()
-        ->and($failure['liveMain'])
-        ->toBe("import fragments/*.caddy\n")
-        ->and($failure['publishedFragments'])
-        ->toBeEmpty()
-        ->and($failure['serviceCalls'])
-        ->toBe(['reload-or-restart caddy', 'reload-or-restart caddy']);
-});
-
-/**
- * @return array{exitCode: int, stderr: string, liveIsLink: bool, liveMain: string, publishedFragments: array<string, string>, serviceCalls: list<string>}
- */
-function run_app_dev_direct_caddy_removal(bool $failActivation): array
-{
-    $root = sys_get_temp_dir().'/orbit-caddy-remove-'.bin2hex(random_bytes(8));
-    $etc = $root.'/etc/caddy';
-    $bin = $root.'/bin';
-    $files = new Filesystem;
-    $files->ensureDirectoryExists(path: $etc.'/fragments', mode: 0o777, recursive: true);
-    $files->ensureDirectoryExists(path: $bin, mode: 0o777, recursive: true);
-    file_put_contents(filename: $etc.'/Caddyfile', data: "import fragments/*.caddy\n");
-    file_put_contents(filename: $etc.'/fragments/app-dev.caddy', data: "owned\n");
-    file_put_contents(filename: $etc.'/fragments/custom.caddy', data: "custom handler\n");
-    file_put_contents(
-        filename: $bin.'/install',
-        data: "#!/bin/bash\nargs=(); skip=0; for arg in \"\$@\"; do if [ \"\$skip\" = 1 ]; then skip=0; continue; fi; case \"\$arg\" in -o|-g) skip=1;; *) args+=(\"\$arg\");; esac; done; exec /usr/bin/install \"\${args[@]}\"\n",
-    );
-    file_put_contents(filename: $bin.'/chown', data: "#!/bin/bash\nexit 0\n");
-    file_put_contents(filename: $bin.'/runuser', data: '#!/bin/bash'."\n".'test "$1" = -u && test "$2" = caddy && test "$3" = -- || exit 97'."\n".'shift 3; exec "$@"'."\n");
-    file_put_contents(filename: $bin.'/caddy', data: "#!/bin/bash\nexit 0\n");
-    file_put_contents(
-        filename: $bin.'/systemctl',
-        data: "#!/bin/bash\nprintf '%s\\n' \"\$*\" >> \"\$HARNESS_SERVICE_LOG\"\nif [ \"\$HARNESS_FAIL_ACTIVATION\" = 1 ] && [ ! -e \"\$HARNESS_FAILED\" ]; then touch \"\$HARNESS_FAILED\"; exit 1; fi\nexit 0\n",
-    );
-
-    foreach (['install', 'chown', 'caddy', 'systemctl', 'runuser'] as $shim) {
-        chmod(filename: $bin.'/'.$shim, permissions: 0o755);
-    }
-
-    $caddyPublisher = new AppDevCaddyPublisher(
-        $etc.'/orbit-versions',
-        $etc.'/Caddyfile',
-        'caddy',
-        $etc.'/orbit-locks/caddy.lock',
-    );
-    $command = $caddyPublisher->removeCommand('remove-version');
-    $process = new Process(
-        command: array_slice(array: $command->arguments, offset: 1),
-        cwd: $root,
-        env: [
-            'PATH' => $bin.':'.getenv('PATH'),
-            'HARNESS_SERVICE_LOG' => $root.'/service.log',
-            'HARNESS_FAIL_ACTIVATION' => $failActivation ? '1' : '0',
-            'HARNESS_FAILED' => $root.'/failed',
-        ],
-    );
-    $process->setInput($command->input);
-    $process->run();
-    $published = [];
-
-    $publishedDirectory = $etc.'/orbit-versions/remove-version/fragments';
-
-    if (is_dir($publishedDirectory)) {
-        foreach ($files->files($publishedDirectory) as $file) {
-            $published[$file->getFilename()] = (string) file_get_contents($file->getPathname());
-        }
-    }
-
-    $liveMain = file_get_contents($etc.'/Caddyfile');
-    $serviceLog = is_file($root.'/service.log') ? (string) file_get_contents($root.'/service.log') : '';
-    $result = [
-        'exitCode' => $process->getExitCode() ?? 1,
-        'stderr' => $process->getErrorOutput(),
-        'liveIsLink' => is_link($etc.'/Caddyfile'),
-        'liveMain' => $liveMain === false ? '' : $liveMain,
-        'publishedFragments' => $published,
-        'serviceCalls' => array_values(array_filter(explode("\n", trim($serviceLog)))),
-    ];
-    $files->deleteDirectory($root);
-
-    return $result;
-}
-
-function zero_site_publisher(AppDevCaddyPublishHarness $harness): AppDevCaddyPublisher
-{
-    return new AppDevCaddyPublisher(
-        versionsDirectory: $harness->etcCaddyPath('orbit-versions'),
-        liveCaddyfilePath: $harness->etcCaddyPath('Caddyfile'),
-        caddyServiceName: 'caddy',
-        lockPath: $harness->etcCaddyPath('orbit-locks/caddy.lock'),
-        hibernationMarkerDirectory: $harness->etcCaddyPath('hibernation-markers'),
-        hibernationAccessLogDirectory: $harness->etcCaddyPath('hibernation-logs'),
-    );
-}
 
 final class AppDevProjectionOwnerSpy implements DevelopmentProjectionOperationLock
 {

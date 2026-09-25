@@ -19,7 +19,6 @@ use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
-use App\Infrastructure\AppDev\AppDevCaddyConfigRenderer;
 use App\Infrastructure\AppDev\AppDevDnsConfigRenderer;
 use App\Infrastructure\AppDev\AppDevPhpFpmConfigRenderer;
 use App\Infrastructure\AppDev\AppDevSiteRepository;
@@ -50,6 +49,7 @@ use App\Models\Route;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 use Tests\Support\FakePublicRouteEdgeProjector;
+use Tests\Support\SshNodeCaddyBuilds;
 
 afterEach(function (): void {
     if (is_string($this->orb181ProjectorHome ?? null)) {
@@ -272,8 +272,8 @@ it('retains an ordered shared production Route and republishes only its survivor
                 ),
             ))
         ->toBeTrue()
-        ->and($ssh->connections)
-        ->toContainEqual(expectConnectionHost($router->wireguard_ip));
+        ->and(collect($ssh->connections)->pluck('host')->all())
+        ->toContain($router->wireguard_ip);
 
     $ssh->phpDiscovery = "8.5\t".base64_encode(<<<FPM
         [orbit-app-instance-{$departing->id}]
@@ -519,7 +519,7 @@ function orb181_removal_projector(
 
     return [
         new NativeAppInstanceRemovalProjector(
-            new RemoteAppDevCaddyManager($sites, new AppDevCaddyConfigRenderer, $executor),
+            new RemoteAppDevCaddyManager(SshNodeCaddyBuilds::over($ssh), $executor),
             new RemoteAppDevCertificateManager($executor, $signer, $accounts),
             new RemoteAppDevPhpFpmManager(
                 $sites,

@@ -10,8 +10,6 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\IngressSite;
 use App\Domain\Routes\PublicRouteEdgeProjector;
 use App\Domain\Routes\PublicRoutePrivateOverride;
-use App\Infrastructure\AppDev\AppDevCaddyConfigRenderer;
-use App\Infrastructure\AppDev\AppDevSite;
 use App\Infrastructure\AppDev\AppDevSshExecutor;
 use App\Infrastructure\AppDev\RemoteAppDevCaddyManager;
 use App\Infrastructure\AppDev\RemoteAppDevCertificateManager;
@@ -27,7 +25,6 @@ final readonly class NativePublicRouteEdgeProjector implements PublicRouteEdgePr
         private RemoteAppDevCaddyManager $caddy,
         private NodeRoleFirewallManager $firewall,
         private AppDevSshExecutor $ssh,
-        private AppDevCaddyConfigRenderer $renderer = new AppDevCaddyConfigRenderer,
     ) {}
 
     public function artifact(Route $route): IngressSite
@@ -45,50 +42,6 @@ final readonly class NativePublicRouteEdgeProjector implements PublicRouteEdgePr
         // Public Ingress uses Caddy automatic HTTPS (Let's Encrypt). Confirm Ingress exists
         // and do not pin an Orbit CA leaf that would replace a working public certificate.
         $this->sites->ingressNode($route);
-    }
-
-    public function stageIngressCaddy(Route $route): void
-    {
-        $ingress = $this->sites->ingressNode($route);
-        $artifact = $this->sites->forRoute($route);
-        $configuration = $this->renderer->render(collect([
-            new AppDevSite(
-                nodeId: $ingress->id,
-                nodeAddress: $ingress->wireguard_ip ?? '',
-                scope: $artifact->certificateScope,
-                checkoutPath: '',
-                documentRoot: '',
-                phpVersion: null,
-                domain: $artifact->domain,
-                upstreamAddresses: [$artifact->routerUpstream],
-                certificateScope: $artifact->certificateScope,
-                publicListener: true,
-                preserveForwardedIdentity: true,
-            ),
-        ]));
-        $encoded = base64_encode($configuration);
-        $this->ssh->execute(
-            $ingress,
-            new RemoteCommand(
-                arguments: [
-                    'sudo',
-                    'bash',
-                    '-seu',
-                    '--',
-                    "route-{$route->id}-ingress",
-                    $encoded,
-                ],
-                input: <<<'BASH'
-                    scope=$1
-                    encoded=$2
-                    staged="/etc/caddy/orbit-versions/staged"
-                    mkdir -p -- "$staged"
-                    printf '%s' "$encoded" | base64 -d > "$staged/$scope.caddy"
-                    BASH,
-            ),
-            step: 'ingress-caddy',
-            errorCode: 'route.ingress_caddy_failed',
-        );
     }
 
     public function verifyPublicEdge(Route $route): void
@@ -114,7 +67,7 @@ final readonly class NativePublicRouteEdgeProjector implements PublicRouteEdgePr
 
     public function activatePublicHandler(Route $route): void
     {
-        $this->caddy->converge($this->sites->ingressNode($route));
+        $this->caddy->build($this->sites->ingressNode($route));
     }
 
     public function prepareIngressFirewall(Route $route): void
@@ -125,9 +78,8 @@ final readonly class NativePublicRouteEdgeProjector implements PublicRouteEdgePr
 
     public function rollbackPublicEdge(Route $route): void
     {
-        $this->removeStaged($route);
         $ingress = $this->sites->ingressNode($route);
-        $this->caddy->converge($ingress);
+        $this->caddy->build($ingress);
         $this->firewall->converge($ingress, RoleName::Ingress, $ingress->user);
         $this->certificates->removeRouteIngress($route, $ingress);
     }
@@ -158,25 +110,6 @@ final readonly class NativePublicRouteEdgeProjector implements PublicRouteEdgePr
             step: $step,
             errorCode: 'route.public_edge_unverified',
             commandTimeout: 15,
-        );
-    }
-
-    private function removeStaged(Route $route): void
-    {
-        $ingress = $this->sites->ingressNode($route);
-        $this->ssh->execute(
-            $ingress,
-            new RemoteCommand(
-                arguments: [
-                    'sudo',
-                    'rm',
-                    '-f',
-                    '--',
-                    "/etc/caddy/orbit-versions/staged/route-{$route->id}-ingress.caddy",
-                ],
-            ),
-            step: 'ingress-caddy',
-            errorCode: 'route.ingress_caddy_failed',
         );
     }
 }

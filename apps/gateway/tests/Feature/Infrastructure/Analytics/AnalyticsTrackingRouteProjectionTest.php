@@ -36,6 +36,7 @@ use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\Route;
+use Tests\Support\SshNodeCaddyBuilds;
 
 beforeEach(function (): void {
     $this->cluster = Cluster::query()->create(['name' => 'edge', 'tld' => 'edge.test', 'state' => ClusterState::Active]);
@@ -298,7 +299,7 @@ describe('analytics tracking Route removal', function (): void {
         $projector = new NativeRouteRemovalProjector(
             new DnsmasqPrivateDnsManager($processes, new AppDevDnsConfigRenderer($sites)),
             new RemoteAppDevCertificateManager($executor, $signer, $accounts),
-            new RemoteAppDevCaddyManager($sites, new AppDevCaddyConfigRenderer, $executor),
+            new RemoteAppDevCaddyManager(SshNodeCaddyBuilds::over($ssh), $executor),
             new RemoteAppDevRouteFirewallManager($executor),
         );
 

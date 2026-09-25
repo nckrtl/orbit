@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Shared\LifecycleStatus;
-use App\Infrastructure\AppProd\AppProdCaddyConfigRenderer;
-use App\Infrastructure\AppProd\AppProdCaddyPublisher;
 use App\Infrastructure\AppProd\AppProdPhpFpmConfigRenderer;
 use App\Infrastructure\AppProd\AppProdSiteRepository;
 use App\Infrastructure\AppProd\AppProdSshExecutor;
@@ -17,20 +15,16 @@ use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
-use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
-use Symfony\Component\Process\Process;
-use Tests\Support\AppDevCaddyPublishHarness;
-use Tests\Support\AppDevCaddyPublishScenario;
 use Tests\Support\AppDevFakeSshExecutor;
+use Tests\Support\FakeNodeCaddyBuilds;
 use Tests\Support\FpmPublishHarness;
 
-it('renders no leftover production Instance sites for Caddy or PHP-FPM', function (): void {
+it('renders no leftover production Instance sites for PHP-FPM', function (): void {
     $node = app_prod_runtime_models();
     $sites = new AppProdSiteRepository()->forNode($node);
 
     $fpm = new AppProdPhpFpmConfigRenderer()->render($sites);
-    $caddy = new AppProdCaddyConfigRenderer()->render($sites);
 
     expect($sites)
         ->toBeEmpty()
@@ -38,12 +32,6 @@ it('renders no leftover production Instance sites for Caddy or PHP-FPM', functio
         ->not->toContain(
             '[orbit-prod-instance-1]',
             'https://orbit.nckrtl.com',
-            'php_fastcgi unix//run/php/orbit-prod-instance-1.sock',
-        )
-        ->and($caddy)
-        ->not->toContain(
-            'https://orbit.nckrtl.com',
-            'root * /var/www/acme/main/public',
             'php_fastcgi unix//run/php/orbit-prod-instance-1.sock',
         );
 });
@@ -278,94 +266,50 @@ it('restores the exact AppProd FPM file before the recovery reload when activati
     }
 });
 
-it('publishes one Orbit-owned Caddy fragment and restores the prior aggregate after reload failure', function (): void {
+it('requests a Node Caddy build and writes no Caddy fragment', function (): void {
     $node = app_prod_runtime_models();
     $ssh = new AppDevFakeSshExecutor;
-    $manager = new RemoteAppProdCaddyManager(
-        sites: new AppProdSiteRepository,
-        renderer: new AppProdCaddyConfigRenderer,
-        ssh: app_prod_ssh($ssh),
-    );
+    $builds = new FakeNodeCaddyBuilds;
+    $manager = new RemoteAppProdCaddyManager(builds: $builds, ssh: app_prod_ssh($ssh));
 
     $manager->converge($node);
+    $manager->remove($node);
 
-    $command = $ssh->commands[0];
-    $script = $command->input ?? '';
+    expect($builds->built)->toBe([$node->name, $node->name])
+        ->and($ssh->commands)->toHaveCount(1)
+        ->and(implode("\n", [...$ssh->commands[0]->arguments, (string) $ssh->commands[0]->input]))
+        ->not->toContain('orbit-versions', 'app-prod.caddy', '/etc/caddy/Caddyfile');
+});
 
-    expect($script)
-        ->toContain(
-            '/run/lock/orbit/caddy.lock',
-            'umask 0077',
-            'lock_directory=$(dirname "$lock")',
-            'if ! mkdir -m 0700 -- "$lock_directory" 2>/dev/null; then',
-            'test "$(stat -c %u:%g:%a -- "$lock_directory")" = 0:0:700',
-            'test ! -L "$lock_directory"',
-            'test ! -L "$lock"',
-            'test "$(stat -c %u:%g -- "$lock")" = 0:0',
-            'chmod 0600 -- "$lock"',
-            'test "$(stat -c %a -- "$lock")" = 600',
-            'app-prod.caddy',
-            'unmanaged.caddy',
-            'exec 9>>"$lock"',
-            'flock -w 30 9',
-            'caddy validate --config "$candidate/Caddyfile" --adapter caddyfile',
-            'cmp -s -- "$candidate/fragments/app-prod.caddy" "$current_fragments/app-prod.caddy"',
-            'mv -fT -- "$candidate_link" "$live_caddyfile"',
-            'if ! systemctl enable "$caddy_service" || ! systemctl reload-or-restart "$caddy_service"; then',
-            'mv -fT -- "$rollback_link" "$live_caddyfile"',
-            'cp -a -- "$previous_main" "$rollback_file"',
-            'mv -fT -- "$rollback_file" "$live_caddyfile"',
-            'systemctl reload-or-restart "$caddy_service" || true',
-        )
-        ->not
-        ->toContain('rm -rf -- "$live_caddyfile"')
-        ->and($ssh->commands[0]->arguments)
-        ->toContain('/run/lock/orbit/caddy.lock');
+it('keeps its error code and records the build stage and Caddy message when the build fails', function (): void {
+    $node = app_prod_runtime_models();
+    $builds = new FakeNodeCaddyBuilds;
+    $builds->failNext($node->name, 'reload', 'Caddy did not reload the new version; the previous configuration is live again.');
+    $manager = new RemoteAppProdCaddyManager(builds: $builds, ssh: app_prod_ssh(new AppDevFakeSshExecutor));
 
-    $lockSetup = mb_strpos(haystack: $script, needle: 'lock_directory=$(dirname "$lock")');
-    $lockOpen = mb_strpos(haystack: $script, needle: 'exec 9>>"$lock"');
-
-    expect($lockSetup)
-        ->toBeInt()
-        ->toBeLessThan($lockOpen);
-
-    $lock = mb_strpos(haystack: $script, needle: 'flock -w 30 9');
-    $snapshot = mb_strpos(haystack: $script, needle: 'source_main=$(readlink -f "$live_caddyfile")');
-    $validation = mb_strpos(haystack: $script, needle: 'caddy validate --config "$candidate/Caddyfile"');
-    $switch = mb_strpos(haystack: $script, needle: 'mv -fT -- "$candidate_link" "$live_caddyfile"');
-    $activation = mb_strpos(haystack: $script, needle: 'if ! systemctl enable');
-    $rollback = mb_strpos(haystack: $script, needle: 'mv -fT -- "$rollback_link" "$live_caddyfile"');
-
-    expect($lock)
-        ->toBeInt()
-        ->toBeLessThan($snapshot)
-        ->and($validation)
-        ->toBeInt()
-        ->toBeLessThan($switch)
-        ->and($switch)
-        ->toBeInt()
-        ->toBeLessThan($activation)
-        ->and($activation)
-        ->toBeInt()
-        ->toBeLessThan($rollback);
+    expect(fn () => $manager->remove($node))
+        ->toThrow(function (RuntimeConvergenceException $exception) use ($node): void {
+            expect($exception->errorCode)->toBe('app-prod.caddy_config_failed')
+                ->and($exception->step)->toBe('app-prod-caddy-config')
+                ->and($exception->getMessage())->toBe("The Caddy build for Node [{$node->name}] failed at stage [reload]: Caddy did not reload the new version; the previous configuration is live again.");
+        });
 });
 
 it('orders the app-prod Caddy unit after the managed WireGuard interface', function (): void {
     $node = app_prod_runtime_models();
     $ssh = new AppDevFakeSshExecutor;
-    $manager = new RemoteAppProdCaddyManager(
-        sites: new AppProdSiteRepository,
-        renderer: new AppProdCaddyConfigRenderer,
-        ssh: app_prod_ssh($ssh),
-    );
+    $builds = new FakeNodeCaddyBuilds;
+    $builds->onBuild = fn () => expect($ssh->commands)->toHaveCount(1);
+    $manager = new RemoteAppProdCaddyManager(builds: $builds, ssh: app_prod_ssh($ssh));
 
     $manager->converge($node);
 
-    expect($ssh->commands)
-        ->toHaveCount(2)
-        ->and($ssh->commands[1]->arguments)
+    expect($builds->built)->toBe([$node->name])
+        ->and($ssh->commands)
+        ->toHaveCount(1)
+        ->and($ssh->commands[0]->arguments)
         ->toBe(['sudo', 'bash', '-seu', '--', 'caddy', '/etc/systemd/system'])
-        ->and($ssh->commands[1]->input)
+        ->and($ssh->commands[0]->input)
         ->toContain(
             'managed=$directory/orbit-vpn.conf',
             'install -d -o root -g root -m 0755 -- "$directory"',
@@ -377,262 +321,11 @@ it('orders the app-prod Caddy unit after the managed WireGuard interface', funct
             'systemctl restart "$service"',
         )
         ->and(base64_decode(
-            Str::match('/\x27([A-Za-z0-9+\/=]+)\x27 \| base64 --decode/', $ssh->commands[1]->input ?? ''),
+            Str::match('/\x27([A-Za-z0-9+\/=]+)\x27 \| base64 --decode/', $ssh->commands[0]->input ?? ''),
             strict: true,
         ))
         ->toBe("# Managed by Orbit.\n[Unit]\nAfter=wg-quick@orbit.service\nWants=wg-quick@orbit.service\n");
 });
-
-it('normalizes the unmanaged production fragment before app production configuration', function (): void {
-    $harness = new AppDevCaddyPublishHarness;
-
-    try {
-        $publisher = new AppProdCaddyPublisher(
-            versionsDirectory: $harness->etcCaddyPath('orbit-versions'),
-            liveCaddyfilePath: $harness->etcCaddyPath('Caddyfile'),
-            caddyServiceName: 'caddy',
-            lockPath: $harness->etcCaddyPath('orbit-locks/caddy.lock'),
-        );
-        $result = $harness->run(
-            publisher: $publisher,
-            scenario: AppDevCaddyPublishScenario::orbitAggregate("import fragments/*.caddy\n", [
-                'unmanaged.caddy' => "legacy.test {\n}\n",
-                'app-prod.caddy' => "stale production\n",
-            ]),
-        );
-
-        expect($result->exitCode)
-            ->toBe(0)
-            ->and($result->publishedFragments)
-            ->toHaveKey('00-unmanaged.caddy')
-            ->not->toHaveKey('unmanaged.caddy');
-    } finally {
-        $harness->cleanup();
-    }
-});
-
-it('fails closed when both unmanaged Caddy fragment names already exist', function (): void {
-    $harness = new AppDevCaddyPublishHarness;
-
-    try {
-        $publisher = new AppProdCaddyPublisher(
-            versionsDirectory: $harness->etcCaddyPath('orbit-versions'),
-            liveCaddyfilePath: $harness->etcCaddyPath('Caddyfile'),
-            caddyServiceName: 'caddy',
-            lockPath: $harness->etcCaddyPath('orbit-locks/caddy.lock'),
-        );
-        $result = $harness->run(
-            publisher: $publisher,
-            scenario: AppDevCaddyPublishScenario::orbitAggregate("import fragments/*.caddy\n", [
-                'unmanaged.caddy' => "legacy\n",
-                '00-unmanaged.caddy' => "current\n",
-                'custom.caddy' => "custom\n",
-            ]),
-        );
-
-        expect($result->exitCode)
-            ->not
-            ->toBe(0)
-            ->and($result->liveMainAfter)
-            ->toBe("import fragments/*.caddy\n")
-            ->and($result->publishedFragments)
-            ->toBeEmpty();
-    } finally {
-        $harness->cleanup();
-    }
-});
-
-it('restores the exact Caddy symlink before the recovery reload when activation fails', function (): void {
-    $harness = new AppDevCaddyPublishHarness;
-    $previousTarget = $harness->etcCaddyPath('orbit-versions/current/Caddyfile');
-
-    try {
-        $publisher = new AppProdCaddyPublisher(
-            versionsDirectory: $harness->etcCaddyPath('orbit-versions'),
-            liveCaddyfilePath: $harness->etcCaddyPath('Caddyfile'),
-            caddyServiceName: 'caddy',
-            lockPath: $harness->etcCaddyPath('orbit-locks/caddy.lock'),
-        );
-        $result = $harness->run(
-            publisher: $publisher,
-            scenario: AppDevCaddyPublishScenario::orbitAggregateWithActivationFailure(
-                "import fragments/*.caddy\n",
-                [
-                    'custom.caddy' => "custom handler\n",
-                    'app-prod.caddy' => "stale production\n",
-                ],
-            ),
-        );
-
-        expect($result->exitCode)
-            ->not
-            ->toBe(0)
-            ->and($result->liveMainAfter)
-            ->toBe("import fragments/*.caddy\n")
-            ->and(fileperms($harness->etcCaddyPath('orbit-locks')) & 0o777)
-            ->toBe(0o700)
-            ->and(fileperms($harness->etcCaddyPath('orbit-locks/caddy.lock')) & 0o777)
-            ->toBe(0o600)
-            ->and($result->liveLinkTargetAfter)
-            ->toBe($previousTarget)
-            ->and($result->publishedFragments)
-            ->toBeEmpty()
-            ->and($result->serviceCalls)
-            ->toBe([
-                'enable caddy',
-                'reload-or-restart caddy',
-                'reload-or-restart caddy',
-            ]);
-    } finally {
-        $harness->cleanup();
-    }
-});
-
-it('removes only the app production Caddy fragment through an atomic preserved aggregate', function (): void {
-    expect(method_exists(AppProdCaddyPublisher::class, 'removeCommand'))->toBeTrue();
-
-    $node = app_prod_runtime_models();
-    $ssh = new AppDevFakeSshExecutor;
-    $manager = new RemoteAppProdCaddyManager(
-        sites: new AppProdSiteRepository,
-        renderer: new AppProdCaddyConfigRenderer,
-        ssh: app_prod_ssh($ssh),
-    );
-
-    $manager->remove($node);
-
-    $command = $ssh->commands[0];
-    $script = $command->input ?? '';
-
-    expect($script)
-        ->toContain(
-            '/run/lock/orbit/caddy.lock',
-            'umask 0077',
-            'lock_directory=$(dirname "$lock")',
-            'if ! mkdir -m 0700 -- "$lock_directory" 2>/dev/null; then',
-            'test "$(stat -c %u:%g:%a -- "$lock_directory")" = 0:0:700',
-            'test ! -L "$lock_directory"',
-            'test ! -L "$lock"',
-            'test "$(stat -c %u:%g -- "$lock")" = 0:0',
-            'chmod 0600 -- "$lock"',
-            'test "$(stat -c %a -- "$lock")" = 600',
-            'exec 9>>"$lock"',
-            'flock -w 30 9',
-            'source_main=$(readlink -f "$live_caddyfile")',
-            'test ! -f "$current_fragments/$owned_fragment"',
-            'caddy validate --config "$candidate/Caddyfile" --adapter caddyfile',
-            'mv -fT -- "$candidate_link" "$live_caddyfile"',
-            'mv -fT -- "$rollback_link" "$live_caddyfile"',
-        )
-        ->not->toContain(
-            'exec 9>"$lock"',
-            'apt-get remove',
-            'apt-get purge',
-            'rm -rf -- /var/www',
-            'rm -rf -- "$current_fragments"',
-        );
-
-    $setup = mb_strpos(haystack: $script, needle: 'lock_directory=$(dirname "$lock")');
-    $open = mb_strpos(haystack: $script, needle: 'exec 9>>"$lock"');
-    expect($setup)->toBeInt()->toBeLessThan($open);
-});
-
-it('removes an app production fragment from a direct Caddyfile and restores that file on activation failure', function (): void {
-    $success = run_app_prod_direct_caddy_removal(failActivation: false);
-
-    expect($success['exitCode'])
-        ->toBe(0, $success['stderr'])
-        ->and($success['liveIsLink'])
-        ->toBeTrue()
-        ->and($success['publishedFragments'])
-        ->toBe([
-            '00-unmanaged.caddy' => "custom unmanaged\n",
-            'custom.caddy' => "custom handler\n",
-        ]);
-
-    $failure = run_app_prod_direct_caddy_removal(failActivation: true);
-
-    expect($failure['exitCode'])
-        ->not
-        ->toBe(0)
-        ->and($failure['liveIsLink'])
-        ->toBeFalse()
-        ->and($failure['liveMain'])
-        ->toBe("import fragments/*.caddy\n")
-        ->and($failure['publishedFragments'])
-        ->toBeEmpty()
-        ->and($failure['serviceCalls'])
-        ->toBe(['reload-or-restart caddy', 'reload-or-restart caddy']);
-});
-
-/**
- * @return array{exitCode: int, stderr: string, liveIsLink: bool, liveMain: string, publishedFragments: array<string, string>, serviceCalls: list<string>}
- */
-function run_app_prod_direct_caddy_removal(bool $failActivation): array
-{
-    $root = sys_get_temp_dir().'/orbit-caddy-remove-'.bin2hex(random_bytes(8));
-    $etc = $root.'/etc/caddy';
-    $bin = $root.'/bin';
-    $files = new Filesystem;
-    $files->ensureDirectoryExists(path: $etc.'/fragments', mode: 0o777, recursive: true);
-    $files->ensureDirectoryExists(path: $bin, mode: 0o777, recursive: true);
-    file_put_contents(filename: $etc.'/Caddyfile', data: "import fragments/*.caddy\n");
-    file_put_contents(filename: $etc.'/fragments/app-prod.caddy', data: "owned\n");
-    file_put_contents(filename: $etc.'/fragments/unmanaged.caddy', data: "custom unmanaged\n");
-    file_put_contents(filename: $etc.'/fragments/custom.caddy', data: "custom handler\n");
-    file_put_contents(
-        filename: $bin.'/install',
-        data: "#!/bin/bash\nargs=(); skip=0; for arg in \"\$@\"; do if [ \"\$skip\" = 1 ]; then skip=0; continue; fi; case \"\$arg\" in -o|-g) skip=1;; *) args+=(\"\$arg\");; esac; done; exec /usr/bin/install \"\${args[@]}\"\n",
-    );
-    file_put_contents(filename: $bin.'/chown', data: "#!/bin/bash\nexit 0\n");
-    file_put_contents(filename: $bin.'/caddy', data: "#!/bin/bash\nexit 0\n");
-    file_put_contents(
-        filename: $bin.'/systemctl',
-        data: "#!/bin/bash\nprintf '%s\\n' \"\$*\" >> \"\$HARNESS_SERVICE_LOG\"\nif [ \"\$HARNESS_FAIL_ACTIVATION\" = 1 ] && [ ! -e \"\$HARNESS_FAILED\" ]; then touch \"\$HARNESS_FAILED\"; exit 1; fi\nexit 0\n",
-    );
-
-    foreach (['install', 'chown', 'caddy', 'systemctl'] as $shim) {
-        chmod(filename: $bin.'/'.$shim, permissions: 0o755);
-    }
-
-    $publisher = new AppProdCaddyPublisher(
-        $etc.'/orbit-versions',
-        $etc.'/Caddyfile',
-        'caddy',
-        $etc.'/orbit-locks/caddy.lock',
-    );
-    $command = $publisher->removeCommand('remove-version');
-    $process = new Process(array_slice(array: $command->arguments, offset: 1), $root, [
-        'PATH' => $bin.':'.getenv('PATH'),
-        'HARNESS_SERVICE_LOG' => $root.'/service.log',
-        'HARNESS_FAIL_ACTIVATION' => $failActivation ? '1' : '0',
-        'HARNESS_FAILED' => $root.'/failed',
-    ]);
-    $process->setInput($command->input);
-    $process->run();
-    $published = [];
-    $publishedDirectory = $etc.'/orbit-versions/remove-version/fragments';
-
-    if (is_dir($publishedDirectory)) {
-        foreach ($files->files($publishedDirectory) as $file) {
-            $published[$file->getFilename()] = (string) file_get_contents($file->getPathname());
-        }
-    }
-
-    $liveMain = file_get_contents($etc.'/Caddyfile');
-    $serviceLog = is_file($root.'/service.log') ? (string) file_get_contents($root.'/service.log') : '';
-    $result = [
-        'exitCode' => $process->getExitCode() ?? 1,
-        'stderr' => $process->getErrorOutput(),
-        'liveIsLink' => is_link($etc.'/Caddyfile'),
-        'liveMain' => $liveMain === false ? '' : $liveMain,
-        'publishedFragments' => $published,
-        'serviceCalls' => array_values(array_filter(explode("\n", trim($serviceLog)))),
-    ];
-    $files->deleteDirectory($root);
-
-    return $result;
-}
 
 function app_prod_runtime_models(): Node
 {

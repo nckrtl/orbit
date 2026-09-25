@@ -88,8 +88,6 @@ final readonly class PublishPublicRouteAction
 
         try {
             $this->forward($route, RouteReplacementStep::IngressCertificate, fn () => $this->edge->prepareIngressCertificate($route));
-            $failureStep = RouteReplacementStep::IngressCaddy->value;
-            $this->forward($route, RouteReplacementStep::IngressCaddy, fn () => $this->edge->stageIngressCaddy($route));
             $failureStep = RouteReplacementStep::PublicEdgeVerified->value;
             $this->forward($route, RouteReplacementStep::PublicEdgeVerified, fn () => $this->edge->verifyPublicEdge($route));
             $failureStep = RouteReplacementStep::PublicActivated->value;

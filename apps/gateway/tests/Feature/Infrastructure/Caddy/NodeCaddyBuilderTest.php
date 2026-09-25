@@ -12,6 +12,7 @@ use App\Infrastructure\Caddy\Build\NodeCaddyBuilder;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuildException;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuildLock;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuildResult;
+use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
 use App\Infrastructure\Caddy\Build\NodeCaddyfile;
 use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
 use App\Infrastructure\Caddy\Build\NodeCaddySiteSource;
@@ -188,6 +189,97 @@ describe('the Gateway Node lock', function (): void {
     });
 });
 
+describe('two publishers on one Node', function (): void {
+    it('keep both sites when the second commits while the first build holds the Node', function (): void {
+        $node = node_caddy_builder_node('app-dev', '10.44.0.3');
+        $node->roles()->create(['role' => RoleName::WebSocket, 'status' => LifecycleStatus::Provisioning]);
+        mkdir($this->lockDirectory, 0o700, true);
+        // The first publisher's build holds the Node and pushes the state it read: only its own site.
+        $first = fopen($this->lockDirectory."/node-{$node->id}.lock", 'c+');
+        flock($first, LOCK_EX);
+        $firstPush = app(NodeCaddyfileRenderer::class)->render($node)->content;
+        // The second publisher commits its state, then requests a build that waits for the first.
+        $node->roles()->create(['role' => RoleName::Analytics, 'status' => LifecycleStatus::Provisioning]);
+        $waits = 0;
+        $lock = new NodeCaddyBuildLock(
+            directory: $this->lockDirectory,
+            wait: function () use (&$waits, $first): void {
+                if (++$waits === 1) {
+                    flock($first, LOCK_UN);
+                }
+            },
+        );
+
+        try {
+            new NodeCaddyBuilder(app(NodeCaddyfileRenderer::class), $lock, node_caddy_builder_transport($this))->build($node);
+        } finally {
+            fclose($first);
+        }
+
+        $secondPush = node_caddy_builder_pushed($this->ssh->commands[0]);
+
+        expect($waits)->toBeGreaterThanOrEqual(1)
+            ->and($firstPush)->toContain('# orbit: websocket reverb.orbit')->not->toContain('analytics.orbit')
+            ->and($secondPush)->toContain('# orbit: websocket reverb.orbit', '# orbit: analytics analytics.orbit');
+    });
+
+    it('push the same Caddyfile whichever publisher builds last', function (): void {
+        $orders = [[RoleName::WebSocket, RoleName::Analytics], [RoleName::Analytics, RoleName::WebSocket]];
+        $finals = [];
+
+        foreach ($orders as $index => $order) {
+            $node = node_caddy_builder_node("app-dev-{$index}", '10.44.0.3');
+            $node->update(['name' => 'app-dev']);
+            $this->ssh->commands = [];
+
+            foreach ($order as $role) {
+                $node->roles()->create(['role' => $role, 'status' => LifecycleStatus::Provisioning]);
+                new NodeCaddyBuilder(app(NodeCaddyfileRenderer::class), new NodeCaddyBuildLock($this->lockDirectory), node_caddy_builder_transport($this))->build($node);
+            }
+
+            $finals[] = node_caddy_builder_pushed($this->ssh->commands[1]);
+            $node->roles()->delete();
+            $node->delete();
+        }
+
+        expect($finals[0])->toBe($finals[1])
+            ->toContain('# orbit: websocket reverb.orbit', '# orbit: analytics analytics.orbit');
+    });
+});
+
+describe('the listen address check', function (): void {
+    it('runs the address stage over SSH without root and changes nothing', function (): void {
+        $node = node_caddy_builder_node('app-dev', '10.44.0.3');
+        $this->ssh->results = [new CommandResult(0, '', '', 1, false)];
+
+        node_caddy_builder($this)->checkListenAddresses($node);
+
+        expect($this->ssh->commands)->toHaveCount(1)
+            ->and($this->ssh->commands[0]->arguments)->toBe(['bash', '-seu', '--', '10.44.0.3'])
+            ->and($this->ssh->commands[0]->input)->not->toContain('orbit-versions');
+    });
+
+    it('names the missing address at stage addresses', function (): void {
+        $node = node_caddy_builder_node('app-dev', '10.44.0.3');
+        $this->ssh->results = [new CommandResult(1, '', "The build binds 10.44.0.3, which is not an address on this Node. Correct the stored WireGuard or LAN address of the Node, then build again.\norbit-caddy-build-stage=addresses\n", 1, false)];
+
+        expect(fn () => node_caddy_builder($this)->checkListenAddresses($node))
+            ->toThrow(function (NodeCaddyBuildException $exception): void {
+                expect($exception->stage)->toBe('addresses')
+                    ->and($exception->detail)->toStartWith('The build binds 10.44.0.3, which is not an address on this Node.');
+            });
+    });
+
+    it('refuses a render problem before it contacts the Node', function (): void {
+        $node = node_caddy_builder_node('app-dev', '10.44.0.3');
+
+        expect(fn () => node_caddy_builder($this, duplicate: true)->checkListenAddresses($node))
+            ->toThrow(fn (NodeCaddyBuildException $exception) => expect($exception->stage)->toBe('render'));
+
+        expect($this->ssh->commands)->toBe([]);
+    });
+});
+
 describe('the site diff', function (): void {
     it('compares two Caddyfiles site by site, ignoring comments and indentation', function (): void {
         $live = <<<'CADDY'
@@ -243,13 +335,48 @@ describe('the site diff', function (): void {
     });
 });
 
-describe('the dry-run command', function (): void {
-    it('refuses to run without --dry-run because the build is not live yet', function (): void {
+describe('the build command', function (): void {
+    it('builds and pushes the Node without --dry-run', function (): void {
         node_caddy_builder_node('app-dev', '10.44.0.3');
+        app()->instance(NodeCaddyBuilds::class, node_caddy_builder($this));
 
         $this->artisan('orbit:caddy-build', ['node' => 'app-dev'])
-            ->expectsOutputToContain('The Node Caddy build is not live yet.')
+            ->expectsOutputToContain('Published a new Caddyfile on Node [app-dev] and reloaded Caddy.')
+            ->assertSuccessful();
+
+        expect($this->ssh->commands)->toHaveCount(1)
+            ->and(node_caddy_builder_pushed($this->ssh->commands[0]))->toStartWith(NodeCaddyfileRenderer::Marker);
+    });
+
+    it('reports a build that changed nothing', function (): void {
+        node_caddy_builder_node('app-dev', '10.44.0.3');
+        $this->ssh->results = [new CommandResult(0, "orbit-caddy-build-result=unchanged\n", '', 1, false)];
+        app()->instance(NodeCaddyBuilds::class, node_caddy_builder($this));
+
+        $this->artisan('orbit:caddy-build', ['node' => 'app-dev'])
+            ->expectsOutputToContain('The Caddyfile on Node [app-dev] is current. Nothing changed.')
+            ->assertSuccessful();
+    });
+
+    it('fails and names the stage and Caddy message when the build fails', function (): void {
+        node_caddy_builder_node('app-dev', '10.44.0.3');
+        $this->ssh->results = [new CommandResult(1, '', "Error: adapting config\norbit-caddy-build-stage=validate\n", 1, false)];
+        app()->instance(NodeCaddyBuilds::class, node_caddy_builder($this));
+
+        $this->artisan('orbit:caddy-build', ['node' => 'app-dev'])
+            ->expectsOutputToContain('The Caddy build for Node [app-dev] failed at stage [validate]: Error: adapting config')
             ->assertFailed();
+    });
+
+    it('refuses --diff without --dry-run', function (): void {
+        node_caddy_builder_node('app-dev', '10.44.0.3');
+        app()->instance(NodeCaddyBuilds::class, node_caddy_builder($this));
+
+        $this->artisan('orbit:caddy-build', ['node' => 'app-dev', '--diff' => true])
+            ->expectsOutputToContain('--diff only compares a render. Pass --dry-run --diff.')
+            ->assertFailed();
+
+        expect($this->ssh->commands)->toBe([]);
     });
 
     it('prints the render of a Node without contacting it', function (): void {
@@ -320,6 +447,13 @@ function node_caddy_builder_renderer(bool $duplicate = false): NodeCaddyfileRend
     };
 
     return new NodeCaddyfileRenderer([$source]);
+}
+
+function node_caddy_builder_pushed(RemoteCommand $command): string
+{
+    preg_match("/printf '%s' '([A-Za-z0-9+\\/=]+)' \\| base64 --decode > \"\\\$candidate\\/Caddyfile\"/", (string) $command->input, $match);
+
+    return (string) base64_decode($match[1] ?? '', true);
 }
 
 function node_caddy_builder_render(Node $node): NodeCaddyfile

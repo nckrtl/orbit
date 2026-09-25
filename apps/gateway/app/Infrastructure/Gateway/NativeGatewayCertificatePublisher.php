@@ -6,6 +6,7 @@ namespace App\Infrastructure\Gateway;
 
 use App\Domain\Certificates\GatewayCertificatePaths;
 use App\Domain\Nodes\NodeProvisioningException;
+use App\Infrastructure\Caddy\CaddyPublicationLock;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
@@ -48,6 +49,26 @@ final readonly class NativeGatewayCertificatePublisher
 
             throw $exception;
         }
+
+        $this->reload();
+    }
+
+    /**
+     * The live Gateway site already names this certificate, and a Node Caddy build whose render did not
+     * change does not reload, so Caddy reloads here under the Node Caddy lock that builds hold.
+     */
+    private function reload(): void
+    {
+        $this->run(
+            step: 'gateway-certificate-reload',
+            errorCode: 'gateway.caddy_start_failed',
+            arguments: ['sudo', 'bash', '-seu'],
+            input: CaddyPublicationLock::script(CaddyPublicationLock::Path).PHP_EOL.<<<'BASH'
+                if systemctl is-active --quiet caddy; then
+                    systemctl reload-or-restart caddy
+                fi
+                BASH,
+        );
     }
 
     private function stage(
@@ -130,9 +151,9 @@ final readonly class NativeGatewayCertificatePublisher
     }
 
     /** @param non-empty-list<string> $arguments */
-    private function run(string $step, string $errorCode, array $arguments): CommandResult
+    private function run(string $step, string $errorCode, array $arguments, ?string $input = null): CommandResult
     {
-        $result = $this->processes->run(new ProcessInvocation(arguments: $arguments, timeout: 60.0));
+        $result = $this->processes->run(new ProcessInvocation(arguments: $arguments, timeout: 60.0, input: $input));
 
         if (! $result->succeeded()) {
             throw new NodeProvisioningException(

@@ -496,12 +496,6 @@ final readonly class ConvergeRouteAction
                     RouteReplacementStep::IngressCertificate,
                     fn () => $this->projection->prepareIngressCertificate($replacement),
                 );
-                $failureStep = 'ingress-caddy';
-                $this->forwardStep(
-                    $replacement,
-                    RouteReplacementStep::IngressCaddy,
-                    fn () => $this->projection->stageIngressCaddy($replacement),
-                );
                 $failureStep = 'public-edge-verified';
                 $this->forwardStep(
                     $replacement,

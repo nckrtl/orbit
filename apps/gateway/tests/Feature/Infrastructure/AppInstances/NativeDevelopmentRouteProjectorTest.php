@@ -35,7 +35,7 @@ use App\Infrastructure\AppDev\RemoteAppDevCertificateManager;
 use App\Infrastructure\AppDev\RemoteAppDevPhpFpmManager;
 use App\Infrastructure\AppDev\RemoteAppDevRouteFirewallManager;
 use App\Infrastructure\AppInstances\NativeDevelopmentRouteProjector;
-use App\Infrastructure\Caddy\Build\NodeCaddyListenerResolver;
+use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
 use App\Infrastructure\Nodes\RemotePhpPackageManager;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
@@ -58,6 +58,7 @@ use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Str;
 use Tests\Support\FakeClusterRouterDnsSelectionReconciler;
+use Tests\Support\SshNodeCaddyBuilds;
 
 it('uses one local workload site when Router and workload roles share a Node', function (): void {
     [$appInstance, $route, $node] = orb127_route_projection_models(coLocated: true, phpVersion: '8.5');
@@ -175,10 +176,10 @@ it('retires a transferred generated Route without inventing an old Router certif
         expect($deletions->map(static fn (RemoteCommand $command): string => $command->arguments[3])->values()->all())
             ->toBe(["app-instance-{$instance->id}", "route-{$sourceRoute->id}-router"]);
         $firstDeletion = $deletions->keys()->first();
-        $caddyHosts = collect($ssh->commands)->filter(static fn (RemoteCommand $command): bool => str_contains($command->input ?? '', 'caddy validate --config'))
+        $caddyHosts = collect($ssh->commands)->filter(static fn (RemoteCommand $command): bool => str_contains($command->input ?? '', 'orbit-caddy-build-result'))
             ->keys()->map(fn (int $index): string => $ssh->hosts[$index])->unique()->sort()->values()->all();
         expect($caddyHosts)->toBe(['10.44.0.10', '10.44.0.30']);
-        expect(collect($ssh->commands)->take($firstDeletion)->filter(static fn (RemoteCommand $command): bool => str_contains($command->input ?? '', 'caddy validate --config'))->count())->toBe(2);
+        expect(collect($ssh->commands)->take($firstDeletion)->filter(static fn (RemoteCommand $command): bool => str_contains($command->input ?? '', 'orbit-caddy-build-result'))->count())->toBe(2);
         $projector->retireSource($transfer);
         expect($sourceRoute->refresh()->status)->toBe(RouteStatus::Retiring);
     } finally {
@@ -247,7 +248,7 @@ it('keeps source certificates when retirement cannot reconcile Caddy', function 
     $route->update(['status' => RouteStatus::Active]);
     $transfer = orb368_projection_transfer($instance, $route, $route, $source, $router, $router);
     [$projector, $ssh, , $home] = orb127_route_projector(
-        static fn (RemoteCommand $command): bool => str_contains($command->input ?? '', 'caddy validate --config'),
+        static fn (RemoteCommand $command): bool => str_contains($command->input ?? '', 'orbit-caddy-build-result'),
     );
 
     try {
@@ -905,10 +906,7 @@ it('projects a dedicated Router over reachable LAN with separate keys and preser
             ->first(
                 static fn (RemoteCommand $command): bool => in_array('s_client', $command->arguments, true),
             );
-        $routerConfiguration = new AppDevCaddyConfigRenderer()->render(
-            new AppDevSiteRepository()->forNode($router),
-            app(NodeCaddyListenerResolver::class)->fragments($router)->routeBind(),
-        );
+        $routerConfiguration = app(NodeCaddyfileRenderer::class)->render($router)->content;
 
         expect($arguments)
             ->toContain("app-instance-{$appInstance->id}", "route-{$route->id}-router")
@@ -950,10 +948,7 @@ it('projects a dedicated Router over reachable LAN with separate keys and preser
             )
             ->and(collect($ssh->commands)
                 ->contains(
-                    static fn (RemoteCommand $command): bool => str_contains(
-                        $command->input ?? '',
-                        base64_encode($routerConfiguration),
-                    ),
+                    static fn (RemoteCommand $command): bool => SshNodeCaddyBuilds::pushed($command) === $routerConfiguration,
                 ))
             ->toBeTrue()
             ->and($processes->invocations)
@@ -999,11 +994,9 @@ it('retains active workload and Router sites while publishing a second Route on 
     try {
         $projector->converge($secondInstance, $secondRoute);
 
-        $sites = new AppDevSiteRepository;
-        $renderer = new AppDevCaddyConfigRenderer;
-        $workloadConfiguration = $renderer->render($sites->forNode($workload), app(NodeCaddyListenerResolver::class)->fragments($workload)->routeBind());
-        $routerConfiguration = $renderer->render($sites->forNode($router), app(NodeCaddyListenerResolver::class)->fragments($router)->routeBind());
-        $publishedInputs = collect($ssh->commands)->pluck('input')->filter();
+        $workloadConfiguration = app(NodeCaddyfileRenderer::class)->render($workload)->content;
+        $routerConfiguration = app(NodeCaddyfileRenderer::class)->render($router)->content;
+        $pushed = collect($ssh->commands)->map(static fn (RemoteCommand $command): ?string => SshNodeCaddyBuilds::pushed($command))->filter();
 
         expect($workloadConfiguration)
             ->toContain(
@@ -1015,13 +1008,9 @@ it('retains active workload and Router sites while publishing a second Route on 
                 "/etc/caddy/orbit-certificates/route-{$firstRoute->id}-router/current/cert.pem",
                 "/etc/caddy/orbit-certificates/route-{$secondRoute->id}-router/current/cert.pem",
             )
-            ->and($publishedInputs->contains(
-                static fn (string $input): bool => str_contains($input, base64_encode($workloadConfiguration)),
-            ))
+            ->and($pushed->contains($workloadConfiguration))
             ->toBeTrue()
-            ->and($publishedInputs->contains(
-                static fn (string $input): bool => str_contains($input, base64_encode($routerConfiguration)),
-            ))
+            ->and($pushed->contains($routerConfiguration))
             ->toBeTrue();
     } finally {
         new Filesystem()->deleteDirectory($home);
@@ -1097,7 +1086,7 @@ it('refuses an invalid workload leaf before Router Caddy or DNS publication', fu
                 ->filter(
                     static fn (RemoteCommand $command): bool => str_contains(
                         $command->input ?? '',
-                        'caddy validate --config "$candidate/Caddyfile"',
+                        'orbit-caddy-build-result',
                     ),
                 ))
             ->toHaveCount(1);
@@ -1270,7 +1259,7 @@ function orb_hostname_change_certificate_replay(Orb127RouteSshExecutor $ssh, arr
         }
 
         if (
-            ! str_contains($command->input ?? '', 'caddy validate --config')
+            ! str_contains($command->input ?? '', 'orbit-caddy-build-result')
             || preg_match("/printf '%s' '([A-Za-z0-9+\\/=]*)' \\| base64 --decode/", $command->input ?? '', $encoded) !== 1
         ) {
             continue;
@@ -1438,7 +1427,7 @@ function orb127_route_projector(?Closure $failSsh = null, bool $failDns = false)
     $home = sys_get_temp_dir().'/orbit-route-projector-'.Str::uuid();
     config()->set('orbit.home', $home);
     $certificates = new RemoteAppDevCertificateManager($executor, $signer, $accounts);
-    $caddy = new RemoteAppDevCaddyManager($sites, new AppDevCaddyConfigRenderer, $executor);
+    $caddy = new RemoteAppDevCaddyManager(SshNodeCaddyBuilds::over($ssh), $executor);
     $dns = new DnsmasqPrivateDnsManager($processes, new AppDevDnsConfigRenderer($sites));
     $projector = new NativeDevelopmentRouteProjector(
         new RemoteAppDevPhpFpmManager(

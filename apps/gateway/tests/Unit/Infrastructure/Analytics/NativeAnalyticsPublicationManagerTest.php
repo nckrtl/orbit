@@ -6,10 +6,10 @@ use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\Certificates\GatewayCertificateIssuer;
 use App\Domain\Certificates\GatewayCertificatePaths;
 use App\Domain\Nodes\NodeRoleOperationException;
-use App\Infrastructure\Analytics\AnalyticsCaddyPublisher;
 use App\Infrastructure\Analytics\AnalyticsCaddySiteRenderer;
 use App\Infrastructure\Analytics\AnalyticsCertificatePublisher;
 use App\Infrastructure\Analytics\NativeAnalyticsPublicationManager;
+use App\Infrastructure\Caddy\Build\NodeCaddyBuildException;
 use App\Infrastructure\Nodes\CaddyPackageSourceProgram;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
@@ -19,6 +19,7 @@ use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
+use Tests\Support\RecordingNodeCaddyBuilds;
 
 it('waits for Plausible, issues the certificate, publishes the Caddy site, then converges DNS last', function (): void {
     $events = [];
@@ -26,7 +27,7 @@ it('waits for Plausible, issues the certificate, publishes the Caddy site, then 
 
     $manager->converge(analytics_publication_node());
 
-    expect($events)->toBe(['ssh:health', 'ssh:caddy-source', 'certificate:issue', 'ssh:certificate', 'ssh:caddy', 'dns:converge']);
+    expect($events)->toBe(['ssh:health', 'ssh:caddy-source', 'certificate:issue', 'ssh:certificate', 'build:services', 'dns:converge']);
 });
 
 it('publishes nothing when Plausible does not become healthy', function (): void {
@@ -49,23 +50,27 @@ it('throws when the certificate SSH push fails', function (): void {
     expect($events)->toBe(['ssh:health', 'ssh:caddy-source', 'certificate:issue', 'ssh:certificate']);
 });
 
-it('throws when the Caddy SSH push fails', function (): void {
+it('keeps its error code and names the Node, stage, and Caddy message when the build fails', function (): void {
     $events = [];
-    $manager = analytics_publication_manager($events, failCaddy: true);
+    $manager = analytics_publication_manager($events, buildFailure: new NodeCaddyBuildException('services', 'addresses', 'The build binds 192.168.6.30, which is not an address on this Node.'));
 
     expect(fn () => $manager->converge(analytics_publication_node()))
-        ->toThrow(NodeRoleOperationException::class);
+        ->toThrow(function (NodeRoleOperationException $exception): void {
+            expect($exception->underlyingErrorCode)->toBe('analytics.caddy_publication_failed')
+                ->and($exception->step)->toBe('analytics-caddy')
+                ->and($exception->getMessage())->toContain('Node [services] failed at stage [addresses]: The build binds 192.168.6.30');
+        });
 
-    expect($events)->toBe(['ssh:health', 'ssh:caddy-source', 'certificate:issue', 'ssh:certificate', 'ssh:caddy']);
+    expect($events)->toBe(['ssh:health', 'ssh:caddy-source', 'certificate:issue', 'ssh:certificate', 'build:services']);
 });
 
-it('removes the Caddy site and certificate over SSH, then converges DNS without the node', function (): void {
+it('builds the Node before it removes the certificate, then converges DNS without the node', function (): void {
     $events = [];
     $manager = analytics_publication_manager($events);
 
     $manager->remove(analytics_publication_node());
 
-    expect($events)->toBe(['ssh:caddy-remove', 'ssh:certificate-remove', 'dns:converge-empty']);
+    expect($events)->toBe(['build:services', 'ssh:certificate-remove', 'dns:converge-empty']);
 });
 
 it('touches only the Gateway-side DNS record when the node is unreachable', function (): void {
@@ -75,14 +80,6 @@ it('touches only the Gateway-side DNS record when the node is unreachable', func
     $manager->removeUnreachable(analytics_publication_node());
 
     expect($events)->toBe(['dns:converge-empty']);
-});
-
-it('reports the missing listen address when the Caddy publication refuses it', function (): void {
-    $events = [];
-    $manager = analytics_publication_manager($events, failCaddy: true);
-
-    expect(fn () => $manager->converge(analytics_publication_node()))
-        ->toThrow(NodeRoleOperationException::class, 'Caddy would bind 192.168.6.30, which is not an address on this Node.');
 });
 
 function analytics_publication_node(): Node
@@ -98,7 +95,7 @@ function analytics_publication_node(): Node
 function analytics_publication_manager(
     array &$events,
     bool $failCertificate = false,
-    bool $failCaddy = false,
+    ?NodeCaddyBuildException $buildFailure = null,
     bool $failHealth = false,
 ): NativeAnalyticsPublicationManager {
     $certificateDirectory = sys_get_temp_dir().'/orbit-analytics-test-'.bin2hex(random_bytes(4));
@@ -122,8 +119,7 @@ function analytics_publication_manager(
             }
         },
         certificatePublisher: new AnalyticsCertificatePublisher,
-        caddy: new AnalyticsCaddyPublisher,
-        site: new AnalyticsCaddySiteRenderer,
+        builds: new RecordingNodeCaddyBuilds($events, $buildFailure),
         dns: new class($events) implements PrivateDnsManager
         {
             public function __construct(private array &$events) {}
@@ -133,12 +129,11 @@ function analytics_publication_manager(
                 $this->events[] = $pendingNode instanceof Node ? 'dns:converge' : 'dns:converge-empty';
             }
         },
-        ssh: new class($events, $failCertificate, $failCaddy, $failHealth) implements SshExecutor
+        ssh: new class($events, $failCertificate, $failHealth) implements SshExecutor
         {
             public function __construct(
                 private array &$events,
                 private bool $failCertificate,
-                private bool $failCaddy,
                 private bool $failHealth,
             ) {}
 
@@ -168,10 +163,9 @@ function analytics_publication_manager(
                     return new CommandResult($this->failCertificate ? 1 : 0, '', '', 1, false);
                 }
 
-                $isCaddyPublish = ! str_contains($command->input ?? '', 'if [ ! -d');
-                $this->events[] = $isCaddyPublish ? 'ssh:caddy' : 'ssh:caddy-remove';
+                $this->events[] = 'ssh:other';
 
-                return new CommandResult($this->failCaddy ? 1 : 0, '', $this->failCaddy ? "Caddy would bind 192.168.6.30, which is not an address on this Node. Correct the stored WireGuard or LAN address of the Node, then publish again.\n" : '', 1, false);
+                return new CommandResult(0, '', '', 1, false);
             }
         },
         keys: new class implements SshKeyProvider

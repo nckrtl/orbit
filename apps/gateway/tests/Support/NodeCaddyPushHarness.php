@@ -71,6 +71,24 @@ final readonly class NodeCaddyPushHarness
         ];
     }
 
+    /** @return array{exit: int, stdout: string, stderr: string} */
+    public function checkAddresses(NodeCaddyfile $caddyfile, string $present): array
+    {
+        $command = $this->script()->addressCheck($caddyfile);
+        $process = new Process($command->arguments, $this->root, [
+            'PATH' => $this->root.'/bin:'.getenv('PATH'),
+            'HARNESS_ADDRESSES' => $present,
+        ]);
+        $process->setInput($command->input);
+        $process->run();
+
+        return [
+            'exit' => $process->getExitCode() ?? 1,
+            'stdout' => $process->getOutput(),
+            'stderr' => $process->getErrorOutput(),
+        ];
+    }
+
     public function path(string $suffix): string
     {
         return $this->caddyDirectory.'/'.$suffix;

@@ -809,7 +809,7 @@ it('publishes an eligible public Route on the same ID and names only the Ingress
     expect($updated->json('data'))
         ->not->toHaveKey('public_ip')
         ->and($edge->calls)
-        ->toBe(['ingress-certificate', 'ingress-caddy', 'public-edge-verified', 'public-activated', 'ingress-firewall']);
+        ->toBe(['ingress-certificate', 'public-edge-verified', 'public-activated', 'ingress-firewall']);
 
     $artifact = new IngressSiteRepository()->forRoute($route->refresh());
     expect($artifact->artifact())
@@ -1332,7 +1332,6 @@ function route_api_domain_projector(bool $rollback = false, bool $cleanup = fals
         'prepareFirewallPolicy',
         'prepareRouterCaddy',
         'prepareIngressCertificate',
-        'stageIngressCaddy',
         'prepareIngressFirewall',
         'verifyPublicEdge',
         'activatePublicHandler',
