@@ -75,9 +75,11 @@ A Process's cAdvisor series is keyed by its systemd unit name or Docker containe
 
 ## Process runtime status
 
-A Process list reads every Process's runtime status from the same Prometheus in one query. A systemd Process takes its state from `node_systemd_unit_state`, and a missing unit is `inactive`. cAdvisor reports only running containers, so a Docker Process with a series is `running` and one without is `exited`. The Gateway caches that answer for ten seconds, so every open list and screen shares one query. When the Gateway starts, stops, or restarts a Process, it reads the new status from the Node, broadcasts it as `process.status`, and lists report that status for thirty seconds, until Prometheus holds a sample from after the change.
+A Process list first reads each Process's runtime status from the Gateway's [view of the Node agents](/reference/node-agent#gateway-view). For a Process whose Node has no fresh view, it reads the status from the same Prometheus in one query.
 
-If Prometheus cannot answer at all, the list asks each Process's Node over SSH instead, and it does not cache that answer.
+A systemd Process takes its state from `node_systemd_unit_state`, and a missing unit is `inactive`. cAdvisor reports only running containers, so a Docker Process with a series is `running` and one without is `exited`. The Gateway caches that answer for ten seconds, so every open list and screen shares one query. When the Gateway starts, stops, or restarts a Process, it reads the new status from the Node and broadcasts it as `process.status`. Lists report that status for thirty seconds, ahead of the view and Prometheus, until both hold state from after the change.
+
+If Prometheus cannot answer at all, the list asks each Process's Node over SSH, but only for Processes whose Node has no fresh view. It does not cache that answer.
 
 ## Private access and credentials
 

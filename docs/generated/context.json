@@ -77,6 +77,7 @@
                 "Ingress",
                 "Instance",
                 "Node",
+                "Node agent",
                 "Process",
                 "Project",
                 "Route",
@@ -3799,6 +3800,34 @@
             ]
         },
         {
+            "path": "docs/decisions/0148-keep-a-gateway-view-of-node-agent-state.md",
+            "title": "ADR 0148: Keep a Gateway view of Node agent state",
+            "kind": "decision",
+            "components": [
+                "apps/docs",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Database",
+                "Doctor",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Node agent",
+                "Process",
+                "Runtime hibernation",
+                "Task"
+            ],
+            "governing_adrs": [
+                "0084",
+                "0087",
+                "0127",
+                "0128",
+                "0129",
+                "0148"
+            ]
+        },
+        {
             "path": "docs/decisions/0150-keep-extension-commands-local-and-confirm-the-proxycli-fleet-stop.md",
             "title": "ADR 0150: Keep extension commands local and confirm the proxycli fleet stop",
             "kind": "decision",
@@ -3841,6 +3870,7 @@
                 "Ingress",
                 "Instance",
                 "Node",
+                "Node agent",
                 "Process",
                 "Project",
                 "Project type",
@@ -3993,6 +4023,7 @@
                 "0145",
                 "0146",
                 "0147",
+                "0148",
                 "0150"
             ]
         },
@@ -4172,6 +4203,7 @@
                 "Gateway",
                 "Instance",
                 "Node",
+                "Node agent",
                 "Process",
                 "Project",
                 "Runtime hibernation"
@@ -4576,7 +4608,8 @@
                 "Schedule"
             ],
             "governing_adrs": [
-                "0129"
+                "0129",
+                "0148"
             ]
         },
         {
@@ -4885,8 +4918,10 @@
             "kind": "reference",
             "components": [],
             "concepts": [
+                "Database",
                 "Doctor",
                 "Gateway",
+                "Instance",
                 "Node",
                 "Node agent",
                 "Process",
@@ -4895,7 +4930,8 @@
             "governing_adrs": [
                 "0128",
                 "0129",
-                "0130"
+                "0130",
+                "0148"
             ]
         },
         {

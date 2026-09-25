@@ -175,16 +175,17 @@ There is no environment variable to set. The Gateway resolves the active connect
 
 ## Node agent channels
 
-Each Node has a presence channel, `presence-node.{id}`, where its [Node agent](/reference/node-agent) publishes presence and Process runtime state. The Gateway does not broadcast on these channels, and it never receives their events. [ADR 0129](/decisions/0129-publish-node-presence-and-process-state-on-per-node-presence-channels) records the design.
+Each Node has a presence channel, `presence-node.{id}`, where its [Node agent](/reference/node-agent) publishes presence and Process runtime state. The Gateway does not broadcast on these channels. Its agent view subscriber joins every channel and keeps the latest state as the [Gateway view](/reference/node-agent#gateway-view). [ADR 0129](/decisions/0129-publish-node-presence-and-process-state-on-per-node-presence-channels) records the channel design, and [ADR 0148](/decisions/0148-keep-a-gateway-view-of-node-agent-state) records the Gateway view.
 
 ### Membership
 
 | Member ID | Who | Signed by |
 | --- | --- | --- |
 | `agent.{id}` | The agent of Node `{id}` | `POST /api/v1/agent/broadcasting/auth`, only for a request from Node `{id}`'s own WireGuard address when that Node is managed. |
+| `gateway.{socket id}` | The Gateway's agent view subscriber | The subscriber itself, with the Reverb app secret the Gateway holds. No HTTP request is involved. |
 | `viewer.{socket id}` | Any other subscriber, such as a browser | `POST /api/v1/broadcasting/auth`, with the same rules as `orbit`. |
 
-A member's `user_info` is `{ "kind": "agent", "node_id": 12, "version": "0.1.0" }` for the agent and `{ "kind": "viewer", "node_id": 7 }` for a viewer, where a viewer's `node_id` is the Node the viewer connects from. The existing auth endpoint never signs an `agent.*` member. It refuses any other `presence-*` channel, including a malformed `presence-node.*` name, with `broadcast.channel_forbidden` (403). Presence events tell a subscriber when the agent joins (`pusher:member_added`) and leaves (`pusher:member_removed`). A clean agent stop and an agent crash both close the connection, so the agent leaves at once.
+A member's `user_info` is `{ "kind": "agent", "node_id": 12, "version": "0.1.0" }` for the agent, `{ "kind": "gateway" }` for the subscriber, and `{ "kind": "viewer", "node_id": 7 }` for a viewer, where a viewer's `node_id` is the Node the viewer connects from. The existing auth endpoint never signs an `agent.*` or `gateway.*` member. It refuses any other `presence-*` channel, including a malformed `presence-node.*` name, with `broadcast.channel_forbidden` (403). Presence events tell a subscriber when the agent joins (`pusher:member_added`) and leaves (`pusher:member_removed`). A clean agent stop and an agent crash both close the connection, so the agent leaves at once.
 
 ### Events
 
