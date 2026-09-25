@@ -56,7 +56,7 @@ The Gateway writes `gateway_address` to the agent's `config.toml` on every conve
 
    The `version` value is the agent's short version string, such as `1.2.3`. The Gateway signs membership `agent.{id}` on the caller's own channel only. The response has the Pusher `auth` and `channel_data` values.
 
-4. The agent subscribes to `presence-node.{id}`, sends its snapshot, and then sends heartbeats, changes, and a complete snapshot at least every 60 seconds. [Realtime events](/reference/events#node-agent-channels) defines the events.
+4. The agent subscribes to `presence-node.{id}` and sends its snapshot. Then it publishes the events in [Realtime events](/reference/events#node-agent-channels).
 
 When the Gateway role moves, its WireGuard address changes, and every agent loses the Gateway until its configuration is rewritten. Run `orbit node:add <node>` or a role converge on each Node; a changed `gateway_address` restarts the agent. The Reverb address needs no converge, because the agent reads it from each realtime response when it connects.
 

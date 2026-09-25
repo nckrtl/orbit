@@ -26,6 +26,8 @@ Reverb client events carry the sender's member ID but no socket ID, and presence
 
 ## Decision
 
+The subscriber repairs a view without waiting for a member to join, and the agent stops the two causes it controls: a second process and a dead connection.
+
 ### The subscriber asks for a snapshot
 
 - A Node's channel owes a snapshot when agent events arrive without a complete snapshot, or when the agent's `sequence` goes back without a membership change. A snapshot that completes after the sequence went back does not settle it, because it can come from the second process.
@@ -58,7 +60,7 @@ The agent version is 0.1.2. The subscriber change works with agent 0.1.1: it rec
 
 ## Affects
 
-- Components: apps/agent, apps/gateway, apps/docs
+- Components: apps/gateway, apps/docs
 - ADRs: amends [ADR 0148](/decisions/0148-keep-a-gateway-view-of-node-agent-state) and [ADR 0129](/decisions/0129-publish-node-presence-and-process-state-on-per-node-presence-channels)
 - Detail: [Node agent](/reference/node-agent#gateway-view), [Realtime events](/reference/events#node-agent-channels)
 - Verify: Gateway tests for the snapshot request; agent tests for the lock and the ping; an Incus proof with a second agent process and repeated Reverb drops against subscriber restarts
