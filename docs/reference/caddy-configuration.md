@@ -52,15 +52,15 @@ Each publisher chooses its `bind` addresses with the listener rule of the [Node 
 | --- | --- | --- |
 | Private Route sites in `app-dev.caddy`: workload and Router sites, custom proxy Routes, analytics tracking hosts, Agentation, and Vite | The WireGuard address, and the LAN address when the Node has one | `0.0.0.0` |
 | Public Ingress sites | None | `0.0.0.0` |
-| `reverb.orbit`, `analytics.orbit`, `collector.cli-proxy-api.orbit`, and Herdr observer sites | The WireGuard address | `0.0.0.0` when the Node has a private Route site; otherwise the WireGuard address |
+| `reverb.orbit`, `analytics.orbit`, and `collector.cli-proxy-api.orbit` | The WireGuard address | `0.0.0.0` when the Node has a private Route site; otherwise the WireGuard address |
 | `gateway.orbit`, `metrics.orbit`, and the service metrics scrape site | The WireGuard address | The WireGuard address |
 
 Caddy sends a connection for a specific address only to the sites bound to that address. If one site binds the WireGuard address and another binds `0.0.0.0` on the same port, a WireGuard client that asks for the second hostname gets an empty response. The rule puts every site that WireGuard clients use on the same listener.
 
-The Gateway decides the addresses from stored state: the Node's `ingress` role, its WireGuard and LAN addresses, and its Route sites. The `app-dev`, `websocket`, `analytics`, ProxyCli, and Herdr publishers also rewrite the `bind` lines of the fragments they carry to this rule:
+The Gateway decides the addresses from stored state: the Node's `ingress` role, its WireGuard and LAN addresses, and its Route sites. The `app-dev`, `websocket`, `analytics`, and ProxyCli publishers also rewrite the `bind` lines of the fragments they carry to this rule:
 
 - The private `https://` sites in `app-dev.caddy`.
-- Every site in `websocket.caddy`, `analytics.caddy`, `proxycli.caddy`, and `herdr-<session>.caddy`.
+- Every site in `websocket.caddy`, `analytics.caddy`, and `proxycli.caddy`.
 
 One publication therefore corrects a listener that another publisher wrote earlier. It publishes a new version when only a carried fragment changed. Public sites, Unix socket sites, and all other fragments keep their `bind` lines. The Metrics, service metrics, and Gateway web publishers bind the WireGuard address and carry other fragments unchanged.
 

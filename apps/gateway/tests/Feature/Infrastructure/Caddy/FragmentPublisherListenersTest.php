@@ -79,7 +79,6 @@ describe('the listener rewrite', function (): void {
                 ."https://cli-proxy-api.orbit {\n    bind 0.0.0.0\n    tls /c/cert.pem /c/key.pem\n}\n\n"
                 ."shop.example.com {\n    bind 0.0.0.0\n    tls force_automate\n}\n",
             'proxycli.caddy' => "# Managed by Orbit: proxycli\ncollector.cli-proxy-api.orbit {\n    bind 0.0.0.0\n}\n",
-            'herdr-main.caddy' => "# Managed by Orbit: herdr-observer\nhttps://main.herdr.orbit {\n    bind 0.0.0.0\n}\n",
             'gateway.caddy' => "gateway.orbit {\n    bind 10.44.0.3\n}\n",
             '00-unmanaged.caddy' => "legacy.test {\n    bind 0.0.0.0\n}\n",
         ];
@@ -104,7 +103,6 @@ describe('the listener rewrite', function (): void {
                     ."shop.example.com {\n    bind 0.0.0.0\n    tls force_automate\n}\n",
                 )
                 ->and(file_get_contents("{$directory}/proxycli.caddy"))->toContain("    bind 10.44.0.3\n")
-                ->and(file_get_contents("{$directory}/herdr-main.caddy"))->toContain("    bind 10.44.0.3\n")
                 ->and(file_get_contents("{$directory}/gateway.caddy"))->toBe($fragments['gateway.caddy'])
                 ->and(file_get_contents("{$directory}/00-unmanaged.caddy"))->toBe($fragments['00-unmanaged.caddy'])
                 ->and(glob("{$directory}/*.orbit-listeners"))->toBe([])

@@ -18,12 +18,12 @@ final readonly class CaddyFragmentListeners
     /** The fragment that holds the Node's Route sites. Its private `https://` sites use the first-row rule. */
     public const string RouteFragment = 'app-dev.caddy';
 
-    /** Fragments that hold one shared site each, as shell patterns. */
-    public const array SharedFragments = ['websocket.caddy', 'analytics.caddy', 'proxycli.caddy', 'herdr-*.caddy'];
+    /** Fragments that hold one shared site each. */
+    public const array SharedFragments = ['websocket.caddy', 'analytics.caddy', 'proxycli.caddy'];
 
     /**
      * @param  non-empty-list<string>  $routes  The listeners of private Route sites.
-     * @param  non-empty-list<string>  $shared  The listeners of `websocket`, `analytics`, ProxyCli, and Herdr sites.
+     * @param  non-empty-list<string>  $shared  The listeners of the `websocket`, `analytics`, and ProxyCli sites.
      */
     public function __construct(
         public array $routes,
