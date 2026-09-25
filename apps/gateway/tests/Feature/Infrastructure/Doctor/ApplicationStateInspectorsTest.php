@@ -469,21 +469,33 @@ it('executes current worker identity outcomes from the production program', func
         : $user;
     $files = new Filesystem;
     $files->makeDirectory("{$procRoot}/{$mainPid}/task/{$mainPid}", 0o755, true);
-    $files->makeDirectory("{$procRoot}/{$workerPid}", 0o755, true);
-    file_put_contents("{$procRoot}/{$mainPid}/task/{$mainPid}/children", $condition === 'idle' ? '' : "{$workerPid}\n");
-
-    if ($condition !== 'idle') {
-        $uid = $condition === 'uid mismatch' ? posix_geteuid() + 1 : posix_geteuid();
+    $children = match ($condition) {
+        'idle' => '',
+        'exited before a UID mismatch' => "{$workerPid} ".($workerPid + 1)."\n",
+        default => "{$workerPid}\n",
+    };
+    file_put_contents("{$procRoot}/{$mainPid}/task/{$mainPid}/children", $children);
+    $writeWorker = static function (int $pid, int $uid, string $state = 'S') use ($files, $procRoot, $mainPid, $sandbox, $condition): void {
         $gid = $condition === 'gid mismatch' ? posix_getegid() + 1 : posix_getegid();
         $parent = $condition === 'reparented' ? $mainPid + 1 : $mainPid;
-        $status = "PPid:\t{$parent}\nUid:\t{$uid}\t{$uid}\t{$uid}\t{$uid}\nGid:\t{$gid}\t{$gid}\t{$gid}\t{$gid}\n";
-        file_put_contents("{$procRoot}/{$workerPid}/status", $status);
-        file_put_contents("{$procRoot}/{$workerPid}/stat", application_process_stat($workerPid, $parent, 9001));
-        symlink($condition === 'root mismatch' ? $sandbox : '/', "{$procRoot}/{$workerPid}/root");
-
-        if ($condition === 'missing status') {
-            unlink("{$procRoot}/{$workerPid}/status");
+        $files->makeDirectory("{$procRoot}/{$pid}", 0o755, true);
+        $status = "State:\t{$state}\nPPid:\t{$parent}\nUid:\t{$uid}\t{$uid}\t{$uid}\t{$uid}\nGid:\t{$gid}\t{$gid}\t{$gid}\t{$gid}\n";
+        file_put_contents("{$procRoot}/{$pid}/status", $status);
+        file_put_contents("{$procRoot}/{$pid}/stat", application_process_stat($pid, $parent, 9001));
+        if ($state !== 'Z') {
+            symlink($condition === 'root mismatch' ? $sandbox : '/', "{$procRoot}/{$pid}/root");
         }
+    };
+
+    match ($condition) {
+        'idle', 'exited' => null,
+        'exited before a UID mismatch' => $writeWorker($workerPid + 1, posix_geteuid() + 1),
+        'zombie' => $writeWorker($workerPid, posix_geteuid(), 'Z'),
+        default => $writeWorker($workerPid, $condition === 'uid mismatch' ? posix_geteuid() + 1 : posix_geteuid()),
+    };
+
+    if ($condition === 'missing status') {
+        unlink("{$procRoot}/{$workerPid}/status");
     }
 
     try {
@@ -507,8 +519,11 @@ it('executes current worker identity outcomes from the production program', func
     'UID mismatch' => ['uid mismatch', '0'],
     'GID mismatch' => ['gid mismatch', '0'],
     'process root mismatch' => ['root mismatch', '0'],
-    'disappearing status' => ['missing status', '2'],
+    'unreadable status of a running worker' => ['missing status', '2'],
     'reparented worker' => ['reparented', '2'],
+    'worker that exited after the children list' => ['exited', '1'],
+    'worker that is exiting as a zombie' => ['zombie', '1'],
+    'exited worker before a live UID mismatch' => ['exited before a UID mismatch', '0'],
 ]);
 
 it('executes socket and service association outcomes from the production program', function (
