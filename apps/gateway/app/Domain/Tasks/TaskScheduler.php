@@ -6,6 +6,7 @@ namespace App\Domain\Tasks;
 
 use App\Actions\Tasks\CompleteTaskGroupAction;
 use App\Domain\Projects\LifecyclePhase;
+use App\Domain\Shared\ResourceOperationException;
 use App\Models\AgentThread;
 use App\Models\AppInstance;
 use App\Models\ProjectLifecycleStep;
@@ -929,6 +930,78 @@ final readonly class TaskScheduler
         }
 
         $group = $started->taskGroup;
+
+        return $group->fresh(['tasks', 'app', 'taskable']) ?? $group;
+    }
+
+    public function cancelRunningSubtask(TaskGroup $taskGroup, Task $task): TaskGroup
+    {
+        $taskGroup->requireManagedExecution();
+        /** @var Task|null $next */
+        $next = null;
+        $group = DB::transaction(function () use ($taskGroup, $task, &$next): TaskGroup {
+            $locked = Task::query()->where('task_group_id', $taskGroup->id)->lockForUpdate()->findOrFail($task->id);
+            $group = TaskGroup::query()->where('execution_mode', TaskExecutionMode::Managed)
+                ->lockForUpdate()
+                ->findOrFail($locked->task_group_id);
+
+            if ($locked->status !== TaskStatus::Running) {
+                throw new ResourceOperationException(
+                    errorCode: 'tasks.subtask_not_running',
+                    message: __('Only a running subtask can be cancelled.'),
+                    status: 409,
+                );
+            }
+
+            $assistanceReason = $locked->assistance_reason;
+            $locked->update([
+                'status' => TaskStatus::Cancelled,
+                'settled_at' => now(),
+                'completion_summary' => 'Cancelled by operator.',
+                'assistance_requested' => false,
+                'assistance_reason' => null,
+            ]);
+
+            $tasks = $this->lockedTasks($group);
+            if ($group->assistance_requested && $assistanceReason !== null && $group->assistance_reason === $assistanceReason) {
+                $otherAssistance = $group->tasks()
+                    ->whereKeyNot($locked->id)
+                    ->where('assistance_requested', true)
+                    ->exists();
+
+                if (! $otherAssistance) {
+                    $group->assistance_requested = false;
+                    $group->assistance_reason = null;
+                }
+            }
+
+            $next = $this->lowestTodo($tasks);
+            if ($next instanceof Task) {
+                try {
+                    $this->markRunning($next, $tasks);
+                    $group->status = TaskGroupStatus::Running;
+                } catch (TaskSequenceException) {
+                    $next = null;
+                    $group->status = $this->runningSibling($tasks) instanceof Task
+                        ? TaskGroupStatus::Running
+                        : TaskGroupStatus::Reviewing;
+                }
+            } else {
+                $group->status = TaskGroupStatus::Settling;
+            }
+            $group->save();
+
+            return $group->fresh(['tasks', 'app', 'taskable']) ?? $group;
+        });
+
+        if ($next instanceof Task && $next->status === TaskStatus::Running) {
+            $this->recordSubtaskStart($next);
+            $this->assignImplementer($next);
+        }
+
+        if ($group->status === TaskGroupStatus::Settling) {
+            return $this->settle($group);
+        }
 
         return $group->fresh(['tasks', 'app', 'taskable']) ?? $group;
     }

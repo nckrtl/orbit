@@ -64,6 +64,7 @@ Use these operations after the extension is enabled. List and show accept any au
 | `tasks:subtask:create` | `POST /api/v1/task-groups/{group}/tasks` | Group workspace Node |
 | `tasks:subtask:update` | `PATCH /api/v1/task-groups/{group}/tasks/{task}` | Group workspace Node |
 | `tasks:subtask:destroy` | `DELETE /api/v1/task-groups/{group}/tasks/{task}` | Group workspace Node |
+| `tasks:subtask:cancel` | `POST /api/v1/task-groups/{group}/tasks/{task}/cancel` | Gateway |
 | `tasks:cancel` | `POST /api/v1/task-groups/{group}/cancel` | Gateway |
 | `tasks:comment:create` | `POST /api/v1/task-groups/{group}/tasks/{task}/comments` | Gateway |
 | `tasks:comment:list` | `GET /api/v1/task-groups/{group}/tasks/{task}/comments` | Gateway |
@@ -73,6 +74,14 @@ Create requires `app_id`, `title`, and `brief`. It may include an ordered `tasks
 Update changes a group's `title`, `brief`, or `status`. Title and brief change only while the group is in `backlog`. The status moves between `backlog` and `todo` in either direction. Moving to `todo` asks the scheduler to claim, as create does.
 
 Subtask create appends one subtask at the next position with status `todo`. It works in any group status, and it accepts `deliverables`. Outside `backlog`, a new subtask needs at least one deliverable. Subtask update changes `title`, `brief`, `position`, or `deliverables`, and the other subtasks shift to keep positions gapless from 1. A `deliverables` value replaces the whole list. Subtask destroy deletes the subtask and closes the gap. Subtask update and destroy work only while the group is in `backlog`, with one exception: the deliverables of a `todo` subtask can change in any group status.
+
+Cancel a `running` subtask with `tasks:subtask:cancel`. Only a `running` subtask can be cancelled; another status returns HTTP 409 `tasks.subtask_not_running`. Cancellation interrupts that subtask's implementer and keeps the group and its Instance. It starts the lowest-position `todo` subtask. When no `todo` subtask remains, the group moves to `settling`.
+
+An interrupt failure returns HTTP 502 `tasks.subtask_interrupt_failed` and leaves the subtask `running`, so an operator can retry. A `cancelled` or `failed` subtask does not block the next subtask.
+
+When cancellation leaves no `todo` subtask, the group moves to `settling` without a `pr_url`. Orbit opens and publishes a pull request only after the last subtask is approved. It does not publish a pull request for earlier approved commits when the last subtask is cancelled. The operator must open the pull request manually or cancel the group.
+
+Cancellation does not reset the shared checkout. The cancelled implementer's uncommitted edits stay in the shared checkout, and the next approval commits them.
 
 Moving a group to `todo`, by create or update, needs at least one deliverable on every subtask.
 
@@ -91,7 +100,7 @@ Moving a group to `todo`, by create or update, needs at least one deliverable on
 
 A status update and a scheduler claim cannot both succeed. When the claim wins, the update returns `tasks.already_claimed`.
 
-MCP tool names follow the API operation identifiers: `tasks-create`, `tasks-update`, `tasks-list`, `tasks-show`, `tasks-cancel`, `tasks-complete`, `tasks-subtask-create`, `tasks-subtask-update`, `tasks-subtask-destroy`, `tasks-comment-create`, `tasks-comment-list`, `tasks-agents`, `tasks-enable`, `tasks-disable`, and `tasks-status`. Each CLI command carries the operation's route name, such as `orbit tasks:subtask:create`.
+MCP tool names follow the API operation identifiers: `tasks-create`, `tasks-update`, `tasks-list`, `tasks-show`, `tasks-cancel`, `tasks-complete`, `tasks-subtask-create`, `tasks-subtask-update`, `tasks-subtask-destroy`, `tasks-subtask-cancel`, `tasks-comment-create`, `tasks-comment-list`, `tasks-agents`, `tasks-enable`, `tasks-disable`, and `tasks-status`. Each CLI command carries the operation's route name, such as `orbit tasks:subtask:create`.
 
 ## Deliverables
 

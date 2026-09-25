@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api;
 
+use App\Actions\Tasks\CancelRunningSubtaskAction;
 use App\Actions\Tasks\CancelTaskCheckAction;
 use App\Actions\Tasks\CancelTaskGroupAction;
 use App\Actions\Tasks\CompleteTaskGroupAction;
@@ -81,6 +82,17 @@ final class TaskGroupsController extends Controller
 
     #[RequiresNodeAccess(ServingNode::TaskGroupOwning)]
     public function destroyTask(EmptyTasksRequest $request, TaskGroup $group, Task $task, DestroyTaskAction $action): JsonResponse
+    {
+        abort_unless($task->task_group_id === $group->id, 404);
+
+        return response()->json([
+            'data' => TaskData::fromModel($action->execute($group, $task))->toArray(),
+            'meta' => $this->meta($request),
+        ]);
+    }
+
+    #[RequiresNodeAccess(ServingNode::Gateway)]
+    public function cancelSubtask(EmptyTasksRequest $request, TaskGroup $group, Task $task, CancelRunningSubtaskAction $action): JsonResponse
     {
         abort_unless($task->task_group_id === $group->id, 404);
 

@@ -6580,6 +6580,37 @@
       }
     },
     {
+      "name": "tasks-subtask-cancel",
+      "title": "tasks:subtask:cancel",
+      "description": "tasks:subtask:cancel",
+      "method": "POST",
+      "path": "/api/v1/task-groups/{group}/tasks/{task}/cancel",
+      "path_inputs": [
+        "group",
+        "task"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "group": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Task group ID."
+          },
+          "task": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "group",
+          "task"
+        ]
+      }
+    },
+    {
       "name": "tasks-subtask-create",
       "title": "Create a subtask",
       "description": "Appends one subtask to a Task group at the next position with status `todo`. Works in any group status. `deliverables` is a list of at most 20 typed items the subtask must deliver, each with a unique slug `id`, a `type`, and a `description`: `file` adds `path` (a path or glob) and `change` (`created`, `modified`, or `any`); `test` adds `project`, `file` (a Pest test file in that project), and `name` (a substring of the test name); `command` adds `command` and an optional `directory`; `review` adds nothing. Orbit verifies file, test, and command deliverables at handoff, and the reviewer confirms review deliverables. Outside `backlog`, a subtask needs at least one deliverable (`tasks.subtask_deliverables_missing`). Served by the Node that holds the group's Instance, or by the Gateway for a group without one. Returns `tasks.disabled` while the extension is off.",

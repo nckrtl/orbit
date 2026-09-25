@@ -21,6 +21,10 @@ final class FakeAgentDriver implements AgentDriver
 
     public bool $eligible = true;
 
+    public bool $supportsInterruption = false;
+
+    public bool $failNextInterrupt = false;
+
     public function __construct(private readonly string $key = 'example') {}
 
     public function key(): string
@@ -52,7 +56,16 @@ final class FakeAgentDriver implements AgentDriver
 
     public function interrupt(AgentThread $thread): void
     {
-        throw AgentDriverException::unsupported('interruption');
+        $this->calls[] = ['operation' => 'interrupt', 'thread' => $thread->external_id];
+
+        if ($this->failNextInterrupt) {
+            $this->failNextInterrupt = false;
+
+            throw new AgentDriverException('The interrupt request failed.');
+        }
+        if (! $this->supportsInterruption) {
+            throw AgentDriverException::unsupported('interruption');
+        }
     }
 
     public function observe(AgentThread $thread): AgentObservation
