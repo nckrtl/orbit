@@ -9,6 +9,8 @@ use App\Domain\AppDev\PrivateDnsAnswerExpiry;
 use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
+use App\Domain\Metrics\MetricsFleetReconciler;
+use App\Domain\Metrics\MetricsReconcileDeferral;
 use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Nodes\NodeRoleValidationException;
@@ -43,6 +45,8 @@ final readonly class RelocateNodeRoleAction
         private SettingRepository $settings,
         private ?RecordEventBroadcaster $broadcaster = null,
         private PrivateDnsAnswerExpiry $dnsAnswers = new PrivateDnsAnswerExpiry,
+        private ?MetricsFleetReconciler $metrics = null,
+        private ?MetricsReconcileDeferral $metricsDeferral = null,
     ) {}
 
     public function execute(Node $target, RoleName $role, bool $force = false, ?Node $from = null): NodeRole
@@ -115,8 +119,7 @@ final readonly class RelocateNodeRoleAction
         $this->copyOwnedSettings($source, $target, $role);
         $assignment = $this->transfer($target, $source, $role);
         $this->finishOrReport($target, $source, $role, function () use ($target, $source, $assignment, $role): void {
-            $this->afterTransfer($target, $assignment, $role);
-            $this->retractSource($source, $role);
+            $this->moveOwnedState($target, $source, $assignment, $role);
         });
         $this->announce($source);
         $this->announce($target);
@@ -129,8 +132,7 @@ final readonly class RelocateNodeRoleAction
         $this->copyOwnedSettings($from, $target, $role);
         $this->prepareTarget($target, $role);
         $this->finishOrReport($target, $from, $role, function () use ($target, $from, $assignment, $role): void {
-            $this->afterTransfer($target, $assignment, $role);
-            $this->retractSource($from, $role);
+            $this->moveOwnedState($target, $from, $assignment, $role);
         });
         $this->announce($from);
         $this->announce($target);
@@ -176,6 +178,25 @@ final readonly class RelocateNodeRoleAction
         }
 
         $this->firewall->converge($target, $role, $target->user);
+    }
+
+    /**
+     * Converges the destination and retracts the source, then reconciles Metrics once against the
+     * finished move. Each role converge and removal would otherwise reconcile Metrics on its own, so a
+     * slow Metrics Node could hold the source retraction behind a check that has nothing to do with it.
+     */
+    private function moveOwnedState(Node $target, Node $source, NodeRole $assignment, RoleName $role): void
+    {
+        $reconcileMetrics = ($this->metricsDeferral ?? app(MetricsReconcileDeferral::class))->during(
+            function () use ($target, $source, $assignment, $role): void {
+                $this->afterTransfer($target, $assignment, $role);
+                $this->retractSource($source, $role);
+            },
+        );
+
+        if ($reconcileMetrics) {
+            ($this->metrics ?? app(MetricsFleetReconciler::class))->reconcile();
+        }
     }
 
     private function afterTransfer(Node $target, NodeRole $assignment, RoleName $role): void

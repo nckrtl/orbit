@@ -23,6 +23,8 @@ use App\Infrastructure\WireGuard\WireGuardServerConfigRenderer;
 use App\Models\Node;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
+use Tests\Support\HostBinary;
+use Tests\Support\TestToolchain;
 
 it('removes and restores only the selected peer in the serialized gateway projection', function (): void {
     $orbitHome = sys_get_temp_dir().'/orbit-vpn-projection-'.Str::uuid();
@@ -663,7 +665,7 @@ function gateway_peer_projection_harness(bool $active, bool $enabled, ?string $f
         body: <<<SH
             printf '%s\n' "wg-quick \$*" >> "{$root}/commands.log"
             if [ "\$1" = 'strip' ]; then
-                /usr/bin/cat -- "\$2"
+                {{host:cat}} -- "\$2"
                 exit 0
             fi
             exit 0
@@ -702,7 +704,7 @@ function gateway_peer_projection_harness(bool $active, bool $enabled, ?string $f
             if [ "{$failure}" = 'chmod' ] && [ "\$1" = '0600' ] && [ "\$2" = "{$root}/state/runtime.conf" ]; then
                 exit 1
             fi
-            exec /usr/bin/chmod "\$@"
+            exec {{host:chmod}} "\$@"
             SH,
     );
 
@@ -808,7 +810,7 @@ function gateway_peer_projection_harness(bool $active, bool $enabled, ?string $f
             if ($invocation->arguments === ['sudo', 'bash', '-seu']) {
                 $input = gateway_peer_projection_rewrite_shell($invocation->input ?? '', $this->root);
                 $process = proc_open(
-                    ['/bin/bash', '-seu'],
+                    [TestToolchain::bash(), '-seu'],
                     [
                         0 => ['pipe', 'r'],
                         1 => ['pipe', 'w'],
@@ -816,7 +818,7 @@ function gateway_peer_projection_harness(bool $active, bool $enabled, ?string $f
                     ],
                     $pipes,
                     $this->root,
-                    ['PATH' => "{$this->root}/bin:/usr/bin:/bin"],
+                    ['PATH' => "{$this->root}/bin:".TestToolchain::path()],
                 );
 
                 if (! is_resource($process)) {
@@ -961,7 +963,7 @@ function gateway_peer_projection_harness(bool $active, bool $enabled, ?string $f
 
 function gateway_peer_projection_write_shim(string $root, string $name, string $body): void
 {
-    file_put_contents("{$root}/bin/{$name}", "#!/bin/sh\n{$body}\n");
+    file_put_contents("{$root}/bin/{$name}", HostBinary::expand("#!/bin/sh\n{$body}\n"));
     chmod(filename: "{$root}/bin/{$name}", permissions: 0o700);
 }
 

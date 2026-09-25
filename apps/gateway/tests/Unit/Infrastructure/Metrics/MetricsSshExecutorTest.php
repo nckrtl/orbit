@@ -17,6 +17,8 @@ use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
+use Symfony\Component\Process\Exception\ProcessTimedOutException;
+use Symfony\Component\Process\Process;
 
 describe(MetricsSshExecutor::class, function (): void {
     it('uses the configured node user for every SSH connection', function (string $user): void {
@@ -264,6 +266,41 @@ describe(MetricsSshExecutor::class, function (): void {
         expectMetricsDockerCommandsUsePrivilegedBoundary($ssh);
     });
 
+    it('removes nothing on a Node without Docker', function (): void {
+        $spec = new MetricsRuntimeSpec()->for(MetricsService::Prometheus, 41, '10.44.0.3', 'configuration');
+        $ssh = new MetricsCapturingSshExecutor([
+            metricsCommandResult(exitCode: 127),
+            metricsCommandResult(exitCode: 127),
+            metricsCommandResult(stdout: "absent\n"),
+            metricsCommandResult(exitCode: 127),
+            metricsCommandResult(exitCode: 127),
+            metricsCommandResult(stdout: "absent\n"),
+            metricsCommandResult(exitCode: 127),
+            metricsCommandResult(exitCode: 127),
+            metricsCommandResult(stdout: "absent\n"),
+        ]);
+
+        metricsSshExecutor($ssh)->removeContainers(metricsSshNode(), [$spec]);
+        metricsSshExecutor($ssh)->purgeVolumes(metricsSshNode(), [$spec]);
+
+        expect(array_filter(
+            $ssh->commands,
+            static fn (RemoteCommand $command): bool => in_array('rm', $command->arguments, true),
+        ))->toBeEmpty();
+    });
+
+    it('refuses a removal when Docker is installed but cannot report its containers', function (): void {
+        $spec = new MetricsRuntimeSpec()->for(MetricsService::Prometheus, 41, '10.44.0.3', 'configuration');
+        $ssh = new MetricsCapturingSshExecutor([
+            metricsCommandResult(exitCode: 1),
+            metricsCommandResult(exitCode: 1),
+            metricsCommandResult(stdout: "present\n"),
+        ]);
+
+        expect(fn () => metricsSshExecutor($ssh)->removeContainers(metricsSshNode(), [$spec]))
+            ->toThrow(ResourceOperationException::class, 'Metrics container state could not be inspected.');
+    });
+
     it('keeps an owned healthy container unchanged through privileged inspection', function (): void {
         $spec = new MetricsRuntimeSpec()->for(
             MetricsService::Prometheus,
@@ -425,17 +462,103 @@ describe(MetricsSshExecutor::class, function (): void {
 
         $executor->publishConfiguration(metricsSshNode(), $bundle);
 
-        $protectedConfiguration = stream_get_contents($ssh->commands[0]->protectedInput?->stream());
+        $check = $ssh->commands[2];
+        $protectedConfiguration = stream_get_contents($check->protectedInput?->stream());
 
-        expect($ssh->commands[0]->shellCommand())
+        expect(array_map(static fn (RemoteCommand $command): string => $command->shellCommand(), array_slice($ssh->commands, 0, 2)))
+            ->toBe([
+                "'sudo' 'docker' 'image' 'inspect' '--format={{.Id}}' '--' 'prom/prometheus:v3.5.0'",
+                "'sudo' 'docker' 'image' 'inspect' '--format={{.Id}}' '--' 'grafana/grafana:12.1.1'",
+            ])
+            ->and($check->shellCommand())
             ->toBe(
-                "'sudo' 'docker' 'container' 'run' '--rm' '--interactive' '--entrypoint' '/bin/promtool' "
+                "'sudo' 'docker' 'container' 'run' '--rm' '--interactive' '--pull=never' '--entrypoint' '/bin/promtool' "
                 ."'prom/prometheus:v3.5.0' 'check' 'config' '/dev/stdin'",
             )
+            ->and($check->timeout)
+            ->toBe(MetricsSshExecutor::ConfigurationCheckTimeoutSeconds)
             ->and($protectedConfiguration)
             ->toContain('scrape_configs:');
 
         expectMetricsDockerCommandsUsePrivilegedBoundary($ssh);
+    });
+
+    it('bounds every Metrics command so a stuck Node fails the request before PHP-FPM ends it', function (): void {
+        $absent = [metricsCommandResult(exitCode: 1), metricsCommandResult()];
+        $bundle = new MetricsConfigurationRenderer()->render(
+            [['name' => 'metrics-runtime', 'address' => '10.44.0.3']],
+            'admin-password-sentinel',
+        );
+        $ssh = new MetricsCapturingSshExecutor([]);
+        metricsSshExecutor($ssh)->publishConfiguration(metricsSshNode(), $bundle);
+        $published = $ssh->commands;
+        $ssh = new MetricsCapturingSshExecutor([
+            ...$absent, ...$absent, ...$absent, ...$absent, ...$absent, ...$absent,
+            metricsCommandResult(),
+            metricsCommandResult(),
+            metricsCommandResult(stdout: "running healthy\n"),
+            metricsCommandResult(),
+            metricsCommandResult(),
+            metricsCommandResult(stdout: "running healthy\n"),
+        ]);
+        metricsSshExecutor($ssh)->convergeContainers(metricsSshNode(), metricsReplacementSpecs());
+        $ssh->commands = [...$published, ...$ssh->commands];
+
+        expect($ssh->commands)->not->toBeEmpty();
+
+        foreach ($ssh->commands as $command) {
+            expect($command->timeout)->not->toBeNull()->toBeLessThanOrEqual(MetricsSshExecutor::CommandTimeoutSeconds);
+        }
+    });
+
+    it('pulls a missing pinned image once, within its own bound, before the check', function (): void {
+        $ssh = new MetricsCapturingSshExecutor([metricsCommandResult(exitCode: 1)]);
+        $bundle = new MetricsConfigurationRenderer()->render(
+            [['name' => 'metrics-runtime', 'address' => '10.44.0.3']],
+            'admin-password-sentinel',
+        );
+
+        metricsSshExecutor($ssh)->publishConfiguration(metricsSshNode(), $bundle);
+
+        $pulls = array_values(array_filter(
+            $ssh->commands,
+            static fn (RemoteCommand $command): bool => array_slice($command->arguments, 0, 4) === ['sudo', 'docker', 'image', 'pull'],
+        ));
+
+        expect($pulls)->toHaveCount(1)
+            ->and($pulls[0]->arguments)->toBe(['sudo', 'docker', 'image', 'pull', '--', 'prom/prometheus:v3.5.0'])
+            ->and($pulls[0]->timeout)->toBe(MetricsSshExecutor::ImagePullTimeoutSeconds)
+            ->and($ssh->commands[1])->toBe($pulls[0]);
+    });
+
+    it('refuses to publish when a missing pinned image cannot be pulled', function (): void {
+        $ssh = new MetricsCapturingSshExecutor([metricsCommandResult(exitCode: 1), metricsCommandResult(exitCode: 1)]);
+        $bundle = new MetricsConfigurationRenderer()->render(
+            [['name' => 'metrics-runtime', 'address' => '10.44.0.3']],
+            'admin-password-sentinel',
+        );
+
+        expect(fn () => metricsSshExecutor($ssh)->publishConfiguration(metricsSshNode(), $bundle))
+            ->toThrow(function (ResourceOperationException $exception): void {
+                expect($exception->errorCode)->toBe('metrics.image_pull_failed')
+                    ->and($exception->getMessage())->toBe('The Metrics image [prom/prometheus:v3.5.0] could not be pulled.');
+            })
+            ->and($ssh->commands)->toHaveCount(2);
+    });
+
+    it('reports a promtool check that does not finish as a timeout, not an invalid configuration', function (): void {
+        $ssh = new MetricsTimingOutSshExecutor('/bin/promtool');
+        $bundle = new MetricsConfigurationRenderer()->render(
+            [['name' => 'metrics-runtime', 'address' => '10.44.0.3']],
+            'admin-password-sentinel',
+        );
+
+        expect(fn () => metricsSshExecutor($ssh)->publishConfiguration(metricsSshNode(), $bundle))
+            ->toThrow(function (ResourceOperationException $exception): void {
+                expect($exception->errorCode)->toBe('metrics.prometheus_configuration_check_timed_out')
+                    ->and($exception->status)->toBe(504)
+                    ->and($exception->getMessage())->toBe('A Metrics command on node [metrics-ssh] did not finish within 60 seconds.');
+            });
     });
 
     it('stages a generated file as root-only then chowns it for the container identity', function (): void {
@@ -749,6 +872,23 @@ final class MetricsCapturingSshExecutor implements SshExecutor
         $this->commands[] = $command;
 
         return array_shift($this->results) ?? metricsCommandResult();
+    }
+}
+
+final class MetricsTimingOutSshExecutor implements SshExecutor
+{
+    public function __construct(private readonly string $argument) {}
+
+    public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
+    {
+        if (in_array($this->argument, $command->arguments, true)) {
+            $process = new Process(['true']);
+            $process->setTimeout($command->timeout);
+
+            throw new ProcessTimedOutException($process, ProcessTimedOutException::TYPE_GENERAL);
+        }
+
+        return metricsCommandResult();
     }
 }
 

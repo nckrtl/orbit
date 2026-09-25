@@ -17,6 +17,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskRunReceipts;
 use App\Infrastructure\AgentView\CacheAgentStateView;
+use App\Infrastructure\AppInstances\DependencyUpdateSupervisorHost;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
 use App\Infrastructure\Logs\CacheLogStreamStore;
 use App\Infrastructure\Processes\CommandResult;
@@ -39,6 +40,7 @@ use Tests\Support\FakeRouterLanIngressReconciler;
 use Tests\Support\FakeTaskCheckRunner;
 use Tests\Support\FakeTaskRunReceipts;
 use Tests\Support\FakeVitePortRuntime;
+use Tests\Support\TestToolchain;
 use Tests\TestCase;
 
 require_once __DIR__.'/Support/FakeNodeAgentRuntime.php';
@@ -51,6 +53,7 @@ require_once __DIR__.'/Helpers/AgentViewFixtures.php';
 require_once __DIR__.'/Helpers/AnalyticsRoleFixtures.php';
 require_once __DIR__.'/Helpers/AnalyticsConnectionFixtures.php';
 require_once __DIR__.'/Helpers/InstanceAnalyticsFixtures.php';
+require_once __DIR__.'/Helpers/ConfigFixtures.php';
 
 uses(TestCase::class, RefreshDatabase::class)
     ->beforeEach(function (): void {
@@ -215,6 +218,16 @@ function app_instance_removal_migration_boundary(): Migration
 }
 
 /**
+ * Returns the host variant for running a dependency update supervisor program in a test. Linux runs the exact
+ * Node program. Other hosts, such as macOS, have no /proc, so they run the same program logic with the
+ * Portable variant, which reads process state with ps.
+ */
+function dependency_update_supervisor_host(): DependencyUpdateSupervisorHost
+{
+    return PHP_OS_FAMILY === 'Linux' ? DependencyUpdateSupervisorHost::Node : DependencyUpdateSupervisorHost::Portable;
+}
+
+/**
  * Adapt a Caddyfile with the installed caddy binary, which must meet the release floor in
  * App\Domain\Nodes\CaddyRelease. Reads the configuration from a temporary file rather than stdin.
  */
@@ -228,7 +241,7 @@ function caddy_adapt(string $configuration): CommandResult
         file_put_contents($path, $configuration);
 
         return new NativeProcessRunner()->run(new ProcessInvocation(
-            arguments: ['caddy', 'adapt', '--config', $path, '--adapter', 'caddyfile'],
+            arguments: [TestToolchain::require('caddy', 'brew install caddy'), 'adapt', '--config', $path, '--adapter', 'caddyfile'],
         ));
     } finally {
         unlink($path);

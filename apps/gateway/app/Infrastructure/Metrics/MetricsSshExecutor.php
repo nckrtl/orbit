@@ -17,6 +17,7 @@ use App\Models\Node;
 use JsonException;
 use RuntimeException;
 use SensitiveParameter;
+use Symfony\Component\Process\Exception\ProcessTimedOutException;
 use Throwable;
 
 final readonly class MetricsSshExecutor implements MetricsCredentialRuntime, MetricsRuntimeHost
@@ -30,6 +31,22 @@ final readonly class MetricsSshExecutor implements MetricsCredentialRuntime, Met
 
     /** @var non-empty-list<string> */
     private const array ConfigurationPaths = MetricsFootprint::ConfigurationPaths;
+
+    /**
+     * The longest a Metrics command may run on the Node. Metrics convergence runs inside role, Route,
+     * and Instance requests, so one stuck Docker call must fail that request with an error long before
+     * PHP-FPM ends it.
+     */
+    public const float CommandTimeoutSeconds = 120.0;
+
+    /** The longest the promtool check of the generated Prometheus configuration may run. */
+    public const float ConfigurationCheckTimeoutSeconds = 60.0;
+
+    /** The longest a missing pinned Metrics image may take to pull. */
+    public const float ImagePullTimeoutSeconds = 300.0;
+
+    /** @var non-empty-list<string> */
+    private const array Images = [MetricsRuntimeSpec::PrometheusImage, MetricsRuntimeSpec::GrafanaImage];
 
     public function __construct(
         private SshExecutor $ssh,
@@ -99,6 +116,8 @@ final readonly class MetricsSshExecutor implements MetricsCredentialRuntime, Met
     public function publishConfiguration(Node $node, MetricsConfigurationBundle $configuration): void
     {
         $prometheus = $this->file($configuration, '/etc/orbit/metrics/prometheus.yml');
+        $this->ensureImages($node);
+        // The image is already on the Node, so the check never pulls inside the request.
         $this->run(
             $node,
             new RemoteCommand(
@@ -109,6 +128,7 @@ final readonly class MetricsSshExecutor implements MetricsCredentialRuntime, Met
                     'run',
                     '--rm',
                     '--interactive',
+                    '--pull=never',
                     '--entrypoint',
                     '/bin/promtool',
                     MetricsRuntimeSpec::PrometheusImage,
@@ -117,9 +137,11 @@ final readonly class MetricsSshExecutor implements MetricsCredentialRuntime, Met
                     '/dev/stdin',
                 ],
                 protectedInput: $prometheus->contents->input(),
+                timeout: self::ConfigurationCheckTimeoutSeconds,
             ),
             'metrics.prometheus_configuration_invalid',
             'The generated Prometheus configuration is invalid.',
+            timeoutErrorCode: 'metrics.prometheus_configuration_check_timed_out',
         );
 
         foreach (self::ConfigurationDirectories as $directory) {
@@ -558,7 +580,7 @@ final readonly class MetricsSshExecutor implements MetricsCredentialRuntime, Met
             ]),
         );
 
-        if ($absence->succeeded() && trim($absence->stdout) === '') {
+        if ($absence->succeeded() && trim($absence->stdout) === '' || $this->dockerAbsent($node)) {
             return null;
         }
 
@@ -586,7 +608,7 @@ final readonly class MetricsSshExecutor implements MetricsCredentialRuntime, Met
             new RemoteCommand(['sudo', 'docker', 'volume', 'ls', '--filter', "name=^{$name}$", '--format={{.Name}}']),
         );
 
-        if ($absence->succeeded() && trim($absence->stdout) === '') {
+        if ($absence->succeeded() && trim($absence->stdout) === '' || $this->dockerAbsent($node)) {
             return null;
         }
 
@@ -668,6 +690,7 @@ final readonly class MetricsSshExecutor implements MetricsCredentialRuntime, Met
             'container',
             'run',
             '--detach',
+            '--pull=never',
             '--name',
             $spec->name,
             '--restart',
@@ -964,6 +987,22 @@ final readonly class MetricsSshExecutor implements MetricsCredentialRuntime, Met
         return $result->succeeded() && trim($result->stdout) === 'healthy';
     }
 
+    /**
+     * Whether the Node has no Docker at all, so no Metrics container or volume can exist there. A Metrics
+     * convergence that failed before Docker was installed leaves nothing for removal to inspect. Only an
+     * explicit answer counts: a probe that fails is not taken as absence.
+     */
+    private function dockerAbsent(Node $node): bool
+    {
+        $result = $this->raw($node, new RemoteCommand([
+            'sh',
+            '-c',
+            'if command -v docker >/dev/null 2>&1; then echo present; else echo absent; fi',
+        ]));
+
+        return $result->succeeded() && trim($result->stdout) === 'absent';
+    }
+
     private function pathExists(Node $node, string $path, bool $directory = false): bool
     {
         $test = $directory ? '-d' : '-e';
@@ -1010,9 +1049,62 @@ final readonly class MetricsSshExecutor implements MetricsCredentialRuntime, Met
         );
     }
 
-    private function raw(Node $node, RemoteCommand $command): CommandResult
+    /**
+     * Pulls a pinned image only when the Node lacks it, so ordinary convergence never waits on a registry.
+     * A first Metrics convergence pulls once, within a bound.
+     */
+    private function ensureImages(Node $node): void
     {
-        return $this->ssh->execute($this->connection($node), $command);
+        foreach (self::Images as $image) {
+            if ($this->raw($node, new RemoteCommand(['sudo', 'docker', 'image', 'inspect', '--format={{.Id}}', '--', $image]))->succeeded()) {
+                continue;
+            }
+
+            $this->run(
+                $node,
+                new RemoteCommand(['sudo', 'docker', 'image', 'pull', '--', $image], timeout: self::ImagePullTimeoutSeconds),
+                'metrics.image_pull_failed',
+                "The Metrics image [{$image}] could not be pulled.",
+                timeoutErrorCode: 'metrics.image_pull_timed_out',
+            );
+        }
+    }
+
+    private function raw(
+        Node $node,
+        RemoteCommand $command,
+        string $timeoutErrorCode = 'metrics.remote_command_timed_out',
+    ): CommandResult {
+        $timeout = $command->timeout ?? self::CommandTimeoutSeconds;
+
+        try {
+            return $this->ssh->execute($this->connection($node), $this->bounded($command, $timeout));
+        } catch (ProcessTimedOutException $exception) {
+            throw new ResourceOperationException(
+                $timeoutErrorCode,
+                sprintf('A Metrics command on node [%s] did not finish within %d seconds.', $node->name, (int) $timeout),
+                504,
+                $exception,
+            );
+        }
+    }
+
+    private function bounded(RemoteCommand $command, float $timeout): RemoteCommand
+    {
+        if ($command->timeout !== null) {
+            return $command;
+        }
+
+        return new RemoteCommand(
+            $command->arguments,
+            input: $command->input,
+            protectedInput: $command->protectedInput,
+            maxOutputBytes: $command->maxOutputBytes,
+            output: $command->output,
+            cancelled: $command->cancelled,
+            timeout: $timeout,
+            terminateGraceSeconds: $command->terminateGraceSeconds,
+        );
     }
 
     private function run(
@@ -1020,8 +1112,9 @@ final readonly class MetricsSshExecutor implements MetricsCredentialRuntime, Met
         RemoteCommand $command,
         string $errorCode,
         string $message,
+        string $timeoutErrorCode = 'metrics.remote_command_timed_out',
     ): CommandResult {
-        $result = $this->raw($node, $command);
+        $result = $this->raw($node, $command, $timeoutErrorCode);
 
         if (! $result->succeeded()) {
             throw new ResourceOperationException($errorCode, $message, 502);

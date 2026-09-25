@@ -49,6 +49,7 @@ use App\Models\Node;
 use App\Models\Task;
 use App\Models\TaskCheck;
 use App\Models\TaskGroup;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Laravel\Ai\Classification;
 use Tests\Feature\GitHub\GitHubTestSupport;
@@ -807,6 +808,25 @@ it('runs the artisan tick while the extension is enabled', function (): void {
     $this->artisan('tasks:tick')
         ->expectsOutput('Routed [0] tasks and started [0] groups.')
         ->assertSuccessful();
+});
+
+it('takes the tick lock in the default cache store when CACHE_STORE is unset', function (): void {
+    /** @var array{default: string} $cache */
+    $cache = config_without_env('cache.php', ['CACHE_STORE']);
+    config(['cache.default' => $cache['default']]);
+    Cache::lock('orbit:tasks:tick')->forceRelease();
+    app(TaskExtensionState::class)->enable();
+
+    $this->artisan('tasks:tick')
+        ->expectsOutput('Routed [0] tasks and started [0] groups.')
+        ->assertSuccessful();
+
+    $held = Cache::store('file')->lock('orbit:tasks:tick', 300);
+    expect($held->get())->toBeTrue();
+    $this->artisan('tasks:tick')
+        ->expectsOutput('Another tasks tick is already running.')
+        ->assertSuccessful();
+    $held->release();
 });
 
 it('does not classify or advance a task while its T3 thread is active', function (string $status): void {

@@ -10883,6 +10883,15 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
+            /** @description A role step failed on the Node (`node_role.convergence_failed` or `node_role.remove_failed`). `error.details.step` names the failed step. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
     "node-role-remove": {
@@ -10962,6 +10971,15 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
+            /** @description A role step failed on the Node (`node_role.convergence_failed` or `node_role.remove_failed`). `error.details.step` names the failed step. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
     "node-role-relocate": {
@@ -11032,6 +11050,15 @@ export interface operations {
             };
             /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A role step failed on the Node (`node_role.convergence_failed` or `node_role.remove_failed`). `error.details.step` names the failed step. */
+            502: {
                 headers: {
                     [name: string]: unknown;
                 };

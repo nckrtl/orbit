@@ -587,8 +587,12 @@
                 "apps/cli"
             ],
             "concepts": [
+                "Gateway",
+                "Node",
+                "Process",
                 "Project",
-                "Task"
+                "Task",
+                "Tool"
             ],
             "governing_adrs": []
         },

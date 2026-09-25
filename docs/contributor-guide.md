@@ -39,12 +39,16 @@ Commit `docs/generated/context.json` when generation changes it. For Mintlify pa
 
 Build the feature and tests against the documented behavior. Keep proposed ADRs and documentation aligned with what the implementation delivers. Explain material changes in direction in the PR.
 
+`composer test:affected` selects tests with Pest test-impact analysis (TIA), which needs PCOV or Xdebug. Without a coverage driver, TIA is skipped and every test runs. On macOS, install PCOV with `brew install shivammathur/extensions/pcov@8.5`. Every project sets Composer's `process-timeout` to `0`, so a long test or check run is never stopped after Composer's default 300 seconds.
+
 Run these commands in each changed project, such as `apps/cli`:
 
 ```bash
 composer test:affected
 composer check
 ```
+
+Gateway tests run the shell programs that Orbit installs on Ubuntu Nodes. On macOS, install the Linux tools they need with `brew install bash coreutils gnu-sed findutils caddy`. The test bootstrap puts these tools first on `PATH`, supplies `setsid` and `flock`, and stops with the missing package names when a tool is absent. Tests of Node programs that use Linux kernel interfaces, such as `/proc/net/tcp` or `os.O_PATH`, run in a Debian PHP container through a local Docker runtime. Start one first, for example with `brew install colima docker` and `colima start`.
 
 Add regression coverage for behavior changes and their important failure modes. Confirm that the tests exercising the new behavior ran.
 

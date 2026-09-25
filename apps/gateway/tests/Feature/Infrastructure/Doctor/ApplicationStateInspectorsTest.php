@@ -41,6 +41,7 @@ use Illuminate\Support\Str;
 use Symfony\Component\Process\Exception\ProcessTimedOutException;
 use Symfony\Component\Process\Process;
 use Tests\Support\AppDevFakeSshExecutor;
+use Tests\Support\UnixSocketDirectory;
 
 it('checks only selected-node app projections through the fixed SSH boundary', function (): void {
     $app = application_inspector_app();
@@ -514,7 +515,7 @@ it('executes socket and service association outcomes from the production program
     string $condition,
     string $expected,
 ): void {
-    $sandbox = sys_get_temp_dir().'/orbit-doctor-socket-'.Str::uuid();
+    $sandbox = UnixSocketDirectory::create();
     $procRoot = "{$sandbox}/proc";
     $mainPid = 510;
     $socket = "{$sandbox}/php.sock";

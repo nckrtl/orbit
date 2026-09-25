@@ -13470,6 +13470,16 @@
                 }
               }
             }
+          },
+          "502": {
+            "description": "A role step failed on the Node (`node_role.convergence_failed` or `node_role.remove_failed`). `error.details.step` names the failed step.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "x-codeSamples": [
@@ -13621,6 +13631,16 @@
                 }
               }
             }
+          },
+          "502": {
+            "description": "A role step failed on the Node (`node_role.convergence_failed` or `node_role.remove_failed`). `error.details.step` names the failed step.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "x-codeSamples": [
@@ -13762,6 +13782,16 @@
           },
           "422": {
             "description": "The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "A role step failed on the Node (`node_role.convergence_failed` or `node_role.remove_failed`). `error.details.step` names the failed step.",
             "content": {
               "application/json": {
                 "schema": {

@@ -124,6 +124,8 @@ A failed check stops the build before any change. `/run/lock` is a tmpfs, so the
 
 Every Node with Caddy sites, the Gateway machine included, installs Caddy from the pinned source before its first build.
 
+A file with no site on a Node without `/usr/bin/caddy` changes nothing, because nothing serves there. The script stops at step 2 and reports the build as unchanged. A role removal after a convergence that failed before Caddy was installed relies on this.
+
 ### When a build fails
 
 A build either publishes the whole file or changes nothing. It fails when a site cannot be rendered from stored state, when two sites collide, when Caddy is below the floor, when the Node lacks an address the file binds, when `caddy validate` rejects the file, or when Caddy fails to reload.

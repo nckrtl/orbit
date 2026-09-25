@@ -45,7 +45,7 @@ final readonly class HumanRenderer
             $continuation = $index === $last ? ' ' : '│';
 
             if (TerminalText::minimumWidth($label) > $labelWidth || TerminalText::minimumWidth($text) > $valueWidth) {
-                $parts = [...TerminalText::wrap($label, $columns - 3), ...TerminalText::wrap($text, $columns - 3)];
+                $parts = [...TerminalText::wrap($label, $columns - 3), ...TerminalText::wrapWords($text, $columns - 3)];
 
                 foreach ($parts as $line => $part) {
                     $lines[] = $this->connector($line === 0 ? $start : $continuation).'  '.$part;
@@ -55,7 +55,7 @@ final readonly class HumanRenderer
             }
 
             $labelLines = TerminalText::wrap($label, $labelWidth);
-            $valueLines = TerminalText::wrap($text, $valueWidth);
+            $valueLines = TerminalText::wrapWords($text, $valueWidth);
 
             for ($line = 0; $line < max(count($labelLines), count($valueLines)); $line++) {
                 $lines[] = $this->connector($line === 0 ? $start : $continuation).'  '
