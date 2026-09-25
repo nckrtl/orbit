@@ -235,12 +235,12 @@ describe('npm dependency reader', function (): void {
         'root version mismatch' => ['{"version":"1"}', '{"lockfileVersion":3,"packages":{"":{"version":"2"}}}'],
     ]);
 
-    it('accepts a root alias that an override repeats when npm locks the unaliased package', function (string $override): void {
-        // Shape of a real Vite+ checkout: npm ci installs this lock, and it installs plain vite 8.0.2.
-        $manifest = '{"devDependencies":{"vite":"npm:@voidzero-dev/vite-plus-core@latest"},"overrides":{"vite":'.$override.',"vitest":"npm:@voidzero-dev/vite-plus-test@latest"}}';
-        $lock = <<<'JSON'
-{"lockfileVersion":3,"requires":true,"packages":{"":{"devDependencies":{"vite":"npm:@voidzero-dev/vite-plus-core@latest"}},"node_modules/vite":{"version":"8.0.2","resolved":"https://registry.npmjs.org/vite/-/vite-8.0.2.tgz","integrity":"sha512-1gFhNi+bHhRE/qKZOJXACm6tX4bA3Isy9KuKF15AgSRuRazNBOJfdDemPBU16/mpMxApDPrWvZ08DcLPEoRnuA==","license":"MIT","peerDependencies":{"esbuild":"^0.27.0"},"peerDependenciesMeta":{"esbuild":{"optional":true}}}}}
-JSON;
+    it('accepts an alias target that npm would accept for the locked package', function (string $spec, bool $override): void {
+        // Shape of a real Vite+ checkout: npm 11.19 ci installs plain vite 8.0.2 for each of these specs.
+        $constraint = 'npm:@voidzero-dev/vite-plus-core'.$spec;
+        $overrides = $override ? ',"overrides":{"vite":"'.$constraint.'"}' : '';
+        $manifest = '{"devDependencies":{"vite":"'.$constraint.'"}'.$overrides.'}';
+        $lock = '{"lockfileVersion":3,"requires":true,"packages":{"":{"devDependencies":{"vite":"'.$constraint.'"}},"node_modules/vite":{"version":"8.0.2","resolved":"https://registry.npmjs.org/vite/-/vite-8.0.2.tgz","integrity":"sha512-1gFhNi+bHhRE/qKZOJXACm6tX4bA3Isy9KuKF15AgSRuRazNBOJfdDemPBU16/mpMxApDPrWvZ08DcLPEoRnuA==","license":"MIT","peerDependencies":{"esbuild":"^0.27.0"},"peerDependenciesMeta":{"esbuild":{"optional":true}}}}}';
 
         $graph = (new ReadNpmDependencyGraphAction)->execute($manifest, $lock);
 
@@ -248,23 +248,26 @@ JSON;
         expect($graph->resolutions[0]->package->name)->toBe('vite');
         expect($graph->resolutions[0]->version)->toBe('8.0.2');
         expect($graph->resolutions[0]->development)->toBeTrue();
-        expect($graph->requirements[0])->toEqual(new DependencyRequirement(null, 'node_modules/vite', 'vite', 'npm:@voidzero-dev/vite-plus-core@latest', DependencyRequirementKind::Dependency, DependencyScope::Development, false));
+        expect($graph->requirements[0])->toEqual(new DependencyRequirement(null, 'node_modules/vite', 'vite', $constraint, DependencyRequirementKind::Dependency, DependencyScope::Development, false));
     })->with([
-        'string override' => '"npm:@voidzero-dev/vite-plus-core@latest"',
-        'root reference' => '"$vite"',
-        'object override' => '{".":"npm:@voidzero-dev/vite-plus-core@latest","esbuild":"0.27.0"}',
+        'dist-tag without override' => ['@latest', false],
+        'dist-tag with matching override' => ['@latest', true],
+        'satisfied range' => ['@^8.0.0', false],
+        'any version' => ['@*', false],
+        'no spec' => ['', false],
     ]);
 
-    it('rejects an alias identity mismatch that no matching override explains', function (string $manifest): void {
-        $lock = '{"lockfileVersion":3,"packages":{"":{"devDependencies":{"vite":"npm:@voidzero-dev/vite-plus-core@latest"}},"node_modules/vite":{"version":"8.0.2"}}}';
+    it('rejects an alias target that npm ci would refuse', function (string $constraint, string $record): void {
+        $manifest = '{"devDependencies":{"vite":"'.$constraint.'"},"overrides":{"vite":"'.$constraint.'"}}';
+        $lock = '{"lockfileVersion":3,"packages":{"":{"devDependencies":{"vite":"'.$constraint.'"}},"node_modules/vite":'.$record.'}}';
 
         expect(fn () => (new ReadNpmDependencyGraphAction)->execute($manifest, $lock))
             ->toThrow(DependencyParseException::class, 'dependencies.invalid_npm_input');
     })->with([
-        'no override' => '{"devDependencies":{"vite":"npm:@voidzero-dev/vite-plus-core@latest"}}',
-        'different override spec' => '{"devDependencies":{"vite":"npm:@voidzero-dev/vite-plus-core@latest"},"overrides":{"vite":"npm:@voidzero-dev/vite-plus-core@0.2.7"}}',
-        'override for another name' => '{"devDependencies":{"vite":"npm:@voidzero-dev/vite-plus-core@latest"},"overrides":{"vitest":"npm:@voidzero-dev/vite-plus-core@latest"}}',
-        'malformed overrides' => '{"devDependencies":{"vite":"npm:@voidzero-dev/vite-plus-core@latest"},"overrides":[]}',
+        // npm 11.19: "lock file's vite@8.0.2 does not satisfy vite@0.2.9".
+        'unsatisfied range' => ['npm:@voidzero-dev/vite-plus-core@^0.2.7', '{"version":"8.0.2","resolved":"https://registry.npmjs.org/vite/-/vite-8.0.2.tgz"}'],
+        'unsatisfied version' => ['npm:@voidzero-dev/vite-plus-core@0.2.7', '{"version":"8.0.2","resolved":"https://registry.npmjs.org/vite/-/vite-8.0.2.tgz"}'],
+        'dist-tag without a registry tarball' => ['npm:@voidzero-dev/vite-plus-core@latest', '{"version":"8.0.2"}'],
     ]);
 
     it('accepts bundled dependency names without separate lock entries', function (): void {
@@ -335,7 +338,7 @@ JSON;
         'array root' => ['{}', '{"lockfileVersion":3,"packages":{"":[]}}'],
         'missing required resolution' => ['{"dependencies":{"missing":"*"}}', '{"lockfileVersion":3,"packages":{"":{"dependencies":{"missing":"*"}}}}'],
         'invalid root version' => ['{"version":1}', '{"lockfileVersion":3,"packages":{"":{"version":1}}}'],
-        'alias identity mismatch' => ['{"dependencies":{"one":"npm:actual@*"}}', '{"lockfileVersion":3,"packages":{"":{"dependencies":{"one":"npm:actual@*"}},"node_modules/one":{"name":"different","version":"1"}}}'],
+        'alias identity mismatch' => ['{"dependencies":{"one":"npm:actual@^2"}}', '{"lockfileVersion":3,"packages":{"":{"dependencies":{"one":"npm:actual@^2"}},"node_modules/one":{"name":"different","version":"1.0.0"}}}'],
         'alias credentials' => ['{"dependencies":{"one":"npm:actual@https://fixture-user:fixture-secret@example.test"}}', '{"lockfileVersion":3,"packages":{"":{}}}'],
         'dependency list' => ['{"dependencies":[]}', '{"lockfileVersion":3,"packages":{"":{}}}'],
         'null map' => ['{"optionalDependencies":null}', '{"lockfileVersion":3,"packages":{"":{}}}'],

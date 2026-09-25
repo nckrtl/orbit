@@ -345,7 +345,20 @@ describe('pnpm v9 dependency graph reader', function (): void {
             $manifest->devDependencies->{'app-two'} = '^1';
         },
         'mismatched specifier' => fn ($manifest, $lock) => $lock->importers->{'.'}->dependencies->{'app-one'}->specifier = '^2',
-        'unsafe specifier' => fn ($manifest, $lock) => $manifest->dependencies->{'app-one'} = 'https://fixture-user:fixture-secret@example.test/a.tgz',
+        // pnpm supports authenticated tarball specs; the reader hashes them, so only the mismatch fails.
+        'specifier changed to an authenticated tarball' => fn ($manifest, $lock) => $manifest->dependencies->{'app-one'} = 'https://fixture-user:fixture-secret@example.test/a.tgz',
+    ]);
+
+    it('rejects a malformed manifest specifier before comparing it with the importer', function (string $specifier): void {
+        [$manifest, $lock] = pnpmReaderRecords();
+        $manifest->dependencies->{'app-one'} = $specifier;
+
+        expect(fn () => (new ReadPnpmDependencyGraphAction)->execute(json_encode($manifest, JSON_THROW_ON_ERROR), json_encode($lock, JSON_THROW_ON_ERROR)))
+            ->toThrow(DependencyParseException::class, 'dependencies.invalid_pnpm_input');
+    })->with([
+        'tarball without host' => 'https://',
+        'control character' => "^1\n",
+        'credentials in a Git URL' => 'git+ssh://fixture-user:fixture-secret@example.test/a.git',
     ]);
 
     it('rejects inconsistent graph records', function (Closure $mutate): void {

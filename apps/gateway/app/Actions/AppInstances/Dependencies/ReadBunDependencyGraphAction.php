@@ -50,6 +50,9 @@ final readonly class ReadBunDependencyGraphAction
             $declarations[$field] = $this->links($record, $field);
         }
 
+        // Like npm, Bun drops a regular declaration that optionalDependencies repeats.
+        $declarations['dependencies'] = array_diff_key($declarations['dependencies'], $declarations['optionalDependencies']);
+
         $metadata = $record->peerDependenciesMeta ?? null;
 
         foreach (array_keys($declarations['peerDependencies']) as $name) {
@@ -389,6 +392,11 @@ final readonly class ReadBunDependencyGraphAction
         $root->devDependencies = (object) array_intersect_key(
             get_object_vars($manifest->devDependencies ?? new stdClass),
             $development,
+        );
+        // Bun drops a regular declaration that optionalDependencies repeats.
+        $root->dependencies = (object) array_diff_key(
+            get_object_vars($manifest->dependencies ?? new stdClass),
+            $this->links($manifest, 'optionalDependencies'),
         );
 
         return $root;

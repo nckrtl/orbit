@@ -93,7 +93,8 @@ describe('Bun dependency reader', function (): void {
 
     it('preserves optional and development overlap and ignores lock-local development tools', function (): void {
         $root = '{"dependencies":{"one":"^1"},"optionalDependencies":{"one":"^2"},"devDependencies":{"one":"^2"}}';
-        $lock = bunReaderLock($root, ['one' => ['one@2.0.0', '', (object) ['devDependencies' => (object) ['uninstalled' => '*']], '']]);
+        // Bun drops the regular declaration that optionalDependencies repeats and keeps the development one.
+        $lock = bunReaderLock('{"optionalDependencies":{"one":"^2"},"devDependencies":{"one":"^2"}}', ['one' => ['one@2.0.0', '', (object) ['devDependencies' => (object) ['uninstalled' => '*']], '']]);
 
         $graph = (new ReadBunDependencyGraphAction)->execute($root, $lock);
 
@@ -335,6 +336,28 @@ describe('Bun dependency reader', function (): void {
         expect($graph->resolutions[3]->regular && $graph->resolutions[3]->development)->toBeTrue();
         expect(json_encode($graph, JSON_THROW_ON_ERROR))->not->toContain('jonschlinkert-is-number-98e8ff1');
     });
+
+    it('reads locks Bun wrote for regular declarations that optionalDependencies repeats', function (string $manifest, string $root, array $packages, int $resolutions): void {
+        // Root records written by bun 1.3.14 (version 1) and bun 1.4.2 (version 2) for these manifests.
+        foreach ([1, 2] as $version) {
+            $lock = str_replace('"lockfileVersion":1', '"lockfileVersion":'.$version, bunReaderLock($root, $packages));
+
+            expect((new ReadBunDependencyGraphAction)->execute($manifest, $lock)->resolutions)->toHaveCount($resolutions);
+        }
+    })->with([
+        'same constraint' => [
+            '{"dependencies":{"ms":"^2.1.3","is-number":"^7.0.0"},"optionalDependencies":{"ms":"^2.1.3"}}',
+            '{"dependencies":{"is-number":"^7.0.0"},"optionalDependencies":{"ms":"^2.1.3"}}',
+            ['is-number' => ['is-number@7.0.0', '', new stdClass, 'sha512-41Cifkg6e8TylSpdtTpeLVMqvSBEVzTttHvERD741+pnZ8ANv0004MRL43QKPDlK9cGvNp6NZWZUBlbGXYxxng=='], 'ms' => ['ms@2.1.3', '', new stdClass, 'sha512-6FlzubTLZG3J2a/NVCAleEhjzq5oxgHyaCU9yYXvcLsvoVaHJq/s5xXI6/XXP6tz7R9xAOtHnSO/tXtF3WRTlA==']],
+            2,
+        ],
+        'regular optional and development' => [
+            '{"dependencies":{"ms":"^2.0.0"},"optionalDependencies":{"ms":"^2.1.3"},"devDependencies":{"ms":"^2.1.0"}}',
+            '{"devDependencies":{"ms":"^2.1.0"},"optionalDependencies":{"ms":"^2.1.3"}}',
+            ['ms' => ['ms@2.1.3', '', new stdClass, 'sha512-6FlzubTLZG3J2a/NVCAleEhjzq5oxgHyaCU9yYXvcLsvoVaHJq/s5xXI6/XXP6tz7R9xAOtHnSO/tXtF3WRTlA==']],
+            1,
+        ],
+    ]);
 
     it('treats root peer metadata without a declaration like Bun does', function (int $version): void {
         // Real bun.lock written by bun 1.4.2 and bun 1.3.14 for this manifest: only optional metadata becomes a peer.

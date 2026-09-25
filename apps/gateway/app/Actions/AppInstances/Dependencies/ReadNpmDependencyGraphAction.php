@@ -12,6 +12,7 @@ use App\Domain\AppInstances\Dependencies\DependencyRequirement;
 use App\Domain\AppInstances\Dependencies\DependencyRequirementKind;
 use App\Domain\AppInstances\Dependencies\DependencyResolution;
 use App\Domain\AppInstances\Dependencies\DependencyScope;
+use App\Domain\AppInstances\Dependencies\NpmVersionRange;
 use InvalidArgumentException;
 use JsonException;
 use stdClass;
@@ -56,34 +57,6 @@ final readonly class ReadNpmDependencyGraphAction
         }
 
         return $declarations;
-    }
-
-    /**
-     * Root override specs by package name. npm requires a root dependency and its override to share one spec.
-     *
-     * @return array<string, string>
-     */
-    private function rootOverrides(stdClass $manifest): array
-    {
-        if (! property_exists($manifest, 'overrides')) {
-            return [];
-        }
-
-        if (! $manifest->overrides instanceof stdClass) {
-            $this->invalid();
-        }
-
-        $overrides = [];
-
-        foreach (get_object_vars($manifest->overrides) as $name => $value) {
-            $spec = $value instanceof stdClass ? ($value->{'.'} ?? null) : $value;
-
-            if (is_string($spec)) {
-                $overrides[(string) $name] = $spec;
-            }
-        }
-
-        return $overrides;
     }
 
     private function decode(string $contents): stdClass
@@ -153,10 +126,9 @@ final readonly class ReadNpmDependencyGraphAction
             $this->stale();
         }
 
-        $overrides = $this->rootOverrides($manifest);
-        $requirements = $this->requirements($manifest, null, $packages, $overrides);
+        $requirements = $this->requirements($manifest, null, $packages);
 
-        if (array_map(get_object_vars(...), $requirements) !== array_map(get_object_vars(...), $this->requirements($root, null, $packages, $overrides))) {
+        if (array_map(get_object_vars(...), $requirements) !== array_map(get_object_vars(...), $this->requirements($root, null, $packages))) {
             $this->invalid();
         }
 
@@ -285,10 +257,9 @@ final readonly class ReadNpmDependencyGraphAction
 
     /**
      * @param  array<string, mixed>  $packages
-     * @param  array<string, string>  $overrides
      * @return list<DependencyRequirement>
      */
-    private function requirements(stdClass $record, ?string $from, array $packages, array $overrides = []): array
+    private function requirements(stdClass $record, ?string $from, array $packages): array
     {
         $optional = $this->links($record, 'optionalDependencies');
         $peers = $this->links($record, 'peerDependencies');
@@ -334,7 +305,7 @@ final readonly class ReadNpmDependencyGraphAction
                     $targetRecord = $packages[$target];
 
                     if (! $targetRecord instanceof stdClass
-                        || (str_starts_with($constraint, 'npm:') && ! $this->aliasTarget($name, $constraint, $this->identity($target, $targetRecord), $from, $overrides))) {
+                        || (str_starts_with($constraint, 'npm:') && ! $this->aliasTarget($name, $constraint, $target, $targetRecord))) {
                         $this->invalid();
                     }
                 }
@@ -408,18 +379,29 @@ final readonly class ReadNpmDependencyGraphAction
     }
 
     /**
-     * A root alias that an override repeats can lock the unaliased package: npm records what it installed.
-     *
-     * @param  array<string, string>  $overrides
+     * npm validates an alias edge against the spec after the package name and never compares that name.
+     * A dist-tag accepts any registry tarball, so npm can lock the unaliased package, for example with Vite+ overrides.
      */
-    private function aliasTarget(string $name, string $constraint, string $identity, ?string $from, array $overrides): bool
+    private function aliasTarget(string $name, string $constraint, string $location, stdClass $record): bool
     {
-        if ($identity === $this->targetName($name, $constraint)) {
+        if ($this->identity($location, $record) === $this->targetName($name, $constraint)) {
             return true;
         }
 
-        return $from === null && $identity === $name
-            && in_array($overrides[$name] ?? null, [$constraint, '$'.$name], true);
+        preg_match('{^npm:(?:@[^/]+/)?[^@]+(?:@(.+))?$}D', $constraint, $match);
+        $spec = trim($match[1] ?? '');
+
+        if ($spec === '*') {
+            return true;
+        }
+
+        $range = NpmVersionRange::parse($spec);
+
+        if ($range === null) {
+            return is_string($record->resolved ?? null) && preg_match('{^https?://}i', $record->resolved) === 1;
+        }
+
+        return is_string($record->version ?? null) && $range->satisfies($record->version);
     }
 
     private function targetName(string $name, string $constraint): string
