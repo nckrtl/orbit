@@ -513,6 +513,7 @@ TYPE_RULES = {'string': 'string', 'integer': 'integer', 'int': 'integer', 'numer
 def schema_from_tokens(toks):
     sch = {}
     required = False
+    sometimes = False
     nullable = False
     notes = []
     type_ = None
@@ -535,6 +536,8 @@ def schema_from_tokens(toks):
                 sch['format'] = 'uri'
             elif base == 'required':
                 required = True
+            elif base == 'sometimes':
+                sometimes = True
             elif base == 'nullable':
                 nullable = True
             elif base == 'alpha_dash':
@@ -578,7 +581,7 @@ def schema_from_tokens(toks):
     sch = {'type': [type_, 'null'] if nullable else type_, **sch}
     if notes:
         sch['description'] = ' '.join(notes)
-    return sch, required
+    return sch, required and not sometimes
 
 
 def clean_schema(s):

@@ -77,10 +77,10 @@ orbit project:show <project> [--json]
 
 ## orbit project:update
 
-Change a Project's type or source defaults. Omitted fields stay unchanged. The Gateway reconciles affected development sources, inherited web roots, and generated domains before publishing the change. It does not start a production deployment. See [Update a Project](/reference/apps#update-a-project) for validation, rollback, and retry behavior.
+Change a Project's type, source defaults, or task baseline command. Omitted fields stay unchanged. The Gateway reconciles affected development sources, inherited web roots, and generated domains before publishing the change. It does not start a production deployment. See [Update a Project](/reference/apps#update-a-project) for validation, rollback, and retry behavior.
 
 ```bash
-orbit project:update <project> [--type=TYPE] [--slug=SLUG] [--repository=URL] [--default-branch=BRANCH] [--root=PATH]
+orbit project:update <project> [--type=TYPE] [--slug=SLUG] [--repository=URL] [--default-branch=BRANCH] [--root=PATH] [--baseline-check=COMMAND] [--clear-baseline-check]
 ```
 
 The command accepts these options.
@@ -92,6 +92,8 @@ The command accepts these options.
 | `--repository=URL` | New Git access URL. The Gateway validates ownership before updating checkout origins. |
 | `--default-branch=BRANCH` | New default branch for development sources that inherit it. |
 | `--root=PATH` | New relative web root for Instances without an override. |
+| `--baseline-check=COMMAND` | Set the Project's task baseline command. |
+| `--clear-baseline-check` | Clear the configured task baseline command. Mutually exclusive with `--baseline-check`. |
 
 ## orbit project:destroy
 

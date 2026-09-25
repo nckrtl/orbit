@@ -26,6 +26,9 @@ final class UpdateAppRequest extends GatewayRequest implements HasBody
         private readonly ?string $repositoryUrl = null,
         private readonly ?string $defaultBranch = null,
         private readonly ?string $root = null,
+        #[\SensitiveParameter]
+        private readonly ?string $taskBaselineCheck = null,
+        private readonly bool $taskBaselineCheckProvided = false,
     ) {}
 
     public function resolveEndpoint(): string
@@ -38,7 +41,7 @@ final class UpdateAppRequest extends GatewayRequest implements HasBody
         return AppResponse::fromGatewayData($this->unwrapData($response), $this->successRequestId($response));
     }
 
-    /** @return array<string, string> */
+    /** @return array<string, mixed> */
     protected function defaultBody(): array
     {
         return array_filter(
@@ -48,8 +51,10 @@ final class UpdateAppRequest extends GatewayRequest implements HasBody
                 'repository_url' => $this->repositoryUrl,
                 'default_branch' => $this->defaultBranch,
                 'root' => $this->root,
+                ...($this->taskBaselineCheckProvided ? ['task_baseline_check' => $this->taskBaselineCheck] : []),
             ],
-            static fn (?string $value): bool => $value !== null,
+            static fn (mixed $value, string $key): bool => $key === 'task_baseline_check' || $value !== null,
+            ARRAY_FILTER_USE_BOTH,
         );
     }
 }

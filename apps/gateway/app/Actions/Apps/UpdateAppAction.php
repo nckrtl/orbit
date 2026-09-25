@@ -72,6 +72,10 @@ final readonly class UpdateAppAction
         }
 
         if (! $data->hasReconcilableChanges()) {
+            if ($data->taskBaselineCheckProvided) {
+                $app->update(['task_baseline_check' => $data->taskBaselineCheck]);
+                $app = $app->fresh() ?? $app;
+            }
             ($this->broadcaster ?? app(RecordEventBroadcaster::class))->broadcast(
                 RecordEventType::AppUpdated,
                 $app->id,
@@ -92,6 +96,11 @@ final readonly class UpdateAppAction
             $instanceIds,
             fn (): OrbitApp => $this->executeOwned($app->fresh() ?? $app, $data),
         );
+
+        if ($data->taskBaselineCheckProvided) {
+            $result->update(['task_baseline_check' => $data->taskBaselineCheck]);
+            $result = $result->fresh() ?? $result;
+        }
 
         ($this->broadcaster ?? app(RecordEventBroadcaster::class))->broadcast(
             RecordEventType::AppUpdated,

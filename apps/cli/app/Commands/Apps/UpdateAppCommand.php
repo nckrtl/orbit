@@ -20,6 +20,8 @@ final class UpdateAppCommand extends GatewayCommand
         {--repository= : New repository access URL}
         {--default-branch= : New stored default branch}
         {--root= : New relative web root}
+        {--baseline-check= : Set the Project task baseline command}
+        {--clear-baseline-check : Clear the Project task baseline command}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -40,6 +42,8 @@ final class UpdateAppCommand extends GatewayCommand
         $repositoryUrl = $this->stringOption('repository');
         $defaultBranch = $this->stringOption('default-branch');
         $root = $this->stringOption('root');
+        $baselineCheck = $this->stringOption('baseline-check');
+        $clearBaselineCheck = $this->option('clear-baseline-check') === true;
 
         if ($slug !== null && (strlen($slug) > 63 || preg_match('/[\x00-\x1F\x7F]/', $slug) === 1)) {
             return $this->renderGatewayFailure(
@@ -62,7 +66,15 @@ final class UpdateAppCommand extends GatewayCommand
             );
         }
 
-        if ($type === null && $slug === null && $repositoryUrl === null && $defaultBranch === null && $root === null) {
+        if ($baselineCheck !== null && $clearBaselineCheck) {
+            return $this->renderGatewayFailure('app.update_required', 'Choose either --baseline-check or --clear-baseline-check.');
+        }
+
+        if ($baselineCheck !== null && (trim($baselineCheck) === '' || strlen($baselineCheck) > 4096)) {
+            return $this->renderGatewayFailure('app.baseline_check_invalid', 'Task baseline command is invalid.');
+        }
+
+        if ($type === null && $slug === null && $repositoryUrl === null && $defaultBranch === null && $root === null && $baselineCheck === null && ! $clearBaselineCheck) {
             return $this->renderGatewayFailure(
                 'app.update_required',
                 'Provide at least one Project update.',
@@ -84,6 +96,8 @@ final class UpdateAppCommand extends GatewayCommand
                 repositoryUrl: $repositoryUrl,
                 defaultBranch: $defaultBranch,
                 root: $root,
+                taskBaselineCheck: $clearBaselineCheck ? null : $baselineCheck,
+                taskBaselineCheckProvided: $clearBaselineCheck || $baselineCheck !== null,
             ),
             AppResponse::class,
             ['Update Project', 'Updating Project', 'Updated Project'],

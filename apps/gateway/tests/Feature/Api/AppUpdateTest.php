@@ -26,6 +26,27 @@ beforeEach(function (): void {
 });
 
 describe('app updates', function (): void {
+    it('sets and clears the task baseline command on an existing Project', function (): void {
+        $command = 'composer check --token=baseline-secret';
+
+        $response = $this->patchJson('/api/v1/apps/'.$this->fixture->app->id, [
+            'task_baseline_check' => $command,
+        ])->assertOk();
+
+        expect($this->fixture->app->refresh()->taskBaselineCheck())
+            ->toBe($command)
+            ->and($response->getContent())
+            ->not->toContain($command, 'baseline-secret')
+            ->and(json_encode(Activity::query()->latest('id')->first()?->properties))
+            ->not->toContain($command, 'baseline-secret');
+
+        $this->patchJson('/api/v1/apps/'.$this->fixture->app->id, [
+            'task_baseline_check' => null,
+        ])->assertOk();
+
+        expect($this->fixture->app->refresh()->taskBaselineCheck())->toBeNull();
+    });
+
     it('switches inheriting default development instances when default_branch changes', function (): void {
         $explicit = AppInstance::query()->create([
             'app_id' => $this->fixture->app->id,

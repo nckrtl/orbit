@@ -78,7 +78,7 @@ final readonly class CommandActivityInputSanitizer
 
     public function sanitize(mixed $value, ?string $key = null): mixed
     {
-        if (is_string($key) && $this->isSensitiveKey($key) && ! $this->isNumericMetric($key, $value)) {
+        if (is_string($key) && ($this->normalizeKey($key) === 'task_baseline_check' || $this->isSensitiveKey($key) && ! $this->isNumericMetric($key, $value))) {
             return self::REDACTED;
         }
 

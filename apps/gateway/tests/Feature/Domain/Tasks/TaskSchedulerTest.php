@@ -847,6 +847,7 @@ it('keeps the reviewed pull request, writes settle metrics, and notifies Coder a
 
 it('runs the Project setup steps and check on the fresh workspace before the first implementer starts', function (): void {
     $app = scheduler_app('baseline-app');
+    $app->update(['task_baseline_check' => 'composer check']);
     $instance = scheduler_instance($app, scheduler_node('baseline-node', '10.44.0.94'), 'baseline');
     $group = queued_group($app, 'Baseline', $instance);
     ProjectLifecycleStep::query()->create(['app_id' => $app->id, 'phase' => 'setup', 'name' => 'Install', 'command' => 'composer install', 'timeout_seconds' => 600, 'position' => 1]);
@@ -860,6 +861,7 @@ it('runs the Project setup steps and check on the fresh workspace before the fir
 
     $check = TaskCheck::query()->sole();
     expect($spawner->events)->toBe([])
+        ->and($checks->commands)->toBe(['composer check'])
         ->and($check->kind)->toBe(TaskCheckKind::Baseline)
         ->and($check->task_comment_id)->toBeNull()
         ->and($checks->setups)->toBe([[['name' => 'Install', 'command' => 'composer install', 'timeout_seconds' => 600], ['name' => '[Orbit internal] Install Composer dependencies', 'command' => 'while IFS= read -r -d "" manifest; do project="${manifest%/composer.json}"; [ "$project" = "$manifest" ] && project="."; if [ -f "$project/composer.lock" ] && [ ! -f "$project/vendor/autoload.php" ]; then (cd "$project" && composer install --no-interaction --prefer-dist) || exit $?; fi; done < <(git ls-files -z -- "composer.json" ":(glob)**/composer.json")', 'timeout_seconds' => 600]]]);
@@ -870,8 +872,45 @@ it('runs the Project setup steps and check on the fresh workspace before the fir
         ->and($spawner->events)->toBe(['implementer:1']);
 });
 
+it('prepares Composer and JavaScript dependencies referenced by a custom baseline command', function (): void {
+    $app = scheduler_app('custom-baseline-command');
+    $app->update(['task_baseline_check' => 'composer test && bun run check']);
+    $instance = scheduler_instance($app, scheduler_node('custom-baseline-node', '10.44.0.98'), 'custom-check');
+    queued_group($app, 'Custom baseline command', $instance);
+    scheduler_bind_claim($instance, scheduler_recording_spawner());
+    $checks = new FakeTaskCheckRunner([TaskCheckReading::running()]);
+    app()->instance(TaskCheckRunner::class, $checks);
+
+    app(TaskScheduler::class)->claimNext();
+    test_pass_baseline();
+
+    expect(array_column($checks->setups[0], 'name'))->toBe([
+        '[Orbit internal] Install Composer dependencies',
+        '[Orbit internal] Install JavaScript dependencies',
+    ])->and($checks->commands)->toBe(['composer test && bun run check']);
+});
+
+it('passes an unset Project baseline without a command and starts the first implementer', function (): void {
+    $app = scheduler_app('no-baseline-command');
+    $instance = scheduler_instance($app, scheduler_node('no-baseline-command-node', '10.44.0.97'), 'no-check');
+    $group = queued_group($app, 'No baseline command', $instance);
+    $spawner = scheduler_recording_spawner();
+    scheduler_bind_claim($instance, $spawner);
+    $checks = new FakeTaskCheckRunner([TaskCheckReading::running(), FakeTaskCheckRunner::passed()]);
+    app()->instance(TaskCheckRunner::class, $checks);
+
+    app(TaskScheduler::class)->claimNext();
+    test_pass_baseline();
+    test_pass_baseline();
+
+    expect($checks->commands)->toBe([null])
+        ->and($spawner->events)->toBe(['implementer:1'])
+        ->and($group->fresh()?->assistance_requested)->toBeFalse();
+});
+
 it('asks for assistance, and starts no agent, when the fresh workspace fails its check', function (?string $failedStep, string $reason): void {
     $app = scheduler_app('broken-main');
+    $app->update(['task_baseline_check' => 'composer check']);
     $instance = scheduler_instance($app, scheduler_node('broken-node', '10.44.0.95'), 'broken');
     $group = queued_group($app, 'Broken main', $instance);
     $spawner = scheduler_recording_spawner();
@@ -888,7 +927,7 @@ it('asks for assistance, and starts no agent, when the fresh workspace fails its
         ->and($group->fresh()?->assistance_reason)->toStartWith($reason)
         ->and(TaskCheck::query()->sole()->failed_step)->toBe($failedStep);
 })->with([
-    'composer check' => [null, 'composer check failed with exit code 1 on a fresh checkout of task-'],
+    'composer check' => [null, 'The Project baseline check failed with exit code 1 on a fresh checkout of task-'],
     'setup step' => ['Install', 'The Project setup step "Install" failed with exit code 1 on a fresh checkout of task-'],
 ]);
 

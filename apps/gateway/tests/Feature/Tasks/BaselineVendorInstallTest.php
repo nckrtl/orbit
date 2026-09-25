@@ -26,6 +26,7 @@ it('baseline installs vendor before check on a fresh workspace', function (): vo
         'slug' => 'baseline-vendor-install',
         'repository_url' => 'git@example.test:baseline-vendor-install.git',
         'default_branch' => 'main',
+        'task_baseline_check' => 'composer check',
     ]);
     $node = Node::query()->create([
         'name' => 'baseline-vendor-node',
@@ -91,6 +92,7 @@ it('reports missing dependencies instead of claiming the default branch is broke
         'slug' => 'baseline-install-failure',
         'repository_url' => 'git@example.test:baseline-install-failure.git',
         'default_branch' => 'main',
+        'task_baseline_check' => 'composer check',
     ]);
     $node = Node::query()->create([
         'name' => 'baseline-failure-node',
@@ -148,5 +150,5 @@ it('reports missing dependencies instead of claiming the default branch is broke
         ->and(TaskCheck::query()->sole()->output)->toBe($output);
 })->with([
     'Composer install failure' => ['[Orbit internal] Install Composer dependencies', "Could not install dependencies.\n", 'Composer dependency installation failed'],
-    'nested project vendor tools missing' => [null, 'sh: 1: vendor/bin/pest: not found', 'Composer dependencies appear to be missing'],
+    'nested project vendor tools missing' => [null, 'sh: 1: vendor/bin/pest: not found', 'Project dependencies appear to be missing'],
 ]);

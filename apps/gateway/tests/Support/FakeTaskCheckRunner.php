@@ -32,11 +32,15 @@ final class FakeTaskCheckRunner implements TaskCheckRunner
     /** @var list<array<string, mixed>|null> the deliverables each started check was asked to verify */
     public array $deliverables = [];
 
-    public function start(AppInstance $instance, array $setup = [], ?array $deliverables = null): TaskCheckProcess
+    /** @var list<string|null> configured commands for each started check */
+    public array $commands = [];
+
+    public function start(AppInstance $instance, array $setup = [], ?array $deliverables = null, ?string $command = 'composer check'): TaskCheckProcess
     {
         $this->starts++;
         $this->setups[] = $setup;
         $this->deliverables[] = $deliverables;
+        $this->commands[] = $command;
 
         return new TaskCheckProcess(4000 + $this->starts, 'Wed Sep 23 12:00:0'.$this->starts.' 2026', str_repeat('a', 40), str_repeat('b', 40));
     }

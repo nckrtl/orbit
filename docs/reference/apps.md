@@ -88,7 +88,7 @@ Edit the code in the web Project properties, or send `PATCH /api/v1/projects/{pr
 
 ## Update a Project
 
-Use `project:update` when an existing Project must change its type, slug, repository access URL, default branch, or relative web root. The Gateway API accepts `PATCH /api/v1/projects/{project}` and the compatibility path `PATCH /api/v1/apps/{app}` with those same fields. The PHP SDK sends `UpdateAppRequest` to either path. Omitted fields stay unchanged. [ADR 0016](/decisions/0016-reconcile-app-identity-and-source-default-updates) owns the reconciliation lifecycle. The API, SDK, CLI, activity, Doctor, and validation contracts expose no `main_branch` or `--main-branch` name.
+Use `project:update` when an existing Project must change its type, slug, repository access URL, default branch, relative web root, or task baseline check. The Gateway API accepts `PATCH /api/v1/projects/{project}` and the compatibility path `PATCH /api/v1/apps/{app}` with those same fields. The PHP SDK sends `UpdateAppRequest` to either path. Omitted fields stay unchanged; send `task_baseline_check: null` to clear that setting. The MCP `project-update` tool accepts the same string-or-null field. [ADR 0016](/decisions/0016-reconcile-app-identity-and-source-default-updates) owns the source reconciliation lifecycle. The API, SDK, CLI, activity, Doctor, and validation contracts expose no `main_branch` or `--main-branch` name.
 
 ```bash
 orbit project:update 3 --repository=https://github.com/acme/site.git --default-branch=stable
@@ -101,6 +101,7 @@ orbit project:update 3 --repository=https://github.com/acme/site.git --default-b
 | `repository_url` and `--repository` | Store the selected HTTPS or SSH access URL. Equivalent forms keep the same canonical repository identity. |
 | `default_branch` and `--default-branch` | Store the new Project default and switch every development `default` Instance that inherits it. An explicit `branch_override` stays unchanged even when it matched the old default. |
 | `root` and `--root` | Change the inherited web root of every Instance without its own override. Production resolves the new root inside the active release. |
+| `task_baseline_check` and `--baseline-check` | Set the Project task baseline command; send null or use `--clear-baseline-check` to clear it. |
 
 The Gateway treats the supplied fields as one operation. It inventories affected Instances and Routes, preflights every Orbit-owned checkout and generated domain, prepares reversible mutations, then publishes. A confirmed failure before publication rolls back origins, prepared Routes, stored Laravel `APP_URL` values, and runtime projections. The previous Project record stays authoritative. An identical retry resumes the recorded state from its last verified evidence. A conflicting update while one update is incomplete returns `app.update_in_progress`.
 

@@ -28,6 +28,7 @@ final class UpdateAppRequest extends FormRequest
             'repository_url' => ['sometimes', 'required', 'string', 'max:2048'],
             'default_branch' => ['sometimes', 'required', 'string', 'max:255'],
             'root' => ['sometimes', 'required', 'string', 'max:255'],
+            'task_baseline_check' => ['sometimes', 'nullable', 'string', 'max:4096'],
         ];
     }
 
@@ -37,7 +38,7 @@ final class UpdateAppRequest extends FormRequest
         try {
             return app(TopLevelJsonObjectInspector::class)->inspect(
                 $this->getContent(),
-                ['code', 'type', 'slug', 'repository_url', 'default_branch', 'root'],
+                ['code', 'type', 'slug', 'repository_url', 'default_branch', 'root', 'task_baseline_check'],
             );
         } catch (UnexpectedValueException $exception) {
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
@@ -55,6 +56,7 @@ final class UpdateAppRequest extends FormRequest
                 && ! $this->exists('repository_url')
                 && ! $this->exists('default_branch')
                 && ! $this->exists('root')
+                && ! $this->exists('task_baseline_check')
             ) {
                 $validator->errors()->add('body', 'Provide at least one Project update.');
             }
@@ -99,6 +101,8 @@ final class UpdateAppRequest extends FormRequest
             defaultBranch: is_string($validated['default_branch'] ?? null) ? $validated['default_branch'] : null,
             rootProvided: array_key_exists('root', $validated),
             root: is_string($validated['root'] ?? null) ? $validated['root'] : null,
+            taskBaselineCheckProvided: array_key_exists('task_baseline_check', $validated),
+            taskBaselineCheck: is_string($validated['task_baseline_check'] ?? null) ? $validated['task_baseline_check'] : null,
         );
     }
 }

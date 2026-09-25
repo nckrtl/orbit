@@ -180,6 +180,19 @@ describe('app requests', function (): void {
             ->toBe('stable');
     });
 
+    it('transports baseline command updates and an explicit clear without exposing it in diagnostics', function (): void {
+        $command = 'composer check --token=fixture-secret';
+        $set = new UpdateAppRequest(appId: 3, taskBaselineCheck: $command, taskBaselineCheckProvided: true);
+        $clear = new UpdateAppRequest(appId: 3, taskBaselineCheckProvided: true);
+
+        expect($set->body()->all())
+            ->toBe(['task_baseline_check' => $command])
+            ->and($clear->body()->all())
+            ->toBe(['task_baseline_check' => null])
+            ->and(print_r($set, true))
+            ->not->toContain('fixture-secret');
+    });
+
     it('does not keep the replaced App request class name', function (): void {
         expect(class_exists('Orbit\\Sdk\\Requests\\Apps\\RemoveAppRequest'))->toBeFalse();
     });

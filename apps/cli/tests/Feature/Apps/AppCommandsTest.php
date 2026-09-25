@@ -448,6 +448,28 @@ describe('project:update', function (): void {
             ->toHaveKey('main_branch');
     });
 
+    it('sets or clears the Project task baseline check through the SDK request', function (): void {
+        $command = 'composer check';
+        $setClient = MockClient::global([UpdateAppRequest::class => app_mock_response()]);
+
+        $this->artisan('project:update', [
+            'project' => '3',
+            '--baseline-check' => $command,
+        ])->assertExitCode(0);
+
+        expect($setClient->getLastRequest()?->body()->all())
+            ->toBe(['task_baseline_check' => $command]);
+
+        $clearClient = MockClient::global([UpdateAppRequest::class => app_mock_response()]);
+        $this->artisan('project:update', [
+            'project' => '3',
+            '--clear-baseline-check' => true,
+        ])->assertExitCode(0);
+
+        expect($clearClient->getLastRequest()?->body()->all())
+            ->toBe(['task_baseline_check' => null]);
+    });
+
     it('reports the updated app for humans', function (): void {
         MockClient::global([UpdateAppRequest::class => app_mock_response()]);
 

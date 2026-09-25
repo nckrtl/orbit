@@ -457,7 +457,6 @@
         "additionalProperties": false,
         "required": [
           "slug",
-          "type",
           "repository_url",
           "root"
         ]
@@ -1191,16 +1190,18 @@
           "root": {
             "type": "string",
             "maxLength": 255
+          },
+          "task_baseline_check": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 4096
           }
         },
         "additionalProperties": false,
         "required": [
-          "app",
-          "type",
-          "slug",
-          "repository_url",
-          "default_branch",
-          "root"
+          "app"
         ]
       }
     },
@@ -4691,7 +4692,6 @@
         "additionalProperties": false,
         "required": [
           "slug",
-          "type",
           "repository_url",
           "root"
         ]
@@ -5517,16 +5517,18 @@
             "type": "string",
             "maxLength": 255,
             "description": "New relative web root"
+          },
+          "task_baseline_check": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 4096
           }
         },
         "additionalProperties": false,
         "required": [
-          "app",
-          "type",
-          "slug",
-          "repository_url",
-          "default_branch",
-          "root"
+          "app"
         ]
       }
     },
@@ -5914,9 +5916,7 @@
         },
         "additionalProperties": false,
         "required": [
-          "route",
-          "domain",
-          "publication"
+          "route"
         ]
       }
     },

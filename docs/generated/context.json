@@ -408,6 +408,7 @@
                 "Repository identity",
                 "Route",
                 "Schedule",
+                "Task",
                 "Web root"
             ],
             "governing_adrs": []
@@ -3308,7 +3309,6 @@
                 "Node",
                 "Process",
                 "Project",
-                "Setup step",
                 "Task",
                 "Tool"
             ],
@@ -4413,6 +4413,7 @@
                 "Repository identity",
                 "Route",
                 "Task",
+                "Tool",
                 "Web root"
             ],
             "governing_adrs": [
@@ -5275,7 +5276,6 @@
                 "Project",
                 "Route",
                 "Schedule",
-                "Setup step",
                 "Task",
                 "Task group",
                 "Tool"

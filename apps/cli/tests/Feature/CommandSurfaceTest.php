@@ -567,7 +567,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         'project:show' => [['project'], ['json' => false]],
         'project:update' => [
             ['project'],
-            ['type' => null, 'slug' => null, 'repository' => null, 'default-branch' => null, 'root' => null, 'json' => false],
+            ['type' => null, 'slug' => null, 'repository' => null, 'default-branch' => null, 'root' => null, 'baseline-check' => null, 'clear-baseline-check' => false, 'json' => false],
         ],
         'cluster:list' => [[], ['json' => false]],
         'cluster:create' => [['name'], ['tld' => null, 'json' => false]],
