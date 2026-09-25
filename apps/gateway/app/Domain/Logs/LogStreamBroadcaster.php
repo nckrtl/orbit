@@ -7,6 +7,7 @@ namespace App\Domain\Logs;
 use App\Domain\Broadcasting\RealtimeConnection;
 use DateTimeInterface;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
 use Throwable;
@@ -18,6 +19,9 @@ use Throwable;
  * it: the agent reads its stream list again on its next prompt, and the viewer's next renewal finds
  * the stream closed. A failed `log.lines` throws instead, so the relay run fails and publishes the
  * lines again, in order, instead of losing them.
+ *
+ * During a `websocket` move every event also goes to the old Node's Reverb, where the viewers and
+ * agents that connected before DNS moved still listen. That send is best-effort, as for record events.
  */
 final readonly class LogStreamBroadcaster
 {
@@ -39,16 +43,16 @@ final readonly class LogStreamBroadcaster
      */
     public function lines(string $streamId, int $sequence, array $lines, int $dropped, int $skipped): void
     {
-        if (! $this->realtime->configureBroadcasting()) {
-            throw new RuntimeException('No websocket role is active.');
-        }
-
-        event(new LogStreamBroadcast('private-log-stream.'.$streamId, 'log.lines', $this->envelope('log.lines', $streamId, [
+        $sent = $this->send(new LogStreamBroadcast('private-log-stream.'.$streamId, 'log.lines', $this->envelope('log.lines', $streamId, [
             'sequence' => $sequence,
             'lines' => $lines,
             'dropped' => $dropped,
             'skipped' => $skipped,
         ])));
+
+        if (! $sent) {
+            throw new RuntimeException('No websocket role is active.');
+        }
     }
 
     public function ended(string $streamId, LogStreamEndReason $reason): void
@@ -87,13 +91,65 @@ final readonly class LogStreamBroadcaster
     private function publish(LogStreamBroadcast $event): void
     {
         try {
-            if (! $this->realtime->configureBroadcasting()) {
-                return;
-            }
+            $this->send($event);
+        } catch (Throwable $exception) {
+            $this->failed($event, $exception);
+        }
+    }
 
+    /**
+     * Sends the event to the serving Reverb, and during a `websocket` move to the old Node's Reverb too.
+     * Returns false when no websocket role is active. A failure on the serving server throws after the
+     * old server had its try; a failure on the old server is logged, and later sends skip it for a while.
+     */
+    private function send(LogStreamBroadcast $event): bool
+    {
+        $connections = $this->realtime->all();
+
+        if ($connections === []) {
+            return false;
+        }
+
+        $servingFailure = null;
+
+        try {
+            $this->realtime->configureBroadcasting($connections[0]);
             event($event);
         } catch (Throwable $exception) {
-            Log::warning('Failed to publish a live log event.', ['event' => $event->name, 'exception' => $exception->getMessage()]);
+            $servingFailure = $exception;
         }
+
+        foreach (array_slice($connections, 1) as $connection) {
+            if ($this->realtime->oldServerSkipped($connection)) {
+                continue;
+            }
+
+            try {
+                $this->realtime->configureBroadcasting($connection, oldServer: true);
+                Broadcast::purge('reverb');
+                Broadcast::connection('reverb')->broadcast($event->broadcastOn(), $event->broadcastAs(), $event->broadcastWith());
+                $this->realtime->recordOldServer($connection, true);
+            } catch (Throwable $exception) {
+                $this->failed($event, $exception);
+                $this->realtime->recordOldServer($connection, false);
+            }
+        }
+
+        if (count($connections) > 1) {
+            // Later broadcasts in this process start again from the serving server.
+            $this->realtime->configureBroadcasting($connections[0]);
+            Broadcast::purge('reverb');
+        }
+
+        if ($servingFailure !== null) {
+            throw $servingFailure;
+        }
+
+        return true;
+    }
+
+    private function failed(LogStreamBroadcast $event, Throwable $exception): void
+    {
+        Log::warning('Failed to publish a live log event.', ['event' => $event->name, 'exception' => $exception->getMessage()]);
     }
 }
