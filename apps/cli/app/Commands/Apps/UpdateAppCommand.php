@@ -19,7 +19,7 @@ final class UpdateAppCommand extends GatewayCommand
         {--slug= : New Project slug}
         {--repository= : New repository access URL}
         {--default-branch= : New stored default branch}
-        {--root= : New relative web root}
+        {--root= : New repository-relative root; package types may use .}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -55,10 +55,10 @@ final class UpdateAppCommand extends GatewayCommand
             );
         }
 
-        if ($type !== null && ! in_array($type, ['monorepo', 'laravel-app', 'laravel-package'], true)) {
+        if ($type !== null && ! in_array($type, ['monorepo', 'laravel-app', 'laravel-package', 'node-package'], true)) {
             return $this->renderGatewayFailure(
                 'project.type_invalid',
-                'Project type must be monorepo, laravel-app, or laravel-package.',
+                'Project type must be monorepo, laravel-app, laravel-package, or node-package.',
             );
         }
 

@@ -558,7 +558,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         'project:list' => [[], ['json' => false]],
         'project:create' => [
             ['slug', 'type', 'repository'],
-            ['name' => null, 'default-branch' => null, 'root' => 'public', 'json' => false],
+            ['name' => null, 'default-branch' => null, 'root' => null, 'json' => false],
         ],
         'project:destroy' => [['project'], ['yes' => false, 'json' => false]],
         'project:excluded-node:add' => [['node'], ['project' => null, 'json' => false]],

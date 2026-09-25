@@ -8,8 +8,9 @@ use App\Data\Apps\UpdateAppData;
 use App\Domain\Projects\ProjectType;
 use App\Domain\SourceControl\GitBranchName;
 use App\Domain\SourceControl\GitRepositoryOrigin;
-use App\Domain\SourceControl\RelativeWebRoot;
+use App\Domain\SourceControl\ProjectRoot;
 use App\Http\Requests\TopLevelJsonObjectInspector;
+use App\Models\App as OrbitApp;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -74,10 +75,16 @@ final class UpdateAppRequest extends FormRequest
                 $validator->errors()->add('default_branch', 'The default branch is not a valid Git branch name.');
             }
 
-            $root = $this->input('root');
+            $routeApp = $this->route('app');
+            $type = ProjectType::tryFrom((string) $this->input('type'))
+                ?? ($routeApp instanceof OrbitApp ? $routeApp->type : ProjectType::LaravelApp);
+            $sentRoot = $this->input('root');
+            $root = is_string($sentRoot) ? $sentRoot : ($routeApp instanceof OrbitApp ? $routeApp->root : null);
 
-            if (is_string($root) && ! RelativeWebRoot::isValid($root)) {
-                $validator->errors()->add('root', 'The root must be a normalized relative web path.');
+            if (is_string($root) && ! ProjectRoot::isValid($root, $type)) {
+                $validator->errors()->add('root', is_string($sentRoot)
+                    ? ProjectRoot::message($root, $type)
+                    : "The stored root [{$root}] is not valid for a {$type->value} Project. Send a web root with the type change.");
             }
         }];
     }

@@ -989,7 +989,8 @@
                     "enum": [
                       "monorepo",
                       "laravel-app",
-                      "laravel-package"
+                      "laravel-package",
+                      "node-package"
                     ]
                   },
                   "repository_url": {
@@ -1307,7 +1308,8 @@
                     "enum": [
                       "monorepo",
                       "laravel-app",
-                      "laravel-package"
+                      "laravel-package",
+                      "node-package"
                     ]
                   },
                   "slug": {
@@ -14586,9 +14588,10 @@
                     "enum": [
                       "monorepo",
                       "laravel-app",
-                      "laravel-package"
+                      "laravel-package",
+                      "node-package"
                     ],
-                    "description": "Project type (monorepo, laravel-app, or laravel-package)"
+                    "description": "Project type (monorepo, laravel-app, laravel-package, or node-package)"
                   },
                   "repository_url": {
                     "type": "string",
@@ -14602,7 +14605,7 @@
                   "root": {
                     "type": "string",
                     "maxLength": 255,
-                    "description": "Relative web root"
+                    "description": "Repository-relative root; defaults to . for package types and public otherwise"
                   },
                   "defaults": {
                     "type": [
@@ -14925,7 +14928,8 @@
                     "enum": [
                       "monorepo",
                       "laravel-app",
-                      "laravel-package"
+                      "laravel-package",
+                      "node-package"
                     ],
                     "description": "New Project type"
                   },
@@ -14947,7 +14951,7 @@
                   "root": {
                     "type": "string",
                     "maxLength": 255,
-                    "description": "New relative web root"
+                    "description": "New repository-relative root; package types may use ."
                   }
                 },
                 "required": [
@@ -22566,7 +22570,8 @@
             "enum": [
               "monorepo",
               "laravel-app",
-              "laravel-package"
+              "laravel-package",
+              "node-package"
             ]
           },
           "repository_url": {
@@ -23196,7 +23201,8 @@
             "enum": [
               "monorepo",
               "laravel-app",
-              "laravel-package"
+              "laravel-package",
+              "node-package"
             ]
           }
         }

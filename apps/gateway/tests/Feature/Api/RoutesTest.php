@@ -14,6 +14,7 @@ use App\Domain\AppInstances\Environment\AppInstanceRouteEnvironmentSynchronizer;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Projects\ProjectType;
 use App\Domain\Routes\PublicRouteEdgeProjector;
 use App\Domain\Routes\PublicRouteEligibility;
 use App\Domain\Routes\RouteDomainProjector;
@@ -58,6 +59,45 @@ beforeEach(function (): void {
     $this->target = route_instance($this->orbitApp, $this->node, 'main');
     $this->removal = new FakeRouteRemovalProjector;
     app()->instance(RouteRemovalProjector::class, $this->removal);
+});
+
+it('refuses a package Instance whose repository root is not a supported Route web root', function (): void {
+    $this->orbitApp->update([
+        'type' => ProjectType::NodePackage,
+        'root' => '.',
+    ]);
+
+    $this->postJson('/api/v1/routes', [
+        'app_id' => $this->orbitApp->id,
+        'domain' => 'node-package.example.test',
+        'publication' => 'private',
+        'app_instance_id' => $this->target->id,
+    ])->assertConflict()
+        ->assertJsonPath('error.code', 'route.target_web_root_unsupported');
+
+    $this->assertDatabaseCount('routes', 0);
+    $this->assertDatabaseCount('route_targets', 0);
+});
+
+it('refuses to attach a package Instance with repository root . to an existing Route', function (): void {
+    $this->orbitApp->update([
+        'type' => ProjectType::NodePackage,
+        'root' => '.',
+    ]);
+
+    $route = $this->postJson('/api/v1/routes', [
+        'app_id' => $this->orbitApp->id,
+        'domain' => 'targetless.example.test',
+        'publication' => 'private',
+        'node_id' => $this->node->id,
+    ])->assertCreated()->json('data.id');
+
+    $this->putJson("/api/v1/routes/{$route}/target", [
+        'app_instance_id' => $this->target->id,
+    ])->assertConflict()
+        ->assertJsonPath('error.code', 'route.target_web_root_unsupported');
+
+    $this->assertDatabaseCount('route_targets', 0);
 });
 
 it('creates, retries, lists, shows, updates, clears, and removes an explicit Route', function (): void {

@@ -33,7 +33,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitBranchName;
 use App\Domain\SourceControl\GitRepositoryIdentity;
-use App\Domain\SourceControl\RelativeWebRoot;
+use App\Domain\SourceControl\ProjectRoot;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\Node;
@@ -651,6 +651,11 @@ final readonly class RegisterAppInstanceAction
 
         if ($app instanceof OrbitApp) {
             $this->assertExistingAppInput($app, $data);
+            $root = $data->root ?? $app->root;
+
+            if (! is_string($root) || ! ProjectRoot::isValid($root, $app->type)) {
+                throw new ResourceOperationException('app.root_invalid', 'The Project root is invalid.', 422);
+            }
 
             return [$app, false];
         }
@@ -685,18 +690,23 @@ final readonly class RegisterAppInstanceAction
             );
         }
 
+        $type = new ProjectTypeClassifier()->classify([
+            'slug' => $slug,
+            'repository_identity' => GitRepositoryIdentity::derive($facts->repositoryUrl),
+            'root' => $root,
+            'has_production_php' => false,
+        ]);
+        if (! ProjectRoot::isValid($root, $type)) {
+            throw new ResourceOperationException('app.root_invalid', 'The Project root is invalid.', 422);
+        }
+
         $result = $this->createApp->execute(new CreateAppData(
             name: $data->appName ?? $slug,
             slug: $slug,
-            type: new ProjectTypeClassifier()->classify([
-                'slug' => $slug,
-                'repository_identity' => GitRepositoryIdentity::derive($facts->repositoryUrl),
-                'root' => $root,
-                'has_production_php' => false,
-            ]),
+            type: $type,
             repositoryUrl: $facts->repositoryUrl,
             defaultBranch: GitBranchName::validate($defaultBranch),
-            root: RelativeWebRoot::validate($root),
+            root: ProjectRoot::validate($root, $type),
             defaults: null,
         ));
 

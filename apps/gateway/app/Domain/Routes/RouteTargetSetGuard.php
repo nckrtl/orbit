@@ -161,6 +161,8 @@ final readonly class RouteTargetSetGuard
                 $this->refuse('route.target_inactive', 'The Route target must be active.');
             }
 
+            RouteTargetWebRoot::assertSupported($instance);
+
             if ($instance->environment !== 'production') {
                 $this->refuse('route.pool_unsupported', 'A production Route pool cannot include an app-dev target.');
             }

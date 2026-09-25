@@ -6,6 +6,7 @@ use App\Actions\AppInstances\Dependencies\UpdateInstanceDependenciesAction;
 use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\AppInstances\Dependencies\DependencyUpdateStepStatus;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentOperationLock;
+use App\Domain\Projects\ProjectType;
 use App\Infrastructure\AppDev\NativeAppDevSourceOperationLock;
 use App\Infrastructure\AppInstances\BunDependencyUpdatePresenceProgram;
 use App\Infrastructure\AppInstances\ComposerDependencyUpdatePresenceProgram;
@@ -32,9 +33,14 @@ use Illuminate\Support\Str;
 
 use function Pest\Laravel\mock;
 
-function dependency_update_instance(bool $production = false): AppInstance
+function dependency_update_instance(bool $production = false, ProjectType $type = ProjectType::LaravelApp): AppInstance
 {
-    $app = OrbitApp::query()->create(['slug' => 'dependency-update', 'name' => 'Dependency update', 'repository_url' => 'https://example.test/update.git']);
+    $app = OrbitApp::query()->create([
+        'slug' => 'dependency-update',
+        'name' => 'Dependency update',
+        'type' => $type,
+        'repository_url' => 'https://example.test/update.git',
+    ]);
     $node = Node::query()->create(['name' => 'dependency-update', 'public_ssh_host' => '192.0.2.181', 'wireguard_ip' => '10.44.0.2', 'user' => 'orbit', 'status' => 'active']);
 
     return $app->appInstances()->create([
@@ -192,8 +198,8 @@ describe('coordinated development dependency updates', function (): void {
         $this->assertDatabaseCount('app_instance_dependency_scan_attempts', 0);
     });
 
-    it('runs Composer then Vite+ and refreshes inventory', function (): void {
-        $instance = dependency_update_instance();
+    it('runs Composer then Vite+ and refreshes inventory for supported Project types', function (ProjectType $type): void {
+        $instance = dependency_update_instance(type: $type);
         $kinds = [];
         $receipt = dependency_update_receipt();
         dependency_update_ssh(function ($connection, RemoteCommand $command) use (&$kinds, $receipt): CommandResult {
@@ -221,6 +227,37 @@ describe('coordinated development dependency updates', function (): void {
         expect($result->javascript->status)->toBe(DependencyUpdateStepStatus::Succeeded);
         expect($result->inventory?->succeeded())->toBeTrue();
         expect($result->inventory?->javascript->succeeded())->toBeTrue();
+    })->with([
+        'laravel-app' => ProjectType::LaravelApp,
+        'laravel-package' => ProjectType::LaravelPackage,
+    ]);
+
+    it('updates the JavaScript lockfile for a node-package Project', function (): void {
+        $instance = dependency_update_instance(type: ProjectType::NodePackage);
+        $kinds = [];
+        $receipt = dependency_update_receipt();
+        dependency_update_ssh(function ($connection, RemoteCommand $command) use (&$kinds, $receipt): CommandResult {
+            $kind = dependency_update_kind($command);
+            $kinds[] = $kind;
+
+            return match ($kind) {
+                'yarn-inspect', 'pnpm-inspect', 'bun-inspect' => new CommandResult(0, '{"status":"absent"}', '', 1, false),
+                'composer-inspect' => new CommandResult(0, '{"status":"absent"}', '', 1, false),
+                'npm-inspect' => dependency_update_present_probe(),
+                'npm-apply' => new CommandResult(0, '', '', 12, false),
+                'collect' => new CommandResult(0, json_encode($receipt, JSON_THROW_ON_ERROR), '', 1, false),
+                default => throw new RuntimeException($kind),
+            };
+        });
+
+        $result = app(UpdateInstanceDependenciesAction::class)->execute($instance);
+
+        expect($kinds)->toContain('npm-apply')
+            ->and($kinds)->not->toContain('composer-apply')
+            ->and($result->succeeded())->toBeTrue()
+            ->and($result->composer->status)->toBe(DependencyUpdateStepStatus::Absent)
+            ->and($result->javascript->status)->toBe(DependencyUpdateStepStatus::Succeeded)
+            ->and($result->inventory?->succeeded())->toBeTrue();
     });
 
     it('stops later mutation after JavaScript failure and scans readable files', function (): void {

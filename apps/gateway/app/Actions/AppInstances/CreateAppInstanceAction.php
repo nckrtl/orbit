@@ -31,7 +31,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitBranchName;
 use App\Domain\SourceControl\GitRepositoryOrigin;
-use App\Domain\SourceControl\RelativeWebRoot;
+use App\Domain\SourceControl\ProjectRoot;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\Node;
@@ -64,7 +64,7 @@ final readonly class CreateAppInstanceAction
         $app = OrbitApp::query()->findOrFail($data->appId);
         $this->assertCompleteSourceDefaults($app);
         $requestedNode = Node::query()->findOrFail($data->nodeId);
-        $root = $data->root === null ? null : RelativeWebRoot::validate($data->root);
+        $root = $data->root === null ? null : ProjectRoot::validate($data->root, $app->type);
 
         if (
             $requestedNode
@@ -292,7 +292,7 @@ final readonly class CreateAppInstanceAction
             ! is_string($app->default_branch)
             || ! GitBranchName::isValid($app->default_branch)
             || ! is_string($app->root)
-            || ! RelativeWebRoot::isValid($app->root)
+            || ! ProjectRoot::isValid($app->root, $app->type)
         ) {
             throw new ResourceOperationException(
                 errorCode: 'app.source_defaults_incomplete',

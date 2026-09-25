@@ -40,6 +40,7 @@ use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Projects\ProjectLifecycleRunner;
+use App\Domain\Projects\ProjectType;
 use App\Domain\Routes\RouteDomainProjector;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
@@ -851,6 +852,34 @@ it('creates an active checkout AppInstance on a standalone Node with inherited r
         ])
         ->and(Route::query()->sole()->targets()->sole()->app_instance_id)
         ->toBe(AppInstance::query()->sole()->id);
+});
+
+it('creates an Instance with a repository-root Project root for each package type', function (): void {
+    foreach ([ProjectType::LaravelPackage, ProjectType::NodePackage] as $index => $type) {
+        $project = OrbitApp::query()->create([
+            'name' => $type->value,
+            'slug' => $type->value,
+            'type' => $type,
+            'repository_url' => 'https://github.com/acme/'.$type->value.'.git',
+            'default_branch' => 'main',
+            'root' => '.',
+        ]);
+        $name = 'package-'.$index;
+        $this->source->resolution = new DevelopmentSourceResolution($name, str_repeat('a', 40));
+
+        $response = $this->postJson('/api/v1/instances', [
+            'project_id' => $project->id,
+            'node_id' => $this->node->id,
+            'name' => $name,
+            'root' => '.',
+        ])->assertCreated()
+            ->assertJsonPath('data.root', '.')
+            ->assertJsonPath('data.effective_root', '.')
+            ->assertJsonPath('data.status', 'active');
+
+        expect($response->json('data.project.type'))->toBe($type->value)
+            ->and(Route::query()->where('app_id', $project->id)->exists())->toBeFalse();
+    }
 });
 
 it('records the instances of one App among several', function (): void {

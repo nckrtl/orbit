@@ -3,7 +3,7 @@ title: "instance"
 description: "Create, register, set up, clone, deploy, roll back, and remove Instances, and attach Database connections to them."
 ---
 
-An Instance is one placement of a Project on one Node. An Instance on an app-dev Node owns a checkout or worktree. An Instance on an app-prod Node owns a dedicated Unix user, a production home with retained releases, and a `current` link that selects the release Caddy serves. Laravel mode comes from the Instance `APP_ENV` value, not from the Node role. Active `laravel-app` Instances have exactly one Route. `monorepo` and `laravel-package` Instances get no Route by default.
+An Instance is one placement of a Project on one Node. An Instance on an app-dev Node owns a checkout or worktree. An Instance on an app-prod Node owns a dedicated Unix user, a production home with retained releases, and a `current` link that selects the release Caddy serves. Laravel mode comes from the Instance `APP_ENV` value, not from the Node role. Active `laravel-app` Instances have exactly one Route. `monorepo`, `laravel-package`, and `node-package` Instances get no Route by default. Package Instances can inherit `.` as their root to use the repository root without a web-root layout.
 
 The [Applications guide](/domains/applications) walks through creation and registration. The [production release layout](/reference/deployments), [Instance setup and teardown](/reference/instance-setup), [Instance cloning](/reference/appinstance-cloning), [Instance removal](/reference/appinstance-removal), and [Database connections](/reference/database-connections) references own the contracts behind the commands on this page.
 
