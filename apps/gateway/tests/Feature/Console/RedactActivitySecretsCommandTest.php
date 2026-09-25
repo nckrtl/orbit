@@ -45,11 +45,12 @@ it('redacts secrets in stored activity and keeps every other field', function ()
         'input' => ['node_id' => 4, 'cliproxy_management_key' => '[REDACTED]'],
     ]);
     $keyRemoved = redact_activity_row(['input' => ['node_id' => 4]]);
+    $lowercase = redact_activity_row(['input' => ['node_id' => 4, 'cliproxy_management_key' => '[redacted]']]);
     $empty = redact_activity_row(null);
     $untouched = DB::table('activity_log')->where('id', $handRedacted)->value('updated_at');
 
     $this->artisan('orbit:activity-redact')
-        ->expectsOutput('Scanned 4 Activity records. Redacted 1.')
+        ->expectsOutput('Scanned 5 Activity records. Redacted 1.')
         ->assertSuccessful();
 
     expect(redact_activity_properties($leaked))->toBe([
@@ -66,10 +67,11 @@ it('redacts secrets in stored activity and keeps every other field', function ()
         ->and(redact_activity_properties($handRedacted))->toBe(['input' => ['node_id' => 4, 'cliproxy_management_key' => '[REDACTED]']])
         ->and(DB::table('activity_log')->where('id', $handRedacted)->value('updated_at'))->toBe($untouched)
         ->and(redact_activity_properties($keyRemoved))->toBe(['input' => ['node_id' => 4]])
+        ->and(redact_activity_properties($lowercase))->toBe(['input' => ['node_id' => 4, 'cliproxy_management_key' => '[redacted]']])
         ->and(redact_activity_properties($empty))->toBeNull();
 
     $this->artisan('orbit:activity-redact')
-        ->expectsOutput('Scanned 4 Activity records. Redacted 0.')
+        ->expectsOutput('Scanned 5 Activity records. Redacted 0.')
         ->assertSuccessful();
 });
 

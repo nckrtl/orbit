@@ -63,20 +63,80 @@ it('fails closed for any field named like a key, token, secret, or password', fu
     'service_credentials',
     'credential',
     'certificate_pem',
+    'managementKEY',
+    'clientSECRET',
+    'apiToken',
+    'APIToken',
+    'X-Api-Key',
+    'authorization',
 ]);
 
-it('keeps numbers, booleans, and null under secret-named fields', function (): void {
+it('keeps usage counts, booleans, and null under secret-named fields', function (): void {
     $sanitizer = new CommandActivityInputSanitizer;
-    $counts = ['tokens' => 300, 'input_tokens' => 12, 'cost_per_token' => 0.5, 'password_set' => true, 'api_key' => null];
+    $counts = ['tokens' => 300, 'input_tokens' => 12, 'usedTokens' => 40, 'token_count' => 3, 'password_set' => true, 'api_key' => null];
 
     expect($sanitizer->sanitizeProperties($counts))->toBe($counts);
+});
+
+it('redacts numeric secrets under secret-named fields', function (): void {
+    $sanitizer = new CommandActivityInputSanitizer;
+
+    expect($sanitizer->sanitizeProperties(['password' => 12345678, 'api_key' => 9876543210, 'pin_secret' => 1.5]))
+        ->toBe(['password' => '[REDACTED]', 'api_key' => '[REDACTED]', 'pin_secret' => '[REDACTED]']);
+});
+
+it('redacts header maps', function (): void {
+    $sanitizer = new CommandActivityInputSanitizer;
+
+    expect($sanitizer->sanitizeProperties(['headers' => [
+        'Authorization' => 'Basic dXNlcjpwYXNz',
+        'Proxy-Authorization' => 'Basic dXNlcjpwYXNz',
+        'Cookie' => 'session=abc',
+        'Set-Cookie' => 'session=abc; HttpOnly',
+        'Accept' => 'application/json',
+    ]]))->toBe(['headers' => [
+        'Authorization' => '[REDACTED]',
+        'Proxy-Authorization' => '[REDACTED]',
+        'Cookie' => '[REDACTED]',
+        'Set-Cookie' => '[REDACTED]',
+        'Accept' => 'application/json',
+    ]]);
+});
+
+it('keeps secret words in text assignments beyond the name rule', function (): void {
+    $sanitizer = new CommandActivityInputSanitizer;
+
+    expect($sanitizer->redactText('PASSWORD_HASH=abc123 SECRET_KEY_BASE=def456 status=ok'))
+        ->toBe('PASSWORD_HASH=[REDACTED] SECRET_KEY_BASE=[REDACTED] status=ok')
+        ->and($sanitizer->redactText('{"password_hash":"abc123"}'))
+        ->toBe('{"password_hash":"[REDACTED]"}')
+        ->and($sanitizer->redactText('API_KEY: abc123'))
+        ->toBe('API_KEY: [REDACTED]');
+});
+
+it('keeps prose that mentions a bare key', function (): void {
+    $sanitizer = new CommandActivityInputSanitizer;
+
+    expect($sanitizer->redactText('Missing key: APP_NAME'))->toBe('Missing key: APP_NAME')
+        ->and($sanitizer->redactText('Duplicate keys: APP_NAME, APP_ENV'))->toBe('Duplicate keys: APP_NAME, APP_ENV');
 });
 
 it('keeps audited non-secret fields whose names contain a secret word', function (string $name): void {
     $sanitizer = new CommandActivityInputSanitizer;
 
     expect($sanitizer->sanitizeProperties([$name => 'public-value']))->toBe([$name => 'public-value']);
-})->with(['public_key', 'wireguard_public_key', 'host_key_fingerprint']);
+})->with([
+    'public_key',
+    'wireguard_public_key',
+    'wireguardPublicKey',
+    'ssh_public_key',
+    'public_pem',
+    'host_key_fingerprint',
+    'runtime_key',
+    'env_key',
+    'idempotency_key',
+    'token_expires_at',
+]);
 
 it('keeps ordinary fields for audit', function (): void {
     $sanitizer = new CommandActivityInputSanitizer;

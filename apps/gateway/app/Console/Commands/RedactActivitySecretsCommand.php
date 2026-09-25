@@ -38,7 +38,7 @@ final class RedactActivitySecretsCommand extends Command
 
                     $sanitized = $sanitizer->sanitizeProperties($properties);
 
-                    if ($sanitized === $properties) {
+                    if ($sanitized === $properties || $sanitized === $this->canonicalMarkers($properties)) {
                         continue;
                     }
 
@@ -58,6 +58,24 @@ final class RedactActivitySecretsCommand extends Command
             : "Scanned {$scanned} Activity records. Redacted {$redacted}.");
 
         return self::SUCCESS;
+    }
+
+    /**
+     * Reads a hand-written redaction marker in any case, such as `[redacted]`, as already redacted.
+     *
+     * @param  array<array-key, mixed>  $properties
+     * @return array<array-key, mixed>
+     */
+    private function canonicalMarkers(array $properties): array
+    {
+        return array_map(
+            fn (mixed $value): mixed => match (true) {
+                is_array($value) => $this->canonicalMarkers($value),
+                is_string($value) && strcasecmp($value, '[REDACTED]') === 0 => '[REDACTED]',
+                default => $value,
+            },
+            $properties,
+        );
     }
 
     /** @return array<array-key, mixed>|null */

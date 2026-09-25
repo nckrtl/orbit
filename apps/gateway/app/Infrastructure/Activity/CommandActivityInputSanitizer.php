@@ -39,6 +39,9 @@ final readonly class CommandActivityInputSanitizer
         'authtoken',
         'accesstoken',
         'privatekey',
+        'authorization',
+        'cookie',
+        'cookies',
     ];
 
     /**
@@ -49,19 +52,33 @@ final readonly class CommandActivityInputSanitizer
     private const array NON_SECRET_KEYS = [
         'public_key',
         'wireguard_public_key',
+        'ssh_public_key',
+        'public_pem',
         'host_key_fingerprint',
+        'runtime_key',
+        'env_key',
+        'idempotency_key',
+        'token_expires_at',
     ];
 
-    private const string SECRET_KEY_CORE =
-        '(?:KEYS?|TOKENS?|SECRETS?|PASSWORDS?|PASSWD|PASSPHRASE|CREDENTIALS?|BEARER|APIKEY|APPKEY|AUTHTOKEN|ACCESSTOKEN|PRIVATEKEY)';
+    /** Secret-named fields whose numeric values are usage counts, such as `tokens` or `token_count`. */
+    private const array NUMERIC_METRIC_SUFFIXES = ['tokens', 'count'];
 
-    private const string SECRET_KEY_IDENTIFIER = '(?:[A-Za-z][A-Za-z0-9]*[_-])*'.self::SECRET_KEY_CORE;
+    private const string SECRET_KEY_PREFIX = '(?:[A-Za-z][A-Za-z0-9]*[_-])';
+
+    private const string SECRET_KEY_SUFFIX = '(?:[_-](?:HASH|BASE))?';
+
+    /** A bare `key` in text is prose such as `Missing key: name`, so a key word needs a prefix such as `API_KEY`. */
+    private const string SECRET_KEY_IDENTIFIER =
+        '(?:'.self::SECRET_KEY_PREFIX.'*'
+        .'(?:TOKENS?|SECRETS?|PASSWORDS?|PASSWD|PASSPHRASE|CREDENTIALS?|BEARER|APIKEY|APPKEY|AUTHTOKEN|ACCESSTOKEN|PRIVATEKEY)'
+        .'|'.self::SECRET_KEY_PREFIX.'+KEYS?)'.self::SECRET_KEY_SUFFIX;
 
     private const string PEM_BLOCK_PATTERN = '/-----BEGIN [A-Z0-9 ]+-----[\s\S]*?-----END [A-Z0-9 ]+-----/';
 
     public function sanitize(mixed $value, ?string $key = null): mixed
     {
-        if (is_string($key) && $this->canCarrySecret($value) && $this->isSensitiveKey($key)) {
+        if (is_string($key) && $this->isSensitiveKey($key) && ! $this->isNumericMetric($key, $value)) {
             return self::REDACTED;
         }
 
@@ -154,19 +171,33 @@ final readonly class CommandActivityInputSanitizer
     }
 
     /**
-     * Numbers, booleans, and null carry counts and flags such as token usage, never a credential.
+     * Booleans and null carry no secret. Numbers stay only under usage-count names.
      */
-    private function canCarrySecret(mixed $value): bool
+    private function isNumericMetric(string $key, mixed $value): bool
     {
-        return ! is_int($value) && ! is_float($value) && ! is_bool($value) && $value !== null;
+        if (is_bool($value) || $value === null) {
+            return true;
+        }
+
+        if (! is_int($value) && ! is_float($value)) {
+            return false;
+        }
+
+        $segments = explode('_', $this->normalizeKey($key));
+
+        return in_array(end($segments), self::NUMERIC_METRIC_SUFFIXES, strict: true);
+    }
+
+    private function normalizeKey(string $key): string
+    {
+        $separated = preg_replace('/(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])/', '_', $key) ?? $key;
+
+        return trim(strtolower(preg_replace('/[^A-Za-z0-9]+/', '_', $separated) ?? $separated), '_');
     }
 
     private function isSensitiveKey(string $key): bool
     {
-        $underscored = str_replace(search: '-', replace: '_', subject: $key);
-        $normalized = preg_match('/\A[A-Z0-9_]+\z/D', $underscored) === 1
-            ? strtolower($underscored)
-            : Str::snake($underscored);
+        $normalized = $this->normalizeKey($key);
 
         if (in_array($normalized, self::NON_SECRET_KEYS, strict: true)) {
             return false;
