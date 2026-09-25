@@ -131,7 +131,16 @@ The Gateway runs one role operation per Node at a time. The lock covers these st
 - the app manager setup for `app-dev` and `app-prod`
 - the [Node agent](/reference/node-agent) converge that follows a role convergence
 
-The Metrics fleet reconcile runs after a role convergence and outside this lock. It converges exporters on every Node, and holding one Node's lock while it waits for another's could deadlock two operations. An exporter converge can therefore still run beside a role operation on the same Node.
+Two paths run steps on the Node outside this lock:
+
+- the Metrics fleet reconcile after a role convergence or removal, and after `node:add`
+- the Node agent converge at the `agent` step of `node:add`
+
+The Metrics fleet reconcile converges exporters on every Node. Holding one Node's lock while it waits for another's could deadlock two operations. An exporter converge can therefore still run beside a role operation on the same Node.
+
+The `agent` step of `node:add` runs after the role steps released the lock. It holds only the Node agent lock. It installs the agent's own files and restarts only `orbit-agent.service`, so it can run beside a role operation.
+
+An offline role removal, for a Node the Gateway cannot reach, also runs outside the lock. It changes only the Gateway and other Nodes, never the unreachable machine.
 
 `node:role:add`, `node:role:remove`, and the role steps of `node:add` take the lock before they claim the assignment. A second operation waits up to 2 minutes. If the Node is still busy, it fails and leaves the assignment as it was:
 
