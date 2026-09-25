@@ -14,6 +14,7 @@
             "default_branch": null,
             "root": null,
             "defaults": null,
+            "task_check": null,
             "excluded_nodes": []
         },
         "meta": {

@@ -14,6 +14,7 @@
             "default_branch": "release",
             "root": "web/public",
             "defaults": null,
+            "task_check": null,
             "excluded_nodes": []
         },
         "meta": {

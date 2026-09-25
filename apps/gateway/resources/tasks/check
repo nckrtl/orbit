@@ -2,12 +2,14 @@
 """Orbit task check (ADR 0125). The Gateway installs this script in .git/orbit/ and runs it over SSH.
 
 check start CHECKOUT [SETUP|-] [DELIVERABLES|-] [COMMAND]
-                                start the configured baseline check detached; print the process and the tree it checks.
+                                start the Project task check detached; print the process and the tree it checks.
                                 SETUP is a JSON file of setup steps to run first: [{"name", "command", "timeout_seconds"}]
                                 DELIVERABLES is a JSON file of the subtask's deliverables to verify after a passing check
                                 (ADR 0133): {"start", "tests": [{"id", "project", "file"}], "commands": [{"id", "command", "directory"}]}
+                                COMMAND is a file with the Project's task check command; an empty file runs no command.
+                                Without COMMAND, the check runs `composer check`.
 check run CHECKOUT HEAD TREE [SETUP|-] [DELIVERABLES|-] [COMMAND]
-                                run the setup steps and the check, then write check.json (started by `start`)
+                                run the setup steps and the command, then write check.json (started by `start`)
 check status PID STARTED        print running, finished (with the result), or lost
 check cancel PID STARTED        stop the check's process group
 """
@@ -214,8 +216,8 @@ def run(checkout, head, tree, setup=None, deliverables=None, command='composer c
             log.flush()
             exit_code = subprocess.run(['bash', '-lc', command], cwd=checkout, stdin=subprocess.DEVNULL,
                                        stdout=log, stderr=subprocess.STDOUT).returncode
-            if exit_code == 0 and deliverables:
-                evidence = verify_deliverables(checkout, tree, deliverables, log)
+        if failed_step is None and exit_code == 0 and deliverables:
+            evidence = verify_deliverables(checkout, tree, deliverables, log)
     head_after = git(checkout, 'rev-parse', 'HEAD')
     tree_after = working_tree(checkout)
     result = {

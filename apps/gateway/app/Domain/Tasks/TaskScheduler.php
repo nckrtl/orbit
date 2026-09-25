@@ -273,10 +273,13 @@ final readonly class TaskScheduler
         $repeats = $check instanceof TaskCheck
             ? TaskCheck::query()->where('task_comment_id', $receipt->id)->where('status', $check->status->value)->count()
             : 0;
+        $command = $group->app->taskCheckCommand();
+        $name = $command ?? 'the task check';
+        $owned = $command === null ? "Orbit's task check" : "Orbit's {$command}";
         $item = match (true) {
-            $check instanceof TaskCheck && $status === TaskCheckStatus::Failed => new TaskRubricItem('check_passed', false, "Orbit ran composer check, and it failed with exit code {$check->exit_code}. The end of its output:\n\n```\n".rtrim((string) $check->output)."\n```\n"),
-            $status === TaskCheckStatus::Cancelled => new TaskRubricItem('check_passed', false, "An operator cancelled Orbit's composer check before it finished."),
-            $check instanceof TaskCheck && $status === TaskCheckStatus::Changed && $repeats >= 2 => new TaskRubricItem('check_passed', false, 'The workspace changed while composer check ran, twice. Changed paths: '.implode(', ', $check->changed_paths ?? []).'. Make the check leave the tree unchanged, for example by ignoring the files it writes.'),
+            $check instanceof TaskCheck && $status === TaskCheckStatus::Failed => new TaskRubricItem('check_passed', false, "Orbit ran {$name}, and it failed with exit code {$check->exit_code}. The end of its output:\n\n```\n".rtrim((string) $check->output)."\n```\n"),
+            $status === TaskCheckStatus::Cancelled => new TaskRubricItem('check_passed', false, "An operator cancelled {$owned} before it finished."),
+            $check instanceof TaskCheck && $status === TaskCheckStatus::Changed && $repeats >= 2 => new TaskRubricItem('check_passed', false, "The workspace changed while {$name} ran, twice. Changed paths: ".implode(', ', $check->changed_paths ?? []).'. Make the check leave the tree unchanged, for example by ignoring the files it writes.'),
             default => null,
         };
         if ($item instanceof TaskRubricItem) {
@@ -288,13 +291,13 @@ final readonly class TaskScheduler
         }
         if ($status === TaskCheckStatus::Lost && $repeats >= 2) {
             $task->update(['completion_handoff_comment_id' => $receipt->id]);
-            $this->requestAssistance($task, $group, "Orbit's composer check stopped twice without a result.", $observation);
+            $this->requestAssistance($task, $group, "{$owned} stopped twice without a result.", $observation);
 
             return;
         }
 
         try {
-            $process = $this->checks->start($instance, [], $this->deliverableCheck($task));
+            $process = $this->checks->start($instance, $command, [], $this->deliverableCheck($task));
         } catch (TaskCheckException $exception) {
             $this->recordCommunicationFailure($task, $group, $exception->getMessage());
 
@@ -440,7 +443,7 @@ final readonly class TaskScheduler
         $receipt->update(['commit_sha' => $commit]);
         if ($pullRequest instanceof TaskRunPullRequest) {
             try {
-                $url = $this->publisher->publish($group, TaskPullRequestDescription::render($pullRequest, $group->tasks()->whereNotIn('status', [TaskStatus::Cancelled, TaskStatus::Failed])->count()));
+                $url = $this->publisher->publish($group, TaskPullRequestDescription::render($pullRequest, $group->tasks()->whereNotIn('status', [TaskStatus::Cancelled, TaskStatus::Failed])->count(), $group->app->taskCheckCommand()));
             } catch (TaskPullRequestException $exception) {
                 $this->recordCommunicationFailure($task, $group, $exception->getMessage());
 
@@ -495,7 +498,7 @@ final readonly class TaskScheduler
     {
         $instance = $group->taskable;
         $items = [
-            new TaskRubricItem('check_script', $instance instanceof AppInstance && $this->workspace->definesComposerCheckScript($instance), 'composer.json in the workspace does not define a check script, so Orbit cannot run composer check. Restore the check script.'),
+            new TaskRubricItem('check_script', ! self::runsComposerCheck($group->app->taskCheckCommand()) || $instance instanceof AppInstance && $this->workspace->definesComposerCheckScript($instance), 'composer.json in the workspace does not define a check script, so Orbit cannot run composer check. Restore the check script.'),
             $this->receiptItem($read, $receipt),
         ];
         $confirmation = $this->confirmationItem($task, $receipt, TaskThreadRole::Implementer);
@@ -660,7 +663,7 @@ final readonly class TaskScheduler
         if ($task->{$reminder} !== $task->{$attempt}) {
             try {
                 $this->prepareTurn($group, $task, $thread->role);
-                $this->actor->remindRubric($group, $thread, TaskRubricReminder::compose($thread->role, $failures, ! $implementer && $task->isLastSubtask(), $task->deliverableList()));
+                $this->actor->remindRubric($group, $thread, TaskRubricReminder::compose($thread->role, $failures, ! $implementer && $task->isLastSubtask(), $task->deliverableList(), $group->app->taskCheckCommand()));
             } catch (AgentDriverException|TaskRunReceiptException $exception) {
                 $this->recordCommunicationFailure($task, $group, $exception->getMessage());
 
@@ -1355,6 +1358,14 @@ final readonly class TaskScheduler
         $this->startBaseline($group, $task);
     }
 
+    /**
+     * Only a task check that runs `composer check` needs the workspace's Composer `check` script.
+     */
+    private static function runsComposerCheck(?string $command): bool
+    {
+        return $command !== null && preg_match('/\bcomposer\s+check\b/', $command) === 1;
+    }
+
     private function checkOutputShowsMissingDependencies(TaskCheck $check): bool
     {
         return preg_match(
@@ -1380,11 +1391,11 @@ final readonly class TaskScheduler
             ->map(static fn (ProjectLifecycleStep $step): array => ['name' => $step->name, 'command' => $step->command, 'timeout_seconds' => $step->timeout_seconds])
             ->values()
             ->all();
-        $command = $instance->app->taskBaselineCheck();
+        $command = $instance->app->taskCheckCommand();
         if ($command !== null && preg_match('/\\bcomposer\\b|\\bvendor\\//i', $command) === 1) {
             $setup[] = [
                 'name' => self::BASELINE_COMPOSER_INSTALL_STEP,
-                'command' => 'while IFS= read -r -d "" manifest; do project="${manifest%/composer.json}"; [ "$project" = "$manifest" ] && project="."; if [ -f "$project/composer.lock" ] && [ ! -f "$project/vendor/autoload.php" ]; then (cd "$project" && composer install --no-interaction --prefer-dist) || exit $?; fi; done < <(git ls-files -z -- "composer.json" ":(glob)**/composer.json")',
+                'command' => 'while IFS= read -r -d "" manifest; do project="${manifest%/composer.json}"; [ "$project" = "$manifest" ] && project="."; if { [ "$project" = "." ] || [ -f "$project/composer.lock" ]; } && [ ! -f "$project/vendor/autoload.php" ]; then (cd "$project" && composer install --no-interaction --prefer-dist) || exit $?; fi; done < <(git ls-files -z -- "composer.json" ":(glob)**/composer.json")',
                 'timeout_seconds' => 600,
             ];
         }
@@ -1396,7 +1407,7 @@ final readonly class TaskScheduler
             ];
         }
         try {
-            $process = $this->checks->start($instance, $setup, command: $command);
+            $process = $this->checks->start($instance, $command, $setup);
         } catch (TaskCheckException $exception) {
             $this->recordCommunicationFailure($task, $group, $exception->getMessage());
 

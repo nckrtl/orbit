@@ -56,6 +56,7 @@ function registration_payload(): array
             'repository_url' => 'git@github.com:acme/acme.git',
             'default_branch' => 'main',
             'root' => 'public',
+            'task_check' => 'composer check',
             'defaults' => null,
         ],
         'app_instance' => $instance,

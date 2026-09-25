@@ -9,12 +9,16 @@ namespace App\Domain\Tasks;
  */
 final readonly class TaskRunInstructions
 {
-    /** @param list<TaskDeliverable> $deliverables */
-    public static function implementer(array $deliverables = []): string
+    /**
+     * @param  list<TaskDeliverable>  $deliverables
+     * @param  string|null  $check  the Project task check command, or null when the Project has none (ADR 0125)
+     */
+    public static function implementer(array $deliverables = [], ?string $check = 'composer check'): string
     {
+        $passes = $check === null ? '' : ' and '.$check.' passes';
         $confirm = $deliverables === [] ? '' : ' Add --deliverable=ID=evidence for each deliverable of this subtask ('.self::ids($deliverables).'), where the evidence says where or how it is met. Orbit refuses the handoff without them, then checks file, test, and command deliverables against your diff and its own run.';
 
-        return self::autonomy().' When the brief is complete and composer check passes, end your turn with .git/orbit/run --outcome=ready_for_review --summary="What you changed".'.$confirm.' '.self::blocked();
+        return self::autonomy().' When the brief is complete'.$passes.', end your turn with .git/orbit/run --outcome=ready_for_review --summary="What you changed".'.$confirm.' '.self::blocked();
     }
 
     /**

@@ -44,3 +44,12 @@ it('accepts only a complete pull request description from a receipt', function (
     'empty change' => [['summary' => 'S', 'changes' => [''], 'breaking' => []], false],
     'not an array' => [null, false],
 ]);
+
+it('names the Project task check, or only the review when the Project has none', function (): void {
+    $pullRequest = new TaskRunPullRequest('Summary.', ['Change.'], []);
+
+    expect(TaskPullRequestDescription::render($pullRequest, 1, 'vp run check'))
+        ->toContain('Checks: each of the 1 subtasks passed `vp run check` and was approved by the reviewer.')
+        ->and(TaskPullRequestDescription::render($pullRequest, 1, null))
+        ->toContain('Checks: each of the 1 subtasks was approved by the reviewer.');
+});

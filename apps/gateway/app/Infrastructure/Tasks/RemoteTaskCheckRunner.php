@@ -21,7 +21,7 @@ final readonly class RemoteTaskCheckRunner implements TaskCheckRunner
 {
     public function __construct(private AppDevSshExecutor $ssh) {}
 
-    public function start(AppInstance $instance, array $setup = [], ?array $deliverables = null, ?string $command = 'composer check'): TaskCheckProcess
+    public function start(AppInstance $instance, ?string $command, array $setup = [], ?array $deliverables = null): TaskCheckProcess
     {
         $script = file_get_contents(resource_path('tasks/check'));
         if ($script === false) {

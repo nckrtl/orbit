@@ -68,9 +68,9 @@ it('per-project baseline skips an unset command and preserves custom command fai
         'name' => 'Project',
         'slug' => 'project',
         'repository_url' => 'git@github.com:acme/project.git',
-        'task_baseline_check' => 'printf "custom baseline failed\\n"; exit 7',
+        'task_check' => 'printf "custom baseline failed\\n"; exit 7',
     ]);
-    expect($project->taskBaselineCheck())->toBe('printf "custom baseline failed\\n"; exit 7');
+    expect($project->taskCheckCommand())->toBe('printf "custom baseline failed\\n"; exit 7');
 
     $node = Node::query()->create([
         'name' => 'baseline-node',
@@ -90,7 +90,7 @@ it('per-project baseline skips an unset command and preserves custom command fai
     ]);
     $runner = per_project_baseline_runner(new LocalShellSshExecutor);
 
-    $failed = $runner->start($instance, command: $project->taskBaselineCheck());
+    $failed = $runner->start($instance, command: $project->taskCheckCommand());
     $reading = null;
     for ($attempt = 0; $attempt < 100; $attempt++) {
         $reading = $runner->read($instance, $failed);
@@ -107,10 +107,10 @@ it('per-project baseline skips an unset command and preserves custom command fai
         'slug' => 'no-check',
         'repository_url' => 'git@github.com:acme/no-check.git',
     ]);
-    expect($unsetProject->taskBaselineCheck())->toBeNull();
+    expect($unsetProject->taskCheckCommand())->toBeNull();
     $instance->app()->associate($unsetProject);
     $instance->save();
-    $noCheck = $runner->start($instance, command: $unsetProject->taskBaselineCheck());
+    $noCheck = $runner->start($instance, command: $unsetProject->taskCheckCommand());
     $noOp = null;
     for ($attempt = 0; $attempt < 100; $attempt++) {
         $noOp = $runner->read($instance, $noCheck);
@@ -121,4 +121,21 @@ it('per-project baseline skips an unset command and preserves custom command fai
     }
     expect($noOp?->exitCode)->toBe(0)
         ->and($noOp?->output)->not->toContain('composer check');
+
+    $handoff = $runner->start($instance, null, [], [
+        'start' => null,
+        'tests' => [],
+        'commands' => [['id' => 'hello', 'command' => 'printf "deliverable ran\\n"', 'directory' => null]],
+    ]);
+    $verified = null;
+    for ($attempt = 0; $attempt < 100; $attempt++) {
+        $verified = $runner->read($instance, $handoff);
+        if ($verified->state !== 'running') {
+            break;
+        }
+        usleep(100_000);
+    }
+    expect($verified?->exitCode)->toBe(0)
+        ->and($verified?->deliverables['commands']['hello']['exit_code'] ?? null)->toBe(0)
+        ->and($verified?->output)->not->toContain('composer check');
 });

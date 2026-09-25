@@ -42,7 +42,7 @@ final class FakeTaskCheckRunner implements TaskCheckRunner
     /** @var list<string|null> configured commands for each started check */
     public array $commands = [];
 
-    public function start(AppInstance $instance, array $setup = [], ?array $deliverables = null, ?string $command = 'composer check'): TaskCheckProcess
+    public function start(AppInstance $instance, ?string $command, array $setup = [], ?array $deliverables = null): TaskCheckProcess
     {
         $this->starts++;
         $this->setups[] = $setup;

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\AppInstances\AppInstanceSourceLayout;
 use App\Domain\AppInstances\AppInstanceState;
+use App\Domain\AppInstances\Environment\AppInstanceEnvironmentOperationLock;
 use App\Domain\Projects\ProjectType;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Shared\LifecycleStatus;
@@ -27,25 +28,54 @@ beforeEach(function (): void {
 });
 
 describe('app updates', function (): void {
-    it('sets and clears the task baseline command on an existing Project', function (): void {
-        $command = 'composer check --token=baseline-secret';
+    it('sets and clears the task check as a visible Project setting', function (): void {
+        $command = 'vp run check --filter=api';
 
-        $response = $this->patchJson('/api/v1/apps/'.$this->fixture->app->id, [
-            'task_baseline_check' => $command,
-        ])->assertOk();
+        $this->patchJson('/api/v1/projects/'.$this->fixture->app->id, [
+            'task_check' => $command,
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.task_check', $command);
 
-        expect($this->fixture->app->refresh()->taskBaselineCheck())
+        expect($this->fixture->app->refresh()->taskCheckCommand())
             ->toBe($command)
-            ->and($response->getContent())
-            ->not->toContain($command, 'baseline-secret')
-            ->and(json_encode(Activity::query()->latest('id')->first()?->properties))
-            ->not->toContain($command, 'baseline-secret');
+            ->and(Activity::query()->latest('id')->first()?->properties['input']['task_check'] ?? null)
+            ->toBe($command);
 
-        $this->patchJson('/api/v1/apps/'.$this->fixture->app->id, [
-            'task_baseline_check' => null,
+        $this->patchJson('/api/v1/projects/'.$this->fixture->app->id, [
+            'task_check' => null,
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.task_check', null);
+
+        expect($this->fixture->app->refresh()->taskCheckCommand())->toBeNull();
+    });
+
+    it('stores the task check inside the update operation lock', function (): void {
+        $lock = new class($this->fixture->app->id) implements AppInstanceEnvironmentOperationLock
+        {
+            /** @var list<array{ids: list<int>, stored: string|null}> */
+            public array $runs = [];
+
+            public function __construct(private readonly int $appId) {}
+
+            public function run(array $appInstanceIds, Closure $operation): mixed
+            {
+                $result = $operation();
+                $this->runs[] = ['ids' => $appInstanceIds, 'stored' => OrbitApp::query()->findOrFail($this->appId)->task_check];
+
+                return $result;
+            }
+        };
+        $this->app->instance(AppInstanceEnvironmentOperationLock::class, $lock);
+
+        $this->patchJson('/api/v1/projects/'.$this->fixture->app->id, [
+            'task_check' => 'composer test',
         ])->assertOk();
 
-        expect($this->fixture->app->refresh()->taskBaselineCheck())->toBeNull();
+        expect($lock->runs)->toHaveCount(1)
+            ->and($lock->runs[0]['ids'])->toBe([$this->fixture->defaultInstance->id])
+            ->and($lock->runs[0]['stored'])->toBe('composer test');
     });
 
     it('refuses a Project root update that would expose an inherited Route target root', function (): void {

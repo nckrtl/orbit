@@ -847,7 +847,7 @@ it('keeps the reviewed pull request, writes settle metrics, and notifies Coder a
 
 it('runs the Project setup steps and check on the fresh workspace before the first implementer starts', function (): void {
     $app = scheduler_app('baseline-app');
-    $app->update(['task_baseline_check' => 'composer check']);
+    $app->update(['task_check' => 'composer check']);
     $instance = scheduler_instance($app, scheduler_node('baseline-node', '10.44.0.94'), 'baseline');
     $group = queued_group($app, 'Baseline', $instance);
     ProjectLifecycleStep::query()->create(['app_id' => $app->id, 'phase' => 'setup', 'name' => 'Install', 'command' => 'composer install', 'timeout_seconds' => 600, 'position' => 1]);
@@ -864,7 +864,7 @@ it('runs the Project setup steps and check on the fresh workspace before the fir
         ->and($checks->commands)->toBe(['composer check'])
         ->and($check->kind)->toBe(TaskCheckKind::Baseline)
         ->and($check->task_comment_id)->toBeNull()
-        ->and($checks->setups)->toBe([[['name' => 'Install', 'command' => 'composer install', 'timeout_seconds' => 600], ['name' => '[Orbit internal] Install Composer dependencies', 'command' => 'while IFS= read -r -d "" manifest; do project="${manifest%/composer.json}"; [ "$project" = "$manifest" ] && project="."; if [ -f "$project/composer.lock" ] && [ ! -f "$project/vendor/autoload.php" ]; then (cd "$project" && composer install --no-interaction --prefer-dist) || exit $?; fi; done < <(git ls-files -z -- "composer.json" ":(glob)**/composer.json")', 'timeout_seconds' => 600]]]);
+        ->and($checks->setups)->toBe([[['name' => 'Install', 'command' => 'composer install', 'timeout_seconds' => 600], ['name' => '[Orbit internal] Install Composer dependencies', 'command' => 'while IFS= read -r -d "" manifest; do project="${manifest%/composer.json}"; [ "$project" = "$manifest" ] && project="."; if { [ "$project" = "." ] || [ -f "$project/composer.lock" ]; } && [ ! -f "$project/vendor/autoload.php" ]; then (cd "$project" && composer install --no-interaction --prefer-dist) || exit $?; fi; done < <(git ls-files -z -- "composer.json" ":(glob)**/composer.json")', 'timeout_seconds' => 600]]]);
 
     test_pass_baseline();
 
@@ -874,7 +874,7 @@ it('runs the Project setup steps and check on the fresh workspace before the fir
 
 it('prepares Composer and JavaScript dependencies referenced by a custom baseline command', function (): void {
     $app = scheduler_app('custom-baseline-command');
-    $app->update(['task_baseline_check' => 'composer test && bun run check']);
+    $app->update(['task_check' => 'composer test && bun run check']);
     $instance = scheduler_instance($app, scheduler_node('custom-baseline-node', '10.44.0.98'), 'custom-check');
     queued_group($app, 'Custom baseline command', $instance);
     scheduler_bind_claim($instance, scheduler_recording_spawner());
@@ -910,7 +910,7 @@ it('passes an unset Project baseline without a command and starts the first impl
 
 it('asks for assistance, and starts no agent, when the fresh workspace fails its check', function (?string $failedStep, string $reason): void {
     $app = scheduler_app('broken-main');
-    $app->update(['task_baseline_check' => 'composer check']);
+    $app->update(['task_check' => 'composer check']);
     $instance = scheduler_instance($app, scheduler_node('broken-node', '10.44.0.95'), 'broken');
     $group = queued_group($app, 'Broken main', $instance);
     $spawner = scheduler_recording_spawner();

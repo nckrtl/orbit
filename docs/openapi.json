@@ -1010,6 +1010,13 @@
                       "array",
                       "null"
                     ]
+                  },
+                  "task_check": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 4096
                   }
                 },
                 "required": [
@@ -1328,7 +1335,7 @@
                     "type": "string",
                     "maxLength": 255
                   },
-                  "task_baseline_check": {
+                  "task_check": {
                     "type": [
                       "string",
                       "null"
@@ -1409,7 +1416,7 @@
           {
             "lang": "bash",
             "label": "curl",
-            "source": "curl -sS -X PATCH \"https://gateway.orbit/api/v1/apps/4\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{}'\n"
+            "source": "curl -sS -X PATCH \"https://gateway.orbit/api/v1/apps/4\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"code\": \"ACM\"}'\n"
           }
         ]
       }
@@ -14611,10 +14618,19 @@
                       "array",
                       "null"
                     ]
+                  },
+                  "task_check": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 4096,
+                    "description": "Task check command; defaults to composer check for Laravel types and none otherwise"
                   }
                 },
                 "required": [
                   "slug",
+                  "type",
                   "repository_url",
                   "root"
                 ],
@@ -14703,7 +14719,7 @@
           {
             "lang": "bash",
             "label": "curl",
-            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/projects\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"slug\": \"acme\", \"repository_url\": \"https://github.com/acme/site.git\", \"root\": \"public\"}'\n"
+            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/projects\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"slug\": \"acme\", \"type\": \"monorepo\", \"repository_url\": \"https://github.com/acme/site.git\", \"root\": \"public\"}'\n"
           },
           {
             "lang": "php",
@@ -14951,12 +14967,13 @@
                     "maxLength": 255,
                     "description": "New repository-relative root; package types may use ."
                   },
-                  "task_baseline_check": {
+                  "task_check": {
                     "type": [
                       "string",
                       "null"
                     ],
-                    "maxLength": 4096
+                    "maxLength": 4096,
+                    "description": "New task check command for task baselines and handoffs"
                   }
                 },
                 "additionalProperties": false
@@ -15032,7 +15049,7 @@
           {
             "lang": "bash",
             "label": "curl",
-            "source": "curl -sS -X PATCH \"https://gateway.orbit/api/v1/projects/4\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{}'\n"
+            "source": "curl -sS -X PATCH \"https://gateway.orbit/api/v1/projects/4\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"code\": \"ACM\"}'\n"
           },
           {
             "lang": "php",
@@ -22589,6 +22606,12 @@
               "null"
             ],
             "additionalProperties": true
+          },
+          "task_check": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },

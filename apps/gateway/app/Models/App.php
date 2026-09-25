@@ -23,7 +23,7 @@ use SensitiveParameter;
  * @property string|null $default_branch
  * @property string|null $root
  * @property array<string, mixed>|null $defaults
- * @property string|null $task_baseline_check
+ * @property string|null $task_check
  * @property-read Collection<int, TaskGroup> $taskGroups
  */
 final class App extends Model
@@ -36,11 +36,11 @@ final class App extends Model
 
     /** @var list<string> */
     #[\Override]
-    protected $fillable = ['name', 'code', 'slug', 'type', 'repository_url', 'default_branch', 'root', 'defaults', 'task_baseline_check'];
+    protected $fillable = ['name', 'code', 'slug', 'type', 'repository_url', 'default_branch', 'root', 'defaults', 'task_check'];
 
     /** @var list<string> */
     #[\Override]
-    protected $hidden = ['defaults', 'repository_identity', 'task_baseline_check'];
+    protected $hidden = ['defaults', 'repository_identity'];
 
     protected static function booted(): void
     {
@@ -106,9 +106,9 @@ final class App extends Model
         return $this->type->isWebServing();
     }
 
-    public function taskBaselineCheck(): ?string
+    public function taskCheckCommand(): ?string
     {
-        $command = $this->task_baseline_check;
+        $command = $this->task_check;
 
         return is_string($command) && trim($command) !== '' ? trim($command) : null;
     }

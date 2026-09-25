@@ -14,7 +14,8 @@
                 "repository_url": "https://github.com/example/acme.git",
                 "default_branch": "release",
                 "root": "web/public",
-                "defaults": null
+                "defaults": null,
+                "task_check": null
             },
             {
                 "id": 2,
@@ -25,7 +26,8 @@
                 "repository_url": "git@github.com:example/bravo-docs.git",
                 "default_branch": "main",
                 "root": "public",
-                "defaults": null
+                "defaults": null,
+                "task_check": null
             },
             {
                 "id": 3,
@@ -36,7 +38,8 @@
                 "repository_url": "git@github.com:example/charlie-shop.git",
                 "default_branch": "main",
                 "root": "public",
-                "defaults": null
+                "defaults": null,
+                "task_check": null
             },
             {
                 "id": 4,
@@ -47,7 +50,8 @@
                 "repository_url": "https://github.com/example/delta-api.git",
                 "default_branch": "main",
                 "root": "public",
-                "defaults": null
+                "defaults": null,
+                "task_check": null
             },
             {
                 "id": 5,
@@ -58,7 +62,8 @@
                 "repository_url": "git@github.com:example/echo-mail.git",
                 "default_branch": "release",
                 "root": "public",
-                "defaults": null
+                "defaults": null,
+                "task_check": null
             },
             {
                 "id": 6,
@@ -69,7 +74,8 @@
                 "repository_url": "git@github.com:example/foxtrot-crm.git",
                 "default_branch": "main",
                 "root": "web/public",
-                "defaults": null
+                "defaults": null,
+                "task_check": null
             },
             {
                 "id": 7,
@@ -80,7 +86,8 @@
                 "repository_url": "https://github.com/example/golf-billing.git",
                 "default_branch": "main",
                 "root": "public",
-                "defaults": null
+                "defaults": null,
+                "task_check": null
             },
             {
                 "id": 8,
@@ -91,7 +98,8 @@
                 "repository_url": "git@github.com:example/hotel-booking.git",
                 "default_branch": "main",
                 "root": "public",
-                "defaults": null
+                "defaults": null,
+                "task_check": null
             },
             {
                 "id": 9,
@@ -102,7 +110,8 @@
                 "repository_url": "git@github.com:example/india-search.git",
                 "default_branch": "release",
                 "root": "public",
-                "defaults": null
+                "defaults": null,
+                "task_check": null
             },
             {
                 "id": 10,
@@ -113,7 +122,8 @@
                 "repository_url": "https://github.com/example/juliet-chat.git",
                 "default_branch": "main",
                 "root": "public",
-                "defaults": null
+                "defaults": null,
+                "task_check": null
             },
             {
                 "id": 11,
@@ -124,7 +134,8 @@
                 "repository_url": "git@github.com:example/kilo-metrics.git",
                 "default_branch": "main",
                 "root": "web/public",
-                "defaults": null
+                "defaults": null,
+                "task_check": null
             },
             {
                 "id": 12,
@@ -135,7 +146,8 @@
                 "repository_url": "git@github.com:example/lima-auth.git",
                 "default_branch": "main",
                 "root": "public",
-                "defaults": null
+                "defaults": null,
+                "task_check": null
             },
             {
                 "id": 13,
@@ -146,7 +158,8 @@
                 "repository_url": "https://github.com/example/mike-media.git",
                 "default_branch": "release",
                 "root": "public",
-                "defaults": null
+                "defaults": null,
+                "task_check": null
             },
             {
                 "id": 14,
@@ -157,7 +170,8 @@
                 "repository_url": "git@github.com:example/november-news.git",
                 "default_branch": "main",
                 "root": "public",
-                "defaults": null
+                "defaults": null,
+                "task_check": null
             },
             {
                 "id": 15,
@@ -168,7 +182,8 @@
                 "repository_url": "git@github.com:example/oscar-orders.git",
                 "default_branch": "main",
                 "root": "public",
-                "defaults": null
+                "defaults": null,
+                "task_check": null
             },
             {
                 "id": 16,
@@ -179,7 +194,8 @@
                 "repository_url": "https://github.com/example/papa-payments.git",
                 "default_branch": "main",
                 "root": "web/public",
-                "defaults": null
+                "defaults": null,
+                "task_check": null
             },
             {
                 "id": 17,
@@ -190,7 +206,8 @@
                 "repository_url": "git@github.com:example/quebec-queue.git",
                 "default_branch": "release",
                 "root": "public",
-                "defaults": null
+                "defaults": null,
+                "task_check": null
             },
             {
                 "id": 18,
@@ -201,7 +218,8 @@
                 "repository_url": "git@github.com:example/romeo-reports.git",
                 "default_branch": "main",
                 "root": "public",
-                "defaults": null
+                "defaults": null,
+                "task_check": null
             },
             {
                 "id": 19,
@@ -212,7 +230,8 @@
                 "repository_url": "https://github.com/example/sierra-store.git",
                 "default_branch": "main",
                 "root": "public",
-                "defaults": null
+                "defaults": null,
+                "task_check": null
             },
             {
                 "id": 20,
@@ -223,7 +242,8 @@
                 "repository_url": "git@github.com:example/tango-tickets.git",
                 "default_branch": "main",
                 "root": "public",
-                "defaults": null
+                "defaults": null,
+                "task_check": null
             },
             {
                 "id": 21,
@@ -234,7 +254,8 @@
                 "repository_url": "git@github.com:example/uniform-uploads.git",
                 "default_branch": "release",
                 "root": "web/public",
-                "defaults": null
+                "defaults": null,
+                "task_check": null
             },
             {
                 "id": 22,
@@ -245,7 +266,8 @@
                 "repository_url": "https://github.com/example/victor-video.git",
                 "default_branch": "main",
                 "root": "public",
-                "defaults": null
+                "defaults": null,
+                "task_check": null
             },
             {
                 "id": 23,
@@ -256,7 +278,8 @@
                 "repository_url": "git@github.com:example/whiskey-wiki.git",
                 "default_branch": "main",
                 "root": "public",
-                "defaults": null
+                "defaults": null,
+                "task_check": null
             },
             {
                 "id": 24,
@@ -267,7 +290,8 @@
                 "repository_url": "git@github.com:example/x-ray-export.git",
                 "default_branch": "main",
                 "root": "public",
-                "defaults": null
+                "defaults": null,
+                "task_check": null
             }
         ],
         "meta": {

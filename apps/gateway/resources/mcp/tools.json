@@ -453,6 +453,13 @@
               "array",
               "null"
             ]
+          },
+          "task_check": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 4096
           }
         },
         "additionalProperties": false,
@@ -1193,7 +1200,7 @@
             "type": "string",
             "maxLength": 255
           },
-          "task_baseline_check": {
+          "task_check": {
             "type": [
               "string",
               "null"
@@ -4690,11 +4697,20 @@
               "array",
               "null"
             ]
+          },
+          "task_check": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 4096,
+            "description": "Task check command; defaults to composer check for Laravel types and none otherwise"
           }
         },
         "additionalProperties": false,
         "required": [
           "slug",
+          "type",
           "repository_url",
           "root"
         ]
@@ -5522,12 +5538,13 @@
             "maxLength": 255,
             "description": "New repository-relative root; package types may use ."
           },
-          "task_baseline_check": {
+          "task_check": {
             "type": [
               "string",
               "null"
             ],
-            "maxLength": 4096
+            "maxLength": 4096,
+            "description": "New task check command for task baselines and handoffs"
           }
         },
         "additionalProperties": false,

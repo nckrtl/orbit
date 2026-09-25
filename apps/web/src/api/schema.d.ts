@@ -3048,6 +3048,7 @@ export interface components {
             defaults?: {
                 [key: string]: unknown;
             } | null;
+            task_check?: string | null;
         };
         DevelopmentNodeExclusion: {
             project_id?: number;
@@ -4105,6 +4106,7 @@ export interface operations {
                     default_branch?: string;
                     root: string;
                     defaults?: unknown[] | null;
+                    task_check?: string | null;
                 };
             };
         };
@@ -4281,7 +4283,7 @@ export interface operations {
                     repository_url?: string;
                     default_branch?: string;
                     root?: string;
-                    task_baseline_check?: string | null;
+                    task_check?: string | null;
                 };
             };
         };
@@ -11339,13 +11341,15 @@ export interface operations {
                      * @description Project type (monorepo, laravel-app, laravel-package, or node-package)
                      * @enum {string}
                      */
-                    type?: "monorepo" | "laravel-app" | "laravel-package" | "node-package";
+                    type: "monorepo" | "laravel-app" | "laravel-package" | "node-package";
                     repository_url: string;
                     /** @description Stored default branch; resolve the remote default when omitted */
                     default_branch?: string;
                     /** @description Repository-relative root; defaults to . for package types and public otherwise */
                     root: string;
                     defaults?: unknown[] | null;
+                    /** @description Task check command; defaults to composer check for Laravel types and none otherwise */
+                    task_check?: string | null;
                 };
             };
         };
@@ -11528,7 +11532,8 @@ export interface operations {
                     default_branch?: string;
                     /** @description New repository-relative root; package types may use . */
                     root?: string;
-                    task_baseline_check?: string | null;
+                    /** @description New task check command for task baselines and handoffs */
+                    task_check?: string | null;
                 };
             };
         };

@@ -12,16 +12,19 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('apps', static function (Blueprint $table): void {
-            $table->text('task_baseline_check')->nullable();
+            $table->text('task_check')->nullable();
         });
 
-        DB::table('apps')->update(['task_baseline_check' => 'composer check']);
+        // ADR 0125: Laravel Projects keep the `composer check` gate; monorepo and node-package Projects run no check command.
+        DB::table('apps')
+            ->whereIn('type', ['laravel-app', 'laravel-package'])
+            ->update(['task_check' => 'composer check']);
     }
 
     public function down(): void
     {
         Schema::table('apps', static function (Blueprint $table): void {
-            $table->dropColumn('task_baseline_check');
+            $table->dropColumn('task_check');
         });
     }
 };

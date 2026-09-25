@@ -18,11 +18,11 @@ interface TaskCheckRunner
      *
      * @param  list<array{name: string, command: string, timeout_seconds: int}>  $setup
      * @param  array{start: string|null, tests: list<array{id: string, project: string, file: string}>, commands: list<array{id: string, command: string, directory: string}>}|null  $deliverables
-     * @param  string|null  $command  the command to run, or null for a no-op check
+     * @param  string|null  $command  the Project task check command, or null to run no command
      *
      * @throws TaskCheckException
      */
-    public function start(AppInstance $instance, array $setup = [], ?array $deliverables = null, ?string $command = 'composer check'): TaskCheckProcess;
+    public function start(AppInstance $instance, ?string $command, array $setup = [], ?array $deliverables = null): TaskCheckProcess;
 
     /** @throws TaskCheckException */
     public function read(AppInstance $instance, TaskCheckProcess $process): TaskCheckReading;
