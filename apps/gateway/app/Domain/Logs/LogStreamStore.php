@@ -7,8 +7,8 @@ namespace App\Domain\Logs;
 use App\Infrastructure\Logs\CacheLogStreamStore;
 
 /**
- * The open live log streams (ADR 0153). PHP-FPM workers open, renew, and close streams; the agent
- * view subscriber reads them to relay lines and ends streams whose lease ran out.
+ * The open live log streams (ADR 0153). PHP-FPM workers open, renew, and close streams; the log relay
+ * runs of the agent view publisher read them to relay lines and end streams whose lease ran out.
  *
  * @see CacheLogStreamStore
  */
@@ -52,4 +52,10 @@ interface LogStreamStore
      * @return list<LogStream>
      */
     public function sweep(): array;
+
+    /** How far the relay got with a stream, or null before its first `log.lines` event. */
+    public function cursor(string $id): ?LogRelayCursor;
+
+    /** Records how far the relay got with an open stream. Closing or sweeping the stream removes it. */
+    public function saveCursor(string $id, LogRelayCursor $cursor): void;
 }

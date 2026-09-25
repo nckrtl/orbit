@@ -37,7 +37,13 @@ export type LogStreamClosed = { id: string; closed: true };
 /** `data` of the `log.lines` event on `private-log-stream.{stream}`. */
 export type LogLinesEvent = { sequence: number; lines: string[]; dropped: number; skipped: number };
 
-export type LogEndedReason = "closed" | "expired" | "revoked" | "agent_left" | "source_unavailable";
+export type LogEndedReason =
+    | "closed"
+    | "expired"
+    | "revoked"
+    | "agent_left"
+    | "source_unavailable"
+    | "relay_behind";
 
 /** `data` of the `log.ended` event on `private-log-stream.{stream}`. */
 export type LogEndedEvent = { reason: LogEndedReason };
@@ -375,7 +381,7 @@ export class LogTail {
         } else if (reason === "revoked") {
             this.set({ status: "revoked", subscribed: false, reason });
         } else {
-            // `agent_left`, `source_unavailable`, and a `closed` this pane did not ask for.
+            // `agent_left`, `source_unavailable`, `relay_behind`, and a `closed` this pane did not ask for.
             this.fallback(reason);
         }
     }

@@ -173,6 +173,22 @@ describe('opening a live log stream', function (): void {
         'agent before 0.3.0' => [fn ($test) => log_stream_agent($test->serving, logs: false), 'agent_outdated'],
     ]);
 
+    it('sends a production Instance log to SSH reads before it checks the live path', function (Closure $arrange): void {
+        $arrange($this);
+        app(CacheAgentStateView::class)->forgetSubscriber();
+
+        ($this->open)()
+            ->assertStatus(409)
+            ->assertJsonPath('error.code', 'logs.live_unavailable')
+            ->assertJsonPath('error.details.reason', 'ssh_only')
+            ->assertJsonPath('error.message', 'A production Instance log is read over SSH only.');
+
+        expect(app(LogStreamStore::class)->all())->toBe([]);
+    })->with([
+        'production Instance' => [fn ($test) => $test->instance->update(['environment' => 'production', 'production_home' => '/home/shop', 'checkout_path' => '/home/shop/releases/1'])],
+        'app-prod Node' => [fn ($test) => $test->serving->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active])],
+    ]);
+
     it('allows sixteen open streams for each serving Node', function (): void {
         foreach (range(1, 16) as $index) {
             ($this->open)(['socket_id' => "{$index}.1"])->assertCreated();

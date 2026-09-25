@@ -12,4 +12,5 @@ enum LogStreamEndReason: string
     case Revoked = 'revoked';
     case AgentLeft = 'agent_left';
     case SourceUnavailable = 'source_unavailable';
+    case RelayBehind = 'relay_behind';
 }

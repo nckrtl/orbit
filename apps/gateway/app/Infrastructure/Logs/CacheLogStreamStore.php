@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Logs;
 
+use App\Domain\Logs\LogRelayCursor;
 use App\Domain\Logs\LogStream;
 use App\Domain\Logs\LogStreamStore;
 use App\Infrastructure\AgentView\CacheAgentStateView;
@@ -26,6 +27,8 @@ final readonly class CacheLogStreamStore implements LogStreamStore
     private const string STREAM_KEY = 'log-streams.stream.';
 
     private const string LOCK_KEY = 'log-streams.lock';
+
+    private const string CURSOR_KEY = 'log-streams.cursor.';
 
     /** Seconds an entry outlives its lease, so a store without a subscriber still empties itself. */
     private const int GraceSeconds = 60;
@@ -94,6 +97,7 @@ final readonly class CacheLogStreamStore implements LogStreamStore
             unset($index[$id]);
             $this->putIndex($index);
             $this->cache->forget(self::STREAM_KEY.$id);
+            $this->cache->forget(self::CURSOR_KEY.$id);
 
             return $stream;
         });
@@ -166,12 +170,27 @@ final readonly class CacheLogStreamStore implements LogStreamStore
 
                 unset($index[$id]);
                 $this->cache->forget(self::STREAM_KEY.$id);
+                $this->cache->forget(self::CURSOR_KEY.$id);
             }
 
             $this->putIndex($index);
 
             return $ended;
         });
+    }
+
+    #[\Override]
+    public function cursor(string $id): ?LogRelayCursor
+    {
+        return preg_match(LogStream::ID, $id) === 1 ? LogRelayCursor::fromArray($this->cache->get(self::CURSOR_KEY.$id)) : null;
+    }
+
+    #[\Override]
+    public function saveCursor(string $id, LogRelayCursor $cursor): void
+    {
+        if (preg_match(LogStream::ID, $id) === 1) {
+            $this->cache->put(self::CURSOR_KEY.$id, $cursor->toArray(), self::LeaseSeconds + self::GraceSeconds);
+        }
     }
 
     /** @return array<string, array{node_id: int, expires_at: float}> */

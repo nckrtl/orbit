@@ -14,7 +14,8 @@ use App\Infrastructure\AgentView\CacheAgentStateView;
 use App\Models\Node;
 
 /**
- * Opens a live log stream for one viewer (ADR 0153): checks that the serving Node can stream,
+ * Opens a live log stream for one viewer (ADR 0153): checks that the serving Node can stream and
+ * that its agent can read the source, which it cannot for a production Instance,
  * stores the stream with a lease, and signs the viewer's socket for the stream's private channel.
  * The stream stays inactive until the viewer's first renewal, so the agent starts reading only
  * after the viewer subscribed.
@@ -31,7 +32,7 @@ final readonly class OpenLogStreamAction
     public function execute(LogStreamTarget $target, Node $viewer, string $socketId, int $lines): array
     {
         $nodeId = (int) $target->node->getKey();
-        $reason = $this->availability->unavailableReason($nodeId);
+        $reason = $target->sshOnly ? 'ssh_only' : $this->availability->unavailableReason($nodeId);
         $connection = $this->realtime->resolve();
 
         if ($reason !== null || $connection === null) {
@@ -39,7 +40,9 @@ final readonly class OpenLogStreamAction
 
             throw new ResourceOperationException(
                 errorCode: 'logs.live_unavailable',
-                message: "The live log path is not available for Node [{$target->node->name}] ({$reason}).",
+                message: $target->sshOnly
+                    ? 'A production Instance log is read over SSH only.'
+                    : "The live log path is not available for Node [{$target->node->name}] ({$reason}).",
                 status: 409,
                 details: ['reason' => $reason],
             );

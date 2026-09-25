@@ -42,8 +42,9 @@ use Throwable;
  * in a child process through `AgentViewPublisher`, so the socket loop never waits for them.
  *
  * ADR 0153 adds the log channel `presence-node-logs.{id}` of every Node. The subscriber records
- * whether the agent joined it on any server, and relays the agent's `client-log` lines to the viewers
- * of live log streams through {@see LogRelay}. It never sends a client event there either.
+ * whether the agent joined it on any server and queues the agent's log events with the publisher,
+ * whose log relay runs redact and publish them for the viewers of live log streams. It never sends a
+ * client event there either.
  */
 final class AgentViewSubscriber
 {
@@ -120,7 +121,6 @@ final class AgentViewSubscriber
      * @param  Closure(): float  $clock
      * @param  Closure(float): void  $sleep
      * @param  (Closure(): WebSocketClient)|null  $sockets  Makes the socket of a second link.
-     * @param  (Closure(): void)|null  $broadcastingChanged  Runs after every connect, so relayed log broadcasts use the current Reverb connection.
      */
     public function __construct(
         WebSocketClient $socket,
@@ -136,8 +136,6 @@ final class AgentViewSubscriber
         private readonly int $reverbPort = 443,
         private readonly ?AgentViewPublisher $publisher = null,
         ?Closure $sockets = null,
-        private readonly ?LogRelay $logs = null,
-        private readonly ?Closure $broadcastingChanged = null,
     ) {
         $this->idleSockets = [$socket];
         $this->sockets = $sockets ?? static fn (): WebSocketClient => new StreamWebSocketClient;
@@ -232,7 +230,6 @@ final class AgentViewSubscriber
         }
 
         $this->flush();
-        $this->logs?->sweep();
         $this->queueUsage();
         $this->publisher?->poll();
 
@@ -394,13 +391,9 @@ final class AgentViewSubscriber
         $link->lastMessageAt = $this->now();
         $link->pingSentAt = null;
         $this->log->info('The agent view subscriber connected to Reverb.', ['address' => $link->address]);
-
-        // The log relay broadcasts from this process: it must use the connection just joined, also after a rotation.
-        if ($this->broadcastingChanged !== null) {
-            ($this->broadcastingChanged)();
-        }
-
         $this->refresh();
+        // Streams may have opened, or lost their viewer's access, while no subscriber watched.
+        $this->publisher?->logStreamsChanged();
     }
 
     private function isServingLink(AgentViewLink $link): bool
@@ -623,8 +616,9 @@ final class AgentViewSubscriber
     }
 
     /**
-     * Keeps the agent's log channel membership and relays its log events (ADR 0153). Reverb stamps a
-     * client event with the sender's member ID, so only `agent.{id}` can send lines for Node `{id}`.
+     * Keeps the agent's log channel membership and queues its log events for the relay (ADR 0153).
+     * Reverb stamps a client event with the sender's member ID, so only `agent.{id}` can send lines
+     * for Node `{id}`. Nothing here waits: the relay runs outside the socket loop.
      *
      * @param  array<string, mixed>  $message
      */
@@ -652,18 +646,15 @@ final class AgentViewSubscriber
             return;
         }
 
-        if (($message['user_id'] ?? null) !== $agent || $this->logs === null) {
+        // The Gateway's own prompt to the agent: a stream opened, was renewed for the first time, or closed.
+        if ($event === 'log-streams.changed') {
+            $this->publisher?->logStreamsChanged();
+
             return;
         }
 
-        try {
-            match ($event) {
-                'client-log' => $this->logs->lines($nodeId, $data),
-                'client-log-end' => $this->logs->end($nodeId, $data),
-                default => null,
-            };
-        } catch (Throwable $exception) {
-            $this->log->warning('The agent view subscriber could not relay log lines.', ['node_id' => $nodeId, 'error' => $exception->getMessage()]);
+        if (($message['user_id'] ?? null) === $agent && in_array($event, ['client-log', 'client-log-end'], strict: true)) {
+            $this->publisher?->queueLog($nodeId, $event, $data);
         }
     }
 
@@ -679,11 +670,7 @@ final class AgentViewSubscriber
         }
 
         if ($was && ! $now) {
-            try {
-                $this->logs?->agentLeft($nodeId);
-            } catch (Throwable $exception) {
-                $this->log->warning('The agent view subscriber could not end the log streams of a Node.', ['node_id' => $nodeId, 'error' => $exception->getMessage()]);
-            }
+            $this->publisher?->queueLogAgentLeft($nodeId);
         }
     }
 

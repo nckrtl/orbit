@@ -43,6 +43,9 @@ final class LogFollower
 
     private int $stream = 0;
 
+    /** The last `log.lines` sequence printed from the current stream. */
+    private int $sequence = 0;
+
     /** @var list<string>|null Lines of a reopened stream held until they reach the last printed line. */
     private ?array $catchUp = null;
 
@@ -164,6 +167,12 @@ final class LogFollower
 
     private function receive(LogStreamEvent $event): void
     {
+        if ($this->opener->openedCount() === $this->stream && $event->sequence <= $this->sequence) {
+            // The Gateway repeats a part after a failed relay run; its sequence shows it was printed.
+            return;
+        }
+
+        $this->sequence = $event->sequence;
         $lines = array_map(LogRedaction::redact(...), $event->lines);
 
         if ($this->opener->openedCount() !== $this->stream) {

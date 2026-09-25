@@ -8,13 +8,16 @@ use App\Domain\Broadcasting\RealtimeConnection;
 use DateTimeInterface;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
+use RuntimeException;
 use Throwable;
 
 /**
  * Publishes the server events of live log streams through the Reverb HTTP API (ADR 0153).
  *
- * A failed publish never fails the request or the relay pass that caused it: the viewer notices a
- * gap, an expired lease, or a closed stream, and falls back or reopens.
+ * A failed `log-streams.changed` or `log.ended` never fails the request or the relay run that caused
+ * it: the agent reads its stream list again on its next prompt, and the viewer's next renewal finds
+ * the stream closed. A failed `log.lines` throws instead, so the relay run fails and publishes the
+ * lines again, in order, instead of losing them.
  */
 final readonly class LogStreamBroadcaster
 {
@@ -29,10 +32,18 @@ final readonly class LogStreamBroadcaster
         $this->publish(new LogStreamBroadcast("presence-node-logs.{$nodeId}", 'log-streams.changed', []));
     }
 
-    /** @param list<string> $lines */
+    /**
+     * @param  list<string>  $lines
+     *
+     * @throws RuntimeException when Reverb is not configured or refused the event.
+     */
     public function lines(string $streamId, int $sequence, array $lines, int $dropped, int $skipped): void
     {
-        $this->publish(new LogStreamBroadcast('private-log-stream.'.$streamId, 'log.lines', $this->envelope('log.lines', $streamId, [
+        if (! $this->realtime->configureBroadcasting()) {
+            throw new RuntimeException('No websocket role is active.');
+        }
+
+        event(new LogStreamBroadcast('private-log-stream.'.$streamId, 'log.lines', $this->envelope('log.lines', $streamId, [
             'sequence' => $sequence,
             'lines' => $lines,
             'dropped' => $dropped,

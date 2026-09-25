@@ -43,6 +43,8 @@ final readonly class LogStreamTargetResolver
             (int) $instance->id,
             Node::query()->findOrFail($instance->node_id),
             LogStreamSource::laravel($checkout),
+            // A production Instance lives in its own home, which the agent's unit hides (ADR 0151).
+            sshOnly: $instance->placedOnAppProd(),
         );
     }
 

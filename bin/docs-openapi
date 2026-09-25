@@ -1154,7 +1154,7 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
     if route['method'] in ('POST', 'PUT', 'PATCH', 'DELETE') and route['name'] not in INTERNAL:
         responses['409'] = error_response('A guard refused the change and the Gateway changed nothing; `error.code` names the guard.')
     if route['name'] in ('instance:log-stream:create', 'process:log-stream:create'):
-        responses['409'] = error_response('The live log path is not available (`logs.live_unavailable`); `details.reason` is `realtime_not_configured`, `subscriber_down`, `agent_unavailable`, or `agent_outdated`.')
+        responses['409'] = error_response('The live log path is not available (`logs.live_unavailable`); `details.reason` is `ssh_only` for a production Instance, or `realtime_not_configured`, `subscriber_down`, `agent_unavailable`, or `agent_outdated`.')
     if route['name'] in ('instance:log-stream:renew', 'instance:log-stream:destroy', 'process:log-stream:renew', 'process:log-stream:destroy'):
         responses['404'] = error_response('The stream does not exist, has ended, belongs to another record, or was opened by another Node (`logs.stream_not_found`).')
     if route['name'] in ('tasks:list', 'tasks:show', 'tasks:agents', 'tasks:agent-stream'):

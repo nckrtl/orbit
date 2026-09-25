@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\AgentView;
 
 use App\Domain\Logs\LogRedactor;
+use App\Domain\Logs\LogRelayCursor;
 use App\Domain\Logs\LogStream;
 use App\Domain\Logs\LogStreamBroadcaster;
 use App\Domain\Logs\LogStreamEndReason;
@@ -14,242 +15,107 @@ use App\Domain\Nodes\NodeAccessAuthorizer;
 use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Process;
-use Closure;
 use Psr\Log\LoggerInterface;
-use Throwable;
 
 /**
- * The agent view subscriber's relay of live log lines (ADR 0153).
+ * One relay run of live log events (ADR 0153). `orbit:agent-view-publish --logs` runs it outside the
+ * agent view subscriber's socket loop, with the items that {@see LogRelayQueue} kept in order.
  *
- * It accepts lines only for a stream that is open for the sending Node, redacts them again with the
- * record's stored environment values and the Gateway's secret patterns, drops lines above its own
- * rate, and publishes them on the viewer's private channel in parts under Reverb's message limit.
- * It also ends streams whose lease ran out, whose viewer lost access, or whose agent left.
+ * It relays lines only for a stream that is open for the sending Node. It redacts them again with the
+ * record's stored environment values and the Gateway's secret patterns, and publishes them on the
+ * viewer's private channel in parts under Reverb's message limit. After each part it saves the
+ * stream's {@see LogRelayCursor}, so a repeated run skips what it already published. A failed
+ * publish or store read throws, and the subscriber runs the items again.
+ *
+ * It also ends streams: when the agent reports its source unavailable, when the agent leaves, when the
+ * queue fell behind, and, when asked to sweep, when a lease ran out or a viewer lost access.
  *
  * Log lines are never logged.
+ *
+ * @phpstan-import-type Batch from LogRelayQueue
  */
-final class LogRelay
+final readonly class LogRelay
 {
-    public const int RateBytesPerSecond = 65_536;
-
-    public const int BurstBytes = 262_144;
-
-    public const int SweepSeconds = 5;
-
-    /** Seconds before the relay reads a record's environment values again. */
-    public const int ValuesSeconds = 60;
-
-    /** The longest line the relay accepts; the agent already cuts lines at 8 KiB. */
-    public const int MaxLineBytes = 8_192 + 64;
-
-    /** The most lines one agent event may carry. */
-    public const int MaxLines = 2_000;
-
-    /** @var array<string, array{sequence: int, tokens: float, at: float, values: list<string>, valuesAt: float}> */
-    private array $relayed = [];
-
-    private float $nextSweepAt = 0.0;
-
-    /** @param Closure(): float $clock */
     public function __construct(
-        private readonly LogStreamStore $streams,
-        private readonly LogStreamBroadcaster $broadcaster,
-        private readonly LogRedactor $redactor,
-        private readonly NodeAccessAuthorizer $access,
-        private readonly LoggerInterface $log,
-        private readonly Closure $clock,
+        private LogStreamStore $streams,
+        private LogStreamBroadcaster $broadcaster,
+        private LogRedactor $redactor,
+        private NodeAccessAuthorizer $access,
+        private LoggerInterface $log,
     ) {}
 
     /**
-     * Relays one `client-log` event that Reverb stamped with `agent.{nodeId}`.
+     * Relays one batch in order and returns how many streams are still open.
      *
-     * @param  array<string, mixed>  $data
+     * @param  Batch  $batch
      */
-    public function lines(int $nodeId, array $data): void
+    public function relay(array $batch): int
     {
-        $stream = $this->streamOf($nodeId, $data);
-        $lines = $data['lines'] ?? null;
-        $dropped = $data['dropped'] ?? 0;
-        $skipped = $data['skipped'] ?? 0;
+        /** @var array<string, list<string>|null> $values Environment values by stream, read once per run. */
+        $values = [];
 
-        if (
-            $stream === null || ! is_array($lines) || ! array_is_list($lines) || count($lines) > self::MaxLines
-            || ! array_all($lines, static fn (mixed $line): bool => is_string($line)) || ! is_int($dropped) || $dropped < 0 || ! is_int($skipped) || $skipped < 0
-        ) {
+        foreach ($batch['items'] as $item) {
+            match ($item['type']) {
+                'lines' => $this->lines($batch['relay'], $item['item'], $item['node'], $item['stream'], $item['lines'], $item['dropped'], $item['skipped'], $values),
+                'end' => $this->endStream($item['node'], $item['stream'], LogStreamEndReason::tryFrom($item['reason']) ?? LogStreamEndReason::SourceUnavailable),
+                'agent_left' => $this->agentLeft($item['node']),
+            };
+        }
+
+        if ($batch['sweep']) {
+            $this->sweep();
+        }
+
+        return count($this->streams->all());
+    }
+
+    /**
+     * @param  list<string>  $lines
+     * @param  array<string, list<string>|null>  $values
+     */
+    private function lines(string $relay, int $item, int $nodeId, string $streamId, array $lines, int $dropped, int $skipped, array &$values): void
+    {
+        $stream = $this->streams->find($streamId);
+
+        // A Node may send lines only for the streams whose source is on that Node. A closed stream has no viewer.
+        if ($stream === null || $stream->nodeId !== $nodeId) {
             return;
         }
 
-        $state = $this->state($stream);
+        if (! array_key_exists($streamId, $values)) {
+            $record = $this->record($stream);
+            $values[$streamId] = $record === null ? null : $this->redactor->valuesFor($record);
+        }
 
-        if ($state === null) {
+        if ($values[$streamId] === null) {
+            $this->finish($stream, LogStreamEndReason::SourceUnavailable);
+
             return;
         }
 
         /** @var list<string> $lines */
-        $lines = $lines === [] ? [] : explode("\n", $this->redactor->redact(implode("\n", array_map($this->line(...), $lines)), $state['values']));
-        [$kept, $limited] = $this->limit($stream->id, $lines);
-        $this->publish($stream->id, $kept, $dropped + $limited, $skipped);
-    }
+        $lines = $lines === [] ? [] : explode("\n", $this->redactor->redact(implode("\n", $lines), $values[$streamId]));
+        $cursor = $this->streams->cursor($streamId);
+        $sequence = $cursor->sequence ?? 0;
 
-    /**
-     * Ends one stream after its agent reported `client-log-end`.
-     *
-     * @param  array<string, mixed>  $data
-     */
-    public function end(int $nodeId, array $data): void
-    {
-        $stream = $this->streamOf($nodeId, $data);
-
-        if ($stream !== null) {
-            $this->finish($stream, LogStreamEndReason::SourceUnavailable);
-        }
-    }
-
-    /** Ends every stream of a Node whose agent left its log channel. */
-    public function agentLeft(int $nodeId): void
-    {
-        foreach ($this->streams->all() as $stream) {
-            if ($stream->nodeId === $nodeId) {
-                $this->finish($stream, LogStreamEndReason::AgentLeft, prompt: false);
-            }
-        }
-    }
-
-    /** Every `SweepSeconds`: ends streams whose lease ran out or whose viewer lost access to the Node. */
-    public function sweep(): void
-    {
-        if ($this->now() < $this->nextSweepAt) {
-            return;
-        }
-
-        $this->nextSweepAt = $this->now() + self::SweepSeconds;
-
-        try {
-            $changed = [];
-
-            foreach ($this->streams->sweep() as $stream) {
-                $this->broadcaster->ended($stream->id, LogStreamEndReason::Expired);
-                $changed[$stream->nodeId] = true;
-            }
-
-            $open = [];
-
-            foreach ($this->streams->all() as $stream) {
-                $open[$stream->id] = true;
-
-                if (! $this->allowed($stream)) {
-                    $this->finish($stream, LogStreamEndReason::Revoked, prompt: false);
-                    $changed[$stream->nodeId] = true;
-                }
-            }
-
-            foreach (array_keys($changed) as $nodeId) {
-                $this->broadcaster->changed($nodeId);
-            }
-
-            $this->relayed = array_intersect_key($this->relayed, $open);
-        } catch (Throwable $exception) {
-            $this->log->warning('The log relay could not check the open log streams.', ['error' => $exception->getMessage()]);
-        }
-    }
-
-    /** @param array<string, mixed> $data */
-    private function streamOf(int $nodeId, array $data): ?LogStream
-    {
-        $id = $data['stream'] ?? null;
-
-        if (! is_string($id) || preg_match(LogStream::ID, $id) !== 1) {
-            return null;
-        }
-
-        try {
-            $stream = $this->streams->find($id);
-        } catch (Throwable $exception) {
-            $this->log->warning('The log relay could not read a log stream.', ['stream' => $id, 'error' => $exception->getMessage()]);
-
-            return null;
-        }
-
-        // A Node may send lines only for the streams whose source is on that Node.
-        return $stream !== null && $stream->nodeId === $nodeId ? $stream : null;
-    }
-
-    /** @return array{sequence: int, tokens: float, at: float, values: list<string>, valuesAt: float}|null */
-    private function state(LogStream $stream): ?array
-    {
-        $state = $this->relayed[$stream->id] ?? ['sequence' => 0, 'tokens' => (float) self::BurstBytes, 'at' => $this->now(), 'values' => [], 'valuesAt' => -INF];
-
-        if ($this->now() - $state['valuesAt'] >= self::ValuesSeconds) {
-            $record = $this->record($stream);
-
-            if ($record === null) {
-                $this->finish($stream, LogStreamEndReason::SourceUnavailable);
-
-                return null;
-            }
-
-            $state['values'] = $this->redactor->valuesFor($record);
-            $state['valuesAt'] = $this->now();
-        }
-
-        return $this->relayed[$stream->id] = $state;
-    }
-
-    private function record(LogStream $stream): AppInstance|Process|null
-    {
-        try {
-            return match ($stream->recordType) {
-                LogStreamRecordType::Instance => AppInstance::query()->with('environmentValues')->find($stream->recordId),
-                LogStreamRecordType::Process => Process::query()->find($stream->recordId),
-            };
-        } catch (Throwable $exception) {
-            $this->log->warning('The log relay could not read the record of a log stream.', ['stream' => $stream->id, 'error' => $exception->getMessage()]);
-
-            return null;
-        }
-    }
-
-    private function line(string $line): string
-    {
-        $line = mb_scrub(str_replace("\r", '', $line), 'UTF-8');
-
-        return strlen($line) > self::MaxLineBytes ? mb_strcut($line, 0, self::MaxLineBytes - 12, 'UTF-8').' [truncated]' : $line;
-    }
-
-    /**
-     * Keeps the lines that fit the stream's rate and counts the rest.
-     *
-     * @param  list<string>  $lines
-     * @return array{list<string>, int}
-     */
-    private function limit(string $streamId, array $lines): array
-    {
-        $state = $this->relayed[$streamId];
-        $state['tokens'] = min((float) self::BurstBytes, $state['tokens'] + ($this->now() - $state['at']) * self::RateBytesPerSecond);
-        $state['at'] = $this->now();
-        $kept = [];
-        $dropped = 0;
-
-        foreach ($lines as $line) {
-            $cost = strlen($line) + 1;
-
-            if ($cost > $state['tokens']) {
-                $dropped++;
-
+        foreach ($this->parts($streamId, $lines, $dropped, $skipped) as $index => $part) {
+            if ($cursor?->covers($relay, $item, $index + 1) === true) {
                 continue;
             }
 
-            $state['tokens'] -= $cost;
-            $kept[] = $line;
+            $this->broadcaster->lines($streamId, ++$sequence, $part['lines'], $part['dropped'], $part['skipped']);
+            $cursor = new LogRelayCursor($relay, $item, $index + 1, $sequence);
+            $this->streams->saveCursor($streamId, $cursor);
         }
-
-        $this->relayed[$streamId] = $state;
-
-        return [$kept, $dropped];
     }
 
-    /** @param list<string> $lines */
-    private function publish(string $streamId, array $lines, int $dropped, int $skipped): void
+    /**
+     * Splits lines into `log.lines` events under Reverb's message limit. The counts go with the first.
+     *
+     * @param  list<string>  $lines
+     * @return list<array{lines: list<string>, dropped: int, skipped: int}>
+     */
+    private function parts(string $streamId, array $lines, int $dropped, int $skipped): array
     {
         $parts = [];
         $part = [];
@@ -267,14 +133,63 @@ final class LogRelay
             $parts[] = $part;
         }
 
-        foreach ($parts as $index => $part) {
-            if ($part === [] && $dropped === 0 && $skipped === 0) {
-                continue;
-            }
-
-            $sequence = ++$this->relayed[$streamId]['sequence'];
-            $this->broadcaster->lines($streamId, $sequence, $part, $index === 0 ? $dropped : 0, $index === 0 ? $skipped : 0);
+        if ($parts === [[]] && $dropped === 0 && $skipped === 0) {
+            return [];
         }
+
+        return array_map(
+            static fn (array $lines, int $index): array => ['lines' => $lines, 'dropped' => $index === 0 ? $dropped : 0, 'skipped' => $index === 0 ? $skipped : 0],
+            $parts,
+            array_keys($parts),
+        );
+    }
+
+    private function endStream(int $nodeId, string $streamId, LogStreamEndReason $reason): void
+    {
+        $stream = $this->streams->find($streamId);
+
+        if ($stream !== null && $stream->nodeId === $nodeId) {
+            $this->finish($stream, $reason);
+        }
+    }
+
+    private function agentLeft(int $nodeId): void
+    {
+        foreach ($this->streams->all() as $stream) {
+            if ($stream->nodeId === $nodeId) {
+                $this->finish($stream, LogStreamEndReason::AgentLeft, prompt: false);
+            }
+        }
+    }
+
+    /** Ends streams whose lease ran out or whose viewer lost access to the Node. */
+    private function sweep(): void
+    {
+        $changed = [];
+
+        foreach ($this->streams->sweep() as $stream) {
+            $this->broadcaster->ended($stream->id, LogStreamEndReason::Expired);
+            $changed[$stream->nodeId] = true;
+        }
+
+        foreach ($this->streams->all() as $stream) {
+            if (! $this->allowed($stream)) {
+                $this->finish($stream, LogStreamEndReason::Revoked, prompt: false);
+                $changed[$stream->nodeId] = true;
+            }
+        }
+
+        foreach (array_keys($changed) as $nodeId) {
+            $this->broadcaster->changed($nodeId);
+        }
+    }
+
+    private function record(LogStream $stream): AppInstance|Process|null
+    {
+        return match ($stream->recordType) {
+            LogStreamRecordType::Instance => AppInstance::query()->with('environmentValues')->find($stream->recordId),
+            LogStreamRecordType::Process => Process::query()->find($stream->recordId),
+        };
     }
 
     private function allowed(LogStream $stream): bool
@@ -285,24 +200,22 @@ final class LogRelay
         return $viewer instanceof Node && $serving instanceof Node && $this->access->allows($viewer, $serving);
     }
 
+    /** Closes the stream, then tells its viewer and, when `$prompt`, its agent. Both messages are best effort. */
     private function finish(LogStream $stream, LogStreamEndReason $reason, bool $prompt = true): void
     {
-        try {
-            $this->streams->close($stream->id);
-        } catch (Throwable $exception) {
-            $this->log->warning('The log relay could not close a log stream.', ['stream' => $stream->id, 'error' => $exception->getMessage()]);
-        }
-
-        unset($this->relayed[$stream->id]);
+        $this->streams->close($stream->id);
         $this->broadcaster->ended($stream->id, $reason);
 
         if ($prompt) {
             $this->broadcaster->changed($stream->nodeId);
         }
-    }
 
-    private function now(): float
-    {
-        return ($this->clock)();
+        $context = ['stream' => $stream->id, 'node_id' => $stream->nodeId, 'reason' => $reason->value];
+
+        if ($reason === LogStreamEndReason::RelayBehind) {
+            $this->log->warning('The log relay fell behind and ended a live log stream.', $context);
+        } else {
+            $this->log->info('A live log stream ended.', $context);
+        }
     }
 }

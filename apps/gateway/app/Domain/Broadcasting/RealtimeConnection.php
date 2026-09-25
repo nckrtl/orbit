@@ -37,13 +37,6 @@ final class RealtimeConnection
         private readonly string $orbitHome,
     ) {}
 
-    /** Forgets the resolved connection, so a long-running process reads the websocket role again. */
-    public function forget(): void
-    {
-        $this->resolved = false;
-        $this->connection = null;
-    }
-
     public function resolve(): ?RealtimeConnectionData
     {
         if ($this->resolved) {

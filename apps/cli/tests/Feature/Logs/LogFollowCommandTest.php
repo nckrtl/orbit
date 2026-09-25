@@ -146,6 +146,22 @@ describe('process:logs --follow', function (): void {
             ->and(Artisan::output())->toBe("kept\n");
     });
 
+    it('prints a repeated part once', function (): void {
+        log_follow_profile();
+        log_follow_transport([
+            ...log_follow_handshake('1.2', log_follow_stream_id('a')),
+            log_follow_lines('a', 1, ['one']),
+            log_follow_lines('a', 2, ['two']),
+            log_follow_lines('a', 2, ['two']),
+            log_follow_lines('a', 3, ['three']),
+        ]);
+        MockClient::global(log_follow_stream_mocks('a'));
+        log_follow_interrupt_after($this->clock, 3);
+
+        expect(Artisan::call('process:logs', ['process' => '41', '--follow' => true]))->toBe(0)
+            ->and(Artisan::output())->toBe("one\ntwo\nthree\n");
+    });
+
     it('polls the one-shot read every 5 seconds when the Gateway refuses a live stream', function (): void {
         log_follow_profile();
         log_follow_transport(log_follow_handshake('1.2', log_follow_stream_id('a')));
@@ -559,6 +575,25 @@ describe('instance:logs --follow', function (): void {
             ->toBe(['socket_id' => '1.2', 'lines' => 50])
             ->and(log_follow_sent($mock, InstanceLogsRequest::class)[0]->getUrl())
             ->toBe('https://10.44.0.1/api/v1/instances/12/logs');
+    });
+
+    it('follows a production Instance log over SSH without calling it unavailable', function (): void {
+        log_follow_profile();
+        log_follow_transport(log_follow_handshake('1.2', log_follow_stream_id('a')));
+        MockClient::global([
+            CreateLogStreamRequest::class => MockResponse::make([
+                'error' => [
+                    'code' => 'logs.live_unavailable',
+                    'message' => 'A production Instance log is read over SSH only.',
+                    'details' => ['reason' => 'ssh_only'],
+                ],
+            ], 409),
+            InstanceLogsRequest::class => log_follow_reads(["a\nb\n"], name: 'shop'),
+        ]);
+        log_follow_interrupt_after($this->clock, 2);
+
+        expect(Artisan::call('instance:logs', ['instance' => '12', '--follow' => true]))->toBe(0)
+            ->and(Artisan::output())->toBe("Following over SSH; polling every 5 seconds.\na\nb\n");
     });
 });
 

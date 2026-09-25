@@ -57,6 +57,12 @@ final readonly class ConsoleLogFollowOutput implements LogFollowOutput
             return;
         }
 
+        if ($reason === 'ssh_only') {
+            $this->diagnostic(sprintf('Following over SSH; polling every %d seconds.', (int) LogFollower::POLL_SECONDS));
+
+            return;
+        }
+
         $this->diagnostic(sprintf(
             'Live tail unavailable%s; polling every %d seconds.',
             match (true) {

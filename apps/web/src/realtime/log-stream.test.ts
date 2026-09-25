@@ -250,7 +250,7 @@ it.each([
     expect(calls("PUT")).toEqual([]);
 });
 
-it.each(["agent_left", "source_unavailable", "closed"])(
+it.each(["agent_left", "source_unavailable", "relay_behind", "closed"])(
     "falls back to polling when the stream ends with %s",
     async (reason) => {
         const live = socket();
