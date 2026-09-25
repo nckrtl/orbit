@@ -5306,6 +5306,7 @@
                 "apps/web"
             ],
             "concepts": [
+                "Database",
                 "Gateway",
                 "Instance",
                 "Node",

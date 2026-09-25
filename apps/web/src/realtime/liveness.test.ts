@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import {
+    downForMs,
     fallbackPollMs,
     isLive,
     POLL_MAX_MS,
@@ -63,5 +64,21 @@ describe("fallbackPollMs", () => {
         setLiveness("reconnecting");
 
         expect(fallbackPollMs(Date.now())).toBe(POLL_MIN_MS);
+    });
+});
+
+describe("downForMs", () => {
+    it("counts from the loss of realtime and is 0 while live", () => {
+        expect(downForMs()).toBe(0);
+
+        setLiveness("reconnecting");
+        vi.advanceTimersByTime(160_000);
+        setLiveness("polling");
+
+        expect(downForMs()).toBe(160_000);
+
+        setLiveness("live");
+
+        expect(downForMs()).toBe(0);
     });
 });

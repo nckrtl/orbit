@@ -43,7 +43,7 @@ CPU and memory still come from the Process list, which the web app polls every 1
 
 ## Polling
 
-Realtime events keep the fleet lists, the deployment history, and the annotation list current. While the page is subscribed to `orbit`, those views do not poll. After a reconnect, the page reloads everything once, because events sent while the socket was down are lost.
+Realtime events keep the fleet lists, the deployment history, and the annotation list current. While the page is subscribed to `orbit`, those views do not poll. When the page goes live after a period without realtime, it reloads everything once, because events sent while the socket was down are lost. That holds after a reconnect, and after a first connect that comes more than 5 seconds after page load.
 
 When realtime is down, or the Gateway offers none, those views poll with a backoff. The first poll comes 30 seconds after the loss. After that, the delay grows with the time realtime has been down, so it doubles each time until it reaches 5 minutes. A reconnect resets it. The footer shows `live updates paused` next to the Gateway name while the page polls. Clicking it reloads every view at once and starts the backoff again.
 
@@ -54,8 +54,12 @@ Some views have no event and poll on their own clock while the tab is visible:
 | View | Interval |
 | --- | --- |
 | Process list, for CPU and memory | 15 seconds |
-| Task board, agents, and comments | 10 seconds |
-| Instance logs, queue, and analytics | 10 seconds |
+| Database users, on a database page | 15 seconds |
+| Live UFW rules, on a Node page | 15 seconds |
+| Task board, agents, comments, and task status | 10 seconds |
+| Process logs, on a Process page | 10 seconds |
+| Instance logs, queue, and analytics, on an Instance page | 10 seconds |
+| Node metrics from Grafana, not the Gateway | 10 seconds |
 | Quota (`proxycli`) status and provider pools | 60 seconds |
 
 The firewall list reads every Node's rules with one request, `GET /api/v1/firewall-rules`. It returns only the Nodes that the browser's Node can reach. The CLI keeps the per-Node list.

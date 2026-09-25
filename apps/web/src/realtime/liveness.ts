@@ -35,6 +35,11 @@ export function resetPollBackoff(now = Date.now()): void {
     }
 }
 
+/** How long realtime has been down, or 0 while it is live. The page starts down, at load. */
+export function downForMs(now = Date.now()): number {
+    return downSince === null ? 0 : Math.max(0, now - downSince);
+}
+
 /** Whether record-change events reach the page right now. */
 export const isLive = (): boolean => current.liveness === "live";
 

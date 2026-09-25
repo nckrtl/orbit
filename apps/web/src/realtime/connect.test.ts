@@ -5,10 +5,10 @@ import Pusher from "pusher-js";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import { setTransport, type Transport } from "../api/client";
 import { connectRealtime } from "./connect";
-import { setLiveness } from "./liveness";
+import { downForMs, setLiveness } from "./liveness";
 
 vi.mock("pusher-js", () => ({ default: vi.fn() }));
-vi.mock("./liveness", () => ({ setLiveness: vi.fn() }));
+vi.mock("./liveness", () => ({ setLiveness: vi.fn(), downForMs: vi.fn(() => 0) }));
 
 const configured = { url: "wss://reverb.orbit", key: "test-key", channel: "orbit" };
 const unavailable = { url: null, key: null, channel: "orbit" };
@@ -64,6 +64,7 @@ let sockets: ReturnType<typeof socket>[];
 
 beforeEach(() => {
     vi.resetAllMocks();
+    vi.mocked(downForMs).mockReturnValue(0);
     vi.useFakeTimers();
     vi.stubEnv("DEV", true);
     vi.stubGlobal("window", { location: { origin: "http://localhost:5173" } });
@@ -233,6 +234,42 @@ it("invalidates all queries only after a previously live connection subscribes a
     pusher.channel.emit("pusher:subscription_succeeded");
     expect(setLiveness).toHaveBeenLastCalledWith("live");
     expect(invalidate).toHaveBeenCalledExactlyOnceWith();
+});
+
+it("reloads every list on a first subscription that follows a polling period", async () => {
+    const invalidate = vi.spyOn(client, "invalidateQueries");
+    await connectRealtime(client, controller.signal);
+    const pusher = sockets[0]!;
+
+    // The socket failed at load and connects minutes later, while the lists polled with a backoff.
+    vi.mocked(downForMs).mockReturnValue(160_000);
+    pusher.channel.emit("pusher:subscription_succeeded");
+
+    expect(setLiveness).toHaveBeenLastCalledWith("live");
+    expect(invalidate).toHaveBeenCalledExactlyOnceWith();
+});
+
+it("reloads every list when a retried realtime discovery finally connects", async () => {
+    const invalidate = vi.spyOn(client, "invalidateQueries");
+    transport.mockResolvedValueOnce(response(unavailable));
+    await connectRealtime(client, controller.signal);
+    await vi.advanceTimersByTimeAsync(30_000);
+    const pusher = sockets[0]!;
+
+    vi.mocked(downForMs).mockReturnValue(30_000);
+    pusher.channel.emit("pusher:subscription_succeeded");
+
+    expect(invalidate).toHaveBeenCalledExactlyOnceWith();
+});
+
+it("does not reload on a first subscription right after page load", async () => {
+    const invalidate = vi.spyOn(client, "invalidateQueries");
+    await connectRealtime(client, controller.signal);
+
+    vi.mocked(downForMs).mockReturnValue(1_000);
+    sockets[0]!.channel.emit("pusher:subscription_succeeded");
+
+    expect(invalidate).not.toHaveBeenCalled();
 });
 
 it.each([event, JSON.stringify(event)])(
