@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Infrastructure\AppInstances\ComposerDependencyUpdateProgram;
+use App\Infrastructure\AppInstances\DependencyUpdateSupervisorHost;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\NativeProcessRunner;
 use App\Infrastructure\Processes\ProcessCancelledException;
@@ -11,6 +12,7 @@ use App\Infrastructure\Processes\ProtectedInput;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\Process;
+use Tests\Support\TestToolchain;
 
 function composer_update_program_directory(string $suffix = ''): string
 {
@@ -33,7 +35,9 @@ function composer_update_program_fixture(string $path, string $preUpdate): void
     ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT));
 
     $lock = new Process([
-        '/usr/bin/composer',
+        dependency_update_supervisor_host() === DependencyUpdateSupervisorHost::Node
+            ? '/usr/bin/composer'
+            : TestToolchain::require('composer', 'brew install composer'),
         '--working-dir',
         $path,
         'update',
@@ -50,12 +54,8 @@ function composer_update_program_run(string $path, string $deadline, ?Closure $c
 {
     return new NativeProcessRunner()->run(new ProcessInvocation(
         arguments: [
-            '/usr/bin/setsid',
-            '--wait',
-            '/usr/bin/bash',
-            '-eu',
-            '-c',
-            ComposerDependencyUpdateProgram::render(),
+            ...dependency_update_supervisor_host()->launcher(),
+            ComposerDependencyUpdateProgram::render(dependency_update_supervisor_host()),
             'composer-update',
             $path,
             $deadline,

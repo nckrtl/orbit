@@ -112,7 +112,7 @@ final class CaddyKernelSettingHarness
             if [ "${args[0]}" != -d ]; then
               printf 'install %s\n' "${destination##*/}" >> "${HARNESS_CALL_LOG}"
             fi
-            exec /usr/bin/install "${args[@]}"
+            exec {{host:install}} "${args[@]}"
             BASH);
         $this->writeShim('stat', <<<'BASH'
             #!/usr/bin/env bash
@@ -131,7 +131,7 @@ final class CaddyKernelSettingHarness
 
     private function writeShim(string $name, string $contents): void
     {
-        file_put_contents(filename: $this->root.'/bin/'.$name, data: $contents);
+        file_put_contents(filename: $this->root.'/bin/'.$name, data: HostBinary::expand($contents));
         chmod($this->root.'/bin/'.$name, permissions: 0o755);
     }
 

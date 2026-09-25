@@ -13,15 +13,17 @@ use App\Infrastructure\AppDev\PrivateDnsRequestHandler;
 use App\Infrastructure\AppDev\PrivateDnsTransportServer;
 use App\Infrastructure\AppDev\SocketPrivateDnsUpstream;
 use App\Models\Node;
+use Tests\Support\LoopbackRequesters;
 use Tests\Support\RegisteredNodeDnsRequesterResolver;
 
 it('answers UDP and TCP questions from the actual transport source', function (): void {
+    $sources = LoopbackRequesters::detect();
     $registered = Node::query()->create([
         'name' => 'udp-peer',
         'status' => LifecycleStatus::Active,
         'platform' => 'linux',
         'public_ssh_host' => '192.0.2.2',
-        'wireguard_ip' => '127.0.0.2',
+        'wireguard_ip' => $sources->first,
         'user' => 'orbit',
     ]);
     $server = orb258_transport_server(
@@ -29,18 +31,19 @@ it('answers UDP and TCP questions from the actual transport source', function ()
             exact: ['app.cluster.test' => '10.44.0.20'],
             suffixes: [],
         )
-            ->withRequesterOverrides(DnsRequester::registered($registered->id, '127.0.0.2')->cacheKey(), [
+            ->withRequesterOverrides(DnsRequester::registered($registered->id, $sources->first)->cacheKey(), [
                 'app.cluster.test' => '192.168.10.2',
             ]),
+        listenAddress: $sources->listen,
     );
 
     try {
         $server->start();
         expect($server->listening())->toBeTrue();
-        $udpRegistered = orb258_query($server, '127.0.0.2', 'udp');
-        $udpUnknown = orb258_query($server, '127.0.0.1', 'udp');
-        $tcpRegistered = orb258_query($server, '127.0.0.2', 'tcp');
-        $tcpUnknown = orb258_query($server, '127.0.0.1', 'tcp');
+        $udpRegistered = orb258_query($server, $sources, $sources->first, 'udp');
+        $udpUnknown = orb258_query($server, $sources, $sources->second, 'udp');
+        $tcpRegistered = orb258_query($server, $sources, $sources->first, 'tcp');
+        $tcpUnknown = orb258_query($server, $sources, $sources->second, 'tcp');
 
         expect($udpRegistered)
             ->toBe('192.168.10.2')
@@ -93,15 +96,16 @@ it('keeps answering catalog names after a public-name forward whose upstream nev
 });
 
 it('drains every queued UDP query in one wake', function (): void {
+    $sources = LoopbackRequesters::detect();
     $server = orb258_transport_server(new PrivateDnsAnswerCatalog(
         exact: ['gateway.orbit' => '10.44.0.1'],
         suffixes: [],
-    ));
+    ), listenAddress: $sources->listen);
 
     try {
         $server->start();
-        $first = orb313_open_udp_query($server, '127.0.0.2', 'gateway.orbit');
-        $second = orb313_open_udp_query($server, '127.0.0.1', 'gateway.orbit');
+        $first = orb313_open_udp_query($server, $sources->first, 'gateway.orbit', $sources);
+        $second = orb313_open_udp_query($server, $sources->second, 'gateway.orbit', $sources);
         $server->serveOnce(1.0);
 
         expect(orb313_read_udp_address($first))
@@ -144,12 +148,13 @@ it('does not let a stalled TCP client block a later UDP catalog query', function
 });
 
 it('does not let one UDP requester pollute another requesters TCP cache', function (): void {
+    $sources = LoopbackRequesters::detect();
     $first = Node::query()->create([
         'name' => 'cache-one',
         'status' => LifecycleStatus::Active,
         'platform' => 'linux',
         'public_ssh_host' => '192.0.2.3',
-        'wireguard_ip' => '127.0.0.2',
+        'wireguard_ip' => $sources->first,
         'user' => 'orbit',
     ]);
     $second = Node::query()->create([
@@ -157,7 +162,7 @@ it('does not let one UDP requester pollute another requesters TCP cache', functi
         'status' => LifecycleStatus::Active,
         'platform' => 'linux',
         'public_ssh_host' => '192.0.2.4',
-        'wireguard_ip' => '127.0.0.3',
+        'wireguard_ip' => $sources->second,
         'user' => 'orbit',
     ]);
     $cache = new InMemoryPrivateDnsAnswerCache;
@@ -166,22 +171,23 @@ it('does not let one UDP requester pollute another requesters TCP cache', functi
             exact: ['app.cluster.test' => '10.44.0.20'],
             suffixes: [],
         )
-            ->withRequesterOverrides(DnsRequester::registered($first->id, '127.0.0.2')->cacheKey(), [
+            ->withRequesterOverrides(DnsRequester::registered($first->id, $sources->first)->cacheKey(), [
                 'app.cluster.test' => '192.168.10.2',
             ])
-            ->withRequesterOverrides(DnsRequester::registered($second->id, '127.0.0.3')->cacheKey(), [
+            ->withRequesterOverrides(DnsRequester::registered($second->id, $sources->second)->cacheKey(), [
                 'app.cluster.test' => '192.168.10.3',
             ]),
         $cache,
+        listenAddress: $sources->listen,
     );
 
     try {
         $server->start();
-        $firstUdp = orb258_query($server, '127.0.0.2', 'udp');
-        $secondTcp = orb258_query($server, '127.0.0.3', 'tcp');
-        $firstTcp = orb258_query($server, '127.0.0.2', 'tcp');
+        $firstUdp = orb258_query($server, $sources, $sources->first, 'udp');
+        $secondTcp = orb258_query($server, $sources, $sources->second, 'tcp');
+        $firstTcp = orb258_query($server, $sources, $sources->first, 'tcp');
         $cache->flush();
-        $secondUdp = orb258_query($server, '127.0.0.3', 'udp');
+        $secondUdp = orb258_query($server, $sources, $sources->second, 'udp');
 
         expect($firstUdp)
             ->toBe('192.168.10.2')
@@ -226,6 +232,7 @@ function orb258_transport_server(
     ?InMemoryPrivateDnsAnswerCache $cache = null,
     ?PrivateDnsUpstream $upstream = null,
     float $ioTimeoutSeconds = 2.0,
+    string $listenAddress = '127.0.0.1',
 ): PrivateDnsTransportServer {
     return new PrivateDnsTransportServer(
         handler: new PrivateDnsRequestHandler(
@@ -234,18 +241,31 @@ function orb258_transport_server(
             cache: $cache ?? new InMemoryPrivateDnsAnswerCache,
             upstream: $upstream,
         ),
+        listenAddress: $listenAddress,
         ioTimeoutSeconds: $ioTimeoutSeconds,
     );
 }
 
-function orb313_open_udp_query(PrivateDnsTransportServer $server, string $source, string $name): Socket
-{
+function orb313_open_udp_query(
+    PrivateDnsTransportServer $server,
+    string $source,
+    string $name,
+    ?LoopbackRequesters $sources = null,
+): Socket {
     $query = new PrivateDnsMessageCodec()->encodeQuery($name);
-    $socket = socket_create(AF_INET, SOCK_DGRAM, SOL_UDP);
-    expect($socket)->toBeInstanceOf(Socket::class);
-    socket_bind($socket, $source, 0);
+
+    if ($sources instanceof LoopbackRequesters) {
+        $socket = $sources->socket($source, SOCK_DGRAM);
+        $destination = $sources->destination;
+    } else {
+        $socket = socket_create(AF_INET, SOCK_DGRAM, SOL_UDP);
+        expect($socket)->toBeInstanceOf(Socket::class);
+        socket_bind($socket, $source, 0);
+        $destination = '127.0.0.1';
+    }
+
     socket_set_option($socket, SOL_SOCKET, SO_RCVTIMEO, ['sec' => 1, 'usec' => 0]);
-    socket_sendto($socket, $query, strlen($query), 0, '127.0.0.1', $server->port());
+    socket_sendto($socket, $query, strlen($query), 0, $destination, $server->port());
 
     return $socket;
 }
@@ -262,15 +282,17 @@ function orb313_read_udp_address(Socket $socket): string
     return long2ip($address['ip'] ?? 0) ?: '';
 }
 
-function orb258_query(PrivateDnsTransportServer $server, string $source, string $transport): string
-{
+function orb258_query(
+    PrivateDnsTransportServer $server,
+    LoopbackRequesters $sources,
+    string $source,
+    string $transport,
+): string {
     $query = new PrivateDnsMessageCodec()->encodeQuery('app.cluster.test');
 
     if ($transport === 'tcp') {
-        $socket = socket_create(AF_INET, SOCK_STREAM, SOL_TCP);
-        expect($socket)->toBeInstanceOf(Socket::class);
-        socket_bind($socket, $source, 0);
-        socket_connect($socket, '127.0.0.1', $server->port());
+        $socket = $sources->socket($source, SOCK_STREAM);
+        socket_connect($socket, $sources->destination, $server->port());
         socket_write($socket, pack('n', strlen($query)).$query);
         $server->serveOnce(1.0);
         $header = socket_read($socket, 2);
@@ -279,10 +301,8 @@ function orb258_query(PrivateDnsTransportServer $server, string $source, string 
         $response = socket_read($socket, $length['len'] ?? 0);
         socket_close($socket);
     } else {
-        $socket = socket_create(AF_INET, SOCK_DGRAM, SOL_UDP);
-        expect($socket)->toBeInstanceOf(Socket::class);
-        socket_bind($socket, $source, 0);
-        socket_sendto($socket, $query, strlen($query), 0, '127.0.0.1', $server->port());
+        $socket = $sources->socket($source, SOCK_DGRAM);
+        socket_sendto($socket, $query, strlen($query), 0, $sources->destination, $server->port());
         $server->serveOnce(1.0);
         $response = '';
         $from = '';

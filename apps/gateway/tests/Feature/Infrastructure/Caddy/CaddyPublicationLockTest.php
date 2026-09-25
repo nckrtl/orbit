@@ -145,7 +145,7 @@ describe('the shared Caddy lock program', function (): void {
             new Filesystem()->deleteDirectory($root);
         }
     });
-})->skip(PHP_OS_FAMILY !== 'Linux', 'Uses GNU stat and the Linux flock utility.');
+});
 
 /**
  * @param  list<RemoteCommand>  $commands
