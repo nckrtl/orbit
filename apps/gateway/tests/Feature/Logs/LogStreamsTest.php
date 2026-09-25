@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Logs\LogRelayCursor;
 use App\Domain\Logs\LogStreamBroadcast;
 use App\Domain\Logs\LogStreamStore;
 use App\Domain\Nodes\RoleName;
@@ -210,16 +211,27 @@ describe('renewing and closing a live log stream', function (): void {
         $this->url = "/api/v1/instances/{$this->instance->id}/log-streams/{$this->stream}";
     });
 
-    it('activates the stream and prompts the agent on the first renewal only', function (): void {
+    it('activates the stream and prompts the agent on the first renewal', function (): void {
         expect(app(LogStreamStore::class)->forNode($this->serving->id))->toBe([]);
 
-        ($this->as)($this->viewer)->putJson($this->url)->assertOk();
         ($this->as)($this->viewer)->putJson($this->url)->assertOk();
 
         expect(array_map(static fn ($stream): string => $stream->id, app(LogStreamStore::class)->forNode($this->serving->id)))->toBe([$this->stream]);
         Event::assertDispatchedTimes(LogStreamBroadcast::class, 1);
         Event::assertDispatched(LogStreamBroadcast::class, fn (LogStreamBroadcast $event): bool => $event->channel === "presence-node-logs.{$this->serving->id}"
             && $event->name === 'log-streams.changed' && $event->payload === []);
+    });
+
+    it('prompts the agent again on each renewal until the stream relays its first line', function (): void {
+        ($this->as)($this->viewer)->putJson($this->url)->assertOk();
+        ($this->as)($this->viewer)->putJson($this->url)->assertOk();
+
+        Event::assertDispatchedTimes(LogStreamBroadcast::class, 2);
+
+        app(LogStreamStore::class)->saveCursor($this->stream, new LogRelayCursor('relay', 1, 0, 1));
+        ($this->as)($this->viewer)->putJson($this->url)->assertOk();
+
+        Event::assertDispatchedTimes(LogStreamBroadcast::class, 2);
     });
 
     it('extends the lease without recording Activity', function (): void {

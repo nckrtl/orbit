@@ -14,7 +14,9 @@ use App\Models\Node;
 
 /**
  * Extends the lease of a live log stream that the calling Node opened for this record. The first
- * renewal activates the stream and prompts the Node's agent to start reading (ADR 0153).
+ * renewal activates the stream and prompts the Node's agent to start reading (ADR 0153). Each later
+ * renewal prompts again until the stream relays its first line: a lost prompt leaves the stream
+ * silent, and the relay's own prompts run only while the subscriber knows a stream may be open.
  */
 final readonly class RenewLogStreamAction
 {
@@ -33,7 +35,7 @@ final readonly class RenewLogStreamAction
 
         $renewed = $this->streams->renew($streamId, CacheAgentStateView::now() + LogStreamStore::LeaseSeconds) ?? throw self::notFound();
 
-        if (! $stream->active) {
+        if (! $stream->active || $this->streams->cursor($streamId) === null) {
             $this->broadcaster->changed($renewed->nodeId);
         }
 
