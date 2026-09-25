@@ -126,7 +126,22 @@ The Metrics fleet reconcile runs after a role convergence and outside this lock.
 
 Run the command again. `node:role:relocate` and Cluster Router changes take the lock only around the baseline step, so a busy Node fails that step as their other baseline failures do.
 
-The lock lives in a file cache store under `ORBIT_HOME`, whatever `CACHE_STORE` says. It expires after 10 minutes, the Gateway's PHP-FPM request limit, so an operation whose worker dies without releasing it blocks that Node's role operations for at most 10 minutes. Operations on different Nodes run in parallel.
+Operations on different Nodes run in parallel.
+
+### Per-Node locks
+
+Four kinds of lock guard work on one Node. They all live in a file cache store under `ORBIT_HOME`, whatever `CACHE_STORE` says.
+
+| Lock | Guards | Term | When it is busy |
+| --- | --- | --- | --- |
+| Tool | One package of one tool manager | 10 minutes | Fails at once with `tool.operation_locked` |
+| Tool manager | The shared state of `vp`, `composer`, `apt`, or `brew` | 10 minutes | Fails at once with `tool.operation_locked` or `node_role.tool_manager_locked` |
+| Role | Role operations | 10 minutes | Waits up to 2 minutes, then `node_role.node_busy` |
+| Node agent | The [agent converge](/reference/node-agent#agent-secret) | 4 minutes, renewed before each step | Waits up to 2 minutes, then `agent.converge_busy` |
+
+The 10-minute term is the Gateway's PHP-FPM request limit. A request cannot outlive it, so a worker that is killed mid-operation blocks the Node for at most 10 minutes.
+
+An operation takes the locks it needs in one fixed order: tool, then tool manager (`vp` before `composer`), then role, then Node agent. No code takes an earlier lock while it holds a later one. The tool and tool manager locks fail at once instead of waiting, so an operation that holds the role lock never waits for a tool manager. The locks therefore cannot deadlock.
 
 ## Node agent
 

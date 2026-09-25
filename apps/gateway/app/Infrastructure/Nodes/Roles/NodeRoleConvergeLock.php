@@ -18,12 +18,8 @@ use Illuminate\Contracts\Cache\LockTimeoutException;
  */
 final class NodeRoleConvergeLock
 {
-    /**
-     * How long one role operation may hold the lock. It matches the Gateway's PHP-FPM
-     * `request_terminate_timeout`, so a worker killed at that limit leaves a lock that expires by the
-     * time the request has failed.
-     */
-    public const int LockSeconds = 600;
+    /** How long one role operation may hold the lock (NodeLocks::RequestSeconds). */
+    public const int LockSeconds = NodeLocks::RequestSeconds;
 
     /** @var array<string, array{lock: Lock, depth: positive-int}> */
     private array $held = [];
