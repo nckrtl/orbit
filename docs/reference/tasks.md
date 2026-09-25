@@ -254,6 +254,8 @@ A fitting claimed group moves from `todo` to `reserved`. InstanceProvisioning as
 
 If no remaining Node fits, provisioning returns no Instance. The group returns to `todo` with the assistance reason `Workspace provisioning did not return an instance.`, and claim processing continues with the next eligible group. The reason clears when the group moves to `running` or `backlog`, or when it later waits for capacity.
 
+An unexpected provisioning error, such as a lock timeout or a failed lookup, has the same result. The Gateway writes the error to its application log, and the group returns to `todo` with the same reason. The reason never contains the error text. A group never stays `reserved` after a failed provision, so it does not count toward the Node ceiling.
+
 If Nodes fit but each is at the ceiling, the group waits for capacity. It returns to `todo` without a reason. When no `app-dev` Node has capacity, claim processing stops until capacity frees. Otherwise it continues with the next eligible group.
 
 When the assignment fits the Node ceiling, the group becomes `running`. AgentSpawner starts the first implementer through the selected driver. The shared reviewer starts at the first handoff. The Gateway stores an Orbit thread ID only after creation and the opening turn succeed.
