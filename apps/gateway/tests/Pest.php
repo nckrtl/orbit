@@ -20,6 +20,7 @@ use App\Infrastructure\AgentView\CacheAgentStateView;
 use App\Infrastructure\AppInstances\DependencyUpdateSupervisorHost;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
 use App\Infrastructure\Logs\CacheLogStreamStore;
+use App\Infrastructure\Nodes\NodeLocks;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\NativeProcessRunner;
 use App\Infrastructure\Processes\ProcessInvocation;
@@ -69,6 +70,8 @@ uses(TestCase::class, RefreshDatabase::class)
         // The view's file store under ORBIT_HOME would outlive a test; each test gets its own.
         app()->instance(CacheAgentStateView::class, new CacheAgentStateView(Cache::store('array')));
         app()->instance(LogStreamStore::class, new CacheLogStreamStore(Cache::store('array')));
+        // The same holds for the Node locks' file store.
+        app()->instance(NodeLocks::class, new NodeLocks(Cache::store('array')));
         Classification::fake();
         // Transitions wait for private DNS answers to expire; tests assert those waits instead.
         Sleep::fake(syncWithCarbon: true);

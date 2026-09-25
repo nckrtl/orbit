@@ -292,6 +292,7 @@ use App\Infrastructure\Nodes\NativeNodeConverger;
 use App\Infrastructure\Nodes\NativeNodeProvisioningLock;
 use App\Infrastructure\Nodes\NativeNodeRoleDependentCleaner;
 use App\Infrastructure\Nodes\NodeAgentSshExecutor;
+use App\Infrastructure\Nodes\NodeLocks;
 use App\Infrastructure\Nodes\RemoteNodeStorageRootPreparer;
 use App\Infrastructure\Nodes\Roles\NativeNodeRoleFirewallManager;
 use App\Infrastructure\Nodes\Roles\NativeRoleBaselineConverger;
@@ -531,6 +532,12 @@ final class AppServiceProvider extends ServiceProvider
             LogStreamStore::class,
             static fn ($app): CacheLogStreamStore => new CacheLogStreamStore(
                 $app->make(CacheManager::class)->build(CacheAgentStateView::storeConfiguration((string) config('orbit.home'))),
+            ),
+        );
+        $this->app->singleton(
+            NodeLocks::class,
+            static fn ($app): NodeLocks => new NodeLocks(
+                $app->make(CacheManager::class)->build(NodeLocks::storeConfiguration((string) config('orbit.home'))),
             ),
         );
         $this->app->singleton(
