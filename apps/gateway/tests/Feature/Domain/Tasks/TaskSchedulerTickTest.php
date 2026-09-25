@@ -1562,6 +1562,19 @@ it('commits the last approved subtask, opens the pull request with the reviewer 
         ->and($task->fresh()?->status)->toBe(TaskStatus::Completed);
 });
 
+it('counts only the delivered subtasks in the pull request description', function (): void {
+    [$group, , , $signer] = tick_review([tick_final_approval()], last: true);
+    foreach ([TaskStatus::Completed, TaskStatus::Cancelled, TaskStatus::Failed] as $index => $status) {
+        Task::query()->create(['task_group_id' => $group->id, 'position' => $index + 2, 'title' => $status->value, 'brief' => 'Other subtask.', 'status' => $status]);
+    }
+    $publishing = tick_publishing();
+
+    app(TaskScheduler::class)->tick();
+
+    expect($signer->messages)->toHaveCount(1)
+        ->and($publishing->publisher->bodies)->toBe([TaskPullRequestDescription::render(new TaskRunPullRequest('Adds tick routing.', ['Tasks store their records.'], []), 2)]);
+});
+
 it('reminds the reviewer when the approval of the last subtask has no pull request fields', function (): void {
     [$group, $task, , $signer] = tick_review([FakeTaskRunReceipts::contents('approved')], last: true);
     $publishing = tick_publishing();

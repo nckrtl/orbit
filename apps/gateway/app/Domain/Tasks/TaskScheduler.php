@@ -432,7 +432,7 @@ final readonly class TaskScheduler
         $receipt->update(['commit_sha' => $commit]);
         if ($pullRequest instanceof TaskRunPullRequest) {
             try {
-                $url = $this->publisher->publish($group, TaskPullRequestDescription::render($pullRequest, $group->tasks()->count()));
+                $url = $this->publisher->publish($group, TaskPullRequestDescription::render($pullRequest, $group->tasks()->whereNotIn('status', [TaskStatus::Cancelled, TaskStatus::Failed])->count()));
             } catch (TaskPullRequestException $exception) {
                 $this->recordCommunicationFailure($task, $group, $exception->getMessage());
 
