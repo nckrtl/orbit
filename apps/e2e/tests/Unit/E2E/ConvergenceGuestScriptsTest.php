@@ -554,7 +554,7 @@ function typed_cluster_creation_commands(): array
     ];
 }
 
-/** @return array{root:string,script:string,environment:array<string,string>,caddyfile:string,commands:string} */
+/** @return array{root:string,script:string,environment:array<string,string>,fragment:string,commands:string} */
 function metrics_publication_probe_fixture(bool $metricsAssigned): array
 {
     $root = temporaryPath('orbit-metrics-publication-probe-', 5);
@@ -562,12 +562,12 @@ function metrics_publication_probe_fixture(bool $metricsAssigned): array
     $sourceRoot = "{$root}/source";
     $metricsSource = "{$sourceRoot}/apps/gateway/app/Infrastructure/Metrics";
     $version = "{$root}/etc/caddy/orbit-versions/1234567890abcdef";
-    $caddyfile = "{$version}/Caddyfile";
+    $fragment = "{$version}/fragments/metrics.caddy";
     $certificateVersion = "{$root}/etc/caddy/orbit-metrics-cert-versions/1234567890abcdef";
     $certificateCurrent = "{$root}/etc/caddy/orbit-metrics-cert-current";
     $commands = "{$root}/commands";
     mkdir("{$root}/bin", 0o700, true);
-    mkdir($version, 0o700, true);
+    mkdir("{$version}/fragments", 0o700, true);
     mkdir("{$root}/ca", 0o700, true);
     mkdir("{$root}/ssh", 0o700, true);
     mkdir("{$sourceRoot}/apps/gateway/vendor", 0o700, true);
@@ -584,8 +584,8 @@ function metrics_publication_probe_fixture(bool $metricsAssigned): array
         require __DIR__.'/../app/Infrastructure/Metrics/MetricsFootprint.php';
         require __DIR__.'/../app/Infrastructure/Metrics/MetricsPublicationRenderer.php';
         PHP);
-    file_put_contents($caddyfile, metrics_publication_build(''));
-    symlink($caddyfile, "{$root}/etc/caddy/Caddyfile");
+    file_put_contents("{$version}/Caddyfile", "import {$version}/fragments/*.caddy\n");
+    symlink("{$version}/Caddyfile", "{$root}/etc/caddy/Caddyfile");
     file_put_contents("{$root}/ca/root.pem", "fixture root\n");
     file_put_contents("{$root}/ssh/id_ed25519", "fixture key\n");
     file_put_contents("{$root}/ssh/known_hosts", "fixture host\n");
@@ -615,7 +615,7 @@ function metrics_publication_probe_fixture(bool $metricsAssigned): array
             '10.44.0.2',
             '10.44.0.1',
         ]);
-        file_put_contents($caddyfile, metrics_publication_build($render->mustRun()->getOutput()));
+        file_put_contents($fragment, $render->mustRun()->getOutput());
     }
 
     file_put_contents("{$root}/bin/dig", str_replace('__COMMANDS__', $commands, <<<'BASH'
@@ -680,17 +680,9 @@ function metrics_publication_probe_fixture(bool $metricsAssigned): array
             'METRICS_HEALTH' => '{"database":"ok"}',
             'METRICS_UFW_STATUS' => "Status: active\n\n[ 7] 10.44.0.2 3000/tcp on orbit ALLOW IN 10.44.0.1 # orbit:metrics-grafana-upstream\n",
         ],
-        'caddyfile' => $caddyfile,
+        'fragment' => $fragment,
         'commands' => $commands,
     ];
-}
-
-/** The one Caddyfile a Node Caddy build writes on the Gateway Node, with the Metrics site when one renders. */
-function metrics_publication_build(string $site): string
-{
-    $build = "# Managed by Orbit: Node Caddy build\n{\n    auto_https disable_certs\n}\n";
-
-    return $site === '' ? $build : $build."\n# orbit: metrics metrics.orbit\n".rtrim($site)."\n";
 }
 
 /** @return array{root:string,script:string,state:string,commands:string,caddy:string,ca:string} */
@@ -2162,8 +2154,8 @@ describe('convergence guest scripts', function () {
                 ),
             ))->toBeTrue();
 
-            $current = file_get_contents($fixture['caddyfile']);
-            file_put_contents($fixture['caddyfile'], metrics_publication_build("# stale Metrics publication\n"));
+            $currentFragment = file_get_contents($fixture['fragment']);
+            file_put_contents($fixture['fragment'], "# stale Metrics publication\n");
             $stale = new Process($command, env: $fixture['environment']);
             expect($stale->run())
                 ->not
@@ -2171,7 +2163,7 @@ describe('convergence guest scripts', function () {
                 ->and(trim($stale->getOutput()))
                 ->toBe('');
 
-            file_put_contents($fixture['caddyfile'], $current);
+            file_put_contents($fixture['fragment'], $currentFragment);
             $certificateCurrent = $fixture['root'].'/etc/caddy/orbit-metrics-cert-current';
             $foreignCertificate = $fixture['root'].'/etc/caddy/foreign-metrics-certificate';
             mkdir($foreignCertificate, 0o700);
@@ -2185,7 +2177,7 @@ describe('convergence guest scripts', function () {
         }
     });
 
-    it('refuses a Metrics site that only the fragment layout of an earlier release holds', function (): void {
+    it('proves the Metrics publication from a Node Caddy build without fragments', function (): void {
         $fixture = metrics_publication_probe_fixture(true);
         try {
             $command = [
@@ -2197,12 +2189,20 @@ describe('convergence guest scripts', function () {
                 'orbit-e2e-topology-snapshot-gateway',
                 base64_encode(json_encode(TopologyProfile::ASSIGNMENTS, JSON_THROW_ON_ERROR)),
             ];
-            $version = dirname($fixture['caddyfile']);
-            $site = (string) preg_replace('/\A.*?# orbit: metrics metrics.orbit\n/s', '', (string) file_get_contents($fixture['caddyfile']));
-            mkdir("{$version}/fragments", 0o700);
-            file_put_contents("{$version}/fragments/metrics.caddy", $site);
-            file_put_contents($fixture['caddyfile'], "{\n    auto_https disable_certs\n}\nimport {$version}/fragments/*.caddy\n");
+            $build = $fixture['root'].'/etc/caddy/orbit-versions/0123456789abcdef0123456789abcdef';
+            mkdir($build, 0o700, true);
+            $site = "# orbit: metrics metrics.orbit\n".rtrim((string) file_get_contents($fixture['fragment']))."\n";
+            file_put_contents("{$build}/Caddyfile", "# Managed by Orbit: Node Caddy build\n{\n    auto_https disable_certs\n}\n\n{$site}");
+            unlink($fixture['root'].'/etc/caddy/Caddyfile');
+            symlink("{$build}/Caddyfile", $fixture['root'].'/etc/caddy/Caddyfile');
+            unlink($fixture['fragment']);
 
+            $evidence = json_decode(new Process($command, env: $fixture['environment'])->mustRun()->getOutput(), true, 16, JSON_THROW_ON_ERROR);
+
+            expect($evidence['passed'])->toBeTrue()
+                ->and($evidence['expected'])->toBe('metrics.orbit:current-product-publication');
+
+            file_put_contents("{$build}/Caddyfile", "# Managed by Orbit: Node Caddy build\n{\n    auto_https disable_certs\n}\n");
             expect(new Process($command, env: $fixture['environment'])->run())->not->toBe(0);
         } finally {
             new Filesystem()->deleteDirectory($fixture['root']);
@@ -2402,7 +2402,6 @@ describe('convergence guest scripts', function () {
         );
         expect($source)
             ->not->toContain('caddy-ca-path')
-            ->not->toContain('fragments/')
             ->not->toContain('wireguard_address')
             ->not->toContain('echo $address, "\\n";')
             ->not->toContain('HostKeyAlias=')

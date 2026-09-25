@@ -177,14 +177,19 @@ case "$probe" in
       /etc/caddy/orbit-versions/*/Caddyfile) ;;
       *) exit 1 ;;
     esac
-    # A Node Caddy build (ADR 0141) writes one Caddyfile with every site.
-    [[ "$(head -n 1 -- "$live_main")" == '# Managed by Orbit: Node Caddy build' ]]
+    live_fragment=$(dirname "$live_main")/fragments/metrics.caddy
+    # A Node Caddy build (ADR 0141) writes one Caddyfile with every site and no fragments.
+    node_caddy_build=0
+    if [[ "$(head -n 1 -- "$live_main")" == '# Managed by Orbit: Node Caddy build' ]]; then
+      node_caddy_build=1
+    fi
     certificate_current=/etc/caddy/orbit-metrics-cert-current
     dns_output=$(dig +time=3 +tries=1 +short metrics.orbit A @"$gateway_address")
     mapfile -t resolved < <(printf '%s' "$dns_output" | awk 'NF')
     if [[ "$publication" == absent ]]; then
       [[ "${#resolved[@]}" -eq 0 ]]
       [[ ! -e "$certificate_current" && ! -L "$certificate_current" ]]
+      [[ ! -e "$live_fragment" ]]
       if grep -qx '# orbit: metrics metrics.orbit' "$live_main"; then
         exit 1
       fi
@@ -199,20 +204,26 @@ case "$probe" in
         /etc/caddy/orbit-metrics-cert-versions/*) ;;
         *) exit 1 ;;
       esac
-      expected_site=$(mktemp)
-      trap 'rm -f -- "$expected_site"' EXIT
-      /usr/bin/php -r 'require $argv[1]; echo (new App\Infrastructure\Metrics\MetricsPublicationRenderer)->caddy($argv[2], $argv[3]);' -- "$source_root/apps/gateway/vendor/autoload.php" "$metrics_address" "$gateway_address" >"$expected_site"
-      php -r 'exit(str_contains(file_get_contents($argv[1]), "# orbit: metrics metrics.orbit\n".rtrim(file_get_contents($argv[2]))."\n") ? 0 : 1);' -- "$live_main" "$expected_site"
+      [[ "$node_caddy_build" == 1 || -f "$live_fragment" ]]
+      expected_fragment=$(mktemp)
+      trap 'rm -f -- "$expected_fragment"' EXIT
+      /usr/bin/php -r 'require $argv[1]; echo (new App\Infrastructure\Metrics\MetricsPublicationRenderer)->caddy($argv[2], $argv[3]);' -- "$source_root/apps/gateway/vendor/autoload.php" "$metrics_address" "$gateway_address" >"$expected_fragment"
+      if [[ "$node_caddy_build" == 1 ]]; then
+        php -r 'exit(str_contains(file_get_contents($argv[1]), "# orbit: metrics metrics.orbit\n".rtrim(file_get_contents($argv[2]))."\n") ? 0 : 1);' -- "$live_main" "$expected_fragment"
+        live_fragment=$expected_fragment
+      else
+        cmp -s -- "$expected_fragment" "$live_fragment"
+      fi
       openssl verify -CAfile /home/orbit/.orbit/ca/root.pem "$certificate_current/metrics.pem" >/dev/null
       openssl x509 -in "$certificate_current/metrics.pem" -noout -checkhost metrics.orbit >/dev/null
       ufw_status=$(ssh -n -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/home/orbit/.orbit/ssh/known_hosts -i /home/orbit/.orbit/ssh/id_ed25519 "orbit@$metrics_address" sudo ufw status numbered)
       php -r '$status=stream_get_contents(STDIN); if (preg_match("/^Status:\\s+active$/mi", $status) !== 1) exit(1); $marker="# orbit:metrics-grafana-upstream"; $owned=array_values(array_filter(preg_split("/\\R/", $status) ?: [], static fn(string $line): bool => str_ends_with(rtrim($line), $marker))); if (count($owned) !== 1) exit(1); $pattern="/\\A\\s*\\[\\s*\\d+\\]\\s+".preg_quote($argv[1], "/")."\\s+3000\\/tcp on orbit\\s+ALLOW IN\\s+".preg_quote($argv[2], "/")."\\s+\\# orbit:metrics-grafana-upstream\\s*\\z/D"; if (preg_match($pattern, $owned[0]) !== 1) exit(1);' -- "$metrics_address" "$gateway_address" <<<"$ufw_status"
       health=$(curl --fail --silent --show-error --max-time 10 --cacert /home/orbit/.orbit/ca/root.pem --resolve "metrics.orbit:443:$gateway_address" https://metrics.orbit/api/health)
       php -r '$health=json_decode(stream_get_contents(STDIN), true, 16, JSON_THROW_ON_ERROR); if (($health["database"] ?? null) !== "ok") exit(1);' <<<"$health"
-      site_sha=$(sha256sum -- "$expected_site" | cut -d ' ' -f 1)
+      fragment_sha=$(sha256sum -- "$live_fragment" | cut -d ' ' -f 1)
       expected='metrics.orbit:current-product-publication'
-      observed="dns=$gateway_address,caddy=$site_sha,certificate=metrics.orbit+orbit-ca,firewall=$gateway_address>$metrics_address:3000/tcp,grafana.database=ok"
-      rm -f -- "$expected_site"
+      observed="dns=$gateway_address,caddy=$fragment_sha,certificate=metrics.orbit+orbit-ca,firewall=$gateway_address>$metrics_address:3000/tcp,grafana.database=ok"
+      rm -f -- "$expected_fragment"
       trap - EXIT
     else
       exit 65
