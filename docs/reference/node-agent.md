@@ -231,17 +231,19 @@ The agent runs as `root`, so it reads the file as its owner without capabilities
 
 Each agent converge checks the file's SHA-256 hash with `sudo sha256sum` and keeps the secret while the hash matches the stored one. Otherwise it writes a new secret to a candidate file through standard input, moves it into place, stores the new hash, and restarts the agent. The secret never appears in a command's arguments, and the Gateway never reads it back. There is no scheduled rotation. To rotate a secret, delete the file on the Node and converge it.
 
-The converge changes the Gateway's record only when the agent that matches it can run, so a failed converge never locks out the running agent. The running agent reads its secret only when it starts.
+The converge changes the Gateway's record only at points where the agent that runs still passes, so a failed converge never locks out the running agent. The running agent reads its secret only when it starts.
 
 | Step | Gateway record |
 | --- | --- |
-| Install the binary, configuration, root certificate, and unit | Unchanged. A failure here, such as a failed download, leaves the old agent running with its old record. |
-| Write the secret file | Unchanged. The running agent keeps sending what it read at start. |
-| Replace a stored hash with a new one | Stored right before the restart. Every agent that starts from then on reads the new file. |
-| Restart the agent | An exempt Node stays exempt until the restart succeeds, and the exemption accepts both the old agent and the new one. |
-| After the restart | Stores the hash and ends the exemption. For an agent older than 0.3.0, sets the exemption and clears the hash. |
+| Write the secret file | Unchanged. The running agent keeps sending what it read at start, and an agent older than 0.3.0 ignores the file. |
+| Install the binary, configuration, root certificate, and unit | Unchanged. A 0.3.0 binary always finds its secret. |
+| Right before the restart, for an agent older than 0.3.0 | Sets the exemption and clears the hash. The exemption accepts the agent that stops and the one that starts. |
+| Restart the agent | Unchanged. |
+| After the restart succeeded | Stores the new hash and ends the exemption. |
 
-If a converge stops after the restart but before it stores the record, the Node stays exempt while an agent that sends the secret runs. Doctor reports it as `exempt`, and the next converge ends the exemption. One converge runs per Node at a time: a second converge of the same Node waits up to 5 minutes and then fails with `agent.converge_busy`.
+A failure before the restart succeeded, such as a failed download or a failed `systemctl restart`, leaves the file different from the stored hash while the running agent keeps its accepted secret. Doctor reports `mismatch`, or `exempt` for a Node that was exempt, and the next converge writes a new secret and restarts the agent. A converge that stops between the restart and the record has the same result.
+
+One converge runs per Node at a time. The lock lives in a file cache store under `ORBIT_HOME`, whatever `CACHE_STORE` says. A second converge of the same Node waits up to 2 minutes and then fails with `agent.converge_busy`. The lock expires after 4 minutes, so a converge that dies without releasing it, such as a PHP-FPM worker killed at its 600-second request limit, blocks the Node's agent converges for at most 4 minutes.
 
 ### Rollout
 
@@ -427,7 +429,7 @@ The agent recovers from each failure below without an operator.
 | Reverb stops answering without closing the connection | The agent reconnects within about 30 seconds. |
 | systemd D-Bus is unavailable | The agent exits with an error, and systemd restarts it. |
 | The secret file is missing or malformed | The agent exits with an error, and systemd restarts it every 2 seconds. Doctor reports `node.agent_secret_mismatch`. A converge writes a new secret. |
-| An agent converge fails, for example because the download fails | The old agent keeps running, and the Gateway keeps accepting it. The next converge repairs the Node. |
+| An agent converge fails, for example because the download or the restart fails | The old agent keeps running, and the Gateway keeps accepting it. Doctor reports `node.agent_secret_mismatch`, and the next converge repairs the Node. |
 | The secret differs from the Gateway's hash, for example after a Gateway database restore | The Gateway refuses the agent with `agent.secret_invalid`, and the agent keeps retrying with its backoff. Doctor reports `node.agent_secret_mismatch`, and a converge writes a new secret. |
 
 The agent logs to the systemd journal. Logs contain no Reverb key, signature, agent secret, or log line that it streams.

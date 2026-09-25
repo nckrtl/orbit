@@ -11,7 +11,5 @@ final readonly class AgentSecretHash
         public string $value,
         /** Whether the converge wrote a new secret file, so the agent must restart. */
         public bool $written,
-        /** Whether the new secret replaces a valid stored hash, rather than ending the exemption. */
-        public bool $replaces,
     ) {}
 }
