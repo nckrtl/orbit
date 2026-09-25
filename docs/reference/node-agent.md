@@ -82,7 +82,7 @@ The subscriber is a Gateway process that runs next to PHP-FPM on the Gateway hos
 
 | Item | Value |
 | --- | --- |
-| Command | `php artisan orbit:agent-view`, run as the `orbit` user in the Gateway checkout |
+| Command | `/usr/bin/php8.5 artisan orbit:agent-view`, run as the `orbit` user in the Gateway checkout |
 | Unit | `/etc/systemd/system/orbit-agent-view.service`, with `Restart=always` and `RestartSec=2` |
 | Installed by | `orbit:bootstrap` and `orbit:gateway-web`, which install, enable, and restart the unit |
 | Connection | One WebSocket to Reverb for all Nodes, to the `websocket` role's WireGuard address on port 443, verifying the `reverb.orbit` certificate against the Orbit root CA |
@@ -93,7 +93,7 @@ The subscriber joins each channel as a new member, so each agent sends it a full
 
 When the connection drops, the subscriber clears the view and reconnects with exponential backoff from 1 second to 30 seconds, with jitter. It answers `pusher:ping`, sends its own ping after 30 quiet seconds, and reconnects when no answer arrives within 30 more seconds. It ignores a message larger than 64 KB and keeps at most 4,096 units for each Node.
 
-Every 60 seconds the subscriber compares the Gateway checkout's commit with the commit it started from. When they differ, it exits, and systemd starts it again with the new code.
+Every 60 seconds the subscriber compares the Gateway checkout's commit with the commit it started from. When they differ, it exits, and systemd starts it again with the new code. It writes connection changes and failures to the Gateway log.
 
 ### Stored state
 
@@ -103,6 +103,8 @@ The view lives in the Gateway's default cache store, which the subscriber shares
 | --- | --- | --- |
 | One for each Node | The agent's units, its `docker` state, its last `sequence`, and the Gateway time at which the last agent event arrived | 60 seconds after its last write |
 | One for the subscriber | Whether realtime is configured, whether the socket is connected, the number of joined channels, and the Gateway time of the last write | 30 seconds after its last write |
+
+The subscriber writes its own entry every 5 seconds and at once when its connection drops. It removes the entry when it stops.
 
 The subscriber applies agent events with the rules in [Realtime events](/reference/events#events): it accepts an event only when Reverb's `user_id` is `agent.{id}`, applies a snapshot when every part has arrived, and starts over when the agent's `sequence` restarts. It removes a Node's entry when `agent.{id}` leaves the channel. It keeps a unit only when the name has the form `orbit-process-{id}-{name}`, the runtime is `systemd` or `docker`, and the status is a short lowercase word.
 
@@ -197,7 +199,7 @@ Run `orbit node:add <node>` to repair the first three. `node:add` refuses a Node
 
 | Observed | Meaning | Repair |
 | --- | --- | --- |
-| `subscriber_down` | The subscriber has not written its health in the last 30 seconds. | Check `systemctl status orbit-agent-view` on the Gateway host, or run `php artisan orbit:gateway-web` in the Gateway checkout. |
+| `subscriber_down` | The subscriber stopped, or it has not written its health in the last 30 seconds. | Check `systemctl status orbit-agent-view` on the Gateway host, or run `php artisan orbit:gateway-web` in the Gateway checkout. |
 | `disconnected` | The subscriber runs but has no Reverb connection. | Check the `websocket` role with `orbit doctor --family=role`. |
 | `missing` | The subscriber is connected but has no complete snapshot from this Node's agent. | Check `journalctl -u orbit-agent` on the Node. |
 | `stale` | No agent event arrived from this Node in the last 15 seconds. | Check the Node's network and `journalctl -u orbit-agent` on the Node. |
