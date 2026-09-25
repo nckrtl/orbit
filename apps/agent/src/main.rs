@@ -1041,7 +1041,10 @@ mod protocol_tests {
     #[tokio::test]
     async fn log_channel_auth_names_the_socket_channel_and_version() {
         let (base, state) = fake_server().await;
-        let http = reqwest::Client::new();
+        let http = reqwest::Client::builder()
+            .default_headers(AgentSecret::parse(TEST_SECRET).unwrap().headers())
+            .build()
+            .unwrap();
         let auth = channel_auth(
             &http,
             &format!("{base}/auth"),
