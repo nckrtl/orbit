@@ -17,6 +17,9 @@ use InvalidArgumentException;
  *
  * It reports its last stage on stderr as `orbit-caddy-build-stage=<stage>` and its result on
  * stdout as `orbit-caddy-build-result=<published|unchanged>`.
+ *
+ * A render with no site on a Node without Caddy has nothing to withdraw, so the build changes nothing and
+ * reports `unchanged`. A role removal after a convergence that failed before Caddy was installed relies on it.
  */
 final readonly class NodeCaddyPushScript
 {
@@ -62,6 +65,7 @@ final readonly class NodeCaddyPushScript
                 NodeCaddyfileRenderer::Marker,
                 (string) self::Retained,
                 implode(' ', $caddyfile->listenAddresses),
+                $caddyfile->sites === [] ? '1' : '0',
             ],
             input: $this->script(base64_encode($caddyfile->content)),
             timeout: 120.0,
@@ -119,6 +123,7 @@ final readonly class NodeCaddyPushScript
             marker=\$7
             retained=\$8
             listen_addresses=\$9
+            siteless=\${10}
             versions="\$caddy_directory/orbit-versions"
             backups="\$caddy_directory/orbit-backups"
             live="\$caddy_directory/Caddyfile"
@@ -171,6 +176,10 @@ final readonly class NodeCaddyPushScript
             {$lock}
 
             stage=release
+            if [ "\$siteless" = 1 ] && [ ! -e "\$caddy_bin" ]; then
+                printf 'orbit-caddy-build-result=unchanged\\n'
+                exit 0
+            fi
             reported=\$("\$caddy_bin" version 2>/dev/null | head -n 1 | awk '{ print \$1 }' || true)
             installed=\${reported#v}
             if ! printf '%s\\n' "\$installed" | grep -Eq '^[0-9]+[.][0-9]+[.][0-9]+'; then

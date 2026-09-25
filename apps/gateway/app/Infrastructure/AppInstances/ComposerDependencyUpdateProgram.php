@@ -12,9 +12,9 @@ final class ComposerDependencyUpdateProgram
 
     public const float TerminateGraceSeconds = 2.0;
 
-    public static function render(): string
+    public static function render(DependencyUpdateSupervisorHost $host = DependencyUpdateSupervisorHost::Node): string
     {
-        return <<<'BASH'
+        return $host->program(<<<'BASH'
 root=$1
 deadline=$2
 case "$root" in /*) ;; *) exit 1 ;; esac
@@ -161,6 +161,6 @@ if [ $((now - start)) -ge "$deadline" ] && [ "$status" -eq 137 ]; then
     exit 124
 fi
 exit "$status"
-BASH;
+BASH);
     }
 }

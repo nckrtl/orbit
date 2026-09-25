@@ -36,6 +36,11 @@ final readonly class ReadPnpmDependencyGraphAction
         }
     }
 
+    private function stale(): never
+    {
+        throw new DependencyParseException('dependencies.stale_pnpm_lockfile');
+    }
+
     private function invalid(): never
     {
         throw new DependencyParseException('dependencies.invalid_pnpm_input');
@@ -180,18 +185,25 @@ final readonly class ReadPnpmDependencyGraphAction
         return $links;
     }
 
-    /** @return array<array-key, bool> */
-    private function peers(stdClass $record): array
+    /**
+     * pnpm records no peer for root manifest metadata without a declaration, so the root ignores such a
+     * well-formed entry. pnpm writes a peer for every metadata entry of a lockfile package record.
+     *
+     * @return array<array-key, bool>
+     */
+    private function peers(stdClass $record, bool $root = false): array
     {
         $peers = array_fill_keys(array_keys($this->links($record, 'peerDependencies')), false);
 
         foreach ($this->map($record, 'peerDependenciesMeta') as $name => $meta) {
-            if (! array_key_exists($name, $peers) || ! $meta instanceof stdClass
-                || (property_exists($meta, 'optional') && ! is_bool($meta->optional))) {
+            if (! $meta instanceof stdClass || (property_exists($meta, 'optional') && ! is_bool($meta->optional))
+                || (! $root && ! array_key_exists($name, $peers))) {
                 $this->invalid();
             }
 
-            $peers[$name] = $meta->optional ?? false;
+            if (array_key_exists($name, $peers)) {
+                $peers[$name] = $meta->optional ?? false;
+            }
         }
 
         return $peers;
@@ -298,7 +310,7 @@ final readonly class ReadPnpmDependencyGraphAction
      */
     private function rootRequirements(stdClass $manifest, stdClass $importer, array $snapshots): array
     {
-        $peerOptional = $this->peers($manifest);
+        $peerOptional = $this->peers($manifest, root: true);
         $peers = $this->links($manifest, 'peerDependencies');
         $optional = $this->links($manifest, 'optionalDependencies');
         $sections = [
@@ -324,8 +336,9 @@ final readonly class ReadPnpmDependencyGraphAction
                 $specifier = $this->constraint($entry->specifier ?? null);
                 $expected = $declared[$name] ?? ($field === 'dependencies' ? ($peers[$name] ?? null) : null);
 
+                // pnpm install rewrites the importer from package.json, so a specifier difference is a stale lock.
                 if ($expected !== $specifier) {
-                    $this->invalid();
+                    $this->stale();
                 }
 
                 $id = $this->target($name, $entry->version ?? null, $snapshots);
@@ -344,7 +357,7 @@ final readonly class ReadPnpmDependencyGraphAction
             }
 
             if (array_diff_key($declared, $locked) !== []) {
-                $this->invalid();
+                $this->stale();
             }
         }
 

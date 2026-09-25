@@ -646,7 +646,7 @@ it('dispatches every assignment to its code-defined baseline', function (): void
     );
 });
 
-it('installs Caddy for an Ingress-only Node and keeps it on removal', function (): void {
+it('installs Caddy for an Ingress-only Node, and on removal builds the Node and closes public HTTP but keeps Caddy', function (): void {
     $events = [];
     [$node, $assignment] = role_baseline_models(RoleName::Ingress, 'ingress-only');
     $metricsFleet = Mockery::mock(MetricsFleetReconciler::class);
@@ -696,6 +696,7 @@ it('installs Caddy for an Ingress-only Node and keeps it on removal', function (
         'caddy:converge',
         'metrics',
         'caddy:remove',
+        'firewall:remove:ingress',
         'metrics',
         'metrics',
     ]);
@@ -1281,6 +1282,7 @@ function ingress_role_baseline(array &$events): IngressRoleBaseline
         new AppDevSshExecutor(baseline_ssh($events), baseline_keys(), baseline_known_hosts()),
         $caddy,
         baseline_account_resolver(),
+        baseline_firewall($events),
     );
 }
 
