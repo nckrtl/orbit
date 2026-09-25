@@ -234,3 +234,107 @@ it('still cancels and drops the workspace record when removal refuses', function
         ->and($cancelled->taskable_id)->toBeNull()
         ->and(AppInstance::query()->find($instanceId))->toBeNull();
 });
+
+/** A group that holds no Instance while its provisioned `task-{id}` workspace stays on the Node. */
+function cancel_unattached_workspace(TaskGroupStatus $status, string $instanceStatus = 'source_resolved'): array
+{
+    $group = cancellable_task_group($status);
+    $attached = $group->taskable;
+    $group->taskable()->dissociate();
+    $group->save();
+    $attached?->delete();
+    $name = 'task-'.$group->id;
+    $workspace = AppInstance::query()->create([
+        'app_id' => $group->app_id,
+        'node_id' => Node::query()->where('name', 'cancel-node')->value('id'),
+        'name' => $name,
+        'branch_override' => $name,
+        'checkout_path' => "/srv/orbit/apps/cancel-app/{$name}",
+        'status' => $instanceStatus,
+    ]);
+
+    return [$group->fresh(['app', 'taskable']) ?? $group, $workspace];
+}
+
+describe('a workspace the group never attached', function (): void {
+    it('removes the leftover workspace of a group swept back to todo', function (): void {
+        app(TaskExtensionState::class)->enable();
+        $remover = cancel_recording_remover();
+        [$group, $workspace] = cancel_unattached_workspace(TaskGroupStatus::Todo);
+
+        $cancelled = app(CancelTaskGroupAction::class)->execute($group);
+
+        expect($cancelled->status)->toBe(TaskGroupStatus::Cancelled)
+            ->and($remover->calls)->toBe([[$workspace->id, true]])
+            ->and(AppInstance::query()->find($workspace->id))->toBeNull();
+    });
+
+    it('removes the leftover workspace of a group stranded in reserved past the bound', function (): void {
+        app(TaskExtensionState::class)->enable();
+        $remover = cancel_recording_remover();
+        [$group, $workspace] = cancel_unattached_workspace(TaskGroupStatus::Reserved);
+        $group->forceFill(['reserved_at' => now()->subSeconds(3601)])->save();
+
+        app(CancelTaskGroupAction::class)->execute($group);
+
+        expect($remover->calls)->toBe([[$workspace->id, true]]);
+    });
+
+    it('leaves the workspace to a claim still in flight', function (): void {
+        app(TaskExtensionState::class)->enable();
+        $remover = cancel_recording_remover();
+        [$group, $workspace] = cancel_unattached_workspace(TaskGroupStatus::Reserved, 'reserved');
+        $group->forceFill(['reserved_at' => now()->subSeconds(30)])->save();
+
+        $cancelled = app(CancelTaskGroupAction::class)->execute($group);
+
+        expect($cancelled->status)->toBe(TaskGroupStatus::Cancelled)
+            ->and($remover->calls)->toBe([])
+            ->and(AppInstance::query()->find($workspace->id))->not->toBeNull();
+    });
+
+    it('removes a workspace the claim attached before the cancel landed', function (): void {
+        app(TaskExtensionState::class)->enable();
+        $remover = cancel_recording_remover();
+        [$group, $workspace] = cancel_unattached_workspace(TaskGroupStatus::Reserved);
+        $group->forceFill(['reserved_at' => now()->subSeconds(30)])->save();
+        $stale = $group->fresh(['app', 'taskable']);
+        $group->taskable()->associate($workspace);
+        $group->save();
+
+        app(CancelTaskGroupAction::class)->execute($stale);
+
+        expect($remover->calls)->toBe([[$workspace->id, true]])
+            ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Cancelled)
+            ->and($group->fresh()?->taskable_id)->toBeNull();
+    });
+
+    it('drops the record of a half-provisioned workspace when removal refuses', function (): void {
+        app(TaskExtensionState::class)->enable();
+        app()->instance(AppInstanceRemover::class, new class implements AppInstanceRemover
+        {
+            public function execute(AppInstance $instance, bool $force): AppInstanceRemoval
+            {
+                throw new ResourceOperationException('instance.remove_refused', 'AppInstance is not active.', 409);
+            }
+        });
+        [$group, $workspace] = cancel_unattached_workspace(TaskGroupStatus::Todo, 'checkout_prepared');
+
+        $cancelled = app(CancelTaskGroupAction::class)->execute($group);
+
+        expect($cancelled->status)->toBe(TaskGroupStatus::Cancelled)
+            ->and(AppInstance::query()->find($workspace->id))->toBeNull();
+    });
+
+    it('never removes an Instance that only shares the workspace name', function (): void {
+        app(TaskExtensionState::class)->enable();
+        $remover = cancel_recording_remover();
+        [$group, $workspace] = cancel_unattached_workspace(TaskGroupStatus::Todo);
+        $workspace->update(['branch_override' => null]);
+
+        app(CancelTaskGroupAction::class)->execute($group);
+
+        expect($remover->calls)->toBe([])
+            ->and(AppInstance::query()->find($workspace->id))->not->toBeNull();
+    });
+});

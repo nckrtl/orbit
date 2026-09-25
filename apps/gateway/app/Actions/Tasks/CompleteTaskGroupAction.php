@@ -4,17 +4,15 @@ declare(strict_types=1);
 
 namespace App\Actions\Tasks;
 
-use App\Domain\AppInstances\AppInstanceRemover;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskGroupStatus;
-use App\Models\AppInstance;
 use App\Models\TaskGroup;
 
 final readonly class CompleteTaskGroupAction
 {
     public function __construct(
         private RequireTasksExtensionAction $requireExtension,
-        private AppInstanceRemover $remover,
+        private RemoveTaskWorkspaceAction $workspace,
     ) {}
 
     public function execute(TaskGroup $group): TaskGroup
@@ -36,11 +34,7 @@ final readonly class CompleteTaskGroupAction
             );
         }
 
-        $instance = $group->taskable;
-
-        if ($instance instanceof AppInstance) {
-            $this->remover->execute($instance, true);
-        }
+        $this->workspace->execute($group);
 
         $group->taskable()->dissociate();
         $group->status = TaskGroupStatus::Completed;

@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Actions\Tasks\CancelTaskGroupAction;
+use App\Domain\AppInstances\AppInstanceRemover;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\AgentSpawner;
 use App\Domain\Tasks\InstanceProvisioning;
@@ -13,6 +15,7 @@ use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskStatus;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
+use App\Models\AppInstanceRemoval;
 use App\Models\Node;
 use App\Models\Task;
 use App\Models\TaskGroup;
@@ -428,6 +431,83 @@ describe('the stale reservation sweep', function (): void {
             ->and($group?->tasks->sole()->status)->toBe(TaskStatus::Todo);
     });
 });
+
+describe('a group cancelled while its claim runs', function (): void {
+    it('removes the Instance the claim provisioned and keeps the group cancelled', function (): void {
+        claim_hol_enable();
+        $app = claim_hol_app();
+        $group = claim_hol_group($app, 'Cancelled mid-claim');
+        $removed = claim_hol_recording_remover();
+        $instance = claim_hol_instance($app, 'task-'.$group->id);
+        app()->instance(InstanceProvisioning::class, new class($instance) implements InstanceProvisioning
+        {
+            public function __construct(private AppInstance $instance) {}
+
+            public function provision(InstanceProvisionIntent $intent): ?AppInstance
+            {
+                app(CancelTaskGroupAction::class)->execute($intent->group);
+
+                return $this->instance;
+            }
+        });
+        claim_hol_spawner();
+
+        expect(app(TaskScheduler::class)->claimNext())->toBeNull()
+            ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Cancelled)
+            ->and($group->fresh()?->taskable_id)->toBeNull()
+            ->and($removed->ids)->toBe([$instance->id])
+            ->and(AppInstance::query()->find($instance->id))->toBeNull();
+    });
+
+    it('removes a half-provisioned workspace and does not return the group to todo when provisioning fails', function (): void {
+        Exceptions::fake();
+        claim_hol_enable();
+        $app = claim_hol_app();
+        $group = claim_hol_group($app, 'Cancelled then failed');
+        $removed = claim_hol_recording_remover();
+        app()->instance(InstanceProvisioning::class, new class($app) implements InstanceProvisioning
+        {
+            public function __construct(private OrbitApp $app) {}
+
+            public function provision(InstanceProvisionIntent $intent): ?AppInstance
+            {
+                $name = 'task-'.$intent->group->id;
+                claim_hol_instance($this->app, $name)->update(['branch_override' => $name]);
+                app(CancelTaskGroupAction::class)->execute($intent->group);
+
+                throw new RuntimeException('The checkout failed part way.');
+            }
+        });
+        claim_hol_spawner();
+
+        expect(app(TaskScheduler::class)->claimNext())->toBeNull()
+            ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Cancelled)
+            ->and($group->fresh()?->assistance_reason)->toBeNull()
+            ->and($removed->ids)->toHaveCount(1)
+            ->and(AppInstance::query()->where('name', 'task-'.$group->id)->exists())->toBeFalse();
+    });
+});
+
+/** Records each removal and deletes the row, as a completed removal does. */
+function claim_hol_recording_remover(): object
+{
+    $remover = new class implements AppInstanceRemover
+    {
+        /** @var list<int> */
+        public array $ids = [];
+
+        public function execute(AppInstance $instance, bool $force): AppInstanceRemoval
+        {
+            $this->ids[] = $instance->id;
+            $instance->delete();
+
+            return new AppInstanceRemoval;
+        }
+    };
+    app()->instance(AppInstanceRemover::class, $remover);
+
+    return $remover;
+}
 
 /**
  * Provisions one Instance per group and returns the Instance a group already holds, as TaskWorkspaceProvisioner does.

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Tasks;
 
 use App\Actions\Tasks\CompleteTaskGroupAction;
+use App\Actions\Tasks\RemoveTaskWorkspaceAction;
 use App\Domain\Projects\LifecyclePhase;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\AgentThread;
@@ -58,6 +59,7 @@ final readonly class TaskScheduler
         private TaskPullRequestPublisher $publisher,
         private TaskCheckRunner $checks,
         private TaskBroadcasts $broadcasts,
+        private RemoveTaskWorkspaceAction $workspaces,
     ) {}
 
     /**
@@ -827,11 +829,8 @@ final readonly class TaskScheduler
             try {
                 $instance = $this->provisioning->provision(InstanceProvisionIntent::for($reserved));
             } catch (TaskCapacityException $exception) {
-                $reserved->status = TaskGroupStatus::Todo;
-                if (self::isClaimFailureReason($reserved->assistance_reason)) {
-                    $reserved->assistance_reason = null;
-                }
-                $reserved->save();
+                $this->releaseReservation($reserved, self::isClaimFailureReason($reserved->assistance_reason) ? null : $reserved->assistance_reason);
+                $this->removeEndedWorkspace($reserved, null);
 
                 if ($exception->fleetFull) {
                     return null;
@@ -847,10 +846,8 @@ final readonly class TaskScheduler
             }
 
             if (! $instance instanceof AppInstance) {
-                $reserved->update([
-                    'status' => TaskGroupStatus::Todo,
-                    'assistance_reason' => self::ProvisioningFailedReason,
-                ]);
+                $this->releaseReservation($reserved, self::ProvisioningFailedReason);
+                $this->removeEndedWorkspace($reserved, null);
                 $skipped[] = $reserved->id;
 
                 continue;
@@ -862,6 +859,7 @@ final readonly class TaskScheduler
                 // A failed start must not strand the group in reserved or drop its Instance. The log keeps the detail.
                 report($exception);
                 $this->releaseFailedStart($reserved, $instance);
+                $this->removeEndedWorkspace($reserved, $instance);
                 $skipped[] = $reserved->id;
 
                 continue;
@@ -871,6 +869,8 @@ final readonly class TaskScheduler
         }
 
         if (! $started instanceof TaskGroup) {
+            $this->removeEndedWorkspace($reserved, $instance);
+
             return null;
         }
 
@@ -894,7 +894,7 @@ final readonly class TaskScheduler
             ->findOrFail($reserved->id);
 
         if (! $this->holdsReservation($group, $reserved)) {
-            if ($group->taskable_id === null) {
+            if ($group->taskable_id === null && ! self::hasEnded($group)) {
                 $group->taskable()->associate($instance);
                 $group->save();
             }
@@ -935,7 +935,7 @@ final readonly class TaskScheduler
                 if (! $group instanceof TaskGroup) {
                     return;
                 }
-                if ($group->taskable_id === null) {
+                if ($group->taskable_id === null && ! self::hasEnded($group)) {
                     $group->taskable()->associate($instance);
                 }
                 if ($this->holdsReservation($group, $reserved)) {
@@ -947,6 +947,46 @@ final readonly class TaskScheduler
         } catch (Throwable $exception) {
             report($exception);
         }
+    }
+
+    /**
+     * Returns a group to todo only while this claim still holds its reservation, so a claim never overwrites a
+     * group that the tick released, a cancel ended, or a newer claim reserved.
+     */
+    private function releaseReservation(TaskGroup $reserved, ?string $reason): void
+    {
+        TaskGroup::query()->whereKey($reserved->id)
+            ->where('status', TaskGroupStatus::Reserved)
+            ->where('reserved_at', $reserved->reserved_at)
+            ->update(['status' => TaskGroupStatus::Todo, 'assistance_reason' => $reason]);
+    }
+
+    /**
+     * A group cancelled or completed while its claim ran holds no workspace, because the cancel left the
+     * workspace to the claim. The claim removes the Instance it provisioned, or the group's unattached
+     * `task-{group id}` workspace when provisioning failed part way.
+     */
+    private function removeEndedWorkspace(TaskGroup $reserved, ?AppInstance $instance): void
+    {
+        $group = TaskGroup::query()->with('taskable')->find($reserved->id);
+        if (! $group instanceof TaskGroup || ! self::hasEnded($group) || $group->taskable_id !== null) {
+            return;
+        }
+
+        try {
+            $leftover = $instance instanceof AppInstance ? AppInstance::query()->find($instance->id) : $this->workspaces->find($group);
+            if ($leftover instanceof AppInstance) {
+                $this->workspaces->remove($leftover);
+            }
+        } catch (Throwable $exception) {
+            // The workspace stays findable by name, so a repeated cancel removes it.
+            report($exception);
+        }
+    }
+
+    private static function hasEnded(TaskGroup $group): bool
+    {
+        return in_array($group->status, [TaskGroupStatus::Cancelled, TaskGroupStatus::Completed], true);
     }
 
     private function holdsReservation(TaskGroup $group, TaskGroup $reserved): bool
@@ -964,7 +1004,7 @@ final readonly class TaskScheduler
      */
     public function releaseStaleReservations(): int
     {
-        $cutoff = now()->subSeconds((int) config('orbit.tasks.reserved_timeout_seconds'));
+        $cutoff = RemoveTaskWorkspaceAction::reservationCutoff();
         $stale = static fn ($query) => $query->where('execution_mode', TaskExecutionMode::Managed)
             ->where('status', TaskGroupStatus::Reserved)
             ->where(static fn ($query) => $query->whereNull('reserved_at')->orWhere('reserved_at', '<=', $cutoff));
