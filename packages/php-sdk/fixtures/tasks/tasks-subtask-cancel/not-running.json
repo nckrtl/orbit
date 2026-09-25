@@ -1,0 +1,13 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\Tasks\\CancelSubtaskRequest",
+    "route": "POST /api/v1/task-groups/{group}/tasks/{task}/cancel",
+    "status": 409,
+    "body": {
+        "error": {
+            "code": "tasks.subtask_not_running",
+            "message": "Only a running subtask can be cancelled.",
+            "details": {}
+        }
+    }
+}
