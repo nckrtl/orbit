@@ -18,6 +18,7 @@ use App\Models\TaskGroup;
 use Closure;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Throwable;
@@ -1027,60 +1028,86 @@ final readonly class TaskScheduler
         return $released;
     }
 
-    /** The most abandoned workspace removals one tick attempts, so a backlog of remote removals never stalls the tick. */
-    public const int AbandonedWorkspacesPerTick = 5;
+    /** Seconds one tick may spend removing abandoned workspaces, well inside the 300-second tick lock. */
+    public const int AbandonedWorkspaceBudgetSeconds = 60;
+
+    /** The first retry delay after a failed removal. Each further failure doubles it, up to the reservation timeout. */
+    public const int AbandonedWorkspaceBackoffSeconds = 60;
 
     /**
-     * Removes the `task-{group id}` workspace of a cancelled or completed group that holds no Instance, once no
-     * claim can still own it: the group was never reserved, or its reservation is older than
+     * Removes the `task-{group id}` workspace (branch `task-{group id}`) of a cancelled or completed group that holds
+     * no Instance, once no claim can still own it: the group was never reserved, or its reservation is older than
      * `orbit.tasks.reserved_timeout_seconds`. A cancel that lands during a live claim leaves the workspace to that
-     * claim, and this sweep removes it when the claim stopped first. A removal that fails is reported and retried
-     * on a later tick.
+     * claim, and this sweep removes it when the claim stopped first.
+     *
+     * One query selects the candidates. A failed removal is reported and backs off per Instance, so a workspace that
+     * keeps failing never blocks the others or costs a remote timeout on every tick. The sweep stops starting
+     * removals once it has spent its time budget; the rest wait for the next tick.
      */
     public function removeAbandonedWorkspaces(): int
     {
-        $cutoff = RemoveTaskWorkspaceAction::reservationCutoff();
-        $workspaces = AppInstance::query()
-            ->where('name', 'like', 'task-%')
-            ->whereColumn('branch_override', 'name')
-            ->orderBy('id')
-            ->get();
+        $started = now();
         $removed = 0;
-        $attempts = 0;
 
-        foreach ($workspaces as $workspace) {
-            if ($attempts >= self::AbandonedWorkspacesPerTick) {
+        foreach ($this->abandonedWorkspaces() as $workspace) {
+            if ($started->diffInSeconds(now(), true) >= self::AbandonedWorkspaceBudgetSeconds) {
                 break;
             }
 
-            $groupId = substr($workspace->name, strlen('task-'));
-            if (! ctype_digit($groupId)) {
+            $backoffKey = 'tasks.workspace-removal.'.$workspace->id;
+            /** @var array{failures: int, due: int}|null $backoff */
+            $backoff = Cache::get($backoffKey);
+            if (is_array($backoff) && $backoff['due'] > now()->getTimestamp()) {
                 continue;
             }
 
-            $ended = TaskGroup::query()->whereKey((int) $groupId)
-                ->where('app_id', $workspace->app_id)
-                ->where('execution_mode', TaskExecutionMode::Managed)
-                ->whereIn('status', [TaskGroupStatus::Cancelled, TaskGroupStatus::Completed])
-                ->whereNull('taskable_id')
-                ->where(static fn ($query) => $query->whereNull('reserved_at')->orWhere('reserved_at', '<=', $cutoff))
-                ->exists();
-            if (! $ended) {
+            $instance = AppInstance::query()->find($workspace->id);
+            if (! $instance instanceof AppInstance) {
                 continue;
             }
-
-            $attempts++;
 
             try {
-                $this->workspaces->remove($workspace);
-                Log::warning('Removed the workspace of an ended task group.', ['task_group_id' => (int) $groupId, 'app_instance_id' => $workspace->id]);
+                $this->workspaces->remove($instance);
+                Cache::forget($backoffKey);
+                Log::warning('Removed the workspace of an ended task group.', ['task_group_id' => (int) $workspace->getAttribute('ended_task_group_id'), 'app_instance_id' => $workspace->id]);
                 $removed++;
             } catch (Throwable $exception) {
                 report($exception);
+                $failures = (is_array($backoff) ? $backoff['failures'] : 0) + 1;
+                $delay = min(
+                    self::AbandonedWorkspaceBackoffSeconds * 2 ** min($failures - 1, 20),
+                    max(self::AbandonedWorkspaceBackoffSeconds, (int) config('orbit.tasks.reserved_timeout_seconds')),
+                );
+                Cache::put($backoffKey, ['failures' => $failures, 'due' => now()->addSeconds($delay)->getTimestamp()], now()->addSeconds($delay * 2));
             }
         }
 
         return $removed;
+    }
+
+    /** @return Collection<int, AppInstance> */
+    private function abandonedWorkspaces(): Collection
+    {
+        $workspaceName = match (DB::connection()->getDriverName()) {
+            'mysql', 'mariadb' => "CONCAT('task-', task_groups.id)",
+            default => "'task-' || task_groups.id",
+        };
+
+        return AppInstance::query()
+            ->select('app_instances.*', 'task_groups.id as ended_task_group_id')
+            ->join('task_groups', static function ($join) use ($workspaceName): void {
+                $join->on('task_groups.app_id', '=', 'app_instances.app_id')
+                    ->whereRaw("app_instances.name = {$workspaceName}");
+            })
+            ->whereColumn('app_instances.branch_override', 'app_instances.name')
+            ->where('task_groups.execution_mode', TaskExecutionMode::Managed->value)
+            ->whereIn('task_groups.status', [TaskGroupStatus::Cancelled->value, TaskGroupStatus::Completed->value])
+            ->whereNull('task_groups.taskable_id')
+            ->where(static fn ($query) => $query
+                ->whereNull('task_groups.reserved_at')
+                ->orWhere('task_groups.reserved_at', '<=', RemoveTaskWorkspaceAction::reservationCutoff()))
+            ->orderBy('app_instances.id')
+            ->get();
     }
 
     public static function isClaimFailureReason(?string $reason): bool

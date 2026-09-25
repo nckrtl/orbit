@@ -309,6 +309,45 @@ describe('a workspace the group never attached', function (): void {
             ->and($group->fresh()?->taskable_id)->toBeNull();
     });
 
+    it('removes an Instance a claim attached after cancel looked for the workspace', function (): void {
+        app(TaskExtensionState::class)->enable();
+        [$group, $workspace] = cancel_unattached_workspace(TaskGroupStatus::Todo);
+        $late = AppInstance::query()->create([
+            'app_id' => $group->app_id,
+            'node_id' => $workspace->node_id,
+            'name' => 'late-attach',
+            'checkout_path' => '/srv/orbit/apps/cancel-app/late-attach',
+            'status' => 'source_resolved',
+        ]);
+        $remover = new class($group->id, $late) implements AppInstanceRemover
+        {
+            /** @var list<int> */
+            public array $calls = [];
+
+            public function __construct(private int $groupId, private AppInstance $late) {}
+
+            public function execute(AppInstance $instance, bool $force): AppInstanceRemoval
+            {
+                $this->calls[] = $instance->id;
+                if ($this->calls === [$instance->id] && $instance->id !== $this->late->id) {
+                    $group = TaskGroup::query()->findOrFail($this->groupId);
+                    $group->taskable()->associate($this->late);
+                    $group->save();
+                }
+                $instance->delete();
+
+                return new AppInstanceRemoval;
+            }
+        };
+        app()->instance(AppInstanceRemover::class, $remover);
+
+        $cancelled = app(CancelTaskGroupAction::class)->execute($group);
+
+        expect($remover->calls)->toBe([$workspace->id, $late->id])
+            ->and($cancelled->taskable_id)->toBeNull()
+            ->and(AppInstance::query()->whereKey([$workspace->id, $late->id])->exists())->toBeFalse();
+    });
+
     it('drops the record of a half-provisioned workspace when removal refuses', function (): void {
         app(TaskExtensionState::class)->enable();
         app()->instance(AppInstanceRemover::class, new class implements AppInstanceRemover

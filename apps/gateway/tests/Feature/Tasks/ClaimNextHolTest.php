@@ -524,40 +524,88 @@ describe('the abandoned workspace sweep', function (): void {
             ->and(AppInstance::query()->count())->toBe(2);
     });
 
-    it('attempts a bounded number of removals per tick and retries a failed one later', function (): void {
+    it('backs off failing removals per Instance so a later workspace is still removed', function (): void {
         Exceptions::fake();
         claim_hol_enable();
         $app = claim_hol_app();
-        $failing = true;
-        app()->instance(AppInstanceRemover::class, new class($failing) implements AppInstanceRemover
-        {
-            public function __construct(private bool &$failing) {}
+        $remover = claim_hol_failing_remover();
+        foreach (range(1, 5) as $index) {
+            $group = claim_hol_group($app, "Failing {$index}");
+            $group->forceFill(['status' => TaskGroupStatus::Cancelled])->save();
+            $remover->failing[] = claim_hol_workspace($app, $group, 'source_resolved')->id;
+        }
+        $good = claim_hol_group($app, 'Good');
+        $good->forceFill(['status' => TaskGroupStatus::Cancelled])->save();
+        $goodWorkspace = claim_hol_workspace($app, $good, 'source_resolved');
 
-            public function execute(AppInstance $instance, bool $force): AppInstanceRemoval
-            {
-                if ($this->failing) {
-                    throw new RuntimeException('The Node is unreachable.');
-                }
-                $instance->delete();
+        expect(app(TaskScheduler::class)->removeAbandonedWorkspaces())->toBe(1)
+            ->and(AppInstance::query()->find($goodWorkspace->id))->toBeNull();
+        Exceptions::assertReportedCount(5);
 
-                return new AppInstanceRemoval;
-            }
-        });
-        foreach (range(1, TaskScheduler::AbandonedWorkspacesPerTick + 2) as $index) {
-            $group = claim_hol_group($app, "Ended {$index}");
+        $this->travel(TaskScheduler::AbandonedWorkspaceBackoffSeconds - 1)->seconds();
+        expect(app(TaskScheduler::class)->removeAbandonedWorkspaces())->toBe(0)
+            ->and($remover->attempts)->toHaveCount(6);
+
+        $this->travel(2)->seconds();
+        app(TaskScheduler::class)->removeAbandonedWorkspaces();
+        expect($remover->attempts)->toHaveCount(11);
+
+        // The second failure doubles the delay.
+        $this->travel(TaskScheduler::AbandonedWorkspaceBackoffSeconds + 1)->seconds();
+        app(TaskScheduler::class)->removeAbandonedWorkspaces();
+        expect($remover->attempts)->toHaveCount(11);
+
+        $remover->failing = [];
+        $this->travel(TaskScheduler::AbandonedWorkspaceBackoffSeconds)->seconds();
+        expect(app(TaskScheduler::class)->removeAbandonedWorkspaces())->toBe(5)
+            ->and(AppInstance::query()->count())->toBe(0);
+    });
+
+    it('stops starting removals once the tick has spent its time budget', function (): void {
+        claim_hol_enable();
+        $app = claim_hol_app();
+        $remover = claim_hol_failing_remover(secondsPerRemoval: 25);
+        foreach (range(1, 4) as $index) {
+            $group = claim_hol_group($app, "Slow {$index}");
             $group->forceFill(['status' => TaskGroupStatus::Cancelled])->save();
             claim_hol_workspace($app, $group, 'source_resolved');
         }
 
-        expect(app(TaskScheduler::class)->removeAbandonedWorkspaces())->toBe(0);
-        Exceptions::assertReportedCount(TaskScheduler::AbandonedWorkspacesPerTick);
-
-        $failing = false;
-        expect(app(TaskScheduler::class)->removeAbandonedWorkspaces())->toBe(TaskScheduler::AbandonedWorkspacesPerTick)
-            ->and(app(TaskScheduler::class)->removeAbandonedWorkspaces())->toBe(2)
-            ->and(AppInstance::query()->count())->toBe(0);
+        expect(app(TaskScheduler::class)->removeAbandonedWorkspaces())->toBe(3)
+            ->and(AppInstance::query()->count())->toBe(1)
+            ->and(app(TaskScheduler::class)->removeAbandonedWorkspaces())->toBe(1);
     });
 });
+
+/** Removes Instances, fails for the listed ids, and advances the clock by the time one removal takes. */
+function claim_hol_failing_remover(int $secondsPerRemoval = 0): object
+{
+    $remover = new class($secondsPerRemoval) implements AppInstanceRemover
+    {
+        /** @var list<int> */
+        public array $failing = [];
+
+        /** @var list<int> */
+        public array $attempts = [];
+
+        public function __construct(private int $secondsPerRemoval) {}
+
+        public function execute(AppInstance $instance, bool $force): AppInstanceRemoval
+        {
+            $this->attempts[] = $instance->id;
+            test()->travel($this->secondsPerRemoval)->seconds();
+            if (in_array($instance->id, $this->failing, true)) {
+                throw new RuntimeException('The Node is unreachable.');
+            }
+            $instance->delete();
+
+            return new AppInstanceRemoval;
+        }
+    };
+    app()->instance(AppInstanceRemover::class, $remover);
+
+    return $remover;
+}
 
 /** The group's deterministic workspace, as TaskWorkspaceProvisioner creates it. */
 function claim_hol_workspace(OrbitApp $app, TaskGroup $group, string $status = 'reserved'): AppInstance

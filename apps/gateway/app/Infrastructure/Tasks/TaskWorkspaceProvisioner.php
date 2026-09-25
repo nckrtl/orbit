@@ -87,6 +87,15 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
             ->first();
 
         if ($existing instanceof AppInstance) {
+            // Only the group's own workspace carries its task branch. Another Instance with the name is never adopted.
+            if ($existing->branch_override !== $name) {
+                throw new ResourceOperationException(
+                    'instance.name_taken',
+                    "Instance [{$name}] exists without the task branch and is not this group's workspace.",
+                    409,
+                );
+            }
+
             if ($existing->node_id !== $node->id) {
                 throw new ResourceOperationException(
                     'instance.placement_conflict',
@@ -262,9 +271,11 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
      */
     private function existingWorkspaceNodeId(TaskGroup $group): ?int
     {
+        $name = TaskWorkspaceName::for($group);
         $nodeId = AppInstance::query()
             ->where('app_id', $group->app_id)
-            ->where('name', TaskWorkspaceName::for($group))
+            ->where('name', $name)
+            ->where('branch_override', $name)
             ->value('node_id');
 
         return is_numeric($nodeId) ? (int) $nodeId : null;

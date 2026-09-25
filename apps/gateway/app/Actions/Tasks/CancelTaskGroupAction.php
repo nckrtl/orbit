@@ -50,9 +50,12 @@ final readonly class CancelTaskGroupAction
             $this->workspace->remove($instance);
         }
 
-        $attachedByClaim = DB::transaction(static function () use ($group, $claimInFlight): ?AppInstance {
+        $removedId = $instance?->id;
+        $attachedByClaim = DB::transaction(static function () use ($group, $removedId): ?AppInstance {
             $locked = TaskGroup::query()->with('taskable')->lockForUpdate()->findOrFail($group->id);
-            $attached = $claimInFlight && $locked->taskable instanceof AppInstance ? $locked->taskable : null;
+            // A claim can attach an Instance between the checks above and this lock. Cancel removes whatever is still
+            // attached and was not removed above, whether or not it saw a claim in flight.
+            $attached = $locked->taskable instanceof AppInstance && $locked->taskable_id !== $removedId ? $locked->taskable : null;
             $locked->taskable()->dissociate();
             $locked->status = TaskGroupStatus::Cancelled;
             $locked->assistance_requested = false;

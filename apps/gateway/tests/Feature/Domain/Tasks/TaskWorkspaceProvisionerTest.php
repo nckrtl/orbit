@@ -480,11 +480,32 @@ describe('a workspace an interrupted claim left unattached', function (): void {
             'node_id' => $full->id,
             'name' => TaskWorkspaceName::for($group),
             'checkout_path' => '/srv/orbit/apps/orbit/'.TaskWorkspaceName::for($group),
+            'branch_override' => TaskWorkspaceName::for($group),
             'status' => AppInstanceState::Reserved,
         ]);
         bind_task_workspace_fakes();
 
         expect(fn () => app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, false)))
             ->toThrow(fn (TaskCapacityException $exception) => expect($exception->fleetFull)->toBeFalse());
+    });
+
+    it('never adopts an Instance that only shares the workspace name', function (): void {
+        $app = provisioner_app('orbit');
+        $node = provisioner_node('only', '10.44.0.134');
+        $group = provisioner_group($app);
+        $lookalike = AppInstance::query()->create([
+            'app_id' => $app->id,
+            'node_id' => $node->id,
+            'name' => TaskWorkspaceName::for($group),
+            'checkout_path' => '/srv/orbit/apps/orbit/'.TaskWorkspaceName::for($group),
+            'branch_override' => 'feature-x',
+            'status' => AppInstanceState::SourceResolved,
+        ]);
+        bind_task_workspace_fakes();
+
+        expect(app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, false)))->toBeNull()
+            ->and($lookalike->fresh()?->branch_override)->toBe('feature-x')
+            ->and($lookalike->fresh()?->status)->toBe(AppInstanceState::SourceResolved);
+        $this->assertDatabaseCount('app_instances', 1);
     });
 });
