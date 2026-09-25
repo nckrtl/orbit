@@ -23,6 +23,11 @@ use Throwable;
  * It signs its own `gateway.{socket id}` membership with the Reverb secret the Gateway already
  * holds, so no message costs an HTTP request. It never sends a client event and never acts on
  * what an agent reports: the view is only an input to reads. ADR 0148 records the design.
+ *
+ * Reverb announces a member only when its first connection joins and its last one leaves, and an
+ * agent sends a snapshot only when a member joins. So when agent events keep arriving without a
+ * complete snapshot, or the agent's sequence goes back without a membership change, the subscriber
+ * leaves and joins that channel again: its new membership makes every agent connection send one.
  */
 final class AgentViewSubscriber
 {
@@ -42,6 +47,8 @@ final class AgentViewSubscriber
 
     public const int ConnectTimeoutSeconds = 10;
 
+    public const int SnapshotRequestSeconds = 5;
+
     private const float MaxBackoffSeconds = 30.0;
 
     private const string CHANNEL = '/\Apresence-node\.([1-9][0-9]*)\z/D';
@@ -51,6 +58,9 @@ final class AgentViewSubscriber
 
     /** @var array<int, true> Nodes whose stored view changed in this pass. */
     private array $dirty = [];
+
+    /** @var array<int, float> When the subscriber last asked each Node's agent for a snapshot. */
+    private array $snapshotRequestedAt = [];
 
     private ?string $socketId = null;
 
@@ -163,6 +173,7 @@ final class AgentViewSubscriber
         }
 
         $this->flush();
+        $this->requestSnapshots();
         $this->keepAlive();
 
         if ($this->socket->isConnected() && $this->now() >= $this->nextRefreshAt) {
@@ -273,7 +284,7 @@ final class AgentViewSubscriber
 
         foreach (array_diff(array_keys($this->channels), $nodeIds) as $nodeId) {
             $this->send(['event' => 'pusher:unsubscribe', 'data' => ['channel' => "presence-node.{$nodeId}"]]);
-            unset($this->channels[$nodeId]);
+            unset($this->channels[$nodeId], $this->snapshotRequestedAt[$nodeId]);
             $this->forget($nodeId);
         }
 
@@ -288,11 +299,52 @@ final class AgentViewSubscriber
             return;
         }
 
-        $channel = "presence-node.{$nodeId}";
-        $signature = $this->signer->sign($this->socketId, $channel, $this->connection, "gateway.{$this->socketId}", ['kind' => 'gateway']);
-
-        if ($this->send(['event' => 'pusher:subscribe', 'data' => ['channel' => $channel] + $signature])) {
+        if ($this->send($this->subscription($nodeId, $this->socketId, $this->connection))) {
             $this->channels[$nodeId] = new AgentChannelState;
+        }
+    }
+
+    /** @return array<string, mixed> */
+    private function subscription(int $nodeId, string $socketId, RealtimeConnectionData $connection): array
+    {
+        $channel = "presence-node.{$nodeId}";
+        $signature = $this->signer->sign($socketId, $channel, $connection, "gateway.{$socketId}", ['kind' => 'gateway']);
+
+        return ['event' => 'pusher:subscribe', 'data' => ['channel' => $channel] + $signature];
+    }
+
+    /**
+     * Leaves and joins again each channel whose agent owes a complete snapshot. Reverb then announces
+     * the subscriber as a new member, and every agent connection answers with a snapshot. The state
+     * stays in place, so the Node turns fresh as soon as that snapshot is complete.
+     */
+    private function requestSnapshots(): void
+    {
+        if ($this->socketId === null || $this->connection === null) {
+            return;
+        }
+
+        foreach ($this->channels as $nodeId => $state) {
+            $wantedSince = $state->snapshotWantedSince;
+
+            if (
+                $wantedSince === null
+                || $this->now() - $wantedSince < self::SnapshotRequestSeconds
+                || $this->now() - ($this->snapshotRequestedAt[$nodeId] ?? -INF) < self::SnapshotRequestSeconds
+            ) {
+                continue;
+            }
+
+            $this->snapshotRequestedAt[$nodeId] = $this->now();
+            $state->snapshotRequested();
+            $this->log->info('The agent view subscriber asks a Node agent for a complete snapshot.', ['node_id' => $nodeId]);
+
+            if (
+                ! $this->send(['event' => 'pusher:unsubscribe', 'data' => ['channel' => "presence-node.{$nodeId}"]])
+                || ! $this->send($this->subscription($nodeId, $this->socketId, $this->connection))
+            ) {
+                return;
+            }
         }
     }
 
@@ -442,6 +494,7 @@ final class AgentViewSubscriber
 
         $this->channels = [];
         $this->dirty = [];
+        $this->snapshotRequestedAt = [];
         $this->socketId = null;
         $this->connection = null;
         $this->credentialsFingerprint = null;

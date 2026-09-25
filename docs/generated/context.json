@@ -3866,6 +3866,27 @@
             ]
         },
         {
+            "path": "docs/decisions/0154-recover-the-gateway-agent-view-without-a-membership-change.md",
+            "title": "ADR 0154: Recover the Gateway agent view without a membership change",
+            "kind": "decision",
+            "components": [
+                "apps/docs",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Doctor",
+                "Gateway",
+                "Node",
+                "Node agent",
+                "Process"
+            ],
+            "governing_adrs": [
+                "0129",
+                "0148",
+                "0154"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -4044,7 +4065,8 @@
                 "0147",
                 "0148",
                 "0149",
-                "0150"
+                "0150",
+                "0154"
             ]
         },
         {
@@ -4948,7 +4970,8 @@
                 "0128",
                 "0129",
                 "0130",
-                "0148"
+                "0148",
+                "0154"
             ]
         },
         {
