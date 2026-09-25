@@ -19,6 +19,22 @@ final readonly class UfwRuleShape
         public ?string $family,
     ) {}
 
+    public function withSource(string $source): self
+    {
+        return new self(
+            comment: $this->comment,
+            action: $this->action,
+            direction: $this->direction,
+            source: $source,
+            destination: $this->destination,
+            port: $this->port,
+            protocol: $this->protocol,
+            inInterface: $this->inInterface,
+            outInterface: $this->outInterface,
+            family: $this->family,
+        );
+    }
+
     public function matches(self $observed): bool
     {
         return
