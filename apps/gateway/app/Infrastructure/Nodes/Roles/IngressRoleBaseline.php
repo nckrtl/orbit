@@ -14,8 +14,10 @@ use App\Models\Node;
 use App\Models\NodeRole;
 
 /**
- * Installs the Caddy that serves the Ingress public sites, so an Ingress-only Node can serve them. Public Route
- * publication keeps owning the public sites and the Ingress firewall rules.
+ * Installs the Caddy that serves the Ingress public sites, so an Ingress-only Node can serve them. It does not
+ * build the Node Caddyfile: while the role converges it is not active, so a build here would drop the public
+ * sites. Role convergence builds the Node after the role is active again. Public Route publication keeps owning
+ * the public sites and the Ingress firewall rules.
  */
 final readonly class IngressRoleBaseline implements RoleBaseline
 {
@@ -39,7 +41,6 @@ final readonly class IngressRoleBaseline implements RoleBaseline
             'role-prerequisites',
             'ingress.prerequisite_failed',
         );
-        $this->caddy->converge($node);
     }
 
     /** The build renders the sites other roles still place on the Node. Caddy stays installed. */

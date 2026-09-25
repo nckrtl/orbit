@@ -267,6 +267,32 @@ describe(RouteDoctorProbe::class, function (): void {
             ->and($onMember->checked)->toBe(0)
             ->and($onMember->issues)->toBeEmpty();
     });
+
+    it('does not report a Cluster Route on a Node whose Router role is not active', function (): void {
+        $router = route_doctor_node();
+        $cluster = Cluster::query()->create(['name' => 'edge', 'tld' => null, 'state' => ClusterState::Active]);
+        $router->update(['cluster_id' => $cluster->id]);
+        $router->roles()->create([
+            'cluster_id' => $cluster->id,
+            'role' => RoleName::Router,
+            'status' => LifecycleStatus::Removing,
+        ]);
+        Route::query()->create([
+            'kind' => RouteKind::AnalyticsTracking,
+            'cluster_id' => $cluster->id,
+            'domain' => 'analytics.shop.example.com',
+            'provenance' => RouteProvenance::Explicit,
+            'publication' => RoutePublication::Public,
+            'status' => RouteStatus::Pending,
+        ]);
+        $inspector = Mockery::mock(CustomProxyRouteInspector::class);
+        $inspector->shouldNotReceive('inspect');
+
+        $report = new RouteDoctorProbe($inspector)->inspect(route_doctor_context($router));
+
+        expect($report->checked)->toBe(0)
+            ->and($report->issues)->toBeEmpty();
+    });
 });
 
 function route_doctor_context(Node $node): DoctorNodeContext

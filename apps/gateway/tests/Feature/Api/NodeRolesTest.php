@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 use App\Domain\Analytics\AnalyticsRoleSettings;
 use App\Domain\Analytics\AnalyticsRoleSettingsRepository;
+use App\Domain\AppDev\AppDevCaddyManager;
 use App\Domain\AppDev\PrivateDnsManager;
+use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Metrics\ExporterDegradationReason;
@@ -43,6 +45,8 @@ beforeEach(function (): void {
     });
     $this->reachability = new NodeRoleApiReachabilityFake;
     app()->instance(NodeReachabilityProbe::class, $this->reachability);
+    $this->caddy = new NodeRoleApiCaddyFake;
+    app()->instance(AppDevCaddyManager::class, $this->caddy);
 
     $this->caller = $this->markAsGateway(node_roles_api_node('gateway-peer'));
     $this->node = node_roles_api_node('role-target');
@@ -1129,6 +1133,44 @@ it('returns safe binding and inactive-node failures', function (): void {
         ->assertJsonPath('error.code', 'validation.failed');
 });
 
+it('builds the Ingress Node Caddyfile only after the Ingress role is active again', function (): void {
+    $cluster = Cluster::query()->create(['name' => 'ingress-build']);
+    $this->node->update(['cluster_id' => $cluster->id]);
+
+    $this->postJson("/api/v1/nodes/{$this->node->id}/roles", ['role' => 'ingress'])->assertCreated();
+    $this
+        ->postJson("/api/v1/nodes/{$this->node->id}/roles", ['role' => 'ingress', 'converge_existing' => true])
+        ->assertOk();
+
+    expect($this->caddy->builds)->toBe([
+        [$this->node->id, 'active'],
+        [$this->node->id, 'active'],
+    ]);
+});
+
+it('does not build Caddy after converging a role other than Ingress', function (): void {
+    $this->postJson("/api/v1/nodes/{$this->node->id}/roles", ['role' => 'app-dev'])->assertCreated();
+
+    expect($this->caddy->builds)->toBe([]);
+});
+
+it('marks the Ingress role failed when the Caddy build after convergence fails', function (): void {
+    $cluster = Cluster::query()->create(['name' => 'ingress-build-failure']);
+    $this->node->update(['cluster_id' => $cluster->id]);
+    $this->caddy->failure = new RuntimeConvergenceException(
+        step: 'caddy-config',
+        errorCode: 'app-dev.caddy_config_failed',
+        message: 'The Caddy build failed.',
+    );
+
+    $this->postJson("/api/v1/nodes/{$this->node->id}/roles", ['role' => 'ingress'])->assertStatus(502);
+
+    $assignment = $this->node->roles()->where('role', RoleName::Ingress)->sole();
+    expect($assignment->status)->toBe(LifecycleStatus::Failed)
+        ->and($assignment->failed_step)->toBe('converge:caddy-config')
+        ->and($assignment->error_code)->toBe('app-dev.caddy_config_failed');
+});
+
 it('returns a safe correlated 502 for convergence failure', function (): void {
     $sentinel = (string) Str::uuid();
     $requestId = (string) Str::uuid();
@@ -1363,6 +1405,28 @@ function node_roles_api_node(
         'public_ssh_host' => $name.'.example.test',
         'wireguard_ip' => '10.44.10.'.(Node::query()->count() + 2),
     ]);
+}
+
+final class NodeRoleApiCaddyFake implements AppDevCaddyManager
+{
+    /** @var list<array{int, string|null}> the Node and its Ingress role status at each build */
+    public array $builds = [];
+
+    public ?RuntimeConvergenceException $failure = null;
+
+    public function converge(Node $node): void
+    {
+        $this->builds[] = [
+            $node->id,
+            $node->roles()->where('role', RoleName::Ingress)->first()?->status->value,
+        ];
+
+        if ($this->failure instanceof RuntimeConvergenceException) {
+            throw $this->failure;
+        }
+    }
+
+    public function remove(Node $node): void {}
 }
 
 final class NodeRoleApiLifecycleFake implements NodeRoleDependentCleaner, RoleBaselineConverger

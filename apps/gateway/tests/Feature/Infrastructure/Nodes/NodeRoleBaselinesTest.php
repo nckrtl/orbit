@@ -693,7 +693,6 @@ it('installs Caddy for an Ingress-only Node and keeps it on removal', function (
         'guard:gateway',
         'ssh:caddy-source',
         'ssh:ingress',
-        'caddy:converge',
         'metrics',
         'caddy:remove',
         'metrics',

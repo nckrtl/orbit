@@ -16,6 +16,7 @@ use App\Domain\Doctor\DoctorNodeContext;
 use App\Domain\Doctor\RouteDoctorIssueCode;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\RouteStatus;
+use App\Domain\Shared\LifecycleStatus;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Route;
@@ -95,6 +96,7 @@ final readonly class RouteDoctorProbe implements DoctorFamilyProbe
         $clusters = NodeRole::query()
             ->where('node_id', $node->id)
             ->where('role', RoleName::Router)
+            ->where('status', LifecycleStatus::Active)
             ->whereNotNull('cluster_id')
             ->pluck('cluster_id');
 

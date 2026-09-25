@@ -345,7 +345,7 @@ Doctor instance checks report public Ingress, private forwarding, TLS, and firew
 | `instance.private_forwarding_mismatch` | The Ingress cannot open a TCP connection to a private address that its public site forwards to. |
 | `instance.public_firewall_mismatch` | The Ingress firewall is inactive, or it lacks an exact managed rule for public HTTP on port 80 or HTTPS on port 443. |
 
-Doctor builds the expected public site the same way the publisher does. A separate Ingress expects a reverse proxy to the Router. An Ingress that shares its Node with the Router and the workload expects the composed site that serves the Instance directly. The forwarding check dials the Router, or the workload Nodes when the Ingress also holds the Router role. A composed site forwards nowhere, so it always passes that check. Related-node checks use only caller-authorized selected nodes. An unavailable observation reports `instance.related_node_unverifiable` without contacting an unselected Node.
+Doctor builds the expected public site the same way the publisher does. An Ingress that runs a target of the Route expects the composed site that serves the Instance directly. Any other Ingress expects a reverse proxy to the Router. The forwarding check dials the Router, or the workload Nodes when the Ingress also holds the Router role. A composed site forwards nowhere, so it always passes that check. Related-node checks use only caller-authorized selected nodes. An unavailable observation reports `instance.related_node_unverifiable` without contacting an unselected Node.
 
 ### Publication ownership
 
