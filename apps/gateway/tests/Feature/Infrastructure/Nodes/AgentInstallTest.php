@@ -292,7 +292,105 @@ it('fails with agent.checksum_mismatch', function (): void {
         ->toContain(['sudo', 'rm', '-f', '--', '/usr/local/bin/orbit-agent.orbit-candidate']);
 });
 
-function nodeAgentExecutor(SshExecutor $ssh, ?ManagedUserAccount $account = new ManagedUserAccount('orbit', 'orbit', '/home/orbit')): NodeAgentSshExecutor
+function nodeAgentStoredNode(): Node
+{
+    return Node::query()->forceCreate([
+        'name' => 'app-prod',
+        'status' => LifecycleStatus::Active,
+        'platform' => 'linux',
+        'public_ssh_host' => '192.0.2.4',
+        'user' => 'orbit',
+        'architecture' => 'x86_64',
+        'wireguard_ip' => '10.44.0.4',
+        'agent_secret_exempt' => true,
+    ]);
+}
+
+/** @return list<list<string>> */
+function nodeAgentArguments(object $ssh): array
+{
+    return array_map(static fn (RemoteCommand $command): array => $command->arguments, $ssh->commands);
+}
+
+describe('the agent secret', function (): void {
+    it('keeps an agent that sends no secret exempt and writes no secret', function (): void {
+        $ssh = new AgentInstallStatefulSsh;
+        $node = nodeAgentStoredNode();
+        $node->forceFill(['agent_secret_hash' => str_repeat('c', 64), 'agent_secret_exempt' => false])->save();
+
+        nodeAgentExecutor($ssh)->converge($node);
+
+        expect(NodeAgentFootprint::sendsSecret())->toBeFalse()
+            ->and($ssh->file(NodeAgentFootprint::SecretPath))->toBeNull()
+            ->and($node->fresh()?->agent_secret_exempt)->toBeTrue()
+            ->and($node->fresh()?->agent_secret_hash)->toBeNull();
+    });
+
+    it('writes a root-only secret through stdin and stores only its hash', function (): void {
+        $ssh = new AgentInstallStatefulSsh;
+        $node = nodeAgentStoredNode();
+
+        nodeAgentExecutor($ssh, version: NodeAgentFootprint::SecretSince)->converge($node);
+
+        $secret = (string) $ssh->file(NodeAgentFootprint::SecretPath);
+        $fresh = $node->fresh();
+
+        $arguments = nodeAgentArguments($ssh);
+        $directory = array_search(['sudo', 'install', '-d', '-o', 'root', '-g', 'root', '-m', '0700', '/etc/orbit/agent'], $arguments, true);
+        $write = array_search(['sudo', 'install', '-D', '-o', 'root', '-g', 'root', '-m', '0600', '/dev/stdin', NodeAgentFootprint::SecretPath.'.orbit-candidate'], $arguments, true);
+
+        expect($directory)->toBeInt()->toBeLessThan($write);
+        expect($secret)->toMatch('/\A[0-9a-f]{64}\z/')
+            ->and($ssh->modes[NodeAgentFootprint::SecretPath])->toBe('-o root -g root -m 0600')
+            ->and($fresh?->agent_secret_hash)->toBe(hash('sha256', $secret))
+            ->and($fresh?->agent_secret_exempt)->toBeFalse()
+            ->and(json_encode(nodeAgentArguments($ssh)))->not->toContain($secret)
+            ->and(nodeAgentArguments($ssh))
+            ->toContain(['sudo', 'install', '-d', '-o', 'root', '-g', 'root', '-m', '0700', '/etc/orbit/agent'])
+            ->toContain(['sudo', 'install', '-D', '-o', 'root', '-g', 'root', '-m', '0600', '/dev/stdin', NodeAgentFootprint::SecretPath.'.orbit-candidate'])
+            ->toContain(['sudo', 'systemctl', 'restart', 'orbit-agent'])
+            ->not->toContain(['sudo', 'cat', '--', NodeAgentFootprint::SecretPath]);
+    });
+
+    it('keeps a matching secret and leaves the running agent alone', function (): void {
+        $ssh = new AgentInstallStatefulSsh;
+        $node = nodeAgentStoredNode();
+        $agent = nodeAgentExecutor($ssh, version: NodeAgentFootprint::SecretSince);
+        $agent->converge($node);
+        $secret = $ssh->file(NodeAgentFootprint::SecretPath);
+        $ssh->commands = [];
+
+        $agent->converge($node->fresh() ?? $node);
+
+        expect($ssh->file(NodeAgentFootprint::SecretPath))->toBe($secret)
+            ->and($node->fresh()?->agent_secret_hash)->toBe(hash('sha256', (string) $secret))
+            ->and(nodeAgentArguments($ssh))
+            ->toContain(['sudo', 'sha256sum', '--', NodeAgentFootprint::SecretPath])
+            ->not->toContain(['sudo', 'systemctl', 'restart', 'orbit-agent']);
+    });
+
+    it('writes a new secret when the file is missing or differs', function (?string $contents): void {
+        $ssh = new AgentInstallStatefulSsh;
+        $node = nodeAgentStoredNode();
+        $agent = nodeAgentExecutor($ssh, version: NodeAgentFootprint::SecretSince);
+        $agent->converge($node);
+        $first = $ssh->file(NodeAgentFootprint::SecretPath);
+        $ssh->putFile(NodeAgentFootprint::SecretPath, $contents);
+        $ssh->commands = [];
+
+        $agent->converge($node->fresh() ?? $node);
+        $second = (string) $ssh->file(NodeAgentFootprint::SecretPath);
+
+        expect($second)->not->toBe($first)->not->toBe($contents)
+            ->and($node->fresh()?->agent_secret_hash)->toBe(hash('sha256', $second))
+            ->and(nodeAgentArguments($ssh))->toContain(['sudo', 'systemctl', 'restart', 'orbit-agent']);
+    })->with([
+        'missing' => [null],
+        'edited' => ['edited-by-hand'],
+    ]);
+});
+
+function nodeAgentExecutor(SshExecutor $ssh, ?ManagedUserAccount $account = new ManagedUserAccount('orbit', 'orbit', '/home/orbit'), string $version = NodeAgentFootprint::Version): NodeAgentSshExecutor
 {
     if (! Node::query()->whereHas('roles', static fn ($query) => $query->where('role', RoleName::Gateway)->where('status', LifecycleStatus::Active))->exists()) {
         $gateway = Node::query()->create([
@@ -322,6 +420,7 @@ function nodeAgentExecutor(SshExecutor $ssh, ?ManagedUserAccount $account = new 
         },
         app(StorageRootResolver::class),
         app(NodeSettingsNormalizer::class),
+        $version,
     );
 }
 
@@ -402,6 +501,25 @@ final class AgentInstallStatefulSsh implements SshExecutor
     /** @var array<string, string> */
     private array $checksums = [];
 
+    /** @var array<string, string> */
+    public array $modes = [];
+
+    public function file(string $path): ?string
+    {
+        return $this->files[$path] ?? null;
+    }
+
+    public function putFile(string $path, ?string $contents): void
+    {
+        if ($contents === null) {
+            unset($this->files[$path]);
+
+            return;
+        }
+
+        $this->files[$path] = $contents;
+    }
+
     public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
     {
         $this->commands[] = $command;
@@ -410,7 +528,7 @@ final class AgentInstallStatefulSsh implements SshExecutor
 
         if (($arguments[1] ?? null) === 'sha256sum') {
             $path = $arguments[array_key_last($arguments)];
-            $checksum = $this->checksums[$path] ?? null;
+            $checksum = $this->checksums[$path] ?? (isset($this->files[$path]) ? hash('sha256', $this->files[$path]) : null);
 
             return $checksum === null
                 ? new CommandResult(1, '', '', 1, false)
@@ -450,7 +568,9 @@ final class AgentInstallStatefulSsh implements SshExecutor
 
         if (($arguments[1] ?? null) === 'install' && $command->protectedInput !== null) {
             $stream = $command->protectedInput->stream();
-            $this->files[$arguments[array_key_last($arguments)]] = stream_get_contents($stream) ?: '';
+            $target = $arguments[array_key_last($arguments)];
+            $this->files[$target] = stream_get_contents($stream) ?: '';
+            $this->modes[$target] = implode(' ', array_slice($arguments, 3, 6));
 
             return new CommandResult(0, '', '', 1, false);
         }
@@ -465,6 +585,10 @@ final class AgentInstallStatefulSsh implements SshExecutor
             if (isset($this->checksums[$source])) {
                 $this->checksums[$destination] = $this->checksums[$source];
                 unset($this->checksums[$source]);
+            }
+            if (isset($this->modes[$source])) {
+                $this->modes[$destination] = $this->modes[$source];
+                unset($this->modes[$source]);
             }
 
             return new CommandResult(0, '', '', 1, false);

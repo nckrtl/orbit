@@ -3392,7 +3392,8 @@
                 "0129",
                 "0130",
                 "0148",
-                "0151"
+                "0151",
+                "0155"
             ]
         },
         {
@@ -3416,7 +3417,8 @@
                 "0128",
                 "0129",
                 "0148",
-                "0151"
+                "0151",
+                "0155"
             ]
         },
         {
@@ -3963,6 +3965,35 @@
             ]
         },
         {
+            "path": "docs/decisions/0155-authenticate-the-node-agent-with-a-per-node-secret.md",
+            "title": "ADR 0155: Authenticate the Node agent with a per-Node secret",
+            "kind": "decision",
+            "components": [
+                "apps/docs",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Database",
+                "Doctor",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Node agent",
+                "Process",
+                "Project",
+                "Route",
+                "Task"
+            ],
+            "governing_adrs": [
+                "0033",
+                "0045",
+                "0128",
+                "0129",
+                "0148",
+                "0155"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -4144,7 +4175,8 @@
                 "0150",
                 "0151",
                 "0152",
-                "0154"
+                "0154",
+                "0155"
             ]
         },
         {
@@ -5057,7 +5089,8 @@
                 "0130",
                 "0148",
                 "0151",
-                "0154"
+                "0154",
+                "0155"
             ]
         },
         {

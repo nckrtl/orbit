@@ -12,7 +12,7 @@ Each Node agent keeps one WebSocket connection to the existing Reverb server and
 
 Proposed.
 
-Amended by [ADR 0148](/decisions/0148-keep-a-gateway-view-of-node-agent-state) and [ADR 0151](/decisions/0151-push-task-and-process-usage-changes-over-realtime).
+Amended by [ADR 0148](/decisions/0148-keep-a-gateway-view-of-node-agent-state), [ADR 0151](/decisions/0151-push-task-and-process-usage-changes-over-realtime), and [ADR 0155](/decisions/0155-authenticate-the-node-agent-with-a-per-node-secret).
 
 This extends [ADR 0084](/decisions/0084-broadcast-record-changes-through-reverb). Its rules for the channel, the envelope, and queues stay unchanged for Gateway broadcasts. It adds a second kind of realtime traffic: client events that a Node agent from [ADR 0128](/decisions/0128-run-a-visibility-only-agent-on-managed-nodes) publishes. Reverb stays a plain, unmodified Laravel app, as ADR 0084 and [ADR 0087](/decisions/0087-run-reverb-through-a-websocket-role) require.
 

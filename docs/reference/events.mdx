@@ -216,7 +216,7 @@ Each Node has a presence channel, `presence-node.{id}`, where its [Node agent](/
 
 | Member ID | Who | Signed by |
 | --- | --- | --- |
-| `agent.{id}` | The agent of Node `{id}` | `POST /api/v1/agent/broadcasting/auth`, only for a request from Node `{id}`'s own WireGuard address when that Node is managed. |
+| `agent.{id}` | The agent of Node `{id}` | `POST /api/v1/agent/broadcasting/auth`, only for a request from Node `{id}`'s own WireGuard address that carries the Node's [agent secret](/reference/node-agent#agent-secret), when that Node is managed. |
 | `gateway.{socket id}` | The Gateway's agent view subscriber | The subscriber itself, with the Reverb app secret the Gateway holds. No HTTP request is involved. |
 | `viewer.{socket id}` | Any other subscriber, such as a browser | `POST /api/v1/broadcasting/auth`, with the same rules as `orbit`. |
 
