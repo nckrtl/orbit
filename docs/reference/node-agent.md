@@ -142,7 +142,7 @@ The agent answers Reverb's `pusher:ping` with `pusher:pong`.
 
 One Node runs one agent. The agent holds an exclusive lock on `/etc/orbit/agent` while it runs, and a second agent process exits with `another orbit-agent already runs on this Node`. A second process would join as the same member, and Reverb announces neither its join nor its exit, so it would mix two event streams on the channel.
 
-Agent 0.1.1 has none of the limits above, no lock, and no 60-second snapshot. [ADR 0154](/decisions/0154-recover-the-gateway-agent-view-without-a-membership-change) added them in 0.1.2.
+Agent 0.1.1 has none of the limits above, no lock, and no 60-second snapshot. [ADR 0154](/decisions/0154-recover-the-gateway-agent-view-without-a-membership-change) added them, and 0.2.0 is the first release that has them.
 
 ## Gateway view
 
@@ -287,8 +287,8 @@ The agent recovers from each failure below without an operator.
 | Reverb is down or the `websocket` role is absent | The agent and the subscriber retry. The web app polls Prometheus, and Gateway reads use Prometheus and SSH. |
 | The agent view subscriber stops | systemd restarts it after 2 seconds. Until it rejoins, the view turns stale after 15 seconds, and Gateway reads use Prometheus and SSH. The web app reloads the Process list every 60 seconds. |
 | The Gateway is down | The agent cannot get a membership signed and retries. An agent that is already connected keeps publishing. |
-| A snapshot is lost | The subscriber asks for a new snapshot within about 10 seconds. Agent 0.1.2 also sends one every 60 seconds. |
-| A second agent process runs on the Node | Agent 0.1.2 refuses to start it. A second 0.1.1 process keeps resetting the subscriber's state, so the view stays `missing` until about 10 seconds after it exits. |
+| A snapshot is lost | The subscriber asks for a new snapshot within about 10 seconds. Agent 0.2.0 also sends one every 60 seconds. |
+| A second agent process runs on the Node | Agent 0.2.0 refuses to start it. A second 0.1.1 process keeps resetting the subscriber's state, so the view stays `missing` until about 10 seconds after it exits. |
 | Reverb stops answering without closing the connection | The agent reconnects within about 30 seconds. |
 | systemd D-Bus is unavailable | The agent exits with an error, and systemd restarts it. |
 

@@ -28,12 +28,12 @@ use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Log;
 use Symfony\Component\Process\Process;
 
-it('pins agent v0.1.1 assets and checksums from its release manifest', function (): void {
-    expect(NodeAgentFootprint::Version)->toBe('0.1.1')
-        ->and(NodeAgentFootprint::X8664Checksum)->toBe('a25ff7385eb63ca959100dbbc09696efaa2b6d959619cc8c68bd06614acb90be')
-        ->and(NodeAgentFootprint::Aarch64Checksum)->toBe('e6edca454ef531f98c40fd8647b2232aac8b101b852733c6cdd6b5c8947cc948')
+it('pins agent v0.2.0 assets and checksums from its release manifest', function (): void {
+    expect(NodeAgentFootprint::Version)->toBe('0.2.0')
+        ->and(NodeAgentFootprint::X8664Checksum)->toBe('ed3cb9978ef9e16683342cb11d5a3b3a4f54f6fc47b6ee0ec695090cef989b57')
+        ->and(NodeAgentFootprint::Aarch64Checksum)->toBe('34389c2cb4424468e94f42dff1ee05c3a6b490f4286e56fea53dede796c406e3')
         ->and(NodeAgentFootprint::downloadUrl('x86_64'))
-        ->toBe('https://github.com/nckrtl/orbit/releases/download/agent-v0.1.1/orbit-agent-0.1.1-linux-x86_64');
+        ->toBe('https://github.com/nckrtl/orbit/releases/download/agent-v0.2.0/orbit-agent-0.2.0-linux-x86_64');
 });
 
 it('keeps the role converge going when the agent install fails', function (): void {

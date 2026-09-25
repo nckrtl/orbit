@@ -6,11 +6,11 @@ namespace App\Infrastructure\Nodes;
 
 final readonly class NodeAgentFootprint
 {
-    public const string Version = '0.1.1';
+    public const string Version = '0.2.0';
 
-    public const string X8664Checksum = 'a25ff7385eb63ca959100dbbc09696efaa2b6d959619cc8c68bd06614acb90be';
+    public const string X8664Checksum = 'ed3cb9978ef9e16683342cb11d5a3b3a4f54f6fc47b6ee0ec695090cef989b57';
 
-    public const string Aarch64Checksum = 'e6edca454ef531f98c40fd8647b2232aac8b101b852733c6cdd6b5c8947cc948';
+    public const string Aarch64Checksum = '34389c2cb4424468e94f42dff1ee05c3a6b490f4286e56fea53dede796c406e3';
 
     public const string BinaryPath = '/usr/local/bin/orbit-agent';
 

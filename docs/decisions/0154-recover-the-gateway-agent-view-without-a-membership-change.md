@@ -42,7 +42,7 @@ The subscriber repairs a view without waiting for a member to join, and the agen
 - Each join, from the TCP connection to `pusher_internal:subscription_succeeded`, must finish within 30 seconds. Each Gateway request must finish within 30 seconds.
 - The agent retries with backoff from 2 seconds to 30 seconds. A session that stayed joined for 60 seconds starts the backoff again from 2 seconds. A session that fails sooner keeps backing off.
 
-The agent version is 0.1.2. The subscriber change works with agent 0.1.1: it recovers a missing view, but the fleet keeps the slow reconnect and the unguarded second process until it runs 0.1.2.
+The agent changes first ship in agent 0.2.0. The subscriber change works with agent 0.1.1: it recovers a missing view, but the fleet keeps the slow reconnect and the unguarded second process until it runs 0.2.0.
 
 ## Rejected alternatives
 
@@ -53,9 +53,9 @@ The agent version is 0.1.2. The subscriber change works with agent 0.1.1: it rec
 
 ## Consequences
 
-- A lost, discarded, or corrupted Node view recovers within about 10 seconds, with agent 0.1.1 or 0.1.2.
+- A lost, discarded, or corrupted Node view recovers within about 10 seconds, with agent 0.1.1 or 0.2.0.
 - Each request makes every member of that channel see the subscriber leave and join, and the agent sends one extra snapshot, as when a browser opens.
-- While a second 0.1.1 agent process runs, its events keep resetting the subscriber's state, so the view stays `missing`. It turns fresh within about 10 seconds after that process exits. Agent 0.1.2 refuses the second process.
+- While a second 0.1.1 agent process runs, its events keep resetting the subscriber's state, so the view stays `missing`. It turns fresh within about 10 seconds after that process exits. Agent 0.2.0 refuses the second process.
 - Every agent sends one snapshot a minute and one ping about every 15 seconds while its channel is quiet.
 
 ## Affects
