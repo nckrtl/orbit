@@ -1,7 +1,6 @@
 import { queryOptions } from "@tanstack/react-query";
 import type { components } from "./schema";
 import { get } from "./client";
-import { POLL_SECONDS } from "./queries";
 import type { AgentThread } from "../tasks/agent-stream";
 
 type LineChanges = { lines_added?: number | null; lines_deleted?: number | null };
@@ -133,6 +132,34 @@ export function formatDurationMs(value: number | null | undefined): string | nul
     return parts.join(" ");
 }
 
+const activeStatuses: ReadonlySet<TaskGroup["status"]> = new Set([
+    "reserved",
+    "running",
+    "reviewing",
+    "settling",
+]);
+
+/** Whether a group's status is active, as the Gateway's `TaskGroupStatus::isActive()` defines it. */
+export function isActiveTaskGroup(status: TaskGroup["status"]): boolean {
+    return activeStatuses.has(status);
+}
+
+/**
+ * A group's duration at `now`. The Gateway computes an active group's duration when it answers, so
+ * the page adds the time since that response (`fetchedAt`, the query's `dataUpdatedAt`) and the
+ * duration counts forward between refetches. A finished group's duration is final.
+ */
+export function liveDurationMs(
+    group: Pick<TaskGroup, "status" | "duration_ms">,
+    fetchedAt: number,
+    now: number,
+): number | null {
+    if (group.duration_ms == null) return null;
+    if (!isActiveTaskGroup(group.status) || !(fetchedAt > 0)) return group.duration_ms;
+
+    return group.duration_ms + Math.max(0, now - fetchedAt);
+}
+
 export const taskStatusLabels: Record<TaskGroup["status"], string> = {
     backlog: "Being prepared",
     todo: "Waiting for capacity",
@@ -152,10 +179,13 @@ export function tasksForInstance(groups: readonly TaskGroup[], instanceId: numbe
     );
 }
 
+// Task events refetch these queries while realtime is live, so they carry no refetchInterval of
+// their own. Every caller passes `useTaskPoll()`: every 30 s while realtime is down, and every
+// 5 minutes while it is live, as a safety net for a lost notice.
+
 export const taskGroupsQuery = queryOptions({
     queryKey: ["task-groups"],
     queryFn: () => get<TaskGroup[]>("/api/v1/task-groups"),
-    refetchInterval: POLL_SECONDS * 1000,
     retry: false,
 });
 
@@ -163,16 +193,17 @@ export const taskGroupQuery = (id: string) =>
     queryOptions({
         queryKey: ["task-groups", id],
         queryFn: () => get<TaskGroup>(`/api/v1/task-groups/${encodeURIComponent(id)}`),
-        refetchInterval: POLL_SECONDS * 1000,
         retry: false,
     });
 
-/** Agent threads of a task group. The key sits under the group, so a group refresh refreshes them. */
+/**
+ * Agent threads of a task group. The key sits under the group, so invalidating the group's whole
+ * key refreshes them; a `task_group.updated` event refetches the group's own key only.
+ */
 export const taskAgentsQuery = (groupId: number) =>
     queryOptions({
         queryKey: ["task-groups", String(groupId), "agents"],
         queryFn: () => get<AgentThread[]>(`/api/v1/task-groups/${groupId}/agents`),
-        refetchInterval: POLL_SECONDS * 1000,
         retry: false,
     });
 
@@ -182,7 +213,6 @@ export const taskCommentsQuery = (groupId: number, taskId: number) =>
         queryKey: ["task-groups", String(groupId), "tasks", String(taskId), "comments"],
         queryFn: () =>
             get<TaskComment[]>(`/api/v1/task-groups/${groupId}/tasks/${taskId}/comments`),
-        refetchInterval: POLL_SECONDS * 1000,
         retry: false,
     });
 

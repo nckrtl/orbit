@@ -919,3 +919,20 @@ final class Orb105InterruptingCleanupSshExecutor implements SshExecutor
         );
     }
 }
+
+it('closes a relocated Instance environment to other local users after the last verification', function (): void {
+    $fixture = orb105_relocation_fixture();
+
+    try {
+        file_put_contents($fixture['source'].'/.env', "APP_KEY=secret\n");
+        chmod($fixture['source'].'/.env', 0o664);
+        $facts = $fixture['manager']->inspect($fixture['node'], $fixture['source'], false)[0];
+
+        $fixture['manager']->relocate($fixture['instance'], $facts);
+
+        expect(fileperms($fixture['destination'].'/.env') & 0o777)->toBe(0o660)
+            ->and($fixture['instance']->refresh()->registration_relocation_state)->toBe('relocated');
+    } finally {
+        orb105_remove_relocation_fixture($fixture);
+    }
+});

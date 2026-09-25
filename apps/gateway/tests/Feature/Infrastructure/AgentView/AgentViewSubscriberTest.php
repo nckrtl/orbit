@@ -8,6 +8,7 @@ use App\Domain\AgentView\AgentViewFreshness;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\WebSocket\WebSocketCredentialManager;
+use App\Infrastructure\AgentView\AgentViewPublisher;
 use App\Infrastructure\AgentView\AgentViewSubscriber;
 use App\Infrastructure\AgentView\CacheAgentStateView;
 use App\Infrastructure\AgentView\WebSocketClient;
@@ -125,6 +126,82 @@ function agent_view_subscriber(): array
     );
 
     return [$subscriber, $socket, $state];
+}
+
+final class FakeAgentViewPublisher implements AgentViewPublisher
+{
+    /** @var list<array{int, list<int>}> */
+    public array $workspaces = [];
+
+    /** @var list<int> */
+    public array $usage = [];
+
+    public int $polls = 0;
+
+    public bool $stopped = false;
+
+    public function queueWorkspaces(int $nodeId, array $instanceIds): void
+    {
+        $this->workspaces[] = [$nodeId, $instanceIds];
+    }
+
+    public function queueUsage(int $sampledAt): void
+    {
+        $this->usage[] = $sampledAt;
+    }
+
+    public function poll(): void
+    {
+        $this->polls++;
+    }
+
+    public function stop(): void
+    {
+        $this->stopped = true;
+    }
+}
+
+/** @return array{AgentViewSubscriber, FakeAgentViewSocket, object{now: float, commit: string}, FakeAgentViewPublisher} */
+function live_agent_view_subscriber(): array
+{
+    $socket = new FakeAgentViewSocket;
+    $publisher = new FakeAgentViewPublisher;
+    $state = new class
+    {
+        public float $now = 1_000.0;
+
+        public string $commit = 'aaa';
+    };
+    Carbon::setTestNow(Carbon::createFromTimestamp($state->now));
+
+    $subscriber = new AgentViewSubscriber(
+        socket: $socket,
+        credentials: app(WebSocketCredentialManager::class),
+        view: app(CacheAgentStateView::class),
+        signer: new PresenceChannelSigner,
+        log: new NullLogger,
+        caPath: '/home/orbit/.orbit/ca/root.pem',
+        commit: static fn (): string => $state->commit,
+        clock: static fn (): float => $state->now,
+        sleep: static function (float $seconds) use ($state): void {
+            $state->now += $seconds;
+        },
+        publisher: $publisher,
+    );
+
+    return [$subscriber, $socket, $state, $publisher];
+}
+
+/**
+ * @param  array<string, mixed>  $overrides
+ * @return array<string, mixed>
+ */
+function agent_workspace(int $instanceId, array $overrides = []): array
+{
+    return [
+        'instance_id' => $instanceId, 'base' => 'main', 'start' => null, 'branch' => 'task-1', 'head' => str_repeat('b', 40),
+        'dirty' => false, 'commits' => null, 'diff' => ['files' => 2, 'added' => 30, 'removed' => 4, 'truncated' => false], ...$overrides,
+    ];
 }
 
 /** @param array<string, mixed> $data */
@@ -491,5 +568,100 @@ describe('the agent view subscriber', function (): void {
             ->and($socket->isConnected())->toBeFalse()
             ->and(app(AgentStateView::class)->node($node->id)->freshness)->toBe(AgentViewFreshness::Missing)
             ->and(app(AgentStateView::class)->subscriber())->toBeNull();
+    });
+
+    it('keeps the task workspaces an agent reports and drops malformed ones', function (): void {
+        activate_websocket_role();
+        $node = subscriber_managed_node('app-dev', '10.44.0.3');
+        [$subscriber, $socket] = live_agent_view_subscriber();
+        $subscriber->pass();
+
+        $socket->push(
+            agent_snapshot($node->id, 1, []),
+            agent_event($node->id, 'client-workspaces', ['sequence' => 2, 'part' => 1, 'parts' => 1, 'workspaces' => [
+                agent_workspace(31), agent_workspace(32, ['head' => 'not-a-commit']), agent_workspace(33, ['diff' => ['files' => -1, 'added' => 0, 'removed' => 0]]),
+            ]]),
+        );
+        $subscriber->pass();
+
+        $view = app(AgentStateView::class)->node($node->id);
+        expect($view->workspace(31))->toBe(agent_workspace(31))
+            ->and($view->workspace(32))->toBeNull()
+            ->and($view->workspace(33))->toBeNull();
+
+        $socket->push(agent_event($node->id, 'client-workspace', ['sequence' => 3, 'workspace' => agent_workspace(31, ['dirty' => true])]));
+        $socket->push(agent_event($node->id, 'client-workspaces', ['sequence' => 4, 'part' => 1, 'parts' => 1, 'workspaces' => []], sender: 'viewer.1.2'));
+        $subscriber->pass();
+        $subscriber->pass();
+
+        expect(app(AgentStateView::class)->node($node->id)->workspace(31)['dirty'] ?? null)->toBeTrue();
+    });
+
+    it('hands a new head or new counts to the publisher and nothing else', function (): void {
+        activate_websocket_role();
+        $node = subscriber_managed_node('app-dev', '10.44.0.3');
+        [$subscriber, $socket, , $publisher] = live_agent_view_subscriber();
+        $subscriber->pass();
+
+        $socket->push(
+            agent_snapshot($node->id, 1, []),
+            agent_event($node->id, 'client-workspaces', ['sequence' => 2, 'part' => 1, 'parts' => 1, 'workspaces' => [agent_workspace(31)]]),
+        );
+        $subscriber->pass();
+        $socket->push(agent_event($node->id, 'client-workspace', ['sequence' => 3, 'workspace' => agent_workspace(31, ['dirty' => true])]));
+        $subscriber->pass();
+        $socket->push(agent_event($node->id, 'client-workspace', ['sequence' => 4, 'workspace' => agent_workspace(31, ['head' => str_repeat('c', 40), 'diff' => null])]));
+        $subscriber->pass();
+
+        expect($publisher->workspaces)->toBe([[$node->id, [31]], [$node->id, [31]]])
+            ->and($publisher->polls)->toBeGreaterThan(0);
+    });
+
+    it('queues Process usage every fifteen seconds only while a browser watches', function (): void {
+        activate_websocket_role();
+        $node = subscriber_managed_node('app-dev', '10.44.0.3');
+        [$subscriber, $socket, $state, $publisher] = live_agent_view_subscriber();
+        $subscriber->pass();
+        $subscriber->pass();
+
+        expect($publisher->usage)->toBe([]);
+
+        $socket->push([
+            'event' => 'pusher_internal:subscription_succeeded',
+            'channel' => "presence-node.{$node->id}",
+            'data' => json_encode(['presence' => ['ids' => ["agent.{$node->id}", 'viewer.77.1'], 'hash' => [], 'count' => 2]]),
+        ]);
+        $state->now += 15;
+        $subscriber->pass();
+        $state->now += 5;
+        $subscriber->pass();
+
+        expect($publisher->usage)->toBe([(int) $state->now - 5]);
+
+        $socket->push(['event' => 'pusher_internal:member_removed', 'channel' => "presence-node.{$node->id}", 'data' => json_encode(['user_id' => 'viewer.77.1'])]);
+        $state->now += 15;
+        $subscriber->pass();
+
+        expect($publisher->usage)->toHaveCount(1)
+            ->and($subscriber->hasViewers())->toBeFalse();
+    });
+
+    it('stops a running publish when it stops', function (): void {
+        [$subscriber, , , $publisher] = live_agent_view_subscriber();
+
+        $subscriber->run(static fn (): bool => true);
+
+        expect($publisher->stopped)->toBeTrue();
+    });
+
+    it('keeps polling the publisher while it has no Reverb connection', function (): void {
+        [$subscriber, $socket, , $publisher] = live_agent_view_subscriber();
+        $socket->refuse = true;
+
+        $subscriber->pass();
+        $subscriber->pass();
+
+        expect($socket->isConnected())->toBeFalse()
+            ->and($publisher->polls)->toBe(2);
     });
 });

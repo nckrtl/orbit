@@ -92,6 +92,11 @@ Route::prefix('v1')->group(function (): void {
         ->withoutMiddleware(RecordCommandActivity::class)
         ->name('agent:realtime:auth');
 
+    Route::middleware(RequireActiveWireGuardPeer::class)
+        ->get('agent/workspaces', [AgentRealtimeController::class, 'workspaces'])
+        ->withoutMiddleware(RecordCommandActivity::class)
+        ->name('agent:workspaces');
+
     Route::middleware([
         RequireActiveWireGuardPeer::class,
         RequireNodeAccess::class,

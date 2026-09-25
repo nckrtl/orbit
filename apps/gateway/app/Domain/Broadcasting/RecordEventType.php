@@ -51,4 +51,12 @@ enum RecordEventType: string
 
     case DeploymentCreated = 'deployment.created';
     case DeploymentUpdated = 'deployment.updated';
+
+    case ProcessUsage = 'process.usage';
+
+    case TaskGroupCreated = 'task_group.created';
+    case TaskGroupUpdated = 'task_group.updated';
+    case TaskCommentCreated = 'task_comment.created';
+    case AgentThreadUpdated = 'agent_thread.updated';
+    case TasksUpdated = 'tasks.updated';
 }

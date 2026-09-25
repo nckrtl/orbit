@@ -18,6 +18,7 @@ describe('MCP tool manifest', function (): void {
         'realtime:auth',
         'agent:realtime',
         'agent:realtime:auth',
+        'agent:workspaces',
         'metrics:grafana:authorize',
         'runtime-activation:app-instance',
         'schedule:complete',

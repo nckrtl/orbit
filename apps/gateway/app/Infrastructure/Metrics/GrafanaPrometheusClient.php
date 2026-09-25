@@ -45,12 +45,19 @@ final class GrafanaPrometheusClient
         $base = $this->base ??= 'http://'.$this->metricsNodeAddress().':3000';
         $uid = $this->datasourceUid ??= $this->resolveDatasourceUid($base, $credentials->username, $credentials->password);
 
-        $decoded = Http::baseUrl($base)
-            ->withBasicAuth($credentials->username, $credentials->password)
-            ->timeout(self::TIMEOUT)
-            ->get("/api/datasources/proxy/uid/{$uid}/api/v1/query", ['query' => $promql])
-            ->throw()
-            ->json();
+        try {
+            $decoded = Http::baseUrl($base)
+                ->withBasicAuth($credentials->username, $credentials->password)
+                ->timeout(self::TIMEOUT)
+                ->get("/api/datasources/proxy/uid/{$uid}/api/v1/query", ['query' => $promql])
+                ->throw()
+                ->json();
+        } catch (\Throwable $exception) {
+            // A moved Metrics role or a new datasource must not stay unreachable for the life of the process.
+            $this->base = $this->datasourceUid = null;
+
+            throw $exception;
+        }
 
         return is_array($decoded) ? $decoded : [];
     }

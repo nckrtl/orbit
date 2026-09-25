@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useFleet } from "../api/queries";
 import { formatCompactCount, formatTokens, taskAgentsQuery, taskIdentity } from "../api/tasks";
+import { useTaskPoll } from "../realtime/polling";
 import { Frame } from "../ui/Frame";
 import { usePageVisible } from "../ui/usePageVisible";
 import {
@@ -50,9 +51,11 @@ export function AgentSessions({
     subtaskId?: string;
     projectCode?: string;
 }) {
-    // Every tab's indicator shows its thread's state from this list, which polls. The selected
+    // Every tab's indicator shows its thread's state from this list. An `agent_thread.updated`
+    // event refetches it while realtime is live; it polls every 5 minutes then, and every 30 s while
+    // realtime is down. The selected
     // thread's stream only drives the panel beside the tabs.
-    const query = useQuery(taskAgentsQuery(groupId));
+    const query = useQuery({ ...taskAgentsQuery(groupId), refetchInterval: useTaskPoll() });
     const [selectedId, setSelectedId] = useState<number | null>(null);
     const sessions = (query.data ?? []).filter(
         (session) =>

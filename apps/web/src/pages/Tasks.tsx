@@ -1,6 +1,7 @@
 import { AgentSessions } from "../tasks/AgentSessions";
 import { TaskComments } from "../tasks/TaskComments";
 import { useQuery } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
 import { Link, useParams, useRouter } from "@tanstack/react-router";
 import { GatewayError } from "../api/client";
 import { lists } from "../api/queries";
@@ -13,6 +14,8 @@ import {
     formatLineDiff,
     formatSignedLineChanges,
     formatTokens,
+    isActiveTaskGroup,
+    liveDurationMs,
     taskColumn,
     taskGroupQuery,
     taskGroupsQuery,
@@ -27,9 +30,22 @@ import { Frame } from "../ui/Frame";
 import { PageHeader } from "../ui/PageHeader";
 import { Properties } from "../ui/Properties";
 import { useGo } from "../ui/go";
+import { useTaskPoll } from "../realtime/polling";
 
 const columns: TaskColumn[] = ["Backlog", "Todo", "In progress", "Done"];
 const subtaskColumns: TaskColumn[] = ["Todo", "In progress", "Done"];
+
+/** The current time, updated every `intervalMs` while `enabled`, so an active group's duration counts forward. */
+function useNow(intervalMs: number, enabled: boolean): number {
+    const [now, setNow] = useState(Date.now);
+    useEffect(() => {
+        if (!enabled) return;
+        setNow(Date.now());
+        const timer = setInterval(() => setNow(Date.now()), intervalMs);
+        return () => clearInterval(timer);
+    }, [intervalMs, enabled]);
+    return now;
+}
 
 function TaskStatus({ status }: { status: TaskGroup["status"] }) {
     const color =
@@ -91,6 +107,7 @@ function pullRequestProperty(url: string | null) {
 function taskProperties(
     group: TaskGroup,
     detail: TaskGroup | Task,
+    durationMs: number | null,
     projectName: string,
     openProject?: () => void,
     openInstance?: () => void,
@@ -137,7 +154,7 @@ function taskProperties(
             title: formatTokens(detail.tokens) ?? undefined,
         },
         ...lineDiffProperty(detail),
-        { name: "Duration", value: formatDurationMs(detail.duration_ms) },
+        { name: "Duration", value: formatDurationMs(durationMs) },
     ];
 }
 
@@ -182,15 +199,17 @@ const cardMetaClassName = "text-[11px] font-medium uppercase tracking-[0.08em]";
 
 function CardFooter({
     task,
+    durationMs,
     progress,
 }: {
     task: TaskGroup | Task;
+    durationMs: number | null;
     progress?: { completed: number; total: number };
 }) {
     const column = taskColumn(task.status);
     if (column === "Backlog" || column === "Todo") return null;
 
-    const duration = formatCardDuration(task.duration_ms);
+    const duration = formatCardDuration(durationMs);
     const progressLabel =
         column === "In progress" && progress !== undefined && progress.total > 0
             ? `${progress.completed}/${progress.total}`
@@ -219,10 +238,12 @@ function CardFooter({
 function KanbanCardBody({
     identity,
     task,
+    durationMs = task.duration_ms,
     progress,
 }: {
     identity: string;
     task: TaskGroup | Task;
+    durationMs?: number | null;
     progress?: { completed: number; total: number };
 }) {
     return (
@@ -234,7 +255,7 @@ function KanbanCardBody({
                 <CardDiff task={task} />
             </div>
             <h2 className="break-words font-bold">{task.title}</h2>
-            <CardFooter task={task} progress={progress} />
+            <CardFooter task={task} durationMs={durationMs} progress={progress} />
         </>
     );
 }
@@ -243,9 +264,14 @@ const kanbanCardClassName =
     "kanban-card block rounded-[2px] focus-visible:outline-2 focus-visible:outline-cyan";
 
 export function TasksBoard({ instanceId }: { instanceId?: number } = {}) {
-    const groups = useQuery(taskGroupsQuery);
+    const groups = useQuery({ ...taskGroupsQuery, refetchInterval: useTaskPoll() });
     const visibleGroups =
         instanceId === undefined ? groups.data : tasksForInstance(groups.data ?? [], instanceId);
+    // Cards show whole minutes, so the board ticks once a minute while a group is active.
+    const now = useNow(
+        60_000,
+        (visibleGroups ?? []).some((group) => isActiveTaskGroup(group.status)),
+    );
     return (
         <div className="flex min-w-0 flex-col gap-[var(--panel-gap)] md:h-full">
             {instanceId === undefined && <PageHeader trail={[{ label: "Tasks" }]} />}
@@ -287,6 +313,11 @@ export function TasksBoard({ instanceId }: { instanceId?: number } = {}) {
                                         <KanbanCardBody
                                             identity={taskIdentity(group.id, group.project_code)}
                                             task={group}
+                                            durationMs={liveDurationMs(
+                                                group,
+                                                groups.dataUpdatedAt,
+                                                now,
+                                            )}
                                             progress={completedSubtaskProgress(group.tasks)}
                                         />
                                     </Link>
@@ -312,13 +343,18 @@ export function SubtaskDetail() {
 
 function TaskDetailView({ id, subtaskId }: { id: string; subtaskId?: string }) {
     const router = useRouter();
-    const group = useQuery(taskGroupQuery(id));
+    const group = useQuery({ ...taskGroupQuery(id), refetchInterval: useTaskPoll() });
     const projects = useQuery(lists.projects);
     const go = useGo();
     const task = group.data;
     const project = projects.data?.find((item) => item.id === task?.app_id);
     const detail =
         subtaskId === undefined ? task : task?.tasks.find((item) => String(item.id) === subtaskId);
+    // The group's duration counts forward every second while it is active. A subtask's duration is
+    // the value the Gateway stored when it last refreshed the group.
+    const countsForward =
+        subtaskId === undefined && task !== undefined && isActiveTaskGroup(task.status);
+    const now = useNow(1_000, countsForward);
     return (
         <div className="flex min-w-0 flex-col gap-[var(--panel-gap)] md:h-full">
             <PageHeader
@@ -352,6 +388,9 @@ function TaskDetailView({ id, subtaskId }: { id: string; subtaskId?: string }) {
                             properties={taskProperties(
                                 task,
                                 detail,
+                                "tasks" in detail
+                                    ? liveDurationMs(detail, group.dataUpdatedAt, now)
+                                    : detail.duration_ms,
                                 project?.name ?? task.app,
                                 project === undefined
                                     ? undefined

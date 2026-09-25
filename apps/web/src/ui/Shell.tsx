@@ -8,6 +8,7 @@ import { taskGroupsQuery } from "../api/tasks";
 import { counts } from "../fleet/fleet";
 import { connectRealtime } from "../realtime/connect";
 import { resetPollBackoff, useLiveness, usePollingReason } from "../realtime/liveness";
+import { useTaskPoll } from "../realtime/polling";
 import { Frame } from "./Frame";
 import {
     FILTERED_SECTIONS,
@@ -60,7 +61,8 @@ function Navigation({
     const nav = useNav();
     const hovered = useUi((state) => state.hover === "nav" && state.focus === null);
     const totals = counts(fleet);
-    const taskCount = useQuery(taskGroupsQuery).data?.length ?? null;
+    const taskCount =
+        useQuery({ ...taskGroupsQuery, refetchInterval: useTaskPoll() }).data?.length ?? null;
     const active = navFor(section, id, fleet);
 
     return (
@@ -149,7 +151,8 @@ export function Shell() {
     const go = useGo();
     const fleet = useFleet();
     const totals = counts(fleet);
-    const taskCount = useQuery(taskGroupsQuery).data?.length ?? null;
+    const taskCount =
+        useQuery({ ...taskGroupsQuery, refetchInterval: useTaskPoll() }).data?.length ?? null;
     const activeNav = navFor(section, second, fleet);
 
     useUi((state) => `${state.focus}|${state.menu === null}|${state.menu?.confirm}`);

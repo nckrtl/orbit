@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api;
 
 use App\Actions\Broadcasting\PresenceChannelSigner;
+use App\Actions\Tasks\ListAgentWorkspacesAction;
+use App\Data\Tasks\AgentWorkspaceData;
 use App\Domain\Broadcasting\RealtimeConnection;
 use App\Domain\Nodes\ManagedNodeEligibility;
 use App\Domain\Shared\ResourceOperationException;
@@ -31,6 +33,18 @@ final class AgentRealtimeController extends Controller
                 'channel' => "presence-node.{$id}",
                 'member' => "agent.{$id}",
             ],
+            'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')],
+        ]);
+    }
+
+    /** The task checkouts the caller's agent watches (ADR 0151). */
+    public function workspaces(Request $request, ManagedNodeEligibility $eligibility, ListAgentWorkspacesAction $action): JsonResponse
+    {
+        $node = $this->peer($request);
+        $this->ensureEligible($node, $eligibility);
+
+        return response()->json([
+            'data' => array_map(static fn (AgentWorkspaceData $workspace): array => $workspace->toArray(), $action->execute($node)),
             'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')],
         ]);
     }

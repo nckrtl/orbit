@@ -135,4 +135,34 @@ describe('AgentChannelState', function (): void {
 
         expect($state->units)->toHaveCount(AgentChannelState::MaxUnits);
     });
+
+    it('replaces the workspaces only when every part of a list has arrived in order', function (): void {
+        $state = new AgentChannelState;
+        $workspace = static fn (int $id, string $head): array => [
+            'instance_id' => $id, 'base' => 'main', 'start' => null, 'branch' => null, 'head' => str_repeat($head, 40),
+            'dirty' => null, 'commits' => null, 'diff' => null,
+        ];
+
+        $state->apply('client-workspaces', ['sequence' => 1, 'part' => 1, 'parts' => 2, 'workspaces' => [$workspace(1, 'a')]], 100.0);
+        expect($state->workspaces)->toBe([]);
+
+        $state->apply('client-workspaces', ['sequence' => 3, 'part' => 2, 'parts' => 2, 'workspaces' => [$workspace(2, 'b')]], 100.0);
+        expect($state->workspaces)->toBe([]);
+
+        $state->apply('client-workspaces', ['sequence' => 4, 'part' => 1, 'parts' => 2, 'workspaces' => [$workspace(1, 'a')]], 100.0);
+        $state->apply('client-workspaces', ['sequence' => 5, 'part' => 2, 'parts' => 2, 'workspaces' => [$workspace(2, 'b')]], 100.0);
+        expect(array_keys($state->workspaces))->toBe([1, 2])
+            ->and($state->takeChangedWorkspaces())->toBe([1, 2])
+            ->and($state->takeChangedWorkspaces())->toBe([]);
+
+        $state->apply('client-workspaces', ['sequence' => 6, 'part' => 1, 'parts' => 1, 'workspaces' => [$workspace(2, 'b')]], 101.0);
+        expect(array_keys($state->workspaces))->toBe([2])
+            ->and($state->takeChangedWorkspaces())->toBe([]);
+
+        $state->apply('client-workspace', ['sequence' => 7, 'workspace' => $workspace(2, 'c')], 102.0);
+        expect($state->takeChangedWorkspaces())->toBe([2]);
+
+        $state->apply('client-heartbeat', ['sequence' => 1], 110.0);
+        expect($state->workspaces)->toBe([]);
+    });
 });

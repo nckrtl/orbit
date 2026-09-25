@@ -84,6 +84,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/agent/workspaces": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the task checkouts the agent watches
+         * @description The `orbit-agent` on a managed Node calls this endpoint every 60 seconds to learn which task checkouts to watch. The Gateway identifies the Node from the WireGuard address and lists the Instances on that Node that hold the workspace of an unfinished task group, at most 64, with the checkout path, the Project's default branch as `base`, and the Instance's starting commit as `start`. The list is empty while the tasks extension is disabled.
+         */
+        get: operations["agent-workspaces"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/analytics/credentials": {
         parameters: {
             query?: never;
@@ -3751,6 +3771,47 @@ export interface operations {
                             /** @description The agent's member ID, `agent.{id}`. */
                             member: string;
                         };
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or its Node is not eligible for an agent (`agent.node_ineligible`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "agent-workspaces": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            /** @description The Instance that holds the task workspace. */
+                            instance_id: number;
+                            /** @description The absolute checkout path on the Node. */
+                            path: string;
+                            /** @description The Project's default branch, which the diff counts are read against. */
+                            base: string;
+                            /** @description The Instance's starting commit, or null. */
+                            start: string | null;
+                        }[];
                         meta: components["schemas"]["Meta"];
                     };
                 };

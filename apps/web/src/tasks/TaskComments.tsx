@@ -10,6 +10,7 @@ import {
     type TaskCheck,
     type TaskComment,
 } from "../api/tasks";
+import { useTaskPoll } from "../realtime/polling";
 import { Frame } from "../ui/Frame";
 
 const metaClassName = "text-[11px] font-medium uppercase tracking-[0.08em]";
@@ -197,7 +198,10 @@ function PullRequestProposal({ proposal }: { proposal: NonNullable<TaskComment["
 
 /** The task's latest check and its comments and run receipts, newest first, as stacked cards. */
 export function TaskComments({ groupId, task }: { groupId: number; task: Task }) {
-    const query = useQuery(taskCommentsQuery(groupId, task.id));
+    const query = useQuery({
+        ...taskCommentsQuery(groupId, task.id),
+        refetchInterval: useTaskPoll(),
+    });
     const now = useClock();
     const comments = query.data ?? [];
     return (
