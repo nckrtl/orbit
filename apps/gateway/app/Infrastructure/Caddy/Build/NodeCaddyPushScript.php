@@ -18,8 +18,10 @@ use InvalidArgumentException;
  * It reports its last stage on stderr as `orbit-caddy-build-stage=<stage>` and its result on
  * stdout as `orbit-caddy-build-result=<published|unchanged>`.
  *
- * A render with no site on a Node without Caddy has nothing to withdraw, so the build changes nothing and
- * reports `unchanged`. A role removal after a convergence that failed before Caddy was installed relies on it.
+ * On a Node without Caddy nothing is served, so a build that only withdraws changes nothing and reports
+ * `unchanged`. That holds for a render with no site, and for any render while no Caddy role on the Node is
+ * active or converging: then every Caddy role failed before Caddy was installed or is being removed, and a
+ * removal must not fail on the sites another failed role still renders.
  */
 final readonly class NodeCaddyPushScript
 {
@@ -33,7 +35,7 @@ final readonly class NodeCaddyPushScript
         private string $minimumRelease = CaddyRelease::MINIMUM,
     ) {}
 
-    public function command(NodeCaddyfile $caddyfile): RemoteCommand
+    public function command(NodeCaddyfile $caddyfile, bool $caddyExpected = true): RemoteCommand
     {
         if (! $caddyfile->buildable()) {
             throw new InvalidArgumentException('A Node Caddyfile with render problems cannot be pushed.');
@@ -65,7 +67,7 @@ final readonly class NodeCaddyPushScript
                 NodeCaddyfileRenderer::Marker,
                 (string) self::Retained,
                 implode(' ', $caddyfile->listenAddresses),
-                $caddyfile->sites === [] ? '1' : '0',
+                $caddyfile->sites === [] || ! $caddyExpected ? '1' : '0',
             ],
             input: $this->script(base64_encode($caddyfile->content)),
             timeout: 120.0,
@@ -123,7 +125,7 @@ final readonly class NodeCaddyPushScript
             marker=\$7
             retained=\$8
             listen_addresses=\$9
-            siteless=\${10}
+            unserved=\${10}
             versions="\$caddy_directory/orbit-versions"
             backups="\$caddy_directory/orbit-backups"
             live="\$caddy_directory/Caddyfile"
@@ -176,7 +178,7 @@ final readonly class NodeCaddyPushScript
             {$lock}
 
             stage=release
-            if [ "\$siteless" = 1 ] && [ ! -e "\$caddy_bin" ]; then
+            if [ "\$unserved" = 1 ] && [ ! -e "\$caddy_bin" ]; then
                 printf 'orbit-caddy-build-result=unchanged\\n'
                 exit 0
             fi

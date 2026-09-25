@@ -167,7 +167,7 @@ A failed check stops the build before any change. `/run/lock` is a tmpfs, so the
 
 Every Node with Caddy sites, the Gateway machine included, installs Caddy from the pinned source before its first build.
 
-A file with no site on a Node without `/usr/bin/caddy` changes nothing, because nothing serves there. The script stops at step 2 and reports the build as unchanged. A role removal after a convergence that failed before Caddy was installed relies on this.
+A Node without `/usr/bin/caddy` serves nothing, so a build there that has nothing to publish changes nothing. That is a file with no site, or any file while no Caddy role on the Node (`gateway`, `router`, `ingress`, `app-dev`, `app-prod`, `websocket`, `analytics`) is active or converging. The script then stops at step 2 and reports the build as unchanged. So when two Caddy roles both failed to converge before Caddy was installed, removing either one succeeds, although the other still renders its sites. While a Caddy role is active or converging, a missing Caddy still fails the build at step 2.
 
 ### When a build fails
 

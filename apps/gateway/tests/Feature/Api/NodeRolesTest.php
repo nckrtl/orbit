@@ -842,7 +842,7 @@ it('removes any role whose convergence failed through its baseline', function (s
         ->toBeFalse()
         ->and($this->roleLifecycle->removed)
         ->toBe([['role' => $role, 'purge_data' => false]]);
-})->with(['ingress', 'app-dev', 'app-prod', 'metrics', 'websocket', 'analytics', 'database']);
+})->with(['gateway', 'ingress', 'app-dev', 'app-prod', 'metrics', 'websocket', 'analytics', 'database']);
 
 it('refuses to remove a role while another operation holds it', function (LifecycleStatus $status, ?string $failedStep): void {
     $this->node->roles()->create([

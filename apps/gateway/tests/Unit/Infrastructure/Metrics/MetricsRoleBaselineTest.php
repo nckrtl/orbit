@@ -9,6 +9,7 @@ use App\Domain\Metrics\MetricsPublicationCleanup;
 use App\Domain\Metrics\MetricsPublicationManager;
 use App\Domain\Metrics\MetricsPublicationReport;
 use App\Domain\Metrics\MetricsRuntimeLifecycle;
+use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -65,7 +66,7 @@ it('rolls completed runtime and exporter stages back in reverse order', function
     $baseline = metricsBaseline($events, failure: $failure);
 
     expect(fn () => $baseline->converge($metrics, $assignment))
-        ->toThrow(RuntimeException::class, "{$failure} failed")
+        ->toThrow(NodeRoleOperationException::class, "{$failure} failed")
         ->and($events)
         ->toBe($expected);
 })->with([
@@ -96,16 +97,36 @@ it('fails closed when convergence rollback does not complete', function (): void
     try {
         $baseline->converge($metrics, $assignment);
         $exception = null;
-    } catch (ResourceOperationException $caught) {
+    } catch (NodeRoleOperationException $caught) {
         $exception = $caught;
     }
 
     expect($exception)
         ->not
         ->toBeNull()
-        ->and($exception?->errorCode)
+        ->and($exception?->step)
+        ->toBe('metrics-runtime')
+        ->and($exception?->underlyingErrorCode)
         ->toBe('metrics.rollback_failed');
 });
+
+it('names the failing Metrics step and its error code', function (string $failure, string $step): void {
+    [$metrics, $assignment] = metricsBaselineTopology();
+    $events = [];
+    $baseline = metricsBaseline($events, failure: $failure);
+
+    expect(fn () => $baseline->converge($metrics, $assignment))
+        ->toThrow(function (NodeRoleOperationException $exception) use ($failure, $step): void {
+            expect($exception->step)->toBe($step)
+                ->and($exception->errorCode)->toBe('node_role.convergence_failed')
+                ->and($exception->underlyingErrorCode)->toBe('metrics.test_'.str_replace(':', '_', $failure));
+        });
+})->with([
+    'exporters' => ['exporters:converge', 'metrics-exporters'],
+    'cadvisor' => ['cadvisors:converge', 'metrics-cadvisor'],
+    'runtime' => ['runtime:converge', 'metrics-runtime'],
+    'publication' => ['publication:converge', 'metrics-publication'],
+]);
 
 it('removes publication, exporters, and runtime in that order', function (): void {
     [$metrics, $assignment] = metricsBaselineTopology();
@@ -311,7 +332,7 @@ final class MetricsBaselineRuntime implements MetricsRuntimeLifecycle
         $this->events[] = $event;
 
         if ($this->failure === $event || $this->rollbackFailure === $event) {
-            throw new RuntimeException("{$event} failed");
+            throw new ResourceOperationException('metrics.test_'.str_replace(':', '_', $event), "{$event} failed", 502);
         }
     }
 }
@@ -354,7 +375,7 @@ final class MetricsBaselineExporters implements MetricsExporterLifecycle
         $this->events[] = $event;
 
         if ($this->failure === $event || $this->rollbackFailure === $event) {
-            throw new RuntimeException("{$event} failed");
+            throw new ResourceOperationException('metrics.test_'.str_replace(':', '_', $event), "{$event} failed", 502);
         }
     }
 }
@@ -387,7 +408,7 @@ final class MetricsBaselineCadvisors implements MetricsCadvisorLifecycle
         $this->events[] = $event;
 
         if ($this->failure === $event || $this->rollbackFailure === $event) {
-            throw new RuntimeException("{$event} failed");
+            throw new ResourceOperationException('metrics.test_'.str_replace(':', '_', $event), "{$event} failed", 502);
         }
     }
 }
@@ -425,7 +446,7 @@ final class MetricsBaselinePublication implements MetricsPublicationManager
         $this->events[] = $event;
 
         if ($this->failure === $event || $this->rollbackFailure === $event) {
-            throw new RuntimeException("{$event} failed");
+            throw new ResourceOperationException('metrics.test_'.str_replace(':', '_', $event), "{$event} failed", 502);
         }
     }
 }
