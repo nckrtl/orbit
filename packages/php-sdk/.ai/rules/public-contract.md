@@ -1,6 +1,6 @@
 # Public contract
 
-The SDK models exactly 162 concrete public Gateway API operations:
+The SDK models exactly 166 concrete public Gateway API operations:
 
 - Gateway: status and root trust.
 - Activity: list and show.
@@ -12,6 +12,7 @@ The SDK models exactly 162 concrete public Gateway API operations:
 - AppInstance: list, show, create, register, clone, transfer, remove, update, deploy-step create, list, update, and destroy, deploy, rollback, retained-release list, deployment-history list and show, environment import, environment update, environment synchronization, dependency inventory read, dependency scan, dependency update, and full-domain and directory instance resolution through the concise Instance routes.
 - Route: list, show, create, update, target set, target clear, and remove.
 - Process: list, add, start, stop, restart, logs, and remove.
+- Logs: Instance log read, and live log stream create, renew, and destroy for an Instance or a Process.
 - Schedule: list, add, show, run, logs, complete, remove, and activate.
 - Firewall: list, allow, deny, and remove.
 - Tool: manager list, tool list, show, install, update, and remove.
@@ -69,6 +70,13 @@ operations. Keep the public API typed and small.
   authorization, or a custom proxy Node, optional Process, and loopback
   upstream with omitted nulls. The Gateway owns domain, kind, scope, basis,
   relationship, pool policy, and lifecycle policy.
+- Keep log transport limited to a numeric Instance or Process ID and a line
+  count for a one-shot read, the caller's Reverb socket ID and a line count to
+  open a live log stream, and the stream ID to renew or close it. Keep the
+  stream's subscription signature out of arrays, debug output, and
+  serialization. The Gateway owns access, stream limits, and the relay; the
+  caller owns renewal, the realtime subscription, and the fallback to one-shot
+  reads.
 - Preserve explicitly supplied process fields for every runtime. The Gateway
   owns cross-field policy.
 - Keep App runtime definition transport limited to a numeric App ID, a

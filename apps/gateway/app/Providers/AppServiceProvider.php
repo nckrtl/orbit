@@ -101,6 +101,9 @@ use App\Domain\Hibernation\AppInstanceRuntimeReadiness;
 use App\Domain\Hibernation\HibernationMarkerStore;
 use App\Domain\Hibernation\HibernationWakeFailureStore;
 use App\Domain\Hibernation\RuntimeHibernatorConverger;
+use App\Domain\Logs\LogRedactor;
+use App\Domain\Logs\LogStreamBroadcaster;
+use App\Domain\Logs\LogStreamStore;
 use App\Domain\Metrics\MetricsAccessRevoker;
 use App\Domain\Metrics\MetricsCadvisorLifecycle;
 use App\Domain\Metrics\MetricsCredentialManager;
@@ -118,6 +121,7 @@ use App\Domain\Metrics\MetricsStatusReader;
 use App\Domain\Metrics\ServiceMetricsLifecycle;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\Metrics\NodeMetricsReader;
+use App\Domain\Nodes\NodeAccessAuthorizer;
 use App\Domain\Nodes\NodeAgentRuntime;
 use App\Domain\Nodes\NodeConverger;
 use App\Domain\Nodes\NodeProvisioningLock;
@@ -163,6 +167,7 @@ use App\Http\Streaming\NativeDeploymentStreamConnection;
 use App\Infrastructure\Activity\ActivityPropertiesObserver;
 use App\Infrastructure\AgentView\AgentViewSubscriber;
 use App\Infrastructure\AgentView\CacheAgentStateView;
+use App\Infrastructure\AgentView\LogRelay;
 use App\Infrastructure\AgentView\NativeAgentViewConverger;
 use App\Infrastructure\AgentView\ProcessAgentViewPublisher;
 use App\Infrastructure\AgentView\StreamWebSocketClient;
@@ -260,6 +265,7 @@ use App\Infrastructure\Hibernation\NativeRuntimeHibernatorConverger;
 use App\Infrastructure\Hibernation\RemoteAppInstanceCheckoutInspector;
 use App\Infrastructure\Hibernation\RemoteAppInstanceRuntimeReadiness;
 use App\Infrastructure\Hibernation\RemoteHibernationMarkerStore;
+use App\Infrastructure\Logs\CacheLogStreamStore;
 use App\Infrastructure\Metrics\MetricsCadvisorRuntime;
 use App\Infrastructure\Metrics\MetricsCadvisorSshExecutor;
 use App\Infrastructure\Metrics\MetricsExporterRuntime;
@@ -346,6 +352,7 @@ use App\Infrastructure\WireGuard\WireGuardServerConfigRenderer;
 use App\Models\Activity;
 use App\Models\AppInstance;
 use App\Models\DatabaseConnection;
+use Illuminate\Broadcasting\BroadcastManager;
 use Illuminate\Cache\CacheManager;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Support\ServiceProvider;
@@ -524,6 +531,12 @@ final class AppServiceProvider extends ServiceProvider
             ),
         );
         $this->app->singleton(
+            LogStreamStore::class,
+            static fn ($app): CacheLogStreamStore => new CacheLogStreamStore(
+                $app->make(CacheManager::class)->build(CacheAgentStateView::storeConfiguration((string) config('orbit.home'))),
+            ),
+        );
+        $this->app->singleton(
             CacheAgentStateView::class,
             static fn ($app): CacheAgentStateView => new CacheAgentStateView(
                 $app->make(CacheManager::class)->build(CacheAgentStateView::storeConfiguration((string) config('orbit.home'))),
@@ -554,6 +567,18 @@ final class AppServiceProvider extends ServiceProvider
                     log: $app->make(LoggerInterface::class),
                     clock: CacheAgentStateView::now(...),
                     workingDirectory: base_path(),
+                ),
+                broadcastingChanged: static function () use ($app): void {
+                    $app->make(RealtimeConnection::class)->forget();
+                    $app->make(BroadcastManager::class)->purge('reverb');
+                },
+                logs: new LogRelay(
+                    streams: $app->make(LogStreamStore::class),
+                    broadcaster: $app->make(LogStreamBroadcaster::class),
+                    redactor: $app->make(LogRedactor::class),
+                    access: $app->make(NodeAccessAuthorizer::class),
+                    log: $app->make(LoggerInterface::class),
+                    clock: CacheAgentStateView::now(...),
                 ),
             ),
         );

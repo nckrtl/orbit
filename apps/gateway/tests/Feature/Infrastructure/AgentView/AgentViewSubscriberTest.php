@@ -5,17 +5,30 @@ declare(strict_types=1);
 use App\Actions\Broadcasting\PresenceChannelSigner;
 use App\Domain\AgentView\AgentStateView;
 use App\Domain\AgentView\AgentViewFreshness;
+use App\Domain\Logs\LogRedactor;
+use App\Domain\Logs\LogStream;
+use App\Domain\Logs\LogStreamBroadcast;
+use App\Domain\Logs\LogStreamBroadcaster;
+use App\Domain\Logs\LogStreamRecordType;
+use App\Domain\Logs\LogStreamSource;
+use App\Domain\Logs\LogStreamStore;
+use App\Domain\Nodes\NodeAccessAuthorizer;
+use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\WebSocket\WebSocketCredentialManager;
 use App\Infrastructure\AgentView\AgentViewPublisher;
 use App\Infrastructure\AgentView\AgentViewSubscriber;
 use App\Infrastructure\AgentView\CacheAgentStateView;
+use App\Infrastructure\AgentView\LogRelay;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Infrastructure\AgentView\WebSocketException;
 use App\Infrastructure\Caddy\Build\CaddySiteCertificates;
 use App\Infrastructure\WebSocket\WebSocketDnsTarget;
+use App\Models\App as OrbitApp;
+use App\Models\AppInstance;
+use App\Models\AppInstanceEnvironmentValue;
 use App\Models\Node;
 use Illuminate\Cache\ArrayStore;
 use Illuminate\Cache\Repository as CacheRepository;
@@ -818,5 +831,175 @@ describe('the agent view subscriber during a websocket move', function (): void 
         $subscriber->pass();
 
         expect(app(AgentStateView::class)->node($this->node->id)->freshness)->toBe(AgentViewFreshness::Fresh);
+    });
+});
+
+/** @return array{AgentViewSubscriber, FakeAgentViewSocket, object{now: float, commit: string}} */
+function log_relay_subscriber(): array
+{
+    $socket = new FakeAgentViewSocket;
+    $state = new class
+    {
+        public float $now = 1_000.0;
+
+        public string $commit = 'aaa';
+    };
+    Carbon::setTestNow(Carbon::createFromTimestamp($state->now));
+    $clock = static fn (): float => $state->now;
+
+    $subscriber = new AgentViewSubscriber(
+        socket: $socket,
+        credentials: app(WebSocketCredentialManager::class),
+        view: app(CacheAgentStateView::class),
+        signer: new PresenceChannelSigner,
+        log: new NullLogger,
+        caPath: '/home/orbit/.orbit/ca/root.pem',
+        commit: static fn (): string => $state->commit,
+        clock: $clock,
+        sleep: static function (float $seconds) use ($state): void {
+            $state->now += $seconds;
+        },
+        logs: new LogRelay(
+            streams: app(LogStreamStore::class),
+            broadcaster: app(LogStreamBroadcaster::class),
+            redactor: app(LogRedactor::class),
+            access: app(NodeAccessAuthorizer::class),
+            log: new NullLogger,
+            clock: $clock,
+        ),
+    );
+
+    return [$subscriber, $socket, $state];
+}
+
+/** @param array<string, mixed> $data */
+function agent_log_event(int $nodeId, string $event, array $data, ?string $sender = null): array
+{
+    return ['event' => $event, 'channel' => "presence-node-logs.{$nodeId}", 'data' => json_encode($data), 'user_id' => $sender ?? "agent.{$nodeId}"];
+}
+
+/** @return list<LogStreamBroadcast> */
+function log_events(string $name): array
+{
+    return array_values(array_filter(
+        Event::dispatched(LogStreamBroadcast::class)->map(static fn (array $call): LogStreamBroadcast => $call[0])->all(),
+        static fn (LogStreamBroadcast $event): bool => $event->name === $name,
+    ));
+}
+
+describe('the live log relay', function (): void {
+    beforeEach(function (): void {
+        activate_websocket_role();
+        Event::fake([LogStreamBroadcast::class]);
+        $this->node = subscriber_managed_node('app-prod', '10.44.0.3');
+        $this->viewer = subscriber_managed_node('laptop', '10.44.0.21');
+        $this->viewer->accessibleNodes()->attach($this->node->id);
+        $app = OrbitApp::query()->create(['name' => 'Shop', 'slug' => 'shop', 'repository_url' => 'git@example.test:shop.git', 'default_branch' => 'main']);
+        $this->instance = AppInstance::query()->create(['app_id' => $app->id, 'node_id' => $this->node->id, 'name' => 'main', 'checkout_path' => '/home/orbit/apps/shop/main', 'status' => 'active']);
+        AppInstanceEnvironmentValue::query()->create(['app_instance_id' => $this->instance->id, 'env_key' => 'STRIPE_SECRET', 'env_value' => 'sk-live-orbit-4821-secret']);
+        [$this->subscriber, $this->socket, $this->clock] = log_relay_subscriber();
+        $this->stream = new LogStream(str_repeat('ab', 16), LogStreamRecordType::Instance, (int) $this->instance->id, (int) $this->node->id, (int) $this->viewer->id, LogStreamSource::laravel(StoragePath::parse('/home/orbit/apps/shop/main')), 100, 1_060.0);
+        app(LogStreamStore::class)->open($this->stream);
+        $this->subscriber->pass();
+        $this->socket->push(agent_log_event($this->node->id, 'pusher_internal:subscription_succeeded', ['presence' => ['ids' => ["agent.{$this->node->id}", 'gateway.1234.5678']]]));
+        $this->socket->push(agent_snapshot($this->node->id, 1, []));
+        $this->subscriber->pass();
+        $this->subscriber->pass();
+    });
+
+    afterEach(fn () => Carbon::setTestNow());
+
+    it('joins every Node log channel with its own gateway membership and records the agent as a member', function (): void {
+        $subscribe = collect($this->socket->sent)->firstWhere('data.channel', "presence-node-logs.{$this->node->id}");
+
+        expect($subscribe['event'])->toBe('pusher:subscribe')
+            ->and(json_decode($subscribe['data']['channel_data'], true))->toBe(['user_id' => 'gateway.1234.5678', 'user_info' => ['kind' => 'gateway']])
+            ->and(app(AgentStateView::class)->node($this->node->id)->logs)->toBeTrue();
+    });
+
+    it('relays redacted lines from the Node agent to the viewer channel', function (): void {
+        $this->socket->push(agent_log_event($this->node->id, 'client-log', [
+            'stream' => $this->stream->id, 'sequence' => 1, 'dropped' => 2, 'skipped' => 0,
+            'lines' => ['[2026-09-25 10:00:00] production.ERROR: charge failed with sk-live-orbit-4821-secret', 'Authorization: Bearer abcdefgh12345678', 'DB_PASSWORD=hunter2hunter2'],
+        ]));
+        $this->subscriber->pass();
+
+        $lines = log_events('log.lines');
+
+        expect($lines)->toHaveCount(1)
+            ->and($lines[0]->channel)->toBe("private-log-stream.{$this->stream->id}")
+            ->and($lines[0]->payload['type'])->toBe('log.lines')
+            ->and($lines[0]->payload['id'])->toBe($this->stream->id)
+            ->and($lines[0]->payload['data'])->toBe([
+                'sequence' => 1,
+                'lines' => ['[2026-09-25 10:00:00] production.ERROR: charge failed with [REDACTED]', 'Authorization: [REDACTED]', 'DB_PASSWORD=[REDACTED]'],
+                'dropped' => 2,
+                'skipped' => 0,
+            ]);
+    });
+
+    it('ignores lines from another member, for another Node, or for an unknown stream', function (): void {
+        $other = subscriber_managed_node('app-dev', '10.44.0.4');
+        $this->subscriber->pass();
+        $foreign = new LogStream(str_repeat('cd', 16), LogStreamRecordType::Instance, (int) $this->instance->id, (int) $other->id, (int) $this->viewer->id, LogStreamSource::laravel(StoragePath::parse('/srv/app')), 100, 1_060.0);
+        app(LogStreamStore::class)->open($foreign);
+        $line = ['sequence' => 1, 'dropped' => 0, 'skipped' => 0, 'lines' => ['forged']];
+
+        $this->socket->push(
+            agent_log_event($this->node->id, 'client-log', ['stream' => $this->stream->id, ...$line], sender: 'viewer.9.9'),
+            agent_log_event($this->node->id, 'client-log', ['stream' => $this->stream->id, ...$line], sender: "agent.{$other->id}"),
+            agent_log_event($this->node->id, 'client-log', ['stream' => $foreign->id, ...$line]),
+            agent_log_event($this->node->id, 'client-log', ['stream' => str_repeat('ef', 16), ...$line]),
+            agent_event($this->node->id, 'client-log', ['stream' => $this->stream->id, ...$line]),
+        );
+        $this->subscriber->pass();
+
+        expect(log_events('log.lines'))->toBe([]);
+    });
+
+    it('drops lines above its rate, counts them, and splits parts under the message limit', function (): void {
+        $line = str_repeat('x', 8_000);
+        $this->socket->push(agent_log_event($this->node->id, 'client-log', ['stream' => $this->stream->id, 'sequence' => 1, 'dropped' => 0, 'skipped' => 0, 'lines' => array_fill(0, 40, $line)]));
+        $this->subscriber->pass();
+
+        $events = log_events('log.lines');
+        $sent = array_sum(array_map(static fn (LogStreamBroadcast $event): int => count($event->payload['data']['lines']), $events));
+
+        expect($sent)->toBe(32)
+            ->and($events[0]->payload['data']['dropped'])->toBe(8)
+            ->and(array_map(static fn (LogStreamBroadcast $event): int => $event->payload['data']['sequence'], $events))->toBe(range(1, count($events)))
+            ->and(array_all($events, static fn (LogStreamBroadcast $event): bool => strlen((string) json_encode($event->payload)) <= LogStreamBroadcaster::PayloadLimit))->toBeTrue();
+    });
+
+    it('ends the stream when the agent reports its source unavailable', function (): void {
+        $this->socket->push(agent_log_event($this->node->id, 'client-log-end', ['stream' => $this->stream->id, 'reason' => 'source_unavailable']));
+        $this->subscriber->pass();
+
+        expect(log_events('log.ended')[0]->payload['data'])->toBe(['reason' => 'source_unavailable'])
+            ->and(app(LogStreamStore::class)->find($this->stream->id))->toBeNull();
+    });
+
+    it('ends every stream of a Node whose agent leaves its log channel', function (): void {
+        $this->socket->push(agent_log_event($this->node->id, 'pusher_internal:member_removed', ['user_id' => "agent.{$this->node->id}"]));
+        $this->subscriber->pass();
+
+        expect(log_events('log.ended')[0]->payload['data'])->toBe(['reason' => 'agent_left'])
+            ->and(app(LogStreamStore::class)->find($this->stream->id))->toBeNull()
+            ->and(app(AgentStateView::class)->node($this->node->id)->logs)->toBeFalse();
+    });
+
+    it('ends a stream when its lease runs out or its viewer loses access', function (): void {
+        $revoked = new LogStream(str_repeat('cd', 16), LogStreamRecordType::Instance, (int) $this->instance->id, (int) $this->node->id, (int) $this->viewer->id, LogStreamSource::laravel(StoragePath::parse('/home/orbit/apps/shop/main')), 100, 1_200.0);
+        app(LogStreamStore::class)->open($revoked);
+        $this->clock->now = 1_061.0;
+        Carbon::setTestNow(Carbon::createFromTimestamp(1_061));
+        $this->viewer->accessibleNodes()->detach();
+        $this->subscriber->pass();
+
+        $ended = collect(log_events('log.ended'))->mapWithKeys(static fn (LogStreamBroadcast $event): array => [$event->payload['id'] => $event->payload['data']['reason']])->all();
+
+        expect($ended)->toBe([$this->stream->id => 'expired', $revoked->id => 'revoked'])
+            ->and(app(LogStreamStore::class)->all())->toBe([])
+            ->and(collect(log_events('log-streams.changed'))->pluck('channel')->all())->toContain("presence-node-logs.{$this->node->id}");
     });
 });

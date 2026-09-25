@@ -12,6 +12,9 @@ use App\Domain\Processes\ProcessRuntime;
  * Units are keyed `{runtime}:{name}`, for example `systemd:orbit-process-42-web`, exactly as the
  * agent reported them. Only a fresh view answers; every other view answers null so the reader
  * falls back to Prometheus or SSH.
+ *
+ * `logs` says whether the agent is a member of the Node's log channel, `presence-node-logs.{id}`,
+ * which agents from 0.3.0 join to serve live log streams (ADR 0153).
  */
 final readonly class AgentNodeView
 {
@@ -26,6 +29,7 @@ final readonly class AgentNodeView
         public ?string $docker = null,
         public ?float $receivedAt = null,
         public array $workspaces = [],
+        public bool $logs = false,
     ) {}
 
     public static function missing(int $nodeId): self

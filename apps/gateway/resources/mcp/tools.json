@@ -2855,7 +2855,7 @@
     {
       "name": "instance-logs",
       "title": "Read Instance logs",
-      "description": "Read Instance logs",
+      "description": "Returns one redacted tail of the Instance's application log, `storage/logs/laravel.log` or the newest `laravel-*.log`, read over SSH. `lines` is 1 to 1,000, default 100. Open a live log stream to follow new lines.",
       "method": "GET",
       "path": "/api/v1/instances/{instance}/logs",
       "path_inputs": [
@@ -4518,7 +4518,7 @@
     {
       "name": "process-logs",
       "title": "Read Process logs",
-      "description": "Return one bounded process log tail.",
+      "description": "Returns one redacted tail of the Process's journal or container output, read over SSH. `lines` is 1 to 1,000, default 100. Open a live log stream to follow new lines.",
       "method": "GET",
       "path": "/api/v1/processes/{process}/logs",
       "path_inputs": [

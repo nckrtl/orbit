@@ -7,6 +7,7 @@ use std::{
     io::BufReader,
     net::{IpAddr, SocketAddr},
 };
+pub mod logs;
 pub mod workspace;
 use workspace::WorkspaceState;
 
@@ -345,6 +346,23 @@ pub fn next_attempt(attempt: u32, joined_for: Option<std::time::Duration>) -> u3
         attempt.saturating_add(1)
     }
 }
+
+/// The systemd unit the Gateway installs. The agent runs only inside it.
+pub const SERVICE_UNIT: &str = "orbit-agent.service";
+
+/// Whether `/proc/self/cgroup` places this process in the managed `orbit-agent.service` unit.
+///
+/// A copy started by hand, for example a test build run in a shell on a fleet Node, would join
+/// Reverb as that Node's agent and then leave, which drops the Gateway's view of the Node. Only
+/// systemd can start a process inside the unit's cgroup, and it runs one copy at a time.
+pub fn runs_in_service_unit(cgroup: &str) -> bool {
+    cgroup.lines().any(|line| {
+        line.rsplit(':')
+            .next()
+            .is_some_and(|path| path.trim_end().ends_with(&format!("/{SERVICE_UNIT}")))
+    })
+}
+
 pub fn retry_delay(attempt: u32) -> std::time::Duration {
     let base = 1_u64.checked_shl(attempt.min(5)).unwrap_or(30).min(30);
     let jitter = rand::thread_rng().gen_range(0..=base / 4);
@@ -515,6 +533,23 @@ gateway_address = "10.44.0.1""#,
             config.gateway_address,
             "10.44.0.1".parse::<IpAddr>().unwrap()
         );
+    }
+
+    #[test]
+    fn runs_only_inside_the_managed_service_unit() {
+        assert!(runs_in_service_unit(
+            "0::/system.slice/orbit-agent.service\n"
+        ));
+        assert!(!runs_in_service_unit(
+            "0::/user.slice/user-1000.slice/session-3.scope\n"
+        ));
+        assert!(!runs_in_service_unit(
+            "0::/system.slice/orbit-e2e-test.service\n"
+        ));
+        assert!(!runs_in_service_unit(
+            "0::/system.slice/orbit-agent.service/extra\n"
+        ));
+        assert!(!runs_in_service_unit(""));
     }
 
     #[test]

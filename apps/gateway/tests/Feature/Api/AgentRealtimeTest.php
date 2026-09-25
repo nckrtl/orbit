@@ -26,7 +26,22 @@ describe('agent realtime endpoints', function (): void {
             ->assertJsonPath('data.address', $this->node->wireguard_ip)
             ->assertJsonPath('data.key', $credentials->appKey)
             ->assertJsonPath('data.channel', "presence-node.{$this->node->id}")
+            ->assertJsonPath('data.log_channel', "presence-node-logs.{$this->node->id}")
             ->assertJsonPath('data.member', "agent.{$this->node->id}");
+    });
+
+    it('signs the agent membership of its own log channel only', function (): void {
+        [, $credentials] = activate_websocket_role($this->node);
+        $channel = "presence-node-logs.{$this->node->id}";
+        $response = $this->postJson('/api/v1/agent/broadcasting/auth', ['socket_id' => '123.456', 'channel_name' => $channel, 'version' => '0.3.0'])->assertOk();
+
+        expect($response->json('auth'))->toBe($credentials->appKey.':'.hash_hmac('sha256', '123.456:'.$channel.':'.$response->json('channel_data'), $credentials->appSecret))
+            ->and(json_decode($response->json('channel_data'), true)['user_id'])->toBe("agent.{$this->node->id}");
+
+        foreach (['presence-node-logs.999', 'private-log-stream.'.str_repeat('a', 32), "presence-node-logs.{$this->node->id}x"] as $other) {
+            $this->postJson('/api/v1/agent/broadcasting/auth', ['socket_id' => '1.2', 'channel_name' => $other])
+                ->assertForbidden()->assertJsonPath('error.code', 'agent.channel_forbidden');
+        }
     });
 
     it('returns an eligibility error for an unmanaged node', function (): void {

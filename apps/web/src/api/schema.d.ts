@@ -55,9 +55,29 @@ export interface paths {
         put?: never;
         /**
          * Authorize the agent's presence channel
-         * @description The `orbit-agent` on a managed Node calls this endpoint to join its own presence channel. The Gateway signs member `agent.{id}` on `presence-node.{id}` only for a request from that Node's WireGuard address. The response carries the Pusher `auth` and `channel_data` values.
+         * @description The `orbit-agent` on a managed Node calls this endpoint to join its own presence channels. The Gateway signs member `agent.{id}` on `presence-node.{id}` or `presence-node-logs.{id}` only for a request from that Node's WireGuard address. The response carries the Pusher `auth` and `channel_data` values.
          */
         post: operations["agent-realtime-auth"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent/log-streams": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the live log streams the agent reads
+         * @description The `orbit-agent` on a managed Node calls this endpoint to learn which logs to read for live log streams: when it joins its log channel, after each `log-streams.changed` event, and every 15 seconds while it reads a stream. The Gateway identifies the Node from the WireGuard address and lists at most 16 open streams whose source is on that Node, each with its ID, `lines`, and one `laravel`, `journal`, or `docker` source that the Gateway resolved from its own records.
+         */
+        get: operations["agent-log-streams"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1237,6 +1257,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/instances/{instance}/log-streams": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Open a live Instance log stream
+         * @description Opens a live log stream of the Instance's application log for one Reverb socket, with the access rule of `instance:logs`. The response signs the socket's subscription to `private-log-stream.{id}`; the Gateway then relays redacted lines from the Node agent there as `log.lines` events. Returns `logs.live_unavailable` with `details.reason` when the live path is not available, and `logs.stream_limit` when the Node already has 16 open streams.
+         */
+        post: operations["instance-log-stream-create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/instances/{instance}/log-streams/{stream}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Renew a live Instance log stream
+         * @description Extends the lease of a live Instance log stream to 60 seconds from now. Only the Node that opened the stream can renew it. Does not record Activity.
+         */
+        put: operations["instance-log-stream-renew"];
+        post?: never;
+        /**
+         * Close a live Instance log stream
+         * @description Closes a live Instance log stream at once and publishes `log.ended` with reason `closed`. Only the Node that opened the stream can close it.
+         */
+        delete: operations["instance-log-stream-destroy"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/instances/{instance}/logs": {
         parameters: {
             query?: never;
@@ -1244,7 +1308,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Read Instance logs */
+        /**
+         * Read Instance logs
+         * @description Returns one redacted tail of the Instance's application log, `storage/logs/laravel.log` or the newest `laravel-*.log`, read over SSH. `lines` is 1 to 1,000, default 100. Open a live log stream to follow new lines.
+         */
         get: operations["instance-logs"];
         put?: never;
         post?: never;
@@ -1906,6 +1973,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/processes/{process}/log-streams": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Open a live Process log stream
+         * @description Opens a live log stream of the Process's journal or container output for one Reverb socket, with the access rule of `process:logs`. The response signs the socket's subscription to `private-log-stream.{id}`; the Gateway then relays redacted lines from the Node agent there as `log.lines` events. Returns `logs.live_unavailable` with `details.reason` when the live path is not available, and `logs.stream_limit` when the Node already has 16 open streams.
+         */
+        post: operations["process-log-stream-create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/processes/{process}/log-streams/{stream}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Renew a live Process log stream
+         * @description Extends the lease of a live Process log stream to 60 seconds from now. Only the Node that opened the stream can renew it. Does not record Activity.
+         */
+        put: operations["process-log-stream-renew"];
+        post?: never;
+        /**
+         * Close a live Process log stream
+         * @description Closes a live Process log stream at once and publishes `log.ended` with reason `closed`. Only the Node that opened the stream can close it.
+         */
+        delete: operations["process-log-stream-destroy"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/processes/{process}/logs": {
         parameters: {
             query?: never;
@@ -1915,7 +2026,7 @@ export interface paths {
         };
         /**
          * Read Process logs
-         * @description Return one bounded process log tail.
+         * @description Returns one redacted tail of the Process's journal or container output, read over SSH. `lines` is 1 to 1,000, default 100. Open a live log stream to follow new lines.
          */
         get: operations["process-logs"];
         put?: never;
@@ -3743,6 +3854,58 @@ export interface operations {
             };
         };
     };
+    "agent-log-streams": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            /** @description The stream ID. */
+                            id: string;
+                            /** @description The number of earlier lines to send first. */
+                            lines: number;
+                            source: {
+                                /**
+                                 * @description The source type.
+                                 * @enum {string}
+                                 */
+                                type: "laravel" | "journal" | "docker";
+                                /** @description `laravel`: the Instance checkout path. */
+                                path?: string;
+                                /** @description `journal`: the unit `orbit-process-{id}-{name}.service`. */
+                                unit?: string;
+                                /** @description `docker`: the container `orbit-process-{id}-{name}`. */
+                                container?: string;
+                                /** @description `docker`: the Process ID in the container name and label. */
+                                process_id?: number;
+                            };
+                        }[];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or its Node is not eligible for an agent (`agent.node_ineligible`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     "agent-realtime": {
         parameters: {
             query?: never;
@@ -3768,6 +3931,8 @@ export interface operations {
                             key: string | null;
                             /** @description The Node's presence channel, `presence-node.{id}`. */
                             channel: string;
+                            /** @description The Node's log channel, `presence-node-logs.{id}`, for live log streams. */
+                            log_channel: string;
                             /** @description The agent's member ID, `agent.{id}`. */
                             member: string;
                         };
@@ -8546,6 +8711,218 @@ export interface operations {
             };
         };
     };
+    "instance-log-stream-create": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Numeric Instance ID. */
+                instance: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    socket_id: string;
+                    lines?: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Created. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            /** @description The stream ID. */
+                            id: string;
+                            /** @description The private channel, `private-log-stream.{id}`. */
+                            channel: string;
+                            /** @description The Pusher signature of this channel for the request's `socket_id` only. */
+                            auth: string;
+                            /** @description The number of earlier lines the stream sends first. */
+                            lines: number;
+                            /** @description Seconds the stream lives without a renewal. */
+                            lease_seconds: number;
+                            /** @description Seconds between renewals. */
+                            renew_seconds: number;
+                        };
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The live log path is not available (`logs.live_unavailable`); `details.reason` is `realtime_not_configured`, `subscriber_down`, `agent_unavailable`, or `agent_outdated`. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The Node already has 16 open log streams (`logs.stream_limit`). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "instance-log-stream-renew": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Numeric Instance ID. */
+                instance: number;
+                stream: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            /** @description The stream ID. */
+                            id: string;
+                            /** @description Seconds the stream lives from now without another renewal. */
+                            lease_seconds: number;
+                        };
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The stream does not exist, has ended, belongs to another record, or was opened by another Node (`logs.stream_not_found`). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "instance-log-stream-destroy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Numeric Instance ID. */
+                instance: number;
+                stream: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            /** @description The stream ID. */
+                            id: string;
+                            /**
+                             * @description Always true.
+                             * @constant
+                             */
+                            closed: true;
+                        };
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The stream does not exist, has ended, belongs to another record, or was opened by another Node (`logs.stream_not_found`). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     "instance-logs": {
         parameters: {
             query?: {
@@ -11046,6 +11423,218 @@ export interface operations {
             };
             /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "process-log-stream-create": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Numeric Process ID. */
+                process: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    socket_id: string;
+                    lines?: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Created. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            /** @description The stream ID. */
+                            id: string;
+                            /** @description The private channel, `private-log-stream.{id}`. */
+                            channel: string;
+                            /** @description The Pusher signature of this channel for the request's `socket_id` only. */
+                            auth: string;
+                            /** @description The number of earlier lines the stream sends first. */
+                            lines: number;
+                            /** @description Seconds the stream lives without a renewal. */
+                            lease_seconds: number;
+                            /** @description Seconds between renewals. */
+                            renew_seconds: number;
+                        };
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The live log path is not available (`logs.live_unavailable`); `details.reason` is `realtime_not_configured`, `subscriber_down`, `agent_unavailable`, or `agent_outdated`. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The Node already has 16 open log streams (`logs.stream_limit`). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "process-log-stream-renew": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Numeric Process ID. */
+                process: number;
+                stream: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            /** @description The stream ID. */
+                            id: string;
+                            /** @description Seconds the stream lives from now without another renewal. */
+                            lease_seconds: number;
+                        };
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The stream does not exist, has ended, belongs to another record, or was opened by another Node (`logs.stream_not_found`). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "process-log-stream-destroy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Numeric Process ID. */
+                process: number;
+                stream: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            /** @description The stream ID. */
+                            id: string;
+                            /**
+                             * @description Always true.
+                             * @constant
+                             */
+                            closed: true;
+                        };
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The stream does not exist, has ended, belongs to another record, or was opened by another Node (`logs.stream_not_found`). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

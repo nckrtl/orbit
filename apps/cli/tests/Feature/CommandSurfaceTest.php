@@ -122,6 +122,7 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'instance:deployment:show',
         'instance:destroy',
         'instance:list',
+        'instance:logs',
         'instance:register',
         'instance:release:list',
         'instance:rollback',
@@ -361,7 +362,7 @@ it('only hides Orbit commands that belong to disabled extensions', function (): 
     $orbitCommands = collect(app(Kernel::class)->all())
         ->filter(static fn (Command $command): bool => str_starts_with($command::class, 'App\\Commands\\'));
 
-    expect($orbitCommands)->toHaveCount(162);
+    expect($orbitCommands)->toHaveCount(163);
     expect($orbitCommands
         ->filter(static fn (Command $command): bool => $command->isHidden())
         ->keys()
@@ -707,6 +708,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         'instance:deployment:show' => [['deployment'], ['json' => false]],
         'instance:destroy' => [['instance'], ['yes' => false, 'force' => false, 'json' => false]],
         'instance:list' => [[], ['json' => false]],
+        'instance:logs' => [['instance'], ['lines' => '100', 'follow' => false, 'json' => false]],
         'instance:register' => [
             [],
             [
@@ -852,7 +854,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
             ],
         ],
         'process:list' => [[], ['instance' => null, 'node' => null, 'project' => null, 'app' => null, 'json' => false]],
-        'process:logs' => [['process'], ['lines' => '100', 'json' => false]],
+        'process:logs' => [['process'], ['lines' => '100', 'follow' => false, 'json' => false]],
         'process:destroy' => [['process'], ['project' => null, 'app' => null, 'yes' => false, 'json' => false]],
         'process:restart' => [['process'], ['json' => false]],
         'process:show' => [['name'], ['project' => null, 'app' => null, 'json' => false]],
@@ -1181,6 +1183,7 @@ it('renders one exact json failure envelope for every Orbit product command', fu
         'instance:deployment:show' => [['deployment' => '1'], ...$profileMissing],
         'instance:destroy' => [['instance' => '1'], ...$profileMissing],
         'instance:list' => [[], ...$profileMissing],
+        'instance:logs' => [['instance' => '1'], ...$profileMissing],
         'instance:register' => [
             ['--app' => '1', '--no-interaction' => true, '--path' => '/tmp/orbit-command-surface-not-git'],
             'code' => 'instance.source_invalid',

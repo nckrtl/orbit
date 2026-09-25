@@ -40,6 +40,10 @@ use Throwable;
  * line counts stored when its workspace reports new ones, and, while a browser (`viewer.*` member) is
  * on any channel, has every Process's CPU and memory broadcast every `UsageSeconds`. The last two run
  * in a child process through `AgentViewPublisher`, so the socket loop never waits for them.
+ *
+ * ADR 0153 adds the log channel `presence-node-logs.{id}` of every Node. The subscriber records
+ * whether the agent joined it on any server, and relays the agent's `client-log` lines to the viewers
+ * of live log streams through {@see LogRelay}. It never sends a client event there either.
  */
 final class AgentViewSubscriber
 {
@@ -71,6 +75,8 @@ final class AgentViewSubscriber
     private const float MaxBackoffSeconds = 30.0;
 
     private const string CHANNEL = '/\Apresence-node\.([1-9][0-9]*)\z/D';
+
+    private const string LOG_CHANNEL = '/\Apresence-node-logs\.([1-9][0-9]*)\z/D';
 
     /** @var array<string, AgentViewLink> Links keyed by Reverb address, the serving address first. */
     private array $links = [];
@@ -114,6 +120,7 @@ final class AgentViewSubscriber
      * @param  Closure(): float  $clock
      * @param  Closure(float): void  $sleep
      * @param  (Closure(): WebSocketClient)|null  $sockets  Makes the socket of a second link.
+     * @param  (Closure(): void)|null  $broadcastingChanged  Runs after every connect, so relayed log broadcasts use the current Reverb connection.
      */
     public function __construct(
         WebSocketClient $socket,
@@ -129,6 +136,8 @@ final class AgentViewSubscriber
         private readonly int $reverbPort = 443,
         private readonly ?AgentViewPublisher $publisher = null,
         ?Closure $sockets = null,
+        private readonly ?LogRelay $logs = null,
+        private readonly ?Closure $broadcastingChanged = null,
     ) {
         $this->idleSockets = [$socket];
         $this->sockets = $sockets ?? static fn (): WebSocketClient => new StreamWebSocketClient;
@@ -223,6 +232,7 @@ final class AgentViewSubscriber
         }
 
         $this->flush();
+        $this->logs?->sweep();
         $this->queueUsage();
         $this->publisher?->poll();
 
@@ -384,6 +394,12 @@ final class AgentViewSubscriber
         $link->lastMessageAt = $this->now();
         $link->pingSentAt = null;
         $this->log->info('The agent view subscriber connected to Reverb.', ['address' => $link->address]);
+
+        // The log relay broadcasts from this process: it must use the connection just joined, also after a rotation.
+        if ($this->broadcastingChanged !== null) {
+            ($this->broadcastingChanged)();
+        }
+
         $this->refresh();
     }
 
@@ -441,7 +457,8 @@ final class AgentViewSubscriber
 
             foreach (array_diff(array_keys($link->channels), $this->nodeIds) as $nodeId) {
                 $this->send($link, ['event' => 'pusher:unsubscribe', 'data' => ['channel' => "presence-node.{$nodeId}"]]);
-                unset($link->channels[$nodeId], $link->snapshotRequestedAt[$nodeId], $link->viewers[$nodeId]);
+                $this->send($link, ['event' => 'pusher:unsubscribe', 'data' => ['channel' => "presence-node-logs.{$nodeId}"]]);
+                unset($link->channels[$nodeId], $link->snapshotRequestedAt[$nodeId], $link->viewers[$nodeId], $link->logMembers[$nodeId]);
                 $this->dirty[$nodeId] = true;
             }
 
@@ -463,9 +480,14 @@ final class AgentViewSubscriber
             return;
         }
 
-        if ($this->send($link, $this->subscription($nodeId, $link->socketId, $link->connection))) {
-            $link->channels[$nodeId] = new AgentChannelState;
+        if (! $this->send($link, $this->subscription($nodeId, $link->socketId, $link->connection))) {
+            return;
         }
+
+        $link->channels[$nodeId] = new AgentChannelState;
+        $logChannel = "presence-node-logs.{$nodeId}";
+        $signature = $this->signer->sign($link->socketId, $logChannel, $link->connection, "gateway.{$link->socketId}", ['kind' => 'gateway']);
+        $this->send($link, ['event' => 'pusher:subscribe', 'data' => ['channel' => $logChannel] + $signature]);
     }
 
     /** @return array<string, mixed> */
@@ -533,6 +555,12 @@ final class AgentViewSubscriber
 
         $channel = $message['channel'] ?? null;
 
+        if (is_string($event) && is_string($channel) && preg_match(self::LOG_CHANNEL, $channel, $matches) === 1) {
+            $this->handleLogChannel($link, (int) $matches[1], $event, $message);
+
+            return;
+        }
+
         if (! is_string($event) || ! is_string($channel) || preg_match(self::CHANNEL, $channel, $matches) !== 1) {
             return;
         }
@@ -595,6 +623,77 @@ final class AgentViewSubscriber
     }
 
     /**
+     * Keeps the agent's log channel membership and relays its log events (ADR 0153). Reverb stamps a
+     * client event with the sender's member ID, so only `agent.{id}` can send lines for Node `{id}`.
+     *
+     * @param  array<string, mixed>  $message
+     */
+    private function handleLogChannel(AgentViewLink $link, int $nodeId, string $event, array $message): void
+    {
+        if (! isset($link->channels[$nodeId])) {
+            return;
+        }
+
+        $agent = "agent.{$nodeId}";
+        $data = $this->data($message);
+
+        if ($event === 'pusher_internal:subscription_succeeded') {
+            $presence = is_array($data['presence'] ?? null) ? $data['presence'] : [];
+            $this->setLogMember($link, $nodeId, in_array($agent, is_array($presence['ids'] ?? null) ? $presence['ids'] : [], strict: true));
+
+            return;
+        }
+
+        if (in_array($event, ['pusher_internal:member_added', 'pusher_internal:member_removed'], strict: true)) {
+            if (($data['user_id'] ?? null) === $agent) {
+                $this->setLogMember($link, $nodeId, $event === 'pusher_internal:member_added');
+            }
+
+            return;
+        }
+
+        if (($message['user_id'] ?? null) !== $agent || $this->logs === null) {
+            return;
+        }
+
+        try {
+            match ($event) {
+                'client-log' => $this->logs->lines($nodeId, $data),
+                'client-log-end' => $this->logs->end($nodeId, $data),
+                default => null,
+            };
+        } catch (Throwable $exception) {
+            $this->log->warning('The agent view subscriber could not relay log lines.', ['node_id' => $nodeId, 'error' => $exception->getMessage()]);
+        }
+    }
+
+    /** Records the agent's log channel membership on one server. The Node streams while any server has it. */
+    private function setLogMember(AgentViewLink $link, int $nodeId, bool $member): void
+    {
+        $was = $this->logMember($nodeId);
+        $link->logMembers[$nodeId] = $member;
+        $now = $this->logMember($nodeId);
+
+        if ($was !== $now) {
+            $this->dirty[$nodeId] = true;
+        }
+
+        if ($was && ! $now) {
+            try {
+                $this->logs?->agentLeft($nodeId);
+            } catch (Throwable $exception) {
+                $this->log->warning('The agent view subscriber could not end the log streams of a Node.', ['node_id' => $nodeId, 'error' => $exception->getMessage()]);
+            }
+        }
+    }
+
+    /** Whether the Node's agent is a member of its log channel on any live server. */
+    private function logMember(int $nodeId): bool
+    {
+        return array_any($this->links, static fn (AgentViewLink $link): bool => $link->logMembers[$nodeId] ?? false);
+    }
+
+    /**
      * Writes every changed Node once, from the link whose agent state has the newest event. A Node
      * without a complete snapshot on any link has no entry, unless a move carries its stored one.
      */
@@ -642,7 +741,7 @@ final class AgentViewSubscriber
                 }
 
                 $changed = array_values(array_unique([...($this->unwrittenWorkspaces[$nodeId] ?? []), ...$changed]));
-                $this->view->putNode($nodeId, $newest->units, $newest->docker, $newest->sequence, (float) $newest->lastEventAt, $newest->agentAt, $newest->workspaces);
+                $this->view->putNode($nodeId, $newest->units, $newest->docker, $newest->sequence, (float) $newest->lastEventAt, $newest->agentAt, $newest->workspaces, $this->logMember($nodeId));
                 $this->stored[$nodeId] = true;
                 unset($this->unwrittenWorkspaces[$nodeId]);
 

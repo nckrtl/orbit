@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\Broadcasting\RealtimeConnection;
 use App\Domain\WebSocket\WebSocketCredentialManager;
 use App\Domain\WebSocket\WebSocketCredentials;
+use App\Infrastructure\AgentView\AgentViewSubscriber;
 use App\Models\Node;
 
 it('resolves null without an active websocket role', function (): void {
@@ -80,4 +81,29 @@ it('connects to the serving node by address, because the Gateway host cannot res
 
     expect(config('broadcasting.connections.reverb.client_options.curl'))
         ->toBe([CURLOPT_RESOLVE => ['reverb.orbit:443:10.44.0.90']]);
+});
+
+it('reads the websocket role again after it forgets the connection', function (): void {
+    $realtime = app(RealtimeConnection::class);
+    expect($realtime->resolve())->toBeNull();
+
+    [, $credentials] = activate_websocket_role();
+    expect($realtime->resolve())->toBeNull();
+
+    $realtime->forget();
+
+    expect($realtime->resolve()?->key)->toBe($credentials->appKey);
+});
+
+it('gives the agent view subscriber a broadcast refresh that forgets the resolved connection', function (): void {
+    $realtime = app(RealtimeConnection::class);
+    expect($realtime->resolve())->toBeNull();
+    [, $credentials] = activate_websocket_role();
+    $subscriber = app(AgentViewSubscriber::class);
+
+    $refresh = new ReflectionProperty($subscriber, 'broadcastingChanged')->getValue($subscriber);
+    expect($refresh)->toBeInstanceOf(Closure::class);
+    $refresh();
+
+    expect(app(RealtimeConnection::class)->resolve()?->key)->toBe($credentials->appKey);
 });
