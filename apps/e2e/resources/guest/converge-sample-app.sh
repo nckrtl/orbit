@@ -467,7 +467,7 @@ PHP
     ;;
   reproject)
     # Re-project every managed role and instance through the product so the
-    # rendered PHP-FPM pools, Caddy fragments, firewall rules, and DNS records
+    # rendered PHP-FPM pools, Caddy sites, firewall rules, and DNS records
     # match the Gateway code in the checkout. Roles first, then instances with
     # development last: the app-dev runtime converger publishes the Gateway
     # DNS records for every active site, so it must run after every other

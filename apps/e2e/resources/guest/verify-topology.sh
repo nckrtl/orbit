@@ -94,15 +94,26 @@ assert_production_runtime() {
   [[ -S "$production_socket" ]]
   [[ "$(stat -c %U -- "$production_socket")" == "$production_user" ]]
 }
+# A Node Caddy build (ADR 0141) writes one live Caddyfile with every site of the Node.
+built_caddyfile() {
+  local live_main
+  live_main=$(readlink -f -- /etc/caddy/Caddyfile) || return 1
+  case "$live_main" in
+    /etc/caddy/orbit-versions/*/Caddyfile) ;;
+    *) return 1 ;;
+  esac
+  [[ "$(head -n 1 -- "$live_main")" == '# Managed by Orbit: Node Caddy build' ]] || return 1
+  printf '%s\n' "$live_main"
+}
 assert_production_caddy() {
   assert_production_runtime
   caddy_state=$(systemctl is-active caddy 2>/dev/null)
   [[ "$caddy_state" == active ]]
   caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null 2>&1
-  caddy_root=$(dirname "$(readlink -f -- /etc/caddy/Caddyfile)")
-  [[ "$(grep -RFl -- "https://$production_domain {" "$caddy_root" | wc -l)" -eq 1 ]]
-  [[ "$(grep -RFl -- "root * $production_root" "$caddy_root" | wc -l)" -eq 1 ]]
-  [[ "$(grep -RFl -- "php_fastcgi unix/$production_socket" "$caddy_root" | wc -l)" -eq 1 ]]
+  caddyfile=$(built_caddyfile)
+  grep -Fq -- "https://$production_domain {" "$caddyfile"
+  grep -Fq -- "root * $production_root" "$caddyfile"
+  grep -Fq -- "php_fastcgi unix/$production_socket" "$caddyfile"
 }
 repo_git() {
   if [[ "$(id -u)" -eq 0 ]]; then
@@ -171,25 +182,13 @@ case "$probe" in
     db=/home/orbit/.orbit/gateway.sqlite
     [[ -r "$db" ]]
     read -r publication gateway_address metrics_address < <(php -r '$pdo=new PDO("sqlite:".$argv[1]); $required=json_decode(base64_decode($argv[2], true), true, 16, JSON_THROW_ON_ERROR); if (!is_array($required) || array_is_list($required) || $required===[]) exit(65); foreach ($required as $node=>$roles) { if (!is_string($node) || preg_match("/\\A[a-z][a-z0-9-]{0,22}\\z/D", $node)!==1 || !is_array($roles) || !array_is_list($roles)) exit(65); foreach ($roles as $role) { if (!is_string($role) || preg_match("/\\A[a-z][a-z0-9-]{0,31}\\z/D", $role)!==1) exit(65); } } $nodeForRole=static function(string $role) use ($required): ?string { $matches=[]; foreach ($required as $node=>$roles) { if (in_array($role, $roles, true)) $matches[]=$node; } if (count($matches)>1) exit(65); return $matches[0] ?? null; }; $address=static function (string $node, string $role) use ($pdo): string { $statement=$pdo->prepare("SELECT n.wireguard_ip FROM nodes n INNER JOIN node_roles r ON r.node_id = n.id WHERE n.name = ? AND n.status = ? AND r.role = ? AND r.status = ?"); $statement->execute([$node, "active", $role, "active"]); $addresses=$statement->fetchAll(PDO::FETCH_COLUMN); if (count($addresses)!==1 || !is_string($addresses[0]) || filter_var($addresses[0], FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)===false) exit(1); return $addresses[0]; }; $gatewayNode=$nodeForRole("gateway"); if ($gatewayNode===null) exit(65); $gateway=$address($gatewayNode, "gateway"); $metricsNode=$nodeForRole("metrics"); if ($metricsNode===null) { echo "absent ", $gateway, " -\n"; exit; } echo "present ", $gateway, " ", $address($metricsNode, "metrics"), "\n";' -- "$db" "$required_assignments")
-    live=/etc/caddy/Caddyfile
-    live_main=$(readlink -f -- "$live")
-    case "$live_main" in
-      /etc/caddy/orbit-versions/*/Caddyfile) ;;
-      *) exit 1 ;;
-    esac
-    live_fragment=$(dirname "$live_main")/fragments/metrics.caddy
-    # A Node Caddy build (ADR 0141) writes one Caddyfile with every site and no fragments.
-    node_caddy_build=0
-    if [[ "$(head -n 1 -- "$live_main")" == '# Managed by Orbit: Node Caddy build' ]]; then
-      node_caddy_build=1
-    fi
+    live_main=$(built_caddyfile)
     certificate_current=/etc/caddy/orbit-metrics-cert-current
     dns_output=$(dig +time=3 +tries=1 +short metrics.orbit A @"$gateway_address")
     mapfile -t resolved < <(printf '%s' "$dns_output" | awk 'NF')
     if [[ "$publication" == absent ]]; then
       [[ "${#resolved[@]}" -eq 0 ]]
       [[ ! -e "$certificate_current" && ! -L "$certificate_current" ]]
-      [[ ! -e "$live_fragment" ]]
       if grep -qx '# orbit: metrics metrics.orbit' "$live_main"; then
         exit 1
       fi
@@ -204,26 +203,20 @@ case "$probe" in
         /etc/caddy/orbit-metrics-cert-versions/*) ;;
         *) exit 1 ;;
       esac
-      [[ "$node_caddy_build" == 1 || -f "$live_fragment" ]]
-      expected_fragment=$(mktemp)
-      trap 'rm -f -- "$expected_fragment"' EXIT
-      /usr/bin/php -r 'require $argv[1]; echo (new App\Infrastructure\Metrics\MetricsPublicationRenderer)->caddy($argv[2], $argv[3]);' -- "$source_root/apps/gateway/vendor/autoload.php" "$metrics_address" "$gateway_address" >"$expected_fragment"
-      if [[ "$node_caddy_build" == 1 ]]; then
-        php -r 'exit(str_contains(file_get_contents($argv[1]), "# orbit: metrics metrics.orbit\n".rtrim(file_get_contents($argv[2]))."\n") ? 0 : 1);' -- "$live_main" "$expected_fragment"
-        live_fragment=$expected_fragment
-      else
-        cmp -s -- "$expected_fragment" "$live_fragment"
-      fi
+      expected_site=$(mktemp)
+      trap 'rm -f -- "$expected_site"' EXIT
+      /usr/bin/php -r 'require $argv[1]; echo (new App\Infrastructure\Metrics\MetricsPublicationRenderer)->caddy($argv[2], $argv[3]);' -- "$source_root/apps/gateway/vendor/autoload.php" "$metrics_address" "$gateway_address" >"$expected_site"
+      php -r 'exit(str_contains(file_get_contents($argv[1]), "# orbit: metrics metrics.orbit\n".rtrim(file_get_contents($argv[2]))."\n") ? 0 : 1);' -- "$live_main" "$expected_site"
       openssl verify -CAfile /home/orbit/.orbit/ca/root.pem "$certificate_current/metrics.pem" >/dev/null
       openssl x509 -in "$certificate_current/metrics.pem" -noout -checkhost metrics.orbit >/dev/null
       ufw_status=$(ssh -n -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/home/orbit/.orbit/ssh/known_hosts -i /home/orbit/.orbit/ssh/id_ed25519 "orbit@$metrics_address" sudo ufw status numbered)
       php -r '$status=stream_get_contents(STDIN); if (preg_match("/^Status:\\s+active$/mi", $status) !== 1) exit(1); $marker="# orbit:metrics-grafana-upstream"; $owned=array_values(array_filter(preg_split("/\\R/", $status) ?: [], static fn(string $line): bool => str_ends_with(rtrim($line), $marker))); if (count($owned) !== 1) exit(1); $pattern="/\\A\\s*\\[\\s*\\d+\\]\\s+".preg_quote($argv[1], "/")."\\s+3000\\/tcp on orbit\\s+ALLOW IN\\s+".preg_quote($argv[2], "/")."\\s+\\# orbit:metrics-grafana-upstream\\s*\\z/D"; if (preg_match($pattern, $owned[0]) !== 1) exit(1);' -- "$metrics_address" "$gateway_address" <<<"$ufw_status"
       health=$(curl --fail --silent --show-error --max-time 10 --cacert /home/orbit/.orbit/ca/root.pem --resolve "metrics.orbit:443:$gateway_address" https://metrics.orbit/api/health)
       php -r '$health=json_decode(stream_get_contents(STDIN), true, 16, JSON_THROW_ON_ERROR); if (($health["database"] ?? null) !== "ok") exit(1);' <<<"$health"
-      fragment_sha=$(sha256sum -- "$live_fragment" | cut -d ' ' -f 1)
+      site_sha=$(sha256sum -- "$expected_site" | cut -d ' ' -f 1)
       expected='metrics.orbit:current-product-publication'
-      observed="dns=$gateway_address,caddy=$fragment_sha,certificate=metrics.orbit+orbit-ca,firewall=$gateway_address>$metrics_address:3000/tcp,grafana.database=ok"
-      rm -f -- "$expected_fragment"
+      observed="dns=$gateway_address,caddy=$site_sha,certificate=metrics.orbit+orbit-ca,firewall=$gateway_address>$metrics_address:3000/tcp,grafana.database=ok"
+      rm -f -- "$expected_site"
       trap - EXIT
     else
       exit 65

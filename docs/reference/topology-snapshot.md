@@ -89,8 +89,6 @@ On the typed `instances` envelope, sample convergence uses the Orbit CLI to keep
 
 The rendered pools, Caddy sites, firewall rules, and DNS records then match the checkout. The harness writes no Caddy file on any Node: `converge-app-prod.sh` only provisions `app-prod`, and every Caddyfile comes from a [Node Caddy build](/reference/caddy-configuration#node-caddy-build). Reproject builds each Node, and the first build backs up and replaces an older snapshot's fragment layout. The sample production site answers over TLS with the Orbit CA leaf that the Gateway publishes, so hydration and verification trust the Orbit root CA. Doctor then reports no `role.caddy_build_drift`.
 
-Discovery does not converge. A Node cloned from a snapshot taken before the build keeps its fragment layout until a command builds it. Readiness verification of `metrics.orbit` therefore accepts the site from either layout. Doctor reports such a Node as `role.caddy_build_drift` with `observed` set to `not_built`.
-
 ### Sample compatibility
 
 The sample adapter selects its production creation contract before it changes sample state. When the complete candidate-clone and explicit-deployment command set is available, it creates production from the development candidate and deploys it explicitly. Otherwise it uses direct production creation. A failure after selection stops convergence and never switches to the older contract.
