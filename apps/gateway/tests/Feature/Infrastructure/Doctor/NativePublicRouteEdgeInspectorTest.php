@@ -108,6 +108,37 @@ describe('a separate Ingress', function (): void {
     });
 });
 
+describe('an Ingress whose role is converging', function (): void {
+    beforeEach(function (): void {
+        $cluster = Cluster::query()->create(['name' => 'edge', 'tld' => 'edge.test', 'state' => ClusterState::Active]);
+        public_edge_node('edge-router', '10.44.0.20', '10.10.0.20', $cluster, [RoleName::Router]);
+        $this->ingress = public_edge_node('edge-ingress', '10.44.0.30', '10.10.0.30', $cluster, [RoleName::Ingress]);
+        $workload = public_edge_node('edge-workload', '10.44.0.40', '10.10.0.40', $cluster, [RoleName::AppProd]);
+        $this->route = public_edge_route($cluster, $workload);
+    });
+
+    it('keeps the public site in a Node Caddy build while the role serves', function (
+        LifecycleStatus $status,
+        ?string $failedStep,
+        bool $serves,
+    ): void {
+        $this->ingress->roles()->where('role', RoleName::Ingress)->update([
+            'status' => $status,
+            'failed_step' => $failedStep,
+            'error_code' => $failedStep === null ? null : 'node_role.convergence_failed',
+        ]);
+
+        $caddyfile = app(NodeCaddyfileRenderer::class)->render($this->ingress)->content;
+
+        expect(str_contains($caddyfile, "{$this->route->domain} {"))->toBe($serves);
+    })->with([
+        'active' => [LifecycleStatus::Active, null, true],
+        'converging' => [LifecycleStatus::Provisioning, null, true],
+        'failed convergence' => [LifecycleStatus::Failed, 'converge:caddy-config', true],
+        'being removed' => [LifecycleStatus::Removing, null, false],
+    ]);
+});
+
 describe('an Ingress that runs the workload while the Router is on another Node', function (): void {
     beforeEach(function (): void {
         $cluster = Cluster::query()->create(['name' => 'edge', 'tld' => 'edge.test', 'state' => ClusterState::Active]);

@@ -299,7 +299,7 @@ final readonly class InstanceDoctorProbe implements DoctorFamilyProbe
             }
 
             $cluster = $route->cluster;
-            $ingress = $cluster !== null ? $this->eligibility->activeIngress($cluster) : null;
+            $ingress = $cluster !== null ? $this->eligibility->servingIngress($cluster) : null;
             $router = $cluster !== null ? $this->eligibility->activeRouter($cluster) : null;
             $related = [];
             foreach ([$ingress, $router] as $node) {

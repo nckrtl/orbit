@@ -8,7 +8,6 @@ use App\Data\Nodes\NodeData;
 use App\Domain\Analytics\AnalyticsRoleSettings;
 use App\Domain\Analytics\AnalyticsRoleSettingsRepository;
 use App\Domain\Analytics\AnalyticsStorageProcessGuard;
-use App\Domain\AppDev\AppDevCaddyManager;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
@@ -43,7 +42,6 @@ final readonly class AddNodeRoleAction
         private ?RecordEventBroadcaster $broadcaster = null,
         private ?AnalyticsStorageProcessGuard $analyticsStorage = null,
         private ?AnalyticsRoleSettingsRepository $analyticsSettings = null,
-        private ?AppDevCaddyManager $caddy = null,
     ) {}
 
     /**
@@ -218,36 +216,11 @@ final readonly class AddNodeRoleAction
         }
 
         DB::transaction(static fn () => $claim['assignment']->markConvergenceActive());
-        $this->buildIngressCaddy($node, $role, $claim['assignment']);
 
         return [
             'assignment' => $claim['assignment']->refresh(),
             'created' => $claim['created'],
         ];
-    }
-
-    /**
-     * Public sites render only for an active Ingress, so the Ingress Node is built after its role is active again.
-     * A build during convergence would drop every public site on the Node.
-     */
-    private function buildIngressCaddy(Node $node, RoleName $role, NodeRole $assignment): void
-    {
-        if ($role !== RoleName::Ingress) {
-            return;
-        }
-
-        try {
-            ($this->caddy ?? app(AppDevCaddyManager::class))->converge($node);
-        } catch (RuntimeConvergenceException $exception) {
-            $this->failConvergence($assignment, new NodeRoleOperationException(
-                step: $this->unnamespacedStep($exception->step),
-                errorCode: 'node_role.convergence_failed',
-                underlyingErrorCode: $exception->errorCode,
-                message: $exception->getMessage(),
-                result: $exception->result,
-                previous: $exception,
-            ));
-        }
     }
 
     private function guardEmptyDatabaseSettings(RoleName $role): void

@@ -41,7 +41,7 @@ final readonly class PublicRouteEligibility
             return 'router-missing';
         }
 
-        if (! $this->activeIngress($cluster) instanceof Node) {
+        if (! $this->servingIngress($cluster) instanceof Node) {
             return 'ingress-missing';
         }
 
@@ -71,14 +71,25 @@ final readonly class PublicRouteEligibility
         return $this->publicActivationRank($step) >= $this->publicActivationRank(RouteReplacementStep::PublicActivated);
     }
 
-    public function activeIngress(Cluster $cluster): ?Node
+    /**
+     * The Cluster's Ingress Node while its role serves public sites. A role serves while it is active, while it
+     * converges, and after a failed convergence, because its public sites are already live. This is the same
+     * rule Node Caddy builds apply to every other role, so a build during an Ingress converge keeps the public
+     * sites. A role that is being removed, or whose removal failed, serves nothing.
+     */
+    public function servingIngress(Cluster $cluster): ?Node
     {
         $assignment = NodeRole::query()
             ->with('node')
             ->where('cluster_id', $cluster->id)
             ->where('role', RoleName::Ingress)
-            ->where('status', LifecycleStatus::Active)
-            ->first();
+            ->orderBy('id')
+            ->get()
+            ->first(static fn (NodeRole $role): bool => match ($role->status) {
+                LifecycleStatus::Active, LifecycleStatus::Provisioning => true,
+                LifecycleStatus::Failed => is_string($role->failed_step) && str_starts_with($role->failed_step, 'converge:'),
+                LifecycleStatus::Removing => false,
+            });
 
         $node = $assignment?->node;
 

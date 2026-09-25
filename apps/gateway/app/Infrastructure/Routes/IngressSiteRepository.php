@@ -22,7 +22,7 @@ final readonly class IngressSiteRepository
     {
         $route->loadMissing(['cluster.routerAssignment.node', 'targets.appInstance.node']);
         $cluster = $route->cluster;
-        $ingress = $cluster !== null ? $this->eligibility->activeIngress($cluster) : null;
+        $ingress = $cluster !== null ? $this->eligibility->servingIngress($cluster) : null;
         $router = $cluster !== null ? $this->eligibility->activeRouter($cluster) : null;
 
         if ($ingress === null || $router === null) {
@@ -77,7 +77,7 @@ final readonly class IngressSiteRepository
     {
         $route->loadMissing('cluster');
         $cluster = $route->cluster;
-        $ingress = $cluster !== null ? $this->eligibility->activeIngress($cluster) : null;
+        $ingress = $cluster !== null ? $this->eligibility->servingIngress($cluster) : null;
 
         if (! $ingress instanceof Node) {
             throw new RuntimeConvergenceException(

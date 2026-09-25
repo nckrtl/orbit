@@ -73,7 +73,7 @@ Both sources work the same way. The Gateway downloads the publisher's signing ke
 
 Orbit installs Caddy this way because the Ubuntu archive ships Caddy 2.6.2, which does not know `log_skip` — a directive an `app-dev` site renders for every hibernating Instance — or `tls force_automate`, which every public Ingress site renders. A Node below **Caddy 2.9.0** fails the `caddy-package-source` step of role convergence with the installed and required release named. [ADR 0100](/decisions/0100-install-caddy-from-the-pinned-caddy-apt-source) records the decision and [ADR 0138](/decisions/0138-opt-public-ingress-sites-into-caddy-certificate-automation) raises the floor to 2.9.0.
 
-Roles that serve through Caddy are `gateway`, `router`, `ingress`, `app-dev`, `app-prod`, `websocket`, and `analytics`. Each one installs Caddy when it converges, so an Ingress-only Node can serve its public sites. The `ingress` role builds the Node's Caddyfile after the role is active again, so a converge keeps the public sites the Node already serves. Removing the `ingress` role leaves the Caddy package installed.
+Roles that serve through Caddy are `gateway`, `router`, `ingress`, `app-dev`, `app-prod`, `websocket`, and `analytics`. Each one installs Caddy when it converges, so an Ingress-only Node can serve its public sites. An Ingress keeps serving its public sites while its role converges, so a converge keeps the public sites the Node already serves. Removing the `ingress` role leaves the Caddy package installed.
 
 Converging a role on a Node that still carries the archive package upgrades it in place. Orbit owns `/etc/caddy/Caddyfile` as a symlink into its own versions directory, and the install keeps the existing file, so the live configuration survives the upgrade.
 
