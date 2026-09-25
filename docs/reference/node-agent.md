@@ -297,7 +297,7 @@ When the subscriber sees a new `head` or new diff counts for the workspace of an
 
 The subscriber relays the lines of every [live log stream](/reference/live-logs) through a [publish run](#publish-runs), so a slow Reverb or database never stalls the view. In its socket loop it accepts a `client-log` or `client-log-end` event on `presence-node-logs.{id}` only when Reverb's `user_id` is `agent.{id}`. It cuts a line longer than 8 KiB, drops lines above 64 KiB per second for each stream, with a 256 KiB burst, and queues the rest in arrival order.
 
-During a `websocket` move it joins the log channel on each Reverb server. A Node can stream while its agent is a member on either server, and its streams end with `agent_left` only when the agent has left both.
+During a `websocket` move it joins the log channel on each Reverb server. A Node can stream while its agent is a member on either server, and its streams end with `agent_left` only when the agent has left both. The Gateway publishes each log event to both servers, as it does record events, so viewers and agents still on the old server keep receiving lines and prompts.
 
 A log run takes the queued events in order, at most 256 KiB of lines at a time. It drops lines unless the stream is open for Node `{id}`. It redacts each line again, with the Gateway's patterns and the stored environment values of the Instance or Process, and publishes `log.lines` on the stream's channel through the Reverb HTTP API, in parts under 10,000 bytes. After each part it saves how far it got, so a repeated run skips what it already published.
 
