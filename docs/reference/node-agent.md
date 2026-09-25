@@ -104,7 +104,7 @@ The view lives in its own file cache store in `ORBIT_HOME/cache/agent-view`. The
 | One for each Node | The agent's units, its `docker` state, its last `sequence`, and the Gateway time at which the last agent event arrived | 60 seconds after its last write |
 | One for the subscriber | Whether realtime is configured, whether the socket is connected, the number of joined channels, and the Gateway time of the last write | 30 seconds after its last write |
 
-The subscriber writes its own entry every 5 seconds and at once when its connection drops. It removes the entry when it stops.
+The subscriber writes its own entry every 5 seconds, and at once when its connection drops or comes back. It removes the entry when it stops.
 
 The subscriber applies agent events with the rules in [Realtime events](/reference/events#events): it accepts an event only when Reverb's `user_id` is `agent.{id}`, applies a snapshot when every part has arrived, and starts over when the agent's `sequence` restarts. It removes a Node's entry when `agent.{id}` leaves the channel. It keeps a unit only when the name has the form `orbit-process-{id}-{name}`, the runtime is `systemd` or `docker`, and the status is a short lowercase word.
 
