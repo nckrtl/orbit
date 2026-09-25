@@ -3380,7 +3380,9 @@
                 "0127",
                 "0128",
                 "0129",
-                "0130"
+                "0130",
+                "0148",
+                "0151"
             ]
         },
         {
@@ -3395,13 +3397,16 @@
                 "Gateway",
                 "Node",
                 "Node agent",
-                "Process"
+                "Process",
+                "Task"
             ],
             "governing_adrs": [
                 "0084",
                 "0087",
                 "0128",
-                "0129"
+                "0129",
+                "0148",
+                "0151"
             ]
         },
         {
@@ -3869,6 +3874,37 @@
             ]
         },
         {
+            "path": "docs/decisions/0151-push-task-and-process-usage-changes-over-realtime.md",
+            "title": "ADR 0151: Push task and Process usage changes over realtime",
+            "kind": "decision",
+            "components": [
+                "apps/docs",
+                "apps/gateway",
+                "apps/web"
+            ],
+            "concepts": [
+                "Database",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Node agent",
+                "Process",
+                "Project",
+                "Schedule",
+                "Task",
+                "Task group"
+            ],
+            "governing_adrs": [
+                "0084",
+                "0103",
+                "0122",
+                "0128",
+                "0129",
+                "0148",
+                "0151"
+            ]
+        },
+        {
             "path": "docs/decisions/0152-sample-successful-read-activity.md",
             "title": "ADR 0152: Sample successful read activity",
             "kind": "decision",
@@ -4096,6 +4132,7 @@
                 "0148",
                 "0149",
                 "0150",
+                "0151",
                 "0152",
                 "0154"
             ]
@@ -4676,11 +4713,14 @@
                 "Project",
                 "Route",
                 "Runtime hibernation",
-                "Schedule"
+                "Schedule",
+                "Task",
+                "Task group"
             ],
             "governing_adrs": [
                 "0129",
-                "0148"
+                "0148",
+                "0151"
             ]
         },
         {
@@ -4995,13 +5035,16 @@
                 "Node",
                 "Node agent",
                 "Process",
-                "Task"
+                "Project",
+                "Task",
+                "Task group"
             ],
             "governing_adrs": [
                 "0128",
                 "0129",
                 "0130",
                 "0148",
+                "0151",
                 "0154"
             ]
         },
@@ -5271,6 +5314,7 @@
                 "Gateway",
                 "Instance",
                 "Node",
+                "Node agent",
                 "Process",
                 "Project",
                 "Route",
@@ -5368,10 +5412,12 @@
                 "Process",
                 "Router",
                 "Task",
+                "Task group",
                 "proxycli"
             ],
             "governing_adrs": [
-                "0123"
+                "0123",
+                "0151"
             ]
         },
         {

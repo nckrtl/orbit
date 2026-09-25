@@ -1,11 +1,13 @@
 ---
 title: "Node agent"
-description: "What orbit-agent observes on a managed Node, how the Gateway installs, upgrades, and removes it, how it connects to Reverb, how the Gateway keeps a view of its reports, and how Doctor checks it."
+description: "What orbit-agent observes on a managed Node, including task checkouts. How the Gateway installs, connects, and removes it, keeps a view of its reports, pushes Process usage, and checks it with Doctor."
 ---
 
 # Node agent
 
-`orbit-agent` is a small Rust program that runs on every managed Linux Node. It reports whether it is running and the runtime state of the Node's Orbit Processes. The web app uses those reports to show Node presence and Process state live. The Gateway keeps a [view](#gateway-view) of them, so it can skip repeated SSH reads. The agent never runs commands, never changes the Node, and never listens on a port. [ADR 0128](/decisions/0128-run-a-visibility-only-agent-on-managed-nodes) records why, [ADR 0129](/decisions/0129-publish-node-presence-and-process-state-on-per-node-presence-channels) defines the transport, [ADR 0130](/decisions/0130-publish-agent-binaries-as-github-releases) defines the releases, and [ADR 0148](/decisions/0148-keep-a-gateway-view-of-node-agent-state) defines the Gateway view.
+`orbit-agent` is a small Rust program that runs on every managed Linux Node. It reports whether it is running, the runtime state of the Node's Orbit Processes, and the Git state of the Node's task checkouts. The web app uses those reports to show Node presence and Process state live. The Gateway keeps a [view](#gateway-view) of them, so it can skip repeated SSH reads. The agent never runs commands, never changes the Node, and never listens on a port.
+
+[ADR 0128](/decisions/0128-run-a-visibility-only-agent-on-managed-nodes) records why, [ADR 0129](/decisions/0129-publish-node-presence-and-process-state-on-per-node-presence-channels) defines the transport, [ADR 0130](/decisions/0130-publish-agent-binaries-as-github-releases) defines the releases, [ADR 0148](/decisions/0148-keep-a-gateway-view-of-node-agent-state) defines the Gateway view, and [ADR 0151](/decisions/0151-push-task-and-process-usage-changes-over-realtime) adds task checkouts and Process usage.
 
 ## Where it runs
 
@@ -13,7 +15,7 @@ The Gateway installs the agent on every Node that uses the managed-node boundary
 
 ## What it observes
 
-The agent watches two sources on the Node and reports the state of each Orbit Process unit or container.
+The agent watches two sources on the Node and reports the state of each Orbit Process unit or container. It also reports the Git state of the Node's [task workspaces](#task-workspaces).
 
 | Source | What the agent watches | Reported `runtime_status` |
 | --- | --- | --- |
@@ -27,6 +29,62 @@ The agent does not read Schedules, role services, CPU, or memory. Prometheus sti
 When Docker is not installed or its socket is missing, the agent watches systemd only and reports Docker as `absent`. It checks for the socket every 10 seconds, and connects and sends a new snapshot when the socket appears. When the Docker event stream ends, for example because Docker restarted, the agent reconnects and sends a new snapshot.
 
 The agent merges changes to the same unit or container that arrive within 250 milliseconds and sends only the latest state.
+
+## Task workspaces
+
+The agent reports the Git state of each task checkout on its Node, so the Gateway can skip `git` over SSH. It reads only Git metadata. It never sends file contents or file names, and it never starts `git` or any other program.
+
+### Watch list
+
+The agent asks the Gateway which checkouts to watch with `GET /api/v1/agent/workspaces`, at start and every 60 seconds:
+
+```json
+{
+  "data": [
+    {
+      "instance_id": 31,
+      "path": "/home/orbit/apps/orbit/task-58",
+      "base": "main",
+      "start": "9f2c4be07d1a6c35e8f0b2a4d6c8e0f1a3b5c7d9"
+    }
+  ],
+  "meta": { "request_id": "..." }
+}
+```
+
+The list holds the Instances on the caller's Node that hold the workspace of a [task group](/reference/tasks) that has not finished: `backlog` or `todo` with an Instance, `reserved`, `running`, `reviewing`, or `settling`. `base` is the Project's default branch. `start` is the Instance's starting commit, or null. The list is empty while the tasks extension is disabled, and it holds at most 64 entries. The endpoint uses the same rules and errors as the other [agent endpoints](#how-it-connects).
+
+The agent accepts only an absolute path of at most 4,096 bytes, without `.` or `..` parts, that opens as the root of a Git work tree. A linked worktree works. It never opens a path that the list does not name, and it never opens a submodule.
+
+### Reading Git
+
+The agent reads Git with libgit2 inside its own process. libgit2 runs no hooks, filters, or `fsmonitor` programs. The checkouts belong to `orbit` and the agent runs as `root`, so the agent turns off libgit2's check of the repository owner.
+
+Every 2 seconds the agent checks the size, time, and inode of these files in each checkout's Git directory: `HEAD`, `index`, `packed-refs`, the current branch's ref, and the base ref. When one of them changed, it reads the checkout again. It also reads every checkout again every 30 seconds, because an edit to a working file changes none of those files. It reads one checkout at a time.
+
+| Field | Meaning |
+| --- | --- |
+| `instance_id` | The Instance from the watch list. |
+| `base`, `start` | The `base` and `start` values the agent read the state against. |
+| `branch` | The current branch, such as `task-58`, or null when `HEAD` is detached. |
+| `head` | The full `HEAD` commit, or null in an empty repository. |
+| `dirty` | `true` when the index or working tree differs from `HEAD`, untracked files included. Ignored files and submodules do not count. Null when the agent cannot read the working tree. |
+| `commits` | The number of commits reachable from `HEAD` but not from `start`, at most 1,000. Null without `start`, or when the checkout does not have `start`. |
+| `diff` | `{ files, added, removed, truncated }` from the merge base of `base` and `HEAD` to `HEAD`, as `git diff --numstat base...HEAD` counts it. Null when `base` does not resolve. `truncated` is true over the file limit. |
+
+| Limit | Value |
+| --- | --- |
+| Checkouts per Node | 64 |
+| Changed files in `diff` | 5,000; a larger diff has an exact `files` count, no line counts, and `truncated: true` |
+| Lines counted per file | Files up to 1 MiB. A larger file, and a binary file, counts as changed with no lines. |
+| Submodules | A changed submodule counts as one changed file with no lines. The agent never opens it. |
+| Renames | Counted as `git diff` counts them by default. When an added or deleted file is over 1 MiB, only exact renames count. |
+| Branch name | 255 characters; a checkout on a longer branch is left out |
+| libgit2 memory | 8 MiB object cache and 32 MiB mapped pack window |
+
+A checkout the agent cannot open or read, for example because its Git files are not readable by other users, is left out of its reports. The Gateway then reads that checkout over SSH.
+
+The agent publishes the state as `client-workspaces` and `client-workspace` events on its channel. [Realtime events](/reference/events#events) defines them.
 
 ## How it connects
 
@@ -60,7 +118,7 @@ The Gateway writes `gateway_address` to the agent's `config.toml` on every conve
 
 When the Gateway role moves, its WireGuard address changes, and every agent loses the Gateway until its configuration is rewritten. Run `orbit node:add <node>` or a role converge on each Node; a changed `gateway_address` restarts the agent. The Reverb address needs no converge, because the agent reads it from each realtime response when it connects.
 
-The two agent endpoints require an active WireGuard peer, but no Gateway access edge. They do not record Activity.
+The agent endpoints, including the [watch list](#watch-list), require an active WireGuard peer, but no Gateway access edge. They do not record Activity.
 
 | Code | HTTP | Meaning |
 | --- | --- | --- |
@@ -119,12 +177,14 @@ The view lives in its own file cache store in `ORBIT_HOME/cache/agent-view`. The
 
 | Entry | Contents | Kept for |
 | --- | --- | --- |
-| One for each Node | The agent's units, its `docker` state, its last `sequence`, and the Gateway time at which the last agent event arrived | 60 seconds after its last write |
+| One for each Node | The agent's units, its `docker` state, its task workspaces, its last `sequence`, and the Gateway time at which the last agent event arrived | 60 seconds after its last write |
 | One for the subscriber | Whether realtime is configured, whether the socket is connected, the number of joined channels, and the Gateway time of the last write | 30 seconds after its last write |
 
 The subscriber writes its own entry every 5 seconds, and at once when its connection drops or comes back. It removes the entry when it stops.
 
 The subscriber applies agent events with the rules in [Realtime events](/reference/events#events): it accepts an event only when Reverb's `user_id` is `agent.{id}`, applies a snapshot when every part has arrived, and starts over when the agent's `sequence` restarts. It removes a Node's entry when `agent.{id}` leaves the channel. Reverb announces that only when the member's last connection leaves. It keeps a unit only when the name has the form `orbit-process-{id}-{name}`, the runtime is `systemd` or `docker`, and the status is a short lowercase word.
+
+It keeps a workspace only with a positive Instance id, a 40-character hexadecimal `head` and `start` or null, a branch of at most 255 characters, and non-negative counts, and it keeps at most 64 workspaces for each Node.
 
 ### Freshness
 
@@ -151,6 +211,29 @@ Four repeated reads ask the view first and fall back when it is not fresh.
 
 The status that a start, stop, or restart itself returns stays on SSH, because it must show the change the Gateway just made. A wake's readiness checks are separate reads that follow the start, so they use the view.
 
+Two task reads use the Node's [task workspaces](#task-workspaces). A reader uses a workspace only when the Node's view is fresh, the workspace is listed, and its `base` and `start` equal the values the reader would use.
+
+| Read | With a fresh workspace | Otherwise |
+| --- | --- | --- |
+| The [scheduler tick](/reference/tasks#session-routing)'s check for new commits since the thread started | `commits` is greater than 0 | `git rev-list` or `git log` over SSH |
+| The line diff that [showing an active group](/reference/tasks#tokens-and-line-diff) refreshes | `diff.added` and `diff.removed`, unless `diff` is truncated | `git diff --shortstat` over SSH |
+
+Reads that decide what the Gateway commits or tells an agent stay on SSH: the branch check before an approval commit, a subtask's start commit, the `composer.json` check script, run receipts, and the Project check. A workspace can lag its checkout by up to 2 seconds.
+
+When the subscriber sees a new `head` or new diff counts for the workspace of an unfinished task group, it hands the work to a [publish run](#publish-runs). The run stores the group's line counts when the diff is complete, and always broadcasts [`task_group.updated`](/reference/events#tasks), also for a truncated or unknown diff. The database is written only for such a change.
+
+### Process usage
+
+The subscriber also pushes the CPU and memory of every Process to browsers, so no browser polls the Process list for them. It counts the `viewer.*` members on the channels it joins. While at least one viewer is present, it queues a sample every 15 seconds. A [publish run](#publish-runs) reads CPU and memory for every Process from [Prometheus](/reference/metrics#process-runtime-status), with the two fleet-wide queries that the Process list uses, and broadcasts one [`process.usage`](/reference/events#process-usage) event on `orbit`. A Process without a sample has null values, as every Process has while Prometheus cannot answer. With no viewer, nothing is queried or broadcast.
+
+### Publish runs
+
+The subscriber never reads Prometheus, writes the database, or broadcasts in its socket loop. It starts `php artisan orbit:agent-view-publish` as a child process with the queued work, and does not wait for it. Task workspaces and Process usage have separate lanes, with one run at a time in each; work that arrives meanwhile waits for the next run in its lane. A run that takes longer than 12 seconds is stopped.
+
+When a workspace run fails, is stopped, or cannot start, its workspaces are queued again and retried 15 seconds later; the run reads the current view, so a retry is safe. After five failed runs in a row, a workspace is dropped with an error in the Gateway log, until the agent reports a new change for it.
+
+A failed usage sample is dropped, because the next one replaces it. After a subscriber restart, the first workspace list from each agent queues every workspace again. A hung Prometheus or Reverb HTTP API therefore costs a skipped sample or a delayed notice, and the view stays fresh. A failed run's error output goes to the Gateway log.
+
 ## Install and upgrade
 
 The Gateway pins one agent version and one SHA-256 checksum for each architecture. It picks the asset for the Node's recorded architecture, `x86_64` or `aarch64`.
@@ -165,7 +248,19 @@ The Gateway pins one agent version and one SHA-256 checksum for each architectur
 
 The Gateway downloads the asset on the Node to a candidate file. It checks the checksum, then moves the candidate into place. A checksum mismatch deletes the candidate and fails with `agent.checksum_mismatch`. When the installed binary already matches the pin, the Gateway skips the download.
 
-The unit runs the agent as `root` with `Restart=always` and `RestartSec=2`. It grants no capabilities (`CapabilityBoundingSet=` is empty) and sets `NoNewPrivileges=yes`, `ProtectSystem=strict`, `ProtectHome=yes`, `PrivateTmp=yes`, `MemoryMax=64M`, and `RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6`. Root ownership of the Docker socket lets the agent read it without capabilities.
+The unit runs the agent as `root` with `Restart=always` and `RestartSec=2`. It grants no capabilities (`CapabilityBoundingSet=` is empty) and sets `NoNewPrivileges=yes`, `ProtectSystem=strict`, `ProtectHome=tmpfs`, `BindReadOnlyPaths=-{Instance root}`, `PrivateTmp=yes`, `MemoryMax=128M`, and `RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6`. Root ownership of the Docker socket lets the agent read it without capabilities.
+
+The Instance root is the Node's apps path from its settings, or `apps` in the managed user's home. The Gateway resolves it on every converge. The bind line appears only when the root lies under `/home`. When the Gateway cannot resolve the managed user, or the root holds characters outside letters, digits, `.`, `_`, `-`, and `/`, the unit sets `ProtectHome=yes` instead, and the Gateway reads that Node's checkouts over SSH.
+
+The Instance root and each checkout must stay world-traversable (`0755`, as Orbit creates them); otherwise the agent leaves the checkout out, and the Gateway reads it over SSH. Orbit removes the world bits from an Instance `.env` when it configures the Laravel URL, after a registration moves a checkout, after a transfer, and for every Instance checkout in the Instance root on each agent converge. When the converge fails to close a checkout's `.env`, it logs a warning that names the checkout and continues.
+
+What the agent can read:
+
+| Path | Access |
+| --- | --- |
+| `/home` and `/root` | Empty, except the Instance root |
+| The Instance root | Read-only. Without capabilities, root reads only files that other users may read: the tracked files and `.git` that Orbit checks out, but not an Instance `.env` |
+| Everything else | Read-only, as `ProtectSystem=strict` sets |
 
 The Gateway restarts the agent only when the binary, configuration, certificate, or unit changed. An unchanged converge leaves the running agent and its connection alone.
 
@@ -176,7 +271,7 @@ The Gateway converges the agent at these points:
 | `node:add`, for a new or an existing Node, after the Metrics exporters | Provisioning fails at step `agent` with `node.agent_install_failed`. A new Node becomes `failed`, and an existing active Node stays `active`. |
 | A role converge on the Node | The role converge continues. The Gateway logs a warning, and Doctor reports the drift. |
 
-To upgrade the fleet, publish a new release, update the pin in the Gateway, deploy the Gateway, and run `orbit node:add <node>` or a role converge on each Node. Doctor reports every Node that still runs another version. Version 0.1.1 requires `gateway_address` in its configuration.
+To upgrade the fleet, publish a new release, update the pin in the Gateway, deploy the Gateway, and run `orbit node:add <node>` or a role converge on each Node. Doctor reports every Node that still runs another version. Version 0.1.1 requires `gateway_address` in its configuration. Version 0.2.0 reports task workspaces and needs the unit above.
 
 ## Failures
 
@@ -187,8 +282,10 @@ The agent recovers from each failure below without an operator.
 | The agent crashes | systemd restarts it after 2 seconds. The web app shows the Node offline until the agent rejoins. The Gateway drops the Node's view and reads over SSH until then. |
 | The agent stops cleanly | The agent closes its connection, so the web app shows the Node offline at once, and the Gateway drops the Node's view. |
 | The Node loses power or network | Heartbeats stop. The web app shows the Node offline after 15 seconds without a heartbeat, and the Gateway's view of the Node turns stale at the same time. |
+| The agent cannot read a task checkout | It leaves the checkout out of its reports, and the Gateway reads that checkout over SSH. |
+| The watch list request fails | The agent keeps its last list and asks again after 60 seconds. |
 | Reverb is down or the `websocket` role is absent | The agent and the subscriber retry. The web app polls Prometheus, and Gateway reads use Prometheus and SSH. |
-| The agent view subscriber stops | systemd restarts it after 2 seconds. Until it rejoins, the Gateway's view turns stale after 15 seconds, and Gateway reads use Prometheus and SSH. |
+| The agent view subscriber stops | systemd restarts it after 2 seconds. Until it rejoins, the view turns stale after 15 seconds, and Gateway reads use Prometheus and SSH. The web app reloads the Process list every 60 seconds. |
 | The Gateway is down | The agent cannot get a membership signed and retries. An agent that is already connected keeps publishing. |
 | A snapshot is lost | The subscriber asks for a new snapshot within about 10 seconds. Agent 0.1.2 also sends one every 60 seconds. |
 | A second agent process runs on the Node | Agent 0.1.2 refuses to start it. A second 0.1.1 process keeps resetting the subscriber's state, so the view stays `missing` until about 10 seconds after it exits. |
@@ -245,7 +342,7 @@ The job refuses to replace the assets of an existing release. Pull requests and 
 
 The first version of the agent has these limits.
 
-- The agent reports presence and Process runtime state only. The Gateway uses it for the four reads in [Gateway view](#gateway-view).
-- Task workspace probes, Instance logs, the Horizon queue, and `ufw status` still run over SSH. The agent does not collect their data.
-- The agent does not report CPU or memory, so the web app still polls the Process list for them.
+- The agent reports presence, Process runtime state, and task checkout Git state. The Gateway uses them for the reads in [Gateway view](#gateway-view).
+- Task reads that gate an action, Instance logs, the Horizon queue, and `ufw status` still run over SSH.
+- The agent does not report CPU or memory. The Gateway pushes them from Prometheus as [Process usage](#process-usage).
 - The agent supports Linux on `x86_64` and `aarch64` only.
