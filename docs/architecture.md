@@ -53,10 +53,6 @@ See [Applications](/domains/applications) for source, branch, and setup details;
 
 Instance commands manage Instances and Routes. Runtime publication, Caddy, DNS, certificates, PHP-FPM, and firewall intent use Instances and Routes only. Doctor inspects Instances and Routes.
 
-## Herdr sessions
-
-A [Herdr session](/reference/herdr-sessions) runs a named headless Herdr server on a Node. Orbit can manage its process or adopt an existing server whose lifecycle stays external. Both modes let Commander view recorded panes through temporary, read-only `terminal.observe` access.
-
 ## Tasks
 
 The optional [tasks](/reference/tasks) extension stores Commander-style feature groups on the Gateway. A Task group has ordered Task subtasks and one shared Instance. A new group waits in Backlog while its branch, ADRs, documentation, and subtasks are prepared. Once the group moves to Todo, the Gateway claims it, provisions that instance on an `app-dev` Node, and starts the T3 reviewer and the first implementer on the instance-owning Node.

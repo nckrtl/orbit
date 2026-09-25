@@ -97,7 +97,7 @@ Every 60 seconds the subscriber compares the Gateway checkout's commit with the 
 
 ### Stored state
 
-The view lives in the Gateway's default cache store, which the subscriber shares with every PHP-FPM worker.
+The view lives in its own file cache store in `ORBIT_HOME/cache/agent-view`. The Gateway pins that store in code, whatever `CACHE_STORE` says, so heartbeats never write the SQLite database. The subscriber and every PHP-FPM worker run as `orbit` and share those files.
 
 | Entry | Contents | Kept for |
 | --- | --- | --- |
@@ -131,7 +131,7 @@ Four repeated reads ask the view first and fall back when it is not fresh.
 | [`process:logs`](/cli/process#orbit-processlogs) | When the view lists the exact unit or container, the Gateway runs only the log read. | The ownership check over SSH, then the log read |
 | The hibernator's [idle halt](/reference/app-dev-runtime-hibernation#idle-window-and-sweep) | When the view shows the Process stopped, the hibernator skips its stop. | The ownership check and the stop over SSH |
 
-A read right after the Gateway starts, stops, or restarts a Process stays on SSH, because it must see the change the Gateway just made.
+The status that a start, stop, or restart itself returns stays on SSH, because it must show the change the Gateway just made. A wake's readiness checks are separate reads that follow the start, so they use the view.
 
 ## Install and upgrade
 

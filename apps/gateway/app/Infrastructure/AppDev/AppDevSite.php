@@ -74,6 +74,12 @@ final readonly class AppDevSite
         return "/etc/caddy/orbit-certificates/{$scope}/current";
     }
 
+    /** A public listener uses Caddy automatic HTTPS and loads no Orbit certificate file. */
+    public function loadsCertificate(string $scope): bool
+    {
+        return ! $this->publicListener && ($this->certificateScope ?? $this->scope) === $scope;
+    }
+
     public function isLocalHttpProxy(): bool
     {
         return $this->localHttpUpstream !== null && $this->localHttpUpstream !== '';

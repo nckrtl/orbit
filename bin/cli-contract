@@ -76,7 +76,7 @@ def coverage():
     commands = sorted(command['name'] for command in json.loads(listing)['commands']
                       if ':' in command['name'] and not command['name'].startswith(('internal:', 'design:', 'make:', 'app:build', 'mcp:', 'boost:', 'vendor:', 'stub:', 'skill:'))
                       and not command.get('hidden')) 
-    commands += [name for name in ('doctor', 'profile', 'top') if any(command['name'] == name for command in json.loads(listing)['commands'])]
+    commands += [name for name in ('doctor', 'profile') if any(command['name'] == name for command in json.loads(listing)['commands'])]
     expected = ROOT / 'apps/cli/tests/Expected'
     covered = {path.parent.name for path in expected.rglob('*') if path.is_file()}
     missing = [name for name in commands if name.replace(':', '-') not in covered]

@@ -13,7 +13,6 @@ use App\Domain\Doctor\DoctorInspectionException;
 use App\Domain\Doctor\DoctorIssueCodeCatalog;
 use App\Domain\Doctor\DoctorIssueKind;
 use App\Domain\Doctor\FirewallDoctorIssueCode;
-use App\Domain\Doctor\HerdrSessionDoctorIssueCode;
 use App\Domain\Doctor\InstanceDoctorIssueCode;
 use App\Domain\Doctor\NodeDoctorIssueCode;
 use App\Domain\Doctor\ProcessDoctorIssueCode;
@@ -62,7 +61,7 @@ it('serializes bounded doctor reports and derives status precedence', function (
     $report = DoctorReportData::fromNodes([$node]);
 
     expect(array_map(static fn (DoctorFamily $family): string => $family->value, DoctorFamily::cases()))
-        ->toEqual(['node', 'role', 'app', 'instance', 'schedule', 'tool', 'process', 'firewall', 'herdr', 'database_connection', 'route'])
+        ->toEqual(['node', 'role', 'app', 'instance', 'schedule', 'tool', 'process', 'firewall', 'database_connection', 'route'])
         ->and($family->status->value)
         ->toBe('unverifiable')
         ->and($family->family)
@@ -185,7 +184,6 @@ it('defines the exact stable issue-code catalog for every Doctor family', functi
         DoctorFamily::Tool->value => ToolDoctorIssueCode::cases(),
         DoctorFamily::Process->value => ProcessDoctorIssueCode::cases(),
         DoctorFamily::Firewall->value => FirewallDoctorIssueCode::cases(),
-        DoctorFamily::Herdr->value => HerdrSessionDoctorIssueCode::cases(),
         DoctorFamily::DatabaseConnection->value => DatabaseConnectionDoctorIssueCode::cases(),
         DoctorFamily::Route->value => RouteDoctorIssueCode::cases(),
     ];
@@ -284,13 +282,6 @@ it('defines the exact stable issue-code catalog for every Doctor family', functi
             'firewall.rule_mismatch',
             'firewall.inspection_failed',
             'firewall.node_unreachable',
-        ],
-        'herdr' => [
-            'herdr.process_unhealthy',
-            'herdr.listener_unhealthy',
-            'herdr.session_unhealthy',
-            'herdr.inspection_failed',
-            'herdr.node_unreachable',
         ],
         'database_connection' => [
             'database_connection.missing',

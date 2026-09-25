@@ -1,7 +1,7 @@
 ---
 title: "ADR 0085: Build orbit top as a thin TUI client"
 sidebarTitle: "0085 Build orbit top as a thin TUI client"
-description: "Proposed. orbit top is a php-tui screen that stays current from the same SDK requests and realtime events every other command uses, with polling as a fallback and design sketches as its spec."
+description: "Proposed. Superseded by ADR 0147. orbit top is a php-tui screen that stays current from the same SDK requests and realtime events every other command uses, with polling as a fallback and design sketches as its spec."
 ---
 
 # ADR 0085: Build orbit top as a thin TUI client
@@ -10,7 +10,7 @@ description: "Proposed. orbit top is a php-tui screen that stays current from th
 
 ## Status
 
-Proposed.
+Proposed. Superseded by [ADR 0147](/decisions/0147-retire-orbit-top), which removes `orbit top` in favor of the web app.
 
 ## Context
 
@@ -55,5 +55,5 @@ Part of the fleet data `orbit top` wants to show (deployment history, database c
 
 - Components: apps/cli, apps/docs
 - ADRs: depends on [ADR 0084](/decisions/0084-broadcast-record-changes-through-reverb) for the realtime channel and events it consumes; none amended
-- Detail: [`top`](/cli/top)
+- Detail: none; [ADR 0147](/decisions/0147-retire-orbit-top) removed the `top` page
 - Verify: `apps/cli/tests/Unit/Tui/ScreenTest.php`, `StateTest.php`, `InteractionTest.php`, `ActionRunnerTest.php`, `NodeFormStateTest.php`; screen snapshots under `apps/cli/tests/Expected/top/`; `apps/cli/design/README.md` and its recorded flows for the accepted `design:top` sketch

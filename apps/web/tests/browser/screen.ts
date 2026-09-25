@@ -1,5 +1,5 @@
 /**
- * The screen as text, the way `orbit top` snapshots are text: one block per frame with the labels
+ * The screen as text: one block per frame with the labels
  * from its border, then one line per row with its cells. It reads structure, not pixels, so it is
  * the same on every operating system. A bar is its reading only, a selected row starts with `›` (the page shows it by highlight alone),
  * and a row that needs a look ends with `!`.

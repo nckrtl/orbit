@@ -114,7 +114,6 @@
               "reference/service-metrics",
               "reference/analytics",
               "reference/proxycli",
-              "reference/herdr-sessions",
               "reference/tasks",
               "reference/pi-server",
               "reference/local-resolver-overrides",
@@ -195,10 +194,8 @@
               "cli/profile",
               "cli/activity",
               "cli/realtime",
-              "cli/top",
               "cli/extension",
               "cli/tasks",
-              "cli/herdr",
               "cli/proxycli",
               "cli/workspace"
             ]
@@ -521,19 +518,6 @@
             ]
           },
           {
-            "group": "Herdr sessions",
-            "openapi": "/openapi.json",
-            "pages": [
-              "GET /api/v1/herdr/sessions",
-              "POST /api/v1/herdr/sessions",
-              "POST /api/v1/herdr/sessions/adopt",
-              "DELETE /api/v1/herdr/sessions/{session}",
-              "GET /api/v1/herdr/sessions/{session}",
-              "POST /api/v1/herdr/sessions/{session}/observation-grants",
-              "POST /api/v1/herdr/sessions/{session}/restart"
-            ]
-          },
-          {
             "group": "proxycli",
             "openapi": "/openapi.json",
             "pages": [
@@ -718,6 +702,9 @@
               "decisions/0142-apply-plausibles-clickhouse-configuration-from-the-analytics-role",
               "decisions/0143-record-topology-evidence-and-sync-without-verification",
               "decisions/0144-migrate-waiting-connections-when-caddy-reloads",
+              "decisions/0145-publish-the-proxycli-collector-on-collector-cli-proxy-api-orbit",
+              "decisions/0146-retire-the-herdr-integration",
+              "decisions/0147-retire-orbit-top",
               "decisions/0148-keep-a-gateway-view-of-node-agent-state"
             ]
           }

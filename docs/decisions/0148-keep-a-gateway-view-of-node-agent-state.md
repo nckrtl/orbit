@@ -1,12 +1,12 @@
 ---
 title: "ADR 0148: Keep a Gateway view of Node agent state"
 sidebarTitle: "0148 Keep a Gateway view of Node agent state"
-description: "Proposed. One long-running Gateway process joins every Node agent's presence channel over one Reverb connection and keeps the latest Process state in the Gateway cache. Four repeated Process reads use that view and fall back to SSH when it is missing or stale."
+description: "Proposed. One long-running Gateway process joins every Node agent's presence channel over one Reverb connection and keeps the latest Process state in its own file cache under ORBIT_HOME. Four repeated Process reads use that view and fall back to SSH when it is missing or stale."
 ---
 
 # ADR 0148: Keep a Gateway view of Node agent state
 
-One long-running Gateway process, the agent view subscriber, joins every Node agent's presence channel over one Reverb connection. It keeps the latest Process state of each Node in the Gateway cache, with the time the Gateway received it. Four repeated Process reads use this view instead of SSH, and fall back to SSH when the view is missing or stale. SSH stays the only way the Gateway changes a Node.
+One long-running Gateway process, the agent view subscriber, joins every Node agent's presence channel over one Reverb connection. It keeps the latest Process state of each Node in its own file cache under `ORBIT_HOME`, with the time the Gateway received it. Four repeated Process reads use this view instead of SSH, and fall back to SSH when the view is missing or stale. SSH stays the only way the Gateway changes a Node.
 
 ## Status
 
@@ -48,7 +48,7 @@ The Gateway owns the subscriber, the view, and the read contract. Node agents an
 
 ### The view
 
-- The view lives in the Gateway's default cache store, one entry for each Node and one for the subscriber's own health. The subscriber and every PHP-FPM worker share that store.
+- The view lives in its own file cache store in `ORBIT_HOME/cache/agent-view`, one entry for each Node and one for the subscriber's own health. The Gateway pins that store in code, whatever `CACHE_STORE` says, so heartbeats never write the SQLite database. The subscriber and every PHP-FPM worker run as `orbit` and share those files.
 - A Node entry holds the agent's units, `docker` state, last `sequence`, and the Gateway time at which the last agent event arrived. Each write keeps the entry for 60 seconds.
 - The subscriber applies agent events with the rules from ADR 0129. It accepts an event on `presence-node.{id}` only when Reverb's `user_id` is `agent.{id}`. It applies a snapshot once every part has arrived. It starts over when the agent's `sequence` restarts. It removes the Node entry when `agent.{id}` leaves the channel.
 - The subscriber keeps a unit only when its name has the form `orbit-process-{id}-{name}`, its runtime is `systemd` or `docker`, and its status is a short lowercase word. Readers look up only the unit name that they compute from a Process on that Node.
@@ -74,7 +74,7 @@ In a fresh view, a systemd Process that is not listed is `inactive`, and a Docke
 | Process logs | When the view lists the exact unit or container, the Gateway skips the ownership check and runs only the log read. | Ownership check, then the log read |
 | Hibernator stop | When the view shows the Process stopped, the hibernator skips its stop. | Ownership check, then the stop |
 
-A read right after the Gateway starts, stops, or restarts a Process stays on SSH, because it must observe the change that the Gateway just made. Every change to a Node still runs over SSH.
+The status that a start, stop, or restart itself returns stays on SSH, because it must show the change that the Gateway just made. A wake's readiness checks are separate reads that follow the start, so they use the view. Every change to a Node still runs over SSH.
 
 Estimated savings, from the measured command counts:
 
@@ -114,7 +114,7 @@ Doctor reports `node.agent_view_stale` in the `node` family for an eligible Node
 | A Node loses power or network | Its entry is stale 15 seconds after the last event. |
 | The subscriber crashes | systemd restarts it after 2 seconds. Until it rejoins, entries turn stale after 15 seconds and expire after 60 seconds. |
 | The Gateway and a Node disagree about the time | Freshness uses only the Gateway clock. The agent's `at` is stored but never compared. |
-| The cache store fails | The subscriber logs a warning and keeps running. Readers find no entry and fall back. |
+| The view's cache files cannot be written | The subscriber logs a warning and keeps running. Readers find no entry and fall back. |
 
 ## Rejected alternatives
 

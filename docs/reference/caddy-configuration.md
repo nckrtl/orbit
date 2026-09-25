@@ -34,7 +34,6 @@ Every role keeps its sites in its own fragment, such as `app-dev.caddy` or `metr
 | `app-dev.caddy` | App development sites and [Route](/reference/routes) ingress |
 | `app-prod.caddy` | App production sites |
 | `00-metrics-service.caddy` | [Service metrics](/reference/service-metrics) monitoring site |
-| `herdr-<session>.caddy` | [Herdr session](/reference/herdr-sessions) observer |
 | `metrics.caddy` | [Metrics](/reference/metrics) route on the Gateway |
 | `websocket.caddy` | `websocket` role |
 | `proxycli.caddy` | [ProxyCLI](/reference/proxycli) collector |
@@ -97,7 +96,6 @@ Caddy accepts one global options block, and only as the first block. Orbit write
 | `websocket` site | `websocket.caddy_publication_failed` |
 | `analytics` site | `analytics.caddy_publication_failed` |
 | ProxyCli collector site | `proxycli.caddy_publication_failed` |
-| Herdr observer site | `herdr.observer_failed` |
 | Metrics site on the Gateway | `metrics.caddy_publication_failed` |
 
 Role convergence, such as `orbit node:role:add NODE app-dev --converge`, fails with `node_role.convergence_failed`; `orbit node:role:list` shows the publisher's code as the underlying error.
@@ -146,7 +144,7 @@ reverb.orbit {
 }
 ```
 
-The Gateway renders the sites from committed database state only. A role's sites render while the role is provisioning or active, and after a failed reconvergence, because they were live before that attempt. They stop rendering when the role's removal starts or when its first convergence fails. A Herdr observer site renders while its session publishes the observer and is not being removed.
+The Gateway renders the sites from committed database state only. A role's sites render while the role is provisioning or active, and after a failed reconvergence, because they were live before that attempt. They stop rendering when the role's removal starts or when its first convergence fails.
 
 The same state always gives the same file. Route transitions are already [stored state](/reference/routes#stored-transitions): a Route that is being published or withdrawn, an Instance that is being removed, a placement change, and a Router replacement each have a database record that the build reads. A Node gets at most one site for each domain and port. When a Route's current and transition placements render the same site on one Node, the build keeps the current one. Any other duplicate fails the build.
 
@@ -157,7 +155,7 @@ The same state always gives the same file. Route transitions are already [stored
 | `gateway.orbit` | The Node with the `gateway` role | WireGuard address |
 | `metrics.orbit` | The Node with the `gateway` role | WireGuard address |
 | Service metrics scrape site on port 9103 | A selected Ingress Node | WireGuard address |
-| `reverb.orbit`, `analytics.orbit`, `collector.cli-proxy-api.orbit`, and Herdr observer sites | The Node that runs the role, collector, or session | WireGuard address, or `0.0.0.0` when a site from the first row binds `0.0.0.0` on the same port |
+| `reverb.orbit`, `analytics.orbit`, and `collector.cli-proxy-api.orbit` | The Node that runs the role or collector | WireGuard address, or `0.0.0.0` when a site from the first row binds `0.0.0.0` on the same port |
 
 Caddy sends a connection for the WireGuard address only to the sites bound to that address, and every other connection to the `0.0.0.0` sites. Routers, Ingress, and private DNS clients reach first-row sites only on a Node's LAN or WireGuard address, so a Node without `ingress` binds them there and has no wildcard listener. A Gateway that is also a Router therefore serves `gateway.orbit` and its Router sites on the same port.
 
@@ -165,7 +163,9 @@ On a Node with `ingress`, first-row sites bind `0.0.0.0`, `gateway.orbit` stays 
 
 ### When a build runs
 
-A command that changes Caddy sites commits its change and then requests a build for each affected Node. That covers Route and Instance commands, deploys, role convergence, Metrics, ProxyCli, Herdr observers, and Gateway web convergence. When a command adds a site, it publishes the site's certificate before the build. When it removes a site, it builds first and removes the certificate afterwards. A certificate step that replaces a certificate a live site already uses reloads Caddy itself.
+A command that changes Caddy sites commits its change and then requests a build for each affected Node. That covers Route and Instance commands, deploys, role convergence, Metrics, ProxyCli, and Gateway web convergence. When a command adds a site, it publishes the site's certificate before the build. When it removes a site, it builds first and removes the certificate afterwards. A certificate step that replaces a certificate a live site already uses reloads Caddy itself.
+
+The Gateway refuses to remove a certificate that a site in its stored state still renders on the Node, because `caddy validate` would then fail for every later build. It checks stored state, not the live file on the Node. The step fails with `app-dev.certificate_in_use`, names the blocking site's domain, and keeps the certificate, so the command can be retried.
 
 The Gateway runs one build at a time for each Node. A second build waits up to 30 seconds and then reads the latest committed state. When a build renders the same file that is already live, it changes nothing and does not reload Caddy.
 

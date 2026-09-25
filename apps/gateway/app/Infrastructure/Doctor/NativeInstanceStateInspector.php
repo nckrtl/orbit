@@ -53,9 +53,7 @@ final readonly class NativeInstanceStateInspector implements InstanceStateInspec
                         $account->user,
                         $account->group,
                         $appInstance->source_layout,
-                        $appInstance->branch ?? '',
                         $appInstance->starting_commit ?? '',
-                        $appInstance->registration_detached ? '1' : '0',
                     ],
                     input: self::remoteScript(),
                 ),
@@ -147,9 +145,7 @@ final readonly class NativeInstanceStateInspector implements InstanceStateInspec
             managed_user=$4
             managed_group=$5
             source_layout=$6
-            branch=$7
-            starting_commit=$8
-            detached=$9
+            starting_commit=$7
 
             emit() {
                 if "$@"; then printf '1\n'; else printf '0\n'; fi
@@ -186,13 +182,7 @@ final readonly class NativeInstanceStateInspector implements InstanceStateInspec
             source_identity_matches() {
                 test -n "$starting_commit" || return 1
                 test "$(git -C "$checkout" rev-parse --verify "$starting_commit^{commit}")" = "$starting_commit" || return 1
-                git -C "$checkout" merge-base --is-ancestor "$starting_commit" HEAD || return 1
-
-                if [ "$detached" = 1 ]; then
-                    ! git -C "$checkout" symbolic-ref --quiet HEAD >/dev/null
-                else
-                    test -n "$branch" && test "$(git -C "$checkout" symbolic-ref --short HEAD)" = "$branch"
-                fi
+                git -C "$checkout" merge-base "$starting_commit" HEAD >/dev/null
             }
 
             emit checkout_exists

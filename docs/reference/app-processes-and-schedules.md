@@ -117,7 +117,7 @@ A prepared production home without `current` accepts a stopped Process installat
 
 A systemd Process may persist a managed environment map in its specification. The renderer writes those values as `Environment=` directives after the optional environment file. Derived `PATH`, `NODE_USE_SYSTEM_CA`, development-server, certificate, and Agentation values still win for their keys. Stored values never enter `ExecStart` argv. HTTP Process create still accepts environment only for Docker. Gateway-owned enable paths such as [proxycli](/reference/proxycli) persist the map through the specification. See [ADR 0108](/decisions/0108-persist-managed-environment-on-systemd-processes).
 
-A Node systemd Process runs as the Node's managed runtime user. It uses `/home/{user}` as the default working directory and does not read an Instance environment file or receive development-server certificate or origin values. Creating or starting it requires an active Linux Node with a recorded WireGuard address. Shared infrastructure such as a Docker database uses this target. The [Database role](/reference/database-role) can converge Docker on that Node, and a Node Process does not require that role. A managed Herdr session uses a Node Process; an adopted external session does not. [Herdr sessions](/reference/herdr-sessions) owns that integration:
+A Node systemd Process runs as the Node's managed runtime user. It uses `/home/{user}` as the default working directory and does not read an Instance environment file or receive development-server certificate or origin values. Creating or starting it requires an active Linux Node with a recorded WireGuard address. Shared infrastructure such as a Docker database uses this target. The [Database role](/reference/database-role) can converge Docker on that Node, and a Node Process does not require that role.
 
 ```bash
 orbit process:create postgres \
@@ -125,8 +125,6 @@ orbit process:create postgres \
   --runtime=docker \
   --image=postgres:18
 ```
-
-Managed Herdr session commands compose their Node Process and observer service through the [Herdr sessions](/reference/herdr-sessions) contract. Adoption composes only the observer around an existing external service. Operators do not add that observer as a generic Process.
 
 `--node` accepts a positive Node ID or the registered Node name. The CLI resolves a name through the node list before it sends the create request.
 

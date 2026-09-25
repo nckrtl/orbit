@@ -57,9 +57,9 @@ it('renders an Orbit-owned systemd unit with fixed argv and the target identity'
 
 it('omits EnvironmentFile for a Node Process without an environment file', function (): void {
     $process = new Process([
-        'name' => 'herdr-observer',
+        'name' => 'log-shipper',
         'runtime_config' => [
-            'command' => ['/usr/local/bin/herdr-observer'],
+            'command' => ['/usr/local/bin/log-shipper'],
             'environment_file' => '',
         ],
         'working_directory' => '/home/orbit',
@@ -77,7 +77,7 @@ it('omits EnvironmentFile for a Node Process without an environment file', funct
     $unit = $renderer->render($process, $target);
 
     expect($renderer->unitName($process))
-        ->toBe('orbit-process-9-herdr-observer.service')
+        ->toBe('orbit-process-9-log-shipper.service')
         ->and($unit)
         ->toContain('X-Orbit-Process-ID=9')
         ->toContain('User=orbit')

@@ -12,7 +12,7 @@ use JsonException;
 final readonly class LocalExtensionState
 {
     /** @var list<string> */
-    private const array Extensions = ['herdr', 'proxycli'];
+    private const array Extensions = ['proxycli'];
 
     public function __construct(private string $path) {}
 
@@ -50,7 +50,11 @@ final readonly class LocalExtensionState
         $this->mutate(static fn (array $enabled): array => array_values(array_diff($enabled, [$extension])));
     }
 
-    /** @return list<string> */
+    /**
+     * Reads the enabled extensions. A slug this CLI does not know is ignored, and the next write drops it.
+     *
+     * @return list<string>
+     */
     private function read(): array
     {
         set_error_handler(static fn (): bool => true);
@@ -84,11 +88,11 @@ final readonly class LocalExtensionState
 
         $enabled = is_array($decoded['enabled']) ? $decoded['enabled'] : null;
 
-        if ($enabled === null || array_any($enabled, fn (mixed $item): bool => ! is_string($item) || ! $this->known($item))) {
+        if ($enabled === null || array_any($enabled, static fn (mixed $item): bool => ! is_string($item))) {
             throw new GatewayConfigException('Orbit extension configuration is invalid.');
         }
 
-        return array_values(array_unique($enabled));
+        return array_values(array_unique(array_filter($enabled, $this->known(...))));
     }
 
     private function readPrivateContents(): string

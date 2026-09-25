@@ -20,7 +20,7 @@ const features = tableFeatures({
 
 export type Column<T> = {
     header: string;
-    /** Share of the pane's width, as the `orbit top` tables give their columns. */
+    /** Share of the pane's width. */
     width: number;
     /** Size the column to its widest cell, and leave the shares to the others. */
     fit?: boolean;

@@ -11,7 +11,7 @@ import { DeploymentPage, RecordPage } from "./pages/RecordPage";
 import { SectionList } from "./pages/SectionList";
 import { Shell } from "./ui/Shell";
 
-// The URL carries what `orbit top` keeps in its page stack: the section, the open record, and the
+// The URL carries the page stack: the section, the open record, and the
 // node and project filters. Back is the browser's own.
 const rootRoute = createRootRoute({ component: Shell });
 
