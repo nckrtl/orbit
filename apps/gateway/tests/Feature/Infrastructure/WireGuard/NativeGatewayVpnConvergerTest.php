@@ -7,6 +7,7 @@ use App\Domain\Nodes\NodeProvisioningException;
 use App\Infrastructure\Files\ProtectedFileWriter;
 use App\Infrastructure\Firewall\UfwStatusParser;
 use App\Infrastructure\Firewall\UfwStoredRuleProbe;
+use App\Infrastructure\Gateway\GatewayPrivateDnsResolver;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
@@ -41,6 +42,10 @@ it('activates the gateway WireGuard address through a validated atomic server co
             orbitHome: $orbitHome,
         );
         assert_gateway_firewall_commands(arguments: $arguments);
+        expect($arguments[19])->toBe(['sudo', 'bash', '-seu', '--', GatewayPrivateDnsResolver::DROP_IN])
+            ->and($processes->calls[19]->input)
+            ->toBe(new GatewayPrivateDnsResolver()->convergeScript('10.44.0.1', 'orbit'))
+            ->and($arguments)->toHaveCount(20);
     } finally {
         new Filesystem()->deleteDirectory($orbitHome);
     }
@@ -234,7 +239,7 @@ function assert_gateway_publication_commands(
 /** @param list<list<string>> $arguments */
 function assert_gateway_firewall_commands(array $arguments): void
 {
-    expect(array_slice(array: $arguments, offset: 11))->toBe([
+    expect(array_slice(array: $arguments, offset: 11, length: 8))->toBe([
         ['sudo', 'ufw', 'status', 'numbered'],
         [
             'sudo',

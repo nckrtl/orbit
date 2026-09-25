@@ -4025,6 +4025,27 @@
             ]
         },
         {
+            "path": "docs/decisions/0156-route-the-private-domain-on-the-gateway-machine-to-vpn-dns.md",
+            "title": "ADR 0156: Route the private domain on the Gateway machine to VPN DNS",
+            "kind": "decision",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Cluster",
+                "Gateway",
+                "Node",
+                "Project",
+                "Route",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0061",
+                "0094",
+                "0156"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -4208,7 +4229,8 @@
                 "0152",
                 "0153",
                 "0154",
-                "0155"
+                "0155",
+                "0156"
             ]
         },
         {
@@ -5265,7 +5287,8 @@
             "governing_adrs": [
                 "0061",
                 "0062",
-                "0149"
+                "0149",
+                "0156"
             ]
         },
         {

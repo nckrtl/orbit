@@ -16,6 +16,7 @@ use App\Infrastructure\Firewall\UfwRuleShape;
 use App\Infrastructure\Firewall\UfwStatusParser;
 use App\Infrastructure\Firewall\UfwStoredRuleParser;
 use App\Infrastructure\Firewall\UfwStoredRuleProbe;
+use App\Infrastructure\Gateway\GatewayPrivateDnsResolver;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
@@ -46,6 +47,7 @@ final readonly class NativeGatewayVpnConverger implements GatewayVpnConverger
         private SystemdVpnOrderingDropIn $vpnOrdering = new SystemdVpnOrderingDropIn,
         private RetiredDnsmasqSnippets $stockDnsSnippets = new RetiredDnsmasqSnippets,
         private UplinkDnsResolvers $uplinkResolvers = new UplinkDnsResolvers,
+        private GatewayPrivateDnsResolver $resolver = new GatewayPrivateDnsResolver,
     ) {}
 
     public function converge(Node $gateway, BootstrapGatewayData $data): void
@@ -55,6 +57,22 @@ final readonly class NativeGatewayVpnConverger implements GatewayVpnConverger
         });
         $this->convergeDns($data);
         $this->convergeFirewall($gateway, $data);
+        $this->convergeResolver($data);
+    }
+
+    /**
+     * Routes the private domain on this machine to its own VPN DNS listener, so clients on the
+     * Gateway resolve private names such as `reverb.orbit`.
+     */
+    private function convergeResolver(BootstrapGatewayData $data): void
+    {
+        $command = $this->resolver->convergeCommand($data->dnsServer, $data->domain);
+        $this->run(
+            step: 'gateway-private-dns-resolver',
+            errorCode: 'vpn.dns_resolver_failed',
+            arguments: $command->arguments,
+            input: $command->input,
+        );
     }
 
     private function convergeWireGuard(Node $gateway, BootstrapGatewayData $data): void

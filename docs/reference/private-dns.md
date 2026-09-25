@@ -36,6 +36,22 @@ Provisioning and repair omit `PreDown` because systemd-resolved removes the link
 
 An explicit underlay override can use a link other than `orbit`. Read line 1 of `orbit.dns-link`, then run `resolvectl status <link>` for that link.
 
+## The Gateway machine
+
+The Gateway machine is not a managed peer. When it also holds `vpn`, its tunnel is the hub. When `gateway` moved to another machine, that machine keeps the tunnel it joined with. So the Gateway selects its resolver in a separate step. [ADR 0156](/decisions/0156-route-the-private-domain-on-the-gateway-machine-to-vpn-dns) records the decision.
+
+Gateway bootstrap and every `gateway` role convergence send queries for the private VPN domain to Orbit VPN DNS over the `orbit` link. The address is the configured VPN DNS server, or the WireGuard address of the `vpn` Node. Other queries, including names under Node and Cluster TLDs, stay on the uplink resolvers, so the Gateway still resolves ordinary names while Orbit VPN DNS is down. The Orbit CLI on the Gateway machine then resolves `reverb.orbit` and stays live.
+
+The drop-in `/etc/systemd/system/wg-quick@orbit.service.d/orbit-gateway-dns.conf` reapplies the route whenever the tunnel starts. A failure there never fails the tunnel. When `/etc/wireguard/orbit.dns-link` exists, the machine is a managed peer, and the step leaves the peer's resolver policy in place. Removing the `gateway` role removes the drop-in and reverts the `orbit` link.
+
+| Command | Expected result on the Gateway machine |
+| --- | --- |
+| `resolvectl status orbit` | The `orbit` link lists the Orbit VPN DNS address and the routing domain `~orbit`. |
+| `getent hosts reverb.orbit` | The address of the Node that holds `websocket`. |
+| `getent ahostsv4 example.com` | An ordinary name resolves through the uplink resolvers. |
+
+To add the route to an existing Gateway, run `orbit node:role:add <gateway-node> gateway --converge`. A failure stops at step `gateway-private-dns-resolver` with `vpn.dns_resolver_failed`. After [relocating the gateway role](/solutions/relocate-gateway-role), converge the role on the target the same way.
+
 ## Repair one peer
 
 Run this DNS repair on the Gateway to update one active managed Linux peer's resolver settings. It uses the saved WireGuard address and pinned Secure Shell (SSH) identity. Roles and the running tunnel stay unchanged.

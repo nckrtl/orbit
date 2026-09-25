@@ -41,8 +41,10 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WebSocket\WebSocketCredentialManager;
 use App\Domain\WebSocket\WebSocketCredentials;
 use App\Domain\WebSocket\WebSocketPublicationManager;
+use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\AppDev\AppDevSshExecutor;
 use App\Infrastructure\AppProd\AppProdSshExecutor;
+use App\Infrastructure\Gateway\GatewayPrivateDnsResolver;
 use App\Infrastructure\Nodes\CaddyPackageSourceProgram;
 use App\Infrastructure\Nodes\Roles\AnalyticsRoleBaseline;
 use App\Infrastructure\Nodes\Roles\AppDevRoleBaseline;
@@ -280,6 +282,7 @@ it('converges and removes the gateway role while VPN removal stays protected', f
         'ssh:caddy',
         'firewall:converge:gateway',
         'dns:none',
+        'ssh:'.GatewayPrivateDnsResolver::DROP_IN,
         'ssh:vpn',
         'firewall:converge:vpn',
     ])->and(NodeAccess::query()->where('consumer_node_id', $gatewayNode->id)->pluck('serving_node_id')->all())
@@ -293,8 +296,10 @@ it('converges and removes the gateway role while VPN removal stays protected', f
         'ssh:caddy',
         'firewall:converge:gateway',
         'dns:none',
+        'ssh:'.GatewayPrivateDnsResolver::DROP_IN,
         'ssh:vpn',
         'firewall:converge:vpn',
+        'ssh:'.GatewayPrivateDnsResolver::DROP_IN,
         'firewall:remove:gateway',
         'dns:none',
         'dns:none',
@@ -575,6 +580,71 @@ it('installs pinned Caddy before the gateway role firewall and stops when it can
         ->toBe(['sudo', 'bash', '-seu', '--', ...CaddyPackageSourceProgram::arguments()])
         ->and($ssh->commands[0]->input)
         ->toBe(CaddyPackageSourceProgram::render());
+});
+
+it('routes the private domain on the Gateway machine to the configured VPN DNS address', function (
+    ?string $configuredDnsServer,
+    string $expectedAddress,
+): void {
+    $events = [];
+    [$vpnNode] = role_baseline_models(RoleName::Vpn, name: 'vpn-dns-holder');
+    [$node, $assignment] = role_baseline_models(RoleName::Gateway, name: 'gateway-dns');
+    app(VpnSettings::class)->configure(subnet: '10.44.0.0/24', dnsServer: $configuredDnsServer, domain: 'mesh');
+    $ssh = gateway_resolver_ssh($events, failResolver: false);
+    $gateway = new GatewayRoleBaseline(
+        baseline_firewall($events),
+        baseline_dns($events),
+        new NodeRolePrerequisiteCommandFactory,
+        new AppDevSshExecutor($ssh, baseline_keys(), baseline_known_hosts()),
+    );
+
+    $gateway->converge($node, $assignment);
+
+    $resolver = collect($ssh->commands)->last();
+    expect($vpnNode->wireguard_ip)->toBe('10.44.0.2')
+        ->and($resolver->arguments)->toBe(['sudo', 'bash', '-seu', '--', GatewayPrivateDnsResolver::DROP_IN])
+        ->and($resolver->input)->toBe(new GatewayPrivateDnsResolver()->convergeScript($expectedAddress, 'mesh'))
+        ->and(array_slice($events, -2))->toBe(['dns:none', 'ssh:resolver']);
+})->with([
+    'the VPN Node address' => [null, '10.44.0.2'],
+    'the configured VPN DNS server' => ['10.44.0.53', '10.44.0.53'],
+]);
+
+it('fails the gateway role convergence when the resolver step fails', function (): void {
+    $events = [];
+    role_baseline_models(RoleName::Vpn, name: 'vpn-dns-holder');
+    [$node, $assignment] = role_baseline_models(RoleName::Gateway, name: 'gateway-dns');
+    $gateway = new GatewayRoleBaseline(
+        baseline_firewall($events),
+        baseline_dns($events),
+        new NodeRolePrerequisiteCommandFactory,
+        new AppDevSshExecutor(gateway_resolver_ssh($events, failResolver: true), baseline_keys(), baseline_known_hosts()),
+    );
+
+    expect(fn () => $gateway->converge($node, $assignment))
+        ->toThrow(function (NodeRoleOperationException $exception): void {
+            expect($exception->step)->toBe('gateway-private-dns-resolver')
+                ->and($exception->errorCode)->toBe('node_role.convergence_failed')
+                ->and($exception->underlyingErrorCode)->toBe('vpn.dns_resolver_failed');
+        })
+        ->and(array_slice($events, -2))->toBe(['dns:none', 'ssh:resolver']);
+});
+
+it('skips the resolver step while no Node serves VPN DNS', function (): void {
+    $events = [];
+    [$node, $assignment] = role_baseline_models(RoleName::Gateway, name: 'gateway-dns');
+    $ssh = gateway_resolver_ssh($events, failResolver: false);
+    $gateway = new GatewayRoleBaseline(
+        baseline_firewall($events),
+        baseline_dns($events),
+        new NodeRolePrerequisiteCommandFactory,
+        new AppDevSshExecutor($ssh, baseline_keys(), baseline_known_hosts()),
+    );
+
+    $gateway->converge($node, $assignment);
+
+    expect($events)->not->toContain('ssh:resolver')
+        ->and(end($events))->toBe('dns:none');
 });
 
 it('dispatches every assignment to its code-defined baseline', function (): void {
@@ -1022,6 +1092,36 @@ function database_role_baseline(array &$events): DatabaseRoleBaseline
         baseline_known_hosts(),
         baseline_account_resolver(),
     );
+}
+
+/**
+ * @param  list<string>  $events
+ * @return SshExecutor&object{commands: list<RemoteCommand>}
+ */
+function gateway_resolver_ssh(array &$events, bool $failResolver): SshExecutor
+{
+    return new class($events, $failResolver) implements SshExecutor
+    {
+        /** @var list<RemoteCommand> */
+        public array $commands = [];
+
+        /** @param list<string> $events */
+        public function __construct(
+            private array &$events,
+            private bool $failResolver,
+        ) {}
+
+        public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
+        {
+            $this->commands[] = $command;
+            $resolver = ($command->arguments[4] ?? null) === GatewayPrivateDnsResolver::DROP_IN;
+            $this->events[] = $resolver ? 'ssh:resolver' : 'ssh:other';
+
+            return $resolver && $this->failResolver
+                ? new CommandResult(1, '', 'Failed to set DNS configuration: Link orbit not known', 1, false)
+                : new CommandResult(0, '', '', 1, false);
+        }
+    };
 }
 
 /** @param list<string> $events */
