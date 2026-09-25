@@ -111,6 +111,12 @@ final readonly class CacheAgentStateView implements AgentStateView
         ], self::SubscriberSeconds);
     }
 
+    /** Removes the subscriber's health, as when it stops: Doctor then reports it down at once. */
+    public function forgetSubscriber(): void
+    {
+        $this->cache->forget(self::SUBSCRIBER_KEY);
+    }
+
     /** The Gateway clock in seconds, with Carbon's test time in tests. */
     public static function now(): float
     {

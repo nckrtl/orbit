@@ -94,7 +94,7 @@ final class AgentViewSubscriber
 
     /**
      * Runs until `$stopping` returns true or the checkout's commit changes. Always leaves the view
-     * empty and the socket closed.
+     * and its own health empty and the socket closed.
      *
      * @param  Closure(): bool  $stopping
      * @return string Why the subscriber stopped: `stopped` or `commit_changed`.
@@ -123,7 +123,12 @@ final class AgentViewSubscriber
             return 'stopped';
         } finally {
             $this->disconnect();
-            $this->writeHealth(force: true);
+
+            try {
+                $this->view->forgetSubscriber();
+            } catch (Throwable $exception) {
+                $this->log->warning('The agent view subscriber could not clear its health.', ['error' => $exception->getMessage()]);
+            }
         }
     }
 
@@ -135,6 +140,7 @@ final class AgentViewSubscriber
                 $this->log->warning('The agent view subscriber lost its Reverb connection.');
                 $this->disconnect();
                 $this->scheduleReconnect();
+                $this->writeHealth(force: true);
             }
 
             if ($this->now() < $this->nextConnectAt) {

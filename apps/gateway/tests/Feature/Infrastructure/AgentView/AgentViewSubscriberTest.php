@@ -331,6 +331,6 @@ describe('the agent view subscriber', function (): void {
         expect($reason)->toBe('commit_changed')
             ->and($socket->isConnected())->toBeFalse()
             ->and(app(AgentStateView::class)->node($node->id)->freshness)->toBe(AgentViewFreshness::Missing)
-            ->and(app(AgentStateView::class)->subscriber()?->connected)->toBeFalse();
+            ->and(app(AgentStateView::class)->subscriber())->toBeNull();
     });
 });
