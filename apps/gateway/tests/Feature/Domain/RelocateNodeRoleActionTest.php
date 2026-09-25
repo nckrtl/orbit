@@ -20,6 +20,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WebSocket\WebSocketCredentialManager;
 use App\Infrastructure\Metrics\NativeMetricsCredentialManager;
 use App\Infrastructure\WebSocket\WebSocketFootprint;
+use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\NodeAccess;
 use App\Models\NodeRole;
@@ -153,9 +154,12 @@ describe(RelocateNodeRoleAction::class, function (): void {
             'role' => RoleName::Gateway,
             'status' => LifecycleStatus::Active,
         ]);
+        $cluster = Cluster::query()->create(['name' => "relocate-onto-{$held->value}"]);
+        $target->update(['cluster_id' => $cluster->id]);
         $target->roles()->create([
             'role' => $held,
             'status' => LifecycleStatus::Active,
+            'cluster_id' => $held === RoleName::Ingress ? $cluster->id : null,
         ]);
 
         expect(fn () => app(RelocateNodeRoleAction::class)->execute(
