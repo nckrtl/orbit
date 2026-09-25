@@ -26,6 +26,9 @@ use SensitiveParameter;
 
 final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManager
 {
+    /** Reads a container's last lines with standard error merged into standard output, in order. */
+    public const string DockerLogsScript = 'exec docker container logs --tail "$1" "$2" 2>&1';
+
     private ProcessRuntimeLease $lease;
 
     private AgentProcessView $agents;
@@ -381,12 +384,14 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
                 // UTC, as the Node agent writes the live lines, so both reads give the same text (ADR 0153).
                 '--utc',
             ],
+            // Standard output and standard error in one stream, in the order the container wrote
+            // them, as the Node agent streams them live (ADR 0153).
             ProcessRuntime::Docker => [
                 'sudo',
-                'docker',
-                'container',
-                'logs',
-                '--tail',
+                'sh',
+                '-c',
+                self::DockerLogsScript,
+                'orbit-process-logs',
                 (string) $lines,
                 $this->docker->containerName($process),
             ],

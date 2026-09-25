@@ -20,7 +20,10 @@ pub const RESCAN_EVERY: u32 = 4;
 pub const MAX_NEW_ENTRIES: u64 = 10_000;
 /// Formatted bytes one poll reads at most; the rest is counted as dropped. The rates allow far less.
 pub const MAX_POLL_BYTES: usize = 512 * 1024;
-pub const MAX_MESSAGE_BYTES: usize = 16 * 1024;
+/// The most bytes of one message the agent reads, the same as the one-shot read over SSH returns. A
+/// longer message is cut there and ends with a line `[orbit] message cut at 4 MiB`.
+pub const MAX_MESSAGE_BYTES: usize = 4 * 1024 * 1024;
+pub const MESSAGE_CUT: &str = "[orbit] message cut at 4 MiB";
 const MAX_SMALL_FIELD: usize = 256;
 const MAX_ENTRY_ITEMS: u64 = 4_096;
 const MAX_CHAIN: u64 = 1 << 20;
@@ -251,7 +254,8 @@ impl Wanted {
     }
     fn limit(self) -> usize {
         if self == Self::Message {
-            MAX_MESSAGE_BYTES
+            // One byte more tells whether the message is longer.
+            MAX_MESSAGE_BYTES + 1
         } else {
             MAX_SMALL_FIELD
         }
@@ -278,6 +282,8 @@ pub struct Entry {
     pub hostname: Option<Vec<u8>>,
     pub source_realtime: Option<Vec<u8>>,
     pub unreadable: bool,
+    /// The message was longer than `MAX_MESSAGE_BYTES` and was cut there.
+    pub message_cut: bool,
 }
 
 pub struct JournalFile {
@@ -577,6 +583,11 @@ impl JournalFile {
                     Wanted::Hostname => &mut entry.hostname,
                     Wanted::SourceRealtime => &mut entry.source_realtime,
                 };
+                let mut value = value;
+                if kind == Wanted::Message && value.len() > MAX_MESSAGE_BYTES {
+                    value.truncate(MAX_MESSAGE_BYTES);
+                    entry.message_cut = true;
+                }
                 slot.get_or_insert(value);
             }
         }
@@ -752,8 +763,9 @@ pub fn format_entry(entry: &Entry, _unit: &str) -> Vec<String> {
     let indent = " ".repeat(prefix.chars().count());
     let mut lines = message.split('\n');
     let first = format!("{prefix}{}", lines.next().unwrap_or_default());
+    let cut = entry.message_cut.then_some(MESSAGE_CUT);
     std::iter::once(first)
-        .chain(lines.map(|line| format!("{indent}{line}")))
+        .chain(lines.chain(cut).map(|line| format!("{indent}{line}")))
         .collect()
 }
 
@@ -1386,6 +1398,75 @@ mod tests {
         assert!(bytes <= FIRST_LINES_BYTES + 21_000, "{bytes}");
         assert!(lines.len() < 20);
         assert!(lines.last().unwrap().contains("queue[4242]: 099 "));
+    }
+
+    /// A 40 KB message of 40 lines, and what `journalctl --output short-iso --utc` printed for it.
+    #[test]
+    fn a_message_over_16_kib_gives_the_lines_journalctl_prints() {
+        let message: Vec<u8> = (0..40)
+            .flat_map(|i| format!("part {i:02} {}\n", "q".repeat(1000)).into_bytes())
+            .collect();
+        let expected: Vec<String> = include_str!("../../tests/journalctl_large_message.txt")
+            .lines()
+            .map(str::to_owned)
+            .collect();
+        assert_eq!(expected.len(), 40);
+        let entry = Entry {
+            realtime: 1_790_363_131_337_833,
+            source_realtime: Some(b"1790363131337825".to_vec()),
+            message: Some(message.clone()),
+            pid: Some(b"2773152".to_vec()),
+            syslog_pid: Some(b"4242".to_vec()),
+            identifier: Some(b"lvtbig".to_vec()),
+            comm: Some(b"python3".to_vec()),
+            hostname: Some(b"beast".to_vec()),
+            ..Entry::default()
+        };
+        assert_eq!(format_entry(&entry, "u.service"), expected);
+        // The reader returns the whole message in every journal format.
+        for options in every_variant() {
+            let dir = TempDir::new();
+            let mut w = Writer::new(options);
+            w.append(
+                T0,
+                &[
+                    ("_SYSTEMD_UNIT", UNIT.as_bytes()),
+                    ("_PID", b"7"),
+                    ("SYSLOG_IDENTIFIER", b"big"),
+                    ("MESSAGE", &message),
+                ],
+            );
+            w.write(&dir.0.join("system.journal"));
+            let lines = JournalTail::new(vec![dir.0.clone()], UNIT).start(1000);
+            assert_eq!(lines.len(), 40, "{options:?}");
+            assert!(
+                lines[39].trim_start().starts_with("part 39 "),
+                "{options:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_message_over_4_mib_is_cut_there_and_marked() {
+        let dir = TempDir::new();
+        let mut w = Writer::new(Options::default());
+        let message: Vec<u8> = (0..5000)
+            .flat_map(|i| format!("{i:04} {}\n", "m".repeat(1000)).into_bytes())
+            .collect();
+        w.append(
+            T0,
+            &[
+                ("_SYSTEMD_UNIT", UNIT.as_bytes()),
+                ("_PID", b"7"),
+                ("SYSLOG_IDENTIFIER", b"big"),
+                ("MESSAGE", &message),
+            ],
+        );
+        w.write(&dir.0.join("system.journal"));
+        let mut tail = JournalTail::new(vec![dir.0.clone()], UNIT);
+        let lines = tail.start(100_000);
+        assert_eq!(lines.last().unwrap().trim_start(), MESSAGE_CUT);
+        assert!(lines.len() < 5000);
     }
 
     #[test]

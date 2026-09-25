@@ -102,9 +102,9 @@ Each record has one source, the same one that its one-shot read uses.
 | --- | --- | --- |
 | Instance | `storage/logs/laravel.log` in the checkout, or the newest `laravel-*.log` when it is absent, as [Instance logs](/reference/instance-logs#know-which-file-the-gateway-reads) describes | Each line of the file |
 | systemd Process | The journal entries of `orbit-process-{id}-{name}.service`, and systemd's own messages about that unit | `2026-09-25T10:15:02+00:00 host name[pid]: message`, as `journalctl --output short-iso --utc` prints it |
-| Docker Process | The output of container `orbit-process-{id}-{name}` | Each line of standard output and standard error |
+| Docker Process | The output of container `orbit-process-{id}-{name}` | Each line of standard output and standard error, in the order the container wrote them |
 
-The agent follows a daily log file to the next day's file. When an earlier file becomes the newest again, it continues where it left that file, so no line is sent twice. It starts from the beginning of a file that was truncated. Journal lines match the one-shot read over SSH, which uses `journalctl --output short-iso --utc`.
+The agent follows a daily log file to the next day's file. When an earlier file becomes the newest again, it continues where it left that file, so no line is sent twice. It starts from the beginning of a file that was truncated. Journal lines match the one-shot read over SSH, which uses `journalctl --output short-iso --utc`. The agent reads at most 4 MiB of one journal message, as much as a one-shot read returns; a longer message is cut there and ends with the line `[orbit] message cut at 4 MiB`. The one-shot read of a Docker Process also returns both streams in one, in the same order.
 
 The agent refuses a log file that `root` owns, a link at `storage/logs` or at the log file, and a container without the labels `orbit.managed=true` and `orbit.process.id={id}`. The stream then ends with `source_unavailable`.
 
