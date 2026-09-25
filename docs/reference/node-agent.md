@@ -301,7 +301,9 @@ During a `websocket` move it joins the log channel on each Reverb server. A Node
 
 A log run takes the queued events in order, at most 256 KiB of lines at a time. It drops lines unless the stream is open for Node `{id}`. It redacts each line again, with the Gateway's patterns and the stored environment values of the Instance or Process, and publishes `log.lines` on the stream's channel through the Reverb HTTP API, in parts under 10,000 bytes. After each part it saves how far it got, so a repeated run skips what it already published.
 
-A log run publishes `log.ended` when the agent ends a stream, when `agent.{id}` leaves the log channel, and when the subscriber's queue falls behind. While a stream may be open, a run every 5 seconds also ends streams whose lease ended and streams whose opening Node lost its access edge. A run removes ended streams from the store and prompts the agent with `log-streams.changed`. Every 15 seconds, it also prompts again each Node with an active stream that has not relayed a line yet, so an agent that missed a prompt while Reverb was unreachable still starts the stream.
+A log run publishes `log.ended` when the agent ends a stream, when `agent.{id}` leaves the log channel, and when the subscriber's queue falls behind. While a stream may be open, a run every 5 seconds also ends streams whose lease ended and streams whose opening Node lost its access edge. A run removes ended streams from the store and prompts the agent with `log-streams.changed`.
+
+Every 15 seconds, it also prompts again each Node with an active stream that has not relayed a line yet, so an agent that missed a prompt while Reverb was unreachable still starts the stream. Each renewal of such a stream prompts the agent again as well, because the sweeps may have stopped when the prompt was lost.
 
 No line is lost silently. When a stream's queued lines pass 1 MiB, or all queued lines pass 16 MiB, or its lines wait through five failed runs in a row, the subscriber drops that stream's queued lines and ends it with `relay_behind`.
 
