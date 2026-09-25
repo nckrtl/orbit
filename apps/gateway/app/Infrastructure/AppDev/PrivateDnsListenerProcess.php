@@ -8,7 +8,7 @@ use Throwable;
 
 /**
  * Runs the private DNS listener. It depends on no framework code, so the Gateway can install it on the vpn Node as a
- * self-contained release. See ADR 0148.
+ * self-contained release. See ADR 0149.
  */
 final class PrivateDnsListenerProcess
 {

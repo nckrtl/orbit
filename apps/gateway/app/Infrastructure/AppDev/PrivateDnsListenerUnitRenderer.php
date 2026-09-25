@@ -6,7 +6,7 @@ namespace App\Infrastructure\AppDev;
 
 /**
  * Renders the listener's systemd units. `orbit-private-dns.socket` holds the UDP and TCP sockets, so a restart of
- * `orbit-private-dns.service` never closes them. The service runs `serve.php` from an installed release. ADR 0148.
+ * `orbit-private-dns.service` never closes them. The service runs `serve.php` from an installed release. ADR 0149.
  */
 final readonly class PrivateDnsListenerUnitRenderer
 {

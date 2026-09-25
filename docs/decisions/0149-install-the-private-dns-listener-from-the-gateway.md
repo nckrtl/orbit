@@ -1,10 +1,10 @@
 ---
-title: "ADR 0148: Install the private DNS listener from the Gateway"
-sidebarTitle: "0148 Install the private DNS listener from the Gateway"
+title: "ADR 0149: Install the private DNS listener from the Gateway"
+sidebarTitle: "0149 Install the private DNS listener from the Gateway"
 description: "Proposed. The Gateway builds the private DNS listener as a small release from its own code and installs it on the vpn Node with every listener publication. A systemd socket unit holds the DNS address, so a listener restart never stops VPN DNS. The listener confirms each catalog it loads."
 ---
 
-# ADR 0148: Install the private DNS listener from the Gateway
+# ADR 0149: Install the private DNS listener from the Gateway
 
 The Gateway builds the private DNS listener as a small release from its own code and installs it on the Node that holds `vpn` with every listener publication. `orbit-private-dns.socket` holds the DNS address, so restarting the listener never stops VPN DNS. The listener writes the digest of each catalog it loads, and the publication restarts a listener that does not confirm the published catalog.
 

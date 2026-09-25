@@ -10,7 +10,7 @@ use RuntimeException;
 /**
  * The private DNS listener as a self-contained release: `serve.php` plus every Gateway class the listener process
  * reaches, copied from the Gateway's own source. Its id is a digest of those files, so it changes exactly when the
- * listener code changes. See ADR 0148.
+ * listener code changes. See ADR 0149.
  */
 final class PrivateDnsListenerRelease
 {

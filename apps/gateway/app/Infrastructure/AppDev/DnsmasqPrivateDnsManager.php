@@ -203,7 +203,7 @@ final readonly class DnsmasqPrivateDnsManager implements PrivateDnsManager
     /**
      * Installs the listener release and its units, hands the DNS address to `orbit-private-dns.socket`, and makes
      * sure the running listener serves the published catalog. A restart keeps the sockets open in systemd, so it
-     * never stops VPN DNS. See ADR 0148.
+     * never stops VPN DNS. See ADR 0149.
      */
     private function listenerPublication(): string
     {

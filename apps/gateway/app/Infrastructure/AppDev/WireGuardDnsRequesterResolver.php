@@ -9,7 +9,7 @@ use App\Domain\AppDev\PrivateDnsRequesterResolver;
 
 /**
  * Resolves requesters from the published catalog. The listener release carries this class, so it uses no framework
- * code (ADR 0148). RegisteredNodeDnsRequesterResolver reads the same identity from the database.
+ * code (ADR 0149). RegisteredNodeDnsRequesterResolver reads the same identity from the database.
  */
 final readonly class WireGuardDnsRequesterResolver implements PrivateDnsRequesterResolver
 {

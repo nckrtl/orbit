@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 /*
  * Entry point of a private DNS listener release. The Gateway copies this file and the listener classes into
- * /var/lib/orbit/private-dns/releases/<id>/ on the Node that holds `vpn`. It needs no Composer autoloader. ADR 0148.
+ * /var/lib/orbit/private-dns/releases/<id>/ on the Node that holds `vpn`. It needs no Composer autoloader. ADR 0149.
  *
  * serve.php --listen=ADDRESS --port=53 --catalog=PATH --upstream=HOST:PORT
  * serve.php --self-test   loads every class in the release and exits 0
