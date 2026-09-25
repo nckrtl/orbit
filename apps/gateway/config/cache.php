@@ -14,9 +14,12 @@ return [
      | framework. This connection is utilized if another isn't explicitly
      | specified when running a cache operation inside the application.
      |
+     | The Gateway keeps its locks in this store and has no cache tables, so it
+     | defaults to files and refuses the database and null drivers at boot.
+     |
      */
 
-    'default' => env(key: 'CACHE_STORE', default: 'database'),
+    'default' => env(key: 'CACHE_STORE', default: 'file'),
 
     /*
      |--------------------------------------------------------------------------
