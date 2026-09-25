@@ -115,7 +115,8 @@
                 "Schedule"
             ],
             "governing_adrs": [
-                "0152"
+                "0152",
+                "0158"
             ]
         },
         {
@@ -4077,6 +4078,26 @@
             ]
         },
         {
+            "path": "docs/decisions/0158-end-interrupted-activity.md",
+            "title": "ADR 0158: End interrupted Activity",
+            "kind": "decision",
+            "components": [
+                "apps/docs",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Database",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Process"
+            ],
+            "governing_adrs": [
+                "0152",
+                "0158"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -4262,7 +4283,8 @@
                 "0154",
                 "0155",
                 "0156",
-                "0157"
+                "0157",
+                "0158"
             ]
         },
         {

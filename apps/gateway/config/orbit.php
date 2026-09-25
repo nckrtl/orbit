@@ -31,6 +31,9 @@ return [
     // PHP-FPM and Caddy end a Gateway request after 600 seconds. The command deadline ends remote
     // work 30 seconds earlier, so a slow command fails with an error and records its Activity.
     'command_timeout' => 570.0,
+    // No Gateway request outlives the 600-second PHP-FPM limit, streamed deployments included. An
+    // Activity still `running` 300 seconds after that belongs to a request that was killed.
+    'activity_interrupted_after' => 900,
     'websocket' => [
         'repository' => env(key: 'ORBIT_WEBSOCKET_REPOSITORY', default: 'https://github.com/nckrtl/orbit-reverb.git'),
         'ref' => env(key: 'ORBIT_WEBSOCKET_REF', default: 'main'),

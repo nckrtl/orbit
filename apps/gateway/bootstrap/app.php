@@ -23,6 +23,7 @@ use App\Http\Middleware\NormalizeErrorDetails;
 use App\Http\Middleware\RecordCommandActivity;
 use App\Http\Middleware\RequireActiveWireGuardPeer;
 use App\Http\Middleware\RequireNodeAccess;
+use App\Infrastructure\Activity\ActivityShutdownFinalizer;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuildException;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -33,6 +34,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Validation\ValidationException;
+use Symfony\Component\ErrorHandler\Error\FatalError;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 if (
@@ -55,6 +57,7 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withSchedule(function (Schedule $schedule): void {
         app(TaskSchedule::class)->register($schedule);
         $schedule->command('annotations:dispatch')->everyTenSeconds()->withoutOverlapping();
+        $schedule->command('orbit:activity-finalize-interrupted')->everyFiveMinutes()->withoutOverlapping();
     })
     ->withCommands()
     ->withMiddleware(function (Middleware $middleware): void {
@@ -65,6 +68,11 @@ return Application::configure(basePath: dirname(__DIR__))
     })
     ->withExceptions(
         function (Exceptions $exceptions): void {
+            // Runs before log context is built, which can exhaust memory again and stop later shutdown code.
+            $exceptions->report(function (FatalError $exception): void {
+                ActivityShutdownFinalizer::finalizeArmed();
+            });
+
             $exceptions->render(function (AppInstanceRemovalException $exception, Request $request): JsonResponse {
                 $request->attributes->set('orbit.error_code', $exception->errorCode);
                 $removal = AppInstanceRemovalData::fromModel($exception->removal)->toArray();

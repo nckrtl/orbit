@@ -60,13 +60,22 @@ Human output uses a detail tree with the command and status, the request ID the 
 
 | Request | Activity |
 | --- | --- |
-| Any method other than `GET` or `HEAD` | Always. The record is `running` while the request is in flight. |
+| Any method other than `GET` or `HEAD` | Always. The record is `running` while the request is in flight. A request that ends without recording its outcome is marked interrupted, as [Interrupted requests](#interrupted-requests) explains. |
 | A `GET` or `HEAD` request that fails | Always, written when the request ends. |
 | A successful `GET` or `HEAD` request | Once per command, caller address, and target path in any 60 seconds. Other identical reads in that window write nothing. |
 | A `schedule:*` operation | Always. |
 | A successful read of a `:credentials` route | Always. |
 
 A polling client therefore adds about one record per command and target per minute. Reading the logs of two Processes keeps a record for each. If the sampling cache fails, the Gateway records the read. `--request-id` finds no record for a successful read that fell inside another read's window. [ADR 0152](/decisions/0152-sample-successful-read-activity) records this rule.
+
+## Interrupted requests
+
+A request can end before it records its outcome. PHP-FPM ends every Gateway request after 600 seconds, the kernel can kill a worker that runs out of memory, and a Gateway deploy restarts its workers. The Gateway then ends the record as `failed` with the error code `activity.interrupted`. Its duration and exit code stay null.
+
+- After a fatal error in PHP, such as exhausted memory, or a client abort, the Gateway ends the record when the request shuts down.
+- A killed worker runs no code. The Gateway scheduler runs `php artisan orbit:activity-finalize-interrupted` every five minutes. It ends every record still `running` 900 seconds after it started, at most 500 records per run, oldest first. No request can run that long, so the sweep never ends a command that is still working.
+
+`activity.interrupted` means the Gateway lost the request, not that the operation failed on its target. The operation may have finished on the Node, so check the target before you run the command again. [ADR 0158](/decisions/0158-end-interrupted-activity) records this rule.
 
 ## What a record holds
 
@@ -80,7 +89,7 @@ A polling client therefore adds about one record per command and target per minu
 | `caller_ip` | The address the request came from, or null. |
 | `target_node_id` | The Node the operation acted on, or null. |
 | `subject_type`, `subject_id` | The record the operation acted on, when there is one. |
-| `duration_ms` | How long the Gateway took, or null while running. |
+| `duration_ms` | How long the Gateway took, or null while running and for an interrupted request. |
 | `exit_code` | The exit code of a remote operation, when one applies. |
 | `error_code` | The stable error code of a failed attempt, or null. |
 | `properties` | Bounded operation metadata such as the step that failed or the release a deployment selected. |

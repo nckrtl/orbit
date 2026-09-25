@@ -113,6 +113,8 @@ The [service metrics](/reference/service-metrics) extension observes each dedica
 
 Both roles use `pm = ondemand` with `pm.process_idle_timeout = 10s` and `pm.max_requests = 500`. `pm.max_children` is 10 on an app-dev pool and 20 on an app-prod pool. The Gateway's own `orbit-gateway` pool uses 8, because its host runs the scheduler and task ticks beside it, and each open agent stream holds one worker. A Gateway request ends after 600 seconds, and Caddy's FastCGI timeouts match. The Gateway ends an API command's remote work after 570 seconds, so a slow command fails with `command.deadline_exceeded` and records its Activity before PHP-FPM ends the request. The longest recorded operation, `instance:register`, took 522 seconds. An agent stream reconnects when its request ends. [ADR 0021](/decisions/0021-pin-sury-php-fpm-with-opcache-profiles-per-role) records why both roles use `ondemand`.
 
+A request killed before it records its Activity, for example by that limit or by the OOM killer, ends as `activity.interrupted` within 20 minutes, as the [activity](/cli/activity#interrupted-requests) page explains.
+
 ## Caddy
 
 Production sites add an immutable cache header for Vite build output:
