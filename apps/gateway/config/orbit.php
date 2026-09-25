@@ -58,6 +58,8 @@ return [
         'implementer_model' => env('ORBIT_TASKS_IMPLEMENTER_MODEL'),
         'reviewer_model' => env('ORBIT_TASKS_REVIEWER_MODEL'),
         'observation_grace_seconds' => (int) env('ORBIT_TASKS_OBSERVATION_GRACE_SECONDS', 120),
+        // A group reserved longer than this returns to todo on the next tick. Keep it well above the slowest workspace provision.
+        'reserved_timeout_seconds' => max(60, (int) env('ORBIT_TASKS_RESERVED_TIMEOUT_SECONDS', 3600)),
         'coder_webhook_url' => env('ORBIT_CODER_WEBHOOK_URL'),
         'coder_webhook_secret' => env('ORBIT_CODER_WEBHOOK_SECRET'),
         'jev_confidence_threshold' => (float) env('ORBIT_TASKS_JEV_CONFIDENCE_THRESHOLD', 0.75),

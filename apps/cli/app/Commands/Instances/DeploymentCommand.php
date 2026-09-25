@@ -65,11 +65,7 @@ abstract class DeploymentCommand extends GatewayCommand
                 }
             }
         } catch (GatewayApiException $exception) {
-            return $this->renderStreamFailure(
-                $exception->errorCode() ?? 'deployment.stream_invalid',
-                $exception->getMessage(),
-                $exception->requestId() ?? $this->requestId,
-            );
+            return $this->renderApiFailure($exception, 'deployment.stream_invalid', $this->requestId);
         } catch (Throwable) {
             return $this->renderStreamFailure(
                 'deployment.stream_failed',
@@ -187,11 +183,7 @@ abstract class DeploymentCommand extends GatewayCommand
             }
 
             if ($exception instanceof GatewayApiException) {
-                return $this->renderStreamFailure(
-                    $exception->errorCode() ?? 'deployment.stream_invalid',
-                    $exception->getMessage(),
-                    $exception->requestId() ?? $this->requestId,
-                );
+                return $this->renderApiFailure($exception, 'deployment.stream_invalid', $this->requestId);
             }
 
             return $this->renderStreamFailure(

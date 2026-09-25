@@ -580,7 +580,7 @@ final readonly class MetricsSshExecutor implements MetricsCredentialRuntime, Met
             ]),
         );
 
-        if ($absence->succeeded() && trim($absence->stdout) === '') {
+        if ($absence->succeeded() && trim($absence->stdout) === '' || $this->dockerAbsent($node)) {
             return null;
         }
 
@@ -608,7 +608,7 @@ final readonly class MetricsSshExecutor implements MetricsCredentialRuntime, Met
             new RemoteCommand(['sudo', 'docker', 'volume', 'ls', '--filter', "name=^{$name}$", '--format={{.Name}}']),
         );
 
-        if ($absence->succeeded() && trim($absence->stdout) === '') {
+        if ($absence->succeeded() && trim($absence->stdout) === '' || $this->dockerAbsent($node)) {
             return null;
         }
 
@@ -985,6 +985,22 @@ final readonly class MetricsSshExecutor implements MetricsCredentialRuntime, Met
         );
 
         return $result->succeeded() && trim($result->stdout) === 'healthy';
+    }
+
+    /**
+     * Whether the Node has no Docker at all, so no Metrics container or volume can exist there. A Metrics
+     * convergence that failed before Docker was installed leaves nothing for removal to inspect. Only an
+     * explicit answer counts: a probe that fails is not taken as absence.
+     */
+    private function dockerAbsent(Node $node): bool
+    {
+        $result = $this->raw($node, new RemoteCommand([
+            'sh',
+            '-c',
+            'if command -v docker >/dev/null 2>&1; then echo present; else echo absent; fi',
+        ]));
+
+        return $result->succeeded() && trim($result->stdout) === 'absent';
     }
 
     private function pathExists(Node $node, string $path, bool $directory = false): bool

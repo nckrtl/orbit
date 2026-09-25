@@ -77,11 +77,7 @@ final class UpdateInstanceDependenciesCommand extends GatewayCommand
                 InstanceDependencyUpdateResponse::class,
             ));
         } catch (GatewayApiException $exception) {
-            return $this->renderGatewayFailure(
-                $exception->errorCode() ?? 'gateway.request_failed',
-                $exception->getMessage(),
-                $exception->requestId(),
-            );
+            return $this->renderApiFailure($exception);
         } catch (FatalRequestException) {
             return $this->renderGatewayFailure('gateway.unreachable', 'Could not reach the gateway.');
         } catch (ConsoleInterrupted) {

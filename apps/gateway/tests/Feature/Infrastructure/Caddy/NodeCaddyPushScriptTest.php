@@ -288,6 +288,36 @@ describe('a failed build', function (): void {
             ->and($this->harness->validations())->toBe([]);
     });
 
+    it('changes nothing for a render without sites on a Node without Caddy', function (): void {
+        unlink($this->harness->root.'/bin/caddy');
+
+        $result = $this->harness->push(node_caddy_push_empty_file());
+
+        expect($result['exit'])->toBe(0, $result['stderr'])
+            ->and($result['stdout'])->toBe("orbit-caddy-build-result=unchanged\n")
+            ->and(file_exists($this->harness->path('Caddyfile')))->toBeFalse()
+            ->and($this->harness->directories('orbit-versions'))->toBe([])
+            ->and($this->harness->serviceCalls())->toBe([]);
+    });
+
+    it('still refuses a render with sites on a Node without Caddy', function (): void {
+        unlink($this->harness->root.'/bin/caddy');
+
+        $result = $this->harness->push(node_caddy_push_file('shop.test'));
+
+        expect($result['exit'])->not->toBe(0)
+            ->and($result['stderr'])->toContain('reported no release')
+            ->and($result['stderr'])->toContain('orbit-caddy-build-stage=release')
+            ->and($this->harness->directories('orbit-versions'))->toBe([]);
+    });
+
+    it('publishes a render without sites on a Node with Caddy', function (): void {
+        $result = $this->harness->push(node_caddy_push_empty_file());
+
+        expect($result['exit'])->toBe(0, $result['stderr'])
+            ->and($result['stdout'])->toBe("orbit-caddy-build-result=published\n");
+    });
+
     it('accepts the floor release itself', function (): void {
         $result = $this->harness->push(node_caddy_push_file('shop.test'), ['HARNESS_CADDY_VERSION' => 'v2.9.0 h1:abc']);
 
@@ -328,7 +358,8 @@ it('runs as root through the fixed script arguments', function (): void {
     $command = new NodeCaddyPushScript()->command(node_caddy_push_file('shop.test'));
 
     expect(array_slice($command->arguments, 0, 4))->toBe(['sudo', 'bash', '-seu', '--'])
-        ->and(array_slice($command->arguments, 5))->toBe(['/etc/caddy', '/usr/bin/caddy', 'caddy', '/run/lock/orbit/caddy.lock', '2.9.0', NodeCaddyfileRenderer::Marker, '9', '10.44.0.9']);
+        ->and(array_slice($command->arguments, 5))->toBe(['/etc/caddy', '/usr/bin/caddy', 'caddy', '/run/lock/orbit/caddy.lock', '2.9.0', NodeCaddyfileRenderer::Marker, '9', '10.44.0.9', '0'])
+        ->and(array_slice(new NodeCaddyPushScript()->command(node_caddy_push_empty_file())->arguments, -1))->toBe(['1']);
 });
 
 function node_caddy_push_file(string $domain): NodeCaddyfile
@@ -351,4 +382,9 @@ function node_caddy_push_file(string $domain): NodeCaddyfile
     };
 
     return new NodeCaddyfileRenderer([$source])->render(new Node(['name' => 'node', 'wireguard_ip' => '10.44.0.9']));
+}
+
+function node_caddy_push_empty_file(): NodeCaddyfile
+{
+    return new NodeCaddyfileRenderer([])->render(new Node(['name' => 'node', 'wireguard_ip' => '10.44.0.9']));
 }

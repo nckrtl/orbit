@@ -36,6 +36,8 @@ final class TickTaskSessionsCommand extends Command
 
         try {
             $decisions = $scheduler->tick();
+            $scheduler->releaseStaleReservations();
+            $scheduler->removeAbandonedWorkspaces();
             $started = $scheduler->claimAvailable();
             $planners->observe();
         } finally {

@@ -471,7 +471,25 @@ abstract class GatewayCommand extends Command
         ConsoleWriter::write($this->output, json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)."\n");
     }
 
-    /** @param array<string,string> $details */
+    /**
+     * Renders a Gateway error with the bounded details it carries.
+     */
+    protected function renderApiFailure(
+        GatewayApiException $exception,
+        string $fallbackCode = 'gateway.request_failed',
+        ?string $fallbackRequestId = null,
+    ): int {
+        $code = $exception->errorCode() ?? $fallbackCode;
+
+        return $this->renderGatewayFailure(
+            $code,
+            $exception->getMessage(),
+            $exception->requestId() ?? $fallbackRequestId,
+            details: GatewayFailureRenderer::safeDetails($code, $exception->details()),
+        );
+    }
+
+    /** @param array<string,mixed> $details */
     protected function renderGatewayFailure(
         string $code,
         string $message,
