@@ -44,7 +44,7 @@ The Gateway owns authorization, the stream list, the relay, and the second redac
 6. The viewer renews the lease every 20 seconds with `PUT` and closes the stream with `DELETE` on the same path. Renewal checks the access edge again and requires the viewer's Node to be the Node that opened the stream. A viewer that disappears stops the stream when its lease ends.
 7. Every 5 seconds while a stream may be open, a relay run ends each stream whose lease ended, with `expired`, and each stream whose viewer lost its access edge, with `revoked`.
 
-The Gateway refuses a stream with `logs.live_unavailable` (409) and a reason when it cannot serve one: the record is a production Instance (`ssh_only`), realtime is not configured, the subscriber is down, the Node's view is not fresh, or the Node's agent has not joined the log channel. It allows 16 open streams for each serving Node and refuses more with `logs.stream_limit` (429).
+The Gateway refuses a stream with `logs.live_unavailable` (409) and a reason when it cannot serve one: the record is a production Instance (`ssh_only`), realtime is not configured, the subscriber is down, the Node's view is not fresh, the Node's agent is older than 0.3.0 (`agent_outdated`), or a newer agent has not joined the log channel yet (`agent_not_joined`). The subscriber reads the agent's version from its membership of `presence-node.{id}`. It allows 16 open streams for each serving Node and refuses more with `logs.stream_limit` (429).
 
 ### Tell the agent
 
@@ -72,6 +72,7 @@ A viewer names only an Instance or a Process. The Gateway resolves the source fr
 - The agent joins a second presence channel, `presence-node-logs.{id}`, as member `agent.{id}`. The agent auth endpoint signs it only for the Node's own address. The subscriber joins it as `gateway.{socket id}`. The browser auth endpoint refuses it.
 - The agent sends `client-log` events there: `{ stream, sequence, lines, dropped, skipped }`, each under 10,000 bytes. It sends `client-log-end` with a reason when a source ends. Reverb stamps both with `agent.{id}`.
 - The subscriber accepts an event only from `agent.{id}` and queues it. A relay run then drops it unless the stream is open for Node `{id}`.
+- Only the agent may join the log channel as `agent.{id}`. The agent endpoints identify the Node by its WireGuard address, which every local user on the Node shares. Every `agent/*` route therefore also requires the Node's agent secret, a file that only `root` can read and that `orbit-agent.service` loads. The agent secret change, on branch `nck/agent-secret`, adds it. Without the secret, a local user such as an app user cannot fetch the stream list or sign a membership of `presence-node-logs.{id}`, so it can neither read another viewer's lines nor inject lines into their streams. Agent 0.3.0 also refuses to start outside `orbit-agent.service`, which it checks in its own cgroup, and the running agent holds the lock on `/etc/orbit/agent`. Those checks stop a stray copy of the agent, not a user who writes their own client; the secret stops that user.
 
 ### Production Instances stay on SSH
 
@@ -96,7 +97,7 @@ We chose the relay over direct publishing by the agent. With direct publishing, 
 
 - The agent applies the Gateway's secret patterns to each line before it sends it: PEM blocks, URL credentials, `Authorization` headers, `Bearer` tokens, and values after a secret-named key in `KEY=value`, JSON, and `key: value` form. A PEM block that spans lines is redacted from its `BEGIN` line to its `END` line, for at most 200 lines.
 - One table of test cases in `apps/agent` holds the expected result of each pattern. The agent tests and a Gateway test both run it, so the two implementations stay the same.
-- The Gateway applies the patterns again and replaces the stored environment values, as the one-shot reads do.
+- The Gateway applies the patterns again and replaces the stored environment values of eight characters or more, as the one-shot reads do. It skips the values of setting keys, such as `APP_ENV` and `LOG_CHANNEL`, which would otherwise hide ordinary words such as `production` in `production.INFO`.
 - Redaction is a safety net, not access control. It misses a secret with no recognizable shape or key name, a secret split across lines or encoded, a short environment value that the Gateway skips, and personal data such as email addresses. Access to the Node decides who may read a log.
 
 ### Bound rate and memory
@@ -118,7 +119,8 @@ We chose the relay over direct publishing by the agent. With direct publishing, 
 ### Clients
 
 - The web app log panes open a stream when the realtime socket is live, and show the first lines from the stream. They do not poll while the stream runs. They fall back to the 10-second poll when the Gateway refuses the stream, the stream ends, or the socket drops. A refusal or an end shows no error, except `revoked`.
-- `orbit process:logs` gains `--follow`. `orbit instance:logs` is new, with the same options. Without `--follow`, both return one tail over SSH, as today. With `--follow`, the CLI prints the first lines and then each new line from the stream. When the live path is not available, it polls the one-shot read every 5 seconds and prints the lines after the last line it printed.
+- `orbit process:logs` gains `--follow`. `orbit instance:logs` is new, with the same options. Without `--follow`, both return one tail over SSH, as today. With `--follow`, the CLI prints the first lines and then each new line from the stream. When the live path is not available, it polls the one-shot read every 5 seconds and prints the lines after the last line it printed. After the first poll, it reads 1,000 lines to find that line. When the line is not there, because more lines were written or the log was rotated, it prints `[orbit] lines may be missing` and the newest `--lines` lines. A reopened stream also asks for 1,000 earlier lines, for the same reason.
+- Six reasons pass on their own: `agent_not_joined`, `agent_unavailable`, `subscriber_down`, `logs.stream_limit`, and the ends `agent_left` and `relay_behind`. For these, both clients try the live path again every 30 seconds while they poll. A `websocket` move is such a case: the agent rejoins its log channel on the new server a few seconds after it reconnects.
 
 ### One-shot reads stay on SSH
 
@@ -143,6 +145,7 @@ The rest of the boundary stays. The agent runs no program, opens no port, writes
 | A member of `presence-node.{id}`, such as any browser with Gateway access | Read log lines | No log line is sent on `presence-node.{id}`. Log lines use `presence-node-logs.{id}`, which the browser endpoint refuses. |
 | A browser or client that sends input | Name a path, unit, or container | Clients send only a record ID and a line count. The agent never receives client input. |
 | App code on a Node | Point `laravel.log` or `storage/logs` at another file with a link | The agent opens both without following a symbolic link and refuses a file that `root` owns. |
+| A local user on the serving Node, such as an app user | Call the agent endpoints from the Node's WireGuard address, join `presence-node-logs.{id}` as `agent.{id}`, read the Node's streams, or inject lines | Every `agent/*` route requires the Node's agent secret, which only `root` can read. Without it the Gateway lists no stream and signs no membership. |
 | A compromised Node | Send lines for another Node's stream, or flood the Gateway | A relay run publishes lines from `agent.{id}` only for streams of Node `{id}`. The subscriber's rate and backlog limits bound a flood. A Node can already lie about its own logs. |
 | A compromised Gateway | List any path | It can list only the three source types, and the agent checks each. A compromised Gateway already holds SSH to every Node. |
 | The `websocket` role Node | Read lines in transit | Reverb sees every log line in plain text after TLS ends on that Node, as it sees every realtime message. Orbit trusts it as part of the realtime layer. |
@@ -165,7 +168,7 @@ The rest of the boundary stays. The agent runs no program, opens no port, writes
 
 ## Consequences
 
-- An open log pane costs no SSH command and no API call while its stream runs, apart from one renewal every 20 seconds. New lines show within about a second.
+- An open log pane costs no SSH command and no API call while its stream runs, apart from one renewal every 20 seconds. New lines show within about two seconds.
 - The Gateway handles one request to open a stream, one renewal every 20 seconds for each viewer, and one agent list request for each change and every 15 seconds while a Node streams.
 - Every log line passes through the subscriber's queue and a relay run. A flood on many Nodes can use Gateway CPU up to the relay rate of 64 KiB per second for each open stream. While streams are open, the relay starts a PHP process every 5 seconds to sweep, and one for each batch of lines.
 - A slow or stopped Reverb delays lines, not the agent view. Lines wait in the subscriber's memory, up to the relay backlog. A stream that falls further behind ends with `relay_behind`.
@@ -173,7 +176,7 @@ The rest of the boundary stays. The agent runs no program, opens no port, writes
 - The Node reads log content only while someone watches it. Redaction happens twice, and it still misses what no pattern recognizes.
 - The agent gains a journal reader and a file reader. A journal field that uses xz compression shows as `[orbit] entry not readable`. The journal view shows the unit's entries and systemd's own messages about the unit, in the form `2026-09-25T10:15:02+00:00 name[pid]: message`, which differs from `journalctl --output short-iso` by the missing host name.
 - A log file that `root` owns, for example one written by `sudo php artisan`, cannot stream. A `laravel.log` that is a symbolic link also cannot stream, while the one-shot read skips it and reads the newest daily file. Both streams end with `source_unavailable`, and the viewer falls back to SSH reads.
-- Nodes need agent 0.3.0 for the live path. Older agents never join the log channel, so the Gateway refuses streams for their Nodes and clients use SSH reads.
+- Nodes need agent 0.3.0 for the live path. Older agents never join the log channel, so the Gateway refuses streams for their Nodes with `agent_outdated` and clients use SSH reads.
 - The `websocket` role Node sees log lines in transit.
 
 ## Affects
