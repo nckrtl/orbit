@@ -14,7 +14,7 @@ return [
      |
      */
 
-    'default' => env(key: 'QUEUE_CONNECTION', default: 'database'),
+    'default' => env(key: 'QUEUE_CONNECTION', default: 'sync'),
 
     /*
      |--------------------------------------------------------------------------

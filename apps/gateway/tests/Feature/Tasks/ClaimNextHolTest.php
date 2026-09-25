@@ -19,8 +19,11 @@ use App\Models\AppInstanceRemoval;
 use App\Models\Node;
 use App\Models\Task;
 use App\Models\TaskGroup;
+use Illuminate\Cache\ArrayStore;
+use Illuminate\Contracts\Cache\Repository;
 use Illuminate\Database\DeadlockException;
 use Illuminate\Database\QueryException;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Exceptions;
 
 it('claimNext continues after provision null', function (): void {
@@ -559,6 +562,48 @@ describe('the abandoned workspace sweep', function (): void {
         $this->travel(TaskScheduler::AbandonedWorkspaceBackoffSeconds)->seconds();
         expect(app(TaskScheduler::class)->removeAbandonedWorkspaces())->toBe(5)
             ->and(AppInstance::query()->count())->toBe(0);
+    });
+
+    it('keeps sweeping and ticking when the backoff cache fails', function (): void {
+        Exceptions::fake();
+        Cache::extend('failing', static fn (): Repository => Cache::repository(new class extends ArrayStore
+        {
+            #[Override]
+            public function get($key): mixed
+            {
+                throw new RuntimeException('The cache could not be read.');
+            }
+
+            #[Override]
+            public function put($key, $value, $seconds): bool
+            {
+                throw new RuntimeException('The cache could not be written.');
+            }
+
+            #[Override]
+            public function forget($key): bool
+            {
+                throw new RuntimeException('The cache could not be written.');
+            }
+        }));
+        config(['cache.stores.failing' => ['driver' => 'failing'], 'cache.default' => 'failing']);
+        claim_hol_enable();
+        $app = claim_hol_app();
+        $remover = claim_hol_failing_remover();
+        $failing = claim_hol_group($app, 'Failing');
+        $failing->forceFill(['status' => TaskGroupStatus::Cancelled])->save();
+        $remover->failing[] = claim_hol_workspace($app, $failing, 'source_resolved')->id;
+        $good = claim_hol_group($app, 'Good');
+        $good->forceFill(['status' => TaskGroupStatus::Cancelled])->save();
+        $goodWorkspace = claim_hol_workspace($app, $good, 'source_resolved');
+
+        expect(app(TaskScheduler::class)->removeAbandonedWorkspaces())->toBe(1)
+            ->and(AppInstance::query()->find($goodWorkspace->id))->toBeNull()
+            ->and($remover->attempts)->toHaveCount(2);
+
+        $this->artisan('tasks:tick')->assertSuccessful();
+
+        expect($remover->attempts)->toHaveCount(3);
     });
 
     it('stops starting removals once the tick has spent its time budget', function (): void {

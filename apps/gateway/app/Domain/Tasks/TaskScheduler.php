@@ -1055,9 +1055,8 @@ final readonly class TaskScheduler
             }
 
             $backoffKey = 'tasks.workspace-removal.'.$workspace->id;
-            /** @var array{failures: int, due: int}|null $backoff */
-            $backoff = Cache::get($backoffKey);
-            if (is_array($backoff) && $backoff['due'] > now()->getTimestamp()) {
+            $backoff = $this->workspaceRemovalBackoff($backoffKey);
+            if ($backoff !== null && $backoff['due'] > now()->getTimestamp()) {
                 continue;
             }
 
@@ -1068,21 +1067,60 @@ final readonly class TaskScheduler
 
             try {
                 $this->workspaces->remove($instance);
-                Cache::forget($backoffKey);
+                $this->rememberWorkspaceRemovalBackoff($backoffKey, null);
                 Log::warning('Removed the workspace of an ended task group.', ['task_group_id' => (int) $workspace->getAttribute('ended_task_group_id'), 'app_instance_id' => $workspace->id]);
                 $removed++;
             } catch (Throwable $exception) {
                 report($exception);
-                $failures = (is_array($backoff) ? $backoff['failures'] : 0) + 1;
+                $failures = ($backoff['failures'] ?? 0) + 1;
                 $delay = min(
                     self::AbandonedWorkspaceBackoffSeconds * 2 ** min($failures - 1, 20),
                     max(self::AbandonedWorkspaceBackoffSeconds, (int) config('orbit.tasks.reserved_timeout_seconds')),
                 );
-                Cache::put($backoffKey, ['failures' => $failures, 'due' => now()->addSeconds($delay)->getTimestamp()], now()->addSeconds($delay * 2));
+                $this->rememberWorkspaceRemovalBackoff($backoffKey, ['failures' => $failures, 'due' => now()->addSeconds($delay)->getTimestamp()], $delay * 2);
             }
         }
 
         return $removed;
+    }
+
+    /**
+     * Reads a workspace removal backoff. A cache error is logged and read as no backoff, so one bad read never
+     * stops the sweep or the tick.
+     *
+     * @return array{failures: int, due: int}|null
+     */
+    private function workspaceRemovalBackoff(string $key): ?array
+    {
+        try {
+            $backoff = Cache::get($key);
+        } catch (Throwable $exception) {
+            Log::warning('The workspace removal backoff could not be read.', ['key' => $key, 'exception' => $exception::class, 'reason' => $exception->getMessage()]);
+
+            return null;
+        }
+
+        return is_array($backoff) && is_int($backoff['failures'] ?? null) && is_int($backoff['due'] ?? null)
+            ? ['failures' => $backoff['failures'], 'due' => $backoff['due']]
+            : null;
+    }
+
+    /**
+     * Stores or clears a workspace removal backoff. A cache error is logged and the sweep continues.
+     *
+     * @param  array{failures: int, due: int}|null  $backoff
+     */
+    private function rememberWorkspaceRemovalBackoff(string $key, ?array $backoff, int $seconds = 0): void
+    {
+        try {
+            if ($backoff === null) {
+                Cache::forget($key);
+            } else {
+                Cache::put($key, $backoff, now()->addSeconds($seconds));
+            }
+        } catch (Throwable $exception) {
+            Log::warning('The workspace removal backoff could not be written.', ['key' => $key, 'exception' => $exception::class, 'reason' => $exception->getMessage()]);
+        }
     }
 
     /** @return Collection<int, AppInstance> */

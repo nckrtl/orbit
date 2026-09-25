@@ -69,6 +69,7 @@
     },
     "config": {
         "preferred-install": "dist",
+        "process-timeout": 0,
         "sort-packages": true,
         "optimize-autoloader": true,
         "allow-plugins": {

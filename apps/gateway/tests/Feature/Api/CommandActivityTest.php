@@ -33,6 +33,8 @@ use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\ToolManagerRegistry;
 use App\Domain\Tools\ToolRemovalPlan;
 use App\Domain\Tools\ToolStatus;
+use App\Infrastructure\Gateway\GatewayCaddyConfigRenderer;
+use App\Infrastructure\Gateway\GatewayFpmConfigRenderer;
 use App\Infrastructure\Processes\CommandResult;
 use App\Models\Activity;
 use App\Models\App as OrbitApp;
@@ -1774,3 +1776,13 @@ final readonly class CommandActivityEnvironmentAccess implements AppInstanceEnvi
         return AppInstanceEnvironmentWriteResult::changed();
     }
 }
+
+it('ends every API command before PHP-FPM and Caddy end its request', function (): void {
+    preg_match('/request_terminate_timeout = (\d+)s/', new GatewayFpmConfigRenderer()->renderPool('/checkout', '/home/orbit/.orbit'), $fpm);
+    preg_match_all('/(?:read|write)_timeout (\d+)s/', new GatewayCaddyConfigRenderer()->render('gateway.orbit', '10.44.0.1', '/checkout', '/checkout/public'), $caddy);
+    $deadline = config('orbit.command_timeout');
+
+    expect($fpm[1] ?? null)->not->toBeNull()
+        ->and($caddy[1])->not->toBeEmpty()
+        ->and($deadline)->toBeLessThanOrEqual(min((float) $fpm[1], ...array_map(floatval(...), $caddy[1])) - 30.0);
+});

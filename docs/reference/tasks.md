@@ -266,7 +266,7 @@ An Instance that only shares the name, with another branch, is never resumed or 
 
 When a group is cancelled while its claim runs, the claim removes the workspace it provisioned, or the part of it that exists when provisioning fails, and the group stays `cancelled`. When that claim stops before it can, each tick removes the `task-{group id}` workspace of a `cancelled` or `completed` group that holds no Instance and was reserved longer ago than `ORBIT_TASKS_RESERVED_TIMEOUT_SECONDS`, or never.
 
-A tick starts no new removal after it has spent 60 seconds on them, well inside its 300-second lock, and the rest wait for the next tick. A failed removal goes to the application log and backs off for that Instance only: 60 seconds after the first failure, doubling after each further failure, up to `ORBIT_TASKS_RESERVED_TIMEOUT_SECONDS`. A workspace that keeps failing therefore never blocks the removal of another one.
+A tick starts no new removal after it has spent 60 seconds on them, well inside its 300-second lock, and the rest wait for the next tick. A failed removal goes to the application log and backs off for that Instance only: 60 seconds after the first failure, doubling after each further failure, up to `ORBIT_TASKS_RESERVED_TIMEOUT_SECONDS`. A workspace that keeps failing therefore never blocks the removal of another one. When the Gateway cannot read or write a backoff in its cache, it logs a warning, tries the removal as if no backoff exists, and continues the sweep and the tick.
 
 If the stopped claim created a workspace, provisioning finds it by its `task-{group id}` name and resumes it on its Node. When that Node is at the ceiling, the group waits for capacity. When that Node does not fit the group, provisioning returns no Instance. A claim whose provision outlasts the bound finds its group in `todo`. It attaches the Instance to the group and leaves the group in `todo` for the next claim.
 
@@ -419,7 +419,7 @@ Confidence below `ORBIT_TASKS_JEV_CONFIDENCE_THRESHOLD` (default `0.75`) becomes
 
 Gateway uses `laravel/ai` Classification with its official TypeSafe provider in `config/ai.php`. The package client posts to TypeSafe. Tests use the package fake and never call the network.
 
-Run the tick with `php artisan tasks:tick` while the extension is enabled. One Gateway lock protects scheduled and manual ticks. A held lock skips the invocation without routing or claiming work. After current work and merge checks, the tick fills available Node capacity with the oldest `todo` groups.
+Run the tick with `php artisan tasks:tick` while the extension is enabled. One lock in the Gateway cache store protects scheduled and manual ticks. A held lock skips the invocation without routing or claiming work. After current work and merge checks, the tick fills available Node capacity with the oldest `todo` groups.
 
 A provisioning failure leaves the group in `todo` with its assistance reason visible, and the tick continues to the next eligible group. The tick tries each failing group once. A full fleet ends the claims for that tick without a reason on any group. Groups that are reserved, running, reviewing, settling, assisted, or awaiting merge count toward the limit of 10.
 
