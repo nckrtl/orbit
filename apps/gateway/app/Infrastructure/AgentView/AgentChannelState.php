@@ -72,24 +72,23 @@ final class AgentChannelState
 
         if ($event === 'client-snapshot') {
             $this->applySnapshotPart($sequence, $data);
-        } else {
-            $this->sequence = $sequence;
-            $this->pending = null;
+            $this->noteSnapshotNeed($receivedAt);
 
-            if ($event === 'client-process') {
-                $unit = is_array($data['unit'] ?? null) ? $this->unit($data['unit']) : null;
+            return true;
+        }
 
-                if ($unit !== null && (isset($this->units[$unit[0]]) || count($this->units) < self::MaxUnits)) {
-                    $this->units[$unit[0]] = $unit[1];
-                }
+        $this->sequence = $sequence;
+        $this->pending = null;
+
+        if ($event === 'client-process') {
+            $unit = is_array($data['unit'] ?? null) ? $this->unit($data['unit']) : null;
+
+            if ($unit !== null && (isset($this->units[$unit[0]]) || count($this->units) < self::MaxUnits)) {
+                $this->units[$unit[0]] = $unit[1];
             }
         }
 
-        if (! $this->hasSnapshot || $this->sequenceWentBack) {
-            $this->snapshotWantedSince ??= $receivedAt;
-        } else {
-            $this->snapshotWantedSince = null;
-        }
+        $this->noteSnapshotNeed($receivedAt);
 
         return true;
     }
@@ -99,6 +98,16 @@ final class AgentChannelState
     {
         $this->snapshotWantedSince = null;
         $this->sequenceWentBack = false;
+    }
+
+    /** A snapshot that completes after the sequence went back can come from the second connection, so it settles nothing. */
+    private function noteSnapshotNeed(float $receivedAt): void
+    {
+        if (! $this->hasSnapshot || $this->sequenceWentBack) {
+            $this->snapshotWantedSince ??= $receivedAt;
+        } else {
+            $this->snapshotWantedSince = null;
+        }
     }
 
     /** Forgets everything, as when the agent leaves the channel or the connection drops. */
