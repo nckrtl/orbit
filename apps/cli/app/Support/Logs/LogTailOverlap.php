@@ -33,17 +33,6 @@ final class LogTailOverlap
     }
 
     /**
-     * The lines of $tail after the remembered ones, or every line when no overlap is found.
-     *
-     * @param  list<string>  $tail
-     * @return list<string>
-     */
-    public function after(array $tail): array
-    {
-        return $this->find($tail) ?? $tail;
-    }
-
-    /**
      * The lines of $tail after the remembered ones, or null when the tail does not contain them.
      * Without context every line is new.
      *

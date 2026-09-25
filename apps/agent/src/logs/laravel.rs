@@ -18,6 +18,8 @@ pub const FIRST_READ_BYTES: u64 = 256 * 1024;
 pub const READ_AHEAD: u64 = 1024 * 1024;
 pub const SKIP_BEHIND: u64 = 4 * 1024 * 1024;
 pub const SKIP_KEEP: u64 = 64 * 1024;
+/// How many files the tail remembers its read position of after it switched away from them.
+const LEFT_FILES: usize = 8;
 
 /// The source cannot be read; the stream ends with `source_unavailable`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -169,6 +171,9 @@ pub struct LaravelTail {
     current: Option<Current>,
     partial: Vec<u8>,
     discarding: bool,
+    /// `(dev, ino, offset)` of files the tail switched away from, newest last. When the newest daily
+    /// file changes back to one of them, the tail resumes where it left it instead of sending it again.
+    left: Vec<(u64, u64, u64)>,
 }
 
 impl LaravelTail {
@@ -183,6 +188,7 @@ impl LaravelTail {
             current: None,
             partial: Vec::new(),
             discarding: false,
+            left: Vec::new(),
         }
     }
 
@@ -288,12 +294,27 @@ impl LaravelTail {
         }
         self.partial.clear();
         self.discarding = false;
+        if let Some(old) = self.current.take() {
+            self.left
+                .retain(|(dev, ino, _)| (*dev, *ino) != (old.dev, old.ino));
+            self.left.push((old.dev, old.ino, old.offset));
+            if self.left.len() > LEFT_FILES {
+                self.left.remove(0);
+            }
+        }
+        // A file read before resumes at its old position; a file that shrank since starts again.
+        let offset = self
+            .left
+            .iter()
+            .find(|(dev, ino, _)| (*dev, *ino) == (m.dev, m.ino))
+            .map_or(0, |(_, _, offset)| *offset);
+        let offset = if offset <= m.size { offset } else { 0 };
         self.current = Some(Current {
             file,
             name,
             dev: m.dev,
             ino: m.ino,
-            offset: 0,
+            offset,
         });
         Ok(true)
     }
@@ -577,6 +598,26 @@ mod tests {
         // laravel.log appearing wins over daily files.
         append(&dir.logs().join("laravel.log"), b"single\n");
         assert_eq!(t.poll(true).unwrap().lines, ["single"]);
+    }
+
+    #[test]
+    fn a_daily_file_that_becomes_newest_again_resumes_where_it_was_left() {
+        let dir = TempDir::new();
+        let a = dir.logs().join("laravel-2026-09-25.log");
+        let b = dir.logs().join("laravel-worker-2026-09-25.log");
+        append(&a, b"a1\n");
+        let mut t = tail(&dir);
+        assert_eq!(t.start(10).unwrap(), ["a1"]);
+        std::thread::sleep(Duration::from_millis(20));
+        append(&b, b"b1\n");
+        assert_eq!(t.poll(true).unwrap().lines, ["b1"]);
+        std::thread::sleep(Duration::from_millis(20));
+        append(&a, b"a2\n");
+        // Only the new line of the first file, not the whole file again.
+        assert_eq!(t.poll(true).unwrap().lines, ["a2"]);
+        std::thread::sleep(Duration::from_millis(20));
+        append(&b, b"b2\n");
+        assert_eq!(t.poll(true).unwrap().lines, ["b2"]);
     }
 
     #[test]

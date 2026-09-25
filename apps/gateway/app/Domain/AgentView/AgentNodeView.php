@@ -14,7 +14,8 @@ use App\Domain\Processes\ProcessRuntime;
  * falls back to Prometheus or SSH.
  *
  * `logs` says whether the agent is a member of the Node's log channel, `presence-node-logs.{id}`,
- * which agents from 0.3.0 join to serve live log streams (ADR 0153).
+ * which agents from 0.3.0 join to serve live log streams (ADR 0153). `agentVersion` is the version the
+ * agent reported when it joined, or null when the Gateway does not know it.
  */
 final readonly class AgentNodeView
 {
@@ -30,6 +31,7 @@ final readonly class AgentNodeView
         public ?float $receivedAt = null,
         public array $workspaces = [],
         public bool $logs = false,
+        public ?string $agentVersion = null,
     ) {}
 
     public static function missing(int $nodeId): self

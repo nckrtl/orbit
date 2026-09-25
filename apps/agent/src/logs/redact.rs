@@ -115,6 +115,11 @@ fn into_string(bytes: Vec<u8>) -> String {
         .unwrap_or_else(|error| String::from_utf8_lossy(error.as_bytes()).into())
 }
 
+/// The line that replaces the last hidden line of a PEM block that has no `END` within the limit.
+pub fn unclosed_marker(hidden: usize) -> String {
+    format!("[orbit] {hidden} lines redacted after a PEM BEGIN line without END")
+}
+
 /// Redacts a stream line by line. It carries the state of a PEM block that spans lines.
 #[derive(Debug, Default)]
 pub struct Redactor {
@@ -148,8 +153,13 @@ impl Redactor {
                 };
             }
             let count = count + 1;
-            self.pem_lines = (count < PEM_MAX_LINES).then_some(count);
-            return None;
+            if count < PEM_MAX_LINES {
+                self.pem_lines = Some(count);
+                return None;
+            }
+            // No END within the limit: the block ends here, and the reader learns what was hidden.
+            self.pem_lines = None;
+            return render.then(|| unclosed_marker(count - 1));
         }
         if !render && !line.contains("-----") {
             return None;
@@ -250,9 +260,14 @@ mod tests {
             r.line("-----BEGIN CERTIFICATE-----").as_deref(),
             Some("[REDACTED]")
         );
-        for _ in 2..=PEM_MAX_LINES {
+        for _ in 2..PEM_MAX_LINES {
             assert_eq!(r.line("MIIBszCCAVmgAwIBAgIU"), None);
         }
+        // The 200th line of the block ends it with a marker that counts the hidden lines.
+        assert_eq!(
+            r.line("MIIBszCCAVmgAwIBAgIU").as_deref(),
+            Some("[orbit] 199 lines redacted after a PEM BEGIN line without END")
+        );
         assert_eq!(r.line("after").as_deref(), Some("after"));
     }
 

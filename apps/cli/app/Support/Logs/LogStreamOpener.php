@@ -43,6 +43,12 @@ final class LogStreamOpener implements RealtimeChannelOpener
     /** How soon an activation that could not reach the Gateway is tried again. */
     private const int ACTIVATION_RETRY_SECONDS = 1;
 
+    /** The most earlier lines a stream may ask for. */
+    private const int MAX_LINES = 1000;
+
+    /** Refusals that end the renewals: every other failure, such as a 502 while the Gateway restarts, is tried again. */
+    private const array FINAL_RENEWAL_ERRORS = ['logs.stream_not_found', 'node_access.required', 'peer.identity_unknown'];
+
     private ?LogStreamResponse $stream = null;
 
     private float $renewAt = 0.0;
@@ -51,12 +57,22 @@ final class LogStreamOpener implements RealtimeChannelOpener
 
     private int $opened = 0;
 
+    /** @param  int  $history  How many earlier lines the next stream asks for: `--lines` at first. */
     public function __construct(
         private readonly GatewayConnector $connector,
         private readonly InstanceLogStreamTarget|ProcessLogStreamTarget $target,
-        private readonly int $lines,
+        private int $history,
         private readonly LogFollowClock $clock,
     ) {}
+
+    /**
+     * Ask for more earlier lines in the streams opened from now on, so a reopened stream reaches back
+     * to the lines printed last. It never asks for fewer.
+     */
+    public function requestHistory(int $lines): void
+    {
+        $this->history = max($this->history, min($lines, self::MAX_LINES));
+    }
 
     #[\Override]
     public function open(string $socketId): RealtimeChannelGrant
@@ -64,7 +80,7 @@ final class LogStreamOpener implements RealtimeChannelOpener
         $this->close();
 
         try {
-            $stream = $this->send(new CreateLogStreamRequest($this->target, $socketId, $this->lines), LogStreamResponse::class);
+            $stream = $this->send(new CreateLogStreamRequest($this->target, $socketId, $this->history), LogStreamResponse::class);
         } catch (FatalRequestException $exception) {
             throw new RealtimeConnectionException('Could not reach the gateway to open the log stream.', previous: $exception);
         }
@@ -91,10 +107,12 @@ final class LogStreamOpener implements RealtimeChannelOpener
 
     /**
      * Renew the open stream when it is due: at once for a new stream, which activates it, and
-     * then every renewal interval. An unreachable Gateway is retried after a second while the
-     * stream is not yet active, and at the next interval after that, while the lease still runs.
+     * then every renewal interval. A failed renewal, such as an unreachable Gateway or a 502, is
+     * retried after a second while the stream is not yet active, and at the next interval after
+     * that, while the lease still runs.
      *
-     * @throws GatewayApiException when the Gateway refuses the renewal.
+     * @throws GatewayApiException when the Gateway refuses the renewal for good: the stream is gone
+     *                             or the caller lost access.
      */
     public function renewIfDue(): void
     {
@@ -111,7 +129,11 @@ final class LogStreamOpener implements RealtimeChannelOpener
         try {
             $this->send($request, LogStreamRenewalResponse::class);
             $this->active = true;
-        } catch (FatalRequestException) {
+        } catch (FatalRequestException|GatewayApiException $exception) {
+            if ($exception instanceof GatewayApiException && in_array($exception->errorCode(), self::FINAL_RENEWAL_ERRORS, strict: true)) {
+                throw $exception;
+            }
+
             if (! $this->active) {
                 $this->renewAt = $this->clock->now() + self::ACTIVATION_RETRY_SECONDS;
             }

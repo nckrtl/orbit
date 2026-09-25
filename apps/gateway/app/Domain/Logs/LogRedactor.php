@@ -16,29 +16,48 @@ use SensitiveParameter;
  */
 final readonly class LogRedactor
 {
-    /** A shorter Instance value would blank ordinary words, such as `true` or `local`, out of the log. */
-    public const int ShortestInstanceValue = 8;
+    /** A shorter value would blank ordinary words, such as `true` or `local`, out of the log. */
+    public const int ShortestValue = 8;
+
+    /**
+     * Keys whose values are settings, not secrets. Replacing them would hide ordinary words, such as
+     * `production` in `production.INFO`, and no secret is lost when they stay.
+     */
+    private const string NonSecretKey = '/\A(?:APP_ENV|APP_NAME|APP_URL|APP_LOCALE|APP_FALLBACK_LOCALE|LOG_[A-Z0-9_]*|DB_CONNECTION|DB_HOST|DB_PORT|[A-Z0-9_]*_(?:DRIVER|CONNECTION|STORE))\z/D';
 
     public function __construct(private CommandActivityInputSanitizer $sanitizer) {}
 
     /**
-     * The values to replace in the log of an Instance or a Process, longest first.
+     * The values to replace in the log of an Instance or a Process, longest first: each stored
+     * environment value of eight characters or more, except the values of known setting keys.
      *
      * @return list<string>
      */
     public function valuesFor(#[SensitiveParameter] AppInstance|Process $record): array
     {
-        $values = $record instanceof AppInstance
-            ? $record->environmentValues
-                ->map(static fn (AppInstanceEnvironmentValue $value): string => $value->env_value)
-                ->filter(static fn (string $value): bool => strlen($value) >= self::ShortestInstanceValue)
-                ->all()
-            : array_filter(
-                is_array($record->runtime_config['environment'] ?? null) ? $record->runtime_config['environment'] : [],
-                static fn (mixed $value): bool => is_string($value) && $value !== '',
-            );
+        $environment = [];
 
-        /** @var list<string> $values */
+        if ($record instanceof AppInstance) {
+            foreach ($record->environmentValues as $value) {
+                /** @var AppInstanceEnvironmentValue $value */
+                $environment[] = [$value->env_key, $value->env_value];
+            }
+        } else {
+            $stored = $record->runtime_config['environment'] ?? null;
+
+            foreach (is_array($stored) ? $stored : [] as $key => $value) {
+                $environment[] = [(string) $key, $value];
+            }
+        }
+
+        $values = [];
+
+        foreach ($environment as [$key, $value]) {
+            if (is_string($value) && strlen($value) >= self::ShortestValue && preg_match(self::NonSecretKey, strtoupper($key)) !== 1) {
+                $values[] = $value;
+            }
+        }
+
         $values = array_values(array_unique($values));
         usort($values, static fn (string $first, string $second): int => strlen($second) <=> strlen($first));
 

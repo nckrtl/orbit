@@ -948,6 +948,37 @@ describe('the live log channels', function (): void {
             ->and(app(AgentStateView::class)->node($this->node->id)->logs)->toBeFalse();
     });
 
+    it('records the agent version from its Node channel membership', function (): void {
+        $agent = "agent.{$this->node->id}";
+        $this->socket->push(agent_event($this->node->id, 'pusher_internal:subscription_succeeded', ['presence' => [
+            'ids' => [$agent],
+            'hash' => [$agent => ['kind' => 'agent', 'node_id' => $this->node->id, 'version' => '0.2.0']],
+        ]], sender: ''));
+        $this->socket->push(agent_snapshot($this->node->id, 2, []));
+        $this->subscriber->pass();
+        $this->subscriber->pass();
+
+        expect(app(AgentStateView::class)->node($this->node->id)->agentVersion)->toBe('0.2.0');
+
+        $this->socket->push(
+            agent_event($this->node->id, 'pusher_internal:member_added', ['user_id' => $agent, 'user_info' => ['kind' => 'agent', 'version' => '0.3.0']], sender: ''),
+            agent_snapshot($this->node->id, 1, []),
+        );
+        $this->subscriber->pass();
+        $this->subscriber->pass();
+
+        expect(app(AgentStateView::class)->node($this->node->id)->agentVersion)->toBe('0.3.0');
+
+        $this->socket->push(
+            agent_event($this->node->id, 'pusher_internal:member_added', ['user_id' => $agent, 'user_info' => ['version' => 'not a version!']], sender: ''),
+            agent_snapshot($this->node->id, 1, []),
+        );
+        $this->subscriber->pass();
+        $this->subscriber->pass();
+
+        expect(app(AgentStateView::class)->node($this->node->id)->agentVersion)->toBeNull();
+    });
+
     it('tells the publisher on connect and when the Gateway prompts an agent about its streams', function (): void {
         // Streams may have opened while no subscriber watched.
         expect($this->publisher->streamsChanged)->toBe(1);

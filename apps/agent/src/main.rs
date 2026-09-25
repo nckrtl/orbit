@@ -327,14 +327,19 @@ async fn connected_session(
     )
     .await?;
     let mut log_subscribed = false;
+    // While the log channel subscription waits for an answer, a 4009 error refuses it, not the session.
+    let mut log_pending = false;
     if let Some(log_channel) = log_channel {
         match channel_auth(client, &auth_url, &socket_id, log_channel, VERSION).await {
-            Ok(auth) => send_control(
-                &mut socket,
-                "pusher:subscribe",
-                json!({"channel":log_channel,"auth":auth.auth,"channel_data":auth.channel_data}),
-            )
-            .await?,
+            Ok(auth) => {
+                send_control(
+                    &mut socket,
+                    "pusher:subscribe",
+                    json!({"channel":log_channel,"auth":auth.auth,"channel_data":auth.channel_data}),
+                )
+                .await?;
+                log_pending = true;
+            }
             Err(error) => eprintln!(
                 "orbit-agent: log channel authorization failed; live log tails are off for this connection: {error}"
             ),
@@ -392,12 +397,12 @@ async fn connected_session(
             },
             _=&mut debounce,if !pending.is_empty()=>{if pending.due(Instant::now()){for unit in pending.take(){let event=orbit_agent::process_frame(channel,sequence.advance(),unit)?;send_raw_frame(&mut socket,event).await?;}}},
             message=socket.next()=>match message{
-                Some(Ok(Message::Text(text)))=>{liveness.message(Instant::now());let value:Value=serde_json::from_str(&text)?;match route(&value,channel,log_channel){
+                Some(Ok(Message::Text(text)))=>{liveness.message(Instant::now());let value:Value=serde_json::from_str(&text)?;match route(&value,channel,log_channel,log_pending){
                     Route::Pong=>send_control(&mut socket,"pusher:pong",json!({})).await?,
                     Route::Fail=>return Err(format!("Pusher rejected subscription: {}",value["data"]).into()),
                     Route::Snapshot=>{let all=combined_units(systemd,docker_units);send_snapshots(&mut socket,channel,sequence,&all,if *docker_available{"available"}else{"absent"},workspaces).await?;snapshot_due.as_mut().reset(Instant::now()+SNAPSHOT_INTERVAL);},
-                    Route::LogSubscribed=>{log_subscribed=true;log_hub.prompt();},
-                    Route::LogRefused=>{log_subscribed=false;eprintln!("orbit-agent: log channel subscription refused; live log tails are off for this connection");},
+                    Route::LogSubscribed=>{log_subscribed=true;log_pending=false;log_hub.prompt();},
+                    Route::LogRefused=>{log_subscribed=false;log_pending=false;eprintln!("orbit-agent: log channel subscription refused; live log tails are off for this connection");},
                     Route::FetchLogStreams=>log_hub.prompt(),
                     Route::Ignore=>{}
                 }},
@@ -421,12 +426,19 @@ enum Route {
     FetchLogStreams,
     Ignore,
 }
-fn route(value: &Value, channel: &str, log_channel: Option<&str>) -> Route {
+/// Reverb's `pusher:error` code for a subscription whose signature it refuses.
+const UNAUTHORIZED: i64 = 4009;
+
+fn route(value: &Value, channel: &str, log_channel: Option<&str>, log_pending: bool) -> Route {
     let on = value["channel"].as_str();
     let on_node = on == Some(channel);
     let on_logs = on.is_some() && on == log_channel;
     match value["event"].as_str().unwrap_or("") {
         "pusher:ping" => Route::Pong,
+        // The Node channel is already joined, so an unauthorized error answers the log channel's subscription.
+        "pusher:error" if log_pending && error_code(value) == Some(UNAUTHORIZED) => {
+            Route::LogRefused
+        }
         "pusher:error" => Route::Fail,
         "pusher_internal:subscription_error" if on_logs => Route::LogRefused,
         "pusher_internal:subscription_error" => Route::Fail,
@@ -434,6 +446,14 @@ fn route(value: &Value, channel: &str, log_channel: Option<&str>) -> Route {
         "pusher_internal:member_added" if on_node => Route::Snapshot,
         "log-streams.changed" if on_logs => Route::FetchLogStreams,
         _ => Route::Ignore,
+    }
+}
+
+/// The `code` of a `pusher:error`, whose `data` is an object or a JSON string.
+fn error_code(value: &Value) -> Option<i64> {
+    match &value["data"] {
+        Value::String(text) => serde_json::from_str::<Value>(text).ok()?["code"].as_i64(),
+        data => data["code"].as_i64(),
     }
 }
 
@@ -899,7 +919,7 @@ mod protocol_tests {
             if let Some(channel) = channel {
                 value["channel"] = json!(channel);
             }
-            route(&value, node, log_channel)
+            route(&value, node, log_channel, false)
         };
         let with_logs = |event: &str, channel: Option<&str>| message(event, channel, Some(logs));
         assert_eq!(with_logs("pusher:ping", None), Route::Pong);
@@ -952,6 +972,27 @@ mod protocol_tests {
             message("pusher_internal:subscription_succeeded", None, None),
             Route::Ignore
         );
+    }
+
+    #[test]
+    fn an_unauthorized_error_refuses_only_a_pending_log_subscription() {
+        let unauthorized = json!({"event": "pusher:error", "data": {"code": 4009, "message": "Connection is unauthorized"}});
+        let as_text = json!({"event": "pusher:error", "data": "{\"code\":4009,\"message\":\"Connection is unauthorized\"}"});
+        let other = json!({"event": "pusher:error", "data": {"code": 4201, "message": "Pong reply not received"}});
+        let logs = Some("presence-node-logs.12");
+        assert_eq!(
+            route(&unauthorized, "presence-node.12", logs, true),
+            Route::LogRefused
+        );
+        assert_eq!(
+            route(&as_text, "presence-node.12", logs, true),
+            Route::LogRefused
+        );
+        assert_eq!(
+            route(&unauthorized, "presence-node.12", logs, false),
+            Route::Fail
+        );
+        assert_eq!(route(&other, "presence-node.12", logs, true), Route::Fail);
     }
 
     #[test]

@@ -63,7 +63,7 @@ final class InstanceLogsCommand extends GatewayCommand
                 $profile,
                 new InstanceLogStreamTarget($instanceId),
                 $lines,
-                fn (): string => $this->sendOrThrow($connector, new InstanceLogsRequest($instanceId, $lines), InstanceLogsResponse::class)->logs,
+                fn (int $read): string => $this->sendOrThrow($connector, new InstanceLogsRequest($instanceId, $read), InstanceLogsResponse::class)->logs,
             );
         }
 

@@ -76,6 +76,18 @@ final readonly class ConsoleLogFollowOutput implements LogFollowOutput
     }
 
     #[\Override]
+    public function missing(): void
+    {
+        if ($this->json) {
+            $this->writeJson(['type' => 'missing']);
+
+            return;
+        }
+
+        ConsoleWriter::write($this->output, "[orbit] lines may be missing\n");
+    }
+
+    #[\Override]
     public function reconnecting(): void
     {
         if (! $this->json) {

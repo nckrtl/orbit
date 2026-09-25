@@ -243,6 +243,32 @@ impl StreamQueue {
     }
 }
 
+/// Collects a source's first lines while it reads them, keeping only the newest 256 KiB, so a source
+/// with long lines never holds more than that for one stream.
+#[derive(Debug, Default)]
+pub struct FirstLines {
+    lines: VecDeque<String>,
+    bytes: usize,
+}
+impl FirstLines {
+    /// Adds a line, cut to 8 KiB, and lets `sink` see each older line that no longer fits.
+    pub fn push(&mut self, line: String, sink: &mut LineSink) {
+        let line = cut_line(&line, MAX_LINE_BYTES);
+        self.bytes += cost(&line);
+        self.lines.push_back(line);
+        while self.bytes > FIRST_LINES_BYTES {
+            let Some(old) = self.lines.pop_front() else {
+                break;
+            };
+            self.bytes -= cost(&old);
+            sink.observe(&old);
+        }
+    }
+    pub fn into_lines(self) -> Vec<String> {
+        self.lines.into()
+    }
+}
+
 /// Redacts, cuts, and rate-limits the lines of one stream before they reach its queue.
 pub struct LineSink {
     queue: Arc<StreamQueue>,
@@ -261,6 +287,10 @@ impl LineSink {
     /// Sends the first lines, oldest first: at most the stream's `lines`, and at most 256 KiB.
     pub fn first(&mut self, raw: Vec<String>) {
         let start = raw.len().saturating_sub(self.lines);
+        // Lines before the window still open or close a PEM block that reaches into it.
+        for line in &raw[..start] {
+            self.redactor.observe(line);
+        }
         let redacted: Vec<String> = raw
             .into_iter()
             .skip(start)
@@ -291,6 +321,11 @@ impl LineSink {
         if let Some(line) = self.redactor.line(raw) {
             self.queue.push(cut_line(&line, MAX_LINE_BYTES));
         }
+    }
+
+    /// Keeps the PEM state for a line before the first lines that is never sent.
+    pub fn observe(&mut self, line: &str) {
+        self.redactor.observe(line);
     }
 
     pub fn dropped(&self, count: u64) {
@@ -433,6 +468,25 @@ mod tests {
     }
 
     #[test]
+    fn first_lines_hold_at_most_256_kib_while_they_are_read() {
+        let q = queue();
+        let mut sink = LineSink::new(q.clone(), 1000);
+        let mut first = FirstLines::default();
+        first.push("-----BEGIN RSA PRIVATE KEY-----".into(), &mut sink);
+        for i in 0..60 {
+            first.push(format!("{i:04}{}", "z".repeat(20_000)), &mut sink);
+            assert!(first.bytes <= FIRST_LINES_BYTES);
+        }
+        let lines = first.into_lines();
+        assert_eq!(lines.len(), FIRST_LINES_BYTES / MAX_LINE_BYTES);
+        assert!(lines[0].ends_with("[truncated]"));
+        assert!(lines.last().unwrap().starts_with("0059"));
+        // The BEGIN line fell out of the window, but the block it opened still hides the key lines.
+        sink.first(lines);
+        assert_eq!(q.queued_bytes(), 0);
+    }
+
+    #[test]
     fn first_lines_keep_the_newest_within_count_and_256_kib() {
         let q = queue();
         let mut sink = LineSink::new(q.clone(), 1000);
@@ -441,6 +495,16 @@ mod tests {
             .collect();
         sink.first(raw);
         assert_eq!(q.queued_bytes(), 262 * 1000);
+        let q = queue();
+        let mut sink = LineSink::new(q.clone(), 2);
+        sink.first(vec![
+            "-----BEGIN RSA PRIVATE KEY-----".into(),
+            "MIIEpAIBAAKCAQEA".into(),
+            "-----END RSA PRIVATE KEY-----".into(),
+        ]);
+        // The window starts inside the block, so its body stays hidden.
+        let flush = q.flush("c", Instant::now()).unwrap();
+        assert!(flush.frames.is_empty());
         let q = queue();
         let mut sink = LineSink::new(q.clone(), 3);
         sink.first(vec!["1".into(), "2".into(), "API_KEY=x".into(), "4".into()]);

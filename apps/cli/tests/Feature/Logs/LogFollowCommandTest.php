@@ -253,7 +253,8 @@ describe('process:logs --follow', function (): void {
             ->and(Artisan::output())->toBe("a\nb\nc\nd\n")
             ->and(array_map(fn (PendingRequest $request): mixed => $request->body()?->all(), $create))->toBe([
                 ['socket_id' => '1.1', 'lines' => 100],
-                ['socket_id' => '2.2', 'lines' => 100],
+                // Once lines are printed, a reopened stream reaches back far enough to find them.
+                ['socket_id' => '2.2', 'lines' => 1000],
             ])
             ->and(count($transport->connections))->toBe(2)
             ->and(array_map(fn (PendingRequest $request): string => $request->getUrl(), log_follow_sent($mock, RenewLogStreamRequest::class)))->toBe([
@@ -534,6 +535,258 @@ describe('process:logs --follow', function (): void {
             ->and($transport->connections)->toBe([]);
     });
 
+    it('prints each new line once when it polls with --lines=1', function (): void {
+        log_follow_profile();
+        log_follow_transport(log_follow_handshake('1.2', log_follow_stream_id('a')));
+        $file = ['prod-line-1', 'prod-line-2'];
+        $mock = MockClient::global([
+            CreateLogStreamRequest::class => log_follow_refusal('ssh_only'),
+            ProcessLogsRequest::class => log_follow_file($file),
+        ]);
+        $this->clock->onTick(function (float $now, int $count) use (&$file): void {
+            // The first poll runs after the first sleep; each later sleep ends five seconds on.
+            match ($count) {
+                2 => $file[] = 'A',
+                3 => $file[] = 'B',
+                default => null,
+            };
+
+            if ($count === 7) {
+                InterruptIntent::record(SIGINT);
+            }
+        });
+
+        expect(Artisan::call('process:logs', ['process' => '41', '--follow' => true, '--lines' => '1']))->toBe(0)
+            ->and(Artisan::output())->toBe("Following over SSH; polling every 5 seconds.\nprod-line-2\nA\nB\n")
+            ->and(array_map(
+                fn (PendingRequest $request): mixed => $request->query()->get('lines'),
+                log_follow_sent($mock, ProcessLogsRequest::class),
+            ))->toBe([1, 1000, 1000, 1000, 1000, 1000]);
+    });
+
+    it('marks a gap and prints the newest lines when more lines arrive between polls than the window holds', function (): void {
+        log_follow_profile();
+        log_follow_transport(log_follow_handshake('1.2', log_follow_stream_id('a')));
+        $file = ['start'];
+        MockClient::global([
+            CreateLogStreamRequest::class => log_follow_refusal('ssh_only'),
+            ProcessLogsRequest::class => log_follow_file($file),
+        ]);
+        $this->clock->onTick(function (float $now, int $count) use (&$file): void {
+            if ($count === 2) {
+                array_push($file, ...array_map(static fn (int $i): string => "burst {$i}", range(1, 1500)));
+            }
+
+            if ($count === 3) {
+                InterruptIntent::record(SIGINT);
+            }
+        });
+
+        Artisan::call('process:logs', ['process' => '41', '--follow' => true, '--lines' => '2', '--json' => true]);
+
+        expect(log_follow_json_lines(Artisan::output()))->toBe([
+            ['type' => 'notice', 'code' => 'logs.live_unavailable', 'reason' => 'ssh_only'],
+            ['type' => 'lines', 'lines' => ['start'], 'dropped' => 0, 'skipped' => 0],
+            ['type' => 'missing'],
+            ['type' => 'lines', 'lines' => ['burst 1499', 'burst 1500'], 'dropped' => 0, 'skipped' => 0],
+        ]);
+    });
+
+    it('prints repeated identical lines of a short log by their position', function (): void {
+        log_follow_profile();
+        log_follow_transport(log_follow_handshake('1.2', log_follow_stream_id('a')));
+        $file = ['tick', 'tick'];
+        MockClient::global([
+            CreateLogStreamRequest::class => log_follow_refusal('ssh_only'),
+            ProcessLogsRequest::class => log_follow_file($file),
+        ]);
+        $this->clock->onTick(function (float $now, int $count) use (&$file): void {
+            match ($count) {
+                2 => array_push($file, 'tick', 'tick', 'tick'),
+                3 => $file[] = 'tick',
+                default => null,
+            };
+
+            if ($count === 4) {
+                InterruptIntent::record(SIGINT);
+            }
+        });
+
+        Artisan::call('process:logs', ['process' => '41', '--follow' => true]);
+
+        expect(Artisan::output())->toBe("Following over SSH; polling every 5 seconds.\n".str_repeat("tick\n", 6));
+    });
+
+    it('retries the live path every 30 seconds while the agent has not joined its log channel', function (): void {
+        log_follow_profile();
+        $transport = log_follow_transport([log_follow_handshake('1.1', log_follow_stream_id('a'))[0]]);
+        $file = ['one', 'two'];
+        $creates = 0;
+        $renewed = false;
+        $mock = MockClient::global([
+            CreateLogStreamRequest::class => function () use (&$creates, $transport): MockResponse {
+                if (++$creates < 3) {
+                    // The next connection, after the retry.
+                    $transport->enqueue([log_follow_handshake(($creates + 1).'.1', log_follow_stream_id('b'))[0]]);
+
+                    return log_follow_refusal('agent_not_joined');
+                }
+
+                $transport->enqueue([log_follow_handshake('3.1', log_follow_stream_id('b'))[1]]);
+
+                return MockResponse::make(log_follow_stream_envelope('b'), 201);
+            },
+            RenewLogStreamRequest::class => function () use ($transport, &$file, &$renewed): MockResponse {
+                if (! $renewed) {
+                    $renewed = true;
+                    // The new stream's first lines reach back past the lines the polls printed.
+                    $transport->enqueue([log_follow_lines('b', 1, [...$file, 'live'])]);
+                }
+
+                return log_follow_renewed('b');
+            },
+            DestroyLogStreamRequest::class => MockResponse::make([
+                'data' => ['id' => log_follow_stream_id('b'), 'closed' => true],
+                'meta' => ['request_id' => log_follow_request_id()],
+            ]),
+            ProcessLogsRequest::class => log_follow_file($file),
+        ]);
+        $start = $this->clock->now();
+        $this->clock->onTick(function (float $now) use ($start, &$file, &$renewed): void {
+            if ($now - $start >= 12.0 && ! in_array('three', $file, strict: true)) {
+                $file[] = 'three';
+            }
+
+            if ($renewed && $now - $start >= 62.0) {
+                InterruptIntent::record(SIGINT);
+            }
+        });
+
+        expect(Artisan::call('process:logs', ['process' => '41', '--follow' => true, '--json' => true]))->toBe(0)
+            ->and(log_follow_json_lines(Artisan::output()))->toBe([
+                ['type' => 'notice', 'code' => 'logs.live_unavailable', 'reason' => 'agent_not_joined'],
+                ['type' => 'lines', 'lines' => ['one', 'two'], 'dropped' => 0, 'skipped' => 0],
+                ['type' => 'lines', 'lines' => ['three'], 'dropped' => 0, 'skipped' => 0],
+                ['type' => 'lines', 'lines' => ['live'], 'dropped' => 0, 'skipped' => 0],
+            ])
+            ->and(array_map(
+                fn (PendingRequest $request): mixed => $request->body()?->all()['lines'] ?? null,
+                log_follow_sent($mock, CreateLogStreamRequest::class),
+            ))->toBe([100, 1000, 1000])
+            ->and(count($transport->connections))->toBe(3);
+    });
+
+    it('keeps polling without a live retry when the agent is older than 0.3.0', function (): void {
+        log_follow_profile();
+        log_follow_transport(log_follow_handshake('1.2', log_follow_stream_id('a')));
+        $mock = MockClient::global([
+            CreateLogStreamRequest::class => log_follow_refusal('agent_outdated'),
+            ProcessLogsRequest::class => log_follow_reads(["a\n"]),
+        ]);
+        $start = $this->clock->now();
+        $this->clock->onTick(function (float $now) use ($start): void {
+            if ($now - $start >= 95.0) {
+                InterruptIntent::record(SIGINT);
+            }
+        });
+
+        expect(Artisan::call('process:logs', ['process' => '41', '--follow' => true]))->toBe(0)
+            ->and(log_follow_sent($mock, CreateLogStreamRequest::class))->toHaveCount(1);
+    });
+
+    it('marks a gap when a reopened stream does not reach the lines printed last', function (): void {
+        log_follow_profile();
+        log_follow_transport([
+            ...log_follow_handshake('1.1', log_follow_stream_id('a')),
+            null,
+            log_follow_lines('a', 1, ['a', 'b']),
+            log_follow_ended('a', 'expired'),
+            null,
+            ...log_follow_handshake('2.2', log_follow_stream_id('b')),
+            log_follow_lines('b', 1, ['x', 'y', 'z']),
+        ]);
+        $streams = ['a', 'b'];
+        MockClient::global([
+            CreateLogStreamRequest::class => function () use (&$streams): MockResponse {
+                return MockResponse::make(log_follow_stream_envelope(array_shift($streams) ?? 'z'), 201);
+            },
+            RenewLogStreamRequest::class => log_follow_renewed('a'),
+            DestroyLogStreamRequest::class => MockResponse::make([
+                'data' => ['id' => log_follow_stream_id('b'), 'closed' => true],
+                'meta' => ['request_id' => log_follow_request_id()],
+            ]),
+        ]);
+        $start = $this->clock->now();
+        $this->clock->onTick(function (float $now) use ($start): void {
+            if ($now - $start >= 5.0) {
+                InterruptIntent::record(SIGINT);
+            }
+        });
+
+        expect(Artisan::call('process:logs', ['process' => '41', '--follow' => true, '--lines' => '2']))->toBe(0)
+            ->and(Artisan::output())->toBe("a\nb\n[orbit] lines may be missing\ny\nz\n");
+    });
+
+    it('keeps following after one failed poll', function (): void {
+        log_follow_profile();
+        log_follow_transport(log_follow_handshake('1.2', log_follow_stream_id('a')));
+        $responses = [
+            MockResponse::make(['data' => ['id' => 41, 'name' => 'worker', 'lines' => 100, 'logs' => "a\n"], 'meta' => ['request_id' => log_follow_request_id()]]),
+            MockResponse::make('<html>502 Bad Gateway</html>', 502),
+            MockResponse::make(['data' => ['id' => 41, 'name' => 'worker', 'lines' => 100, 'logs' => "a\nb\n"], 'meta' => ['request_id' => log_follow_request_id()]]),
+        ];
+        MockClient::global([
+            CreateLogStreamRequest::class => log_follow_refusal('ssh_only'),
+            ProcessLogsRequest::class => function () use (&$responses): MockResponse {
+                return count($responses) > 1 ? array_shift($responses) : $responses[0];
+            },
+        ]);
+        log_follow_interrupt_after($this->clock, 4);
+
+        expect(Artisan::call('process:logs', ['process' => '41', '--follow' => true]))->toBe(0)
+            ->and(Artisan::output())->toBe("Following over SSH; polling every 5 seconds.\na\nb\n");
+    });
+
+    it('keeps the stream after a renewal fails with a 502', function (): void {
+        log_follow_profile();
+        $transport = log_follow_transport(log_follow_handshake('1.2', log_follow_stream_id('a')));
+        $renewals = 0;
+        $mock = MockClient::global([
+            ...log_follow_stream_mocks('a'),
+            RenewLogStreamRequest::class => function () use (&$renewals, $transport): MockResponse {
+                if (++$renewals === 2) {
+                    return MockResponse::make('<html>502 Bad Gateway</html>', 502);
+                }
+
+                if ($renewals === 3) {
+                    $transport->enqueue([log_follow_lines('a', 1, ['still live'])]);
+                }
+
+                return log_follow_renewed('a');
+            },
+        ]);
+        $start = $this->clock->now();
+        $this->clock->onTick(function (float $now) use ($start): void {
+            if ($now - $start >= 41.0) {
+                InterruptIntent::record(SIGINT);
+            }
+        });
+
+        expect(Artisan::call('process:logs', ['process' => '41', '--follow' => true]))->toBe(0)
+            ->and(Artisan::output())->toBe("still live\n")
+            ->and($renewals)->toBe(3)
+            ->and(log_follow_sent($mock, CreateLogStreamRequest::class))->toHaveCount(1);
+    });
+
+    it('closes the stream when the follow fails unexpectedly', function (): void {
+        log_follow_profile();
+        log_follow_transport([...log_follow_handshake('1.2', log_follow_stream_id('a')), null, new RuntimeException('boom')]);
+        $mock = MockClient::global(log_follow_stream_mocks('a'));
+
+        expect(fn () => Artisan::call('process:logs', ['process' => '41', '--follow' => true]))->toThrow(RuntimeException::class, 'boom')
+            ->and(log_follow_sent($mock, DestroyLogStreamRequest::class))->toHaveCount(1);
+    });
+
     it('redacts credential-shaped live lines before it prints them', function (): void {
         log_follow_profile();
         log_follow_transport([
@@ -717,6 +970,31 @@ function log_follow_reads(array $reads, string $name = 'worker'): Closure
 
         return MockResponse::make([
             'data' => ['id' => 41, 'name' => $name, 'lines' => 100, 'logs' => $logs],
+            'meta' => ['request_id' => log_follow_request_id()],
+        ]);
+    };
+}
+
+function log_follow_refusal(string $reason): MockResponse
+{
+    return MockResponse::make([
+        'error' => ['code' => 'logs.live_unavailable', 'message' => 'Live logs are not available for this Node.', 'details' => ['reason' => $reason]],
+    ], 409);
+}
+
+/**
+ * A log file that the one-shot read tails: each read returns its last `lines` lines as they are then.
+ *
+ * @param  list<string>  $file
+ */
+function log_follow_file(array &$file): Closure
+{
+    return function (PendingRequest $request) use (&$file): MockResponse {
+        $lines = (int) $request->query()->get('lines');
+        $tail = array_slice($file, -$lines);
+
+        return MockResponse::make([
+            'data' => ['id' => 41, 'name' => 'worker', 'lines' => $lines, 'logs' => $tail === [] ? '' : implode("\n", $tail)."\n"],
             'meta' => ['request_id' => log_follow_request_id()],
         ]);
     };

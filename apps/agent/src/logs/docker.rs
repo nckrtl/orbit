@@ -1,7 +1,7 @@
 //! Follows the output of an Orbit Docker Process through the Docker Engine API (ADR 0153).
 use super::{
     laravel::Unavailable,
-    limits::{cut_continued_line, line_text, LineSink, MAX_LINE_BYTES},
+    limits::{cut_continued_line, line_text, FirstLines, LineSink, MAX_LINE_BYTES},
 };
 use bollard::{
     container::{LogOutput, LogsOptions},
@@ -160,10 +160,11 @@ pub async fn run(
                 ..Default::default()
             };
             let started = OffsetDateTime::now_utc() - time::Duration::seconds(1);
-            let mut batch = Vec::new();
-            match follow(&docker, &id, options, None, |line| batch.push(line)).await {
+            let mut batch = FirstLines::default();
+            let read = follow(&docker, &id, options, None, |line| batch.push(line, sink)).await;
+            match read {
                 Ok(at) => {
-                    sink.first(batch);
+                    sink.first(batch.into_lines());
                     last = Some(at.unwrap_or(started));
                 }
                 Err(Some(unavailable)) => return Err(unavailable),

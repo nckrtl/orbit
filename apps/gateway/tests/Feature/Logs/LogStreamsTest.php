@@ -65,11 +65,11 @@ function log_stream_process(Node $node, string $runtime, string $name = 'queue')
 }
 
 /** Makes the Node's agent fresh in the view, as a member of its log channel unless told otherwise. */
-function log_stream_agent(Node $node, bool $logs = true): void
+function log_stream_agent(Node $node, bool $logs = true, ?string $version = '0.3.0'): void
 {
     $view = app(CacheAgentStateView::class);
     $view->putSubscriber(true, true, 2);
-    $view->putNode((int) $node->id, [], 'available', 1, CacheAgentStateView::now(), null, [], $logs);
+    $view->putNode((int) $node->id, [], 'available', 1, CacheAgentStateView::now(), null, [], $logs, $version);
 }
 
 beforeEach(function (): void {
@@ -171,7 +171,9 @@ describe('opening a live log stream', function (): void {
         'subscriber disconnected' => [fn ($test) => app(CacheAgentStateView::class)->putSubscriber(true, false, 0), 'subscriber_down'],
         'agent stopped' => [fn ($test) => app(CacheAgentStateView::class)->forgetNode($test->serving->id), 'agent_unavailable'],
         'agent stale' => [fn ($test) => Carbon::setTestNow(Carbon::createFromTimestamp(1_016)), 'agent_unavailable'],
-        'agent before 0.3.0' => [fn ($test) => log_stream_agent($test->serving, logs: false), 'agent_outdated'],
+        'agent before 0.3.0' => [fn ($test) => log_stream_agent($test->serving, logs: false, version: '0.2.0'), 'agent_outdated'],
+        'agent 0.3.0 not joined yet' => [fn ($test) => log_stream_agent($test->serving, logs: false), 'agent_not_joined'],
+        'agent of unknown version not joined yet' => [fn ($test) => log_stream_agent($test->serving, logs: false, version: null), 'agent_not_joined'],
     ]);
 
     it('sends a production Instance log to SSH reads before it checks the live path', function (Closure $arrange): void {

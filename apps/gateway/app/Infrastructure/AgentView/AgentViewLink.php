@@ -36,6 +36,9 @@ final class AgentViewLink
     /** @var array<int, bool> Whether each Node's agent is a member of its log channel on this server (ADR 0153). */
     public array $logMembers = [];
 
+    /** @var array<int, string> The version each Node's agent reported in its membership of `presence-node.{id}` on this server. */
+    public array $agentVersions = [];
+
     public function __construct(
         public readonly string $address,
         public readonly WebSocketClient $socket,
@@ -54,6 +57,7 @@ final class AgentViewLink
         $this->snapshotRequestedAt = [];
         $this->viewers = [];
         $this->logMembers = [];
+        $this->agentVersions = [];
         $this->socketId = null;
         $this->connection = null;
         $this->pingSentAt = null;

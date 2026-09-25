@@ -12,8 +12,8 @@ import {
     useRealtimeSocket,
 } from "./socket";
 
-// Local types for the log stream endpoints and events (docs/reference/live-logs.md), until
-// `src/api/schema.d.ts` is regenerated from docs/openapi.json.
+// Types for the log stream endpoints and events (docs/reference/live-logs.md). The endpoint types
+// match `src/api/schema.d.ts`. The events travel over Reverb, so only the reference describes them.
 
 /** The record whose log a stream follows, as its API path segment. */
 export type LogStreamKind = "instances" | "processes";
@@ -53,6 +53,26 @@ export const LOG_TAIL_MAX_LINES = 2_000;
 
 /** The renewal interval when the open response names none. */
 const DEFAULT_RENEW_SECONDS = 20;
+
+/** How soon a first renewal that failed is tried again. The agent reads the stream only after it. */
+const ACTIVATION_RETRY_SECONDS = 1;
+
+/** How often a pane that falls back for a passing reason tries the live stream again. */
+export const LIVE_RETRY_SECONDS = 30;
+
+/**
+ * Fallback reasons that pass on their own: the subscriber or the agent restarts, the agent has not
+ * joined its log channel yet, a stream ended because the agent left or the relay fell behind, or the
+ * Node had no stream left. The pane tries the live stream again for these.
+ */
+const PASSING_REASONS = new Set([
+    "subscriber_down",
+    "agent_unavailable",
+    "agent_not_joined",
+    "agent_left",
+    "relay_behind",
+    "logs.stream_limit",
+]);
 
 /**
  * - `off`: realtime is not live, so the pane polls.
@@ -94,8 +114,10 @@ type Stream = {
     timer: ReturnType<typeof setTimeout> | undefined;
     /** Whether this stream sent lines yet: its first lines replace the pane, later lines append. */
     received: boolean;
-    /** Whether the pane renewed it yet. The Gateway starts the agent's reading on the first renewal. */
+    /** Whether the pane asked for the first renewal yet. The Gateway starts the agent's reading on it. */
     activated: boolean;
+    /** Whether a renewal succeeded yet. */
+    renewed: boolean;
     sequence: number;
 };
 
@@ -189,6 +211,8 @@ export class LogTail {
     /** Bumped whenever the pane stops caring about an answer that is still on its way. */
     private attempt = 0;
     private disposed = false;
+    /** The live retry after a fallback for a passing reason. */
+    private retry: ReturnType<typeof setTimeout> | undefined;
     private readonly source: LogSource;
     private readonly onChange: (state: LogTailState) => void;
 
@@ -239,6 +263,7 @@ export class LogTail {
     /** Closes the stream for good, when the pane closes. */
     dispose(): void {
         this.end(true);
+        clearTimeout(this.retry);
         this.disposed = true;
     }
 
@@ -310,6 +335,7 @@ export class LogTail {
             timer: undefined,
             received: false,
             activated: false,
+            renewed: false,
             sequence: 0,
         };
         this.stream = stream;
@@ -398,6 +424,7 @@ export class LogTail {
         api<LogStreamRenewed>("PUT", `${this.path}/${stream.id}`).then(
             () => {
                 if (this.stream === stream) {
+                    stream.renewed = true;
                     this.scheduleRenewal(stream);
                 }
             },
@@ -413,6 +440,12 @@ export class LogTail {
                 } else if (error instanceof GatewayError && error.status === 403) {
                     this.end(false);
                     this.set({ status: "revoked", subscribed: false, reason: "revoked" });
+                } else if (!stream.renewed) {
+                    // The agent reads the stream only after the first renewal, so try it again soon.
+                    stream.timer = setTimeout(
+                        () => this.renew(stream),
+                        ACTIVATION_RETRY_SECONDS * 1000,
+                    );
                 } else {
                     // A failed renewal leaves the lease running; the next one may get through.
                     this.scheduleRenewal(stream);
@@ -423,11 +456,25 @@ export class LogTail {
 
     private fallback(reason: string): void {
         this.set({ status: "fallback", subscribed: false, reason });
+
+        if (PASSING_REASONS.has(reason)) {
+            clearTimeout(this.retry);
+            this.retry = setTimeout(() => {
+                if (
+                    !this.disposed &&
+                    this.state.status === "fallback" &&
+                    this.state.reason === reason
+                ) {
+                    this.open();
+                }
+            }, LIVE_RETRY_SECONDS * 1000);
+        }
     }
 
     /** Stops listening to the current stream, and closes it on the Gateway when `close` is set. */
     private end(close: boolean, keepalive = false): void {
         this.attempt++;
+        clearTimeout(this.retry);
         const stream = this.stream;
 
         if (stream === null) {

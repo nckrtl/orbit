@@ -229,7 +229,7 @@ it("keeps at most 2,000 lines", async () => {
 
 it.each([
     [failure(409, "logs.live_unavailable", { reason: "agent_outdated" }), "agent_outdated"],
-    [failure(429, "logs.stream_limit"), "logs.stream_limit"],
+    [failure(409, "logs.live_unavailable", { reason: "ssh_only" }), "ssh_only"],
     [failure(403, "node_access.required"), "node_access.required"],
     [{ status: 500, payload: null }, "http_500"],
 ])("falls back to polling when the Gateway refuses the stream: %j", async (answer, reason) => {
@@ -250,7 +250,64 @@ it.each([
     expect(calls("PUT")).toEqual([]);
 });
 
-it.each(["agent_left", "source_unavailable", "relay_behind", "closed"])(
+it.each([
+    [failure(409, "logs.live_unavailable", { reason: "agent_not_joined" }), "agent_not_joined"],
+    [failure(409, "logs.live_unavailable", { reason: "subscriber_down" }), "subscriber_down"],
+    [failure(429, "logs.stream_limit"), "logs.stream_limit"],
+])(
+    "polls and tries the live stream again every 30 seconds for a passing refusal: %j",
+    async (answer, reason) => {
+        const live = socket();
+        answers.POST!.push(answer as Answer, answer as Answer, opened(2));
+
+        tail.connect(live);
+        await vi.advanceTimersByTimeAsync(0);
+        expect(state()).toMatchObject({ status: "fallback", reason });
+
+        await vi.advanceTimersByTimeAsync(29_000);
+        expect(calls("POST")).toHaveLength(1);
+        await vi.advanceTimersByTimeAsync(1_000);
+        expect(calls("POST")).toHaveLength(2);
+        expect(state()).toMatchObject({ status: "fallback", reason });
+
+        await vi.advanceTimersByTimeAsync(30_000);
+        expect(calls("POST")).toHaveLength(3);
+        expect(state().status).toBe("streaming");
+        expect(live.subscribe).toHaveBeenCalledWith(`private-log-stream.${streamId(2)}`);
+    },
+);
+
+it("tries the live stream again when the stream ended because the agent left or the relay fell behind", async () => {
+    const live = socket();
+    answers.POST!.push(opened(1), opened(2));
+    tail.connect(live);
+    await vi.advanceTimersByTimeAsync(0);
+    live.channels
+        .get(`private-log-stream.${streamId(1)}`)!
+        .emit("log.ended", ended(1, "agent_left"));
+    expect(state()).toMatchObject({ status: "fallback", reason: "agent_left" });
+
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    expect(calls("POST")).toHaveLength(2);
+    expect(state().status).toBe("streaming");
+});
+
+it("does not retry after the pane closed", async () => {
+    const live = socket();
+    answers.POST!.push(
+        failure(409, "logs.live_unavailable", { reason: "agent_not_joined" }) as Answer,
+    );
+    tail.connect(live);
+    await vi.advanceTimersByTimeAsync(0);
+
+    tail.dispose();
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    expect(calls("POST")).toHaveLength(1);
+});
+
+it.each(["source_unavailable", "closed"])(
     "falls back to polling when the stream ends with %s",
     async (reason) => {
         const live = socket();
@@ -343,10 +400,31 @@ it("keeps renewing after a renewal fails for another reason", async () => {
     await vi.advanceTimersByTimeAsync(0);
     live.channels.get(`private-log-stream.${streamId(1)}`)!.emit("pusher:subscription_succeeded");
 
-    await vi.advanceTimersByTimeAsync(40_000);
+    // The failed first renewal is tried again after a second, because it starts the agent's reading.
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(calls("PUT")).toHaveLength(2);
+
+    await vi.advanceTimersByTimeAsync(39_000);
 
     expect(calls("PUT")).toHaveLength(3);
     expect(state().status).toBe("streaming");
+});
+
+it("waits for the next interval when a later renewal fails", async () => {
+    answers.POST!.push(opened(1));
+    answers.PUT!.push(
+        { status: 200, payload: { data: { id: "x", lease_seconds: 60 } } },
+        { status: 502, payload: null },
+    );
+    const live = socket();
+    tail.connect(live);
+    await vi.advanceTimersByTimeAsync(0);
+    live.channels.get(`private-log-stream.${streamId(1)}`)!.emit("pusher:subscription_succeeded");
+
+    await vi.advanceTimersByTimeAsync(21_000);
+    expect(calls("PUT")).toHaveLength(2);
+    await vi.advanceTimersByTimeAsync(19_000);
+    expect(calls("PUT")).toHaveLength(3);
 });
 
 it("polls while the socket is down and opens a new stream on the new socket", async () => {

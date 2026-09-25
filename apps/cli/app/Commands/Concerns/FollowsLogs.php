@@ -31,7 +31,7 @@ use Throwable;
  */
 trait FollowsLogs
 {
-    /** @param  Closure(): string  $fetch  One-shot read of the last $lines lines, for the polling fallback. */
+    /** @param  Closure(int): string  $fetch  One-shot read of the last lines of the log, for the polling fallback. */
     protected function followLogs(
         GatewayConnector $connector,
         GatewayProfile $profile,
@@ -89,6 +89,8 @@ trait FollowsLogs
             }
         } catch (Throwable $exception) {
             if (! $exception instanceof ConsoleInterrupted && InterruptIntent::pending() === null) {
+                $opener->close();
+
                 throw $exception;
             }
         } finally {

@@ -61,7 +61,7 @@ final class ProcessLogsCommand extends ProcessCommand
                 $profile,
                 new ProcessLogStreamTarget($processId),
                 $lines,
-                fn (): string => $this->sendOrThrow($connector, new ProcessLogsRequest($processId, $lines), ProcessLogsResponse::class)->logs,
+                fn (int $read): string => $this->sendOrThrow($connector, new ProcessLogsRequest($processId, $read), ProcessLogsResponse::class)->logs,
             );
         }
 

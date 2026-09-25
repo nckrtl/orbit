@@ -20,6 +20,9 @@ interface LogFollowOutput
      */
     public function polling(string $code, ?string $reason): void;
 
+    /** A read did not reach the lines printed last, so lines between them may be missing. */
+    public function missing(): void;
+
     /** The realtime socket dropped; the follow reconnects and reopens its stream. */
     public function reconnecting(): void;
 }

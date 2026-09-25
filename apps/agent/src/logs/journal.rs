@@ -2,7 +2,7 @@
 //! <https://systemd.io/JOURNAL_FILE_FORMAT/>. It reads with `pread`, never maps a file, and checks every
 //! offset and size. A file that is being written can look inconsistent; the reader then tries that file
 //! again at the next poll. It links no systemd library and runs no program.
-use super::laravel::Unavailable;
+use super::{laravel::Unavailable, limits::FIRST_LINES_BYTES};
 use rustix::fs::{self as rfs, Mode, OFlags};
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
@@ -789,7 +789,10 @@ impl JournalTail {
                     .iter()
                     .all(|r| r.realtime > tracked.file.header.tail_entry_realtime);
             let want = if older { 0 } else { lines as u64 };
-            if let Ok((mut found, _)) = self.collect(&mut tracked, want, u64::MAX, usize::MAX) {
+            // Read at most 256 KiB of lines for the first lines, across every file.
+            let held: usize = records.iter().flat_map(|r| &r.lines).map(String::len).sum();
+            let budget = FIRST_LINES_BYTES.saturating_sub(held);
+            if let Ok((mut found, _)) = self.collect(&mut tracked, want, u64::MAX, budget) {
                 records.append(&mut found);
                 records.sort_by_key(|r| (r.realtime, r.seqnum));
                 let excess = records.len().saturating_sub(lines);
@@ -1173,6 +1176,28 @@ mod tests {
             );
             assert_eq!(tail.poll(true), Poll::default());
         }
+    }
+
+    #[test]
+    fn first_lines_read_at_most_256_kib_of_the_newest_entries() {
+        let dir = TempDir::new();
+        let path = dir.0.join("system.journal");
+        let mut w = Writer::new(Options {
+            compact: true,
+            keyed: false,
+            compression: Compression::None,
+            buckets: 7,
+            first_array: 2,
+        });
+        for n in 0..100 {
+            service_entry(&mut w, n, &format!("{n:03} {}", "x".repeat(20_000)));
+        }
+        w.write(&path);
+        let lines = JournalTail::new(vec![dir.0.clone()], UNIT).start(1000);
+        let bytes: usize = lines.iter().map(String::len).sum();
+        assert!(bytes <= FIRST_LINES_BYTES + 21_000, "{bytes}");
+        assert!(lines.len() < 20);
+        assert!(lines.last().unwrap().contains("queue[4242]: 099 "));
     }
 
     #[test]

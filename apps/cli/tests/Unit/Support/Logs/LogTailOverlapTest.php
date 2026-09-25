@@ -10,7 +10,7 @@ describe(LogTailOverlap::class, function (): void {
 
         expect($overlap->hasContext())->toBeFalse()
             ->and($overlap->find(['a', 'b']))->toBe(['a', 'b'])
-            ->and($overlap->after([]))->toBe([]);
+            ->and($overlap->find([]))->toBe([]);
     });
 
     it('returns only the lines after the last five printed lines', function (): void {
@@ -39,15 +39,21 @@ describe(LogTailOverlap::class, function (): void {
         $overlap = new LogTailOverlap;
         $overlap->remember(['a', 'b', 'c']);
 
-        expect($overlap->find(['c', 'd']))->toBeNull()
-            ->and($overlap->after(['c', 'd']))->toBe(['c', 'd']);
+        expect($overlap->find(['c', 'd']))->toBeNull();
     });
 
-    it('prints every fetched line when no overlap is found', function (): void {
+    it('finds no overlap when the tail does not contain the context', function (): void {
         $overlap = new LogTailOverlap;
         $overlap->remember(['a', 'b']);
 
-        expect($overlap->find(['x', 'y']))->toBeNull()
-            ->and($overlap->after(['x', 'y']))->toBe(['x', 'y']);
+        expect($overlap->find(['x', 'y']))->toBeNull();
+    });
+
+    it('finds a single printed line inside a larger window', function (): void {
+        $overlap = new LogTailOverlap;
+        $overlap->remember(['B']);
+
+        expect($overlap->find(['A', 'B']))->toBe([])
+            ->and($overlap->find(['A', 'B', 'C']))->toBe(['C']);
     });
 });
