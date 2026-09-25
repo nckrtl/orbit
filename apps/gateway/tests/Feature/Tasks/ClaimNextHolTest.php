@@ -7,6 +7,7 @@ use App\Domain\Tasks\AgentSpawner;
 use App\Domain\Tasks\InstanceProvisioning;
 use App\Domain\Tasks\InstanceProvisionIntent;
 use App\Domain\Tasks\TaskCapacityException;
+use App\Domain\Tasks\TaskConcurrencyGuard;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskStatus;
@@ -15,6 +16,7 @@ use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Task;
 use App\Models\TaskGroup;
+use Illuminate\Support\Facades\Exceptions;
 
 it('claimNext continues after provision null', function (): void {
     $gateway = $this->markAsGateway(Node::query()->create([
@@ -191,6 +193,43 @@ it('tries a failing group once per tick', function (): void {
         ->and($failing->fresh()?->status)->toBe(TaskGroupStatus::Todo)
         ->and($failing->fresh()?->assistance_reason)->toBe(TaskScheduler::ProvisioningFailedReason)
         ->and(TaskGroup::query()->where('status', TaskGroupStatus::Running)->count())->toBe(2);
+});
+
+it('returns a group to todo when provisioning throws and continues the tick with the next group', function (): void {
+    Exceptions::fake();
+    claim_hol_enable();
+    $app = claim_hol_app();
+    $failing = claim_hol_group($app, 'Throwing');
+    $next = claim_hol_group($app, 'Next');
+    $provisioning = new class($failing->id, $app) implements InstanceProvisioning
+    {
+        /** @var array<int, int> */
+        public array $calls = [];
+
+        public function __construct(private int $failingId, private OrbitApp $app) {}
+
+        public function provision(InstanceProvisionIntent $intent): ?AppInstance
+        {
+            $this->calls[$intent->group->id] = ($this->calls[$intent->group->id] ?? 0) + 1;
+            if ($intent->group->id === $this->failingId) {
+                throw new RuntimeException('Lock wait timeout for token secret-value-123');
+            }
+
+            return claim_hol_instance($this->app, 'claim-hol-'.$intent->group->id);
+        }
+    };
+    app()->instance(InstanceProvisioning::class, $provisioning);
+    claim_hol_spawner();
+
+    $this->artisan('tasks:tick')->assertSuccessful();
+
+    Exceptions::assertReported(RuntimeException::class);
+    expect($provisioning->calls[$failing->id])->toBe(1)
+        ->and($failing->fresh()?->status)->toBe(TaskGroupStatus::Todo)
+        ->and($failing->fresh()?->assistance_reason)->toBe(TaskScheduler::ProvisioningFailedReason)
+        ->and($next->fresh()?->status)->toBe(TaskGroupStatus::Running)
+        ->and(TaskGroup::query()->where('status', TaskGroupStatus::Reserved)->count())->toBe(0)
+        ->and(app(TaskConcurrencyGuard::class)->activeForApp($app->id))->toBe(1);
 });
 
 it('clears the provisioning failure reason when a group moves to backlog', function (): void {
