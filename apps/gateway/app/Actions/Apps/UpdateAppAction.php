@@ -60,7 +60,7 @@ final readonly class UpdateAppAction
         if ($data->rootProvided || $data->typeProvided) {
             $effectiveRoot = $data->rootProvided ? $data->root : $app->root;
             $message = ! $data->rootProvided && $data->type instanceof ProjectType
-                ? "A {$data->type->value} Project cannot keep root [{$effectiveRoot}] while a Route targets an Instance that inherits it. Send a web root with the type change."
+                ? "A Route targets an Instance that inherits root [{$effectiveRoot}], which is not a web root. Send a web root with the change."
                 : null;
             $this->assertRouteTargetRootCompatibility($app, $effectiveRoot, $message);
         }

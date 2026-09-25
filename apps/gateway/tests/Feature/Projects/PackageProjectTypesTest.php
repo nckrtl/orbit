@@ -46,6 +46,26 @@ it('covers package project types when creating and updating Projects', function 
     }
 });
 
+it('names the type when the package root is sent for an app Project', function (): void {
+    $this->postJson('/api/v1/projects', [
+        'slug' => 'app-with-dot-root',
+        'type' => ProjectType::LaravelApp->value,
+        'repository_url' => 'https://github.com/acme/app-with-dot-root.git',
+        'default_branch' => 'main',
+        'root' => '.',
+    ])->assertUnprocessable()
+        ->assertJsonPath('error.details.root.0', 'The root [.] is not valid for a laravel-app Project. Send a web root such as public.');
+
+    $this->postJson('/api/v1/projects', [
+        'slug' => 'app-with-bad-root',
+        'type' => ProjectType::LaravelApp->value,
+        'repository_url' => 'https://github.com/acme/app-with-bad-root.git',
+        'default_branch' => 'main',
+        'root' => '../outside',
+    ])->assertUnprocessable()
+        ->assertJsonPath('error.details.root.0', 'The root must be a normalized relative Project path.');
+});
+
 it('updates a legacy Project with a null root when root is omitted', function (): void {
     $project = OrbitApp::query()->create([
         'name' => 'legacy-project',

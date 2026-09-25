@@ -83,7 +83,7 @@ final class UpdateAppRequest extends FormRequest
 
             if (is_string($root) && ! ProjectRoot::isValid($root, $type)) {
                 $validator->errors()->add('root', is_string($sentRoot)
-                    ? 'The root must be a normalized relative Project path.'
+                    ? ProjectRoot::message($root, $type)
                     : "The stored root [{$root}] is not valid for a {$type->value} Project. Send a web root with the type change.");
             }
         }];

@@ -47,7 +47,7 @@ orbit project:create <slug> <type> <repository> [options]
 orbit project:create acme laravel-app https://github.com/acme/site.git
 orbit project:create acme laravel-app git@github.com:acme/site.git --default-branch=stable --root=web/public
 orbit project:create support laravel-package git@github.com:acme/support.git --root=.
-orbit project:create node-kit node-package git@github.com:acme/node-kit.git --root=.
+orbit project:create node-kit node-package git@github.com:acme/node-kit.git
 ```
 
 Creation is idempotent. Repeating the command with the same values returns the existing Project. A retry that changes any value fails with `app.identity_conflict`, and a second Project for the same repository fails with `app.repository_identity_conflict`.

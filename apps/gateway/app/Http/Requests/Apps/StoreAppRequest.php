@@ -102,7 +102,7 @@ final class StoreAppRequest extends FormRequest
         $type = ProjectType::tryFrom((string) $this->input('type')) ?? ProjectType::LaravelApp;
 
         if (is_string($root) && ! ProjectRoot::isValid($root, $type)) {
-            $validator->errors()->add('root', 'The root must be a normalized relative Project path.');
+            $validator->errors()->add('root', ProjectRoot::message($root, $type));
         }
     }
 }

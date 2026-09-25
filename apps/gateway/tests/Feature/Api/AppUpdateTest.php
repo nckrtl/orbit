@@ -76,7 +76,7 @@ describe('app updates', function (): void {
             ])
             ->assertConflict()
             ->assertJsonPath('error.code', 'route.target_web_root_unsupported')
-            ->assertJsonPath('error.message', 'A node-package Project cannot keep root [.] while a Route targets an Instance that inherits it. Send a web root with the type change.');
+            ->assertJsonPath('error.message', 'A Route targets an Instance that inherits root [.], which is not a web root. Send a web root with the change.');
 
         expect($this->fixture->app->refresh()->type)
             ->toBe(ProjectType::LaravelPackage)
