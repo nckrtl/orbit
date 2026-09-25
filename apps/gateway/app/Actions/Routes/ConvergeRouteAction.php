@@ -556,8 +556,18 @@ final readonly class ConvergeRouteAction
                     $replacement,
                     RouteReplacementStep::PublicActivated,
                     function () use ($replacement): void {
+                        $before = $replacement->replacement_step;
                         $replacement->update(['replacement_step' => RouteReplacementStep::PublicActivated]);
-                        $this->projection->activatePublicHandler($replacement);
+
+                        try {
+                            $this->projection->activatePublicHandler($replacement);
+                        } catch (Throwable $exception) {
+                            // The activation build changed nothing, so the stored step goes back and every
+                            // later build renders the Ingress Node as it last built.
+                            $replacement->update(['replacement_step' => $before]);
+
+                            throw $exception;
+                        }
                     },
                 );
                 $failureStep = 'ingress-firewall';

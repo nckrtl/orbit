@@ -232,6 +232,33 @@ describe('site sources', function (): void {
         expect($render())->not->toContain('reverb.orbit');
     });
 
+    it('keeps reverb.orbit on the source of a websocket move until the move withdraws it there', function (): void {
+        $source = caddy_build_node('gateway', '10.44.0.1');
+        $target = caddy_build_node('app-dev', '10.44.0.2');
+        $role = $source->roles()->create(['role' => RoleName::WebSocket, 'status' => LifecycleStatus::Active]);
+        $certificates = new CaddySiteCertificates;
+        $certificates->record($source->id, CaddySiteCertificates::Websocket);
+        $serves = static fn (Node $node): bool => str_contains(caddy_build_renderer()->render($node)->content, 'reverb.orbit {');
+
+        // The move transfers the row first; the target has no certificate yet.
+        $role->update(['node_id' => $target->id]);
+
+        expect($serves($source))->toBeTrue()->and($serves($target))->toBeFalse();
+
+        $certificates->record($target->id, CaddySiteCertificates::Websocket);
+
+        expect($serves($source))->toBeTrue()->and($serves($target))->toBeTrue();
+
+        // The retraction forgets the source record before its withdrawing build.
+        $certificates->forget($source->id, CaddySiteCertificates::Websocket);
+
+        expect($serves($source))->toBeFalse()->and($serves($target))->toBeTrue();
+
+        $role->update(['status' => LifecycleStatus::Removing]);
+
+        expect($serves($target))->toBeFalse();
+    });
+
     it('renders a role while it converges, is active, or failed a reconvergence, but not while it is removed', function (): void {
         $node = caddy_build_node('ws', '10.44.0.2');
         $role = $node->roles()->create(['role' => RoleName::WebSocket, 'status' => LifecycleStatus::Provisioning]);

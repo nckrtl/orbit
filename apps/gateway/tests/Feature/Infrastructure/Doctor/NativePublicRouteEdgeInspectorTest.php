@@ -95,6 +95,50 @@ describe('a separate Ingress', function (): void {
     });
 });
 
+describe('an Ingress that runs the workload while the Router is on another Node', function (): void {
+    beforeEach(function (): void {
+        $cluster = Cluster::query()->create(['name' => 'edge', 'tld' => 'edge.test', 'state' => ClusterState::Active]);
+        $this->router = public_edge_node('gateway', '10.44.0.1', null, $cluster, [RoleName::Router]);
+        $this->ingress = public_edge_node('app-prod', '10.44.0.3', null, $cluster, [RoleName::Ingress, RoleName::AppProd]);
+        $this->route = public_edge_route($cluster, $this->ingress);
+    });
+
+    it('builds one public site for the host that serves the local workload', function (): void {
+        $ingress = app(NodeCaddyfileRenderer::class)->render($this->ingress);
+        $domain = $this->route->domain;
+
+        expect($ingress->problems)->toBe([])
+            ->and(substr_count($ingress->content, "{$domain} {"))->toBe(1)
+            ->and($ingress->content)
+            ->toContain("# orbit: ingress route-{$this->route->id}-ingress\n{$domain} {\n    bind 0.0.0.0\n    tls force_automate")
+            ->toContain('php_fastcgi unix//run/php/orbit-app-')
+            ->not->toContain("https://{$domain} {")
+            ->not->toContain('reverse_proxy https://10.44.0.1');
+    });
+
+    it('lets the Router reach the public site through the Node system roots', function (): void {
+        $router = app(NodeCaddyfileRenderer::class)->render($this->router)->content;
+        $block = strstr((string) strstr($router, "# orbit: app-dev route-{$this->route->id}-router"), '# orbit:', true) ?: (string) strstr($router, "# orbit: app-dev route-{$this->route->id}-router");
+
+        expect($block)->toContain('reverse_proxy https://10.44.0.3')
+            ->not->toContain('tls_trusted_ca_certs');
+    });
+
+    it('builds the private workload site again once the Route is private', function (): void {
+        $this->route->update(['publication' => RoutePublication::Private, 'replacement_step' => null]);
+        $ingress = app(NodeCaddyfileRenderer::class)->render($this->ingress)->content;
+
+        expect($ingress)->toContain("https://{$this->route->domain} {")
+            ->not->toContain('tls force_automate');
+    });
+
+    it('accepts the published site', function (): void {
+        public_edge_publish_build($this->caddy, $this->ingress);
+
+        expect(public_edge_observe($this))->toBe([true, true, true]);
+    });
+});
+
 describe('an Ingress that shares the Router and the workload', function (): void {
     beforeEach(function (): void {
         $cluster = Cluster::query()->create(['name' => 'prod', 'tld' => 'prod.test', 'state' => ClusterState::Active]);

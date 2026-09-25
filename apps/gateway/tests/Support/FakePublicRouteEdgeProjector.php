@@ -18,6 +18,9 @@ final class FakePublicRouteEdgeProjector implements PublicRouteEdgeProjector
     /** @var array<string, int> */
     public array $failures = [];
 
+    /** @var (\Closure(Route): void)|null Runs when the rollback starts, to observe the state it builds. */
+    public ?\Closure $onRollback = null;
+
     public function artifact(Route $route): IngressSite
     {
         $this->calls[] = 'artifact';
@@ -60,6 +63,10 @@ final class FakePublicRouteEdgeProjector implements PublicRouteEdgeProjector
 
     public function rollbackPublicEdge(Route $route): void
     {
+        if ($this->onRollback instanceof \Closure) {
+            ($this->onRollback)($route);
+        }
+
         $this->event('rollback-public-edge');
     }
 

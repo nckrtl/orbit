@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\Nodes\RelocateNodeRoleAction;
+use App\Domain\AppDev\PrivateDnsAnswerExpiry;
 use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\Gateway\GatewayServingHost;
 use App\Domain\Nodes\NodeRoleFirewallManager;
@@ -21,6 +22,8 @@ use App\Models\Node;
 use App\Models\NodeAccess;
 use App\Models\NodeRole;
 use App\Models\Setting;
+use Carbon\CarbonInterval as Duration;
+use Illuminate\Support\Sleep;
 
 describe(RelocateNodeRoleAction::class, function (): void {
     beforeEach(function (): void {
@@ -200,6 +203,30 @@ describe(RelocateNodeRoleAction::class, function (): void {
             ->toBe($credentials->laravelAppKey)
             ->and(Setting::query()->where('scope_type', 'node')->where('scope_id', $source->id)->count())
             ->toBe(0);
+    });
+
+    it('withdraws websocket from the source only after the target serves and cached DNS answers expire', function (): void {
+        $source = relocate_role_node('beast', '10.44.0.1');
+        $target = relocate_role_node('services', '10.44.0.11');
+        $source->roles()->create(['role' => RoleName::WebSocket, 'status' => LifecycleStatus::Active]);
+        app(WebSocketCredentialManager::class)->ensure($source);
+        $atSleep = [];
+        Sleep::whenFakingSleep(function (Duration $duration) use (&$atSleep): void {
+            $atSleep[] = [
+                'seconds' => (int) $duration->totalSeconds,
+                'converged' => $this->baselines->converged,
+                'removed' => $this->baselines->removed,
+            ];
+        });
+
+        app(RelocateNodeRoleAction::class)->execute($target, RoleName::WebSocket, force: true);
+
+        expect($atSleep)->toBe([[
+            'seconds' => PrivateDnsAnswerExpiry::WithdrawalGraceSeconds,
+            'converged' => ["websocket:{$target->name}"],
+            'removed' => [],
+        ]])
+            ->and($this->baselines->removed)->toBe([['role' => 'websocket', 'node' => $source->name, 'purge_data' => false]]);
     });
 
     it('transfers metrics and copies missing grafana credentials', function (): void {

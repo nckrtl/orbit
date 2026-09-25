@@ -43,7 +43,11 @@ A version holds only its `Caddyfile`. It has no fragments and imports nothing. T
 
 The Gateway renders the sites from committed database state only, so the same state always gives the same file. Route transitions are [stored state](/reference/routes#stored-transitions): a Route that is being published or withdrawn, an Instance that is being removed, a placement change, and a Router replacement each have a database record that the build reads.
 
-A role's sites render while the role is provisioning or active, and after a failed convergence, because they may already be live. They stop rendering when the role's removal starts. The `websocket`, `analytics`, ProxyCli, and Metrics sites also wait for their certificate: the Gateway records when the role's certificate step has placed the certificate on the Node, and forgets it when removal takes the certificate away. A build during a role's first convergence or relocation therefore leaves that site out instead of failing for every site on the Node.
+A role's sites render while the role is provisioning or active, and after a failed convergence, because they may already be live. They stop rendering when the role's removal starts.
+
+The `websocket`, `analytics`, ProxyCli, and Metrics sites also wait for their certificate: the Gateway records when the role's certificate step has placed the certificate on the Node, and forgets it at the removal that withdraws the site. A build during a role's first convergence or relocation therefore leaves that site out instead of failing for every site on the Node.
+
+When `websocket` moves, the old Node keeps `reverb.orbit` until the new Node serves it, private DNS answers with the new Node, and cached answers can have expired, which is the 31-second grace that Route moves use. Only then does the move withdraw the site and the certificate on the old Node.
 
 | Site source | Nodes | Listener |
 | --- | --- | --- |
@@ -112,7 +116,9 @@ Every Node with Caddy sites, the Gateway machine included, installs Caddy from t
 
 ### When a build fails
 
-A build either publishes the whole file or changes nothing. It fails when a site cannot be rendered from stored state, when two sites collide, when Caddy is below the floor, when the Node lacks an address the file binds, when `caddy validate` rejects the file, or when Caddy fails to reload. After a reload failure the script points `/etc/caddy/Caddyfile` back at the previous version and reloads again. The live configuration keeps serving in every case.
+A build either publishes the whole file or changes nothing. It fails when a site cannot be rendered from stored state, when two sites collide, when Caddy is below the floor, when the Node lacks an address the file binds, when `caddy validate` rejects the file, or when Caddy fails to reload.
+
+A failed reload leaves Caddy on the configuration it already runs. The script then points `/etc/caddy/Caddyfile` back at the previous version and asks Caddy to load it again. It never restarts a running Caddy; it starts Caddy only when Caddy is not running. The live configuration keeps serving unless Caddy itself had stopped.
 
 The command that requested the build fails with its usual error code:
 
@@ -126,7 +132,7 @@ The command that requested the build fails with its usual error code:
 | Metrics and service metrics | `metrics.caddy_publication_failed` |
 | Gateway web convergence | `gateway.caddy_config_invalid` at `render` or `validate`, `gateway.caddy_start_failed` at `reload`, and `gateway.caddy_config_install_failed` at any other stage |
 
-Role convergence, such as `orbit node:role:add NODE app-dev --converge`, fails with `node_role.convergence_failed`; `orbit node:role:list` shows the publisher's code as the underlying error. The error message and the activity record name the Node, the failed stage, and Caddy's message:
+Role convergence, such as `orbit node:role:add NODE app-dev --converge`, fails with `node_role.convergence_failed`; `orbit node:role:list` shows the publisher's code as the underlying error. The error message, the activity record, and the `node`, `stage`, and `message` fields of the error details name the Node, the failed stage, and Caddy's message:
 
 ```text
 The Caddy build for Node [app-prod] failed at stage [validate]: Error: loading certificates: open /etc/caddy/orbit-websocket-cert-current/reverb.pem: no such file or directory

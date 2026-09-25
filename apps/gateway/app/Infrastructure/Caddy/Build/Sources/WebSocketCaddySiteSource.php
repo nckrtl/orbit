@@ -24,9 +24,11 @@ final readonly class WebSocketCaddySiteSource implements NodeCaddySiteSource
 
     public function sites(Node $node): array
     {
+        // During a move the role row already names the target, but the source keeps its site, and its
+        // record, until the move withdraws it there after the target serves and DNS has moved.
         if (
-            ! CaddySiteRoles::nodeServes($node->id, RoleName::WebSocket)
-            || ! $this->certificates->published($node->id, CaddySiteCertificates::Websocket)
+            ! $this->certificates->published($node->id, CaddySiteCertificates::Websocket)
+            || CaddySiteRoles::serving(RoleName::WebSocket) === []
         ) {
             return [];
         }

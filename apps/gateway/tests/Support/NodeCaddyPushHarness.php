@@ -182,6 +182,13 @@ final readonly class NodeCaddyPushHarness
                 printf 'Job for caddy.service failed.\n' >&2
                 exit 1
             fi
+            if [ "$HARNESS_FAIL_RELOAD" = always ] && { [ "$1" = reload-or-restart ] || [ "$1" = reload ]; }; then
+                printf 'Job for caddy.service failed.\n' >&2
+                exit 1
+            fi
+            if [ "$1" = is-active ] && [ "${HARNESS_CADDY_INACTIVE:-0}" = 1 ]; then
+                exit 3
+            fi
             BASH);
         $this->shim('install', <<<'BASH'
             #!/usr/bin/env bash

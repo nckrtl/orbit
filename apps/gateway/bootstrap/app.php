@@ -23,6 +23,7 @@ use App\Http\Middleware\NormalizeErrorDetails;
 use App\Http\Middleware\RecordCommandActivity;
 use App\Http\Middleware\RequireActiveWireGuardPeer;
 use App\Http\Middleware\RequireNodeAccess;
+use App\Infrastructure\Caddy\Build\NodeCaddyBuildException;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Application;
@@ -153,7 +154,7 @@ return Application::configure(basePath: dirname(__DIR__))
                         'error' => [
                             'code' => $exception->errorCode,
                             'message' => $exception->getMessage(),
-                            'details' => ['step' => $exception->step],
+                            'details' => ['step' => $exception->step, ...NodeCaddyBuildException::detailsIn($exception)],
                         ],
                     ], 502)
                     ->header('X-Orbit-Request-Id', is_string($requestId) ? $requestId : '');
@@ -172,7 +173,7 @@ return Application::configure(basePath: dirname(__DIR__))
                         'error' => [
                             'code' => $exception->errorCode,
                             'message' => $exception->getMessage(),
-                            'details' => ['step' => $exception->step],
+                            'details' => ['step' => $exception->step, ...NodeCaddyBuildException::detailsIn($exception)],
                         ],
                     ], 502)
                     ->header('X-Orbit-Request-Id', is_string($requestId) ? $requestId : '');
@@ -210,7 +211,7 @@ return Application::configure(basePath: dirname(__DIR__))
                         'error' => [
                             'code' => $exception->errorCode,
                             'message' => $exception->getMessage(),
-                            'details' => ['step' => $exception->step],
+                            'details' => ['step' => $exception->step, ...NodeCaddyBuildException::detailsIn($exception)],
                         ],
                     ], 502)
                     ->header('X-Orbit-Request-Id', is_string($requestId) ? $requestId : '');
@@ -327,7 +328,7 @@ return Application::configure(basePath: dirname(__DIR__))
                         'error' => [
                             'code' => $exception->errorCode,
                             'message' => $exception->getMessage(),
-                            'details' => $exception->details,
+                            'details' => [...NodeCaddyBuildException::detailsIn($exception), ...$exception->details],
                         ],
                     ], $exception->status)
                     ->header('X-Orbit-Request-Id', is_string($requestId) ? $requestId : '');

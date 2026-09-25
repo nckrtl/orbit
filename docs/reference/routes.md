@@ -308,6 +308,8 @@ Ingress forwards Orbit-CA HTTPS to the Router over the configured LAN address an
 
 When Ingress shares a Node with the Router, with app-prod, or with both, one composed Caddy service serves the public Route. The composed site does not proxy to its own public listener.
 
+When the Ingress Node runs a target of the public Route, one site on the public listener serves that target directly, with `tls force_automate`, and replaces the target's private site for that host. A Router on another Node still forwards private traffic to that Node. It verifies the site against the Node's system roots, which also hold the Orbit root, so it accepts the public certificate. Until Let's Encrypt issues that certificate, the host does not complete TLS on that Node.
+
 Firewall policy admits public HTTP and HTTPS only on the Ingress Node, and only while that Cluster has at least one active public Route. Router and workload listeners stay private. Direct public workload traffic is denied.
 
 An exact client-local override can send the Route domain to the Router address and then to the workload address without changing public Ingress or DNS state. [Local resolver overrides](/reference/local-resolver-overrides) owns installing that caller-local resolver.

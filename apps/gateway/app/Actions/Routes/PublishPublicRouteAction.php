@@ -100,14 +100,27 @@ final readonly class PublishPublicRouteAction
             $failureStep = RouteReplacementStep::IngressFirewall->value;
             $this->forward($route, RouteReplacementStep::IngressFirewall, fn () => $this->edge->prepareIngressFirewall($route));
         } catch (Throwable $exception) {
-            $this->recordFailure($route, $failureStep, $this->errorCode($exception));
+            // A failed activation never completed: the stored step goes back to the verified edge, so the
+            // rollback build renders the Ingress Node as it last built and keeps the Node buildable.
+            $activationFailed = $failureStep === RouteReplacementStep::PublicActivated->value;
+            $this->recordFailure(
+                $route,
+                $failureStep,
+                $this->errorCode($exception),
+                $activationFailed ? RouteReplacementStep::PublicEdgeVerified : null,
+            );
 
             if (
-                $failureStep === RouteReplacementStep::PublicActivated->value
+                $activationFailed
                 || $this->eligibility->publicActivationRank($route->refresh()->replacement_step)
                     < $this->eligibility->publicActivationRank(RouteReplacementStep::PublicActivated)
             ) {
-                $this->edge->rollbackPublicEdge($route);
+                try {
+                    $this->edge->rollbackPublicEdge($route);
+                } catch (Throwable $rollback) {
+                    // The activation failure is what the caller must see; the rollback retries on the next command.
+                    report($rollback);
+                }
             }
 
             throw $exception;
@@ -167,9 +180,9 @@ final readonly class PublishPublicRouteAction
         }
     }
 
-    private function recordFailure(Route $route, string $step, string $errorCode): void
+    private function recordFailure(Route $route, string $step, string $errorCode, ?RouteReplacementStep $stored = null): void
     {
-        $attributes = ['replacement_step' => RouteReplacementStep::tryFrom($step) ?? $route->replacement_step];
+        $attributes = ['replacement_step' => $stored ?? RouteReplacementStep::tryFrom($step) ?? $route->replacement_step];
 
         if ($route->status !== RouteStatus::Active) {
             $attributes['failed_step'] = $step;

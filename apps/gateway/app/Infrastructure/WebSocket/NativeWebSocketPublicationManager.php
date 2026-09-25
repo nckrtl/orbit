@@ -71,14 +71,16 @@ final readonly class NativeWebSocketPublicationManager implements WebSocketPubli
         $this->build($node, fn () => $this->builds->checkListenAddresses($node));
     }
 
-    /** The role is already `removing`, so the build withdraws its site before the certificate goes. */
+    /** The role is already `removing` or has moved, so the build withdraws the site before the certificate goes. */
     public function remove(Node $node): void
     {
         $address = $this->address($node);
 
+        // Forgetting the record first withdraws the site in the build, also on the source of a move,
+        // where the role row already names another Node.
+        $this->certificateRecords()->forget($node->id, CaddySiteCertificates::Websocket);
         $this->build($node, fn () => $this->builds->build($node));
         $this->ssh->execute($this->connection($node, $address), $this->certificatePublisher->removeCommand());
-        $this->certificateRecords()->forget($node->id, CaddySiteCertificates::Websocket);
         $this->dns->converge();
     }
 

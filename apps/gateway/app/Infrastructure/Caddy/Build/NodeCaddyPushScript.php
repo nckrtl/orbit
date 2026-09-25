@@ -283,8 +283,14 @@ final readonly class NodeCaddyPushScript
                 else
                     rm -f -- "\$live"
                 fi
+                # A failed reload leaves Caddy on the configuration it already runs. Caddy is asked to load
+                # the restored file again, and started only when it is not running, never restarted.
                 if [ "\$had_live" = 1 ]; then
-                    systemctl reload-or-restart "\$caddy_service" || systemctl restart "\$caddy_service" || true
+                    if systemctl is-active --quiet "\$caddy_service"; then
+                        systemctl reload "\$caddy_service" || true
+                    else
+                        systemctl start "\$caddy_service" || true
+                    fi
                 fi
                 journalctl -u "\$caddy_service" --since "@\$reload_started" --no-pager -o cat 2>/dev/null | grep '^Error:' | head -n 1 >&2 || true
                 printf 'Caddy did not reload the new version; the previous configuration is live again.\\n' >&2

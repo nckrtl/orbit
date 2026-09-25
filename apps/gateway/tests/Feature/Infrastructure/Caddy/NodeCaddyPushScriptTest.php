@@ -226,7 +226,31 @@ describe('a failed build', function (): void {
             ->and($result['stderr'])->toContain('address already in use')
             ->and(readlink($this->harness->path('Caddyfile')))->toBe($this->harness->path("orbit-versions/{$previous->version}/Caddyfile"))
             ->and($this->harness->directories('orbit-versions'))->toBe([$previous->version])
-            ->and($this->harness->serviceCalls())->toBe(['enable --quiet caddy', 'reload-or-restart caddy', 'reload-or-restart caddy']);
+            ->and($this->harness->serviceCalls())->toBe(['enable --quiet caddy', 'reload-or-restart caddy', 'is-active --quiet caddy', 'reload caddy']);
+    });
+
+    it('never restarts a running Caddy when every reload fails', function (): void {
+        $previous = node_caddy_push_file('shop.test');
+        $this->harness->push($previous);
+
+        $result = $this->harness->push(node_caddy_push_file('other.test'), ['HARNESS_FAIL_RELOAD' => 'always']);
+
+        expect($result['exit'])->not->toBe(0)
+            ->and($result['stderr'])->toContain('orbit-caddy-build-stage=reload')
+            ->and(readlink($this->harness->path('Caddyfile')))->toBe($this->harness->path("orbit-versions/{$previous->version}/Caddyfile"))
+            ->and($this->harness->serviceCalls())->toBe(['enable --quiet caddy', 'reload-or-restart caddy', 'is-active --quiet caddy', 'reload caddy'])
+            ->and($this->harness->serviceCalls())->not->toContain('restart caddy');
+    });
+
+    it('starts Caddy with the restored file when it is not running after a failed reload', function (): void {
+        $previous = node_caddy_push_file('shop.test');
+        $this->harness->push($previous);
+
+        $result = $this->harness->push(node_caddy_push_file('other.test'), ['HARNESS_FAIL_RELOAD' => 'always', 'HARNESS_CADDY_INACTIVE' => '1']);
+
+        expect($result['exit'])->not->toBe(0)
+            ->and(readlink($this->harness->path('Caddyfile')))->toBe($this->harness->path("orbit-versions/{$previous->version}/Caddyfile"))
+            ->and($this->harness->serviceCalls())->toBe(['enable --quiet caddy', 'reload-or-restart caddy', 'is-active --quiet caddy', 'start caddy']);
     });
 
     it('restores a replaced regular file when Caddy fails to reload', function (): void {
