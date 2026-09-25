@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\AgentView\AgentViewConverger;
 use App\Domain\Certificates\GatewayCertificateIssuer;
 use App\Domain\Certificates\GatewayCertificatePaths;
 use App\Domain\Hibernation\RuntimeHibernatorConverger;
@@ -83,7 +84,7 @@ it('repairs restrictive public permissions without exposing private files or sym
 });
 
 it('publishes complete validated FPM Caddy and certificate configurations through atomic switches', function (): void {
-    [$converger, $processes, $issuer, $orbitHome, $hibernator] = gateway_web_converger();
+    [$converger, $processes, $issuer, $orbitHome, $hibernator, $agentView] = gateway_web_converger();
 
     try {
         $converger->converge('gateway.orbit', '10.44.0.1');
@@ -233,6 +234,8 @@ it('publishes complete validated FPM Caddy and certificate configurations throug
             )))
             ->toBeTrue()
             ->and($hibernator->calls)
+            ->toBe(1)
+            ->and($agentView->calls)
             ->toBe(1);
     } finally {
         new Filesystem()->deleteDirectory($orbitHome);
@@ -531,7 +534,7 @@ it('repeats the same idempotent install step on every web convergence', function
 });
 
 it('stops before any Caddy or certificate step when Caddy cannot be installed', function (): void {
-    [$converger, $processes, $issuer, $orbitHome, $hibernator] = gateway_web_converger(failure: 'caddy-install');
+    [$converger, $processes, $issuer, $orbitHome, $hibernator, $agentView] = gateway_web_converger(failure: 'caddy-install');
 
     try {
         expect(fn () => $converger->converge('gateway.orbit', '10.44.0.1'))
@@ -560,6 +563,8 @@ it('stops before any Caddy or certificate step when Caddy cannot be installed', 
             ->and($issuer->calls)
             ->toBeEmpty()
             ->and($hibernator->calls)
+            ->toBe(0)
+            ->and($agentView->calls)
             ->toBe(0);
     } finally {
         new Filesystem()->deleteDirectory($orbitHome);
@@ -749,7 +754,8 @@ function protected_file_writer_wait_until(Closure $condition, float $timeoutSeco
  *     object&ProcessRunner,
  *     object&GatewayCertificateIssuer,
  *     string,
- *     RecordingRuntimeHibernatorConverger
+ *     RecordingRuntimeHibernatorConverger,
+ *     RecordingAgentViewConverger
  * }
  */
 function gateway_web_converger(?string $failure = null, string $checkoutPath = '/home/orbit/orbit-gateway'): array
@@ -855,15 +861,27 @@ function gateway_web_converger(?string $failure = null, string $checkoutPath = '
             checkoutPath: $checkoutPath,
             webRoot: '/home/orbit/web',
             hibernator: $hibernator = new RecordingRuntimeHibernatorConverger,
+            agentView: $agentView = new RecordingAgentViewConverger,
         ),
         $processes,
         $issuer,
         $orbitHome,
         $hibernator,
+        $agentView,
     ];
 }
 
 final class RecordingRuntimeHibernatorConverger implements RuntimeHibernatorConverger
+{
+    public int $calls = 0;
+
+    public function converge(): void
+    {
+        $this->calls++;
+    }
+}
+
+final class RecordingAgentViewConverger implements AgentViewConverger
 {
     public int $calls = 0;
 

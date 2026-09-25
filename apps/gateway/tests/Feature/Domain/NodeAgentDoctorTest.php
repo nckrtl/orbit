@@ -6,6 +6,7 @@ use App\Actions\Doctor\NodeDoctorProbe;
 use App\Domain\Doctor\DoctorNodeContext;
 use App\Domain\Doctor\NodeInspectionData;
 use App\Domain\Shared\LifecycleStatus;
+use App\Infrastructure\AgentView\CacheAgentStateView;
 use App\Models\Node;
 
 it('reports node.agent_missing when the binary or unit is absent', function (bool $binaryExists, bool $unitExists): void {
@@ -130,3 +131,78 @@ function node_agent_doctor_context(
         $checksumMatches,
     ));
 }
+
+/** @return array{DoctorNodeContext, int} */
+function node_agent_view_doctor_context(): array
+{
+    $node = Node::query()->create([
+        'name' => 'edge',
+        'status' => LifecycleStatus::Active,
+        'platform' => 'linux',
+        'architecture' => 'x86_64',
+        'public_ssh_host' => '192.0.2.50',
+        'user' => 'orbit',
+        'wireguard_ip' => '10.44.0.2',
+        'ssh_host_fingerprint' => 'SHA256:managed',
+    ]);
+
+    return [new DoctorNodeContext($node, new NodeInspectionData(true, 'linux', 'x86_64', true, true, true, true, true)), (int) $node->id];
+}
+
+/** @return list<string> */
+function node_agent_view_codes(DoctorNodeContext $context): array
+{
+    return array_map(static fn ($issue): string => $issue->code.'='.json_encode($issue->observed), (new NodeDoctorProbe)->inspect($context)->issues);
+}
+
+describe('the Gateway view of an active agent', function (): void {
+    it('reports nothing while no websocket role is active', function (): void {
+        [$context] = node_agent_view_doctor_context();
+
+        expect(node_agent_view_codes($context))->toBe([]);
+    });
+
+    it('reports the subscriber down when it wrote no recent health', function (): void {
+        activate_websocket_role();
+        [$context] = node_agent_view_doctor_context();
+
+        expect(node_agent_view_codes($context))->toBe(['node.agent_view_stale="subscriber_down"']);
+    });
+
+    it('reports a subscriber without a Reverb connection', function (): void {
+        activate_websocket_role();
+        [$context] = node_agent_view_doctor_context();
+        app(CacheAgentStateView::class)->putSubscriber(configured: true, connected: false, channels: 0);
+
+        expect(node_agent_view_codes($context))->toBe(['node.agent_view_stale="disconnected"']);
+    });
+
+    it('does not report the view for a Node whose agent is missing or not running', function (bool $unitExists, bool $active): void {
+        activate_websocket_role();
+        [$context] = node_agent_view_doctor_context();
+        $inspection = $context->inspection;
+        app(CacheAgentStateView::class)->putSubscriber(configured: true, connected: true, channels: 2);
+
+        $codes = node_agent_view_codes(new DoctorNodeContext($context->node, new NodeInspectionData(true, 'linux', 'x86_64', true, $unitExists, $unitExists, $active, true)));
+
+        expect(array_filter($codes, static fn (string $code): bool => str_starts_with($code, 'node.agent_view_stale')))->toBe([])
+            ->and($inspection->agentActive)->toBeTrue();
+    })->with([
+        'agent missing' => [false, false],
+        'agent inactive' => [true, false],
+    ]);
+
+    it('reports a missing or stale Node view and nothing for a fresh one', function (): void {
+        activate_websocket_role();
+        [$context, $nodeId] = node_agent_view_doctor_context();
+        app(CacheAgentStateView::class)->putSubscriber(configured: true, connected: true, channels: 2);
+
+        expect(node_agent_view_codes($context))->toBe(['node.agent_view_stale="missing"']);
+
+        seed_agent_view($nodeId, [], ageSeconds: 16);
+        expect(node_agent_view_codes($context))->toBe(['node.agent_view_stale="stale"']);
+
+        seed_agent_view($nodeId, []);
+        expect(node_agent_view_codes($context))->toBe([]);
+    });
+});

@@ -201,6 +201,7 @@ it('defines the exact stable issue-code catalog for every Doctor family', functi
             'node.agent_missing',
             'node.agent_inactive',
             'node.agent_outdated',
+            'node.agent_view_stale',
             'node.inspection_failed',
         ],
         'role' => [

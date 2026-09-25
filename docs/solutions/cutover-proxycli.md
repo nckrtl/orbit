@@ -48,7 +48,7 @@ Use these checks after enable. Each one must show a single collector and no extr
 | `https://collector.cli-proxy-api.orbit/v1/quota-stats` | CodexBar-compatible JSON from the snapshot. |
 | Account toggle in the web UI | CLIProxyAPI `PATCH /auth-files/status` then a cache recompile. No quota `api-call`. |
 
-If two pollers appear, disable `proxycli`, stop the leftover Process, and enable again only after the old unit is gone.
+If two pollers appear, run `orbit proxycli:disable`, stop the leftover Process, and enable again only after the old unit is gone.
 
 ## Related
 

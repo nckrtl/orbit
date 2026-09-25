@@ -12,7 +12,7 @@ final readonly class PresenceChannelSigner
     /**
      * Returns the Pusher presence authorization for one member: `auth` signs the socket, channel, and exact `channel_data`.
      *
-     * @param  array{kind: string, node_id: int, version?: ?string}  $userInfo
+     * @param  array{kind: string, node_id?: int, version?: ?string}  $userInfo
      * @return array{auth: string, channel_data: string}
      */
     public function sign(string $socketId, string $channel, RealtimeConnectionData $connection, string $member, array $userInfo): array

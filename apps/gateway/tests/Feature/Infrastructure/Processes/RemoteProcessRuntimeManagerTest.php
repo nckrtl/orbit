@@ -1518,6 +1518,32 @@ it('rechecks exact ownership before reading systemd logs', function (): void {
     expect($this->ssh->commands)->toHaveCount(2);
 });
 
+it('reads logs without the ownership check when a fresh agent view lists the exact unit', function (): void {
+    $process = runtime_manager_systemd_process($this->instance);
+    seed_agent_view($this->instance->node_id, ["systemd:orbit-process-{$process->id}-queue" => 'active']);
+    $this->ssh->responses = [process_runtime_result(stdout: "line one\n")];
+
+    expect($this->manager->logs($process, 20))->toBe("line one\n")
+        ->and($this->ssh->commands)->toHaveCount(1)
+        ->and($this->ssh->commands[0]->arguments[1])->toBe('journalctl');
+});
+
+it('keeps the ownership check before logs when the agent view does not list the unit', function (string $case): void {
+    $process = runtime_manager_systemd_process($this->instance);
+    seed_agent_view(
+        $this->instance->node_id,
+        $case === 'stale' ? ["systemd:orbit-process-{$process->id}-queue" => 'active'] : [],
+        ageSeconds: $case === 'stale' ? 16 : 0,
+    );
+    $this->ssh->responses = [
+        process_runtime_result(),
+        process_runtime_result(stdout: "[Unit]\nDescription=Personal service\n"),
+    ];
+
+    expect(fn () => $this->manager->logs($process, 20))
+        ->toThrow(ProcessOperationException::class, 'not owned by this process');
+})->with(['unlisted', 'stale']);
+
 it('requires a successful systemd stop before deleting an owned unit', function (): void {
     $process = runtime_manager_systemd_process($this->instance);
     $this->ssh->responses = [

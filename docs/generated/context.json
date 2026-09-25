@@ -234,7 +234,6 @@
             "components": [],
             "concepts": [
                 "Gateway",
-                "Process",
                 "proxycli"
             ],
             "governing_adrs": []
@@ -418,6 +417,7 @@
             "concepts": [
                 "Database",
                 "Database connection",
+                "Gateway",
                 "Node",
                 "Process",
                 "Route",
@@ -2803,7 +2803,8 @@
                 "0080",
                 "0104",
                 "0108",
-                "0109"
+                "0109",
+                "0150"
             ]
         },
         {
@@ -3827,6 +3828,25 @@
             ]
         },
         {
+            "path": "docs/decisions/0150-keep-extension-commands-local-and-confirm-the-proxycli-fleet-stop.md",
+            "title": "ADR 0150: Keep extension commands local and confirm the proxycli fleet stop",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs"
+            ],
+            "concepts": [
+                "Gateway",
+                "Node",
+                "Process",
+                "proxycli"
+            ],
+            "governing_adrs": [
+                "0104",
+                "0150"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -4003,7 +4023,8 @@
                 "0145",
                 "0146",
                 "0147",
-                "0148"
+                "0148",
+                "0150"
             ]
         },
         {
@@ -5075,7 +5096,8 @@
                 "0104",
                 "0108",
                 "0109",
-                "0145"
+                "0145",
+                "0150"
             ]
         },
         {
