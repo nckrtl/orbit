@@ -230,7 +230,9 @@ The subscriber also pushes the CPU and memory of every Process to browsers, so n
 
 The subscriber never reads Prometheus, writes the database, or broadcasts in its socket loop. It starts `php artisan orbit:agent-view-publish` as a child process with the queued work, and does not wait for it. Task workspaces and Process usage have separate lanes, with one run at a time in each; work that arrives meanwhile waits for the next run in its lane. A run that takes longer than 12 seconds is stopped.
 
-When a workspace run fails, is stopped, or cannot start, its workspaces are queued again and retried 15 seconds later; the run reads the current view, so a retry is safe. A failed usage sample is dropped, because the next one replaces it. After a subscriber restart, the first workspace list from each agent queues every workspace again. A hung Prometheus or Reverb HTTP API therefore costs a skipped sample or a delayed notice, and the view stays fresh. A failed run's error output goes to the Gateway log.
+When a workspace run fails, is stopped, or cannot start, its workspaces are queued again and retried 15 seconds later; the run reads the current view, so a retry is safe. After five failed runs in a row, a workspace is dropped with an error in the Gateway log, until the agent reports a new change for it.
+
+A failed usage sample is dropped, because the next one replaces it. After a subscriber restart, the first workspace list from each agent queues every workspace again. A hung Prometheus or Reverb HTTP API therefore costs a skipped sample or a delayed notice, and the view stays fresh. A failed run's error output goes to the Gateway log.
 
 ## Install and upgrade
 
@@ -250,7 +252,7 @@ The unit runs the agent as `root` with `Restart=always` and `RestartSec=2`. It g
 
 The Instance root is the Node's apps path from its settings, or `apps` in the managed user's home. The Gateway resolves it on every converge. The bind line appears only when the root lies under `/home`. When the Gateway cannot resolve the managed user, or the root holds characters outside letters, digits, `.`, `_`, `-`, and `/`, the unit sets `ProtectHome=yes` instead, and the Gateway reads that Node's checkouts over SSH.
 
-The Instance root and each checkout must stay world-traversable (`0755`, as Orbit creates them); otherwise the agent leaves the checkout out, and the Gateway reads it over SSH. Orbit removes the world bits from an Instance `.env` when it configures the Laravel URL, after a registration moves a checkout, after a transfer, and for every Instance checkout in the Instance root on each agent converge.
+The Instance root and each checkout must stay world-traversable (`0755`, as Orbit creates them); otherwise the agent leaves the checkout out, and the Gateway reads it over SSH. Orbit removes the world bits from an Instance `.env` when it configures the Laravel URL, after a registration moves a checkout, after a transfer, and for every Instance checkout in the Instance root on each agent converge. When the converge fails to close a checkout's `.env`, it logs a warning that names the checkout and continues.
 
 What the agent can read:
 
