@@ -588,6 +588,7 @@
             ],
             "concepts": [
                 "Gateway",
+                "Node",
                 "Project",
                 "Task",
                 "Tool"
