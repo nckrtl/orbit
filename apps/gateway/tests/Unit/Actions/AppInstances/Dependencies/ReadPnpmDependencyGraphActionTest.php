@@ -426,6 +426,8 @@ YAML;
         'invalid peer declaration' => fn ($manifest, $lock) => $lock->packages->{'plugin@1.0.0'}->peerDependencies->host = 1,
         'invalid peer optional flag' => fn ($manifest, $lock) => $lock->packages->{'plugin@1.0.0'}->peerDependenciesMeta->{'missing-peer'}->optional = 'true',
         'malformed undeclared peer metadata' => fn ($manifest, $lock) => $manifest->peerDependenciesMeta = (object) ['unknown' => (object) ['optional' => 'yes']],
+        // pnpm writes a peer declaration for every package record's metadata entry.
+        'undeclared package peer metadata' => fn ($manifest, $lock) => $lock->packages->{'plugin@1.0.0'}->peerDependenciesMeta->{'undeclared'} = (object) ['optional' => true],
         'invalid integrity' => fn ($manifest, $lock) => $lock->packages->{'app-one@1.0.0'}->resolution->integrity = 'fixture-secret',
         'null resolution metadata' => fn ($manifest, $lock) => $lock->packages->{'app-one@1.0.0'}->resolution = null,
         'invalid tarball metadata' => fn ($manifest, $lock) => $lock->packages->{'app-one@1.0.0'}->resolution->tarball = 1,

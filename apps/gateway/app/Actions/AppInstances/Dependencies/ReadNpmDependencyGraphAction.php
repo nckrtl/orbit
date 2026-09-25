@@ -388,15 +388,15 @@ final readonly class ReadNpmDependencyGraphAction
             return true;
         }
 
-        preg_match('{^npm:(?:@[^/]+/)?[^@]+(?:@(.+))?$}D', $constraint, $match);
-        $spec = trim($match[1] ?? '');
+        preg_match('{^npm:(?:@[^/]+/)?[^@]+(?:@(.*))?$}D', $constraint, $match);
 
-        // npm-package-arg reads a bare alias without a spec as `*`, which dep-valid accepts without a semver check.
-        if ($spec === '' || $spec === '*') {
+        // npm reads `npm:ms` and `npm:ms@` as `*`, which dep-valid accepts without a semver check.
+        // A whitespace-only spec is an empty range instead, which excludes prereleases.
+        if (($match[1] ?? '') === '' || trim($match[1]) === '*') {
             return true;
         }
 
-        $range = NpmVersionRange::parse($spec);
+        $range = NpmVersionRange::parse(trim($match[1]));
 
         if ($range === null) {
             return is_string($record->resolved ?? null) && preg_match('{^https?://}i', $record->resolved) === 1;
@@ -411,7 +411,7 @@ final readonly class ReadNpmDependencyGraphAction
             return $name;
         }
 
-        if (preg_match('{^npm:((?:@[^/]+/)?[^@]+)(?:@(.+))?$}D', $constraint, $match) !== 1) {
+        if (preg_match('{^npm:((?:@[^/]+/)?[^@]+)(?:@(.*))?$}D', $constraint, $match) !== 1) {
             $this->invalid();
         }
 

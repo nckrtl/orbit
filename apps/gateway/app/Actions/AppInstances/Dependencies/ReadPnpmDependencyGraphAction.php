@@ -185,17 +185,22 @@ final readonly class ReadPnpmDependencyGraphAction
         return $links;
     }
 
-    /** @return array<array-key, bool> */
-    private function peers(stdClass $record): array
+    /**
+     * pnpm records no peer for root manifest metadata without a declaration, so the root ignores such a
+     * well-formed entry. pnpm writes a peer for every metadata entry of a lockfile package record.
+     *
+     * @return array<array-key, bool>
+     */
+    private function peers(stdClass $record, bool $root = false): array
     {
         $peers = array_fill_keys(array_keys($this->links($record, 'peerDependencies')), false);
 
         foreach ($this->map($record, 'peerDependenciesMeta') as $name => $meta) {
-            if (! $meta instanceof stdClass || (property_exists($meta, 'optional') && ! is_bool($meta->optional))) {
+            if (! $meta instanceof stdClass || (property_exists($meta, 'optional') && ! is_bool($meta->optional))
+                || (! $root && ! array_key_exists($name, $peers))) {
                 $this->invalid();
             }
 
-            // pnpm records no peer for metadata without a declaration; the entry must still be well formed.
             if (array_key_exists($name, $peers)) {
                 $peers[$name] = $meta->optional ?? false;
             }
@@ -305,7 +310,7 @@ final readonly class ReadPnpmDependencyGraphAction
      */
     private function rootRequirements(stdClass $manifest, stdClass $importer, array $snapshots): array
     {
-        $peerOptional = $this->peers($manifest);
+        $peerOptional = $this->peers($manifest, root: true);
         $peers = $this->links($manifest, 'peerDependencies');
         $optional = $this->links($manifest, 'optionalDependencies');
         $sections = [
