@@ -94,8 +94,8 @@ final class NodeCaddyBuildLock
     }
 
     /**
-     * Runs `$operation` under the Node's lock only when no build holds it now; otherwise returns `$busy`
-     * at once. A reader such as Doctor uses it, so it never waits for a build and never makes one wait long.
+     * Runs `$operation` under the Node's lock when no build holds it within `$waitSeconds`; otherwise returns
+     * `$busy`. A reader such as Doctor uses it, so it waits only briefly and never makes a build wait long.
      *
      * @template T
      * @template B
@@ -104,7 +104,7 @@ final class NodeCaddyBuildLock
      * @param  B  $busy
      * @return T|B
      */
-    public function runIfFree(int $nodeId, Closure $operation, mixed $busy = null): mixed
+    public function runIfFree(int $nodeId, Closure $operation, mixed $busy = null, float $waitSeconds = 0.0): mixed
     {
         if (array_key_exists($nodeId, $this->depths)) {
             return $operation();
@@ -123,8 +123,16 @@ final class NodeCaddyBuildLock
                 throw new RuntimeException("Could not protect the Node Caddy build lock [{$path}].");
             }
 
-            if (! flock($handle, LOCK_EX | LOCK_NB)) {
-                return $busy;
+            $expiresAt = ($this->clock)() + $waitSeconds;
+
+            while (! flock($handle, LOCK_EX | LOCK_NB)) {
+                $remaining = $expiresAt - ($this->clock)();
+
+                if ($remaining <= 0.0) {
+                    return $busy;
+                }
+
+                ($this->wait)((int) min(50_000, ceil($remaining * 1_000_000)));
             }
 
             $this->depths[$nodeId] = 1;

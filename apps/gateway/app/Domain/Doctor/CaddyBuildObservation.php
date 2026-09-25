@@ -16,5 +16,12 @@ final readonly class CaddyBuildObservation
         public ?string $liveVersion,
         public bool $matches,
         public array $sources,
+        /** A build held the Node's lock, so the live file was not compared. */
+        public bool $building = false,
     ) {}
+
+    public static function building(): self
+    {
+        return new self(null, null, false, [], building: true);
+    }
 }

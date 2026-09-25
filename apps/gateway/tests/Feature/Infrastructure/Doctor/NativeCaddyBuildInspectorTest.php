@@ -119,29 +119,41 @@ it('fails closed when the live Caddyfile cannot be read', function (CommandResul
     'a truncated read' => [new CommandResult(0, 'partial', '', 1, true)],
 ]);
 
-it('skips the comparison at once while a build holds the Node lock, and reads with a short timeout', function (): void {
+it('reports a Node as not compared when a build keeps its lock past the short wait, and reads with a short timeout', function (): void {
     $node = caddy_build_inspector_websocket_node();
-    $this->ssh->live = app(NodeCaddyfileRenderer::class)->render($node)->content;
+    $this->ssh->live = app(NodeCaddyfileRenderer::class)->render($node)->content."# hand edit\n";
     mkdir($this->lockDirectory, 0o700, true);
     $held = fopen("{$this->lockDirectory}/node-{$node->id}.lock", 'c+');
     flock($held, LOCK_EX);
+    $now = 0.0;
+    $waited = 0;
+    $lock = new NodeCaddyBuildLock($this->lockDirectory, clock: function () use (&$now): float {
+        return $now;
+    }, wait: function (int $microseconds) use (&$now, &$waited): void {
+        $now += $microseconds / 1_000_000;
+        $waited += $microseconds;
+    });
 
     try {
-        $started = microtime(true);
+        $observation = caddy_build_inspector($this, $lock)->inspect($node);
 
-        expect(caddy_build_inspector($this)->inspect($node))->toBeNull()
-            ->and(microtime(true) - $started)->toBeLessThan(1.0)
+        expect($observation?->building)->toBeTrue()
+            ->and($observation?->matches)->toBeFalse()
+            ->and($waited)->toBeGreaterThanOrEqual((int) (NativeCaddyBuildInspector::LockWaitSeconds * 1_000_000))->toBeLessThan((int) (NativeCaddyBuildInspector::LockWaitSeconds * 1_000_000) + 100_000)
             ->and($this->ssh->commands)->toBe([]);
     } finally {
         flock($held, LOCK_UN);
         fclose($held);
     }
 
-    expect(caddy_build_inspector($this)->inspect($node)?->matches)->toBeTrue()
+    $observation = caddy_build_inspector($this, $lock)->inspect($node);
+
+    expect($observation?->building)->toBeFalse()
+        ->and($observation?->matches)->toBeFalse()
         ->and($this->ssh->commands[0]->timeout)->toBe(NativeCaddyBuildInspector::ReadTimeoutSeconds);
 });
 
-function caddy_build_inspector(object $test): NativeCaddyBuildInspector
+function caddy_build_inspector(object $test, ?NodeCaddyBuildLock $lock = null): NativeCaddyBuildInspector
 {
     return new NativeCaddyBuildInspector(
         app(NodeCaddyfileRenderer::class),
@@ -152,7 +164,7 @@ function caddy_build_inspector(object $test): NativeCaddyBuildInspector
             new CaddyBuildInspectorKnownHosts,
             app(GatewayServingHost::class),
         )),
-        new NodeCaddyBuildLock($test->lockDirectory),
+        $lock ?? new NodeCaddyBuildLock($test->lockDirectory),
     );
 }
 

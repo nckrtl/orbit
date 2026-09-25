@@ -55,6 +55,8 @@ The two Reverb servers share nothing, so the Gateway serves both while they hold
 
 The withdrawal build reloads Caddy on the old Node, and the reload closes that Node's Reverb connections with a WebSocket close. Browsers reconnect at once through private DNS, which already names the new Node, and reload their data when they subscribe again. Agents reconnect after their own backoff, which [Node agent](/reference/node-agent) describes.
 
+The Gateway stops publishing to the old server, and its subscriber closes that link, only after the withdrawal build has succeeded and the old Node's Reverb has stopped. When either step fails, the move is incomplete: the command fails and names `orbit node:role:relocate NEW websocket --from OLD --force`, and the Gateway keeps serving both servers until that command finishes the move.
+
 | Site source | Nodes | Listener |
 | --- | --- | --- |
 | `app-dev` and `app-prod` workload and Router sites, custom proxy Routes, analytics tracking hosts, Agentation, Vite, and hibernation wake sites | Workload and Router Nodes | `0.0.0.0` on a Node with `ingress`; otherwise the WireGuard address and the LAN address when the Node has one |
@@ -216,6 +218,6 @@ The `role` family renders the Node's build from stored state and compares it byt
 
 Doctor checks every Linux Node that renders a Caddy site or holds a `gateway`, `router`, `ingress`, `app-dev`, `app-prod`, `websocket`, or `analytics` role. To repair drift, build the Node again with `php artisan orbit:caddy-build NODE` on the Gateway machine, or converge a role that publishes one of the listed sites, such as `orbit node:role:add NODE app-prod --converge`. The build backs up a hand-edited or foreign file before it replaces it. When Doctor cannot read the live file, it reports `role.inspection_failed`.
 
-Doctor compares only while no build holds the Gateway's build lock for the Node. When a build runs, Doctor skips the comparison for that Node at once instead of waiting, and it reads the live file with a 10-second limit, so a build never waits long for Doctor. A command that has saved its change but has not started its build yet can still show `role.caddy_build_drift` for a moment. Run Doctor again; a drift that remains is real.
+Doctor compares only while no build holds the Gateway's build lock for the Node. When a build runs, Doctor waits up to 5 seconds for it. If the build still holds the lock, Doctor reports `role.inspection_failed` with `observed` set to `building`, so the Node's check reads as unverifiable, never healthy. Doctor reads the live file with a 10-second limit, so a build never waits long for Doctor. A command that has saved its change but has not started its build yet can still show `role.caddy_build_drift` for a moment. Run Doctor again; a drift that remains is real.
 
 For a production Instance, the `instance` family checks that each of the Instance's own site blocks is in the live file exactly as a build renders it, and reports `instance.caddy_projection_mismatch` otherwise. Route families check their Route's sites in the same file. A change elsewhere in the file shows only as `role.caddy_build_drift`.

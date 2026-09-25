@@ -38,6 +38,9 @@ final readonly class NativeCaddyBuildInspector implements CaddyBuildInspector
     /** Well below the 30 seconds a build waits for the lock that Doctor holds while it reads. */
     public const float ReadTimeoutSeconds = 10.0;
 
+    /** How long Doctor waits for a running build before it reports the Node as not compared. */
+    public const float LockWaitSeconds = 5.0;
+
     public function __construct(
         private NodeCaddyfileRenderer $renderer,
         private NodeCaddyLiveReader $live,
@@ -55,18 +58,18 @@ final readonly class NativeCaddyBuildInspector implements CaddyBuildInspector
                 return null;
             }
 
-            // Only while no build holds the Gateway's lock for the Node: a running build is replacing the file,
-            // so Doctor skips the comparison instead of waiting. The short read keeps a build's wait short.
+            // A running build is replacing the file. Doctor waits briefly for it, then reports the Node as
+            // not compared rather than healthy. The short read keeps a build's wait for Doctor short.
             $compared = $this->lock->runIfFree($node->id, fn (): array => [
                 $this->renderer->render($node),
                 $this->live->read($node, self::ReadTimeoutSeconds),
-            ]);
+            ], waitSeconds: self::LockWaitSeconds);
         } catch (Throwable) {
             throw new DoctorInspectionException;
         }
 
         if ($compared === null) {
-            return null;
+            return CaddyBuildObservation::building();
         }
 
         [$caddyfile, $live] = $compared;

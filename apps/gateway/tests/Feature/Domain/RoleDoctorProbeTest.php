@@ -663,6 +663,27 @@ describe('Caddy build drift', function (): void {
         'no build to compare' => [null],
     ]);
 
+    it('reports a Node whose Caddy build was running as not compared, never as healthy', function (): void {
+        $node = role_probe_node('caddy-building');
+        $role = role_probe_assignment($node, RoleName::AppProd);
+        $roleCalls = 0;
+        $vpnCalls = 0;
+
+        $report = new RoleDoctorProbe(
+            role_probe_state_inspector($roleCalls),
+            role_probe_vpn_inspector($vpnCalls),
+            caddyBuilds: role_probe_caddy_builds(CaddyBuildObservation::building()),
+        )->inspect(role_probe_context($node));
+
+        expect($report->status)->toBe(DoctorFamilyStatus::Unverifiable)
+            ->and($report->issues)->toHaveCount(1)
+            ->and($report->issues[0]->code)->toBe('role.inspection_failed')
+            ->and($report->issues[0]->kind)->toBe(DoctorIssueKind::Unverifiable)
+            ->and($report->issues[0]->summary)->toBe('A Caddy build for this Node was running, so Doctor did not compare its Caddyfile.')
+            ->and($report->issues[0]->observed)->toBe('building')
+            ->and($report->issues[0]->resourceId)->toBe($role->id);
+    });
+
     it('reports a failed observation as unverifiable without exception text', function (): void {
         $node = role_probe_node('caddy-unreadable');
         $role = role_probe_assignment($node, RoleName::Gateway);

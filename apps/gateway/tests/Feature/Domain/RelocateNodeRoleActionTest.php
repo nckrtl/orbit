@@ -7,6 +7,7 @@ use App\Domain\AppDev\PrivateDnsAnswerExpiry;
 use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\Gateway\GatewayServingHost;
 use App\Domain\Nodes\NodeRoleFirewallManager;
+use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Nodes\NodeRoleValidationException;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
@@ -229,6 +230,33 @@ describe(RelocateNodeRoleAction::class, function (): void {
             ->and($this->baselines->removed)->toBe([['role' => 'websocket', 'node' => $source->name, 'purge_data' => false]]);
     });
 
+    it('reports a websocket move whose source withdrawal failed as incomplete, and finishes it on retry', function (): void {
+        $source = relocate_role_node('beast', '10.44.0.1');
+        $target = relocate_role_node('services', '10.44.0.11');
+        $source->roles()->create(['role' => RoleName::WebSocket, 'status' => LifecycleStatus::Active]);
+        app(WebSocketCredentialManager::class)->ensure($source);
+        Sleep::fake();
+        $this->baselines->removeFailure = new NodeRoleOperationException(
+            'websocket-caddy',
+            'node_role.convergence_failed',
+            'websocket.caddy_publication_failed',
+            'The Caddy build for Node [beast] failed at stage [gateway-lock]: Another Caddy build for this Node held the lock for 30 seconds.',
+        );
+
+        expect(fn () => app(RelocateNodeRoleAction::class)->execute($target, RoleName::WebSocket, force: true))
+            ->toThrow(function (NodeRoleOperationException $exception) use ($source, $target): void {
+                expect($exception->underlyingErrorCode)->toBe('websocket.caddy_publication_failed')
+                    ->and($exception->getMessage())->toStartWith("Role [websocket] now runs on node [{$target->name}], but withdrawing it from node [{$source->name}] failed, so the move is incomplete:")
+                    ->and($exception->getMessage())->toEndWith("Run `orbit node:role:relocate {$target->name} websocket --from {$source->name} --force` to finish it.");
+            });
+
+        expect($this->baselines->removed)->toBe([]);
+
+        app(RelocateNodeRoleAction::class)->execute($target, RoleName::WebSocket, force: true, from: $source);
+
+        expect($this->baselines->removed)->toBe([['role' => 'websocket', 'node' => $source->name, 'purge_data' => false]]);
+    });
+
     it('transfers metrics and copies missing grafana credentials', function (): void {
         $source = relocate_role_node('beast', '10.44.0.1');
         $target = relocate_role_node('services', '10.44.0.11');
@@ -445,8 +473,17 @@ final class RelocateNodeRoleBaselineFake implements RoleBaselineConverger
         $this->converged[] = "{$assignment->role->value}:{$node->name}";
     }
 
+    public ?NodeRoleOperationException $removeFailure = null;
+
     public function remove(Node $node, NodeRole $assignment, bool $purgeData): void
     {
+        if ($this->removeFailure instanceof NodeRoleOperationException) {
+            $failure = $this->removeFailure;
+            $this->removeFailure = null;
+
+            throw $failure;
+        }
+
         $this->removed[] = [
             'role' => $assignment->role->value,
             'node' => $node->name,

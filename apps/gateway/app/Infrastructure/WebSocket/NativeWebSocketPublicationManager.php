@@ -82,17 +82,17 @@ final readonly class NativeWebSocketPublicationManager implements WebSocketPubli
         // Forgetting the certificate record withdraws the site in the build, also on the source of a move,
         // where the role row already names another Node. The build's Caddy reload closes the Node's Reverb
         // connections, and clients reconnect through private DNS that already names the new Node. The
-        // Gateway keeps publishing here until that build is done, then forgets the serving mark.
+        // serving mark stays until retire(), so a failed withdrawal keeps the Gateway on this Reverb too.
         $this->certificateRecords()->forget($node->id, CaddySiteCertificates::Websocket);
-
-        try {
-            $this->build($node, fn () => $this->builds->build($node));
-        } finally {
-            $this->dnsTarget->forget($node->id);
-        }
+        $this->build($node, fn () => $this->builds->build($node));
 
         $this->ssh->execute($this->connection($node, $address), $this->certificatePublisher->removeCommand());
         $this->dns->converge();
+    }
+
+    public function retire(Node $node): void
+    {
+        $this->dnsTarget->forget($node->id);
     }
 
     /** The certificate may stay on the Node, so a later convergence publishes it again before its site renders. */

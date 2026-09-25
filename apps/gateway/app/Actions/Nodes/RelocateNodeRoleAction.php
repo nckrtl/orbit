@@ -10,6 +10,7 @@ use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Nodes\NodeRoleFirewallManager;
+use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Nodes\NodeRoleValidationException;
 use App\Domain\Nodes\RoleAssignmentException;
 use App\Domain\Nodes\RoleBaselineConverger;
@@ -112,7 +113,7 @@ final readonly class RelocateNodeRoleAction
         $this->copyOwnedSettings($source, $target, $role);
         $assignment = $this->transfer($target, $source, $role);
         $this->afterTransfer($target, $assignment, $role);
-        $this->retractSource($source, $role);
+        $this->retractSourceOrReport($target, $source, $role);
         $this->announce($source);
         $this->announce($target);
 
@@ -124,7 +125,7 @@ final readonly class RelocateNodeRoleAction
         $this->copyOwnedSettings($from, $target, $role);
         $this->prepareTarget($target, $role);
         $this->afterTransfer($target, $assignment, $role);
-        $this->retractSource($from, $role);
+        $this->retractSourceOrReport($target, $from, $role);
         $this->announce($from);
         $this->announce($target);
 
@@ -181,6 +182,29 @@ final readonly class RelocateNodeRoleAction
         }
 
         $this->baselines->converge($target, $assignment);
+    }
+
+    /**
+     * The role already runs on the target. When the source cannot be withdrawn, the move is incomplete:
+     * the error says so and names the command that finishes it. For `websocket`, the Gateway keeps serving
+     * both Reverb servers until then.
+     */
+    private function retractSourceOrReport(Node $target, Node $source, RoleName $role): void
+    {
+        try {
+            $this->retractSource($source, $role);
+        } catch (NodeRoleOperationException $exception) {
+            throw new NodeRoleOperationException(
+                $exception->step,
+                $exception->errorCode,
+                $exception->underlyingErrorCode,
+                "Role [{$role->value}] now runs on node [{$target->name}], but withdrawing it from node [{$source->name}] failed, so the move is incomplete: "
+                    .$exception->getMessage()
+                    ." Run `orbit node:role:relocate {$target->name} {$role->value} --from {$source->name} --force` to finish it.",
+                $exception->result,
+                $exception,
+            );
+        }
     }
 
     private function retractSource(Node $source, RoleName $role): void

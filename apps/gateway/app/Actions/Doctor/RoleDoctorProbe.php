@@ -167,6 +167,19 @@ final readonly class RoleDoctorProbe implements DoctorFamilyProbe
             return;
         }
 
+        if ($observation->building) {
+            $this->add($issues, $role, $this->issue(
+                $role,
+                RoleDoctorIssueCode::InspectionFailed,
+                DoctorIssueKind::Unverifiable,
+                'A Caddy build for this Node was running, so Doctor did not compare its Caddyfile.',
+                'verifiable',
+                'building',
+            ));
+
+            return;
+        }
+
         $sources = $observation->sources === [] ? 'none' : implode(', ', $observation->sources);
         $this->add($issues, $role, $this->issue(
             $role,
