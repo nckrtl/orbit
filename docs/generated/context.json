@@ -74,7 +74,6 @@
                 "Database",
                 "Doctor",
                 "Gateway",
-                "Herdr session",
                 "Ingress",
                 "Instance",
                 "Node",
@@ -199,7 +198,6 @@
                 "Database",
                 "Doctor",
                 "Gateway",
-                "Herdr session",
                 "Instance",
                 "Node",
                 "Node agent",
@@ -235,8 +233,6 @@
             "components": [],
             "concepts": [
                 "Gateway",
-                "Herdr session",
-                "Node",
                 "Process",
                 "proxycli"
             ],
@@ -278,22 +274,6 @@
                 "Instance",
                 "Node",
                 "Project"
-            ],
-            "governing_adrs": []
-        },
-        {
-            "path": "docs/cli/herdr.mdx",
-            "title": "herdr",
-            "kind": "product",
-            "components": [],
-            "concepts": [
-                "Doctor",
-                "Gateway",
-                "Herdr session",
-                "Node",
-                "Process",
-                "Route",
-                "Tool"
             ],
             "governing_adrs": []
         },
@@ -343,7 +323,6 @@
                 "Database",
                 "Firewall rule",
                 "Gateway",
-                "Herdr session",
                 "Ingress",
                 "Instance",
                 "Node",
@@ -520,29 +499,9 @@
                 "Database",
                 "Doctor",
                 "Gateway",
-                "Herdr session",
                 "Node",
                 "Tool",
                 "Tool Manager"
-            ],
-            "governing_adrs": []
-        },
-        {
-            "path": "docs/cli/top.mdx",
-            "title": "top",
-            "kind": "product",
-            "components": [],
-            "concepts": [
-                "Database",
-                "Database connection",
-                "Doctor",
-                "Firewall rule",
-                "Gateway",
-                "Instance",
-                "Node",
-                "Process",
-                "Project",
-                "Schedule"
             ],
             "governing_adrs": []
         },
@@ -574,7 +533,6 @@
                 "Documentation context",
                 "Firewall rule",
                 "Gateway",
-                "Herdr session",
                 "Ingress",
                 "Instance",
                 "Instance routing",
@@ -2060,14 +2018,14 @@
             "concepts": [
                 "Firewall rule",
                 "Gateway",
-                "Herdr session",
                 "Node",
                 "Process"
             ],
             "governing_adrs": [
                 "0069",
                 "0071",
-                "0072"
+                "0072",
+                "0146"
             ]
         },
         {
@@ -2376,7 +2334,8 @@
             ],
             "governing_adrs": [
                 "0084",
-                "0085"
+                "0085",
+                "0147"
             ]
         },
         {
@@ -2446,7 +2405,8 @@
             "governing_adrs": [
                 "0084",
                 "0085",
-                "0088"
+                "0088",
+                "0147"
             ]
         },
         {
@@ -2517,7 +2477,6 @@
             ],
             "concepts": [
                 "Gateway",
-                "Herdr session",
                 "Node",
                 "Route"
             ],
@@ -2526,7 +2485,8 @@
                 "0071",
                 "0072",
                 "0090",
-                "0091"
+                "0091",
+                "0146"
             ]
         },
         {
@@ -3018,7 +2978,8 @@
             "kind": "decision",
             "components": [
                 "apps/docs",
-                "apps/gateway"
+                "apps/gateway",
+                "apps/web"
             ],
             "concepts": [
                 "Database",
@@ -3137,7 +3098,8 @@
             "components": [
                 "apps/docs",
                 "apps/e2e",
-                "apps/gateway"
+                "apps/gateway",
+                "apps/web"
             ],
             "concepts": [
                 "Gateway",
@@ -3225,7 +3187,8 @@
             "title": "ADR 0120: Extract the agent annotation package",
             "kind": "decision",
             "components": [
-                "apps/gateway"
+                "apps/gateway",
+                "apps/web"
             ],
             "concepts": [
                 "Gateway",
@@ -3267,7 +3230,8 @@
             "kind": "decision",
             "components": [
                 "apps/docs",
-                "apps/gateway"
+                "apps/gateway",
+                "apps/web"
             ],
             "concepts": [
                 "Database",
@@ -3288,7 +3252,8 @@
             "title": "ADR 0123: Serve the web app from the Gateway origin",
             "kind": "decision",
             "components": [
-                "apps/gateway"
+                "apps/gateway",
+                "apps/web"
             ],
             "concepts": [
                 "Gateway",
@@ -3298,7 +3263,8 @@
             "governing_adrs": [
                 "0084",
                 "0085",
-                "0123"
+                "0123",
+                "0147"
             ]
         },
         {
@@ -3352,7 +3318,8 @@
             "title": "ADR 0126: Limit browser API calls to Orbit origins",
             "kind": "decision",
             "components": [
-                "apps/gateway"
+                "apps/gateway",
+                "apps/web"
             ],
             "concepts": [
                 "Gateway",
@@ -3524,7 +3491,8 @@
             "title": "ADR 0134: Resume Pi agent streams from a cursor",
             "kind": "decision",
             "components": [
-                "apps/gateway"
+                "apps/gateway",
+                "apps/web"
             ],
             "concepts": [
                 "Gateway",
@@ -3689,7 +3657,8 @@
                 "0137",
                 "0138",
                 "0139",
-                "0141"
+                "0141",
+                "0146"
             ]
         },
         {
@@ -3776,21 +3745,56 @@
             ]
         },
         {
-            "path": "docs/decisions/0146-confirm-the-catalog-that-the-private-dns-listener-serves.md",
-            "title": "ADR 0146: Confirm the catalog that the private DNS listener serves",
+            "path": "docs/decisions/0146-retire-the-herdr-integration.md",
+            "title": "ADR 0146: Retire the Herdr integration",
             "kind": "decision",
             "components": [
+                "apps/cli",
                 "apps/docs",
-                "apps/gateway"
+                "apps/gateway",
+                "apps/web",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Database",
+                "Doctor",
+                "Gateway",
+                "Node",
+                "Process",
+                "Route",
+                "Tool",
+                "Tool Manager",
+                "proxycli"
+            ],
+            "governing_adrs": [
+                "0043",
+                "0069",
+                "0072",
+                "0091",
+                "0123",
+                "0141",
+                "0146"
+            ]
+        },
+        {
+            "path": "docs/decisions/0147-retire-orbit-top.md",
+            "title": "ADR 0147: Retire orbit top",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs"
             ],
             "concepts": [
                 "Gateway",
                 "Node",
-                "proxycli"
+                "Process"
             ],
             "governing_adrs": [
-                "0092",
-                "0146"
+                "0085",
+                "0088",
+                "0123",
+                "0129",
+                "0147"
             ]
         },
         {
@@ -3967,7 +3971,8 @@
                 "0143",
                 "0144",
                 "0145",
-                "0146"
+                "0146",
+                "0147"
             ]
         },
         {
@@ -4063,7 +4068,9 @@
             "path": "docs/reference/agent-annotation.md",
             "title": "Agent annotation package",
             "kind": "reference",
-            "components": [],
+            "components": [
+                "apps/web"
+            ],
             "concepts": [
                 "Database",
                 "Gateway",
@@ -4165,7 +4172,6 @@
                 "Development-server endpoint",
                 "Doctor",
                 "Gateway",
-                "Herdr session",
                 "Instance",
                 "Node",
                 "Process",
@@ -4314,7 +4320,9 @@
             "path": "docs/reference/browser-access.md",
             "title": "Browser access to the Gateway",
             "kind": "reference",
-            "components": [],
+            "components": [
+                "apps/web"
+            ],
             "concepts": [
                 "Gateway",
                 "Instance",
@@ -4335,7 +4343,6 @@
                 "Database",
                 "Doctor",
                 "Gateway",
-                "Herdr session",
                 "Ingress",
                 "Instance",
                 "Node",
@@ -4384,7 +4391,6 @@
                 "Doctor",
                 "Firewall rule",
                 "Gateway",
-                "Herdr session",
                 "Instance",
                 "Node",
                 "Process",
@@ -4578,6 +4584,7 @@
                 "apps/cli",
                 "apps/docs",
                 "apps/gateway",
+                "apps/web",
                 "packages/php-sdk"
             ],
             "concepts": [
@@ -4617,27 +4624,6 @@
                 "0098",
                 "0121",
                 "0140"
-            ]
-        },
-        {
-            "path": "docs/reference/herdr-sessions.md",
-            "title": "Herdr sessions",
-            "kind": "reference",
-            "components": [],
-            "concepts": [
-                "Doctor",
-                "Gateway",
-                "Herdr session",
-                "Node",
-                "Process",
-                "Project",
-                "Task",
-                "Tool"
-            ],
-            "governing_adrs": [
-                "0004",
-                "0069",
-                "0091"
             ]
         },
         {
@@ -4901,7 +4887,6 @@
             "concepts": [
                 "Doctor",
                 "Gateway",
-                "Herdr session",
                 "Ingress",
                 "Instance",
                 "Node",
@@ -5000,9 +4985,7 @@
             "path": "docs/reference/private-dns.md",
             "title": "Private DNS",
             "kind": "reference",
-            "components": [
-                "apps/gateway"
-            ],
+            "components": [],
             "concepts": [
                 "Cluster",
                 "Gateway",
@@ -5014,8 +4997,7 @@
             ],
             "governing_adrs": [
                 "0061",
-                "0062",
-                "0146"
+                "0062"
             ]
         },
         {
@@ -5154,7 +5136,8 @@
             "title": "Tasks",
             "kind": "reference",
             "components": [
-                "apps/gateway"
+                "apps/gateway",
+                "apps/web"
             ],
             "concepts": [
                 "Database",
@@ -5197,7 +5180,6 @@
                 "Database",
                 "Doctor",
                 "Gateway",
-                "Herdr session",
                 "Node",
                 "Process",
                 "Tool",
@@ -5249,7 +5231,9 @@
             "path": "docs/reference/web-app.md",
             "title": "Web app",
             "kind": "reference",
-            "components": [],
+            "components": [
+                "apps/web"
+            ],
             "concepts": [
                 "Gateway",
                 "Node",

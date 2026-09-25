@@ -115,6 +115,4 @@ A retained Tool row for an absent package produces bounded `tool.not_installed` 
 
 ## Limits
 
-Installing or updating the Herdr formula changes package files only. It does not start, stop, or restart a managed [Herdr session](/reference/herdr-sessions).
-
 [ADR 0001](/decisions/0001-tool-management) governs Tool ownership and removal limits. [ADR 0004](/decisions/0004-verify-only-doctor-boundary) governs Doctor inspection and reporting limits.

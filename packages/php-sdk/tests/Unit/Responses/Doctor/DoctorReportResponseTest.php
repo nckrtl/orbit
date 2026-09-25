@@ -73,7 +73,6 @@ it('accepts every family and all statuses', function (): void {
         'tool',
         'process',
         'firewall',
-        'herdr',
         'database_connection',
         'route',
     ]);

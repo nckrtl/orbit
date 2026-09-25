@@ -50,14 +50,6 @@ final readonly class RenameNodeAction
             return $node->load('roles');
         }
 
-        if ($node->herdrSessions()->exists()) {
-            throw new ResourceOperationException(
-                errorCode: 'node.has_herdr_sessions',
-                message: "Node [{$node->name}] still owns Herdr sessions. Observer hostnames embed the Node name. Destroy those sessions, then rename, then recreate them.",
-                status: 409,
-            );
-        }
-
         if (Node::query()->where('name', $name)->whereKeyNot($node->id)->exists()) {
             throw new ResourceOperationException(
                 errorCode: 'validation.failed',

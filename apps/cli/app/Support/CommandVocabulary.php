@@ -32,7 +32,6 @@ final readonly class CommandVocabulary
         'env' => ['import', 'sync'],
         'firewall' => ['allow', 'deny'],
         'gateway' => ['status', 'trust', 'use'],
-        'herdr' => ['adopt', 'observe', 'restart'],
         'instance' => [
             'clone',
             'deploy',
@@ -50,7 +49,6 @@ final readonly class CommandVocabulary
         'realtime' => ['tail'],
         'schedule' => ['logs', 'run'],
         'tasks' => ['cancel', 'complete', 'status'],
-        'top' => ['top'],
     ];
 
     /** @var list<string> */

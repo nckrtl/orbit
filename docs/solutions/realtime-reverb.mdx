@@ -7,7 +7,7 @@ description: "Turn on realtime events with one node role, what its converge inst
 
 ## Problem
 
-`orbit top` and other realtime CLI views need the Gateway to push events instead of the CLI polling for them. The Gateway broadcasts with Laravel's `reverb` driver over one Reverb app, and the CLI subscribes to one private channel named `orbit`. That needs a WebSocket server (the Pusher protocol) reachable at `wss://reverb.orbit`.
+The web app and `realtime:tail` need the Gateway to push events instead of polling for them. The Gateway broadcasts with Laravel's `reverb` driver over one Reverb app, and clients subscribe to one private channel named `orbit`. That needs a WebSocket server (the Pusher protocol) reachable at `wss://reverb.orbit`.
 
 ## Cause
 
@@ -63,4 +63,4 @@ orbit realtime:show
 getent ahostsv4 reverb.orbit
 ```
 
-On the node itself, `systemctl status orbit-websocket` reports the unit active. `orbit realtime:show` reports a configured connection at `wss://reverb.orbit` once the role is active; `getent ahostsv4 reverb.orbit` resolves to the role's node address over WireGuard. `orbit realtime:tail` and the header of `orbit top` go live against real record changes once both report configured. From a node that trusts the Orbit CA, `curl -i https://reverb.orbit/apps/<app-id>/events -X POST` should answer `401 Unauthorized` with `Authentication signature invalid` rather than a connection or TLS error, confirming the Pusher-protocol server is live behind the role's Caddy site.
+On the node itself, `systemctl status orbit-websocket` reports the unit active. `orbit realtime:show` reports a configured connection at `wss://reverb.orbit` once the role is active; `getent ahostsv4 reverb.orbit` resolves to the role's node address over WireGuard. `orbit realtime:tail` and the web app go live against real record changes once both report configured. From a node that trusts the Orbit CA, `curl -i https://reverb.orbit/apps/<app-id>/events -X POST` should answer `401 Unauthorized` with `Authentication signature invalid` rather than a connection or TLS error, confirming the Pusher-protocol server is live behind the role's Caddy site.

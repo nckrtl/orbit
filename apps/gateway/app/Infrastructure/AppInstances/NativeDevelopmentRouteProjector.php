@@ -136,7 +136,7 @@ final readonly class NativeDevelopmentRouteProjector implements AppInstanceTrans
     private function usesCertificate(Node $node, string $scope): bool
     {
         return new AppDevSiteRepository()->forNode($node)->contains(
-            static fn (AppDevSite $site): bool => ($site->certificateScope ?? $site->scope) === $scope,
+            static fn (AppDevSite $site): bool => $site->loadsCertificate($scope),
         );
     }
 

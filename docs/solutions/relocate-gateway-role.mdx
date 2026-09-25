@@ -24,7 +24,7 @@ orbit node:rename gateway vpn
 orbit node:add gateway <new-vps-host>
 ```
 
-`node:add` looks up an existing record by name. Rename-first avoids a unique-name collision. [ADR 0091](/decisions/0091-rename-a-node-without-changing-wireguard-identity) owns that command. Destroy any Herdr sessions on the old Node before rename; observer hostnames embed the Node name.
+`node:add` looks up an existing record by name. Rename-first avoids a unique-name collision. [ADR 0091](/decisions/0091-rename-a-node-without-changing-wireguard-identity) owns that command.
 
 Then provision the new Node as an ordinary machine. It must not already hold `app-dev`, `app-prod`, or `database`; those roles conflict with `gateway`. Install PHP-FPM and Caddy there, and copy the serving checkout, `ORBIT_HOME` (CA and Gateway SSH keys), and Gateway `.env`. Relocate updates the live SQLite on the process host that runs the command, so copy that database onto the target after relocate (or copy it again if you staged one earlier). Then transfer the singleton assignment:
 
