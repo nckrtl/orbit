@@ -193,24 +193,17 @@ it('tries a failing group once per tick', function (): void {
         ->and(TaskGroup::query()->where('status', TaskGroupStatus::Running)->count())->toBe(2);
 });
 
-it('clears the provisioning failure reason when a group moves to backlog or is cancelled', function (TaskGroupStatus $status): void {
+it('clears the provisioning failure reason when a group moves to backlog', function (): void {
     $gateway = claim_hol_enable();
     $group = claim_hol_group(claim_hol_app(), 'Moved');
     $group->update(['assistance_reason' => TaskScheduler::ProvisioningFailedReason]);
     $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip]);
 
-    if ($status === TaskGroupStatus::Backlog) {
-        $this->patchJson("/api/v1/task-groups/{$group->id}", ['status' => 'backlog'])->assertOk();
-    } else {
-        $this->postJson("/api/v1/task-groups/{$group->id}/cancel")->assertOk();
-    }
+    $this->patchJson("/api/v1/task-groups/{$group->id}", ['status' => 'backlog'])->assertOk();
 
-    expect($group->fresh()?->status)->toBe($status)
+    expect($group->fresh()?->status)->toBe(TaskGroupStatus::Backlog)
         ->and($group->fresh()?->assistance_reason)->toBeNull();
-})->with([
-    'backlog' => [TaskGroupStatus::Backlog],
-    'cancelled' => [TaskGroupStatus::Cancelled],
-]);
+});
 
 function claim_hol_group(OrbitApp $app, string $title): TaskGroup
 {

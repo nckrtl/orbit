@@ -237,7 +237,7 @@ The Node ceiling applies once `taskable` points at an Instance on that Node. A g
 
 A fitting claimed group moves from `todo` to `reserved`. InstanceProvisioning assigns the shared Instance on an active Linux `app-dev` Node with capacity and a WireGuard address. Both of the group's drivers must allow the Node. T3 requires an active `t3-code` Process, and Pi requires an active `pi-server` Process, each with desired state `running`. This recorded state is the placement signal, not an HTTP health probe. A [development node exclusion](/reference/development-node-exclusions) removes that Node from the choice before the driver checks and the ceiling.
 
-If no remaining Node fits, provisioning returns no Instance. The group returns to `todo` with the assistance reason `Workspace provisioning did not return an instance.`, and claim processing continues with the next eligible group. The reason clears when the group moves to `running`, `backlog`, or `cancelled`, or when it later waits for capacity.
+If no remaining Node fits, provisioning returns no Instance. The group returns to `todo` with the assistance reason `Workspace provisioning did not return an instance.`, and claim processing continues with the next eligible group. The reason clears when the group moves to `running` or `backlog`, or when it later waits for capacity.
 
 If Nodes fit but each is at the ceiling, the group waits for capacity. It returns to `todo` without a reason. When no `app-dev` Node has capacity, claim processing stops until capacity frees. Otherwise it continues with the next eligible group.
 
