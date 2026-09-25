@@ -60,9 +60,11 @@ final readonly class CaddyFragmentListeners
 
     /**
      * Shell code that rewrites the `bind` lines of the Route and shared fragments in `$fragments` to
-     * these listeners. It sets `listeners_rewritten=1` when it changed a fragment, so a publisher that
-     * found its own fragment unchanged still publishes the corrected siblings. Public sites (no
-     * `https://` scheme) and Unix socket sites keep their own listeners.
+     * these listeners. It rewrites a fragment only when one of its `bind` lines differs, so an unchanged
+     * fragment keeps its exact bytes, and it sets `listeners_rewritten=1` when it rewrote one. Public
+     * sites (no `https://` scheme) and Unix socket sites keep their own listeners. It also defines
+     * `orbit_require_listen_addresses`, which a publisher calls before it swaps the live Caddyfile. It
+     * refuses a listener that is not an address on the Node, as the Node Caddy build does.
      */
     public function script(string $fragments = '$candidate/fragments'): string
     {
@@ -70,26 +72,40 @@ final readonly class CaddyFragmentListeners
         $shared = $this->sharedBind();
         $route = self::RouteFragment;
         $sharedPatterns = implode('|', self::SharedFragments);
+        $addresses = implode(' ', $this->listenAddresses());
 
         return <<<BASH
             listeners_rewritten=0
             orbit_rewrite_listeners() {
                 local fragment=\$1 listeners=\$2 scope=\$3
-                local rewritten="\$fragment.orbit-listeners"
-                awk -v listeners="\$listeners" -v scope="\$scope" '
+                local rewritten="\$fragment.orbit-listeners" changed
+                changed=\$(awk -v listeners="\$listeners" -v scope="\$scope" -v out="\$rewritten" '
                     /^[[:space:]]*bind[[:space:]]/ && (scope == "all" || previous ~ /^[[:space:]]*https:\\/\\/[^[:space:]]+[[:space:]]*[{][[:space:]]*\$/) {
                         match(\$0, /^[[:space:]]*/)
-                        print substr(\$0, 1, RLENGTH) "bind " listeners
+                        line = substr(\$0, 1, RLENGTH) "bind " listeners
+                        if (line != \$0) changed++
+                        print line > out
                         previous = \$0
                         next
                     }
-                    { print; if (\$0 !~ /^[[:space:]]*\$/) previous = \$0 }
-                ' "\$fragment" > "\$rewritten"
-                if ! cmp -s -- "\$fragment" "\$rewritten"; then
+                    { print > out; if (\$0 !~ /^[[:space:]]*\$/) previous = \$0 }
+                    END { print changed + 0 }
+                ' "\$fragment")
+                if [ "\$changed" != 0 ]; then
                     cat -- "\$rewritten" > "\$fragment"
                     listeners_rewritten=1
                 fi
                 rm -f -- "\$rewritten"
+            }
+            orbit_require_listen_addresses() {
+                local present address
+                present=\$(ip -o -4 addr show 2>/dev/null | awk '{ split(\$4, parts, "/"); print parts[1] }' || true)
+                for address in {$addresses}; do
+                    if ! printf '%s\\n' "\$present" | grep -Fxq -- "\$address"; then
+                        printf 'Caddy would bind %s, which is not an address on this Node. Correct the stored WireGuard or LAN address of the Node, then publish again.\\n' "\$address" >&2
+                        exit 1
+                    fi
+                done
             }
             for listener_fragment in "{$fragments}"/*.caddy; do
                 if [ ! -f "\$listener_fragment" ] || [ -L "\$listener_fragment" ]; then
@@ -101,5 +117,36 @@ final readonly class CaddyFragmentListeners
                 esac
             done
             BASH;
+    }
+
+    /**
+     * Shell function `orbit_fragments_unchanged CANDIDATE LIVE`. It succeeds when both directories hold the
+     * same `.caddy` files with the same bytes, so a publisher leaves an identical live version alone.
+     */
+    public static function comparison(): string
+    {
+        return <<<'BASH'
+            orbit_fragments_unchanged() {
+                local candidate=$1 live=$2 fragment
+                [ -d "$live" ] || return 1
+                for fragment in "$candidate"/*.caddy; do
+                    [ -e "$fragment" ] || continue
+                    cmp -s -- "$fragment" "$live/$(basename "$fragment")" || return 1
+                done
+                for fragment in "$live"/*.caddy; do
+                    [ -e "$fragment" ] || continue
+                    [ -e "$candidate/$(basename "$fragment")" ] || return 1
+                done
+            }
+            BASH;
+    }
+
+    /** @return list<string> The specific addresses these listeners bind, which must exist on the Node. */
+    public function listenAddresses(): array
+    {
+        return array_values(array_unique(array_filter(
+            [...$this->routes, ...$this->shared],
+            static fn (string $address): bool => $address !== NodeCaddyListeners::Wildcard,
+        )));
     }
 }

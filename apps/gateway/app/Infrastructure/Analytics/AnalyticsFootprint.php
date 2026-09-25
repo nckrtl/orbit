@@ -19,7 +19,7 @@ final readonly class AnalyticsFootprint
 
     public const string CaddyFragmentMarker = '# Managed by Orbit: analytics';
 
-    /** Replaced on the node with the address its other Caddy sites already bind. */
+    /** Replaced on the Gateway with the listener the Node Caddy build rule chooses for a shared site. */
     public const string CaddyBindPlaceholder = '__ORBIT_ANALYTICS_BIND__';
 
     public const string CertificateVersionsDirectory = '/etc/caddy/orbit-analytics-cert-versions';

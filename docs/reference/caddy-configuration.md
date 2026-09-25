@@ -62,9 +62,17 @@ The Gateway decides the addresses from stored state: the Node's `ingress` role, 
 - The private `https://` sites in `app-dev.caddy`.
 - Every site in `websocket.caddy`, `analytics.caddy`, and `proxycli.caddy`.
 
-One publication therefore corrects a listener that another publisher wrote earlier. It publishes a new version when only a carried fragment changed. Public sites, Unix socket sites, and all other fragments keep their `bind` lines. The Metrics, service metrics, and Gateway web publishers bind the WireGuard address and carry other fragments unchanged.
+One publication therefore corrects a listener that another publisher wrote earlier. A fragment whose `bind` lines already follow the rule keeps its exact bytes. Public sites, Unix socket sites, and all other fragments keep their `bind` lines. The Metrics, service metrics, and Gateway web publishers bind the WireGuard address and carry other fragments unchanged.
 
-A stored LAN address must exist on its Node. Otherwise Caddy fails to reload, and the publisher restores the previous version and fails with its usual error code.
+When every fragment of the new version matches the live version byte for byte, a publisher changes nothing. It writes no version and does not reload Caddy, so open WebSocket streams stay connected.
+
+Before the `app-dev`, `websocket`, `analytics`, and ProxyCli publishers swap the live Caddyfile, they check that every specific address they bind exists on the Node, as the [Node Caddy build](#how-a-build-is-pushed) does. When a stored LAN address is missing, for example after a DHCP lease changed, the publisher stops, leaves the live Caddyfile unchanged, and fails with its usual error code. The message names the address:
+
+```text
+Caddy would bind 192.168.6.30, which is not an address on this Node. Correct the stored WireGuard or LAN address of the Node, then publish again.
+```
+
+Give a Node with a stored LAN address a fixed address or a DHCP reservation.
 
 ## Publication lock
 

@@ -32,6 +32,7 @@ final readonly class ProxyCliCaddyPublisher
     ): RemoteCommand {
         $lockScript = CaddyPublicationLock::script();
         $listenerScript = $listeners->script();
+        $comparison = CaddyFragmentListeners::comparison();
         $encoded = base64_encode(str_replace(ProxyCliFootprint::CaddyBindPlaceholder, $listeners->sharedBind(), $configuration));
         $replacedFragment = $appDevConfiguration === null ? '' : self::AppDevFragment;
         $replacementEncoded = base64_encode($appDevConfiguration ?? '');
@@ -84,21 +85,20 @@ final readonly class ProxyCliCaddyPublisher
                 fi
                 printf '%s' '{$encoded}' | base64 --decode > "\$candidate/fragments/\$owned_fragment"
                 {$listenerScript}
+                {$comparison}
                 printf '%s\n' '{$this->encodedGlobalOptions()}' | base64 --decode > "\$candidate/Caddyfile"
                 printf 'import %s/fragments/*.caddy\n' "\$candidate" >> "\$candidate/Caddyfile"
                 chown -R root:caddy "\$candidate"
                 find "\$candidate" -type d -exec chmod 0750 {} +
                 find "\$candidate" -type f -exec chmod 0640 {} +
-                if [ -z "\$replaced_fragment" ] \\
-                    && [ "\$listeners_rewritten" = 0 ] \\
-                    && [ -d "\$current_fragments" ] \\
-                    && [ -f "\$current_fragments/\$owned_fragment" ] \\
-                    && cmp -s -- "\$candidate/fragments/\$owned_fragment" "\$current_fragments/\$owned_fragment" \\
+                # An identical candidate needs no new version and no reload.
+                if orbit_fragments_unchanged "\$candidate/fragments" "\$current_fragments" \\
                     && systemctl is-active --quiet "\$caddy_service"; then
                     rm -rf -- "\$candidate"
                     exit 0
                 fi
                 refuse_carried_global_options "\$candidate" "\$source_main"
+                orbit_require_listen_addresses
                 caddy validate --config "\$candidate/Caddyfile" --adapter caddyfile
                 printf '%s\n' '{$this->encodedGlobalOptions()}' | base64 --decode > "\$candidate/Caddyfile"
                 printf 'import %s/%s/fragments/*.caddy\n' "\$versions" "\$version" >> "\$candidate/Caddyfile"

@@ -25,12 +25,39 @@ final class CaddyFragmentNodeHarness implements SshExecutor
 
     private int $versions = 0;
 
-    public function __construct()
+    private string $lastError = '';
+
+    /** @param list<string> $addresses The IPv4 addresses the Node's `ip` reports. */
+    public function __construct(array $addresses = ['10.44.0.3'])
     {
         $this->root = sys_get_temp_dir().'/orbit-caddy-fragments-'.bin2hex(random_bytes(6));
         new Filesystem()->ensureDirectoryExists($this->root.'/bin');
         new Filesystem()->ensureDirectoryExists($this->root.'/etc/caddy/orbit-versions');
         $this->writeShims();
+        $this->addresses($addresses);
+    }
+
+    /** @param list<string> $addresses */
+    public function addresses(array $addresses): void
+    {
+        file_put_contents($this->root.'/addresses', implode(PHP_EOL, $addresses).PHP_EOL);
+    }
+
+    /** @return list<string> The published version directories, oldest name first. */
+    public function versions(): array
+    {
+        $versions = array_map(basename(...), glob($this->root.'/etc/caddy/orbit-versions/*', GLOB_ONLYDIR) ?: []);
+        sort($versions);
+
+        return $versions;
+    }
+
+    /** @return list<string> Every `systemctl` call the publications made. */
+    public function serviceCalls(): array
+    {
+        $log = @file_get_contents($this->root.'/systemctl.log');
+
+        return $log === false ? [] : array_values(array_filter(explode(PHP_EOL, $log)));
     }
 
     /** @param array<string, string> $fragments The live version's fragments by file name. */
@@ -127,10 +154,17 @@ final class CaddyFragmentNodeHarness implements SshExecutor
             RuntimeHibernation::AccessLogDirectory => $this->root.'/hibernation/logs',
         ];
         $arguments = array_map(static fn (string $argument): string => $paths[$argument] ?? $argument, $arguments);
-        $process = new Process($arguments, $this->root, ['PATH' => $this->root.'/bin:'.getenv('PATH')], $command->input);
+        $process = new Process($arguments, $this->root, ['PATH' => $this->root.'/bin:'.getenv('PATH'), 'HARNESS_ROOT' => $this->root], $command->input);
         $process->run();
+        $this->lastError = $process->getErrorOutput();
 
         return $process;
+    }
+
+    /** The standard error of the last program the harness ran. */
+    public function lastError(): string
+    {
+        return $this->lastError;
     }
 
     private function writeShims(): void
@@ -149,7 +183,13 @@ final class CaddyFragmentNodeHarness implements SshExecutor
                 BASH,
             'chown' => "#!/usr/bin/env bash\nexit 0\n",
             'caddy' => "#!/usr/bin/env bash\nexit 0\n",
-            'systemctl' => "#!/usr/bin/env bash\nexit 0\n",
+            'systemctl' => "#!/usr/bin/env bash\nprintf '%s\\n' \"\$*\" >> \"\$HARNESS_ROOT/systemctl.log\"\n",
+            'ip' => <<<'BASH'
+                #!/usr/bin/env bash
+                while read -r address; do
+                  [ -n "$address" ] && printf '2: orbit    inet %s/24 scope global orbit\n' "$address"
+                done < "$HARNESS_ROOT/addresses"
+                BASH,
             'dpkg-query' => "#!/usr/bin/env bash\nexit 0\n",
             'runuser' => "#!/usr/bin/env bash\nshift 3\nexec \"\$@\"\n",
         ];

@@ -99,6 +99,7 @@ function proxycli_caddy_root(): string
     $stubs = [
         'install' => "#!/usr/bin/env bash\nwhile [ \"\$1\" != -- ]; do shift; done\nshift\nmkdir -p \"\$@\"\n",
         'chown' => "#!/usr/bin/env bash\nexit 0\n",
+        'ip' => "#!/usr/bin/env bash\necho '2: orbit    inet 10.44.0.17/24 scope global orbit'\n",
         'caddy' => "#!/usr/bin/env bash\necho \"\$*\" >> \"\$ORBIT_TEST_ROOT/caddy.log\"\n[ \"\$ORBIT_TEST_VALIDATES\" = 1 ]\n",
         'systemctl' => "#!/usr/bin/env bash\nif [ \"\$1\" = is-active ]; then exit 0; fi\necho \"\$*\" >> \"\$ORBIT_TEST_ROOT/systemctl.log\"\n",
     ];

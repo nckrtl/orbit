@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\ProxyCli\ProxyCliState;
@@ -112,6 +113,26 @@ describe('the listener rewrite', function (): void {
             rmdir($directory);
         }
     });
+
+    it('keeps the exact bytes of a fragment whose listeners already follow the rule', function (): void {
+        $directory = sys_get_temp_dir().'/orbit-listeners-'.bin2hex(random_bytes(6));
+        mkdir($directory);
+        // The analytics and ProxyCli renderers end without a final newline.
+        $fragment = "# Managed by Orbit: analytics\nanalytics.orbit {\n    bind 10.44.0.3\n}";
+        file_put_contents("{$directory}/analytics.caddy", $fragment);
+        $script = new CaddyFragmentListeners(['10.44.0.3'], ['10.44.0.3'])->script('$directory');
+
+        try {
+            $process = new Process(['bash', '-euc', 'directory=$1; '.$script.PHP_EOL.'printf %s "$listeners_rewritten"', 'rewrite', $directory]);
+            $process->mustRun();
+
+            expect($process->getOutput())->toBe('0')
+                ->and(file_get_contents("{$directory}/analytics.caddy"))->toBe($fragment);
+        } finally {
+            array_map(unlink(...), glob("{$directory}/*") ?: []);
+            rmdir($directory);
+        }
+    });
 });
 
 describe('fragment publishers on one Node', function (): void {
@@ -179,6 +200,45 @@ describe('fragment publishers on one Node', function (): void {
 
         expect($this->harness->binds())->toBe(fragment_listener_expected_binds('bind 0.0.0.0'));
     });
+
+    it('leaves an unchanged Node alone: no new version and no reload', function (string $publisher): void {
+        $node = fragment_listener_services_node();
+        $publishers = fragment_listener_publishers($this->harness, $node);
+        $this->harness->seed(fragment_listener_incident_fragments($node));
+
+        foreach ($publishers as $publish) {
+            $publish();
+        }
+
+        $versions = $this->harness->versions();
+        $reloads = fragment_listener_reloads($this->harness);
+
+        $publishers[$publisher]();
+        $publishers[$publisher]();
+
+        expect($this->harness->versions())->toBe($versions)
+            ->and(fragment_listener_reloads($this->harness))->toBe($reloads)
+            ->and($this->harness->binds())->toBe(fragment_listener_expected_binds('bind 10.44.0.3'));
+    })->with(['app-dev', 'websocket', 'analytics', 'proxycli']);
+
+    it('refuses before the swap when the Node lacks its stored LAN address', function (string $publisher): void {
+        $node = fragment_listener_services_node();
+        $node->update(['lan_ip' => '192.168.6.30']);
+        $this->harness->seed(fragment_listener_incident_fragments($node));
+        $live = $this->harness->fragments();
+
+        expect(fn () => fragment_listener_publishers($this->harness, $node)[$publisher]())
+            ->toThrow(Throwable::class)
+            ->and($this->harness->lastError())->toContain('Caddy would bind 192.168.6.30, which is not an address on this Node.')
+            ->and($this->harness->fragments())->toBe($live)
+            ->and(fragment_listener_reloads($this->harness))->toBe(0);
+
+        $this->harness->addresses(['10.44.0.3', '192.168.6.30']);
+        fragment_listener_publishers($this->harness, $node)[$publisher]();
+
+        expect($this->harness->binds()['app-dev.caddy'])->toBe(['bind 10.44.0.3 192.168.6.30'])
+            ->and($this->harness->binds()['websocket.caddy'])->toBe(['bind 10.44.0.3']);
+    })->with(['app-dev', 'websocket']);
 });
 
 function fragment_listener_node(string $name, string $wireGuard, ?string $lan = null, bool $ingress = false): Node
@@ -264,11 +324,7 @@ function fragment_listener_publishers(CaddyFragmentNodeHarness $harness, Node $n
     $listeners = static fn (): CaddyFragmentListeners => app(NodeCaddyListenerResolver::class)->fragments($node);
 
     return [
-        'app-dev' => static fn () => new RemoteAppDevCaddyManager(
-            new AppDevSiteRepository,
-            new AppDevCaddyConfigRenderer,
-            new AppDevSshExecutor($harness, app(SshKeyProvider::class), app(KnownHostsStore::class)),
-        )->converge($node),
+        'app-dev' => static fn () => fragment_listener_route_manager($harness)->converge($node),
         'websocket' => static fn () => $harness->run(new WebSocketCaddyPublisher()->command(
             new WebSocketCaddySiteRenderer()->render(8080),
             '8080',
@@ -285,6 +341,23 @@ function fragment_listener_publishers(CaddyFragmentNodeHarness $harness, Node $n
             $listeners(),
         )),
     ];
+}
+
+/** The Route publisher with an in-process projection lock, so it never waits on another test worker. */
+function fragment_listener_route_manager(CaddyFragmentNodeHarness $harness): RemoteAppDevCaddyManager
+{
+    return new RemoteAppDevCaddyManager(
+        new AppDevSiteRepository,
+        new AppDevCaddyConfigRenderer,
+        new AppDevSshExecutor($harness, app(SshKeyProvider::class), app(KnownHostsStore::class)),
+        projection: new class implements DevelopmentProjectionOperationLock
+        {
+            public function run(Closure $operation): mixed
+            {
+                return $operation();
+            }
+        },
+    );
 }
 
 /**
@@ -309,4 +382,9 @@ function fragment_listener_orders(array $items): array
     }
 
     return $orders;
+}
+
+function fragment_listener_reloads(CaddyFragmentNodeHarness $harness): int
+{
+    return count(array_filter($harness->serviceCalls(), static fn (string $call): bool => str_starts_with($call, 'reload-or-restart')));
 }
