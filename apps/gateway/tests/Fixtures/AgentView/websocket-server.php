@@ -32,12 +32,18 @@ function say(string $line): void
     fflush(STDOUT);
 }
 
-/** Closes with a TCP reset and no close frame or TLS close_notify, as a crashed or restarted Reverb can. */
-function reset_connection(Socket $socket): void
+/**
+ * Resets the connection like a crashed Reverb: no close frame and no TLS close_notify, only a TCP
+ * reset. Closing the PHP stream would send close_notify first, and the client would read a clean
+ * end of stream, so the server kills itself with the socket set to linger zero.
+ */
+function reset_connection(Socket $socket): never
 {
     socket_set_option($socket, SOL_SOCKET, SO_LINGER, ['l_onoff' => 1, 'l_linger' => 0]);
-    socket_close($socket);
     say('reset=yes');
+    posix_kill(getmypid(), SIGKILL);
+
+    exit(1);
 }
 
 function frame(int $opcode, string $payload, bool $final = true): string
@@ -146,8 +152,6 @@ for ($connection = 1; $connection <= $connections; $connection++) {
         }
 
         reset_connection($socket);
-
-        continue;
     }
 
     if (! handshake($client, $mode)) {
@@ -157,11 +161,25 @@ for ($connection = 1; $connection <= $connections; $connection++) {
     }
 
     if ($mode === 'reset') {
-        // Wait for the client's first frame, which proves its handshake is done, then reset.
-        $read = [$client];
-        $write = $except = null;
-        stream_select($read, $write, $except, 10);
+        // The client is connected and waiting to read.
+        usleep(200_000);
         reset_connection($socket);
+    }
+
+    if ($mode === 'reset-after-frame') {
+        // Once the client is connected and waiting, a whole message and then a reset before it reads.
+        usleep(200_000);
+        fwrite($client, text(['event' => 'last']));
+        reset_connection($socket);
+    }
+
+    if ($mode === 'ping') {
+        // A ping the client cannot answer, because the test shut its write side.
+        usleep(200_000);
+        fwrite($client, frame(0x9, 'p'));
+        say('pinged=yes');
+        // Keep the connection open, so only the client's failed write can end it.
+        sleep(30);
 
         continue;
     }
