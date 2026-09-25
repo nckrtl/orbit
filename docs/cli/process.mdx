@@ -239,9 +239,20 @@ orbit process:logs <process> [--lines=COUNT] [--follow] [--json]
 
 Without `--follow`, the Gateway reads the tail once over SSH. With `--follow`, the CLI opens a [live log stream](/reference/live-logs): the Node agent reads the log, and the Gateway relays new lines to this CLI only. The CLI prints `[orbit] N lines dropped` or `[orbit] N MiB skipped` where the stream reports them.
 
-When the Gateway cannot open a stream, for example because the Node's agent is older than 0.3.0 or realtime is not configured, the CLI prints a notice on stderr and polls the one-shot read every 5 seconds. It does the same when it cannot connect to Reverb within 15 seconds, with reason `realtime_unreachable`, for example on a host that does not resolve `reverb.orbit`. It prints only the lines after the last line it printed. When a live stream ends because the agent stopped, the source became unreadable, or the Gateway fell behind, the CLI switches to polling in the same way. It prints a part the Gateway sends again, with a `sequence` it already has, only once.
+When the Gateway cannot open a stream, for example because the Node's agent is older than 0.3.0 or realtime is not configured, the CLI prints a notice on stderr and polls the one-shot read every 5 seconds. It does the same when it cannot connect to Reverb within 15 seconds, with reason `realtime_unreachable`, for example on a host that does not resolve `reverb.orbit`. When a live stream ends because the agent stopped, the source became unreadable, or the Gateway fell behind, the CLI switches to polling in the same way. It prints a part the Gateway sends again, with a `sequence` it already has, only once.
 
-With `--json` and `--follow`, the CLI prints one JSON object on each line: `{"type":"lines","lines":[...],"dropped":0,"skipped":0}` for new lines, and `{"type":"notice","code":"logs.live_unavailable","reason":"agent_outdated"}` when it switches to polling. Ctrl-C ends the command with exit code 0 and closes the stream.
+While it polls, the CLI prints only the lines after the last line it printed:
+
+- The first poll reads `--lines` lines. Every later poll reads 1,000 lines, so the last printed line is still in the read even with `--lines=1`.
+- When a read does not hold the last printed line, because more than 1,000 lines were written in 5 seconds or the log was rotated, the CLI prints `[orbit] lines may be missing` and then the newest `--lines` lines.
+- While a log is shorter than 1,000 lines, the CLI counts new lines by position, so it prints repeated identical lines too. In a longer log it finds its place by the text of the last lines it printed, so a new line identical to those lines can be missed.
+- One failed read, for example a 502 while the Gateway restarts, does not end the command. The third failed read in a row does.
+
+For the reasons that pass on their own, such as `agent_not_joined` during a `websocket` move, the CLI tries to open a stream again every 30 seconds. A stream it opens after it printed lines asks for 1,000 earlier lines and prints only the ones after the last printed line, or `[orbit] lines may be missing` and the newest `--lines` lines. [Live logs](/reference/live-logs#when-the-live-path-is-not-available) lists the reasons. The CLI prints the notice again only when the reason changes or after a stream ran.
+
+The CLI redacts credential-shaped text before it prints a line and writes `[redacted]`. A value that the agent or the Gateway already redacted shows as `[REDACTED]`, so one line can show both.
+
+With `--json` and `--follow`, the CLI prints one JSON object on each line: `{"type":"lines","lines":[...],"dropped":0,"skipped":0}` for new lines, `{"type":"notice","code":"logs.live_unavailable","reason":"agent_outdated"}` when it switches to polling, and `{"type":"missing"}` where it prints `[orbit] lines may be missing`. Ctrl-C ends the command with exit code 0 and closes the stream.
 
 ```bash
 orbit process:logs 41 --lines=250
