@@ -21,6 +21,8 @@ use Throwable;
 
 final readonly class TaskScheduler
 {
+    private const string BASELINE_COMPOSER_INSTALL_STEP = '[Orbit internal] Install Composer dependencies';
+
     public function __construct(
         private TaskConcurrencyGuard $ceilings,
         private InstanceProvisioning $provisioning,
@@ -1167,6 +1169,8 @@ final readonly class TaskScheduler
             : 0;
         $branch = 'task-'.$group->id;
         $reason = match (true) {
+            $check instanceof TaskCheck && $status === TaskCheckStatus::Failed && $check->failed_step === self::BASELINE_COMPOSER_INSTALL_STEP => "Composer dependency installation failed with exit code {$check->exit_code} on a fresh checkout of {$branch}, before any agent started. Restore the required dependencies, then cancel and create the group again. The task's check shows the install output.",
+            $check instanceof TaskCheck && $status === TaskCheckStatus::Failed && $check->failed_step === null && $this->checkOutputShowsMissingComposerDependencies($check) => "Composer dependencies appear to be missing on a fresh checkout of {$branch}, before any agent started. Install the Project dependencies, then cancel and create the group again. The task's check shows the missing-dependency output.",
             $check instanceof TaskCheck && $status === TaskCheckStatus::Failed && $check->failed_step !== null => "The Project setup step \"{$check->failed_step}\" failed with exit code {$check->exit_code} on a fresh checkout of {$branch}, before any agent started. Fix the setup or the branch, then cancel and create the group again. The task's check shows the output.",
             $check instanceof TaskCheck && $status === TaskCheckStatus::Failed => "composer check failed with exit code {$check->exit_code} on a fresh checkout of {$branch}, before any agent started. The Project's default branch or the task branch is broken. Fix it, then cancel and create the group again. The task's check shows the output.",
             $status === TaskCheckStatus::Cancelled => 'An operator cancelled the baseline check before any agent started.',
@@ -1181,6 +1185,14 @@ final readonly class TaskScheduler
         }
 
         $this->startBaseline($group, $task);
+    }
+
+    private function checkOutputShowsMissingComposerDependencies(TaskCheck $check): bool
+    {
+        return preg_match(
+            '/vendor\\/bin\\/[^:\\s]+:\\s*(?:not found|No such file or directory)|vendor\\/autoload\\.php.{0,160}(?:failed to open stream|No such file|not found)|Failed opening required [\'\"][^\'\"]*vendor\\/autoload\\.php/i',
+            (string) $check->output,
+        ) === 1;
     }
 
     private function startBaseline(TaskGroup $group, Task $task): void
@@ -1200,6 +1212,11 @@ final readonly class TaskScheduler
             ->map(static fn (ProjectLifecycleStep $step): array => ['name' => $step->name, 'command' => $step->command, 'timeout_seconds' => $step->timeout_seconds])
             ->values()
             ->all();
+        $setup[] = [
+            'name' => self::BASELINE_COMPOSER_INSTALL_STEP,
+            'command' => 'while IFS= read -r -d "" manifest; do project="${manifest%/composer.json}"; [ "$project" = "$manifest" ] && project="."; if [ -f "$project/composer.lock" ] && [ ! -f "$project/vendor/autoload.php" ]; then (cd "$project" && composer install --no-interaction --prefer-dist) || exit $?; fi; done < <(git ls-files -z -- "composer.json" ":(glob)**/composer.json")',
+            'timeout_seconds' => 600,
+        ];
         try {
             $process = $this->checks->start($instance, $setup);
         } catch (TaskCheckException $exception) {
