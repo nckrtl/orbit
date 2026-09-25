@@ -8,6 +8,7 @@ use App\E2E\Value\GuestCommand;
 use App\E2E\Value\TopologyProfile;
 use App\E2E\Value\TopologyRecipe;
 use App\E2E\Value\TopologyTarget;
+use Illuminate\Filesystem\Filesystem;
 use Illuminate\Process\PendingProcess;
 use Illuminate\Support\Facades\Process;
 use Tests\TestCase;
@@ -163,8 +164,7 @@ describe('mount.source', function () {
                 ->and(fileperms($environment) & 0o777)->toBe(0o640)
                 ->and(glob($directory.'/.env.*'))->toBe([]);
         } finally {
-            array_map(unlink(...), glob($directory.'/{,.}*', GLOB_BRACE) ?: []);
-            @rmdir($directory);
+            (new Filesystem)->deleteDirectory($directory);
         }
     })->with([
         'bootstrap default' => ["APP_ENV=local\nORBIT_GATEWAY_CHECKOUT=/home/orbit/orbit-gateway\nORBIT_HOME=/home/orbit/.orbit\n"],
