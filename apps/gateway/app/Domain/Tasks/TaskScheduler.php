@@ -1304,7 +1304,11 @@ final readonly class TaskScheduler
         return $this->orderedTasks($tasks)
             ->filter(static fn (Task $candidate): bool => $candidate->position < $task->position
                 || ($candidate->position === $task->position && $candidate->id < $task->id))
-            ->every(static fn (Task $candidate): bool => $candidate->status === TaskStatus::Completed);
+            ->every(static fn (Task $candidate): bool => in_array($candidate->status, [
+                TaskStatus::Completed,
+                TaskStatus::Cancelled,
+                TaskStatus::Failed,
+            ], true));
     }
 
     private function failSpawn(?TaskGroup $group, ?Task $task, string $agent): void
