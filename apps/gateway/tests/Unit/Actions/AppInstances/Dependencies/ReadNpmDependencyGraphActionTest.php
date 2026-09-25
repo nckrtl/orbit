@@ -290,6 +290,7 @@ JSON;
         'malformed alias' => ['{"optionalDependencies":{"one":"npm:@invalid"}}', '{"lockfileVersion":3,"packages":{"":{}}}'],
         'invalid undeclared peer metadata' => ['{"peerDependenciesMeta":{"missing":{"optional":"yes"}}}', '{"lockfileVersion":3,"packages":{"":{}}}'],
         'nonobject peer metadata' => ['{"peerDependenciesMeta":[]}', '{"lockfileVersion":3,"packages":{"":{}}}'],
+        'nonobject undeclared peer metadata value' => ['{"peerDependenciesMeta":{"missing":true}}', '{"lockfileVersion":3,"packages":{"":{}}}'],
         'unreachable record' => ['{}', '{"lockfileVersion":3,"packages":{"":{},"node_modules/unused":{"version":"1"}}}'],
         'missing parent record' => ['{}', '{"lockfileVersion":3,"packages":{"":{},"node_modules/missing/node_modules/one":{"version":"1"}}}'],
         'malformed package record' => ['{}', '{"lockfileVersion":3,"packages":{"":{},"node_modules/one":[]}}'],
