@@ -268,7 +268,7 @@ A subscriber treats the Node's agent as online while `agent.{id}` is a member an
 
 ### Agent log events
 
-The agent publishes these client events on `presence-node-logs.{id}`. The subscriber ignores an event unless its `user_id` is `agent.{id}` and the stream is open for Node `{id}`.
+The agent publishes these client events on `presence-node-logs.{id}`. The subscriber ignores an event unless its `user_id` is `agent.{id}`, and its [log relay](/reference/node-agent#log-relay) drops lines unless the stream is open for Node `{id}`.
 
 | Event | When | Data |
 | --- | --- | --- |

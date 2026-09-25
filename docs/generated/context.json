@@ -3945,6 +3945,7 @@
                 "packages/php-sdk"
             ],
             "concepts": [
+                "Database",
                 "Gateway",
                 "Instance",
                 "Node",
