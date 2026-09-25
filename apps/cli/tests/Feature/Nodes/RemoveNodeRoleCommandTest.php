@@ -403,6 +403,71 @@ it('renders unrelated gateway failures through the shared boundary without a for
     $mockClient->assertSentCount(1, RemoveNodeRoleRequest::class);
 });
 
+it('keeps the failed step of a forced role removal in json and names it in human output', function (): void {
+    $response = static fn (): MockResponse => MockResponse::make(
+        [
+            'error' => [
+                'code' => 'node_role.remove_failed',
+                'message' => 'UFW is inactive on node [app-prod]. Retry with --offline if node [app-prod] is unreachable.',
+                'details' => ['step' => 'remove:host-firewall', 'stdout' => 'private-output'],
+            ],
+        ],
+        502,
+        ['X-Orbit-Request-Id' => node_role_remove_request_id()],
+    );
+    MockClient::global([RemoveNodeRoleRequest::class => $response]);
+
+    $this
+        ->artisan('node:role:remove', ['node' => '7', 'role' => 'ingress', '--force' => true, '--json' => true])
+        ->expectsOutput(json_encode([
+            'error' => [
+                'code' => 'node_role.remove_failed',
+                'message' => 'UFW is inactive on node [app-prod]. Retry with --offline if node [app-prod] is unreachable.',
+                'details' => ['step' => 'remove:host-firewall'],
+                'request_id' => node_role_remove_request_id(),
+            ],
+        ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES))
+        ->doesntExpectOutputToContain('private-output')
+        ->assertExitCode(1);
+
+    MockClient::destroyGlobal();
+    MockClient::global([RemoveNodeRoleRequest::class => $response]);
+    $exitCode = Artisan::call('node:role:remove', ['node' => '7', 'role' => 'ingress', '--force' => true]);
+    $output = Artisan::output();
+
+    expect($exitCode)->toBe(1)
+        ->and($output)->toContain('UFW is inactive on node [app-prod].', 'step: remove:host-firewall', 'Request ID: '.node_role_remove_request_id())
+        ->not->toContain('private-output');
+});
+
+it('keeps the failed step of a preview failure that is not a consent refusal', function (): void {
+    MockClient::global([
+        RemoveNodeRoleRequest::class => MockResponse::make(
+            [
+                'error' => [
+                    'code' => 'node_role.remove_failed',
+                    'message' => 'Role [app-dev] dependencies changed during removal from node [app-dev].',
+                    'details' => ['step' => 'dependency-race'],
+                ],
+            ],
+            502,
+            ['X-Orbit-Request-Id' => node_role_remove_request_id()],
+        ),
+    ]);
+
+    $this
+        ->artisan('node:role:remove', ['node' => '7', 'role' => 'app-dev', '--json' => true])
+        ->expectsOutput(json_encode([
+            'error' => [
+                'code' => 'node_role.remove_failed',
+                'message' => 'Role [app-dev] dependencies changed during removal from node [app-dev].',
+                'details' => ['step' => 'dependency-race'],
+                'request_id' => node_role_remove_request_id(),
+            ],
+        ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES))
+        ->assertExitCode(1);
+});
+
 function node_role_remove_command_options(?SymfonyCommand $command): array
 {
     if (! $command instanceof SymfonyCommand) {

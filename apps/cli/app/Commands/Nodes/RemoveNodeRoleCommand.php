@@ -8,7 +8,6 @@ use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use App\Support\Console\ConsoleWriter;
 use App\Support\Console\ProgressState;
-use App\Support\GatewayFailureRenderer;
 use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\Requests\Nodes\RemoveNodeRoleRequest;
@@ -157,16 +156,7 @@ final class RemoveNodeRoleCommand extends NodeCommand
 
     private function renderPreviewFailure(GatewayApiException $exception): int
     {
-        $code = $exception->errorCode() ?? 'gateway.request_failed';
-
-        return $this->renderGatewayFailure(
-            $code,
-            $exception->getMessage(),
-            $exception->requestId(),
-            details: $code === 'validation.failed'
-                ? GatewayFailureRenderer::fieldDetails($exception->details())
-                : [],
-        );
+        return $this->renderApiFailure($exception);
     }
 
     private function isConsentPreview(GatewayApiException $exception): bool
