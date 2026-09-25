@@ -4,15 +4,41 @@ declare(strict_types=1);
 
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Infrastructure\Gateway\GatewayPrivateDnsResolver;
+use Illuminate\Filesystem\Filesystem;
+use Illuminate\Support\Str;
+use Symfony\Component\Process\Process;
 
 describe('GatewayPrivateDnsResolver', function (): void {
     it('reapplies a suffix-only route to VPN DNS whenever the tunnel starts', function (): void {
         expect(new GatewayPrivateDnsResolver()->dropIn('10.44.0.1', 'orbit'))->toBe(implode("\n", [
             '# Managed by Orbit.',
             '[Service]',
-            "ExecStartPost=-/bin/sh -c 'test -e /etc/wireguard/orbit.dns-link || { resolvectl dns orbit 10.44.0.1 && resolvectl domain orbit ~orbit; }'",
+            "ExecStartPost=-/bin/sh -c 'test -e /etc/wireguard/orbit.dns-link || { resolvectl dns orbit 10.44.0.1 && resolvectl domain orbit \"~orbit\"; }'",
             '',
         ]));
+    });
+
+    it('passes the routing domain to resolvectl without tilde expansion', function (): void {
+        $directory = sys_get_temp_dir().'/orbit-gateway-dns-'.bin2hex(random_bytes(6));
+        mkdir($directory);
+        $log = "{$directory}/calls";
+        file_put_contents("{$directory}/resolvectl", "#!/bin/sh\nprintf '%s\\n' \"\$*\" >> '{$log}'\n");
+        chmod("{$directory}/resolvectl", 0o755);
+
+        try {
+            // `root` names a user on every host, so an unquoted `~root` would expand to its home.
+            $line = explode("\n", new GatewayPrivateDnsResolver()->dropIn('10.44.0.1', 'root'))[2];
+            $script = Str::beforeLast(Str::after($line, "-c '"), "'");
+            $process = new Process(['/bin/sh', '-c', $script], env: ['PATH' => "{$directory}:/usr/bin:/bin"]);
+            $process->mustRun();
+
+            expect(file($log, FILE_IGNORE_NEW_LINES))->toBe([
+                'dns orbit 10.44.0.1',
+                'domain orbit ~root',
+            ]);
+        } finally {
+            new Filesystem()->deleteDirectory($directory);
+        }
     });
 
     it('installs the drop-in and applies the route to the live orbit link', function (): void {

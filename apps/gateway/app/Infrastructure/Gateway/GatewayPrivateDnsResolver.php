@@ -36,7 +36,7 @@ final readonly class GatewayPrivateDnsResolver
         return implode("\n", [
             '# Managed by Orbit.',
             '[Service]',
-            "ExecStartPost=-/bin/sh -c 'test -e {$peerState} || { resolvectl dns orbit {$address} && resolvectl domain orbit ~{$domain}; }'",
+            "ExecStartPost=-/bin/sh -c 'test -e {$peerState} || { resolvectl dns orbit {$address} && resolvectl domain orbit \"~{$domain}\"; }'",
             '',
         ]);
     }
