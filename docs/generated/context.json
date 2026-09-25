@@ -3681,7 +3681,8 @@
                 "0138",
                 "0139",
                 "0141",
-                "0146"
+                "0146",
+                "0157"
             ]
         },
         {
@@ -4025,6 +4026,29 @@
             ]
         },
         {
+            "path": "docs/decisions/0157-serve-wildcard-sites-on-the-wireguard-address-beside-wireguard-only-sites.md",
+            "title": "ADR 0157: Serve wildcard sites on the WireGuard address beside WireGuard-only sites",
+            "kind": "decision",
+            "components": [
+                "apps/docs",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Cluster",
+                "Doctor",
+                "Gateway",
+                "Ingress",
+                "Node",
+                "Route",
+                "Router",
+                "proxycli"
+            ],
+            "governing_adrs": [
+                "0141",
+                "0157"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -4208,7 +4232,8 @@
                 "0152",
                 "0153",
                 "0154",
-                "0155"
+                "0155",
+                "0157"
             ]
         },
         {
@@ -4592,7 +4617,8 @@
             "governing_adrs": [
                 "0138",
                 "0139",
-                "0141"
+                "0141",
+                "0157"
             ]
         },
         {

@@ -19,9 +19,11 @@ final readonly class AppDevCaddyConfigRenderer
 
     /**
      * @param  Collection<int, AppDevSite>  $sites
-     * @param  string  $bind  The listener of private sites. Public sites always bind every address.
+     * @param  string  $bind  The listener of private sites.
+     * @param  string  $publicBind  The listener of public sites: every address, and the WireGuard address too on a
+     *                              Node where a WireGuard-only site shares their port.
      */
-    public function render(Collection $sites, string $bind = '0.0.0.0'): string
+    public function render(Collection $sites, string $bind = '0.0.0.0', string $publicBind = '0.0.0.0'): string
     {
         if ($sites->isEmpty()) {
             return '# Orbit has no active app development sites.'.PHP_EOL;
@@ -30,7 +32,7 @@ final readonly class AppDevCaddyConfigRenderer
         return
             $sites
                 ->sortBy('domain')
-                ->map(function (AppDevSite $site) use ($bind): string {
+                ->map(function (AppDevSite $site) use ($bind, $publicBind): string {
                     $handler = $this->handler($site);
                     $internal = $this->localUnixSite($site);
 
@@ -39,7 +41,7 @@ final readonly class AppDevCaddyConfigRenderer
                     $siteBlock = $site->publicListener
                         ? <<<CADDY
                             {$site->domain} {
-                                bind 0.0.0.0
+                                bind {$publicBind}
                                 tls force_automate
                                 {$handler}
                             }

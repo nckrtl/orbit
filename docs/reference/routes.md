@@ -317,6 +317,8 @@ The Ingress serves public sites while its role is active, while it converges, an
 
 When Ingress shares a Node with the Router, with app-prod, or with both, one composed Caddy service serves the public Route. The composed site does not proxy to its own public listener.
 
+Ingress may also share the Gateway Node, which a small fleet makes its Router. The public site then binds every address and the WireGuard address, and `gateway.orbit` and `metrics.orbit` stay on the WireGuard address alone. [Caddy configuration](/reference/caddy-configuration#listener-addresses) describes the listeners.
+
 When the Ingress Node runs a target of the public Route, one site on the public listener serves that target directly, with `tls force_automate`, and replaces the target's private site for that host. A Router on another Node still forwards private traffic to that Node. It verifies the site against the Node's system roots, which also hold the Orbit root, so it accepts the public certificate. Until Let's Encrypt issues that certificate, the host does not complete TLS on that Node.
 
 Firewall policy admits public HTTP and HTTPS only on the Ingress Node, and only while that Cluster has at least one active public Route. Router and workload listeners stay private. Direct public workload traffic is denied.

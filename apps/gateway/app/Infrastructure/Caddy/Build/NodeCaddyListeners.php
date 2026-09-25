@@ -18,12 +18,14 @@ final readonly class NodeCaddyListeners
     /**
      * @param  list<string>  $explicit  The WireGuard address, then the LAN address when the Node has one.
      * @param  array<int, CaddySite>  $wildcardSites  The first first-row site on each port that binds every address.
+     * @param  array<int, true>  $wireGuardOnlyPorts  The ports that carry a WireGuard-only site.
      */
     private function __construct(
         public bool $ingress,
         public ?string $wireGuard,
         public array $explicit,
         private array $wildcardSites,
+        private array $wireGuardOnlyPorts,
     ) {}
 
     /** @param list<CaddySite> $sites Every site on the Node, or at least every first-row site. */
@@ -32,10 +34,15 @@ final readonly class NodeCaddyListeners
         $wireGuard = self::address($node->wireguard_ip);
         $ingress = $node->exists && CaddySiteRoles::nodeServes($node->id, RoleName::Ingress);
         $wildcardSites = [];
+        $wireGuardOnlyPorts = [];
 
         foreach ($sites as $site) {
             if ($ingress && $site->listener === CaddyListenerRule::Wildcard && ! array_key_exists($site->port, $wildcardSites)) {
                 $wildcardSites[$site->port] = $site;
+            }
+
+            if ($site->listener === CaddyListenerRule::WireGuard) {
+                $wireGuardOnlyPorts[$site->port] = true;
             }
         }
 
@@ -44,6 +51,7 @@ final readonly class NodeCaddyListeners
             wireGuard: $wireGuard,
             explicit: array_values(array_unique(array_filter([$wireGuard, self::address($node->lan_ip)]))),
             wildcardSites: $wildcardSites,
+            wireGuardOnlyPorts: $wireGuardOnlyPorts,
         );
     }
 
@@ -54,11 +62,16 @@ final readonly class NodeCaddyListeners
      * joins the wildcard listener only beside a first-row site on its port. An empty list means the
      * Node has no WireGuard address.
      *
+     * A WireGuard-only site such as `gateway.orbit` opens a listener on the WireGuard address, and Caddy
+     * sends every connection to that address to that listener alone. So on a port that carries one, a
+     * site that binds `0.0.0.0` also binds the WireGuard address, and WireGuard clients still reach it.
+     * The WireGuard-only site never joins the wildcard listener.
+     *
      * @return list<string>
      */
     public function bind(CaddyListenerRule $rule, int $port): array
     {
-        return match ($rule) {
+        $bind = match ($rule) {
             CaddyListenerRule::Public => [self::Wildcard],
             CaddyListenerRule::Wildcard => $this->ingress ? [self::Wildcard] : ($this->wireGuard === null ? [] : $this->explicit),
             CaddyListenerRule::WireGuard => $this->wireGuard === null ? [] : [$this->wireGuard],
@@ -66,12 +79,12 @@ final readonly class NodeCaddyListeners
                 ? [self::Wildcard]
                 : ($this->wireGuard === null ? [] : [$this->wireGuard]),
         };
-    }
 
-    /** The first-row site that puts `0.0.0.0` on this port, which only happens on an Ingress Node. */
-    public function wildcardSite(int $port): ?CaddySite
-    {
-        return $this->wildcardSites[$port] ?? null;
+        if ($bind === [self::Wildcard] && $this->wireGuard !== null && array_key_exists($port, $this->wireGuardOnlyPorts)) {
+            return [self::Wildcard, $this->wireGuard];
+        }
+
+        return $bind;
     }
 
     private static function address(?string $address): ?string

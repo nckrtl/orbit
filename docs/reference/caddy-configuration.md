@@ -68,13 +68,37 @@ A send to the old server gets 0.3 seconds to connect and 0.5 seconds in total, a
 | Service metrics scrape site on port 9103 | A selected Ingress Node | WireGuard address |
 | `reverb.orbit`, `analytics.orbit`, and `collector.cli-proxy-api.orbit` | The Node that runs the role or collector | WireGuard address, or `0.0.0.0` when a site from the first row binds `0.0.0.0` on the same port |
 
+On a port that also carries a WireGuard-only site, every site that binds `0.0.0.0` binds the WireGuard address too. [ADR 0157](/decisions/0157-serve-wildcard-sites-on-the-wireguard-address-beside-wireguard-only-sites) records this rule.
+
 A Node gets at most one site for each domain, port, and listener. When a Route's current and transition placements render the same site on one Node, the build keeps the current one. Any other duplicate fails the build and names both sites.
 
 ### Listener addresses
 
 Caddy sends a connection for the WireGuard address only to the sites bound to that address, and every other connection to the `0.0.0.0` sites. If one site bound the WireGuard address and another bound `0.0.0.0` on the same port, a WireGuard client that asked for the second hostname would get an empty response. The listener rule above puts every site that WireGuard clients use on the same listener.
 
-Routers, Ingress, and private DNS clients reach first-row sites only on a Node's LAN or WireGuard address, so a Node without `ingress` binds them there and has no wildcard listener. A Gateway that is also a Router therefore serves `gateway.orbit` and its Router sites on the same port. On a Node with `ingress`, first-row sites bind `0.0.0.0` and `gateway.orbit` stays off that public listener. A build fails when a WireGuard-only site shares a port with a first-row site on such a Node, because the first-row site would be unreachable over WireGuard.
+Routers, Ingress, and private DNS clients reach first-row sites only on a Node's LAN or WireGuard address, so a Node without `ingress` binds them there and has no wildcard listener. A Gateway that is also a Router therefore serves `gateway.orbit` and its Router sites on the same port. On a Node with `ingress`, first-row sites bind `0.0.0.0` and `gateway.orbit` stays off that public listener.
+
+When a WireGuard-only site shares a port with them, as on a Gateway that is also the Router and the Ingress, each site on `0.0.0.0` also binds the WireGuard address. WireGuard clients then reach every site on that port, and public clients reach every site except the WireGuard-only ones:
+
+```caddy
+gateway.orbit, 10.44.0.1 {
+    bind 10.44.0.1
+    # Gateway web site
+}
+
+https://shop.test {
+    bind 0.0.0.0 10.44.0.1
+    # Router site
+}
+
+shop.example.com {
+    bind 0.0.0.0 10.44.0.1
+    tls force_automate
+    # public Ingress site
+}
+```
+
+A WireGuard-only site and another site for the same host and port then share the WireGuard address, so the build fails on them as a duplicate address.
 
 The Gateway decides the addresses from stored state: the Node's `ingress` role, its WireGuard and LAN addresses, and its Route sites. Caddy cannot start with a missing listen address, so every build first checks that each specific address it binds exists on the Node. When a stored LAN address is missing, for example after a DHCP lease changed, the build stops at stage `addresses`, leaves the live Caddyfile unchanged, and names the address:
 
@@ -188,7 +212,7 @@ php artisan orbit:caddy-build NODE --dry-run --diff
 | `--dry-run` | Prints the rendered Caddyfile and changes nothing. |
 | `--diff` | With `--dry-run`, reads the live `/etc/caddy/Caddyfile` and prints one line for each site: `same`, `changed`, `build only`, or `live only`. A `changed` site lists the lines that differ. It reads no file that the live Caddyfile imports. |
 
-A failed build exits with status 1 and prints the error message. `--dry-run` exits with status 1 and prints `Build refused:` with the reason when the render has a problem, such as a duplicate address or a WireGuard-only site on a wildcard port. The output names hostnames and certificate paths; Orbit's Caddy sites hold no secrets.
+A failed build exits with status 1 and prints the error message. `--dry-run` exits with status 1 and prints `Build refused:` with the reason when the render has a problem, such as a duplicate address. The output names hostnames and certificate paths; Orbit's Caddy sites hold no secrets.
 
 Repeating any command that publishes one of a Node's sites, such as `orbit node:role:add NODE app-dev --converge`, also builds the Node again.
 

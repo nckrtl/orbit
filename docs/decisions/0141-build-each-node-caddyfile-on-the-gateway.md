@@ -10,7 +10,7 @@ The Gateway renders the complete Caddyfile for one Node from stored state in one
 
 ## Status
 
-Proposed. Amended by [ADR 0146](/decisions/0146-retire-the-herdr-integration), which removes the Herdr observer site source. The Context keeps the Herdr publisher as it was surveyed.
+Proposed. Amended by [ADR 0146](/decisions/0146-retire-the-herdr-integration), which removes the Herdr observer site source, and by [ADR 0157](/decisions/0157-serve-wildcard-sites-on-the-wireguard-address-beside-wireguard-only-sites), which binds wildcard sites to the WireGuard address beside WireGuard-only sites instead of failing the build. The Context keeps the Herdr publisher as it was surveyed.
 
 ## Context
 

@@ -94,6 +94,22 @@ describe('the Node Caddyfile', function (): void {
 
         expect(caddy_adapt(caddy_build_renderer()->render($node)->content)->succeeded())->toBeTrue();
     });
+
+    it('validates a Gateway that is also the Router and the Ingress when a Caddy binary is installed', function (): void {
+        if (new ExecutableFinder()->find('caddy') === null) {
+            $this->markTestSkipped('Caddy is not installed.');
+        }
+
+        $gateway = caddy_build_node('gateway', '10.44.0.1');
+        $gateway->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
+        CaddySiteCertificateFixtures::recordAll($gateway);
+        [, $route] = caddy_build_private_route($gateway, 'shop.test');
+        $gateway->roles()->create(['role' => RoleName::Ingress, 'status' => LifecycleStatus::Active, 'cluster_id' => $route->cluster_id]);
+        $caddyfile = caddy_build_renderer()->render($gateway->fresh() ?? $gateway);
+
+        expect($caddyfile->problems)->toBe([])
+            ->and(caddy_adapt($caddyfile->content)->succeeded())->toBeTrue();
+    });
 });
 
 describe('site sources', function (): void {
@@ -360,29 +376,48 @@ describe('listener selection', function (): void {
             ->not->toContain('0.0.0.0');
     });
 
-    it('refuses a WireGuard-only site beside a first-row site on an Ingress Node and names both', function (): void {
+    it('builds a Gateway that is also the Router and the Ingress, with its wildcard sites on the WireGuard address too', function (): void {
         $gateway = caddy_build_node('gateway', '10.44.0.1');
         $gateway->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
+        CaddySiteCertificateFixtures::recordAll($gateway);
+        $gateway->roles()->create(['role' => RoleName::WebSocket, 'status' => LifecycleStatus::Active]);
         CaddySiteCertificateFixtures::recordAll($gateway);
         [, $route] = caddy_build_private_route($gateway, 'shop.test');
         $gateway->roles()->create(['role' => RoleName::Ingress, 'status' => LifecycleStatus::Active, 'cluster_id' => $route->cluster_id]);
 
-        $caddyfile = caddy_build_renderer()->render($gateway);
+        $caddyfile = caddy_build_renderer()->render($gateway->fresh() ?? $gateway);
 
-        expect($caddyfile->buildable())->toBeFalse()
-            ->and($caddyfile->problems)->toBe([
-                'The gateway site gateway.orbit binds the WireGuard address on port 443, which the '
-                ."app-dev site route-{$route->id}-router serves on 0.0.0.0 on this Ingress Node. The app-dev site would be unreachable over WireGuard.",
-            ]);
+        expect($caddyfile->problems)->toBe([])
+            ->and($caddyfile->listenAddresses)->toBe(['10.44.0.1'])
+            ->and($caddyfile->content)
+            ->toContain("gateway.orbit, 10.44.0.1 {\n    bind 10.44.0.1\n")
+            ->toContain("# orbit: app-dev route-{$route->id}-router\nhttps://shop.test {\n    bind 0.0.0.0 10.44.0.1\n")
+            ->toContain("reverb.orbit {\n    bind 0.0.0.0 10.44.0.1\n");
     });
 
-    it('allows a WireGuard-only site beside a first-row site on another port of an Ingress Node', function (): void {
+    it('binds public Ingress sites to the WireGuard address too beside a WireGuard-only site', function (): void {
+        $caddyfile = caddy_build_compose([
+            caddy_build_rendered_site(CaddyListenerRule::Public, host: 'shop.example.com', source: 'ingress'),
+            caddy_build_rendered_site(CaddyListenerRule::Wildcard, host: 'shop.test', source: 'app-dev'),
+            caddy_build_rendered_site(CaddyListenerRule::WireGuard, host: 'gateway.orbit', source: 'gateway'),
+        ], lan: '192.168.1.9', ingress: true);
+
+        expect($caddyfile->buildable())->toBeTrue()
+            ->and($caddyfile->content)
+            ->toContain("shop.example.com {\n    bind 0.0.0.0 10.44.0.9\n")
+            ->toContain("shop.test {\n    bind 0.0.0.0 10.44.0.9\n")
+            ->toContain("gateway.orbit {\n    bind 10.44.0.9\n")
+            ->not->toContain('192.168.1.9');
+    });
+
+    it('keeps wildcard sites off the WireGuard address beside a WireGuard-only site on another port', function (): void {
         $caddyfile = caddy_build_compose([
             caddy_build_rendered_site(CaddyListenerRule::Wildcard, host: 'shop.test', source: 'app-dev'),
             caddy_build_rendered_site(CaddyListenerRule::WireGuard, host: '10.44.0.9', source: 'service-metrics', port: 9103),
         ], ingress: true);
 
-        expect($caddyfile->buildable())->toBeTrue();
+        expect($caddyfile->buildable())->toBeTrue()
+            ->and($caddyfile->content)->toContain("shop.test {\n    bind 0.0.0.0\n");
     });
 });
 
@@ -415,11 +450,22 @@ describe('duplicate addresses', function (): void {
 
     it('treats the same domain on different listeners as different addresses', function (): void {
         $caddyfile = caddy_build_compose([
+            caddy_build_rendered_site(CaddyListenerRule::Wildcard, host: 'app.test', source: 'app-dev', port: 8443),
+            caddy_build_rendered_site(CaddyListenerRule::Public, host: 'app.test', source: 'ingress', port: 8443),
+        ]);
+
+        expect($caddyfile->buildable())->toBeTrue();
+    });
+
+    it('refuses a WireGuard-only site and a public site for one domain on one port, which share the WireGuard address', function (): void {
+        $caddyfile = caddy_build_compose([
             caddy_build_rendered_site(CaddyListenerRule::WireGuard, host: 'app.test', source: 'gateway', port: 8443),
             caddy_build_rendered_site(CaddyListenerRule::Public, host: 'app.test', source: 'ingress', port: 8443),
         ], ingress: true);
 
-        expect($caddyfile->buildable())->toBeTrue();
+        expect($caddyfile->problems)->toBe([
+            'The gateway site app.test and the ingress site app.test both serve app.test:8443 on 10.44.0.9.',
+        ]);
     });
 
     it('refuses two sites on one unix socket', function (): void {

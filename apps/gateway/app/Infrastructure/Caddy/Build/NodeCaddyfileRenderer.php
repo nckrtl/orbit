@@ -11,7 +11,7 @@ use Throwable;
 /**
  * Renders a Node's whole Caddyfile from committed state (ADR 0141): the Orbit marker line, Orbit's
  * global options, then every site of every site source on that Node. NodeCaddyListeners chooses each
- * site's listener. The renderer reports, rather than renders around, a listener conflict or a duplicate address.
+ * site's listener. The renderer reports, rather than renders around, a duplicate address.
  */
 final readonly class NodeCaddyfileRenderer
 {
@@ -52,14 +52,6 @@ final readonly class NodeCaddyfileRenderer
                 $problems[] = "The {$site->describe()} needs the WireGuard IPv4 address of Node [{$node->name}].";
 
                 continue;
-            }
-
-            $wildcard = $listeners->wildcardSite($site->port);
-
-            if ($site->listener === CaddyListenerRule::WireGuard && $wildcard instanceof CaddySite) {
-                $problems[] = "The {$site->describe()} binds the WireGuard address on port {$site->port}, which the "
-                    ."{$wildcard->describe()} serves on ".self::Wildcard.' on this Ingress Node. The '
-                    ."{$wildcard->source} site would be unreachable over WireGuard.";
             }
 
             foreach ($bind as $listener) {

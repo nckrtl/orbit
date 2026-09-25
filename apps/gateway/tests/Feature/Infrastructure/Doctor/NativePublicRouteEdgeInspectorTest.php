@@ -30,6 +30,7 @@ use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\Route;
 use Illuminate\Support\Facades\File;
+use Tests\Support\CaddySiteCertificateFixtures;
 use Tests\Support\LocalRootShellSshExecutor;
 
 const PUBLIC_EDGE_UFW_ACTIVE = <<<'UFW'
@@ -210,6 +211,41 @@ describe('an Ingress that runs the workload while the Router is on another Node'
         public_edge_publish_build($this->caddy, $this->ingress);
 
         expect(public_edge_observe($this))->toBe([true, true, true]);
+    });
+});
+
+describe('an Ingress on the Gateway Node that is also the Router', function (): void {
+    beforeEach(function (): void {
+        $cluster = Cluster::query()->create(['name' => 'edge', 'tld' => 'edge.test', 'state' => ClusterState::Active]);
+        $this->ingress = public_edge_node('gateway', '10.44.0.1', null, $cluster, [RoleName::Gateway, RoleName::Router, RoleName::Ingress]);
+        CaddySiteCertificateFixtures::recordAll($this->ingress);
+        $workload = public_edge_node('app-prod', '10.44.0.3', null, $cluster, [RoleName::AppProd]);
+        $this->route = public_edge_route($cluster, $workload);
+    });
+
+    it('builds the public site on every address and on the WireGuard address beside gateway.orbit', function (): void {
+        $caddyfile = app(NodeCaddyfileRenderer::class)->render($this->ingress);
+
+        expect($caddyfile->problems)->toBe([])
+            ->and($caddyfile->content)
+            ->toContain("gateway.orbit, 10.44.0.1 {\n    bind 10.44.0.1\n")
+            ->toContain("# orbit: ingress route-{$this->route->id}-ingress\n{$this->route->domain} {\n    bind 0.0.0.0 10.44.0.1\n    tls force_automate");
+    });
+
+    it('accepts the public site in the one Caddyfile a Node Caddy build writes', function (): void {
+        public_edge_publish_build($this->caddy, $this->ingress);
+
+        expect(public_edge_observe($this))->toBe([true, true, true]);
+    });
+
+    it('reports a public site that left the WireGuard address', function (): void {
+        public_edge_publish_build($this->caddy, $this->ingress, fn (string $file): string => str_replace(
+            "{$this->route->domain} {\n    bind 0.0.0.0 10.44.0.1\n",
+            "{$this->route->domain} {\n    bind 0.0.0.0\n",
+            $file,
+        ));
+
+        expect(public_edge_observe($this)[0])->toBeFalse();
     });
 });
 
