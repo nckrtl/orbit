@@ -318,7 +318,7 @@ A stale application HTTP error does not block a valid public edge. The trusted r
 
 ### Publish the public edge
 
-A publication-only update on the same domain keeps the Route ID. The Gateway stages the Ingress Caddy site outside the live import, verifies the private hops, then installs the handler so Caddy can obtain Let's Encrypt for the public hostname. Firewall rules open after at least one public Route is live. The candidate handler stays unreachable until those checks succeed, including when another Route already keeps Ingress ports open. A Let's Encrypt failure stays on `failed_step` and Doctor; converge does not fall back to Orbit CA.
+A publication-only update on the same domain keeps the Route ID. The Gateway verifies the private hops, stores the activated step, and then builds the Ingress Node, so its Caddyfile gains the public site and Caddy can obtain Let's Encrypt for the public hostname. Firewall rules open after at least one public Route is live. The candidate handler stays unreachable until those checks succeed, including when another Route already keeps Ingress ports open. A Let's Encrypt failure stays on `failed_step` and Doctor; converge does not fall back to Orbit CA.
 
 A combined domain and publication change reserves a replacement Route with `publication=public`. The current Route stays authoritative until cutover. Environment synchronization and private infrastructure complete before public exposure. Cutover makes the replacement authoritative in one database transition. Successful cleanup deletes the preview Route and releases its domain.
 
