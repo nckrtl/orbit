@@ -55,10 +55,10 @@ final class UpdateAppCommand extends GatewayCommand
             );
         }
 
-        if ($type !== null && ! in_array($type, ['monorepo', 'laravel-app', 'laravel-package'], true)) {
+        if ($type !== null && ! in_array($type, ['monorepo', 'laravel-app', 'laravel-package', 'node-package'], true)) {
             return $this->renderGatewayFailure(
                 'project.type_invalid',
-                'Project type must be monorepo, laravel-app, or laravel-package.',
+                'Project type must be monorepo, laravel-app, laravel-package, or node-package.',
             );
         }
 

@@ -21,7 +21,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitBranchName;
 use App\Domain\SourceControl\GitRepositoryIdentity;
 use App\Domain\SourceControl\GitRepositoryOrigin;
-use App\Domain\SourceControl\RelativeWebRoot;
+use App\Domain\SourceControl\ProjectRoot;
 use App\Domain\SourceControl\RepositoryDefaultBranchResolver;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
@@ -482,6 +482,9 @@ final readonly class UpdateAppAction
      */
     private function normalized(OrbitApp $app, UpdateAppData $data): array
     {
+        $type = $data->typeProvided ? $data->type ?? $app->type : $app->type;
+        $root = $data->rootProvided ? (string) $data->root : $app->root;
+
         return [
             'slug' => $data->slugProvided ? $data->slug : $app->slug,
             'repository_url' => $data->repositoryUrlProvided
@@ -490,9 +493,7 @@ final readonly class UpdateAppAction
             'default_branch' => $data->defaultBranchProvided
                 ? GitBranchName::validate((string) $data->defaultBranch)
                 : $app->default_branch,
-            'root' => $data->rootProvided
-                ? RelativeWebRoot::validate((string) $data->root)
-                : $app->root,
+            'root' => ProjectRoot::validate($root, $type),
         ];
     }
 

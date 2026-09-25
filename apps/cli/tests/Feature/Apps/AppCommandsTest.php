@@ -71,6 +71,24 @@ describe('project:create', function (): void {
             ]);
     });
 
+    it('creates a node-package Project through the typed SDK request', function (): void {
+        $mockClient = MockClient::global([
+            CreateAppRequest::class => app_mock_response(201),
+        ]);
+
+        $this->artisan('project:create', [
+            'slug' => 'node-kit',
+            'type' => 'node-package',
+            'repository' => 'https://github.com/acme/node-kit.git',
+            '--root' => '.',
+        ])->assertExitCode(0);
+
+        expect($mockClient->getLastRequest())
+            ->toBeInstanceOf(CreateAppRequest::class)
+            ->and($mockClient->getLastRequest()?->body()->all())
+            ->toMatchArray(['type' => 'node-package', 'root' => '.']);
+    });
+
     it('reports the created app for humans', function (): void {
         MockClient::global([CreateAppRequest::class => app_mock_response(201)]);
 
@@ -446,6 +464,24 @@ describe('project:update', function (): void {
             ->and($request?->body()->all())
             ->not
             ->toHaveKey('main_branch');
+    });
+
+    it('updates a Project to node-package through the typed SDK request', function (): void {
+        $mockClient = MockClient::global([
+            UpdateAppRequest::class => app_mock_response(),
+        ]);
+
+        $this->artisan('project:update', [
+            'project' => '3',
+            '--type' => 'node-package',
+            '--json' => true,
+        ])->expectsOutput(app_json())
+            ->assertExitCode(0);
+
+        expect($mockClient->getLastRequest())
+            ->toBeInstanceOf(UpdateAppRequest::class)
+            ->and($mockClient->getLastRequest()?->body()->all())
+            ->toBe(['type' => 'node-package']);
     });
 
     it('reports the updated app for humans', function (): void {

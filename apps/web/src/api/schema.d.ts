@@ -3001,7 +3001,7 @@ export interface components {
             slug?: string;
             code?: string;
             /** @enum {string} */
-            type?: "monorepo" | "laravel-app" | "laravel-package";
+            type?: "monorepo" | "laravel-app" | "laravel-package" | "node-package";
             repository_url?: string;
             default_branch?: string | null;
             root?: string | null;
@@ -3162,7 +3162,7 @@ export interface components {
             name?: string;
             slug?: string;
             /** @enum {string} */
-            type?: "monorepo" | "laravel-app" | "laravel-package";
+            type?: "monorepo" | "laravel-app" | "laravel-package" | "node-package";
         };
         NodeIdentity: {
             id?: number;
@@ -4019,7 +4019,7 @@ export interface operations {
                     code?: string;
                     slug: string;
                     /** @enum {string} */
-                    type: "monorepo" | "laravel-app" | "laravel-package";
+                    type: "monorepo" | "laravel-app" | "laravel-package" | "node-package";
                     repository_url: string;
                     default_branch?: string;
                     root: string;
@@ -4195,7 +4195,7 @@ export interface operations {
                 "application/json": {
                     code?: string;
                     /** @enum {string} */
-                    type: "monorepo" | "laravel-app" | "laravel-package";
+                    type: "monorepo" | "laravel-app" | "laravel-package" | "node-package";
                     slug: string;
                     repository_url: string;
                     default_branch: string;
@@ -11254,10 +11254,10 @@ export interface operations {
                     /** @description Unique project slug */
                     slug: string;
                     /**
-                     * @description Project type (monorepo, laravel-app, or laravel-package)
+                     * @description Project type (monorepo, laravel-app, laravel-package, or node-package)
                      * @enum {string}
                      */
-                    type: "monorepo" | "laravel-app" | "laravel-package";
+                    type: "monorepo" | "laravel-app" | "laravel-package" | "node-package";
                     repository_url: string;
                     /** @description Stored default branch; resolve the remote default when omitted */
                     default_branch?: string;
@@ -11438,7 +11438,7 @@ export interface operations {
                      * @description New Project type
                      * @enum {string}
                      */
-                    type: "monorepo" | "laravel-app" | "laravel-package";
+                    type: "monorepo" | "laravel-app" | "laravel-package" | "node-package";
                     /** @description New Project slug */
                     slug: string;
                     repository_url: string;

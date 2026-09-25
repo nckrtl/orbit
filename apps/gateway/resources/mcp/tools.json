@@ -432,7 +432,8 @@
             "enum": [
               "monorepo",
               "laravel-app",
-              "laravel-package"
+              "laravel-package",
+              "node-package"
             ]
           },
           "repository_url": {
@@ -1172,7 +1173,8 @@
             "enum": [
               "monorepo",
               "laravel-app",
-              "laravel-package"
+              "laravel-package",
+              "node-package"
             ]
           },
           "slug": {
@@ -4663,9 +4665,10 @@
             "enum": [
               "monorepo",
               "laravel-app",
-              "laravel-package"
+              "laravel-package",
+              "node-package"
             ],
-            "description": "Project type (monorepo, laravel-app, or laravel-package)"
+            "description": "Project type (monorepo, laravel-app, laravel-package, or node-package)"
           },
           "repository_url": {
             "type": "string",
@@ -5494,7 +5497,8 @@
             "enum": [
               "monorepo",
               "laravel-app",
-              "laravel-package"
+              "laravel-package",
+              "node-package"
             ],
             "description": "New Project type"
           },

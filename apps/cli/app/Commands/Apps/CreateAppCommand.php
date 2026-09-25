@@ -15,7 +15,7 @@ final class CreateAppCommand extends GatewayCommand
     #[\Override]
     protected $signature = 'project:create
         {slug : Unique project slug}
-        {type : Project type (monorepo, laravel-app, or laravel-package)}
+        {type : Project type (monorepo, laravel-app, laravel-package, or node-package)}
         {repository : Git repository URL}
         {--name= : Optional display name}
         {--default-branch= : Stored default branch; resolve the remote default when omitted}
@@ -73,10 +73,10 @@ final class CreateAppCommand extends GatewayCommand
             return self::FAILURE;
         }
 
-        if (! in_array($type, ['monorepo', 'laravel-app', 'laravel-package'], true)) {
+        if (! in_array($type, ['monorepo', 'laravel-app', 'laravel-package', 'node-package'], true)) {
             return $this->renderGatewayFailure(
                 'project.type_invalid',
-                'Project type must be monorepo, laravel-app, or laravel-package.',
+                'Project type must be monorepo, laravel-app, laravel-package, or node-package.',
             );
         }
 
