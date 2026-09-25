@@ -182,7 +182,7 @@ describe('Bun dependency reader', function (): void {
         'binary header' => "#!/usr/bin/env bun\nbun-lockfile-format-v0\n",
         'binary data' => "\x00\x01\x02",
         'version zero' => '{"lockfileVersion":0}',
-        'future version' => '{"lockfileVersion":2}',
+        'future version' => '{"lockfileVersion":3}',
         'numeric string' => '{"lockfileVersion":"1"}',
         'missing version' => '{}',
         'Yarn metadata' => '{"__metadata":{"version":8}}',
@@ -223,9 +223,6 @@ describe('Bun dependency reader', function (): void {
         'null root' => ['{}', '{"lockfileVersion":1,"workspaces":{"":null}}'],
         'packages array' => ['{}', '{"lockfileVersion":1,"workspaces":{"":{}},"packages":[]}'],
         'missing required package' => ['{"dependencies":{"one":"*"}}', '{"lockfileVersion":1,"workspaces":{"":{"dependencies":{"one":"*"}}}}'],
-        'dropped optional root' => ['{"optionalDependencies":{"one":"*"}}', '{"lockfileVersion":1,"workspaces":{"":{}}}'],
-        'dropped peer root' => ['{"peerDependencies":{"one":"*"}}', '{"lockfileVersion":1,"workspaces":{"":{}}}'],
-        'name conflict' => ['{"name":"one"}', '{"lockfileVersion":1,"workspaces":{"":{"name":"two"}}}'],
         'numeric constraint' => ['{"dependencies":{"one":1}}', '{"lockfileVersion":1,"workspaces":{"":{}}}'],
     ]);
 
@@ -255,6 +252,9 @@ describe('Bun dependency reader', function (): void {
         'invalid peer metadata' => [['one@1.0.0', '', (object) ['peerDependencies' => (object) ['peer' => '*'], 'peerDependenciesMeta' => (object) ['peer' => (object) ['optional' => 'yes']]], '']],
         'invalid source URL' => [['one@https://', new stdClass]],
         'missing Git tag' => [['one@github:sample/one#revision', new stdClass]],
+        'unsafe GitHub tag' => [['one@github:sample/one#revision', new stdClass, '../escape']],
+        'malformed Git integrity' => [['one@github:sample/one#revision', new stdClass, 'sample-one-revision', 'not-a-hash']],
+        'extra Git entry' => [['one@github:sample/one#revision', new stdClass, 'sample-one-revision', '', 'extra']],
     ]);
 
     it('rejects excluded layouts', function (string $manifest, string $lock): void {
@@ -295,14 +295,113 @@ describe('Bun dependency reader', function (): void {
         }
     });
 
+    it('reports a lock whose root workspace no longer matches package.json as stale', function (string $manifest, string $lock): void {
+        try {
+            (new ReadBunDependencyGraphAction)->execute($manifest, $lock);
+            test()->fail('A stale lock was accepted.');
+        } catch (DependencyParseException $exception) {
+            expect($exception->errorCode)->toBe('dependencies.stale_bun_lockfile');
+            expect($exception->getMessage())->toBe('dependencies.stale_bun_lockfile');
+        }
+    })->with([
+        // A real checkout raised lucide-react in package.json without running bun install.
+        'raised constraint' => ['{"dependencies":{"lucide-react":"^1.47.0"}}', '{"lockfileVersion":1,"workspaces":{"":{"dependencies":{"lucide-react":"^1.45.0"}}},"packages":{"lucide-react":["lucide-react@1.45.0","",{},""]}}'],
+        'manifest dependency missing from lock' => ['{"dependencies":{"one":"*"}}', '{"lockfileVersion":2,"workspaces":{"":{}}}'],
+        'lock dependency removed from manifest' => ['{}', '{"lockfileVersion":1,"workspaces":{"":{"dependencies":{"one":"*"}}},"packages":{"one":["one@1.0.0","",{},""]}}'],
+        'dropped optional root' => ['{"optionalDependencies":{"one":"*"}}', '{"lockfileVersion":1,"workspaces":{"":{}}}'],
+        'dropped peer root' => ['{"peerDependencies":{"one":"*"}}', '{"lockfileVersion":1,"workspaces":{"":{}}}'],
+        'name conflict' => ['{"name":"one"}', '{"lockfileVersion":1,"workspaces":{"":{"name":"two"}}}'],
+        'different numeric-looking constraint' => ['{"dependencies":{"one":"1"}}', '{"lockfileVersion":1,"workspaces":{"":{"dependencies":{"one":"1.0"}}},"packages":{"one":["one@1.0.0","",{},""]}}'],
+        'development scope mismatch' => ['{"devDependencies":{"one":"*"}}', '{"lockfileVersion":1,"workspaces":{"":{"dependencies":{"one":"*"}}},"packages":{"one":["one@1.0.0","",{},""]}}'],
+        'optional peer mismatch' => ['{"peerDependencies":{"one":"*"}}', '{"lockfileVersion":1,"workspaces":{"":{"peerDependencies":{"one":"*"},"optionalPeers":["one"]}}}'],
+    ]);
+
+    it('reads a real Bun 1.4 version 2 lock like the version 1 format', function (): void {
+        // Written by bun 1.4.2 install --lockfile-only; bun 1.3.14 writes the same content as version 1.
+        $path = dirname(__DIR__, 4).'/Fixtures/Dependencies/BunV2/';
+        $manifest = file_get_contents($path.'manifest.json');
+        $lock = file_get_contents($path.'bun.lock');
+
+        $graph = (new ReadBunDependencyGraphAction)->execute($manifest, $lock);
+        $v1 = (new ReadBunDependencyGraphAction)->execute($manifest, str_replace('"lockfileVersion": 2,', '"lockfileVersion": 1,', $lock));
+
+        expect($lock)->toContain('"lockfileVersion": 2,');
+        expect($graph)->toEqual($v1);
+        expect(array_map(fn ($resolution): string => $resolution->package->name.'@'.$resolution->version, $graph->resolutions))->toBe([
+            'debug@4.4.3', 'fsevents@2.3.3', 'is-number@'.$graph->resolutions[2]->version, 'ms@2.1.3', 'lodash@4.18.1', 'react@19.3.0', 'react-dom@19.3.0', 'scheduler@0.28.0',
+        ]);
+        expect($graph->resolutions[2]->version)->toStartWith('bun:sha256:');
+        expect($graph->resolutions[2]->integrity)->toStartWith('sha512-');
+        expect($graph->resolutions[3]->regular && $graph->resolutions[3]->development)->toBeTrue();
+        expect(json_encode($graph, JSON_THROW_ON_ERROR))->not->toContain('jonschlinkert-is-number-98e8ff1');
+    });
+
+    it('treats root peer metadata without a declaration like Bun does', function (int $version): void {
+        // Real bun.lock written by bun 1.4.2 and bun 1.3.14 for this manifest: only optional metadata becomes a peer.
+        $manifest = '{"name":"root-meta","dependencies":{"ms":"^2.1.3"},"peerDependenciesMeta":{"a-peer":{"optional":false},"b-peer":{},"c-peer":{"optional":true}}}';
+        $lock = <<<JSONC
+{
+  "lockfileVersion": {$version},
+  "configVersion": 1,
+  "workspaces": {
+    "": {
+      "name": "root-meta",
+      "dependencies": {
+        "ms": "^2.1.3",
+      },
+      "peerDependencies": {
+        "c-peer": "*",
+      },
+      "optionalPeers": [
+        "c-peer",
+      ],
+    },
+  },
+  "packages": {
+    "ms": ["ms@2.1.3", "", {}, "sha512-6FlzubTLZG3J2a/NVCAleEhjzq5oxgHyaCU9yYXvcLsvoVaHJq/s5xXI6/XXP6tz7R9xAOtHnSO/tXtF3WRTlA=="],
+  }
+}
+JSONC;
+
+        $graph = (new ReadBunDependencyGraphAction)->execute($manifest, $lock);
+
+        expect($graph->requirements)->toEqual([
+            new DependencyRequirement(null, 'ms', 'ms', '^2.1.3', DependencyRequirementKind::Dependency, DependencyScope::Regular, false),
+            new DependencyRequirement(null, null, 'c-peer', '*', DependencyRequirementKind::Peer, DependencyScope::Regular, true),
+        ]);
+    })->with(['version 1' => 1, 'version 2' => 2]);
+
+    it('rejects malformed root peer metadata without a declaration', function (): void {
+        $manifest = '{"peerDependenciesMeta":{"missing":{"optional":"yes"}}}';
+
+        expect(fn () => (new ReadBunDependencyGraphAction)->execute($manifest, bunReaderLock()))
+            ->toThrow(DependencyParseException::class, 'dependencies.invalid_bun_input');
+    });
+
+    it('applies the stricter version 2 content rules', function (array $tuple): void {
+        $root = '{"dependencies":{"one":"*"}}';
+        $v1 = bunReaderLock($root, ['one' => $tuple]);
+
+        expect((new ReadBunDependencyGraphAction)->execute($root, $v1)->resolutions)->toHaveCount(1);
+        expect(fn () => (new ReadBunDependencyGraphAction)->execute($root, str_replace('"lockfileVersion":1', '"lockfileVersion":2', $v1)))
+            ->toThrow(DependencyParseException::class, 'dependencies.invalid_bun_input');
+    })->with([
+        'off-registry tarball without integrity' => [['one@1.0.0', 'https://packages.example.test/one/-/one-1.0.0.tgz', new stdClass, '']],
+        'unsafe Git tag' => [['one@git+https://example.test/one.git#0123456789abcdef0123456789abcdef01234567', new stdClass, '../escape']],
+    ]);
+
+    it('accepts version 2 registry tuples that need no integrity', function (string $registry): void {
+        $root = '{"dependencies":{"one":"*"}}';
+        $lock = str_replace('"lockfileVersion":1', '"lockfileVersion":2', bunReaderLock($root, ['one' => ['one@1.0.0', $registry, new stdClass, '']]));
+
+        expect((new ReadBunDependencyGraphAction)->execute($root, $lock)->resolutions[0]->integrity)->toBeNull();
+    })->with(['default registry' => '', 'default registry URL' => 'https://registry.npmjs.org/one/-/one-1.0.0.tgz']);
+
     it('rejects duplicate package paths and strict root constraint mismatches', function (string $root, string $lock): void {
         expect(fn () => (new ReadBunDependencyGraphAction)->execute($root, $lock))
             ->toThrow(DependencyParseException::class, 'dependencies.invalid_bun_input');
     })->with([
         'duplicate path' => ['{}', '{"lockfileVersion":1,"workspaces":{"":{}},"packages":{"one":["one@1.0.0","",{},""],"o\\u006ee":["one@2.0.0","",{},""]}}'],
-        'different numeric-looking constraint' => ['{"dependencies":{"one":"1"}}', '{"lockfileVersion":1,"workspaces":{"":{"dependencies":{"one":"1.0"}}},"packages":{"one":["one@1.0.0","",{},""]}}'],
-        'development scope mismatch' => ['{"devDependencies":{"one":"*"}}', '{"lockfileVersion":1,"workspaces":{"":{"dependencies":{"one":"*"}}},"packages":{"one":["one@1.0.0","",{},""]}}'],
-        'optional peer mismatch' => ['{"peerDependencies":{"one":"*"}}', '{"lockfileVersion":1,"workspaces":{"":{"peerDependencies":{"one":"*"},"optionalPeers":["one"]}}}'],
     ]);
 
     it('retains development paths when Bun replaces them with an optional root declaration', function (bool $present): void {

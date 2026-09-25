@@ -192,19 +192,79 @@ describe('npm dependency reader', function (): void {
         'empty requirement maps' => '{"dependencies":{},"devDependencies":{},"optionalDependencies":{},"peerDependencies":{}}',
     ]);
 
-    it('rejects omitted roots that would lose requirements or package records', function (int $version, string $manifest, string $packages): void {
+    it('reports an omitted root as stale when the manifest declares requirements', function (int $version, string $manifest): void {
+        $lock = '{"lockfileVersion":'.$version.',"packages":{}}';
+
+        expect(fn () => (new ReadNpmDependencyGraphAction)->execute($manifest, $lock))
+            ->toThrow(DependencyParseException::class, 'dependencies.stale_npm_lockfile');
+    })->with([2, 3])->with([
+        'required dependency' => '{"dependencies":{"one":"*"}}',
+        'development dependency' => '{"devDependencies":{"one":"*"}}',
+        'optional dependency' => '{"optionalDependencies":{"one":"*"}}',
+        'peer requirement' => '{"peerDependencies":{"one":"*"}}',
+        'optional peer requirement' => '{"peerDependencies":{"one":"*"},"peerDependenciesMeta":{"one":{"optional":true}}}',
+    ]);
+
+    it('rejects malformed omitted roots', function (int $version, string $manifest, string $packages): void {
         $lock = '{"lockfileVersion":'.$version.',"packages":'.$packages.'}';
 
         expect(fn () => (new ReadNpmDependencyGraphAction)->execute($manifest, $lock))
             ->toThrow(DependencyParseException::class, 'dependencies.invalid_npm_input');
     })->with([2, 3])->with([
-        'required dependency' => ['{"dependencies":{"one":"*"}}', '{}'],
-        'development dependency' => ['{"devDependencies":{"one":"*"}}', '{}'],
-        'optional dependency' => ['{"optionalDependencies":{"one":"*"}}', '{}'],
-        'peer requirement' => ['{"peerDependencies":{"one":"*"}}', '{}'],
-        'optional peer requirement' => ['{"peerDependencies":{"one":"*"},"peerDependenciesMeta":{"one":{"optional":true}}}', '{}'],
         'matching package without root metadata' => ['{"dependencies":{"one":"*"}}', '{"node_modules/one":{"version":"1"}}'],
         'explicit null root' => ['{}', '{"":null}'],
+    ]);
+
+    it('reports a lock whose root record no longer matches package.json as stale', function (string $manifest, string $lock): void {
+        try {
+            (new ReadNpmDependencyGraphAction)->execute($manifest, $lock);
+            test()->fail('A stale lock was accepted.');
+        } catch (DependencyParseException $exception) {
+            expect($exception->errorCode)->toBe('dependencies.stale_npm_lockfile');
+            expect($exception->getMessage())->toBe('dependencies.stale_npm_lockfile');
+        }
+    })->with([
+        // A renamed package added to package.json without npm install, as in a real checkout.
+        'manifest dependency missing from lock' => ['{"dependencies":{"@nckrtl/launch-ui":"0.0.x","react":"^19.1.0"}}', '{"lockfileVersion":3,"packages":{"":{"dependencies":{"@hardimpactdev/launch-ui":"0.0.x","react":"^19.1.0"}},"node_modules/@hardimpactdev/launch-ui":{"version":"0.0.1"},"node_modules/react":{"version":"19.1.0"}}}'],
+        'lock dependency removed from manifest' => ['{}', '{"lockfileVersion":3,"packages":{"":{"dependencies":{"one":"*"}},"node_modules/one":{"version":"1"}}}'],
+        'root constraint mismatch' => ['{"optionalDependencies":{"missing":"^1"}}', '{"lockfileVersion":3,"packages":{"":{"optionalDependencies":{"missing":"^2"}}}}'],
+        'numeric-looking root constraint mismatch' => ['{"optionalDependencies":{"missing":"1"}}', '{"lockfileVersion":3,"packages":{"":{"optionalDependencies":{"missing":"1.0"}}}}'],
+        'root scope mismatch' => ['{"devDependencies":{"one":"*"}}', '{"lockfileVersion":3,"packages":{"":{"dependencies":{"one":"*"}},"node_modules/one":{"version":"1"}}}'],
+        'optional peer flag mismatch' => ['{"peerDependencies":{"one":"*"},"peerDependenciesMeta":{"one":{"optional":true}}}', '{"lockfileVersion":3,"packages":{"":{"peerDependencies":{"one":"*"}}}}'],
+        'root name mismatch' => ['{"name":"one"}', '{"lockfileVersion":3,"packages":{"":{"name":"two"}}}'],
+        'root version mismatch' => ['{"version":"1"}', '{"lockfileVersion":3,"packages":{"":{"version":"2"}}}'],
+    ]);
+
+    it('accepts a root alias that an override repeats when npm locks the unaliased package', function (string $override): void {
+        // Shape of a real Vite+ checkout: npm ci installs this lock, and it installs plain vite 8.0.2.
+        $manifest = '{"devDependencies":{"vite":"npm:@voidzero-dev/vite-plus-core@latest"},"overrides":{"vite":'.$override.',"vitest":"npm:@voidzero-dev/vite-plus-test@latest"}}';
+        $lock = <<<'JSON'
+{"lockfileVersion":3,"requires":true,"packages":{"":{"devDependencies":{"vite":"npm:@voidzero-dev/vite-plus-core@latest"}},"node_modules/vite":{"version":"8.0.2","resolved":"https://registry.npmjs.org/vite/-/vite-8.0.2.tgz","integrity":"sha512-1gFhNi+bHhRE/qKZOJXACm6tX4bA3Isy9KuKF15AgSRuRazNBOJfdDemPBU16/mpMxApDPrWvZ08DcLPEoRnuA==","license":"MIT","peerDependencies":{"esbuild":"^0.27.0"},"peerDependenciesMeta":{"esbuild":{"optional":true}}}}}
+JSON;
+
+        $graph = (new ReadNpmDependencyGraphAction)->execute($manifest, $lock);
+
+        expect($graph->resolutions)->toHaveCount(1);
+        expect($graph->resolutions[0]->package->name)->toBe('vite');
+        expect($graph->resolutions[0]->version)->toBe('8.0.2');
+        expect($graph->resolutions[0]->development)->toBeTrue();
+        expect($graph->requirements[0])->toEqual(new DependencyRequirement(null, 'node_modules/vite', 'vite', 'npm:@voidzero-dev/vite-plus-core@latest', DependencyRequirementKind::Dependency, DependencyScope::Development, false));
+    })->with([
+        'string override' => '"npm:@voidzero-dev/vite-plus-core@latest"',
+        'root reference' => '"$vite"',
+        'object override' => '{".":"npm:@voidzero-dev/vite-plus-core@latest","esbuild":"0.27.0"}',
+    ]);
+
+    it('rejects an alias identity mismatch that no matching override explains', function (string $manifest): void {
+        $lock = '{"lockfileVersion":3,"packages":{"":{"devDependencies":{"vite":"npm:@voidzero-dev/vite-plus-core@latest"}},"node_modules/vite":{"version":"8.0.2"}}}';
+
+        expect(fn () => (new ReadNpmDependencyGraphAction)->execute($manifest, $lock))
+            ->toThrow(DependencyParseException::class, 'dependencies.invalid_npm_input');
+    })->with([
+        'no override' => '{"devDependencies":{"vite":"npm:@voidzero-dev/vite-plus-core@latest"}}',
+        'different override spec' => '{"devDependencies":{"vite":"npm:@voidzero-dev/vite-plus-core@latest"},"overrides":{"vite":"npm:@voidzero-dev/vite-plus-core@0.2.7"}}',
+        'override for another name' => '{"devDependencies":{"vite":"npm:@voidzero-dev/vite-plus-core@latest"},"overrides":{"vitest":"npm:@voidzero-dev/vite-plus-core@latest"}}',
+        'malformed overrides' => '{"devDependencies":{"vite":"npm:@voidzero-dev/vite-plus-core@latest"},"overrides":[]}',
     ]);
 
     it('accepts bundled dependency names without separate lock entries', function (): void {
@@ -274,14 +334,9 @@ JSON;
         'missing root in nonempty map' => ['{}', '{"lockfileVersion":3,"packages":{"node_modules/one":{"version":"1"}}}'],
         'array root' => ['{}', '{"lockfileVersion":3,"packages":{"":[]}}'],
         'missing required resolution' => ['{"dependencies":{"missing":"*"}}', '{"lockfileVersion":3,"packages":{"":{"dependencies":{"missing":"*"}}}}'],
-        'root constraint mismatch' => ['{"optionalDependencies":{"missing":"^1"}}', '{"lockfileVersion":3,"packages":{"":{"optionalDependencies":{"missing":"^2"}}}}'],
-        'numeric-looking root constraint mismatch' => ['{"optionalDependencies":{"missing":"1"}}', '{"lockfileVersion":3,"packages":{"":{"optionalDependencies":{"missing":"1.0"}}}}'],
-        'root name mismatch' => ['{"name":"one"}', '{"lockfileVersion":3,"packages":{"":{"name":"two"}}}'],
-        'root version mismatch' => ['{"version":"1"}', '{"lockfileVersion":3,"packages":{"":{"version":"2"}}}'],
         'invalid root version' => ['{"version":1}', '{"lockfileVersion":3,"packages":{"":{"version":1}}}'],
         'alias identity mismatch' => ['{"dependencies":{"one":"npm:actual@*"}}', '{"lockfileVersion":3,"packages":{"":{"dependencies":{"one":"npm:actual@*"}},"node_modules/one":{"name":"different","version":"1"}}}'],
         'alias credentials' => ['{"dependencies":{"one":"npm:actual@https://fixture-user:fixture-secret@example.test"}}', '{"lockfileVersion":3,"packages":{"":{}}}'],
-        'root scope mismatch' => ['{"devDependencies":{"one":"*"}}', '{"lockfileVersion":3,"packages":{"":{"dependencies":{"one":"*"}},"node_modules/one":{"version":"1"}}}'],
         'dependency list' => ['{"dependencies":[]}', '{"lockfileVersion":3,"packages":{"":{}}}'],
         'null map' => ['{"optionalDependencies":null}', '{"lockfileVersion":3,"packages":{"":{}}}'],
         'nonstring requirement' => ['{"dependencies":{"one":false}}', '{"lockfileVersion":3,"packages":{"":{}}}'],

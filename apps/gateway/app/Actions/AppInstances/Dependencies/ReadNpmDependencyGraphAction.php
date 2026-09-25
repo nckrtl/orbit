@@ -32,6 +32,60 @@ final readonly class ReadNpmDependencyGraphAction
         throw new DependencyParseException('dependencies.invalid_npm_input');
     }
 
+    private function stale(): never
+    {
+        throw new DependencyParseException('dependencies.stale_npm_lockfile');
+    }
+
+    /** @return array<string, mixed> */
+    private function declarations(stdClass $record): array
+    {
+        $declarations = [];
+
+        foreach (['dependencies', 'devDependencies', 'optionalDependencies', 'peerDependencies'] as $field) {
+            $declarations[$field] = $this->links($record, $field);
+        }
+
+        // npm drops a regular declaration that optionalDependencies repeats.
+        $declarations['dependencies'] = array_diff_key($declarations['dependencies'], $declarations['optionalDependencies']);
+
+        $metadata = $record->peerDependenciesMeta ?? null;
+
+        foreach (array_keys($declarations['peerDependencies']) as $name) {
+            $declarations['optionalPeers'][$name] = $metadata instanceof stdClass && ($metadata->{$name}->optional ?? false) === true;
+        }
+
+        return $declarations;
+    }
+
+    /**
+     * Root override specs by package name. npm requires a root dependency and its override to share one spec.
+     *
+     * @return array<string, string>
+     */
+    private function rootOverrides(stdClass $manifest): array
+    {
+        if (! property_exists($manifest, 'overrides')) {
+            return [];
+        }
+
+        if (! $manifest->overrides instanceof stdClass) {
+            $this->invalid();
+        }
+
+        $overrides = [];
+
+        foreach (get_object_vars($manifest->overrides) as $name => $value) {
+            $spec = $value instanceof stdClass ? ($value->{'.'} ?? null) : $value;
+
+            if (is_string($spec)) {
+                $overrides[(string) $name] = $spec;
+            }
+        }
+
+        return $overrides;
+    }
+
     private function decode(string $contents): stdClass
     {
         $value = json_decode($contents, false, 512, JSON_THROW_ON_ERROR);
@@ -90,13 +144,19 @@ final readonly class ReadNpmDependencyGraphAction
 
         foreach (['name', 'version'] as $field) {
             if (property_exists($manifest, $field) && property_exists($root, $field) && $manifest->{$field} !== $root->{$field}) {
-                $this->invalid();
+                $this->stale();
             }
         }
 
-        $requirements = $this->requirements($manifest, null, $packages);
+        // npm install rewrites the root record from package.json, so any declaration difference is a stale lock.
+        if ($this->declarations($manifest) !== $this->declarations($root)) {
+            $this->stale();
+        }
 
-        if (array_map(get_object_vars(...), $requirements) !== array_map(get_object_vars(...), $this->requirements($root, null, $packages))) {
+        $overrides = $this->rootOverrides($manifest);
+        $requirements = $this->requirements($manifest, null, $packages, $overrides);
+
+        if (array_map(get_object_vars(...), $requirements) !== array_map(get_object_vars(...), $this->requirements($root, null, $packages, $overrides))) {
             $this->invalid();
         }
 
@@ -225,9 +285,10 @@ final readonly class ReadNpmDependencyGraphAction
 
     /**
      * @param  array<string, mixed>  $packages
+     * @param  array<string, string>  $overrides
      * @return list<DependencyRequirement>
      */
-    private function requirements(stdClass $record, ?string $from, array $packages): array
+    private function requirements(stdClass $record, ?string $from, array $packages, array $overrides = []): array
     {
         $optional = $this->links($record, 'optionalDependencies');
         $peers = $this->links($record, 'peerDependencies');
@@ -273,7 +334,7 @@ final readonly class ReadNpmDependencyGraphAction
                     $targetRecord = $packages[$target];
 
                     if (! $targetRecord instanceof stdClass
-                        || (str_starts_with($constraint, 'npm:') && $this->identity($target, $targetRecord) !== $this->targetName($name, $constraint))) {
+                        || (str_starts_with($constraint, 'npm:') && ! $this->aliasTarget($name, $constraint, $this->identity($target, $targetRecord), $from, $overrides))) {
                         $this->invalid();
                     }
                 }
@@ -344,6 +405,21 @@ final readonly class ReadNpmDependencyGraphAction
         }
 
         return $value;
+    }
+
+    /**
+     * A root alias that an override repeats can lock the unaliased package: npm records what it installed.
+     *
+     * @param  array<string, string>  $overrides
+     */
+    private function aliasTarget(string $name, string $constraint, string $identity, ?string $from, array $overrides): bool
+    {
+        if ($identity === $this->targetName($name, $constraint)) {
+            return true;
+        }
+
+        return $from === null && $identity === $name
+            && in_array($overrides[$name] ?? null, [$constraint, '$'.$name], true);
     }
 
     private function targetName(string $name, string $constraint): string

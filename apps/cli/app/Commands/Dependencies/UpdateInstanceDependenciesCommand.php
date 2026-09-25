@@ -11,6 +11,7 @@ use App\Services\GatewayConnectorFactory;
 use App\Support\Console\ConsoleInterrupted;
 use App\Support\Console\ConsoleWriter;
 use App\Support\Console\ProgressState;
+use App\Support\DependencyErrorHint;
 use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\Requests\AppInstances\UpdateInstanceDependenciesRequest;
@@ -166,13 +167,13 @@ final class UpdateInstanceDependenciesCommand extends GatewayCommand
     private function renderEcosystem(string $label, DependencyInventoryResponse $inventory): void
     {
         $snapshot = $inventory->snapshot;
-        ConsoleWriter::write($this->output, $this->humanRenderer()->detail($label, [
+        ConsoleWriter::write($this->output, $this->humanRenderer()->detail($label, DependencyErrorHint::withHint([
             'State' => $inventory->state,
             'Resolutions' => $snapshot === null ? null : count($snapshot->graph->resolutions ?? []),
             'Requirements' => $snapshot === null ? null : count($snapshot->graph->requirements ?? []),
             'Observed' => $snapshot?->observedAt,
             'Attempted' => $inventory->attemptedAt,
             'Error' => $inventory->errorCode,
-        ]));
+        ], $inventory->errorCode)));
     }
 }

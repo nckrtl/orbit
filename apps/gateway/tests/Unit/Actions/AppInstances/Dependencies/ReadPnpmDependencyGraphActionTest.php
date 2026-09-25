@@ -326,6 +326,28 @@ describe('pnpm v9 dependency graph reader', function (): void {
         'multiple YAML documents' => ['{}', "lockfileVersion: '9.0'\nimporters: {.: {}}\n---\nfixture-secret"],
     ]);
 
+    it('reports an importer that no longer matches package.json as stale', function (Closure $mutate): void {
+        [$manifest, $lock] = pnpmReaderRecords();
+        $mutate($manifest, $lock);
+
+        try {
+            (new ReadPnpmDependencyGraphAction)->execute(json_encode($manifest, JSON_THROW_ON_ERROR), json_encode($lock, JSON_THROW_ON_ERROR));
+            test()->fail('A stale lock was accepted.');
+        } catch (DependencyParseException $exception) {
+            expect($exception->errorCode)->toBe('dependencies.stale_pnpm_lockfile');
+            expect($exception->getMessage())->toBe('dependencies.stale_pnpm_lockfile');
+        }
+    })->with([
+        'missing root declaration' => fn ($manifest, $lock) => unsetPnpmProperty($manifest->dependencies, 'app-one'),
+        'missing importer declaration' => fn ($manifest, $lock) => unsetPnpmProperty($lock->importers->{'.'}->dependencies, 'app-one'),
+        'mismatched scope' => function ($manifest, $lock): void {
+            unset($manifest->dependencies->{'app-two'});
+            $manifest->devDependencies->{'app-two'} = '^1';
+        },
+        'mismatched specifier' => fn ($manifest, $lock) => $lock->importers->{'.'}->dependencies->{'app-one'}->specifier = '^2',
+        'unsafe specifier' => fn ($manifest, $lock) => $manifest->dependencies->{'app-one'} = 'https://fixture-user:fixture-secret@example.test/a.tgz',
+    ]);
+
     it('rejects inconsistent graph records', function (Closure $mutate): void {
         [$manifest, $lock] = pnpmReaderRecords();
         $mutate($manifest, $lock);
@@ -344,13 +366,6 @@ describe('pnpm v9 dependency graph reader', function (): void {
         'missing snapshot' => fn ($manifest, $lock) => unsetPnpmProperty($lock->snapshots, 'app-one@1.0.0'),
         'metadata identity mismatch' => fn ($manifest, $lock) => $lock->packages->{'app-one@1.0.0'}->name = 'other',
         'metadata version mismatch' => fn ($manifest, $lock) => $lock->packages->{'app-one@1.0.0'}->version = '2.0.0',
-        'missing root declaration' => fn ($manifest, $lock) => unsetPnpmProperty($manifest->dependencies, 'app-one'),
-        'missing importer declaration' => fn ($manifest, $lock) => unsetPnpmProperty($lock->importers->{'.'}->dependencies, 'app-one'),
-        'mismatched scope' => function ($manifest, $lock): void {
-            unset($manifest->dependencies->{'app-two'});
-            $manifest->devDependencies->{'app-two'} = '^1';
-        },
-        'mismatched specifier' => fn ($manifest, $lock) => $lock->importers->{'.'}->dependencies->{'app-one'}->specifier = '^2',
         'numeric specifier' => fn ($manifest, $lock) => $lock->importers->{'.'}->dependencies->{'app-one'}->specifier = 1,
         'wrong alias identity' => fn ($manifest, $lock) => $lock->importers->{'.'}->dependencies->renamed->version = 'app-one@1.0.0',
         'numeric resolved version' => fn ($manifest, $lock) => $lock->importers->{'.'}->dependencies->{'app-one'}->version = 1,
@@ -366,7 +381,6 @@ describe('pnpm v9 dependency graph reader', function (): void {
         'invalid integrity' => fn ($manifest, $lock) => $lock->packages->{'app-one@1.0.0'}->resolution->integrity = 'fixture-secret',
         'null resolution metadata' => fn ($manifest, $lock) => $lock->packages->{'app-one@1.0.0'}->resolution = null,
         'invalid tarball metadata' => fn ($manifest, $lock) => $lock->packages->{'app-one@1.0.0'}->resolution->tarball = 1,
-        'unsafe specifier' => fn ($manifest, $lock) => $manifest->dependencies->{'app-one'} = 'https://fixture-user:fixture-secret@example.test/a.tgz',
         'unreachable package' => function ($manifest, $lock): void {
             $lock->packages->{'orphan@1.0.0'} = (object) [];
             $lock->snapshots->{'orphan@1.0.0'} = (object) [];
