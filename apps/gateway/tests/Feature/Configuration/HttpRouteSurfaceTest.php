@@ -31,6 +31,7 @@ $bootHttpRoutes = static function (string $environment, string $debug): array {
         cwd: base_path(),
         env: [
             'APP_ENV' => $environment,
+            'CACHE_STORE' => false,
             'APP_DEBUG' => $debug,
             'APP_RUNNING_IN_CONSOLE' => 'false',
         ],
@@ -92,6 +93,7 @@ it('keeps Boost console commands available', function (): void {
         cwd: base_path(),
         env: [
             'APP_ENV' => 'local',
+            'CACHE_STORE' => false,
             'APP_DEBUG' => 'true',
             'APP_RUNNING_IN_CONSOLE' => 'true',
         ],

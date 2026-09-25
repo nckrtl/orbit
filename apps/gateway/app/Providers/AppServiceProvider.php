@@ -91,6 +91,7 @@ use App\Domain\Firewall\FirewallInspector;
 use App\Domain\Firewall\FirewallManager;
 use App\Domain\Firewall\RouterLanIngressPublisher;
 use App\Domain\Firewall\RouterLanIngressReconciler;
+use App\Domain\Gateway\GatewayCacheStore;
 use App\Domain\Gateway\GatewaySelfAccessConverger;
 use App\Domain\Gateway\GatewayVpnConverger;
 use App\Domain\Gateway\GatewayWebConverger;
@@ -843,6 +844,11 @@ final class AppServiceProvider extends ServiceProvider
 
     public function boot(ActivityPropertiesObserver $activityPropertiesObserver): void
     {
+        /** @var array<string, mixed> $cache */
+        $cache = config('cache');
+        if (! $this->app->runningConsoleCommand(GatewayCacheStore::RecoveryCommands)) {
+            GatewayCacheStore::assertSupported($cache, $this->app->environment(), $this->app->configurationIsCached());
+        }
         Activity::observe($activityPropertiesObserver);
         Relation::morphMap([
             'instance' => AppInstance::class,

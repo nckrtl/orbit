@@ -12,14 +12,15 @@ return [
      |
      | This option determines the default session driver that is utilized for
      | incoming requests. Laravel supports a variety of storage options to
-     | persist session data. Database storage is a great default choice.
+     | persist session data. The Gateway has no sessions table, so it defaults
+     | to the in-memory array driver.
      |
      | Supported: "file", "cookie", "database", "memcached",
      |            "redis", "dynamodb", "array"
      |
      */
 
-    'driver' => env(key: 'SESSION_DRIVER', default: 'database'),
+    'driver' => env(key: 'SESSION_DRIVER', default: 'array'),
 
     /*
      |--------------------------------------------------------------------------
