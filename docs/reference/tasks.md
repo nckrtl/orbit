@@ -213,13 +213,15 @@ Select a card to read the task brief, its status, tokens, line diff, duration, a
 
 Select a subtask to open its own detail page with its title, brief, status, Project, shared Instance, tokens, line diff, and duration. The subtask detail omits the subtasks board. Use the parent task breadcrumb to return to the board.
 
-The board refreshes every ten seconds. Backlog contains groups that are still being prepared. Todo contains groups that wait for the scheduler. In progress contains reserved, running, reviewing, and settling groups. Settling means awaiting completion after review and merge. Done contains completed, failed, and cancelled groups; each card keeps its outcome visible. Failed and cancelled do not mean successful completion.
+The board stays current from [task events](/reference/web-app#live-tasks) while realtime is live, with a refetch every 5 minutes as a safety net, and polls every 30 seconds while realtime is not live. Backlog contains groups that are still being prepared. Todo contains groups that wait for the scheduler. In progress contains reserved, running, reviewing, and settling groups. Settling means awaiting completion after review and merge. Done contains completed, failed, and cancelled groups; each card keeps its outcome visible. Failed and cancelled do not mean successful completion.
 
 The board is read-only. Move a group from Backlog to Todo with `tasks:update`. The Gateway still owns scheduling and concurrency. When the extension is disabled, the page explains that tasks are unavailable. Request errors remain visible instead of appearing as an empty board.
 
 ### Tokens and line diff
 
-When the parent task is open, Tokens is the total for the current implementer of each subtask plus the shared reviewer. Line diff is the whole feature branch against the Project default branch. A subtask shows its current implementer's metrics. Showing an active group refreshes these values through the selected drivers and shared checkout. Missing runtime metrics remain unknown; failed reads preserve stored values.
+When the parent task is open, Tokens is the total for the current implementer of each subtask plus the shared reviewer. Line diff is the whole feature branch against the Project default branch. A subtask shows its current implementer's metrics. Showing an active group refreshes these values through the selected drivers and shared checkout.
+
+The line diff comes from the Node agent's [task workspace](/reference/node-agent#task-workspaces) state while the Gateway's view of that Node is fresh, and from `git diff --shortstat` over SSH otherwise or when the agent's diff is truncated. When the agent reports a new commit or new counts, the Gateway stores the group's line counts when the diff is complete and broadcasts `task_group.updated` in either case. Missing runtime metrics remain unknown; failed reads preserve stored values.
 
 ## Scheduler and ceilings
 
@@ -333,6 +335,8 @@ When one Pi event becomes several entries, only the last carries the cursor, so 
 A scheduler tick checks every in-progress task in running and reviewing groups. In-progress tasks have status `running` or `reviewing`. The tick checks the normalized AgentThread state of each attached reviewer or implementer thread, including sessions recorded only in `agent_threads`. Tasks without attached sessions are skipped. `todo`, completed, failed, and cancelled tasks do not ask Jev for decisions. The tick also reads the planner thread of every Backlog and Todo group, so its state and token count stay current while the operator plans. That read asks Jev nothing.
 
 AgentThread state is authoritative. The thread that acts in the task's phase defers the task while it is `working`, including a starting T3 session. That thread is the task's implementer while the task is `running`, and the group's reviewer while the task is `reviewing`. The Gateway then does not inspect that task's messages or pending requests, check workspace commits, or call Jev. Other snapshot fields cannot override an active status. The tick still checks the remaining sessions and other in-progress tasks.
+
+Otherwise the tick checks for commits since the thread started. It reads the count from the Node agent's [task workspace](/reference/node-agent#task-workspaces) state while the Gateway's view of that Node is fresh, and runs `git` over SSH otherwise.
 
 The other thread's work does not defer the task. While the operator talks to the shared reviewer, the tick still reads the implementer's receipt, asks for assistance on `blocked`, runs the handoff check, and sends reminders to the implementer. The Gateway sends no turn to the working thread until it stops. [ADR 0132](/decisions/0132-pause-only-for-the-acting-thread-and-a-real-question) records the decision.
 

@@ -15,7 +15,7 @@ Every broadcast happens synchronously, inside the same request that changed the 
 
 ## Channel and authorization
 
-Every event broadcasts on one private channel, `orbit`. A client authorizes access the same way it calls the rest of the API: as an active WireGuard peer Node, identified by its source address, against `POST /api/v1/broadcasting/auth`. Any authenticated Gateway API caller may subscribe; there is no per-Node scoping on this channel. An unauthenticated caller, or a caller whose peer address does not match an active Node, receives `403`.
+Every event broadcasts on one private channel, `orbit`. A client authorizes access the same way it calls the rest of the API: as an active WireGuard peer Node, identified by its source address, against `POST /api/v1/broadcasting/auth`. The endpoint requires Gateway access: the active Gateway peer, or a Node with an access edge to the Gateway. There is no per-Node scoping on this channel. An unauthenticated caller, or a caller whose peer address does not match an active Node, receives `403`, and a Node without Gateway access receives `403` with `node_access.required`.
 
 Node agents publish on separate per-Node presence channels, not on `orbit`. See [Node agent channels](#node-agent-channels).
 
@@ -50,7 +50,7 @@ Every event shares the same shape. The broadcast name equals `type`.
 | `type` | `<family>.<verb>`, for example `node.created`. Also the broadcast name a client subscribes to. |
 | `id` | The changed record's id. A string annotation ID for annotations; a numeric id for every family except deploy steps, which use the step's name. |
 | `at` | ISO 8601 timestamp of the broadcast, in the Gateway's timezone. |
-| `data` | For annotation notices, `{ id, instanceId, revision }`. For other changes, the record exactly as its list or show endpoint returns it: the same Spatie Data object, unchanged. A `deleted` event carries a minimal snapshot instead, usually just `id` and a name or slug, because the action deletes the record before the broadcast and leaves nothing else to serialize. |
+| `data` | For annotation notices, `{ id, instanceId, revision }`. For task notices and Process usage, the fields their tables below list. For other changes, the record exactly as its list or show endpoint returns it: the same Spatie Data object, unchanged. A `deleted` event carries a minimal snapshot instead, usually just `id` and a name or slug, because the action deletes the record before the broadcast and leaves nothing else to serialize. |
 
 ```json
 {
@@ -63,7 +63,7 @@ Every event shares the same shape. The broadcast name equals `type`.
 
 ## Verbs
 
-Most families broadcast `created`, `updated`, and `deleted`. Three families also broadcast `status`, reserved for a change to the Gateway's own recorded runtime state rather than to configuration: process start, stop, and restart. Node and Instance runtime state changes are not currently broadcast; see [Limits](#limits).
+Most families broadcast `created`, `updated`, and `deleted`. Three families also broadcast `status`, reserved for a change to the Gateway's own recorded runtime state rather than to configuration: process start, stop, and restart. Node and Instance runtime state changes are not currently broadcast; see [Limits](#limits). `process.usage` is a periodic sample rather than a record change.
 
 ## Event catalogue
 
@@ -123,6 +123,32 @@ Most families broadcast `created`, `updated`, and `deleted`. Three families also
 | `firewall.deleted` | A firewall rule is removed. | `{ id, name }` |
 
 There is no `firewall.updated`. Storing a rule under a name that already exists requires the same action, source, protocol, and port as the stored rule; any difference is refused as a conflict, so there is no path that changes a stored rule's fields.
+
+### Tasks
+
+Task events are notices. They carry identifiers, status, and counts, never titles, briefs, receipts, or messages, because a task group with its subtasks can pass Reverb's 10,000-byte limit. A client fetches the record over HTTP when it needs more. [ADR 0151](/decisions/0151-push-task-and-process-usage-changes-over-realtime) records the design.
+
+| Type | Fires when | Data |
+| --- | --- | --- |
+| `task_group.created` | A task group is created. | `{ id, status }` |
+| `task_group.updated` | A group, one of its subtasks, or one of its Project checks changes, or the Gateway sees a new diff summary for the group's workspace. | `{ id, status, lines_added, lines_deleted, line_diff }` |
+| `task_comment.created` | A comment or run receipt is stored on a subtask. | `{ id, task_group_id, task_id }` |
+| `agent_thread.updated` | An agent thread is created, or its state, error, or observation error changes. | `{ id, task_group_id, task_id, state }` |
+| `tasks.updated` | The tasks extension is enabled or disabled. | `{ enabled }` |
+
+`id` is the group's id for `task_group.*`, the comment's id for `task_comment.created`, the thread's id for `agent_thread.updated`, and `0` for `tasks.updated`. `task_id` is null for a group's shared reviewer thread.
+
+A change only to a group's or subtask's tokens, line counts, or duration does not broadcast by itself, because showing a group refreshes those values. They reach clients with the next other change. The Gateway collects the task changes of one request, one scheduler tick, or one agent view pass, and broadcasts each record once when that work ends.
+
+### Process usage
+
+While a browser watches, the Gateway broadcasts the CPU and memory of every Process every 15 seconds.
+
+| Type | Fires when | Data |
+| --- | --- | --- |
+| `process.usage` | Every 15 seconds while at least one `viewer.*` member is on a [Node agent channel](#node-agent-channels). | `{ part, parts, processes }` |
+
+`id` is the sample time in Unix seconds, the same for every part of one sample. `processes` lists `[id, cpu, memory_bytes]` for at most 200 Processes per part, with the same values and units as the `cpu` and `memory_bytes` fields of the Process list. A Process without a sample has null values. The agent view subscriber sends these events; [Process usage](/reference/node-agent#process-usage) describes when.
 
 ### Route
 
@@ -205,6 +231,8 @@ The agent publishes Pusher client events. Reverb adds the sender's `user_id` to 
 | `client-heartbeat` | Every 5 seconds. | `{ sequence, at }` |
 | `client-snapshot` | After the agent joins, when a new member joins, after the agent reconnects to Docker, and at least every 60 seconds. Agent 0.1.1 sends no periodic snapshot. | `{ sequence, at, docker, part, parts, units }` |
 | `client-process` | As soon as a unit or container changes, after 250 milliseconds of merging. | `{ sequence, at, unit }` |
+| `client-workspaces` | After each snapshot, when the agent's watch list changes, and when a checkout that it read before fails to open. | `{ sequence, at, part, parts, workspaces }` |
+| `client-workspace` | As soon as the agent reads a new state for one watched task checkout. | `{ sequence, at, workspace }` |
 
 | Field | Contract |
 | --- | --- |
@@ -214,6 +242,10 @@ The agent publishes Pusher client events. Reverb adds the sender's `user_id` to 
 | `part`, `parts` | This part's number, from 1, and the number of parts. The agent splits a snapshot so that each message stays under Reverb's 10,000-byte limit. The parts arrive in order with consecutive `sequence` values, and a subscriber applies the snapshot once it has every part. |
 | `units` | A list of `unit` entries: every `orbit-process-*` unit and container the agent sees. |
 | `unit` | `{ name, runtime, runtime_status }`, for example `{ "name": "orbit-process-42-web", "runtime": "docker", "runtime_status": "exited" }`. `name` has no `.service` suffix. `runtime` is `systemd` or `docker`. |
+| `workspaces` | A list of `workspace` entries: every task checkout on the agent's watch list that it could read. Parts follow the snapshot's rules. |
+| `workspace` | `{ instance_id, base, start, branch, head, dirty, commits, diff }`, the Git state of one task checkout. [Task workspaces](/reference/node-agent#task-workspaces) defines each field. |
+
+A complete `client-workspaces` list replaces what a subscriber knows about the Node's workspaces. A workspace missing from it is not watched or cannot be read.
 
 A snapshot replaces what a subscriber knows about the Node's units. A unit missing from a complete snapshot, or from a `client-process` event since, has no unit or container. Its Process reads as `inactive` for systemd or `exited` for Docker.
 

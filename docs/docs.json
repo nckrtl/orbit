@@ -710,6 +710,7 @@
               "decisions/0147-retire-orbit-top",
               "decisions/0148-keep-a-gateway-view-of-node-agent-state",
               "decisions/0150-keep-extension-commands-local-and-confirm-the-proxycli-fleet-stop",
+              "decisions/0151-push-task-and-process-usage-changes-over-realtime",
               "decisions/0152-sample-successful-read-activity",
               "decisions/0154-recover-the-gateway-agent-view-without-a-membership-change"
             ]
