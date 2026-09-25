@@ -31,7 +31,7 @@ describe('PreparedStateFingerprint', function (): void {
     });
 
     afterEach(function (): void {
-        $tempDirectory = rtrim(sys_get_temp_dir(), '/');
+        $tempDirectory = temporaryDirectory();
         $expectedPrefix = $tempDirectory.'/orbit-fingerprint-';
 
         if (
