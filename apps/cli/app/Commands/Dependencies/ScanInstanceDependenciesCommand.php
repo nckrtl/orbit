@@ -11,6 +11,7 @@ use App\Services\GatewayConnectorFactory;
 use App\Support\Console\ConsoleInterrupted;
 use App\Support\Console\ConsoleWriter;
 use App\Support\Console\ProgressState;
+use App\Support\DependencyErrorHint;
 use InvalidArgumentException;
 use JsonException;
 use Orbit\Sdk\GatewayApiException;
@@ -70,7 +71,7 @@ final class ScanInstanceDependenciesCommand extends GatewayCommand
                 $connector, new ScanInstanceDependenciesRequest($target->instanceId), InstanceDependencyInventoryResponse::class,
             ));
         } catch (GatewayApiException $exception) {
-            return $this->renderGatewayFailure($exception->errorCode() ?? 'gateway.request_failed', $exception->getMessage(), $exception->requestId());
+            return $this->renderApiFailure($exception);
         } catch (FatalRequestException) {
             return $this->renderGatewayFailure('gateway.unreachable', 'Could not reach the gateway.');
         }
@@ -96,7 +97,7 @@ final class ScanInstanceDependenciesCommand extends GatewayCommand
         try {
             $list = $progress->during('targets', fn () => $this->captureAuthorizedInstances($connector));
         } catch (GatewayApiException $exception) {
-            return $this->renderGatewayFailure($exception->errorCode() ?? 'gateway.request_failed', $exception->getMessage(), $exception->requestId());
+            return $this->renderApiFailure($exception);
         } catch (ConsoleInterrupted) {
             return $this->renderGatewayFailure('input.cancelled', 'Instance listing was cancelled.');
         }
@@ -407,13 +408,13 @@ final class ScanInstanceDependenciesCommand extends GatewayCommand
     private function renderEcosystem(string $label, DependencyInventoryResponse $inventory): void
     {
         $snapshot = $inventory->snapshot;
-        ConsoleWriter::write($this->output, $this->humanRenderer()->detail($label, [
+        ConsoleWriter::write($this->output, $this->humanRenderer()->detail($label, DependencyErrorHint::withHint([
             'State' => $inventory->state,
             'Resolutions' => $snapshot === null ? null : count($snapshot->graph->resolutions ?? []),
             'Requirements' => $snapshot === null ? null : count($snapshot->graph->requirements ?? []),
             'Observed' => $snapshot?->observedAt,
             'Attempted' => $inventory->attemptedAt,
             'Error' => $inventory->errorCode,
-        ]));
+        ], $inventory->errorCode)));
     }
 }

@@ -464,7 +464,7 @@ it('fails the group when a later implementer spawn returns no thread id', functi
         ->and($advanced->tasks->last()?->implementer_agent_thread_id)->toBeNull();
 });
 
-it('leaves a provisioned group reserved when the Node is already at the ceiling', function (): void {
+it('returns a provisioned group to todo on its Instance when the Node is already at the ceiling', function (): void {
     $app = scheduler_app('held-app');
     $node = scheduler_node('full-node', '10.44.0.92');
     $instance = scheduler_instance($app, $node, 'held');
@@ -497,7 +497,7 @@ it('leaves a provisioned group reserved when the Node is already at the ceiling'
 
     expect($claimed)->toBeNull()
         ->and($queued->fresh()?->status)->toBe(TaskGroupStatus::Todo)
-        ->and($queued->fresh()?->taskable_id)->toBeNull()
+        ->and($queued->fresh()?->taskable_id)->toBe($instance->id)
         ->and($queued->fresh()?->reviewer_agent_thread_id)->toBeNull();
 });
 

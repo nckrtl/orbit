@@ -12,6 +12,7 @@ use App\Domain\AppInstances\Dependencies\DependencyRequirement;
 use App\Domain\AppInstances\Dependencies\DependencyRequirementKind;
 use App\Domain\AppInstances\Dependencies\DependencyResolution;
 use App\Domain\AppInstances\Dependencies\DependencyScope;
+use App\Domain\AppInstances\Dependencies\NpmVersionRange;
 use InvalidArgumentException;
 use JsonException;
 use stdClass;
@@ -30,6 +31,32 @@ final readonly class ReadNpmDependencyGraphAction
     private function invalid(): never
     {
         throw new DependencyParseException('dependencies.invalid_npm_input');
+    }
+
+    private function stale(): never
+    {
+        throw new DependencyParseException('dependencies.stale_npm_lockfile');
+    }
+
+    /** @return array<string, mixed> */
+    private function declarations(stdClass $record): array
+    {
+        $declarations = [];
+
+        foreach (['dependencies', 'devDependencies', 'optionalDependencies', 'peerDependencies'] as $field) {
+            $declarations[$field] = $this->links($record, $field);
+        }
+
+        // npm drops a regular declaration that optionalDependencies repeats.
+        $declarations['dependencies'] = array_diff_key($declarations['dependencies'], $declarations['optionalDependencies']);
+
+        $metadata = $record->peerDependenciesMeta ?? null;
+
+        foreach (array_keys($declarations['peerDependencies']) as $name) {
+            $declarations['optionalPeers'][$name] = $metadata instanceof stdClass && ($metadata->{$name}->optional ?? false) === true;
+        }
+
+        return $declarations;
     }
 
     private function decode(string $contents): stdClass
@@ -90,8 +117,13 @@ final readonly class ReadNpmDependencyGraphAction
 
         foreach (['name', 'version'] as $field) {
             if (property_exists($manifest, $field) && property_exists($root, $field) && $manifest->{$field} !== $root->{$field}) {
-                $this->invalid();
+                $this->stale();
             }
+        }
+
+        // npm install rewrites the root record from package.json, so any declaration difference is a stale lock.
+        if ($this->declarations($manifest) !== $this->declarations($root)) {
+            $this->stale();
         }
 
         $requirements = $this->requirements($manifest, null, $packages);
@@ -273,7 +305,7 @@ final readonly class ReadNpmDependencyGraphAction
                     $targetRecord = $packages[$target];
 
                     if (! $targetRecord instanceof stdClass
-                        || (str_starts_with($constraint, 'npm:') && $this->identity($target, $targetRecord) !== $this->targetName($name, $constraint))) {
+                        || (str_starts_with($constraint, 'npm:') && ! $this->aliasTarget($name, $constraint, $target, $targetRecord))) {
                         $this->invalid();
                     }
                 }
@@ -346,13 +378,40 @@ final readonly class ReadNpmDependencyGraphAction
         return $value;
     }
 
+    /**
+     * npm validates an alias edge against the spec after the package name and never compares that name.
+     * A dist-tag accepts any registry tarball, so npm can lock the unaliased package, for example with Vite+ overrides.
+     */
+    private function aliasTarget(string $name, string $constraint, string $location, stdClass $record): bool
+    {
+        if ($this->identity($location, $record) === $this->targetName($name, $constraint)) {
+            return true;
+        }
+
+        preg_match('{^npm:(?:@[^/]+/)?[^@]+(?:@(.*))?$}D', $constraint, $match);
+
+        // npm reads `npm:ms` and `npm:ms@` as `*`, which dep-valid accepts without a semver check.
+        // A whitespace-only spec is an empty range instead, which excludes prereleases.
+        if (($match[1] ?? '') === '' || trim($match[1]) === '*') {
+            return true;
+        }
+
+        $range = NpmVersionRange::parse(trim($match[1]));
+
+        if ($range === null) {
+            return is_string($record->resolved ?? null) && preg_match('{^https?://}i', $record->resolved) === 1;
+        }
+
+        return is_string($record->version ?? null) && $range->satisfies($record->version);
+    }
+
     private function targetName(string $name, string $constraint): string
     {
         if (! str_starts_with($constraint, 'npm:')) {
             return $name;
         }
 
-        if (preg_match('{^npm:((?:@[^/]+/)?[^@]+)(?:@(.+))?$}D', $constraint, $match) !== 1) {
+        if (preg_match('{^npm:((?:@[^/]+/)?[^@]+)(?:@(.*))?$}D', $constraint, $match) !== 1) {
             $this->invalid();
         }
 

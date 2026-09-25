@@ -1050,3 +1050,46 @@ it('cuts an oversized build message on a character boundary instead of dropping 
         ->and(mb_check_encoding($details['message'] ?? '', 'UTF-8'))->toBeTrue()
         ->and($details['message'] ?? '')->toEndWith('é…');
 });
+
+it('keeps a bounded operation step without a Caddy build for any error code', function (string $code, string $step): void {
+    expect(GatewayFailureRenderer::safeDetails($code, ['step' => $step, 'stdout' => 'private-output']))
+        ->toBe(['step' => $step]);
+})->with([
+    'role removal' => ['node_role.remove_failed', 'remove:host-firewall'],
+    'role convergence' => ['node_role.convergence_failed', 'converge:caddy'],
+    'node provisioning' => ['node.provisioning_failed', 'wireguard-peer'],
+    'tool manager' => ['tool.manager_failed', 'tool-manager-vp'],
+]);
+
+it('drops a malformed operation field and keeps the valid ones', function (mixed $step): void {
+    expect(GatewayFailureRenderer::safeDetails('node_role.remove_failed', ['step' => $step, 'reason' => 'app_instances_attached', 'role' => 'app-dev']))
+        ->toBe(['reason' => 'app_instances_attached', 'role' => 'app-dev']);
+})->with([
+    'control character' => ["remove:host\nfirewall"],
+    'upper case' => ['Remove:Host-Firewall'],
+    'spaces' => ['remove host firewall'],
+    'trailing separator' => ['remove:'],
+    'oversized' => [str_repeat('a', 129)],
+    'not a string' => [['remove']],
+]);
+
+it('keeps the step, outcome, and id of a tool operation failure', function (): void {
+    expect(GatewayFailureRenderer::safeDetails('tool.version_probe_failed', [
+        'step' => 'install', 'outcome' => 'manager_failed', 'id' => 110, 'manager_output' => 'private-output',
+    ]))->toBe(['id' => 110, 'step' => 'install', 'outcome' => 'manager_failed'])
+        ->and(GatewayFailureRenderer::safeDetails('tool.version_probe_failed', ['outcome' => 'Manager Failed!', 'id' => 0]))->toBe([]);
+});
+
+it('keeps the step next to the set of a failed Caddy build', function (): void {
+    expect(GatewayFailureRenderer::safeDetails('node_role.convergence_failed', [
+        'step' => 'converge:websocket-caddy', 'node' => 'app-prod', 'stage' => 'validate', 'message' => 'Error: bad config',
+    ]))->toBe(['step' => 'converge:websocket-caddy', 'node' => 'app-prod', 'stage' => 'validate', 'message' => 'Error: bad config']);
+});
+
+it('leaves validation details to the field messages', function (): void {
+    $details = ['field' => 'force', 'reason' => 'destructive_consent_required', 'role' => 'app-dev', 'dependents' => ['1 workspace record']];
+
+    expect(GatewayFailureRenderer::safeDetails('validation.failed', $details))
+        ->toBe(GatewayFailureRenderer::fieldDetails($details))
+        ->toBe($details);
+});
