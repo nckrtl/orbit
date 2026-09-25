@@ -9,6 +9,7 @@ enum ProjectType: string
     case Monorepo = 'monorepo';
     case LaravelApp = 'laravel-app';
     case LaravelPackage = 'laravel-package';
+    case NodePackage = 'node-package';
 
     public function isWebServing(): bool
     {

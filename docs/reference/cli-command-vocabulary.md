@@ -70,7 +70,7 @@ Some families expose actions that are not the pairs above. Those last segments b
 | `profile` | `profile` | The CLI profiles one HTTP request from the operator machine. |
 | `realtime` | `tail` | The CLI streams decoded realtime Gateway events as they arrive. |
 | `schedule` | `logs`, `run` | The CLI reads Schedule logs or runs a Schedule once. |
-| `tasks` | `cancel`, `complete`, `status` | The CLI cancels or completes a task group, or reports whether the tasks extension is on. |
+| `tasks` | `cancel`, `complete`, `status` | The CLI cancels or completes a task group, cancels a running subtask with `tasks:subtask:cancel`, or reports whether the tasks extension is on. |
 
 `doctor` and `profile` are one-segment commands. Each family name is the command.
 

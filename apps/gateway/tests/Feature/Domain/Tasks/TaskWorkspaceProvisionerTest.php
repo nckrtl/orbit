@@ -13,6 +13,7 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessRuntime;
+use App\Domain\Projects\ProjectType;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\InstanceProvisioning;
@@ -30,12 +31,16 @@ use App\Models\ProjectNodeExclusion;
 use App\Models\Task;
 use App\Models\TaskGroup;
 
-function provisioner_app(string $slug, ?string $root = 'public'): OrbitApp
-{
+function provisioner_app(
+    string $slug,
+    ?string $root = 'public',
+    ProjectType $type = ProjectType::LaravelApp,
+): OrbitApp {
     return OrbitApp::query()->create([
         'name' => $slug,
         'slug' => $slug,
         'repository_url' => "git@example.test:{$slug}.git",
+        'type' => $type,
         'default_branch' => 'main',
         'root' => $root,
     ]);
@@ -207,6 +212,25 @@ it('activates a visitable workspace through the development provisioner', functi
         ->and($fakes->development->reserves)->toBe(1)
         ->and($fakes->development->completes)->toBe(1);
 });
+
+it('creates a visitable Task workspace at the repository root for each package type', function (ProjectType $type): void {
+    $app = provisioner_app($type->value, '.', $type);
+    $node = provisioner_node($type->value.'-dev', '10.44.0.125');
+    $group = provisioner_group($app);
+    $fakes = bind_task_workspace_fakes();
+
+    $instance = app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, true));
+
+    expect($instance)->toBeInstanceOf(AppInstance::class)
+        ->and($instance?->node_id)->toBe($node->id)
+        ->and($instance?->root)->toBe('.')
+        ->and($instance?->status)->toBe(AppInstanceState::SourceResolved)
+        ->and($fakes->development->reserves)->toBe(1)
+        ->and($fakes->development->completes)->toBe(1);
+})->with([
+    'laravel-package' => ProjectType::LaravelPackage,
+    'node-package' => ProjectType::NodePackage,
+]);
 
 it('reuses an already assigned Task workspace', function (): void {
     $app = provisioner_app('reuse');

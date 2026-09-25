@@ -36,7 +36,8 @@ describe('the agent stream list', function (): void {
     beforeEach(function (): void {
         Carbon::setTestNow(Carbon::createFromTimestamp(1_000));
         $this->node = agent_log_node('app-prod', '10.44.0.11');
-        $this->withServerVariables(['REMOTE_ADDR' => $this->node->wireguard_ip]);
+        $this->node->forceFill(['agent_secret_hash' => hash('sha256', 'agent-log-secret')])->save();
+        $this->withServerVariables(['REMOTE_ADDR' => $this->node->wireguard_ip])->withToken('agent-log-secret');
     });
 
     afterEach(fn () => Carbon::setTestNow());
@@ -54,6 +55,15 @@ describe('the agent stream list', function (): void {
             ['id' => $journal->id, 'lines' => 250, 'source' => ['type' => 'journal', 'unit' => 'orbit-process-7-queue.service']],
             ['id' => $docker->id, 'lines' => 250, 'source' => ['type' => 'docker', 'container' => 'orbit-process-8-web', 'process_id' => 8]],
         ]);
+    });
+
+    it('refuses a local caller on the Node without its agent secret', function (): void {
+        agent_log_stream($this->node, LogStreamSource::journal('orbit-process-7-queue.service'));
+
+        $this->withToken('')->getJson('/api/v1/agent/log-streams', ['Authorization' => ''])
+            ->assertUnauthorized()->assertJsonPath('error.code', 'agent.secret_required');
+        $this->withToken('guessed')->getJson('/api/v1/agent/log-streams')
+            ->assertForbidden()->assertJsonPath('error.code', 'agent.secret_invalid');
     });
 
     it('refuses a caller that is not an active managed Node', function (): void {

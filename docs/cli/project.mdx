@@ -3,7 +3,7 @@ title: "project"
 description: "Create, inspect, and remove Project records. A Project owns one repository, a type, and the source defaults that Instances inherit."
 ---
 
-A Project is Orbit's stable record for one application repository. It owns one repository identity, one type, one access URL, a default branch, and a relative web root. Instances, Routes, and process and Schedule definitions hang off the Project.
+A Project is Orbit's stable record for one repository. It owns one repository identity, one type, one access URL, a default branch, and a normalized root path. For Laravel apps the root is a web root; package types can use `.` for the repository root. Instances, Routes, and process and Schedule definitions hang off the Project.
 
 The [Projects reference](/reference/apps) owns repository identity, type, default-branch resolution, and idempotent creation. The [Applications guide](/domains/applications) shows how a Project becomes a running Instance.
 
@@ -34,19 +34,20 @@ orbit project:create <slug> <type> <repository> [options]
 | Argument | Required | Meaning |
 | --- | --- | --- |
 | `slug` | yes | Unique Project slug. It names the checkout directory under the Node apps root. |
-| `type` | yes | `monorepo`, `laravel-app`, or `laravel-package`. Type decides routing and PHP-FPM capability. |
+| `type` | yes | `monorepo`, `laravel-app`, `laravel-package`, or `node-package`. Type decides routing and PHP-FPM capability. |
 | `repository` | yes | HTTPS or SSH Git repository URL. |
 
 | Option | Default | Meaning |
 | --- | --- | --- |
 | `--name=NAME` | the slug | Display name. |
 | `--default-branch=BRANCH` | the remote default | Stored default branch. The Gateway verifies that an explicit branch exists. |
-| `--root=PATH` | `public` | Relative web root that Instances inherit. |
+| `--root=PATH` | `.` for `laravel-package` and `node-package`; `public` otherwise | Normalized repository-relative root that Instances inherit. `.` means the repository root. |
 
 ```bash
 orbit project:create acme laravel-app https://github.com/acme/site.git
 orbit project:create acme laravel-app git@github.com:acme/site.git --default-branch=stable --root=web/public
-orbit project:create support laravel-package git@github.com:acme/support.git --root=src
+orbit project:create support laravel-package git@github.com:acme/support.git --root=.
+orbit project:create node-kit node-package git@github.com:acme/node-kit.git
 ```
 
 Creation is idempotent. Repeating the command with the same values returns the existing Project. A retry that changes any value fails with `app.identity_conflict`, and a second Project for the same repository fails with `app.repository_identity_conflict`.
@@ -91,7 +92,7 @@ The command accepts these options.
 | `--slug=SLUG` | New Project slug. Generated development domains follow it; recorded paths stay unchanged. |
 | `--repository=URL` | New Git access URL. The Gateway validates ownership before updating checkout origins. |
 | `--default-branch=BRANCH` | New default branch for development sources that inherit it. |
-| `--root=PATH` | New relative web root for Instances without an override. |
+| `--root=PATH` | New normalized repository-relative root for Instances without an override. Package types may use `.`. |
 
 ## orbit project:destroy
 

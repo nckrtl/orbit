@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\Node;
+use Illuminate\Testing\TestResponse;
 
 describe('agent realtime endpoints', function (): void {
     beforeEach(function (): void {
@@ -15,7 +16,8 @@ describe('agent realtime endpoints', function (): void {
             'wireguard_ip' => '10.44.0.31',
             'ssh_host_fingerprint' => 'SHA256:test',
         ]);
-        $this->withServerVariables(['REMOTE_ADDR' => $this->node->wireguard_ip]);
+        $this->node->forceFill(['agent_secret_hash' => hash('sha256', 'agent-node-secret')])->save();
+        $this->withServerVariables(['REMOTE_ADDR' => $this->node->wireguard_ip])->withToken('agent-node-secret');
     });
 
     it('returns the Reverb serving address', function (): void {
@@ -96,5 +98,90 @@ describe('agent realtime endpoints', function (): void {
         $this->postJson('/api/v1/agent/broadcasting/auth', [
             'socket_id' => '1.2', 'channel_name' => "presence-node.{$this->node->id}",
         ])->assertNotFound()->assertJsonPath('error.code', 'realtime.not_configured');
+    });
+});
+
+/** Calls one agent endpoint with the given bearer token, or none. */
+function agent_endpoint_call(mixed $test, string $endpoint, ?string $token): TestResponse
+{
+    $headers = $token === null ? [] : ['Authorization' => 'Bearer '.$token];
+
+    return match ($endpoint) {
+        'realtime' => $test->getJson('/api/v1/agent/realtime', $headers),
+        'workspaces' => $test->getJson('/api/v1/agent/workspaces', $headers),
+        'log-streams' => $test->getJson('/api/v1/agent/log-streams', $headers),
+        'auth' => $test->postJson('/api/v1/agent/broadcasting/auth', [
+            'socket_id' => '123.456', 'channel_name' => 'presence-node.'.$test->node->id,
+        ], $headers),
+    };
+}
+
+describe('the agent secret', function (): void {
+    beforeEach(function (): void {
+        $this->secret = bin2hex(random_bytes(32));
+        $this->node = Node::query()->forceCreate([
+            'name' => 'secret-node',
+            'status' => LifecycleStatus::Active,
+            'platform' => 'linux',
+            'public_ssh_host' => '192.0.2.32',
+            'wireguard_ip' => '10.44.0.32',
+            'ssh_host_fingerprint' => 'SHA256:test',
+            'agent_secret_hash' => hash('sha256', $this->secret),
+        ]);
+        $this->other = bin2hex(random_bytes(32));
+        Node::query()->forceCreate([
+            'name' => 'other-node',
+            'status' => LifecycleStatus::Active,
+            'platform' => 'linux',
+            'public_ssh_host' => '192.0.2.33',
+            'wireguard_ip' => '10.44.0.33',
+            'ssh_host_fingerprint' => 'SHA256:test',
+            'agent_secret_hash' => hash('sha256', $this->other),
+        ]);
+        activate_websocket_role($this->node);
+        $this->withServerVariables(['REMOTE_ADDR' => $this->node->wireguard_ip]);
+    });
+
+    it('refuses a request without the secret', function (string $endpoint): void {
+        agent_endpoint_call($this, $endpoint, null)->assertUnauthorized()->assertJsonPath('error.code', 'agent.secret_required');
+    })->with(['realtime', 'auth', 'workspaces', 'log-streams']);
+
+    it('refuses a wrong secret and another Node\'s secret', function (string $endpoint): void {
+        agent_endpoint_call($this, $endpoint, str_repeat('0', 64))->assertForbidden()->assertJsonPath('error.code', 'agent.secret_invalid');
+        agent_endpoint_call($this, $endpoint, $this->other)->assertForbidden()->assertJsonPath('error.code', 'agent.secret_invalid');
+        // The stored hash itself is not a secret the endpoint accepts.
+        agent_endpoint_call($this, $endpoint, (string) $this->node->agent_secret_hash)->assertForbidden()->assertJsonPath('error.code', 'agent.secret_invalid');
+    })->with(['realtime', 'auth', 'workspaces', 'log-streams']);
+
+    it('accepts the Node\'s own secret', function (string $endpoint): void {
+        agent_endpoint_call($this, $endpoint, $this->secret)->assertOk();
+    })->with(['realtime', 'auth', 'workspaces', 'log-streams']);
+
+    it('never signs a membership for another Node from its secret', function (): void {
+        $this->withServerVariables(['REMOTE_ADDR' => '10.44.0.33']);
+
+        agent_endpoint_call($this, 'auth', $this->secret)->assertForbidden()->assertJsonPath('error.code', 'agent.secret_invalid');
+    });
+
+    it('refuses a Node that must send a secret but has none recorded', function (): void {
+        $this->node->forceFill(['agent_secret_hash' => null, 'agent_secret_exempt' => false])->save();
+
+        agent_endpoint_call($this, 'realtime', null)->assertUnauthorized()->assertJsonPath('error.code', 'agent.secret_required');
+        agent_endpoint_call($this, 'realtime', $this->secret)->assertForbidden()->assertJsonPath('error.code', 'agent.secret_invalid');
+    });
+
+    it('accepts an exempt Node without a secret until it has one', function (): void {
+        $this->node->forceFill(['agent_secret_hash' => null, 'agent_secret_exempt' => true])->save();
+        agent_endpoint_call($this, 'realtime', null)->assertOk();
+
+        $this->node->forceFill(['agent_secret_hash' => hash('sha256', $this->secret), 'agent_secret_exempt' => false])->save();
+        agent_endpoint_call($this, 'realtime', null)->assertUnauthorized();
+    });
+
+    it('never returns the secret hash', function (): void {
+        $body = agent_endpoint_call($this, 'realtime', $this->secret)->assertOk()->getContent();
+
+        expect($body)->not->toContain((string) $this->node->agent_secret_hash)
+            ->and($this->node->fresh()?->toArray())->not->toHaveKey('agent_secret_hash');
     });
 });

@@ -10,14 +10,15 @@ These terms describe the parts of Orbit. Follow the links for commands and detai
 - **Gateway** — The central Orbit service. It stores every machine and application record, authorizes each action, and applies changes to machines over SSH. See [Architecture](/architecture#gateway).
 - **Node** — A machine connected to Orbit. It runs one or more roles and reaches the Gateway over WireGuard. A Node outside a Cluster is standalone.
 - **Cluster** — An optional group of Nodes that share routing. It has a name and may have a development top-level domain (TLD), such as `test`. See [Routes](/reference/routes).
-- **Project** — One Git repository plus shared source defaults and a `type` that decides routing and PHP-FPM capability. Use Project update to change those defaults. The HTTP compatibility path `/api/v1/apps` still serves the same records. See [Projects](/reference/apps#update-a-project).
-- **Project type** — Closed enum `monorepo`, `laravel-app`, or `laravel-package`. `laravel-app` is the web-serving type. See [ADR 0106](/decisions/0106-derive-instance-capabilities-from-project-type).
+- **Project** — One Git repository plus shared source defaults and a `type` that decides routing and PHP-FPM capability. Use Project update to change those defaults. See [Projects](/reference/apps#update-a-project).
+- **Package root** — Package Projects may use `.` to mean the repository root. `/api/v1/apps` remains a compatibility path for the same Project records.
+- **Project type** — Closed enum `monorepo`, `laravel-app`, `laravel-package`, or `node-package`. `laravel-app` is the web-serving type. See [ADR 0106](/decisions/0106-derive-instance-capabilities-from-project-type).
 - **Repository identity** — The Git host and path, without a trailing `.git`. Equivalent SSH and HTTPS URLs identify the same repository and belong to one Project. See [Projects](/reference/apps#keep-one-repository-owner).
 - **Instance** — One managed copy of a Project on a Node. Placement on app-dev uses a checkout or worktree. Placement on app-prod requires a candidate. See [ADR 0047](/decisions/0047-create-production-appinstances-from-candidates) and [Applications](/domains/applications).
 - **Development node exclusion** — One Project and one app-dev Node. Development placement for that Project skips that Node. See [Development node exclusions](/reference/development-node-exclusions).
 - **Setup step** — One named setup command stored for a Project. See [Instance setup and teardown](/reference/instance-setup).
 - **Teardown step** — One named teardown command stored for a Project. See [Instance setup and teardown](/reference/instance-setup).
-- **Instance routing** — An active `laravel-app` Instance has one Route. A `monorepo` or `laravel-package` Instance has no Route by default. See [ADR 0106](/decisions/0106-derive-instance-capabilities-from-project-type).
+- **Instance routing** — An active `laravel-app` Instance has one Route. A `monorepo`, `laravel-package`, or `node-package` Instance has no Route by default. See [ADR 0106](/decisions/0106-derive-instance-capabilities-from-project-type).
 - **Web root** — The directory served by a web-serving Instance, with a relative path inherited from the Project or overridden per Instance. app-prod resolves it inside the selected release. See [Production release layout](/reference/deployments).
 - **Route** — A domain the Gateway publishes on the private network. See [ADR 0064](/decisions/0064-name-application-endpoints-as-domains), [ADR 0080](/decisions/0080-add-node-owned-custom-proxy-routes), and [Routes](/reference/routes).
 - **Route replacement** — The Route Orbit creates for a domain change. See [ADR 0065](/decisions/0065-replace-routes-when-domains-change).
