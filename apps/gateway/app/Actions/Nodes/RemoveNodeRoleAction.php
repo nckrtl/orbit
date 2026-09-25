@@ -402,13 +402,21 @@ final readonly class RemoveNodeRoleAction
         }
     }
 
+    /**
+     * An active assignment, or one whose convergence or earlier removal failed. Every baseline removal repeats
+     * safely over whatever a failed convergence left behind, so a role that never finished converging can be
+     * removed instead of only converged again. A provisioning or removing assignment belongs to a running operation.
+     */
     private function canClaim(NodeRole $assignment): bool
     {
+        if ($assignment->status === LifecycleStatus::Active) {
+            return true;
+        }
+
         return
-            $assignment->status === LifecycleStatus::Active
-            || $assignment->status === LifecycleStatus::Failed
+            $assignment->status === LifecycleStatus::Failed
             && is_string($assignment->failed_step)
-            && str_starts_with($assignment->failed_step, 'remove:');
+            && (str_starts_with($assignment->failed_step, 'converge:') || str_starts_with($assignment->failed_step, 'remove:'));
     }
 
     private function sameDependencies(NodeRoleDependencySet $captured, NodeRoleDependencySet $current): bool

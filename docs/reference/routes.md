@@ -356,7 +356,7 @@ Doctor builds the expected public site the same way the publisher does. An Ingre
 
 The claimed assignment is `removing`, so it serves nothing. The Gateway builds the Node Caddyfile from stored state: the public sites leave, and the Node's other sites return from the all-address listener to their private addresses. It then closes the `orbit:ingress-http` and `orbit:ingress-https` rules, including rules that outlived their last public Route, and reconciles service metrics. The Caddy package stays installed. When the Ingress was the Node's last role, the Gateway reopens public SSH before it deletes the assignment.
 
-A failed step leaves the assignment `failed` with `failed_step=remove:STEP` and a bounded `error_code`. The same command retries every step. When the Node has no Ingress assignment, the command succeeds and changes nothing. With `--offline`, the Gateway removes an unreachable Ingress on its side only and lists the Caddy configuration and firewall rules that stay on the Node under `retained_on_node`.
+The command also removes an Ingress whose convergence failed (`failed_step=converge:STEP`), for example after `converge:caddy-config`, through the same steps. A failed step leaves the assignment `failed` with `failed_step=remove:STEP` and a bounded `error_code`. The same command retries every step. When the Node has no Ingress assignment, the command succeeds and changes nothing. With `--offline`, the Gateway removes an unreachable Ingress on its side only and lists the Caddy configuration and firewall rules that stay on the Node under `retained_on_node`.
 
 ### Publication ownership
 
