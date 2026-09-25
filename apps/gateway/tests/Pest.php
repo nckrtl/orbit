@@ -37,6 +37,7 @@ use Tests\Support\FakeRouterLanIngressReconciler;
 use Tests\Support\FakeTaskCheckRunner;
 use Tests\Support\FakeTaskRunReceipts;
 use Tests\Support\FakeVitePortRuntime;
+use Tests\Support\TestToolchain;
 use Tests\TestCase;
 
 require_once __DIR__.'/Support/FakeNodeAgentRuntime.php';
@@ -225,7 +226,7 @@ function caddy_adapt(string $configuration): CommandResult
         file_put_contents($path, $configuration);
 
         return new NativeProcessRunner()->run(new ProcessInvocation(
-            arguments: ['caddy', 'adapt', '--config', $path, '--adapter', 'caddyfile'],
+            arguments: [TestToolchain::require('caddy', 'brew install caddy'), 'adapt', '--config', $path, '--adapter', 'caddyfile'],
         ));
     } finally {
         unlink($path);

@@ -48,6 +48,8 @@ composer test:affected
 composer check
 ```
 
+Gateway tests run the shell programs that Orbit installs on Ubuntu Nodes. On macOS, install the Linux tools they need with `brew install bash coreutils gnu-sed findutils caddy`. The test bootstrap puts these tools first on `PATH`, supplies `setsid` and `flock`, and stops with the missing package names when a tool is absent.
+
 Add regression coverage for behavior changes and their important failure modes. Confirm that the tests exercising the new behavior ran.
 
 GitHub CI runs quality checks and affected tests for all five projects, including documentation lint. Root `composer check` can also run the complete local check on a clean commit.

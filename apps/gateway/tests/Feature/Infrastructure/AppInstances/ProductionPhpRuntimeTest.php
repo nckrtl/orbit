@@ -26,6 +26,7 @@ use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Schema;
 use Symfony\Component\Process\Process;
 use Tests\Support\AppDevFakeSshExecutor;
+use Tests\Support\HostBinary;
 
 it('records a canonical dedicated PHP runtime identity without converting existing placements', function (): void {
     $app = OrbitApp::query()->create([
@@ -537,7 +538,7 @@ function orb304_write_root_identity_commands(string $bin): void
         mkdir -m 0711 -- "$directory"
         BASH);
     chmod($bin.'/install', 0700);
-    file_put_contents($bin.'/stat', <<<'BASH'
+    file_put_contents($bin.'/stat', HostBinary::expand(<<<'BASH'
         #!/bin/sh
         if [ "$1" = -c ] && [ "$2" = %U:%G ]; then
             printf 'root:root\n'
@@ -546,11 +547,11 @@ function orb304_write_root_identity_commands(string $bin): void
         if [ "$1" = -c ] && [ "$2" = %U:%G:%a ]; then
             shift 2
             [ "$1" = -- ] && shift
-            printf 'root:root:%s\n' "$(/usr/bin/stat -c %a -- "$1")"
+            printf 'root:root:%s\n' "$({{host:stat}} -c %a -- "$1")"
             exit 0
         fi
-        exec /usr/bin/stat "$@"
-        BASH);
+        exec {{host:stat}} "$@"
+        BASH));
     chmod($bin.'/stat', 0700);
 }
 

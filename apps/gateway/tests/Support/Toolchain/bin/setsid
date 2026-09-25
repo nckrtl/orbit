@@ -1,0 +1,58 @@
+#!/usr/bin/env perl
+# Test-only stand-in for util-linux setsid(1) on hosts that lack it, such as macOS.
+# Supports the forms Orbit uses: setsid [-f|--fork] [-w|--wait] [-c|--ctty] [--] program [arguments...]
+use strict;
+use warnings;
+no warnings qw(exec);
+use POSIX ();
+
+my ($fork, $wait) = (0, 0);
+
+while (@ARGV) {
+    my $option = $ARGV[0];
+    last if $option !~ /\A-/;
+    shift @ARGV;
+    last if $option eq '--';
+
+    if ($option eq '-f' || $option eq '--fork') {
+        $fork = 1;
+    } elsif ($option eq '-w' || $option eq '--wait') {
+        $wait = 1;
+    } elsif ($option eq '-c' || $option eq '--ctty') {
+        # A test process has no controlling terminal to take over.
+    } else {
+        print STDERR "setsid: unsupported option $option\n";
+        exit 1;
+    }
+}
+
+if (!@ARGV) {
+    print STDERR "setsid: no command specified\n";
+    exit 1;
+}
+
+# Like util-linux, fork when asked or when this process already leads a process group.
+if ($fork || getpgrp() == $$) {
+    my $pid = fork();
+    if (!defined $pid) {
+        print STDERR "setsid: fork failed: $!\n";
+        exit 1;
+    }
+
+    if ($pid != 0) {
+        exit 0 if !$wait;
+        waitpid($pid, 0);
+        exit POSIX::WEXITSTATUS($?) if POSIX::WIFEXITED($?);
+        # util-linux exits with the raw wait status when the child did not exit normally.
+        exit($? & 0xff);
+    }
+}
+
+if (!defined POSIX::setsid()) {
+    print STDERR "setsid: failed to create a new session: $!\n";
+    exit 1;
+}
+
+exec { $ARGV[0] } @ARGV;
+print STDERR "setsid: failed to execute $ARGV[0]: $!\n";
+exit($!{ENOENT} ? 127 : 126);
