@@ -3828,6 +3828,25 @@
             ]
         },
         {
+            "path": "docs/decisions/0149-install-the-private-dns-listener-from-the-gateway.md",
+            "title": "ADR 0149: Install the private DNS listener from the Gateway",
+            "kind": "decision",
+            "components": [
+                "apps/docs",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Database",
+                "Gateway",
+                "Node",
+                "Process"
+            ],
+            "governing_adrs": [
+                "0092",
+                "0149"
+            ]
+        },
+        {
             "path": "docs/decisions/0150-keep-extension-commands-local-and-confirm-the-proxycli-fleet-stop.md",
             "title": "ADR 0150: Keep extension commands local and confirm the proxycli fleet stop",
             "kind": "decision",
@@ -4024,6 +4043,7 @@
                 "0146",
                 "0147",
                 "0148",
+                "0149",
                 "0150"
             ]
         },
@@ -5054,7 +5074,8 @@
             ],
             "governing_adrs": [
                 "0061",
-                "0062"
+                "0062",
+                "0149"
             ]
         },
         {
@@ -5417,7 +5438,8 @@
                 "0091",
                 "0092",
                 "0094",
-                "0095"
+                "0095",
+                "0149"
             ]
         },
         {
