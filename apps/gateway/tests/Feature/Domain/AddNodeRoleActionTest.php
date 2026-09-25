@@ -14,6 +14,8 @@ use App\Domain\Tools\ToolManagerMaterializer;
 use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\ToolManagerRegistry;
 use App\Domain\Tools\ToolManagerScopeLock;
+use App\Infrastructure\Nodes\NodeLocks;
+use App\Infrastructure\Nodes\Roles\NodeRoleConvergeLock;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Tools\NativeToolManagerMaterializer;
 use App\Models\Node;
@@ -64,6 +66,38 @@ describe(AddNodeRoleAction::class, function (): void {
             ->toBeEmpty();
         app(ToolManagerScopeLock::class)->run($node->id, ToolManagerName::Vp, static fn (): null => null);
         app(ToolManagerScopeLock::class)->run($node->id, ToolManagerName::Composer, static fn (): null => null);
+    });
+
+    it('waits for another role operation on the same Node and fails with node_role.node_busy', function (): void {
+        $baseline = new AddNodeRoleBaselineFake;
+        app()->instance(RoleBaselineConverger::class, $baseline);
+        app()->instance(NodeRoleConvergeLock::class, new NodeRoleConvergeLock(app(NodeLocks::class), waitSeconds: 0));
+        $node = add_role_node();
+        $held = app(NodeLocks::class)->lock("node-role:id:{$node->id}", 60);
+        expect($held->get())->toBeTrue();
+
+        try {
+            expect(fn () => app(AddNodeRoleAction::class)->execute($node, RoleName::Metrics))
+                ->toThrow(function (NodeRoleOperationException $exception) use ($node): void {
+                    expect($exception->step)->toBe('converge:node-lock')
+                        ->and($exception->errorCode)->toBe('node_role.convergence_failed')
+                        ->and($exception->underlyingErrorCode)->toBe('node_role.node_busy')
+                        ->and($exception->getMessage())->toBe("Another role operation is still running on node [{$node->name}].");
+                });
+        } finally {
+            $held->release();
+        }
+
+        $assignment = $node->roles()->sole();
+        expect($baseline->convergedRoles)->toBeEmpty()
+            ->and($assignment->status)->toBe(LifecycleStatus::Failed)
+            ->and($assignment->failed_step)->toBe('converge:node-lock')
+            ->and($assignment->error_code)->toBe('node_role.node_busy');
+
+        app(AddNodeRoleAction::class)->execute($node, RoleName::Metrics, convergeExisting: true);
+
+        expect($baseline->convergedRoles)->toBe([RoleName::Metrics])
+            ->and($assignment->refresh()->status)->toBe(LifecycleStatus::Active);
     });
 
     it('materializes app managers after baseline while the assignment is provisioning', function (): void {

@@ -25,6 +25,7 @@ use App\Domain\Tools\ToolManagerMaterializer;
 use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\ToolManagerScopeLock;
 use App\Domain\Tools\ToolManagerScopeLockException;
+use App\Infrastructure\Nodes\Roles\NodeRoleConvergeLock;
 use App\Models\Node;
 use App\Models\NodeRole;
 use Closure;
@@ -42,6 +43,7 @@ final readonly class AddNodeRoleAction
         private ?RecordEventBroadcaster $broadcaster = null,
         private ?AnalyticsStorageProcessGuard $analyticsStorage = null,
         private ?AnalyticsRoleSettingsRepository $analyticsSettings = null,
+        private ?NodeRoleConvergeLock $nodeLock = null,
     ) {}
 
     /**
@@ -174,8 +176,10 @@ final readonly class AddNodeRoleAction
     private function convergeClaim(Node $node, RoleName $role, array $claim): array
     {
         try {
-            $this->baselines->converge($node, $claim['assignment']);
-            $this->materializeAppManagers($node, $role, $claim['assignment']);
+            ($this->nodeLock ?? app(NodeRoleConvergeLock::class))->run($node, function () use ($node, $role, $claim): void {
+                $this->baselines->converge($node, $claim['assignment']);
+                $this->materializeAppManagers($node, $role, $claim['assignment']);
+            });
         } catch (NodeProvisioningException $exception) {
             $this->failConvergence($claim['assignment'], new NodeRoleOperationException(
                 step: $exception->step,

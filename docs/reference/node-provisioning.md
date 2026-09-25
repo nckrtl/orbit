@@ -123,6 +123,17 @@ Every Node with Caddy sites installs Caddy through this step before its first [N
 
 A Node that was never `active` still becomes `failed` at the step that stopped. A private DNS failure uses step `private-dns`.
 
+## Role operations on one Node
+
+The Gateway runs one role convergence or removal per Node at a time, so two operations never run package, firewall, or service steps on the same machine together. A `node:role:add`, `node:role:remove`, `node:role:relocate`, Cluster Router change, or `node:add` that reaches a role step while another one runs on that Node waits up to 2 minutes.
+
+| Result | Meaning |
+| --- | --- |
+| The other operation finishes within 2 minutes | This operation continues. |
+| It is still running after 2 minutes | Convergence fails at step `node-lock` with error code `node_role.node_busy`, and the role becomes `failed`. Run `orbit node:role:add <node> <role> --converge` again. A removal fails with `node_role.remove_failed` and the same code. |
+
+The lock lives in a file cache store under `ORBIT_HOME`, whatever `CACHE_STORE` says. It expires after 10 minutes, the Gateway's PHP-FPM request limit, so an operation whose worker dies without releasing it blocks that Node's role operations for at most 10 minutes. Operations on different Nodes run in parallel.
+
 ## Node agent
 
 After the Metrics exporters, provisioning installs or upgrades the [Node agent](/reference/node-agent) on a managed Node, at step `agent`. A failure returns `node.agent_install_failed` and follows the converge rules above: a new Node becomes `failed`, and an existing active Node stays `active`.

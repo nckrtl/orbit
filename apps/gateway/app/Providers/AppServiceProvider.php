@@ -294,6 +294,7 @@ use App\Infrastructure\Nodes\NodeLocks;
 use App\Infrastructure\Nodes\RemoteNodeStorageRootPreparer;
 use App\Infrastructure\Nodes\Roles\NativeNodeRoleFirewallManager;
 use App\Infrastructure\Nodes\Roles\NativeRoleBaselineConverger;
+use App\Infrastructure\Nodes\Roles\NodeRoleConvergeLock;
 use App\Infrastructure\Nodes\SshManagedUserAccountResolver;
 use App\Infrastructure\Nodes\SshNodeReachabilityProbe;
 use App\Infrastructure\Processes\CommandDeadline;
@@ -532,6 +533,7 @@ final class AppServiceProvider extends ServiceProvider
                 $app->make(CacheManager::class)->build(NodeLocks::storeConfiguration((string) config('orbit.home'))),
             ),
         );
+        $this->app->singleton(NodeRoleConvergeLock::class);
         $this->app->singleton(
             CacheAgentStateView::class,
             static fn ($app): CacheAgentStateView => new CacheAgentStateView(
