@@ -41,6 +41,9 @@ final class StreamWebSocketClient implements WebSocketClient
     /** Whether the open fragmented message passed the size limit and is being dropped. */
     private bool $discarding = false;
 
+    /** Whether the peer ended the connection, so frames still buffered are read without a reply. */
+    private bool $peerGone = false;
+
     #[\Override]
     public function connect(WebSocketEndpoint $endpoint, float $timeoutSeconds): void
     {
@@ -123,20 +126,31 @@ final class StreamWebSocketClient implements WebSocketClient
         }
 
         while (is_resource($this->stream)) {
-            $chunk = fread($this->stream, 65_536);
+            // A peer that resets the connection makes `fread()` warn and return false. That is a lost
+            // connection like any other, so it closes the client instead of raising the warning.
+            $chunk = @fread($this->stream, 65_536);
 
-            if ($chunk === false || $chunk === '') {
-                if (feof($this->stream)) {
-                    $this->close();
-                }
+            if ($chunk === false || ($chunk === '' && feof($this->stream))) {
+                $this->peerGone = true;
 
+                break;
+            }
+
+            if ($chunk === '') {
                 break;
             }
 
             $this->buffer .= $chunk;
         }
 
-        return $this->drainFrames();
+        // Whole frames that arrived before the connection ended are still delivered.
+        $messages = $this->drainFrames();
+
+        if ($this->peerGone) {
+            $this->close();
+        }
+
+        return $messages;
     }
 
     #[\Override]
@@ -150,6 +164,7 @@ final class StreamWebSocketClient implements WebSocketClient
         $this->buffer = '';
         $this->fragments = null;
         $this->discarding = false;
+        $this->peerGone = false;
     }
 
     #[\Override]
@@ -173,7 +188,7 @@ final class StreamWebSocketClient implements WebSocketClient
             [$final, $opcode, $payload] = $frame;
 
             if ($opcode === self::OPCODE_PING) {
-                $this->writeFrame(self::OPCODE_PONG, $payload);
+                $this->answerPing($payload);
 
                 continue;
             }
@@ -240,14 +255,15 @@ final class StreamWebSocketClient implements WebSocketClient
             "\r\n",
         ]);
 
-        if (fwrite($this->stream(), $request) === false) {
+        // A reset connection makes `fwrite()` and `fgets()` warn; the handshake then fails as refused.
+        if (@fwrite($this->stream(), $request) === false) {
             throw new WebSocketException('Could not send the WebSocket handshake.');
         }
 
         $response = '';
 
         while (! str_contains($response, "\r\n\r\n") && strlen($response) < 16_384) {
-            $line = fgets($this->stream());
+            $line = @fgets($this->stream());
 
             if ($line === false) {
                 break;
@@ -368,8 +384,26 @@ final class StreamWebSocketClient implements WebSocketClient
         return $length === 0 ? '' : $payload ^ substr(str_repeat($mask, intdiv($length, 4) + 1), 0, $length);
     }
 
+    /** A failed pong closes the client like any lost connection; `receive()` never throws for it. */
+    private function answerPing(string $payload): void
+    {
+        if ($this->peerGone) {
+            return;
+        }
+
+        try {
+            $this->writeFrame(self::OPCODE_PONG, $payload);
+        } catch (WebSocketException) {
+            // writeFrame() closed the client.
+        }
+    }
+
     private function acknowledgeClose(string $payload): void
     {
+        if ($this->peerGone) {
+            return;
+        }
+
         try {
             $this->writeFrame(self::OPCODE_CLOSE, substr($payload, 0, 2));
         } catch (WebSocketException) {
