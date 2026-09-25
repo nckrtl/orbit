@@ -50,7 +50,9 @@ A third gap is on every Node whose firewall admits HTTP or HTTPS to any destinat
 - A LAN neighbour that routes to the WireGuard address completes the TCP and TLS handshake with a WireGuard-only site and then gets no HTTP answer. The handshake shows the site's certificate, which names the private hostname.
 - Caddy may present a private site's certificate on the public listener to a client that asks for that hostname in SNI, because Caddy's certificate cache is shared across listeners. The public listener serves no private site, so the client gets no answer. The certificate names only the private hostname.
 - A private site on an Ingress Node refuses a LAN client whose address is outside private and shared address space.
-- The global options change, so every Node's Caddyfile changes once. Doctor reports `role.caddy_build_drift` on a Node until its next build. `php artisan orbit:caddy-build NODE` builds a Node at once.
+- A container on the Gateway Node can no longer reach `gateway.orbit`, because its Docker bridge source address is outside the VPN subnet. Containers on other Nodes still reach it, because their traffic leaves with the Node's WireGuard address. No Orbit flow depends on the same-Node case.
+- The guard trusts the connection's source address. A load balancer or port forward that rewrites a public client's source to a private or shared address makes private sites on the Ingress Node reachable through it.
+- The global options change, so every Node's Caddyfile changes once. Doctor reports `role.caddy_build_drift` on a Node until its next build. After deploying this change, run `php artisan orbit:caddy-build NODE` for every Caddy Node.
 
 ## Affects
 
