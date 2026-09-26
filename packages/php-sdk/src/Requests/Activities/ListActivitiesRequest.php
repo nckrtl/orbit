@@ -18,6 +18,11 @@ final class ListActivitiesRequest extends GatewayRequest
     public function __construct(
         private readonly int $limit = 25,
         private readonly ?string $requestId = null,
+        private readonly ?int $beforeId = null,
+        private readonly ?string $status = null,
+        private readonly ?string $command = null,
+        private readonly ?int $callerNodeId = null,
+        private readonly ?int $targetNodeId = null,
     ) {}
 
     public function resolveEndpoint(): string
@@ -37,12 +42,35 @@ final class ListActivitiesRequest extends GatewayRequest
         return new ActivitiesResponse($activities, $requestId);
     }
 
-    /** @return array{limit: int, request_id?: string} */
+    /** @return array<string, int|string> */
     protected function defaultQuery(): array
     {
-        return [
-            'limit' => $this->limit,
-            ...($this->requestId === null ? [] : ['request_id' => $this->requestId]),
-        ];
+        $query = ['limit' => $this->limit];
+
+        if ($this->requestId !== null) {
+            $query['request_id'] = $this->requestId;
+        }
+
+        if ($this->beforeId !== null) {
+            $query['before_id'] = $this->beforeId;
+        }
+
+        if ($this->status !== null) {
+            $query['status'] = $this->status;
+        }
+
+        if ($this->command !== null) {
+            $query['command'] = $this->command;
+        }
+
+        if ($this->callerNodeId !== null) {
+            $query['caller_node_id'] = $this->callerNodeId;
+        }
+
+        if ($this->targetNodeId !== null) {
+            $query['target_node_id'] = $this->targetNodeId;
+        }
+
+        return $query;
     }
 }

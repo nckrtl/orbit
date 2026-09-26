@@ -129,6 +129,13 @@ export function Pane<T extends Record<string, any>>({
 
                 return row === undefined || target === undefined ? null : target(row);
             },
+            activate:
+                onRowClick === undefined
+                    ? undefined
+                    : (index) => {
+                          const row = sorted[index]?.original;
+                          if (row !== undefined) onRowClick(row);
+                      },
         });
 
         return () => void panes.delete(name);

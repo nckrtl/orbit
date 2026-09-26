@@ -94,6 +94,61 @@ describe('activity:list', function (): void {
         'above maximum' => '201',
     ]);
 
+    it('sends before, status, command, caller, and target filters', function (): void {
+        $mock = MockClient::global([
+            ListActivitiesRequest::class => MockResponse::make([
+                'data' => [activity_cli_payload()],
+                'meta' => ['request_id' => activity_cli_gateway_request_id()],
+            ]),
+        ]);
+
+        $this
+            ->artisan('activity:list', [
+                '--before-id' => '480',
+                '--status' => 'failed',
+                '--command' => 'instance:deploy',
+                '--caller' => '2',
+                '--target' => '4',
+                '--json' => true,
+            ])
+            ->assertExitCode(0);
+
+        expect($mock->getLastRequest()?->query()->all())->toBe([
+            'limit' => 25,
+            'before_id' => 480,
+            'status' => 'failed',
+            'command' => 'instance:deploy',
+            'caller_node_id' => 2,
+            'target_node_id' => 4,
+        ]);
+    });
+
+    it('rejects an invalid list filter before sending a gateway request', function (array $options, string $code, string $message): void {
+        $mock = MockClient::global();
+        $expected = json_encode([
+            'error' => [
+                'code' => $code,
+                'message' => $message,
+                'request_id' => null,
+            ],
+        ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+
+        $this
+            ->artisan('activity:list', [...$options, '--json' => true])
+            ->expectsOutput($expected)
+            ->assertExitCode(1);
+
+        expect($mock->getLastPendingRequest())->toBeNull();
+    })->with([
+        'before id' => [['--before-id' => '0'], 'activity.before_id_invalid', 'Before ID must be a positive integer.'],
+        'before id text' => [['--before-id' => 'nope'], 'activity.before_id_invalid', 'Before ID must be a positive integer.'],
+        'status' => [['--status' => 'success'], 'activity.status_invalid', 'Status must be running, succeeded, or failed.'],
+        'command empty' => [['--command' => ''], 'activity.command_invalid', 'Command must be between 1 and 255 characters.'],
+        'command too long' => [['--command' => str_repeat('a', 256)], 'activity.command_invalid', 'Command must be between 1 and 255 characters.'],
+        'caller' => [['--caller' => '0'], 'activity.caller_invalid', 'Caller must be a positive integer.'],
+        'target' => [['--target' => '-1'], 'activity.target_invalid', 'Target must be a positive integer.'],
+    ]);
+
     it('rejects an invalid request ID before sending a gateway request', function (): void {
         $mock = MockClient::global();
 
