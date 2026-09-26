@@ -167,7 +167,15 @@ When the value is `true`, Orbit runs that file twice at handoff.
 
 The base run reads that test file from the working tree, including an uncommitted or untracked file. No other file from the diff is present. Dependencies already installed in the workspace stay available, so Pest can run. The base run does not change the workspace.
 
+The base run builds the start commit in a directory under the clone's `.git/orbit/`. It archives that commit and extracts the archive there. It does not register a Git worktree, and the directory is not in the apps root. The check removes the directory when the base run finishes or the check is cancelled. A base run killed with SIGKILL can leave the directory. Nothing is registered, so removing the clone removes the leftover with it.
+
+At the start of a check, Orbit removes any `orbit-base-*` worktree this checkout registered earlier, prunes Git's worktree list, and removes a leftover base directory under `.git/orbit/`.
+
 The base run passes when at least one test whose name contains `name` fails. A matching test that passes does not fail that run when another matching test fails. When no matching test fails and a matching test passes, the deliverable fails. The reminder says that the test does not reproduce the bug. When no matching test fails and a matching test is skipped, the reminder names the skip. When no test name contains `name`, the reminder says so. When the test file cannot be placed on the start commit, the base run does not start, and the reminder names that failure.
+
+A JUnit `error` counts as a failure, including a missing class. The base run stops after 600 seconds. A timed-out base run counts as failing on the start commit.
+
+Each failed case on the base run records whether it was a `failure` or an `error`, and the tail of its message, at most 4096 characters. The review request shows those lines under a lead that says an error, such as a missing class, is not an assertion failure. It also says when the base run timed out and names the 600 second limit. [ADR 0163](/decisions/0163-prove-a-failing-test-on-the-start-commit) records the lines.
 
 The diff check from the table above still applies. Orbit reports a miss in the diff, a miss on the base run, and a miss on the working tree together. When the base run has no failing match, that miss is not hidden by another miss.
 
@@ -196,7 +204,7 @@ The script refuses a missing confirmation, an unknown ID, an ID given twice, emp
 
 When every other item passes, Orbit runs its [Project check](#project-check) with the deliverables. After the Project's task check passes, or at once when the Project has none, the check script records the diff, runs each `test` file with `vendor/bin/pest FILE --log-junit=…` in its project, and runs each `command` in a login shell. A run that names a file turns off Pest's test impact analysis, so a cached result never counts. The check keeps the end of each command's output.
 
-A `test` with `fails_on_base` set to `true` runs twice, as [Reproduce a bug on the start commit](#reproduce-a-bug-on-the-start-commit) describes. The base run does not change the workspace.
+A `test` with `fails_on_base` set to `true` runs twice, as [Reproduce a bug on the start commit](#reproduce-a-bug-on-the-start-commit) describes. The base run does not change the workspace. It stops after 600 seconds, and a timed-out base run counts as failing on the start commit. The review request includes the kind and the tail of each base failure message.
 
 The `deliverables` item fails when a confirmation is missing or a deliverable does not pass. The reminder names each failing deliverable and why, and the assistance reason repeats it. Like every item, it gets one reminder per completion attempt, then asks for assistance. The reviewer starts only when every deliverable passes.
 

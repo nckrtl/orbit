@@ -7,6 +7,7 @@ check start CHECKOUT [SETUP|-] [DELIVERABLES|-] [COMMAND]
                                 DELIVERABLES is a JSON file of the subtask's deliverables to verify after a passing check
                                 (ADR 0133): {"start", "tests": [{"id", "project", "file", "fails_on_base"}], "commands": [{"id", "command", "directory"}]}
                                 A test with fails_on_base runs on the start commit, with only that test file taken from the working tree, then on the working tree (ADR 0163).
+                                The base tree is an archive extracted under .git/orbit/, not a registered worktree. The base run stops after 600 seconds.
                                 COMMAND is a file with the Project's task check command; an empty file runs no command.
                                 Without COMMAND, the check runs `composer check`.
 check run CHECKOUT HEAD TREE [SETUP|-] [DELIVERABLES|-] [COMMAND]
@@ -70,6 +71,9 @@ def optional(path):
 
 
 def start(checkout, setup=None, deliverables=None, command=None):
+    # A killed base run used to leave a registered orbit-base-* worktree. Drop those, and any leftover base directory, before this check runs.
+    retire_stale_base_worktrees(checkout)
+    retire_stale_base_directories()
     setup, deliverables = optional(setup), optional(deliverables)
     if command:
         with open(command) as source:
@@ -133,8 +137,16 @@ def run_logged(arguments, cwd, log, capture=None):
         return process.wait()
 
 
-def test_cases(junit):
-    """Each test case in a JUnit file with its status: passed, failed, or skipped."""
+FAILURE_TAIL = 4096
+BASE_RUN_TIMEOUT = 600
+BASE_PROCESS = None
+
+
+def test_cases(junit, messages=False):
+    """Each test case in a JUnit file with its status: passed, failed, or skipped.
+
+    With messages, a failed base-run case also keeps whether it was a failure or an error, and the tail of that message.
+    """
     if not os.path.exists(junit):
         return []
     try:
@@ -148,8 +160,31 @@ def test_cases(junit):
             status = 'failed'
         elif case.find('skipped') is not None:
             status = 'skipped'
-        cases.append({'name': case.get('name', ''), 'status': status})
+        record = {'name': case.get('name', ''), 'status': status}
+        if messages and status == 'failed':
+            detail = failure_detail(case)
+            if detail is not None:
+                record['kind'], record['message'] = detail
+        cases.append(record)
     return cases
+
+
+def failure_detail(case):
+    """The JUnit kind and the tail of the message. An error wins when both elements are present."""
+    element = case.find('error')
+    kind = 'error'
+    if element is None:
+        element = case.find('failure')
+        kind = 'failure'
+    if element is None:
+        return None
+    message = element.get('message')
+    if message is None:
+        message = element.text or ''
+    message = message.strip()
+    if len(message) > FAILURE_TAIL:
+        message = message[-FAILURE_TAIL:]
+    return kind, message
 
 
 def deliverable_path(checkout, project, relative):
@@ -171,7 +206,7 @@ def commit_exists(checkout, revision):
 
 
 def share_vendor(checkout, worktree, project):
-    """Copy the project's installed vendor into the temporary checkout without a second install.
+    """Copy the project's installed vendor into the base tree without a second install.
 
     The copy is a reflink when the filesystem can clone, otherwise a full copy. It is never a hardlink, so a
     Pest process in the temporary checkout cannot change the workspace's vendor files.
@@ -198,46 +233,122 @@ def share_vendor(checkout, worktree, project):
         shutil.rmtree(destination, ignore_errors=True)
 
 
-def remove_base_checkout(checkout, scratch):
-    """Remove the temporary start-commit checkout and its worktree registration."""
-    checkout_real = os.path.realpath(checkout)
-    scratch_real = os.path.realpath(scratch)
-    if not os.path.basename(scratch_real).startswith('orbit-base-'):
+def base_directories():
+    """The directory under .git/orbit/ that holds base trees. A leftover here dies with the clone."""
+    return os.path.join(DIRECTORY, 'bases')
+
+
+def remove_base_tree(scratch):
+    """Remove one base directory. It is not a worktree, and it is removed only when it sits under the orbit directory."""
+    try:
+        scratch_real = os.path.realpath(scratch)
+        root = os.path.realpath(DIRECTORY)
+    except OSError:
         return
-    if scratch_real == checkout_real or checkout_real.startswith(scratch_real + os.sep) or scratch_real.startswith(checkout_real + os.sep):
-        return
-    subprocess.run(['git', '-C', checkout, 'worktree', 'remove', '--force', scratch_real],
-                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    if os.path.lexists(scratch_real):
+    if os.path.basename(scratch_real).startswith('orbit-base-') and scratch_real.startswith(root + os.sep):
         shutil.rmtree(scratch_real, ignore_errors=True)
+
+
+def retire_stale_base_directories():
+    """Remove base directories a killed run left under .git/orbit/."""
+    root = base_directories()
+    if not os.path.isdir(root):
+        return
+    for name in os.listdir(root):
+        if name.startswith('orbit-base-'):
+            remove_base_tree(os.path.join(root, name))
+
+
+def retire_stale_base_worktrees(checkout):
+    """Remove orbit-base-* worktrees this checkout registered before the base tree stopped being a worktree, then prune."""
+    try:
+        checkout_real = os.path.realpath(checkout)
+        listing = subprocess.check_output(['git', '-C', checkout, 'worktree', 'list', '--porcelain', '-z'], stderr=subprocess.DEVNULL)
+    except (OSError, subprocess.CalledProcessError):
+        return
+    for field in listing.decode('utf-8', errors='replace').split('\0'):
+        if not field.startswith('worktree '):
+            continue
+        path = field[len('worktree '):]
+        if not os.path.basename(path.rstrip('/')).startswith('orbit-base-') or not os.path.isdir(path):
+            continue
+        path_real = os.path.realpath(path)
+        if path_real == checkout_real or checkout_real.startswith(path_real + os.sep):
+            continue
+        subprocess.run(['git', '-C', checkout, 'worktree', 'remove', '--force', '--', path],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     subprocess.run(['git', '-C', checkout, 'worktree', 'prune'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
+def stop_base_process():
+    """Kill the base run's process group. It has its own session so the timeout does not kill the check."""
+    process = BASE_PROCESS
+    if process is None or process.poll() is not None:
+        return
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError, OSError):
+        try:
+            process.kill()
+        except OSError:
+            pass
+    try:
+        process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        pass
+
+
 def cancelled(signum, _frame):
-    """Cancellation must unwind finally blocks. The default SIGTERM action would skip them and leave the base checkout."""
+    """Cancellation must unwind finally blocks. The default SIGTERM action would skip them and leave the base tree."""
+    stop_base_process()
     raise SystemExit(128 + signum)
+
+
+def extract_archive(checkout, start, scratch):
+    """Extract the start commit into scratch. This does not register a worktree or touch the task index."""
+    archive = subprocess.Popen(['git', '-C', checkout, 'archive', '--format=tar', start], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    extract = subprocess.Popen(['tar', '-x', '-C', scratch], stdin=archive.stdout, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    if archive.stdout is not None:
+        archive.stdout.close()
+    extract_code = extract.wait()
+    archive_code = archive.wait()
+    return archive_code == 0 and extract_code == 0
+
+
+def run_base(arguments, cwd, log, timeout):
+    """Run the base Pest process into the check log. A timeout kills its process group and returns None."""
+    global BASE_PROCESS
+    BASE_PROCESS = subprocess.Popen(arguments, cwd=cwd, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+    try:
+        return BASE_PROCESS.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        stop_base_process()
+        log.write(f'Base run timed out after {timeout} seconds.\n'.encode())
+        log.flush()
+        return None
 
 
 def base_run(checkout, start, test, log):
     """Run the test file on the start commit with only that file taken from the working tree (ADR 0163).
 
-    The temporary worktree is the tree under test. The task workspace is not checked out or edited, and the
-    worktree is removed before this returns.
+    The tree is an extracted archive under .git/orbit/, not a registered worktree. The task workspace is not
+    checked out or edited, and the directory is removed before this returns. A kill can leave it; the clone's
+    removal takes it, and the next check removes it.
     """
+    global BASE_PROCESS
     scratch = None
     try:
         source = deliverable_path(checkout, test.get('project'), test.get('file'))
         if source is None or not os.path.isfile(source) or not commit_exists(checkout, start):
             return {'base_placed': False}
-        parent = os.path.dirname(os.path.realpath(checkout))
         try:
-            scratch = tempfile.mkdtemp(prefix='orbit-base-', dir=parent if os.path.isdir(parent) and os.access(parent, os.W_OK) else None)
+            os.makedirs(base_directories(), exist_ok=True)
+            scratch = tempfile.mkdtemp(prefix='orbit-base-', dir=base_directories())
         except OSError:
             return {'base_placed': False}
-        log.write(f'# orbit base checkout {scratch}\n'.encode())
+        log.write(f'# orbit base tree {scratch}\n'.encode())
         log.flush()
-        if subprocess.run(['git', '-C', checkout, 'worktree', 'add', '--detach', '--quiet', scratch, start],
-                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode != 0:
+        if not extract_archive(checkout, start, scratch):
             return {'base_placed': False}
         destination = deliverable_path(scratch, test.get('project'), test.get('file'))
         if destination is None:
@@ -255,13 +366,20 @@ def base_run(checkout, start, test, log):
         log.flush()
         if directory is None:
             return {'base_placed': True, 'base_exit_code': 127}
-        exit_code = run_logged(['bash', '-lc', 'exec vendor/bin/pest "$1" --log-junit="$2"', 'pest', test['file'], junit], directory, log)
+        exit_code = run_base(['bash', '-lc', 'exec vendor/bin/pest "$1" --log-junit="$2"', 'pest', test['file'], junit], directory, log, BASE_RUN_TIMEOUT)
+        if exit_code is None:
+            result = {'base_placed': True, 'base_exit_code': 124, 'base_timed_out': True, 'base_timeout_seconds': BASE_RUN_TIMEOUT}
+            if os.path.isfile(junit):
+                result['base_cases'] = test_cases(junit, messages=True)
+            return result
         if not os.path.isfile(junit):
             return {'base_placed': True, 'base_exit_code': exit_code}
-        return {'base_placed': True, 'base_exit_code': exit_code, 'base_cases': test_cases(junit)}
+        return {'base_placed': True, 'base_exit_code': exit_code, 'base_cases': test_cases(junit, messages=True)}
     finally:
+        stop_base_process()
+        BASE_PROCESS = None
         if scratch is not None:
-            remove_base_checkout(checkout, scratch)
+            remove_base_tree(scratch)
 
 
 def diff(checkout, start_commit, tree):

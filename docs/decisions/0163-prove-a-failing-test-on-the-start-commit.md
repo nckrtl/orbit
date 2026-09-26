@@ -22,6 +22,12 @@ The layout bug on the iPhone home screen shipped twice. Nothing proved that the 
 
 The start commit is the commit Orbit records when the subtask starts. The diff and this extra run both use that commit.
 
+### A killed base run
+
+A base run that registered a temporary worktree left that worktree behind when the run was killed with SIGKILL, for example by a Node reboot or the OOM killer. The directory sat in the apps root and stayed a linked worktree of the task clone. Removing the clone was refused, because every linked worktree must be a registered AppInstance, and the sweep retried that removal.
+
+A JUnit `error` and a JUnit `failure` were both stored as `failed`. A missing class on the start commit met the base run, and the reviewer saw the same status as an assertion failure. The base run also had no time limit, so a run that never finished held the check.
+
 ## Decision
 
 A `test` deliverable accepts `fails_on_base`, a JSON boolean. Group create, subtask create, and subtask update store an omitted value as `false`. Show, the turn file, and the stored list include the boolean on every `test` deliverable.
@@ -39,9 +45,17 @@ When `fails_on_base` is `true`, the handoff check runs the test file twice with 
 
 The base run reads the test file's bytes from the working tree, including an uncommitted or untracked file. No other path from the diff is present. Dependencies already installed in the task workspace stay available, so Pest can run. The base run does not change the task workspace: HEAD, the index, tracked files, and untracked files stay as they were.
 
-The check records a JUnit `failure` or `error` as `failed`, and a skip as `skipped`, as it does for the working-tree run. The base run meets the table when at least one matching test is `failed`. A matching pass or skip does not remove that failure. The file must also be added or modified in the diff, as ADR 0133 requires.
+The base run builds that tree in a directory under the clone's `.git/orbit/`. It archives the start commit and extracts the archive, then copies the test file and the project's installed dependencies. It does not register a Git worktree, and the directory is not in the apps root. The check removes the directory when the base run finishes or the check is cancelled. A base run killed with SIGKILL can leave the directory. Nothing is registered, so removing the clone removes the leftover with it.
 
-The check records the two runs separately. The working-tree run keeps `exit_code` and `cases`. The base run adds `base_exit_code` and `base_cases` on that test's evidence. When the test file cannot be placed on the start commit, the base run does not start, and the evidence records that placement failure instead of cases.
+At the start of a check, Orbit removes any `orbit-base-*` worktree this checkout registered earlier, prunes Git's worktree list, and removes a leftover base directory under `.git/orbit/`. That clears a worktree a check registered before this rule.
+
+The check records a JUnit `failure` or `error` as `failed`, and a skip as `skipped`, as it does for the working-tree run. The base run meets the table when at least one matching test is `failed`. A matching pass or skip does not remove that failure. The file must also be added or modified in the diff, as ADR 0133 requires. An `error` meets the table, including a missing class.
+
+Each failed case on the base run also records whether it was a `failure` or an `error`, and the tail of its message, at most 4096 characters. The review request shows those lines. The reviewer can tell a missing class from an assertion failure.
+
+The base run stops after 600 seconds. A timed-out base run counts as failing on the start commit, including when it wrote no cases. The review request says that it timed out and names that limit.
+
+The check records the two runs separately. The working-tree run keeps `exit_code` and `cases`. The base run adds `base_exit_code` and `base_cases` on that test's evidence. A case in `base_cases` that failed includes `kind` (`failure` or `error`) and `message` (the tail). A timed-out base run sets `base_timed_out` and `base_timeout_seconds` instead of requiring cases. When the test file cannot be placed on the start commit, the base run does not start, and the evidence records that placement failure instead of cases.
 
 The diff check, the base run, and the working-tree run all contribute. A pass on the base is reported even when the diff check fails or the working-tree run fails. The reminder lists each failing part, in that order.
 
@@ -58,6 +72,19 @@ Orbit did not place {path} on the start commit, so the base run did not start.
 ```
 
 The failure text for the working tree stays the text from ADR 0133.
+
+### What the reviewer sees
+
+The review request includes the base run when a case failed or the run timed out. The lead is one sentence: an error, such as a missing class, is not an assertion failure. Each following line starts with the deliverable id. `{id}` is that id, `{name}` is the test case name, `{message}` is the stored tail, and `{seconds}` is the stored limit.
+
+```text
+Base run on the start commit. An error, such as a missing class, is not an assertion failure.
+- {id}: "{name}" failed on the start commit with a failure: {message}
+- {id}: "{name}" failed on the start commit with an error: {message}
+- {id}: The base run timed out after {seconds} seconds, so it counts as failing on the start commit.
+```
+
+A failed case with an empty message omits the colon and the message. A pass or a skip is not listed. The timeout line is present when the base run timed out, including when cases were also recorded.
 
 ### Who sets the field
 
@@ -77,6 +104,10 @@ When `fails_on_base` is `true`, the deliverable line in the implementer prompt s
 - Treat any passing test in the file as a miss: other tests in that file cover behavior that already works. Only a test whose name contains `name` counts, and one failure among those tests is enough.
 - Require every matching test to fail on the base: another test whose name contains `name` can already pass. The base run passes when at least one matching test fails.
 - Check out the start commit in the task workspace: that replaces the implementer's tree. The base run leaves the workspace unchanged.
+- Register a temporary worktree beside the clone: a base run killed with SIGKILL leaves that worktree registered. Removing the clone is then refused, because every linked worktree must be a registered AppInstance, and the sweep retries the removal.
+- Put the base tree in the apps root without registering it: a leftover sits outside the clone, so removing the clone does not remove it.
+- Treat a JUnit error as a miss: a load error is still a failure of the named test on the broken code. The review request shows the kind and the message so the reviewer can reject a missing class.
+- Leave a timed-out base run as "did not run": which sends the handoff back: a run that never finishes on the broken code did not pass. It counts as failing on the start commit, and the review request says it timed out.
 
 ## Consequences
 
@@ -85,7 +116,9 @@ When `fails_on_base` is `true`, the deliverable line in the implementer prompt s
 - That run does not change the task workspace, so the working-tree run and the rest of the check see the implementer's tree.
 - When no matching test fails on the start commit, the handoff returns to the implementer before a reviewer spends a turn. If a matching test passed, the reminder says that the test does not reproduce the bug.
 - On the base, at least one test whose name contains `name` must fail. On the working tree, every such test must pass. A name that also matches a test which still passes after the fix fails that second run.
-- A load error on the base is `failed`, the same status as an assertion failure. The result the reproduction reminder names is a pass.
+- A load error on the base is `failed`, the same status as an assertion failure. The result the reproduction reminder names is a pass. The review request shows that the case was an error and includes the tail of its message.
+- A base run that runs longer than 600 seconds counts as failing on the start commit. The review request names that timeout.
+- A killed base run does not register a worktree and does not block removal of the clone. A leftover directory under `.git/orbit/` is removed with the clone, and the next check removes one that an earlier check left behind.
 - A bug with no automatic repro stays a `review` deliverable, and the brief says why.
 - A stored `test` deliverable gains `fails_on_base`. An omitted input is `false` and keeps the single working-tree run.
 
@@ -94,4 +127,4 @@ When `fails_on_base` is `true`, the deliverable line in the implementer prompt s
 - Components: apps/gateway, apps/cli, packages/php-sdk, apps/docs
 - ADRs: extends [ADR 0133](/decisions/0133-verify-typed-subtask-deliverables-at-handoff)
 - Detail: [Tasks](/reference/tasks#reproduce-a-bug-on-the-start-commit)
-- Verify: `composer docs-lint`; Gateway validation tests that refuse a non-boolean `fails_on_base` and refuse the field on any other type as `validation.failed` naming the deliverable id; a handoff test where every named test passes on the start commit and the reminder says the test does not reproduce the bug; a handoff test where one matching test fails on the start commit while another matching test passes, and the base run still passes; a handoff test where a matching test fails on the start commit with only the test file applied, then every matching test passes on the working tree
+- Verify: `composer docs-lint`; Gateway validation tests that refuse a non-boolean `fails_on_base` and refuse the field on any other type as `validation.failed` naming the deliverable id; a handoff test where every named test passes on the start commit and the reminder says the test does not reproduce the bug; a handoff test where one matching test fails on the start commit while another matching test passes, and the base run still passes; a handoff test where a matching test fails on the start commit with only the test file applied, then every matching test passes on the working tree; a test that kills a base run with SIGKILL and then removes the workspace with nothing registered; a test that stores the failure kind and the tail of the message; a test that a timed-out base run counts as failing on the start commit

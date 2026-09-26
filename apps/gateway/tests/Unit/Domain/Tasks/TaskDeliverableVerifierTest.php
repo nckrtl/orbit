@@ -160,6 +160,43 @@ it('uses the documented base-run sentence when the start commit run does not exe
     'no base evidence' => [[], 'Orbit did not place apps/gateway/tests/Feature/HomeScreenTest.php on the start commit, so the base run did not start.'],
 ]);
 
+it('counts a timed-out base run as failing on the start commit', function (): void {
+    $evidence = fails_on_base_evidence([
+        'exit_code' => 0,
+        'cases' => [['name' => 'it keeps the home screen layout', 'status' => 'passed']],
+        'base_placed' => true,
+        'base_exit_code' => 124,
+        'base_timed_out' => true,
+        'base_timeout_seconds' => 600,
+        'base_cases' => [['name' => 'it keeps the home screen layout', 'status' => 'passed']],
+    ]);
+
+    expect(TaskDeliverableVerifier::failures([fails_on_base_deliverable()], $evidence))->toBe([])
+        ->and($evidence->baseRunReview([fails_on_base_deliverable()]))->toBe("Base run on the start commit. An error, such as a missing class, is not an assertion failure.\n- layout-repro: The base run timed out after 600 seconds, so it counts as failing on the start commit.");
+});
+
+it('shows the reviewer whether a base failure was a failure or an error, and the tail of its message', function (): void {
+    $evidence = fails_on_base_evidence([
+        'exit_code' => 0,
+        'cases' => [['name' => 'it keeps the home screen layout', 'status' => 'passed']],
+        'base_placed' => true,
+        'base_exit_code' => 2,
+        'base_cases' => [
+            ['name' => 'it breaks the home screen layout', 'status' => 'failed', 'kind' => 'error', 'message' => 'Class "HomeScreen" not found'],
+            ['name' => 'it keeps the home screen layout', 'status' => 'failed', 'kind' => 'failure', 'message' => 'expected layout'],
+            ['name' => 'it keeps the home screen layout blank', 'status' => 'failed', 'kind' => 'error', 'message' => ''],
+            ['name' => 'it keeps the home screen layout on a phone', 'status' => 'passed'],
+        ],
+    ]);
+
+    expect($evidence->baseRunReview([fails_on_base_deliverable()]))->toBe(implode("\n", [
+        'Base run on the start commit. An error, such as a missing class, is not an assertion failure.',
+        '- layout-repro: "it breaks the home screen layout" failed on the start commit with an error: Class "HomeScreen" not found',
+        '- layout-repro: "it keeps the home screen layout" failed on the start commit with a failure: expected layout',
+        '- layout-repro: "it keeps the home screen layout blank" failed on the start commit with an error.',
+    ]));
+});
+
 it('keeps the single working-tree run when fails_on_base is false', function (): void {
     $deliverable = TaskDeliverable::fromArray([
         'id' => 'layout-repro',

@@ -116,7 +116,7 @@ final readonly class TaskDeliverableVerifier
     }
 
     /**
-     * @param  array{exit_code: int, cases: list<array{name: string, status: string}>, base_placed?: bool, base_exit_code?: int, base_cases?: list<array{name: string, status: string}>}|null  $run
+     * @param  array{exit_code: int, cases: list<array{name: string, status: string, kind?: string, message?: string}>, base_placed?: bool, base_exit_code?: int, base_timed_out?: bool, base_timeout_seconds?: int, base_cases?: list<array{name: string, status: string, kind?: string, message?: string}>}|null  $run
      */
     private static function testRun(TaskDeliverable $deliverable, ?array $run, string $path): ?string
     {
@@ -141,12 +141,16 @@ final readonly class TaskDeliverableVerifier
     /**
      * ADR 0163: at least one test whose name contains the deliverable name must fail on the start commit.
      *
-     * @param  array{exit_code: int, cases: list<array{name: string, status: string}>, base_placed?: bool, base_exit_code?: int, base_cases?: list<array{name: string, status: string}>}|null  $run
+     * @param  array{exit_code: int, cases: list<array{name: string, status: string, kind?: string, message?: string}>, base_placed?: bool, base_exit_code?: int, base_timed_out?: bool, base_timeout_seconds?: int, base_cases?: list<array{name: string, status: string, kind?: string, message?: string}>}|null  $run
      */
     private static function baseRun(TaskDeliverable $deliverable, ?array $run, string $path): ?string
     {
         if ($run === null || ($run['base_placed'] ?? false) !== true) {
             return "Orbit did not place {$path} on the start commit, so the base run did not start.";
+        }
+        // A run that never finishes did not pass on the broken code. It counts as failing on the start commit.
+        if (($run['base_timed_out'] ?? false) === true) {
+            return null;
         }
         if (! isset($run['base_cases'], $run['base_exit_code'])) {
             return "Orbit did not run {$path} on the start commit (exit code ".($run['base_exit_code'] ?? 1).').';
@@ -171,8 +175,8 @@ final readonly class TaskDeliverableVerifier
     }
 
     /**
-     * @param  list<array{name: string, status: string}>  $cases
-     * @return list<array{name: string, status: string}>
+     * @param  list<array{name: string, status: string, kind?: string, message?: string}>  $cases
+     * @return list<array{name: string, status: string, kind?: string, message?: string}>
      */
     private static function named(array $cases, string $needle): array
     {

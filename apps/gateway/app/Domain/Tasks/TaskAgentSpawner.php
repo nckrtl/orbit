@@ -7,6 +7,7 @@ namespace App\Domain\Tasks;
 use App\Models\AgentThread;
 use App\Models\AppInstance;
 use App\Models\Task;
+use App\Models\TaskCheck;
 use App\Models\TaskGroup;
 use Illuminate\Support\Facades\Log;
 
@@ -152,7 +153,28 @@ final readonly class TaskAgentSpawner implements AgentSpawner, TaskPlannerSpawne
             'Review subtask #'.$task->id.': '.$task->title,
             $task->brief,
             TaskRunInstructions::deliverables($deliverables),
+            $this->baseRunReview($task, $deliverables),
             TaskRunInstructions::reviewer($task->isLastSubtask(), $deliverables),
         ], static fn (string $part): bool => $part !== ''));
+    }
+
+    /**
+     * ADR 0163: the kind and message of each base failure, so a missing class is not read as a reproduction.
+     *
+     * @param  list<TaskDeliverable>  $deliverables
+     */
+    private function baseRunReview(Task $task, array $deliverables): string
+    {
+        $check = $task->checks()
+            ->where('kind', TaskCheckKind::Handoff->value)
+            ->where('status', TaskCheckStatus::Passed->value)
+            ->latest('id')
+            ->first();
+        if (! $check instanceof TaskCheck) {
+            return '';
+        }
+        $evidence = TaskDeliverableEvidence::fromArray($check->deliverable_evidence);
+
+        return $evidence instanceof TaskDeliverableEvidence ? $evidence->baseRunReview($deliverables) : '';
     }
 }
