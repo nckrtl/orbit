@@ -99,7 +99,8 @@ final class NodeAddFlowCommand extends GatewayCommand
             }
         }
 
-        $roles = array_values(array_filter($this->option('role'), is_string(...)));
+        $roleOption = $this->option('role');
+        $roles = array_values(array_filter(is_array($roleOption) ? $roleOption : [], is_string(...)));
         if ($roles === []) {
             $selected = $this->promptOrRefuse('At least one --role is required.', fn (): MultiSelectPrompt => new MultiSelectPrompt(
                 'Roles',

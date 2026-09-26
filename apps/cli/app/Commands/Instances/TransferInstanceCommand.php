@@ -96,9 +96,9 @@ HELP;
             ),
             AppInstanceResponse::class,
             ['Transfer Instance', 'Transferring Instance', 'Transferred Instance'],
-            static function (object $response): ProgressState {
-                if (! $response instanceof AppInstanceResponse || $response->transfer === null || $response->domain === null || $response->domain === '') {
-                    throw new GatewayApiException('Gateway response is invalid.', 'gateway.invalid_response', requestId: $response instanceof AppInstanceResponse ? $response->requestId : null);
+            static function (AppInstanceResponse $response): ProgressState {
+                if ($response->transfer === null || $response->domain === null || $response->domain === '') {
+                    throw new GatewayApiException('Gateway response is invalid.', 'gateway.invalid_response', requestId: $response->requestId);
                 }
 
                 return $response->transfer->cleanupCompleted ? ProgressState::Success : ProgressState::Warning;
