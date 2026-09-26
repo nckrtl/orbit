@@ -13,10 +13,12 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessRuntime;
+use App\Domain\Projects\ProjectType;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\InstanceProvisioning;
 use App\Domain\Tasks\InstanceProvisionIntent;
+use App\Domain\Tasks\TaskCapacityException;
 use App\Domain\Tasks\TaskCeilings;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskStatus;
@@ -29,12 +31,16 @@ use App\Models\ProjectNodeExclusion;
 use App\Models\Task;
 use App\Models\TaskGroup;
 
-function provisioner_app(string $slug, ?string $root = 'public'): OrbitApp
-{
+function provisioner_app(
+    string $slug,
+    ?string $root = 'public',
+    ProjectType $type = ProjectType::LaravelApp,
+): OrbitApp {
     return OrbitApp::query()->create([
         'name' => $slug,
         'slug' => $slug,
         'repository_url' => "git@example.test:{$slug}.git",
+        'type' => $type,
         'default_branch' => 'main',
         'root' => $root,
     ]);
@@ -207,6 +213,25 @@ it('activates a visitable workspace through the development provisioner', functi
         ->and($fakes->development->completes)->toBe(1);
 });
 
+it('creates a visitable Task workspace at the repository root for each package type', function (ProjectType $type): void {
+    $app = provisioner_app($type->value, '.', $type);
+    $node = provisioner_node($type->value.'-dev', '10.44.0.125');
+    $group = provisioner_group($app);
+    $fakes = bind_task_workspace_fakes();
+
+    $instance = app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, true));
+
+    expect($instance)->toBeInstanceOf(AppInstance::class)
+        ->and($instance?->node_id)->toBe($node->id)
+        ->and($instance?->root)->toBe('.')
+        ->and($instance?->status)->toBe(AppInstanceState::SourceResolved)
+        ->and($fakes->development->reserves)->toBe(1)
+        ->and($fakes->development->completes)->toBe(1);
+})->with([
+    'laravel-package' => ProjectType::LaravelPackage,
+    'node-package' => ProjectType::NodePackage,
+]);
+
 it('reuses an already assigned Task workspace', function (): void {
     $app = provisioner_app('reuse');
     $node = provisioner_node('reuse-dev', '10.44.0.103');
@@ -284,33 +309,36 @@ it('skips a non-T3 app-dev Node even when it has the lower id', function (): voi
     $this->assertDatabaseMissing('app_instances', ['node_id' => $incapable->id]);
 });
 
-it('returns null without creating a workspace when the only capable Node is full', function (): void {
+it('reports a capacity wait without creating a workspace when every capable Node is full', function (bool $otherNodeHasRoom): void {
     $app = provisioner_app('full');
     $incapable = provisioner_node('no-t3', '10.44.0.110');
     $incapable->processes()->delete();
     $capable = provisioner_node('full-t3', '10.44.0.111');
-    $occupied = AppInstance::query()->create([
-        'app_id' => $app->id,
-        'node_id' => $capable->id,
-        'name' => 'occupied',
-        'checkout_path' => '/srv/orbit/apps/full/occupied',
-        'status' => AppInstanceState::SourceResolved,
-    ]);
-    for ($i = 0; $i < TaskCeilings::PerNode; $i++) {
-        $active = provisioner_group($app, "Active {$i}");
-        $active->taskable()->associate($occupied);
-        $active->save();
+    foreach ($otherNodeHasRoom ? [$capable] : [$capable, $incapable] as $node) {
+        $occupied = AppInstance::query()->create([
+            'app_id' => $app->id,
+            'node_id' => $node->id,
+            'name' => "occupied-{$node->id}",
+            'checkout_path' => "/srv/orbit/apps/full/occupied-{$node->id}",
+            'status' => AppInstanceState::SourceResolved,
+        ]);
+        for ($i = 0; $i < TaskCeilings::PerNode; $i++) {
+            $active = provisioner_group($app, "Active {$node->id} {$i}");
+            $active->taskable()->associate($occupied);
+            $active->save();
+        }
     }
     $group = provisioner_group($app);
     $fakes = bind_task_workspace_fakes();
 
-    $instance = app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, false));
-
-    expect($instance)->toBeNull()
+    expect(fn () => app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, false)))
+        ->toThrow(fn (TaskCapacityException $exception) => expect($exception->fleetFull)->toBe(! $otherNodeHasRoom))
         ->and($fakes->source->calls)->toBe([]);
-    $this->assertDatabaseCount('app_instances', 1);
-    $this->assertDatabaseMissing('app_instances', ['node_id' => $incapable->id]);
-});
+    $this->assertDatabaseCount('app_instances', $otherNodeHasRoom ? 1 : 2);
+})->with([
+    'another app-dev Node has room' => [true],
+    'the whole fleet is full' => [false],
+]);
 
 it('places a group only on a Node that allows both its implementer and reviewer drivers', function (): void {
     $app = provisioner_app('mixed');
@@ -405,4 +433,79 @@ it('returns null for a planning group when no app-dev Node has access to itself'
 
     expect(app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent(provisioner_group($app), true, selfAccess: true)))->toBeNull();
     $this->assertDatabaseCount('app_instances', 0);
+});
+
+describe('a workspace an interrupted claim left unattached', function (): void {
+    it('resumes it on its own Node instead of the least loaded one', function (): void {
+        $app = provisioner_app('orbit');
+        provisioner_node('first', '10.44.0.130');
+        $second = provisioner_node('second', '10.44.0.131');
+        $group = provisioner_group($app);
+        $left = AppInstance::query()->create([
+            'app_id' => $app->id,
+            'node_id' => $second->id,
+            'name' => TaskWorkspaceName::for($group),
+            'checkout_path' => '/srv/orbit/apps/orbit/'.TaskWorkspaceName::for($group),
+            'branch_override' => TaskWorkspaceName::for($group),
+            'status' => AppInstanceState::CheckoutPrepared,
+        ]);
+        bind_task_workspace_fakes();
+
+        $instance = app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, false));
+
+        expect($instance?->id)->toBe($left->id)
+            ->and($instance?->status)->toBe(AppInstanceState::SourceResolved);
+        $this->assertDatabaseCount('app_instances', 1);
+    });
+
+    it('waits for capacity on its own Node', function (): void {
+        $app = provisioner_app('orbit');
+        provisioner_node('roomy', '10.44.0.132');
+        $full = provisioner_node('full', '10.44.0.133');
+        $occupied = AppInstance::query()->create([
+            'app_id' => $app->id,
+            'node_id' => $full->id,
+            'name' => 'occupied',
+            'checkout_path' => '/srv/orbit/apps/orbit/occupied',
+            'status' => AppInstanceState::SourceResolved,
+        ]);
+        for ($i = 0; $i < TaskCeilings::PerNode; $i++) {
+            $active = provisioner_group($app, "Active {$i}");
+            $active->taskable()->associate($occupied);
+            $active->save();
+        }
+        $group = provisioner_group($app);
+        AppInstance::query()->create([
+            'app_id' => $app->id,
+            'node_id' => $full->id,
+            'name' => TaskWorkspaceName::for($group),
+            'checkout_path' => '/srv/orbit/apps/orbit/'.TaskWorkspaceName::for($group),
+            'branch_override' => TaskWorkspaceName::for($group),
+            'status' => AppInstanceState::Reserved,
+        ]);
+        bind_task_workspace_fakes();
+
+        expect(fn () => app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, false)))
+            ->toThrow(fn (TaskCapacityException $exception) => expect($exception->fleetFull)->toBeFalse());
+    });
+
+    it('never adopts an Instance that only shares the workspace name', function (): void {
+        $app = provisioner_app('orbit');
+        $node = provisioner_node('only', '10.44.0.134');
+        $group = provisioner_group($app);
+        $lookalike = AppInstance::query()->create([
+            'app_id' => $app->id,
+            'node_id' => $node->id,
+            'name' => TaskWorkspaceName::for($group),
+            'checkout_path' => '/srv/orbit/apps/orbit/'.TaskWorkspaceName::for($group),
+            'branch_override' => 'feature-x',
+            'status' => AppInstanceState::SourceResolved,
+        ]);
+        bind_task_workspace_fakes();
+
+        expect(app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, false)))->toBeNull()
+            ->and($lookalike->fresh()?->branch_override)->toBe('feature-x')
+            ->and($lookalike->fresh()?->status)->toBe(AppInstanceState::SourceResolved);
+        $this->assertDatabaseCount('app_instances', 1);
+    });
 });

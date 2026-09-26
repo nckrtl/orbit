@@ -1,9 +1,14 @@
 use bollard::{container::ListContainersOptions, system::EventsOptions, Docker};
 use futures_util::{SinkExt, StreamExt};
 use orbit_agent::{
-    docker_container_name, docker_status, frame, gateway_client, iso_now, process_unit_name,
-    retry_delay, snapshot_frames, tls_config, ChangeBatch, Config, Envelope, HeartbeatData,
-    Sequencer, Unit, CHANGE_MERGE_WINDOW,
+    docker_container_name, docker_status, frame, gateway_client, iso_now, lock_single_instance,
+    next_attempt, process_unit_name, retry_delay, snapshot_frames, tls_config,
+    workspace::{
+        configure_libgit2, lock_workspaces, watch_workspaces, SharedWorkspaces, WorkspaceUpdate,
+    },
+    workspace_frame, workspaces_frames, AgentSecret, ChangeBatch, Config, Envelope, HeartbeatData,
+    Liveness, LivenessCheck, Sequencer, Unit, CHANGE_MERGE_WINDOW, JOIN_TIMEOUT, LOCK_PATH,
+    SECRET_PATH, SNAPSHOT_INTERVAL,
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -62,7 +67,9 @@ async fn main() {
 
 async fn run() -> Result<(), Box<dyn Error + Send + Sync>> {
     let config = Config::load()?;
-    let client = gateway_client(config.gateway_address)?;
+    let _single_instance = lock_single_instance(LOCK_PATH)?;
+    let secret = AgentSecret::load(SECRET_PATH)?;
+    let client = gateway_client(config.gateway_address, &secret)?;
     let tls = tls_config()?;
     let connection = Connection::system().await?;
     let manager = Proxy::new(
@@ -84,6 +91,15 @@ async fn run() -> Result<(), Box<dyn Error + Send + Sync>> {
     });
     let (docker_tx, mut docker_rx) = mpsc::unbounded_channel();
     tokio::spawn(docker_watcher(docker_tx));
+    configure_libgit2()?;
+    let workspaces = SharedWorkspaces::default();
+    let (workspace_tx, mut workspace_rx) = mpsc::unbounded_channel();
+    tokio::spawn(watch_workspaces(
+        client.clone(),
+        config.gateway_url.clone(),
+        workspaces.clone(),
+        workspace_tx,
+    ));
     let (shutdown_tx, mut shutdown_rx) = watch::channel(false);
     tokio::spawn(async move {
         wait_for_os_shutdown().await;
@@ -91,6 +107,7 @@ async fn run() -> Result<(), Box<dyn Error + Send + Sync>> {
     });
     let mut sequence = Sequencer::default();
     let mut attempt = 0u32;
+    let mut joined_at: Option<Instant> = None;
     let mut docker_units = HashMap::new();
     let mut docker_available = false;
     let mut systemd = systemd_snapshot(&manager).await?;
@@ -110,10 +127,10 @@ async fn run() -> Result<(), Box<dyn Error + Send + Sync>> {
                 continue;
             }
         };
-        if !discovery
+        if discovery
             .member
             .strip_prefix("agent.")
-            .is_some_and(|id| discovery.channel == format!("presence-node.{id}"))
+            .is_none_or(|id| discovery.channel != format!("presence-node.{id}"))
         {
             return Err("Gateway returned an invalid agent channel identity".into());
         }
@@ -138,16 +155,19 @@ async fn run() -> Result<(), Box<dyn Error + Send + Sync>> {
             &mut docker_available,
             &mut docker_rx,
             &mut systemd_rx,
+            &workspaces,
+            &mut workspace_rx,
             &mut heartbeat,
             &mut systemd_poll,
             &mut shutdown_rx,
+            &mut joined_at,
         )
         .await
         {
             Ok(()) => return Ok(()),
             Err(error) => {
                 eprintln!("orbit-agent: realtime connection ended: {error}");
-                attempt = attempt.saturating_add(1);
+                attempt = next_attempt(attempt, joined_at.take().map(|joined| joined.elapsed()));
                 tokio::select! {_=shutdown_rx.changed()=>return Ok(()),_=tokio::time::sleep(retry_delay(attempt))=>{}}
             }
         }
@@ -202,9 +222,12 @@ async fn connected_session(
     docker_available: &mut bool,
     docker_rx: &mut mpsc::UnboundedReceiver<DockerUpdate>,
     systemd_rx: &mut mpsc::UnboundedReceiver<()>,
+    workspaces: &SharedWorkspaces,
+    workspace_rx: &mut mpsc::UnboundedReceiver<WorkspaceUpdate>,
     heartbeat: &mut Interval,
     systemd_poll: &mut Interval,
     shutdown: &mut watch::Receiver<bool>,
+    joined_at: &mut Option<Instant>,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     let mut parsed = reqwest::Url::parse(ws_url)?;
     if parsed.scheme() != "wss"
@@ -217,15 +240,24 @@ async fn connected_session(
     parsed.set_query(Some(&format!(
         "protocol=7&client=orbit-agent&version={VERSION}&flash=false"
     )));
-    let stream = connect_by_address(ws_address.parse::<std::net::IpAddr>()?, 443).await?;
+    let address = ws_address.parse::<std::net::IpAddr>()?;
     let request = parsed.as_str().into_client_request()?;
-    let (socket, _) =
-        client_async_tls_with_config(request, stream, None, Some(Connector::Rustls(tls))).await?;
     let auth_url = format!(
         "{}/api/v1/agent/broadcasting/auth",
         gateway.trim_end_matches('/')
     );
-    let mut socket = protocol_handshake(socket, client, &auth_url, channel, VERSION).await?;
+    let join = async {
+        let stream = connect_by_address(address, 443).await?;
+        let (socket, _) =
+            client_async_tls_with_config(request, stream, None, Some(Connector::Rustls(tls)))
+                .await?;
+        protocol_handshake(socket, client, &auth_url, channel, VERSION).await
+    };
+    let mut socket = tokio::time::timeout(JOIN_TIMEOUT, join)
+        .await
+        .map_err(|_| "joining the Reverb channel timed out")??;
+    // The caller starts the backoff again only when this session stays joined long enough.
+    *joined_at = Some(Instant::now());
     // Re-read both runtimes for every successful join.
     *systemd = match systemd_snapshot(manager).await {
         Ok(units) => units,
@@ -234,6 +266,8 @@ async fn connected_session(
             std::process::exit(1);
         }
     };
+    // The snapshot below carries every current workspace, so queued notices are stale.
+    while workspace_rx.try_recv().is_ok() {}
     let units = combined_units(systemd, docker_units);
     send_snapshots(
         &mut socket,
@@ -245,15 +279,31 @@ async fn connected_session(
         } else {
             "absent"
         },
+        workspaces,
     )
     .await?;
     let mut pending = ChangeBatch::default();
     let debounce = tokio::time::sleep(Duration::from_secs(86400));
     tokio::pin!(debounce);
+    // Every snapshot restarts this timer, so a complete snapshot goes out at least once a minute.
+    let snapshot_due = tokio::time::sleep(SNAPSHOT_INTERVAL);
+    tokio::pin!(snapshot_due);
+    let mut liveness = Liveness::new(Instant::now());
     loop {
         tokio::select! {
             _=shutdown.changed()=>{socket.close(None).await?;return Ok(())},
-            _=heartbeat.tick()=>{let payload=Envelope{sequence:sequence.advance(),at:iso_now(),data:HeartbeatData{}};send_client(&mut socket,channel,"client-heartbeat",serde_json::to_value(payload)?).await?;},
+            _=heartbeat.tick()=>{
+                let payload=Envelope{sequence:sequence.advance(),at:iso_now(),data:HeartbeatData{}};send_client(&mut socket,channel,"client-heartbeat",serde_json::to_value(payload)?).await?;
+                match liveness.check(Instant::now()) {
+                    LivenessCheck::Alive=>{},
+                    LivenessCheck::Ping=>send_control(&mut socket,"pusher:ping",json!({})).await?,
+                    LivenessCheck::Dead=>return Err("Reverb did not answer the ping".into()),
+                }
+            },
+            _=&mut snapshot_due=>{
+                let all=combined_units(systemd,docker_units);send_snapshots(&mut socket,channel,sequence,&all,if *docker_available{"available"}else{"absent"},workspaces).await?;
+                snapshot_due.as_mut().reset(Instant::now()+SNAPSHOT_INTERVAL);
+            },
             signal=systemd_rx.recv()=>match signal {
                 Some(())=>{
                     let fresh=match systemd_snapshot(manager).await{Ok(units)=>units,Err(error)=>{eprintln!("orbit-agent: systemd D-Bus watcher failed: {error}");std::process::exit(1)}};
@@ -266,21 +316,26 @@ async fn connected_session(
                 if let Some(deadline)=queue_changes(&mut pending,diff_units(systemd,&fresh)){debounce.as_mut().reset(deadline);} *systemd=fresh;
             },
             update=docker_rx.recv()=>match update {
-                Some(DockerUpdate::Connected(units))=>{docker_units.clear();docker_units.extend(units.into_iter().map(|unit|(unit.name.clone(),unit)));*docker_available=true;let all=combined_units(systemd,docker_units);send_snapshots(&mut socket,channel,sequence,&all,"available").await?;},
-                Some(DockerUpdate::Absent)=>{if *docker_available{*docker_available=false;docker_units.clear();let all=combined_units(systemd,docker_units);send_snapshots(&mut socket,channel,sequence,&all,"absent").await?;}},
+                Some(DockerUpdate::Connected(units))=>{docker_units.clear();docker_units.extend(units.into_iter().map(|unit|(unit.name.clone(),unit)));*docker_available=true;let all=combined_units(systemd,docker_units);send_snapshots(&mut socket,channel,sequence,&all,"available",workspaces).await?;snapshot_due.as_mut().reset(Instant::now()+SNAPSHOT_INTERVAL);},
+                Some(DockerUpdate::Absent) if *docker_available=>{*docker_available=false;docker_units.clear();let all=combined_units(systemd,docker_units);send_snapshots(&mut socket,channel,sequence,&all,"absent",workspaces).await?;snapshot_due.as_mut().reset(Instant::now()+SNAPSHOT_INTERVAL);},
+                Some(DockerUpdate::Absent)=>{},
                 Some(DockerUpdate::Changed(unit)) if docker_units.get(&unit.name)!=Some(&unit)=>{docker_units.insert(unit.name.clone(),unit.clone());if let Some(deadline)=queue_changes(&mut pending,[unit]){debounce.as_mut().reset(deadline);}},
                 Some(DockerUpdate::Changed(_))=>{},
                 None=>{},
             },
+            Some(update)=workspace_rx.recv()=>match update {
+                WorkspaceUpdate::Changed(id)=>{let state=lock_workspaces(workspaces).get(&id).cloned();if let Some(state)=state{send_raw_frame(&mut socket,workspace_frame(channel,sequence.advance(),state)?).await?;}},
+                WorkspaceUpdate::List=>send_workspaces(&mut socket,channel,sequence,workspaces).await?,
+            },
             _=&mut debounce,if !pending.is_empty()=>{if pending.due(Instant::now()){for unit in pending.take(){let event=orbit_agent::process_frame(channel,sequence.advance(),unit)?;send_raw_frame(&mut socket,event).await?;}}},
             message=socket.next()=>match message{
-                Some(Ok(Message::Text(text)))=>{let value:Value=serde_json::from_str(&text)?;match value["event"].as_str().unwrap_or(""){
+                Some(Ok(Message::Text(text)))=>{liveness.message(Instant::now());let value:Value=serde_json::from_str(&text)?;match value["event"].as_str().unwrap_or(""){
                     "pusher:ping"=>send_control(&mut socket,"pusher:pong",json!({})).await?,
                     "pusher:error"|"pusher_internal:subscription_error"=>return Err(format!("Pusher rejected subscription: {}",value["data"]).into()),
-                    "pusher_internal:member_added"=>{let all=combined_units(systemd,docker_units);send_snapshots(&mut socket,channel,sequence,&all,if *docker_available{"available"}else{"absent"}).await?;},
+                    "pusher_internal:member_added"=>{let all=combined_units(systemd,docker_units);send_snapshots(&mut socket,channel,sequence,&all,if *docker_available{"available"}else{"absent"},workspaces).await?;snapshot_due.as_mut().reset(Instant::now()+SNAPSHOT_INTERVAL);},
                     _=>{}
                 }},
-                Some(Ok(Message::Ping(data)))=>socket.send(Message::Pong(data)).await?,
+                Some(Ok(Message::Ping(data)))=>{liveness.message(Instant::now());socket.send(Message::Pong(data)).await?},
                 Some(Ok(Message::Close(_)))|None=>return Err("Pusher closed connection".into()),
                 Some(Err(error))=>return Err(error.into()),_=>{}
             }
@@ -373,8 +428,25 @@ async fn send_snapshots(
     sequence: &mut Sequencer,
     units: &[Unit],
     docker: &'static str,
+    workspaces: &SharedWorkspaces,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     for event in snapshot_frames(channel, sequence, units, docker)? {
+        send_raw_frame(socket, event).await?;
+    }
+    // Every snapshot is followed by the complete workspace list, even when it is empty.
+    send_workspaces(socket, channel, sequence, workspaces).await
+}
+async fn send_workspaces(
+    socket: &mut Socket,
+    channel: &str,
+    sequence: &mut Sequencer,
+    workspaces: &SharedWorkspaces,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
+    let list = lock_workspaces(workspaces)
+        .values()
+        .cloned()
+        .collect::<Vec<_>>();
+    for event in workspaces_frames(channel, sequence, &list)? {
         send_raw_frame(socket, event).await?;
     }
     Ok(())
@@ -637,14 +709,28 @@ mod protocol_tests {
         Arc,
     };
     use tokio_tungstenite::connect_async;
+    const TEST_SECRET: &str = "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff";
     #[derive(Clone)]
     struct FakeState {
         auths: Arc<AtomicUsize>,
         subscriptions: Arc<AtomicUsize>,
     }
-    async fn auth(State(state): State<FakeState>) -> Json<Value> {
+    async fn auth(
+        State(state): State<FakeState>,
+        headers: axum::http::HeaderMap,
+    ) -> Result<Json<Value>, axum::http::StatusCode> {
+        // The Gateway signs the membership only for the agent's secret (ADR 0155).
+        if headers
+            .get(axum::http::header::AUTHORIZATION)
+            .and_then(|value| value.to_str().ok())
+            != Some(format!("Bearer {TEST_SECRET}").as_str())
+        {
+            return Err(axum::http::StatusCode::UNAUTHORIZED);
+        }
         state.auths.fetch_add(1, Ordering::SeqCst);
-        Json(json!({"auth":"signed","channel_data":"{\"user_id\":\"agent.12\"}"}))
+        Ok(Json(
+            json!({"auth":"signed","channel_data":"{\"user_id\":\"agent.12\"}"}),
+        ))
     }
     async fn ws_route(
         State(state): State<FakeState>,
@@ -721,7 +807,23 @@ mod protocol_tests {
     #[tokio::test]
     async fn fake_pusher_auth_subscribe_events_and_reconnect() {
         let (base, state) = fake_server().await;
-        let http = reqwest::Client::new();
+        let unauthenticated = reqwest::Client::new();
+        let (socket, _) = connect_async(format!("{}/socket", base.replacen("http://", "ws://", 1)))
+            .await
+            .unwrap();
+        assert!(protocol_handshake(
+            socket,
+            &unauthenticated,
+            &format!("{base}/auth"),
+            "presence-node.12",
+            VERSION,
+        )
+        .await
+        .is_err());
+        let http = reqwest::Client::builder()
+            .default_headers(AgentSecret::parse(TEST_SECRET).unwrap().headers())
+            .build()
+            .unwrap();
         for _ in 0..2 {
             let (socket, _) =
                 connect_async(format!("{}/socket", base.replacen("http://", "ws://", 1)))

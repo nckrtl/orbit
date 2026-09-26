@@ -18,6 +18,28 @@ final class GatewayFailureRenderer
 
     private const int MAX_MESSAGE_LENGTH = 512;
 
+    /** Caddy's message in a Node Caddy build failure, which the Gateway bounds at 2,000 bytes. A longer one is cut, not dropped. */
+    private const int MAX_BUILD_MESSAGE_LENGTH = 2000;
+
+    /** The fields a failed Node Caddy build adds to any error it causes: the Node, the failed stage, and Caddy's message. */
+    private const array BUILD_FIELDS = ['node', 'stage', 'message'];
+
+    /** A step name, such as `remove:host-firewall`, `converge:caddy`, or `tool-manager-vp`. */
+    private const string STEP_PATTERN = '/\A[a-z0-9](?:[a-z0-9:._-]{0,126}[a-z0-9])?\z/D';
+
+    /**
+     * The bounded operation fields any error may carry, each with the pattern its value must match.
+     * They name what failed and why in closed tokens, never remote output or a raw value.
+     */
+    private const array OPERATION_FIELDS = [
+        'step' => self::STEP_PATTERN,
+        'outcome' => '/\A[a-z][a-z0-9_]{0,63}\z/D',
+        'reason' => '/\A[a-z][a-z0-9_]{0,63}\z/D',
+        'cleanup' => '/\A[a-z][a-z0-9_]{0,63}\z/D',
+        'role' => '/\A[a-z][a-z0-9-]{0,63}\z/D',
+        'field' => '/\A[a-z][a-z0-9_.-]{0,63}\z/D',
+    ];
+
     /**
      * @param  array<string,mixed>  $details
      * @return array<string,mixed>
@@ -49,13 +71,69 @@ final class GatewayFailureRenderer
             return $safe;
         }
 
+        $safe = [];
         $id = $details['id'] ?? null;
 
         if (is_int($id) && $id > 0) {
-            return ['id' => $id];
+            $safe['id'] = $id;
         }
 
-        return [];
+        return [...$safe, ...self::operationDetails($details), ...self::buildDetails($details)];
+    }
+
+    /**
+     * Keeps the operation fields whose values match their closed patterns, such as the failed `step` of a role operation
+     * or the `outcome` of a tool operation. A malformed value drops.
+     *
+     * @param  array<string,mixed>  $details
+     * @return array<string,string>
+     */
+    public static function operationDetails(array $details): array
+    {
+        $safe = [];
+
+        foreach (self::OPERATION_FIELDS as $field => $pattern) {
+            $value = $details[$field] ?? null;
+
+            if (is_string($value) && preg_match($pattern, $value) === 1) {
+                $safe[$field] = $value;
+            }
+        }
+
+        return $safe;
+    }
+
+    /**
+     * Keeps the Node, stage, and Caddy message of a failed Node Caddy build, and the step that requested it.
+     * They come as a set; a partial or malformed set drops.
+     *
+     * @param  array<string,mixed>  $details
+     * @return array<string,string>
+     */
+    public static function buildDetails(array $details): array
+    {
+        $node = $details['node'] ?? null;
+        $stage = $details['stage'] ?? null;
+        $message = is_string($details['message'] ?? null) ? self::truncatedText($details['message'], self::MAX_BUILD_MESSAGE_LENGTH) : null;
+
+        if (
+            ! is_string($node)
+            || preg_match('/\A[A-Za-z0-9](?:[A-Za-z0-9._-]{0,62})\z/D', $node) !== 1
+            || ! is_string($stage)
+            || preg_match('/\A[a-z][a-z-]{0,31}\z/D', $stage) !== 1
+            || $message === null
+        ) {
+            return [];
+        }
+
+        $safe = [];
+        $step = $details['step'] ?? null;
+
+        if (is_string($step) && preg_match(self::STEP_PATTERN, $step) === 1) {
+            $safe['step'] = $step;
+        }
+
+        return [...$safe, 'node' => $node, 'stage' => $stage, 'message' => $message];
     }
 
     /**
@@ -80,6 +158,14 @@ final class GatewayFailureRenderer
         }
 
         $humanDetails = $details;
+
+        // The error message already names the Node, stage, and Caddy message of a failed build.
+        if (self::buildDetails($details) !== []) {
+            foreach ([...self::BUILD_FIELDS, 'step'] as $field) {
+                unset($humanDetails[$field]);
+            }
+        }
+
         $id = $humanDetails['id'] ?? null;
 
         if (is_int($id) && $id > 0) {
@@ -236,6 +322,25 @@ final class GatewayFailureRenderer
 
         if ($text === '' || strlen($text) > $maxLength) {
             return null;
+        }
+
+        return $text;
+    }
+
+    /**
+     * Like safeText, but cuts an oversized text on a UTF-8 character boundary and marks the cut, instead of dropping it.
+     */
+    private static function truncatedText(string $text, int $maxLength): ?string
+    {
+        $text = preg_replace(pattern: '/[\x00-\x1F\x7F]+/', replacement: ' ', subject: mb_scrub($text, 'UTF-8'));
+        $text = is_string($text) ? trim($text) : '';
+
+        if ($text === '') {
+            return null;
+        }
+
+        if (strlen($text) > $maxLength) {
+            $text = mb_strcut($text, 0, $maxLength - strlen('…'), 'UTF-8').'…';
         }
 
         return $text;

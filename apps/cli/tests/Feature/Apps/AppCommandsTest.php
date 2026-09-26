@@ -71,6 +71,67 @@ describe('project:create', function (): void {
             ]);
     });
 
+    it('sends a task check on create only when --task-check is given', function (): void {
+        $mockClient = MockClient::global([CreateAppRequest::class => app_mock_response(201)]);
+
+        $this->artisan('project:create', [
+            'slug' => 'kit',
+            'type' => 'node-package',
+            'repository' => 'git@github.com:acme/kit.git',
+            '--task-check' => 'vp run check',
+        ])->assertExitCode(0);
+
+        expect($mockClient->getLastRequest()?->body()->all())->toMatchArray(['task_check' => 'vp run check']);
+
+        $defaultClient = MockClient::global([CreateAppRequest::class => app_mock_response(201)]);
+
+        $this->artisan('project:create', [
+            'slug' => 'kit',
+            'type' => 'node-package',
+            'repository' => 'git@github.com:acme/kit.git',
+        ])->assertExitCode(0);
+
+        expect($defaultClient->getLastRequest()?->body()->all())->not->toHaveKey('task_check');
+    });
+
+    it('creates a node-package Project through the typed SDK request', function (): void {
+        $mockClient = MockClient::global([
+            CreateAppRequest::class => app_mock_response(201),
+        ]);
+
+        $this->artisan('project:create', [
+            'slug' => 'node-kit',
+            'type' => 'node-package',
+            'repository' => 'https://github.com/acme/node-kit.git',
+            '--root' => '.',
+        ])->assertExitCode(0);
+
+        expect($mockClient->getLastRequest())
+            ->toBeInstanceOf(CreateAppRequest::class)
+            ->and($mockClient->getLastRequest()?->body()->all())
+            ->toMatchArray(['type' => 'node-package', 'root' => '.']);
+    });
+
+    it('defaults the root by Project type when --root is omitted', function (string $type, string $root): void {
+        $mockClient = MockClient::global([
+            CreateAppRequest::class => app_mock_response(201),
+        ]);
+
+        $this->artisan('project:create', [
+            'slug' => 'kit',
+            'type' => $type,
+            'repository' => 'https://github.com/acme/kit.git',
+        ])->assertExitCode(0);
+
+        expect($mockClient->getLastRequest()?->body()->all())
+            ->toMatchArray(['type' => $type, 'root' => $root]);
+    })->with([
+        'node-package' => ['node-package', '.'],
+        'laravel-package' => ['laravel-package', '.'],
+        'laravel-app' => ['laravel-app', 'public'],
+        'monorepo' => ['monorepo', 'public'],
+    ]);
+
     it('reports the created app for humans', function (): void {
         MockClient::global([CreateAppRequest::class => app_mock_response(201)]);
 
@@ -392,6 +453,8 @@ describe('project:show', function (): void {
             ->toContain('main')
             ->toContain('Web root')
             ->toContain('public')
+            ->toContain('Task check')
+            ->toContain('composer check')
             ->toContain('No Instances.')
             ->not->toContain(app_request_id());
     });
@@ -446,6 +509,59 @@ describe('project:update', function (): void {
             ->and($request?->body()->all())
             ->not
             ->toHaveKey('main_branch');
+    });
+
+    it('sets or clears the Project task check through the SDK request', function (): void {
+        $setClient = MockClient::global([UpdateAppRequest::class => app_mock_response()]);
+
+        $this->artisan('project:update', [
+            'project' => '3',
+            '--task-check' => 'vp run check',
+        ])->assertExitCode(0);
+
+        expect($setClient->getLastRequest()?->body()->all())
+            ->toBe(['task_check' => 'vp run check']);
+
+        $clearClient = MockClient::global([UpdateAppRequest::class => app_mock_response()]);
+        $this->artisan('project:update', [
+            'project' => '3',
+            '--clear-task-check' => true,
+        ])->assertExitCode(0);
+
+        expect($clearClient->getLastRequest()?->body()->all())
+            ->toBe(['task_check' => null]);
+    });
+
+    it('refuses --task-check with --clear-task-check before contacting the Gateway', function (): void {
+        $mockClient = MockClient::global([UpdateAppRequest::class => app_mock_response()]);
+
+        $this->artisan('project:update', [
+            'project' => '3',
+            '--task-check' => 'composer check',
+            '--clear-task-check' => true,
+            '--json' => true,
+        ])->expectsOutputToContain('app.task_check_conflict')
+            ->assertExitCode(1);
+
+        expect($mockClient->getLastRequest())->toBeNull();
+    });
+
+    it('updates a Project to node-package through the typed SDK request', function (): void {
+        $mockClient = MockClient::global([
+            UpdateAppRequest::class => app_mock_response(),
+        ]);
+
+        $this->artisan('project:update', [
+            'project' => '3',
+            '--type' => 'node-package',
+            '--json' => true,
+        ])->expectsOutput(app_json())
+            ->assertExitCode(0);
+
+        expect($mockClient->getLastRequest())
+            ->toBeInstanceOf(UpdateAppRequest::class)
+            ->and($mockClient->getLastRequest()?->body()->all())
+            ->toBe(['type' => 'node-package']);
     });
 
     it('reports the updated app for humans', function (): void {
@@ -535,6 +651,7 @@ function app_payload(): array
         'repository_url' => 'git@github.com:nckrtl/orbit.git',
         'default_branch' => 'main',
         'root' => 'public',
+        'task_check' => 'composer check',
         'defaults' => ['php_version' => '8.5'],
     ];
 }

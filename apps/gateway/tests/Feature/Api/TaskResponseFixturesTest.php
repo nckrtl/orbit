@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Tasks\AgentDriverRegistry;
 use App\Domain\Tasks\InstanceProvisioning;
 use App\Domain\Tasks\InstanceProvisionIntent;
 use App\Domain\Tasks\TaskExtensionState;
@@ -16,6 +17,7 @@ use App\Models\Task;
 use App\Models\TaskComment;
 use App\Models\TaskGroup;
 use Illuminate\Support\Carbon;
+use Orbit\Sdk\Requests\Tasks\CancelSubtaskRequest;
 use Orbit\Sdk\Requests\Tasks\CancelTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\CompleteTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\CreateSubtaskRequest;
@@ -31,6 +33,7 @@ use Orbit\Sdk\Requests\Tasks\ShowTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\ShowTasksStatusRequest;
 use Orbit\Sdk\Requests\Tasks\UpdateSubtaskRequest;
 use Orbit\Sdk\Requests\Tasks\UpdateTaskGroupRequest;
+use Tests\Support\FakeAgentDriver;
 
 /**
  * Records the tasks family responses that the SDK and the CLI replay. Data is deterministic:
@@ -151,6 +154,28 @@ describe('task response fixtures', function (): void {
         $first->update(['status' => TaskStatus::Todo]);
 
         record_fixture($this->deleteJson("/api/v1/task-groups/{$group->id}/tasks/{$first->id}")->assertOk(), 'tasks/tasks-subtask-destroy/destroyed', DestroySubtaskRequest::class, 'DELETE /api/v1/task-groups/{group}/tasks/{task}');
+    });
+
+    it('records a cancelled subtask, a refused cancel, and a failed interrupt', function (): void {
+        $group = task_fixture_group($this->project);
+        $first = $group->tasks()->orderBy('position')->firstOrFail();
+        $group->update(['status' => TaskGroupStatus::Running]);
+
+        record_fixture($this->postJson("/api/v1/task-groups/{$group->id}/tasks/{$first->id}/cancel")->assertConflict(), 'tasks/tasks-subtask-cancel/not-running', CancelSubtaskRequest::class, 'POST /api/v1/task-groups/{group}/tasks/{task}/cancel');
+
+        $first->update(['status' => TaskStatus::Running]);
+        record_fixture($this->postJson("/api/v1/task-groups/{$group->id}/tasks/{$first->id}/cancel")->assertOk(), 'tasks/tasks-subtask-cancel/cancelled', CancelSubtaskRequest::class, 'POST /api/v1/task-groups/{group}/tasks/{task}/cancel');
+
+        $stuck = task_fixture_group($this->project);
+        $stuck->update(['status' => TaskGroupStatus::Running]);
+        $running = $stuck->tasks()->orderBy('position')->firstOrFail();
+        $running->update(['status' => TaskStatus::Running]);
+        AgentThread::query()->create(['task_group_id' => $stuck->id, 'task_id' => $running->id, 'node_id' => null, 'role' => 'implementer', 'model' => 'gpt-5.6-luna', 'effort' => 'low', 'driver' => 'fake', 'runtime_key' => 'node:2', 'external_id' => 'thread-implementer', 'state' => 'working', 'observed_at' => now()->subMinute()]);
+        $driver = new FakeAgentDriver('fake');
+        $driver->failNextInterrupt = true;
+        app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
+
+        record_fixture($this->postJson("/api/v1/task-groups/{$stuck->id}/tasks/{$running->id}/cancel")->assertStatus(502), 'tasks/tasks-subtask-cancel/interrupt-failed', CancelSubtaskRequest::class, 'POST /api/v1/task-groups/{group}/tasks/{task}/cancel');
     });
 
     it('records comments and agent threads', function (): void {

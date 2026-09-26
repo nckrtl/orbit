@@ -36,6 +36,14 @@ describe('RecordEventType', function (): void {
             'deploy_step.created',
             'deploy_step.updated',
             'deploy_step.deleted',
+            'deployment.created',
+            'deployment.updated',
+            'process.usage',
+            'task_group.created',
+            'task_group.updated',
+            'task_comment.created',
+            'agent_thread.updated',
+            'tasks.updated',
         ]);
     });
 

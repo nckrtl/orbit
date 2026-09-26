@@ -77,6 +77,7 @@ use App\Domain\Clusters\ClusterRouterOperationLock;
 use App\Domain\DatabaseConnections\DatabaseInspectionExecutor;
 use App\Domain\DatabaseConnections\ManagedMysqlUserProvisioner;
 use App\Domain\Doctor\AppStateInspector;
+use App\Domain\Doctor\CaddyBuildInspector;
 use App\Domain\Doctor\CustomProxyRouteInspector;
 use App\Domain\Doctor\GatewayVpnStateInspector;
 use App\Domain\Doctor\InstanceStateInspector;
@@ -90,6 +91,7 @@ use App\Domain\Firewall\FirewallInspector;
 use App\Domain\Firewall\FirewallManager;
 use App\Domain\Firewall\RouterLanIngressPublisher;
 use App\Domain\Firewall\RouterLanIngressReconciler;
+use App\Domain\Gateway\GatewayCacheStore;
 use App\Domain\Gateway\GatewaySelfAccessConverger;
 use App\Domain\Gateway\GatewayVpnConverger;
 use App\Domain\Gateway\GatewayWebConverger;
@@ -111,6 +113,7 @@ use App\Domain\Metrics\MetricsFirewallExpectationProvider;
 use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Metrics\MetricsPublicationManager as MetricsPublicationManagerContract;
 use App\Domain\Metrics\MetricsPublicationReport;
+use App\Domain\Metrics\MetricsReconcileDeferral;
 use App\Domain\Metrics\MetricsRoleManager;
 use App\Domain\Metrics\MetricsRuntimeLifecycle;
 use App\Domain\Metrics\MetricsStatusReader;
@@ -163,6 +166,7 @@ use App\Infrastructure\Activity\ActivityPropertiesObserver;
 use App\Infrastructure\AgentView\AgentViewSubscriber;
 use App\Infrastructure\AgentView\CacheAgentStateView;
 use App\Infrastructure\AgentView\NativeAgentViewConverger;
+use App\Infrastructure\AgentView\ProcessAgentViewPublisher;
 use App\Infrastructure\AgentView\StreamWebSocketClient;
 use App\Infrastructure\Analytics\NativeAnalyticsClickhouseConfigurationManager;
 use App\Infrastructure\Analytics\NativeAnalyticsPublicationManager;
@@ -228,6 +232,7 @@ use App\Infrastructure\Clusters\NativeClusterRouterOperationLock;
 use App\Infrastructure\DatabaseConnections\RegisteredDatabaseInspectionExecutor;
 use App\Infrastructure\DatabaseConnections\RemoteManagedMysqlUserProvisioner;
 use App\Infrastructure\Doctor\NativeAppStateInspector;
+use App\Infrastructure\Doctor\NativeCaddyBuildInspector;
 use App\Infrastructure\Doctor\NativeCustomProxyRouteInspector;
 use App\Infrastructure\Doctor\NativeGatewayVpnStateInspector;
 use App\Infrastructure\Doctor\NativeInstanceStateInspector;
@@ -285,9 +290,11 @@ use App\Infrastructure\Nodes\NativeNodeConverger;
 use App\Infrastructure\Nodes\NativeNodeProvisioningLock;
 use App\Infrastructure\Nodes\NativeNodeRoleDependentCleaner;
 use App\Infrastructure\Nodes\NodeAgentSshExecutor;
+use App\Infrastructure\Nodes\NodeLocks;
 use App\Infrastructure\Nodes\RemoteNodeStorageRootPreparer;
 use App\Infrastructure\Nodes\Roles\NativeNodeRoleFirewallManager;
 use App\Infrastructure\Nodes\Roles\NativeRoleBaselineConverger;
+use App\Infrastructure\Nodes\Roles\NodeRoleConvergeLock;
 use App\Infrastructure\Nodes\SshManagedUserAccountResolver;
 use App\Infrastructure\Nodes\SshNodeReachabilityProbe;
 use App\Infrastructure\Processes\CommandDeadline;
@@ -459,6 +466,7 @@ final class AppServiceProvider extends ServiceProvider
         DatabaseInspectionExecutor::class => RegisteredDatabaseInspectionExecutor::class,
         ClusterRouterDnsSelectionReconciler::class => NativeClusterRouterDnsSelectionReconciler::class,
         RoleStateInspector::class => NativeRoleStateInspector::class,
+        CaddyBuildInspector::class => NativeCaddyBuildInspector::class,
         ScheduleStateInspector::class => NativeScheduleStateInspector::class,
         ToolInspector::class => NativeToolInspector::class,
         ToolManagerMaterializer::class => NativeToolManagerMaterializer::class,
@@ -520,6 +528,13 @@ final class AppServiceProvider extends ServiceProvider
             ),
         );
         $this->app->singleton(
+            NodeLocks::class,
+            static fn ($app): NodeLocks => new NodeLocks(
+                $app->make(CacheManager::class)->build(NodeLocks::storeConfiguration((string) config('orbit.home'))),
+            ),
+        );
+        $this->app->singleton(NodeRoleConvergeLock::class);
+        $this->app->singleton(
             CacheAgentStateView::class,
             static fn ($app): CacheAgentStateView => new CacheAgentStateView(
                 $app->make(CacheManager::class)->build(CacheAgentStateView::storeConfiguration((string) config('orbit.home'))),
@@ -545,6 +560,12 @@ final class AppServiceProvider extends ServiceProvider
                 sleep: static function (float $seconds): void {
                     usleep((int) ($seconds * 1_000_000));
                 },
+                publisher: new ProcessAgentViewPublisher(
+                    command: [PHP_BINARY, base_path('artisan'), 'orbit:agent-view-publish'],
+                    log: $app->make(LoggerInterface::class),
+                    clock: CacheAgentStateView::now(...),
+                    workingDirectory: base_path(),
+                ),
             ),
         );
         $this->app->bind(
@@ -667,6 +688,7 @@ final class AppServiceProvider extends ServiceProvider
         );
         $this->app->singleton(PrivateDnsManager::class, static fn (): PrivateDnsManager => app(DnsmasqPrivateDnsManager::class));
         $this->app->singleton(CommandDeadline::class);
+        $this->app->scoped(MetricsReconcileDeferral::class);
         $this->app->singleton(
             ToolManagerRegistry::class,
             static fn (): ToolManagerRegistry => new ToolManagerRegistry([
@@ -822,6 +844,11 @@ final class AppServiceProvider extends ServiceProvider
 
     public function boot(ActivityPropertiesObserver $activityPropertiesObserver): void
     {
+        /** @var array<string, mixed> $cache */
+        $cache = config('cache');
+        if (! $this->app->runningConsoleCommand(GatewayCacheStore::RecoveryCommands)) {
+            GatewayCacheStore::assertSupported($cache, $this->app->environment(), $this->app->configurationIsCached());
+        }
         Activity::observe($activityPropertiesObserver);
         Relation::morphMap([
             'instance' => AppInstance::class,

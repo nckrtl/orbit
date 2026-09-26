@@ -15,7 +15,8 @@ $secret = $argv[4] ?? '';
 $nodeId = (int) ($argv[5] ?? 0);
 
 $context = stream_context_create(['ssl' => ['local_cert' => $cert, 'local_pk' => $key, 'verify_peer' => false]]);
-$server = stream_socket_server('tls://127.0.0.1:0', $errno, $error, STREAM_SERVER_BIND | STREAM_SERVER_LISTEN, $context);
+// The server accepts plain TCP and starts TLS itself, so the `reset` mode can keep the raw socket.
+$server = stream_socket_server('tcp://127.0.0.1:0', $errno, $error, STREAM_SERVER_BIND | STREAM_SERVER_LISTEN, $context);
 
 if ($server === false) {
     fwrite(STDERR, "listen failed: {$error}\n");
@@ -29,6 +30,20 @@ function say(string $line): void
 {
     fwrite(STDOUT, $line."\n");
     fflush(STDOUT);
+}
+
+/**
+ * Resets the connection like a crashed Reverb: no close frame and no TLS close_notify, only a TCP
+ * reset. Closing the PHP stream would send close_notify first, and the client would read a clean
+ * end of stream, so the server kills itself with the socket set to linger zero.
+ */
+function reset_connection(Socket $socket): never
+{
+    socket_set_option($socket, SOL_SOCKET, SO_LINGER, ['l_onoff' => 1, 'l_linger' => 0]);
+    say('reset=yes');
+    posix_kill(getmypid(), SIGKILL);
+
+    exit(1);
 }
 
 function frame(int $opcode, string $payload, bool $final = true): string
@@ -121,10 +136,50 @@ for ($connection = 1; $connection <= $connections; $connection++) {
         exit(1);
     }
 
+    $socket = str_starts_with($mode, 'reset') ? socket_import_stream($client) : null;
+
+    if (stream_socket_enable_crypto($client, true, STREAM_CRYPTO_METHOD_TLS_SERVER) !== true) {
+        fclose($client);
+
+        continue;
+    }
+
     say('accepted='.microtime(true));
+
+    if ($mode === 'reset-handshake') {
+        // Read the whole handshake request, then reset instead of answering it.
+        while (($line = fgets($client)) !== false && $line !== "\r\n") {
+        }
+
+        reset_connection($socket);
+    }
 
     if (! handshake($client, $mode)) {
         fclose($client);
+
+        continue;
+    }
+
+    if ($mode === 'reset') {
+        // The client is connected and waiting to read.
+        usleep(200_000);
+        reset_connection($socket);
+    }
+
+    if ($mode === 'reset-after-frame') {
+        // Once the client is connected and waiting, a whole message and then a reset before it reads.
+        usleep(200_000);
+        fwrite($client, text(['event' => 'last']));
+        reset_connection($socket);
+    }
+
+    if ($mode === 'ping') {
+        // A ping the client cannot answer, because the test shut its write side.
+        usleep(200_000);
+        fwrite($client, frame(0x9, 'p'));
+        say('pinged=yes');
+        // Keep the connection open, so only the client's failed write can end it.
+        sleep(30);
 
         continue;
     }

@@ -15,4 +15,20 @@ final readonly class ListFirewallRulesAction
     {
         return $node->firewallRules()->with('node')->orderBy('name')->get();
     }
+
+    /**
+     * Every rule on the given Nodes in one read, for a client that shows the whole fleet.
+     *
+     * @param  list<int>  $nodeIds
+     * @return Collection<int, FirewallRule>
+     */
+    public function executeForNodes(array $nodeIds): Collection
+    {
+        return FirewallRule::query()
+            ->with('node')
+            ->whereIn('node_id', $nodeIds)
+            ->orderBy('node_id')
+            ->orderBy('name')
+            ->get();
+    }
 }

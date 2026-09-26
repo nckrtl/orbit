@@ -15,6 +15,8 @@ use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Routes\RouteProvenance;
+use App\Domain\Routes\RoutePublication;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tools\ToolManagerMaterializer;
 use App\Infrastructure\Processes\CommandResult;
@@ -24,6 +26,7 @@ use App\Models\AppInstance;
 use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\NodeRole;
+use App\Models\Route as OrbitRoute;
 use Illuminate\Routing\Route;
 use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
@@ -669,6 +672,23 @@ it('supports Ingress compatibility and rejects app-dev in both assignment orders
     'app-dev after Ingress' => [['ingress'], 'app-dev', false],
 ]);
 
+it('refuses Ingress on a Gateway Node before any convergence', function (): void {
+    $cluster = Cluster::query()->create(['name' => 'public-private']);
+    $this->node->update(['cluster_id' => $cluster->id]);
+    $this->node->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
+
+    $this
+        ->postJson("/api/v1/nodes/{$this->node->id}/roles", ['role' => 'ingress'])
+        ->assertUnprocessable()
+        ->assertJsonPath('error.code', 'validation.failed')
+        ->assertJsonPath('error.message', 'Role [ingress] conflicts with assigned role [gateway].');
+
+    expect($this->node->roles()->pluck('role')->map->value->all())
+        ->toBe(['gateway'])
+        ->and($this->roleLifecycle->converged)
+        ->toBe([]);
+});
+
 it('removes Ingress repeatedly and supports remove then add replacement', function (): void {
     $cluster = Cluster::query()->create(['name' => 'replace-ingress-api']);
     $this->node->update(['cluster_id' => $cluster->id]);
@@ -695,7 +715,178 @@ it('removes Ingress repeatedly and supports remove then add replacement', functi
         ->and($replacement->roles()->where('role', RoleName::Ingress)->sole()->cluster_id)
         ->toBe($cluster->id)
         ->and($this->roleLifecycle->removed)
+        ->toBe([['role' => 'ingress', 'purge_data' => false]]);
+});
+
+it('removes Ingress through its baseline while the assignment is removing', function (): void {
+    $cluster = Cluster::query()->create(['name' => 'baseline-ingress-api']);
+    $this->node->update(['cluster_id' => $cluster->id]);
+    $this->postJson("/api/v1/nodes/{$this->node->id}/roles", ['role' => 'ingress'])->assertCreated();
+    $statuses = [];
+    $this->roleLifecycle->onRemove = static function (NodeRole $assignment) use (&$statuses): void {
+        $statuses[] = NodeRole::query()->findOrFail($assignment->id)->status;
+    };
+
+    $this
+        ->deleteJson("/api/v1/nodes/{$this->node->id}/roles/ingress", ['force' => true])
+        ->assertOk()
+        ->assertJsonPath('data.removed', true);
+
+    expect($statuses)
+        ->toBe([LifecycleStatus::Removing])
+        ->and($this->node->roles()->exists())
+        ->toBeFalse();
+});
+
+it('refuses Ingress removal while a public Route in its Cluster depends on it', function (): void {
+    $cluster = Cluster::query()->create(['name' => 'guarded-ingress-api']);
+    $this->node->update(['cluster_id' => $cluster->id]);
+    $this->postJson("/api/v1/nodes/{$this->node->id}/roles", ['role' => 'ingress'])->assertCreated();
+    node_roles_api_public_route($cluster);
+
+    $this
+        ->deleteJson("/api/v1/nodes/{$this->node->id}/roles/ingress", ['force' => true])
+        ->assertUnprocessable()
+        ->assertJsonPath('error.code', 'validation.failed')
+        ->assertJsonPath('error.message', "Role [ingress] cannot be removed while public Routes depend on node [{$this->node->name}].");
+
+    expect($this->node->roles()->where('role', RoleName::Ingress)->sole()->status)
+        ->toBe(LifecycleStatus::Active)
+        ->and($this->roleLifecycle->removed)
         ->toBeEmpty();
+});
+
+it('records a failed Ingress removal and completes it on retry', function (): void {
+    $cluster = Cluster::query()->create(['name' => 'retry-ingress-api']);
+    $this->node->update(['cluster_id' => $cluster->id]);
+    $this->postJson("/api/v1/nodes/{$this->node->id}/roles", ['role' => 'ingress'])->assertCreated();
+    $this->roleLifecycle->removalFailure = new NodeRoleOperationException(
+        step: 'caddy-config',
+        errorCode: 'node_role.remove_failed',
+        underlyingErrorCode: 'app-dev.caddy_config_failed',
+        message: 'The Node Caddy build failed.',
+    );
+
+    $this
+        ->deleteJson("/api/v1/nodes/{$this->node->id}/roles/ingress", ['force' => true])
+        ->assertStatus(502)
+        ->assertJsonPath('error.code', 'node_role.remove_failed')
+        ->assertJsonPath('error.details.step', 'remove:caddy-config');
+
+    $failed = $this->node->roles()->where('role', RoleName::Ingress)->sole();
+    expect($failed->status)
+        ->toBe(LifecycleStatus::Failed)
+        ->and($failed->failed_step)
+        ->toBe('remove:caddy-config')
+        ->and($failed->error_code)
+        ->toBe('app-dev.caddy_config_failed');
+
+    $this->roleLifecycle->removalFailure = null;
+
+    $this
+        ->deleteJson("/api/v1/nodes/{$this->node->id}/roles/ingress", ['force' => true])
+        ->assertOk()
+        ->assertJsonPath('data.removed', true);
+
+    expect($this->node->roles()->exists())
+        ->toBeFalse()
+        ->and($this->roleLifecycle->removed)
+        ->toHaveCount(2);
+});
+
+it('removes an Ingress whose convergence failed', function (): void {
+    $cluster = Cluster::query()->create(['name' => 'failed-converge-ingress-api']);
+    $this->node->update(['cluster_id' => $cluster->id]);
+    $this->node->roles()->create([
+        'role' => RoleName::Ingress,
+        'cluster_id' => $cluster->id,
+        'status' => LifecycleStatus::Failed,
+        'failed_step' => 'converge:caddy-config',
+        'error_code' => 'app-dev.caddy_config_failed',
+    ]);
+    $statuses = [];
+    $this->roleLifecycle->onRemove = static function (NodeRole $assignment) use (&$statuses): void {
+        $statuses[] = NodeRole::query()->findOrFail($assignment->id)->status;
+    };
+
+    $this
+        ->deleteJson("/api/v1/nodes/{$this->node->id}/roles/ingress", ['force' => true])
+        ->assertOk()
+        ->assertJsonPath('data.removed', true);
+
+    expect($statuses)
+        ->toBe([LifecycleStatus::Removing])
+        ->and($this->node->roles()->exists())
+        ->toBeFalse()
+        ->and($this->roleLifecycle->removed)
+        ->toBe([['role' => 'ingress', 'purge_data' => false]]);
+});
+
+it('removes any role whose convergence failed through its baseline', function (string $role): void {
+    $cluster = Cluster::query()->create(['name' => "failed-converge-{$role}-api"]);
+    $this->node->update(['cluster_id' => $cluster->id]);
+    $this->node->roles()->create([
+        'role' => $role,
+        'cluster_id' => $role === 'ingress' ? $cluster->id : null,
+        'status' => LifecycleStatus::Failed,
+        'failed_step' => 'converge:role-prerequisites',
+        'error_code' => 'packages.failed',
+    ]);
+
+    $this
+        ->deleteJson("/api/v1/nodes/{$this->node->id}/roles/{$role}", ['force' => true])
+        ->assertOk()
+        ->assertJsonPath('data.removed', true);
+
+    expect($this->node->roles()->exists())
+        ->toBeFalse()
+        ->and($this->roleLifecycle->removed)
+        ->toBe([['role' => $role, 'purge_data' => false]]);
+})->with(['ingress', 'app-dev', 'app-prod', 'metrics', 'websocket', 'analytics', 'database']);
+
+it('refuses to remove a role while another operation holds it', function (LifecycleStatus $status, ?string $failedStep): void {
+    $this->node->roles()->create([
+        'role' => RoleName::AppProd,
+        'status' => $status,
+        'failed_step' => $failedStep,
+    ]);
+
+    $this
+        ->deleteJson("/api/v1/nodes/{$this->node->id}/roles/app-prod", ['force' => true])
+        ->assertUnprocessable()
+        ->assertJsonPath('error.code', 'validation.failed')
+        ->assertJsonPath('error.message', "Role [app-prod] cannot be removed from status [{$status->value}].");
+
+    expect($this->node->roles()->sole()->status)
+        ->toBe($status)
+        ->and($this->roleLifecycle->removed)
+        ->toBeEmpty();
+})->with([
+    'converging' => [LifecycleStatus::Provisioning, null],
+    'removing' => [LifecycleStatus::Removing, null],
+]);
+
+it('removes an unreachable Ingress on the Gateway side and lists what stays on the Node', function (): void {
+    $cluster = Cluster::query()->create(['name' => 'offline-ingress-api']);
+    $this->node->update(['cluster_id' => $cluster->id]);
+    $this->postJson("/api/v1/nodes/{$this->node->id}/roles", ['role' => 'ingress'])->assertCreated();
+    $this->reachability->degradation = ExporterDegradationReason::Unreachable;
+
+    $this
+        ->deleteJson("/api/v1/nodes/{$this->node->id}/roles/ingress", ['force' => true, 'offline' => true])
+        ->assertOk()
+        ->assertJsonPath('data.removed', true)
+        ->assertJsonPath('data.retained_on_node', [
+            'Caddy configuration that serves the ingress role on every address',
+            'Orbit firewall rules for public HTTP and HTTPS on the ingress role',
+        ]);
+
+    expect($this->node->roles()->exists())
+        ->toBeFalse()
+        ->and($this->roleLifecycle->removed)
+        ->toBeEmpty()
+        ->and($this->roleLifecycle->removedUnreachable)
+        ->toBe(['ingress']);
 });
 
 it('returns standard validation failures for protected unknown and duplicate assignments', function (
@@ -786,6 +977,22 @@ it('relocates the singleton gateway assignment onto the target node', function (
         ->toBeTrue()
         ->and(NodeRole::query()->where('role', RoleName::Gateway)->count())
         ->toBe(1);
+});
+
+it('refuses to relocate the gateway role onto an Ingress Node', function (): void {
+    $assignment = $this->caller->roles()->where('role', RoleName::Gateway)->sole();
+    $cluster = Cluster::query()->create(['name' => 'relocate-onto-ingress']);
+    $this->node->update(['cluster_id' => $cluster->id]);
+    $this->node->roles()->create(['role' => RoleName::Ingress, 'status' => LifecycleStatus::Active, 'cluster_id' => $cluster->id]);
+
+    $this
+        ->postJson("/api/v1/nodes/{$this->node->id}/roles/gateway/relocate", ['force' => true])
+        ->assertUnprocessable()
+        ->assertJsonPath('error.code', 'validation.failed')
+        ->assertJsonPath('error.message', 'Role [gateway] conflicts with assigned role [ingress].');
+
+    expect($assignment->refresh()->node_id)->toBe($this->caller->id)
+        ->and($this->roleLifecycle->converged)->toBe([]);
 });
 
 it('requires force before relocating the gateway role', function (): void {
@@ -1365,6 +1572,25 @@ function node_roles_api_node(
     ]);
 }
 
+function node_roles_api_public_route(Cluster $cluster): OrbitRoute
+{
+    $app = OrbitApp::query()->create([
+        'name' => 'Public',
+        'slug' => 'public-'.$cluster->id,
+        'repository_url' => 'https://github.com/acme/public.git',
+        'default_branch' => 'main',
+        'root' => 'public',
+    ]);
+
+    return OrbitRoute::query()->create([
+        'app_id' => $app->id,
+        'cluster_id' => $cluster->id,
+        'domain' => "public-{$cluster->id}.example.com",
+        'provenance' => RouteProvenance::Explicit,
+        'publication' => RoutePublication::Public,
+    ]);
+}
+
 final class NodeRoleApiLifecycleFake implements NodeRoleDependentCleaner, RoleBaselineConverger
 {
     /** @var list<string> */
@@ -1376,6 +1602,12 @@ final class NodeRoleApiLifecycleFake implements NodeRoleDependentCleaner, RoleBa
     public ?NodeRoleOperationException $convergenceFailure = null;
 
     public ?NodeRoleOperationException $removalFailure = null;
+
+    /** @var list<string> */
+    public array $removedUnreachable = [];
+
+    /** @var (Closure(NodeRole): void)|null */
+    public ?Closure $onRemove = null;
 
     public function converge(Node $node, NodeRole $assignment): void
     {
@@ -1393,12 +1625,19 @@ final class NodeRoleApiLifecycleFake implements NodeRoleDependentCleaner, RoleBa
             'purge_data' => $purgeData,
         ];
 
+        if ($this->onRemove instanceof Closure) {
+            ($this->onRemove)($assignment);
+        }
+
         if ($this->removalFailure instanceof NodeRoleOperationException) {
             throw $this->removalFailure;
         }
     }
 
-    public function removeUnreachable(Node $node, NodeRole $assignment): void {}
+    public function removeUnreachable(Node $node, NodeRole $assignment): void
+    {
+        $this->removedUnreachable[] = $assignment->role->value;
+    }
 
     public function clean(NodeRoleDependencySet $dependencies): void {}
 }
@@ -1408,10 +1647,12 @@ final class NodeRoleApiReachabilityFake implements NodeReachabilityProbe
     /** @var list<int> */
     public array $nodeIds = [];
 
+    public ?ExporterDegradationReason $degradation = null;
+
     public function degradation(Node $node): ?ExporterDegradationReason
     {
         $this->nodeIds[] = $node->id;
 
-        return null;
+        return $this->degradation;
     }
 }

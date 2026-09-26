@@ -55,7 +55,7 @@ export interface paths {
         put?: never;
         /**
          * Authorize the agent's presence channel
-         * @description The `orbit-agent` on a managed Node calls this endpoint to join its own presence channel. The Gateway signs member `agent.{id}` on `presence-node.{id}` only for a request from that Node's WireGuard address. The response carries the Pusher `auth` and `channel_data` values.
+         * @description The `orbit-agent` on a managed Node calls this endpoint to join its own presence channel. The Gateway signs member `agent.{id}` on `presence-node.{id}` only for a request from that Node's WireGuard address that carries the Node's agent secret. The response carries the Pusher `auth` and `channel_data` values.
          */
         post: operations["agent-realtime-auth"];
         delete?: never;
@@ -73,9 +73,29 @@ export interface paths {
         };
         /**
          * Show the agent's Reverb connection
-         * @description The `orbit-agent` on a managed Node calls this endpoint to find its Reverb connection. The Gateway identifies the Node from the WireGuard address and returns the Reverb URL, serving address, and app key, the Node's `presence-node.{id}` channel, and the agent's `agent.{id}` member ID. Connection values are null when broadcasting is not configured.
+         * @description The `orbit-agent` on a managed Node calls this endpoint to find its Reverb connection. The Gateway identifies the Node from the WireGuard address and the agent's bearer secret, and returns the Reverb URL, serving address, and app key, the Node's `presence-node.{id}` channel, and the agent's `agent.{id}` member ID. Connection values are null when broadcasting is not configured.
          */
         get: operations["agent-realtime"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent/workspaces": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the task checkouts the agent watches
+         * @description The `orbit-agent` on a managed Node calls this endpoint every 60 seconds to learn which task checkouts to watch. The Gateway identifies the Node from the WireGuard address and the agent's bearer secret, and lists the Instances on that Node that hold the workspace of an unfinished task group, at most 64, with the checkout path, the Project's default branch as `base`, and the Instance's starting commit as `start`. The list is empty while the tasks extension is disabled.
+         */
+        get: operations["agent-workspaces"];
         put?: never;
         post?: never;
         delete?: never;
@@ -615,6 +635,26 @@ export interface paths {
          * @description Verify registered node state without making repairs.
          */
         post: operations["doctor"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/firewall-rules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List firewall rules on every Node
+         * @description Returns the operator firewall rules of every Node the caller can reach, in one response, ordered by Node and name. The web app uses it for the fleet list instead of one request per Node. The per-Node list stays for the CLI. The list does not SSH.
+         */
+        get: operations["firewall-fleet-list"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2670,7 +2710,7 @@ export interface paths {
         put?: never;
         /**
          * Cancel a Task group
-         * @description Cancels a backlog, todo, reserved, running, reviewing, or failed Task group and clears its shared Instance. Idempotent for cancelled groups. Route-free source_resolved Instances use database-only cleanup and retain their checkout; other Instances use the forced Instance remover. Requires Gateway access. Returns tasks.disabled while the extension is off and tasks.not_cancellable for settling or completed groups.
+         * @description Cancels a backlog, todo, reserved, running, reviewing, or failed Task group, or a settling group without a pull request, and clears its shared Instance. For a settling group with an approved subtask, the Gateway first pushes the workspace HEAD to `task-{group}` on origin; a failed push returns `tasks.push_failed` (502) and keeps the group and Instance. Idempotent for cancelled groups. Route-free source_resolved Instances use database-only cleanup and retain their checkout; other Instances use the forced Instance remover. Requires Gateway access. Returns tasks.disabled while the extension is off and tasks.not_cancellable for completed groups and settling groups with a pull request.
          */
         post: operations["tasks-cancel"];
         delete?: never;
@@ -2741,6 +2781,26 @@ export interface paths {
          * @description Updates a subtask `title`, `brief`, or `position` while its group is in `backlog` (`tasks.not_in_backlog`). Other subtasks shift so positions stay gapless from 1. `deliverables` replaces the whole list, in the form that subtask create takes. It changes in `backlog`, or in any group status while the subtask is `todo` (`tasks.deliverables_locked`); outside `backlog` the list cannot become empty (`tasks.subtask_deliverables_missing`). Served by the Node that holds the group's Instance, or by the Gateway for a group without one. Returns `tasks.disabled` while the extension is off.
          */
         patch: operations["tasks-subtask-update"];
+        trace?: never;
+    };
+    "/api/v1/task-groups/{group}/tasks/{task}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel a running subtask
+         * @description Cancels a `running` subtask. Stops its implementer and its running baseline or handoff check, keeps the group and its Instance, and starts the lowest-position `todo` subtask. That subtask runs the baseline check first when no implementer has started in the group. When no `todo` subtask remains, the group moves to `settling` without a pull request. Requires Gateway access. Returns `tasks.disabled` while the extension is off, `tasks.subtask_not_running` (409) when the subtask is not `running`, and `tasks.subtask_interrupt_failed` (502) when the implementer or check could not be stopped; the subtask then stays `running`.
+         */
+        post: operations["tasks-subtask-cancel"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/task-groups/{group}/tasks/{task}/check/cancel": {
@@ -2981,13 +3041,14 @@ export interface components {
             slug?: string;
             code?: string;
             /** @enum {string} */
-            type?: "monorepo" | "laravel-app" | "laravel-package";
+            type?: "monorepo" | "laravel-app" | "laravel-package" | "node-package";
             repository_url?: string;
             default_branch?: string | null;
             root?: string | null;
             defaults?: {
                 [key: string]: unknown;
             } | null;
+            task_check?: string | null;
         };
         DevelopmentNodeExclusion: {
             project_id?: number;
@@ -3086,6 +3147,20 @@ export interface components {
             expected?: string | null;
             observed?: string | null;
         };
+        FirewallRule: {
+            id?: number;
+            node_id?: number;
+            node?: string;
+            name?: string;
+            action?: string;
+            source?: string;
+            protocol?: string;
+            port?: string;
+            status?: string;
+            backend_status?: string | null;
+            failed_step?: string | null;
+            error_code?: string | null;
+        };
         GatewayStatus: {
             name?: string;
             status?: string;
@@ -3128,7 +3203,7 @@ export interface components {
             name?: string;
             slug?: string;
             /** @enum {string} */
-            type?: "monorepo" | "laravel-app" | "laravel-package";
+            type?: "monorepo" | "laravel-app" | "laravel-package" | "node-package";
         };
         NodeIdentity: {
             id?: number;
@@ -3341,20 +3416,6 @@ export interface components {
             node_name?: string;
             development_instance_count?: number;
             already_exists?: boolean;
-        };
-        FirewallRule: {
-            id?: number;
-            node_id?: number;
-            node?: string;
-            name?: string;
-            action?: string;
-            source?: string;
-            protocol?: string;
-            port?: string;
-            status?: string;
-            backend_status?: string | null;
-            failed_step?: string | null;
-            error_code?: string | null;
         };
         NodeMetrics: {
             cores?: number[];
@@ -3674,7 +3735,16 @@ export interface operations {
                     };
                 };
             };
-            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`), its Node is not eligible for an agent (`agent.node_ineligible`), or it asked for another Node's channel (`agent.channel_forbidden`). */
+            /** @description The request carries no agent secret (`agent.secret_required`). */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`), its agent secret does not match (`agent.secret_invalid`), its Node is not eligible for an agent (`agent.node_ineligible`), or it asked for another Node's channel (`agent.channel_forbidden`). */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -3735,7 +3805,66 @@ export interface operations {
                     };
                 };
             };
-            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or its Node is not eligible for an agent (`agent.node_ineligible`). */
+            /** @description The request carries no agent secret (`agent.secret_required`). */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`), its agent secret does not match (`agent.secret_invalid`), or its Node is not eligible for an agent (`agent.node_ineligible`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "agent-workspaces": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            /** @description The Instance that holds the task workspace. */
+                            instance_id: number;
+                            /** @description The absolute checkout path on the Node. */
+                            path: string;
+                            /** @description The Project's default branch, which the diff counts are read against. */
+                            base: string;
+                            /** @description The Instance's starting commit, or null. */
+                            start: string | null;
+                        }[];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The request carries no agent secret (`agent.secret_required`). */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`), its agent secret does not match (`agent.secret_invalid`), or its Node is not eligible for an agent (`agent.node_ineligible`). */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -3999,11 +4128,12 @@ export interface operations {
                     code?: string;
                     slug: string;
                     /** @enum {string} */
-                    type: "monorepo" | "laravel-app" | "laravel-package";
+                    type?: "monorepo" | "laravel-app" | "laravel-package" | "node-package";
                     repository_url: string;
                     default_branch?: string;
                     root: string;
                     defaults?: unknown[] | null;
+                    task_check?: string | null;
                 };
             };
         };
@@ -4175,11 +4305,12 @@ export interface operations {
                 "application/json": {
                     code?: string;
                     /** @enum {string} */
-                    type: "monorepo" | "laravel-app" | "laravel-package";
-                    slug: string;
-                    repository_url: string;
-                    default_branch: string;
-                    root: string;
+                    type?: "monorepo" | "laravel-app" | "laravel-package" | "node-package";
+                    slug?: string;
+                    repository_url?: string;
+                    default_branch?: string;
+                    root?: string;
+                    task_check?: string | null;
                 };
             };
         };
@@ -6109,6 +6240,38 @@ export interface operations {
             };
             /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "firewall-fleet-list": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["FirewallRule"][];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -10334,6 +10497,15 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
+            /** @description A role step failed on the Node (`node_role.convergence_failed` or `node_role.remove_failed`). `error.details.step` names the failed step. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
     "node-role-remove": {
@@ -10413,6 +10585,15 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
+            /** @description A role step failed on the Node (`node_role.convergence_failed` or `node_role.remove_failed`). `error.details.step` names the failed step. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
     "node-role-relocate": {
@@ -10483,6 +10664,15 @@ export interface operations {
             };
             /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A role step failed on the Node (`node_role.convergence_failed` or `node_role.remove_failed`). `error.details.step` names the failed step. */
+            502: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -11202,16 +11392,18 @@ export interface operations {
                     /** @description Unique project slug */
                     slug: string;
                     /**
-                     * @description Project type (monorepo, laravel-app, or laravel-package)
+                     * @description Project type (monorepo, laravel-app, laravel-package, or node-package)
                      * @enum {string}
                      */
-                    type: "monorepo" | "laravel-app" | "laravel-package";
+                    type: "monorepo" | "laravel-app" | "laravel-package" | "node-package";
                     repository_url: string;
                     /** @description Stored default branch; resolve the remote default when omitted */
                     default_branch?: string;
-                    /** @description Relative web root */
+                    /** @description Repository-relative root; defaults to . for package types and public otherwise */
                     root: string;
                     defaults?: unknown[] | null;
+                    /** @description Task check command; defaults to composer check for Laravel types and none otherwise */
+                    task_check?: string | null;
                 };
             };
         };
@@ -11386,14 +11578,16 @@ export interface operations {
                      * @description New Project type
                      * @enum {string}
                      */
-                    type: "monorepo" | "laravel-app" | "laravel-package";
+                    type?: "monorepo" | "laravel-app" | "laravel-package" | "node-package";
                     /** @description New Project slug */
-                    slug: string;
-                    repository_url: string;
+                    slug?: string;
+                    repository_url?: string;
                     /** @description New stored default branch */
-                    default_branch: string;
-                    /** @description New relative web root */
-                    root: string;
+                    default_branch?: string;
+                    /** @description New repository-relative root; package types may use . */
+                    root?: string;
+                    /** @description New task check command for task baselines and handoffs */
+                    task_check?: string | null;
                 };
             };
         };
@@ -13314,12 +13508,12 @@ export interface operations {
             content: {
                 "application/json": {
                     /** @description New explicit domain */
-                    domain: string;
+                    domain?: string;
                     /**
                      * @description New publication intent
                      * @enum {string}
                      */
-                    publication: "private" | "public";
+                    publication?: "private" | "public";
                 };
             };
         };
@@ -14424,7 +14618,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description The tasks extension is disabled (`tasks.disabled`) or the Task group is settling or completed (`tasks.not_cancellable`). */
+            /** @description The tasks extension is disabled (`tasks.disabled`), or the Task group is completed or settling with a pull request (`tasks.not_cancellable`). */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -14435,6 +14629,15 @@ export interface operations {
             };
             /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The approved commits of a settling group could not be pushed to its task branch (`tasks.push_failed`). The group and its Instance stay. */
+            502: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -14771,6 +14974,82 @@ export interface operations {
             };
             /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "tasks-subtask-cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Numeric Task group ID. */
+                group: number;
+                task: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["Task"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The tasks extension is disabled (`tasks.disabled`) or the subtask is not running (`tasks.subtask_not_running`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The implementer or the running check could not be stopped (`tasks.subtask_interrupt_failed`). The subtask stays running. */
+            502: {
                 headers: {
                     [name: string]: unknown;
                 };

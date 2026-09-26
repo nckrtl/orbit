@@ -1,11 +1,11 @@
 ---
 title: "Projects"
-description: "How a Project records one repository, its type, its default branch, and the web root that Instances inherit."
+description: "How a Project records one repository, its type, its default branch, and the root path that Instances inherit."
 ---
 
 # Projects
 
-A Project stores one repository, access URL, `type`, default branch, and relative web root. New Instances inherit these source defaults. [ADR 0105](/decisions/0105-name-applications-as-project-and-instance) names the record. [ADR 0106](/decisions/0106-derive-instance-capabilities-from-project-type) owns type. [ADR 0025](/decisions/0025-stabilize-the-default-appinstance-identity) defines default identity. [ADR 0026](/decisions/0026-identify-each-app-by-one-repository) defines repository ownership.
+A Project stores one repository, access URL, `type`, default branch, and normalized root path. New Instances inherit these source defaults. For Laravel apps the root is a web root; for package Projects it may be `.` to name the repository root. [ADR 0105](/decisions/0105-name-applications-as-project-and-instance) names the record. [ADR 0106](/decisions/0106-derive-instance-capabilities-from-project-type) owns type. [ADR 0025](/decisions/0025-stabilize-the-default-appinstance-identity) defines default identity. [ADR 0026](/decisions/0026-identify-each-app-by-one-repository) defines repository ownership.
 
 The canonical HTTP surface is `/api/v1/projects` and the canonical CLI family is `project:*`. `/api/v1/apps` remains a dual-read and dual-write compatibility path for the same records so older CLI binaries and `app-*` MCP tools keep working.
 
@@ -22,9 +22,9 @@ Use `project:create` with a slug, a type, and an HTTPS or SSH Git origin:
 orbit project:create acme laravel-app https://github.com/acme/site.git
 ```
 
-`type` is required on the canonical surface. Allowed values are `monorepo`, `laravel-app`, and `laravel-package`. Compatibility `POST /api/v1/apps` callers that omit `type` receive `laravel-app`.
+`type` is required on the canonical surface. Allowed values are `monorepo`, `laravel-app`, `laravel-package`, and `node-package`. Compatibility `POST /api/v1/apps` callers that omit `type` receive `laravel-app`.
 
-The command-line interface (CLI) uses `public` as the web root unless you set `--root`. Without `--default-branch`, the Gateway reads and saves the repository's default branch once. A later remote change does not update the Project.
+The command-line interface (CLI) uses `.` as the root for `laravel-package` and `node-package`, and `public` for other types, unless you set `--root`. Laravel apps use their relative web root. The API and SDK always require `root`. Without `--default-branch`, the Gateway reads and saves the repository's default branch once. A later remote change does not update the Project.
 
 Both source defaults can be explicit:
 
@@ -40,13 +40,16 @@ The public Project contract uses these source fields.
 
 | Field or option | Result |
 | --- | --- |
-| `type` | Required on `project:create`. Closed enum `monorepo`, `laravel-app`, or `laravel-package`. |
+| `type` | Required on `project:create`. Closed enum `monorepo`, `laravel-app`, `laravel-package`, or `node-package`. |
 | `repository_url` | Required repository access URL in the Gateway API and PHP SDK. |
 | `default_branch` | Optional Gateway API and PHP SDK input; returned by every Project response. |
 | `--default-branch` | Optional CLI input for `project:create`. |
-| `root` and `--root` | Required API and SDK field and the CLI's normalized relative web-root input. |
+| `root` and `--root` | Required API and SDK field. A normalized repository-relative path; `.` is allowed for package types and means the repository root. |
+| `task_check` and `--task-check` | Optional command that task baselines and handoffs run ([Project check](/reference/tasks#project-check)). When omitted, `laravel-app` and `laravel-package` get `composer check`, and `monorepo` and `node-package` get null, which runs no check command. An explicit null also stores no command. |
 
-SDK Project responses and the `project:list` and `project:show` commands expose the stored type, repository, default branch, and root. The API, SDK, CLI, activity, Doctor, and validation contracts expose no `main_branch` or `--main-branch` compatibility name.
+The type defaults apply to new Projects only. The upgrade gives every existing Project `composer check`, whatever its type. An operator clears it with `project:update --clear-task-check`, for example on an existing `node-package` Project without a Composer `check` script.
+
+SDK Project responses and the `project:list` and `project:show` commands expose the stored type, repository, default branch, root, and task check. The task check is an ordinary setting, like setup steps, so activity records it as sent. The API, SDK, CLI, activity, Doctor, and validation contracts expose no `main_branch` or `--main-branch` compatibility name.
 
 ## Keep one repository owner
 
@@ -76,7 +79,7 @@ Valid explicit values fill only unresolved or optional values. They do not overr
 
 ## Retry creation safely
 
-Repeating `project:create` with the same name, slug, type, repository access URL, default branch, root, and defaults returns the existing Project. A retry does not look up an omitted branch again.
+Repeating `project:create` with the same name, slug, type, repository access URL, default branch, root, defaults, and any sent task check returns the existing Project. A retry does not look up an omitted branch again.
 
 A retry that changes any creation value fails with `app.identity_conflict` and does not mutate the Project. A different repository access URL is a changed value even when it has the same canonical repository identity, so creation never switches the stored URL.
 
@@ -88,7 +91,7 @@ Edit the code in the web Project properties, or send `PATCH /api/v1/projects/{pr
 
 ## Update a Project
 
-Use `project:update` when an existing Project must change its type, slug, repository access URL, default branch, or relative web root. The Gateway API accepts `PATCH /api/v1/projects/{project}` and the compatibility path `PATCH /api/v1/apps/{app}` with those same fields. The PHP SDK sends `UpdateAppRequest` to either path. Omitted fields stay unchanged. [ADR 0016](/decisions/0016-reconcile-app-identity-and-source-default-updates) owns the reconciliation lifecycle. The API, SDK, CLI, activity, Doctor, and validation contracts expose no `main_branch` or `--main-branch` name.
+Use `project:update` when an existing Project must change its type, slug, repository access URL, default branch, relative web root, or task check. The Gateway API accepts `PATCH /api/v1/projects/{project}` and the compatibility path `PATCH /api/v1/apps/{app}` with those same fields. The PHP SDK sends `UpdateAppRequest` to either path. Omitted fields stay unchanged; send `task_check: null` to clear the task check. The MCP `project-update` tool accepts the same string-or-null field. [ADR 0016](/decisions/0016-reconcile-app-identity-and-source-default-updates) owns the source reconciliation lifecycle. The API, SDK, CLI, activity, Doctor, and validation contracts expose no `main_branch` or `--main-branch` name.
 
 ```bash
 orbit project:update 3 --repository=https://github.com/acme/site.git --default-branch=stable
@@ -100,7 +103,10 @@ orbit project:update 3 --repository=https://github.com/acme/site.git --default-b
 | `slug` and `--slug` | Reconcile generated development Route domains and Laravel application URLs before the new slug is published. Existing checkout paths, production users, and homes stay as recorded. |
 | `repository_url` and `--repository` | Store the selected HTTPS or SSH access URL. Equivalent forms keep the same canonical repository identity. |
 | `default_branch` and `--default-branch` | Store the new Project default and switch every development `default` Instance that inherits it. An explicit `branch_override` stays unchanged even when it matched the old default. |
-| `root` and `--root` | Change the inherited web root of every Instance without its own override. Production resolves the new root inside the active release. |
+| `root` and `--root` | Change the inherited root of every Instance without its own override. Production resolves the new root inside the active release. |
+| `task_check` and `--task-check` | Store the command that task baselines and handoffs run. Send null or use `--clear-task-check` to run no check command. A type change keeps the stored value. |
+
+A type change must keep a root that the new type allows. When the stored root is `.` and the new type is `laravel-app` or `monorepo`, validation fails on `root` and the message names the type. Send a web root with the type change. A type or root change that leaves a Route target inheriting an unsupported root, such as `.`, returns `route.target_web_root_unsupported`.
 
 The Gateway treats the supplied fields as one operation. It inventories affected Instances and Routes, preflights every Orbit-owned checkout and generated domain, prepares reversible mutations, then publishes. A confirmed failure before publication rolls back origins, prepared Routes, stored Laravel `APP_URL` values, and runtime projections. The previous Project record stays authoritative. An identical retry resumes the recorded state from its last verified evidence. A conflicting update while one update is incomplete returns `app.update_in_progress`.
 

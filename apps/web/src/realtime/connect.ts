@@ -3,7 +3,7 @@ import type { QueryClient } from "@tanstack/react-query";
 import Pusher from "pusher-js";
 import { get } from "../api/client";
 import { applyEvent, type RealtimeEvent } from "./apply";
-import { setLiveness } from "./liveness";
+import { downForMs, setLiveness } from "./liveness";
 import {
     acceptAgentEvent,
     agentMemberAdded,
@@ -14,6 +14,12 @@ import {
 import { applyAgentProcessEvent, clearAgentProcesses } from "./agent-processes";
 
 const RETRY_SECONDS = 30;
+
+/**
+ * A first subscription this soon after page load reloads nothing: the lists were fetched moments
+ * ago. After a longer wait the lists only polled, with a backoff of up to 5 minutes, so they reload.
+ */
+export const FIRST_CONNECT_GRACE_MS = 5_000;
 
 type RealtimeConfig = { url: string | null; key: string | null; channel: string | null };
 
@@ -140,8 +146,16 @@ export async function connectRealtime(client: QueryClient, signal: AbortSignal):
             }
 
             // Events sent while the socket was down are gone; reload what they would have changed.
-            if (wasLive) {
+            // That holds after a reconnect, and after a first connect that came late, when the
+            // lists had been polling (a failed socket or a retried realtime discovery). On a prompt
+            // first subscription, reload what now polls only rarely: the task and Process queries,
+            // because a change between their first load and this moment sent no event to this page.
+            if (wasLive || downForMs() > FIRST_CONNECT_GRACE_MS) {
                 void client.invalidateQueries();
+            } else {
+                for (const queryKey of [["task-groups"], ["tasks-status"], ["processes"]]) {
+                    void client.invalidateQueries({ queryKey });
+                }
             }
 
             notifyAnnotationUpdates();

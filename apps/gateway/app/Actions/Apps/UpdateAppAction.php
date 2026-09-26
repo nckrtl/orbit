@@ -17,11 +17,12 @@ use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Projects\ProjectCode;
 use App\Domain\Projects\ProjectType;
+use App\Domain\Routes\RouteTargetWebRoot;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitBranchName;
 use App\Domain\SourceControl\GitRepositoryIdentity;
 use App\Domain\SourceControl\GitRepositoryOrigin;
-use App\Domain\SourceControl\RelativeWebRoot;
+use App\Domain\SourceControl\ProjectRoot;
 use App\Domain\SourceControl\RepositoryDefaultBranchResolver;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
@@ -56,6 +57,14 @@ final readonly class UpdateAppAction
             throw new ResourceOperationException('app.code_update_separate', 'Update the Project code separately from source settings.', 422);
         }
 
+        if ($data->rootProvided || $data->typeProvided) {
+            $effectiveRoot = $data->rootProvided ? $data->root : $app->root;
+            $message = ! $data->rootProvided && $data->type instanceof ProjectType
+                ? "A Route targets an Instance that inherits root [{$effectiveRoot}], which is not a web root. Send a web root with the change."
+                : null;
+            $this->assertRouteTargetRootCompatibility($app, $effectiveRoot, $message);
+        }
+
         if ($data->code !== null) {
             $code = ProjectCode::validate($data->code);
             try {
@@ -71,7 +80,20 @@ final readonly class UpdateAppAction
             $app = $app->fresh() ?? $app;
         }
 
+        $instanceIds = $app->appInstances()
+            ->orderBy('id')
+            ->pluck('id')
+            ->map(static fn (mixed $id): int => (int) $id)
+            ->values()
+            ->all();
+
         if (! $data->hasReconcilableChanges()) {
+            if ($data->taskCheckProvided) {
+                $app = $this->operations->run(
+                    $instanceIds,
+                    fn (): OrbitApp => $this->applyTaskCheck($app->fresh() ?? $app, $data),
+                );
+            }
             ($this->broadcaster ?? app(RecordEventBroadcaster::class))->broadcast(
                 RecordEventType::AppUpdated,
                 $app->id,
@@ -81,16 +103,9 @@ final readonly class UpdateAppAction
             return $app;
         }
 
-        $instanceIds = $app->appInstances()
-            ->orderBy('id')
-            ->pluck('id')
-            ->map(static fn (mixed $id): int => (int) $id)
-            ->values()
-            ->all();
-
         $result = $this->operations->run(
             $instanceIds,
-            fn (): OrbitApp => $this->executeOwned($app->fresh() ?? $app, $data),
+            fn (): OrbitApp => $this->applyTaskCheck($this->executeOwned($app->fresh() ?? $app, $data), $data),
         );
 
         ($this->broadcaster ?? app(RecordEventBroadcaster::class))->broadcast(
@@ -100,6 +115,20 @@ final readonly class UpdateAppAction
         );
 
         return $result;
+    }
+
+    /**
+     * Stores the Project task check while the caller holds the update's operation lock.
+     */
+    private function applyTaskCheck(OrbitApp $app, UpdateAppData $data): OrbitApp
+    {
+        if (! $data->taskCheckProvided) {
+            return $app;
+        }
+
+        $app->update(['task_check' => $data->taskCheck]);
+
+        return $app->fresh() ?? $app;
     }
 
     private function executeOwned(OrbitApp $app, UpdateAppData $data): OrbitApp
@@ -482,6 +511,12 @@ final readonly class UpdateAppAction
      */
     private function normalized(OrbitApp $app, UpdateAppData $data): array
     {
+        $type = $data->typeProvided ? $data->type ?? $app->type : $app->type;
+        $root = $data->rootProvided ? (string) $data->root : $app->root;
+        if (is_string($root)) {
+            $root = ProjectRoot::validate($root, $type);
+        }
+
         return [
             'slug' => $data->slugProvided ? $data->slug : $app->slug,
             'repository_url' => $data->repositoryUrlProvided
@@ -490,9 +525,7 @@ final readonly class UpdateAppAction
             'default_branch' => $data->defaultBranchProvided
                 ? GitBranchName::validate((string) $data->defaultBranch)
                 : $app->default_branch,
-            'root' => $data->rootProvided
-                ? RelativeWebRoot::validate((string) $data->root)
-                : $app->root,
+            'root' => $root,
         ];
     }
 
@@ -598,6 +631,18 @@ final readonly class UpdateAppAction
                     status: 409,
                 );
             }
+        }
+    }
+
+    private function assertRouteTargetRootCompatibility(OrbitApp $app, ?string $root, ?string $message = null): void
+    {
+        $hasInheritedRouteTarget = $app->appInstances()
+            ->whereNull('root')
+            ->whereHas('routeTargets')
+            ->exists();
+
+        if ($hasInheritedRouteTarget) {
+            RouteTargetWebRoot::assertSupportedRoot($root, $message);
         }
     }
 

@@ -28,6 +28,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\ToolManagerScopeLock;
 use App\Domain\Tools\ToolManagerScopeLockException;
+use App\Infrastructure\Nodes\Roles\NodeRoleConvergeLock;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Process;
@@ -47,6 +48,7 @@ final readonly class RemoveNodeRoleAction
         private NodeRoleFirewallManager $firewall,
         private ?RouteRemovalGuard $routes = null,
         private ?RecordEventBroadcaster $broadcaster = null,
+        private ?NodeRoleConvergeLock $nodeLock = null,
     ) {}
 
     public function execute(
@@ -58,8 +60,8 @@ final readonly class RemoveNodeRoleAction
     ): NodeRoleRemovalOutcome {
         $this->routeGuard()->assertRoleRemovable($node, $role);
 
-        if ($role === RoleName::Ingress) {
-            return $this->announceUpdated($node, $this->removeIngress($node, $force));
+        if ($role === RoleName::Ingress && $this->ingressAlreadyRemoved($node, $force)) {
+            return $this->announceUpdated($node, new NodeRoleRemovalOutcome(new NodeRoleDependencySet([], [], [], [])));
         }
 
         if ($role === RoleName::AppDev && $node->appInstances()->exists()) {
@@ -110,13 +112,21 @@ final readonly class RemoveNodeRoleAction
         return $outcome;
     }
 
-    private function removeIngress(Node $node, bool $force): NodeRoleRemovalOutcome
+    /**
+     * Whether a consented Ingress removal has nothing left to remove.
+     *
+     * Ingress removal repeats safely: once the assignment is gone, a repeated
+     * removal succeeds without touching the node. An assigned Ingress takes the
+     * same claimed path as every other role, so its baseline rebuilds the Node
+     * Caddyfile, closes the public HTTP and HTTPS rules, and reconciles metrics.
+     */
+    private function ingressAlreadyRemoved(Node $node, bool $force): bool
     {
+        if (NodeRole::query()->where('node_id', $node->id)->where('role', RoleName::Ingress)->exists()) {
+            return false;
+        }
+
         $this->guardMutableNode($node, RoleName::Ingress);
-        $assignment = NodeRole::query()
-            ->where('node_id', $node->id)
-            ->where('role', RoleName::Ingress)
-            ->first();
 
         if (! $force) {
             throw new NodeRoleValidationException(
@@ -130,13 +140,7 @@ final readonly class RemoveNodeRoleAction
             );
         }
 
-        if ($assignment instanceof NodeRole) {
-            DB::transaction(static function () use ($assignment): void {
-                NodeRole::query()->whereKey($assignment->id)->lockForUpdate()->sole()->delete();
-            });
-        }
-
-        return new NodeRoleRemovalOutcome(new NodeRoleDependencySet([], [], [], []));
+        return true;
     }
 
     private function removeAppRole(
@@ -171,7 +175,24 @@ final readonly class RemoveNodeRoleAction
         }
     }
 
+    /**
+     * Takes the per-Node role lock before it claims the assignment, so a busy Node returns an error
+     * and leaves the assignment as it was.
+     */
     private function removeClaimedRole(
+        Node $node,
+        RoleName $role,
+        bool $purgeData,
+        ?ExporterDegradationReason $degradation,
+    ): NodeRoleRemovalOutcome {
+        return ($this->nodeLock ?? app(NodeRoleConvergeLock::class))->run(
+            $node,
+            fn (): NodeRoleRemovalOutcome => $this->removeClaimedRoleLocked($node, $role, $purgeData, $degradation),
+            'node_role.remove_failed',
+        );
+    }
+
+    private function removeClaimedRoleLocked(
         Node $node,
         RoleName $role,
         bool $purgeData,
@@ -400,13 +421,21 @@ final readonly class RemoveNodeRoleAction
         }
     }
 
+    /**
+     * An active assignment, or one whose convergence or earlier removal failed. Every baseline removal repeats
+     * safely over whatever a failed convergence left behind, so a role that never finished converging can be
+     * removed instead of only converged again. A provisioning or removing assignment belongs to a running operation.
+     */
     private function canClaim(NodeRole $assignment): bool
     {
+        if ($assignment->status === LifecycleStatus::Active) {
+            return true;
+        }
+
         return
-            $assignment->status === LifecycleStatus::Active
-            || $assignment->status === LifecycleStatus::Failed
+            $assignment->status === LifecycleStatus::Failed
             && is_string($assignment->failed_step)
-            && str_starts_with($assignment->failed_step, 'remove:');
+            && (str_starts_with($assignment->failed_step, 'converge:') || str_starts_with($assignment->failed_step, 'remove:'));
     }
 
     private function sameDependencies(NodeRoleDependencySet $captured, NodeRoleDependencySet $current): bool

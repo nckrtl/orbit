@@ -11,7 +11,6 @@ use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\Storage\CheckoutRemovalBoundary;
 use App\Domain\SourceControl\GitRepositoryOrigin;
 use App\Infrastructure\AppDev\AppDevSshExecutor;
-use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProtectedInput;
@@ -237,9 +236,7 @@ final readonly class NativeInstanceStateInspector implements InstanceStateInspec
             'home' => $expectation->home,
             'root' => $expectation->root,
             'environment' => base64_encode($expectation->environment()),
-            'caddy' => base64_encode($expectation->caddy),
-            'caddy_build' => base64_encode($expectation->caddyBuild),
-            'caddy_build_marker' => NodeCaddyfileRenderer::Marker,
+            'caddy_sites' => implode(' ', array_map(base64_encode(...), $expectation->caddySites)),
             'association' => $expectation->associationMatches ? '1' : '0',
             'runtime_expected' => $runtimeExpected ? '1' : '0',
             ...$runtimeValues,
@@ -368,6 +365,39 @@ final readonly class NativeInstanceStateInspector implements InstanceStateInspec
                 case "\$start_after" in ''|*[!0-9]*) return 2 ;; esac
                 test "\$start_after" = "\$start_before" || return 2
             }
+            # A worker has exited when its /proc entry is gone, it is a zombie, or the kernel marks it
+            # exiting (PF_EXITING, 0x4, in the flags field 9 of /proc/PID/stat).
+            worker_exited() {
+                test -d "\$proc_root/\$1" || return 0
+                worker_state=\$(awk '/^State:/ { print $2; exit }' "\$proc_root/\$1/status" 2>/dev/null)
+                case "\$worker_state" in Z|X) return 0 ;; esac
+                worker_flags=\$(sed 's/^[^)]*) //' "\$proc_root/\$1/stat" 2>/dev/null | awk '{ print $7 }')
+                case "\$worker_flags" in
+                    ''|*[!0-9]*) test -d "\$proc_root/\$1" && return 1 || return 0 ;;
+                esac
+                test \$((worker_flags & 4)) -ne 0
+            }
+            worker_matches() {
+                worker_pid=\$1
+                worker_start_before=\$(process_start_time "\$worker_pid") || return 2
+                case "\$worker_start_before" in ''|*[!0-9]*) return 2 ;; esac
+                worker_parent=\$(awk '/^PPid:/ { print $2 }' "\$proc_root/\$worker_pid/status" 2>/dev/null) || return 2
+                worker_uids=\$(awk '/^Uid:/ { print $2 ":" $3 ":" $4 ":" $5 }' "\$proc_root/\$worker_pid/status" 2>/dev/null) || return 2
+                worker_gids=\$(awk '/^Gid:/ { print $2 ":" $3 ":" $4 ":" $5 }' "\$proc_root/\$worker_pid/status" 2>/dev/null) || return 2
+                case "\$worker_parent" in ''|*[!0-9]*) return 2 ;; esac
+                printf '%s\n' "\$worker_uids" | grep -Eq '^[0-9]+:[0-9]+:[0-9]+:[0-9]+\$' || return 2
+                printf '%s\n' "\$worker_gids" | grep -Eq '^[0-9]+:[0-9]+:[0-9]+:[0-9]+\$' || return 2
+                test "\$worker_parent" = "\$main_pid" || return 2
+                test "\$worker_uids" = "\$expected_uid:\$expected_uid:\$expected_uid:\$expected_uid" || return 1
+                test "\$worker_gids" = "\$expected_gid:\$expected_gid:\$expected_gid:\$expected_gid" || return 1
+                worker_root=\$(readlink -f -- "\$proc_root/\$worker_pid/root" 2>/dev/null) || return 2
+                test "\$worker_root" = / || return 1
+                worker_start_after=\$(process_start_time "\$worker_pid") || return 2
+                case "\$worker_start_after" in ''|*[!0-9]*) return 2 ;; esac
+                test "\$worker_start_after" = "\$worker_start_before" || return 2
+            }
+            # An ondemand pool ends idle workers at any time. A worker that exits while it is checked
+            # no longer exists during the inspection, so its unreadable or partial evidence is skipped.
             worker_identity_matches() {
                 expected_uid=\$(id -u -- "\$user" 2>/dev/null) || return 1
                 expected_gid=\$(id -g -- "\$user" 2>/dev/null) || return 1
@@ -378,23 +408,13 @@ final readonly class NativeInstanceStateInspector implements InstanceStateInspec
                     return 2
                 fi
 
-                for worker_pid in \$children; do
-                    worker_start_before=\$(process_start_time "\$worker_pid") || return 2
-                    case "\$worker_start_before" in ''|*[!0-9]*) return 2 ;; esac
-                    worker_parent=\$(awk '/^PPid:/ { print $2 }' "\$proc_root/\$worker_pid/status" 2>/dev/null) || return 2
-                    worker_uids=\$(awk '/^Uid:/ { print $2 ":" $3 ":" $4 ":" $5 }' "\$proc_root/\$worker_pid/status" 2>/dev/null) || return 2
-                    worker_gids=\$(awk '/^Gid:/ { print $2 ":" $3 ":" $4 ":" $5 }' "\$proc_root/\$worker_pid/status" 2>/dev/null) || return 2
-                    case "\$worker_parent" in ''|*[!0-9]*) return 2 ;; esac
-                    printf '%s\n' "\$worker_uids" | grep -Eq '^[0-9]+:[0-9]+:[0-9]+:[0-9]+\$' || return 2
-                    printf '%s\n' "\$worker_gids" | grep -Eq '^[0-9]+:[0-9]+:[0-9]+:[0-9]+\$' || return 2
-                    test "\$worker_parent" = "\$main_pid" || return 2
-                    test "\$worker_uids" = "\$expected_uid:\$expected_uid:\$expected_uid:\$expected_uid" || return 1
-                    test "\$worker_gids" = "\$expected_gid:\$expected_gid:\$expected_gid:\$expected_gid" || return 1
-                    worker_root=\$(readlink -f -- "\$proc_root/\$worker_pid/root" 2>/dev/null) || return 2
-                    test "\$worker_root" = / || return 1
-                    worker_start_after=\$(process_start_time "\$worker_pid") || return 2
-                    case "\$worker_start_after" in ''|*[!0-9]*) return 2 ;; esac
-                    test "\$worker_start_after" = "\$worker_start_before" || return 2
+                for child_pid in \$children; do
+                    worker_matches "\$child_pid"
+                    worker_status=\$?
+                    if test "\$worker_status" -ne 0 && worker_exited "\$child_pid"; then
+                        continue
+                    fi
+                    test "\$worker_status" -eq 0 || return "\$worker_status"
                 done
             }
             socket_service_matches() {
@@ -402,14 +422,17 @@ final readonly class NativeInstanceStateInspector implements InstanceStateInspec
                 socket_metadata=\$(stat -c '%U:%G:%a' -- "\$socket" 2>/dev/null) || return 2
                 test "\$socket_metadata" = "\$user:caddy:660" || return 1
 
-                socket_inodes=\$(awk -v expected="\$socket" '$8 == expected { print $7 }' "\$proc_root/net/unix" 2>/dev/null) || return 2
+                # Every accepted connection repeats the socket path in /proc/net/unix. Only the listening
+                # entry (flag __SO_ACCEPTCON, state SS_UNCONNECTED) identifies the socket the master owns.
+                socket_inodes=\$(awk -v expected="\$socket" '$8 == expected && $4 == "00010000" && $6 == "01" { print $7 }' "\$proc_root/net/unix" 2>/dev/null) || return 2
                 test -n "\$socket_inodes" || return 1
                 socket_count=\$(printf '%s\n' "\$socket_inodes" | wc -l) || return 2
                 test "\$socket_count" -eq 1 || return 2
                 case "\$socket_inodes" in *[!0-9]*) return 2 ;; esac
 
                 for descriptor in "\$proc_root/\$main_pid/fd/"*; do
-                    target=\$(readlink -- "\$descriptor" 2>/dev/null) || return 2
+                    # A descriptor the master closes during the scan is not the listening socket it holds.
+                    target=\$(readlink -- "\$descriptor" 2>/dev/null) || continue
                     if test "\$target" = "socket:[\$socket_inodes]"; then
                         return 0
                     fi
@@ -451,14 +474,15 @@ final readonly class NativeInstanceStateInspector implements InstanceStateInspec
             caddy_matches() {
                 source=\$(readlink -f -- /etc/caddy/Caddyfile 2>/dev/null) || return 1
                 test -f "\$source" || return 1
-                # A Node Caddy build writes one file; it must match a fresh render of the Node.
-                if test "\$(head -n 1 -- "\$source")" = "\$caddy_build_marker"; then
-                    printf '%s' "\$caddy_build" | base64 --decode | cmp -s -- "\$source" -
-                    return
-                fi
-                fragment="\$(dirname -- "\$source")/fragments/app-dev.caddy"
-                test -f "\$fragment" && test ! -L "\$fragment" || return 1
-                printf '%s' "\$caddy" | base64 --decode | cmp -s -- "\$fragment" -
+                # The Node Caddy build keeps every site in the live file; each of this Instance's blocks must be there unchanged.
+                live_caddyfile=\$(cat -- "\$source") || return 2
+                for encoded_site in \$caddy_sites; do
+                    site=\$(printf '%s' "\$encoded_site" | base64 --decode) || return 2
+                    case "\$live_caddyfile" in
+                        *"\$site"*) ;;
+                        *) return 1 ;;
+                    esac
+                done
             }
 
             emit home_matches

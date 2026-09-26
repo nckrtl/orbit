@@ -15,6 +15,7 @@ Each build writes one file, `/etc/caddy/orbit-versions/<version>/Caddyfile`, and
 # Managed by Orbit: Node Caddy build
 {
     auto_https disable_certs
+    order abort first
     metrics {
         per_host
     }
@@ -29,11 +30,15 @@ https://e2e-dev.test {
 # orbit: websocket reverb.orbit
 reverb.orbit {
     bind 10.44.0.3
+    @orbit_outside not remote_ip 10.44.0.0/24
+    abort @orbit_outside
     ...
 }
 ```
 
-The global options block is Orbit's, and it is the same on every Node. `auto_https disable_certs` keeps Caddy's HTTP-to-HTTPS redirects but stops Caddy from obtaining certificates on its own. A private site serves the Orbit CA certificate Orbit publishes for it. A public Ingress site opts back in, as [public Ingress certificates](#public-ingress-certificates) describes.
+The global options block is Orbit's, and it is the same on every Node. A change to it changes every Node's file, and Doctor reports `role.caddy_build_drift` on a Node until its next build. `auto_https disable_certs` keeps Caddy's HTTP-to-HTTPS redirects but stops Caddy from obtaining certificates on its own. A private site serves the Orbit CA certificate Orbit publishes for it. A public Ingress site opts back in, as [public Ingress certificates](#public-ingress-certificates) describes.
+
+`order abort first` runs `abort` before every other handler, so the client guard of a site runs first, as [listener addresses](#listener-addresses) describes.
 
 `metrics { per_host }` makes Caddy count requests, errors, and durations per hostname. On the Node, `curl http://localhost:2019/metrics` shows them. Prometheus scrapes them only on Ingress, as [service metrics](/reference/service-metrics#caddy-traffic) describes. [ADR 0139](/decisions/0139-collect-caddy-http-metrics-on-every-node) records this choice and its cost.
 
@@ -49,22 +54,70 @@ The `websocket`, `analytics`, ProxyCli, and Metrics sites also wait for their ce
 
 When `websocket` moves, the old Node keeps `reverb.orbit` until the new Node serves it, private DNS answers with the new Node, and cached answers can have expired, which is the 31-second grace that Route moves use. Only then does the move withdraw the site and the certificate on the old Node.
 
+Private DNS names the new Node only after its build is live. Until then, any private DNS publication, such as one from a Route created during the move, still answers with the old Node, so a client never reaches a Node that does not serve the site yet.
+
+The two Reverb servers share nothing, so the Gateway serves both while they hold clients. From the moment the new Node's build is live until the old Node's withdrawal build is done, the Gateway sends every broadcast to both servers, and the agent view subscriber keeps a link to each. The subscriber takes each Node's state from the link with the newest agent event. While an agent moves between the servers, its Node keeps its stored view, which goes stale on its own, instead of reading as missing.
+
+The withdrawal build reloads Caddy on the old Node, and the reload closes that Node's Reverb connections with a WebSocket close. Browsers reconnect at once through private DNS, which already names the new Node, and reload their data when they subscribe again. Agents reconnect after their own backoff, which [Node agent](/reference/node-agent) describes.
+
+The Gateway stops publishing to the old server, and its subscriber closes that link, only after the withdrawal build has succeeded and the old Node's Reverb has stopped. When either step fails, or the new Node's convergence fails, the move is incomplete: the command fails and names `orbit node:role:relocate NEW websocket --from OLD --force`, which needs the old Node reachable, and the Gateway keeps serving both servers until that command finishes the move.
+
+A send to the old server gets 0.3 seconds to connect and 0.5 seconds in total, and after a failure the Gateway skips that server for 30 seconds, so an unreachable old Node never slows broadcasts to the serving server.
+
 | Site source | Nodes | Listener |
 | --- | --- | --- |
-| `app-dev` and `app-prod` workload and Router sites, custom proxy Routes, analytics tracking hosts, Agentation, Vite, and hibernation wake sites | Workload and Router Nodes | `0.0.0.0` on a Node with `ingress`; otherwise the WireGuard address and the LAN address when the Node has one |
-| Public Ingress sites | The Cluster's Ingress Node | `0.0.0.0` |
+| `app-dev` and `app-prod` workload and Router sites, custom proxy Routes, analytics tracking hosts, Agentation, Vite, and hibernation wake sites | Workload and Router Nodes | The WireGuard address and the LAN address when the Node has one |
+| Public Ingress sites | The Cluster's Ingress Node | `0.0.0.0`, the WireGuard address, and the LAN address when the Node has one |
 | `gateway.orbit` | The Node with the `gateway` role | WireGuard address |
 | `metrics.orbit` | The Node with the `gateway` role, while a Metrics role renders | WireGuard address |
 | Service metrics scrape site on port 9103 | A selected Ingress Node | WireGuard address |
-| `reverb.orbit`, `analytics.orbit`, and `collector.cli-proxy-api.orbit` | The Node that runs the role or collector | WireGuard address, or `0.0.0.0` when a site from the first row binds `0.0.0.0` on the same port |
+| `reverb.orbit`, `analytics.orbit`, and `collector.cli-proxy-api.orbit` | The Node that runs the role or collector | WireGuard address |
+
+Only public Ingress sites bind `0.0.0.0`, so no private site joins the public listener. The `ingress` and `gateway` roles never share a Node, so `gateway.orbit` and `metrics.orbit` never run beside a public site. [ADR 0157](/decisions/0157-keep-private-caddy-sites-off-the-public-listener) records both rules.
 
 A Node gets at most one site for each domain, port, and listener. When a Route's current and transition placements render the same site on one Node, the build keeps the current one. Any other duplicate fails the build and names both sites.
 
 ### Listener addresses
 
-Caddy sends a connection for the WireGuard address only to the sites bound to that address, and every other connection to the `0.0.0.0` sites. If one site bound the WireGuard address and another bound `0.0.0.0` on the same port, a WireGuard client that asked for the second hostname would get an empty response. The listener rule above puts every site that WireGuard clients use on the same listener.
+Caddy sends a connection for a specific address only to the sites bound to that address, and every other connection to the `0.0.0.0` sites. A public Ingress site therefore binds the WireGuard and LAN addresses as well as `0.0.0.0`: a Router forwards to those addresses, and public traffic can arrive on the LAN address behind NAT. Every other site binds only the addresses its clients use. Routers, Ingress, and private DNS clients reach Router and workload sites on a Node's LAN or WireGuard address, so those sites never bind `0.0.0.0`, on an Ingress Node or elsewhere.
 
-Routers, Ingress, and private DNS clients reach first-row sites only on a Node's LAN or WireGuard address, so a Node without `ingress` binds them there and has no wildcard listener. A Gateway that is also a Router therefore serves `gateway.orbit` and its Router sites on the same port. On a Node with `ingress`, first-row sites bind `0.0.0.0` and `gateway.orbit` stays off that public listener. A build fails when a WireGuard-only site shares a port with a first-row site on such a Node, because the first-row site would be unreachable over WireGuard.
+A production Node that is the Router, the Ingress, and app-prod then serves its private Router sites on the WireGuard and LAN addresses, and only its public sites on every address:
+
+```caddy
+https://shop.test {
+    bind 10.44.0.3 192.168.1.3
+    @orbit_outside not remote_ip private_ranges 100.64.0.0/10 10.44.0.0/24
+    abort @orbit_outside
+    # Router site of a private Route
+}
+
+shop.example.com {
+    bind 0.0.0.0 10.44.0.3 192.168.1.3
+    tls force_automate
+    # public Ingress site
+}
+
+http://10.44.0.3:9103 {
+    bind 10.44.0.3
+    @orbit_outside not remote_ip 10.44.0.0/24
+    abort @orbit_outside
+    # service metrics scrape site
+}
+```
+
+Every site that is not public aborts a client outside the ranges it serves, right after its `bind` line. Orbit's global options order `abort` before every other handler, so the guard runs first.
+
+| Site | Admitted clients |
+| --- | --- |
+| `gateway.orbit`, `metrics.orbit`, the service metrics scrape site, `reverb.orbit`, `analytics.orbit`, and `collector.cli-proxy-api.orbit` | The VPN subnet |
+| Router and workload sites on an Ingress Node | Private and shared address space (`private_ranges` and `100.64.0.0/10`) and the VPN subnet |
+| Router and workload sites on any other Node, and public Ingress sites | Every client |
+
+The guard covers two paths that the listener alone leaves open. Linux accepts a packet for the WireGuard address on any interface, so a LAN neighbour can route to it through the LAN address when the firewall admits HTTPS to any destination, as an Ingress firewall does. A port forward can send public traffic to the LAN address of an Ingress Node.
+
+The TLS handshake still completes before the abort. Caddy's certificate cache is shared across listeners. A client that names a private hostname in SNI on the public listener therefore completes TLS with that site's certificate. It then gets Caddy's empty `200` response, because no private site is on that listener.
+
+A public Ingress site and another site for the same host and port share the WireGuard address, so the build fails on them as a duplicate address.
 
 The Gateway decides the addresses from stored state: the Node's `ingress` role, its WireGuard and LAN addresses, and its Route sites. Caddy cannot start with a missing listen address, so every build first checks that each specific address it binds exists on the Node. When a stored LAN address is missing, for example after a DHCP lease changed, the build stops at stage `addresses`, leaves the live Caddyfile unchanged, and names the address:
 
@@ -99,7 +152,7 @@ The Gateway sends one script to the Node over SSH. On the Node that runs the Gat
 5. Writes `/etc/caddy/orbit-versions/<version>/Caddyfile` and runs `caddy validate` on it as the `caddy` user.
 6. Backs up a live Caddyfile that Orbit did not build, as [replaced configuration](#replaced-configuration) describes.
 7. Points `/etc/caddy/Caddyfile` at the new version, then enables and reloads the `caddy` service.
-8. Keeps the live version and the nine newest others, and removes older versions and the `staged` directory an earlier release left.
+8. Keeps the live version and the nine newest others, and removes older versions.
 
 Validation runs as the `caddy` user, so log files that it creates stay writable by the service. When a build's version file differs from its digest, someone edited it by hand. The script backs that version up before it replaces or prunes it, whatever the new version is.
 
@@ -113,6 +166,8 @@ Every build and every certificate step that reloads Caddy holds `/run/lock/orbit
 A failed check stops the build before any change. `/run/lock` is a tmpfs, so the lock and its directory are recreated after a reboot.
 
 Every Node with Caddy sites, the Gateway machine included, installs Caddy from the pinned source before its first build.
+
+A file with no site on a Node without `/usr/bin/caddy` changes nothing, because nothing serves there. The script stops at step 2 and reports the build as unchanged. A role removal after a convergence that failed before Caddy was installed relies on this.
 
 ### When a build fails
 
@@ -132,7 +187,7 @@ The command that requested the build fails with its usual error code:
 | Metrics and service metrics | `metrics.caddy_publication_failed` |
 | Gateway web convergence | `gateway.caddy_config_invalid` at `render` or `validate`, `gateway.caddy_start_failed` at `reload`, and `gateway.caddy_config_install_failed` at any other stage |
 
-Role convergence, such as `orbit node:role:add NODE app-dev --converge`, fails with `node_role.convergence_failed`; `orbit node:role:list` shows the publisher's code as the underlying error. The error message, the activity record, and the `node`, `stage`, and `message` fields of the error details name the Node, the failed stage, and Caddy's message:
+Role convergence, such as `orbit node:role:add NODE app-dev --converge`, fails with `node_role.convergence_failed`; `orbit node:role:list` shows the publisher's code as the underlying error. The error message, the activity record, and the `node`, `stage`, and `message` fields of the error details name the Node, the failed stage, and Caddy's message. Each stage bounds the message at 2,000 bytes of UTF-8 and marks a cut with `…`. The CLI prints them under `error.details` with `--json`, next to the `step` that requested the build:
 
 ```text
 The Caddy build for Node [app-prod] failed at stage [validate]: Error: loading certificates: open /etc/caddy/orbit-websocket-cert-current/reverb.pem: no such file or directory
@@ -176,9 +231,9 @@ php artisan orbit:caddy-build NODE --dry-run --diff
 | --- | --- |
 | None | Builds the Node and pushes the file, as any publisher does. It prints whether it published a new file or found the live file current. |
 | `--dry-run` | Prints the rendered Caddyfile and changes nothing. |
-| `--diff` | With `--dry-run`, reads the live `/etc/caddy/Caddyfile`, and the fragments of a Node that no build replaced yet, and prints one line for each site: `same`, `changed`, `build only`, or `live only`. A `changed` site lists the lines that differ. |
+| `--diff` | With `--dry-run`, reads the live `/etc/caddy/Caddyfile` and prints one line for each site: `same`, `changed`, `build only`, or `live only`. A `changed` site lists the lines that differ. It reads no file that the live Caddyfile imports. |
 
-A failed build exits with status 1 and prints the error message. `--dry-run` exits with status 1 and prints `Build refused:` with the reason when the render has a problem, such as a duplicate address or a WireGuard-only site on a wildcard port. The output names hostnames and certificate paths; Orbit's Caddy sites hold no secrets.
+A failed build exits with status 1 and prints the error message. `--dry-run` exits with status 1 and prints `Build refused:` with the reason when the render has a problem, such as a duplicate address. The output names hostnames and certificate paths; Orbit's Caddy sites hold no secrets.
 
 Repeating any command that publishes one of a Node's sites, such as `orbit node:role:add NODE app-dev --converge`, also builds the Node again.
 
@@ -194,6 +249,22 @@ The build replaces a Caddyfile that does not start with its marker line. It neve
 | A version with a `fragments` directory, which Orbit's per-role publishers wrote before the build | The whole version directory, fragments included |
 | A build's version whose file differs from its digest | The whole version directory, also when prune removes it |
 
-A Node that no build replaced yet keeps its fragment layout until the first command that builds it. That first build backs up the old version and serves the same Orbit sites from one file. Sites in a replaced file that Orbit does not render stop serving after that build, including an adopted `00-unmanaged.caddy` fragment. Move a hand-placed site into Orbit before the first build, for example as a [custom proxy Route](/reference/routes#custom-proxy-routes). The build never deletes a backup; remove it by hand when you do not need it.
+A Node whose Caddyfile no build wrote, such as one restored from an earlier release's backup, keeps it until the first command that builds it. That first build backs up the old file or version and serves the Orbit sites from one file. Sites in a replaced file that Orbit does not render stop serving after that build, including an adopted `00-unmanaged.caddy` fragment. Move a hand-placed site into Orbit before the first build, for example as a [custom proxy Route](/reference/routes#custom-proxy-routes). The build never deletes a backup; remove it by hand when you do not need it.
 
-[`orbit doctor`](/cli/doctor) reads a Node's Route sites from the one live Caddyfile, or from the fragments of a Node that no build replaced yet. For a production Instance it compares the live build with a fresh render of the Node, so a hand edit reports `instance.caddy_projection_mismatch`.
+## Check a Node with Doctor
+
+[`orbit doctor`](/cli/doctor) reads a Node's sites only from the one live `/etc/caddy/Caddyfile`. It never reads a file that the live Caddyfile imports.
+
+The `role` family renders the Node's build from stored state and compares it byte for byte with the live file. It reports `role.caddy_build_drift` once per Node, on the first active role that publishes Caddy sites, and lists the Node's site sources in the summary:
+
+| `expected` | `observed` | Meaning |
+| --- | --- | --- |
+| The version of a fresh build | The version of the live file | Someone edited the live file, or stored state changed without a build |
+| The version of a fresh build | `not_built` | No build wrote the live file: a foreign file, the package default, or the fragment layout of an earlier release |
+| `buildable` | `refused` | Stored state renders no buildable file, as `Build refused:` in `orbit:caddy-build NODE --dry-run` shows |
+
+Doctor checks every Linux Node that renders a Caddy site or holds a `gateway`, `router`, `ingress`, `app-dev`, `app-prod`, `websocket`, or `analytics` role. To repair drift, build the Node again with `php artisan orbit:caddy-build NODE` on the Gateway machine, or converge a role that publishes one of the listed sites, such as `orbit node:role:add NODE app-prod --converge`. The build backs up a hand-edited or foreign file before it replaces it. When Doctor cannot read the live file, it reports `role.inspection_failed`.
+
+Doctor compares only while no build holds the Gateway's build lock for the Node. When a build runs, Doctor waits up to 5 seconds for it. If the build still holds the lock, Doctor reports `role.inspection_failed` with `observed` set to `building`, so the Node's check reads as unverifiable, never healthy. Doctor reads the live file with a 10-second limit, so a build never waits long for Doctor. A command that has saved its change but has not started its build yet can still show `role.caddy_build_drift` for a moment. Run Doctor again; a drift that remains is real.
+
+For a production Instance, the `instance` family checks that each of the Instance's own site blocks is in the live file exactly as a build renders it, and reports `instance.caddy_projection_mismatch` otherwise. Route families check their Route's sites in the same file. A change elsewhere in the file shows only as `role.caddy_build_drift`.

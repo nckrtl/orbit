@@ -15,7 +15,7 @@ final class NodeRoleServiceCatalog
             RoleName::Gateway => ['caddy', 'php8.5-fpm'],
             RoleName::Vpn => ['wg-quick@orbit', 'dnsmasq'],
             RoleName::Router => ['caddy'],
-            RoleName::Ingress => [],
+            RoleName::Ingress => ['caddy'],
             RoleName::AppDev, RoleName::AppProd => ['caddy', 'docker'],
             RoleName::Metrics => ['docker'],
             RoleName::Database => ['docker'],

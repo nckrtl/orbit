@@ -301,7 +301,7 @@ function synchronizerGit(string $path, array $arguments): array
 
 function removeSynchronizerFixture(string $path): void
 {
-    $prefix = sys_get_temp_dir().'/orbit-';
+    $prefix = temporaryDirectory().'/orbit-';
 
     if (! str_starts_with($path, $prefix)) {
         throw new RuntimeException('Refusing to remove an unsafe synchronizer fixture.');
@@ -428,7 +428,7 @@ function synchronizerRequiredGuestScriptNames(): array
 {
     return [
         'converge-app-dev.sh',
-        'converge-app-prod-internal-tls.sh',
+        'converge-app-prod.sh',
         'converge-gateway.sh',
         'converge-sample-app.sh',
         'converge-sample-fixtures.sh',

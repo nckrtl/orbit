@@ -41,6 +41,7 @@ use Illuminate\Support\Str;
 use Symfony\Component\Process\Exception\ProcessTimedOutException;
 use Symfony\Component\Process\Process;
 use Tests\Support\AppDevFakeSshExecutor;
+use Tests\Support\UnixSocketDirectory;
 
 it('checks only selected-node app projections through the fixed SSH boundary', function (): void {
     $app = application_inspector_app();
@@ -468,21 +469,34 @@ it('executes current worker identity outcomes from the production program', func
         : $user;
     $files = new Filesystem;
     $files->makeDirectory("{$procRoot}/{$mainPid}/task/{$mainPid}", 0o755, true);
-    $files->makeDirectory("{$procRoot}/{$workerPid}", 0o755, true);
-    file_put_contents("{$procRoot}/{$mainPid}/task/{$mainPid}/children", $condition === 'idle' ? '' : "{$workerPid}\n");
-
-    if ($condition !== 'idle') {
-        $uid = $condition === 'uid mismatch' ? posix_geteuid() + 1 : posix_geteuid();
+    $children = match ($condition) {
+        'idle' => '',
+        'exited before a UID mismatch' => "{$workerPid} ".($workerPid + 1)."\n",
+        default => "{$workerPid}\n",
+    };
+    file_put_contents("{$procRoot}/{$mainPid}/task/{$mainPid}/children", $children);
+    $writeWorker = static function (int $pid, int $uid, string $state = 'S', int $flags = 0) use ($files, $procRoot, $mainPid, $sandbox, $condition): void {
         $gid = $condition === 'gid mismatch' ? posix_getegid() + 1 : posix_getegid();
         $parent = $condition === 'reparented' ? $mainPid + 1 : $mainPid;
-        $status = "PPid:\t{$parent}\nUid:\t{$uid}\t{$uid}\t{$uid}\t{$uid}\nGid:\t{$gid}\t{$gid}\t{$gid}\t{$gid}\n";
-        file_put_contents("{$procRoot}/{$workerPid}/status", $status);
-        file_put_contents("{$procRoot}/{$workerPid}/stat", application_process_stat($workerPid, $parent, 9001));
-        symlink($condition === 'root mismatch' ? $sandbox : '/', "{$procRoot}/{$workerPid}/root");
-
-        if ($condition === 'missing status') {
-            unlink("{$procRoot}/{$workerPid}/status");
+        $files->makeDirectory("{$procRoot}/{$pid}", 0o755, true);
+        $status = "State:\t{$state}\nPPid:\t{$parent}\nUid:\t{$uid}\t{$uid}\t{$uid}\t{$uid}\nGid:\t{$gid}\t{$gid}\t{$gid}\t{$gid}\n";
+        file_put_contents("{$procRoot}/{$pid}/status", $status);
+        file_put_contents("{$procRoot}/{$pid}/stat", application_process_stat($pid, $parent, 9001, $flags));
+        if ($state !== 'Z' && $flags === 0) {
+            symlink($condition === 'root mismatch' ? $sandbox : '/', "{$procRoot}/{$pid}/root");
         }
+    };
+
+    match ($condition) {
+        'idle', 'exited' => null,
+        'exited before a UID mismatch' => $writeWorker($workerPid + 1, posix_geteuid() + 1),
+        'zombie' => $writeWorker($workerPid, posix_geteuid(), 'Z'),
+        'exiting' => $writeWorker($workerPid, posix_geteuid(), 'S', 0x4),
+        default => $writeWorker($workerPid, $condition === 'uid mismatch' ? posix_geteuid() + 1 : posix_geteuid()),
+    };
+
+    if ($condition === 'missing status') {
+        unlink("{$procRoot}/{$workerPid}/status");
     }
 
     try {
@@ -506,15 +520,19 @@ it('executes current worker identity outcomes from the production program', func
     'UID mismatch' => ['uid mismatch', '0'],
     'GID mismatch' => ['gid mismatch', '0'],
     'process root mismatch' => ['root mismatch', '0'],
-    'disappearing status' => ['missing status', '2'],
+    'unreadable status of a running worker' => ['missing status', '2'],
     'reparented worker' => ['reparented', '2'],
+    'worker that exited after the children list' => ['exited', '1'],
+    'worker that is exiting as a zombie' => ['zombie', '1'],
+    'worker the kernel marks exiting' => ['exiting', '1'],
+    'exited worker before a live UID mismatch' => ['exited before a UID mismatch', '0'],
 ]);
 
 it('executes socket and service association outcomes from the production program', function (
     string $condition,
     string $expected,
 ): void {
-    $sandbox = sys_get_temp_dir().'/orbit-doctor-socket-'.Str::uuid();
+    $sandbox = UnixSocketDirectory::create();
     $procRoot = "{$sandbox}/proc";
     $mainPid = 510;
     $socket = "{$sandbox}/php.sock";
@@ -531,7 +549,21 @@ it('executes socket and service association outcomes from the production program
         throw new RuntimeException('Could not inspect Unix socket fixture.');
     }
     $inode = (string) $metadata['ino'];
-    file_put_contents("{$procRoot}/net/unix", "a b c d e f {$inode} {$socket}\n");
+    $table = "Num       RefCount Protocol Flags    Type St Inode Path\n"
+        ."0000000000000000: 00000002 00000000 00010000 0001 01 {$inode} {$socket}\n";
+    if ($condition === 'connections in flight') {
+        // Each accepted connection repeats the path with its own inode and the connected state.
+        $table .= '0000000000000001: 00000003 00000000 00000000 0001 03 '.($inode + 1)." {$socket}\n"
+            .'0000000000000002: 00000003 00000000 00000000 0001 03 '.($inode + 2)." {$socket}\n";
+    }
+    if ($condition === 'two listeners') {
+        $table .= '0000000000000003: 00000002 00000000 00010000 0001 01 '.($inode + 3)." {$socket}\n";
+    }
+    file_put_contents("{$procRoot}/net/unix", $table);
+    if ($condition === 'closed descriptor') {
+        // readlink fails on an entry that is no longer a descriptor link, as when the master closes it mid-scan.
+        file_put_contents("{$procRoot}/{$mainPid}/fd/7", '');
+    }
     symlink(
         $condition === 'mismatch' ? 'socket:[999999]' : "socket:[{$inode}]",
         "{$procRoot}/{$mainPid}/fd/8",
@@ -571,6 +603,9 @@ it('executes socket and service association outcomes from the production program
     'master owns expected socket inode' => ['matches', '1'],
     'master owns another socket' => ['mismatch', '0'],
     'socket table disappears' => ['unavailable', '2'],
+    'accepted connections in flight' => ['connections in flight', '1'],
+    'two listening entries' => ['two listeners', '2'],
+    'descriptor closed during the scan' => ['closed descriptor', '1'],
 ]);
 
 it('maps each production projection without retaining protected diagnostics', function (
@@ -599,22 +634,29 @@ it('maps each production projection without retaining protected diagnostics', fu
     'Caddy' => ["1\n1\n1\n1\n1\n0\n", 'caddyProjectionMatches'],
 ]);
 
-it('compares the live Caddy configuration of either layout with the Instance Node render', function (string $layout, string $expected): void {
+it('finds each of the Instance site blocks unchanged in the one live Caddyfile', function (string $layout, string $expected): void {
     $sandbox = sys_get_temp_dir().'/orbit-doctor-caddy-'.bin2hex(random_bytes(6));
     $live = $layout === 'fragment' ? "{$sandbox}/v1/Caddyfile" : "{$sandbox}/v2/Caddyfile";
     $program = application_production_observation_program('caddy_matches', "readlink() { printf '%s\\n' '{$live}'; }");
     $instance = AppInstance::query()->latest('id')->firstOrFail();
+    $sites = app(ProductionInstanceInspectionExpectationFactory::class)->make($instance)->caddySites;
+    $render = app(NodeCaddyfileRenderer::class)->render($instance->node)->content;
     $files = new Filesystem;
-    $files->ensureDirectoryExists(dirname($live).'/fragments');
+    $files->ensureDirectoryExists("{$sandbox}/v1/fragments");
+    $files->ensureDirectoryExists("{$sandbox}/v2");
 
     try {
-        if ($layout === 'fragment') {
-            file_put_contents($live, "import {$sandbox}/v1/fragments/*.caddy\n");
-            file_put_contents("{$sandbox}/v1/fragments/app-dev.caddy", app(ProductionInstanceInspectionExpectationFactory::class)->make($instance)->caddy);
-        } else {
-            $render = app(NodeCaddyfileRenderer::class)->render($instance->node)->content;
-            file_put_contents($live, $layout === 'build drift' ? $render."# hand edit\n" : $render);
-        }
+        expect($sites)->toHaveCount(1)
+            ->and($sites[0])->toStartWith("# orbit: app-prod app-instance-{$instance->id}\n")
+            ->and($render)->toContain($sites[0]);
+
+        file_put_contents($live, match ($layout) {
+            'build' => $render,
+            'edit inside' => str_replace($sites[0], str_replace("\n}\n", "\n    respond hand-edit\n}\n", $sites[0]), $render),
+            'edit elsewhere' => $render."\nhand.example.test {\n    respond hi\n}\n",
+            'fragment' => "import {$sandbox}/v1/fragments/*.caddy\n",
+        });
+        file_put_contents("{$sandbox}/v1/fragments/app-dev.caddy", $sites[0]);
 
         expect(application_run(['bash'], $program)->stdout)->toBe("{$expected}\n");
     } finally {
@@ -622,8 +664,9 @@ it('compares the live Caddy configuration of either layout with the Instance Nod
     }
 })->with([
     'a Node Caddy build that matches a fresh render' => ['build', '1'],
-    'a Node Caddy build edited after its push' => ['build drift', '0'],
-    'the fragment layout of a Node no build replaced yet' => ['fragment', '1'],
+    'a hand edit inside the Instance site' => ['edit inside', '0'],
+    'a hand edit elsewhere in the file, which role.caddy_build_drift reports' => ['edit elsewhere', '1'],
+    'the fragment layout of an earlier release, which Doctor no longer reads' => ['fragment', '0'],
 ]);
 
 it('keeps an unavailable production runtime observation distinct from drift', function (): void {
@@ -1072,14 +1115,16 @@ function application_production_observation_program(string $observation, string 
     return $program;
 }
 
-function application_process_stat(int $pid, int $parentPid, int $startTime): string
+function application_process_stat(int $pid, int $parentPid, int $startTime, int $flags = 0): string
 {
     return implode(' ', [
         (string) $pid,
         '(php-fpm worker)',
         'S',
         (string) $parentPid,
-        ...array_fill(0, 17, '0'),
+        ...array_fill(0, 4, '0'),
+        (string) $flags,
+        ...array_fill(0, 12, '0'),
         (string) $startTime,
     ])."\n";
 }

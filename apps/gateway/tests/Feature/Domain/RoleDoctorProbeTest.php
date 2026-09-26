@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 use App\Actions\Doctor\RoleDoctorProbe;
 use App\Data\Doctor\DoctorIssueData;
+use App\Domain\Doctor\CaddyBuildInspector;
+use App\Domain\Doctor\CaddyBuildObservation;
 use App\Domain\Doctor\DoctorFamilyStatus;
 use App\Domain\Doctor\DoctorInspectionException;
 use App\Domain\Doctor\DoctorIssueKind;
@@ -19,6 +21,10 @@ use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\NodeRole;
 use Illuminate\Support\Facades\DB;
+
+beforeEach(function (): void {
+    app()->instance(CaddyBuildInspector::class, role_probe_caddy_builds(null));
+});
 
 it('returns a healthy empty report without live inspection when the node has no roles', function (): void {
     $roleCalls = 0;
@@ -107,6 +113,29 @@ it('reports lifecycle and each conflicting assignment once without leaking store
         ->not->toContain('secret-step', 'secret-code', 'failed_step', 'error_code');
 });
 
+it('reports an existing Gateway and Ingress on one Node as a role conflict', function (): void {
+    $node = role_probe_node('gateway-ingress');
+    $cluster = Cluster::query()->create(['name' => 'gateway-ingress']);
+    $node->update(['cluster_id' => $cluster->id]);
+    $gateway = role_probe_assignment($node, RoleName::Gateway);
+    role_probe_assignment($node, RoleName::Router, clusterId: $cluster->id);
+    $ingress = role_probe_assignment($node, RoleName::Ingress, clusterId: $cluster->id);
+    $roleCalls = 0;
+    $vpnCalls = 0;
+    $report = new RoleDoctorProbe(
+        role_probe_state_inspector($roleCalls),
+        role_probe_vpn_inspector($vpnCalls),
+    )->inspect(role_probe_context($node));
+
+    expect(array_map(
+        static fn (DoctorIssueData $issue): array => [$issue->resourceId, $issue->code],
+        $report->issues,
+    ))->toBe([
+        [$gateway->id, 'role.assignment_conflict'],
+        [$ingress->id, 'role.assignment_conflict'],
+    ]);
+});
+
 it('does not report a conflict when database shares a node with router', function (): void {
     $node = role_probe_node('database-router');
     $cluster = Cluster::query()->create(['name' => 'database-router']);
@@ -183,6 +212,22 @@ it('reports the complete role and VPN drift matrix in stable field order', funct
         ->toBe([$role->id])
         ->and(json_encode($report))
         ->not->toContain('package-output', 'service-output', 'private-key', 'vpn-setting');
+});
+
+it('reports a Gateway machine without the private DNS route as drift', function (): void {
+    $node = role_probe_node('gateway-dns-route');
+    $role = role_probe_assignment($node, RoleName::Gateway);
+    $roleCalls = 0;
+    $vpnCalls = 0;
+    $report = new RoleDoctorProbe(
+        role_probe_state_inspector($roleCalls, new RoleInspectionData(true, true, true, privateDnsRouteMatches: false)),
+        role_probe_vpn_inspector($vpnCalls),
+    )->inspect(role_probe_context($node));
+
+    expect(array_map(static fn (DoctorIssueData $issue): string => $issue->code, $report->issues))
+        ->toBe(['role.private_dns_route_mismatch'])
+        ->and($report->issues[0]->kind)->toBe(DoctorIssueKind::Drift)
+        ->and($report->issues[0]->resourceId)->toBe($role->id);
 });
 
 it('reports a Caddy below the rendered floor as drift, naming the floor and the installed release', function (): void {
@@ -370,7 +415,7 @@ it('maps a typed VPN inspection failure to the role row and does not stop later 
         ->toBe($vpn->id);
 });
 
-it('checks active Ingress from persisted state without live inspection or reachability', function (): void {
+it('inspects an active Ingress live like every other role', function (): void {
     $cluster = Cluster::query()->create(['name' => 'doctor-healthy-ingress']);
     $node = role_probe_node('healthy-ingress');
     $node->update(['cluster_id' => $cluster->id]);
@@ -381,15 +426,34 @@ it('checks active Ingress from persisted state without live inspection or reacha
     $report = new RoleDoctorProbe(
         role_probe_state_inspector($roleCalls),
         role_probe_vpn_inspector($vpnCalls),
-    )->inspect(role_probe_context($node, reachable: false));
+    )->inspect(role_probe_context($node));
 
     expect($report->checked)
         ->toBe(1)
         ->and($report->issues)
         ->toBeEmpty()
         ->and($roleCalls)
-        ->toBe(0)
+        ->toBe(1)
         ->and($vpnCalls)
+        ->toBe(0);
+});
+
+it('reports an unreachable Node that holds only an active Ingress', function (): void {
+    $cluster = Cluster::query()->create(['name' => 'doctor-unreachable-ingress']);
+    $node = role_probe_node('unreachable-ingress');
+    $node->update(['cluster_id' => $cluster->id]);
+    role_probe_assignment($node, RoleName::Ingress, clusterId: $cluster->id);
+    $roleCalls = 0;
+    $vpnCalls = 0;
+
+    $report = new RoleDoctorProbe(
+        role_probe_state_inspector($roleCalls),
+        role_probe_vpn_inspector($vpnCalls),
+    )->inspect(role_probe_context($node, reachable: false));
+
+    expect(array_map(static fn (DoctorIssueData $issue): string => $issue->code, $report->issues))
+        ->toBe(['role.node_unreachable'])
+        ->and($roleCalls)
         ->toBe(0);
 });
 
@@ -441,7 +505,7 @@ it('reports bounded Ingress Cluster ownership drift for every persisted lifecycl
             'mismatch',
         ])
         ->and($roleCalls)
-        ->toBe(0)
+        ->toBe($status === LifecycleStatus::Active ? 1 : 0)
         ->and($vpnCalls)
         ->toBe(0);
 })->with([
@@ -491,7 +555,7 @@ it('reports every active Ingress in a persisted Cluster cardinality conflict', f
             [$secondRole->id, 'role.cluster_cardinality_conflict'],
         ])
         ->and($roleCalls)
-        ->toBe(0)
+        ->toBe(1)
         ->and($vpnCalls)
         ->toBe(0);
 });
@@ -575,6 +639,168 @@ function role_probe_vpn_inspector(
             }
 
             return $this->state;
+        }
+    };
+}
+
+describe('Caddy build drift', function (): void {
+    it('reports a live Caddyfile that differs from a fresh build once, on the first role that publishes Caddy sites', function (): void {
+        $node = role_probe_node('caddy-drift');
+        role_probe_assignment($node, RoleName::Vpn);
+        $appProd = role_probe_assignment($node, RoleName::AppProd);
+        role_probe_assignment($node, RoleName::WebSocket);
+        $builds = role_probe_caddy_builds(new CaddyBuildObservation(str_repeat('a', 32), str_repeat('b', 32), false, ['app-prod', 'websocket']));
+        $roleCalls = 0;
+        $vpnCalls = 0;
+
+        $report = new RoleDoctorProbe(
+            role_probe_state_inspector($roleCalls),
+            role_probe_vpn_inspector($vpnCalls),
+            caddyBuilds: $builds,
+        )->inspect(role_probe_context($node));
+
+        expect($report->issues)->toHaveCount(1)
+            ->and($report->issues[0]->code)->toBe('role.caddy_build_drift')
+            ->and($report->issues[0]->kind)->toBe(DoctorIssueKind::Drift)
+            ->and($report->issues[0]->resourceId)->toBe($appProd->id)
+            ->and($report->issues[0]->summary)->toBe('The live Caddyfile differs from a fresh Node Caddy build. Site sources: app-prod, websocket.')
+            ->and($report->issues[0]->expected)->toBe(str_repeat('a', 32))
+            ->and($report->issues[0]->observed)->toBe(str_repeat('b', 32))
+            ->and($builds->nodes)->toBe([$node->id]);
+    });
+
+    it('reports a Node whose live Caddyfile no build wrote as not built', function (): void {
+        $node = role_probe_node('caddy-foreign');
+        role_probe_assignment($node, RoleName::AppDev);
+        $roleCalls = 0;
+        $vpnCalls = 0;
+
+        $report = new RoleDoctorProbe(
+            role_probe_state_inspector($roleCalls),
+            role_probe_vpn_inspector($vpnCalls),
+            caddyBuilds: role_probe_caddy_builds(new CaddyBuildObservation(str_repeat('a', 32), null, false, ['app-dev'])),
+        )->inspect(role_probe_context($node));
+
+        expect($report->issues[0]->code)->toBe('role.caddy_build_drift')
+            ->and($report->issues[0]->observed)->toBe('not_built');
+    });
+
+    it('reports stored state that renders no buildable Caddyfile', function (): void {
+        $node = role_probe_node('caddy-refused');
+        role_probe_assignment($node, RoleName::Analytics);
+        $roleCalls = 0;
+        $vpnCalls = 0;
+
+        $report = new RoleDoctorProbe(
+            role_probe_state_inspector($roleCalls),
+            role_probe_vpn_inspector($vpnCalls),
+            caddyBuilds: role_probe_caddy_builds(new CaddyBuildObservation(null, str_repeat('b', 32), false, ['analytics'])),
+        )->inspect(role_probe_context($node));
+
+        expect($report->issues[0]->code)->toBe('role.caddy_build_drift')
+            ->and($report->issues[0]->summary)->toBe('Stored state does not render a buildable Caddyfile for this Node. Site sources: analytics.')
+            ->and($report->issues[0]->expected)->toBe('buildable')
+            ->and($report->issues[0]->observed)->toBe('refused');
+    });
+
+    it('stays healthy when the live Caddyfile matches or the Node has no build to compare', function (?CaddyBuildObservation $observation): void {
+        $node = role_probe_node('caddy-current');
+        role_probe_assignment($node, RoleName::AppDev);
+        $roleCalls = 0;
+        $vpnCalls = 0;
+
+        $report = new RoleDoctorProbe(
+            role_probe_state_inspector($roleCalls),
+            role_probe_vpn_inspector($vpnCalls),
+            caddyBuilds: role_probe_caddy_builds($observation),
+        )->inspect(role_probe_context($node));
+
+        expect($report->issues)->toBe([]);
+    })->with([
+        'a matching build' => [new CaddyBuildObservation(str_repeat('a', 32), str_repeat('a', 32), true, ['app-dev'])],
+        'no build to compare' => [null],
+    ]);
+
+    it('reports a Node whose Caddy build was running as not compared, never as healthy', function (): void {
+        $node = role_probe_node('caddy-building');
+        $role = role_probe_assignment($node, RoleName::AppProd);
+        $roleCalls = 0;
+        $vpnCalls = 0;
+
+        $report = new RoleDoctorProbe(
+            role_probe_state_inspector($roleCalls),
+            role_probe_vpn_inspector($vpnCalls),
+            caddyBuilds: role_probe_caddy_builds(CaddyBuildObservation::building()),
+        )->inspect(role_probe_context($node));
+
+        expect($report->status)->toBe(DoctorFamilyStatus::Unverifiable)
+            ->and($report->issues)->toHaveCount(1)
+            ->and($report->issues[0]->code)->toBe('role.inspection_failed')
+            ->and($report->issues[0]->kind)->toBe(DoctorIssueKind::Unverifiable)
+            ->and($report->issues[0]->summary)->toBe('A Caddy build for this Node was running, so Doctor did not compare its Caddyfile.')
+            ->and($report->issues[0]->observed)->toBe('building')
+            ->and($report->issues[0]->resourceId)->toBe($role->id);
+    });
+
+    it('reports a failed observation as unverifiable without exception text', function (): void {
+        $node = role_probe_node('caddy-unreadable');
+        $role = role_probe_assignment($node, RoleName::Gateway);
+        $roleCalls = 0;
+        $vpnCalls = 0;
+
+        $report = new RoleDoctorProbe(
+            role_probe_state_inspector($roleCalls),
+            role_probe_vpn_inspector($vpnCalls),
+            caddyBuilds: role_probe_caddy_builds(null, throws: true),
+        )->inspect(role_probe_context($node));
+
+        expect($report->issues)->toHaveCount(1)
+            ->and($report->issues[0]->code)->toBe('role.inspection_failed')
+            ->and($report->issues[0]->kind)->toBe(DoctorIssueKind::Unverifiable)
+            ->and($report->issues[0]->resourceId)->toBe($role->id);
+    });
+
+    it('does not compare the build of an unreachable Node or a Node without an active role', function (bool $reachable, LifecycleStatus $status): void {
+        $node = role_probe_node('caddy-skip');
+        role_probe_assignment($node, RoleName::AppDev, $status);
+        $builds = role_probe_caddy_builds(new CaddyBuildObservation(str_repeat('a', 32), null, false, ['app-dev']));
+        $roleCalls = 0;
+        $vpnCalls = 0;
+
+        new RoleDoctorProbe(
+            role_probe_state_inspector($roleCalls),
+            role_probe_vpn_inspector($vpnCalls),
+            caddyBuilds: $builds,
+        )->inspect(role_probe_context($node, $reachable));
+
+        expect($builds->nodes)->toBe([]);
+    })->with([
+        'unreachable' => [false, LifecycleStatus::Active],
+        'no active role' => [true, LifecycleStatus::Failed],
+    ]);
+});
+
+function role_probe_caddy_builds(?CaddyBuildObservation $observation, bool $throws = false): CaddyBuildInspector
+{
+    return new class($observation, $throws) implements CaddyBuildInspector
+    {
+        /** @var list<int> */
+        public array $nodes = [];
+
+        public function __construct(
+            private ?CaddyBuildObservation $observation,
+            private bool $throws,
+        ) {}
+
+        public function inspect(Node $node): ?CaddyBuildObservation
+        {
+            $this->nodes[] = $node->id;
+
+            if ($this->throws) {
+                throw new DoctorInspectionException;
+            }
+
+            return $this->observation;
         }
     };
 }

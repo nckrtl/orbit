@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 use App\Domain\AppInstances\AppInstanceSourceLayout;
 use App\Domain\AppInstances\AppInstanceState;
+use App\Domain\AppInstances\Environment\AppInstanceEnvironmentOperationLock;
+use App\Domain\Projects\ProjectType;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\Activity;
@@ -26,6 +28,133 @@ beforeEach(function (): void {
 });
 
 describe('app updates', function (): void {
+    it('sets and clears the task check as a visible Project setting', function (): void {
+        $command = 'vp run check --filter=api';
+
+        $this->patchJson('/api/v1/projects/'.$this->fixture->app->id, [
+            'task_check' => $command,
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.task_check', $command);
+
+        expect($this->fixture->app->refresh()->taskCheckCommand())
+            ->toBe($command)
+            ->and(Activity::query()->latest('id')->first()?->properties['input']['task_check'] ?? null)
+            ->toBe($command);
+
+        $this->patchJson('/api/v1/projects/'.$this->fixture->app->id, [
+            'task_check' => null,
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.task_check', null);
+
+        expect($this->fixture->app->refresh()->taskCheckCommand())->toBeNull();
+    });
+
+    it('records the task check in activity on the compatibility path', function (): void {
+        $this->patchJson('/api/v1/apps/'.$this->fixture->app->id, [
+            'task_check' => 'composer test',
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.task_check', 'composer test');
+
+        expect(Activity::query()->latest('id')->first()?->properties['input'] ?? null)
+            ->toBe(['task_check' => 'composer test']);
+
+        $this->patchJson('/api/v1/apps/'.$this->fixture->app->id, [
+            'task_check' => null,
+        ])->assertOk();
+
+        expect(Activity::query()->latest('id')->first()?->properties['input'] ?? null)
+            ->toBe(['task_check' => null]);
+    });
+
+    it('stores the task check inside the update operation lock', function (): void {
+        $lock = new class($this->fixture->app->id) implements AppInstanceEnvironmentOperationLock
+        {
+            /** @var list<array{ids: list<int>, stored: string|null}> */
+            public array $runs = [];
+
+            public function __construct(private readonly int $appId) {}
+
+            public function run(array $appInstanceIds, Closure $operation): mixed
+            {
+                $result = $operation();
+                $this->runs[] = ['ids' => $appInstanceIds, 'stored' => OrbitApp::query()->findOrFail($this->appId)->task_check];
+
+                return $result;
+            }
+        };
+        $this->app->instance(AppInstanceEnvironmentOperationLock::class, $lock);
+
+        $this->patchJson('/api/v1/projects/'.$this->fixture->app->id, [
+            'task_check' => 'composer test',
+        ])->assertOk();
+
+        expect($lock->runs)->toHaveCount(1)
+            ->and($lock->runs[0]['ids'])->toBe([$this->fixture->defaultInstance->id])
+            ->and($lock->runs[0]['stored'])->toBe('composer test');
+    });
+
+    it('refuses a Project root update that would expose an inherited Route target root', function (): void {
+        $this->fixture->app->update(['type' => ProjectType::NodePackage]);
+
+        $this
+            ->patchJson('/api/v1/projects/'.$this->fixture->app->id, [
+                'root' => '.',
+            ])
+            ->assertConflict()
+            ->assertJsonPath('error.code', 'route.target_web_root_unsupported');
+
+        expect($this->fixture->app->refresh()->root)
+            ->toBe('public')
+            ->and($this->fixture->defaultInstance->refresh()->root)
+            ->toBeNull()
+            ->and($this->fixture->defaultRoute->targets()->where('app_instance_id', $this->fixture->defaultInstance->id)->exists())
+            ->toBeTrue();
+    });
+
+    it('allows an unsupported Project root update when the Route target has its own web-root override', function (): void {
+        $this->fixture->app->update(['type' => ProjectType::NodePackage]);
+        $this->fixture->defaultInstance->update(['root' => 'public']);
+
+        $this
+            ->patchJson('/api/v1/projects/'.$this->fixture->app->id, [
+                'root' => '.',
+            ])
+            ->assertOk()
+            ->assertJsonPath('data.root', '.');
+
+        expect($this->fixture->app->refresh()->root)
+            ->toBe('.')
+            ->and($this->fixture->defaultInstance->refresh()->root)
+            ->toBe('public')
+            ->and($this->fixture->defaultRoute->targets()->where('app_instance_id', $this->fixture->defaultInstance->id)->exists())
+            ->toBeTrue();
+    });
+
+    it('refuses a Project type update that leaves an inherited Route target with an unsupported root', function (): void {
+        $this->fixture->app->update([
+            'type' => ProjectType::LaravelPackage,
+            'root' => '.',
+        ]);
+
+        $this
+            ->patchJson('/api/v1/projects/'.$this->fixture->app->id, [
+                'type' => ProjectType::NodePackage->value,
+            ])
+            ->assertConflict()
+            ->assertJsonPath('error.code', 'route.target_web_root_unsupported')
+            ->assertJsonPath('error.message', 'A Route targets an Instance that inherits root [.], which is not a web root. Send a web root with the change.');
+
+        expect($this->fixture->app->refresh()->type)
+            ->toBe(ProjectType::LaravelPackage)
+            ->and($this->fixture->app->root)
+            ->toBe('.')
+            ->and($this->fixture->defaultInstance->refresh()->routeTargets()->exists())
+            ->toBeTrue();
+    });
+
     it('switches inheriting default development instances when default_branch changes', function (): void {
         $explicit = AppInstance::query()->create([
             'app_id' => $this->fixture->app->id,

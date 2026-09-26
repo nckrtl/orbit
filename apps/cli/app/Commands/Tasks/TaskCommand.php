@@ -180,11 +180,20 @@ abstract class TaskCommand extends GatewayCommand
         return (int) $this->commandPrompts()->selectEntity('Task group', ['ID', 'Title', 'Project', 'Status'], $rows);
     }
 
-    protected function selectSubtask(TaskGroupResponse $group): int
+    /**
+     * Lists the group's subtasks and returns the selected ID.
+     *
+     * @param  list<string>  $statuses  Offer only these statuses; an empty list offers every subtask.
+     */
+    protected function selectSubtask(TaskGroupResponse $group, array $statuses = []): int
     {
         $rows = [];
 
         foreach ($group->tasks as $task) {
+            if ($statuses !== [] && ! in_array($task->status, $statuses, true)) {
+                continue;
+            }
+
             $rows[$task->id] = [(string) $task->position, (string) $task->id, $task->title, $task->status];
         }
 

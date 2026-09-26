@@ -31,7 +31,7 @@ describe('PreparedStateFingerprint', function (): void {
     });
 
     afterEach(function (): void {
-        $tempDirectory = rtrim(sys_get_temp_dir(), '/');
+        $tempDirectory = temporaryDirectory();
         $expectedPrefix = $tempDirectory.'/orbit-fingerprint-';
 
         if (
@@ -225,7 +225,7 @@ describe('PreparedStateFingerprint', function (): void {
             ->toContain(
                 'apps/e2e/app/E2E/TopologyConverger.php',
                 'apps/e2e/resources/guest/converge-app-dev.sh',
-                'apps/e2e/resources/guest/converge-app-prod-internal-tls.sh',
+                'apps/e2e/resources/guest/converge-app-prod.sh',
                 'apps/e2e/resources/guest/converge-gateway.sh',
                 'apps/e2e/resources/guest/converge-sample-app.sh',
                 'apps/e2e/resources/guest/prepare-node.sh',

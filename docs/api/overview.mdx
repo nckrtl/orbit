@@ -77,7 +77,7 @@ Codes are namespaced by family. The [CLI pages](/cli/overview) and the reference
 
 ## Follow a request
 
-The Gateway records one Activity for every request it authorizes, with the operation, caller, target, result, and request ID, and never the body. Read it with `GET /api/v1/activities` or [`orbit activity:list --request-id=<uuid>`](/cli/activity).
+The Gateway records an Activity for every authorized request that can change something and for every failed request, with the operation, caller, target, result, and request ID, and never the body. It records a successful `GET` once per operation, caller, and target in any 60 seconds, and always for Schedule operations and credential reads. Read it with `GET /api/v1/activities` or [`orbit activity:list --request-id=<uuid>`](/cli/activity).
 
 ## Stream a deployment
 

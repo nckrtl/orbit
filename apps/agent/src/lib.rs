@@ -7,11 +7,27 @@ use std::{
     io::BufReader,
     net::{IpAddr, SocketAddr},
 };
+pub mod workspace;
+use workspace::WorkspaceState;
 
 pub const CONFIG_PATH: &str = "/etc/orbit/agent/config.toml";
 pub const CA_PATH: &str = "/etc/orbit/agent/ca.pem";
+/// The agent's secret, written by the Gateway as `root:root` mode `0600` (ADR 0155).
+pub const SECRET_PATH: &str = "/etc/orbit/agent/secret";
+/// The agent holds an exclusive lock on this directory, so one Node runs one agent.
+pub const LOCK_PATH: &str = "/etc/orbit/agent";
 pub const PUSHER_FRAME_LIMIT: usize = 9_900;
 pub const CHANGE_MERGE_WINDOW: std::time::Duration = std::time::Duration::from_millis(250);
+/// A complete snapshot also goes out this long after the last one, so a lost one heals.
+pub const SNAPSHOT_INTERVAL: std::time::Duration = std::time::Duration::from_secs(60);
+/// The agent pings Reverb after this long without a message from it.
+pub const PING_AFTER: std::time::Duration = std::time::Duration::from_secs(15);
+/// The agent reconnects when Reverb sends nothing for this long after its ping.
+pub const PONG_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+/// Every step from the TCP connect to `pusher_internal:subscription_succeeded` fits in this time.
+pub const JOIN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+/// A session that stayed joined this long starts the backoff again.
+pub const HEALTHY_SESSION: std::time::Duration = std::time::Duration::from_secs(60);
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -30,6 +46,42 @@ impl Config {
             return Err("gateway_url must be https://gateway.orbit".into());
         }
         Ok(config)
+    }
+}
+
+/// The secret the agent sends on every Gateway request, so the Gateway can tell the agent apart from
+/// any other process on the Node (ADR 0155). Neither `Debug` nor an error ever prints it.
+pub struct AgentSecret(String);
+impl std::fmt::Debug for AgentSecret {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("AgentSecret(redacted)")
+    }
+}
+impl AgentSecret {
+    pub fn load(path: &str) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        let contents = std::fs::read_to_string(path)
+            .map_err(|error| format!("cannot read the agent secret at {path}: {error}"))?;
+        Self::parse(&contents)
+    }
+    pub fn parse(contents: &str) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        let secret = contents.trim();
+        if secret.len() != 64
+            || !secret
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        {
+            return Err("the agent secret must be 64 lowercase hexadecimal characters".into());
+        }
+        Ok(Self(secret.to_owned()))
+    }
+    /// The `Authorization` header for every Gateway request, marked sensitive so it is never logged.
+    pub fn headers(&self) -> reqwest::header::HeaderMap {
+        let mut value = reqwest::header::HeaderValue::from_str(&format!("Bearer {}", self.0))
+            .expect("a hexadecimal secret is a valid header value");
+        value.set_sensitive(true);
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert(reqwest::header::AUTHORIZATION, value);
+        headers
     }
 }
 
@@ -81,6 +133,16 @@ pub struct SnapshotData {
 }
 #[derive(Debug, Clone, Serialize)]
 pub struct HeartbeatData {}
+#[derive(Debug, Clone, Serialize)]
+pub struct WorkspacesData {
+    pub part: usize,
+    pub parts: usize,
+    pub workspaces: Vec<WorkspaceState>,
+}
+#[derive(Debug, Clone, Serialize)]
+pub struct WorkspaceData {
+    pub workspace: WorkspaceState,
+}
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ClientFrame {
     pub event: String,
@@ -187,38 +249,14 @@ pub fn split_snapshot(
     units: &[Unit],
     docker: &'static str,
 ) -> Result<Vec<SnapshotData>, serde_json::Error> {
-    let mut chunks: Vec<Vec<Unit>> = Vec::new();
-    let mut current = Vec::new();
-    for unit in units {
-        current.push(unit.clone());
-        let probe = SnapshotData {
-            docker,
-            part: usize::MAX,
-            parts: usize::MAX,
-            units: current.clone(),
-        };
-        let frame = frame(
-            channel,
-            "client-snapshot",
-            json!({"sequence":u64::MAX,"at":"9999-12-31T23:59:59.999999Z","docker":probe.docker,"part":probe.part,"parts":probe.parts,"units":probe.units}),
-        );
-        if serde_json::to_vec(&frame)?.len() > PUSHER_FRAME_LIMIT {
-            let last = current.pop().expect("just appended");
-            if current.is_empty() {
-                return Err(serde_json::Error::io(std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    "one unit exceeds the Pusher frame limit",
-                )));
-            }
-            chunks.push(std::mem::take(&mut current));
-            current.push(last);
-        }
-    }
-    if !current.is_empty() || chunks.is_empty() {
-        chunks.push(current);
-    }
+    let chunks = chunk_for_frames(
+        channel,
+        "client-snapshot",
+        units,
+        |units| json!({"sequence":u64::MAX,"at":"9999-12-31T23:59:59.999999Z","docker":docker,"part":usize::MAX,"parts":usize::MAX,"units":units}),
+    )?;
     let parts = chunks.len();
-    let snapshots = chunks
+    Ok(chunks
         .into_iter()
         .enumerate()
         .map(|(index, units)| SnapshotData {
@@ -227,26 +265,123 @@ pub fn split_snapshot(
             parts,
             units,
         })
-        .collect::<Vec<_>>();
-    for part in &snapshots {
-        let probe = frame(
-            channel,
-            "client-snapshot",
-            json!({"sequence":u64::MAX,"at":"9999-12-31T23:59:59.999999Z","docker":part.docker,"part":usize::MAX,"parts":usize::MAX,"units":part.units}),
-        );
-        if serde_json::to_vec(&probe)?.len() > PUSHER_FRAME_LIMIT {
-            return Err(serde_json::Error::io(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                "snapshot part exceeds frame limit",
-            )));
+        .collect())
+}
+pub fn split_workspaces(
+    channel: &str,
+    workspaces: &[WorkspaceState],
+) -> Result<Vec<WorkspacesData>, serde_json::Error> {
+    let chunks = chunk_for_frames(
+        channel,
+        "client-workspaces",
+        workspaces,
+        |workspaces| json!({"sequence":u64::MAX,"at":"9999-12-31T23:59:59.999999Z","part":usize::MAX,"parts":usize::MAX,"workspaces":workspaces}),
+    )?;
+    let parts = chunks.len();
+    Ok(chunks
+        .into_iter()
+        .enumerate()
+        .map(|(index, workspaces)| WorkspacesData {
+            part: index + 1,
+            parts,
+            workspaces,
+        })
+        .collect())
+}
+pub fn workspaces_frames(
+    channel: &str,
+    sequence: &mut Sequencer,
+    workspaces: &[WorkspaceState],
+) -> Result<Vec<ClientFrame>, serde_json::Error> {
+    split_workspaces(channel, workspaces)?
+        .into_iter()
+        .map(|part| {
+            let payload = Envelope {
+                sequence: sequence.advance(),
+                at: iso_now(),
+                data: part,
+            };
+            Ok(frame(
+                channel,
+                "client-workspaces",
+                serde_json::to_value(payload)?,
+            ))
+        })
+        .collect()
+}
+pub fn workspace_frame(
+    channel: &str,
+    sequence: u64,
+    workspace: WorkspaceState,
+) -> Result<ClientFrame, serde_json::Error> {
+    let payload = Envelope {
+        sequence,
+        at: iso_now(),
+        data: WorkspaceData { workspace },
+    };
+    Ok(frame(
+        channel,
+        "client-workspace",
+        serde_json::to_value(payload)?,
+    ))
+}
+fn frame_limit_error(message: &'static str) -> serde_json::Error {
+    serde_json::Error::io(std::io::Error::new(
+        std::io::ErrorKind::InvalidData,
+        message,
+    ))
+}
+/// Splits items into the fewest consecutive parts whose worst-case frame stays within the Pusher limit.
+/// Always returns at least one part, so an empty list still sends one frame.
+fn chunk_for_frames<T: Clone + Serialize>(
+    channel: &str,
+    event: &str,
+    items: &[T],
+    probe: impl Fn(&[T]) -> Value,
+) -> Result<Vec<Vec<T>>, serde_json::Error> {
+    let fits = |items: &[T]| -> Result<bool, serde_json::Error> {
+        Ok(serde_json::to_vec(&frame(channel, event, probe(items)))?.len() <= PUSHER_FRAME_LIMIT)
+    };
+    let mut chunks: Vec<Vec<T>> = Vec::new();
+    let mut current = Vec::new();
+    for item in items {
+        current.push(item.clone());
+        if !fits(&current)? {
+            let last = current.pop().expect("just appended");
+            if current.is_empty() {
+                return Err(frame_limit_error(
+                    "one entry exceeds the Pusher frame limit",
+                ));
+            }
+            chunks.push(std::mem::take(&mut current));
+            current.push(last);
         }
     }
-    Ok(snapshots)
+    if !current.is_empty() || chunks.is_empty() {
+        chunks.push(current);
+    }
+    for chunk in &chunks {
+        if !fits(chunk)? {
+            return Err(frame_limit_error("snapshot part exceeds frame limit"));
+        }
+    }
+    Ok(chunks)
 }
 pub fn iso_now() -> String {
     time::OffsetDateTime::now_utc()
         .format(&time::format_description::well_known::Rfc3339)
         .unwrap_or_else(|_| "1970-01-01T00:00:00Z".into())
+}
+/// The attempt number for the retry after a connection ended. `joined_for` is how long the session
+/// stayed joined, or `None` when it never joined. Only a session that stayed joined for
+/// `HEALTHY_SESSION` starts the backoff again, so a session that fails right after each join keeps
+/// backing off. The first retry waits `retry_delay(1)`, about 2 seconds.
+pub fn next_attempt(attempt: u32, joined_for: Option<std::time::Duration>) -> u32 {
+    if joined_for.is_some_and(|duration| duration >= HEALTHY_SESSION) {
+        1
+    } else {
+        attempt.saturating_add(1)
+    }
 }
 pub fn retry_delay(attempt: u32) -> std::time::Duration {
     let base = 1_u64.checked_shl(attempt.min(5)).unwrap_or(30).min(30);
@@ -272,9 +407,13 @@ pub fn tls_config(
 }
 pub fn gateway_client(
     address: IpAddr,
+    secret: &AgentSecret,
 ) -> Result<reqwest::Client, Box<dyn std::error::Error + Send + Sync>> {
     let mut reader = BufReader::new(File::open(CA_PATH)?);
     let mut builder = reqwest::Client::builder()
+        .default_headers(secret.headers())
+        .connect_timeout(std::time::Duration::from_secs(10))
+        .timeout(std::time::Duration::from_secs(30))
         .https_only(true)
         .redirect(reqwest::redirect::Policy::none())
         .tls_built_in_root_certs(false)
@@ -285,9 +424,150 @@ pub fn gateway_client(
     Ok(builder.build()?)
 }
 
+/// Takes the lock that keeps a second agent off the Node. A second agent would publish as the same
+/// Reverb member, and Reverb announces neither its join nor its exit, so subscribers would mix two
+/// event streams. The lock ends with the process.
+pub fn lock_single_instance(path: &str) -> Result<File, Box<dyn std::error::Error + Send + Sync>> {
+    let file = File::open(path)?;
+    match file.try_lock() {
+        Ok(()) => Ok(file),
+        Err(std::fs::TryLockError::WouldBlock) => {
+            Err("another orbit-agent already runs on this Node".into())
+        }
+        Err(std::fs::TryLockError::Error(error)) => Err(error.into()),
+    }
+}
+
+/// Tells a connected session when to ping Reverb and when to give its connection up. The agent
+/// only publishes, so on a quiet channel nothing else would show that the connection died.
+#[derive(Debug)]
+pub struct Liveness {
+    last_message: tokio::time::Instant,
+    ping_sent: Option<tokio::time::Instant>,
+}
+#[derive(Debug, PartialEq, Eq)]
+pub enum LivenessCheck {
+    Alive,
+    Ping,
+    Dead,
+}
+impl Liveness {
+    pub fn new(now: tokio::time::Instant) -> Self {
+        Self {
+            last_message: now,
+            ping_sent: None,
+        }
+    }
+    /// Reverb sent something: the connection is alive.
+    pub fn message(&mut self, now: tokio::time::Instant) {
+        self.last_message = now;
+        self.ping_sent = None;
+    }
+    pub fn check(&mut self, now: tokio::time::Instant) -> LivenessCheck {
+        match self.ping_sent {
+            Some(sent) if now >= sent + PONG_TIMEOUT => LivenessCheck::Dead,
+            Some(_) => LivenessCheck::Alive,
+            None if now >= self.last_message + PING_AFTER => {
+                self.ping_sent = Some(now);
+                LivenessCheck::Ping
+            }
+            None => LivenessCheck::Alive,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn loads_a_hexadecimal_secret_and_never_prints_it() {
+        let secret = "0123456789abcdef".repeat(4);
+        let parsed = AgentSecret::parse(&format!("{secret}\n")).unwrap();
+        assert!(!format!("{parsed:?}").contains(&secret));
+        let headers = parsed.headers();
+        let value = headers.get(reqwest::header::AUTHORIZATION).unwrap();
+        assert_eq!(value.to_str().unwrap(), format!("Bearer {secret}"));
+        assert!(value.is_sensitive());
+        assert!(!format!("{headers:?}").contains(&secret));
+    }
+    #[test]
+    fn refuses_a_missing_or_malformed_secret_without_echoing_it() {
+        for bad in [
+            "",
+            "short",
+            &"A".repeat(64),
+            &"g".repeat(64),
+            &"a".repeat(65),
+            &format!("{} x", "a".repeat(62)),
+        ] {
+            let error = AgentSecret::parse(bad).unwrap_err().to_string();
+            assert!(error.contains("64 lowercase hexadecimal"));
+            if !bad.is_empty() {
+                assert!(!error.contains(bad));
+            }
+        }
+        let missing =
+            std::env::temp_dir().join(format!("orbit-agent-no-secret-{}", std::process::id()));
+        let error = AgentSecret::load(missing.to_str().unwrap())
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("cannot read the agent secret"));
+    }
+    #[test]
+    fn a_second_agent_cannot_take_the_lock_until_the_first_one_ends() {
+        let dir = std::env::temp_dir().join(format!("orbit-agent-lock-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.to_str().unwrap();
+        let first = lock_single_instance(path).unwrap();
+        let refused = lock_single_instance(path).unwrap_err();
+        assert!(refused.to_string().contains("another orbit-agent"));
+        drop(first);
+        assert!(lock_single_instance(path).is_ok());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+    #[test]
+    fn only_a_session_that_stayed_joined_starts_the_backoff_again() {
+        assert_eq!(next_attempt(5, None), 6);
+        assert_eq!(next_attempt(5, Some(std::time::Duration::from_secs(1))), 6);
+        assert_eq!(
+            next_attempt(
+                5,
+                Some(HEALTHY_SESSION - std::time::Duration::from_millis(1))
+            ),
+            6
+        );
+        assert_eq!(next_attempt(5, Some(HEALTHY_SESSION)), 1);
+        assert_eq!(next_attempt(u32::MAX, None), u32::MAX);
+        // A session that fails right after every join keeps backing off up to 30 seconds.
+        let mut attempt = 0;
+        for _ in 0..10 {
+            attempt = next_attempt(attempt, Some(std::time::Duration::from_secs(1)));
+        }
+        assert!(retry_delay(attempt) >= std::time::Duration::from_secs(30));
+        assert!(
+            retry_delay(next_attempt(attempt, Some(HEALTHY_SESSION)))
+                < std::time::Duration::from_secs(3)
+        );
+    }
+    #[test]
+    fn liveness_pings_after_a_quiet_spell_and_gives_up_without_an_answer() {
+        let start = tokio::time::Instant::now();
+        let mut liveness = Liveness::new(start);
+        assert_eq!(liveness.check(start + PING_AFTER / 2), LivenessCheck::Alive);
+        assert_eq!(liveness.check(start + PING_AFTER), LivenessCheck::Ping);
+        assert_eq!(
+            liveness.check(start + PING_AFTER + PONG_TIMEOUT / 2),
+            LivenessCheck::Alive
+        );
+        liveness.message(start + PING_AFTER + PONG_TIMEOUT / 2);
+        assert_eq!(
+            liveness.check(start + PING_AFTER + PONG_TIMEOUT),
+            LivenessCheck::Alive
+        );
+        let pinged = start + PING_AFTER * 2 + PONG_TIMEOUT;
+        assert_eq!(liveness.check(pinged), LivenessCheck::Ping);
+        assert_eq!(liveness.check(pinged + PONG_TIMEOUT), LivenessCheck::Dead);
+    }
     fn unit(name: &str, status: &str, runtime: &str) -> Unit {
         Unit {
             name: name.into(),
@@ -400,6 +680,64 @@ gateway_address = "10.44.0.1""#,
         tokio::time::advance(std::time::Duration::from_millis(1)).await;
         assert!(batch.due(tokio::time::Instant::now()));
         assert_eq!(batch.take()[0].runtime_status, "restarting");
+    }
+    fn workspace(id: u64) -> WorkspaceState {
+        WorkspaceState {
+            instance_id: id,
+            base: format!("\"{}", "b".repeat(254)),
+            start: Some("a".repeat(40)),
+            branch: Some(format!("\u{1}{}", "t".repeat(254))),
+            head: Some("f".repeat(40)),
+            dirty: Some(true),
+            commits: Some(1000),
+            diff: Some(workspace::DiffCounts {
+                files: 5000,
+                added: u64::MAX,
+                removed: u64::MAX,
+                truncated: false,
+            }),
+        }
+    }
+    #[test]
+    fn workspace_list_frames_fit_limit_with_consecutive_sequences() {
+        let workspaces = (1..=64).map(workspace).collect::<Vec<_>>();
+        let mut seq = Sequencer::default();
+        seq.advance();
+        let frames = workspaces_frames("presence-node.12", &mut seq, &workspaces).unwrap();
+        assert!(frames.len() > 1);
+        let mut seen = Vec::new();
+        for (index, frame) in frames.iter().enumerate() {
+            assert_eq!(frame.event, "client-workspaces");
+            assert_eq!(frame.channel, "presence-node.12");
+            assert!(serde_json::to_vec(frame).unwrap().len() <= PUSHER_FRAME_LIMIT);
+            assert_eq!(frame.data["sequence"], index as u64 + 2);
+            assert_eq!(frame.data["part"], index + 1);
+            assert_eq!(frame.data["parts"], frames.len());
+            assert!(frame.data["at"].is_string());
+            for w in frame.data["workspaces"].as_array().unwrap() {
+                seen.push(serde_json::from_value::<WorkspaceState>(w.clone()).unwrap());
+            }
+        }
+        assert_eq!(seen, workspaces);
+        assert_eq!(seq.current(), frames.len() as u64 + 1);
+    }
+    #[test]
+    fn empty_workspace_list_is_one_frame_and_one_change_is_one_event() {
+        let mut seq = Sequencer::default();
+        let frames = workspaces_frames("presence-node.3", &mut seq, &[]).unwrap();
+        assert_eq!(frames.len(), 1);
+        assert_eq!(frames[0].data["part"], 1);
+        assert_eq!(frames[0].data["parts"], 1);
+        assert_eq!(frames[0].data["workspaces"], json!([]));
+        let event = workspace_frame("presence-node.3", 9, workspace(7)).unwrap();
+        assert_eq!(event.event, "client-workspace");
+        assert_eq!(event.data["sequence"], 9);
+        assert_eq!(event.data["workspace"]["instance_id"], 7);
+        assert_eq!(
+            event.data.as_object().unwrap().keys().collect::<Vec<_>>(),
+            ["at", "sequence", "workspace"]
+        );
+        assert!(serde_json::to_vec(&event).unwrap().len() <= PUSHER_FRAME_LIMIT);
     }
     #[test]
     fn snapshot_parts_have_consecutive_sequences() {

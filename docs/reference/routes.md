@@ -33,6 +33,12 @@ Active Cluster membership still selects Cluster scope for Project Routes, even w
 
 Creating the same explicit Project Route again with identical Project, domain, publication intent, scope, and target returns the existing Route. A retry that changes one of those values fails without changing the Route. Creating the same custom proxy Route again with identical domain, Node, and upstream or Process returns the existing Route.
 
+### Check Route status with Doctor
+
+Every Route is expected to be `active`. Doctor reports any other status as `route.lifecycle_not_active` drift in the `route` family, with `active` as the expected value and the stored status as the observed value. A Route that an operation leaves `pending`, `activating`, `retiring`, or `failed` therefore stays visible until a retry or cleanup finishes it. Doctor reads only the stored status, so the check also runs when the Node is unreachable.
+
+Doctor reports each Route on one Node. A Node-scoped Route belongs to its Node. A Cluster-scoped Route belongs to the Node that holds the Cluster Router role. A Route with neither a Node nor a Cluster Router is not reported.
+
 ## Select a domain and scope
 
 Supply a domain when creating an Instance to request an explicit Route. Otherwise, Orbit generates one from the effective top-level domain (TLD). Generation uses an active Cluster TLD first, then the Node TLD. If neither authority supplies a TLD, creation stops before source or runtime changes. An explicit domain stays as supplied. Instance responses derive the domain and URL from the authoritative Route.
@@ -74,7 +80,7 @@ The CLI names these operations `route:create`, `route:list`, `route:show`, `rout
 
 ## Change or clear a target
 
-The Gateway validates the complete proposed Route before it commits a target change.
+The Gateway validates the complete proposed Route before it commits a target change. A Route target must have a supported relative web root. A package Instance rooted at `.` is not a supported target and returns `route.target_web_root_unsupported` until an operator sets a web-root override.
 
 | Change | Result |
 | --- | --- |
@@ -111,6 +117,7 @@ A failure before the association commit restores the original associations and r
 | `route.target_app_conflict` | A target or reassignment destination belongs to another Project. |
 | `route.target_scope_conflict` | A target or destination is outside the Route Cluster or is not an active app-prod Node. |
 | `route.target_inactive` | A target Instance is missing or not active. |
+| `route.target_web_root_unsupported` | A target Instance has no supported relative web root, such as a package rooted at `.`. |
 | `route.target_disposition_required` | A detached active Instance has no reassignment or authorized removal. |
 | `route.target_disposition_invalid` | A disposition names an invalid destination or combines reassignment with removal. |
 | `route.target_set_conflict` | Another target-set change is already recorded on the Route. |
@@ -306,11 +313,17 @@ Public TLS terminates on the Ingress Node with Let's Encrypt when the public edg
 
 Ingress forwards Orbit-CA HTTPS to the Router over the configured LAN address and uses WireGuard only when no LAN address is set. A configured but unreachable LAN path fails and does not fall back to WireGuard. Ingress preserves the original `Host` value, HTTPS scheme, and client address.
 
+The Ingress serves public sites while its role is active, while it converges, and after a failed convergence step. An Ingress role that is being removed serves none. A new public activation, or its repeat on deploy, starts only while the Ingress role is active.
+
 When Ingress shares a Node with the Router, with app-prod, or with both, one composed Caddy service serves the public Route. The composed site does not proxy to its own public listener.
+
+Ingress never shares a Node with the Gateway: Ingress is public and the Gateway is private. `node:role:add` refuses `ingress` on the Gateway Node, and `node:role:relocate` refuses `gateway` onto an Ingress Node, before either changes anything. A Gateway that is the Router works with an Ingress on another Node of the Cluster.
+
+On an Ingress Node, only the public sites bind every address; the Router's and workloads' private sites stay on the WireGuard and LAN addresses. A public client that names a private hostname completes TLS with that site's certificate and then gets Caddy's empty `200` response, because no private site is on the public listener. [Caddy configuration](/reference/caddy-configuration#listener-addresses) describes the listeners.
 
 When the Ingress Node runs a target of the public Route, one site on the public listener serves that target directly, with `tls force_automate`, and replaces the target's private site for that host. A Router on another Node still forwards private traffic to that Node. It verifies the site against the Node's system roots, which also hold the Orbit root, so it accepts the public certificate. Until Let's Encrypt issues that certificate, the host does not complete TLS on that Node.
 
-Firewall policy admits public HTTP and HTTPS only on the Ingress Node, and only while that Cluster has at least one active public Route. Router and workload listeners stay private. Direct public workload traffic is denied.
+Firewall policy admits public HTTP and HTTPS only on the Ingress Node, and only while that Cluster has at least one active public Route. When the last live public Route leaves the public edge, its Ingress firewall step closes both rules. Router and workload listeners stay private. Direct public workload traffic is denied.
 
 An exact client-local override can send the Route domain to the Router address and then to the workload address without changing public Ingress or DNS state. [Local resolver overrides](/reference/local-resolver-overrides) owns installing that caller-local resolver.
 
@@ -336,9 +349,18 @@ Doctor instance checks report public Ingress, private forwarding, TLS, and firew
 | --- | --- |
 | `instance.public_ingress_mismatch` | The live Caddy version on the Ingress does not contain the public site that Orbit renders for it, apart from TLS lines. |
 | `instance.public_tls_mismatch` | The public site pins an Orbit CA leaf, or it lacks `tls force_automate` while the Node disables certificate management. |
+| `instance.private_forwarding_mismatch` | The Ingress cannot open a TCP connection to a private address that its public site forwards to. |
 | `instance.public_firewall_mismatch` | The Ingress firewall is inactive, or it lacks an exact managed rule for public HTTP on port 80 or HTTPS on port 443. |
 
-Doctor builds the expected public site the same way the publisher does. A separate Ingress expects a reverse proxy to the Router. An Ingress that shares its Node with the Router and the workload expects the composed site that serves the Instance directly. Related-node checks use only caller-authorized selected nodes. An unavailable observation reports `instance.related_node_unverifiable` without contacting an unselected Node.
+Doctor builds the expected public site the same way the publisher does. An Ingress that runs a target of the Route expects the composed site that serves the Instance directly. Any other Ingress expects a reverse proxy to the Router. The forwarding check dials the Router, or the workload Nodes when the Ingress also holds the Router role. A composed site forwards nowhere, so it always passes that check. Related-node checks use only caller-authorized selected nodes. An unavailable observation reports `instance.related_node_unverifiable` without contacting an unselected Node.
+
+### Ingress removal
+
+`node:role:remove NODE ingress --force` is refused with `public_routes_attached` while any Route in the Node's Cluster has `publication=public`. Make each such Route private or remove it first. The Gateway checks the guard again when it claims the assignment.
+
+The claimed assignment is `removing`, so it serves nothing. The Gateway builds the Node Caddyfile from stored state: the public sites leave, and the Node's other sites return from the all-address listener to their private addresses. It then closes the `orbit:ingress-http` and `orbit:ingress-https` rules, including rules that outlived their last public Route, and reconciles service metrics. The Caddy package stays installed. When the Ingress was the Node's last role, the Gateway reopens public SSH before it deletes the assignment.
+
+The command also removes an Ingress whose convergence failed (`failed_step=converge:STEP`), for example after `converge:caddy-config`, through the same steps. A failed step leaves the assignment `failed` with `failed_step=remove:STEP` and a bounded `error_code`. The same command retries every step. When the Node has no Ingress assignment, the command succeeds and changes nothing. With `--offline`, the Gateway removes an unreachable Ingress on its side only and lists the Caddy configuration and firewall rules that stay on the Node under `retained_on_node`.
 
 ### Publication ownership
 

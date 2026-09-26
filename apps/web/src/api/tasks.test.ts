@@ -11,8 +11,11 @@ import {
     formatLineDiff,
     formatSignedLineChanges,
     formatTokens,
+    isActiveTaskGroup,
+    liveDurationMs,
     taskColumn,
     type Task,
+    type TaskGroup,
 } from "./tasks";
 
 it.each([
@@ -164,4 +167,35 @@ it("measures a check until it finished, or until now while it runs", () => {
     );
     expect(checkDurationMs({ status: "lost", started_at, finished_at: null }, now)).toBeNull();
     expect(checkDurationMs({ status: "passed" }, now)).toBeNull();
+});
+
+it.each([
+    ["backlog", false],
+    ["todo", false],
+    ["reserved", true],
+    ["running", true],
+    ["reviewing", true],
+    ["settling", true],
+    ["completed", false],
+    ["failed", false],
+    ["cancelled", false],
+] as const)("treats a %s group as active: %s", (status, active) => {
+    expect(isActiveTaskGroup(status)).toBe(active);
+});
+
+it("counts an active group's duration forward from the response and keeps a finished one", () => {
+    const group = (status: TaskGroup["status"], duration_ms: number | null) => ({
+        status,
+        duration_ms,
+    });
+    const fetchedAt = 1_000_000;
+
+    expect(liveDurationMs(group("running", 90_000), fetchedAt, fetchedAt + 45_000)).toBe(135_000);
+    expect(liveDurationMs(group("settling", 1_000), fetchedAt, fetchedAt + 2_000)).toBe(3_000);
+    expect(liveDurationMs(group("completed", 90_000), fetchedAt, fetchedAt + 45_000)).toBe(90_000);
+    expect(liveDurationMs(group("todo", null), fetchedAt, fetchedAt + 45_000)).toBeNull();
+    expect(liveDurationMs(group("running", null), fetchedAt, fetchedAt + 45_000)).toBeNull();
+    // A clock read before the response never counts backwards, and an unfetched query adds nothing.
+    expect(liveDurationMs(group("running", 90_000), fetchedAt, fetchedAt - 5_000)).toBe(90_000);
+    expect(liveDurationMs(group("running", 90_000), 0, fetchedAt)).toBe(90_000);
 });

@@ -3,10 +3,13 @@
 declare(strict_types=1);
 
 use App\Domain\Tools\ToolManagerName;
+use App\Domain\Tools\ToolManagerScopeLockException;
 use App\Domain\Tools\ToolOperation;
 use App\Domain\Tools\ToolOperationException;
+use App\Infrastructure\Nodes\NodeLocks;
 use App\Infrastructure\Tools\NativeToolManagerScopeLock;
 use App\Infrastructure\Tools\NativeToolOperationLock;
+use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Cache;
 
 describe(NativeToolOperationLock::class, function (): void {
@@ -66,5 +69,38 @@ describe(NativeToolOperationLock::class, function (): void {
         } finally {
             $manager->release();
         }
+    });
+
+    it('keeps manager and tool locks in the pinned Node lock store with the request term', function (): void {
+        $home = sys_get_temp_dir().'/orbit-tool-locks-'.bin2hex(random_bytes(4));
+        config(['orbit.home' => $home, 'cache.default' => 'database']);
+        app()->forgetInstance(NodeLocks::class);
+
+        try {
+            $scope = new NativeToolManagerScopeLock;
+            $lock = new NativeToolOperationLock($scope);
+
+            $lock->run(7, ToolManagerName::Vp, '@openai/codex', ToolOperation::Install, null, function () use ($home): void {
+                expect(app(NodeLocks::class)->lock('tool-manager:7:vp', 5)->get())->toBeFalse()
+                    ->and(app(NodeLocks::class)->lock('tool:7:vp:'.hash('sha256', '@openai/codex'), 5)->get())->toBeFalse()
+                    ->and(glob($home.'/cache/node-locks/*/*/*') ?: [])->not->toBe([]);
+            });
+
+            expect(app(NodeLocks::class)->lock('tool-manager:7:vp', 5)->get())->toBeTrue();
+        } finally {
+            (new Filesystem)->deleteDirectory($home);
+        }
+    });
+
+    it('frees a manager scope that a killed worker left behind once the request term passed', function (): void {
+        $abandoned = app(NodeLocks::class)->lock('tool-manager:7:composer', NodeLocks::RequestSeconds);
+        expect($abandoned->get())->toBeTrue();
+
+        expect(fn () => (new NativeToolManagerScopeLock)->run(7, ToolManagerName::Composer, static fn (): null => null))
+            ->toThrow(ToolManagerScopeLockException::class);
+
+        $this->travel(NodeLocks::RequestSeconds + 1)->seconds();
+
+        expect((new NativeToolManagerScopeLock)->run(7, ToolManagerName::Composer, static fn (): string => 'free'))->toBe('free');
     });
 });

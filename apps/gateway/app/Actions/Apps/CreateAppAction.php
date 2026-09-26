@@ -12,7 +12,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitBranchName;
 use App\Domain\SourceControl\GitRepositoryIdentity;
 use App\Domain\SourceControl\GitRepositoryOrigin;
-use App\Domain\SourceControl\RelativeWebRoot;
+use App\Domain\SourceControl\ProjectRoot;
 use App\Domain\SourceControl\RepositoryDefaultBranchResolver;
 use App\Models\App as OrbitApp;
 use Illuminate\Database\UniqueConstraintViolationException;
@@ -30,7 +30,7 @@ final readonly class CreateAppAction
         $repositoryUrl = GitRepositoryOrigin::validate($data->repositoryUrl);
         $repositoryIdentity = GitRepositoryIdentity::derive($repositoryUrl);
         $defaultBranch = $data->defaultBranch === null ? null : GitBranchName::validate($data->defaultBranch);
-        $root = RelativeWebRoot::validate($data->root);
+        $root = ProjectRoot::validate($data->root, $data->type);
         $app = OrbitApp::query()->where('slug', $data->slug)->first();
 
         if ($app instanceof OrbitApp) {
@@ -59,6 +59,7 @@ final readonly class CreateAppAction
                 'default_branch' => $defaultBranch,
                 'root' => $root,
                 'defaults' => $data->defaults,
+                'task_check' => $data->resolvedTaskCheck(),
             ]);
             try {
                 $candidate->save();
@@ -139,6 +140,7 @@ final readonly class CreateAppAction
             || $app->default_branch === $defaultBranch)
             && $app->root === $root
             && $app->defaults === $data->defaults
+            && (! $data->taskCheckProvided || $app->task_check === $data->taskCheck)
         ) {
             return;
         }

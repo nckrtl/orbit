@@ -125,6 +125,36 @@ final class UfwStatusParser
         );
     }
 
+    /**
+     * Returns the source address of the one rule that carries `$expected`'s comment and differs from it
+     * only in its IPv4 host source, or null when the rule is missing, exact, or drifts in any other way.
+     */
+    public function staleSource(string $output, UfwRuleShape $expected): ?string
+    {
+        $observed = [];
+
+        foreach (explode("\n", $output) as $line) {
+            if ($this->comment($line) === $expected->comment) {
+                $observed[] = $this->parseLine($line, $expected->comment);
+            }
+        }
+
+        if (count($observed) !== 1 || ! $observed[0] instanceof UfwRuleShape) {
+            return null;
+        }
+
+        $rule = $observed[0];
+
+        if (
+            $rule->source === $expected->source
+            || filter_var($rule->source, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false
+        ) {
+            return null;
+        }
+
+        return $expected->withSource($rule->source)->matches($rule) ? $rule->source : null;
+    }
+
     /** @return list<UfwRuleShape> */
     private function ownedRuleShapes(string $output, string $comment): array
     {

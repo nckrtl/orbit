@@ -1,0 +1,15 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\Nodes\\RemoveNodeRoleRequest",
+    "route": "DELETE /api/v1/nodes/{node}/roles/{role}",
+    "status": 502,
+    "body": {
+        "error": {
+            "code": "node_role.remove_failed",
+            "message": "UFW is inactive on node [app-dev]. Retry with --offline if node [app-dev] is unreachable.",
+            "details": {
+                "step": "remove:host-firewall"
+            }
+        }
+    }
+}

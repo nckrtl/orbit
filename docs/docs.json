@@ -85,6 +85,7 @@
               "reference/instance-setup",
               "reference/development-node-exclusions",
               "reference/instance-logs",
+              "reference/live-logs",
               "reference/instance-queue",
               "reference/instance-analytics-stats",
               "reference/instance-dependencies",
@@ -261,6 +262,7 @@
             "group": "Firewall",
             "openapi": "/openapi.json",
             "pages": [
+              "GET /api/v1/firewall-rules",
               "GET /api/v1/nodes/{node}/firewall-rules",
               "POST /api/v1/nodes/{node}/firewall-rules/allow",
               "POST /api/v1/nodes/{node}/firewall-rules/deny",
@@ -494,6 +496,7 @@
               "POST /api/v1/task-groups/{group}/tasks",
               "DELETE /api/v1/task-groups/{group}/tasks/{task}",
               "PATCH /api/v1/task-groups/{group}/tasks/{task}",
+              "POST /api/v1/task-groups/{group}/tasks/{task}/cancel",
               "POST /api/v1/task-groups/{group}/tasks/{task}/check/cancel",
               "GET /api/v1/task-groups/{group}/tasks/{task}/comments",
               "POST /api/v1/task-groups/{group}/tasks/{task}/comments",
@@ -543,6 +546,7 @@
             "pages": [
               "POST /api/v1/agent/broadcasting/auth",
               "GET /api/v1/agent/realtime",
+              "GET /api/v1/agent/workspaces",
               "GET /api/v1/github/app/callback",
               "GET /api/v1/github/app/register",
               "GET /api/v1/metrics/grafana/authorize",
@@ -708,7 +712,14 @@
               "decisions/0146-retire-the-herdr-integration",
               "decisions/0147-retire-orbit-top",
               "decisions/0148-keep-a-gateway-view-of-node-agent-state",
-              "decisions/0150-keep-extension-commands-local-and-confirm-the-proxycli-fleet-stop"
+              "decisions/0150-keep-extension-commands-local-and-confirm-the-proxycli-fleet-stop",
+              "decisions/0151-push-task-and-process-usage-changes-over-realtime",
+              "decisions/0152-sample-successful-read-activity",
+              "decisions/0153-tail-instance-and-process-logs-live-through-the-node-agent",
+              "decisions/0154-recover-the-gateway-agent-view-without-a-membership-change",
+              "decisions/0155-authenticate-the-node-agent-with-a-per-node-secret",
+              "decisions/0156-route-the-private-domain-on-the-gateway-machine-to-vpn-dns",
+              "decisions/0157-keep-private-caddy-sites-off-the-public-listener"
             ]
           }
         ]

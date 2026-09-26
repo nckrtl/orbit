@@ -6,10 +6,13 @@ use App\Domain\AppInstances\Deployment\AppInstanceDeploymentRecorder;
 use App\Domain\AppInstances\Deployment\DeploymentFailureBoundary;
 use App\Domain\AppInstances\Deployment\DeploymentRelease;
 use App\Domain\AppInstances\Deployment\DeploymentResult;
+use App\Domain\Broadcasting\RecordBroadcast;
+use App\Domain\Broadcasting\RecordEventType;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\AppInstanceDeployment;
 use App\Models\Node;
+use Illuminate\Support\Facades\Event;
 
 function orb350_deployment_recorder_instance(): AppInstance
 {
@@ -110,4 +113,37 @@ it('retains only the most recent 50 deployments per AppInstance', function (): v
         ->toBe(AppInstanceDeploymentRecorder::RETAINED_PER_INSTANCE)
         ->and(AppInstanceDeployment::query()->where('app_instance_id', $instance->id)->orderBy('id')->value('release'))
         ->toBe('20260918120005');
+});
+
+it('broadcasts deployment.created at start and deployment.updated with the outcome at finish', function (): void {
+    Event::fake([RecordBroadcast::class]);
+    $instance = orb350_deployment_recorder_instance();
+    $recorder = new AppInstanceDeploymentRecorder;
+
+    $deployment = $recorder->start($instance, 'caller-node');
+
+    Event::assertDispatched(
+        RecordBroadcast::class,
+        fn (RecordBroadcast $event): bool => $event->type === RecordEventType::DeploymentCreated
+            && $event->id === $deployment->id
+            && $event->data['app_instance_id'] === $instance->id
+            && $event->data['status'] === 'running',
+    );
+
+    $recorder->finish($deployment, DeploymentResult::failed(
+        null,
+        null,
+        DeploymentFailureBoundary::Activation,
+        'deployment.command_timed_out',
+    ), [['type' => 'phase', 'phase' => 'activation', 'step_name' => null]]);
+
+    Event::assertDispatched(
+        RecordBroadcast::class,
+        fn (RecordBroadcast $event): bool => $event->type === RecordEventType::DeploymentUpdated
+            && $event->id === $deployment->id
+            && $event->data['status'] === 'failed'
+            && $event->data['error_code'] === 'deployment.command_timed_out'
+            && ! array_key_exists('events', $event->data),
+    );
+    Event::assertDispatchedTimes(RecordBroadcast::class, 2);
 });

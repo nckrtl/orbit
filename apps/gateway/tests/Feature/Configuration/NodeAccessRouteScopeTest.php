@@ -6,11 +6,12 @@ use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Middleware\RequireActiveWireGuardPeer;
 use App\Http\Middleware\RequireNodeAccess;
+use App\Http\Middleware\RequireNodeAgentSecret;
 use Illuminate\Routing\Route as IlluminateRoute;
 use Illuminate\Support\Facades\Route;
 
 it('declares node access scope on every active-peer API route', function (): void {
-    $agentRoutes = ['agent:realtime', 'agent:realtime:auth'];
+    $agentRoutes = ['agent:realtime', 'agent:realtime:auth', 'agent:workspaces'];
     $protectedRoutes = collect(Route::getRoutes()->getRoutes())
         ->filter(static fn (IlluminateRoute $route): bool => str_starts_with($route->uri(), 'api/v1/'))
         ->filter(
@@ -100,6 +101,7 @@ it('declares node access scope on every active-peer API route', function (): voi
         'env:update' => ServingNode::EnvironmentInstanceOwning,
         'firewall:allow' => ServingNode::Target,
         'firewall:deny' => ServingNode::Target,
+        'firewall:fleet:list' => ServingNode::Collection,
         'firewall:list' => ServingNode::Target,
         'firewall:live:list' => ServingNode::Target,
         'firewall:managed:list' => ServingNode::Target,
@@ -237,6 +239,7 @@ it('declares node access scope on every active-peer API route', function (): voi
         'tasks:list' => ServingNode::Collection,
         'tasks:show' => ServingNode::Collection,
         'tasks:status' => ServingNode::Gateway,
+        'tasks:subtask:cancel' => ServingNode::Gateway,
         'tasks:subtask:create' => ServingNode::TaskGroupOwning,
         'tasks:subtask:destroy' => ServingNode::TaskGroupOwning,
         'tasks:subtask:update' => ServingNode::TaskGroupOwning,
@@ -330,13 +333,17 @@ it('keeps only bootstrap routes outside peer and node access middleware', functi
             continue;
         }
 
-        if (in_array($route->getName(), ['agent:realtime', 'agent:realtime:auth'], strict: true)) {
+        if (in_array($route->getName(), ['agent:realtime', 'agent:realtime:auth', 'agent:workspaces'], strict: true)) {
             expect($middleware)
                 ->toContain(RequireActiveWireGuardPeer::class)
+                ->toContain(RequireNodeAgentSecret::class)
                 ->not->toContain(RequireNodeAccess::class);
 
             continue;
         }
+
+        // Every agent endpoint needs the agent's secret as well as the Node's address (ADR 0155).
+        expect(str_starts_with($route->uri(), 'api/v1/agent/'))->toBeFalse();
 
         expect($middleware)
             ->toContain(RequireActiveWireGuardPeer::class)

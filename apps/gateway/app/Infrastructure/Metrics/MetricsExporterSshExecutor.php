@@ -63,7 +63,11 @@ final readonly class MetricsExporterSshExecutor implements MetricsExporterRuntim
             $this->publishConfiguration($node, $expected, 'metrics.exporter_configuration_failed');
             $this->setServiceActive($node, true, 'metrics.exporter_service_failed');
 
-            if ($ownership === UfwRuleOwnership::Missing) {
+            if ($state->staleFirewallSource !== null) {
+                $this->removeFirewall($node, $state->firewallStatus);
+            }
+
+            if ($ownership !== UfwRuleOwnership::Exact) {
                 $this->addFirewall($node, $rule);
             }
 
@@ -115,7 +119,7 @@ final readonly class MetricsExporterSshExecutor implements MetricsExporterRuntim
                 $this->removeConfiguration($node, 'metrics.exporter_configuration_remove_failed');
             }
 
-            if ($ownership === UfwRuleOwnership::Exact) {
+            if ($ownership === UfwRuleOwnership::Exact || $state->staleFirewallSource !== null) {
                 $this->removeFirewall($node, $state->firewallStatus);
             }
 
@@ -159,13 +163,20 @@ final readonly class MetricsExporterSshExecutor implements MetricsExporterRuntim
         $shape = $this->firewallRules->metricsExporter($node, $metricsNode)->shape;
         $firewall = $this->firewallStatus($node);
         $ownership = $this->parser->ownership($firewall->stdout, $shape);
-        $this->guardFirewallOwnership($ownership);
+        $staleSource = $ownership === UfwRuleOwnership::Drift
+            ? $this->parser->staleSource($firewall->stdout, $shape)
+            : null;
+
+        if ($staleSource === null) {
+            $this->guardFirewallOwnership($ownership);
+        }
 
         return new MetricsExporterState(
             configuration: $configuration,
             serviceActive: $this->serviceActive($node),
             firewallOwnership: $ownership,
             firewallStatus: $firewall->stdout,
+            staleFirewallSource: $staleSource,
         );
     }
 
@@ -191,21 +202,17 @@ final readonly class MetricsExporterSshExecutor implements MetricsExporterRuntim
         }
 
         $firewall = $this->firewallStatus($node);
-        $currentOwnership = $this->parser->ownership($firewall->stdout, $shape);
-        $this->guardFirewallOwnership($currentOwnership);
+        $currentSource = $this->firewallSource($firewall->stdout, $shape);
+        $restoredSource = $state->firewallSource($shape->source);
 
-        if (
-            $state->firewallOwnership === UfwRuleOwnership::Exact
-            && $currentOwnership === UfwRuleOwnership::Missing
-        ) {
-            $this->addFirewall($node, $rule);
-        }
+        if ($currentSource !== $restoredSource) {
+            if ($currentSource !== null) {
+                $this->removeFirewall($node, $firewall->stdout);
+            }
 
-        if (
-            $state->firewallOwnership === UfwRuleOwnership::Missing
-            && $currentOwnership === UfwRuleOwnership::Exact
-        ) {
-            $this->removeFirewall($node, $firewall->stdout);
+            if ($restoredSource !== null) {
+                $this->addFirewall($node, $this->firewallRules->metricsAgentFromSource($rule, $restoredSource));
+            }
         }
 
         $this->verifyRestoredState($node, $shape, $state);
@@ -320,6 +327,20 @@ final readonly class MetricsExporterSshExecutor implements MetricsExporterRuntim
         if ($ownership === UfwRuleOwnership::Drift) {
             $this->firewallOwnershipDrift();
         }
+    }
+
+    /**
+     * The source the Orbit rule admits: the Metrics Node, a former Metrics Node, or null when there is no rule.
+     */
+    private function firewallSource(string $status, UfwRuleShape $shape): ?string
+    {
+        $ownership = $this->parser->ownership($status, $shape);
+
+        if ($ownership === UfwRuleOwnership::Drift) {
+            return $this->parser->staleSource($status, $shape) ?? $this->firewallOwnershipDrift();
+        }
+
+        return $ownership === UfwRuleOwnership::Exact ? $shape->source : null;
     }
 
     private function publishConfiguration(Node $node, string $configuration, string $errorCode): void
@@ -511,7 +532,7 @@ final readonly class MetricsExporterSshExecutor implements MetricsExporterRuntim
             );
         }
 
-        if ($this->parser->ownership($this->firewallStatus($node)->stdout, $shape) !== $state->firewallOwnership) {
+        if ($this->firewallSource($this->firewallStatus($node)->stdout, $shape) !== $state->firewallSource($shape->source)) {
             throw new ResourceOperationException(
                 'metrics.exporter_firewall_rollback_verify_failed',
                 'Metrics exporter firewall recovery could not be verified.',

@@ -15,6 +15,7 @@ use App\Domain\Routes\RouteReconciliationGuard;
 use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStateResolver;
 use App\Domain\Routes\RouteStatus;
+use App\Domain\Routes\RouteTargetWebRoot;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\AppInstance;
 use App\Models\Route;
@@ -87,6 +88,7 @@ final readonly class SetRouteTargetAction
                     );
                 }
 
+                RouteTargetWebRoot::assertSupported($target);
                 $currentTarget = $locked->targets()->first();
 
                 if ($currentTarget?->app_instance_id === $target->id) {

@@ -353,3 +353,36 @@ it('rejects stored managed tuples with a restricted public recovery shape', func
     'wrong interface' => 'in_orbit',
     'wrong outgoing interface' => 'in!out_orbit',
 ]);
+
+describe('stale source', function (): void {
+    $expected = new UfwRuleShape(
+        comment: 'orbit:metrics-node-exporter',
+        action: 'allow',
+        direction: 'in',
+        source: '10.44.0.5',
+        destination: '10.44.0.4',
+        port: '9100',
+        protocol: 'tcp',
+        inInterface: 'orbit',
+        outInterface: null,
+        family: 'v4',
+    );
+
+    it('names the former source of a rule that differs only in its host source', function () use ($expected): void {
+        $output = "Status: active\n\n[ 5] 10.44.0.4 9100/tcp on orbit ALLOW IN 10.44.0.2 # orbit:metrics-node-exporter\n";
+
+        expect(new UfwStatusParser()->staleSource($output, $expected))->toBe('10.44.0.2');
+    });
+
+    it('refuses a rule that is exact, duplicated, or drifts beyond its source', function (string $output) use ($expected): void {
+        expect(new UfwStatusParser()->staleSource("Status: active\n\n{$output}\n", $expected))->toBeNull();
+    })->with([
+        'exact' => '[ 5] 10.44.0.4 9100/tcp on orbit ALLOW IN 10.44.0.5 # orbit:metrics-node-exporter',
+        'missing' => '[ 5] 22/tcp ALLOW IN Anywhere # orbit:public-ssh-recovery',
+        'other port' => '[ 5] 10.44.0.4 9101/tcp on orbit ALLOW IN 10.44.0.2 # orbit:metrics-node-exporter',
+        'other destination' => '[ 5] 10.44.0.9 9100/tcp on orbit ALLOW IN 10.44.0.2 # orbit:metrics-node-exporter',
+        'network source' => '[ 5] 10.44.0.4 9100/tcp on orbit ALLOW IN 10.44.0.0/24 # orbit:metrics-node-exporter',
+        'any source' => '[ 5] 10.44.0.4 9100/tcp on orbit ALLOW IN Anywhere # orbit:metrics-node-exporter',
+        'two rules' => "[ 5] 10.44.0.4 9100/tcp on orbit ALLOW IN 10.44.0.2 # orbit:metrics-node-exporter\n[ 6] 10.44.0.4 9100/tcp on orbit ALLOW IN 10.44.0.3 # orbit:metrics-node-exporter",
+    ]);
+});

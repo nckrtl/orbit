@@ -4,19 +4,22 @@ declare(strict_types=1);
 
 namespace App\Actions\Tasks;
 
-use App\Domain\AppInstances\AppInstanceRemover;
-use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskPullRequestException;
+use App\Domain\Tasks\TaskPullRequestPublisher;
 use App\Domain\Tasks\TaskStatus;
 use App\Models\AppInstance;
+use App\Models\Task;
 use App\Models\TaskGroup;
+use Illuminate\Support\Facades\DB;
 
 final readonly class CancelTaskGroupAction
 {
     public function __construct(
         private RequireTasksExtensionAction $requireExtension,
-        private AppInstanceRemover $remover,
+        private RemoveTaskWorkspaceAction $workspace,
+        private TaskPullRequestPublisher $publisher,
     ) {}
 
     public function execute(TaskGroup $group): TaskGroup
@@ -26,24 +29,44 @@ final readonly class CancelTaskGroupAction
 
         $group->refresh()->load(['app', 'tasks', 'taskable']);
 
-        if (in_array($group->status, [TaskGroupStatus::Settling, TaskGroupStatus::Completed], true)) {
+        $unpublished = $group->status === TaskGroupStatus::Settling && ($group->pr_url === null || $group->pr_url === '');
+        if ($group->status === TaskGroupStatus::Completed || ($group->status === TaskGroupStatus::Settling && ! $unpublished)) {
             throw new ResourceOperationException(
                 errorCode: 'tasks.not_cancellable',
-                message: __('A settling or completed task group cannot be cancelled.'),
+                message: __('A completed task group, or a settling one with a pull request, cannot be cancelled.'),
                 status: 409,
             );
         }
 
-        $instance = $group->taskable;
+        // A live claim owns the workspace it is provisioning. It removes that workspace once it finds the group
+        // cancelled, so cancel leaves it alone and only removes what the claim attached before the cancel landed.
+        $claimInFlight = $this->workspace->claimInFlight($group) && $group->taskable_id === null;
+        $instance = $claimInFlight ? null : $this->workspace->find($group);
 
         if ($instance instanceof AppInstance) {
-            $this->removeWorkspace($instance);
+            if ($unpublished) {
+                $this->pushApprovedWork($group);
+            }
+            $this->workspace->remove($instance);
         }
 
-        $group->taskable()->dissociate();
-        $group->status = TaskGroupStatus::Cancelled;
-        $group->assistance_requested = false;
-        $group->save();
+        $removedId = $instance?->id;
+        $attachedByClaim = DB::transaction(static function () use ($group, $removedId): ?AppInstance {
+            $locked = TaskGroup::query()->with('taskable')->lockForUpdate()->findOrFail($group->id);
+            // A claim can attach an Instance between the checks above and this lock. Cancel removes whatever is still
+            // attached and was not removed above, whether or not it saw a claim in flight.
+            $attached = $locked->taskable instanceof AppInstance && $locked->taskable_id !== $removedId ? $locked->taskable : null;
+            $locked->taskable()->dissociate();
+            $locked->status = TaskGroupStatus::Cancelled;
+            $locked->assistance_requested = false;
+            $locked->save();
+
+            return $attached;
+        });
+
+        if ($attachedByClaim instanceof AppInstance) {
+            $this->workspace->remove($attachedByClaim);
+        }
 
         $group->tasks()
             ->whereNotIn('status', [TaskStatus::Completed, TaskStatus::Failed, TaskStatus::Cancelled])
@@ -54,22 +77,23 @@ final readonly class CancelTaskGroupAction
     }
 
     /**
-     * Removal also deletes a never-active workspace's checkout from its Node. When removal refuses
-     * before it starts, for example on a half-created checkout or an unreachable Node, cancel still
-     * finishes: it deletes the record and leaves the checkout for Doctor to report.
+     * A settling group without a pull request can still hold approved commits that only exist in its
+     * workspace. They reach the task branch on origin before the workspace is removed.
      */
-    private function removeWorkspace(AppInstance $instance): void
+    private function pushApprovedWork(TaskGroup $group): void
     {
+        if (! $group->tasks->contains(static fn (Task $task): bool => $task->status === TaskStatus::Completed)) {
+            return;
+        }
+
         try {
-            $this->remover->execute($instance, true);
-        } catch (ResourceOperationException $exception) {
-            $instance->refresh();
-
-            if ($instance->status !== AppInstanceState::SourceResolved || $instance->routes()->exists()) {
-                throw $exception;
-            }
-
-            $instance->delete();
+            $this->publisher->push($group);
+        } catch (TaskPullRequestException $exception) {
+            throw new ResourceOperationException(
+                errorCode: 'tasks.push_failed',
+                message: __('The group remains settling because its approved commits could not be pushed to task-:group: :reason', ['group' => $group->id, 'reason' => $exception->getMessage()]),
+                status: 502,
+            );
         }
     }
 }

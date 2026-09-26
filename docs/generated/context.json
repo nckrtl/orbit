@@ -111,9 +111,12 @@
                 "Doctor",
                 "Gateway",
                 "Node",
+                "Route",
                 "Schedule"
             ],
-            "governing_adrs": []
+            "governing_adrs": [
+                "0152"
+            ]
         },
         {
             "path": "docs/cli/analytics.mdx",
@@ -199,6 +202,7 @@
                 "Database",
                 "Doctor",
                 "Gateway",
+                "Ingress",
                 "Instance",
                 "Node",
                 "Node agent",
@@ -206,6 +210,7 @@
                 "Project",
                 "Route",
                 "Schedule",
+                "Task",
                 "Tool"
             ],
             "governing_adrs": [
@@ -369,6 +374,7 @@
                 "Gateway",
                 "Instance",
                 "Node",
+                "Node agent",
                 "Process",
                 "Project",
                 "Route",
@@ -405,6 +411,7 @@
                 "Repository identity",
                 "Route",
                 "Schedule",
+                "Task",
                 "Web root"
             ],
             "governing_adrs": []
@@ -454,7 +461,8 @@
                 "Process",
                 "Project",
                 "Route",
-                "Router"
+                "Router",
+                "Web root"
             ],
             "governing_adrs": []
         },
@@ -539,6 +547,7 @@
                 "Instance routing",
                 "Node",
                 "Node agent",
+                "Package root",
                 "Process",
                 "Project",
                 "Project type",
@@ -575,11 +584,16 @@
             "title": "Contributing to Orbit",
             "kind": "product",
             "components": [
-                "apps/cli"
+                "apps/cli",
+                "apps/gateway"
             ],
             "concepts": [
+                "Gateway",
+                "Node",
+                "Process",
                 "Project",
-                "Task"
+                "Task",
+                "Tool"
             ],
             "governing_adrs": []
         },
@@ -3297,19 +3311,24 @@
             "title": "ADR 0125: Run the Project check when the implementer hands off",
             "kind": "decision",
             "components": [
+                "apps/cli",
                 "apps/docs",
-                "apps/gateway"
+                "apps/gateway",
+                "packages/php-sdk"
             ],
             "concepts": [
                 "Gateway",
+                "Instance",
                 "Node",
                 "Process",
                 "Project",
+                "Project type",
                 "Setup step",
                 "Task",
                 "Tool"
             ],
             "governing_adrs": [
+                "0106",
                 "0114",
                 "0121",
                 "0125"
@@ -3377,7 +3396,10 @@
                 "0127",
                 "0128",
                 "0129",
-                "0130"
+                "0130",
+                "0148",
+                "0151",
+                "0155"
             ]
         },
         {
@@ -3392,13 +3414,18 @@
                 "Gateway",
                 "Node",
                 "Node agent",
-                "Process"
+                "Process",
+                "Task"
             ],
             "governing_adrs": [
                 "0084",
                 "0087",
                 "0128",
-                "0129"
+                "0129",
+                "0148",
+                "0151",
+                "0154",
+                "0155"
             ]
         },
         {
@@ -3660,7 +3687,8 @@
                 "0138",
                 "0139",
                 "0141",
-                "0146"
+                "0146",
+                "0157"
             ]
         },
         {
@@ -3866,6 +3894,189 @@
             ]
         },
         {
+            "path": "docs/decisions/0151-push-task-and-process-usage-changes-over-realtime.md",
+            "title": "ADR 0151: Push task and Process usage changes over realtime",
+            "kind": "decision",
+            "components": [
+                "apps/docs",
+                "apps/gateway",
+                "apps/web"
+            ],
+            "concepts": [
+                "Database",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Node agent",
+                "Process",
+                "Project",
+                "Schedule",
+                "Task",
+                "Task group"
+            ],
+            "governing_adrs": [
+                "0084",
+                "0103",
+                "0122",
+                "0128",
+                "0129",
+                "0148",
+                "0151"
+            ]
+        },
+        {
+            "path": "docs/decisions/0152-sample-successful-read-activity.md",
+            "title": "ADR 0152: Sample successful read activity",
+            "kind": "decision",
+            "components": [
+                "apps/docs",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Database",
+                "Database connection",
+                "Doctor",
+                "Gateway",
+                "Node",
+                "Node agent",
+                "Process",
+                "Route",
+                "Schedule",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0004",
+                "0013",
+                "0086",
+                "0152"
+            ]
+        },
+        {
+            "path": "docs/decisions/0153-tail-instance-and-process-logs-live-through-the-node-agent.md",
+            "title": "ADR 0153: Tail Instance and Process logs live through the Node agent",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/gateway",
+                "apps/web",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Database",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Node agent",
+                "Process",
+                "Route",
+                "Task"
+            ],
+            "governing_adrs": [
+                "0128",
+                "0129",
+                "0148",
+                "0151",
+                "0153",
+                "0155"
+            ]
+        },
+        {
+            "path": "docs/decisions/0154-recover-the-gateway-agent-view-without-a-membership-change.md",
+            "title": "ADR 0154: Recover the Gateway agent view without a membership change",
+            "kind": "decision",
+            "components": [
+                "apps/docs",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Doctor",
+                "Gateway",
+                "Node",
+                "Node agent",
+                "Process"
+            ],
+            "governing_adrs": [
+                "0129",
+                "0148",
+                "0154"
+            ]
+        },
+        {
+            "path": "docs/decisions/0155-authenticate-the-node-agent-with-a-per-node-secret.md",
+            "title": "ADR 0155: Authenticate the Node agent with a per-Node secret",
+            "kind": "decision",
+            "components": [
+                "apps/docs",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Database",
+                "Doctor",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Node agent",
+                "Process",
+                "Project",
+                "Route",
+                "Task"
+            ],
+            "governing_adrs": [
+                "0033",
+                "0045",
+                "0128",
+                "0129",
+                "0148",
+                "0155"
+            ]
+        },
+        {
+            "path": "docs/decisions/0156-route-the-private-domain-on-the-gateway-machine-to-vpn-dns.md",
+            "title": "ADR 0156: Route the private domain on the Gateway machine to VPN DNS",
+            "kind": "decision",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Cluster",
+                "Doctor",
+                "Gateway",
+                "Node",
+                "Project",
+                "Route",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0061",
+                "0094",
+                "0156"
+            ]
+        },
+        {
+            "path": "docs/decisions/0157-keep-private-caddy-sites-off-the-public-listener.md",
+            "title": "ADR 0157: Keep private Caddy sites off the public listener",
+            "kind": "decision",
+            "components": [
+                "apps/docs",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Cluster",
+                "Doctor",
+                "Gateway",
+                "Ingress",
+                "Node",
+                "Route",
+                "Router",
+                "proxycli"
+            ],
+            "governing_adrs": [
+                "0141",
+                "0157"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -4044,7 +4255,14 @@
                 "0147",
                 "0148",
                 "0149",
-                "0150"
+                "0150",
+                "0151",
+                "0152",
+                "0153",
+                "0154",
+                "0155",
+                "0156",
+                "0157"
             ]
         },
         {
@@ -4360,6 +4578,7 @@
                 "Repository identity",
                 "Route",
                 "Task",
+                "Tool",
                 "Web root"
             ],
             "governing_adrs": [
@@ -4418,6 +4637,7 @@
                 "Ingress",
                 "Instance",
                 "Node",
+                "Node agent",
                 "Process",
                 "Route",
                 "Router",
@@ -4426,7 +4646,8 @@
             "governing_adrs": [
                 "0138",
                 "0139",
-                "0141"
+                "0141",
+                "0157"
             ]
         },
         {
@@ -4623,11 +4844,15 @@
                 "Project",
                 "Route",
                 "Runtime hibernation",
-                "Schedule"
+                "Schedule",
+                "Task",
+                "Task group"
             ],
             "governing_adrs": [
                 "0129",
-                "0148"
+                "0148",
+                "0151",
+                "0153"
             ]
         },
         {
@@ -4829,6 +5054,7 @@
                 "Gateway",
                 "Instance",
                 "Node",
+                "Node agent",
                 "Process",
                 "Project"
             ],
@@ -4867,6 +5093,23 @@
             ],
             "governing_adrs": [
                 "0115"
+            ]
+        },
+        {
+            "path": "docs/reference/live-logs.md",
+            "title": "Live logs",
+            "kind": "reference",
+            "components": [],
+            "concepts": [
+                "Gateway",
+                "Instance",
+                "Node",
+                "Node agent",
+                "Process",
+                "Route"
+            ],
+            "governing_adrs": [
+                "0153"
             ]
         },
         {
@@ -4942,13 +5185,19 @@
                 "Node",
                 "Node agent",
                 "Process",
-                "Task"
+                "Project",
+                "Task",
+                "Task group"
             ],
             "governing_adrs": [
                 "0128",
                 "0129",
                 "0130",
-                "0148"
+                "0148",
+                "0151",
+                "0153",
+                "0154",
+                "0155"
             ]
         },
         {
@@ -4959,6 +5208,8 @@
                 "apps/gateway"
             ],
             "concepts": [
+                "Cluster",
+                "Database",
                 "Doctor",
                 "Gateway",
                 "Ingress",
@@ -4969,6 +5220,8 @@
                 "Project",
                 "Route",
                 "Router",
+                "Tool",
+                "Tool Manager",
                 "proxycli"
             ],
             "governing_adrs": [
@@ -4976,7 +5229,8 @@
                 "0094",
                 "0100",
                 "0138",
-                "0144"
+                "0144",
+                "0157"
             ]
         },
         {
@@ -5061,6 +5315,7 @@
             "components": [],
             "concepts": [
                 "Cluster",
+                "Doctor",
                 "Gateway",
                 "Node",
                 "Project",
@@ -5071,7 +5326,8 @@
             "governing_adrs": [
                 "0061",
                 "0062",
-                "0149"
+                "0149",
+                "0156"
             ]
         },
         {
@@ -5214,14 +5470,15 @@
             "concepts": [
                 "Database",
                 "Development node exclusion",
+                "Doctor",
                 "Gateway",
                 "Instance",
                 "Node",
+                "Node agent",
                 "Process",
                 "Project",
                 "Route",
                 "Schedule",
-                "Setup step",
                 "Task",
                 "Task group",
                 "Tool"
@@ -5306,14 +5563,20 @@
                 "apps/web"
             ],
             "concepts": [
+                "Database",
                 "Gateway",
+                "Instance",
                 "Node",
                 "Node agent",
                 "Process",
-                "Router"
+                "Router",
+                "Task",
+                "Task group",
+                "proxycli"
             ],
             "governing_adrs": [
-                "0123"
+                "0123",
+                "0151"
             ]
         },
         {

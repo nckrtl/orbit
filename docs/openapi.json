@@ -276,7 +276,7 @@
         "tags": [
           "Node callbacks"
         ],
-        "description": "The `orbit-agent` on a managed Node calls this endpoint to join its own presence channel. The Gateway signs member `agent.{id}` on `presence-node.{id}` only for a request from that Node's WireGuard address. The response carries the Pusher `auth` and `channel_data` values.",
+        "description": "The `orbit-agent` on a managed Node calls this endpoint to join its own presence channel. The Gateway signs member `agent.{id}` on `presence-node.{id}` only for a request from that Node's WireGuard address that carries the Node's agent secret. The response carries the Pusher `auth` and `channel_data` values.",
         "requestBody": {
           "required": true,
           "content": {
@@ -343,8 +343,18 @@
               }
             }
           },
+          "401": {
+            "description": "The request carries no agent secret (`agent.secret_required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "403": {
-            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`), its Node is not eligible for an agent (`agent.node_ineligible`), or it asked for another Node's channel (`agent.channel_forbidden`).",
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`), its agent secret does not match (`agent.secret_invalid`), its Node is not eligible for an agent (`agent.node_ineligible`), or it asked for another Node's channel (`agent.channel_forbidden`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -380,7 +390,7 @@
         "tags": [
           "Node callbacks"
         ],
-        "description": "The `orbit-agent` on a managed Node calls this endpoint to find its Reverb connection. The Gateway identifies the Node from the WireGuard address and returns the Reverb URL, serving address, and app key, the Node's `presence-node.{id}` channel, and the agent's `agent.{id}` member ID. Connection values are null when broadcasting is not configured.",
+        "description": "The `orbit-agent` on a managed Node calls this endpoint to find its Reverb connection. The Gateway identifies the Node from the WireGuard address and the agent's bearer secret, and returns the Reverb URL, serving address, and app key, the Node's `presence-node.{id}` channel, and the agent's `agent.{id}` member ID. Connection values are null when broadcasting is not configured.",
         "responses": {
           "200": {
             "description": "The request succeeded.",
@@ -442,8 +452,18 @@
               }
             }
           },
+          "401": {
+            "description": "The request carries no agent secret (`agent.secret_required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "403": {
-            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or its Node is not eligible for an agent (`agent.node_ineligible`).",
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`), its agent secret does not match (`agent.secret_invalid`), or its Node is not eligible for an agent (`agent.node_ineligible`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -458,6 +478,97 @@
             "lang": "bash",
             "label": "curl",
             "source": "curl -sS \"https://gateway.orbit/api/v1/agent/realtime\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+          }
+        ]
+      }
+    },
+    "/api/v1/agent/workspaces": {
+      "get": {
+        "operationId": "agent-workspaces",
+        "summary": "List the task checkouts the agent watches",
+        "tags": [
+          "Node callbacks"
+        ],
+        "description": "The `orbit-agent` on a managed Node calls this endpoint every 60 seconds to learn which task checkouts to watch. The Gateway identifies the Node from the WireGuard address and the agent's bearer secret, and lists the Instances on that Node that hold the workspace of an unfinished task group, at most 64, with the checkout path, the Project's default branch as `base`, and the Instance's starting commit as `start`. The list is empty while the tasks extension is disabled.",
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "instance_id": {
+                            "type": "integer",
+                            "description": "The Instance that holds the task workspace."
+                          },
+                          "path": {
+                            "type": "string",
+                            "description": "The absolute checkout path on the Node."
+                          },
+                          "base": {
+                            "type": "string",
+                            "description": "The Project's default branch, which the diff counts are read against."
+                          },
+                          "start": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "description": "The Instance's starting commit, or null."
+                          }
+                        },
+                        "required": [
+                          "instance_id",
+                          "path",
+                          "base",
+                          "start"
+                        ]
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The request carries no agent secret (`agent.secret_required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`), its agent secret does not match (`agent.secret_invalid`), or its Node is not eligible for an agent (`agent.node_ineligible`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS \"https://gateway.orbit/api/v1/agent/workspaces\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
           }
         ]
       }
@@ -908,7 +1019,8 @@
                     "enum": [
                       "monorepo",
                       "laravel-app",
-                      "laravel-package"
+                      "laravel-package",
+                      "node-package"
                     ]
                   },
                   "repository_url": {
@@ -928,11 +1040,17 @@
                       "array",
                       "null"
                     ]
+                  },
+                  "task_check": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 4096
                   }
                 },
                 "required": [
                   "slug",
-                  "type",
                   "repository_url",
                   "root"
                 ],
@@ -1021,7 +1139,7 @@
           {
             "lang": "bash",
             "label": "curl",
-            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/apps\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"slug\": \"acme\", \"type\": \"monorepo\", \"repository_url\": \"https://github.com/acme/site.git\", \"root\": \"public\"}'\n"
+            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/apps\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"slug\": \"acme\", \"repository_url\": \"https://github.com/acme/site.git\", \"root\": \"public\"}'\n"
           }
         ]
       }
@@ -1226,7 +1344,8 @@
                     "enum": [
                       "monorepo",
                       "laravel-app",
-                      "laravel-package"
+                      "laravel-package",
+                      "node-package"
                     ]
                   },
                   "slug": {
@@ -1245,15 +1364,15 @@
                   "root": {
                     "type": "string",
                     "maxLength": 255
+                  },
+                  "task_check": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 4096
                   }
                 },
-                "required": [
-                  "type",
-                  "slug",
-                  "repository_url",
-                  "default_branch",
-                  "root"
-                ],
                 "additionalProperties": false
               }
             }
@@ -1327,7 +1446,7 @@
           {
             "lang": "bash",
             "label": "curl",
-            "source": "curl -sS -X PATCH \"https://gateway.orbit/api/v1/apps/4\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"type\": \"monorepo\", \"slug\": \"acme\", \"repository_url\": \"https://github.com/acme/site.git\", \"default_branch\": \"main\", \"root\": \"public\"}'\n"
+            "source": "curl -sS -X PATCH \"https://gateway.orbit/api/v1/apps/4\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"code\": \"ACM\"}'\n"
           }
         ]
       }
@@ -4865,6 +4984,60 @@
             "lang": "php",
             "label": "PHP SDK",
             "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Doctor\\RunDoctorRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new RunDoctorRequest())->dto();\n"
+          }
+        ]
+      }
+    },
+    "/api/v1/firewall-rules": {
+      "get": {
+        "operationId": "firewall-fleet-list",
+        "summary": "List firewall rules on every Node",
+        "tags": [
+          "Firewall"
+        ],
+        "description": "Returns the operator firewall rules of every Node the caller can reach, in one response, ordered by Node and name. The web app uses it for the fleet list instead of one request per Node. The per-Node list stays for the CLI. The list does not SSH.",
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/FirewallRule"
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS \"https://gateway.orbit/api/v1/firewall-rules\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
           }
         ]
       }
@@ -12797,6 +12970,16 @@
                 }
               }
             }
+          },
+          "502": {
+            "description": "A role step failed on the Node (`node_role.convergence_failed` or `node_role.remove_failed`). `error.details.step` names the failed step.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "x-codeSamples": [
@@ -12948,6 +13131,16 @@
                 }
               }
             }
+          },
+          "502": {
+            "description": "A role step failed on the Node (`node_role.convergence_failed` or `node_role.remove_failed`). `error.details.step` names the failed step.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "x-codeSamples": [
@@ -13089,6 +13282,16 @@
           },
           "422": {
             "description": "The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "A role step failed on the Node (`node_role.convergence_failed` or `node_role.remove_failed`). `error.details.step` names the failed step.",
             "content": {
               "application/json": {
                 "schema": {
@@ -14451,9 +14654,10 @@
                     "enum": [
                       "monorepo",
                       "laravel-app",
-                      "laravel-package"
+                      "laravel-package",
+                      "node-package"
                     ],
-                    "description": "Project type (monorepo, laravel-app, or laravel-package)"
+                    "description": "Project type (monorepo, laravel-app, laravel-package, or node-package)"
                   },
                   "repository_url": {
                     "type": "string",
@@ -14467,13 +14671,21 @@
                   "root": {
                     "type": "string",
                     "maxLength": 255,
-                    "description": "Relative web root"
+                    "description": "Repository-relative root; defaults to . for package types and public otherwise"
                   },
                   "defaults": {
                     "type": [
                       "array",
                       "null"
                     ]
+                  },
+                  "task_check": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 4096,
+                    "description": "Task check command; defaults to composer check for Laravel types and none otherwise"
                   }
                 },
                 "required": [
@@ -14790,7 +15002,8 @@
                     "enum": [
                       "monorepo",
                       "laravel-app",
-                      "laravel-package"
+                      "laravel-package",
+                      "node-package"
                     ],
                     "description": "New Project type"
                   },
@@ -14812,16 +15025,17 @@
                   "root": {
                     "type": "string",
                     "maxLength": 255,
-                    "description": "New relative web root"
+                    "description": "New repository-relative root; package types may use ."
+                  },
+                  "task_check": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 4096,
+                    "description": "New task check command for task baselines and handoffs"
                   }
                 },
-                "required": [
-                  "type",
-                  "slug",
-                  "repository_url",
-                  "default_branch",
-                  "root"
-                ],
                 "additionalProperties": false
               }
             }
@@ -14895,7 +15109,7 @@
           {
             "lang": "bash",
             "label": "curl",
-            "source": "curl -sS -X PATCH \"https://gateway.orbit/api/v1/projects/4\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"type\": \"monorepo\", \"slug\": \"acme\", \"repository_url\": \"https://github.com/acme/site.git\", \"default_branch\": \"main\", \"root\": \"public\"}'\n"
+            "source": "curl -sS -X PATCH \"https://gateway.orbit/api/v1/projects/4\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"code\": \"ACM\"}'\n"
           },
           {
             "lang": "php",
@@ -18376,10 +18590,6 @@
                     "description": "New publication intent"
                   }
                 },
-                "required": [
-                  "domain",
-                  "publication"
-                ],
                 "additionalProperties": false
               }
             }
@@ -20289,7 +20499,7 @@
             "description": "Numeric Task group ID."
           }
         ],
-        "description": "Cancels a backlog, todo, reserved, running, reviewing, or failed Task group and clears its shared Instance. Idempotent for cancelled groups. Route-free source_resolved Instances use database-only cleanup and retain their checkout; other Instances use the forced Instance remover. Requires Gateway access. Returns tasks.disabled while the extension is off and tasks.not_cancellable for settling or completed groups.",
+        "description": "Cancels a backlog, todo, reserved, running, reviewing, or failed Task group, or a settling group without a pull request, and clears its shared Instance. For a settling group with an approved subtask, the Gateway first pushes the workspace HEAD to `task-{group}` on origin; a failed push returns `tasks.push_failed` (502) and keeps the group and Instance. Idempotent for cancelled groups. Route-free source_resolved Instances use database-only cleanup and retain their checkout; other Instances use the forced Instance remover. Requires Gateway access. Returns tasks.disabled while the extension is off and tasks.not_cancellable for completed groups and settling groups with a pull request.",
         "requestBody": {
           "required": false,
           "content": {
@@ -20345,7 +20555,17 @@
             }
           },
           "409": {
-            "description": "The tasks extension is disabled (`tasks.disabled`) or the Task group is settling or completed (`tasks.not_cancellable`).",
+            "description": "The tasks extension is disabled (`tasks.disabled`), or the Task group is completed or settling with a pull request (`tasks.not_cancellable`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The approved commits of a settling group could not be pushed to its task branch (`tasks.push_failed`). The group and its Instance stay.",
             "content": {
               "application/json": {
                 "schema": {
@@ -21024,6 +21244,134 @@
             "lang": "php",
             "label": "PHP SDK",
             "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Tasks\\UpdateSubtaskRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new UpdateSubtaskRequest(groupId: 1, taskId: 1))->dto();\n"
+          }
+        ]
+      }
+    },
+    "/api/v1/task-groups/{group}/tasks/{task}/cancel": {
+      "post": {
+        "operationId": "tasks-subtask-cancel",
+        "summary": "Cancel a running subtask",
+        "tags": [
+          "Tasks"
+        ],
+        "parameters": [
+          {
+            "name": "group",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Numeric Task group ID."
+          },
+          {
+            "name": "task",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": ""
+          }
+        ],
+        "description": "Cancels a `running` subtask. Stops its implementer and its running baseline or handoff check, keeps the group and its Instance, and starts the lowest-position `todo` subtask. That subtask runs the baseline check first when no implementer has started in the group. When no `todo` subtask remains, the group moves to `settling` without a pull request. Requires Gateway access. Returns `tasks.disabled` while the extension is off, `tasks.subtask_not_running` (409) when the subtask is not `running`, and `tasks.subtask_interrupt_failed` (502) when the implementer or check could not be stopped; the subtask then stays `running`.",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Task"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No record matches the path parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The tasks extension is disabled (`tasks.disabled`) or the subtask is not running (`tasks.subtask_not_running`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The implementer or the running check could not be stopped (`tasks.subtask_interrupt_failed`). The subtask stays running.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/task-groups/1/tasks/1/cancel\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{}'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Tasks\\CancelSubtaskRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new CancelSubtaskRequest(groupId: 1, taskId: 1))->dto();\n"
           }
         ]
       }
@@ -22298,7 +22646,8 @@
             "enum": [
               "monorepo",
               "laravel-app",
-              "laravel-package"
+              "laravel-package",
+              "node-package"
             ]
           },
           "repository_url": {
@@ -22322,6 +22671,12 @@
               "null"
             ],
             "additionalProperties": true
+          },
+          "task_check": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },
@@ -22698,6 +23053,56 @@
           }
         }
       },
+      "FirewallRule": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "node_id": {
+            "type": "integer"
+          },
+          "node": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "action": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "protocol": {
+            "type": "string"
+          },
+          "port": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "backend_status": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "failed_step": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "error_code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
       "GatewayStatus": {
         "type": "object",
         "properties": {
@@ -22878,7 +23283,8 @@
             "enum": [
               "monorepo",
               "laravel-app",
-              "laravel-package"
+              "laravel-package",
+              "node-package"
             ]
           }
         }
@@ -23728,56 +24134,6 @@
           },
           "already_exists": {
             "type": "boolean"
-          }
-        }
-      },
-      "FirewallRule": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "integer"
-          },
-          "node_id": {
-            "type": "integer"
-          },
-          "node": {
-            "type": "string"
-          },
-          "name": {
-            "type": "string"
-          },
-          "action": {
-            "type": "string"
-          },
-          "source": {
-            "type": "string"
-          },
-          "protocol": {
-            "type": "string"
-          },
-          "port": {
-            "type": "string"
-          },
-          "status": {
-            "type": "string"
-          },
-          "backend_status": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "failed_step": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "error_code": {
-            "type": [
-              "string",
-              "null"
-            ]
           }
         }
       },

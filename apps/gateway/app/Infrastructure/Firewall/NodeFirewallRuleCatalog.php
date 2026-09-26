@@ -135,10 +135,28 @@ final readonly class NodeFirewallRuleCatalog
         return $rules;
     }
 
+    /**
+     * Every rule the role can own on the Node, whether or not its condition holds now. Role removal closes
+     * all of them, so a rule that outlived its condition does not outlive the role.
+     *
+     * @return list<UfwManagedRule>
+     */
+    public function ownedByRole(Node $node, RoleName $role): array
+    {
+        return match ($role) {
+            RoleName::Ingress => $this->ingressRules(),
+            default => $this->forRole($node, $role),
+        };
+    }
+
     /** @return non-empty-list<UfwManagedRule> */
     public function retiredForRole(Node $node, RoleName $role): array
     {
         $rules = [$this->rule('orbit:vpn-ssh', '22', $this->wireguardIp($node), 'orbit')];
+
+        if ($role === RoleName::Ingress) {
+            return $this->ingressPublicHttp($node) === [] ? [...$rules, ...$this->ingressRules()] : $rules;
+        }
 
         if ($role === RoleName::AppProd) {
             if ($this->appProdSites->requiresPublicFirewall($node)) {
@@ -181,6 +199,12 @@ final readonly class NodeFirewallRuleCatalog
             return [];
         }
 
+        return $this->ingressRules();
+    }
+
+    /** @return non-empty-list<UfwManagedRule> */
+    private function ingressRules(): array
+    {
         return [
             $this->rule('orbit:ingress-http', '80'),
             $this->rule('orbit:ingress-https', '443'),
@@ -323,6 +347,12 @@ final readonly class NodeFirewallRuleCatalog
             $this->metricsExporterAddress($node),
             MetricsFootprint::CadvisorPort,
         );
+    }
+
+    /** The same Metrics agent rule, sourced from another Metrics Node's address, as a relocation leaves it. */
+    public function metricsAgentFromSource(UfwManagedRule $rule, string $source): UfwManagedRule
+    {
+        return $this->metricsRule($rule->shape->comment, $source, $rule->shape->destination, $rule->shape->port);
     }
 
     public function metricsService(Node $node, Node $metricsNode, string $kind, bool $allow): UfwManagedRule

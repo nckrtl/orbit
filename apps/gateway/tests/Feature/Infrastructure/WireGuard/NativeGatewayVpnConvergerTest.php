@@ -7,6 +7,7 @@ use App\Domain\Nodes\NodeProvisioningException;
 use App\Infrastructure\Files\ProtectedFileWriter;
 use App\Infrastructure\Firewall\UfwStatusParser;
 use App\Infrastructure\Firewall\UfwStoredRuleProbe;
+use App\Infrastructure\Gateway\GatewayPrivateDnsResolver;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
@@ -17,6 +18,7 @@ use App\Infrastructure\WireGuard\WireGuardServerConfigRenderer;
 use App\Models\Node;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\Process;
 
@@ -41,6 +43,10 @@ it('activates the gateway WireGuard address through a validated atomic server co
             orbitHome: $orbitHome,
         );
         assert_gateway_firewall_commands(arguments: $arguments);
+        expect($arguments[19])->toBe(['sudo', 'bash', '-seu', '--', GatewayPrivateDnsResolver::DROP_IN])
+            ->and($processes->calls[19]->input)
+            ->toBe(new GatewayPrivateDnsResolver()->convergeScript('10.44.0.1', 'orbit'))
+            ->and($arguments)->toHaveCount(20);
     } finally {
         new Filesystem()->deleteDirectory($orbitHome);
     }
@@ -234,7 +240,7 @@ function assert_gateway_publication_commands(
 /** @param list<list<string>> $arguments */
 function assert_gateway_firewall_commands(array $arguments): void
 {
-    expect(array_slice(array: $arguments, offset: 11))->toBe([
+    expect(array_slice(array: $arguments, offset: 11, length: 8))->toBe([
         ['sudo', 'ufw', 'status', 'numbered'],
         [
             'sudo',
@@ -737,6 +743,31 @@ it('reports the bounded dnsmasq journal tail when the managed restart fails', fu
     }
 });
 
+it('finishes bootstrap VPN convergence and logs a warning when the resolver step fails', function (): void {
+    Log::spy();
+    [$converger, $processes, $orbitHome] = gateway_vpn_converger();
+    $processes->failResolver = true;
+    $node = Node::query()->create([
+        'name' => 'gateway',
+        'public_ssh_host' => '85.9.218.89',
+        'wireguard_ip' => '10.44.0.1',
+    ]);
+
+    try {
+        $converger->converge($node, gateway_bootstrap_data());
+
+        expect(end($processes->calls)->arguments)->toBe(['sudo', 'bash', '-seu', '--', GatewayPrivateDnsResolver::DROP_IN]);
+        Log::shouldHaveReceived('warning')
+            ->once()
+            ->withArgs(static fn (string $message, array $context): bool => $context === [
+                'error_code' => 'vpn.dns_resolver_failed',
+                'exit_code' => 1,
+            ]);
+    } finally {
+        new Filesystem()->deleteDirectory($orbitHome);
+    }
+});
+
 it('does not touch UFW when dnsmasq convergence fails and includes rollback', function (): void {
     [$converger, $processes, $orbitHome] = gateway_vpn_converger(failDns: true);
     $node = Node::query()->create([
@@ -1046,6 +1077,8 @@ final class GatewayVpnFakeProcessRunner implements ProcessRunner
 
     public bool $observedProjectionLock = false;
 
+    public bool $failResolver = false;
+
     public function __construct(
         private readonly bool $failValidation,
         private readonly bool $failForwarding,
@@ -1114,6 +1147,10 @@ final class GatewayVpnFakeProcessRunner implements ProcessRunner
 
     private function configuredFailure(ProcessInvocation $invocation): ?CommandResult
     {
+        if ($this->failResolver && ($invocation->arguments[4] ?? null) === GatewayPrivateDnsResolver::DROP_IN) {
+            return new CommandResult(1, '', 'Failed to set DNS configuration', 2, false);
+        }
+
         if (
             $this->failValidation
             && $invocation->arguments === ['sudo', 'wg-quick', 'strip', '/etc/wireguard/orbit-candidate.conf']

@@ -3,11 +3,12 @@ import { Outlet, useLocation } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { transportLabel } from "../api/client";
 import { queryClient } from "../api/queryClient";
-import { POLL_SECONDS, useFleet } from "../api/queries";
+import { useFleet } from "../api/queries";
 import { taskGroupsQuery } from "../api/tasks";
 import { counts } from "../fleet/fleet";
 import { connectRealtime } from "../realtime/connect";
-import { useLiveness, usePollingReason } from "../realtime/liveness";
+import { resetPollBackoff, useLiveness, usePollingReason } from "../realtime/liveness";
+import { useTaskPoll } from "../realtime/polling";
 import { Frame } from "./Frame";
 import {
     FILTERED_SECTIONS,
@@ -60,7 +61,8 @@ function Navigation({
     const nav = useNav();
     const hovered = useUi((state) => state.hover === "nav" && state.focus === null);
     const totals = counts(fleet);
-    const taskCount = useQuery(taskGroupsQuery).data?.length ?? null;
+    const taskCount =
+        useQuery({ ...taskGroupsQuery, refetchInterval: useTaskPoll() }).data?.length ?? null;
     const active = navFor(section, id, fleet);
 
     return (
@@ -149,7 +151,8 @@ export function Shell() {
     const go = useGo();
     const fleet = useFleet();
     const totals = counts(fleet);
-    const taskCount = useQuery(taskGroupsQuery).data?.length ?? null;
+    const taskCount =
+        useQuery({ ...taskGroupsQuery, refetchInterval: useTaskPoll() }).data?.length ?? null;
     const activeNav = navFor(section, second, fleet);
 
     useUi((state) => `${state.focus}|${state.menu === null}|${state.menu?.confirm}`);
@@ -169,13 +172,15 @@ export function Shell() {
     const gateway =
         transportLabel() ??
         (__ORBIT_GATEWAY__ ?? window.location.origin).replace(/^https?:\/\//, "");
-    // A green dot means the WebSocket is subscribed. Anything else says why in its tooltip; the lists poll meanwhile.
+    // A green dot means the WebSocket is subscribed. Anything else says why in its tooltip; the lists poll meanwhile, less and less often.
     const status =
         liveness === "live"
             ? "Live: connected to the Gateway's WebSocket."
-            : liveness === "reconnecting"
-              ? "Reconnecting to the Gateway's WebSocket."
-              : `Not connected to the WebSocket${pollingReason === null ? "" : ` (${pollingReason})`}; refreshing every ${POLL_SECONDS}s.`;
+            : `${
+                  liveness === "reconnecting"
+                      ? "Reconnecting to the Gateway's WebSocket"
+                      : `Not connected to the WebSocket${pollingReason === null ? "" : ` (${pollingReason})`}`
+              }. Lists refresh every 30 seconds, then less often, up to every 5 minutes, and not while the tab is hidden.`;
 
     return (
         <PageHeaderSlot.Provider value={{ header: headerSlot, actions: actionsSlot }}>
@@ -321,6 +326,19 @@ export function Shell() {
                         {message !== "" && <span className="selectable text-fg"> │ {message}</span>}
                     </span>
                     <span className="flex items-center gap-[1ch]">
+                        {liveness !== "live" && (
+                            <button
+                                type="button"
+                                className="cursor-pointer text-yellow hover:text-fg"
+                                title="Refresh now"
+                                onClick={() => {
+                                    resetPollBackoff();
+                                    void queryClient.invalidateQueries();
+                                }}
+                            >
+                                live updates paused
+                            </button>
+                        )}{" "}
                         {gateway}
                         <span
                             role="status"

@@ -6,6 +6,7 @@ use App\Data\GatewayProfile;
 use App\Repositories\GatewayConfigRepository;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Filesystem\Filesystem;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\Nodes\AddNodeRoleRequest;
 use Orbit\Sdk\Requests\Nodes\ListNodesRequest;
@@ -245,6 +246,84 @@ it('renders gateway-owned node role add failures through the shared boundary', f
     $this
         ->artisan('node:role:add', ['node' => '7', 'role' => 'gateway', '--json' => true])
         ->expectsOutput($expected)
+        ->assertExitCode(1);
+});
+
+it('keeps the Node, stage, and Caddy message of a failed Caddy build in json and names them once in human output', function (): void {
+    $message = 'The Caddy build for Node [app-prod] failed at stage [validate]: Error: loading certificates: open /etc/caddy/orbit-websocket-cert-current/reverb.pem: no such file or directory';
+    $response = static fn (): MockResponse => MockResponse::make(
+        [
+            'error' => [
+                'code' => 'node_role.convergence_failed',
+                'message' => $message,
+                'details' => [
+                    'step' => 'websocket-caddy',
+                    'node' => 'app-prod',
+                    'stage' => 'validate',
+                    'message' => 'Error: loading certificates: open /etc/caddy/orbit-websocket-cert-current/reverb.pem: no such file or directory',
+                    'stdout' => 'private-output',
+                ],
+            ],
+        ],
+        502,
+        ['X-Orbit-Request-Id' => node_role_add_request_id()],
+    );
+    MockClient::global([AddNodeRoleRequest::class => $response]);
+
+    $this
+        ->artisan('node:role:add', ['node' => '7', 'role' => 'websocket', '--converge' => true, '--json' => true])
+        ->expectsOutput(json_encode([
+            'error' => [
+                'code' => 'node_role.convergence_failed',
+                'message' => $message,
+                'details' => [
+                    'step' => 'websocket-caddy',
+                    'node' => 'app-prod',
+                    'stage' => 'validate',
+                    'message' => 'Error: loading certificates: open /etc/caddy/orbit-websocket-cert-current/reverb.pem: no such file or directory',
+                ],
+                'request_id' => node_role_add_request_id(),
+            ],
+        ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES))
+        ->assertExitCode(1);
+
+    MockClient::destroyGlobal();
+    MockClient::global([AddNodeRoleRequest::class => $response]);
+    $exitCode = Artisan::call('node:role:add', ['node' => '7', 'role' => 'websocket', '--converge' => true]);
+    $output = Artisan::output();
+
+    expect($exitCode)->toBe(1)
+        ->and(substr_count($output, 'reverb.pem'))->toBe(1)
+        ->and($output)->toContain('failed at stage [validate]')
+        ->not->toContain('stage:', 'private-output');
+});
+
+it('keeps the failed step of a convergence failure without a Caddy build', function (): void {
+    MockClient::global([
+        AddNodeRoleRequest::class => MockResponse::make(
+            [
+                'error' => [
+                    'code' => 'node_role.convergence_failed',
+                    'message' => 'Role [ingress] convergence failed on node [app-prod].',
+                    'details' => ['step' => 'converge:host-firewall', 'stderr' => 'private-output'],
+                ],
+            ],
+            502,
+            ['X-Orbit-Request-Id' => node_role_add_request_id()],
+        ),
+    ]);
+
+    $this
+        ->artisan('node:role:add', ['node' => '7', 'role' => 'ingress', '--converge' => true, '--json' => true])
+        ->expectsOutput(json_encode([
+            'error' => [
+                'code' => 'node_role.convergence_failed',
+                'message' => 'Role [ingress] convergence failed on node [app-prod].',
+                'details' => ['step' => 'converge:host-firewall'],
+                'request_id' => node_role_add_request_id(),
+            ],
+        ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES))
+        ->doesntExpectOutputToContain('private-output')
         ->assertExitCode(1);
 });
 

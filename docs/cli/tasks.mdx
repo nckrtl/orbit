@@ -23,6 +23,7 @@ A task group is one feature. A subtask is one ordered step of it. The [tasks ref
 | [`tasks:subtask:create`](#orbit-taskssubtaskcreate) | Append a subtask to a group. |
 | [`tasks:subtask:update`](#orbit-taskssubtaskupdate) | Change a subtask's title, brief, or position. |
 | [`tasks:subtask:destroy`](#orbit-taskssubtaskdestroy) | Delete a subtask. |
+| [`tasks:subtask:cancel`](#orbit-taskssubtaskcancel) | Cancel a running subtask and start the next one. |
 | [`tasks:comment:create`](#orbit-taskscommentcreate) | Ask for assistance on a subtask or resolve a request. |
 | [`tasks:comment:list`](#orbit-taskscommentlist) | List a subtask's comments. |
 | [`tasks:agents`](#orbit-tasksagents) | List a group's agent threads. |
@@ -168,7 +169,7 @@ orbit tasks:cancel [group] [--yes] [--json]
 | --- | --- |
 | `--yes` | Confirm without a prompt. Required for `--json` and `-n` calls. |
 
-In a terminal, the group list leaves out `settling` and `completed` groups. Before it asks, the CLI reads the group and names it and its Instance in the question. The question defaults to No. A `--json` or `-n` call without `--yes` fails with `input.confirmation_required`. Declining fails with `input.cancelled`. Neither changes the group. A `settling` or `completed` group fails with `tasks.not_cancellable`; complete a settling group instead.
+In a terminal, the group list leaves out `settling` and `completed` groups. Before it asks, the CLI reads the group and names it and its Instance in the question. The question defaults to No. A `--json` or `-n` call without `--yes` fails with `input.confirmation_required`. Declining fails with `input.cancelled`. Neither changes the group. A `completed` group, or a `settling` group with a pull request, fails with `tasks.not_cancellable`; complete a settling group instead. Pass the group ID to cancel a `settling` group without a pull request. The Gateway first pushes its approved commits to the task branch; a failed push fails with `tasks.push_failed` and keeps the group.
 
 ## orbit tasks:complete
 
@@ -244,6 +245,25 @@ orbit tasks:subtask:destroy [group] [subtask] [--yes] [--json]
 | `--yes` | Confirm without a prompt. Required for `--json` and `-n` calls. |
 
 In a terminal, the group list shows only `backlog` groups. The question names the subtask and its group and defaults to No. Consent failures match `tasks:cancel`. JSON returns the deleted subtask.
+
+## orbit tasks:subtask:cancel
+
+Cancel a `running` subtask. The Gateway stops its implementer and its running check, keeps the group and its Instance, and starts the next `todo` subtask. When no `todo` subtask remains, the group moves to `settling`. The [tasks reference](/reference/tasks#groups-and-subtasks) owns these effects.
+
+```bash
+orbit tasks:subtask:cancel [group] [subtask] [--yes] [--json]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--yes` | Confirm without a prompt. Required for `--json` and `-n` calls. |
+
+In a terminal, the group list shows only `running` groups, and the subtask list shows only `running` subtasks. The question names the subtask and its group and defaults to No. Consent failures match `tasks:cancel`. The CLI shows the cancelled subtask. JSON returns it.
+
+| Error code | Meaning |
+| --- | --- |
+| `tasks.subtask_not_running` | The subtask is not `running`, or it moved on while Orbit stopped it. |
+| `tasks.subtask_interrupt_failed` | Orbit could not stop the implementer or the check. The subtask stays `running`. Retry, or cancel the group. |
 
 ## orbit tasks:comment:create
 

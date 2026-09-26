@@ -21,6 +21,7 @@ use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Metrics\MetricsGatewayResolver;
 use App\Domain\Metrics\MetricsPublicationManager;
 use App\Domain\Metrics\MetricsPublicationReport;
+use App\Domain\Metrics\MetricsReconcileDeferral;
 use App\Domain\Metrics\MetricsRuntimeLifecycle;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
@@ -41,14 +42,17 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WebSocket\WebSocketCredentialManager;
 use App\Domain\WebSocket\WebSocketCredentials;
 use App\Domain\WebSocket\WebSocketPublicationManager;
+use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\AppDev\AppDevSshExecutor;
 use App\Infrastructure\AppProd\AppProdSshExecutor;
+use App\Infrastructure\Gateway\GatewayPrivateDnsResolver;
 use App\Infrastructure\Nodes\CaddyPackageSourceProgram;
 use App\Infrastructure\Nodes\Roles\AnalyticsRoleBaseline;
 use App\Infrastructure\Nodes\Roles\AppDevRoleBaseline;
 use App\Infrastructure\Nodes\Roles\AppProdRoleBaseline;
 use App\Infrastructure\Nodes\Roles\DatabaseRoleBaseline;
 use App\Infrastructure\Nodes\Roles\GatewayRoleBaseline;
+use App\Infrastructure\Nodes\Roles\IngressRoleBaseline;
 use App\Infrastructure\Nodes\Roles\MetricsRoleBaseline;
 use App\Infrastructure\Nodes\Roles\NativeRoleBaselineConverger;
 use App\Infrastructure\Nodes\Roles\NodeRoleOperatingSystemGuard;
@@ -69,6 +73,7 @@ use App\Models\Node;
 use App\Models\NodeAccess;
 use App\Models\NodeRole;
 use App\Models\Process;
+use Illuminate\Support\Facades\Log;
 
 it('converges and removes only app development role-owned infrastructure', function (): void {
     expect(class_exists(AppDevRoleBaseline::class))->toBeTrue();
@@ -279,6 +284,7 @@ it('converges and removes the gateway role while VPN removal stays protected', f
         'ssh:caddy',
         'firewall:converge:gateway',
         'dns:none',
+        'ssh:'.GatewayPrivateDnsResolver::DROP_IN,
         'ssh:vpn',
         'firewall:converge:vpn',
     ])->and(NodeAccess::query()->where('consumer_node_id', $gatewayNode->id)->pluck('serving_node_id')->all())
@@ -292,8 +298,10 @@ it('converges and removes the gateway role while VPN removal stays protected', f
         'ssh:caddy',
         'firewall:converge:gateway',
         'dns:none',
+        'ssh:'.GatewayPrivateDnsResolver::DROP_IN,
         'ssh:vpn',
         'firewall:converge:vpn',
+        'ssh:'.GatewayPrivateDnsResolver::DROP_IN,
         'firewall:remove:gateway',
         'dns:none',
         'dns:none',
@@ -576,6 +584,81 @@ it('installs pinned Caddy before the gateway role firewall and stops when it can
         ->toBe(CaddyPackageSourceProgram::render());
 });
 
+it('routes the private domain on the Gateway machine to the configured VPN DNS address', function (
+    ?string $configuredDnsServer,
+    string $expectedAddress,
+): void {
+    $events = [];
+    [$vpnNode, $vpnAssignment] = role_baseline_models(RoleName::Vpn, name: 'vpn-dns-holder');
+    $vpnAssignment->update(['status' => LifecycleStatus::Active]);
+    [$node, $assignment] = role_baseline_models(RoleName::Gateway, name: 'gateway-dns');
+    app(VpnSettings::class)->configure(subnet: '10.44.0.0/24', dnsServer: $configuredDnsServer, domain: 'mesh');
+    $ssh = gateway_resolver_ssh($events, failResolver: false);
+    $gateway = new GatewayRoleBaseline(
+        baseline_firewall($events),
+        baseline_dns($events),
+        new NodeRolePrerequisiteCommandFactory,
+        new AppDevSshExecutor($ssh, baseline_keys(), baseline_known_hosts()),
+    );
+
+    $gateway->converge($node, $assignment);
+
+    $resolver = collect($ssh->commands)->last();
+    expect($vpnNode->wireguard_ip)->toBe('10.44.0.2')
+        ->and($resolver->arguments)->toBe(['sudo', 'bash', '-seu', '--', GatewayPrivateDnsResolver::DROP_IN])
+        ->and($resolver->input)->toBe(new GatewayPrivateDnsResolver()->convergeScript($expectedAddress, 'mesh'))
+        ->and(array_slice($events, -2))->toBe(['dns:none', 'ssh:resolver']);
+})->with([
+    'the VPN Node address' => [null, '10.44.0.2'],
+    'the configured VPN DNS server' => ['10.44.0.53', '10.44.0.53'],
+]);
+
+it('keeps the gateway role converged and logs a warning when the resolver step fails', function (): void {
+    Log::spy();
+    $events = [];
+    [$vpnNode, $vpnAssignment] = role_baseline_models(RoleName::Vpn, name: 'vpn-dns-holder');
+    $vpnAssignment->update(['status' => LifecycleStatus::Active]);
+    [$node, $assignment] = role_baseline_models(RoleName::Gateway, name: 'gateway-dns');
+    $gateway = new GatewayRoleBaseline(
+        baseline_firewall($events),
+        baseline_dns($events),
+        new NodeRolePrerequisiteCommandFactory,
+        new AppDevSshExecutor(gateway_resolver_ssh($events, failResolver: true), baseline_keys(), baseline_known_hosts()),
+    );
+
+    $gateway->converge($node, $assignment);
+    $gateway->remove($node, $assignment, purgeData: false);
+
+    expect($events)->toContain('ssh:resolver', 'firewall:remove:gateway')
+        ->and(array_count_values($events)['ssh:resolver'])->toBe(2);
+    Log::shouldHaveReceived('warning')
+        ->twice()
+        ->withArgs(static fn (string $message, array $context): bool => $context === [
+            'node' => 'gateway-dns',
+            'error_code' => 'node_role.convergence_failed',
+            'exit_code' => 1,
+        ]);
+});
+
+it('skips the resolver step while no Node holds an active vpn role', function (): void {
+    $events = [];
+    // A vpn assignment that is still provisioning does not serve VPN DNS yet.
+    role_baseline_models(RoleName::Vpn, name: 'vpn-provisioning');
+    [$node, $assignment] = role_baseline_models(RoleName::Gateway, name: 'gateway-dns');
+    $ssh = gateway_resolver_ssh($events, failResolver: false);
+    $gateway = new GatewayRoleBaseline(
+        baseline_firewall($events),
+        baseline_dns($events),
+        new NodeRolePrerequisiteCommandFactory,
+        new AppDevSshExecutor($ssh, baseline_keys(), baseline_known_hosts()),
+    );
+
+    $gateway->converge($node, $assignment);
+
+    expect($events)->not->toContain('ssh:resolver')
+        ->and(end($events))->toBe('dns:none');
+});
+
 it('dispatches every assignment to its code-defined baseline', function (): void {
     expect(class_exists(NativeRoleBaselineConverger::class))->toBeTrue();
 
@@ -645,10 +728,16 @@ it('dispatches every assignment to its code-defined baseline', function (): void
     );
 });
 
-it('refreshes service metrics for Ingress lifecycle operations without installing a host baseline', function (): void {
+it('installs Caddy for an Ingress-only Node, and on removal builds the Node and closes public HTTP but keeps Caddy', function (): void {
     $events = [];
+    [$node, $assignment] = role_baseline_models(RoleName::Ingress, 'ingress-only');
     $metricsFleet = Mockery::mock(MetricsFleetReconciler::class);
-    $metricsFleet->shouldReceive('reconcile')->times(3);
+    $metricsFleet
+        ->shouldReceive('reconcile')
+        ->times(3)
+        ->andReturnUsing(static function () use (&$events): void {
+            $events[] = 'metrics';
+        });
     $dispatcher = new NativeRoleBaselineConverger(
         gateway_role_baseline($events),
         new VpnRoleBaseline(
@@ -675,18 +764,24 @@ it('refreshes service metrics for Ingress lifecycle operations without installin
             baseline_keys(),
             baseline_known_hosts(),
         ),
+        ingress: ingress_role_baseline($events),
     );
-    $node = new Node(['name' => 'ingress', 'public_ssh_host' => '192.0.2.86']);
-    $assignment = new NodeRole([
-        'role' => RoleName::Ingress,
-        'status' => LifecycleStatus::Provisioning,
-    ]);
 
     $dispatcher->converge($node, $assignment);
     $dispatcher->remove($node, $assignment, purgeData: false);
     $dispatcher->removeUnreachable($node, $assignment);
 
-    expect($events)->toBe([]);
+    expect($events)->toBe([
+        'guard:gateway',
+        'ssh:caddy-source',
+        'ssh:ingress',
+        'caddy:converge',
+        'metrics',
+        'caddy:remove',
+        'firewall:remove:ingress',
+        'metrics',
+        'metrics',
+    ]);
 });
 
 it('dispatches removeUnreachable to the matching baseline and skips fleet reconciliation for Metrics', function (): void {
@@ -969,7 +1064,7 @@ function baseline_guard_ssh(array &$events): SshExecutor
 function role_baseline_models(RoleName $role, string $name = 'role-node'): array
 {
     $address = '10.44.0.'.(Node::query()->count() + 2);
-    $cluster = $role === RoleName::Router
+    $cluster = in_array($role, [RoleName::Router, RoleName::Ingress], strict: true)
         ? Cluster::query()->create(['name' => "{$name}-cluster"])
         : null;
     $node = Node::query()->create([
@@ -1010,6 +1105,36 @@ function database_role_baseline(array &$events): DatabaseRoleBaseline
         baseline_known_hosts(),
         baseline_account_resolver(),
     );
+}
+
+/**
+ * @param  list<string>  $events
+ * @return SshExecutor&object{commands: list<RemoteCommand>}
+ */
+function gateway_resolver_ssh(array &$events, bool $failResolver): SshExecutor
+{
+    return new class($events, $failResolver) implements SshExecutor
+    {
+        /** @var list<RemoteCommand> */
+        public array $commands = [];
+
+        /** @param list<string> $events */
+        public function __construct(
+            private array &$events,
+            private bool $failResolver,
+        ) {}
+
+        public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
+        {
+            $this->commands[] = $command;
+            $resolver = ($command->arguments[4] ?? null) === GatewayPrivateDnsResolver::DROP_IN;
+            $this->events[] = $resolver ? 'ssh:resolver' : 'ssh:other';
+
+            return $resolver && $this->failResolver
+                ? new CommandResult(1, '', 'Failed to set DNS configuration: Link orbit not known', 1, false)
+                : new CommandResult(0, '', '', 1, false);
+        }
+    };
 }
 
 /** @param list<string> $events */
@@ -1243,6 +1368,36 @@ function router_role_baseline(array &$events): RouterRoleBaseline
     );
 }
 
+/** @param list<string> $events */
+function ingress_role_baseline(array &$events): IngressRoleBaseline
+{
+    $caddy = new class($events) implements AppDevCaddyManager
+    {
+        /** @param list<string> $events */
+        public function __construct(
+            private array &$events,
+        ) {}
+
+        public function converge(Node $node): void
+        {
+            $this->events[] = 'caddy:converge';
+        }
+
+        public function remove(Node $node): void
+        {
+            $this->events[] = 'caddy:remove';
+        }
+    };
+
+    return new IngressRoleBaseline(
+        new NodeRolePrerequisiteCommandFactory,
+        new AppDevSshExecutor(baseline_ssh($events), baseline_keys(), baseline_known_hosts()),
+        $caddy,
+        baseline_account_resolver(),
+        baseline_firewall($events),
+    );
+}
+
 function baseline_account_resolver(?ManagedUserAccount $account = null): ManagedUserAccountResolver
 {
     return new class($account ?? new ManagedUserAccount('orbit', 'orbit', '/home/orbit')) implements ManagedUserAccountResolver
@@ -1362,3 +1517,52 @@ function baseline_known_hosts(): KnownHostsStore
         public function put(string $host, int $port, HostKey $key): void {}
     };
 }
+
+it('holds back fleet reconciliation during a deferral and reports that one was requested', function (): void {
+    $events = [];
+    $metricsFleet = Mockery::mock(MetricsFleetReconciler::class);
+    $metricsFleet->shouldReceive('reconcile')->once();
+    $deferral = new MetricsReconcileDeferral;
+    $dispatcher = new NativeRoleBaselineConverger(
+        gateway_role_baseline($events),
+        new VpnRoleBaseline(
+            new NodeRolePrerequisiteCommandFactory,
+            baseline_ssh($events),
+            baseline_keys(),
+            baseline_known_hosts(),
+            baseline_firewall($events),
+            baseline_account_resolver(),
+        ),
+        app_dev_role_baseline($events),
+        app_prod_role_baseline($events),
+        new MetricsRoleBaseline(
+            Mockery::mock(MetricsRuntimeLifecycle::class)->shouldIgnoreMissing(),
+            Mockery::mock(MetricsExporterLifecycle::class)->shouldIgnoreMissing(),
+            Mockery::mock(MetricsPublicationManager::class)->shouldIgnoreMissing(),
+            new MetricsGatewayResolver,
+            new MetricsPublicationReport,
+            Mockery::mock(MetricsCadvisorLifecycle::class)->shouldIgnoreMissing(),
+        ),
+        $metricsFleet,
+        new NodeRoleOperatingSystemGuard(
+            baseline_guard_ssh($events),
+            baseline_keys(),
+            baseline_known_hosts(),
+        ),
+        metricsDeferral: $deferral,
+    );
+
+    [$appDevNode, $appDevAssignment] = role_baseline_models(RoleName::AppDev, 'deferred-app-dev');
+    [$appProdNode, $appProdAssignment] = role_baseline_models(RoleName::AppProd, 'deferred-app-prod');
+
+    $requested = $deferral->during(function () use ($dispatcher, $appDevNode, $appDevAssignment, $appProdNode, $appProdAssignment): void {
+        $dispatcher->removeUnreachable($appDevNode, $appDevAssignment);
+        $dispatcher->removeUnreachable($appProdNode, $appProdAssignment);
+    });
+
+    expect($requested)->toBeTrue()
+        ->and($deferral->during(static function (): void {}))->toBeFalse();
+
+    // Outside a deferral, each change reconciles again.
+    $dispatcher->removeUnreachable($appDevNode, $appDevAssignment);
+});

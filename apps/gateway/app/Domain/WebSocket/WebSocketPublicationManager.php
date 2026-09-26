@@ -13,7 +13,14 @@ interface WebSocketPublicationManager
     /** Refuses when the Node lacks an address its Caddy sites would bind. It changes nothing. */
     public function checkListenAddresses(Node $node): void;
 
+    /**
+     * Withdraws the site and the certificate. The Gateway keeps publishing to the Node's Reverb until
+     * {@see retire()}, because a withdrawal that fails leaves that Reverb serving its clients.
+     */
     public function remove(Node $node): void;
+
+    /** After the Node's site is withdrawn and its Reverb has stopped: the Gateway stops publishing there. */
+    public function retire(Node $node): void;
 
     /**
      * Removes only the Gateway-side publication, for a websocket node Orbit

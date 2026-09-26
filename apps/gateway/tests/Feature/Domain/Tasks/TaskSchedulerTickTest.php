@@ -49,6 +49,7 @@ use App\Models\Node;
 use App\Models\Task;
 use App\Models\TaskCheck;
 use App\Models\TaskGroup;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Laravel\Ai\Classification;
 use Tests\Feature\GitHub\GitHubTestSupport;
@@ -64,6 +65,7 @@ function tick_group(): TaskGroup
         'slug' => 'tick-app',
         'repository_url' => 'git@example.test:tick.git',
         'default_branch' => 'main',
+        'task_check' => 'composer check',
     ]);
     $node = Node::query()->create([
         'name' => 'tick-node',
@@ -522,8 +524,9 @@ it('advances the current subtask when Jev marks it done', function (): void {
         ->and($spawner->reviews)->toBe(1);
 });
 
-it('hands off only when Orbit can run the workspace check script', function (bool $definesCheckScript, TaskStatus $status): void {
+it('hands off only when Orbit can run the workspace check script', function (bool $definesCheckScript, TaskStatus $status, string $taskCheck = 'composer check'): void {
     $group = tick_group();
+    $group->app->update(['task_check' => $taskCheck]);
     $task = $group->tasks->sole();
     app(TaskExtensionState::class)->enable();
     tick_workspace($definesCheckScript);
@@ -548,6 +551,33 @@ it('hands off only when Orbit can run the workspace check script', function (boo
 })->with([
     'project check script' => [true, TaskStatus::Reviewing],
     'missing check script' => [false, TaskStatus::Running],
+    'composer check with arguments after cd' => [false, TaskStatus::Running, 'cd app && composer check --no-ansi'],
+    'longer composer command' => [false, TaskStatus::Reviewing, 'composer check-platform-reqs'],
+]);
+
+it('hands off with the Project task check, and runs no command when the Project has none', function (?string $taskCheck): void {
+    $group = tick_group();
+    $group->app->update(['task_check' => $taskCheck]);
+    $task = $group->tasks->sole();
+    app(TaskExtensionState::class)->enable();
+    tick_workspace(false);
+    app()->instance(T3Dispatcher::class, tick_dispatcher());
+    app()->instance(T3ThreadReader::class, new class implements T3ThreadReader
+    {
+        public function snapshot(Node $node, string $threadId): ?array
+        {
+            return tick_checked_thread('done');
+        }
+    });
+
+    app(TaskScheduler::class)->tick();
+    app(TaskScheduler::class)->tick();
+
+    expect($task->fresh()?->status)->toBe(TaskStatus::Reviewing)
+        ->and(app(TaskCheckRunner::class)->commands)->toBe([$taskCheck]);
+})->with([
+    'no task check' => [null],
+    'custom task check' => ['vp run check'],
 ]);
 
 it('records an unreachable workspace as a communication failure without aborting the tick', function (): void {
@@ -778,6 +808,25 @@ it('runs the artisan tick while the extension is enabled', function (): void {
     $this->artisan('tasks:tick')
         ->expectsOutput('Routed [0] tasks and started [0] groups.')
         ->assertSuccessful();
+});
+
+it('takes the tick lock in the default cache store when CACHE_STORE is unset', function (): void {
+    /** @var array{default: string} $cache */
+    $cache = config_without_env('cache.php', ['CACHE_STORE']);
+    config(['cache.default' => $cache['default']]);
+    Cache::lock('orbit:tasks:tick')->forceRelease();
+    app(TaskExtensionState::class)->enable();
+
+    $this->artisan('tasks:tick')
+        ->expectsOutput('Routed [0] tasks and started [0] groups.')
+        ->assertSuccessful();
+
+    $held = Cache::store('file')->lock('orbit:tasks:tick', 300);
+    expect($held->get())->toBeTrue();
+    $this->artisan('tasks:tick')
+        ->expectsOutput('Another tasks tick is already running.')
+        ->assertSuccessful();
+    $held->release();
 });
 
 it('does not classify or advance a task while its T3 thread is active', function (string $status): void {
@@ -1537,6 +1586,8 @@ function tick_publishing(array $missing = [[]], int $failures = 0): object
 
             return 'https://github.com/acme/orbit/pull/42';
         }
+
+        public function push(TaskGroup $group): void {}
     };
     app()->instance(TaskBriefCoverage::class, $coverage);
     app()->instance(TaskPullRequestPublisher::class, $publisher);
@@ -1560,6 +1611,19 @@ it('commits the last approved subtask, opens the pull request with the reviewer 
         ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Settling)
         ->and($group->fresh()?->assistance_requested)->toBeFalse()
         ->and($task->fresh()?->status)->toBe(TaskStatus::Completed);
+});
+
+it('counts only the delivered subtasks in the pull request description', function (): void {
+    [$group, , , $signer] = tick_review([tick_final_approval()], last: true);
+    foreach ([TaskStatus::Completed, TaskStatus::Cancelled, TaskStatus::Failed] as $index => $status) {
+        Task::query()->create(['task_group_id' => $group->id, 'position' => $index + 2, 'title' => $status->value, 'brief' => 'Other subtask.', 'status' => $status]);
+    }
+    $publishing = tick_publishing();
+
+    app(TaskScheduler::class)->tick();
+
+    expect($signer->messages)->toHaveCount(1)
+        ->and($publishing->publisher->bodies)->toBe([TaskPullRequestDescription::render(new TaskRunPullRequest('Adds tick routing.', ['Tasks store their records.'], []), 2)]);
 });
 
 it('reminds the reviewer when the approval of the last subtask has no pull request fields', function (): void {

@@ -7,6 +7,7 @@ use App\Infrastructure\AppInstances\DevelopmentCaddyAccessCommand;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\Process;
+use Tests\Support\LinuxHost;
 
 it('leaves out sites that have no checkout to grant access to', function (): void {
     $site = static fn (string $checkoutPath, ?string $localHttpUpstream = null): AppDevSite => new AppDevSite(
@@ -32,6 +33,10 @@ it('leaves out sites that have no checkout to grant access to', function (): voi
 });
 
 it('serves a nested Web root while protecting source and preserving shared parent modes', function (): void {
+    if (LinuxHost::delegate($this)) {
+        return;
+    }
+
     $root = development_caddy_access_fixture();
 
     try {
@@ -57,9 +62,13 @@ it('serves a nested Web root while protecting source and preserving shared paren
     } finally {
         new Filesystem()->deleteDirectory($root);
     }
-})->skip(PHP_OS_FAMILY !== 'Linux', 'Requires Linux ACLs and the Caddy service account.');
+});
 
 it('refuses unsafe Web root links before changing file access', function (string $kind): void {
+    if (LinuxHost::delegate($this)) {
+        return;
+    }
+
     $root = development_caddy_access_fixture();
 
     try {
@@ -79,9 +88,13 @@ it('refuses unsafe Web root links before changing file access', function (string
     } finally {
         new Filesystem()->deleteDirectory($root);
     }
-})->with(['root', 'descendant'])->skip(PHP_OS_FAMILY !== 'Linux', 'Requires Linux ACLs.');
+})->with(['root', 'descendant']);
 
 it('permits only Laravel public storage without exposing private storage', function (): void {
+    if (LinuxHost::delegate($this)) {
+        return;
+    }
+
     $root = development_caddy_access_fixture();
 
     try {
@@ -100,9 +113,13 @@ it('permits only Laravel public storage without exposing private storage', funct
     } finally {
         new Filesystem()->deleteDirectory($root);
     }
-})->skip(PHP_OS_FAMILY !== 'Linux', 'Requires Linux ACLs and the Caddy service account.');
+});
 
 it('keeps both Web roots readable when a Git worktree is nested inside another checkout', function (): void {
+    if (LinuxHost::delegate($this)) {
+        return;
+    }
+
     $root = development_caddy_access_fixture();
 
     try {
@@ -125,9 +142,13 @@ it('keeps both Web roots readable when a Git worktree is nested inside another c
     } finally {
         new Filesystem()->deleteDirectory($root);
     }
-})->skip(PHP_OS_FAMILY !== 'Linux', 'Requires Linux ACLs and the Caddy service account.');
+});
 
 it('restores prior ACLs or retains its snapshot when recovery also fails', function (bool $failRecovery): void {
+    if (LinuxHost::delegate($this)) {
+        return;
+    }
+
     $root = development_caddy_access_fixture();
 
     try {
@@ -168,7 +189,7 @@ it('restores prior ACLs or retains its snapshot when recovery also fails', funct
     } finally {
         new Filesystem()->deleteDirectory($root);
     }
-})->with([false, true])->skip(PHP_OS_FAMILY !== 'Linux', 'Requires Linux ACLs and the Caddy service account.');
+})->with([false, true]);
 
 function development_caddy_access_fixture(): string
 {

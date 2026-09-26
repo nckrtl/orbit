@@ -12,6 +12,7 @@ use App\Domain\ProxyCli\ProxyCliHostname;
 use App\Domain\ProxyCli\ProxyCliState;
 use App\Domain\Routes\ClusterRouterTransition;
 use App\Domain\Shared\LifecycleStatus;
+use App\Infrastructure\WebSocket\WebSocketDnsTarget;
 use App\Models\Node;
 use Illuminate\Database\Eloquent\Builder;
 
@@ -21,6 +22,7 @@ final readonly class AppDevDnsConfigRenderer
         private AppDevSiteRepository $sites,
         private ClusterRouterDnsSelection $selection = new ClusterRouterDnsSelection,
         private ClusterRouterTransition $routerTransitions = new ClusterRouterTransition,
+        private WebSocketDnsTarget $websocket = new WebSocketDnsTarget,
     ) {}
 
     /**
@@ -98,7 +100,7 @@ final readonly class AppDevDnsConfigRenderer
             }
         }
 
-        $websocket = $this->roleNode(RoleName::WebSocket, $pendingNode);
+        $websocket = $this->websocket->node($this->roleNode(RoleName::WebSocket, $pendingNode));
 
         if ($websocket instanceof Node) {
             $records->push("host-record=reverb.orbit,{$websocket->wireguard_ip}");

@@ -33,7 +33,7 @@ use Tests\Support\FakeAgentDriver;
 /** @return array{TaskGroup, Task, FakeAgentDriver, AgentDriverRegistry} */
 function driver_group(): array
 {
-    $app = OrbitApp::query()->create(['name' => 'drivers', 'slug' => 'drivers', 'repository_url' => 'git@example.test:drivers.git', 'default_branch' => 'main']);
+    $app = OrbitApp::query()->create(['name' => 'drivers', 'slug' => 'drivers', 'repository_url' => 'git@example.test:drivers.git', 'default_branch' => 'main', 'task_check' => 'composer check']);
     $node = Node::query()->create(['name' => 'agent-node', 'platform' => 'linux', 'status' => 'active', 'wireguard_ip' => '10.44.0.5', 'public_ssh_host' => '10.44.0.5']);
     $instance = AppInstance::query()->create(['app_id' => $app->id, 'node_id' => $node->id, 'name' => 'task', 'checkout_path' => '/srv/task', 'status' => 'source_resolved']);
     $group = TaskGroup::query()->create(['app_id' => $app->id, 'implementer_agent_driver' => 'example', 'reviewer_agent_driver' => 'example', 'title' => 'Feature', 'brief' => 'Brief', 'status' => 'running']);

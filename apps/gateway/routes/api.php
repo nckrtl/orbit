@@ -28,6 +28,7 @@ use App\Http\Controllers\Api\DatabaseConnectionsController;
 use App\Http\Controllers\Api\DatabaseUsersController;
 use App\Http\Controllers\Api\DoctorRunsController;
 use App\Http\Controllers\Api\FirewallRulesController;
+use App\Http\Controllers\Api\FleetFirewallRulesController;
 use App\Http\Controllers\Api\GatewayStatusesController;
 use App\Http\Controllers\Api\GitHubAppController;
 use App\Http\Controllers\Api\GrafanaAccessAuthorizationController;
@@ -58,6 +59,7 @@ use App\Http\Controllers\Api\ToolsController;
 use App\Http\Middleware\RecordCommandActivity;
 use App\Http\Middleware\RequireActiveWireGuardPeer;
 use App\Http\Middleware\RequireNodeAccess;
+use App\Http\Middleware\RequireNodeAgentSecret;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1')->group(function (): void {
@@ -81,15 +83,14 @@ Route::prefix('v1')->group(function (): void {
     ])->match(['get', 'post'], 'broadcasting/auth', [RealtimeAuthController::class, 'authenticate'])
         ->name('realtime:auth');
 
-    Route::middleware(RequireActiveWireGuardPeer::class)
-        ->get('agent/realtime', [AgentRealtimeController::class, 'show'])
+    // Every agent endpoint requires the agent's secret as well as the Node's address (ADR 0155).
+    Route::middleware([RequireActiveWireGuardPeer::class, RequireNodeAgentSecret::class])
         ->withoutMiddleware(RecordCommandActivity::class)
-        ->name('agent:realtime');
-
-    Route::middleware(RequireActiveWireGuardPeer::class)
-        ->post('agent/broadcasting/auth', [AgentRealtimeController::class, 'authenticate'])
-        ->withoutMiddleware(RecordCommandActivity::class)
-        ->name('agent:realtime:auth');
+        ->prefix('agent')->group(function (): void {
+            Route::get('realtime', [AgentRealtimeController::class, 'show'])->name('agent:realtime');
+            Route::post('broadcasting/auth', [AgentRealtimeController::class, 'authenticate'])->name('agent:realtime:auth');
+            Route::get('workspaces', [AgentRealtimeController::class, 'workspaces'])->name('agent:workspaces');
+        });
 
     Route::middleware([
         RequireActiveWireGuardPeer::class,
@@ -185,6 +186,8 @@ Route::prefix('v1')->group(function (): void {
         Route::delete('nodes/{node}/roles/{role}', [NodeRolesController::class, 'destroy'])
             ->whereNumber('node')
             ->name('node:role:remove');
+        Route::get('firewall-rules', [FleetFirewallRulesController::class, 'index'])
+            ->name('firewall:fleet:list');
         Route::get('nodes/{node}/firewall-rules', [FirewallRulesController::class, 'index'])
             ->name('firewall:list');
         Route::get('nodes/{node}/managed-firewall-rules', [FirewallRulesController::class, 'managed'])
@@ -560,6 +563,8 @@ Route::prefix('v1')->group(function (): void {
             ->whereNumber('group')->whereNumber('task')->name('tasks:subtask:update');
         Route::delete('task-groups/{group}/tasks/{task}', [TaskGroupsController::class, 'destroyTask'])
             ->whereNumber('group')->whereNumber('task')->name('tasks:subtask:destroy');
+        Route::post('task-groups/{group}/tasks/{task}/cancel', [TaskGroupsController::class, 'cancelSubtask'])
+            ->whereNumber('group')->whereNumber('task')->name('tasks:subtask:cancel');
         Route::post('task-groups/{group}/tasks/{task}/check/cancel', [TaskGroupsController::class, 'cancelCheck'])
             ->whereNumber('group')->whereNumber('task')->name('tasks:check:cancel');
         Route::post('task-groups/{group}/tasks/{task}/comments', [TaskGroupsController::class, 'storeComment'])

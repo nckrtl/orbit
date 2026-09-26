@@ -750,6 +750,33 @@ describe('deployment streams', function (): void {
             ->toHaveCount(1);
     });
 
+    it('keeps the bounded step of a pre-admission error', function (): void {
+        MockClient::global([
+            DeployAppInstanceRequest::class => MockResponse::make([
+                'error' => [
+                    'code' => 'runtime.convergence_failed',
+                    'message' => 'Runtime convergence failed.',
+                    'details' => ['step' => 'app-prod-php-runtime-converge', 'command' => 'secret-deploy-command'],
+                ],
+            ], 502, ['X-Orbit-Request-Id' => deployment_cli_request_id()]),
+        ]);
+
+        $exitCode = Artisan::call('instance:deploy', [
+            'instance' => '17',
+            '--json' => true,
+            '--no-interaction' => true,
+        ]);
+
+        expect($exitCode)->toBe(1)
+            ->and(json_decode(trim(Artisan::output()), true, flags: JSON_THROW_ON_ERROR))
+            ->toBe(['error' => [
+                'code' => 'runtime.convergence_failed',
+                'message' => 'Runtime convergence failed.',
+                'details' => ['step' => 'app-prod-php-runtime-converge'],
+                'request_id' => deployment_cli_request_id(),
+            ]]);
+    });
+
     it('leaves SIGINT at its default for stream and non-stream commands', function (): void {
         $commands = Artisan::all();
 

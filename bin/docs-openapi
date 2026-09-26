@@ -232,7 +232,7 @@ TAGS = [
     ('internal', 'Node callbacks', 'Endpoints that managed Nodes and Caddy call; operators do not call them.'),
 ]
 TAG_BY_PREFIX = {p: t for p, t, _ in TAGS}
-INTERNAL = {'tasks:agents', 'tasks:agent-stream', 'agent:realtime', 'agent:realtime:auth', 'metrics:grafana:authorize', 'schedule:complete', 'runtime-activation:app-instance', 'github:app:register', 'github:app:callback'}
+INTERNAL = {'tasks:agents', 'tasks:agent-stream', 'agent:realtime', 'agent:realtime:auth', 'agent:workspaces', 'metrics:grafana:authorize', 'schedule:complete', 'runtime-activation:app-instance', 'github:app:register', 'github:app:callback'}
 DEFINITION_ROUTES = {
     'AppRuntimeDefinitionsController@processIndex': 'List process definitions',
     'AppRuntimeDefinitionsController@processStore': 'Create a process definition',
@@ -253,7 +253,7 @@ SUMMARIES = {
     'node:access:add': 'Grant Node access', 'node:access:remove': 'Revoke Node access',
     'cluster:list': 'List Clusters', 'cluster:show': 'Show a Cluster', 'cluster:create': 'Create a Cluster', 'cluster:update': 'Update a Cluster', 'cluster:destroy': 'Remove a Cluster',
     'cluster:node:add': 'Attach a Node to a Cluster', 'cluster:node:remove': 'Detach a Node from a Cluster', 'cluster:router:set': 'Set the Cluster Router', 'cluster:router:unset': 'Clear the Cluster Router',
-    'firewall:list': 'List firewall rules', 'firewall:managed:list': "List Orbit's own firewall rules", 'firewall:live:list': 'List live UFW rules', 'firewall:allow': 'Allow a firewall rule', 'firewall:deny': 'Deny a firewall rule', 'firewall:remove': 'Remove a firewall rule',
+    'firewall:list': 'List firewall rules', 'firewall:fleet:list': 'List firewall rules on every Node', 'firewall:managed:list': "List Orbit's own firewall rules", 'firewall:live:list': 'List live UFW rules', 'firewall:allow': 'Allow a firewall rule', 'firewall:deny': 'Deny a firewall rule', 'firewall:remove': 'Remove a firewall rule',
     'tool:manager:list': 'List Tool Managers', 'tool:list': 'List Tools', 'tool:show': 'Show a Tool', 'tool:install': 'Install a Tool', 'tool:update': 'Update a Tool', 'tool:remove': 'Remove a Tool',
     'github:app:install': 'Start a GitHub App registration or installation', 'github:app:show': 'Show the GitHub App', 'github:app:destroy': 'Remove the stored GitHub App',
     'github:app:register': 'Serve the GitHub App manifest page', 'github:app:callback': 'Complete a GitHub App registration',
@@ -283,18 +283,20 @@ SUMMARIES = {
     'runtime-activation:app-instance': 'Wake an Instance',
     'realtime:auth': 'Authorize the orbit broadcast channel', 'realtime:show': 'Show the Reverb connection',
     'agent:realtime': "Show the agent's Reverb connection", 'agent:realtime:auth': "Authorize the agent's presence channel",
+    'agent:workspaces': "List the task checkouts the agent watches",
     'tasks:enable': 'Enable Tasks', 'tasks:disable': 'Disable Tasks', 'tasks:status': 'Show Tasks status',
     'tasks:agents': 'List task agent sessions', 'tasks:agent-stream': 'Watch a task agent session',
     'tasks:list': 'List Task groups', 'tasks:create': 'Create a Task group', 'tasks:show': 'Show a Task group', 'tasks:update': 'Update a Task group',
-    'tasks:subtask:create': 'Create a subtask', 'tasks:subtask:update': 'Update a subtask', 'tasks:subtask:destroy': 'Destroy a subtask',
+    'tasks:subtask:create': 'Create a subtask', 'tasks:subtask:update': 'Update a subtask', 'tasks:subtask:destroy': 'Destroy a subtask', 'tasks:subtask:cancel': 'Cancel a running subtask',
     'tasks:complete': 'Complete a Task group', 'tasks:cancel': 'Cancel a Task group',
 }
 DESCRIPTIONS = {
     'gateway:trust': 'Returns the PEM-encoded Orbit root certificate and its SHA-256 fingerprint so a client can pin it before it trusts the Gateway. This endpoint needs no WireGuard identity.',
     'gateway:status': 'Returns the Gateway name, version, and status. This endpoint needs no WireGuard identity.',
     'realtime:auth': 'A Pusher-protocol channel authorization endpoint. A client requests access to the private `orbit` channel with its `socket_id` and `channel_name`; any active WireGuard peer Node is authorized.',
-    'agent:realtime': "The `orbit-agent` on a managed Node calls this endpoint to find its Reverb connection. The Gateway identifies the Node from the WireGuard address and returns the Reverb URL, serving address, and app key, the Node's `presence-node.{id}` channel, and the agent's `agent.{id}` member ID. Connection values are null when broadcasting is not configured.",
-    'agent:realtime:auth': "The `orbit-agent` on a managed Node calls this endpoint to join its own presence channel. The Gateway signs member `agent.{id}` on `presence-node.{id}` only for a request from that Node's WireGuard address. The response carries the Pusher `auth` and `channel_data` values.",
+    'agent:realtime': "The `orbit-agent` on a managed Node calls this endpoint to find its Reverb connection. The Gateway identifies the Node from the WireGuard address and the agent's bearer secret, and returns the Reverb URL, serving address, and app key, the Node's `presence-node.{id}` channel, and the agent's `agent.{id}` member ID. Connection values are null when broadcasting is not configured.",
+    'agent:workspaces': "The `orbit-agent` on a managed Node calls this endpoint every 60 seconds to learn which task checkouts to watch. The Gateway identifies the Node from the WireGuard address and the agent's bearer secret, and lists the Instances on that Node that hold the workspace of an unfinished task group, at most 64, with the checkout path, the Project's default branch as `base`, and the Instance's starting commit as `start`. The list is empty while the tasks extension is disabled.",
+    'agent:realtime:auth': "The `orbit-agent` on a managed Node calls this endpoint to join its own presence channel. The Gateway signs member `agent.{id}` on `presence-node.{id}` only for a request from that Node's WireGuard address that carries the Node's agent secret. The response carries the Pusher `auth` and `channel_data` values.",
     'realtime:show': 'Returns the Reverb WebSocket URL, app key, and channel name a client needs to subscribe to record-change events, or null values when broadcasting is not configured.',
     'metrics:grafana:authorize': 'Caddy on the Gateway calls this endpoint for each Grafana request. The Gateway identifies the caller from the connection address and answers 204 when the caller may reach Grafana.',
     'schedule:complete': 'The installed Schedule callback on the host Node reports the latest run. The Gateway accepts it only from the Schedule\'s recorded host Node and records `last_run_at` and `last_run_status`.',
@@ -303,6 +305,7 @@ DESCRIPTIONS = {
     'database:tables': 'Lists tables on a registered Database connection. SQLite inspection runs on the associated Node.',
     'database:schema': 'Shows columns for every table on a registered Database connection. SQLite inspection runs on the associated Node.',
     'database:describe': 'Shows columns for one table on a registered Database connection. An unknown table returns database.table_missing.',
+    'firewall:fleet:list': 'Returns the operator firewall rules of every Node the caller can reach, in one response, ordered by Node and name. The web app uses it for the fleet list instead of one request per Node. The per-Node list stays for the CLI. The list does not SSH.',
     'firewall:managed:list': 'Returns the `orbit:` rules Orbit intends on the Node: WireGuard member trust, public SSH recovery only while no active role has closed it, then each active role and Metrics. The list does not SSH. No request adds, changes, or removes one of these rules.',
     'firewall:live:list': 'Reads `ufw status numbered` over WireGuard and classifies each IPv4 rule against the desired managed set and operator firewall records. Live rules that do not match are drift. Desired or operator rules absent from live are missing. An inactive, absent, or unreachable backend returns empty live and missing lists.',
     'instance:deployment-config:show': 'Returns the recorded deployment branch and the deploy steps in phase and placement order as one document.',
@@ -323,7 +326,8 @@ DESCRIPTIONS = {
     'tasks:subtask:destroy': 'Deletes a subtask while its group is in `backlog` (`tasks.not_in_backlog`) and closes the position gap. Returns the deleted subtask. Served by the Node that holds the group\'s Instance, or by the Gateway for a group without one. Returns `tasks.disabled` while the extension is off.',
     'tasks:list': 'Lists Task groups, newest first. Optional `app_id` and `status` filters. Returns `tasks.disabled` while the extension is off.',
     'tasks:show': 'Shows one Task group and its Tasks in position order. Returns `tasks.disabled` while the extension is off.',
-    'tasks:cancel': 'Cancels a backlog, todo, reserved, running, reviewing, or failed Task group and clears its shared Instance. Idempotent for cancelled groups. Route-free source_resolved Instances use database-only cleanup and retain their checkout; other Instances use the forced Instance remover. Requires Gateway access. Returns tasks.disabled while the extension is off and tasks.not_cancellable for settling or completed groups.',
+    'tasks:subtask:cancel': 'Cancels a `running` subtask. Stops its implementer and its running baseline or handoff check, keeps the group and its Instance, and starts the lowest-position `todo` subtask. That subtask runs the baseline check first when no implementer has started in the group. When no `todo` subtask remains, the group moves to `settling` without a pull request. Requires Gateway access. Returns `tasks.disabled` while the extension is off, `tasks.subtask_not_running` (409) when the subtask is not `running`, and `tasks.subtask_interrupt_failed` (502) when the implementer or check could not be stopped; the subtask then stays `running`.',
+    'tasks:cancel': 'Cancels a backlog, todo, reserved, running, reviewing, or failed Task group, or a settling group without a pull request, and clears its shared Instance. For a settling group with an approved subtask, the Gateway first pushes the workspace HEAD to `task-{group}` on origin; a failed push returns `tasks.push_failed` (502) and keeps the group and Instance. Idempotent for cancelled groups. Route-free source_resolved Instances use database-only cleanup and retain their checkout; other Instances use the forced Instance remover. Requires Gateway access. Returns tasks.disabled while the extension is off and tasks.not_cancellable for completed groups and settling groups with a pull request.',
     'tasks:complete': 'Marks a settling Task group completed and removes its shared Instance and any visitable Routes. Idempotent. Requires Gateway access. Returns `tasks.disabled` while the extension is off and `tasks.not_settling` when the group is not settling.',
     'proxycli:enable': 'Deploys one collector Process and publishes https://collector.cli-proxy-api.orbit after a Redis Database connection for shared Valkey is in place. Fails closed when that connection is missing, is not Redis, or names a Node without the database role. A custom proxy Route that already serves the collector hostname on that Node is withdrawn in the same Caddy reload and removed; any other Route on that name fails with proxycli.hostname_taken. The response never includes tokens or the management key.',
     'proxycli:disable': 'Stops the collector Process for the whole fleet, withdraws collector.cli-proxy-api.orbit and its certificate, deletes the stored CLIProxyAPI management key and the read and control tokens, and hides provider reads. Enabling again needs the management key. The Redis connection and Valkey data stay.',
@@ -488,8 +492,21 @@ def parse_rule_entries(text):
     return entries
 
 
-def tokens_for(value):
-    v = strip_closures(value)
+ROUTE_TERNARY = re.compile(
+    r"str_starts_with\(\s*\(string\)\s*\$this->route\(\)\?->getName\(\)\s*,\s*'([^']*)'\s*\)\s*\?\s*'([^']*)'\s*:\s*'([^']*)'"
+)
+
+
+def resolve_route_ternaries(value, route_name):
+    """Resolve rules chosen by the route name, such as `str_starts_with($this->route()?->getName(), 'project:') ? 'required' : 'sometimes'`."""
+    return ROUTE_TERNARY.sub(
+        lambda m: "'" + (m.group(2) if (route_name or '').startswith(m.group(1)) else m.group(3)) + "'",
+        value,
+    )
+
+
+def tokens_for(value, route_name=None):
+    v = strip_closures(resolve_route_ternaries(value, route_name))
     toks = []
     for m in re.finditer(r'Rule::enum\((\w+)::class\)', v):
         toks.append(('enum', m.group(1)))
@@ -512,6 +529,7 @@ TYPE_RULES = {'string': 'string', 'integer': 'integer', 'int': 'integer', 'numer
 def schema_from_tokens(toks):
     sch = {}
     required = False
+    sometimes = False
     nullable = False
     notes = []
     type_ = None
@@ -534,6 +552,8 @@ def schema_from_tokens(toks):
                 sch['format'] = 'uri'
             elif base == 'required':
                 required = True
+            elif base == 'sometimes':
+                sometimes = True
             elif base == 'nullable':
                 nullable = True
             elif base == 'alpha_dash':
@@ -577,7 +597,8 @@ def schema_from_tokens(toks):
     sch = {'type': [type_, 'null'] if nullable else type_, **sch}
     if notes:
         sch['description'] = ' '.join(notes)
-    return sch, required
+    # A `sometimes|required` field is optional, but the request still needs a body with at least one field.
+    return sch, required and not sometimes, required and sometimes
 
 
 def clean_schema(s):
@@ -594,10 +615,12 @@ def clean_schema(s):
     return s
 
 
-def rules_to_schema(rules_text):
+def rules_to_schema(rules_text, route_name=None):
     root = {'type': 'object', 'properties': {}, 'required': []}
+    body_required = False
     for key, value in parse_rule_entries(rules_text).items():
-        sch, req = schema_from_tokens(tokens_for(value))
+        sch, req, required_when_sent = schema_from_tokens(tokens_for(value, route_name))
+        body_required = body_required or ('.' not in key and required_when_sent)
         parts = key.split('.')
         node = root
         for idx, part in enumerate(parts):
@@ -633,7 +656,7 @@ def rules_to_schema(rules_text):
                         for drop in ('items', 'maxItems', 'minItems'):
                             child.pop(drop, None)
                     node = child
-    return clean_schema(root)
+    return clean_schema(root), body_required
 
 
 # ---------------------------------------------------------------- data classes -> component schemas
@@ -745,7 +768,7 @@ def route_key(route):
 
 NAME_BY_TAG = {'Nodes': 'beast', 'Apps': 'acme', 'Database connections': 'app', 'Processes': 'vite', 'Schedules': 'daily-report', 'Clusters': 'lab', 'Firewall': 'office-postgres', 'Workspaces': 'feature-search', 'Instances': 'default'}
 EXAMPLE_BY_NAME = {
-    'slug': 'acme', 'domain': 'app.example.test', 'repository_url': 'https://github.com/acme/site.git', 'default_branch': 'main', 'root': 'public',
+    'code': 'ACM', 'slug': 'acme', 'domain': 'app.example.test', 'repository_url': 'https://github.com/acme/site.git', 'default_branch': 'main', 'root': 'public',
     'public_ssh_host': 'beast.example.com', 'public_ssh_port': 22, 'user': 'root', 'orbit_user': 'orbit', 'platform': 'linux', 'architecture': 'x86_64', 'tld': 'test', 'roles': ['app-dev'], 'role': 'app-dev',
     'cluster_id': 3, 'node_id': 7, 'app_id': 4, 'app_instance_id': 12, 'target_id': 12, 'wireguard_ip': '10.44.0.7', 'lan_ip': '192.168.6.20', 'branch': 'main', 'preview_name': 'shop.com',
     'publication': 'private', 'driver': 'mysql', 'host': 'db.example.test', 'port': 3306, 'database': 'app', 'username': 'app', 'password': 'secret', 'path': '/var/lib/app/database.sqlite', 'sql': 'SELECT id, email FROM users', 'table': 'users', 'prefix': 'DB',
@@ -828,7 +851,7 @@ def php_sample(sdkreq, stream, tag):
     return '\n'.join(lines) + '\n'
 
 
-def example_from_schema(sch, name, tag, depth=0):
+def example_from_schema(sch, name, tag, depth=0, update=False):
     if not isinstance(sch, dict):
         return None
     if '$ref' in sch:
@@ -847,6 +870,10 @@ def example_from_schema(sch, name, tag, depth=0):
         for k, v in props.items():
             if k in (sch.get('required') or []) or (depth == 0 and len(props) <= 4):
                 out[k] = example_from_schema(v, k, tag, depth + 1)
+        if depth == 0 and not out and props and update:
+            # An update needs at least one field, so its example sends the first one.
+            k, v = next(iter(props.items()))
+            out[k] = example_from_schema(v, k, tag, depth + 1)
         return out
     if t == 'array':
         return [example_from_schema(sch.get('items', {}), None, tag, depth + 1)] if sch.get('items') else []
@@ -869,7 +896,7 @@ def bash_sample(route, path, body_schema, query, tag):
     lines = [f'curl -sS {method}"{url}" \\', '  --cacert /path/to/orbit-root-ca.pem \\', "  -H 'Accept: application/json' \\", "  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'"]
     if body_schema is not None:
         lines[-1] += ' \\'
-        lines += ["  -H 'Content-Type: application/json' \\", "  -d '" + json.dumps(example_from_schema(body_schema, None, tag) or {}) + "'"]
+        lines += ["  -H 'Content-Type: application/json' \\", "  -d '" + json.dumps(example_from_schema(body_schema, None, tag, update=route['method'] in ('PATCH', 'PUT')) or {}) + "'"]
     return '\n'.join(lines) + '\n'
 
 
@@ -923,7 +950,7 @@ CTRL_DATA_OVERRIDES = {
     'MetricsController@store': ('MetricsMutationData', False), 'MetricsController@destroy': ('MetricsMutationData', False), 'MetricsController@enableExporter': ('MetricsMutationData', False), 'MetricsController@disableExporter': ('MetricsMutationData', False), 'MetricsController@status': ('MetricsStatusData', False), 'MetricsController@credentials': ('MetricsCredentialsData', False), 'MetricsController@reset': ('MetricsCredentialsData', False),
     'NodeAccessController@store': ('AddedNodeAccessData', False), 'NodeAccessController@destroy': ('RemovedNodeAccessData', False),
     'DatabaseConnectionAttachmentsController@store': ('DatabaseConnectionAttachmentData', False), 'DatabaseConnectionAttachmentsController@destroy': ('DatabaseConnectionAttachmentData', False),
-    'ProcessesController@index': ('ProcessData', True), 'ProcessesController@start': ('ProcessData', False), 'ProcessesController@stop': ('ProcessData', False), 'ProcessesController@restart': ('ProcessData', False),
+    'FleetFirewallRulesController@index': ('FirewallRuleData', True), 'ProcessesController@index': ('ProcessData', True), 'ProcessesController@start': ('ProcessData', False), 'ProcessesController@stop': ('ProcessData', False), 'ProcessesController@restart': ('ProcessData', False),
     'DatabaseConnectionsController@users': ('DatabaseUserData', True),
     'TaskGroupsController@comments': ('TaskCommentData', True),
 }
@@ -1007,7 +1034,7 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
     query = []
     cmd = commands.get(route['name'])
     if rules_text:
-        sch = rules_to_schema(rules_text)
+        sch, body_required = rules_to_schema(rules_text, route['name'])
         if route['method'] == 'GET':
             for k, v in (sch.get('properties') or {}).items():
                 if k in params:
@@ -1035,7 +1062,7 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
                 v['description'] = d
     if body_schema is not None:
         body_schema['additionalProperties'] = False
-        op['requestBody'] = {'required': bool(body_schema.get('required')), 'content': {'application/json': {'schema': body_schema}}}
+        op['requestBody'] = {'required': body_required or bool(body_schema.get('required')), 'content': {'application/json': {'schema': body_schema}}}
     stream = route['name'] in ('instance:deploy', 'instance:rollback')
     responses = {}
     if stream:
@@ -1058,6 +1085,14 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
             'member': {'type': 'string', 'description': "The agent's member ID, `agent.{id}`."},
         }, 'required': ['url', 'address', 'key', 'channel', 'member']}
         responses['200'] = envelope(connection, 'The request succeeded.')
+    elif route['name'] == 'agent:workspaces':
+        workspace = {'type': 'object', 'properties': {
+            'instance_id': {'type': 'integer', 'description': 'The Instance that holds the task workspace.'},
+            'path': {'type': 'string', 'description': 'The absolute checkout path on the Node.'},
+            'base': {'type': 'string', 'description': "The Project's default branch, which the diff counts are read against."},
+            'start': {'type': ['string', 'null'], 'description': "The Instance's starting commit, or null."},
+        }, 'required': ['instance_id', 'path', 'base', 'start']}
+        responses['200'] = envelope({'type': 'array', 'items': workspace}, 'The request succeeded.')
     elif route['name'] == 'agent:realtime:auth':
         responses['200'] = {'description': 'The Pusher channel signature.', 'content': {'application/json': {'schema': {'type': 'object', 'properties': {
             'auth': {'type': 'string', 'description': 'Pusher channel signature.'},
@@ -1084,10 +1119,12 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
             responses['200'] = envelope(data, 'The request succeeded.')
         if route['name'] == 'gateway:trust':
             responses['503'] = error_response('The Gateway root CA is unavailable (`ca.unavailable`).')
-    if route['name'] == 'agent:realtime':
-        responses['403'] = error_response('The caller is not an active WireGuard peer (`peer.identity_unknown`) or its Node is not eligible for an agent (`agent.node_ineligible`).')
+    if route['name'] in ('agent:realtime', 'agent:realtime:auth', 'agent:workspaces'):
+        responses['401'] = error_response('The request carries no agent secret (`agent.secret_required`).')
+    if route['name'] in ('agent:realtime', 'agent:workspaces'):
+        responses['403'] = error_response('The caller is not an active WireGuard peer (`peer.identity_unknown`), its agent secret does not match (`agent.secret_invalid`), or its Node is not eligible for an agent (`agent.node_ineligible`).')
     elif route['name'] == 'agent:realtime:auth':
-        responses['403'] = error_response('The caller is not an active WireGuard peer (`peer.identity_unknown`), its Node is not eligible for an agent (`agent.node_ineligible`), or it asked for another Node\'s channel (`agent.channel_forbidden`).')
+        responses['403'] = error_response('The caller is not an active WireGuard peer (`peer.identity_unknown`), its agent secret does not match (`agent.secret_invalid`), its Node is not eligible for an agent (`agent.node_ineligible`), or it asked for another Node\'s channel (`agent.channel_forbidden`).')
     elif route['name'] not in ('gateway:status', 'gateway:trust'):
         responses['403'] = error_response('The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).')
     if params and not stream and route['name'] not in INTERNAL:
@@ -1097,11 +1134,17 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
     if route['name'] in ('tasks:list', 'tasks:show', 'tasks:agents', 'tasks:agent-stream'):
         responses['409'] = error_response('The tasks extension is disabled (`tasks.disabled`).')
     if route['name'] == 'tasks:cancel':
-        responses['409'] = error_response('The tasks extension is disabled (`tasks.disabled`) or the Task group is settling or completed (`tasks.not_cancellable`).')
+        responses['409'] = error_response('The tasks extension is disabled (`tasks.disabled`), or the Task group is completed or settling with a pull request (`tasks.not_cancellable`).')
+        responses['502'] = error_response('The approved commits of a settling group could not be pushed to its task branch (`tasks.push_failed`). The group and its Instance stay.')
+    if route['name'] == 'tasks:subtask:cancel':
+        responses['409'] = error_response('The tasks extension is disabled (`tasks.disabled`) or the subtask is not running (`tasks.subtask_not_running`).')
+        responses['502'] = error_response('The implementer or the running check could not be stopped (`tasks.subtask_interrupt_failed`). The subtask stays running.')
     if route['name'] == 'tasks:complete':
         responses['409'] = error_response('The tasks extension is disabled (`tasks.disabled`) or the Task group is not settling (`tasks.not_settling`).')
     if body_schema is not None or stream:
         responses['422'] = error_response('The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`).')
+    if route['name'] in ('node:role:add', 'node:role:remove', 'node:role:relocate'):
+        responses['502'] = error_response('A role step failed on the Node (`node_role.convergence_failed` or `node_role.remove_failed`). `error.details.step` names the failed step.')
     if route['name'] == 'node:metrics':
         responses['409'] = error_response('No Node has the Metrics role (`metrics.assignment_missing`).')
         responses['422'] = error_response('The Node is not an active, WireGuard-managed Node (`node.metrics_unavailable`).')

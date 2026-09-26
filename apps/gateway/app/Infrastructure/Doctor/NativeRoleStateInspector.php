@@ -8,7 +8,9 @@ use App\Domain\Doctor\DoctorInspectionException;
 use App\Domain\Doctor\RoleInspectionData;
 use App\Domain\Doctor\RoleStateInspector;
 use App\Domain\Nodes\RoleName;
+use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
+use App\Infrastructure\Gateway\GatewayPrivateDnsResolver;
 use App\Infrastructure\Nodes\NodeBootstrapPackageCatalog;
 use App\Infrastructure\Nodes\NodeRoleServiceCatalog;
 use App\Infrastructure\Processes\CommandDeadline;
@@ -68,14 +70,12 @@ final readonly class NativeRoleStateInspector implements RoleStateInspector
         private NodeFirewallRuleCatalog $firewall,
         private CommandDeadline $deadline,
         private UfwManagedRulesCheck $firewallCheck = new UfwManagedRulesCheck,
+        private GatewayPrivateDnsResolver $resolver = new GatewayPrivateDnsResolver,
+        private ?VpnSettings $vpnSettings = null,
     ) {}
 
     public function inspect(NodeRole $role): RoleInspectionData
     {
-        if ($role->role === RoleName::Ingress) {
-            return new RoleInspectionData(true, true, true);
-        }
-
         try {
             $role->loadMissing('node');
             $node = $role->node;
@@ -107,6 +107,7 @@ final readonly class NativeRoleStateInspector implements RoleStateInspector
                 in_array('caddy', $required, strict: true)
                     ? $this->caddyVersion($connection)
                     : null,
+                $role->role === RoleName::Gateway ? $this->privateDnsRouteMatches($connection) : null,
             );
         } catch (DoctorInspectionException $exception) {
             throw $exception;
@@ -147,6 +148,25 @@ final readonly class NativeRoleStateInspector implements RoleStateInspector
         $reported = trim($result->stdout);
 
         return $reported === '' ? null : $reported;
+    }
+
+    /**
+     * Whether the Gateway machine routes the private domain to VPN DNS as ADR 0156 describes. Null
+     * while no Node serves VPN DNS, because then there is no route to expect.
+     */
+    private function privateDnsRouteMatches(SshConnection $connection): ?bool
+    {
+        $settings = $this->vpnSettings ?? app(VpnSettings::class);
+        $address = $this->resolver->vpnDnsAddress($settings);
+
+        if ($address === null) {
+            return null;
+        }
+
+        return $this->booleanResult($this->ssh->execute(
+            $connection,
+            $this->resolver->inspectCommand($address, $settings->domain()),
+        ));
     }
 
     private function booleanResult(CommandResult $result): bool

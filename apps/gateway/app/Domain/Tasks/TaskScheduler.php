@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace App\Domain\Tasks;
 
 use App\Actions\Tasks\CompleteTaskGroupAction;
+use App\Actions\Tasks\RemoveTaskWorkspaceAction;
 use App\Domain\Projects\LifecyclePhase;
+use App\Domain\Shared\ResourceOperationException;
 use App\Models\AgentThread;
 use App\Models\AppInstance;
 use App\Models\ProjectLifecycleStep;
@@ -13,14 +15,33 @@ use App\Models\Task;
 use App\Models\TaskCheck;
 use App\Models\TaskComment;
 use App\Models\TaskGroup;
+use Closure;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
 final readonly class TaskScheduler
 {
+    public const string ProvisioningFailedReason = 'Workspace provisioning did not return an instance.';
+
+    public const string StartFailedReason = 'The group could not start after its workspace was provisioned.';
+
+    public const string ReservationExpiredReason = 'The group stayed reserved too long and returned to todo.';
+
+    /** Reasons the scheduler sets when a claim returns a group to todo. A start, a capacity wait, or a move to backlog clears them. */
+    public const array ClaimFailureReasons = [
+        self::ProvisioningFailedReason,
+        self::StartFailedReason,
+        self::ReservationExpiredReason,
+    ];
+
+    private const string BASELINE_COMPOSER_INSTALL_STEP = '[Orbit internal] Install Composer dependencies';
+
+    private const string BASELINE_JAVASCRIPT_INSTALL_STEP = '[Orbit internal] Install JavaScript dependencies';
+
     public function __construct(
         private TaskConcurrencyGuard $ceilings,
         private InstanceProvisioning $provisioning,
@@ -38,6 +59,8 @@ final readonly class TaskScheduler
         private TaskBriefCoverage $coverage,
         private TaskPullRequestPublisher $publisher,
         private TaskCheckRunner $checks,
+        private TaskBroadcasts $broadcasts,
+        private RemoveTaskWorkspaceAction $workspaces,
     ) {}
 
     /**
@@ -264,10 +287,13 @@ final readonly class TaskScheduler
         $repeats = $check instanceof TaskCheck
             ? TaskCheck::query()->where('task_comment_id', $receipt->id)->where('status', $check->status->value)->count()
             : 0;
+        $command = $group->app->taskCheckCommand();
+        $name = $command ?? 'the task check';
+        $owned = $command === null ? "Orbit's task check" : "Orbit's {$command}";
         $item = match (true) {
-            $check instanceof TaskCheck && $status === TaskCheckStatus::Failed => new TaskRubricItem('check_passed', false, "Orbit ran composer check, and it failed with exit code {$check->exit_code}. The end of its output:\n\n```\n".rtrim((string) $check->output)."\n```\n"),
-            $status === TaskCheckStatus::Cancelled => new TaskRubricItem('check_passed', false, "An operator cancelled Orbit's composer check before it finished."),
-            $check instanceof TaskCheck && $status === TaskCheckStatus::Changed && $repeats >= 2 => new TaskRubricItem('check_passed', false, 'The workspace changed while composer check ran, twice. Changed paths: '.implode(', ', $check->changed_paths ?? []).'. Make the check leave the tree unchanged, for example by ignoring the files it writes.'),
+            $check instanceof TaskCheck && $status === TaskCheckStatus::Failed => new TaskRubricItem('check_passed', false, "Orbit ran {$name}, and it failed with exit code {$check->exit_code}. The end of its output:\n\n```\n".rtrim((string) $check->output)."\n```\n"),
+            $status === TaskCheckStatus::Cancelled => new TaskRubricItem('check_passed', false, "An operator cancelled {$owned} before it finished."),
+            $check instanceof TaskCheck && $status === TaskCheckStatus::Changed && $repeats >= 2 => new TaskRubricItem('check_passed', false, "The workspace changed while {$name} ran, twice. Changed paths: ".implode(', ', $check->changed_paths ?? []).'. Make the check leave the tree unchanged, for example by ignoring the files it writes.'),
             default => null,
         };
         if ($item instanceof TaskRubricItem) {
@@ -279,13 +305,13 @@ final readonly class TaskScheduler
         }
         if ($status === TaskCheckStatus::Lost && $repeats >= 2) {
             $task->update(['completion_handoff_comment_id' => $receipt->id]);
-            $this->requestAssistance($task, $group, "Orbit's composer check stopped twice without a result.", $observation);
+            $this->requestAssistance($task, $group, "{$owned} stopped twice without a result.", $observation);
 
             return;
         }
 
         try {
-            $process = $this->checks->start($instance, [], $this->deliverableCheck($task));
+            $process = $this->checks->start($instance, $command, [], $this->deliverableCheck($task));
         } catch (TaskCheckException $exception) {
             $this->recordCommunicationFailure($task, $group, $exception->getMessage());
 
@@ -328,9 +354,13 @@ final readonly class TaskScheduler
                 'deliverable_evidence' => $reading->deliverables === null ? null : json_encode($reading->deliverables, JSON_THROW_ON_ERROR),
             ];
         $finishedAt = $reading->finishedAt === null ? now() : Carbon::createFromTimestamp($reading->finishedAt);
-        TaskCheck::query()->whereKey($check->id)->where('status', TaskCheckStatus::Running->value)
+        $updated = TaskCheck::query()->whereKey($check->id)->where('status', TaskCheckStatus::Running->value)
             ->update([...$values, 'finished_at' => $finishedAt, 'updated_at' => now()]);
         $check->refresh();
+        $groupId = Task::query()->whereKey($check->task_id)->value('task_group_id');
+        if ($updated === 1 && is_int($groupId)) {
+            $this->broadcasts->groupChanged($groupId);
+        }
     }
 
     private function handleReviewerOutcome(TaskGroup $group, Task $task, TaskSessionObservation $observation): bool
@@ -427,7 +457,7 @@ final readonly class TaskScheduler
         $receipt->update(['commit_sha' => $commit]);
         if ($pullRequest instanceof TaskRunPullRequest) {
             try {
-                $url = $this->publisher->publish($group, TaskPullRequestDescription::render($pullRequest, $group->tasks()->count()));
+                $url = $this->publisher->publish($group, TaskPullRequestDescription::render($pullRequest, $group->tasks()->whereNotIn('status', [TaskStatus::Cancelled, TaskStatus::Failed])->count(), $group->app->taskCheckCommand()));
             } catch (TaskPullRequestException $exception) {
                 $this->recordCommunicationFailure($task, $group, $exception->getMessage());
 
@@ -482,7 +512,7 @@ final readonly class TaskScheduler
     {
         $instance = $group->taskable;
         $items = [
-            new TaskRubricItem('check_script', $instance instanceof AppInstance && $this->workspace->definesComposerCheckScript($instance), 'composer.json in the workspace does not define a check script, so Orbit cannot run composer check. Restore the check script.'),
+            new TaskRubricItem('check_script', ! self::runsComposerCheck($group->app->taskCheckCommand()) || $instance instanceof AppInstance && $this->workspace->definesComposerCheckScript($instance), 'composer.json in the workspace does not define a check script, so Orbit cannot run composer check. Restore the check script.'),
             $this->receiptItem($read, $receipt),
         ];
         $confirmation = $this->confirmationItem($task, $receipt, TaskThreadRole::Implementer);
@@ -647,7 +677,7 @@ final readonly class TaskScheduler
         if ($task->{$reminder} !== $task->{$attempt}) {
             try {
                 $this->prepareTurn($group, $task, $thread->role);
-                $this->actor->remindRubric($group, $thread, TaskRubricReminder::compose($thread->role, $failures, ! $implementer && $task->isLastSubtask(), $task->deliverableList()));
+                $this->actor->remindRubric($group, $thread, TaskRubricReminder::compose($thread->role, $failures, ! $implementer && $task->isLastSubtask(), $task->deliverableList(), $group->app->taskCheckCommand()));
             } catch (AgentDriverException|TaskRunReceiptException $exception) {
                 $this->recordCommunicationFailure($task, $group, $exception->getMessage());
 
@@ -760,76 +790,380 @@ final readonly class TaskScheduler
         }
     }
 
-    public function claimNext(): ?TaskGroup
+    /**
+     * Claims the oldest todo group that fits, provisions its Instance, and starts its first task.
+     *
+     * @param  list<int>  $skipped  Groups whose provisioning or start failed. A caller that passes the same list to later
+     *                              calls tries each failing group at most once.
+     */
+    public function claimNext(array &$skipped = []): ?TaskGroup
     {
-        $reserved = DB::transaction(function (): ?TaskGroup {
-            $candidates = TaskGroup::query()->where('execution_mode', TaskExecutionMode::Managed)
-                ->with(['tasks', 'taskable'])
-                ->where('status', TaskGroupStatus::Todo)
-                ->orderBy('id')
-                ->lockForUpdate()
-                ->get();
+        while (true) {
+            $reserved = DB::transaction(function () use ($skipped): ?TaskGroup {
+                $candidates = TaskGroup::query()->where('execution_mode', TaskExecutionMode::Managed)
+                    ->with(['tasks', 'taskable'])
+                    ->where('status', TaskGroupStatus::Todo)
+                    ->when($skipped !== [], fn ($query) => $query->whereNotIn('id', $skipped))
+                    ->orderBy('id')
+                    ->lockForUpdate()
+                    ->get();
 
-            foreach ($candidates as $group) {
-                if (! $this->ceilings->canActivate($group)) {
-                    continue;
+                foreach ($candidates as $group) {
+                    if (! $this->ceilings->canActivate($group)) {
+                        continue;
+                    }
+
+                    $group->status = TaskGroupStatus::Reserved;
+                    $group->reserved_at = now();
+                    $group->save();
+
+                    return $group->fresh(['tasks', 'app', 'taskable']) ?? $group;
                 }
 
-                $group->status = TaskGroupStatus::Reserved;
-                $group->save();
+                return null;
+            });
 
-                return $group->fresh(['tasks', 'app', 'taskable']) ?? $group;
+            if (! $reserved instanceof TaskGroup) {
+                return null;
             }
 
-            return null;
-        });
+            try {
+                $instance = $this->provisioning->provision(InstanceProvisionIntent::for($reserved));
+            } catch (TaskCapacityException $exception) {
+                $this->releaseReservation($reserved, self::isClaimFailureReason($reserved->assistance_reason) ? null : $reserved->assistance_reason);
+                $this->removeEndedWorkspace($reserved, null);
 
-        if (! $reserved instanceof TaskGroup) {
-            return null;
-        }
-
-        $instance = $this->provisioning->provision(InstanceProvisionIntent::for($reserved));
-
-        if (! $instance instanceof AppInstance) {
-            $reserved->update(['status' => TaskGroupStatus::Todo]);
-
-            return null;
-        }
-
-        $started = DB::transaction(function () use ($reserved, $instance): TaskGroup {
-            $group = TaskGroup::query()->where('execution_mode', TaskExecutionMode::Managed)
-                ->with(['tasks', 'app', 'taskable'])
-                ->lockForUpdate()
-                ->findOrFail($reserved->id);
-
-            $group->taskable()->associate($instance);
-            $group->load('taskable');
-
-            if (! $this->ceilings->canActivate($group)) {
-                $group->status = TaskGroupStatus::Todo;
-                // ADR 0124: a planning group keeps the workspace its planner prepared.
-                if (! $group->plan) {
-                    $group->taskable()->dissociate();
+                if ($exception->fleetFull) {
+                    return null;
                 }
-                $group->save();
 
-                return $group->fresh(['tasks', 'app', 'taskable']) ?? $group;
+                $skipped[] = $reserved->id;
+
+                continue;
+            } catch (Throwable $exception) {
+                // An unexpected provisioning error must not strand the group in reserved. The log keeps the detail.
+                report($exception);
+                $instance = null;
             }
 
-            $group->status = TaskGroupStatus::Running;
-            $group->started_at ??= now();
-            $group->save();
+            if (! $instance instanceof AppInstance) {
+                $this->releaseReservation($reserved, self::ProvisioningFailedReason);
+                $this->removeEndedWorkspace($reserved, null);
+                $skipped[] = $reserved->id;
 
-            return $group->fresh(['tasks', 'app', 'taskable']) ?? $group;
-        });
+                continue;
+            }
 
-        if ($started->status !== TaskGroupStatus::Running) {
+            try {
+                $started = DB::transaction(fn (): ?TaskGroup => $this->startReserved($reserved, $instance));
+            } catch (Throwable $exception) {
+                // A failed start must not strand the group in reserved or drop its Instance. The log keeps the detail.
+                report($exception);
+                $this->releaseFailedStart($reserved, $instance);
+                $this->removeEndedWorkspace($reserved, $instance);
+                $skipped[] = $reserved->id;
+
+                continue;
+            }
+
+            break;
+        }
+
+        if (! $started instanceof TaskGroup) {
+            $this->removeEndedWorkspace($reserved, $instance);
+
             return null;
         }
 
         $this->startFirstTask($started);
 
         return $started->fresh(['tasks', 'app', 'taskable']) ?? $started;
+    }
+
+    /**
+     * Attaches the provisioned Instance and moves the group from reserved to running. The group keeps the Instance
+     * whenever it cannot start, so a later claim reuses it and cancellation removes it.
+     *
+     * A group that is no longer the reservation this claim made, because the tick returned it to todo or cancellation
+     * ended it, keeps its status. It gains the Instance only when it holds none.
+     */
+    private function startReserved(TaskGroup $reserved, AppInstance $instance): ?TaskGroup
+    {
+        $group = TaskGroup::query()->where('execution_mode', TaskExecutionMode::Managed)
+            ->with(['tasks', 'app', 'taskable'])
+            ->lockForUpdate()
+            ->findOrFail($reserved->id);
+
+        if (! $this->holdsReservation($group, $reserved)) {
+            if ($group->taskable_id === null && ! self::hasEnded($group)) {
+                $group->taskable()->associate($instance);
+                $group->save();
+            }
+
+            return null;
+        }
+
+        $group->taskable()->associate($instance);
+        $group->load('taskable');
+
+        if (! $this->ceilings->canActivate($group)) {
+            $group->status = TaskGroupStatus::Todo;
+            $group->save();
+
+            return null;
+        }
+
+        $group->status = TaskGroupStatus::Running;
+        $group->started_at ??= now();
+        if (self::isClaimFailureReason($group->assistance_reason)) {
+            $group->assistance_requested = false;
+            $group->assistance_reason = null;
+        }
+        $group->save();
+
+        return $group->fresh(['tasks', 'app', 'taskable']) ?? $group;
+    }
+
+    /**
+     * Returns a group whose start failed to todo with a fixed reason and keeps its Instance. When this write fails
+     * too, the group stays reserved until the tick returns it to todo.
+     */
+    private function releaseFailedStart(TaskGroup $reserved, AppInstance $instance): void
+    {
+        try {
+            DB::transaction(function () use ($reserved, $instance): void {
+                $group = TaskGroup::query()->lockForUpdate()->find($reserved->id);
+                if (! $group instanceof TaskGroup) {
+                    return;
+                }
+                if ($group->taskable_id === null && ! self::hasEnded($group)) {
+                    $group->taskable()->associate($instance);
+                }
+                if ($this->holdsReservation($group, $reserved)) {
+                    $group->status = TaskGroupStatus::Todo;
+                    $group->assistance_reason = self::StartFailedReason;
+                }
+                $group->save();
+            });
+        } catch (Throwable $exception) {
+            report($exception);
+        }
+    }
+
+    /**
+     * Returns a group to todo only while this claim still holds its reservation, so a claim never overwrites a
+     * group that the tick released, a cancel ended, or a newer claim reserved.
+     */
+    private function releaseReservation(TaskGroup $reserved, ?string $reason): void
+    {
+        TaskGroup::query()->whereKey($reserved->id)
+            ->where('status', TaskGroupStatus::Reserved)
+            ->where('reserved_at', $reserved->reserved_at)
+            ->update(['status' => TaskGroupStatus::Todo, 'assistance_reason' => $reason]);
+    }
+
+    /**
+     * A group cancelled or completed while its claim ran holds no workspace, because the cancel left the
+     * workspace to the claim. The claim removes the Instance it provisioned, or the group's unattached
+     * `task-{group id}` workspace when provisioning failed part way.
+     */
+    private function removeEndedWorkspace(TaskGroup $reserved, ?AppInstance $instance): void
+    {
+        $group = TaskGroup::query()->with('taskable')->find($reserved->id);
+        if (! $group instanceof TaskGroup || ! self::hasEnded($group) || $group->taskable_id !== null) {
+            return;
+        }
+
+        try {
+            $leftover = $instance instanceof AppInstance ? AppInstance::query()->find($instance->id) : $this->workspaces->find($group);
+            if ($leftover instanceof AppInstance) {
+                $this->workspaces->remove($leftover);
+            }
+        } catch (Throwable $exception) {
+            // The workspace stays findable by name, so a repeated cancel removes it.
+            report($exception);
+        }
+    }
+
+    private static function hasEnded(TaskGroup $group): bool
+    {
+        return in_array($group->status, [TaskGroupStatus::Cancelled, TaskGroupStatus::Completed], true);
+    }
+
+    private function holdsReservation(TaskGroup $group, TaskGroup $reserved): bool
+    {
+        return $group->status === TaskGroupStatus::Reserved
+            && $group->reserved_at instanceof Carbon
+            && $reserved->reserved_at instanceof Carbon
+            && $group->reserved_at->equalTo($reserved->reserved_at);
+    }
+
+    /**
+     * Returns groups that stayed reserved longer than `orbit.tasks.reserved_timeout_seconds` to todo, for example after
+     * the process that claimed them stopped. Each update applies only while the group is still reserved and past the
+     * bound, so it never takes a group that a newer claim reserved.
+     */
+    public function releaseStaleReservations(): int
+    {
+        $cutoff = RemoveTaskWorkspaceAction::reservationCutoff();
+        $stale = static fn ($query) => $query->where('execution_mode', TaskExecutionMode::Managed)
+            ->where('status', TaskGroupStatus::Reserved)
+            ->where(static fn ($query) => $query->whereNull('reserved_at')->orWhere('reserved_at', '<=', $cutoff));
+        $released = 0;
+
+        foreach ($stale(TaskGroup::query())->orderBy('id')->pluck('id') as $id) {
+            $updated = $stale(TaskGroup::query()->whereKey($id))->update([
+                'status' => TaskGroupStatus::Todo,
+                'assistance_reason' => self::ReservationExpiredReason,
+            ]);
+            if ($updated === 0) {
+                continue;
+            }
+
+            Log::warning('Task group stayed reserved past the bound and returned to todo.', ['task_group_id' => $id]);
+            $this->broadcasts->groupChanged((int) $id);
+            $released++;
+        }
+
+        return $released;
+    }
+
+    /** Seconds one tick may spend removing abandoned workspaces, well inside the 300-second tick lock. */
+    public const int AbandonedWorkspaceBudgetSeconds = 60;
+
+    /** The first retry delay after a failed removal. Each further failure doubles it, up to the reservation timeout. */
+    public const int AbandonedWorkspaceBackoffSeconds = 60;
+
+    /**
+     * Removes the `task-{group id}` workspace (branch `task-{group id}`) of a cancelled or completed group that holds
+     * no Instance, once no claim can still own it: the group was never reserved, or its reservation is older than
+     * `orbit.tasks.reserved_timeout_seconds`. A cancel that lands during a live claim leaves the workspace to that
+     * claim, and this sweep removes it when the claim stopped first.
+     *
+     * One query selects the candidates. A failed removal is reported and backs off per Instance, so a workspace that
+     * keeps failing never blocks the others or costs a remote timeout on every tick. The sweep stops starting
+     * removals once it has spent its time budget; the rest wait for the next tick.
+     */
+    public function removeAbandonedWorkspaces(): int
+    {
+        $started = now();
+        $removed = 0;
+
+        foreach ($this->abandonedWorkspaces() as $workspace) {
+            if ($started->diffInSeconds(now(), true) >= self::AbandonedWorkspaceBudgetSeconds) {
+                break;
+            }
+
+            $backoffKey = 'tasks.workspace-removal.'.$workspace->id;
+            $backoff = $this->workspaceRemovalBackoff($backoffKey);
+            if ($backoff !== null && $backoff['due'] > now()->getTimestamp()) {
+                continue;
+            }
+
+            $instance = AppInstance::query()->find($workspace->id);
+            if (! $instance instanceof AppInstance) {
+                continue;
+            }
+
+            try {
+                $this->workspaces->remove($instance);
+                $this->rememberWorkspaceRemovalBackoff($backoffKey, null);
+                Log::warning('Removed the workspace of an ended task group.', ['task_group_id' => (int) $workspace->getAttribute('ended_task_group_id'), 'app_instance_id' => $workspace->id]);
+                $removed++;
+            } catch (Throwable $exception) {
+                report($exception);
+                $failures = ($backoff['failures'] ?? 0) + 1;
+                $delay = min(
+                    self::AbandonedWorkspaceBackoffSeconds * 2 ** min($failures - 1, 20),
+                    max(self::AbandonedWorkspaceBackoffSeconds, (int) config('orbit.tasks.reserved_timeout_seconds')),
+                );
+                $this->rememberWorkspaceRemovalBackoff($backoffKey, ['failures' => $failures, 'due' => now()->addSeconds($delay)->getTimestamp()], $delay * 2);
+            }
+        }
+
+        return $removed;
+    }
+
+    /**
+     * Reads a workspace removal backoff. A cache error is logged and read as no backoff, so one bad read never
+     * stops the sweep or the tick.
+     *
+     * @return array{failures: int, due: int}|null
+     */
+    private function workspaceRemovalBackoff(string $key): ?array
+    {
+        try {
+            $backoff = Cache::get($key);
+        } catch (Throwable $exception) {
+            Log::warning('The workspace removal backoff could not be read.', ['key' => $key, 'exception' => $exception::class, 'reason' => $exception->getMessage()]);
+
+            return null;
+        }
+
+        return is_array($backoff) && is_int($backoff['failures'] ?? null) && is_int($backoff['due'] ?? null)
+            ? ['failures' => $backoff['failures'], 'due' => $backoff['due']]
+            : null;
+    }
+
+    /**
+     * Stores or clears a workspace removal backoff. A cache error is logged and the sweep continues.
+     *
+     * @param  array{failures: int, due: int}|null  $backoff
+     */
+    private function rememberWorkspaceRemovalBackoff(string $key, ?array $backoff, int $seconds = 0): void
+    {
+        try {
+            if ($backoff === null) {
+                Cache::forget($key);
+            } else {
+                Cache::put($key, $backoff, now()->addSeconds($seconds));
+            }
+        } catch (Throwable $exception) {
+            Log::warning('The workspace removal backoff could not be written.', ['key' => $key, 'exception' => $exception::class, 'reason' => $exception->getMessage()]);
+        }
+    }
+
+    /** @return Collection<int, AppInstance> */
+    private function abandonedWorkspaces(): Collection
+    {
+        $workspaceName = match (DB::connection()->getDriverName()) {
+            'mysql', 'mariadb' => "CONCAT('task-', task_groups.id)",
+            default => "'task-' || task_groups.id",
+        };
+
+        return AppInstance::query()
+            ->select('app_instances.*', 'task_groups.id as ended_task_group_id')
+            ->join('task_groups', static function ($join) use ($workspaceName): void {
+                $join->on('task_groups.app_id', '=', 'app_instances.app_id')
+                    ->whereRaw("app_instances.name = {$workspaceName}");
+            })
+            ->whereColumn('app_instances.branch_override', 'app_instances.name')
+            ->where('task_groups.execution_mode', TaskExecutionMode::Managed->value)
+            ->whereIn('task_groups.status', [TaskGroupStatus::Cancelled->value, TaskGroupStatus::Completed->value])
+            ->whereNull('task_groups.taskable_id')
+            ->where(static fn ($query) => $query
+                ->whereNull('task_groups.reserved_at')
+                ->orWhere('task_groups.reserved_at', '<=', RemoveTaskWorkspaceAction::reservationCutoff()))
+            ->orderBy('app_instances.id')
+            ->get();
+    }
+
+    public static function isClaimFailureReason(?string $reason): bool
+    {
+        return in_array($reason, self::ClaimFailureReasons, true);
+    }
+
+    /** Claims todo groups until none fits. A failing group is tried once. */
+    public function claimAvailable(): int
+    {
+        $skipped = [];
+        $started = 0;
+
+        while ($this->claimNext($skipped) instanceof TaskGroup) {
+            $started++;
+        }
+
+        return $started;
     }
 
     /**
@@ -933,6 +1267,101 @@ final readonly class TaskScheduler
         return $group->fresh(['tasks', 'app', 'taskable']) ?? $group;
     }
 
+    /**
+     * Cancels a running subtask and starts the next one. `$stop` makes the remote calls that stop the
+     * subtask's implementer and check. It runs outside any database transaction, so a slow Node or agent
+     * never holds the Gateway's SQLite write lock. An exception from `$stop` leaves the subtask and its
+     * check running. The state change then applies only when the subtask is still running: when it moved
+     * on while `$stop` ran, its new state stands and the cancel returns a conflict.
+     *
+     * @param  Closure(Task): void  $stop
+     */
+    public function cancelRunningSubtask(TaskGroup $taskGroup, Task $task, Closure $stop): TaskGroup
+    {
+        $taskGroup->requireManagedExecution();
+        $running = Task::query()->where('task_group_id', $taskGroup->id)->findOrFail($task->id);
+        if ($running->status !== TaskStatus::Running) {
+            throw new ResourceOperationException(
+                errorCode: 'tasks.subtask_not_running',
+                message: __('Only a running subtask can be cancelled.'),
+                status: 409,
+            );
+        }
+
+        $stop($running);
+
+        /** @var Task|null $next */
+        $next = null;
+        $group = DB::transaction(function () use ($taskGroup, $task, &$next): TaskGroup {
+            $locked = Task::query()->where('task_group_id', $taskGroup->id)->lockForUpdate()->findOrFail($task->id);
+            $group = TaskGroup::query()->where('execution_mode', TaskExecutionMode::Managed)
+                ->lockForUpdate()
+                ->findOrFail($locked->task_group_id);
+
+            if ($locked->status !== TaskStatus::Running) {
+                throw new ResourceOperationException(
+                    errorCode: 'tasks.subtask_not_running',
+                    message: __('The subtask stopped running while Orbit stopped it, so its new state stands.'),
+                    status: 409,
+                );
+            }
+
+            TaskCheck::query()->where('task_id', $locked->id)
+                ->where('status', TaskCheckStatus::Running->value)
+                ->update(['status' => TaskCheckStatus::Cancelled->value, 'finished_at' => now(), 'updated_at' => now()]);
+
+            $assistanceReason = $locked->assistance_reason;
+            $locked->update([
+                'status' => TaskStatus::Cancelled,
+                'settled_at' => now(),
+                'completion_summary' => 'Cancelled by operator.',
+                'assistance_requested' => false,
+                'assistance_reason' => null,
+            ]);
+
+            $tasks = $this->lockedTasks($group);
+            if ($group->assistance_requested && $assistanceReason !== null && $group->assistance_reason === $assistanceReason) {
+                $otherAssistance = $group->tasks()
+                    ->whereKeyNot($locked->id)
+                    ->where('assistance_requested', true)
+                    ->exists();
+
+                if (! $otherAssistance) {
+                    $group->assistance_requested = false;
+                    $group->assistance_reason = null;
+                }
+            }
+
+            $next = $this->lowestTodo($tasks);
+            if ($next instanceof Task) {
+                try {
+                    $this->markRunning($next, $tasks);
+                    $group->status = TaskGroupStatus::Running;
+                } catch (TaskSequenceException) {
+                    $next = null;
+                    $group->status = $this->runningSibling($tasks) instanceof Task
+                        ? TaskGroupStatus::Running
+                        : TaskGroupStatus::Reviewing;
+                }
+            } else {
+                $group->status = TaskGroupStatus::Settling;
+            }
+            $group->save();
+
+            return $group->fresh(['tasks', 'app', 'taskable']) ?? $group;
+        });
+
+        if ($next instanceof Task && $next->status === TaskStatus::Running) {
+            $this->beginRunningTask($next);
+        }
+
+        if ($group->status === TaskGroupStatus::Settling) {
+            return $this->settle($group);
+        }
+
+        return $group->fresh(['tasks', 'app', 'taskable']) ?? $group;
+    }
+
     public function acceptReview(Task $task): TaskGroup
     {
         $task->taskGroup->requireManagedExecution();
@@ -1026,7 +1455,7 @@ final readonly class TaskScheduler
             return;
         }
 
-        $reason = 'The settling group has no reviewed pull request URL.';
+        $reason = 'The settling group has no reviewed pull request URL. Cancel the group to push its approved commits to task-'.$group->id.' and remove its workspace.';
         $group->update(['assistance_requested' => true, 'assistance_reason' => $reason]);
         $this->coder->assistance($group, $reason);
     }
@@ -1113,6 +1542,21 @@ final readonly class TaskScheduler
     }
 
     /**
+     * Starts a subtask the way startTask does: records the start commit, then runs the baseline check
+     * when no implementer has started in the group yet, or starts the implementer.
+     */
+    private function beginRunningTask(Task $task): void
+    {
+        $this->recordSubtaskStart($task);
+        if ($this->needsBaseline($task)) {
+            $group = $task->taskGroup()->with(['app', 'taskable'])->firstOrFail();
+            $this->startBaseline($group, $task);
+        } else {
+            $this->assignImplementer($task);
+        }
+    }
+
+    /**
      * A group checks its fresh workspace once, before any implementer has started in it.
      */
     private function needsBaseline(Task $task): bool
@@ -1167,8 +1611,11 @@ final readonly class TaskScheduler
             : 0;
         $branch = 'task-'.$group->id;
         $reason = match (true) {
+            $check instanceof TaskCheck && $status === TaskCheckStatus::Failed && $check->failed_step === self::BASELINE_COMPOSER_INSTALL_STEP => "Composer dependency installation failed with exit code {$check->exit_code} on a fresh checkout of {$branch}, before any agent started. Restore the required dependencies, then cancel and create the group again. The task's check shows the install output.",
+            $check instanceof TaskCheck && $status === TaskCheckStatus::Failed && $check->failed_step === self::BASELINE_JAVASCRIPT_INSTALL_STEP => "JavaScript dependency installation failed with exit code {$check->exit_code} on a fresh checkout of {$branch}, before any agent started. Restore the required dependencies, then cancel and create the group again. The task's check shows the install output.",
+            $check instanceof TaskCheck && $status === TaskCheckStatus::Failed && $check->failed_step === null && $this->checkOutputShowsMissingDependencies($check) => "Project dependencies appear to be missing on a fresh checkout of {$branch}, before any agent started. Install the required dependencies, then cancel and create the group again. The task's check shows the missing-dependency output.",
             $check instanceof TaskCheck && $status === TaskCheckStatus::Failed && $check->failed_step !== null => "The Project setup step \"{$check->failed_step}\" failed with exit code {$check->exit_code} on a fresh checkout of {$branch}, before any agent started. Fix the setup or the branch, then cancel and create the group again. The task's check shows the output.",
-            $check instanceof TaskCheck && $status === TaskCheckStatus::Failed => "composer check failed with exit code {$check->exit_code} on a fresh checkout of {$branch}, before any agent started. The Project's default branch or the task branch is broken. Fix it, then cancel and create the group again. The task's check shows the output.",
+            $check instanceof TaskCheck && $status === TaskCheckStatus::Failed => "The Project baseline check failed with exit code {$check->exit_code} on a fresh checkout of {$branch}, before any agent started. Fix the configured check or the branch, then cancel and create the group again. The task's check shows the output.",
             $status === TaskCheckStatus::Cancelled => 'An operator cancelled the baseline check before any agent started.',
             $check instanceof TaskCheck && $status === TaskCheckStatus::Changed && $repeats >= 2 => 'The workspace changed while the baseline check ran, twice. Changed paths: '.implode(', ', $check->changed_paths ?? []).'.',
             $status === TaskCheckStatus::Lost && $repeats >= 2 => 'The baseline check stopped twice without a result.',
@@ -1181,6 +1628,22 @@ final readonly class TaskScheduler
         }
 
         $this->startBaseline($group, $task);
+    }
+
+    /**
+     * Only a task check that runs `composer check` needs the workspace's Composer `check` script.
+     */
+    private static function runsComposerCheck(?string $command): bool
+    {
+        return $command !== null && preg_match('/(?:^|[\s;&|(])composer\s+check(?=$|[\s;&|)])/', $command) === 1;
+    }
+
+    private function checkOutputShowsMissingDependencies(TaskCheck $check): bool
+    {
+        return preg_match(
+            '/(?:vendor\\/bin\\/[^:\\s]+|node_modules\\/\\.bin\\/[^:\\s]+):\\s*(?:not found|No such file or directory)|(?:vendor\\/autoload\\.php|node_modules\\/[^\\s]+).{0,160}(?:failed to open stream|Failed opening required|No such file|not found)|Failed opening required [\'\"][^\'\"]*(?:vendor\\/autoload\\.php|node_modules\\/)/i',
+            (string) $check->output,
+        ) === 1;
     }
 
     private function startBaseline(TaskGroup $group, Task $task): void
@@ -1200,8 +1663,23 @@ final readonly class TaskScheduler
             ->map(static fn (ProjectLifecycleStep $step): array => ['name' => $step->name, 'command' => $step->command, 'timeout_seconds' => $step->timeout_seconds])
             ->values()
             ->all();
+        $command = $instance->app->taskCheckCommand();
+        if ($command !== null && preg_match('/(?:^|[\\s;&|(])composer(?=$|\\s)|\\bvendor\\//i', $command) === 1) {
+            $setup[] = [
+                'name' => self::BASELINE_COMPOSER_INSTALL_STEP,
+                'command' => 'while IFS= read -r -d "" manifest; do project="${manifest%/composer.json}"; [ "$project" = "$manifest" ] && project="."; if { [ "$project" = "." ] || [ -f "$project/composer.lock" ]; } && [ ! -f "$project/vendor/autoload.php" ]; then (cd "$project" && if [ -f composer.lock ]; then composer install --no-interaction --prefer-dist; else composer install --no-interaction --prefer-dist && rm -f composer.lock; fi) || exit $?; fi; done < <(git ls-files -z -- "composer.json" ":(glob)**/composer.json")',
+                'timeout_seconds' => 600,
+            ];
+        }
+        if ($command !== null && preg_match('/\\b(?:bun|npm|pnpm|yarn|node|vp)\\b|node_modules/i', $command) === 1) {
+            $setup[] = [
+                'name' => self::BASELINE_JAVASCRIPT_INSTALL_STEP,
+                'command' => 'while IFS= read -r -d "" manifest; do project="${manifest%/package.json}"; [ "$project" = "$manifest" ] && project="."; if [ ! -d "$project/node_modules" ] && { [ -f "$project/pnpm-lock.yaml" ] || [ -f "$project/bun.lock" ] || [ -f "$project/bun.lockb" ] || [ -f "$project/package-lock.json" ] || [ -f "$project/yarn.lock" ]; }; then (cd "$project" && vp install --frozen-lockfile) || exit $?; fi; done < <(git ls-files -z -- "package.json" ":(glob)**/package.json")',
+                'timeout_seconds' => 600,
+            ];
+        }
         try {
-            $process = $this->checks->start($instance, $setup);
+            $process = $this->checks->start($instance, $command, $setup);
         } catch (TaskCheckException $exception) {
             $this->recordCommunicationFailure($task, $group, $exception->getMessage());
 
@@ -1304,7 +1782,11 @@ final readonly class TaskScheduler
         return $this->orderedTasks($tasks)
             ->filter(static fn (Task $candidate): bool => $candidate->position < $task->position
                 || ($candidate->position === $task->position && $candidate->id < $task->id))
-            ->every(static fn (Task $candidate): bool => $candidate->status === TaskStatus::Completed);
+            ->every(static fn (Task $candidate): bool => in_array($candidate->status, [
+                TaskStatus::Completed,
+                TaskStatus::Cancelled,
+                TaskStatus::Failed,
+            ], true));
     }
 
     private function failSpawn(?TaskGroup $group, ?Task $task, string $agent): void

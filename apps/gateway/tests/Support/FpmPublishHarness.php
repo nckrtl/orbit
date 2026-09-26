@@ -102,7 +102,7 @@ final class FpmPublishHarness
         $this->files->put($this->root.'/bin/sudo', "#!/usr/bin/env bash\nexec \"\$@\"\n");
         $this->files->put(
             $this->root.'/bin/install',
-            <<<'BASH'
+            HostBinary::expand(<<<'BASH'
                 #!/usr/bin/env bash
                 set -euo pipefail
                 args=()
@@ -124,8 +124,8 @@ final class FpmPublishHarness
                     esac
                 done
 
-                exec /usr/bin/install "${args[@]}"
-                BASH,
+                exec {{host:install}} "${args[@]}"
+                BASH),
         );
         $this->files->put(
             $this->root.'/bin/php-fpm8.5',

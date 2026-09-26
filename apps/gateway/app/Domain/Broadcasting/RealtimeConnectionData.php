@@ -24,8 +24,8 @@ final readonly class RealtimeConnectionData
         public string $secret,
         public string $caCertificatePath,
         /**
-         * Address the Gateway connects to for `host`. The Gateway host does not use Orbit's
-         * private DNS, so it cannot resolve `reverb.orbit` by name.
+         * Address the Gateway connects to for `host`. The Gateway picks the serving Node itself,
+         * so during a `websocket` move it reaches each Node directly instead of through DNS.
          */
         public ?string $resolveAddress = null,
     ) {}

@@ -45,19 +45,4 @@ if [[ "$(dpkg-query -W -f='${Status}' php8.5-fpm 2>/dev/null || true)" != 'insta
 fi
 sudo systemctl enable --now php8.5-fpm
 sudo install -d -m 0755 /var/www
-install_root_text_file() {
-  local value="$1" destination="$2" source
-  source=$(mktemp)
-  printf '%s\n' "$value" >"$source"
-  if ! sudo install -m 0644 "$source" "$destination"; then
-    rm -f "$source"
-    return 1
-  fi
-  rm -f "$source"
-}
-fragment=/etc/caddy/orbit-e2e-global.caddy
-install_root_text_file "$(printf '%s\n' '{' '    local_certs' '}')" "$fragment"
-sudo caddy validate --config "$fragment" --adapter caddyfile
-sudo install -d -m 0755 /var/lib/orbit-e2e
-printf '%s\n' /var/lib/caddy/.local/share/caddy/pki/authorities/local/root.crt | sudo tee /var/lib/orbit-e2e/caddy-ca-path >/dev/null
 GUEST

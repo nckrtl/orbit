@@ -19,7 +19,9 @@ final class UpdateAppCommand extends GatewayCommand
         {--slug= : New Project slug}
         {--repository= : New repository access URL}
         {--default-branch= : New stored default branch}
-        {--root= : New relative web root}
+        {--root= : New repository-relative root; package types may use .}
+        {--task-check= : New task check command for task baselines and handoffs}
+        {--clear-task-check : Remove the task check command so tasks run no check command}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -40,6 +42,8 @@ final class UpdateAppCommand extends GatewayCommand
         $repositoryUrl = $this->stringOption('repository');
         $defaultBranch = $this->stringOption('default-branch');
         $root = $this->stringOption('root');
+        $taskCheck = $this->stringOption('task-check');
+        $clearTaskCheck = $this->option('clear-task-check') === true;
 
         if ($slug !== null && (strlen($slug) > 63 || preg_match('/[\x00-\x1F\x7F]/', $slug) === 1)) {
             return $this->renderGatewayFailure(
@@ -55,14 +59,22 @@ final class UpdateAppCommand extends GatewayCommand
             );
         }
 
-        if ($type !== null && ! in_array($type, ['monorepo', 'laravel-app', 'laravel-package'], true)) {
+        if ($type !== null && ! in_array($type, ['monorepo', 'laravel-app', 'laravel-package', 'node-package'], true)) {
             return $this->renderGatewayFailure(
                 'project.type_invalid',
-                'Project type must be monorepo, laravel-app, or laravel-package.',
+                'Project type must be monorepo, laravel-app, laravel-package, or node-package.',
             );
         }
 
-        if ($type === null && $slug === null && $repositoryUrl === null && $defaultBranch === null && $root === null) {
+        if ($taskCheck !== null && $clearTaskCheck) {
+            return $this->renderGatewayFailure('app.task_check_conflict', 'Choose either --task-check or --clear-task-check.');
+        }
+
+        if ($taskCheck !== null && (trim($taskCheck) === '' || strlen($taskCheck) > 4096)) {
+            return $this->renderGatewayFailure('app.task_check_invalid', 'Task check command is invalid.');
+        }
+
+        if ($type === null && $slug === null && $repositoryUrl === null && $defaultBranch === null && $root === null && $taskCheck === null && ! $clearTaskCheck) {
             return $this->renderGatewayFailure(
                 'app.update_required',
                 'Provide at least one Project update.',
@@ -84,6 +96,8 @@ final class UpdateAppCommand extends GatewayCommand
                 repositoryUrl: $repositoryUrl,
                 defaultBranch: $defaultBranch,
                 root: $root,
+                taskCheck: $clearTaskCheck ? null : $taskCheck,
+                taskCheckProvided: $clearTaskCheck || $taskCheck !== null,
             ),
             AppResponse::class,
             ['Update Project', 'Updating Project', 'Updated Project'],

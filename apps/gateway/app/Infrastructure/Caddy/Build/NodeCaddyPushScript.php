@@ -13,11 +13,13 @@ use InvalidArgumentException;
  * The one root script that pushes a rendered Node Caddyfile (ADR 0141). It takes the Node lock,
  * checks the Caddy release floor, writes and validates a new version, backs up a live Caddyfile
  * that no build wrote, swaps the live symlink, reloads Caddy, restores the previous target when
- * the reload fails, and keeps the live version plus the nine newest others. It removes the `staged`
- * directory that the retired public Ingress staging step wrote.
+ * the reload fails, and keeps the live version plus the nine newest others.
  *
  * It reports its last stage on stderr as `orbit-caddy-build-stage=<stage>` and its result on
  * stdout as `orbit-caddy-build-result=<published|unchanged>`.
+ *
+ * A render with no site on a Node without Caddy has nothing to withdraw, so the build changes nothing and
+ * reports `unchanged`. A role removal after a convergence that failed before Caddy was installed relies on it.
  */
 final readonly class NodeCaddyPushScript
 {
@@ -63,6 +65,7 @@ final readonly class NodeCaddyPushScript
                 NodeCaddyfileRenderer::Marker,
                 (string) self::Retained,
                 implode(' ', $caddyfile->listenAddresses),
+                $caddyfile->sites === [] ? '1' : '0',
             ],
             input: $this->script(base64_encode($caddyfile->content)),
             timeout: 120.0,
@@ -120,6 +123,7 @@ final readonly class NodeCaddyPushScript
             marker=\$7
             retained=\$8
             listen_addresses=\$9
+            siteless=\${10}
             versions="\$caddy_directory/orbit-versions"
             backups="\$caddy_directory/orbit-backups"
             live="\$caddy_directory/Caddyfile"
@@ -172,6 +176,10 @@ final readonly class NodeCaddyPushScript
             {$lock}
 
             stage=release
+            if [ "\$siteless" = 1 ] && [ ! -e "\$caddy_bin" ]; then
+                printf 'orbit-caddy-build-result=unchanged\\n'
+                exit 0
+            fi
             reported=\$("\$caddy_bin" version 2>/dev/null | head -n 1 | awk '{ print \$1 }' || true)
             installed=\${reported#v}
             if ! printf '%s\\n' "\$installed" | grep -Eq '^[0-9]+[.][0-9]+[.][0-9]+'; then
@@ -300,8 +308,6 @@ final readonly class NodeCaddyPushScript
             rm -rf -- "\$replaced"
 
             stage=prune
-            # The retired public Ingress staging step left files here that nothing imports.
-            rm -rf -- "\$versions/staged" || printf 'Could not remove the old staged directory.\\n' >&2
             kept=0
             for directory in \$(ls -1dt -- "\$versions"/*/ 2>/dev/null); do
                 directory=\${directory%/}

@@ -14,6 +14,7 @@ use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStateResolver;
 use App\Domain\Routes\RouteStatus;
+use App\Domain\Routes\RouteTargetWebRoot;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
@@ -196,6 +197,10 @@ final readonly class NativeAppUpdateProjectionMutator implements AppUpdateProjec
         foreach ($app->appInstances as $instance) {
             if ($instance->root !== null) {
                 continue;
+            }
+
+            if ($instance->routeTargets()->exists()) {
+                RouteTargetWebRoot::assertSupportedRoot($newRoot);
             }
 
             $instances[] = [

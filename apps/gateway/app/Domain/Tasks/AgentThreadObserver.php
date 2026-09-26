@@ -8,7 +8,7 @@ use App\Models\AgentThread;
 
 final readonly class AgentThreadObserver
 {
-    public function __construct(private AgentDriverRegistry $drivers) {}
+    public function __construct(private AgentDriverRegistry $drivers, private ?TaskBroadcasts $broadcasts = null) {}
 
     public function observe(AgentThread $thread): ?AgentObservation
     {
@@ -43,10 +43,15 @@ final readonly class AgentThreadObserver
     private function persist(AgentThread $thread, array $values): bool
     {
         $version = $thread->observation_version ?? 0;
+        $before = [$thread->state, $thread->error, $thread->observation_error];
         $updated = AgentThread::query()->whereKey($thread->id)->where('observation_version', $version)->update([
             ...$values, 'observation_version' => $version + 1,
         ]);
         $thread->refresh();
+
+        if ($updated === 1 && $before !== [$thread->state, $thread->error, $thread->observation_error]) {
+            ($this->broadcasts ?? app(TaskBroadcasts::class))->threadChanged($thread->id);
+        }
 
         return $updated === 1;
     }

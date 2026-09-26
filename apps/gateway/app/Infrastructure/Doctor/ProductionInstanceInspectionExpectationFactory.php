@@ -7,28 +7,19 @@ namespace App\Infrastructure\Doctor;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentContextResolver;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentRenderer;
 use App\Domain\AppInstances\ProductionPhpRuntimeIdentity;
-use App\Infrastructure\AppDev\AppDevCaddyConfigRenderer;
-use App\Infrastructure\AppDev\AppDevSiteRepository;
 use App\Infrastructure\AppInstances\ProductionPhpRuntimeConfigRenderer;
-use App\Infrastructure\Caddy\Build\CaddyListenerRule;
 use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
-use App\Infrastructure\Caddy\Build\NodeCaddyListenerResolver;
-use App\Infrastructure\Caddy\Build\NodeCaddyListeners;
 use App\Infrastructure\Metrics\ServiceMetricsProjection;
 use App\Models\AppInstance;
 use App\Models\AppInstanceEnvironmentValue;
-use App\Models\Node;
 
 final readonly class ProductionInstanceInspectionExpectationFactory
 {
     public function __construct(
         private AppInstanceEnvironmentContextResolver $contexts,
         private AppInstanceEnvironmentRenderer $environmentRenderer,
-        private AppDevSiteRepository $sites,
-        private AppDevCaddyConfigRenderer $caddyRenderer,
         private ProductionPhpRuntimeConfigRenderer $runtimeRenderer,
         private ?ServiceMetricsProjection $serviceMetrics = null,
-        private ?NodeCaddyListenerResolver $listeners = null,
         private ?NodeCaddyfileRenderer $builds = null,
     ) {}
 
@@ -72,25 +63,14 @@ final readonly class ProductionInstanceInspectionExpectationFactory
             home: $home,
             root: $root,
             environment: $this->environmentRenderer->render($context, $values),
-            caddy: $this->caddyFragment($instance->node),
-            caddyBuild: ($this->builds ?? app(NodeCaddyfileRenderer::class))->render($instance->node)->content,
+            caddySites: ($this->builds ?? app(NodeCaddyfileRenderer::class))
+                ->render($instance->node)
+                ->blocksFor("app-instance-{$instance->id}"),
             associationMatches: $associationMatches,
             runtime: $runtime,
             runtimeConfiguration: $runtime instanceof ProductionPhpRuntimeIdentity
                 ? $this->runtimeRenderer->render($runtime, $this->serviceMetrics?->enabled($instance->node) ?? false)
                 : null,
         );
-    }
-
-    /**
-     * The `app-dev.caddy` fragment of a Node that no build replaced yet, with the Node's Route listeners.
-     */
-    private function caddyFragment(Node $node): string
-    {
-        $sites = $this->sites->forNode($node);
-        $listeners = ($this->listeners ?? app(NodeCaddyListenerResolver::class))->forNode($node, $sites);
-        $bind = $listeners->bind(CaddyListenerRule::Wildcard, 443) ?: [NodeCaddyListeners::Wildcard];
-
-        return $this->caddyRenderer->render($sites, implode(' ', $bind));
     }
 }

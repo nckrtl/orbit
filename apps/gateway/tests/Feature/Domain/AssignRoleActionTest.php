@@ -255,6 +255,34 @@ describe(AssignRoleAction::class, function (): void {
         'app-dev then Ingress' => [RoleName::AppDev, RoleName::Ingress],
     ]);
 
+    it('keeps Ingress and the Gateway on different Nodes in both assignment orders', function (
+        RoleName $first,
+        RoleName $second,
+    ): void {
+        $cluster = Cluster::query()->create(['name' => "public-private-{$first->value}"]);
+        $node = Node::query()->create([
+            'name' => "public-private-{$first->value}",
+            'public_ssh_host' => '192.0.2.87',
+            'cluster_id' => $cluster->id,
+        ]);
+        $action = app(AssignRoleAction::class);
+        $assignment = $action->execute($node, $first);
+
+        expect(fn () => $action->execute($node, $second))
+            ->toThrow(
+                RoleAssignmentException::class,
+                "Role [{$second->value}] conflicts with assigned role [{$first->value}].",
+            );
+
+        expect($assignment->fresh()?->role)
+            ->toBe($first)
+            ->and($node->roles()->count())
+            ->toBe(1);
+    })->with([
+        'gateway then Ingress' => [RoleName::Gateway, RoleName::Ingress],
+        'Ingress then gateway' => [RoleName::Ingress, RoleName::Gateway],
+    ]);
+
     it('rejects database conflicts with dedicated infrastructure roles', function (
         RoleName $first,
         RoleName $second,

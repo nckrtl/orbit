@@ -7,6 +7,7 @@ namespace App\Infrastructure\Caddy\Build;
 use App\Domain\Settings\SettingRepository;
 use App\Domain\Settings\SettingScope;
 use App\Domain\Settings\SettingScopeType;
+use App\Models\Setting;
 use Carbon\CarbonImmutable;
 
 /**
@@ -34,6 +35,24 @@ final readonly class CaddySiteCertificates
     public function published(int $nodeId, string $site): bool
     {
         return $this->settings->get($this->scope($nodeId), self::KeyPrefix.$site) !== null;
+    }
+
+    /**
+     * Every Node that holds the site's certificate record, in ID order.
+     *
+     * @return list<int>
+     */
+    public function nodeIds(string $site): array
+    {
+        return Setting::query()
+            ->where('scope_type', SettingScopeType::Node->value)
+            ->where('key', self::KeyPrefix.$site)
+            ->whereNotNull('value')
+            ->orderBy('scope_id')
+            ->pluck('scope_id')
+            ->map(static fn (mixed $id): int => (int) $id)
+            ->values()
+            ->all();
     }
 
     /** After the certificate step placed the certificate on the Node, before the build that names it. */

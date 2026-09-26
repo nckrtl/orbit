@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks;
 
+use App\Models\App;
 use App\Models\TaskGroup;
 
 /**
@@ -21,11 +22,16 @@ final readonly class InstanceProvisionIntent
         public bool $selfAccess = false,
     ) {}
 
-    /** Orbit monorepo feature work (`orbit`) gets an isolated checkout; every other Project stays visitable. */
     public static function for(TaskGroup $group, bool $selfAccess = false): self
     {
         $group->loadMissing('app');
 
-        return new self($group, $group->app->slug !== 'orbit', $selfAccess);
+        return new self($group, self::visitableFor($group->app), $selfAccess);
+    }
+
+    /** Orbit monorepo feature work (`orbit`) gets an isolated checkout; every other Project stays visitable. */
+    public static function visitableFor(App $app): bool
+    {
+        return $app->slug !== 'orbit';
     }
 }

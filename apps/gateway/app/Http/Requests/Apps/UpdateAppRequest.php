@@ -8,8 +8,9 @@ use App\Data\Apps\UpdateAppData;
 use App\Domain\Projects\ProjectType;
 use App\Domain\SourceControl\GitBranchName;
 use App\Domain\SourceControl\GitRepositoryOrigin;
-use App\Domain\SourceControl\RelativeWebRoot;
+use App\Domain\SourceControl\ProjectRoot;
 use App\Http\Requests\TopLevelJsonObjectInspector;
+use App\Models\App as OrbitApp;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -28,6 +29,7 @@ final class UpdateAppRequest extends FormRequest
             'repository_url' => ['sometimes', 'required', 'string', 'max:2048'],
             'default_branch' => ['sometimes', 'required', 'string', 'max:255'],
             'root' => ['sometimes', 'required', 'string', 'max:255'],
+            'task_check' => ['sometimes', 'nullable', 'string', 'max:4096'],
         ];
     }
 
@@ -37,7 +39,7 @@ final class UpdateAppRequest extends FormRequest
         try {
             return app(TopLevelJsonObjectInspector::class)->inspect(
                 $this->getContent(),
-                ['code', 'type', 'slug', 'repository_url', 'default_branch', 'root'],
+                ['code', 'type', 'slug', 'repository_url', 'default_branch', 'root', 'task_check'],
             );
         } catch (UnexpectedValueException $exception) {
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
@@ -55,6 +57,7 @@ final class UpdateAppRequest extends FormRequest
                 && ! $this->exists('repository_url')
                 && ! $this->exists('default_branch')
                 && ! $this->exists('root')
+                && ! $this->exists('task_check')
             ) {
                 $validator->errors()->add('body', 'Provide at least one Project update.');
             }
@@ -74,10 +77,16 @@ final class UpdateAppRequest extends FormRequest
                 $validator->errors()->add('default_branch', 'The default branch is not a valid Git branch name.');
             }
 
-            $root = $this->input('root');
+            $routeApp = $this->route('app');
+            $type = ProjectType::tryFrom((string) $this->input('type'))
+                ?? ($routeApp instanceof OrbitApp ? $routeApp->type : ProjectType::LaravelApp);
+            $sentRoot = $this->input('root');
+            $root = is_string($sentRoot) ? $sentRoot : ($routeApp instanceof OrbitApp ? $routeApp->root : null);
 
-            if (is_string($root) && ! RelativeWebRoot::isValid($root)) {
-                $validator->errors()->add('root', 'The root must be a normalized relative web path.');
+            if (is_string($root) && ! ProjectRoot::isValid($root, $type)) {
+                $validator->errors()->add('root', is_string($sentRoot)
+                    ? ProjectRoot::message($root, $type)
+                    : "The stored root [{$root}] is not valid for a {$type->value} Project. Send a web root with the type change.");
             }
         }];
     }
@@ -99,6 +108,8 @@ final class UpdateAppRequest extends FormRequest
             defaultBranch: is_string($validated['default_branch'] ?? null) ? $validated['default_branch'] : null,
             rootProvided: array_key_exists('root', $validated),
             root: is_string($validated['root'] ?? null) ? $validated['root'] : null,
+            taskCheckProvided: array_key_exists('task_check', $validated),
+            taskCheck: is_string($validated['task_check'] ?? null) ? $validated['task_check'] : null,
         );
     }
 }

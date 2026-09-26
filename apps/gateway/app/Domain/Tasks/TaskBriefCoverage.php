@@ -7,7 +7,7 @@ namespace App\Domain\Tasks;
 use App\Models\TaskGroup;
 
 /**
- * Asks Jev whether the pull request change list covers every subtask of the group.
+ * Asks Jev whether the pull request change list covers every subtask of the group, except cancelled and failed subtasks.
  */
 interface TaskBriefCoverage
 {

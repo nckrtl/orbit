@@ -8,70 +8,70 @@ use App\Domain\Nodes\RoleName;
 use App\Models\Node;
 
 /**
- * The listener addresses of one Node's sites under the ADR 0141 rules. The Node Caddy build and Doctor
- * choose each `bind` here, so they cannot disagree about a Node's listeners.
+ * The listener addresses and admitted clients of one Node's sites (ADR 0141, amended by ADR 0157). The Node
+ * Caddy build and Doctor choose each `bind` here, so they cannot disagree about a Node's listeners.
  */
 final readonly class NodeCaddyListeners
 {
     public const string Wildcard = '0.0.0.0';
 
+    /** The client ranges beside the VPN subnet that a private site on an Ingress Node admits: private and shared address space. */
+    public const string PrivateClients = 'private_ranges 100.64.0.0/10';
+
     /**
      * @param  list<string>  $explicit  The WireGuard address, then the LAN address when the Node has one.
-     * @param  array<int, CaddySite>  $wildcardSites  The first first-row site on each port that binds every address.
      */
     private function __construct(
         public bool $ingress,
         public ?string $wireGuard,
         public array $explicit,
-        private array $wildcardSites,
+        private string $vpnSubnet,
     ) {}
 
-    /** @param list<CaddySite> $sites Every site on the Node, or at least every first-row site. */
-    public static function forSites(Node $node, array $sites): self
+    /** @param list<CaddySite> $sites Every site on the Node. The listeners do not depend on them. */
+    public static function forSites(Node $node, array $sites = [], string $vpnSubnet = '10.44.0.0/24'): self
     {
         $wireGuard = self::address($node->wireguard_ip);
-        $ingress = $node->exists && CaddySiteRoles::nodeServes($node->id, RoleName::Ingress);
-        $wildcardSites = [];
-
-        foreach ($sites as $site) {
-            if ($ingress && $site->listener === CaddyListenerRule::Wildcard && ! array_key_exists($site->port, $wildcardSites)) {
-                $wildcardSites[$site->port] = $site;
-            }
-        }
 
         return new self(
-            ingress: $ingress,
+            ingress: $node->exists && CaddySiteRoles::nodeServes($node->id, RoleName::Ingress),
             wireGuard: $wireGuard,
             explicit: array_values(array_unique(array_filter([$wireGuard, self::address($node->lan_ip)]))),
-            wildcardSites: $wildcardSites,
+            vpnSubnet: $vpnSubnet,
         );
     }
 
     /**
-     * First-row sites bind every address on an Ingress Node, where public sites already do. Elsewhere
-     * they bind the Node's WireGuard and LAN addresses, the only ones Routers, workloads, and clients
-     * use, so no wildcard listener exists and WireGuard-only sites can share their port. A shared site
-     * joins the wildcard listener only beside a first-row site on its port. An empty list means the
-     * Node has no WireGuard address.
+     * Only public Ingress sites bind every address. They also bind the WireGuard and LAN addresses, because a
+     * connection to a specific address reaches only the sites bound to it: a Router forwards to those addresses,
+     * and public traffic can arrive on the LAN address behind NAT. Every other site binds only the addresses its
+     * clients use, so no private site joins the public listener. An empty list means the Node has no WireGuard
+     * address.
      *
      * @return list<string>
      */
     public function bind(CaddyListenerRule $rule, int $port): array
     {
         return match ($rule) {
-            CaddyListenerRule::Public => [self::Wildcard],
-            CaddyListenerRule::Wildcard => $this->ingress ? [self::Wildcard] : ($this->wireGuard === null ? [] : $this->explicit),
-            CaddyListenerRule::WireGuard => $this->wireGuard === null ? [] : [$this->wireGuard],
-            CaddyListenerRule::Shared => array_key_exists($port, $this->wildcardSites)
-                ? [self::Wildcard]
-                : ($this->wireGuard === null ? [] : [$this->wireGuard]),
+            CaddyListenerRule::Public => [self::Wildcard, ...$this->explicit],
+            CaddyListenerRule::Wildcard => $this->wireGuard === null ? [] : $this->explicit,
+            CaddyListenerRule::WireGuard, CaddyListenerRule::Shared => $this->wireGuard === null ? [] : [$this->wireGuard],
         };
     }
 
-    /** The first-row site that puts `0.0.0.0` on this port, which only happens on an Ingress Node. */
-    public function wildcardSite(int $port): ?CaddySite
+    /**
+     * The client ranges a site admits, or null when it admits every client. WireGuard-only sites admit the VPN
+     * subnet, so a LAN neighbour that routes to the WireGuard address gets no answer. Private sites on an Ingress
+     * Node, whose firewall admits public HTTP and HTTPS, admit private address space and the VPN subnet, so a public
+     * client that reaches the LAN address, for example through a port forward, gets no answer.
+     */
+    public function clients(CaddyListenerRule $rule): ?string
     {
-        return $this->wildcardSites[$port] ?? null;
+        return match ($rule) {
+            CaddyListenerRule::Public => null,
+            CaddyListenerRule::Wildcard => $this->ingress ? self::PrivateClients.' '.$this->vpnSubnet : null,
+            CaddyListenerRule::WireGuard, CaddyListenerRule::Shared => $this->vpnSubnet,
+        };
     }
 
     private static function address(?string $address): ?string

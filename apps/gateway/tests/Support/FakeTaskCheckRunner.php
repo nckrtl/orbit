@@ -4,16 +4,23 @@ declare(strict_types=1);
 
 namespace Tests\Support;
 
+use App\Domain\Tasks\TaskCheckException;
 use App\Domain\Tasks\TaskCheckProcess;
 use App\Domain\Tasks\TaskCheckReading;
 use App\Domain\Tasks\TaskCheckRunner;
 use App\Models\AppInstance;
+use Illuminate\Support\Facades\DB;
 
 final class FakeTaskCheckRunner implements TaskCheckRunner
 {
     public int $starts = 0;
 
     public int $cancels = 0;
+
+    public bool $failNextCancel = false;
+
+    /** @var list<int> the database transaction level at each cancel */
+    public array $cancelTransactionLevels = [];
 
     /**
      * @param  list<TaskCheckReading>|null  $readings  one reading per read; null finishes every check with exit code 0
@@ -32,11 +39,15 @@ final class FakeTaskCheckRunner implements TaskCheckRunner
     /** @var list<array<string, mixed>|null> the deliverables each started check was asked to verify */
     public array $deliverables = [];
 
-    public function start(AppInstance $instance, array $setup = [], ?array $deliverables = null): TaskCheckProcess
+    /** @var list<string|null> configured commands for each started check */
+    public array $commands = [];
+
+    public function start(AppInstance $instance, ?string $command, array $setup = [], ?array $deliverables = null): TaskCheckProcess
     {
         $this->starts++;
         $this->setups[] = $setup;
         $this->deliverables[] = $deliverables;
+        $this->commands[] = $command;
 
         return new TaskCheckProcess(4000 + $this->starts, 'Wed Sep 23 12:00:0'.$this->starts.' 2026', str_repeat('a', 40), str_repeat('b', 40));
     }
@@ -53,5 +64,11 @@ final class FakeTaskCheckRunner implements TaskCheckRunner
     public function cancel(AppInstance $instance, TaskCheckProcess $process): void
     {
         $this->cancels++;
+        $this->cancelTransactionLevels[] = DB::transactionLevel();
+        if ($this->failNextCancel) {
+            $this->failNextCancel = false;
+
+            throw new TaskCheckException('The Node is unreachable.');
+        }
     }
 }

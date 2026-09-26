@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 use App\Domain\AppInstances\AppInstanceRemover;
+use App\Domain\Broadcasting\RecordBroadcast;
+use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\AgentSpawner;
 use App\Domain\Tasks\InstanceProvisioning;
@@ -24,6 +26,7 @@ use App\Models\Task;
 use App\Models\TaskCheck;
 use App\Models\TaskGroup;
 use Illuminate\Routing\Route;
+use Illuminate\Support\Facades\Event;
 use Tests\Support\FakeTaskCheckRunner;
 
 function tasks_gateway(): Node
@@ -78,6 +81,7 @@ it('exposes the tasks routes with stable methods', function (): void {
         'tasks:subtask:create' => ['api/v1/task-groups/{group}/tasks', ['POST']],
         'tasks:subtask:update' => ['api/v1/task-groups/{group}/tasks/{task}', ['PATCH']],
         'tasks:subtask:destroy' => ['api/v1/task-groups/{group}/tasks/{task}', ['DELETE']],
+        'tasks:subtask:cancel' => ['api/v1/task-groups/{group}/tasks/{task}/cancel', ['POST']],
         'tasks:check:cancel' => ['api/v1/task-groups/{group}/tasks/{task}/check/cancel', ['POST']],
         'tasks:comment:create' => ['api/v1/task-groups/{group}/tasks/{task}/comments', ['POST']],
         'tasks:comment:list' => ['api/v1/task-groups/{group}/tasks/{task}/comments', ['GET', 'HEAD']],
@@ -567,9 +571,11 @@ it('cancels a running check and shows it on the task', function (): void {
         ->assertOk()
         ->assertJsonPath('data.tasks.0.check.status', 'running');
 
+    Event::fake([RecordBroadcast::class]);
     $this->postJson("/api/v1/task-groups/{$group->id}/tasks/{$task->id}/check/cancel")
         ->assertOk()
         ->assertJsonPath('data.status', 'cancelled')
         ->assertJsonPath('data.finished_at', fn (mixed $value): bool => is_string($value));
     expect($checks->cancels)->toBe(1);
+    Event::assertDispatched(RecordBroadcast::class, static fn (RecordBroadcast $event): bool => $event->type === RecordEventType::TaskGroupUpdated && $event->id === $group->id);
 });

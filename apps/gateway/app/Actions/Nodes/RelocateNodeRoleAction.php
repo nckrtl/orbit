@@ -9,7 +9,10 @@ use App\Domain\AppDev\PrivateDnsAnswerExpiry;
 use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
+use App\Domain\Metrics\MetricsFleetReconciler;
+use App\Domain\Metrics\MetricsReconcileDeferral;
 use App\Domain\Nodes\NodeRoleFirewallManager;
+use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Nodes\NodeRoleValidationException;
 use App\Domain\Nodes\RoleAssignmentException;
 use App\Domain\Nodes\RoleBaselineConverger;
@@ -20,10 +23,12 @@ use App\Domain\Settings\SettingScope;
 use App\Domain\Settings\SettingScopeType;
 use App\Domain\Settings\SettingValueProtection;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Metrics\NativeMetricsCredentialManager;
 use App\Infrastructure\WebSocket\WebSocketFootprint;
 use App\Models\Node;
 use App\Models\NodeRole;
+use Closure;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
@@ -40,6 +45,8 @@ final readonly class RelocateNodeRoleAction
         private SettingRepository $settings,
         private ?RecordEventBroadcaster $broadcaster = null,
         private PrivateDnsAnswerExpiry $dnsAnswers = new PrivateDnsAnswerExpiry,
+        private ?MetricsFleetReconciler $metrics = null,
+        private ?MetricsReconcileDeferral $metricsDeferral = null,
     ) {}
 
     public function execute(Node $target, RoleName $role, bool $force = false, ?Node $from = null): NodeRole
@@ -111,8 +118,9 @@ final readonly class RelocateNodeRoleAction
         $this->prepareTarget($target, $role);
         $this->copyOwnedSettings($source, $target, $role);
         $assignment = $this->transfer($target, $source, $role);
-        $this->afterTransfer($target, $assignment, $role);
-        $this->retractSource($source, $role);
+        $this->finishOrReport($target, $source, $role, function () use ($target, $source, $assignment, $role): void {
+            $this->moveOwnedState($target, $source, $assignment, $role);
+        });
         $this->announce($source);
         $this->announce($target);
 
@@ -123,8 +131,9 @@ final readonly class RelocateNodeRoleAction
     {
         $this->copyOwnedSettings($from, $target, $role);
         $this->prepareTarget($target, $role);
-        $this->afterTransfer($target, $assignment, $role);
-        $this->retractSource($from, $role);
+        $this->finishOrReport($target, $from, $role, function () use ($target, $from, $assignment, $role): void {
+            $this->moveOwnedState($target, $from, $assignment, $role);
+        });
         $this->announce($from);
         $this->announce($target);
 
@@ -171,6 +180,25 @@ final readonly class RelocateNodeRoleAction
         $this->firewall->converge($target, $role, $target->user);
     }
 
+    /**
+     * Converges the destination and retracts the source, then reconciles Metrics once against the
+     * finished move. Each role converge and removal would otherwise reconcile Metrics on its own, so a
+     * slow Metrics Node could hold the source retraction behind a check that has nothing to do with it.
+     */
+    private function moveOwnedState(Node $target, Node $source, NodeRole $assignment, RoleName $role): void
+    {
+        $reconcileMetrics = ($this->metricsDeferral ?? app(MetricsReconcileDeferral::class))->during(
+            function () use ($target, $source, $assignment, $role): void {
+                $this->afterTransfer($target, $assignment, $role);
+                $this->retractSource($source, $assignment, $role);
+            },
+        );
+
+        if ($reconcileMetrics) {
+            ($this->metrics ?? app(MetricsFleetReconciler::class))->reconcile();
+        }
+    }
+
     private function afterTransfer(Node $target, NodeRole $assignment, RoleName $role): void
     {
         if ($role === RoleName::Gateway) {
@@ -183,7 +211,29 @@ final readonly class RelocateNodeRoleAction
         $this->baselines->converge($target, $assignment);
     }
 
-    private function retractSource(Node $source, RoleName $role): void
+    /**
+     * The assignment already names the target. When converging the target or withdrawing the source fails,
+     * the move is incomplete: the error keeps its codes, says so, and names the command that finishes it.
+     * For `websocket`, the Gateway keeps serving both Reverb servers until then.
+     *
+     * @param  Closure(): void  $steps
+     */
+    private function finishOrReport(Node $target, Node $source, RoleName $role, Closure $steps): void
+    {
+        try {
+            $steps();
+        } catch (NodeRoleOperationException|ResourceOperationException $exception) {
+            $message = "Role [{$role->value}] now runs on node [{$target->name}], but the move from node [{$source->name}] is incomplete: "
+                .$exception->getMessage()
+                ." Run `orbit node:role:relocate {$target->name} {$role->value} --from {$source->name} --force` to finish it once node [{$source->name}] is reachable.";
+
+            throw $exception instanceof NodeRoleOperationException
+                ? new NodeRoleOperationException($exception->step, $exception->errorCode, $exception->underlyingErrorCode, $message, $exception->result, $exception)
+                : new ResourceOperationException($exception->errorCode, $message, $exception->status, $exception, $exception->details);
+        }
+    }
+
+    private function retractSource(Node $source, NodeRole $assignment, RoleName $role): void
     {
         if ($role === RoleName::WebSocket) {
             // The source still serves `reverb.orbit` until clients that resolved it before the target's
@@ -198,20 +248,25 @@ final readonly class RelocateNodeRoleAction
             return;
         }
 
-        $this->baselines->remove($source, $this->ghostAssignment($source, $role), false);
+        $this->baselines->remove($source, $this->ghostAssignment($source, $assignment), false);
         $this->forgetOwnedSettings($source, $role);
     }
 
-    private function ghostAssignment(Node $source, RoleName $role): NodeRole
+    /**
+     * The moved assignment as the source held it. It keeps the assignment id because the source's
+     * runtime still carries it, for example on the Metrics containers.
+     */
+    private function ghostAssignment(Node $source, NodeRole $assignment): NodeRole
     {
-        $assignment = new NodeRole([
+        $ghost = new NodeRole([
             'node_id' => $source->id,
-            'role' => $role,
+            'role' => $assignment->role,
             'status' => LifecycleStatus::Active,
         ]);
-        $assignment->setRelation('node', $source);
+        $ghost->setAttribute('id', $assignment->id);
+        $ghost->setRelation('node', $source);
 
-        return $assignment;
+        return $ghost;
     }
 
     private function copyOwnedSettings(Node $source, Node $target, RoleName $role): void
