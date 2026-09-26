@@ -12,10 +12,8 @@ import {
     deploymentsQuery,
     type Fleet,
     instanceAnalyticsQuery,
-    instanceLogsQuery,
     liveFirewallQuery,
     managedFirewallQuery,
-    processLogsQuery,
     scheduleLogsQuery,
     useFleet,
 } from "../api/queries";
@@ -61,6 +59,7 @@ import { Bar } from "../ui/Bar";
 import { Frame, Note } from "../ui/Frame";
 import { useGo } from "../ui/go";
 import { LogPane } from "../ui/LogPane";
+import { useLogTail } from "../realtime/log-stream";
 import { openInNewTab } from "../ui/newTab";
 import { type Column, Pane } from "../ui/Pane";
 import { Properties, type Property } from "../ui/Properties";
@@ -499,7 +498,7 @@ function InstanceOverview({ fleet, instance }: { fleet: Fleet; instance: Instanc
         ...deploymentsQuery(instance.id),
         refetchInterval: useFallbackPoll(),
     });
-    const logs = useQuery(instanceLogsQuery(instance.id));
+    const logs = useLogTail("instances", instance.id, 500);
     const hasDeployments = (deployments.data?.length ?? 0) > 0;
     const analytics = useQuery(instanceAnalyticsQuery(instance.id)).data;
     const schedules = useMemo(() => scheduleColumns(fleet, "none"), [fleet]);
@@ -594,8 +593,10 @@ function InstanceOverview({ fleet, instance }: { fleet: Fleet; instance: Instanc
             <LogPane
                 title="Application log"
                 className="min-h-[220px] flex-1"
-                lines={logs.data}
-                loading={logs.isPending}
+                lines={logs.lines}
+                loading={logs.loading}
+                error={logs.error}
+                live={logs.live}
             />
         </div>
     );
@@ -677,7 +678,7 @@ function processCommand(process: Process): string | null {
 }
 
 function ProcessPage({ fleet, process }: { fleet: Fleet; process: Process }) {
-    const logs = useQuery(processLogsQuery(process.id));
+    const logs = useLogTail("processes", process.id, 100);
 
     return (
         <div
@@ -705,8 +706,10 @@ function ProcessPage({ fleet, process }: { fleet: Fleet; process: Process }) {
             <LogPane
                 title="Log"
                 className="min-h-[220px] flex-1"
-                lines={logs.data}
-                loading={logs.isPending}
+                lines={logs.lines}
+                loading={logs.loading}
+                error={logs.error}
+                live={logs.live}
             />
         </div>
     );

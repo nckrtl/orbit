@@ -244,4 +244,76 @@ describe('the agent view publisher', function (): void {
             @unlink($marker);
         }
     });
+
+    it('relays log events in a separate lane, passes them in order on standard input, and never waits', function (): void {
+        $out = tempnam(sys_get_temp_dir(), 'publish');
+        $clock = publisher_clock();
+        $publisher = new ProcessAgentViewPublisher(
+            command: [PHP_BINARY, '-r', 'if (($argv[2] ?? null) === "--logs") { usleep(300000); file_put_contents($argv[1], stream_get_contents(STDIN)); echo json_encode(["open_streams" => 1]), PHP_EOL; }', '--', $out],
+            log: new NullLogger,
+            clock: static fn (): float => $clock->now,
+        );
+        $stream = str_repeat('ab', 16);
+
+        $publisher->queueLog(3, 'client-log', ['stream' => $stream, 'sequence' => 1, 'lines' => ['one'], 'dropped' => 0, 'skipped' => 0]);
+        $publisher->queueLog(3, 'client-log', ['stream' => $stream, 'sequence' => 2, 'lines' => [str_repeat('x', 300)], 'dropped' => 0, 'skipped' => 0]);
+        $publisher->queueLog(3, 'client-log-end', ['stream' => $stream, 'reason' => 'source_unavailable']);
+        $publisher->queueLog(3, 'client-heartbeat', ['stream' => $stream]);
+        $started = hrtime(true);
+        $publisher->poll();
+
+        expect((hrtime(true) - $started) / 1e9)->toBeLessThan(0.25)
+            ->and($publisher->isRunning())->toBeTrue();
+
+        while ($publisher->isRunning()) {
+            usleep(20_000);
+        }
+        $publisher->poll();
+        $batch = json_decode((string) file_get_contents($out), true);
+
+        expect(array_column($batch['items'], 'type'))->toBe(['lines', 'end'])
+            ->and($batch['items'][0]['lines'])->toBe(['one', str_repeat('x', 300)])
+            ->and($batch['sweep'])->toBeTrue();
+        unlink($out);
+    });
+
+    it('puts a failed log run back and runs it again after the log backoff', function (): void {
+        $marker = sys_get_temp_dir().'/orbit-publish-marker-'.bin2hex(random_bytes(4));
+        $out = tempnam(sys_get_temp_dir(), 'publish');
+        $clock = publisher_clock();
+        $publisher = new ProcessAgentViewPublisher(
+            // Fails the first run, then succeeds and records what it got.
+            command: [PHP_BINARY, '-r', '$in = stream_get_contents(STDIN); if (! file_exists($argv[1])) { touch($argv[1]); exit(1); } file_put_contents($argv[2], $in); echo json_encode(["open_streams" => 0]), PHP_EOL;', '--', $marker, $out],
+            log: new NullLogger,
+            clock: static fn (): float => $clock->now,
+        );
+        $finish = static function () use ($publisher): void {
+            $deadline = microtime(true) + 5;
+            while ($publisher->isRunning() && microtime(true) < $deadline) {
+                usleep(20_000);
+            }
+            $publisher->poll();
+        };
+
+        try {
+            $publisher->queueLog(3, 'client-log', ['stream' => str_repeat('ab', 16), 'lines' => ['one'], 'dropped' => 0, 'skipped' => 0]);
+            $publisher->poll();
+            $finish();
+            $publisher->queueLog(3, 'client-log', ['stream' => str_repeat('ab', 16), 'lines' => ['two'], 'dropped' => 0, 'skipped' => 0]);
+            $publisher->poll();
+
+            expect($publisher->isRunning())->toBeFalse();
+
+            $clock->now += ProcessAgentViewPublisher::LogBackoffSeconds;
+            $publisher->poll();
+            $finish();
+            $batch = json_decode((string) file_get_contents($out), true);
+
+            expect(array_map(static fn (array $item): array => $item['lines'], $batch['items']))->toBe([['one'], ['two']])
+                ->and($publisher->isRunning())->toBeFalse();
+        } finally {
+            @unlink($marker);
+            @unlink($out);
+        }
+    });
 });

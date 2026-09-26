@@ -32,6 +32,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitBranchName;
 use App\Domain\SourceControl\GitRepositoryOrigin;
 use App\Domain\SourceControl\ProjectRoot;
+use App\Infrastructure\Processes\CommandDeadline;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\Node;
@@ -41,6 +42,14 @@ use Throwable;
 
 final readonly class CreateAppInstanceAction
 {
+    /**
+     * The time a create keeps back from its setup list for the rollback of a failed setup: the
+     * teardown list gets up to this many seconds, and the removal of the new Instance the next.
+     */
+    public const float RollbackTeardownSeconds = 60.0;
+
+    public const float RollbackRemovalSeconds = 90.0;
+
     public function __construct(
         private ManagedUserAccountResolver $accounts,
         private StorageRootResolver $storageRoots,
@@ -56,6 +65,7 @@ final readonly class CreateAppInstanceAction
         private ?ProjectLifecycleRunner $lifecycle = null,
         private ?RemoveAppInstanceAction $remover = null,
         private ?AppInstanceEnvironmentOperationLock $environmentOperations = null,
+        private ?CommandDeadline $deadline = null,
     ) {}
 
     /** @return array{appInstance: AppInstance, created: bool} */
@@ -160,15 +170,21 @@ final readonly class CreateAppInstanceAction
     {
         $runner = $this->lifecycle ?? app(ProjectLifecycleRunner::class);
 
+        $deadline = $this->deadline ?? app(CommandDeadline::class);
+
         try {
-            $runner->run($instance, LifecyclePhase::Setup);
+            // A failed setup must still leave time to tear down and remove the Instance it created.
+            $deadline->holding(
+                self::RollbackTeardownSeconds + self::RollbackRemovalSeconds,
+                fn (): bool => $runner->run($instance, LifecyclePhase::Setup),
+            );
         } catch (ResourceOperationException $setupFailure) {
             $details = $setupFailure->details;
             // A step the request deadline stopped keeps that code, so it reads apart from a failed command.
-            $deadline = $setupFailure->errorCode === 'command.deadline_exceeded';
-            $code = $deadline ? 'command.deadline_exceeded' : 'instance.setup_step_failed';
-            $status = $deadline ? 504 : 422;
-            $cause = $deadline ? 'Setup ran out of the request deadline' : 'Setup failed';
+            $deadlineCut = $setupFailure->errorCode === 'command.deadline_exceeded';
+            $code = $deadlineCut ? 'command.deadline_exceeded' : 'instance.setup_step_failed';
+            $status = $deadlineCut ? 504 : 422;
+            $cause = $deadlineCut ? 'Setup ran out of the request deadline' : 'Setup failed';
             $instance->update(['failed_step' => 'setup', 'error_code' => $code]);
 
             if (($details['outcome'] ?? null) === 'unconfirmed') {
@@ -176,7 +192,10 @@ final readonly class CreateAppInstanceAction
             }
 
             try {
-                $runner->run($instance->fresh() ?? $instance, LifecyclePhase::Teardown);
+                $deadline->holding(
+                    self::RollbackRemovalSeconds,
+                    fn (): bool => $runner->run($instance->fresh() ?? $instance, LifecyclePhase::Teardown),
+                );
             } catch (ResourceOperationException $teardownFailure) {
                 if (($teardownFailure->details['outcome'] ?? null) === 'unconfirmed') {
                     throw new ResourceOperationException(
@@ -199,7 +218,8 @@ final readonly class CreateAppInstanceAction
             } catch (Throwable) {
                 throw new ResourceOperationException(
                     errorCode: $code,
-                    message: "{$cause} and cleanup is incomplete. Inspect the Instance before retrying removal.",
+                    message: "{$cause} and cleanup is incomplete. Inspect the Instance, then finish the removal with "
+                        ."`orbit instance:destroy {$instance->id} --force`.",
                     status: $status,
                     details: [...$details, 'cleanup' => 'incomplete'],
                 );
@@ -207,7 +227,7 @@ final readonly class CreateAppInstanceAction
 
             throw new ResourceOperationException(
                 errorCode: $code,
-                message: $deadline ? $setupFailure->getMessage().' The Instance was removed.' : 'Setup step failed.',
+                message: $deadlineCut ? $setupFailure->getMessage().' The Instance was removed.' : 'Setup step failed.',
                 status: $status,
                 previous: $setupFailure,
                 details: $details,

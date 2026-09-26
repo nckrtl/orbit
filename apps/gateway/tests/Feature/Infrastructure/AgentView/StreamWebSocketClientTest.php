@@ -256,6 +256,22 @@ describe(StreamWebSocketClient::class, function (): void {
         }
     });
 
+    it('delivers a message that arrived before a read error', function (): void {
+        $server = ScriptedWebSocketServer::start('corrupt-after-frame');
+
+        try {
+            $client = new StreamWebSocketClient;
+            $client->connect($server->endpoint(), 5.0);
+            $server->waitFor('corrupted=');
+            usleep(100_000);
+
+            expect($client->receive(1.0))->toBe([['event' => 'last']])
+                ->and($client->isConnected())->toBeFalse();
+        } finally {
+            $server->stop();
+        }
+    });
+
     it('closes instead of throwing when it cannot answer a ping', function (): void {
         $server = ScriptedWebSocketServer::start('ping');
 

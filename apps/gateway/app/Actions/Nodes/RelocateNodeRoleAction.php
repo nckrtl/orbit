@@ -11,14 +11,15 @@ use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Metrics\MetricsReconcileDeferral;
+use App\Domain\Nodes\GatewayPrivateDnsRoute;
 use App\Domain\Nodes\NodeRoleFirewallManager;
+use App\Domain\Nodes\NodeRoleFollowUpReport;
 use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Nodes\NodeRoleValidationException;
 use App\Domain\Nodes\RoleAssignmentException;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\RoleRegistry;
-use App\Domain\Nodes\RoleRelocationOutcome;
 use App\Domain\Settings\SettingRepository;
 use App\Domain\Settings\SettingScope;
 use App\Domain\Settings\SettingScopeType;
@@ -50,9 +51,10 @@ final readonly class RelocateNodeRoleAction
         private PrivateDnsAnswerExpiry $dnsAnswers = new PrivateDnsAnswerExpiry,
         private ?MetricsFleetReconciler $metrics = null,
         private ?MetricsReconcileDeferral $metricsDeferral = null,
+        private ?GatewayPrivateDnsRoute $privateDnsRoute = null,
     ) {}
 
-    public function execute(Node $target, RoleName $role, bool $force = false, ?Node $from = null): RoleRelocationOutcome
+    public function execute(Node $target, RoleName $role, bool $force = false, ?Node $from = null): NodeRole
     {
         if (! $this->registry->definition($role)->relocatable) {
             throw new NodeRoleValidationException(
@@ -125,14 +127,17 @@ final readonly class RelocateNodeRoleAction
         $this->finishOrReport($target, $source, $role, function () use ($target, $source, $assignment, $role, &$reconcileMetrics): void {
             $reconcileMetrics = $this->moveOwnedState($target, $source, $assignment, $role);
         });
-        $followUp = $reconcileMetrics ? $this->reconcileMetricsAfterMove() : null;
+
+        if ($reconcileMetrics) {
+            $this->reconcileMetricsAfterMove();
+        }
         $this->announce($source);
         $this->announce($target);
 
-        return new RoleRelocationOutcome($assignment, $followUp);
+        return $assignment;
     }
 
-    private function reconcileLeftovers(Node $target, Node $from, RoleName $role, NodeRole $assignment): RoleRelocationOutcome
+    private function reconcileLeftovers(Node $target, Node $from, RoleName $role, NodeRole $assignment): NodeRole
     {
         $this->copyOwnedSettings($from, $target, $role);
         $this->prepareTarget($target, $role);
@@ -140,11 +145,14 @@ final readonly class RelocateNodeRoleAction
         $this->finishOrReport($target, $from, $role, function () use ($target, $from, $assignment, $role, &$reconcileMetrics): void {
             $reconcileMetrics = $this->moveOwnedState($target, $from, $assignment, $role);
         });
-        $followUp = $reconcileMetrics ? $this->reconcileMetricsAfterMove() : null;
+
+        if ($reconcileMetrics) {
+            $this->reconcileMetricsAfterMove();
+        }
         $this->announce($from);
         $this->announce($target);
 
-        return new RoleRelocationOutcome($assignment->refresh(), $followUp);
+        return $assignment->refresh();
     }
 
     private function guardActiveNode(Node $node): void
@@ -205,14 +213,12 @@ final readonly class RelocateNodeRoleAction
 
     /**
      * Reconciles Metrics once against the finished move. The move is complete by now, so a failure
-     * does not fail it: the outcome names the Metrics Node and the command that reconciles it.
+     * does not fail it: the follow-up names the Metrics Node and the command that reconciles it.
      */
-    private function reconcileMetricsAfterMove(): ?string
+    private function reconcileMetricsAfterMove(): void
     {
         try {
             ($this->metrics ?? app(MetricsFleetReconciler::class))->reconcile();
-
-            return null;
         } catch (Throwable $exception) {
             $metricsNode = NodeRole::query()
                 ->with('node')
@@ -226,10 +232,10 @@ final readonly class RelocateNodeRoleAction
                 'message' => $exception->getMessage(),
             ]);
 
-            return $name === null
+            app(NodeRoleFollowUpReport::class)->record($name === null
                 ? "Metrics was not reconciled after the move: {$exception->getMessage()}"
                 : "Metrics on node [{$name}] was not reconciled after the move: {$exception->getMessage()} "
-                    ."Run `orbit node:role:add {$name} metrics --converge` once node [{$name}] is healthy.";
+                    ."Run `orbit node:role:add {$name} metrics --converge` once node [{$name}] is healthy.");
         }
     }
 
@@ -238,6 +244,8 @@ final readonly class RelocateNodeRoleAction
         if ($role === RoleName::Gateway) {
             $this->access->execute($target);
             $this->dns->converge();
+            // A failure never fails the move; the response reports it as `follow_up`.
+            $this->privateDnsRoute()->convergeRoute($target);
 
             return;
         }
@@ -276,6 +284,9 @@ final readonly class RelocateNodeRoleAction
         }
 
         if ($role === RoleName::Gateway) {
+            // First, as role removal does: a failure leaves the move incomplete and names the `--from`
+            // command that finishes it, so the drop-in never stays unreported on the source.
+            $this->privateDnsRoute()->removeRoute($source);
             $this->firewall->remove($source, $role, $source->user);
             $this->forgetOwnedSettings($source, $role);
 
@@ -290,6 +301,11 @@ final readonly class RelocateNodeRoleAction
      * The moved assignment as the source held it. It keeps the assignment id because the source's
      * runtime still carries it, for example on the Metrics containers.
      */
+    private function privateDnsRoute(): GatewayPrivateDnsRoute
+    {
+        return $this->privateDnsRoute ?? app(GatewayPrivateDnsRoute::class);
+    }
+
     private function ghostAssignment(Node $source, NodeRole $assignment): NodeRole
     {
         $ghost = new NodeRole([

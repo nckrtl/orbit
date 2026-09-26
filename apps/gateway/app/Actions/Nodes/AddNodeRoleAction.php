@@ -14,6 +14,7 @@ use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Firewall\FirewallOperationException;
 use App\Domain\Nodes\DatabaseRoleSettings;
 use App\Domain\Nodes\NodeProvisioningException;
+use App\Domain\Nodes\NodeRoleFollowUpReport;
 use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Nodes\RoleAssignmentException;
 use App\Domain\Nodes\RoleBaselineConverger;
@@ -44,10 +45,13 @@ final readonly class AddNodeRoleAction
         private ?AnalyticsStorageProcessGuard $analyticsStorage = null,
         private ?AnalyticsRoleSettingsRepository $analyticsSettings = null,
         private ?NodeRoleConvergeLock $nodeLock = null,
+        private ?NodeRoleFollowUpReport $followUps = null,
     ) {}
 
     /**
-     * @return array{assignment: NodeRole, created: bool}
+     * `follow_up` names a convergence step that failed without failing the role, or is null.
+     *
+     * @return array{assignment: NodeRole, created: bool, follow_up: ?string}
      */
     public function execute(
         Node $node,
@@ -74,6 +78,7 @@ final readonly class AddNodeRoleAction
                 return [
                     'assignment' => $claim['assignment']->refresh(),
                     'created' => false,
+                    'follow_up' => null,
                 ];
             }
 
@@ -175,10 +180,13 @@ final readonly class AddNodeRoleAction
 
     /**
      * @param  array{assignment: NodeRole, created: bool}  $claim
-     * @return array{assignment: NodeRole, created: bool}
+     * @return array{assignment: NodeRole, created: bool, follow_up: ?string}
      */
     private function convergeClaim(Node $node, RoleName $role, array $claim): array
     {
+        // A follow-up recorded earlier in this request belongs to another convergence.
+        $this->followUps()->take();
+
         try {
             $this->nodeLock()->run($node, function () use ($node, $role, $claim): void {
                 $this->baselines->converge($node, $claim['assignment']);
@@ -228,7 +236,13 @@ final readonly class AddNodeRoleAction
         return [
             'assignment' => $claim['assignment']->refresh(),
             'created' => $claim['created'],
+            'follow_up' => $this->followUps()->take(),
         ];
+    }
+
+    private function followUps(): NodeRoleFollowUpReport
+    {
+        return $this->followUps ?? app(NodeRoleFollowUpReport::class);
     }
 
     private function guardEmptyDatabaseSettings(RoleName $role): void

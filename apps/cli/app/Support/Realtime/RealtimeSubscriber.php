@@ -9,8 +9,10 @@ use Closure;
 use stdClass;
 
 /**
- * Subscribes to the gateway's private `orbit` realtime channel and hands back decoded events
- * without blocking a caller's render loop.
+ * Subscribes to one private realtime channel and hands back decoded events without blocking a
+ * caller's render loop. By default that is the gateway's `private-orbit` channel, signed by the
+ * channel authorization endpoint; forChannel() lets a caller name the channel once it knows the
+ * connection's socket ID, as a live log stream does.
  *
  * poll() is safe to call every tick: it never performs a blocking wait. The one exception is
  * establishing or re-establishing the socket itself (TCP connect, TLS handshake, HTTP channel
@@ -20,7 +22,7 @@ use stdClass;
  */
 final class RealtimeSubscriber
 {
-    private const string CHANNEL = 'private-orbit';
+    private const string ORBIT_CHANNEL = 'private-orbit';
 
     /** @var list<int> Reconnect backoff in seconds: 1, 2, 4, 8, 16, 30, 30, ... */
     private const array BACKOFF_SECONDS = [1, 2, 4, 8, 16, 30];
@@ -47,17 +49,25 @@ final class RealtimeSubscriber
 
     private float $handshakeDeadline = 0.0;
 
+    /** The channel of the current connection, known once its grant is issued. */
+    private ?string $channel = null;
+
     /** @var Closure(): float */
     private readonly Closure $clock;
+
+    private readonly RealtimeChannelOpener $opener;
 
     public function __construct(
         private readonly WebSocketTransport $transport,
         private readonly ?RealtimeConnectionConfig $config,
-        private readonly RealtimeChannelAuthorizer $authorizer,
+        RealtimeChannelAuthorizer|RealtimeChannelOpener $authorizer,
         ?Closure $clock = null,
     ) {
         $this->state = $this->config === null ? RealtimeState::NotConfigured : RealtimeState::Reconnecting;
         $this->clock = $clock ?? static fn (): float => microtime(true);
+        $this->opener = $authorizer instanceof RealtimeChannelOpener
+            ? $authorizer
+            : new AuthorizedRealtimeChannel(self::ORBIT_CHANNEL, $authorizer);
     }
 
     /**
@@ -79,6 +89,27 @@ final class RealtimeSubscriber
                 $config === null ? '' : $config->gatewayUrl,
                 $config?->caPath,
             ),
+        );
+    }
+
+    /**
+     * Build a subscriber for $profile's active gateway whose channel $opener names for each
+     * connection. The subscriber is `not_configured` under the same rule as forProfile().
+     *
+     * @param  null|Closure(): float  $clock
+     */
+    public static function forChannel(
+        ?GatewayProfile $profile,
+        string $clientVersion,
+        RealtimeChannelOpener $opener,
+        ?WebSocketTransport $transport = null,
+        ?Closure $clock = null,
+    ): self {
+        return new self(
+            transport: $transport ?? new StreamWebSocketTransport,
+            config: RealtimeConnectionConfig::resolve($profile, $clientVersion),
+            authorizer: $opener,
+            clock: $clock,
         );
     }
 
@@ -108,6 +139,21 @@ final class RealtimeSubscriber
      */
     public function poll(): array
     {
+        return $this->pollDecoded(RealtimeEvent::fromChannelPayload(...));
+    }
+
+    /**
+     * Drain every channel event currently available, in arrival order, without blocking, and
+     * decode each with $decode. A null from $decode drops that event. A RealtimeProtocolException
+     * from $decode drops the connection and schedules a reconnect, as a malformed frame does.
+     *
+     * @template TEvent of object
+     *
+     * @param  Closure(string, mixed): (TEvent|null)  $decode  Receives the event name and its Pusher `data` payload.
+     * @return list<TEvent>
+     */
+    public function pollDecoded(Closure $decode): array
+    {
         if ($this->config === null) {
             $this->state = RealtimeState::NotConfigured;
 
@@ -130,13 +176,14 @@ final class RealtimeSubscriber
             }
         }
 
-        return $this->drainEvents();
+        return $this->drainEvents($decode);
     }
 
     public function close(): void
     {
         $this->transport->close();
         $this->phase = self::PHASE_IDLE;
+        $this->channel = null;
         $this->backoffIndex = 0;
         $this->nextAttemptAt = 0.0;
         $this->state = $this->config === null ? RealtimeState::NotConfigured : RealtimeState::Reconnecting;
@@ -197,11 +244,12 @@ final class RealtimeSubscriber
             throw new RealtimeProtocolException('The realtime socket omitted its socket_id.');
         }
 
-        $auth = $this->authorizer->authorize($socketId, self::CHANNEL);
+        $grant = $this->opener->open($socketId);
+        $this->channel = $grant->channel;
 
         $this->transport->send([
             'event' => 'pusher:subscribe',
-            'data' => ['auth' => $auth, 'channel' => self::CHANNEL],
+            'data' => ['auth' => $grant->auth, 'channel' => $grant->channel],
         ]);
 
         $this->phase = self::PHASE_AWAITING_SUBSCRIBED;
@@ -226,7 +274,7 @@ final class RealtimeSubscriber
             throw new RealtimeProtocolException('The realtime channel subscription failed.');
         }
 
-        if ($event === 'pusher_internal:subscription_succeeded' && ($message['channel'] ?? null) === self::CHANNEL) {
+        if ($event === 'pusher_internal:subscription_succeeded' && ($message['channel'] ?? null) === $this->channel) {
             $this->phase = self::PHASE_CONNECTED;
             $this->state = RealtimeState::Connected;
             $this->backoffIndex = 0;
@@ -237,16 +285,21 @@ final class RealtimeSubscriber
         return false;
     }
 
-    /** @return list<RealtimeEvent> */
-    private function drainEvents(): array
+    /**
+     * @template TEvent of object
+     *
+     * @param  Closure(string, mixed): (TEvent|null)  $decode
+     * @return list<TEvent>
+     */
+    private function drainEvents(Closure $decode): array
     {
         $events = [];
 
         try {
             while (($message = $this->transport->receive()) !== null) {
-                $event = $this->handleConnectedMessage($message);
+                $event = $this->handleConnectedMessage($message, $decode);
 
-                if ($event instanceof RealtimeEvent) {
+                if ($event !== null) {
                     $events[] = $event;
                 }
             }
@@ -262,8 +315,14 @@ final class RealtimeSubscriber
         return $events;
     }
 
-    /** @param  array<string, mixed>  $message */
-    private function handleConnectedMessage(array $message): ?RealtimeEvent
+    /**
+     * @template TEvent of object
+     *
+     * @param  array<string, mixed>  $message
+     * @param  Closure(string, mixed): (TEvent|null)  $decode
+     * @return TEvent|null
+     */
+    private function handleConnectedMessage(array $message, Closure $decode): ?object
     {
         $event = $message['event'] ?? null;
 
@@ -281,12 +340,13 @@ final class RealtimeSubscriber
             ! is_string($event)
             || str_starts_with($event, 'pusher:')
             || str_starts_with($event, 'pusher_internal:')
-            || ($message['channel'] ?? null) !== self::CHANNEL
+            || $this->channel === null
+            || ($message['channel'] ?? null) !== $this->channel
         ) {
             return null;
         }
 
-        return RealtimeEvent::fromChannelPayload($event, $message['data'] ?? null);
+        return $decode($event, $message['data'] ?? null);
     }
 
     private function isProtocolFailure(mixed $event): bool
@@ -312,6 +372,7 @@ final class RealtimeSubscriber
     private function scheduleReconnect(): void
     {
         $this->phase = self::PHASE_IDLE;
+        $this->channel = null;
         $this->state = RealtimeState::Reconnecting;
         $delay = self::BACKOFF_SECONDS[min($this->backoffIndex, count(self::BACKOFF_SECONDS) - 1)];
         $this->nextAttemptAt = ($this->clock)() + $delay;

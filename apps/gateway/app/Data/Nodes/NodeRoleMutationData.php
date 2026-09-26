@@ -7,7 +7,6 @@ namespace App\Data\Nodes;
 use App\Domain\Nodes\NodeRoleRemovalOutcome;
 use App\Domain\Nodes\NodeSideResidue;
 use App\Domain\Nodes\RoleName;
-use App\Domain\Nodes\RoleRelocationOutcome;
 use App\Models\Node;
 use App\Models\NodeRole;
 use Spatie\LaravelData\Attributes\MapOutputName;
@@ -31,7 +30,8 @@ final class NodeRoleMutationData extends Data
         public ?string $followUp = null,
     ) {}
 
-    public static function added(Node $node, NodeRole $assignment): self
+    /** A `followUp` names a convergence step that failed without failing the role. */
+    public static function added(Node $node, NodeRole $assignment, ?string $followUp = null): self
     {
         return new self(
             nodeId: $node->id,
@@ -39,18 +39,7 @@ final class NodeRoleMutationData extends Data
             role: $assignment->role->value,
             assignment: NodeRoleAssignmentData::fromModel($assignment),
             removed: false,
-        );
-    }
-
-    public static function relocated(Node $node, RoleRelocationOutcome $outcome): self
-    {
-        return new self(
-            nodeId: $node->id,
-            nodeName: $node->name,
-            role: $outcome->assignment->role->value,
-            assignment: NodeRoleAssignmentData::fromModel($outcome->assignment),
-            removed: false,
-            followUp: $outcome->followUp,
+            followUp: $followUp,
         );
     }
 

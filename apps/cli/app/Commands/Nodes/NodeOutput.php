@@ -59,15 +59,19 @@ final class NodeOutput
                         ? $response->requestId : null);
         }
 
-        $degraded = ($response instanceof RemovedNodeResponse || $response instanceof NodeRoleMutationResponse)
-            && $response->degradation !== null;
-        // A relocation that finished but left work elsewhere, such as a Metrics reconcile, is a warning too.
-        $followUp = $response instanceof NodeRoleMutationResponse && ! $response->removed && $response->followUp !== null;
+        $warning = match (true) {
+            $response instanceof RemovedNodeResponse => $response->degradation !== null,
+            $response instanceof NodeRoleMutationResponse => $response->degradation !== null || $response->followUp !== null,
+            default => false,
+        };
 
-        return $degraded || $followUp ? ProgressState::Warning : ProgressState::Success;
+        return $warning ? ProgressState::Warning : ProgressState::Success;
     }
 
-    /** The follow-up a finished relocation reports, as an orange warning wrapped at word boundaries. */
+    /**
+     * Warns about a convergence step that failed without failing the role, so the operator does not
+     * learn about it only from Doctor or the Gateway log.
+     */
     public static function followUpWarning(ConsoleMode $mode, ?string $followUp): string
     {
         if ($followUp === null || $mode->machine) {

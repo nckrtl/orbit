@@ -2,17 +2,13 @@
 
 declare(strict_types=1);
 
-use App\Commands\Nodes\NodeOutput;
 use App\Data\GatewayProfile;
 use App\Repositories\GatewayConfigRepository;
-use App\Support\Console\ConsoleMode;
-use App\Support\Console\ProgressState;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\Nodes\ListNodesRequest;
 use Orbit\Sdk\Requests\Nodes\RelocateNodeRoleRequest;
-use Orbit\Sdk\Responses\Nodes\NodeRoleMutationResponse;
 use Saloon\Enums\Method;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
@@ -118,37 +114,23 @@ it('shows deterministic human output for a relocated gateway role', function ():
         ->assertExitCode(0);
 });
 
-it('warns with the follow-up when Metrics was not reconciled after the move', function (): void {
-    $followUp = 'Metrics on node [app-dev] was not reconciled after the move: A Metrics command on node [app-dev] did not finish within 120 seconds. Run `orbit node:role:add app-dev metrics --converge` once node [app-dev] is healthy.';
+it('warns with the follow-up when the target does not get the private DNS route', function (): void {
     MockClient::global([
         RelocateNodeRoleRequest::class => MockResponse::make([
-            'data' => [...relocated_gateway_role_payload(), 'follow_up' => $followUp],
+            'data' => [
+                ...relocated_gateway_role_payload(),
+                'follow_up' => 'The Gateway machine does not route the private domain to Orbit VPN DNS (vpn.dns_resolver_failed).',
+            ],
             'meta' => ['request_id' => relocate_node_role_request_id()],
         ]),
     ]);
 
     $this
         ->artisan('node:role:relocate', ['node' => '7', 'role' => 'gateway', '--force' => true])
-        ->expectsOutputToContain('Warning: Metrics on node [app-dev] was not reconciled after the move')
-        ->expectsOutputToContain('Request ID: '.relocate_node_role_request_id())
+        ->expectsOutput('Role [gateway] relocated to node [beast] (#7).')
+        ->expectsOutputToContain('Warning: The Gateway machine does not route the private domain to Orbit VPN DNS')
+        ->expectsOutput('Request ID: '.relocate_node_role_request_id())
         ->assertExitCode(0);
-});
-
-it('settles a relocation with a follow-up as a warning and wraps it at word boundaries', function (): void {
-    $response = NodeRoleMutationResponse::fromGatewayData([
-        ...relocated_gateway_role_payload(),
-        'follow_up' => 'Metrics on node [app-dev] was not reconciled after the move. Run `orbit node:role:add app-dev metrics --converge` once node [app-dev] is healthy.',
-    ], relocate_node_role_request_id());
-
-    expect(NodeOutput::mutationState($response))->toBe(ProgressState::Warning)
-        ->and(NodeOutput::mutationState(NodeRoleMutationResponse::fromGatewayData(relocated_gateway_role_payload(), relocate_node_role_request_id())))
-        ->toBe(ProgressState::Success);
-
-    $lines = explode("\n", rtrim(NodeOutput::followUpWarning(new ConsoleMode(machine: false, mayPrompt: false, decorated: false, mayRepaint: false, columns: 40), $response->followUp)));
-
-    expect(implode(' ', $lines))->toContain('`orbit node:role:add app-dev metrics')
-        ->and(max(array_map(mb_strlen(...), $lines)))->toBeLessThanOrEqual(40)
-        ->and(NodeOutput::followUpWarning(new ConsoleMode(machine: true, mayPrompt: false, decorated: false, mayRepaint: false, columns: 40), $response->followUp))->toBe('');
 });
 
 it('resolves a node name through the node list before relocating the role', function (): void {

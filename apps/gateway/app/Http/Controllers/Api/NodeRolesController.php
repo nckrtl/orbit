@@ -10,6 +10,7 @@ use App\Actions\Nodes\RelocateNodeRoleAction;
 use App\Actions\Nodes\RemoveNodeRoleAction;
 use App\Data\Nodes\NodeRoleAssignmentData;
 use App\Data\Nodes\NodeRoleMutationData;
+use App\Domain\Nodes\NodeRoleFollowUpReport;
 use App\Domain\Nodes\NodeRoleValidationException;
 use App\Domain\Nodes\RoleAssignmentException;
 use App\Domain\Nodes\RoleName;
@@ -65,7 +66,7 @@ final class NodeRolesController extends Controller
 
         return response()->json(
             [
-                'data' => NodeRoleMutationData::added($node, $result['assignment'])->toArray(),
+                'data' => NodeRoleMutationData::added($node, $result['assignment'], $result['follow_up'])->toArray(),
                 'meta' => $this->meta($request),
             ],
             $result['created'] ? 201 : 200,
@@ -77,11 +78,13 @@ final class NodeRolesController extends Controller
         RelocateNodeRoleRequest $request,
         Node $node,
         RelocateNodeRoleAction $action,
+        NodeRoleFollowUpReport $followUps,
     ): JsonResponse {
+        $followUps->take();
         $outcome = $action->execute($node, $request->role(), $request->force(), $request->from());
 
         return response()->json([
-            'data' => NodeRoleMutationData::relocated($node, $outcome)->toArray(),
+            'data' => NodeRoleMutationData::added($node, $outcome, $followUps->take())->toArray(),
             'meta' => $this->meta($request),
         ]);
     }

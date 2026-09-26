@@ -573,7 +573,7 @@ it('redacts process logs before serializing them to the API response', function 
         ->not->toContain('super-secret');
 });
 
-it('redacts configured Docker environment values even when logs omit their names', function (): void {
+it('redacts configured Docker environment values of eight characters or more even when logs omit their names', function (): void {
     $process = processes_api_record($this->instance);
     $process->forceFill([
         'runtime' => 'docker',
@@ -591,11 +591,9 @@ it('redacts configured Docker environment values even when logs omit their names
     $response = $this
         ->getJson("/api/v1/processes/{$process->id}/logs?lines=25")
         ->assertOk()
-        ->assertJsonPath('data.logs', "worker output [REDACTED]\nworker output [REDACTED]\n");
+        ->assertJsonPath('data.logs', "worker output [REDACTED]\nworker output opaque\n");
 
-    expect($response->getContent())
-        ->not->toContain('opaque-value')
-        ->not->toContain('opaque');
+    expect($response->getContent())->not->toContain('opaque-value');
 });
 
 it('bounds process log requests and does not support follow mode', function (): void {

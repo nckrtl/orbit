@@ -106,3 +106,23 @@ it('restores the request deadline after a nested operation instead of clearing i
 
     expect($deadline->cap(9_999.0))->toBe(9_999.0);
 });
+
+it('holds time back from work for what must follow it, even after that work ran out of time', function (): void {
+    $now = 0.0;
+    $deadline = new CommandDeadline(static function () use (&$now): float {
+        return $now;
+    });
+    $deadline->start(570.0, CommandDeadline::CleanupReserveSeconds);
+
+    $inside = $deadline->holding(150.0, static fn (): float => $deadline->cap(9_999.0));
+
+    expect($inside)->toBe(400.0);
+
+    $now = 400.0;
+    expect(fn () => $deadline->holding(150.0, static fn (): float => $deadline->cap(9_999.0)))
+        ->toThrow(ResourceOperationException::class);
+
+    // The rollback that follows keeps a hold for its own last step, and that step gets the rest.
+    expect($deadline->holding(90.0, static fn (): float => $deadline->cap(9_999.0)))->toBe(80.0)
+        ->and($deadline->cap(9_999.0))->toBe(170.0);
+});

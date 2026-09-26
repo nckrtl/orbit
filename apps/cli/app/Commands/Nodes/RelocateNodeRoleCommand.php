@@ -94,9 +94,7 @@ final class RelocateNodeRoleCommand extends NodeCommand
         }
 
         $this->writeHumanMessage("Role [{$response->role}] relocated to node [{$response->nodeName}] (#{$response->nodeId}).");
-
         ConsoleWriter::write($this->output, NodeOutput::followUpWarning($this->consoleMode(), $response->followUp));
-
         $this->writeHumanMessage("Request ID: {$response->requestId}");
 
         return self::SUCCESS;

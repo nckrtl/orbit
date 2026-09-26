@@ -28,6 +28,9 @@ final class CommandDeadline
 
     private bool $exceeded = false;
 
+    /** Seconds that callers hold back for later work of their own, such as a rollback; see `holding()`. */
+    private float $heldSeconds = 0.0;
+
     /** @var Closure(): float */
     private readonly Closure $clock;
 
@@ -83,6 +86,27 @@ final class CommandDeadline
         }
     }
 
+    /**
+     * Runs work with `$seconds` more held back from it, for the work that must follow it whatever
+     * happens, such as the rollback of a failed create. The hold ends with the work, so the later work
+     * gets that time even after this work ran out of time.
+     *
+     * @template T
+     *
+     * @param  Closure(): T  $operation
+     * @return T
+     */
+    public function holding(float $seconds, Closure $operation): mixed
+    {
+        $this->heldSeconds += $seconds;
+
+        try {
+            return $operation();
+        } finally {
+            $this->heldSeconds -= $seconds;
+        }
+    }
+
     public function clear(): void
     {
         $this->expiresAt = null;
@@ -101,6 +125,8 @@ final class CommandDeadline
         if (! $this->exceeded) {
             $remaining -= $this->cleanupReserveSeconds;
         }
+
+        $remaining -= $this->heldSeconds;
 
         if ($remaining <= 0.0) {
             throw $this->exceeded();

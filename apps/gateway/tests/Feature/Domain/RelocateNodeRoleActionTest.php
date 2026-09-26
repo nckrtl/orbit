@@ -8,7 +8,9 @@ use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\Gateway\GatewayServingHost;
 use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Metrics\MetricsReconcileDeferral;
+use App\Domain\Nodes\GatewayPrivateDnsRoute;
 use App\Domain\Nodes\NodeRoleFirewallManager;
+use App\Domain\Nodes\NodeRoleFollowUpReport;
 use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Nodes\NodeRoleValidationException;
 use App\Domain\Nodes\RoleBaselineConverger;
@@ -38,6 +40,8 @@ describe(RelocateNodeRoleAction::class, function (): void {
         app()->instance(NodeRoleFirewallManager::class, $this->firewall);
         app()->instance(PrivateDnsManager::class, $this->dns);
         app()->instance(RoleBaselineConverger::class, $this->baselines);
+        $this->route = new RelocateNodeRoleRouteFake($this->firewall);
+        app()->instance(GatewayPrivateDnsRoute::class, $this->route);
     });
 
     it('transfers the singleton gateway assignment and leaves vpn on the source', function (): void {
@@ -53,7 +57,7 @@ describe(RelocateNodeRoleAction::class, function (): void {
         ]);
         app(GatewayServingHost::class)->remember($source);
 
-        $result = app(RelocateNodeRoleAction::class)->execute($target, RoleName::Gateway, force: true)->assignment;
+        $result = app(RelocateNodeRoleAction::class)->execute($target, RoleName::Gateway, force: true);
 
         expect($result->is($assignment))
             ->toBeTrue()
@@ -70,6 +74,8 @@ describe(RelocateNodeRoleAction::class, function (): void {
             ->and($this->firewall->events)
             ->toBe([
                 "converge:gateway:{$target->name}",
+                "route:converge:{$target->name}",
+                "route:remove:{$source->name}",
                 "remove:gateway:{$source->name}",
             ])
             ->and($this->dns->calls)
@@ -78,6 +84,50 @@ describe(RelocateNodeRoleAction::class, function (): void {
             ->toBeEmpty()
             ->and(app(GatewayServingHost::class)->nodeId())
             ->toBe($source->id);
+    });
+
+    it('reports a gateway move whose source route removal failed as incomplete, and finishes it on retry', function (): void {
+        $source = relocate_role_node('gateway', '10.44.0.1');
+        $target = relocate_role_node('beast', '10.44.0.11');
+        $source->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
+        $source->roles()->create(['role' => RoleName::Vpn, 'status' => LifecycleStatus::Active]);
+        $this->route->removeFailure = new NodeRoleOperationException(
+            'gateway-private-dns-resolver',
+            'node_role.remove_failed',
+            'vpn.dns_resolver_failed',
+            'Gateway role step [gateway-private-dns-resolver] failed on node [gateway].',
+        );
+
+        expect(fn () => app(RelocateNodeRoleAction::class)->execute($target, RoleName::Gateway, force: true))
+            ->toThrow(function (NodeRoleOperationException $exception) use ($source, $target): void {
+                expect($exception->errorCode)->toBe('node_role.remove_failed')
+                    ->and($exception->underlyingErrorCode)->toBe('vpn.dns_resolver_failed')
+                    ->and($exception->step)->toBe('gateway-private-dns-resolver')
+                    ->and($exception->getMessage())->toBe(
+                        "Role [gateway] now runs on node [{$target->name}], but the move from node [{$source->name}] is incomplete: "
+                        .'Gateway role step [gateway-private-dns-resolver] failed on node [gateway].'
+                        ." Run `orbit node:role:relocate {$target->name} gateway --from {$source->name} --force` to finish it once node [{$source->name}] is reachable.",
+                    );
+            });
+
+        // The source keeps its gateway firewall until the route is gone, so the retry repeats both steps.
+        expect($this->firewall->events)->toBe([
+            "converge:gateway:{$target->name}",
+            "route:converge:{$target->name}",
+            "route:remove:{$source->name}",
+        ])
+            ->and($target->roles()->where('role', RoleName::Gateway)->value('status'))->toBe(LifecycleStatus::Active);
+
+        $this->route->removeFailure = null;
+        $this->firewall->events = [];
+        app(RelocateNodeRoleAction::class)->execute($target, RoleName::Gateway, force: true, from: $source);
+
+        expect($this->firewall->events)->toBe([
+            "converge:gateway:{$target->name}",
+            "route:converge:{$target->name}",
+            "route:remove:{$source->name}",
+            "remove:gateway:{$source->name}",
+        ]);
     });
 
     it('requires force before transferring the assignment', function (): void {
@@ -141,7 +191,7 @@ describe(RelocateNodeRoleAction::class, function (): void {
         ]);
         app(GatewayServingHost::class)->remember($source);
 
-        app(RelocateNodeRoleAction::class)->execute($target, RoleName::Gateway, force: true)->assignment;
+        app(RelocateNodeRoleAction::class)->execute($target, RoleName::Gateway, force: true);
 
         expect(NodeAccess::query()->where('consumer_node_id', $target->id)->pluck('serving_node_id')->all())
             ->toEqualCanonicalizing([$source->id, $metrics->id])
@@ -186,7 +236,7 @@ describe(RelocateNodeRoleAction::class, function (): void {
         ]);
         $credentials = app(WebSocketCredentialManager::class)->ensure($source);
 
-        $result = app(RelocateNodeRoleAction::class)->execute($target, RoleName::WebSocket, force: true)->assignment;
+        $result = app(RelocateNodeRoleAction::class)->execute($target, RoleName::WebSocket, force: true);
 
         expect($result->is($assignment))
             ->toBeTrue()
@@ -254,11 +304,11 @@ describe(RelocateNodeRoleAction::class, function (): void {
         app()->instance(MetricsFleetReconciler::class, $metrics);
         $this->baselines->metrics = $metrics;
 
-        $outcome = app(RelocateNodeRoleAction::class)->execute($target, RoleName::WebSocket, force: true);
+        $assignment = app(RelocateNodeRoleAction::class)->execute($target, RoleName::WebSocket, force: true);
 
-        expect($outcome->assignment->node_id)->toBe($target->id)
+        expect($assignment->node_id)->toBe($target->id)
             ->and($this->baselines->removed)->toBe([['role' => 'websocket', 'node' => $source->name, 'purge_data' => false]])
-            ->and($outcome->followUp)->toBe(
+            ->and(app(NodeRoleFollowUpReport::class)->take())->toBe(
                 'Metrics on node [app-dev] was not reconciled after the move: A Metrics command on node [app-dev] did not finish within 120 seconds. '
                 .'Run `orbit node:role:add app-dev metrics --converge` once node [app-dev] is healthy.',
             )
@@ -275,7 +325,9 @@ describe(RelocateNodeRoleAction::class, function (): void {
         app()->instance(MetricsFleetReconciler::class, $metrics);
         $this->baselines->metrics = $metrics;
 
-        expect(app(RelocateNodeRoleAction::class)->execute($target, RoleName::WebSocket, force: true)->followUp)->toBeNull();
+        app(RelocateNodeRoleAction::class)->execute($target, RoleName::WebSocket, force: true);
+
+        expect(app(NodeRoleFollowUpReport::class)->take())->toBeNull();
     });
 
     it('withdraws websocket from the source only after the target serves and cached DNS answers expire', function (): void {
@@ -364,7 +416,7 @@ describe(RelocateNodeRoleAction::class, function (): void {
             SettingValueProtection::Secret,
         );
 
-        $result = app(RelocateNodeRoleAction::class)->execute($target, RoleName::Metrics, force: true)->assignment;
+        $result = app(RelocateNodeRoleAction::class)->execute($target, RoleName::Metrics, force: true);
 
         expect($result->is($assignment))
             ->toBeTrue()
@@ -393,7 +445,7 @@ describe(RelocateNodeRoleAction::class, function (): void {
             RoleName::WebSocket,
             force: true,
             from: $source,
-        )->assignment;
+        );
 
         expect($result->node_id)->toBe($target->id);
     });
@@ -456,7 +508,7 @@ describe(RelocateNodeRoleAction::class, function (): void {
             RoleName::WebSocket,
             force: true,
             from: $leftover,
-        )->assignment;
+        );
 
         expect($result->is($assignment))
             ->toBeTrue()
@@ -540,6 +592,27 @@ final class RelocateNodeRoleFirewallFake implements NodeRoleFirewallManager
     public function restorePublicSsh(Node $node, string $managedUser): void {}
 
     public function trustWireGuardMembers(Node $node, string $managedUser): void {}
+}
+
+final class RelocateNodeRoleRouteFake implements GatewayPrivateDnsRoute
+{
+    public ?NodeRoleOperationException $removeFailure = null;
+
+    public function __construct(private RelocateNodeRoleFirewallFake $firewall) {}
+
+    public function convergeRoute(Node $node): void
+    {
+        $this->firewall->events[] = "route:converge:{$node->name}";
+    }
+
+    public function removeRoute(Node $node): void
+    {
+        $this->firewall->events[] = "route:remove:{$node->name}";
+
+        if ($this->removeFailure instanceof NodeRoleOperationException) {
+            throw $this->removeFailure;
+        }
+    }
 }
 
 final class RelocateNodeRoleDnsFake implements PrivateDnsManager
