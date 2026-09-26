@@ -41,7 +41,11 @@ orbit instance:teardown-step:create drop-sqlite --project=4 --command='rm -f dat
 | `timeout_seconds` | Whole seconds from 1 through 540. The default is 240. |
 | `before`, `after` | Exclusive placement by step name within the same list. Omit both to append. |
 
-The Gateway refuses a duplicate name, a placement that names an unknown step, both placement options, a thirty-third step, a timeout over 540 seconds, or a list whose timeouts sum to more than 540 seconds. It stores no change. The setup list and the teardown list each have their own count and timeout total.
+The Gateway refuses a duplicate name, a placement that names an unknown step, both placement options, a thirty-third step, a timeout over 540 seconds, or a change that brings a list's timeout total above 540 seconds. It stores no change. The setup list and the teardown list each have their own count and timeout total.
+
+The upgrade to these limits lowers every stored step timeout above 540 seconds to 540. A list can still total more than 540 seconds after that, for example three steps of 540 seconds. Such a list accepts every change that does not raise its total, so it can always be lowered, reordered, or shortened. A new step or a longer timeout is refused until the total fits.
+
+When such a list runs, each step's timeout is cut to what remains of the request deadline, and the request fails with `command.deadline_exceeded` or `instance.setup_step_failed` before PHP-FPM ends it. A Gateway that reads a stored timeout above 540 seconds before its migrations ran refuses with `lifecycle_step.migration_pending`.
 
 One API request runs a whole list, so both limits fit inside its 570-second deadline, whose forward work ends 20 seconds early to leave time for cleanup. Provisioning shares that deadline, so keep normal setup and teardown well below the limit. Authorized reads return commands. Activity records omit command text and command output.
 

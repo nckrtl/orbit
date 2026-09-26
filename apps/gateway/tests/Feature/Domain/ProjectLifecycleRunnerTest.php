@@ -13,6 +13,7 @@ use App\Infrastructure\Processes\CommandDeadline;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\Node;
+use App\Models\ProjectLifecycleStep;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 use Tests\Support\LifecycleSshExecutor;
@@ -92,4 +93,34 @@ it('keeps remote cleanup time inside the remaining request deadline', function (
     $this->steps->create($this->instance->app, LifecyclePhase::Setup, new LifecycleStep('install', 'true', 10), null, null);
     $transport->runner($deadline)->run($this->instance, LifecyclePhase::Setup);
     expect($transport->inputs[0]['timeout'])->toBe(3);
+});
+
+it('stops a stored list over the total limit cleanly when the request deadline runs out', function (): void {
+    foreach (['first', 'second', 'third'] as $position => $name) {
+        ProjectLifecycleStep::query()->create([
+            'app_id' => $this->instance->app_id,
+            'phase' => 'setup',
+            'name' => $name,
+            'command' => 'true',
+            'timeout_seconds' => 540,
+            'position' => $position,
+        ]);
+    }
+
+    $now = 0.0;
+    $deadline = new CommandDeadline(static function () use (&$now): float {
+        return $now;
+    });
+    $deadline->start(570.0, CommandDeadline::CleanupReserveSeconds);
+    $transport = new LifecycleSshExecutor(result: static function () use (&$now): int {
+        $now += 300.0;
+
+        return 0;
+    });
+
+    expect(fn () => $transport->runner($deadline)->run($this->instance, LifecyclePhase::Setup))
+        ->toThrow(ResourceOperationException::class);
+
+    // The first step gets the whole forward budget less the runner's margin; no step outlives the deadline.
+    expect(array_column($transport->inputs, 'timeout'))->toBe([540, 245]);
 });

@@ -42,15 +42,7 @@ final readonly class RollbackAppInstanceAction
 
             return $this->operations->run(
                 [$appInstance->id],
-                function () use ($appInstance, $releaseName, $request): DeploymentResult {
-                    $this->deadline->start(900);
-
-                    try {
-                        return $this->rollback($appInstance->refresh(), $releaseName, $request);
-                    } finally {
-                        $this->deadline->clear();
-                    }
-                },
+                fn (): DeploymentResult => $this->deadline->within(900, fn (): DeploymentResult => $this->rollback($appInstance->refresh(), $releaseName, $request)),
             );
         } catch (Throwable $exception) {
             return DeploymentResult::failed(

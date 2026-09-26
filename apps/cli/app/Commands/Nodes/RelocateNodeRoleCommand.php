@@ -6,6 +6,7 @@ namespace App\Commands\Nodes;
 
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
+use App\Support\Console\ConsoleWriter;
 use App\Support\Console\ProgressState;
 use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\GatewayConnector;
@@ -94,9 +95,7 @@ final class RelocateNodeRoleCommand extends NodeCommand
 
         $this->writeHumanMessage("Role [{$response->role}] relocated to node [{$response->nodeName}] (#{$response->nodeId}).");
 
-        if ($response->followUp !== null) {
-            $this->writeHumanMessage("Warning: {$response->followUp}");
-        }
+        ConsoleWriter::write($this->output, NodeOutput::followUpWarning($this->consoleMode(), $response->followUp));
 
         $this->writeHumanMessage("Request ID: {$response->requestId}");
 

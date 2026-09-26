@@ -82,3 +82,27 @@ it('fails an expired command with a stable error that names the deadline', funct
             ->and($exception->getMessage())->toBe('The 570-second command deadline was exceeded.');
     });
 });
+
+it('restores the request deadline after a nested operation instead of clearing it', function (): void {
+    $now = 0.0;
+    $deadline = new CommandDeadline(static function () use (&$now): float {
+        return $now;
+    });
+    $deadline->start(570.0, CommandDeadline::CleanupReserveSeconds);
+
+    $inside = $deadline->within(60.0, static function () use ($deadline, &$now): float {
+        $now = 10.0;
+
+        return $deadline->cap(9_999.0);
+    });
+
+    // The nested deadline keeps the request's cleanup reserve.
+    expect($inside)->toBe(30.0)
+        ->and($deadline->cap(9_999.0))->toBe(540.0);
+
+    // Without a running deadline, the nested one ends with the operation.
+    $deadline->clear();
+    $deadline->within(60.0, static fn (): null => null);
+
+    expect($deadline->cap(9_999.0))->toBe(9_999.0);
+});

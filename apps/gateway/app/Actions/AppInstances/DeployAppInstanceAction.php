@@ -54,15 +54,7 @@ final readonly class DeployAppInstanceAction
         try {
             return $this->operations->run(
                 [$appInstance->id],
-                function () use ($appInstance, $config, $request): DeploymentResult {
-                    $this->deadline->start(DeploymentDeadline::for($config)->seconds);
-
-                    try {
-                        return $this->deploy($appInstance->refresh(), $config, $request);
-                    } finally {
-                        $this->deadline->clear();
-                    }
-                },
+                fn (): DeploymentResult => $this->deadline->within(DeploymentDeadline::for($config)->seconds, fn (): DeploymentResult => $this->deploy($appInstance->refresh(), $config, $request)),
             );
         } catch (Throwable $exception) {
             return DeploymentResult::failed(

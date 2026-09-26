@@ -59,8 +59,26 @@ final class NodeOutput
                         ? $response->requestId : null);
         }
 
-        return ($response instanceof RemovedNodeResponse || $response instanceof NodeRoleMutationResponse)
-            && $response->degradation !== null ? ProgressState::Warning : ProgressState::Success;
+        $degraded = ($response instanceof RemovedNodeResponse || $response instanceof NodeRoleMutationResponse)
+            && $response->degradation !== null;
+        // A relocation that finished but left work elsewhere, such as a Metrics reconcile, is a warning too.
+        $followUp = $response instanceof NodeRoleMutationResponse && ! $response->removed && $response->followUp !== null;
+
+        return $degraded || $followUp ? ProgressState::Warning : ProgressState::Success;
+    }
+
+    /** The follow-up a finished relocation reports, as an orange warning wrapped at word boundaries. */
+    public static function followUpWarning(ConsoleMode $mode, ?string $followUp): string
+    {
+        if ($followUp === null || $mode->machine) {
+            return '';
+        }
+
+        return TerminalText::style(
+            implode("\n", TerminalText::wrapWords(TerminalText::safe("Warning: {$followUp}"), $mode->columns)),
+            'orange',
+            $mode->decorated,
+        )."\n";
     }
 
     /**

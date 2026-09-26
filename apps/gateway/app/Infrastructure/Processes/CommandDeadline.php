@@ -59,6 +59,30 @@ final class CommandDeadline
         $this->exceeded = false;
     }
 
+    /**
+     * Runs one operation under its own deadline, then restores the deadline around it. The operation
+     * never extends a running deadline, and it cannot clear the request's deadline for work after it.
+     *
+     * @template T
+     *
+     * @param  Closure(): T  $operation
+     * @return T
+     */
+    public function within(float $seconds, Closure $operation): mixed
+    {
+        $saved = [$this->expiresAt, $this->seconds, $this->cleanupReserveSeconds, $this->exceeded];
+        $this->start($seconds);
+
+        try {
+            return $operation();
+        } finally {
+            $exceeded = $this->exceeded;
+            [$this->expiresAt, $this->seconds, $this->cleanupReserveSeconds, $this->exceeded] = $saved;
+            // Once forward work ran out, the request's own cleanup keeps the reserve.
+            $this->exceeded = $this->exceeded || $exceeded;
+        }
+    }
+
     public function clear(): void
     {
         $this->expiresAt = null;
