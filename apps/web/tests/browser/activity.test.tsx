@@ -1,6 +1,6 @@
 import { afterEach, expect, it } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
-import type { Activity } from "../../src/api/activities";
+import { rebuildActivityList, type Activity } from "../../src/api/activities";
 import type { Transport } from "../../src/api/client";
 import { queryClient } from "../../src/api/queryClient";
 import { applyEvent } from "../../src/realtime/apply";
@@ -39,6 +39,9 @@ function pageActivities(rows: readonly Activity[], path: string): Activity[] {
     const status = params.get("status");
     const command = params.get("command");
 
+    const limitParam = Number(params.get("limit"));
+    const limit = Number.isInteger(limitParam) && limitParam >= 1 ? limitParam : 25;
+
     return rows
         .filter((row) => !Number.isInteger(before) || before < 1 || row.id < before)
         .filter((row) => status === null || row.status === status)
@@ -46,7 +49,7 @@ function pageActivities(rows: readonly Activity[], path: string): Activity[] {
         .filter((row) => !Number.isInteger(caller) || caller < 1 || row.caller_node_id === caller)
         .filter((row) => !Number.isInteger(target) || target < 1 || row.target_node_id === target)
         .sort((left, right) => right.id - left.id)
-        .slice(0, 25);
+        .slice(0, limit);
 }
 
 function activityTransport(rows: { current: Activity[] }): Transport {
@@ -144,29 +147,65 @@ it("filters by status, command and node, and a new filter clears the older page"
     await expect.poll(app.url).not.toContain("before_id");
 });
 
-it("loads the older page from its control and from scrolling the list", async () => {
-    const app = await openApp("/activity");
-    await expect.element(page.getByRole("button", { name: "Older rows" })).toBeVisible();
-    await page.getByRole("button", { name: "Older rows" }).click();
+function activityLog(): HTMLElement {
+    const found = document.querySelector("[data-activity-log]");
+    if (!(found instanceof HTMLElement)) throw new Error("Activity log does not scroll.");
 
+    return found;
+}
+
+function visibleAnchor(): HTMLElement {
+    const log = activityLog();
+    const head = log.querySelector("[data-head]");
+    const top =
+        log.getBoundingClientRect().top + (head instanceof HTMLElement ? head.offsetHeight : 0);
+    const found = [...log.querySelectorAll<HTMLElement>("[data-activity-id]")].find(
+        (row) => row.getBoundingClientRect().bottom > top + 1,
+    );
+    if (found === undefined) throw new Error("No activity row is visible.");
+
+    return found;
+}
+
+/** Scrolls until the log has loaded its last page. */
+async function scrollToEnd(): Promise<void> {
+    await expect
+        .poll(() => {
+            const log = activityLog();
+            log.scrollTop = log.scrollHeight;
+            log.dispatchEvent(new Event("scroll"));
+
+            return document.querySelector("[data-activity-end]") !== null;
+        })
+        .toBe(true);
+}
+
+it("loads older rows as the log scrolls and then shows the end", async () => {
+    const app = await openApp("/activity");
+    await expect.element(pane("Activity")).toHaveTextContent("instance:deploy");
+    expect(document.querySelector("[data-activity-end]")).toBeNull();
+    expect(page.getByRole("button", { name: "Older rows" }).query()).toBeNull();
+
+    const log = activityLog();
+    expect(log.scrollHeight).toBeGreaterThan(log.clientHeight);
+    log.scrollTop = Math.max(0, log.scrollHeight - log.clientHeight - 40);
+    log.dispatchEvent(new Event("scroll"));
     await expect
         .poll(() => app.gateway.requests.some((request) => request.path.includes("before_id=101")))
         .toBe(true);
-    await expect.element(pane("Activity")).toHaveTextContent("node:list");
-    await expect.element(pane("Activity")).toHaveTextContent("instance:deploy");
     await expect.poll(app.url).not.toContain("before_id");
 
-    await page.viewport(1280, 420);
-    await expect.element(pane("Activity")).toHaveTextContent("instance:deploy");
-    const body = document.querySelector('[data-pane="activity"] .frame-body');
-    if (!(body instanceof HTMLElement)) throw new Error("The activity list does not scroll.");
-    expect(body.scrollHeight).toBeGreaterThan(body.clientHeight);
-    body.scrollTop = body.scrollHeight;
-    body.dispatchEvent(new Event("scroll"));
-    await expect
-        .poll(() => app.gateway.requests.some((request) => request.path.includes("before_id=51")))
-        .toBe(true);
+    await scrollToEnd();
+    await expect.poll(() => document.querySelector('[data-activity-id="1"]') !== null).toBe(true);
+    const reads = () =>
+        app.gateway.requests.filter((request) => request.path.startsWith("/api/v1/activities"))
+            .length;
+    const done = reads();
+    log.scrollTop = log.scrollHeight;
+    log.dispatchEvent(new Event("scroll"));
+    await expect.poll(reads).toBe(done);
     await expect.poll(app.url).not.toContain("before_id");
+    await page.screenshot({ path: "expected/activity-end.png" });
 });
 
 it("shows a new row and a finished row when their notices arrive", async () => {
@@ -244,8 +283,113 @@ it("shows a new row and a finished row when their notices arrive", async () => {
         data: { id: 4, command: "instance:deploy", status: "running" },
     });
     await expect.element(pane("Activity")).toHaveTextContent("instance:deploy");
+    expect(document.querySelector("[data-activity-new]")).toBeNull();
     expect(activityPaths).toHaveLength(before);
     await page.screenshot({ path: "expected/activity-live.png" });
+});
+
+it("keeps the visible rows still and offers N new when a row arrives below the top", async () => {
+    const rows = {
+        current: Array.from({ length: 60 }, (_, index) =>
+            activity(60 - index, { command: index === 0 ? "node:list" : "app:list" }),
+        ),
+    };
+    await openApp("/activity", {
+        wrapTransport: (inner) => (method, path, body) => {
+            if (path.startsWith("/api/v1/activities")) {
+                return activityTransport(rows)(method, path, body);
+            }
+
+            return inner(method, path, body);
+        },
+    });
+    await expect.element(pane("Activity")).toHaveTextContent("node:list");
+    const log = activityLog();
+    log.scrollTop = 240;
+    log.dispatchEvent(new Event("scroll"));
+    await expect.poll(() => log.scrollTop).toBeGreaterThan(200);
+    await settle();
+    const anchor = visibleAnchor();
+    const anchorId = anchor.dataset.activityId ?? "";
+    const top = anchor.getBoundingClientRect().top;
+
+    rows.current = [
+        activity(62, { command: "review:arrived-later" }),
+        activity(61, { command: "review:arrived" }),
+        ...rows.current,
+    ];
+    applyEvent(queryClient, {
+        type: "activity.created",
+        id: 61,
+        at: "2026-09-20T12:00:04Z",
+        data: { id: 61, command: "review:arrived", status: "succeeded" },
+    });
+    applyEvent(queryClient, {
+        type: "activity.created",
+        id: 62,
+        at: "2026-09-20T12:00:05Z",
+        data: { id: 62, command: "review:arrived-later", status: "succeeded" },
+    });
+    await expect.element(page.getByRole("button", { name: "2 new" })).toBeVisible();
+    await expect
+        .poll(() => {
+            const again = document.querySelector(`[data-activity-id="${anchorId}"]`);
+
+            return again instanceof HTMLElement
+                ? Math.abs(again.getBoundingClientRect().top - top)
+                : 999;
+        })
+        .toBeLessThan(2);
+    expect(activityLog().scrollTop).toBeGreaterThan(200);
+    await page.screenshot({ path: "expected/activity-new.png" });
+
+    log.scrollTop = 0;
+    log.dispatchEvent(new Event("scroll"));
+    await expect.poll(() => document.querySelector("[data-activity-new]")).toBeNull();
+    await expect.element(pane("Activity")).toHaveTextContent("review:arrived-later");
+
+    log.scrollTop = 240;
+    log.dispatchEvent(new Event("scroll"));
+    await expect.poll(() => log.scrollTop).toBeGreaterThan(200);
+    rows.current = [activity(63, { command: "review:one-more" }), ...rows.current];
+    applyEvent(queryClient, {
+        type: "activity.created",
+        id: 63,
+        at: "2026-09-20T12:00:06Z",
+        data: { id: 63, command: "review:one-more", status: "succeeded" },
+    });
+    await page.getByRole("button", { name: "1 new" }).click();
+    await expect.poll(() => activityLog().scrollTop).toBeLessThan(2);
+    await expect.element(pane("Activity")).toHaveTextContent("review:one-more");
+    await expect.poll(() => document.querySelector("[data-activity-new]")).toBeNull();
+});
+
+it("returns to the same scroll position after opening a row", async () => {
+    const app = await openApp("/activity");
+    await expect.element(pane("Activity")).toHaveTextContent("instance:deploy");
+    const log = activityLog();
+    log.scrollTop = 320;
+    log.dispatchEvent(new Event("scroll"));
+    await expect.poll(() => log.scrollTop).toBeGreaterThan(280);
+    const anchor = visibleAnchor();
+    const id = anchor.dataset.activityId ?? "";
+    const top = anchor.getBoundingClientRect().top;
+    const scrollTop = log.scrollTop;
+    anchor.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0 }));
+
+    await expect.element(pane("Properties")).toBeVisible();
+    app.router.history.back();
+    await expect.poll(() => app.url().split("?")[0]).toBe("/activity");
+    await expect.poll(() => Math.abs(activityLog().scrollTop - scrollTop)).toBeLessThan(2);
+    await expect
+        .poll(() => {
+            const again = document.querySelector(`[data-activity-id="${id}"]`);
+
+            return again instanceof HTMLElement
+                ? Math.abs(again.getBoundingClientRect().top - top)
+                : 999;
+        })
+        .toBeLessThan(2);
 });
 
 it("opens a row on its own route, including the stored properties, and back keeps the filters", async () => {
@@ -304,7 +448,8 @@ it("keeps the menu, filters, older rows and detail usable on a phone", async () 
     expect(tops.length).toBeGreaterThanOrEqual(3);
     expect(tops[1] ?? 0).toBeGreaterThan(tops[0] ?? 0);
     expect(buttons[0]?.getBoundingClientRect().width ?? 0).toBeGreaterThan(200);
-    await expect.element(page.getByRole("button", { name: "Older rows" })).toBeVisible();
+    expect(page.getByRole("button", { name: "Older rows" }).query()).toBeNull();
+    await expect.element(page.getByRole("button", { name: "Open activity 150" })).toBeVisible();
     await page.screenshot({ path: "expected/activity-phone.png" });
 
     await expect.element(page.getByRole("button", { name: "Open activity 150" })).toBeVisible();
@@ -320,8 +465,117 @@ it("keeps the menu, filters, older rows and detail usable on a phone", async () 
 
     app.router.history.back();
     await expect.poll(app.url).toBe("/activity");
-    await expect.element(page.getByRole("button", { name: "Older rows" })).toBeVisible();
+    await expect.element(page.getByRole("button", { name: "Open activity 150" })).toBeVisible();
 });
+
+it("scrolls, marks the end, and keeps its place on a phone", async () => {
+    await page.viewport(390, 800);
+    const rows = {
+        current: Array.from({ length: 80 }, (_, index) =>
+            activity(80 - index, { command: index === 79 ? "review:oldest" : "node:list" }),
+        ),
+    };
+    const activityPaths: string[] = [];
+    const app = await openApp("/activity", {
+        wrapTransport: (inner) => (method, path, body) => {
+            if (path.startsWith("/api/v1/activities")) {
+                activityPaths.push(path);
+
+                return activityTransport(rows)(method, path, body);
+            }
+
+            return inner(method, path, body);
+        },
+    });
+    await expect.element(page.getByRole("button", { name: "Open activity 80" })).toBeVisible();
+    const log = activityLog();
+    expect(log.scrollHeight).toBeGreaterThan(log.clientHeight);
+    await expect
+        .poll(() => {
+            const scroller = activityLog();
+            scroller.scrollTop = Math.max(0, scroller.scrollHeight - scroller.clientHeight - 30);
+            scroller.dispatchEvent(new Event("scroll"));
+
+            return activityPaths.some((path) => path.includes("before_id="));
+        })
+        .toBe(true);
+    await scrollToEnd();
+    await expect.poll(() => document.querySelector('[data-activity-id="1"]') !== null).toBe(true);
+    await expect.element(page.getByText("End of the log.")).toBeVisible();
+    await expect.poll(app.url).not.toContain("before_id");
+
+    log.scrollTop = 0;
+    log.dispatchEvent(new Event("scroll"));
+    rows.current = [
+        activity(81, { command: "review:phone-live", status: "running" }),
+        ...rows.current,
+    ];
+    applyEvent(queryClient, {
+        type: "activity.created",
+        id: 81,
+        at: "2026-09-20T12:01:00Z",
+        data: { id: 81, command: "review:phone-live", status: "running" },
+    });
+    await expect.element(page.getByRole("button", { name: "Open activity 81" })).toBeVisible();
+    expect(document.querySelector("[data-activity-new]")).toBeNull();
+
+    log.scrollTop = 360;
+    log.dispatchEvent(new Event("scroll"));
+    await expect.poll(() => log.scrollTop).toBeGreaterThan(300);
+    await settle();
+    const anchor = visibleAnchor();
+    const anchorId = anchor.dataset.activityId ?? "";
+    const top = anchor.getBoundingClientRect().top;
+    const scrollTop = log.scrollTop;
+    rows.current = [activity(82, { command: "review:phone-new" }), ...rows.current];
+    applyEvent(queryClient, {
+        type: "activity.created",
+        id: 82,
+        at: "2026-09-20T12:01:01Z",
+        data: { id: 82, command: "review:phone-new", status: "succeeded" },
+    });
+    await expect.element(page.getByRole("button", { name: "1 new" })).toBeVisible();
+    await expect
+        .poll(() => {
+            const row = document.querySelector(`[data-activity-id="${anchorId}"]`);
+
+            return row instanceof HTMLElement
+                ? Math.abs(row.getBoundingClientRect().top - top)
+                : 999;
+        })
+        .toBeLessThan(2);
+    await page.screenshot({ path: "expected/activity-phone-new.png" });
+    await page.getByRole("button", { name: "1 new" }).click();
+    await expect.poll(() => activityLog().scrollTop).toBeLessThan(2);
+    await expect.element(page.getByRole("button", { name: "Open activity 82" })).toBeVisible();
+
+    const again = activityLog();
+    again.scrollTop = scrollTop;
+    again.dispatchEvent(new Event("scroll"));
+    await expect.poll(() => again.scrollTop).toBeGreaterThan(scrollTop - 40);
+    const card = visibleAnchor();
+    const cardId = card.dataset.activityId ?? "";
+    const cardTop = card.getBoundingClientRect().top;
+    const cardScroll = again.scrollTop;
+    card.dispatchEvent(new MouseEvent("click", { bubbles: true, button: 0 }));
+    await expect.element(pane("Properties")).toBeVisible();
+    app.router.history.back();
+    await expect.poll(() => app.url().split("?")[0]).toBe("/activity");
+    await expect.poll(() => Math.abs(activityLog().scrollTop - cardScroll)).toBeLessThan(2);
+    await expect
+        .poll(() => {
+            const restored = document.querySelector(`[data-activity-id="${cardId}"]`);
+
+            return restored instanceof HTMLElement
+                ? Math.abs(restored.getBoundingClientRect().top - cardTop)
+                : 999;
+        })
+        .toBeLessThan(2);
+});
+
+const settle = async () => {
+    for (let frame = 0; frame < 4; frame += 1) await new Promise(requestAnimationFrame);
+};
 
 function fits(name: string): HTMLElement {
     const value = document.querySelector(`[data-activity-value="${name}"]`);
@@ -388,4 +642,192 @@ it("shows a long path, the request id, and empty collections on a phone", async 
         .toBe("[]");
     await expect.element(pane("Properties")).not.toHaveTextContent("None");
     expect(fits("meta").textContent).toBe("{}");
+});
+
+it("retries an older page when the reader asks again", async () => {
+    let failing = true;
+    let attempts = 0;
+    await openApp("/activity", {
+        wrapTransport: (inner) => (method, path, body) => {
+            if (path.includes("before_id=")) {
+                attempts += 1;
+                if (failing) {
+                    return Promise.resolve({
+                        status: 503,
+                        payload: { error: { code: "temporary", message: "Temporary failure" } },
+                    });
+                }
+            }
+
+            return inner(method, path, body);
+        },
+    });
+    await expect.element(pane("Activity")).toHaveTextContent("instance:deploy");
+    activityLog().scrollTop = activityLog().scrollHeight;
+    activityLog().dispatchEvent(new Event("scroll"));
+    const retry = page.getByRole("button", { name: "Could not load older activity. Try again" });
+    await expect.element(retry).toBeVisible();
+    const before = attempts;
+    failing = false;
+    await retry.click();
+    await expect.poll(() => attempts).toBeGreaterThan(before);
+    await expect
+        .poll(() => document.querySelector("[data-activity-end], [data-activity-id]"))
+        .not.toBeNull();
+});
+
+it("keeps phone filters when nothing matches, and clearing them shows rows", async () => {
+    await page.viewport(390, 800);
+    const app = await openApp("/activity?command=review:does-not-exist");
+    await expect.element(pane("Activity")).toHaveTextContent("No activity.");
+    expect(document.querySelector("[data-activity-filters]")).not.toBeNull();
+    const command = page.getByRole("textbox", { name: "Command" });
+    await command.fill("");
+    await userEvent.keyboard("{Enter}");
+    await expect.poll(app.url).toBe("/activity");
+    await expect.element(pane("Activity")).not.toHaveTextContent("No activity.");
+    await expect.element(page.getByRole("button", { name: "Open activity 150" })).toBeVisible();
+});
+
+it("restores a deep phone position when cards are taller than the estimate", async () => {
+    await page.viewport(390, 800);
+    const rows = {
+        current: Array.from({ length: 49 }, (_, index) =>
+            activity(49 - index, {
+                status: "failed",
+                error_code: "instance.provisioning_health_check_failed",
+            }),
+        ),
+    };
+    const app = await openApp("/activity", {
+        wrapTransport: (inner) => (method, path, body) =>
+            path.startsWith("/api/v1/activities")
+                ? activityTransport(rows)(method, path, body)
+                : inner(method, path, body),
+    });
+    await expect.element(page.getByRole("button", { name: "Open activity 49" })).toBeVisible();
+    for (let step = 1; step <= 10; step += 1) {
+        activityLog().scrollTop = step * 300;
+        activityLog().dispatchEvent(new Event("scroll"));
+        await settle();
+    }
+    const anchor = visibleAnchor();
+    const id = anchor.dataset.activityId ?? "";
+    const top = anchor.getBoundingClientRect().top;
+    anchor.dispatchEvent(new MouseEvent("click", { bubbles: true, button: 0 }));
+    await expect.element(pane("Properties")).toBeVisible();
+    app.router.history.back();
+    await expect.poll(() => app.url().split("?")[0]).toBe("/activity");
+    await expect
+        .poll(() => {
+            const row = document.querySelector(`[data-activity-id="${id}"]`);
+
+            return row instanceof HTMLElement
+                ? Math.abs(row.getBoundingClientRect().top - top)
+                : 999;
+        })
+        .toBeLessThan(2);
+});
+
+it("restores a phone anchor after rows arrive while its detail is open", async () => {
+    await page.viewport(390, 800);
+    const rows = { current: Array.from({ length: 80 }, (_, index) => activity(80 - index)) };
+    const app = await openApp("/activity", {
+        wrapTransport: (inner) => (method, path, body) =>
+            path.startsWith("/api/v1/activities")
+                ? activityTransport(rows)(method, path, body)
+                : inner(method, path, body),
+    });
+    await expect.element(pane("Activity")).toHaveTextContent("node:add");
+    activityLog().scrollTop = 1500;
+    activityLog().dispatchEvent(new Event("scroll"));
+    await settle();
+    const anchor = visibleAnchor();
+    const id = anchor.dataset.activityId ?? "";
+    const top = anchor.getBoundingClientRect().top;
+    anchor.dispatchEvent(new MouseEvent("click", { bubbles: true, button: 0 }));
+    await expect.element(pane("Properties")).toBeVisible();
+    for (let next = 81; next <= 100; next += 1) {
+        const row = activity(next);
+        rows.current.unshift(row);
+        applyEvent(queryClient, {
+            type: "activity.created",
+            id: next,
+            at: row.occurred_at,
+            data: row,
+        });
+    }
+    await settle();
+    app.router.history.back();
+    await expect.poll(() => app.url().split("?")[0]).toBe("/activity");
+    await expect.element(page.getByRole("button", { name: "20 new" })).toBeVisible();
+    await expect
+        .poll(() => {
+            const row = document.querySelector(`[data-activity-id="${id}"]`);
+
+            return row instanceof HTMLElement
+                ? Math.abs(row.getBoundingClientRect().top - top)
+                : 999;
+        })
+        .toBeLessThan(2);
+});
+
+it("gives a removed anchor's place to the next older row", async () => {
+    const rows = { current: Array.from({ length: 49 }, (_, index) => activity(49 - index)) };
+    await openApp("/activity?status=succeeded", {
+        wrapTransport: (inner) => (method, path, body) =>
+            path.startsWith("/api/v1/activities")
+                ? activityTransport(rows)(method, path, body)
+                : inner(method, path, body),
+    });
+    await expect.element(pane("Activity")).toHaveTextContent("node:add");
+    activityLog().scrollTop = 240;
+    activityLog().dispatchEvent(new Event("scroll"));
+    await settle();
+    const anchor = visibleAnchor();
+    const id = Number(anchor.dataset.activityId);
+    const top = anchor.getBoundingClientRect().top;
+    rows.current = rows.current.map((row) => (row.id === id ? { ...row, status: "failed" } : row));
+    await rebuildActivityList(queryClient, { status: "succeeded" });
+    await expect
+        .poll(() => {
+            const next = document.querySelector(`[data-activity-id="${id - 1}"]`);
+
+            return next instanceof HTMLElement
+                ? Math.abs(next.getBoundingClientRect().top - top)
+                : 999;
+        })
+        .toBeLessThan(2);
+});
+
+it("gives a removed anchor's place to the next newer row when no older row remains", async () => {
+    const rows = { current: Array.from({ length: 40 }, (_, index) => activity(40 - index)) };
+    await openApp("/activity?status=succeeded", {
+        wrapTransport: (inner) => (method, path, body) =>
+            path.startsWith("/api/v1/activities")
+                ? activityTransport(rows)(method, path, body)
+                : inner(method, path, body),
+    });
+    await expect.element(pane("Activity")).toHaveTextContent("node:add");
+    const log = activityLog();
+    log.style.flex = "none";
+    log.style.height = "80px";
+    log.style.maxHeight = "80px";
+    log.scrollTop = log.scrollHeight;
+    log.dispatchEvent(new Event("scroll"));
+    await settle();
+    const anchor = visibleAnchor();
+    const id = Number(anchor.dataset.activityId);
+    const top = anchor.getBoundingClientRect().top;
+    rows.current = rows.current.filter((row) => row.id > id);
+    await rebuildActivityList(queryClient, { status: "succeeded" });
+    await expect
+        .poll(() => {
+            const next = document.querySelector(`[data-activity-id="${id + 1}"]`);
+
+            return next instanceof HTMLElement
+                ? Math.abs(next.getBoundingClientRect().top - top)
+                : 999;
+        })
+        .toBeLessThan(2);
 });

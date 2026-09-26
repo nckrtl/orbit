@@ -7,6 +7,7 @@ import { queryClient } from "../../src/api/queryClient";
 import { mountAnnotation } from "@nckrtl/annotate";
 import { teardownAnnotationRuntime } from "@nckrtl/annotate/runtime";
 import { installDemo } from "../../src/demo/install";
+import { resetActivityScroll } from "../../src/pages/Activity";
 import { createAppRouter } from "../../src/router";
 import { ui } from "../../src/ui/store";
 import "../../src/styles.css";
@@ -26,6 +27,7 @@ export async function openApp(
     document.getElementById("app")?.remove();
     queryClient.clear();
     ui.reset();
+    resetActivityScroll();
 
     // Annotation runtime is owned by app entry (main.tsx). Tests bypass main, so mount here
     // once per openApp — never from AnnotationChrome (StrictMode teardown races).

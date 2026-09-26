@@ -145,7 +145,7 @@ function footerHint(section: Section, onList: boolean, onForm: boolean, navCount
     }
 
     if (section === "activity" && onList) {
-        return `↑↓ the log · Enter opens a row · Older loads previous rows · 1-${navCount} jump`;
+        return `↑↓ the log · Enter opens a row · 1-${navCount} jump`;
     }
 
     if (!onList) {
