@@ -22,7 +22,11 @@ final class NativeNodeProvisioningLock implements NodeProvisioningLock
             try {
                 return $callback();
             } finally {
-                $this->held[$nodeName]['depth']--;
+                $depth = $this->held[$nodeName]['depth'] - 1;
+
+                if ($depth >= 1) {
+                    $this->held[$nodeName]['depth'] = $depth;
+                }
             }
         }
 

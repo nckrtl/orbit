@@ -53,15 +53,14 @@ final readonly class CaddySiteRoles
     /** @return list<NodeRole> */
     public static function serving(RoleName $role, ?int $nodeId = null): array
     {
-        return NodeRole::query()
+        return array_values(NodeRole::query()
             ->with('node')
             ->where('role', $role->value)
             ->when($nodeId !== null, static fn (Builder $query): Builder => $query->where('node_id', $nodeId))
             ->orderBy('id')
             ->get()
             ->filter(static fn (NodeRole $assignment): bool => self::serves($assignment))
-            ->values()
-            ->all();
+            ->all());
     }
 
     public static function nodeServes(int $nodeId, RoleName $role): bool

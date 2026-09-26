@@ -114,7 +114,15 @@ return new class extends Migration
                     )
                 ORDER BY routes.id
                 SQL))
-                ->map(static fn (object $row): string => (string) $row->id)
+                ->map(static function (object $row): string {
+                    $id = get_object_vars($row)['id'] ?? null;
+
+                    if (! is_int($id) && ! is_string($id)) {
+                        throw new RuntimeException('Production route target migration row is missing an id.');
+                    }
+
+                    return (string) $id;
+                })
                 ->all(),
         );
     }

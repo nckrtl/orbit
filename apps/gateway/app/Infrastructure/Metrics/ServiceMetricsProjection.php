@@ -39,17 +39,20 @@ final readonly class ServiceMetricsProjection
         $roles = $node->roles->filter(static fn (NodeRole $role): bool => CaddySiteRoles::serves($role))->pluck('role');
         $caddy = $selected && $roles->contains(RoleName::Ingress);
         $fpm = $selected && $roles->contains(RoleName::AppProd);
-        $instances = AppInstance::query()->where('node_id', $node->id)
+        $instances = array_values(AppInstance::query()->where('node_id', $node->id)
             ->where('environment', 'production')->where('status', AppInstanceState::Active)
             ->whereNotNull('production_php_service')->whereNotNull('selected_php_version')
-            ->with(['app', 'node'])->orderBy('id')->get()->all();
+            ->with(['app', 'node'])->orderBy('id')->get()->all());
         foreach ($instances as $instance) {
             ProductionPhpRuntimeIdentity::from($instance);
         }
-        $hosts = $caddy ? Route::query()
-            ->where('publication', 'public')->where('status', 'active')
-            ->whereHas('cluster.ingressAssignment', static fn ($query) => $query->where('node_id', $node->id))
-            ->orderBy('domain')->pluck('domain')->all() : [];
+        $hosts = $caddy ? array_values(array_filter(
+            Route::query()
+                ->where('publication', 'public')->where('status', 'active')
+                ->whereHas('cluster.ingressAssignment', static fn ($query) => $query->where('node_id', $node->id))
+                ->orderBy('domain')->pluck('domain')->all(),
+            is_string(...),
+        )) : [];
 
         return new ServiceMetricsNode($node, $caddy && $hosts !== [], $fpm, $instances, $hosts);
     }

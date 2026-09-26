@@ -186,6 +186,10 @@ final class T3WebSocket
 
     private function frame(string $payload, int $opcode = 0x1): string
     {
+        if ($opcode < 0 || $opcode > 15) {
+            throw new LogicException('WebSocket opcode is out of range.');
+        }
+
         $length = strlen($payload);
         $mask = random_bytes(4);
         $header = chr(0x80 | $opcode);

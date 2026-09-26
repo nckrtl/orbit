@@ -16,13 +16,13 @@ final readonly class ProjectLifecycleStepStore
     /** @return list<LifecycleStep> */
     public function ordered(OrbitApp $app, LifecyclePhase $phase): array
     {
-        return ProjectLifecycleStep::query()
+        return array_values(ProjectLifecycleStep::query()
             ->where('app_id', $app->id)
             ->where('phase', $phase->value)
             ->orderBy('position')
             ->get()
             ->map(fn (ProjectLifecycleStep $row): LifecycleStep => $this->toDomain($row))
-            ->all();
+            ->all());
     }
 
     public function create(

@@ -85,7 +85,7 @@ final class PrivateDnsListenerRelease
         $namespace = '';
         $imports = [];
         $names = [];
-        $tokens = PhpToken::tokenize($source);
+        $tokens = array_values(PhpToken::tokenize($source));
         $count = count($tokens);
 
         for ($index = 0; $index < $count; $index++) {
@@ -110,9 +110,13 @@ final class PrivateDnsListenerRelease
                 $names[] = ltrim($token->text, '\\');
             } elseif ($token->is([T_NAME_QUALIFIED])) {
                 $first = strstr($token->text, '\\', true);
-                $names[] = isset($imports[$first])
-                    ? $imports[$first].substr($token->text, strlen($first))
-                    : $namespace.'\\'.$token->text;
+                if (! is_string($first)) {
+                    $names[] = $namespace.'\\'.$token->text;
+                } else {
+                    $names[] = isset($imports[$first])
+                        ? $imports[$first].substr($token->text, strlen($first))
+                        : $namespace.'\\'.$token->text;
+                }
             } elseif ($token->is(T_STRING)) {
                 $names[] = $imports[$token->text] ?? $namespace.'\\'.$token->text;
             }

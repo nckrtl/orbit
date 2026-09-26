@@ -28,6 +28,14 @@ final readonly class NativeWireGuardPeerDnsRepairer implements WireGuardPeerDnsR
         $domains = $vpn->usesDefaultDnsResolver
             ? ['.']
             : array_values(array_unique(array_filter([$vpn->domain, $node->tld])));
+
+        if ($domains === []) {
+            throw new NodeProvisioningException(
+                step: 'wireguard-peer-state',
+                errorCode: 'vpn.peer_dns_state_unsupported',
+                message: "The existing WireGuard DNS state is not repairable on node [{$node->name}].",
+            );
+        }
         $dnsMode = $vpn->dnsThroughWireGuard ? 'wireguard' : 'underlay';
         $result = $this->ssh->execute(
             new SshConnection(

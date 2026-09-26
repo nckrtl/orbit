@@ -431,14 +431,13 @@ final class AgentViewSubscriber
         $this->nextRefreshAt = $this->now() + self::RefreshSeconds;
 
         try {
-            $this->nodeIds = Node::query()
+            $this->nodeIds = array_values(Node::query()
                 ->where('status', LifecycleStatus::Active)
                 ->with('roles')
                 ->get()
                 ->filter(fn (Node $node): bool => $this->eligibility->allows($node))
                 ->map(static fn (Node $node): int => (int) $node->getKey())
-                ->values()
-                ->all();
+                ->all());
         } catch (Throwable $exception) {
             $this->log->warning('The agent view subscriber could not read the Node list.', ['error' => $exception->getMessage()]);
 

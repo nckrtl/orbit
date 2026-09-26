@@ -58,10 +58,12 @@ final class NodeCaddyBuildLock
             try {
                 return $operation();
             } finally {
-                $this->depths[$nodeId]--;
+                $depth = $this->depths[$nodeId] - 1;
 
-                if ($this->depths[$nodeId] === 0) {
+                if ($depth === 0) {
                     unset($this->depths[$nodeId]);
+                } else {
+                    $this->depths[$nodeId] = $depth;
                 }
             }
         }

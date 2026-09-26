@@ -257,7 +257,7 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
 
         /** @var AppInstanceRemoval $operation */
         $operation = $this->processAdmissions->run(
-            $members->pluck('id')->map(static fn (mixed $id): int => (int) $id)->all(),
+            array_values($members->pluck('id')->map(static fn (mixed $id): int => (int) $id)->all()),
             fn (): AppInstanceRemoval => DB::transaction(function () use (
                 $snapshot,
                 $force,
