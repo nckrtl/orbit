@@ -125,6 +125,12 @@ final class NodeLock implements Lock
         return true;
     }
 
+    /** Whether any process, this one or another, holds the lock now. */
+    public function isLocked(): bool
+    {
+        return $this->lock->isLocked();
+    }
+
     public function name(): string
     {
         return $this->name;

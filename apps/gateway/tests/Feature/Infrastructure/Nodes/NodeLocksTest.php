@@ -218,6 +218,25 @@ describe(NodeLocks::class, function (): void {
         }
     });
 
+    it('tells whether any process holds a lock', function (): void {
+        [$locks, $home] = node_locks_file_store();
+
+        try {
+            $lock = $locks->lock('observed', 600);
+            $other = new NodeLocks(app(CacheManager::class)->build(NodeLocks::storeConfiguration($home)));
+
+            expect($other->lock('observed', 1)->isLocked())->toBeFalse()
+                ->and($lock->get())->toBeTrue()
+                ->and($other->lock('observed', 1)->isLocked())->toBeTrue();
+
+            $lock->release();
+
+            expect($other->lock('observed', 1)->isLocked())->toBeFalse();
+        } finally {
+            (new Filesystem)->deleteDirectory($home);
+        }
+    });
+
     it('stops renewing a lock once it is released', function (): void {
         $locks = new NodeLocks(Cache::store('array'));
         $lock = $locks->lock('released', 600);
