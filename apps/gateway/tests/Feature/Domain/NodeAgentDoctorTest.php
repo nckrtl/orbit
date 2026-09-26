@@ -237,20 +237,20 @@ describe('the agent secret', function (): void {
             ->and(node_agent_secret_codes($node, null))->toBe(['node.agent_secret_mismatch="missing"']);
     });
 
-    it('skips an exempt Node while the pinned agent sends no secret', function (): void {
+    it('skips an exempt Node while agent 0.2.0 sends no secret', function (): void {
         [$context] = node_agent_view_doctor_context();
         $node = $context->node->forceFill(['agent_secret_hash' => null, 'agent_secret_exempt' => true]);
 
-        expect(NodeAgentFootprint::sendsSecret())->toBeFalse()
-            ->and(node_agent_secret_codes($node, null, agentVersion: NodeAgentFootprint::Version))->toBe([]);
+        expect(NodeAgentFootprint::sendsSecret('0.2.0'))->toBeFalse()
+            ->and(node_agent_secret_codes($node, null, agentVersion: '0.2.0'))->toBe([]);
     });
 
-    it('reports a Node that is not exempt while the pinned agent sends no secret', function (?string $hash, bool $exempt, array $expected): void {
+    it('reports a Node that is not exempt while agent 0.2.0 sends no secret', function (?string $hash, bool $exempt, array $expected): void {
         [$context] = node_agent_view_doctor_context();
         $node = $context->node->forceFill(['agent_secret_hash' => $hash, 'agent_secret_exempt' => $exempt]);
-        $codes = node_agent_view_codes(new DoctorNodeContext($node, new NodeInspectionData(true, 'linux', 'x86_64', true, true, true, true, true, $hash)), NodeAgentFootprint::Version);
+        $codes = node_agent_view_codes(new DoctorNodeContext($node, new NodeInspectionData(true, 'linux', 'x86_64', true, true, true, true, true, $hash)), '0.2.0');
 
-        expect(NodeAgentFootprint::sendsSecret())->toBeFalse()
+        expect(NodeAgentFootprint::sendsSecret('0.2.0'))->toBeFalse()
             ->and(array_values(array_filter($codes, static fn (string $code): bool => str_starts_with($code, 'node.agent_secret'))))->toBe($expected);
     })->with([
         'exempt' => [null, true, []],
@@ -258,7 +258,7 @@ describe('the agent secret', function (): void {
         'a stored hash that matches the file' => [str_repeat('a', 64), false, ['node.agent_secret_mismatch="not_exempt"']],
     ]);
 
-    it('reports a Node that is still exempt once the pinned agent sends a secret', function (): void {
+    it('reports a Node that is still exempt once the agent sends a secret', function (): void {
         [$context] = node_agent_view_doctor_context();
         $node = $context->node->forceFill(['agent_secret_hash' => null, 'agent_secret_exempt' => true]);
         $probe = new NodeDoctorProbe(agentVersion: NodeAgentFootprint::SecretSince);

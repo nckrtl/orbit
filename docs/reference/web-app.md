@@ -1,15 +1,38 @@
 ---
 title: "Web app"
-description: "How the Gateway serves the Orbit web app at https://gateway.orbit, how bin/web-deploy releases it, and how to roll a release back."
+description: "How the Gateway serves the Orbit web app at https://gateway.orbit, how bin/web-deploy releases it, and how to roll a release back. An installed copy on iPhone and iPad stays clear of the screen edges."
 ---
 
 # Web app
 
-This page tells an operator how the Gateway serves the Orbit web app, how to release a new build, and how to roll a release back. [ADR 0123](/decisions/0123-serve-the-web-app-from-the-gateway-origin) records why the app shares the Gateway origin.
+This page tells an operator how the Gateway serves the Orbit web app, how to release a new build, and how to roll a release back. It also states how an installed copy on an iPhone or iPad stays clear of the screen edges. [ADR 0123](/decisions/0123-serve-the-web-app-from-the-gateway-origin) records why the app shares the Gateway origin.
 
 ## Open the app
 
 Open `https://gateway.orbit` from a machine on the Orbit WireGuard network. The browser must trust the Orbit root certificate, which `orbit gateway:trust` installs. The Gateway identifies the browser by its WireGuard address, so there is no login. Pages on other origins cannot call the API, as [Browser access to the Gateway](/reference/browser-access) describes.
+
+## Installed app and safe areas
+
+Add the web app to the home screen on an iPhone or iPad and it opens full screen. The page draws under the status bar, under the notch or Dynamic Island, and under the home indicator. The same edges apply in portrait and in landscape.
+
+The app shell keeps the page header, the main navigation, and the footer hint clear of those edges. On a narrow screen the header holds the menu button, and the navigation is the menu that button opens. The header, the navigation, and the footer hint stay tappable.
+
+While the app is installed, the shell pads the top, the bottom, the left, and the right by the inset for that edge. A home screen launch uses standalone display mode. Turning the device updates the four insets, and the shell follows them. A normal browser tab receives no extra safe-area padding. Safari can report a non-zero inset in a tab, especially in landscape, so the shell does not add padding for a tab inset.
+
+Only the shell applies the padding for the installed app, and it does so once. Pages do not add their own inset padding. A second pad would move page content in from an edge the shell already cleared.
+
+The status bar stays translucent. The app background shows behind the clock. The shell does not cover that area with an opaque bar.
+
+[index.html](https://github.com/nckrtl/orbit/blob/main/apps/web/index.html) sets the viewport to include `viewport-fit=cover`. It sets `apple-mobile-web-app-status-bar-style` to `black-translucent`. Those two values let the page draw under the status bar while the background stays visible behind the clock.
+
+While the app is installed, the shell uses these four insets:
+
+| Edge | Inset |
+| --- | --- |
+| Top | `env(safe-area-inset-top)` |
+| Bottom | `env(safe-area-inset-bottom)` |
+| Left | `env(safe-area-inset-left)` |
+| Right | `env(safe-area-inset-right)` |
 
 ## How the Gateway site routes requests
 

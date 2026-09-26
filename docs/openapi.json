@@ -11651,6 +11651,16 @@
                 }
               }
             }
+          },
+          "502": {
+            "description": "A step failed on the Node; `error.details.step` names it. When a role step failed, `error.details.error_code` names that step's own code.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "x-codeSamples": [
@@ -11800,6 +11810,16 @@
           },
           "422": {
             "description": "The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "A step failed on the Node; `error.details.step` names it. When a role step failed, `error.details.error_code` names that step's own code.",
             "content": {
               "application/json": {
                 "schema": {
@@ -13472,7 +13492,7 @@
             }
           },
           "502": {
-            "description": "A role step failed on the Node (`node_role.convergence_failed` or `node_role.remove_failed`). `error.details.step` names the failed step.",
+            "description": "A role step failed on the Node (`node_role.convergence_failed` or `node_role.remove_failed`). `error.details.step` names the failed step, and `error.details.error_code` names its own code, such as `node_role.node_busy` or `node_role.tool_manager_locked`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -13633,7 +13653,7 @@
             }
           },
           "502": {
-            "description": "A role step failed on the Node (`node_role.convergence_failed` or `node_role.remove_failed`). `error.details.step` names the failed step.",
+            "description": "A role step failed on the Node (`node_role.convergence_failed` or `node_role.remove_failed`). `error.details.step` names the failed step, and `error.details.error_code` names its own code, such as `node_role.node_busy` or `node_role.tool_manager_locked`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -13791,7 +13811,7 @@
             }
           },
           "502": {
-            "description": "A role step failed on the Node (`node_role.convergence_failed` or `node_role.remove_failed`). `error.details.step` names the failed step.",
+            "description": "A role step failed on the Node (`node_role.convergence_failed` or `node_role.remove_failed`). `error.details.step` names the failed step, and `error.details.error_code` names its own code, such as `node_role.node_busy` or `node_role.tool_manager_locked`.",
             "content": {
               "application/json": {
                 "schema": {
