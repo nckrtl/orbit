@@ -1,7 +1,7 @@
 ---
 title: "ADR 0133: Verify typed subtask deliverables at handoff"
 sidebarTitle: "0133 Typed subtask deliverables"
-description: "Proposed. Every new subtask carries typed deliverables that Orbit checks at handoff. A test deliverable names one exact Pest file. A reviewer turn is read-only, and a workspace change is a reminder."
+description: "Proposed. Every new subtask carries typed deliverables that Orbit checks at handoff. A test deliverable names one exact Pest file. A reviewer turn is read-only. A newer implementer turn is a new handoff, and a lost commit response that matches the recorded tree is Orbit's commit."
 ---
 
 # ADR 0133: Verify typed subtask deliverables at handoff
@@ -47,7 +47,7 @@ A `test` deliverable's `file` is one Pest test file path relative to its `projec
 
 Moving a group to `todo` refuses with `tasks.subtask_deliverables_missing` while any of its subtasks has no deliverables. Create with `status: todo` refuses the same way. A subtask created after its group left Backlog also needs deliverables. Groups that were already past Backlog keep working: a subtask with an empty list skips every deliverable step.
 
-Deliverables of a `todo` subtask can change after its group left Backlog, so an operator can add them to a group that is already running. The subtask's title, brief, and position still change only in Backlog. A subtask that has started keeps its deliverables.
+Deliverables of a `todo` subtask can change after its group left Backlog, so an operator can add them to a group that is already running. The subtask's title, brief, and position still change only in Backlog. A subtask that has started keeps its deliverables. `tasks:subtask:update` on a `running` subtask that includes `deliverables` refuses with HTTP 409 `tasks.deliverables_locked` and leaves the stored list unchanged. It never answers success while ignoring that list. The same refusal applies to every subtask that has started.
 
 ### The run receipt
 
@@ -93,9 +93,13 @@ A reviewer turn is read-only. The reviewer prompt says that the reviewer does no
 
 When the Gateway sends the review request, it records the workspace HEAD and the working-tree hash. The hash is the one the handoff check already stores: the whole working tree, uncommitted and untracked files included, without touching the Git index. The Gateway reads that pair at send time and stores it on the task for the review attempt. It does not copy the hash from an earlier check row.
 
-When the reviewer's receipt arrives, the Gateway reads HEAD and the hash again. A difference fails `workspace_unchanged`. The Gateway keeps the receipt and does not apply `approved`, `changes_requested`, or `blocked`. The reminder tells the reviewer to revert its changes and to request changes from the implementer instead.
+When the reviewer's receipt arrives, the Gateway reads HEAD and the hash again. A difference fails `workspace_unchanged` only when a newer implementer turn does not explain it and the commit below does not explain it. The Gateway keeps the receipt and does not apply `approved`, `changes_requested`, or `blocked`. The reminder tells the reviewer to revert its changes and to request changes from the implementer instead.
 
-The review sends one reminder and records that stopped turn. Another poll of the same turn is not a second change. The Gateway does not apply the stored outcome, and it does not ask for assistance. It waits until a newer reviewer turn stops, then reads the workspace again. When that turn still differs, the Gateway asks for assistance. When HEAD and the hash match, the Gateway applies the outcome under the rules above. A failed read is a communication failure, not a change.
+A workspace difference that comes from a newer implementer turn than the handoff is a new handoff, not a reviewer change. An operator talking to the implementer during the review is that case. The Gateway does not fail `workspace_unchanged`, does not remind the reviewer, and does not apply the reviewer outcome. It waits until that implementer turn stops. The subtask then needs a new receipt and a passing check before the Gateway asks the reviewer again. The next review request records the new HEAD and hash.
+
+A commit whose response was lost is Orbit's commit, not a reviewer change. The Gateway accepts it when HEAD's parent is the HEAD recorded with the review request and HEAD's tree equals the tree recorded with that request. It stores that commit on the approval and publishes it. It does not fail `workspace_unchanged` for that commit.
+
+For a reviewer change, the review sends one reminder and records that stopped turn. Another poll of the same turn is not a second change. The Gateway does not apply the stored outcome, and it does not ask for assistance. It waits until a newer reviewer turn stops, then reads the workspace again. When that turn still differs, the Gateway asks for assistance. When HEAD and the hash match, the Gateway applies the outcome under the rules above. A failed read is a communication failure, not a change.
 
 A failed publication retries without committing again only while HEAD is still the commit Orbit stored and the recorded hash still matches. A reset back to the HEAD from before the approval is refused and is not published.
 
@@ -116,6 +120,9 @@ The planner prompt and the `implementing-in-orbit` skill tell the planner to giv
 - Revert the reviewer's edits and apply the outcome: a silent revert hides the edit. The reviewer reverts the files and asks the implementer for the change.
 - Copy the handoff check's stored hash instead of reading at send time: the review request waits while the reviewer is working. The pair recorded with the request is the tree the reviewer was asked to review.
 - Compare only HEAD: an uncommitted file or symlink would not show. Those files are part of the hash the check stores.
+- Treat every workspace difference during review as a reviewer edit: an operator message to the implementer is a new handoff, and a reminder would tell the reviewer to revert the implementer's work.
+- Refuse the approval when the commit command returns no SHA: the workspace can hold Orbit's commit. The parent and tree test above identifies it, and refusing it blocks publication of work the approval already accepted.
+- Answer success from `tasks:subtask:update` on a `running` subtask while leaving `deliverables` unchanged: the caller cannot tell that the list was ignored.
 
 ## Consequences
 
@@ -126,6 +133,9 @@ The planner prompt and the `implementing-in-orbit` skill tell the planner to giv
 - Groups that were past Backlog before this change run without verification until an operator adds deliverables to their `todo` subtasks.
 - A `test` deliverable runs one Pest file. A subtask that needs more than one file uses more than one deliverable, at most five, or a `command` deliverable.
 - A reviewer that changes the workspace does not finish that review on the changed tree. The first change is a reminder. Another poll of that same stopped turn neither applies the outcome nor asks for assistance. A second change on a newer stopped reviewer turn asks for assistance.
+- A newer implementer turn during review starts a new handoff. The reviewer is not reminded for that difference.
+- A lost commit response whose parent is the recorded HEAD and whose tree is the recorded tree is stored and published as Orbit's commit.
+- A deliverables update on a `running` subtask refuses with `tasks.deliverables_locked`. The stored list stays as it was, and the response is not success.
 - Sending the review request reads the workspace tree, and the receipt reads it again.
 
 ## Affects
@@ -133,4 +143,4 @@ The planner prompt and the `implementing-in-orbit` skill tell the planner to giv
 - Components: apps/gateway, apps/cli, packages/php-sdk, apps/docs
 - ADRs: [ADR 0114](/decisions/0114-judge-task-completion-as-separate-checks), [ADR 0121](/decisions/0121-end-agent-turns-with-a-run-receipt), [ADR 0124](/decisions/0124-plan-backlog-groups-with-a-t3-planner), [ADR 0125](/decisions/0125-run-the-project-check-when-the-implementer-hands-off)
 - Detail: [Tasks](/reference/tasks)
-- Verify: API validation tests for each type and the Todo refusal, including a `test` `file` with a glob, `..`, or a suffix other than `.php` refused as `validation.failed` naming the deliverable id; run script tests for missing, unknown, and complete confirmations; scheduler tests for each deliverable type, a passing handoff, an empty list, a reviewer workspace change reminded once, and a second change asking for assistance; a test that runs the real check script against a local Git checkout with a Pest test and a command
+- Verify: API validation tests for each type and the Todo refusal, including a `test` `file` with a glob, `..`, or a suffix other than `.php` refused as `validation.failed` naming the deliverable id; a `running` subtask whose `tasks:subtask:update` includes `deliverables` refused as `tasks.deliverables_locked` with the stored list unchanged; run script tests for missing, unknown, and complete confirmations; scheduler tests for each deliverable type, a passing handoff, an empty list, a reviewer workspace change reminded once, a second change asking for assistance, a newer implementer turn treated as a new handoff, and a lost commit response accepted when HEAD's parent and tree match the recorded pair; a test that runs the real check script against a local Git checkout with a Pest test and a command
