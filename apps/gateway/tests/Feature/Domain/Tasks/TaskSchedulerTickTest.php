@@ -51,6 +51,7 @@ use App\Models\AppInstanceRemoval;
 use App\Models\Node;
 use App\Models\Task;
 use App\Models\TaskCheck;
+use App\Models\TaskComment;
 use App\Models\TaskGroup;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
@@ -252,21 +253,30 @@ function tick_appended_subtask(TaskGroup $group): Task
     ]);
 }
 
-/** One earlier fixup. Every status counts toward the cap. */
-function tick_spent_fixup(TaskGroup $group, string $problem, TaskStatus $status = TaskStatus::Completed): Task
+/** One earlier fixup. Every status counts toward the cap. An approved commit, when given, is what the fixup pushed. */
+function tick_spent_fixup(TaskGroup $group, string $problem, TaskStatus $status = TaskStatus::Completed, ?string $headSha = null, ?string $commit = null): Task
 {
-    return Task::query()->create([
+    $task = Task::query()->create([
         'task_group_id' => $group->id,
         'position' => ((int) $group->tasks()->max('position')) + 1,
         'title' => 'Earlier fix',
         'brief' => 'Already tried.',
         'status' => $status,
         'fixup_problem' => $problem,
+        'fixup_head_sha' => $headSha,
         'deliverables' => [[
             'id' => 'composer-check', 'type' => 'command', 'description' => 'Run composer check',
             'command' => 'composer check', 'directory' => '.',
         ]],
     ]);
+    if ($commit !== null) {
+        TaskComment::query()->create([
+            'task_group_id' => $group->id, 'task_id' => $task->id, 'type' => 'approved', 'body' => 'Approved.',
+            'author' => 'reviewer', 'review_attempt' => 1, 'commit_sha' => $commit, 'posted_at' => now(),
+        ]);
+    }
+
+    return $task;
 }
 
 /** @param  array<string, mixed>  $overrides */
@@ -306,11 +316,13 @@ function tick_watch_pulls(array $pulls, array $checks = []): void
     Http::fake($fake);
 }
 
-/** @return object{spawned: list<int>, fetched: list<string>, events: list<string>} */
-function tick_running_agents(bool $fetchFails = false): object
+/** @return object{spawned: list<int>, fetched: list<string>, events: list<string>, fastForwards: int} */
+function tick_running_agents(bool $fetchFails = false, bool $fastForwardFails = false): object
 {
-    $agents = new class($fetchFails) implements AgentSpawner, TaskBaseBranchFetcher
+    $agents = new class($fetchFails, $fastForwardFails) implements AgentSpawner, TaskBaseBranchFetcher
     {
+        public int $fastForwards = 0;
+
         /** @var list<int> */
         public array $spawned = [];
 
@@ -320,7 +332,7 @@ function tick_running_agents(bool $fetchFails = false): object
         /** @var list<string> */
         public array $events = [];
 
-        public function __construct(private bool $fetchFails) {}
+        public function __construct(private bool $fetchFails, private bool $fastForwardFails = false) {}
 
         public function spawnReviewer(Task $task): ?int
         {
@@ -343,6 +355,15 @@ function tick_running_agents(bool $fetchFails = false): object
             $this->events[] = 'fetch';
             if ($this->fetchFails) {
                 throw new TaskPullRequestException('The base branch could not be fetched.');
+            }
+        }
+
+        public function fastForward(TaskGroup $group): void
+        {
+            $this->fastForwards++;
+            $this->events[] = 'fast-forward';
+            if ($this->fastForwardFails) {
+                throw new TaskPullRequestException('The task branch could not be fetched.');
             }
         }
     };
@@ -706,7 +727,7 @@ it('appends one conflict fixup with a merge brief and returns the group to runni
         ->and($group->fresh()?->pr_url)->toBe('https://github.com/acme/orbit/pull/42')
         ->and($group->fresh()?->assistance_requested)->toBeFalse()
         ->and(Task::query()->where('fixup_problem', 'check:Rust agent')->exists())->toBeFalse()
-        ->and($agents->events)->toBe(['fetch', 'spawn'])
+        ->and($agents->events)->toBe(['fast-forward', 'fetch', 'spawn'])
         ->and($agents->fetched)->toBe(['main'])
         ->and($agents->spawned)->toBe([$fixup->id]);
 });
@@ -721,7 +742,8 @@ it('appends one check fixup naming the failed check and its url', function (): v
     app(TaskScheduler::class)->tick();
 
     $fixup = Task::query()->where('fixup_problem', 'check:Custom')->sole();
-    expect($fixup->title)->toBe('Fix Custom')
+    expect($fixup->fixup_head_sha)->toBe('abc123')
+        ->and($fixup->title)->toBe('Fix Custom')
         ->and($fixup->brief)->toBe('Check Custom failed: https://github.com/acme/orbit/runs/9. Do not rebase and do not force-push.')
         ->and($fixup->status)->toBe(TaskStatus::Running)
         ->and($fixup->deliverables)->toBe([[
@@ -955,17 +977,23 @@ it('leaves a conflict fixup todo when the base fetch fails', function (): void {
         ->and($fixup->communication_failures)->toBe(1)
         ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Running)
         ->and($group->fresh()?->assistance_requested)->toBeFalse()
-        ->and($agents->events)->toBe(['fetch'])
+        ->and($agents->events)->toBe(['fast-forward', 'fetch'])
         ->and($agents->spawned)->toBe([]);
 });
 
-it('asks for assistance after a conflict fixup fetch fails five times', function (): void {
+it('retries a failed conflict fixup fetch on the backoff and asks for assistance on the fifth failure', function (): void {
     $group = tick_settling_group();
     $notifier = tick_assistance_notifier();
-    tick_running_agents(fetchFails: true);
+    $agents = tick_running_agents(fetchFails: true);
     tick_watch_pulls([tick_open_pull(['mergeable' => false])], ['abc123' => []]);
 
-    foreach (range(1, 5) as $attempt) {
+    app(TaskScheduler::class)->tick();
+    app(TaskScheduler::class)->tick();
+
+    expect($agents->fetched)->toBe(['main']);
+
+    foreach ([60, 120, 300, 600] as $seconds) {
+        $this->travel($seconds)->seconds();
         app(TaskScheduler::class)->tick();
     }
 
@@ -979,7 +1007,189 @@ it('asks for assistance after a conflict fixup fetch fails five times', function
 
     app(TaskScheduler::class)->tick();
 
-    expect($fixup->fresh()?->communication_failures)->toBe(5);
+    expect($fixup->fresh()?->communication_failures)->toBe(5)
+        ->and($agents->fetched)->toHaveCount(5);
+});
+
+it('appends no fixup while the head is the one the last fixup committed from', function (): void {
+    $group = tick_settling_group();
+    tick_spent_fixup($group, 'check:Custom', headSha: 'abc123', commit: str_repeat('d', 40));
+    $notifier = tick_assistance_notifier();
+    $agents = tick_running_agents();
+    tick_watch_pulls([tick_open_pull()], ['abc123' => [[
+        'name' => 'Custom', 'status' => 'completed', 'conclusion' => 'failure', 'html_url' => 'https://github.com/acme/orbit/runs/9',
+    ]]]);
+
+    app(TaskScheduler::class)->tick();
+
+    expect(Task::query()->where('fixup_problem', 'check:Custom')->count())->toBe(1)
+        ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Settling)
+        ->and($group->fresh()?->assistance_requested)->toBeFalse()
+        ->and($notifier->reasons)->toBe([])
+        ->and($agents->spawned)->toBe([]);
+});
+
+it('asks for assistance instead of a second fixup when the last fixup changed nothing', function (?string $commit, TaskStatus $status): void {
+    $group = tick_settling_group();
+    $spent = tick_spent_fixup($group, 'check:Custom', $status, headSha: 'abc123', commit: $commit);
+    $notifier = tick_assistance_notifier();
+    $agents = tick_running_agents();
+    tick_watch_pulls([tick_open_pull(), tick_open_pull()], ['abc123' => [[
+        'name' => 'Custom', 'status' => 'completed', 'conclusion' => 'failure', 'html_url' => 'https://github.com/acme/orbit/runs/9',
+    ]]]);
+    $reason = 'The pull request needs attention: Check Custom failed: https://github.com/acme/orbit/runs/9. Fixup subtask #'.$spent->id.' changed nothing, so Orbit does not try again on the same result.';
+
+    app(TaskScheduler::class)->tick();
+    app(TaskScheduler::class)->tick();
+
+    expect(Task::query()->where('fixup_problem', 'check:Custom')->count())->toBe(1)
+        ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Settling)
+        ->and($group->fresh()?->assistance_reason)->toBe($reason)
+        ->and($notifier->reasons)->toBe([$reason])
+        ->and($agents->spawned)->toBe([]);
+})->with([
+    'same commit' => ['abc123', TaskStatus::Completed],
+    'no approval' => [null, TaskStatus::Cancelled],
+]);
+
+it('waits for the checks on a new head to complete before the next fixup', function (): void {
+    $group = tick_settling_group();
+    tick_spent_fixup($group, 'check:Custom', headSha: 'abc123', commit: str_repeat('d', 40));
+    $agents = tick_running_agents();
+    $failed = ['name' => 'Custom', 'status' => 'completed', 'conclusion' => 'failure', 'html_url' => 'https://github.com/acme/orbit/runs/10'];
+    Http::preventStrayRequests();
+    Http::fake([
+        'https://api.github.com/repos/acme/orbit/installation' => Http::response(['id' => 9]),
+        'https://api.github.com/app/installations/9/access_tokens' => Http::response(['token' => 'ghs_watch'], 201),
+        'https://api.github.com/repos/acme/orbit/pulls/42' => Http::response(tick_open_pull(['head' => ['sha' => 'def456']])),
+        'https://api.github.com/repos/acme/orbit/commits/def456/check-runs*' => Http::sequence()
+            ->push(['check_runs' => [$failed, ['name' => 'Web', 'status' => 'in_progress', 'conclusion' => null, 'html_url' => 'https://github.com/acme/orbit/runs/11']]])
+            ->push(['check_runs' => [$failed, ['name' => 'Web', 'status' => 'completed', 'conclusion' => 'success', 'html_url' => 'https://github.com/acme/orbit/runs/11']]]),
+    ]);
+
+    app(TaskScheduler::class)->tick();
+
+    expect(Task::query()->where('fixup_problem', 'check:Custom')->count())->toBe(1)
+        ->and($group->fresh()?->assistance_requested)->toBeFalse();
+
+    $this->travel(61)->seconds();
+    app(TaskScheduler::class)->tick();
+
+    $next = Task::query()->where('fixup_problem', 'check:Custom')->orderByDesc('position')->first();
+    expect(Task::query()->where('fixup_problem', 'check:Custom')->count())->toBe(2)
+        ->and($next?->fixup_head_sha)->toBe('def456')
+        ->and($agents->spawned)->toBe([$next?->id]);
+});
+
+it('appends one fixup for a failed check and ignores the Required checks rollup it explains', function (): void {
+    $group = tick_settling_group();
+    $group->app->update(['slug' => 'orbit']);
+    tick_running_agents();
+    tick_watch_pulls([tick_open_pull()], ['abc123' => [
+        ['name' => 'Gateway', 'status' => 'completed', 'conclusion' => 'failure', 'html_url' => 'https://github.com/acme/orbit/runs/1'],
+        ['name' => 'Required checks', 'status' => 'completed', 'conclusion' => 'failure', 'html_url' => 'https://github.com/acme/orbit/runs/2'],
+    ]]);
+
+    app(TaskScheduler::class)->tick();
+
+    expect(Task::query()->whereNotNull('fixup_problem')->pluck('fixup_problem')->all())->toBe(['check:Gateway']);
+});
+
+it('waits with backoff on cancelled checks and asks for assistance only when they persist', function (string $conclusion): void {
+    $group = tick_settling_group();
+    $notifier = tick_assistance_notifier();
+    $agents = tick_running_agents();
+    $pulls = array_fill(0, 12, tick_open_pull());
+    tick_watch_pulls($pulls, ['abc123' => [
+        ['name' => 'Gateway', 'status' => 'completed', 'conclusion' => $conclusion, 'html_url' => 'https://github.com/acme/orbit/runs/1'],
+        ['name' => 'Required checks', 'status' => 'completed', 'conclusion' => 'failure', 'html_url' => 'https://github.com/acme/orbit/runs/2'],
+    ]]);
+
+    app(TaskScheduler::class)->tick();
+    app(TaskScheduler::class)->tick();
+    foreach ([60, 120, 300, 600] as $seconds) {
+        $this->travel($seconds)->seconds();
+        app(TaskScheduler::class)->tick();
+    }
+
+    expect($notifier->reasons)->toBe([])
+        ->and($group->fresh()?->assistance_requested)->toBeFalse()
+        ->and(Task::query()->whereNotNull('fixup_problem')->exists())->toBeFalse();
+
+    $this->travel(1800)->seconds();
+    app(TaskScheduler::class)->tick();
+
+    $reason = 'The pull request needs attention: Check Gateway failed: https://github.com/acme/orbit/runs/1. Those checks were cancelled or could not start, and did not recover. Re-run them.';
+    expect($notifier->reasons)->toBe([$reason])
+        ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Settling)
+        ->and(Task::query()->whereNotNull('fixup_problem')->exists())->toBeFalse()
+        ->and($agents->spawned)->toBe([]);
+})->with(['cancelled', 'startup_failure']);
+
+it('fixes a genuine failure and does not count a cancelled check as a problem', function (): void {
+    $group = tick_settling_group();
+    tick_running_agents();
+    tick_watch_pulls([tick_open_pull()], ['abc123' => [
+        ['name' => 'Gateway', 'status' => 'completed', 'conclusion' => 'cancelled', 'html_url' => 'https://github.com/acme/orbit/runs/1'],
+        ['name' => 'Custom', 'status' => 'completed', 'conclusion' => 'failure', 'html_url' => 'https://github.com/acme/orbit/runs/2'],
+    ]]);
+
+    app(TaskScheduler::class)->tick();
+
+    expect(Task::query()->whereNotNull('fixup_problem')->pluck('fixup_problem')->all())->toBe(['check:Custom']);
+});
+
+it('asks for assistance once the group has three Gateway fixups', function (): void {
+    $group = tick_settling_group();
+    tick_spent_fixup($group, 'conflict:main');
+    tick_spent_fixup($group, 'check:Custom');
+    tick_spent_fixup($group, 'check:Lint');
+    tick_appended_subtask($group)->update(['status' => TaskStatus::Completed]);
+    $notifier = tick_assistance_notifier();
+    $agents = tick_running_agents();
+    tick_watch_pulls([tick_open_pull()], ['abc123' => [
+        ['name' => 'Deploy', 'status' => 'completed', 'conclusion' => 'failure', 'html_url' => 'https://github.com/acme/orbit/runs/3'],
+    ]]);
+
+    app(TaskScheduler::class)->tick();
+
+    $reason = 'The pull request needs attention: Check Deploy failed: https://github.com/acme/orbit/runs/3. Orbit already appended 3 fixups to this group.';
+    expect($notifier->reasons)->toBe([$reason])
+        ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Settling)
+        ->and(Task::query()->whereNotNull('fixup_problem')->count())->toBe(3)
+        ->and($agents->spawned)->toBe([]);
+});
+
+it('fast-forwards the workspace before a resumed subtask starts and retries a failure on the backoff', function (): void {
+    $group = tick_settling_group();
+    $waiting = tick_appended_subtask($group);
+    $agents = tick_running_agents(fastForwardFails: true);
+    tick_watch_pulls(array_fill(0, 3, tick_open_pull()), ['abc123' => []]);
+
+    app(TaskScheduler::class)->tick();
+    app(TaskScheduler::class)->tick();
+
+    expect($agents->fastForwards)->toBe(1)
+        ->and($waiting->fresh()?->status)->toBe(TaskStatus::Todo)
+        ->and($waiting->fresh()?->communication_failures)->toBe(1)
+        ->and($agents->spawned)->toBe([]);
+
+    $this->travel(60)->seconds();
+    app(TaskScheduler::class)->tick();
+
+    expect($agents->fastForwards)->toBe(2)
+        ->and($waiting->fresh()?->communication_failures)->toBe(2);
+});
+
+it('keeps a merged group settling when an approved commit missed the merge', function (): void {
+    $group = tick_settling_group();
+    $reason = TaskScheduler::OrphanedCommitPrefix.'Commit '.str_repeat('d', 40).' reached task-'.$group->id.' after the merge.';
+    $group->update(['assistance_requested' => true, 'assistance_reason' => $reason]);
+    tick_watch_pulls([['merged' => true, 'state' => 'closed', 'head' => ['sha' => 'abc123'], 'base' => ['ref' => 'main']]]);
+
+    app(TaskScheduler::class)->tick();
+
+    $this->assertDatabaseHas('task_groups', ['id' => $group->id, 'status' => 'settling', 'assistance_reason' => $reason]);
 });
 
 it('returns no decisions when the tasks extension is disabled', function (): void {

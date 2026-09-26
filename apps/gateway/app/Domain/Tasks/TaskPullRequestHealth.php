@@ -16,7 +16,9 @@ final readonly class TaskPullRequestHealth
     /**
      * @param  'merged'|'closed'|'open'  $state
      * @param  list<string>  $problems  one plain sentence per problem of an open pull request
-     * @param  list<TaskPullRequestCheck>  $failedChecks  failed runs in the order GitHub returned them
+     * @param  list<TaskPullRequestCheck>  $failedChecks  genuine failed runs in the order GitHub returned them
+     * @param  list<TaskPullRequestCheck>  $infrastructureChecks  cancelled runs and runs that could not start
+     * @param  bool  $checksPending  whether a check run on the head has not completed yet
      */
     public function __construct(
         public string $state,
@@ -24,11 +26,14 @@ final readonly class TaskPullRequestHealth
         public ?string $baseRef = null,
         public bool $conflicts = false,
         public array $failedChecks = [],
+        public ?string $headSha = null,
+        public array $infrastructureChecks = [],
+        public bool $checksPending = false,
     ) {}
 
-    public function reason(): string
+    public function reason(?string $extra = null): string
     {
-        return self::REASON_PREFIX.implode(' ', $this->problems);
+        return self::REASON_PREFIX.implode(' ', $this->problems).($extra !== null ? ' '.$extra : '');
     }
 
     public static function isReason(?string $reason): bool

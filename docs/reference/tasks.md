@@ -512,9 +512,15 @@ Settling watches the stored pull request through the GitHub App until it merges.
 
 While the pull request is open, each tick checks it. The pull request conflicts when GitHub reports it as not mergeable. A null mergeability result is not a conflict. A check fails when a run on the head commit completes with `failure`, `timed_out`, `cancelled`, `startup_failure`, or `action_required`. Without the App permission `checks: read`, the Gateway sees conflicts only.
 
+The Gateway ignores the rollup check `Required checks` while another failed check explains the failure, so one real failure is one problem. A rollup that fails alone stays a problem.
+
+Only `failure`, `timed_out`, and `action_required` are genuine failures. `cancelled` and `startup_failure` are infrastructure, such as a GitHub Actions outage. They never get a fixup. When they are the only problems, the group waits and re-evaluates on the backoff of 1, 2, 5, 10, and 30 minutes. If they persist after that, it asks for assistance and adds `Those checks were cancelled or could not start, and did not recover. Re-run them.` to the reason.
+
 A conflict's identity is `conflict:` plus the base branch name. A failed check's identity is `check:` plus the check run name. The check URL is not part of the identity. The Gateway stores the identity on the fixup as `fixup_problem`. Show returns it. An operator subtask leaves it null, and the cap ignores that subtask.
 
-The Gateway appends at most two fixups for one identity. Every status counts, including `cancelled` and `failed`. It does not append a third fixup for that identity.
+The Gateway appends at most two fixups for one identity, and at most three Gateway fixups for one group. Every status counts, including `cancelled` and `failed`. It does not append a third fixup for that identity. When the group already has three fixups and a problem remains, it asks for assistance and adds `Orbit already appended 3 fixups to this group.` to the reason.
+
+Each fixup records the pull request head it was created for. The Gateway appends no new fixup while the head is still that commit. After the head changes, it waits until every check on the new head has completed. A conflict does not wait for checks. When the last fixup changed nothing, because it was never approved or its approved commit is that same head, the Gateway asks for assistance instead of a second fixup on the same result. The reason adds `Fixup subtask #{id} changed nothing, so Orbit does not try again on the same result.` When the last fixup did commit, the Gateway waits for GitHub to report the new head.
 
 When a problem has fewer than two fixups, one tick appends one fixup and returns the group to `running`. It picks the first such problem. A conflict comes first. Then a failed check that has a reproduction row, in the order GitHub returned. Then any other failed check, in that same order. A `todo` subtask that is already waiting stays first, and that tick appends no fixup.
 
@@ -541,7 +547,11 @@ The fixup uses a new implementer thread and the group's reviewer. The handoff ch
 
 When `pr_url` is already stored, the reviewer does not send `--pr-summary`, `--pr-change`, or `--pr-breaking`.
 
-Before a conflict fixup leaves `todo`, the Gateway runs `git fetch --quiet origin {base}` with the pull request token. `{base}` is one argument. The fetch updates the remote-tracking ref only. A failed fetch leaves the subtask `todo` and the group `running`. It counts as a communication failure. The fifth consecutive failure asks for assistance. The implementer starts after the fetch succeeds, then merges `origin/{base}` and resolves the conflicts.
+Before that push, the Gateway reads the pull request state again. When the pull request has already merged or closed, Orbit does not push. It asks for assistance with a reason that starts with `An approved commit is not on the pull request: ` and names the commit. An unreadable state is a publication failure and waits out the backoff. When the group returns to `settling`, the Gateway reads the pull request once more. If it merged and its head is not the latest approved commit, the group asks for assistance naming that commit. The group then stays `settling`, and its workspace stays, until an operator completes or cancels it.
+
+Before a resumed subtask leaves `todo`, the Gateway fetches `origin/task-{group id}` with the pull request token. When the workspace is strictly behind that ref, it fast-forwards the workspace with `git merge --ff-only`. A workspace that is level, ahead, or diverged stays as it is. The Gateway never forces. A commit pushed to the task branch by someone else then does not cause a non-fast-forward push.
+
+Before a conflict fixup leaves `todo`, the Gateway also runs `git fetch --quiet origin {base}` with the pull request token. `{base}` is one argument. The fetch updates the remote-tracking ref only. A failed fetch leaves the subtask `todo`. It counts as a communication failure, and the next attempt waits out the backoff of 1, 2, 5, 10, and 30 minutes. The fifth consecutive failure asks for assistance. The implementer starts after the fetch succeeds, then merges `origin/{base}` and resolves the conflicts.
 
 The Gateway does not merge the pull request. The coordinator reviews and merges.
 

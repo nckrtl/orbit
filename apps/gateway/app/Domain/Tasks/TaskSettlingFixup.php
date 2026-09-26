@@ -12,6 +12,9 @@ final readonly class TaskSettlingFixup
     /** A problem keeps at most this many fixups, in any status. */
     public const int Limit = 2;
 
+    /** A group keeps at most this many Gateway fixups in total, in any status. The next problem asks for assistance. */
+    public const int GroupLimit = 3;
+
     /**
      * Orbit check names whose reproduction command is the job's check steps, not its setup.
      *

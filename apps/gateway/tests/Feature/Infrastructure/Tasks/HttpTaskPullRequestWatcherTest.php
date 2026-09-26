@@ -171,10 +171,14 @@ it('names each failed check run on the head commit with its URL, through a separ
         ->and(array_map(static fn (TaskPullRequestCheck $check): array => [$check->name, $check->url], $health?->failedChecks ?? []))->toBe([
             ['Rust agent', 'https://github.com/acme/orbit/runs/1'],
             ['Gateway', 'https://ci.example.test/gateway'],
+            ['Deploy', null],
+        ])
+        ->and(array_map(static fn (TaskPullRequestCheck $check): array => [$check->name, $check->url], $health?->infrastructureChecks ?? []))->toBe([
             ['Docs', 'https://github.com/acme/orbit/runs/3'],
             ['CLI', 'https://github.com/acme/orbit/runs/4'],
-            ['Deploy', null],
-        ]);
+        ])
+        ->and($health?->checksPending)->toBeTrue()
+        ->and($health?->headSha)->toBe('abc123');
     Http::assertSent(static fn (Request $request): bool => $request->url() === 'https://api.github.com/repos/acme/orbit/commits/abc123/check-runs?per_page=100'
         && $request->hasHeader('Authorization', 'Bearer ghs_checks'));
     Http::assertSent(static fn (Request $request): bool => str_ends_with($request->url(), '/access_tokens')
@@ -183,6 +187,49 @@ it('names each failed check run on the head commit with its URL, through a separ
         && $request->data() === ['repositories' => ['orbit'], 'permissions' => ['contents' => 'write', 'pull_requests' => 'write']]);
     Http::assertNotSent(static fn (Request $request): bool => str_ends_with($request->url(), '/access_tokens')
         && array_key_exists('checks', $request->data()['permissions']) && count($request->data()['permissions']) > 1);
+});
+
+it('drops the Required checks rollup while another failed check explains the failure', function (): void {
+    GitHubTestSupport::storeApp();
+    watcher_fake_health([], [
+        ['name' => 'Gateway', 'status' => 'completed', 'conclusion' => 'failure', 'html_url' => 'https://github.com/acme/orbit/runs/1'],
+        ['name' => 'Required checks', 'status' => 'completed', 'conclusion' => 'failure', 'html_url' => 'https://github.com/acme/orbit/runs/2'],
+    ]);
+
+    $health = app(HttpTaskPullRequestWatcher::class)->health(watcher_group());
+
+    expect($health?->problems)->toBe(['Check Gateway failed: https://github.com/acme/orbit/runs/1.'])
+        ->and(array_map(static fn (TaskPullRequestCheck $check): string => $check->name, $health?->failedChecks ?? []))->toBe(['Gateway'])
+        ->and($health?->checksPending)->toBeFalse();
+});
+
+it('drops the rollup when a cancelled check explains it, and keeps a rollup that fails alone', function (string $other, array $problems, array $failed, array $infrastructure): void {
+    GitHubTestSupport::storeApp();
+    $runs = [['name' => 'Required checks', 'status' => 'completed', 'conclusion' => 'failure', 'html_url' => 'https://github.com/acme/orbit/runs/2']];
+    if ($other !== '') {
+        array_unshift($runs, ['name' => 'Web', 'status' => 'completed', 'conclusion' => $other, 'html_url' => 'https://github.com/acme/orbit/runs/1']);
+    }
+    watcher_fake_health([], $runs);
+
+    $health = app(HttpTaskPullRequestWatcher::class)->health(watcher_group());
+
+    expect($health?->problems)->toBe($problems)
+        ->and(array_map(static fn (TaskPullRequestCheck $check): string => $check->name, $health?->failedChecks ?? []))->toBe($failed)
+        ->and(array_map(static fn (TaskPullRequestCheck $check): string => $check->name, $health?->infrastructureChecks ?? []))->toBe($infrastructure);
+})->with([
+    'cancelled' => ['cancelled', ['Check Web failed: https://github.com/acme/orbit/runs/1.'], [], ['Web']],
+    'startup failure' => ['startup_failure', ['Check Web failed: https://github.com/acme/orbit/runs/1.'], [], ['Web']],
+    'alone' => ['', ['Check Required checks failed: https://github.com/acme/orbit/runs/2.'], ['Required checks'], []],
+]);
+
+it('reports the head of a merged pull request', function (): void {
+    GitHubTestSupport::storeApp();
+    watcher_fake_health(['merged' => true, 'state' => 'closed', 'head' => ['sha' => 'fed987']]);
+
+    $health = app(HttpTaskPullRequestWatcher::class)->health(watcher_group());
+
+    expect($health?->state)->toBe('merged')
+        ->and($health?->headSha)->toBe('fed987');
 });
 
 it('still reports conflicts and no check problems when GitHub refuses the checks token', function (): void {

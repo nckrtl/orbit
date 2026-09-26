@@ -136,3 +136,58 @@ it('reports one failure when the base name is invalid or the fetch fails', funct
     'invalid name' => ['HEAD', false],
     'failed fetch' => ['main', true],
 ]);
+
+it('fast-forwards a workspace that is strictly behind the task branch and leaves a level, ahead, or diverged one', function (string $case): void {
+    $root = TestOrbitHome::scratch('orbit-fast-forward');
+    $checkout = $root.'/checkout';
+    (new Process(['git', 'init', '--quiet', '--bare', $root.'/origin.git']))->mustRun();
+    (new Process(['git', 'init', '--quiet', '-b', 'task-7', $checkout]))->mustRun();
+    $group = fetcher_group($checkout);
+    $branch = 'task-'.$group->id;
+    fetcher_git($checkout, ['remote', 'add', 'origin', $root.'/origin.git']);
+    fetcher_git($checkout, ['commit', '--quiet', '--allow-empty', '-m', 'Approved']);
+    $approved = fetcher_git($checkout, ['rev-parse', 'HEAD']);
+    fetcher_git($checkout, ['push', '--quiet', 'origin', 'HEAD:refs/heads/'.$branch]);
+    $remote = $approved;
+    if ($case === 'behind' || $case === 'diverged') {
+        fetcher_git($checkout, ['commit', '--quiet', '--allow-empty', '-m', 'Merge main']);
+        $remote = fetcher_git($checkout, ['rev-parse', 'HEAD']);
+        fetcher_git($checkout, ['push', '--quiet', 'origin', 'HEAD:refs/heads/'.$branch]);
+        fetcher_git($checkout, ['reset', '--quiet', '--hard', $approved]);
+        fetcher_git($checkout, ['update-ref', '-d', 'refs/remotes/origin/'.$branch]);
+    }
+    if ($case === 'ahead' || $case === 'diverged') {
+        fetcher_git($checkout, ['commit', '--quiet', '--allow-empty', '-m', 'Local']);
+    }
+    $before = fetcher_git($checkout, ['rev-parse', 'HEAD']);
+
+    fetcher(new LocalShellSshExecutor)->fastForward($group);
+
+    expect(fetcher_git($checkout, ['rev-parse', 'HEAD']))->toBe($case === 'behind' ? $remote : $before)
+        ->and(fetcher_git($checkout, ['rev-parse', 'refs/remotes/origin/'.$branch]))->toBe($remote)
+        ->and(fetcher_git($checkout, ['rev-parse', '--abbrev-ref', 'HEAD']))->toBe('task-7');
+})->with(['behind', 'level', 'ahead', 'diverged']);
+
+it('fast-forwards with the task branch as one argument, the token only on standard input, and never forces the workspace', function (): void {
+    $transport = new AppDevFakeSshExecutor;
+    $group = fetcher_group('/srv/orbit/apps/shop/task-7');
+
+    fetcher($transport)->fastForward($group);
+
+    $command = $transport->commands[0];
+    $script = (string) stream_get_contents($command->protectedInput?->stream());
+    expect($command->arguments)->toBe(['bash', '-seu', '--', '/srv/orbit/apps/shop/task-7', 'task-'.$group->id])
+        ->and($command->input)->toBeNull()
+        ->and($script)->toContain(base64_encode('x-access-token:ghs_fetch'))
+        ->and($script)->toContain('merge --ff-only')
+        ->and($script)->not->toContain('reset')
+        ->and($script)->not->toContain('push');
+});
+
+it('reports one failure when the task branch fetch fails', function (): void {
+    $transport = new AppDevFakeSshExecutor([new CommandResult(128, '', 'fatal: not found', 1, false)]);
+
+    expect(fn () => fetcher($transport)->fastForward(fetcher_group('/srv/orbit/apps/shop/task-7')))
+        ->toThrow(TaskPullRequestException::class, 'The task branch could not be fetched.');
+    expect($transport->commands)->toHaveCount(1);
+});

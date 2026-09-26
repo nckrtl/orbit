@@ -36,6 +36,12 @@ final readonly class TaskScheduler
     /** Assistance set when an approved commit cannot be pushed or its pull request cannot be opened. */
     public const string PublicationFailedPrefix = 'Approved commit publication failed: ';
 
+    /** Assistance set when an approved commit would reach, or reached, a pull request that already merged or closed (ADR 0164). */
+    public const string OrphanedCommitPrefix = 'An approved commit is not on the pull request: ';
+
+    /** Re-evaluations of cancelled or unstarted checks on one head before the group asks for assistance (ADR 0164). */
+    public const int InfrastructureCheckRetries = 5;
+
     /** Reasons the scheduler sets when a claim returns a group to todo. A start, a capacity wait, or a move to backlog clears them. */
     public const array ClaimFailureReasons = [
         self::ProvisioningFailedReason,
@@ -102,7 +108,9 @@ final readonly class TaskScheduler
             $health = $this->pullRequestWatcher->health($group);
             $status = $health?->state;
             if ($status === 'merged') {
-                $this->completeMergedGroup($group);
+                if (! $this->orphanedCommit($group)) {
+                    $this->completeMergedGroup($group);
+                }
             } elseif ($status === 'closed') {
                 $group->update(['assistance_requested' => true, 'assistance_reason' => 'The expected pull request closed without merging.']);
             } elseif ($health instanceof TaskPullRequestHealth) {
@@ -587,6 +595,9 @@ final readonly class TaskScheduler
         if (! $this->retryIsDue($this->publicationBackoffKey($task), 'approved publication')) {
             return;
         }
+        if (! $this->pullRequestStillOpen($group, $task, $commit)) {
+            return;
+        }
         try {
             $this->publisher->push($group, $commit);
         } catch (TaskPullRequestException $exception) {
@@ -619,6 +630,66 @@ final readonly class TaskScheduler
         ]);
         $this->clearPublicationAssistance($task, $group);
         $this->acceptReview($task);
+    }
+
+    /**
+     * ADR 0164: before a commit is pushed to a stored pull request, re-read its state. A merged or closed
+     * pull request would never carry the commit, so Orbit does not push it and asks for assistance naming
+     * it. An unreadable state is a publication failure that waits out the backoff.
+     */
+    private function pullRequestStillOpen(TaskGroup $group, Task $task, string $commit): bool
+    {
+        if (! is_string($group->pr_url) || $group->pr_url === '') {
+            return true;
+        }
+        $state = $this->pullRequestWatcher->status($group);
+        if ($state === 'open') {
+            return true;
+        }
+        if ($state === null) {
+            $this->failPublication($group, $task, 'Orbit could not read the state of '.$group->pr_url.'.');
+
+            return false;
+        }
+
+        $key = $this->publicationBackoffKey($task);
+        $this->extendBackoff($key, $this->readBackoff($key, 'approved publication'), 'approved publication');
+        $this->requestAssistance($task, $group, self::OrphanedCommitPrefix.'Orbit did not push commit '.$commit.' of subtask #'.$task->id.' because '.$group->pr_url.' is already '.$state.'. Push that commit to a new branch and open a pull request, or cancel the group.');
+
+        return false;
+    }
+
+    /** Whether the group waits for an operator because an approved commit missed its merged pull request. */
+    private function orphanedCommit(TaskGroup $group): bool
+    {
+        return $group->assistance_requested && is_string($group->assistance_reason)
+            && str_starts_with($group->assistance_reason, self::OrphanedCommitPrefix);
+    }
+
+    /**
+     * ADR 0164: a group that returns to settling re-reads its pull request. When it already merged and its
+     * head is not the latest approved commit, that commit missed the merge. The group asks for assistance
+     * naming the commit and is not completed, so its workspace stays.
+     */
+    private function checkReturningPullRequest(TaskGroup $group): void
+    {
+        $health = $this->pullRequestWatcher->health($group);
+        if (! $health instanceof TaskPullRequestHealth || $health->state !== 'merged' || $health->headSha === null) {
+            return;
+        }
+        $commit = TaskComment::query()
+            ->where('task_group_id', $group->id)
+            ->where('type', TaskCommentType::Approved)
+            ->whereNotNull('commit_sha')
+            ->latest('id')
+            ->value('commit_sha');
+        if (! is_string($commit) || $commit === '' || $commit === $health->headSha || $group->assistance_requested) {
+            return;
+        }
+
+        $reason = self::OrphanedCommitPrefix.'Commit '.$commit.' reached task-'.$group->id.' after '.$group->pr_url.' merged at '.$health->headSha.'. Open a pull request for task-'.$group->id.', or complete the group.';
+        $group->update(['assistance_requested' => true, 'assistance_reason' => $reason]);
+        $this->coder->assistance($group, $reason);
     }
 
     /** A failed push or open waits out the backoff and asks for assistance on the fifth failure. */
@@ -1899,6 +1970,9 @@ final readonly class TaskScheduler
 
         // ADR 0164: returning to settling refreshes metrics and does not post task_group.settled again.
         $returning = $group->settled_at !== null;
+        if ($returning) {
+            $this->checkReturningPullRequest($group);
+        }
         $metrics = $this->metrics->collect($group);
         $group->tokens = $metrics->tokens;
         $group->line_diff = $metrics->lineDiff;
@@ -1918,6 +1992,12 @@ final readonly class TaskScheduler
     /**
      * Appends one fixup when a current problem still has one left, or asks for assistance when every
      * current problem is at the cap. A waiting subtask starts instead, and no fixup is appended.
+     *
+     * ADR 0164 bounds the fixups. No fixup is appended while the head is the one the last fixup was
+     * created for, or while a check on the head is still running. A fixup that changed nothing asks for
+     * assistance instead of a second try on the same result. Cancelled checks and checks that could not
+     * start are infrastructure: the group waits with backoff and asks for assistance only if they persist.
+     * A group keeps at most three Gateway fixups in total.
      */
     private function healOpenPullRequest(TaskGroup $group, TaskPullRequestHealth $health): void
     {
@@ -1931,8 +2011,34 @@ final readonly class TaskScheduler
             return;
         }
 
+        if ($health->infrastructureChecks === []) {
+            $this->rememberBackoff($this->infrastructureBackoffKey($group), null, 'infrastructure check');
+        }
+
         if ($health->problems === []) {
             $this->reportPullRequestHealth($group, $health);
+
+            return;
+        }
+
+        $fixups = $this->orderedTasks($group->tasks)
+            ->filter(static fn (Task $task): bool => is_string($task->fixup_problem) && $task->fixup_problem !== '')
+            ->values();
+        $latest = $fixups->last();
+        if ($latest instanceof Task && is_string($latest->fixup_head_sha) && $latest->fixup_head_sha === $health->headSha) {
+            if ($this->fixupChangedNothing($latest)) {
+                $this->reportPullRequestHealth($group, $health, 'Fixup subtask #'.$latest->id.' changed nothing, so Orbit does not try again on the same result.');
+            }
+
+            return;
+        }
+
+        if (! $health->conflicts && $health->checksPending) {
+            return;
+        }
+
+        if (! $health->conflicts && $health->failedChecks === []) {
+            $this->awaitInfrastructureChecks($group, $health);
 
             return;
         }
@@ -1944,9 +2050,56 @@ final readonly class TaskScheduler
             return;
         }
 
-        if ($this->appendFixup($group, $plan) instanceof Task) {
+        if ($fixups->count() >= TaskSettlingFixup::GroupLimit) {
+            $this->reportPullRequestHealth($group, $health, 'Orbit already appended '.TaskSettlingFixup::GroupLimit.' fixups to this group.');
+
+            return;
+        }
+
+        if ($this->appendFixup($group, $plan, $health->headSha) instanceof Task) {
             $this->resumeWaitingSubtask($group);
         }
+    }
+
+    /**
+     * Whether a fixup left the pull request head where it was: it never reached an approval, or its
+     * approved commit is the head it was created for. A fixup that did commit waits for GitHub to see the push.
+     */
+    private function fixupChangedNothing(Task $fixup): bool
+    {
+        $commit = TaskComment::query()
+            ->where('task_id', $fixup->id)
+            ->where('type', TaskCommentType::Approved)
+            ->whereNotNull('commit_sha')
+            ->latest('id')
+            ->value('commit_sha');
+
+        return ! is_string($commit) || $commit === '' || $commit === $fixup->fixup_head_sha;
+    }
+
+    /**
+     * Only cancelled checks, or checks that could not start, stand between the pull request and a merge.
+     * Those are not the branch's fault, so no fixup is appended. The group re-evaluates on the backoff
+     * of 1, 2, 5, 10, and 30 minutes, and asks for assistance when they persist after that.
+     */
+    private function awaitInfrastructureChecks(TaskGroup $group, TaskPullRequestHealth $health): void
+    {
+        $key = $this->infrastructureBackoffKey($group);
+        $backoff = $this->readBackoff($key, 'infrastructure check');
+        if ($backoff !== null && $backoff['due'] > now()->getTimestamp()) {
+            return;
+        }
+        if ($backoff !== null && $backoff['failures'] >= self::InfrastructureCheckRetries) {
+            $this->reportPullRequestHealth($group, $health, 'Those checks were cancelled or could not start, and did not recover. Re-run them.');
+
+            return;
+        }
+        $this->extendBackoff($key, $backoff, 'infrastructure check');
+    }
+
+    private function infrastructureBackoffKey(TaskGroup $group): string
+    {
+        return 'tasks.pull-request-infrastructure.'.$group->id;
     }
 
     /** Whether assistance was requested for a cause other than the open pull request's own problems. */
@@ -1981,9 +2134,9 @@ final readonly class TaskScheduler
         return null;
     }
 
-    private function appendFixup(TaskGroup $group, TaskSettlingFixup $plan): ?Task
+    private function appendFixup(TaskGroup $group, TaskSettlingFixup $plan, ?string $headSha): ?Task
     {
-        return DB::transaction(function () use ($group, $plan): ?Task {
+        return DB::transaction(function () use ($group, $plan, $headSha): ?Task {
             $locked = TaskGroup::query()->where('execution_mode', TaskExecutionMode::Managed)
                 ->lockForUpdate()
                 ->findOrFail($group->id);
@@ -1996,7 +2149,8 @@ final readonly class TaskScheduler
                 return null;
             }
             $count = $tasks->filter(static fn (Task $task): bool => $task->fixup_problem === $plan->identity)->count();
-            if ($count >= TaskSettlingFixup::Limit) {
+            $total = $tasks->filter(static fn (Task $task): bool => is_string($task->fixup_problem) && $task->fixup_problem !== '')->count();
+            if ($count >= TaskSettlingFixup::Limit || $total >= TaskSettlingFixup::GroupLimit) {
                 return null;
             }
 
@@ -2007,6 +2161,7 @@ final readonly class TaskScheduler
                 'brief' => $plan->brief,
                 'deliverables' => $plan->deliverables,
                 'fixup_problem' => $plan->identity,
+                'fixup_head_sha' => $headSha,
                 'status' => TaskStatus::Todo,
             ]);
         });
@@ -2061,24 +2216,48 @@ final readonly class TaskScheduler
         }
 
         $base = $this->conflictBase($todo);
-        if ($base !== null) {
-            if ($group->status === TaskGroupStatus::Settling) {
-                $this->leaveSettling($group);
-            }
-            try {
-                $this->bases->fetch($group->fresh() ?? $group, $base);
-            } catch (TaskPullRequestException $exception) {
-                $this->recordCommunicationFailure($todo, $group, $exception->getMessage());
-
-                return;
-            }
-            $this->clearCommunicationFailures($todo);
+        if ($base !== null && $group->status === TaskGroupStatus::Settling) {
+            $this->leaveSettling($group);
+        }
+        if (! $this->prepareResumedWorkspace($group, $todo, $base)) {
+            return;
         }
 
         $started = $this->activateResumedTask($todo);
         if ($started instanceof Task) {
             $this->beginRunningTask($started);
         }
+    }
+
+    /**
+     * Before a resumed subtask starts, fast-forwards the workspace to `origin/task-{group id}` when it is
+     * strictly behind, and fetches a conflict fixup's base ref. A failure waits out #760's backoff of 1, 2,
+     * 5, 10, and 30 minutes, leaves the subtask todo, and asks for assistance on the fifth failure.
+     */
+    private function prepareResumedWorkspace(TaskGroup $group, Task $todo, ?string $base): bool
+    {
+        $key = 'tasks.resume-fetch.'.$todo->id;
+        if (! $this->retryIsDue($key, 'resume fetch')) {
+            return false;
+        }
+        try {
+            $fresh = $group->fresh() ?? $group;
+            if (is_string($fresh->pr_url) && $fresh->pr_url !== '') {
+                $this->bases->fastForward($fresh);
+            }
+            if ($base !== null) {
+                $this->bases->fetch($fresh, $base);
+            }
+        } catch (TaskPullRequestException $exception) {
+            $this->extendBackoff($key, $this->readBackoff($key, 'resume fetch'), 'resume fetch');
+            $this->recordCommunicationFailure($todo, $group, $exception->getMessage());
+
+            return false;
+        }
+        $this->rememberBackoff($key, null, 'resume fetch');
+        $this->clearCommunicationFailures($todo);
+
+        return true;
     }
 
     /** Records the return to running before a conflict fixup's base fetch, which stays outside the commit. */
@@ -2171,7 +2350,7 @@ final readonly class TaskScheduler
      * Asks for assistance once per distinct set of pull request problems, and withdraws only its own
      * request when the pull request is healthy again. Another cause of assistance is left alone.
      */
-    private function reportPullRequestHealth(TaskGroup $group, TaskPullRequestHealth $health): void
+    private function reportPullRequestHealth(TaskGroup $group, TaskPullRequestHealth $health, ?string $extra = null): void
     {
         $ownRequest = TaskPullRequestHealth::isReason($group->assistance_reason);
 
@@ -2183,7 +2362,7 @@ final readonly class TaskScheduler
             return;
         }
 
-        $reason = $health->reason();
+        $reason = $health->reason($extra);
         if ($group->assistance_requested && (! $ownRequest || $group->assistance_reason === $reason)) {
             return;
         }
