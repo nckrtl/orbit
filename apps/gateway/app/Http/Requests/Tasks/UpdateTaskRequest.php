@@ -8,6 +8,7 @@ use App\Data\Tasks\UpdateTaskData;
 use App\Domain\Tasks\TaskDeliverableType;
 use App\Http\Requests\TopLevelJsonObjectInspector;
 use App\Rules\DistinctDeliverableIds;
+use App\Rules\ExactPestTestFile;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Enum;
@@ -17,7 +18,7 @@ use UnexpectedValueException;
 
 final class UpdateTaskRequest extends FormRequest
 {
-    /** @return array<string, list<string|Enum|In|DistinctDeliverableIds>> */
+    /** @return array<string, list<string|Enum|In|DistinctDeliverableIds|ExactPestTestFile>> */
     public function rules(): array
     {
         return [
@@ -32,7 +33,7 @@ final class UpdateTaskRequest extends FormRequest
             'deliverables.*.path' => ['required_if:deliverables.*.type,file', 'prohibited_unless:deliverables.*.type,file', 'string', 'max:500', 'not_regex:#(?:\A/|(?:\A|/)\.\.(?:/|\z))#'],
             'deliverables.*.change' => ['required_if:deliverables.*.type,file', 'prohibited_unless:deliverables.*.type,file', 'string', Rule::in(['created', 'modified', 'any'])],
             'deliverables.*.project' => ['required_if:deliverables.*.type,test', 'prohibited_unless:deliverables.*.type,test', 'string', 'max:500', 'not_regex:#(?:\A/|(?:\A|/)\.\.(?:/|\z))#'],
-            'deliverables.*.file' => ['required_if:deliverables.*.type,test', 'prohibited_unless:deliverables.*.type,test', 'string', 'max:500', 'not_regex:#(?:\A/|(?:\A|/)\.\.(?:/|\z))#'],
+            'deliverables.*.file' => ['required_if:deliverables.*.type,test', 'prohibited_unless:deliverables.*.type,test', 'string', 'max:500', new ExactPestTestFile],
             'deliverables.*.name' => ['required_if:deliverables.*.type,test', 'prohibited_unless:deliverables.*.type,test', 'string', 'max:200'],
             'deliverables.*.command' => ['required_if:deliverables.*.type,command', 'prohibited_unless:deliverables.*.type,command', 'string', 'max:1000'],
             'deliverables.*.directory' => ['sometimes', 'prohibited_unless:deliverables.*.type,command', 'string', 'max:500', 'not_regex:#(?:\A/|(?:\A|/)\.\.(?:/|\z))#'],
