@@ -8,6 +8,8 @@ use App\Actions\Broadcasting\PresenceChannelSigner;
 use App\Actions\Tasks\ListAgentWorkspacesAction;
 use App\Data\Tasks\AgentWorkspaceData;
 use App\Domain\Broadcasting\RealtimeConnection;
+use App\Domain\Logs\LogStream;
+use App\Domain\Logs\LogStreamStore;
 use App\Domain\Nodes\ManagedNodeEligibility;
 use App\Domain\Shared\ResourceOperationException;
 use App\Http\Controllers\Controller;
@@ -31,6 +33,7 @@ final class AgentRealtimeController extends Controller
                 'address' => $connection?->resolveAddress,
                 'key' => $connection?->key,
                 'channel' => "presence-node.{$id}",
+                'log_channel' => "presence-node-logs.{$id}",
                 'member' => "agent.{$id}",
             ],
             'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')],
@@ -49,14 +52,35 @@ final class AgentRealtimeController extends Controller
         ]);
     }
 
+    /**
+     * The live log streams whose source is on the caller's Node (ADR 0153). The agent reads only what
+     * this list names; a `log-streams.changed` event only prompts it to ask again.
+     */
+    public function logStreams(Request $request, ManagedNodeEligibility $eligibility, LogStreamStore $streams): JsonResponse
+    {
+        $node = $this->peer($request);
+        $this->ensureEligible($node, $eligibility);
+
+        return response()->json([
+            'data' => array_map(static fn (LogStream $stream): array => [
+                'id' => $stream->id,
+                'lines' => $stream->lines,
+                'source' => $stream->source->toArray(),
+            ], $streams->forNode((int) $node->getKey())),
+            'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')],
+        ]);
+    }
+
     public function authenticate(AgentRealtimeAuthRequest $request, RealtimeConnection $realtime, ManagedNodeEligibility $eligibility, PresenceChannelSigner $signer): JsonResponse
     {
         $node = $this->peer($request);
         $this->ensureEligible($node, $eligibility);
-        $channel = 'presence-node.'.(int) $node->getKey();
+        $id = (int) $node->getKey();
+        $channel = $request->channelName();
 
-        if ($request->channelName() !== $channel) {
-            throw new ResourceOperationException('agent.channel_forbidden', 'Agent may only join its own presence channel.', 403);
+        // The Node's own presence channel, and from agent 0.3.0 its own log channel (ADR 0153).
+        if (! in_array($channel, ["presence-node.{$id}", "presence-node-logs.{$id}"], strict: true)) {
+            throw new ResourceOperationException('agent.channel_forbidden', 'Agent may only join its own presence channels.', 403);
         }
 
         $connection = $realtime->resolve();

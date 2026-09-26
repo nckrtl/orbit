@@ -1,0 +1,422 @@
+[
+    {
+        "name": "env key",
+        "input": "API_KEY=abc123",
+        "expected": "API_KEY=[REDACTED]"
+    },
+    {
+        "name": "env key lowercase",
+        "input": "api_key=abc123",
+        "expected": "api_key=[REDACTED]"
+    },
+    {
+        "name": "env key mixed case with hyphen",
+        "input": "Api-Key=abc",
+        "expected": "Api-Key=[REDACTED]"
+    },
+    {
+        "name": "env password",
+        "input": "DB_PASSWORD=secret",
+        "expected": "DB_PASSWORD=[REDACTED]"
+    },
+    {
+        "name": "env password with spaces and double quotes",
+        "input": "PASSWORD = \"quoted value\" tail",
+        "expected": "PASSWORD=[REDACTED] tail"
+    },
+    {
+        "name": "env secret single quotes",
+        "input": "SECRET='single quoted' tail",
+        "expected": "SECRET=[REDACTED] tail"
+    },
+    {
+        "name": "env value stops at ampersand",
+        "input": "APP_KEY=base64:abcdef==&next=1",
+        "expected": "APP_KEY=[REDACTED]&next=1"
+    },
+    {
+        "name": "env value stops at hash",
+        "input": "TOKEN=abc#comment",
+        "expected": "TOKEN=[REDACTED]#comment"
+    },
+    {
+        "name": "env public key look-alike",
+        "input": "public_key=abc",
+        "expected": "public_key=[REDACTED]"
+    },
+    {
+        "name": "prose missing key",
+        "input": "Missing key: name",
+        "expected": "Missing key: name"
+    },
+    {
+        "name": "bare key is prose",
+        "input": "key=value",
+        "expected": "key=value"
+    },
+    {
+        "name": "tokens count",
+        "input": "tokens=5",
+        "expected": "tokens=[REDACTED]"
+    },
+    {
+        "name": "token count suffix",
+        "input": "token_count=5",
+        "expected": "token_count=5"
+    },
+    {
+        "name": "hash suffix",
+        "input": "the_key_hash=abc",
+        "expected": "the_key_hash=[REDACTED]"
+    },
+    {
+        "name": "base suffix",
+        "input": "PRIVATE_KEY_BASE=xyz",
+        "expected": "PRIVATE_KEY_BASE=[REDACTED]"
+    },
+    {
+        "name": "secret key base",
+        "input": "SECRET_KEY_BASE=abc123",
+        "expected": "SECRET_KEY_BASE=[REDACTED]"
+    },
+    {
+        "name": "keys plural",
+        "input": "API_KEYS=a,b",
+        "expected": "API_KEYS=[REDACTED]"
+    },
+    {
+        "name": "passwd",
+        "input": "passwd=x",
+        "expected": "passwd=[REDACTED]"
+    },
+    {
+        "name": "passphrase",
+        "input": "PASSPHRASE=x",
+        "expected": "PASSPHRASE=[REDACTED]"
+    },
+    {
+        "name": "aws secret access key",
+        "input": "aws_secret_access_key=AKIAabcdef",
+        "expected": "aws_secret_access_key=[REDACTED]"
+    },
+    {
+        "name": "credentials",
+        "input": "credentials=foo",
+        "expected": "credentials=[REDACTED]"
+    },
+    {
+        "name": "accesstoken and authtoken",
+        "input": "accesstoken=abc AUTHTOKEN=def",
+        "expected": "accesstoken=[REDACTED] AUTHTOKEN=[REDACTED]"
+    },
+    {
+        "name": "apikey and appkey",
+        "input": "APIKEY=1 AppKey=2",
+        "expected": "APIKEY=[REDACTED] AppKey=[REDACTED]"
+    },
+    {
+        "name": "idempotency key in text",
+        "input": "idempotency_key=abc",
+        "expected": "idempotency_key=[REDACTED]"
+    },
+    {
+        "name": "cookie is not a text key",
+        "input": "session_cookie=abc",
+        "expected": "session_cookie=abc"
+    },
+    {
+        "name": "pem is not a text key",
+        "input": "pem=abc",
+        "expected": "pem=abc"
+    },
+    {
+        "name": "hyphenated token hash",
+        "input": "my-token-hash=abc",
+        "expected": "my-token-hash=[REDACTED]"
+    },
+    {
+        "name": "several pairs on one line",
+        "input": "user=bob password=hunter2 host=db",
+        "expected": "user=bob password=[REDACTED] host=db"
+    },
+    {
+        "name": "empty value takes next word",
+        "input": "token= next",
+        "expected": "token=[REDACTED]"
+    },
+    {
+        "name": "unterminated quote",
+        "input": "password=\"unterminated value",
+        "expected": "password=[REDACTED] value"
+    },
+    {
+        "name": "tab around equals",
+        "input": "API_KEY=\tabc def",
+        "expected": "API_KEY=[REDACTED] def"
+    },
+    {
+        "name": "already redacted env",
+        "input": "API_KEY=[REDACTED]",
+        "expected": "API_KEY=[REDACTED]"
+    },
+    {
+        "name": "key colon value",
+        "input": "GITHUB_TOKEN: ghp_abc123",
+        "expected": "GITHUB_TOKEN: [REDACTED]"
+    },
+    {
+        "name": "password colon",
+        "input": "password: hunter2",
+        "expected": "password: [REDACTED]"
+    },
+    {
+        "name": "password colon single quotes",
+        "input": "db_password: 'x y' tail",
+        "expected": "db_password: [REDACTED] tail"
+    },
+    {
+        "name": "header style api key",
+        "input": "X-Api-Key: abc123",
+        "expected": "X-Api-Key: [REDACTED]"
+    },
+    {
+        "name": "tokens colon count",
+        "input": "tokens: 5",
+        "expected": "tokens: [REDACTED]"
+    },
+    {
+        "name": "mysql password yes",
+        "input": "[2026-09-25 10:15:02] production.ERROR: SQLSTATE[HY000] [1045] Access denied for user 'forge'@'localhost' (using password: YES)",
+        "expected": "[2026-09-25 10:15:02] production.ERROR: SQLSTATE[HY000] [1045] Access denied for user 'forge'@'localhost' (using password: [REDACTED]"
+    },
+    {
+        "name": "json password",
+        "input": "{\"password\":\"hunter2\",\"user\":\"bob\"}",
+        "expected": "{\"password\":\"[REDACTED]\",\"user\":\"bob\"}"
+    },
+    {
+        "name": "json escaped quote",
+        "input": "{\"api_key\": \"a\\\"b\", \"n\": 1}",
+        "expected": "{\"api_key\": \"[REDACTED]\", \"n\": 1}"
+    },
+    {
+        "name": "json number",
+        "input": "{\"token\": 12345, \"x\": 1}",
+        "expected": "{\"token\": \"[REDACTED]\", \"x\": 1}"
+    },
+    {
+        "name": "json single quoted",
+        "input": "{\"secret\": 'single', \"x\": 1}",
+        "expected": "{\"secret\": \"[REDACTED]\", \"x\": 1}"
+    },
+    {
+        "name": "json key case",
+        "input": "{\"Password\" : \"X\"}",
+        "expected": "{\"Password\" : \"[REDACTED]\"}"
+    },
+    {
+        "name": "json bare key",
+        "input": "{\"key\": \"not secret\"}",
+        "expected": "{\"key\": \"not secret\"}"
+    },
+    {
+        "name": "json client secret",
+        "input": "{\"client_secret\" : \"abc\", \"x\": 2}",
+        "expected": "{\"client_secret\" : \"[REDACTED]\", \"x\": 2}"
+    },
+    {
+        "name": "json access token",
+        "input": "{\"access_token\":\"eyJhbGciOiJIUzI1NiJ9.e30.abc\"}",
+        "expected": "{\"access_token\":\"[REDACTED]\"}"
+    },
+    {
+        "name": "json tokens count",
+        "input": "{\"tokens\": 5}",
+        "expected": "{\"tokens\": \"[REDACTED]\"}"
+    },
+    {
+        "name": "json already redacted",
+        "input": "{\"password\": \"[REDACTED]\"}",
+        "expected": "{\"password\": \"[REDACTED]\"}"
+    },
+    {
+        "name": "authorization bearer",
+        "input": "Authorization: Bearer abc.def.ghi",
+        "expected": "Authorization: [REDACTED]"
+    },
+    {
+        "name": "authorization lowercase basic",
+        "input": "authorization: Basic dXNlcjpwYXNz",
+        "expected": "authorization: [REDACTED]"
+    },
+    {
+        "name": "proxy authorization",
+        "input": "Proxy-Authorization: Basic abc",
+        "expected": "Proxy-Authorization: [REDACTED]"
+    },
+    {
+        "name": "proxy authorization uppercase",
+        "input": "PROXY-AUTHORIZATION: x",
+        "expected": "PROXY-AUTHORIZATION: [REDACTED]"
+    },
+    {
+        "name": "authorization already redacted",
+        "input": "Authorization: [REDACTED]",
+        "expected": "Authorization: [REDACTED]"
+    },
+    {
+        "name": "authorization already redacted lowercase",
+        "input": "authorization:   [redacted] trailing",
+        "expected": "authorization:   [redacted] trailing"
+    },
+    {
+        "name": "authorization quoted value",
+        "input": "Authorization: 'quoted'",
+        "expected": "Authorization: 'quoted'"
+    },
+    {
+        "name": "authorization without spaces",
+        "input": "Authorization:Bearer xyz12345678",
+        "expected": "Authorization: [REDACTED]"
+    },
+    {
+        "name": "authorization space before colon",
+        "input": "Authorization : Digest username=\"a\"",
+        "expected": "Authorization: [REDACTED]\"a\""
+    },
+    {
+        "name": "curl header",
+        "input": "curl -H \"Authorization: Bearer abc123def456\" https://api.test",
+        "expected": "curl -H \"Authorization: [REDACTED]\" https://api.test"
+    },
+    {
+        "name": "bearer token",
+        "input": "token is Bearer abcdefgh12345 ok",
+        "expected": "token is Bearer [REDACTED] ok"
+    },
+    {
+        "name": "bearer too short",
+        "input": "bearer short",
+        "expected": "bearer short"
+    },
+    {
+        "name": "bearer double quoted",
+        "input": "Bearer \"quoted token\"",
+        "expected": "Bearer [REDACTED]"
+    },
+    {
+        "name": "bearer single quoted uppercase",
+        "input": "BEARER 'x'",
+        "expected": "Bearer [REDACTED]"
+    },
+    {
+        "name": "bearer already redacted",
+        "input": "Bearer [REDACTED]",
+        "expected": "Bearer [REDACTED]"
+    },
+    {
+        "name": "url credentials",
+        "input": "https://user:pass@example.com/path",
+        "expected": "https://[REDACTED]@example.com/path"
+    },
+    {
+        "name": "postgres url",
+        "input": "postgres://app:s3cr3t@db.internal:5432/app",
+        "expected": "postgres://[REDACTED]@db.internal:5432/app"
+    },
+    {
+        "name": "url user only uppercase scheme",
+        "input": "HTTP://USER@host",
+        "expected": "HTTP://[REDACTED]@host"
+    },
+    {
+        "name": "url slash before at",
+        "input": "see http://example.com/@foo",
+        "expected": "see http://example.com/@foo"
+    },
+    {
+        "name": "git ssh url",
+        "input": "git+ssh://git@github.com/x.git",
+        "expected": "git+ssh://[REDACTED]@github.com/x.git"
+    },
+    {
+        "name": "mysql root url",
+        "input": "mysql://root@localhost",
+        "expected": "mysql://[REDACTED]@localhost"
+    },
+    {
+        "name": "url already redacted",
+        "input": "https://[REDACTED]@example.com",
+        "expected": "https://[REDACTED]@example.com"
+    },
+    {
+        "name": "pem single line",
+        "input": "-----BEGIN RSA PRIVATE KEY-----MIIEabc-----END RSA PRIVATE KEY----- after",
+        "expected": "[REDACTED] after"
+    },
+    {
+        "name": "pem two blocks",
+        "input": "a -----BEGIN CERTIFICATE-----x-----END CERTIFICATE----- b -----BEGIN PUBLIC KEY-----y-----END PUBLIC KEY----- c",
+        "expected": "a [REDACTED] b [REDACTED] c"
+    },
+    {
+        "name": "pem begin only",
+        "input": "prefix -----BEGIN CERTIFICATE----- only begin",
+        "expected": "prefix -----BEGIN CERTIFICATE----- only begin"
+    },
+    {
+        "name": "pem lowercase not matched",
+        "input": "-----begin rsa private key-----x-----end rsa private key-----",
+        "expected": "-----begin rsa private key-----x-----end rsa private key-----"
+    },
+    {
+        "name": "non ascii before key",
+        "input": "café API_KEY=été",
+        "expected": "café API_KEY=[REDACTED]"
+    },
+    {
+        "name": "non ascii adjacent to key",
+        "input": "éAPI_KEY=x",
+        "expected": "éAPI_KEY=[REDACTED]"
+    },
+    {
+        "name": "non ascii case not folded",
+        "input": "PASSWORDÉ=x",
+        "expected": "PASSWORDÉ=x"
+    },
+    {
+        "name": "plain line",
+        "input": "GET /api/v1/users 200 12ms",
+        "expected": "GET /api/v1/users 200 12ms"
+    },
+    {
+        "name": "ssh public key text",
+        "input": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI public key",
+        "expected": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI public key"
+    },
+    {
+        "name": "word ending in key",
+        "input": "monkey=banana",
+        "expected": "monkey=banana"
+    },
+    {
+        "name": "keyboard",
+        "input": "keyboard: qwerty",
+        "expected": "keyboard: qwerty"
+    },
+    {
+        "name": "authorization redacted then another header",
+        "input": "Proxy-Authorization: [REDACTED] then Authorization: abc",
+        "expected": "Proxy-Authorization: [REDACTED] then Authorization: [REDACTED]"
+    },
+    {
+        "name": "authorization near-redacted value",
+        "input": "Authorization: [REDACTEDX] y",
+        "expected": "Authorization: [REDACTED]"
+    },
+    {
+        "name": "many secrets",
+        "input": "Authorization: Bearer abcdefgh123 API_KEY=x {\"password\":\"y\"} https://a:b@c.d",
+        "expected": "Authorization: [REDACTED] API_KEY=[REDACTED] {\"password\":\"[REDACTED]\"} https://[REDACTED]@c.d"
+    }
+]
