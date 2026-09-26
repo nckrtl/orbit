@@ -6,6 +6,7 @@ namespace App\Infrastructure\Tasks;
 
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Tasks\TaskDeliverable;
+use App\Domain\Tasks\TaskDeliverableType;
 use App\Domain\Tasks\TaskRunReceipt;
 use App\Domain\Tasks\TaskRunReceiptException;
 use App\Domain\Tasks\TaskRunReceipts;
@@ -34,9 +35,16 @@ final readonly class RemoteTaskRunReceipts implements TaskRunReceipts
         $turn = json_encode([
             'role' => $role->value,
             'final' => $final,
-            'deliverables' => array_map(static fn (TaskDeliverable $deliverable): array => [
-                'id' => $deliverable->id, 'type' => $deliverable->type->value, 'description' => $deliverable->description,
-            ], $deliverables),
+            'deliverables' => array_map(static function (TaskDeliverable $deliverable): array {
+                $fields = [
+                    'id' => $deliverable->id, 'type' => $deliverable->type->value, 'description' => $deliverable->description,
+                ];
+                if ($deliverable->type === TaskDeliverableType::Test) {
+                    $fields['fails_on_base'] = $deliverable->fails_on_base;
+                }
+
+                return $fields;
+            }, $deliverables),
         ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
         $this->run($instance, [], "script='".base64_encode($script)."'\nturn='".base64_encode($turn)."'\n".<<<'BASH'
             install -d -m 0755 -- "$dir"

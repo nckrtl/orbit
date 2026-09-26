@@ -13,7 +13,7 @@ final readonly class SubtaskResponse
         public int $position,
         public string $title,
         public string $brief,
-        /** @var list<array<string, string>> */
+        /** @var list<array<string, string|bool>> */
         public array $deliverables,
         public string $status,
         public ?string $type,
@@ -59,7 +59,7 @@ final readonly class SubtaskResponse
      *     position: int,
      *     title: string,
      *     brief: string,
-     *     deliverables: list<array<string, string>>,
+     *     deliverables: list<array<string, string|bool>>,
      *     status: string,
      *     type: string|null,
      *     implementer_agent_thread_id: int|null,

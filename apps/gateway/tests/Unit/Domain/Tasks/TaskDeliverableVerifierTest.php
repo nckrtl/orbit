@@ -50,6 +50,22 @@ it('refuses a glob in a test deliverable file and accepts one exact php path', f
     'a closing brace' => ['tests/Export}.php', true],
 ]);
 
+it('tells the implementer that a fails_on_base test must fail on the start commit', function (): void {
+    $deliverable = TaskDeliverable::fromArray([
+        'id' => 'layout-repro',
+        'type' => 'test',
+        'description' => 'The layout fails before the fix',
+        'project' => 'apps/gateway',
+        'file' => 'tests/Feature/HomeScreenTest.php',
+        'name' => 'home screen layout',
+        'fails_on_base' => true,
+    ]);
+
+    expect($deliverable->line())->toBe('- layout-repro (test: Pest test "home screen layout" in apps/gateway/tests/Feature/HomeScreenTest.php; at least one test whose name contains "home screen layout" must fail on the start commit, and every such test must pass on the working tree): The layout fails before the fix')
+        ->and($deliverable->toArray()['fails_on_base'])->toBeTrue()
+        ->and(TaskDeliverable::fromArray(['id' => 'export-test', 'type' => 'test', 'description' => 'Test', 'name' => 'exports'])->toArray()['fails_on_base'])->toBeFalse();
+});
+
 it('normalizes a relative path and joins a project and file', function (): void {
     expect(TaskDeliverable::join('.', 'tests/ExportTest.php'))->toBe('tests/ExportTest.php')
         ->and(TaskDeliverable::join('./apps/gateway/', './tests/ExportTest.php'))->toBe('apps/gateway/tests/ExportTest.php')

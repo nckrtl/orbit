@@ -97,7 +97,8 @@
                                 "description": "Every tasks route has a request",
                                 "project": "packages/php-sdk",
                                 "file": "tests/Unit/Requests/Tasks/TaskRequestsTest.php",
-                                "name": "addresses every tasks route"
+                                "name": "addresses every tasks route",
+                                "fails_on_base": false
                             }
                         ],
                         "status": "todo",

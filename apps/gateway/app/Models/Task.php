@@ -49,7 +49,7 @@ use Illuminate\Support\Carbon;
  * @property int|null $duration_ms
  * @property Carbon|null $started_at
  * @property string|null $subtask_start_commit
- * @property list<array<string, string>>|null $deliverables
+ * @property list<array<string, string|bool>>|null $deliverables
  * @property Carbon|null $settled_at
  * @property-read TaskGroup $taskGroup
  */

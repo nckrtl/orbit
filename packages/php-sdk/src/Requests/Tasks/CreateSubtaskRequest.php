@@ -18,7 +18,7 @@ final class CreateSubtaskRequest extends GatewayRequest implements HasBody
     #[\Override]
     protected Method $method = Method::POST;
 
-    /** @param list<array<string, string>> $deliverables */
+    /** @param list<array<string, string|bool>> $deliverables */
     public function __construct(
         private readonly int $groupId,
         private readonly string $title,

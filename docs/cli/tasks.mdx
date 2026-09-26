@@ -91,7 +91,7 @@ Show one task group as a detail tree, followed by its brief and a table of its s
 orbit tasks:show [group] [--json]
 ```
 
-The tree shows the ID, title, Project, status, Instance, pull request, Coder notification, planner, models, tokens, line diff, and duration. The subtask table shows the position, ID, title, status, tokens, line diff, and duration of each subtask. Showing an active group refreshes its metrics, as the [tasks reference](/reference/tasks#tokens-and-line-diff) describes.
+The tree shows the ID, title, Project, status, Instance, pull request, Coder notification, planner, models, tokens, line diff, and duration. The subtask table shows the position, ID, title, status, tokens, line diff, and duration of each subtask. JSON includes `fails_on_base` on every test deliverable. When that value is true, the detail names the deliverable under Fails on the start commit. Showing an active group refreshes its metrics, as the [tasks reference](/reference/tasks#tokens-and-line-diff) describes.
 
 ## orbit tasks:create
 
@@ -197,7 +197,7 @@ orbit tasks:subtask:create [group] [title] [--brief=TEXT] [--deliverables=FILE] 
 | --- | --- | --- |
 | `title` | prompt | Short name of the step. |
 | `--brief=TEXT` | prompt | Goal and acceptance of the step. |
-| `--deliverables=FILE` | none | JSON file with an array of at most 20 [deliverables](/reference/tasks#deliverables). |
+| `--deliverables=FILE` | none | JSON file with an array of at most 20 [deliverables](/reference/tasks#deliverables). A test deliverable may set `fails_on_base` to `true` or `false`. The CLI refuses that field on any other type. |
 
 ```bash
 orbit tasks:subtask:create 13 "Document the export" --brief="$(cat step.md)" --deliverables=deliverables.json

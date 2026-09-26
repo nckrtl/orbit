@@ -2861,7 +2861,7 @@ export interface paths {
         put?: never;
         /**
          * Create a subtask
-         * @description Appends one subtask to a Task group at the next position with status `todo`. Works in any group status. `deliverables` is a list of at most 20 typed items the subtask must deliver, each with a unique slug `id`, a `type`, and a `description`: `file` adds `path` (a path or glob) and `change` (`created`, `modified`, or `any`); `test` adds `project`, `file` (a Pest test file in that project), and `name` (a substring of the test name); `command` adds `command` and an optional `directory`; `review` adds nothing. Orbit verifies file, test, and command deliverables at handoff, and the reviewer confirms review deliverables. Outside `backlog`, a subtask needs at least one deliverable (`tasks.subtask_deliverables_missing`). Served by the Node that holds the group's Instance, or by the Gateway for a group without one. Returns `tasks.disabled` while the extension is off.
+         * @description Appends one subtask to a Task group at the next position with status `todo`. Works in any group status. `deliverables` is a list of at most 20 typed items the subtask must deliver, each with a unique slug `id`, a `type`, and a `description`: `file` adds `path` (a path or glob) and `change` (`created`, `modified`, or `any`); `test` adds `project`, `file` (a Pest test file in that project), `name` (a substring of the test name), and an optional boolean `fails_on_base` (true means the named test must fail on the start commit before it passes; omitted is stored as false, and any other type refuses the field); `command` adds `command` and an optional `directory`; `review` adds nothing. Orbit verifies file, test, and command deliverables at handoff, and the reviewer confirms review deliverables. Outside `backlog`, a subtask needs at least one deliverable (`tasks.subtask_deliverables_missing`). Served by the Node that holds the group's Instance, or by the Gateway for a group without one. Returns `tasks.disabled` while the extension is off.
          */
         post: operations["tasks-subtask-create"];
         delete?: never;
@@ -3637,7 +3637,7 @@ export interface components {
             title?: string;
             brief?: string;
             deliverables?: {
-                [key: string]: string;
+                [key: string]: string | boolean;
             }[];
             /** @enum {string} */
             status?: "todo" | "reserved" | "running" | "reviewing" | "completed" | "failed" | "cancelled";
@@ -14913,6 +14913,7 @@ export interface operations {
                             file?: string;
                             /** @description Conditionally required. */
                             name?: string;
+                            fails_on_base?: boolean;
                             /** @description Conditionally required. */
                             command?: string;
                             directory?: string;
@@ -15370,6 +15371,7 @@ export interface operations {
                         file?: string;
                         /** @description Conditionally required. */
                         name?: string;
+                        fails_on_base?: boolean;
                         /** @description Conditionally required. */
                         command?: string;
                         directory?: string;
@@ -15546,6 +15548,7 @@ export interface operations {
                         file?: string;
                         /** @description Conditionally required. */
                         name?: string;
+                        fails_on_base?: boolean;
                         /** @description Conditionally required. */
                         command?: string;
                         directory?: string;

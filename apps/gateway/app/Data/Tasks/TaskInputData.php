@@ -14,7 +14,7 @@ final class TaskInputData extends Data
     public function __construct(
         public string $title,
         public string $brief,
-        /** @var list<array<string, string>> */
+        /** @var list<array<string, string|bool>> */
         public array $deliverables = [],
     ) {}
 }
