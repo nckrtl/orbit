@@ -78,7 +78,7 @@ Both projects run on Vitest, which ships with Vite+. Unit tests sit next to the 
 bun run test:browser -- -u
 ```
 
-The browser project needs Playwright's Chromium once: `bunx playwright install chromium`.
+The browser project needs Playwright's Chromium. The web verification tests also launch WebKit. Install both once from this directory: `bunx playwright install webkit chromium`.
 
 ## Checks
 
