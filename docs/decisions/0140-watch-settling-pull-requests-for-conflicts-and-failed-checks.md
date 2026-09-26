@@ -12,6 +12,8 @@ While a settling group's pull request is open, the Gateway asks for assistance w
 
 Proposed.
 
+[ADR 0164](/decisions/0164-heal-a-settling-pull-request-with-a-fixup-subtask) amends the response to an open pull request. This record still detects conflicts and failed checks. A pull request that closes without merging still asks for assistance.
+
 ## Context
 
 [ADR 0113](/decisions/0113-gate-task-completion-on-validation-and-review) has each scheduler tick read the pull request of a settling group. A merged pull request completes the group. A pull request that closes without merging asks for assistance. An open pull request produced no signal at all.
@@ -28,7 +30,7 @@ GitHub reports a conflict in the pull request itself: `mergeable` is `false`, or
 - The pull request conflicts when `mergeable` is `false` or `mergeable_state` is `dirty`. A `null` `mergeable` is not a conflict.
 - The Gateway lists the check runs of the head commit with a separate token that has only `checks: read`. A check run fails when it completes with `failure`, `timed_out`, `cancelled`, `startup_failure`, or `action_required`. Other conclusions, and runs that have not completed, are not problems.
 - When GitHub refuses the checks token, the Gateway skips the check runs and still reports conflicts. An unreadable check list alone never asks for assistance.
-- Problems produce one assistance reason. It starts with `The pull request needs attention: ` and has one sentence per problem, such as `It conflicts with main; merge main into the task branch and push.` or `Check Rust agent failed: <url>.`
+- Problems produce one assistance reason. It starts with `The pull request needs attention: ` and has one sentence per problem, such as `It conflicts with main; merge main into the task branch and push.` or `Check Rust agent failed: <url>.` [ADR 0164](/decisions/0164-heal-a-settling-pull-request-with-a-fixup-subtask) appends a fixup subtask before that reason while the problem still has a fixup left.
 - The Gateway writes the reason and notifies Coder only when the reason differs from the stored one. The same problems on the next tick change nothing.
 - When the open pull request has no problems, the Gateway clears the assistance request only if its reason starts with that prefix. It leaves any other assistance request as it is, and it does not replace another request with its own.
 - When the pull request merges, the Gateway clears an assistance request with that prefix before it completes the group. A request with another cause stays. A completion failure still replaces the request with its own cleanup reason.

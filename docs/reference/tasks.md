@@ -7,7 +7,7 @@ description: "How the Gateway tasks extension holds TaskGroup features in Backlo
 
 This page tells an operator how the optional Gateway `tasks` extension runs a Commander-style feature group. A group waits in Backlog while its branch, ADRs, documentation, and subtasks are prepared. Once the group is in Todo, the Gateway provisions its shared Instance, starts agents, and moves each task from turn to turn with run receipts and mechanical checks. It commits approved work and pushes that commit to `origin`, opens and watches the pull request, retains capacity through assistance and merge wait, and removes the workspace clone when the group is cancelled or completed.
 
-[ADR 0103](/decisions/0103-absorb-commander-tasks-as-a-gateway-extension) owns the extension boundary. [ADR 0110](/decisions/0110-route-task-sessions-with-laravel-ai-jev) owns session routing. [ADR 0113](/decisions/0113-gate-task-completion-on-validation-and-review) owns completion gates. [ADR 0122](/decisions/0122-hold-task-groups-in-backlog-until-ready) owns Backlog and Todo. [ADR 0124](/decisions/0124-plan-backlog-groups-with-a-t3-planner) owns planning. [ADR 0160](/decisions/0160-push-each-approved-subtask-and-remove-the-finished-workspace-clone) owns the push after each approval and deletion of the workspace clone.
+[ADR 0103](/decisions/0103-absorb-commander-tasks-as-a-gateway-extension) owns the extension boundary. [ADR 0110](/decisions/0110-route-task-sessions-with-laravel-ai-jev) owns session routing. [ADR 0113](/decisions/0113-gate-task-completion-on-validation-and-review) owns completion gates. [ADR 0122](/decisions/0122-hold-task-groups-in-backlog-until-ready) owns Backlog and Todo. [ADR 0124](/decisions/0124-plan-backlog-groups-with-a-t3-planner) owns planning. [ADR 0160](/decisions/0160-push-each-approved-subtask-and-remove-the-finished-workspace-clone) owns the push after each approval and deletion of the workspace clone. [ADR 0164](/decisions/0164-heal-a-settling-pull-request-with-a-fixup-subtask) owns the fixup that returns a settling group to running.
 
 The extension is off until an authorized Gateway caller enables it. There is no web UI for create. Agents create groups through the [MCP server](/reference/mcp). The [`tasks` CLI family](/cli/tasks) runs every operation on this page from a terminal when MCP is unavailable.
 
@@ -39,6 +39,7 @@ A **TaskGroup** is one parent feature. A **Task** is an ordered subtask. Each ro
 | `taskable_type` / `taskable_id` | TaskGroup | Morph. v1 is an Instance only. Null until the scheduler assigns one |
 | `reviewer_agent_thread_id` | TaskGroup | Long-lived reviewer thread for the group |
 | `implementer_agent_thread_id` | Task | Fresh implementer thread for that subtask |
+| `fixup_problem` | Task | Identity of a Gateway fixup. Null on every other subtask |
 | `pr_url` | TaskGroup | Pull request Orbit opened after the last approval |
 | `notify_coder` | TaskGroup | Opt-in Coder settle webhook. Create also accepts Commander's `notify_on_settle` |
 | `implementer_model` / `reviewer_model` | TaskGroup | `ORBIT_TASKS_IMPLEMENTER_MODEL` and `ORBIT_TASKS_REVIEWER_MODEL` set them for new groups. Unset, they default to `gpt-5.6-luna` (Codex instance `codex`) and `claude-opus-5` (Claude instance `claudeAgent`) |
@@ -46,7 +47,7 @@ A **TaskGroup** is one parent feature. A **Task** is an ordered subtask. Each ro
 
 Group statuses: `backlog`, `todo`, `reserved`, `running`, `reviewing`, `settling`, `completed`, `failed`, `cancelled`. Task statuses: `todo`, `reserved`, `running`, `reviewing`, `completed`, `failed`, `cancelled`.
 
-`backlog` means the group is being prepared, and the scheduler never claims it. `todo` means the group is ready and waits for the scheduler. `settling` is the reviewable state: the pull request is open or the Gateway has finished the open attempt, and Coder may review.
+`backlog` means the group is being prepared, and the scheduler never claims it. `todo` means the group is ready and waits for the scheduler. `settling` is the reviewable state: the pull request is open or the Gateway has finished the open attempt, and Coder may review. A `todo` subtask on an open settling pull request returns the group to `running`. Another assistance cause keeps it `settling`.
 
 v1 attaches the group to one Instance. A new decision is required before another morph target is stored.
 
@@ -74,6 +75,8 @@ Create requires `app_id`, `title`, and `brief`. It may include an ordered `tasks
 Update changes a group's `title`, `brief`, or `status`. Title and brief change only while the group is in `backlog`. The status moves between `backlog` and `todo` in either direction. Moving to `todo` asks the scheduler to claim, as create does.
 
 Subtask create appends one subtask at the next position with status `todo`. It works in any group status, and it accepts `deliverables`. Outside `backlog`, a new subtask needs at least one deliverable. Subtask update changes `title`, `brief`, `position`, or `deliverables`, and the other subtasks shift to keep positions gapless from 1. A `deliverables` value replaces the whole list. Subtask destroy deletes the subtask and closes the gap. Subtask update and destroy work only while the group is in `backlog`, with one exception: the deliverables of a `todo` subtask can change in any group status.
+
+Create does not change the group status. When the group is `settling` and its pull request is open, the next tick returns the group to `running` and starts the subtask. Another assistance cause keeps the group `settling`. [Fix a settling pull request](#fix-a-settling-pull-request) owns that transition.
 
 On a `running` subtask, `tasks:subtask:update` that includes `deliverables` refuses with HTTP 409 `tasks.deliverables_locked` and leaves the stored list unchanged. It never answers success while ignoring that list. The same refusal applies to every subtask that has started.
 
@@ -503,11 +506,56 @@ The group title is the pull request title. The description holds the summary, a 
 
 Settling watches the stored pull request through the GitHub App until it merges. A merged pull request completes the group, and a pull request that closes without merging requests assistance. A settling group without a URL requests assistance and remains incomplete until an operator cancels it.
 
-While the pull request is open, each tick also checks it for problems ([ADR 0140](/decisions/0140-watch-settling-pull-requests-for-conflicts-and-failed-checks)). The pull request conflicts when GitHub reports it as not mergeable. A check fails when a check run on the head commit completes with `failure`, `timed_out`, `cancelled`, `startup_failure`, or `action_required`. Each problem adds one sentence to an assistance reason that starts with `The pull request needs attention: `, such as `It conflicts with main; merge main into the task branch and push.` or `Check Rust agent failed: <url>.`
+### Fix a settling pull request
 
-The Gateway notifies Coder once for each new reason, not on every tick. When the pull request has no problems again, or when it merges, the Gateway clears the request, but only when its reason starts with that prefix. A merged group therefore completes without that request. It never clears or replaces an assistance request with another cause. If completion fails after the merge, the group requests assistance with the cleanup failure as its reason, prefixed with `Merged pull request cleanup failed: `. The checkout and the Instance row stay, and the next tick retries the removal.
+[ADR 0164](/decisions/0164-heal-a-settling-pull-request-with-a-fixup-subtask) owns this response. [ADR 0140](/decisions/0140-watch-settling-pull-requests-for-conflicts-and-failed-checks) detects the problems.
 
-A failed GitHub read changes nothing. The Gateway reads the check runs of one head commit at most once a minute, so a re-run on the same commit shows within a minute and a new push shows at once. Without the App permission `checks: read`, the Gateway reports conflicts only.
+While the pull request is open, each tick checks it. The pull request conflicts when GitHub reports it as not mergeable. A null mergeability result is not a conflict. A check fails when a run on the head commit completes with `failure`, `timed_out`, `cancelled`, `startup_failure`, or `action_required`. Without the App permission `checks: read`, the Gateway sees conflicts only.
+
+A conflict's identity is `conflict:` plus the base branch name. A failed check's identity is `check:` plus the check run name. The check URL is not part of the identity. The Gateway stores the identity on the fixup as `fixup_problem`. Show returns it. An operator subtask leaves it null, and the cap ignores that subtask.
+
+The Gateway appends at most two fixups for one identity. Every status counts, including `cancelled` and `failed`. It does not append a third fixup for that identity.
+
+When a problem has fewer than two fixups, one tick appends one fixup and returns the group to `running`. It picks the first such problem. A conflict comes first. Then a failed check that has a reproduction row, in the order GitHub returned. Then any other failed check, in that same order. A `todo` subtask that is already waiting stays first, and that tick appends no fixup.
+
+A conflict fixup is titled `Merge origin/{base}`. Its brief is `Merge origin/{base} into the task branch and resolve the conflicts. Do not rebase and do not force-push.` A check fixup is titled `Fix {name}`, cut off at 160 characters. Its brief is `Check {name} failed: {url}. Do not rebase and do not force-push.` With no URL, the brief is `Check {name} failed. Do not rebase and do not force-push.`
+
+Every fixup has a `command` deliverable `composer-check`: command `composer check`, directory `.`, description `Run composer check`. When the Project slug is `orbit` and the table lists the check name, the fixup also has `reproduce-check` with that command and directory. The description is `Reproduce {name}`. The same command and directory are stored once.
+
+| Check name | Command | Directory |
+| --- | --- | --- |
+| `CLI` | `composer check` | `apps/cli` |
+| `Docs` | `composer check` | `apps/docs` |
+| `Gateway` | `composer check` | `apps/gateway` |
+| `E2E` | `composer check` | `apps/e2e` |
+| `PHP SDK` | `composer check` | `packages/php-sdk` |
+| `API reference` | `bin/docs-openapi --check && bin/mcp-tools --check` | `.` |
+| `Web` | `copy=$(mktemp) && cp src/api/schema.d.ts "$copy" && bun run types && git diff --exit-code --no-index "$copy" src/api/schema.d.ts && bun run check && bun run test && bun run build` | `apps/web` |
+| `Pi server` | `bun run check && bun run test && bun run build` | `apps/pi-server` |
+| `Agent annotation` | `bun run check && bun run build && bun run test` | `packages/agent-annotation` |
+| `Rust agent` | `cargo fmt --all -- --check && cargo clippy --locked --all-targets -- -D warnings && cargo test --locked` | `apps/agent` |
+
+These rows apply only when the Project slug is `orbit`. The command is the job's check steps, not its setup. Any other slug, and any name not listed, has no reproduction command. The Web row also checks API schema freshness. It copies `src/api/schema.d.ts`, runs `bun run types`, and diffs that copy with `git diff --exit-code --no-index`. CI runs `bun run types && git diff --exit-code src/api/schema.d.ts` on a clean checkout. The copy lets an uncommitted schema that already matches the generator pass.
+
+The fixup uses a new implementer thread and the group's reviewer. The handoff check runs the Project task check and the deliverable commands. After approval, Orbit commits and pushes that stored commit with the [ADR 0160](/decisions/0160-push-each-approved-subtask-and-remove-the-finished-workspace-clone) refspec. The push is not a force push. Orbit does not rebase. The open pull request takes the new commits. Orbit does not open a second pull request, and `pr_url` stays.
+
+When `pr_url` is already stored, the reviewer does not send `--pr-summary`, `--pr-change`, or `--pr-breaking`.
+
+Before a conflict fixup leaves `todo`, the Gateway runs `git fetch --quiet origin {base}` with the pull request token. `{base}` is one argument. The fetch updates the remote-tracking ref only. A failed fetch leaves the subtask `todo` and the group `running`. It counts as a communication failure. The fifth consecutive failure asks for assistance. The implementer starts after the fetch succeeds, then merges `origin/{base}` and resolves the conflicts.
+
+The Gateway does not merge the pull request. The coordinator reviews and merges.
+
+A `todo` subtask on an open settling pull request returns the group to `running` on the tick. The Gateway's own fixup starts in that same tick. An operator's subtask starts on the following tick. The tick starts the lowest `todo` subtask and uses the usual baseline rule. It clears assistance only when the reason starts with `The pull request needs attention: `. Another cause stays, and the tick then starts nothing and appends nothing.
+
+A merged pull request completes the group and does not start a `todo` subtask. A pull request that closed without merging asks for assistance and does not start one. A settling group with no `pr_url` does not start one.
+
+When the group returns to `settling` and `pr_url` is already stored, Orbit refreshes settle metrics and does not post `task_group.settled` again.
+
+When every current problem already has two fixups, the Gateway asks for assistance once. The reason starts with `The pull request needs attention: ` and has one sentence per problem, such as `It conflicts with main; merge main into the task branch and push.` or `Check Rust agent failed: <url>.` The same reason on the next tick changes nothing. Coder is notified once for each new reason. A healthy open pull request, and a merged one, clear that request only. Another cause stays. A merged group therefore completes without that request.
+
+If completion fails after the merge, the group requests assistance with the cleanup failure as its reason, prefixed with `Merged pull request cleanup failed: `. The checkout and the Instance row stay, and the next tick retries the removal.
+
+A failed GitHub read changes nothing. The Gateway reads the check runs of one head commit at most once a minute, so a re-run on the same commit shows within a minute and a new push shows at once.
 
 The Gateway then writes settle metrics. Active groups also refresh these fields when an authorized caller shows the group.
 
