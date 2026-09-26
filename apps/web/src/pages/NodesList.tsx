@@ -13,9 +13,16 @@ export function NodesList() {
     const empty = fleet.loading ? "Loading…" : "None.";
 
     return (
-        <div className="flex flex-col gap-y-[var(--panel-gap)] md:grid md:h-full md:grid-rows-[auto_minmax(0,1fr)]">
+        <div
+            data-testid="section-list"
+            className="flex flex-col gap-y-[var(--panel-gap)] md:grid md:h-full md:grid-rows-[auto_minmax(0,1fr)]"
+        >
             <PageHeader trail={[{ label: "Nodes" }]}>
-                <span className="cursor-pointer text-dim hover:text-fg" onClick={() => go.create()}>
+                <span
+                    data-testid="nodes-create"
+                    className="cursor-pointer text-dim hover:text-fg"
+                    onClick={() => go.create()}
+                >
                     + create
                 </span>
             </PageHeader>

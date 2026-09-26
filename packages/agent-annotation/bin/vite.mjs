@@ -36,6 +36,11 @@ export function annotationServerProxy() {
                     return json(403, { error: "Use this development site's origin" });
                 if (!["GET", "POST"].includes(req.method))
                     return json(405, { error: "Method not allowed" });
+                // Demo mode, including bin/web-verify, must not connect to a local annotation server.
+                if (process.env.VITE_ORBIT_DEMO)
+                    return json(200, {
+                        error: "Demo mode does not call the annotation server.",
+                    });
                 try {
                     // Only bridge the annotation service, never arbitrary local applications.
                     const check = await fetch(`http://127.0.0.1:${port}/annotations`, {

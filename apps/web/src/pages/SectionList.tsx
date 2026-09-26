@@ -135,7 +135,7 @@ function RecordList() {
 
     if (!known) {
         return (
-            <Frame title="Not found" state="warn">
+            <Frame title="Not found" testId="section-list" state="warn">
                 <Note>No section named {section}.</Note>
             </Frame>
         );
@@ -154,6 +154,7 @@ function RecordList() {
         ? (["node", "project"] as const).map((name) => (
               <span
                   key={name}
+                  data-testid={name === "node" ? "section-filter-node" : "section-filter-project"}
                   className={`cursor-pointer ${search[name] === undefined ? "text-dim hover:text-fg" : "text-cyan"}`}
                   onClick={() => cycle(name)}
               >
@@ -163,7 +164,10 @@ function RecordList() {
         : undefined;
 
     return (
-        <div className="flex flex-col gap-y-[var(--panel-gap)] md:grid md:h-full md:grid-rows-[minmax(0,1fr)]">
+        <div
+            data-testid="section-list"
+            className="flex flex-col gap-y-[var(--panel-gap)] md:grid md:h-full md:grid-rows-[minmax(0,1fr)]"
+        >
             <PageHeader trail={[{ label: SECTION_TITLES[section as Section] }]}>
                 {filters}
             </PageHeader>

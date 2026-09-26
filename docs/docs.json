@@ -134,6 +134,7 @@
               "reference/topology-snapshot",
               "reference/cli-command-vocabulary",
               "reference/cli-ux",
+              "reference/web-verification",
               "reference/alpha"
             ]
           },
@@ -732,6 +733,7 @@
               "decisions/0159-push-activity-changes-to-the-web-app",
               "decisions/0160-push-each-approved-subtask-and-remove-the-finished-workspace-clone",
               "decisions/0161-set-a-stale-caddyfile-aside-when-caddy-is-absent",
+              "decisions/0162-verify-web-ui-changes-with-bin-web-verify",
               "decisions/0163-prove-a-failing-test-on-the-start-commit",
               "decisions/0164-heal-a-settling-pull-request-with-a-fixup-subtask"
             ]

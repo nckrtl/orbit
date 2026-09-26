@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# Open apps/web in demo mode and drive it with Playwright. Stdout is one JSON object.
+# See docs/reference/web-verification.md and ADR 0162.
+
+set -euo pipefail
+
+repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+exec bun "$repository_root/apps/web/dev/web-verify.ts" "$@"

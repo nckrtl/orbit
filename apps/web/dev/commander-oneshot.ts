@@ -64,6 +64,19 @@ export function commanderOneShot(): Plugin {
                     return;
                 }
 
+                // Demo mode must not call Commander, even when a token is present in the environment.
+                if (process.env.VITE_ORBIT_DEMO) {
+                    res.statusCode = 200;
+                    res.setHeader("Content-Type", "application/json");
+                    res.end(
+                        JSON.stringify({
+                            ok: false,
+                            error: "Demo mode does not call Commander.",
+                        }),
+                    );
+                    return;
+                }
+
                 try {
                     await handleOneShot(req, res);
                 } catch (error) {

@@ -4,3 +4,4 @@ __pycache__/
 /.e2e/
 /.loop/
 **/.orbit-tia/
+/.orbit-artifacts/

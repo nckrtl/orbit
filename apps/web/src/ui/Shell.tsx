@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Outlet, useLocation } from "@tanstack/react-router";
-import { useEffect, useLayoutEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useState, useSyncExternalStore } from "react";
 import { transportLabel } from "../api/client";
 import { queryClient } from "../api/queryClient";
 import { useFleet } from "../api/queries";
@@ -28,6 +28,43 @@ import { ui, useUi } from "./store";
 import { ViewportReadout } from "./viewportReadout";
 
 declare const __ORBIT_GATEWAY__: string | null;
+
+/** `data-testid` for each main-nav entry. The feature map lists these ids. */
+const NAV_TEST_ID = {
+    dashboard: "nav-dashboard",
+    nodes: "nav-nodes",
+    projects: "nav-projects",
+    instances: "nav-instances",
+    processes: "nav-processes",
+    schedules: "nav-schedules",
+    databases: "nav-databases",
+    firewall: "nav-firewall",
+    quota: "nav-quota",
+    tasks: "nav-tasks",
+    activity: "nav-activity",
+} as const satisfies Record<Section, string>;
+
+const desktopQuery = "(min-width: 768px)";
+const desktop = () => window.matchMedia(desktopQuery).matches;
+const subscribeDesktop = (notify: () => void) => {
+    const media = window.matchMedia(desktopQuery);
+    media.addEventListener("change", notify);
+
+    return () => media.removeEventListener("change", notify);
+};
+
+/** The width where the main nav collapses into the header menu. Same breakpoint as `md`. */
+function useDesktop(): boolean {
+    return useSyncExternalStore(subscribeDesktop, desktop, () => false);
+}
+
+/**
+ * The mapped id belongs to one nav. The desktop copy stays mounted under `hidden md:block` while the
+ * phone menu is open, and a strict locator rejects two matches even when one is hidden.
+ */
+function mappedNavTestId(key: Section, active: boolean): string | undefined {
+    return active ? NAV_TEST_ID[key] : undefined;
+}
 
 /**
  * One pad around the whole shell. Custom properties override the inset; env() is the fallback
@@ -68,11 +105,14 @@ function Navigation({
     id,
     headerRef,
     actionsRef,
+    mapped,
 }: {
     section: Section;
     id: string | undefined;
     headerRef: (element: HTMLDivElement | null) => void;
     actionsRef: (element: HTMLDivElement | null) => void;
+    /** False on a phone, where this nav is only the hidden desktop copy. */
+    mapped: boolean;
 }) {
     const go = useGo();
     const fleet = useFleet();
@@ -99,6 +139,7 @@ function Navigation({
                                 key={key}
                                 className="row nav-row"
                                 data-link=""
+                                data-testid={mappedNavTestId(key, mapped)}
                                 style={{ gridTemplateColumns: "auto auto", columnGap: "1ch" }}
                                 data-selected={key === active ? "" : undefined}
                                 data-focused={hovered ? "" : undefined}
@@ -170,6 +211,7 @@ export function Shell() {
         : "dashboard";
     const message = useUi((state) => state.message);
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+    const onDesktop = useDesktop();
     const go = useGo();
     const fleet = useFleet();
     const totals = counts(fleet);
@@ -233,6 +275,7 @@ export function Shell() {
                     <header className="flex items-center justify-between gap-2 px-[0.5ch] py-[2px] md:hidden">
                         <button
                             type="button"
+                            data-testid="nav-menu"
                             className="cursor-pointer border border-line px-[1.5ch] py-[2px] font-bold text-fg hover:border-fg active:bg-fg active:text-bg"
                             onClick={() => setMobileMenuOpen((open) => !open)}
                             aria-label="Toggle navigation menu"
@@ -273,6 +316,7 @@ export function Shell() {
                                 topRight={
                                     <button
                                         type="button"
+                                        data-testid="nav-close"
                                         className="cursor-pointer text-dim hover:text-fg"
                                         onClick={() => setMobileMenuOpen(false)}
                                     >
@@ -294,6 +338,7 @@ export function Shell() {
                                                 key={key}
                                                 className="row"
                                                 data-link=""
+                                                data-testid={mappedNavTestId(key, !onDesktop)}
                                                 data-selected={isSelected ? "" : undefined}
                                                 onClick={() => {
                                                     go.section(key);
@@ -330,6 +375,7 @@ export function Shell() {
                                                 key={sec}
                                                 className="row"
                                                 data-link=""
+                                                data-testid={mappedNavTestId(sec, !onDesktop)}
                                                 data-selected={isSelected ? "" : undefined}
                                                 onClick={() => {
                                                     go.section(sec);
@@ -359,6 +405,7 @@ export function Shell() {
                                 id={second}
                                 headerRef={setHeaderSlot}
                                 actionsRef={setActionsSlot}
+                                mapped={onDesktop}
                             />
                         </div>
                         <main className="page-content min-h-0 min-w-0 flex-1 overflow-y-auto">
