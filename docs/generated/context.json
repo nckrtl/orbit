@@ -2795,7 +2795,8 @@
                 "0112",
                 "0113",
                 "0122",
-                "0160"
+                "0160",
+                "0165"
             ]
         },
         {
@@ -3014,7 +3015,8 @@
             "governing_adrs": [
                 "0103",
                 "0110",
-                "0112"
+                "0112",
+                "0165"
             ]
         },
         {
@@ -3135,7 +3137,8 @@
             "governing_adrs": [
                 "0112",
                 "0114",
-                "0116"
+                "0116",
+                "0165"
             ]
         },
         {
@@ -4224,6 +4227,29 @@
             ]
         },
         {
+            "path": "docs/decisions/0165-record-per-thread-token-metrics.md",
+            "title": "ADR 0165: Record per-thread token metrics",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Gateway",
+                "Process",
+                "Task"
+            ],
+            "governing_adrs": [
+                "0103",
+                "0112",
+                "0116",
+                "0151",
+                "0165"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -4415,7 +4441,8 @@
                 "0160",
                 "0161",
                 "0163",
-                "0164"
+                "0164",
+                "0165"
             ]
         },
         {
@@ -5464,7 +5491,8 @@
                 "Tool"
             ],
             "governing_adrs": [
-                "0116"
+                "0116",
+                "0165"
             ]
         },
         {
@@ -5663,7 +5691,8 @@
                 "0140",
                 "0160",
                 "0163",
-                "0164"
+                "0164",
+                "0165"
             ]
         },
         {
