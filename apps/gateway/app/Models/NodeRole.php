@@ -29,13 +29,27 @@ final class NodeRole extends Model
 {
     /**
      * How long a `provisioning` or `removing` claim may last before the Gateway treats it as stale: the
-     * role lock's term. Adding and removing a role, and each role step of `node:add`, take the Node's
-     * role lock before they claim and keep it until the claim ends, so an operation that finds a claim
-     * while it holds the lock knows no add or remove still works on it. Relocation and Cluster Router
-     * changes hold a claim outside the lock, but only inside one Gateway request, which PHP-FPM ends
-     * within the same term. A claim older than the term therefore belongs to an operation that died.
+     * role lock's term plus StaleClaimMarginSeconds. Adding and removing a role, and each role step of
+     * `node:add`, take the Node's role lock before they claim and keep it until the claim ends, so an
+     * operation that finds a claim while it holds the lock knows no add or remove still works on it.
+     *
+     * Three claimers hold a claim outside the lock:
+     *
+     * - Relocation and Cluster Router changes, only inside one Gateway request, which PHP-FPM ends
+     *   within the lock's term.
+     * - `orbit:gateway-bootstrap`, which claims the Gateway's roles in an Artisan command without a time
+     *   limit. It first sets the Node itself to `provisioning`, and role add and remove refuse a Node
+     *   that is not `active`, so no operation can take over its claims while it runs.
+     *
+     * A claim older than the window therefore belongs to an operation that died.
      */
-    public const int StaleClaimSeconds = NodeLocks::RequestSeconds;
+    public const int StaleClaimSeconds = NodeLocks::RequestSeconds + self::StaleClaimMarginSeconds;
+
+    /**
+     * The margin over the lock's term: `updated_at` holds whole seconds, and PHP-FPM ends a request
+     * slightly after `request_terminate_timeout`.
+     */
+    public const int StaleClaimMarginSeconds = 60;
 
     protected static function booted(): void
     {

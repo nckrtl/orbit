@@ -127,6 +127,18 @@ describe(AddNodeRoleAction::class, function (): void {
             ->and($assignment->refresh()->status)->toBe(LifecycleStatus::Active);
     });
 
+    it('keeps a claim fresh for a margin past the lock term', function (): void {
+        $node = add_role_node();
+        $assignment = $node->roles()->create(['role' => RoleName::Metrics, 'status' => LifecycleStatus::Provisioning]);
+
+        $this->travel(NodeLocks::RequestSeconds + 1)->seconds();
+        expect($assignment->refresh()->isStaleClaim())->toBeFalse();
+
+        $this->travel(NodeRole::StaleClaimMarginSeconds)->seconds();
+        expect($assignment->refresh()->isStaleClaim())->toBeTrue()
+            ->and(NodeRole::StaleClaimSeconds)->toBe(660);
+    });
+
     it('lets only one operation take a stale claim', function (): void {
         $node = add_role_node();
         $assignment = $node->roles()->create(['role' => RoleName::Metrics, 'status' => LifecycleStatus::Provisioning]);

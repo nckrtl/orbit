@@ -144,7 +144,9 @@ Run the command again. `node:role:relocate` and Cluster Router changes take the 
 
 Operations on different Nodes run in parallel.
 
-An operation that dies mid-way, such as a killed Gateway worker, leaves its role `provisioning` or `removing`. Once the claim is 10 minutes old, the role lock's term, and no operation holds the lock, the claim is stale: `node:role:add --converge` and `node:role:remove` take it over, and Doctor reports `role.claim_stale`. The window can match the lock term because adding and removing a role take the lock before they claim, and relocation and Cluster Router changes, which claim outside the lock, end within one Gateway request.
+An operation that dies mid-way, such as a killed Gateway worker, leaves its role `provisioning` or `removing`. Once the claim is 11 minutes old, the role lock's term plus a 1-minute margin for whole-second times and PHP-FPM slack, and no operation holds the lock, the claim is stale: `node:role:add --converge` and `node:role:remove` take it over, and Doctor reports `role.claim_stale`.
+
+The window can follow the lock term because adding and removing a role take the lock before they claim, and relocation and Cluster Router changes, which claim outside the lock, end within one Gateway request. `orbit:gateway-bootstrap` also claims outside the lock, but it sets the Node itself to `provisioning` first, and role add and remove refuse a Node that is not `active`.
 
 ### Per-Node locks
 
