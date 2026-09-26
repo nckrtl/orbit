@@ -4155,6 +4155,24 @@
             ]
         },
         {
+            "path": "docs/decisions/0162-verify-web-ui-changes-with-bin-web-verify.md",
+            "title": "ADR 0162: Verify web UI changes with bin/web-verify",
+            "kind": "decision",
+            "components": [
+                "apps/docs",
+                "apps/web"
+            ],
+            "concepts": [
+                "Gateway",
+                "Route",
+                "Router",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0162"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -4343,7 +4361,8 @@
                 "0157",
                 "0158",
                 "0159",
-                "0160"
+                "0160",
+                "0162"
             ]
         },
         {
@@ -5664,6 +5683,27 @@
                 "0123",
                 "0151",
                 "0159"
+            ]
+        },
+        {
+            "path": "docs/reference/web-verification.md",
+            "title": "Web verification",
+            "kind": "reference",
+            "components": [
+                "apps/web"
+            ],
+            "concepts": [
+                "Gateway",
+                "Instance",
+                "Node",
+                "Route",
+                "Router",
+                "Task",
+                "Task group",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0162"
             ]
         },
         {

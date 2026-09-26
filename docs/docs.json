@@ -134,6 +134,7 @@
               "reference/topology-snapshot",
               "reference/cli-command-vocabulary",
               "reference/cli-ux",
+              "reference/web-verification",
               "reference/alpha"
             ]
           },
@@ -730,7 +731,8 @@
               "decisions/0157-keep-private-caddy-sites-off-the-public-listener",
               "decisions/0158-end-interrupted-activity",
               "decisions/0159-push-activity-changes-to-the-web-app",
-              "decisions/0160-push-each-approved-subtask-and-remove-the-finished-workspace-clone"
+              "decisions/0160-push-each-approved-subtask-and-remove-the-finished-workspace-clone",
+              "decisions/0162-verify-web-ui-changes-with-bin-web-verify"
             ]
           }
         ]

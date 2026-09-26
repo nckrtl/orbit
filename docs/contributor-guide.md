@@ -81,7 +81,7 @@ The skills in the repository guide an agent through the work.
 | Independently review a proposal or completed PR | [reviewing-pull-requests](https://github.com/nckrtl/orbit/blob/main/.agents/skills/reviewing-pull-requests/SKILL.md) |
 | Merge an approved PR and clean up | [merging-pull-requests](https://github.com/nckrtl/orbit/blob/main/.agents/skills/merging-pull-requests/SKILL.md) |
 
-For focused work, use [writing-documentation](https://github.com/nckrtl/orbit/blob/main/.agents/skills/writing-documentation/SKILL.md) or [verifying-cli-output](https://github.com/nckrtl/orbit/blob/main/.agents/skills/verifying-cli-output/SKILL.md). CLI development and review follow the [CLI standard](/reference/cli-ux).
+For focused work, use [writing-documentation](https://github.com/nckrtl/orbit/blob/main/.agents/skills/writing-documentation/SKILL.md) or [verifying-cli-output](https://github.com/nckrtl/orbit/blob/main/.agents/skills/verifying-cli-output/SKILL.md). Web UI layout uses [verifying-web-ui](https://github.com/nckrtl/orbit/blob/main/.agents/skills/verifying-web-ui/SKILL.md). CLI development and review follow the [CLI standard](/reference/cli-ux).
 
 An independent reviewer can review the proposed ADRs and documentation before coding when requested. The [feature delivery reference](/reference/implementation-loop) describes review evidence and merge responsibilities.
 

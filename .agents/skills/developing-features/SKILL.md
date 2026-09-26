@@ -17,7 +17,7 @@ Before coding, draft significant ADR changes and update the user-facing document
 
 Implement the documented behavior using the affected project's conventions. Add tests for success and important failure cases. Check ownership, input validation, and secret handling where the feature changes them.
 
-For command changes, use [designing-cli-commands](../designing-cli-commands/SKILL.md) and the [CLI standard](../../../docs/reference/cli-ux.md). Use [verifying-cli-output](../verifying-cli-output/SKILL.md) when interaction or rendering needs a real terminal.
+For command changes, use [designing-cli-commands](../designing-cli-commands/SKILL.md) and the [CLI standard](../../../docs/reference/cli-ux.md). Use [verifying-cli-output](../verifying-cli-output/SKILL.md) when interaction or rendering needs a real terminal. When a change affects web app layout, use [verifying-web-ui](../verifying-web-ui/SKILL.md) and attach the phone and desktop screenshots.
 
 When the feature must be proved on an Incus topology, use [proving-on-incus](../proving-on-incus/SKILL.md).
 
