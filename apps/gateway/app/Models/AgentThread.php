@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Domain\Tasks\AgentThreadState;
+use App\Domain\Tasks\TaskBroadcastObserver;
+use Illuminate\Database\Eloquent\Attributes\ObservedBy;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
@@ -35,6 +37,7 @@ use Illuminate\Support\Carbon;
  * @property int|null $lines_deleted
  * @property-read Node|null $node
  */
+#[ObservedBy([TaskBroadcastObserver::class])]
 final class AgentThread extends Model
 {
     /** @var list<string> */

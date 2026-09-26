@@ -6,8 +6,10 @@ namespace App\Models;
 
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskAgentDefaults;
+use App\Domain\Tasks\TaskBroadcastObserver;
 use App\Domain\Tasks\TaskExecutionMode;
 use App\Domain\Tasks\TaskGroupStatus;
+use Illuminate\Database\Eloquent\Attributes\ObservedBy;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -49,6 +51,7 @@ use Illuminate\Support\Carbon;
  * @property-read AppInstance|Model|null $taskable
  * @property-read Collection<int, Task> $tasks
  */
+#[ObservedBy([TaskBroadcastObserver::class])]
 final class TaskGroup extends Model
 {
     /** @var array<string, mixed> */
