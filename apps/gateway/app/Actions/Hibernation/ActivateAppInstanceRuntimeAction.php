@@ -78,10 +78,9 @@ final readonly class ActivateAppInstanceRuntimeAction
     /** @return list<Process> */
     private function desiredRunning(AppInstance $instance): array
     {
-        return $instance->processes
+        return array_values($instance->processes
             ->filter(static fn (Process $process): bool => $process->desired_state === DesiredProcessState::Running)
             ->sortBy('id')
-            ->values()
-            ->all();
+            ->all());
     }
 }

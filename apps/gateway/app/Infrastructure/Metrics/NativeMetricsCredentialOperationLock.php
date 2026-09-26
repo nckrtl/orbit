@@ -54,7 +54,11 @@ final class NativeMetricsCredentialOperationLock implements MetricsCredentialOpe
             try {
                 return $operation();
             } finally {
-                $this->depths[$nodeId]--;
+                $depth = $this->depths[$nodeId] - 1;
+
+                if ($depth >= 1) {
+                    $this->depths[$nodeId] = $depth;
+                }
             }
         }
 

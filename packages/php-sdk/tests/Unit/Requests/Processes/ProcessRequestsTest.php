@@ -238,6 +238,13 @@ it('lists one node-targeted process collection', function (): void {
     expect($request->query()->all())->toBe(['target_type' => 'node', 'target_id' => 4]);
 });
 
+it('rejects a domain selector for a process list because the query target id is an integer', function (): void {
+    $request = new ListProcessesRequest(new AppInstanceProcessTarget('commander.test'));
+
+    expect(fn (): array => $request->query()->all())
+        ->toThrow(InvalidArgumentException::class, 'Process list target id must be an integer.');
+});
+
 it('bounds runtime configuration to a string-keyed response map', function (): void {
     $data = process_gateway_data();
     $data['runtime_config'] = [

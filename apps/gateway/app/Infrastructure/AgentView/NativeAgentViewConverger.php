@@ -9,6 +9,7 @@ use App\Domain\Nodes\NodeProvisioningException;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\Processes\ProtectedInput;
+use RuntimeException;
 use Throwable;
 
 /**
@@ -53,7 +54,13 @@ final readonly class NativeAgentViewConverger implements AgentViewConverger
         try {
             $input = ProtectedInput::fromString($contents);
             $metadata = stream_get_meta_data($input->stream());
-            $this->run('gateway-agent-view-service', ['sudo', 'install', '-m', '0644', $metadata['uri'], $this->units->path()]);
+            $path = $metadata['uri'] ?? null;
+
+            if (! is_string($path) || $path === '') {
+                throw new RuntimeException('Gateway agent view service file is unavailable.');
+            }
+
+            $this->run('gateway-agent-view-service', ['sudo', 'install', '-m', '0644', $path, $this->units->path()]);
         } catch (NodeProvisioningException $exception) {
             throw $exception;
         } catch (Throwable $exception) {

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Orbit\Sdk\Requests\Processes;
 
+use InvalidArgumentException;
 use Orbit\Sdk\GatewayRequest;
 use Orbit\Sdk\Responses\Processes\ProcessesResponse;
 use Orbit\Sdk\Responses\Processes\ProcessResponse;
@@ -40,6 +41,23 @@ final class ListProcessesRequest extends GatewayRequest
     /** @return array{target_type?: string, target_id?: int} */
     protected function defaultQuery(): array
     {
-        return $this->target?->toRequestData() ?? [];
+        if ($this->target === null) {
+            return [];
+        }
+
+        $query = $this->target->toRequestData();
+        $targetId = $query['target_id'];
+
+        // List filtering accepts only the integer id the Gateway validates. A domain
+        // selector is representable on the shared target, and create still sends it,
+        // but it is not an integer query value.
+        if (! is_int($targetId)) {
+            throw new InvalidArgumentException('Process list target id must be an integer.');
+        }
+
+        return [
+            'target_type' => $query['target_type'],
+            'target_id' => $targetId,
+        ];
     }
 }

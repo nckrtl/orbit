@@ -350,6 +350,9 @@ final class StreamWebSocketTransport implements WebSocketTransport
         return [$opcode, $payload];
     }
 
+    /**
+     * @param  int<0, 15>  $opcode  RFC 6455 opcode. FIN makes the first header byte 0x80 through 0x8F.
+     */
     private function writeFrame(int $opcode, string $payload): void
     {
         $length = strlen($payload);

@@ -165,6 +165,10 @@ final readonly class PrivateDnsMessageCodec
 
         $encoded = '';
         foreach (explode('.', $normalized) as $label) {
+            if ($label === '' || strlen($label) > 63) {
+                throw new InvalidArgumentException('DNS label is not encodable.');
+            }
+
             $encoded .= chr(strlen($label)).$label;
         }
 

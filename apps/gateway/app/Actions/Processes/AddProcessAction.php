@@ -17,6 +17,7 @@ use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessAdmissionLock;
 use App\Domain\Processes\ProcessOperationException;
 use App\Domain\Processes\ProcessPresets;
+use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Processes\ProcessRuntimeLease;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Processes\ProcessSpecification;
@@ -79,68 +80,7 @@ final readonly class AddProcessAction
     /** @return array{process: Process, created: bool} */
     private function executeOwned(#[SensitiveParameter] AddProcessData $data): array
     {
-        /** @var array{process: Process, created: bool, attributes: array<string, mixed>} $admission */
-        $admission = DB::transaction(function () use ($data): array {
-            $target = match ($data->targetType) {
-                ProcessTargetType::AppInstance => $this->targets->forAdmission(
-                    AppInstance::query()
-                        ->with('node')
-                        ->lockForUpdate()
-                        ->findOrFail($data->targetId),
-                ),
-                ProcessTargetType::Node => $this->targets->forNodeAdmission(
-                    Node::query()
-                        ->lockForUpdate()
-                        ->findOrFail($data->targetId),
-                ),
-            };
-            if ($data->preset !== null) {
-                $this->assertPresetAdmission($data, $target);
-            }
-            $attributes = $this->specifications->attributes($data, $target);
-            $process = Process::query()
-                ->whereIn('owner_type', $data->targetType->storedTypes())
-                ->where('owner_id', $data->targetId)
-                ->where('name', $data->name)
-                ->first() ?? new Process([
-                    'owner_type' => $data->targetType->storedType(),
-                    'owner_id' => $data->targetId,
-                    'name' => $data->name,
-                ]);
-            $created = ! $process->exists;
-            $desiredState = $process->desired_state;
-
-            if ($created) {
-                $desiredState = $data->start ? DesiredProcessState::Running : DesiredProcessState::Stopped;
-            }
-
-            if ($process->exists && ! $this->specifications->matches($process, $attributes)) {
-                throw new ResourceOperationException(
-                    errorCode: 'process.name_taken',
-                    message: "Process [{$data->name}] already exists with different configuration.",
-                    status: 409,
-                );
-            }
-
-            $process->fill([
-                ...$attributes,
-                'desired_state' => $desiredState,
-            ]);
-
-            if ($desiredState === DesiredProcessState::Running) {
-                $this->runtime->assertCanStart($process);
-            }
-
-            if ($created) {
-                $process->fill([
-                    'status' => LifecycleStatus::Provisioning,
-                    'failed_step' => null,
-                    'error_code' => null,
-                ])->save();
-            }
-
-            return ['process' => $process, 'created' => $created, 'attributes' => $attributes];
-        });
+        $admission = DB::transaction(fn (): array => $this->reserveAdmission($data));
 
         return $this->lease->run($admission['process'], function (Process $fresh) use ($admission): array {
             if (! $admission['created'] && ! $this->specifications->matches($fresh, $admission['attributes'])) {
@@ -194,6 +134,72 @@ final readonly class AddProcessAction
 
             return ['process' => $fresh, 'created' => $admission['created']];
         });
+    }
+
+    /**
+     * @return array{process: Process, created: bool, attributes: array{runtime: ProcessRuntime, working_directory: string, runtime_config: array<string, mixed>, restart_policy: string, keep_alive: bool}}
+     */
+    private function reserveAdmission(#[SensitiveParameter] AddProcessData $data): array
+    {
+        $target = match ($data->targetType) {
+            ProcessTargetType::AppInstance => $this->targets->forAdmission(
+                AppInstance::query()
+                    ->with('node')
+                    ->lockForUpdate()
+                    ->findOrFail($data->targetId),
+            ),
+            ProcessTargetType::Node => $this->targets->forNodeAdmission(
+                Node::query()
+                    ->lockForUpdate()
+                    ->findOrFail($data->targetId),
+            ),
+        };
+        if ($data->preset !== null) {
+            $this->assertPresetAdmission($data, $target);
+        }
+        $attributes = $this->specifications->attributes($data, $target);
+        $process = Process::query()
+            ->whereIn('owner_type', $data->targetType->storedTypes())
+            ->where('owner_id', $data->targetId)
+            ->where('name', $data->name)
+            ->first() ?? new Process([
+                'owner_type' => $data->targetType->storedType(),
+                'owner_id' => $data->targetId,
+                'name' => $data->name,
+            ]);
+        $created = ! $process->exists;
+        $desiredState = $process->desired_state;
+
+        if ($created) {
+            $desiredState = $data->start ? DesiredProcessState::Running : DesiredProcessState::Stopped;
+        }
+
+        if ($process->exists && ! $this->specifications->matches($process, $attributes)) {
+            throw new ResourceOperationException(
+                errorCode: 'process.name_taken',
+                message: "Process [{$data->name}] already exists with different configuration.",
+                status: 409,
+            );
+        }
+
+        $process->fill([
+            ...$attributes,
+            'desired_state' => $desiredState,
+        ]);
+
+        if ($desiredState === DesiredProcessState::Running) {
+            $this->runtime->assertCanStart($process);
+        }
+
+        if ($created) {
+            $process->fill([
+                'status' => LifecycleStatus::Provisioning,
+                'failed_step' => null,
+                'error_code' => null,
+            ])->save();
+        }
+
+        return ['process' => $process, 'created' => $created, 'attributes' => $attributes];
     }
 
     private function projectAgentationSite(Process $process): void

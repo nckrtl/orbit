@@ -454,7 +454,7 @@ final readonly class ConvergeRouteTargetSetAction
             }
         }
 
-        return $this->guard->instances(array_values(array_unique($ids)))->values()->all();
+        return array_values($this->guard->instances(array_values(array_unique($ids)))->all());
     }
 
     private function complete(Route $route): void

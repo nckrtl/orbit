@@ -63,10 +63,9 @@ final class RouteData extends Data
             replacementStep: $route->replacement_step?->value,
             targetSetStep: $route->target_set_step,
             target: $target instanceof RouteTarget ? RouteTargetData::fromModel($target) : null,
-            targets: $route->targets
+            targets: array_values($route->targets
                 ->map(static fn (RouteTarget $row): RouteTargetData => RouteTargetData::fromModel($row))
-                ->values()
-                ->all(),
+                ->all()),
             processId: $proxy instanceof RouteCustomProxy ? $proxy->process_id : null,
             upstream: $proxy instanceof RouteCustomProxy ? $proxy->upstream : null,
             analyticsInstanceId: $route->analyticsTracking?->app_instance_id,

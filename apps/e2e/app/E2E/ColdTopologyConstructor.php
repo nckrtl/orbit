@@ -33,7 +33,7 @@ final readonly class ColdTopologyConstructor
     ) {}
 
     /**
-     * @param  (Closure(string, float, float, bool, ?string): void)|null  $observePhase
+     * @param  (Closure(string, float, float, bool, string|null): void)|null  $observePhase
      * @param  (Closure(ColdTopologyCleanupResult, float, float): void)|null  $observeCleanup
      */
     public function construct(
@@ -45,7 +45,11 @@ final readonly class ColdTopologyConstructor
             throw new RuntimeException('Snapshot replacement construction requires its recorded-input result.');
         }
 
-        return $this->constructWithSlot($plan, $observePhase, $observeCleanup)['source'];
+        return $this->constructWithSlot(
+            $plan,
+            $observePhase ?? $this->ignorePhase(...),
+            $observeCleanup ?? $this->ignoreCleanup(...),
+        )['source'];
     }
 
     public function constructReplacement(ColdTopologyPlan $plan): TopologyConstructionInputs
@@ -53,7 +57,7 @@ final readonly class ColdTopologyConstructor
         if (! $plan->snapshotReplacement) {
             throw new RuntimeException('Cold topology construction has no snapshot replacement declaration.');
         }
-        $result = $this->constructWithSlot($plan, null, null);
+        $result = $this->constructWithSlot($plan, $this->ignorePhase(...), $this->ignoreCleanup(...));
         $imageAlias = array_key_first($plan->imageFingerprints);
         if (! is_string($imageAlias)) {
             throw new RuntimeException('The snapshot replacement base-image identity is absent.');
@@ -68,14 +72,14 @@ final readonly class ColdTopologyConstructor
     }
 
     /**
-     * @param  (Closure(string, float, float, bool, ?string): void)|null  $observePhase
-     * @param  (Closure(ColdTopologyCleanupResult, float, float): void)|null  $observeCleanup
+     * @param  Closure(string, float, float, bool, string|null): void  $observePhase
+     * @param  Closure(ColdTopologyCleanupResult, float, float): void  $observeCleanup
      * @return array{source:SourceState,slot:int}
      */
     private function constructWithSlot(
         ColdTopologyPlan $plan,
-        ?Closure $observePhase,
-        ?Closure $observeCleanup,
+        Closure $observePhase,
+        Closure $observeCleanup,
     ): array {
         $this->phase('preflight', fn () => $this->preflight($plan), $observePhase);
 
@@ -121,7 +125,7 @@ final readonly class ColdTopologyConstructor
         } catch (Throwable $constructionFailure) {
             $cleanupStarted = microtime(true);
             $cleanup = $this->cleanup($plan->target, $plan->operation);
-            $observeCleanup?->__invoke($cleanup, $cleanupStarted, microtime(true));
+            $observeCleanup($cleanup, $cleanupStarted, microtime(true));
             if (! $cleanup->successful()) {
                 throw new ColdTopologyCleanupException($cleanup, $constructionFailure);
             }
@@ -249,22 +253,26 @@ final readonly class ColdTopologyConstructor
      * @template T
      *
      * @param  Closure(): T  $action
-     * @param  (Closure(string, float, float, bool, ?string): void)|null  $observer
+     * @param  Closure(string, float, float, bool, string|null): void  $observer
      * @return T
      */
-    private function phase(string $name, Closure $action, ?Closure $observer): mixed
+    private function phase(string $name, Closure $action, Closure $observer): mixed
     {
         $started = microtime(true);
 
         try {
             $result = $action();
-            $observer?->__invoke($name, $started, microtime(true), true, null);
+            $observer($name, $started, microtime(true), true, null);
 
             return $result;
         } catch (Throwable $exception) {
-            $observer?->__invoke($name, $started, microtime(true), false, $exception->getMessage());
+            $observer($name, $started, microtime(true), false, $exception->getMessage());
 
             throw $exception;
         }
     }
+
+    private function ignorePhase(string $name, float $started, float $finished, bool $passed, ?string $error): void {}
+
+    private function ignoreCleanup(ColdTopologyCleanupResult $result, float $started, float $finished): void {}
 }

@@ -69,10 +69,10 @@ final class RemoveFirewallRuleCommand extends FirewallCommand
             new RemoveFirewallRuleRequest($nodeId, $name),
             FirewallRuleResponse::class,
             ['Remove firewall rule', 'Removing firewall rule', 'Removed firewall rule'],
-            static function (object $response): ProgressState {
-                if (! $response instanceof FirewallRuleResponse || $response->backendStatus !== 'absent') {
+            static function (FirewallRuleResponse $response): ProgressState {
+                if ($response->backendStatus !== 'absent') {
                     throw new GatewayApiException('Gateway response does not confirm the firewall operation.',
-                        'gateway.invalid_response', requestId: $response instanceof FirewallRuleResponse ? $response->requestId : null);
+                        'gateway.invalid_response', requestId: $response->requestId);
                 }
 
                 return ProgressState::Success;

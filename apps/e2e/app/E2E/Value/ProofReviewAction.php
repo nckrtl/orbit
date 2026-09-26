@@ -210,7 +210,7 @@ final readonly class ProofReviewAction
             $value['node'],
             $value['required'],
             $value['status'],
-            $value['argv'],
+            self::stringList($value['argv']),
             $value['stdin_sha256'],
             $value['exit_code'],
             $value['stdout'],
@@ -219,6 +219,25 @@ final readonly class ProofReviewAction
             $value['started_at'],
             $value['completed_at'],
         );
+    }
+
+    /**
+     * @return list<string>
+     */
+    private static function stringList(mixed $values): array
+    {
+        if (! is_array($values) || ! array_is_list($values)) {
+            throw new InvalidArgumentException('The proof review action schema is invalid.');
+        }
+        $list = [];
+        foreach ($values as $value) {
+            if (! is_string($value)) {
+                throw new InvalidArgumentException('The proof review action schema is invalid.');
+            }
+            $list[] = $value;
+        }
+
+        return $list;
     }
 
     private function assertTime(string $time): void

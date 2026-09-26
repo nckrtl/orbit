@@ -37,6 +37,23 @@ it('blocks required incomplete and failed actions while listing exploratory fail
         ->toBe($evaluation->toArray());
 });
 
+it('rejects an evaluation action list that is not a list of strings', function (): void {
+    $started = '2026-09-10T10:00:00Z';
+    $action = ProofReviewAction::incomplete('required-pending', 'shell', 'gateway', true, [], null, $started);
+    $record = new ProofReviewRecord(
+        'AUX-230',
+        str_repeat('a', 40),
+        new AttemptId(str_repeat('b', 32)),
+        [$action],
+        $started,
+    );
+    $payload = ProofReviewEvaluation::forRecord($record, '2026-09-10T10:01:00Z')->toArray();
+    $payload['required_incomplete'] = [1];
+
+    expect(fn () => ProofReviewEvaluation::fromArray($payload))
+        ->toThrow(InvalidArgumentException::class, 'schema is invalid');
+});
+
 it('is ready when only exploratory checks fail', function (): void {
     $action = ProofReviewAction::incomplete(
         'explore',

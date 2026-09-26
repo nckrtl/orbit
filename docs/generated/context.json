@@ -590,7 +590,10 @@
             "kind": "product",
             "components": [
                 "apps/cli",
-                "apps/gateway"
+                "apps/docs",
+                "apps/e2e",
+                "apps/gateway",
+                "packages/php-sdk"
             ],
             "concepts": [
                 "Gateway",
@@ -598,9 +601,12 @@
                 "Process",
                 "Project",
                 "Task",
+                "Task group",
                 "Tool"
             ],
-            "governing_adrs": []
+            "governing_adrs": [
+                "0166"
+            ]
         },
         {
             "path": "docs/decisions/0001-tool-management.md",
@@ -4253,6 +4259,27 @@
             ]
         },
         {
+            "path": "docs/decisions/0166-raise-phpstan-one-level-at-a-time.md",
+            "title": "ADR 0166: Raise PHPStan one level at a time",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/e2e",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Gateway",
+                "Project",
+                "Task",
+                "Task group"
+            ],
+            "governing_adrs": [
+                "0166"
+            ]
+        },
+        {
             "path": "docs/decisions/0168-offload-large-pi-tool-output.md",
             "title": "ADR 0168: Offload large Pi tool output",
             "kind": "decision",
@@ -4468,6 +4495,7 @@
                 "0163",
                 "0164",
                 "0165",
+                "0166",
                 "0168"
             ]
         },
@@ -5151,6 +5179,7 @@
                 "Process",
                 "Project",
                 "Task",
+                "Task group",
                 "Tool"
             ],
             "governing_adrs": [
@@ -5160,7 +5189,8 @@
                 "0113",
                 "0114",
                 "0119",
-                "0131"
+                "0131",
+                "0166"
             ]
         },
         {
