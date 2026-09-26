@@ -78,6 +78,8 @@ final readonly class CacheAgentStateView implements AgentStateView
             docker: $docker,
             receivedAt: $receivedAt,
             workspaces: $workspaces,
+            logs: ($entry['logs'] ?? false) === true,
+            agentVersion: is_string($entry['agent_version'] ?? null) ? $entry['agent_version'] : null,
         );
     }
 
@@ -107,8 +109,10 @@ final readonly class CacheAgentStateView implements AgentStateView
      *
      * @param  array<string, string>  $units
      * @param  array<int, array<string, mixed>>  $workspaces  Task workspaces keyed by Instance id.
+     * @param  bool  $logs  Whether the agent is a member of the Node's log channel (ADR 0153).
+     * @param  ?string  $agentVersion  The version the agent reported in its channel membership.
      */
-    public function putNode(int $nodeId, array $units, ?string $docker, int $sequence, float $receivedAt, ?string $agentAt, array $workspaces = []): void
+    public function putNode(int $nodeId, array $units, ?string $docker, int $sequence, float $receivedAt, ?string $agentAt, array $workspaces = [], bool $logs = false, ?string $agentVersion = null): void
     {
         $this->cache->put(self::NODE_KEY.$nodeId, [
             'received_at' => $receivedAt,
@@ -117,6 +121,8 @@ final readonly class CacheAgentStateView implements AgentStateView
             'docker' => $docker,
             'units' => $units,
             'workspaces' => array_values($workspaces),
+            'logs' => $logs,
+            'agent_version' => $agentVersion,
         ], self::NodeTtlSeconds);
     }
 

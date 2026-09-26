@@ -6,6 +6,7 @@ namespace App\Commands\Processes;
 
 use App\Commands\GatewayCommand;
 use App\Support\Console\ConsoleWriter;
+use App\Support\Logs\LogRedaction;
 use Orbit\Sdk\Responses\Processes\ProcessResponse;
 
 abstract class ProcessCommand extends GatewayCommand
@@ -44,33 +45,7 @@ abstract class ProcessCommand extends GatewayCommand
 
     protected function sanitizedLogs(string $logs): string
     {
-        $sensitiveName = $this->sensitiveNamePattern();
-        $redacted = str_ireplace(
-            search: '[REDACTED]',
-            replace: '[redacted]',
-            subject: $logs,
-        );
-        $patterns = [
-            '/-----BEGIN [A-Z0-9 ]+-----[\s\S]*?-----END [A-Z0-9 ]+-----/' => '[redacted]',
-            '/((?:^|[,{]\s*)["\']?'
-                .$sensitiveName
-                .'["\']?\s*(?:=|:)\s*)(?:"[^"\r\n]*"|\'[^\'\r\n]*\'|[^,\s}\r\n]+)/im' => '$1[redacted]',
-            '/\b('.$sensitiveName.')\s*=\s*(?:"[^"\r\n]*"|\'[^\'\r\n]*\'|[^\s&,}\r\n]+)/i' => '$1=[redacted]',
-            '/\b((?:Proxy-)?Authorization)\s*:\s*[^\r\n]*/i' => '$1: [redacted]',
-            '/\b(Bearer)\s+(?:"[^"]*"|\'[^\']*\'|[A-Za-z0-9][A-Za-z0-9._\-+\/=]{7,})/i' => '$1 [redacted]',
-            '/(\b[a-z][a-z0-9+.-]*:\/\/)[^@\s\/]+@/i' => '$1[redacted]@',
-            '/([?&](?:'.$sensitiveName.'|passwd|credential|cookie)=)[^&\s]+/i' => '$1[redacted]',
-        ];
-
-        foreach ($patterns as $pattern => $replacement) {
-            $result = preg_replace(pattern: $pattern, replacement: $replacement, subject: $redacted);
-
-            if (is_string($result)) {
-                $redacted = $result;
-            }
-        }
-
-        return $redacted;
+        return LogRedaction::redact($logs);
     }
 
     /**
@@ -151,11 +126,7 @@ abstract class ProcessCommand extends GatewayCommand
 
     private function sensitiveNamePattern(): string
     {
-        return
-            '[A-Z0-9_.-]*(?:APP[_-]?KEY|APPLICATION[_-]?KEY|API[_-]?KEY|ACCESS[_-]?TOKEN|'
-            .'REFRESH[_-]?TOKEN|OPERATION[_-]?TOKEN|EXECUTOR[_-]?SECRET|PRIVATE[_-]?KEY|'
-            .'PRE[_-]?SHARED[_-]?KEY|PASSWORD[_-]?HASH|PASSWORD|PASSWD|PWD|SECRET|TOKEN|'
-            .'BEARER[_-]?TOKEN|CREDENTIAL|COOKIE)[A-Z0-9_.-]*';
+        return LogRedaction::sensitiveNamePattern();
     }
 
     protected function renderProcess(ProcessResponse $process, string $message): int

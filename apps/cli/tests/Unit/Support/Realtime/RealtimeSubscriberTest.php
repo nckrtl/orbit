@@ -5,6 +5,8 @@ declare(strict_types=1);
 use App\Support\Realtime\FakeRealtimeChannelAuthorizer;
 use App\Support\Realtime\FakeWebSocketClose;
 use App\Support\Realtime\FakeWebSocketTransport;
+use App\Support\Realtime\RealtimeChannelGrant;
+use App\Support\Realtime\RealtimeChannelOpener;
 use App\Support\Realtime\RealtimeConnectionException;
 use App\Support\Realtime\RealtimeState;
 use App\Support\Realtime\RealtimeSubscriber;
@@ -155,5 +157,80 @@ describe(RealtimeSubscriber::class, function (): void {
 
         expect($subscriber->poll())->toBe([])
             ->and($subscriber->state())->toBe(RealtimeState::Reconnecting);
+    });
+});
+
+describe('RealtimeSubscriber with a channel opener', function (): void {
+    it('subscribes to the channel the opener names for the socket and delivers only its events', function (): void {
+        $opened = [];
+        $opener = new class($opened) implements RealtimeChannelOpener
+        {
+            /** @param  list<string>  $opened */
+            public function __construct(public array &$opened) {}
+
+            public function open(string $socketId): RealtimeChannelGrant
+            {
+                $this->opened[] = $socketId;
+
+                return new RealtimeChannelGrant('private-log-stream.'.str_repeat('c', 32), 'app-key:stream-signature');
+            }
+        };
+        $channel = 'private-log-stream.'.str_repeat('c', 32);
+        $transport = new FakeWebSocketTransport([
+            ['event' => 'pusher:connection_established', 'data' => '{"socket_id":"321.654"}'],
+            ['event' => 'pusher_internal:subscription_succeeded', 'channel' => $channel, 'data' => '{}'],
+            ['event' => 'log.lines', 'channel' => 'private-orbit', 'data' => '{}'],
+            ['event' => 'client-log', 'channel' => $channel, 'data' => '{}'],
+            ['event' => 'log.lines', 'channel' => $channel, 'data' => '{"n":1}'],
+        ]);
+        $subscriber = new RealtimeSubscriber($transport, realtime_test_connection_config(), $opener);
+
+        $subscriber->connect();
+        $events = $subscriber->pollDecoded(static fn (string $name, mixed $payload): ?stdClass => str_starts_with($name, 'client-')
+            ? null
+            : (object) ['name' => $name, 'payload' => $payload]);
+
+        expect($opened)->toBe(['321.654'])
+            ->and($transport->sent)->toBe([
+                ['event' => 'pusher:subscribe', 'data' => ['auth' => 'app-key:stream-signature', 'channel' => $channel]],
+            ])
+            ->and($subscriber->state())->toBe(RealtimeState::Connected)
+            ->and($events)->toEqual([(object) ['name' => 'log.lines', 'payload' => '{"n":1}']]);
+    });
+
+    it('lets an opener failure other than a connection failure reach the caller', function (): void {
+        $opener = new class implements RealtimeChannelOpener
+        {
+            public function open(string $socketId): RealtimeChannelGrant
+            {
+                throw new DomainException('refused');
+            }
+        };
+        $transport = new FakeWebSocketTransport([
+            ['event' => 'pusher:connection_established', 'data' => '{"socket_id":"1.2"}'],
+        ]);
+        $subscriber = new RealtimeSubscriber($transport, realtime_test_connection_config(), $opener);
+        $subscriber->connect();
+
+        $subscriber->poll();
+    })->throws(DomainException::class, 'refused');
+
+    it('reconnects when the opener cannot reach the gateway', function (): void {
+        $opener = new class implements RealtimeChannelOpener
+        {
+            public function open(string $socketId): RealtimeChannelGrant
+            {
+                throw new RealtimeConnectionException('unreachable');
+            }
+        };
+        $transport = new FakeWebSocketTransport([
+            ['event' => 'pusher:connection_established', 'data' => '{"socket_id":"1.2"}'],
+        ]);
+        $subscriber = new RealtimeSubscriber($transport, realtime_test_connection_config(), $opener);
+        $subscriber->connect();
+
+        expect($subscriber->poll())->toBe([])
+            ->and($subscriber->state())->toBe(RealtimeState::Reconnecting)
+            ->and($transport->isConnected())->toBeFalse();
     });
 });
