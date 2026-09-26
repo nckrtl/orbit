@@ -22,7 +22,7 @@ final class TaskData extends Data
         public int $position,
         public string $title,
         public string $brief,
-        /** @var list<array<string, string>> */
+        /** @var list<array<string, string|bool>> */
         public array $deliverables,
         public TaskStatus $status,
         public ?int $implementerAgentThreadId,
@@ -37,6 +37,7 @@ final class TaskData extends Data
         public ?TaskCheckData $check,
         public bool $assistanceRequested,
         public ?string $assistanceReason,
+        public ?string $fixupProblem,
     ) {}
 
     public static function fromModel(Task $task): self
@@ -50,6 +51,7 @@ final class TaskData extends Data
             check: $check instanceof TaskCheck ? TaskCheckData::fromModel($check) : null,
             assistanceRequested: $task->assistance_requested,
             assistanceReason: $task->assistance_reason,
+            fixupProblem: $task->fixup_problem,
 
             id: $task->id,
             taskGroupId: $task->task_group_id,

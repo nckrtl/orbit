@@ -20,6 +20,7 @@ final readonly class TaskDeliverable
         public string $name = '',
         public string $command = '',
         public string $directory = '.',
+        public bool $fails_on_base = false,
     ) {}
 
     /** @param array<array-key, mixed> $data */
@@ -38,6 +39,7 @@ final readonly class TaskDeliverable
             name: $text('name'),
             command: $text('command'),
             directory: $text('directory', '.'),
+            fails_on_base: ($data['fails_on_base'] ?? null) === true,
         );
     }
 
@@ -54,7 +56,7 @@ final readonly class TaskDeliverable
         return array_values(array_map(self::fromArray(...), array_filter($stored, is_array(...))));
     }
 
-    /** @return array<string, string> the id, type, description, and the fields of the type */
+    /** @return array<string, string|bool> the id, type, description, and the fields of the type */
     public function toArray(): array
     {
         $fields = ['id' => $this->id, 'type' => $this->type->value, 'description' => $this->description];
@@ -89,12 +91,24 @@ final readonly class TaskDeliverable
     {
         $detail = match ($this->type) {
             TaskDeliverableType::File => "{$this->path}, {$this->change}",
-            TaskDeliverableType::Test => "Pest test \"{$this->name}\" in {$this->testPath()}",
+            TaskDeliverableType::Test => $this->testLine(),
             TaskDeliverableType::Command => "`{$this->command}` in {$this->directory}",
             TaskDeliverableType::Review => 'confirmed by the reviewer',
         };
 
         return "- {$this->id} ({$this->type->value}: {$detail}): {$this->description}";
+    }
+
+    /** The test detail, including the base-run sentence when fails_on_base is true (ADR 0163). */
+    private function testLine(): string
+    {
+        $detail = "Pest test \"{$this->name}\" in {$this->testPath()}";
+
+        if (! $this->fails_on_base) {
+            return $detail;
+        }
+
+        return $detail."; at least one test whose name contains \"{$this->name}\" must fail on the start commit, and every such test must pass on the working tree";
     }
 
     /** Joins a directory and a path from it into one path from the workspace root. */

@@ -49,7 +49,9 @@ use Illuminate\Support\Carbon;
  * @property int|null $duration_ms
  * @property Carbon|null $started_at
  * @property string|null $subtask_start_commit
- * @property list<array<string, string>>|null $deliverables
+ * @property string|null $fixup_problem
+ * @property string|null $fixup_head_sha
+ * @property list<array<string, string|bool>>|null $deliverables
  * @property Carbon|null $settled_at
  * @property-read TaskGroup $taskGroup
  */
@@ -80,6 +82,8 @@ final class Task extends Model
         'duration_ms',
         'started_at',
         'subtask_start_commit',
+        'fixup_problem',
+        'fixup_head_sha',
         'deliverables',
         'settled_at',
         'completion_attempt',
@@ -133,6 +137,21 @@ final class Task extends Model
             ->whereKeyNot($this->id)
             ->whereIn('status', [TaskStatus::Todo, TaskStatus::Reserved, TaskStatus::Running])
             ->doesntExist();
+    }
+
+    /**
+     * Whether this approval opens the group's pull request.
+     * After a pull request URL is stored, the approval pushes to that pull request and does not require pull request fields (ADR 0164).
+     */
+    public function opensPullRequest(): bool
+    {
+        if (! $this->isLastSubtask()) {
+            return false;
+        }
+
+        $url = $this->taskGroup()->value('pr_url');
+
+        return ! is_string($url) || $url === '';
     }
 
     /**

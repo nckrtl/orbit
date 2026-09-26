@@ -82,11 +82,16 @@ describe('task transport', function (): void {
 
     it('sends subtask and comment bodies', function (): void {
         $docs = ['id' => 'docs', 'type' => 'file', 'description' => 'Docs', 'path' => 'docs/a.md', 'change' => 'any'];
+        $repro = ['id' => 'layout-repro', 'type' => 'test', 'description' => 'Fails before the fix', 'project' => 'apps/gateway', 'file' => 'tests/Feature/HomeScreenTest.php', 'name' => 'home screen layout', 'fails_on_base' => true];
 
         expect(new CreateSubtaskRequest(13, 'Title', 'Brief')->body()->all())
             ->toBe('{"title":"Title","brief":"Brief"}')
             ->and(new CreateSubtaskRequest(13, 'Title', 'Brief', [$docs])->body()->all())
             ->toBe('{"title":"Title","brief":"Brief","deliverables":[{"id":"docs","type":"file","description":"Docs","path":"docs\\/a.md","change":"any"}]}')
+            ->and(new CreateSubtaskRequest(13, 'Title', 'Brief', [$repro])->body()->all())
+            ->toContain('"fails_on_base":true')
+            ->and(new UpdateSubtaskRequest(13, 57, deliverables: [$repro])->body()->all())
+            ->toContain('"fails_on_base":true')
             ->and(new SubtaskInput('One', 'First.', [$docs])->toArray())
             ->toBe(['title' => 'One', 'brief' => 'First.', 'deliverables' => [$docs]])
             ->and(new CreateTaskCommentRequest(13, 57, 'resolution', 'Done.', 'nick')->body()->all())
@@ -164,6 +169,33 @@ describe('task responses from recorded Gateway fixtures', function (): void {
             ->and($group->toArray())->not->toHaveKey('tasks.0.request_id')
             ->and($group->toArray()['tasks'][0])->not->toHaveKey('request_id')
             ->and($group->toArray()['request_id'])->toBe(task_request_id());
+    });
+
+    it('keeps fails_on_base on a test deliverable', function (): void {
+        $mockClient = new MockClient([CreateSubtaskRequest::class => MockResponse::make([
+            'data' => [
+                'id' => 1,
+                'task_group_id' => 1,
+                'position' => 1,
+                'title' => 'Layout',
+                'brief' => 'Fix the layout.',
+                'status' => 'todo',
+                'deliverables' => [[
+                    'id' => 'layout-repro',
+                    'type' => 'test',
+                    'description' => 'Fails before the fix',
+                    'fails_on_base' => true,
+                ]],
+            ],
+            'meta' => ['request_id' => task_request_id()],
+        ])]);
+        $connector = new GatewayConnector('https://10.44.0.1');
+        $connector->withMockClient($mockClient);
+        $subtask = $connector->send(new CreateSubtaskRequest(1, 'Layout', 'Fix the layout.'))->dto();
+
+        expect($subtask)->toBeInstanceOf(SubtaskResponse::class);
+        assert($subtask instanceof SubtaskResponse);
+        expect($subtask->deliverables[0]['fails_on_base'])->toBeTrue();
     });
 
     it('keeps comments newest first and agent errors', function (): void {

@@ -97,8 +97,15 @@ final readonly class RemoteTaskCheckRunner implements TaskCheckRunner
         if (! is_string($head) || $head === '' || ! is_string($tree) || $tree === '') {
             throw new TaskCheckException('The workspace tree could not be read.');
         }
+        $parent = $data['parent'] ?? null;
+        $commitTree = $data['commit_tree'] ?? null;
 
-        return new TaskWorkspaceSnapshot($head, $tree);
+        return new TaskWorkspaceSnapshot(
+            $head,
+            $tree,
+            is_string($parent) && $parent !== '' ? $parent : null,
+            is_string($commitTree) && $commitTree !== '' ? $commitTree : null,
+        );
     }
 
     private function finished(mixed $result, string $output): TaskCheckReading

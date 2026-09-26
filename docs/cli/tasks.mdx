@@ -91,7 +91,7 @@ Show one task group as a detail tree, followed by its brief and a table of its s
 orbit tasks:show [group] [--json]
 ```
 
-The tree shows the ID, title, Project, status, Instance, pull request, Coder notification, planner, models, tokens, line diff, and duration. The subtask table shows the position, ID, title, status, tokens, line diff, and duration of each subtask. Showing an active group refreshes its metrics, as the [tasks reference](/reference/tasks#tokens-and-line-diff) describes.
+The tree shows the ID, title, Project, status, Instance, pull request, Coder notification, planner, models, tokens, line diff, and duration. The subtask table shows the position, ID, title, status, tokens, line diff, and duration of each subtask. JSON includes `fails_on_base` on every test deliverable. When that value is true, the detail names the deliverable under Fails on the start commit. Showing an active group refreshes its metrics, as the [tasks reference](/reference/tasks#tokens-and-line-diff) describes.
 
 ## orbit tasks:create
 
@@ -127,7 +127,7 @@ The CLI does not prompt for the status, the subtasks, the notification, or the p
 | `tasks.subtask_deliverables_missing` | `--status=todo` while a subtask has no deliverables. |
 | `tasks.agent_driver_unavailable` | The Gateway's configured agent driver is unknown. The Gateway stores no group. |
 | `tasks.plan_requires_backlog` | `--plan` with `--status=todo`. |
-| `tasks.planner_driver_unavailable`, `tasks.planner_node_unavailable`, `tasks.planner_unavailable` | The Gateway cannot start the planner. The [tasks reference](/reference/tasks#groups-and-subtasks) explains each case. |
+| `tasks.planner_driver_unavailable`, `tasks.planner_node_unavailable`, `tasks.planner_unavailable` | The Gateway cannot start the planner. It stores no group. When removing the planner Instance also fails, the response is still `tasks.planner_unavailable` and the Instance row stays. The [tasks reference](/reference/tasks#plan-a-group-with-a-planner) explains each case. |
 
 ## orbit tasks:update
 
@@ -169,11 +169,11 @@ orbit tasks:cancel [group] [--yes] [--json]
 | --- | --- |
 | `--yes` | Confirm without a prompt. Required for `--json` and `-n` calls. |
 
-In a terminal, the group list leaves out `settling` and `completed` groups. Before it asks, the CLI reads the group and names it and its Instance in the question. The question defaults to No. A `--json` or `-n` call without `--yes` fails with `input.confirmation_required`. Declining fails with `input.cancelled`. Neither changes the group. A `completed` group, or a `settling` group with a pull request, fails with `tasks.not_cancellable`; complete a settling group instead. Pass the group ID to cancel a `settling` group without a pull request. The Gateway first pushes its approved commits to the task branch; a failed push fails with `tasks.push_failed` and keeps the group.
+In a terminal, the group list leaves out `settling` and `completed` groups. Before it asks, the CLI reads the group and names it and its Instance in the question. The question defaults to No. A `--json` or `-n` call without `--yes` fails with `input.confirmation_required`. Declining fails with `input.cancelled`. Neither changes the group. A `completed` group, or a `settling` group with a pull request, fails with `tasks.not_cancellable`; complete a settling group instead. Pass the group ID to cancel a `settling` group without a pull request. When the Node answers, the Gateway first pushes the stored approved commit to the task branch; a failed push fails with `tasks.push_failed` and keeps the group. When the Node is unreachable, the group is still marked `cancelled`, the Instance stays attached, and the scheduler retries removal, as the [tasks reference](/reference/tasks#cancel-a-stuck-group) describes.
 
 ## orbit tasks:complete
 
-Complete a `settling` group after its pull request is reviewed and merged. The Gateway marks the group `completed` and removes its shared Instance. Completing a completed group succeeds and changes nothing.
+Complete a `settling` group after its pull request is reviewed and merged. The Gateway marks the group `completed` and removes its shared Instance. Completing a completed group whose checkout is already gone succeeds and changes nothing. Completing a completed group that still has its Instance retries removal.
 
 ```bash
 orbit tasks:complete [group] [--yes] [--json]
@@ -183,11 +183,11 @@ orbit tasks:complete [group] [--yes] [--json]
 | --- | --- |
 | `--yes` | Confirm without a prompt. Required for `--json` and `-n` calls. |
 
-In a terminal, the group list shows only `settling` groups. The question names the group and its Instance and defaults to No. Consent failures match `tasks:cancel`. Any other status fails with `tasks.not_settling`.
+In a terminal, the group list shows only `settling` groups. The question names the group and its Instance and defaults to No. Consent failures match `tasks:cancel`. Any other status fails with `tasks.not_settling`. When removal fails, the group is still marked `completed`, the Instance stays attached, and the scheduler retries removal, as the [tasks reference](/reference/tasks#complete-and-cleanup) describes.
 
 ## orbit tasks:subtask:create
 
-Append one subtask to a group at the next position, with status `todo`. This works in every group status. Outside `backlog`, the subtask needs deliverables.
+Append one subtask to a group at the next position, with status `todo`. This works in every group status. Outside `backlog`, the subtask needs deliverables. When the group is `settling` and its pull request is open, the next tick returns the group to `running` and starts this subtask. Another assistance cause keeps the group `settling`. The [tasks reference](/reference/tasks#fix-a-settling-pull-request) owns that transition.
 
 ```bash
 orbit tasks:subtask:create [group] [title] [--brief=TEXT] [--deliverables=FILE] [--json]
@@ -197,7 +197,7 @@ orbit tasks:subtask:create [group] [title] [--brief=TEXT] [--deliverables=FILE] 
 | --- | --- | --- |
 | `title` | prompt | Short name of the step. |
 | `--brief=TEXT` | prompt | Goal and acceptance of the step. |
-| `--deliverables=FILE` | none | JSON file with an array of at most 20 [deliverables](/reference/tasks#deliverables). |
+| `--deliverables=FILE` | none | JSON file with an array of at most 20 [deliverables](/reference/tasks#deliverables). A test deliverable may set `fails_on_base` to `true` or `false`. The CLI refuses that field on any other type. |
 
 ```bash
 orbit tasks:subtask:create 13 "Document the export" --brief="$(cat step.md)" --deliverables=deliverables.json
@@ -230,7 +230,7 @@ orbit tasks:subtask:update [group] [subtask] [--title=TEXT] [--brief=TEXT] [--po
 orbit tasks:subtask:update 58 88 --deliverables=deliverables.json
 ```
 
-In a terminal, the group list shows only `backlog` groups, unless `--deliverables` is the only change. Without a change option, the CLI asks which fields to change and prompts for each one with its current value. It does not prompt for deliverables. A `--json` or `-n` call without a change option fails with `tasks.update_required`. A position that is not a positive integer fails with `tasks.position_invalid`. A title, brief, or position change outside `backlog` fails with `tasks.not_in_backlog`. A deliverables change for a subtask that has started, outside `backlog`, fails with `tasks.deliverables_locked`. An unreadable or malformed file fails with `tasks.deliverables_invalid`.
+In a terminal, the group list shows only `backlog` groups, unless `--deliverables` is the only change. Without a change option, the CLI asks which fields to change and prompts for each one with its current value. It does not prompt for deliverables. A `--json` or `-n` call without a change option fails with `tasks.update_required`. A position that is not a positive integer fails with `tasks.position_invalid`. A title, brief, or position change outside `backlog` fails with `tasks.not_in_backlog`. A deliverables change for a subtask that has started, including a `running` subtask, fails with `tasks.deliverables_locked` and leaves the stored list unchanged. The command never reports success while ignoring that list. An unreadable or malformed file fails with `tasks.deliverables_invalid`.
 
 ## orbit tasks:subtask:destroy
 

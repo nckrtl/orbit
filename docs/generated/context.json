@@ -3519,7 +3519,8 @@
                 "0121",
                 "0124",
                 "0125",
-                "0133"
+                "0133",
+                "0163"
             ]
         },
         {
@@ -3657,7 +3658,8 @@
                 "0098",
                 "0113",
                 "0121",
-                "0140"
+                "0140",
+                "0164"
             ]
         },
         {
@@ -3695,7 +3697,8 @@
                 "0139",
                 "0141",
                 "0146",
-                "0157"
+                "0157",
+                "0161"
             ]
         },
         {
@@ -4155,6 +4158,26 @@
             ]
         },
         {
+            "path": "docs/decisions/0161-set-a-stale-caddyfile-aside-when-caddy-is-absent.md",
+            "title": "ADR 0161: Set a stale Caddyfile aside when Caddy is absent",
+            "kind": "decision",
+            "components": [
+                "apps/docs",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Doctor",
+                "Gateway",
+                "Ingress",
+                "Node",
+                "Router"
+            ],
+            "governing_adrs": [
+                "0141",
+                "0161"
+            ]
+        },
+        {
             "path": "docs/decisions/0162-verify-web-ui-changes-with-bin-web-verify.md",
             "title": "ADR 0162: Verify web UI changes with bin/web-verify",
             "kind": "decision",
@@ -4170,6 +4193,52 @@
             ],
             "governing_adrs": [
                 "0162"
+            ]
+        },
+        {
+            "path": "docs/decisions/0163-prove-a-failing-test-on-the-start-commit.md",
+            "title": "ADR 0163: Prove a failing test on the start commit",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Gateway",
+                "Node",
+                "Project",
+                "Task"
+            ],
+            "governing_adrs": [
+                "0133",
+                "0163"
+            ]
+        },
+        {
+            "path": "docs/decisions/0164-heal-a-settling-pull-request-with-a-fixup-subtask.md",
+            "title": "ADR 0164: Heal a settling pull request with a fixup subtask",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/e2e",
+                "apps/gateway",
+                "apps/web",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Gateway",
+                "Project",
+                "Task"
+            ],
+            "governing_adrs": [
+                "0113",
+                "0121",
+                "0140",
+                "0160",
+                "0164"
             ]
         },
         {
@@ -4362,7 +4431,10 @@
                 "0158",
                 "0159",
                 "0160",
-                "0162"
+                "0161",
+                "0162",
+                "0163",
+                "0164"
             ]
         },
         {
@@ -4747,7 +4819,8 @@
                 "0138",
                 "0139",
                 "0141",
-                "0157"
+                "0157",
+                "0161"
             ]
         },
         {
@@ -5024,7 +5097,8 @@
                 "0098",
                 "0121",
                 "0140",
-                "0160"
+                "0160",
+                "0164"
             ]
         },
         {
@@ -5568,8 +5642,12 @@
             "title": "Tasks",
             "kind": "reference",
             "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/e2e",
                 "apps/gateway",
-                "apps/web"
+                "apps/web",
+                "packages/php-sdk"
             ],
             "concepts": [
                 "Database",
@@ -5602,7 +5680,9 @@
                 "0133",
                 "0134",
                 "0140",
-                "0160"
+                "0160",
+                "0163",
+                "0164"
             ]
         },
         {

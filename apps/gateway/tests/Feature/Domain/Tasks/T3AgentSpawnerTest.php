@@ -5,6 +5,8 @@ declare(strict_types=1);
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskAgentDefaults;
 use App\Domain\Tasks\TaskAgentSpawner;
+use App\Domain\Tasks\TaskCheckKind;
+use App\Domain\Tasks\TaskCheckStatus;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskRunInstructions;
 use App\Domain\Tasks\TaskStatus;
@@ -17,6 +19,7 @@ use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Task;
+use App\Models\TaskCheck;
 use App\Models\TaskGroup;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Artisan;
@@ -207,6 +210,73 @@ it('posts T3 model options as id and value JSON objects', function (): void {
                 ['id' => 'effort', 'value' => 'high'],
             ];
     });
+});
+
+it('shows the base failure kind and message to the reviewer', function (): void {
+    $group = t3_spawner_group();
+    $task = $group->tasks->first();
+    $task->update(['deliverables' => [[
+        'id' => 'layout-repro',
+        'type' => 'test',
+        'description' => 'The layout fails before the fix',
+        'project' => 'apps/gateway',
+        'file' => 'tests/Feature/HomeScreenTest.php',
+        'name' => 'home screen layout',
+        'fails_on_base' => true,
+    ]]]);
+    TaskCheck::query()->create([
+        'task_id' => $task->id,
+        'kind' => TaskCheckKind::Handoff,
+        'status' => TaskCheckStatus::Passed,
+        'pid' => 1,
+        'process_started' => 'Wed Sep 23 12:00:00 2026',
+        'head_before' => str_repeat('a', 40),
+        'tree_before' => str_repeat('b', 40),
+        'deliverable_evidence' => [
+            'diff' => [],
+            'tests' => [
+                'layout-repro' => [
+                    'exit_code' => 0,
+                    'cases' => [['name' => 'it keeps the home screen layout', 'status' => 'passed']],
+                    'base_placed' => true,
+                    'base_exit_code' => 2,
+                    'base_cases' => [[
+                        'name' => 'it breaks the home screen layout',
+                        'status' => 'failed',
+                        'kind' => 'error',
+                        'message' => 'Class "HomeScreen" not found',
+                    ]],
+                ],
+            ],
+            'commands' => [],
+        ],
+        'started_at' => now(),
+    ]);
+    $group->reviewer_agent_thread_id = test_agent_thread($group, 'reviewer-existing')->id;
+    $group->save();
+    [$spawner, $dispatcher] = t3_spawner_stack();
+
+    $spawner->requestReview($task->fresh());
+
+    expect($dispatcher->commands[0]['message']['text'])->toContain('Base run on the start commit. An error, such as a missing class, is not an assertion failure.')
+        ->and($dispatcher->commands[0]['message']['text'])->toContain('- layout-repro: "it breaks the home screen layout" failed on the start commit with an error: Class "HomeScreen" not found');
+});
+
+it('does not ask for pull request fields when reviewing a fixup on an open pull request', function (): void {
+    $group = t3_spawner_group();
+    $group->update([
+        'pr_url' => 'https://github.com/acme/orbit/pull/42',
+        'reviewer_agent_thread_id' => test_agent_thread($group, 'reviewer-existing')->id,
+    ]);
+    [$spawner, $dispatcher] = t3_spawner_stack();
+    $task = $group->tasks()->firstOrFail();
+
+    $spawner->requestReview($task);
+
+    expect($dispatcher->commands)->toHaveCount(1)
+        ->and($dispatcher->commands[0]['message']['text'])->toStartWith('Review subtask #'.$task->id)
+        ->and($dispatcher->commands[0]['message']['text'])->toEndWith(TaskRunInstructions::reviewer(final: false))
+        ->and($dispatcher->commands[0]['message']['text'])->not->toContain('--pr-summary');
 });
 
 it('sends the review request to the stored reviewer thread', function (): void {

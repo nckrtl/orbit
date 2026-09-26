@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Tasks\TaskPullRequestCheck;
 use App\Infrastructure\Tasks\HttpTaskPullRequestWatcher;
 use App\Models\App as OrbitApp;
 use App\Models\TaskGroup;
@@ -118,6 +119,9 @@ it('reports an open pull request that conflicts with its base branch', function 
     $health = app(HttpTaskPullRequestWatcher::class)->health(watcher_group());
 
     expect($health?->state)->toBe('open')
+        ->and($health?->conflicts)->toBeTrue()
+        ->and($health?->baseRef)->toBe('main')
+        ->and($health?->failedChecks)->toBe([])
         ->and($health?->problems)->toBe(['It conflicts with main; merge main into the task branch and push.'])
         ->and($health?->reason())->toBe('The pull request needs attention: It conflicts with main; merge main into the task branch and push.');
 })->with([
@@ -132,6 +136,7 @@ it('does not report a conflict while GitHub still computes mergeability', functi
     $health = app(HttpTaskPullRequestWatcher::class)->health(watcher_group());
 
     expect($health?->state)->toBe('open')
+        ->and($health?->conflicts)->toBeFalse()
         ->and($health?->problems)->toBe([]);
 });
 
@@ -162,7 +167,18 @@ it('names each failed check run on the head commit with its URL, through a separ
         'Check Docs failed: https://github.com/acme/orbit/runs/3.',
         'Check CLI failed: https://github.com/acme/orbit/runs/4.',
         'Check Deploy failed.',
-    ]);
+    ])
+        ->and(array_map(static fn (TaskPullRequestCheck $check): array => [$check->name, $check->url], $health?->failedChecks ?? []))->toBe([
+            ['Rust agent', 'https://github.com/acme/orbit/runs/1'],
+            ['Gateway', 'https://ci.example.test/gateway'],
+            ['Deploy', null],
+        ])
+        ->and(array_map(static fn (TaskPullRequestCheck $check): array => [$check->name, $check->url], $health?->infrastructureChecks ?? []))->toBe([
+            ['Docs', 'https://github.com/acme/orbit/runs/3'],
+            ['CLI', 'https://github.com/acme/orbit/runs/4'],
+        ])
+        ->and($health?->checksPending)->toBeTrue()
+        ->and($health?->headSha)->toBe('abc123');
     Http::assertSent(static fn (Request $request): bool => $request->url() === 'https://api.github.com/repos/acme/orbit/commits/abc123/check-runs?per_page=100'
         && $request->hasHeader('Authorization', 'Bearer ghs_checks'));
     Http::assertSent(static fn (Request $request): bool => str_ends_with($request->url(), '/access_tokens')
@@ -171,6 +187,49 @@ it('names each failed check run on the head commit with its URL, through a separ
         && $request->data() === ['repositories' => ['orbit'], 'permissions' => ['contents' => 'write', 'pull_requests' => 'write']]);
     Http::assertNotSent(static fn (Request $request): bool => str_ends_with($request->url(), '/access_tokens')
         && array_key_exists('checks', $request->data()['permissions']) && count($request->data()['permissions']) > 1);
+});
+
+it('drops the Required checks rollup while another failed check explains the failure', function (): void {
+    GitHubTestSupport::storeApp();
+    watcher_fake_health([], [
+        ['name' => 'Gateway', 'status' => 'completed', 'conclusion' => 'failure', 'html_url' => 'https://github.com/acme/orbit/runs/1'],
+        ['name' => 'Required checks', 'status' => 'completed', 'conclusion' => 'failure', 'html_url' => 'https://github.com/acme/orbit/runs/2'],
+    ]);
+
+    $health = app(HttpTaskPullRequestWatcher::class)->health(watcher_group());
+
+    expect($health?->problems)->toBe(['Check Gateway failed: https://github.com/acme/orbit/runs/1.'])
+        ->and(array_map(static fn (TaskPullRequestCheck $check): string => $check->name, $health?->failedChecks ?? []))->toBe(['Gateway'])
+        ->and($health?->checksPending)->toBeFalse();
+});
+
+it('drops the rollup when a cancelled check explains it, and keeps a rollup that fails alone', function (string $other, array $problems, array $failed, array $infrastructure): void {
+    GitHubTestSupport::storeApp();
+    $runs = [['name' => 'Required checks', 'status' => 'completed', 'conclusion' => 'failure', 'html_url' => 'https://github.com/acme/orbit/runs/2']];
+    if ($other !== '') {
+        array_unshift($runs, ['name' => 'Web', 'status' => 'completed', 'conclusion' => $other, 'html_url' => 'https://github.com/acme/orbit/runs/1']);
+    }
+    watcher_fake_health([], $runs);
+
+    $health = app(HttpTaskPullRequestWatcher::class)->health(watcher_group());
+
+    expect($health?->problems)->toBe($problems)
+        ->and(array_map(static fn (TaskPullRequestCheck $check): string => $check->name, $health?->failedChecks ?? []))->toBe($failed)
+        ->and(array_map(static fn (TaskPullRequestCheck $check): string => $check->name, $health?->infrastructureChecks ?? []))->toBe($infrastructure);
+})->with([
+    'cancelled' => ['cancelled', ['Check Web failed: https://github.com/acme/orbit/runs/1.'], [], ['Web']],
+    'startup failure' => ['startup_failure', ['Check Web failed: https://github.com/acme/orbit/runs/1.'], [], ['Web']],
+    'alone' => ['', ['Check Required checks failed: https://github.com/acme/orbit/runs/2.'], ['Required checks'], []],
+]);
+
+it('reports the head of a merged pull request', function (): void {
+    GitHubTestSupport::storeApp();
+    watcher_fake_health(['merged' => true, 'state' => 'closed', 'head' => ['sha' => 'fed987']]);
+
+    $health = app(HttpTaskPullRequestWatcher::class)->health(watcher_group());
+
+    expect($health?->state)->toBe('merged')
+        ->and($health?->headSha)->toBe('fed987');
 });
 
 it('still reports conflicts and no check problems when GitHub refuses the checks token', function (): void {
@@ -213,4 +272,96 @@ it('reads the check runs of one head commit at most once a minute', function ():
     $watcher->health(TaskGroup::query()->sole()->load('app'));
 
     expect($checkRunReads())->toBe(2);
+});
+
+it('keeps a check pending for 60 minutes or less out of the problems and treats a longer one as infrastructure', function (int $ageSeconds, bool $young, array $problems): void {
+    GitHubTestSupport::storeApp();
+    watcher_fake_health([], [[
+        'name' => 'Web', 'status' => 'in_progress', 'conclusion' => null, 'id' => 11,
+        'started_at' => now()->subSeconds($ageSeconds)->toIso8601String(), 'html_url' => 'https://github.com/acme/orbit/runs/11',
+    ]]);
+
+    $health = app(HttpTaskPullRequestWatcher::class)->health(watcher_group());
+
+    expect($health?->checksPending)->toBeTrue()
+        ->and($health?->checksYoungPending)->toBe($young)
+        ->and($health?->problems)->toBe($problems)
+        ->and($health?->failedChecks)->toBe([])
+        ->and(array_map(static fn (TaskPullRequestCheck $check): string => $check->name, $health?->infrastructureChecks ?? []))->toBe($young ? [] : ['Web']);
+})->with([
+    'inside 60 minutes' => [59 * 60, true, []],
+    'past 60 minutes' => [61 * 60, false, ['Check Web is still pending: https://github.com/acme/orbit/runs/11.']],
+]);
+
+it('names a long-pending check without a url', function (): void {
+    GitHubTestSupport::storeApp();
+    watcher_fake_health([], [[
+        'name' => 'Web', 'status' => 'in_progress', 'conclusion' => null,
+        'started_at' => now()->subMinutes(61)->toIso8601String(),
+    ]]);
+
+    $health = app(HttpTaskPullRequestWatcher::class)->health(watcher_group());
+
+    expect($health?->problems)->toBe(['Check Web is still pending.'])
+        ->and($health?->checksYoungPending)->toBeFalse();
+});
+
+it('keeps the first read of a pending check with no started_at and does not move it', function (): void {
+    GitHubTestSupport::storeApp();
+    watcher_fake_health([], [[
+        'name' => 'Web', 'status' => 'in_progress', 'conclusion' => null, 'html_url' => 'https://github.com/acme/orbit/runs/11',
+    ]]);
+    $watcher = app(HttpTaskPullRequestWatcher::class);
+    $group = watcher_group();
+
+    $first = $watcher->health($group);
+    expect($first?->checksYoungPending)->toBeTrue()
+        ->and($first?->problems)->toBe([])
+        ->and($first?->infrastructureChecks)->toBe([]);
+
+    $this->travel(30)->minutes();
+    $second = $watcher->health($group->fresh(['app']));
+    expect($second?->checksYoungPending)->toBeTrue()
+        ->and($second?->problems)->toBe([]);
+
+    $this->travel(31)->minutes();
+    $third = $watcher->health($group->fresh(['app']));
+    expect($third?->checksYoungPending)->toBeFalse()
+        ->and($third?->checksPending)->toBeTrue()
+        ->and($third?->problems)->toBe(['Check Web is still pending: https://github.com/acme/orbit/runs/11.'])
+        ->and(array_map(static fn (TaskPullRequestCheck $check): string => $check->name, $third?->infrastructureChecks ?? []))->toBe(['Web']);
+});
+
+it('starts a new pending clock when the check run id changes and clears one that completed', function (): void {
+    GitHubTestSupport::storeApp();
+    $pending = static fn (int $id): array => [
+        'id' => $id, 'name' => 'Web', 'status' => 'in_progress', 'conclusion' => null, 'html_url' => 'https://github.com/acme/orbit/runs/'.$id,
+    ];
+    $success = ['id' => 1, 'name' => 'Web', 'status' => 'completed', 'conclusion' => 'success', 'html_url' => 'https://github.com/acme/orbit/runs/1'];
+    Http::fake([
+        'https://api.github.com/repos/acme/orbit/installation' => Http::response(['id' => 9]),
+        'https://api.github.com/app/installations/9/access_tokens' => Http::response(['token' => 'ghs_watch'], 201),
+        'https://api.github.com/repos/acme/orbit/pulls/42' => Http::response([
+            'merged' => false, 'state' => 'open', 'mergeable' => true, 'mergeable_state' => 'clean',
+            'head' => ['sha' => 'abc123'], 'base' => ['ref' => 'main'],
+        ]),
+        'https://api.github.com/repos/acme/orbit/commits/abc123/check-runs*' => Http::sequence()
+            ->push(['check_runs' => [$pending(1)]])
+            ->push(['check_runs' => [$success]])
+            ->push(['check_runs' => [$pending(2)]]),
+    ]);
+    $watcher = app(HttpTaskPullRequestWatcher::class);
+    $group = watcher_group();
+
+    expect($watcher->health($group)?->checksYoungPending)->toBeTrue();
+
+    $this->travel(61)->minutes();
+    $completed = $watcher->health($group->fresh(['app']));
+    expect($completed?->checksPending)->toBeFalse()
+        ->and($completed?->problems)->toBe([])
+        ->and($completed?->infrastructureChecks)->toBe([]);
+
+    $this->travel(61)->seconds();
+    expect($watcher->health($group->fresh(['app']))?->checksYoungPending)->toBeTrue()
+        ->and($watcher->health($group->fresh(['app']))?->problems)->toBe([]);
 });

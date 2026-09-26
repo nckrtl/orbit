@@ -48,7 +48,8 @@
                             "description": "Every tasks route has a request",
                             "project": "packages/php-sdk",
                             "file": "tests/Unit/Requests/Tasks/TaskRequestsTest.php",
-                            "name": "addresses every tasks route"
+                            "name": "addresses every tasks route",
+                            "fails_on_base": false
                         }
                     ],
                     "status": "todo",
@@ -63,7 +64,8 @@
                     "completion_summary": null,
                     "check": null,
                     "assistance_requested": false,
-                    "assistance_reason": null
+                    "assistance_reason": null,
+                    "fixup_problem": null
                 },
                 {
                     "id": 2,
@@ -97,7 +99,8 @@
                     "completion_summary": null,
                     "check": null,
                     "assistance_requested": false,
-                    "assistance_reason": null
+                    "assistance_reason": null,
+                    "fixup_problem": null
                 }
             ],
             "execution_mode": "managed"

@@ -20923,6 +20923,9 @@
                                 "maxLength": 200,
                                 "description": "Conditionally required."
                               },
+                              "fails_on_base": {
+                                "type": "boolean"
+                              },
                               "command": {
                                 "type": "string",
                                 "maxLength": 1000,
@@ -21671,7 +21674,7 @@
             "description": "Numeric Task group ID."
           }
         ],
-        "description": "Appends one subtask to a Task group at the next position with status `todo`. Works in any group status. `deliverables` is a list of at most 20 typed items the subtask must deliver, each with a unique slug `id`, a `type`, and a `description`: `file` adds `path` (a path or glob) and `change` (`created`, `modified`, or `any`); `test` adds `project`, `file` (a Pest test file in that project), and `name` (a substring of the test name); `command` adds `command` and an optional `directory`; `review` adds nothing. Orbit verifies file, test, and command deliverables at handoff, and the reviewer confirms review deliverables. Outside `backlog`, a subtask needs at least one deliverable (`tasks.subtask_deliverables_missing`). Served by the Node that holds the group's Instance, or by the Gateway for a group without one. Returns `tasks.disabled` while the extension is off.",
+        "description": "Appends one subtask to a Task group at the next position with status `todo`. Works in any group status. `deliverables` is a list of at most 20 typed items the subtask must deliver, each with a unique slug `id`, a `type`, and a `description`: `file` adds `path` (a path or glob) and `change` (`created`, `modified`, or `any`); `test` adds `project`, `file` (a Pest test file in that project), `name` (a substring of the test name), and an optional boolean `fails_on_base` (true means the named test must fail on the start commit before it passes; omitted is stored as false, and any other type refuses the field); `command` adds `command` and an optional `directory`; `review` adds nothing. Orbit verifies file, test, and command deliverables at handoff, and the reviewer confirms review deliverables. Outside `backlog`, a subtask needs at least one deliverable (`tasks.subtask_deliverables_missing`). Served by the Node that holds the group's Instance, or by the Gateway for a group without one. Returns `tasks.disabled` while the extension is off.",
         "requestBody": {
           "required": true,
           "content": {
@@ -21741,6 +21744,9 @@
                           "type": "string",
                           "maxLength": 200,
                           "description": "Conditionally required."
+                        },
+                        "fails_on_base": {
+                          "type": "boolean"
                         },
                         "command": {
                           "type": "string",
@@ -22089,6 +22095,9 @@
                           "type": "string",
                           "maxLength": 200,
                           "description": "Conditionally required."
+                        },
+                        "fails_on_base": {
+                          "type": "boolean"
                         },
                         "command": {
                           "type": "string",
@@ -25455,7 +25464,10 @@
             "items": {
               "type": "object",
               "additionalProperties": {
-                "type": "string"
+                "type": [
+                  "string",
+                  "boolean"
+                ]
               }
             }
           },
@@ -25540,6 +25552,12 @@
             "type": "boolean"
           },
           "assistance_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "fixup_problem": {
             "type": [
               "string",
               "null"

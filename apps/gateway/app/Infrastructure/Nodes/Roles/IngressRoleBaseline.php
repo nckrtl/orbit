@@ -34,15 +34,16 @@ final readonly class IngressRoleBaseline implements RoleBaseline
         $account = $this->accounts->resolve($node);
         $caddySource = $this->commands->caddySource($node, RoleName::Ingress);
         if ($caddySource instanceof RemoteCommand) {
-            $this->ssh->execute($node, $caddySource, 'caddy-package-source', 'ingress.prerequisite_failed');
+            $this->ssh->execute($node, $caddySource, 'caddy-package-source', 'ingress.prerequisite_failed', failureLabel: CaddyRoleFailure::sshLabel(RoleName::Ingress));
         }
         $this->ssh->execute(
             $node,
             $this->commands->make($node, RoleName::Ingress, $account),
             'role-prerequisites',
             'ingress.prerequisite_failed',
+            failureLabel: CaddyRoleFailure::sshLabel(RoleName::Ingress),
         );
-        $this->caddy->converge($node);
+        $this->caddy->converge($node, RoleName::Ingress);
     }
 
     /**
@@ -53,7 +54,7 @@ final readonly class IngressRoleBaseline implements RoleBaseline
      */
     public function remove(Node $node, NodeRole $assignment, bool $purgeData): void
     {
-        $this->caddy->remove($node);
+        $this->caddy->remove($node, RoleName::Ingress);
         $this->firewall->remove($node, RoleName::Ingress, $this->accounts->resolve($node)->user);
     }
 

@@ -6,6 +6,9 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskCheckException;
 use App\Domain\Tasks\TaskCheckProcess;
 use App\Domain\Tasks\TaskCheckReading;
+use App\Domain\Tasks\TaskDeliverable;
+use App\Domain\Tasks\TaskDeliverableEvidence;
+use App\Domain\Tasks\TaskDeliverableVerifier;
 use App\Infrastructure\AppDev\AppDevSshExecutor;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
@@ -200,6 +203,8 @@ it('reads the same working tree as the check without touching the index', functi
 
     expect($snapshot->head)->toBe($process->head)
         ->and($snapshot->tree)->toBe($process->tree)
+        ->and($snapshot->parent)->toBeNull()
+        ->and($snapshot->commitTree)->toBe(trim((new Process(['git', 'rev-parse', 'HEAD^{tree}'], $checkout))->mustRun()->getOutput()))
         ->and((new Process(['git', 'status', '--porcelain'], $checkout))->mustRun()->getOutput())->toBe($status);
 
     file_put_contents($checkout.'/extra.txt', "extra\n");
@@ -360,4 +365,428 @@ describe('deliverable evidence', function (): void {
 
         expect($reading->deliverables['commands'])->toBe(['escape' => ['exit_code' => 127, 'output' => 'The directory is outside the workspace.']]);
     });
+});
+
+/**
+ * A checkout whose start commit has the broken code, then an uncommitted fix, an untracked repro test, and
+ * another untracked file. vendor/bin/pest records the tree it saw and writes the JUnit for that tree.
+ *
+ * @return array{0: string, 1: string, 2: array<string, string>}
+ */
+function check_runner_repro_checkout(string $broken, string $fixed, bool $failWhenBroken): array
+{
+    $checkout = check_runner_checkout('echo checks passed');
+    file_put_contents($checkout.'/.gitignore', "ignored/\nvendor/\n");
+    File::ensureDirectoryExists($checkout.'/app/src');
+    File::ensureDirectoryExists($checkout.'/app/vendor/bin');
+    file_put_contents($checkout.'/app/src/Bug.php', 'broken');
+    file_put_contents($checkout.'/app/README.md', 'Shop');
+    file_put_contents($checkout.'/app/vendor/bin/pest', check_runner_repro_pest($broken, $fixed, $failWhenBroken));
+    file_put_contents($checkout.'/app/vendor/marker', 'original');
+    chmod($checkout.'/app/vendor/bin/pest', 0755);
+    (new Process(['git', 'add', '--', '.gitignore', 'app'], $checkout))->mustRun();
+    (new Process(['git', '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '--quiet', '-m', 'project'], $checkout))->mustRun();
+    $start = trim((new Process(['git', 'rev-parse', 'HEAD'], $checkout))->mustRun()->getOutput());
+    file_put_contents($checkout.'/app/src/Bug.php', 'fixed');
+    file_put_contents($checkout.'/app/README.md', 'Shop Exports');
+    File::ensureDirectoryExists($checkout.'/app/tests');
+    file_put_contents($checkout.'/app/tests/LayoutTest.php', 'REPRO');
+    file_put_contents($checkout.'/app/tests/Other.php', 'other');
+
+    return [$checkout, $start, check_runner_snapshot($checkout)];
+}
+
+function check_runner_repro_pest(string $broken, string $fixed, bool $failWhenBroken): string
+{
+    $code = $failWhenBroken ? '1' : '0';
+
+    return <<<BASH
+        #!/usr/bin/env bash
+        junit="\${2#--log-junit=}"
+        src=\$(cat src/Bug.php 2>/dev/null || echo missing)
+        testfile=\$(cat tests/LayoutTest.php 2>/dev/null || echo missing)
+        readme=\$(cat README.md 2>/dev/null || echo missing)
+        extra=\$(cat tests/Other.php 2>/dev/null || echo missing)
+        inode=\$(stat -c %i vendor/marker 2>/dev/null || echo missing)
+        {
+            printf 'src=%s\\n' "\$src"
+            printf 'test=%s\\n' "\$testfile"
+            printf 'readme=%s\\n' "\$readme"
+            printf 'extra=%s\\n' "\$extra"
+            printf 'pwd=%s\\n' "\$PWD"
+            printf 'inode=%s\\n' "\$inode"
+        } > "\${junit}.context"
+        if [ "\$src" = broken ]; then
+            printf mutated >> vendor/marker
+            printf '%s' '{$broken}' > "\$junit"
+            exit {$code}
+        fi
+        printf '%s' '{$fixed}' > "\$junit"
+        BASH;
+}
+
+/** @return array<string, string> */
+function check_runner_snapshot(string $checkout): array
+{
+    $index = trim((new Process(['git', 'rev-parse', '--path-format=absolute', '--git-path', 'index'], $checkout))->mustRun()->getOutput());
+
+    return [
+        'status' => (new Process(['git', 'status', '--porcelain'], $checkout))->mustRun()->getOutput(),
+        'head' => trim((new Process(['git', 'rev-parse', 'HEAD'], $checkout))->mustRun()->getOutput()),
+        'index' => (string) hash_file('sha256', $index),
+        'bug' => (string) file_get_contents($checkout.'/app/src/Bug.php'),
+        'readme' => (string) file_get_contents($checkout.'/app/README.md'),
+        'test' => (string) file_get_contents($checkout.'/app/tests/LayoutTest.php'),
+        'other' => (string) file_get_contents($checkout.'/app/tests/Other.php'),
+        'untracked' => (string) file_get_contents($checkout.'/uncommitted.php'),
+        'marker' => (string) file_get_contents($checkout.'/app/vendor/marker'),
+    ];
+}
+
+/** @return array<string, string> */
+function check_runner_context(string $path): array
+{
+    $context = [];
+    foreach (file($path, FILE_IGNORE_NEW_LINES) ?: [] as $line) {
+        if (! str_contains($line, '=')) {
+            continue;
+        }
+        [$key, $value] = explode('=', $line, 2);
+        $context[$key] = $value;
+    }
+
+    return $context;
+}
+
+/**
+ * @param  array<string, string>  $before
+ */
+function check_runner_workspace_unchanged(string $checkout, array $before, string $baseContext): void
+{
+    $base = check_runner_context($baseContext);
+
+    expect(check_runner_snapshot($checkout))->toBe($before)
+        ->and($base['pwd'])->toContain('/orbit-base-')
+        ->and(is_dir(dirname($base['pwd'])))->toBeFalse()
+        ->and(glob(dirname($checkout).'/orbit-base-*'))->toBe([])
+        ->and((new Process(['git', 'worktree', 'list'], $checkout))->mustRun()->getOutput())->not->toContain('orbit-base-');
+}
+
+describe('fails_on_base', function (): void {
+    $passed = '<?xml version="1.0"?><testsuites><testsuite name="t"><testcase name="it breaks the home screen layout"/><testcase name="it keeps the home screen layout"/></testsuite></testsuites>';
+    $failed = '<?xml version="1.0"?><testsuites><testsuite name="t"><testcase name="it breaks the home screen layout"><failure>bug</failure></testcase><testcase name="it keeps the home screen layout"/></testsuite></testsuites>';
+
+    it('proves a fails_on_base repro fails on the start commit with only the test file applied, then passes on the working tree', function () use ($passed, $failed): void {
+        [$checkout, $start, $before] = check_runner_repro_checkout($failed, $passed, true);
+        $instance = check_runner_instance($checkout);
+        $runner = check_runner(new LocalShellSshExecutor);
+        $deliverable = TaskDeliverable::fromArray([
+            'id' => 'layout-repro',
+            'type' => 'test',
+            'description' => 'The layout fails before the fix',
+            'project' => 'app',
+            'file' => 'tests/LayoutTest.php',
+            'name' => 'home screen layout',
+            'fails_on_base' => true,
+        ]);
+
+        $process = $runner->start($instance, 'composer check', [], [
+            'start' => $start,
+            'tests' => [['id' => 'layout-repro', 'project' => 'app', 'file' => 'tests/LayoutTest.php', 'fails_on_base' => true]],
+            'commands' => [],
+        ]);
+        $reading = check_runner_wait($runner, $instance, $process);
+        $base = check_runner_context($checkout.'/.git/orbit/tests/layout-repro-base.xml.context');
+        $working = check_runner_context($checkout.'/.git/orbit/tests/layout-repro.xml.context');
+
+        expect($reading->exitCode)->toBe(0)
+            ->and($reading->changedPaths)->toBe([])
+            ->and($reading->headAfter)->toBe($process->head)
+            ->and($reading->deliverables['tests']['layout-repro'])->toBe([
+                'exit_code' => 0,
+                'cases' => [
+                    ['name' => 'it breaks the home screen layout', 'status' => 'passed'],
+                    ['name' => 'it keeps the home screen layout', 'status' => 'passed'],
+                ],
+                'base_placed' => true,
+                'base_exit_code' => 1,
+                'base_cases' => [
+                    ['name' => 'it breaks the home screen layout', 'status' => 'failed', 'kind' => 'failure', 'message' => 'bug'],
+                    ['name' => 'it keeps the home screen layout', 'status' => 'passed'],
+                ],
+            ])
+            ->and($base)->toMatchArray(['src' => 'broken', 'test' => 'REPRO', 'readme' => 'Shop', 'extra' => 'missing'])
+            ->and($base['inode'])->not->toBe((string) stat($checkout.'/app/vendor/marker')['ino'])
+            ->and($working)->toMatchArray(['src' => 'fixed', 'test' => 'REPRO', 'readme' => 'Shop Exports', 'extra' => 'other'])
+            ->and($working['pwd'])->toBe(realpath($checkout).'/app')
+            ->and(TaskDeliverableVerifier::failures([$deliverable], TaskDeliverableEvidence::fromArray($reading->deliverables)))->toBe([]);
+        check_runner_workspace_unchanged($checkout, $before, $checkout.'/.git/orbit/tests/layout-repro-base.xml.context');
+    });
+
+    it('fails a fails_on_base deliverable when the test already passes on the start commit', function (): void {
+        $passing = '<?xml version="1.0"?><testsuites><testsuite name="t"><testcase name="it keeps the home screen layout"/></testsuite></testsuites>';
+        [$checkout, $start, $before] = check_runner_repro_checkout($passing, $passing, false);
+        $instance = check_runner_instance($checkout);
+        $runner = check_runner(new LocalShellSshExecutor);
+        $deliverable = TaskDeliverable::fromArray([
+            'id' => 'layout-repro',
+            'type' => 'test',
+            'description' => 'The layout fails before the fix',
+            'project' => 'app',
+            'file' => 'tests/LayoutTest.php',
+            'name' => 'home screen layout',
+            'fails_on_base' => true,
+        ]);
+
+        $reading = check_runner_wait($runner, $instance, $runner->start($instance, 'composer check', [], [
+            'start' => $start,
+            'tests' => [['id' => 'layout-repro', 'project' => 'app', 'file' => 'tests/LayoutTest.php', 'fails_on_base' => true]],
+            'commands' => [],
+        ]));
+
+        expect(TaskDeliverableVerifier::failures([$deliverable], TaskDeliverableEvidence::fromArray($reading->deliverables)))->toBe([
+            'layout-repro (test): The test "it keeps the home screen layout" passes on the start commit, so it does not reproduce the bug.',
+        ]);
+        check_runner_workspace_unchanged($checkout, $before, $checkout.'/.git/orbit/tests/layout-repro-base.xml.context');
+    });
+
+    it('records a fails_on_base placement failure when the test file cannot be placed on the start commit', function (): void {
+        $passing = '<?xml version="1.0"?><testsuites><testsuite name="t"><testcase name="it keeps the home screen layout"/></testsuite></testsuites>';
+        [$checkout, $start, $before] = check_runner_repro_checkout($passing, $passing, false);
+        $instance = check_runner_instance($checkout);
+        $runner = check_runner(new LocalShellSshExecutor);
+
+        $reading = check_runner_wait($runner, $instance, $runner->start($instance, 'composer check', [], [
+            'start' => str_repeat('e', 40),
+            'tests' => [['id' => 'layout-repro', 'project' => 'app', 'file' => 'tests/LayoutTest.php', 'fails_on_base' => true]],
+            'commands' => [],
+        ]));
+
+        expect($reading->deliverables['tests']['layout-repro'])->toBe([
+            'exit_code' => 0,
+            'cases' => [['name' => 'it keeps the home screen layout', 'status' => 'passed']],
+            'base_placed' => false,
+        ])
+            ->and($reading->deliverables['diff'])->toBeNull()
+            ->and(check_runner_snapshot($checkout))->toBe($before)
+            ->and(glob(dirname($checkout).'/orbit-base-*'))->toBe([])
+            ->and($start)->not->toBe('');
+    });
+
+    it('removes the base tree when the check is cancelled', function (): void {
+        $passing = '<?xml version="1.0"?><testsuites><testsuite name="t"><testcase name="it keeps the home screen layout"/></testsuite></testsuites>';
+        [$checkout, $start, $before] = check_runner_repro_checkout($passing, $passing, false);
+        file_put_contents($checkout.'/app/vendor/bin/pest', "#!/usr/bin/env bash\nsleep 30\n");
+        chmod($checkout.'/app/vendor/bin/pest', 0755);
+        $instance = check_runner_instance($checkout);
+        $runner = check_runner(new LocalShellSshExecutor);
+        $process = $runner->start($instance, 'composer check', [], [
+            'start' => $start,
+            'tests' => [['id' => 'layout-repro', 'project' => 'app', 'file' => 'tests/LayoutTest.php', 'fails_on_base' => true]],
+            'commands' => [],
+        ]);
+        $gitDir = trim((new Process(['git', 'rev-parse', '--absolute-git-dir'], $checkout))->mustRun()->getOutput());
+        $bases = $gitDir.'/orbit/bases';
+        $listed = false;
+        $deadline = microtime(true) + 10;
+        while (microtime(true) < $deadline) {
+            if ((glob($bases.'/orbit-base-*') ?: []) !== []) {
+                $listed = true;
+                break;
+            }
+            usleep(50_000);
+        }
+
+        $runner->cancel($instance, $process);
+
+        expect($listed)->toBeTrue()
+            ->and(check_runner_wait($runner, $instance, $process)->state)->toBe('lost')
+            ->and(check_runner_snapshot($checkout))->toBe($before)
+            ->and(glob($bases.'/orbit-base-*') ?: [])->toBe([])
+            ->and(glob(dirname($checkout).'/orbit-base-*') ?: [])->toBe([])
+            ->and(check_runner_live_worktrees($checkout))->toBe([realpath($checkout)]);
+    });
+
+    it('leaves nothing registered after a killed base run', function (): void {
+        $passing = '<?xml version="1.0"?><testsuites><testsuite name="t"><testcase name="it keeps the home screen layout"/></testsuite></testsuites>';
+        [$checkout, $start] = check_runner_repro_checkout($passing, $passing, false);
+        file_put_contents($checkout.'/app/vendor/bin/pest', <<<'BASH'
+            #!/usr/bin/env bash
+            junit="${2#--log-junit=}"
+            echo $$ > "$(dirname "$junit")/base.pid"
+            sleep 60
+            BASH);
+        chmod($checkout.'/app/vendor/bin/pest', 0755);
+        $instance = check_runner_instance($checkout);
+        $runner = check_runner(new LocalShellSshExecutor);
+        $process = $runner->start($instance, 'composer check', [], [
+            'start' => $start,
+            'tests' => [['id' => 'layout-repro', 'project' => 'app', 'file' => 'tests/LayoutTest.php', 'fails_on_base' => true]],
+            'commands' => [],
+        ]);
+        $gitDir = trim((new Process(['git', 'rev-parse', '--absolute-git-dir'], $checkout))->mustRun()->getOutput());
+        $pidFile = $gitDir.'/orbit/tests/base.pid';
+        $deadline = microtime(true) + 15;
+        while (microtime(true) < $deadline && ! is_file($pidFile)) {
+            usleep(50_000);
+        }
+        $basePid = is_file($pidFile) ? (int) trim((string) file_get_contents($pidFile)) : 0;
+
+        expect(is_file($pidFile))->toBeTrue()
+            ->and(check_runner_live_worktrees($checkout))->toBe([realpath($checkout)])
+            ->and(glob(dirname($checkout).'/orbit-base-*') ?: [])->toBe([]);
+
+        $kill = new Process(['kill', '-KILL', '--', '-'.$process->pid]);
+        $kill->run();
+
+        expect($kill->getExitCode())->toBe(0)
+            ->and(glob($gitDir.'/orbit/bases/orbit-base-*') ?: [])->not->toBe([])
+            ->and(check_runner_live_worktrees($checkout))->toBe([realpath($checkout)])
+            ->and(glob(dirname($checkout).'/orbit-base-*') ?: [])->toBe([]);
+
+        if ($basePid > 1) {
+            (new Process(['kill', '-KILL', '--', '-'.$basePid]))->run();
+        }
+
+        expect(File::deleteDirectory($checkout))->toBeTrue()
+            ->and(is_dir($checkout))->toBeFalse();
+    });
+
+    it('stores the base failure kind and the tail of its message', function (): void {
+        $tail = str_repeat('a', 4090).'MISSING-CLASS';
+        $xml = '<?xml version="1.0"?><testsuites><testsuite name="t">'
+            .'<testcase name="it breaks the home screen layout"><error message="'.$tail.'">body</error></testcase>'
+            .'<testcase name="it keeps the home screen layout"><failure message="expected layout">diff</failure></testcase>'
+            .'</testsuite></testsuites>';
+        [$checkout, $start] = check_runner_repro_checkout($xml, $xml, true);
+        $instance = check_runner_instance($checkout);
+        $runner = check_runner(new LocalShellSshExecutor);
+
+        $reading = check_runner_wait($runner, $instance, $runner->start($instance, 'composer check', [], [
+            'start' => $start,
+            'tests' => [['id' => 'layout-repro', 'project' => 'app', 'file' => 'tests/LayoutTest.php', 'fails_on_base' => true]],
+            'commands' => [],
+        ]));
+        $stored = TaskDeliverableEvidence::fromArray($reading->deliverables);
+        $message = $stored?->tests['layout-repro']['base_cases'][0]['message'] ?? '';
+
+        expect($reading->deliverables['tests']['layout-repro']['base_cases'])->toBe([
+            ['name' => 'it breaks the home screen layout', 'status' => 'failed', 'kind' => 'error', 'message' => substr($tail, -4096)],
+            ['name' => 'it keeps the home screen layout', 'status' => 'failed', 'kind' => 'failure', 'message' => 'expected layout'],
+        ])
+            ->and($stored?->tests['layout-repro']['base_cases'][0]['kind'] ?? null)->toBe('error')
+            ->and(strlen($message))->toBe(4096)
+            ->and($message)->toEndWith('MISSING-CLASS');
+    });
+});
+
+/**
+ * @return list<string>
+ */
+function check_runner_live_worktrees(string $checkout): array
+{
+    $listing = (new Process(['git', 'worktree', 'list', '--porcelain', '-z'], $checkout))->mustRun()->getOutput();
+    $records = [];
+    foreach (explode("\0", $listing) as $field) {
+        if (str_starts_with($field, 'worktree ')) {
+            $records[] = ['path' => substr($field, 9), 'prunable' => false];
+        } elseif ($records !== [] && ($field === 'prunable' || str_starts_with($field, 'prunable '))) {
+            $records[array_key_last($records)]['prunable'] = true;
+        }
+    }
+    $paths = [];
+    foreach ($records as $record) {
+        if ($record['prunable']) {
+            continue;
+        }
+        $paths[] = realpath($record['path']) ?: $record['path'];
+    }
+    sort($paths);
+
+    return $paths;
+}
+
+it('removes a stale orbit-base worktree at check start and leaves another worktree', function (): void {
+    $checkout = check_runner_checkout('echo ok');
+    $parent = dirname($checkout);
+    $stale = $parent.'/orbit-base-stale';
+    $gone = $parent.'/orbit-base-gone';
+    $keep = $parent.'/kept-worktree';
+    (new Process(['git', 'worktree', 'add', '--detach', '--quiet', $stale, 'HEAD'], $checkout))->mustRun();
+    (new Process(['git', 'worktree', 'add', '--detach', '--quiet', $gone, 'HEAD'], $checkout))->mustRun();
+    (new Process(['git', 'worktree', 'add', '--detach', '--quiet', $keep, 'HEAD'], $checkout))->mustRun();
+    File::deleteDirectory($gone);
+    $gitDir = trim((new Process(['git', 'rev-parse', '--absolute-git-dir'], $checkout))->mustRun()->getOutput());
+    File::ensureDirectoryExists($gitDir.'/orbit/bases/orbit-base-leftover');
+    file_put_contents($gitDir.'/orbit/bases/orbit-base-leftover/marker', "x\n");
+    File::ensureDirectoryExists($gitDir.'/orbit/bases/notes');
+    $instance = check_runner_instance($checkout);
+    $runner = check_runner(new LocalShellSshExecutor);
+
+    $reading = check_runner_wait($runner, $instance, $runner->start($instance, 'echo ok'));
+
+    expect($reading->exitCode)->toBe(0)
+        ->and(is_dir($stale))->toBeFalse()
+        ->and(is_dir($gone))->toBeFalse()
+        ->and(is_dir($keep))->toBeTrue()
+        ->and(is_dir($gitDir.'/orbit/bases/orbit-base-leftover'))->toBeFalse()
+        ->and(is_dir($gitDir.'/orbit/bases/notes'))->toBeTrue()
+        ->and(check_runner_live_worktrees($checkout))->toBe([realpath($checkout), realpath($keep)]);
+});
+
+it('counts a timed-out base run as failing on the start commit', function (): void {
+    $passing = '<?xml version="1.0"?><testsuites><testsuite name="t"><testcase name="it keeps the home screen layout"/></testsuite></testsuites>';
+    [$checkout, $start] = check_runner_repro_checkout($passing, $passing, false);
+    file_put_contents($checkout.'/app/vendor/bin/pest', <<<'BASH'
+        #!/usr/bin/env bash
+        junit="${2#--log-junit=}"
+        src=$(cat src/Bug.php 2>/dev/null || echo missing)
+        if [ "$src" = broken ]; then
+            sleep 30
+        fi
+        printf '%s' '<?xml version="1.0"?><testsuites><testsuite name="t"><testcase name="it keeps the home screen layout"/></testsuite></testsuites>' > "$junit"
+        BASH);
+    chmod($checkout.'/app/vendor/bin/pest', 0755);
+    $script = test()->directory.'/script/check';
+    File::ensureDirectoryExists(dirname($script));
+    File::copy(resource_path('tasks/check'), $script);
+    $deliverables = test()->directory.'/deliverables.json';
+    file_put_contents($deliverables, json_encode([
+        'start' => $start,
+        'tests' => [['id' => 'layout-repro', 'project' => 'app', 'file' => 'tests/LayoutTest.php', 'fails_on_base' => true]],
+        'commands' => [],
+    ], JSON_THROW_ON_ERROR));
+    $ran = new Process(['python3', '-c', <<<'PYTHON'
+        import importlib.machinery, importlib.util, sys
+        loader = importlib.machinery.SourceFileLoader('check', sys.argv[1])
+        check = importlib.util.module_from_spec(importlib.util.spec_from_loader('check', loader))
+        loader.exec_module(check)
+        check.BASE_RUN_TIMEOUT = 1
+        checkout, deliverables = sys.argv[2], sys.argv[3]
+        check.run(checkout, check.git(checkout, 'rev-parse', 'HEAD'), check.working_tree(checkout), '-', deliverables, 'echo ok')
+        PYTHON, $script, $checkout, $deliverables]);
+    $ran->setTimeout(20);
+
+    $ran->mustRun();
+    $result = json_decode((string) file_get_contents(dirname($script).'/check.json'), true, flags: JSON_THROW_ON_ERROR);
+    $run = $result['deliverables']['tests']['layout-repro'];
+    $deliverable = TaskDeliverable::fromArray([
+        'id' => 'layout-repro',
+        'type' => 'test',
+        'description' => 'The layout fails before the fix',
+        'project' => 'app',
+        'file' => 'tests/LayoutTest.php',
+        'name' => 'home screen layout',
+        'fails_on_base' => true,
+    ]);
+
+    expect($run['base_placed'])->toBeTrue()
+        ->and($run['base_timed_out'])->toBeTrue()
+        ->and($run['base_exit_code'])->toBe(124)
+        ->and($run['base_timeout_seconds'])->toBe(1)
+        ->and($run)->not->toHaveKey('base_cases')
+        ->and($run['cases'][0]['status'])->toBe('passed')
+        ->and(TaskDeliverableVerifier::failures([$deliverable], TaskDeliverableEvidence::fromArray($result['deliverables'])))->toBe([])
+        ->and(glob(dirname($script).'/bases/orbit-base-*') ?: [])->toBe([])
+        ->and(check_runner_live_worktrees($checkout))->toBe([realpath($checkout)]);
 });

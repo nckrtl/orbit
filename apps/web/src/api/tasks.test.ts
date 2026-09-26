@@ -81,6 +81,7 @@ it("counts completed nested tasks against the group total", () => {
         check: null,
         assistance_requested: false,
         assistance_reason: null,
+        fixup_problem: null,
         position: id,
         title: `Step ${id}`,
         brief: "",

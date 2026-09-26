@@ -46,7 +46,7 @@ The Gateway needs outbound HTTPS access to `api.github.com` for every read of a 
 
 ## How Orbit publishes a task pull request
 
-After the Gateway commits an approved subtask, it asks GitHub for a token with `Contents: write` and `Pull requests: write` for the Project repository. The token reaches the Node the same way as a read token, and `git` pushes `HEAD` to `origin/task-{group id}`. After the last approval, the Gateway opens the pull request with the same kind of token and then reads its state.
+After the Gateway commits an approved subtask, it asks GitHub for a token with `Contents: write` and `Pull requests: write` for the Project repository. The token reaches the Node the same way as a read token, and `git` pushes that stored commit to `origin/task-{group id}` as `<commit_sha>:refs/heads/task-{group id}`. The push never uses `HEAD`. After the last approval, the Gateway opens the pull request with the same kind of token and then reads its state.
 
 Unlike a read, publishing has no path without the App: without an App or an installation that covers the repository, the task counts a communication failure and then asks for assistance. [ADR 0121](/decisions/0121-end-agent-turns-with-a-run-receipt) owns the pull request, and [ADR 0160](/decisions/0160-push-each-approved-subtask-and-remove-the-finished-workspace-clone) owns the push after every approval. The [tasks reference](/reference/tasks#pull-request-and-settle-metrics) describes the retry.
 
@@ -54,7 +54,9 @@ An installation made before the App gained `Contents: write` and `Pull requests:
 
 ## How Orbit watches a task pull request
 
-Each scheduler tick reads a settling group's pull request with the pull request token. While the pull request is open, the Gateway also asks GitHub for a second token with only `Checks: read`, and lists the check runs of the pull request's head commit. A failed check run makes the group ask for assistance, as the [tasks reference](/reference/tasks#pull-request-and-settle-metrics) describes. [ADR 0140](/decisions/0140-watch-settling-pull-requests-for-conflicts-and-failed-checks) owns this use.
+Each scheduler tick reads a settling group's pull request with the pull request token. While the pull request is open, the Gateway also asks GitHub for a second token with only `Checks: read`, and lists the check runs of the pull request's head commit. A conflict, or a failed check once every run on the head has completed or has been pending for more than 60 minutes, appends one fixup subtask. A completed genuine failure is still reported while a run on that head has been pending for 60 minutes or less. A run pending for more than 60 minutes is infrastructure.
+
+Each problem gets at most two fixups. When every current problem is at that cap, the group asks for assistance. A settling group with no pull request and a `todo` subtask returns to running and starts that subtask. The [tasks reference](/reference/tasks#fix-a-settling-pull-request) describes both. [ADR 0140](/decisions/0140-watch-settling-pull-requests-for-conflicts-and-failed-checks) owns detection. [ADR 0164](/decisions/0164-heal-a-settling-pull-request-with-a-fixup-subtask) owns the fixup.
 
 The checks token is separate because GitHub refuses a whole token request that names a permission the installation has not accepted. When GitHub refuses the checks token, the Gateway skips the check runs and still reports conflicts. Publishing and merge watching keep working.
 

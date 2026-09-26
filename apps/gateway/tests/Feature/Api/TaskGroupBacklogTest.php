@@ -322,7 +322,7 @@ describe('subtask deliverables', function (): void {
 
         expect($this->getJson("/api/v1/task-groups/{$group['id']}")->assertOk()->json('data.tasks.0.deliverables'))->toBe([
             ['id' => 'reference-page', 'type' => 'file', 'description' => 'Document the export', 'path' => 'docs/reference/tasks.md', 'change' => 'modified'],
-            ['id' => 'export-test', 'type' => 'test', 'description' => 'Test the export', 'project' => 'apps/gateway', 'file' => 'tests/Feature/ExportTest.php', 'name' => 'exports every subtask'],
+            ['id' => 'export-test', 'type' => 'test', 'description' => 'Test the export', 'project' => 'apps/gateway', 'file' => 'tests/Feature/ExportTest.php', 'name' => 'exports every subtask', 'fails_on_base' => false],
             ['id' => 'web-tests', 'type' => 'command', 'description' => 'The web tests pass', 'command' => 'bun test', 'directory' => '.'],
             ['id' => 'error-copy', 'type' => 'review', 'description' => 'Errors name the subtask'],
         ])->and($created['deliverables'])->toHaveCount(4);
@@ -424,7 +424,8 @@ describe('subtask deliverables', function (): void {
             ->assertJsonPath('data.deliverables', $docs);
         $this->patchJson("/api/v1/task-groups/{$group['id']}/tasks/{$running}", ['deliverables' => $docs])
             ->assertConflict()
-            ->assertJsonPath('error.code', 'tasks.deliverables_locked');
+            ->assertJsonPath('error.code', 'tasks.deliverables_locked')
+            ->assertJsonPath('error.message', 'Deliverables change only while the group is in backlog or the subtask is todo.');
         $this->patchJson("/api/v1/task-groups/{$group['id']}/tasks/{$todo}", ['deliverables' => []])
             ->assertUnprocessable()
             ->assertJsonPath('error.code', 'tasks.subtask_deliverables_missing');
@@ -432,7 +433,11 @@ describe('subtask deliverables', function (): void {
             ->assertConflict()
             ->assertJsonPath('error.code', 'tasks.not_in_backlog');
 
-        expect(Task::query()->findOrFail($todo)->title)->toBe('Two');
+        expect(Task::query()->findOrFail($todo)->title)->toBe('Two')
+            ->and(Task::query()->findOrFail($running)->deliverables)->toBe([
+                ['id' => 'done', 'type' => 'review', 'description' => 'One is done.'],
+            ])
+            ->and(Task::query()->findOrFail($running)->status)->toBe(TaskStatus::Running);
     });
 
     it('returns 422 validation.failed when a test file is not one exact php path', function (string $file): void {
@@ -544,17 +549,144 @@ describe('subtask deliverables', function (): void {
             'deliverables' => $deliverables,
         ])->assertCreated()->json('data');
 
-        expect($created['deliverables'])->toBe($deliverables);
+        $stored = stored_test_deliverables($deliverables);
+
+        expect($created['deliverables'])->toBe($stored);
 
         $this->patchJson("/api/v1/task-groups/{$group['id']}/tasks/{$created['id']}", [
             'deliverables' => $deliverables,
-        ])->assertOk()->assertJsonPath('data.deliverables', $deliverables);
+        ])->assertOk()->assertJsonPath('data.deliverables', $stored);
 
         $this->postJson('/api/v1/task-groups', [
             'app_id' => $this->appRecord->id,
             'title' => 'Exact file',
             'brief' => 'Accept an exact path.',
             'tasks' => [['title' => 'Export', 'brief' => 'Add the export.', 'deliverables' => $deliverables]],
-        ])->assertCreated()->assertJsonPath('data.tasks.0.deliverables', $deliverables);
+        ])->assertCreated()->assertJsonPath('data.tasks.0.deliverables', $stored);
     });
+
+    it('stores fails_on_base on a test deliverable and returns 422 validation.failed when another type or value sets it', function (mixed $value, string $message): void {
+        $group = backlog_group($this, []);
+        $repro = ['id' => 'layout-repro', 'type' => 'test', 'description' => 'The layout fails before the fix', 'project' => 'apps/gateway', 'file' => 'tests/Feature/HomeScreenTest.php', 'name' => 'home screen layout', 'fails_on_base' => $value];
+        $groups = TaskGroup::query()->count();
+
+        if ($value === true || $value === false) {
+            $created = $this->postJson("/api/v1/task-groups/{$group['id']}/tasks", [
+                'title' => 'Layout', 'brief' => 'Fix the layout.', 'deliverables' => [$repro],
+            ])->assertCreated()->json('data');
+
+            expect($created['deliverables'])->toBe([$repro])
+                ->and($this->getJson("/api/v1/task-groups/{$group['id']}")->assertOk()->json('data.tasks.0.deliverables'))->toBe([$repro])
+                ->and(Task::query()->findOrFail($created['id'])->deliverables)->toBe([$repro]);
+
+            $updated = $this->patchJson("/api/v1/task-groups/{$group['id']}/tasks/{$created['id']}", [
+                'deliverables' => [[...$repro, 'fails_on_base' => $value === false]],
+            ])->assertOk()->json('data');
+
+            expect($updated['deliverables'][0]['fails_on_base'])->toBe($value === false);
+
+            $this->postJson('/api/v1/task-groups', [
+                'app_id' => $this->appRecord->id,
+                'title' => 'Layout group',
+                'brief' => 'Fix the layout.',
+                'tasks' => [['title' => 'Layout', 'brief' => 'Fix the layout.', 'deliverables' => [$repro]]],
+            ])->assertCreated()->assertJsonPath('data.tasks.0.deliverables.0.fails_on_base', $value);
+
+            return;
+        }
+
+        $created = $this->postJson("/api/v1/task-groups/{$group['id']}/tasks", [
+            'title' => 'Layout', 'brief' => 'Fix the layout.', 'deliverables' => [$repro],
+        ]);
+
+        expect($created->assertUnprocessable()->json('error.code'))->toBe('validation.failed')
+            ->and($created->json('error.details')['deliverables.0.fails_on_base'][0] ?? null)->toBe($message)
+            ->and(Task::query()->where('task_group_id', $group['id'])->count())->toBe(0);
+
+        $subtask = $this->postJson("/api/v1/task-groups/{$group['id']}/tasks", [
+            'title' => 'Layout', 'brief' => 'Fix the layout.',
+            'deliverables' => [['id' => 'done', 'type' => 'review', 'description' => 'Done.']],
+        ])->assertCreated()->json('data');
+        $updated = $this->patchJson("/api/v1/task-groups/{$group['id']}/tasks/{$subtask['id']}", [
+            'deliverables' => [$repro],
+        ]);
+
+        expect($updated->assertUnprocessable()->json('error.code'))->toBe('validation.failed')
+            ->and($updated->json('error.details')['deliverables.0.fails_on_base'][0] ?? null)->toBe($message)
+            ->and(Task::query()->findOrFail($subtask['id'])->deliverables)->toBe([
+                ['id' => 'done', 'type' => 'review', 'description' => 'Done.'],
+            ]);
+
+        $groupCreated = $this->postJson('/api/v1/task-groups', [
+            'app_id' => $this->appRecord->id,
+            'title' => 'Layout group',
+            'brief' => 'Refuse the field.',
+            'tasks' => [['title' => 'Layout', 'brief' => 'Fix the layout.', 'deliverables' => [$repro]]],
+        ]);
+
+        expect($groupCreated->assertUnprocessable()->json('error.code'))->toBe('validation.failed')
+            ->and($groupCreated->json('error.details')['tasks.0.deliverables.0.fails_on_base'][0] ?? null)->toBe($message)
+            ->and(TaskGroup::query()->count())->toBe($groups);
+    })->with([
+        'true' => [true, ''],
+        'false' => [false, ''],
+        'the string true' => ['true', 'The fails_on_base value for deliverable layout-repro must be true or false.'],
+        'the string false' => ['false', 'The fails_on_base value for deliverable layout-repro must be true or false.'],
+        'one' => [1, 'The fails_on_base value for deliverable layout-repro must be true or false.'],
+        'zero' => [0, 'The fails_on_base value for deliverable layout-repro must be true or false.'],
+        'null' => [null, 'The fails_on_base value for deliverable layout-repro must be true or false.'],
+    ]);
+
+    it('returns 422 validation.failed when fails_on_base is set on a deliverable that is not a test', function (array $deliverable): void {
+        $group = backlog_group($this, []);
+        $message = 'The fails_on_base field is only allowed on a test deliverable (deliverable docs).';
+        $groups = TaskGroup::query()->count();
+
+        $created = $this->postJson("/api/v1/task-groups/{$group['id']}/tasks", [
+            'title' => 'Docs', 'brief' => 'Write the docs.', 'deliverables' => [$deliverable],
+        ]);
+
+        expect($created->assertUnprocessable()->json('error.code'))->toBe('validation.failed')
+            ->and($created->json('error.details')['deliverables.0.fails_on_base'][0] ?? null)->toBe($message)
+            ->and(Task::query()->where('task_group_id', $group['id'])->count())->toBe(0);
+
+        $subtask = $this->postJson("/api/v1/task-groups/{$group['id']}/tasks", [
+            'title' => 'Docs', 'brief' => 'Write the docs.',
+            'deliverables' => [['id' => 'done', 'type' => 'review', 'description' => 'Done.']],
+        ])->assertCreated()->json('data');
+        $updated = $this->patchJson("/api/v1/task-groups/{$group['id']}/tasks/{$subtask['id']}", [
+            'deliverables' => [$deliverable],
+        ]);
+
+        expect($updated->assertUnprocessable()->json('error.details')['deliverables.0.fails_on_base'][0] ?? null)->toBe($message)
+            ->and(Task::query()->findOrFail($subtask['id'])->deliverables)->toBe([
+                ['id' => 'done', 'type' => 'review', 'description' => 'Done.'],
+            ]);
+
+        $groupCreated = $this->postJson('/api/v1/task-groups', [
+            'app_id' => $this->appRecord->id,
+            'title' => 'Docs group',
+            'brief' => 'Refuse the field.',
+            'tasks' => [['title' => 'Docs', 'brief' => 'Write the docs.', 'deliverables' => [$deliverable]]],
+        ]);
+
+        expect($groupCreated->assertUnprocessable()->json('error.details')['tasks.0.deliverables.0.fails_on_base'][0] ?? null)->toBe($message)
+            ->and(TaskGroup::query()->count())->toBe($groups);
+    })->with([
+        'a file' => [['id' => 'docs', 'type' => 'file', 'description' => 'Docs', 'path' => 'docs/a.md', 'change' => 'any', 'fails_on_base' => true]],
+        'a command' => [['id' => 'docs', 'type' => 'command', 'description' => 'Docs', 'command' => 'bun test', 'fails_on_base' => false]],
+        'a review' => [['id' => 'docs', 'type' => 'review', 'description' => 'Docs', 'fails_on_base' => true]],
+    ]);
 });
+
+/** @param list<array<string, mixed>> $deliverables */
+function stored_test_deliverables(array $deliverables): array
+{
+    return array_map(static function (array $deliverable): array {
+        if (($deliverable['type'] ?? null) === 'test' && ! array_key_exists('fails_on_base', $deliverable)) {
+            $deliverable['fails_on_base'] = false;
+        }
+
+        return $deliverable;
+    }, $deliverables);
+}

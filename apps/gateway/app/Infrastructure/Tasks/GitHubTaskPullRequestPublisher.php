@@ -32,7 +32,7 @@ final readonly class GitHubTaskPullRequestPublisher implements TaskPullRequestPu
         private AppDevSshExecutor $ssh,
     ) {}
 
-    public function publish(TaskGroup $group, string $body): string
+    public function publish(TaskGroup $group, string $body, string $commit): string
     {
         [$repository, $instance, $branch] = $this->target($group);
         $base = $group->app->default_branch;
@@ -42,7 +42,7 @@ final readonly class GitHubTaskPullRequestPublisher implements TaskPullRequestPu
 
         try {
             $token = $this->access->token($repository);
-            $this->pushBranch($instance, $branch, $token);
+            $this->pushBranch($instance, $branch, $token, $commit);
 
             return $this->github->openPullRequest($token, $repository, new GitHubPullRequestDraft($branch, $base, $group->title, $body));
         } catch (GitHubApiException $exception) {
@@ -50,12 +50,12 @@ final readonly class GitHubTaskPullRequestPublisher implements TaskPullRequestPu
         }
     }
 
-    public function push(TaskGroup $group): void
+    public function push(TaskGroup $group, string $commit): void
     {
         [$repository, $instance, $branch] = $this->target($group);
 
         try {
-            $this->pushBranch($instance, $branch, $this->access->token($repository));
+            $this->pushBranch($instance, $branch, $this->access->token($repository), $commit);
         } catch (GitHubApiException $exception) {
             throw new TaskPullRequestException('The task branch could not be pushed: '.$exception->getMessage(), previous: $exception);
         }
@@ -81,17 +81,21 @@ final readonly class GitHubTaskPullRequestPublisher implements TaskPullRequestPu
         return [$repository, $instance, 'task-'.$group->id];
     }
 
-    private function pushBranch(AppInstance $instance, string $branch, string $token): void
+    private function pushBranch(AppInstance $instance, string $branch, string $token, string $commit): void
     {
+        if (preg_match('/\A[0-9a-f]{40}(?:[0-9a-f]{24})?\z/D', $commit) !== 1) {
+            throw new TaskPullRequestException('The approved commit is not a Git SHA.');
+        }
         $instance->loadMissing('node');
         $script = GitReadScript::for(GitReadEnvironment::forGitHubToken($token), <<<'BASH'
             checkout=$1
             branch=$2
-            git_read git -C "$checkout" push --quiet origin "HEAD:refs/heads/$branch"
+            commit=$3
+            git_read git -C "$checkout" push --quiet origin "$commit:refs/heads/$branch"
             BASH);
         try {
             $this->ssh->execute($instance->node, new RemoteCommand(
-                arguments: ['bash', '-seu', '--', $instance->checkout_path, $branch],
+                arguments: ['bash', '-seu', '--', $instance->checkout_path, $branch, $commit],
                 input: $script->input,
                 protectedInput: $script->protectedInput,
             ), 'task-pull-request-push', 'tasks.push_failed');

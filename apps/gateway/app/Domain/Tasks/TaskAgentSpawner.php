@@ -7,6 +7,7 @@ namespace App\Domain\Tasks;
 use App\Models\AgentThread;
 use App\Models\AppInstance;
 use App\Models\Task;
+use App\Models\TaskCheck;
 use App\Models\TaskGroup;
 use Illuminate\Support\Facades\Log;
 
@@ -102,7 +103,7 @@ final readonly class TaskAgentSpawner implements AgentSpawner, TaskPlannerSpawne
             $group->brief,
             'Follow this repository\'s instructions for designing a feature. Write the ADRs and documentation in this workspace on the branch task-'.$group->id.' and leave them uncommitted. Orbit commits them when the group moves to Todo.',
             'Keep the group current through Orbit MCP: tasks-update for the title and brief, and tasks-subtask-create, tasks-subtask-update, and tasks-subtask-destroy for the subtasks. Split the feature with the creating-tasks skill (.agents/skills/creating-tasks/SKILL.md): each subtask has one concise goal that an implementer finishes and a reviewer verifies in one turn, and its brief names the ADR sections and documentation it implements.',
-            'Give every subtask at least one deliverable and at most five in its deliverables list, and turn each explicit item of its brief into one. A subtask that needs more than five is too large: split it. A deliverable has an id (a lowercase slug, unique in the subtask), a type, and a description. Use type file with path and change (created, modified, or any) for a file the step must create or change; type test with project, file, and name for a Pest test it must add or change and that must pass; type command with command and directory for a check in another ecosystem that must exit 0; and type review for an item only the reviewer can judge. Orbit verifies file, test, and command deliverables before each review, and refuses to move the group to Todo while a subtask has none.',
+            'Give every subtask at least one deliverable and at most five in its deliverables list, and turn each explicit item of its brief into one. A subtask that needs more than five is too large: split it. A deliverable has an id (a lowercase slug, unique in the subtask), a type, and a description. Use type file with path and change (created, modified, or any) for a file the step must create or change; type test with project, file, and name for a Pest test it must add or change and that must pass, and set fails_on_base to true when at least one test whose name contains name must fail on the start commit before every such test passes; type command with command and directory for a check in another ecosystem that must exit 0; and type review for an item only the reviewer can judge. Orbit verifies file, test, and command deliverables before each review, and refuses to move the group to Todo while a subtask has none.',
             'When the operator agrees the plan is ready, move the group to Todo with tasks-update and status todo. Orbit then runs the implementers, and this thread becomes the group\'s reviewer.',
         ]);
     }
@@ -152,7 +153,28 @@ final readonly class TaskAgentSpawner implements AgentSpawner, TaskPlannerSpawne
             'Review subtask #'.$task->id.': '.$task->title,
             $task->brief,
             TaskRunInstructions::deliverables($deliverables),
-            TaskRunInstructions::reviewer($task->isLastSubtask(), $deliverables),
+            $this->baseRunReview($task, $deliverables),
+            TaskRunInstructions::reviewer($task->opensPullRequest(), $deliverables),
         ], static fn (string $part): bool => $part !== ''));
+    }
+
+    /**
+     * ADR 0163: the kind and message of each base failure, so a missing class is not read as a reproduction.
+     *
+     * @param  list<TaskDeliverable>  $deliverables
+     */
+    private function baseRunReview(Task $task, array $deliverables): string
+    {
+        $check = $task->checks()
+            ->where('kind', TaskCheckKind::Handoff->value)
+            ->where('status', TaskCheckStatus::Passed->value)
+            ->latest('id')
+            ->first();
+        if (! $check instanceof TaskCheck) {
+            return '';
+        }
+        $evidence = TaskDeliverableEvidence::fromArray($check->deliverable_evidence);
+
+        return $evidence instanceof TaskDeliverableEvidence ? $evidence->baseRunReview($deliverables) : '';
     }
 }

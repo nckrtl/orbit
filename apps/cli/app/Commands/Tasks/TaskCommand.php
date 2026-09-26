@@ -44,6 +44,9 @@ abstract class TaskCommand extends GatewayCommand
     /** The Gateway stores at most this many deliverables on a subtask. */
     public const int DELIVERABLES_MAX = 5;
 
+    /** Set when a deliverables list is refused for a reason more specific than its shape. */
+    protected static ?string $deliverablesRefusal = null;
+
     /** @var list<string> */
     public const array GROUP_STATUSES = ['backlog', 'todo', 'reserved', 'running', 'reviewing', 'settling', 'completed', 'failed', 'cancelled'];
 
@@ -278,6 +281,20 @@ abstract class TaskCommand extends GatewayCommand
             $rows,
             'No subtasks.',
         ));
+        $repros = [];
+
+        foreach ($group->tasks as $task) {
+            foreach ($task->deliverables as $deliverable) {
+                if (($deliverable['fails_on_base'] ?? false) === true && is_string($deliverable['id'] ?? null)) {
+                    $repros[] = $deliverable['id'];
+                }
+            }
+        }
+
+        if ($repros !== []) {
+            $this->writeText('Fails on the start commit', implode(', ', $repros));
+        }
+
         $this->writeHumanMessage("Request ID: {$group->requestId}");
 
         return self::SUCCESS;
@@ -306,10 +323,10 @@ abstract class TaskCommand extends GatewayCommand
         ConsoleWriter::write($this->output, $this->humanRenderer()->table(
             ['Deliverable', 'Type', 'Requires', 'Description'],
             array_map(static fn (array $deliverable): array => [
-                $deliverable['id'] ?? '',
-                $deliverable['type'] ?? '',
+                is_string($deliverable['id'] ?? null) ? $deliverable['id'] : '',
+                is_string($deliverable['type'] ?? null) ? $deliverable['type'] : '',
                 self::requirement($deliverable),
-                $deliverable['description'] ?? '',
+                is_string($deliverable['description'] ?? null) ? $deliverable['description'] : '',
             ], $task->deliverables),
             'No deliverables.',
         ));
@@ -322,7 +339,7 @@ abstract class TaskCommand extends GatewayCommand
      * Reads a JSON file with a list of deliverables. Returns null when the option is absent and false after the
      * refusal. The Gateway validates each deliverable's fields.
      *
-     * @return list<array<string, string>>|false|null
+     * @return list<array<string, string|bool>>|false|null
      */
     protected function deliverablesFile(string $option = 'deliverables'): array|false|null
     {
@@ -349,7 +366,7 @@ abstract class TaskCommand extends GatewayCommand
         $deliverables = self::deliverables($entries);
 
         if ($deliverables === null) {
-            $this->renderGatewayFailure('tasks.deliverables_invalid', 'The deliverables file must hold a JSON array of at most '.self::DELIVERABLES_MAX.' objects with string fields.');
+            $this->renderGatewayFailure('tasks.deliverables_invalid', self::$deliverablesRefusal ?? self::deliverablesShapeMessage());
 
             return false;
         }
@@ -357,13 +374,22 @@ abstract class TaskCommand extends GatewayCommand
         return $deliverables;
     }
 
+    /** The refusal for a deliverables file whose shape is wrong, before a more specific fails_on_base refusal. */
+    protected static function deliverablesShapeMessage(): string
+    {
+        return 'The deliverables file must hold a JSON array of at most '.self::DELIVERABLES_MAX.' objects with string fields.';
+    }
+
     /**
      * A list of at most DELIVERABLES_MAX objects with string fields, or null for any other value.
+     * A test deliverable may set fails_on_base to a JSON boolean. Any other type, or any other value, is refused.
      *
-     * @return list<array<string, string>>|null
+     * @return list<array<string, string|bool>>|null
      */
     protected static function deliverables(mixed $entries): ?array
     {
+        self::$deliverablesRefusal = null;
+
         if (! is_array($entries) || ! array_is_list($entries) || count($entries) > self::DELIVERABLES_MAX) {
             return null;
         }
@@ -378,11 +404,33 @@ abstract class TaskCommand extends GatewayCommand
             $fields = [];
 
             foreach ($entry as $field => $value) {
-                if (! is_string($field) || ! is_string($value)) {
+                if (! is_string($field)) {
+                    return null;
+                }
+
+                if ($field === 'fails_on_base') {
+                    if (! is_bool($value)) {
+                        self::$deliverablesRefusal = 'The fails_on_base value for '.self::deliverableWho($entry).' must be true or false.';
+
+                        return null;
+                    }
+
+                    $fields[$field] = $value;
+
+                    continue;
+                }
+
+                if (! is_string($value)) {
                     return null;
                 }
 
                 $fields[$field] = $value;
+            }
+
+            if (array_key_exists('fails_on_base', $fields) && ($fields['type'] ?? '') !== 'test') {
+                self::$deliverablesRefusal = 'The fails_on_base field is only allowed on a test deliverable ('.self::deliverableWho($entry).').';
+
+                return null;
             }
 
             $deliverables[] = $fields;
@@ -391,14 +439,27 @@ abstract class TaskCommand extends GatewayCommand
         return $deliverables;
     }
 
-    /** @param array<string, string> $deliverable */
+    /** @param array<string, mixed> $deliverable */
+    private static function deliverableWho(array $deliverable): string
+    {
+        $id = $deliverable['id'] ?? null;
+
+        return is_string($id) && $id !== '' ? "deliverable {$id}" : 'this deliverable';
+    }
+
+    /** @param array<string, string|bool> $deliverable */
     private static function requirement(array $deliverable): string
     {
-        $field = static fn (string $key): string => $deliverable[$key] ?? '';
+        $field = static fn (string $key): string => is_string($deliverable[$key] ?? null) ? $deliverable[$key] : '';
+        $test = rtrim($field('project'), '/').'/'.$field('file').': '.$field('name');
+
+        if (($deliverable['fails_on_base'] ?? false) === true) {
+            $test .= ' (fails on the start commit)';
+        }
 
         return match ($field('type')) {
             'file' => $field('path').' ('.$field('change').')',
-            'test' => rtrim($field('project'), '/').'/'.$field('file').': '.$field('name'),
+            'test' => $test,
             'command' => $field('command').' in '.($field('directory') === '' ? '.' : $field('directory')),
             default => 'reviewer confirms',
         };

@@ -10,8 +10,12 @@ use App\Domain\Tasks\AgentSpawner;
 use App\Domain\Tasks\InstanceProvisioning;
 use App\Domain\Tasks\InstanceProvisionIntent;
 use App\Domain\Tasks\TaskCapacityException;
+use App\Domain\Tasks\TaskCommentType;
 use App\Domain\Tasks\TaskConcurrencyGuard;
+use App\Domain\Tasks\TaskExecutionMode;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskPullRequestException;
+use App\Domain\Tasks\TaskPullRequestPublisher;
 use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskStatus;
 use App\Models\App as OrbitApp;
@@ -19,6 +23,7 @@ use App\Models\AppInstance;
 use App\Models\AppInstanceRemoval;
 use App\Models\Node;
 use App\Models\Task;
+use App\Models\TaskComment;
 use App\Models\TaskGroup;
 use Illuminate\Cache\ArrayStore;
 use Illuminate\Contracts\Cache\Repository;
@@ -274,6 +279,7 @@ function claim_hol_group(OrbitApp $app, string $title): TaskGroup
 
 function claim_hol_enable(): Node
 {
+    bind_task_node_reachability();
     $gateway = test()->markAsGateway(Node::query()->create([
         'name' => 'claim-hol-gateway',
         'status' => LifecycleStatus::Active,
@@ -680,6 +686,105 @@ describe('the abandoned workspace sweep', function (): void {
         expect(app(TaskScheduler::class)->removeAbandonedWorkspaces())->toBe(3)
             ->and(AppInstance::query()->count())->toBe(1)
             ->and(app(TaskScheduler::class)->removeAbandonedWorkspaces())->toBe(1);
+    });
+
+    it('never sweeps a user Instance attached to a non-managed group', function (): void {
+        claim_hol_enable();
+        $app = claim_hol_app();
+        $removed = claim_hol_recording_remover();
+        $managed = claim_hol_group($app, 'Ended');
+        $managed->forceFill(['status' => TaskGroupStatus::Cancelled])->save();
+        $workspace = claim_hol_workspace($app, $managed, 'source_resolved');
+        $managed->taskable()->associate($workspace);
+        $managed->save();
+
+        $lookalike = claim_hol_group($app, 'Name collision');
+        $lookalike->forceFill(['status' => TaskGroupStatus::Cancelled])->save();
+        $userInstance = claim_hol_workspace($app, $lookalike, 'source_resolved');
+        $annotation = claim_hol_group($app, 'Annotation');
+        $annotation->taskable()->associate($userInstance);
+        $annotation->forceFill([
+            'execution_mode' => TaskExecutionMode::ExistingThread,
+            'status' => TaskGroupStatus::Cancelled,
+        ])->save();
+
+        expect(app(TaskScheduler::class)->removeAbandonedWorkspaces())->toBe(1)
+            ->and($removed->ids)->toBe([$workspace->id])
+            ->and(AppInstance::query()->find($userInstance->id))->not->toBeNull()
+            ->and($annotation->fresh()?->taskable_id)->toBe($userInstance->id);
+    });
+
+    it('pushes a stored approval before it deletes a cancelled workspace', function (): void {
+        claim_hol_enable();
+        $app = claim_hol_app();
+        $group = claim_hol_group($app, 'Approved');
+        $workspace = claim_hol_workspace($app, $group, 'source_resolved');
+        $group->taskable()->associate($workspace);
+        $group->forceFill(['status' => TaskGroupStatus::Cancelled])->save();
+        $sha = str_repeat('a', 40);
+        TaskComment::query()->create([
+            'task_group_id' => $group->id,
+            'task_id' => $group->tasks()->value('id'),
+            'type' => TaskCommentType::Approved,
+            'body' => 'Approved.',
+            'author' => 'reviewer',
+            'review_attempt' => 1,
+            'commit_sha' => $sha,
+            'posted_at' => now(),
+        ]);
+        $publisher = new class implements TaskPullRequestPublisher
+        {
+            /** @var list<string> */
+            public array $commits = [];
+
+            public function publish(TaskGroup $group, string $body, string $commit): string
+            {
+                throw new TaskPullRequestException('Cancel never opens a pull request.');
+            }
+
+            public function push(TaskGroup $group, string $commit): void
+            {
+                $this->commits[] = $commit;
+            }
+        };
+        app()->instance(TaskPullRequestPublisher::class, $publisher);
+        $removed = claim_hol_recording_remover();
+
+        expect(app(TaskScheduler::class)->removeAbandonedWorkspaces())->toBe(1)
+            ->and($publisher->commits)->toBe([$sha])
+            ->and($removed->ids)->toBe([$workspace->id]);
+
+        $stuck = claim_hol_group($app, 'Unpushed');
+        $stuckWorkspace = claim_hol_workspace($app, $stuck, 'source_resolved');
+        $stuck->taskable()->associate($stuckWorkspace);
+        $stuck->forceFill(['status' => TaskGroupStatus::Cancelled])->save();
+        TaskComment::query()->create([
+            'task_group_id' => $stuck->id,
+            'task_id' => $stuck->tasks()->value('id'),
+            'type' => TaskCommentType::Approved,
+            'body' => 'Approved.',
+            'author' => 'reviewer',
+            'review_attempt' => 1,
+            'commit_sha' => str_repeat('b', 40),
+            'posted_at' => now(),
+        ]);
+        app()->instance(TaskPullRequestPublisher::class, new class implements TaskPullRequestPublisher
+        {
+            public function publish(TaskGroup $group, string $body, string $commit): string
+            {
+                throw new TaskPullRequestException('Cancel never opens a pull request.');
+            }
+
+            public function push(TaskGroup $group, string $commit): void
+            {
+                throw new TaskPullRequestException('The task branch could not be pushed.');
+            }
+        });
+
+        expect(app(TaskScheduler::class)->removeAbandonedWorkspaces())->toBe(0)
+            ->and(AppInstance::query()->find($stuckWorkspace->id))->not->toBeNull()
+            ->and($stuck->fresh()?->assistance_reason)->toBe(RemoveTaskWorkspaceAction::RemovalFailedPrefix.'The task branch could not be pushed.')
+            ->and($removed->ids)->toBe([$workspace->id]);
     });
 });
 

@@ -146,7 +146,7 @@ final class CreateTaskGroupCommand extends TaskCommand
                 || self::textError($title, 'Title', self::TITLE_MAX) !== null
                 || self::textError($brief, 'Brief', self::BRIEF_MAX) !== null
             ) {
-                $this->renderGatewayFailure('tasks.subtasks_invalid', $refusal);
+                $this->renderGatewayFailure('tasks.subtasks_invalid', self::$deliverablesRefusal ?? $refusal);
 
                 return false;
             }

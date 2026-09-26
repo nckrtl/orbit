@@ -46,13 +46,14 @@ final readonly class AppDevRoleBaseline implements RoleBaseline
         $this->dns->converge($node);
         $caddySource = $this->commands->caddySource($node, RoleName::AppDev);
         if ($caddySource instanceof RemoteCommand) {
-            $this->ssh->execute($node, $caddySource, 'caddy-package-source', 'app-dev.prerequisite_failed');
+            $this->ssh->execute($node, $caddySource, 'caddy-package-source', 'app-dev.prerequisite_failed', failureLabel: CaddyRoleFailure::sshLabel(RoleName::AppDev));
         }
         $this->ssh->execute(
             $node,
             $this->commands->make($node, RoleName::AppDev, $account),
             'role-prerequisites',
             'app-dev.prerequisite_failed',
+            failureLabel: CaddyRoleFailure::sshLabel(RoleName::AppDev),
         );
         // Hibernation wake sites log to these directories, and validation opens those logs as `caddy`.
         $this->ssh->execute(
@@ -63,14 +64,15 @@ final readonly class AppDevRoleBaseline implements RoleBaseline
             ),
             'hibernation-directories',
             'app-dev.prerequisite_failed',
+            failureLabel: CaddyRoleFailure::sshLabel(RoleName::AppDev),
         );
-        $this->caddy->converge($node);
+        $this->caddy->converge($node, RoleName::AppDev);
         $this->firewall->converge($node, RoleName::AppDev, $node->user);
     }
 
     public function remove(Node $node, NodeRole $assignment, bool $purgeData): void
     {
-        $this->caddy->remove($node);
+        $this->caddy->remove($node, RoleName::AppDev);
         $this->firewall->remove($node, RoleName::AppDev, $node->user);
         $this->dns->converge();
     }
