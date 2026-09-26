@@ -21,6 +21,8 @@ use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tools\ToolManagerMaterializer;
+use App\Infrastructure\Nodes\NodeLocks;
+use App\Infrastructure\Nodes\Roles\NodeRoleConvergeLock;
 use App\Infrastructure\Processes\CommandResult;
 use App\Models\Activity;
 use App\Models\App as OrbitApp;
@@ -1394,7 +1396,7 @@ it('returns a safe correlated 502 for convergence failure', function (): void {
             'error' => [
                 'code' => 'node_role.convergence_failed',
                 'message' => 'Role convergence failed.',
-                'details' => ['step' => 'converge:packages'],
+                'details' => ['step' => 'converge:packages', 'error_code' => 'packages.failed'],
             ],
         ]);
 
@@ -1403,6 +1405,29 @@ it('returns a safe correlated 502 for convergence failure', function (): void {
         ->toContain($sentinel)
         ->and(Activity::query()->where('request_id', $requestId)->sole()->error_code)
         ->toBe('node_role.convergence_failed');
+});
+
+it('names node_role.node_busy in the error details when another role operation holds the Node', function (): void {
+    app()->instance(NodeRoleConvergeLock::class, new NodeRoleConvergeLock(app(NodeLocks::class), waitSeconds: 0));
+    $held = app(NodeLocks::class)->lock("node-role:id:{$this->node->id}", 60);
+    expect($held->get())->toBeTrue();
+
+    try {
+        $this
+            ->postJson("/api/v1/nodes/{$this->node->id}/roles", ['role' => 'metrics'])
+            ->assertStatus(502)
+            ->assertExactJson([
+                'error' => [
+                    'code' => 'node_role.convergence_failed',
+                    'message' => "Another role operation is still running on node [{$this->node->name}].",
+                    'details' => ['step' => 'converge:node-lock', 'error_code' => 'node_role.node_busy'],
+                ],
+            ]);
+    } finally {
+        $held->release();
+    }
+
+    expect($this->node->roles()->where('role', 'metrics')->exists())->toBeFalse();
 });
 
 it('records the message of a Caddy listen address refusal on the activity', function (): void {
@@ -1458,7 +1483,7 @@ it('returns a safe correlated 502 for removal failure', function (): void {
             'error' => [
                 'code' => 'node_role.remove_failed',
                 'message' => 'Role removal failed. Retry with --offline if node [role-target] is unreachable.',
-                'details' => ['step' => 'remove:firewall'],
+                'details' => ['step' => 'remove:firewall', 'error_code' => 'firewall.failed'],
             ],
         ]);
 

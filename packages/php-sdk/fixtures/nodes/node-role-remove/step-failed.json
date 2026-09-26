@@ -8,7 +8,8 @@
             "code": "node_role.remove_failed",
             "message": "UFW is inactive on node [app-dev]. Retry with --offline if node [app-dev] is unreachable.",
             "details": {
-                "step": "remove:host-firewall"
+                "step": "remove:host-firewall",
+                "error_code": "firewall.inactive"
             }
         }
     }

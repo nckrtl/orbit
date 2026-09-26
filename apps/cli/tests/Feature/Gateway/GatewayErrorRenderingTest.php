@@ -1067,6 +1067,19 @@ it('keeps a bounded operation step without a Caddy build for any error code', fu
     'tool manager' => ['tool.manager_failed', 'tool-manager-vp'],
 ]);
 
+it('keeps the specific code behind a role operation failure', function (string $errorCode, bool $kept): void {
+    expect(GatewayFailureRenderer::safeDetails('node_role.convergence_failed', ['step' => 'converge:node-lock', 'error_code' => $errorCode]))
+        ->toBe($kept ? ['step' => 'converge:node-lock', 'error_code' => $errorCode] : ['step' => 'converge:node-lock']);
+})->with([
+    'role code' => ['node_role.node_busy', true],
+    'tool manager code' => ['node_role.tool_manager_locked', true],
+    'metrics code' => ['metrics.image_pull_failed', true],
+    'no namespace' => ['node_busy', false],
+    'upper case' => ['Node_role.Busy', false],
+    'control character' => ["node_role.node\nbusy", false],
+    'oversized' => ['node_role.'.str_repeat('a', 70), false],
+]);
+
 it('drops a malformed operation field and keeps the valid ones', function (mixed $step): void {
     expect(GatewayFailureRenderer::safeDetails('node_role.remove_failed', ['step' => $step, 'reason' => 'app_instances_attached', 'role' => 'app-dev']))
         ->toBe(['reason' => 'app_instances_attached', 'role' => 'app-dev']);
