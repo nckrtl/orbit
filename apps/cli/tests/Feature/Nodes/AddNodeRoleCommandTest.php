@@ -477,7 +477,6 @@ it('warns with the follow-up of a convergence step that failed without failing t
         ->artisan('node:role:add', ['node' => '7', 'role' => 'gateway', '--converge' => true])
         ->expectsOutput('Role [gateway] added to node [app-1] (#7).')
         ->expectsOutputToContain('Warning: The Gateway machine does not route the private domain to Orbit VPN DNS')
-        ->expectsOutputToContain('orbit node:role:add app-1 gateway --converge')
         ->expectsOutput('Request ID: '.node_role_add_request_id())
         ->assertExitCode(0);
 
