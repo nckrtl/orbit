@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\AppInstances;
 
 use App\Domain\AppInstances\Logs\AppInstanceLogReader;
+use App\Domain\Logs\LogReadLimit;
 use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Ssh\KnownHostsStore;
@@ -30,6 +31,7 @@ final readonly class RemoteAppInstanceLogReader implements AppInstanceLogReader
             new RemoteCommand(
                 ['sudo', 'bash', '-seu', '--', $this->checkout($instance), (string) $lines],
                 self::script(),
+                maxOutputBytes: LogReadLimit::Bytes,
             ),
         );
 
@@ -41,7 +43,7 @@ final readonly class RemoteAppInstanceLogReader implements AppInstanceLogReader
             );
         }
 
-        return $result->stdout;
+        return LogReadLimit::wholeLines($result->stdout);
     }
 
     private function checkout(AppInstance $instance): string

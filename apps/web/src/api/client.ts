@@ -1,21 +1,33 @@
 export class GatewayError extends Error {
     readonly status: number;
     readonly code: string | null;
+    /** The error envelope's `error.details`, such as `{ reason }` for `logs.live_unavailable`. */
+    readonly details: unknown;
 
-    constructor(message: string, status: number, code: string | null = null) {
+    constructor(
+        message: string,
+        status: number,
+        code: string | null = null,
+        details: unknown = null,
+    ) {
         super(message);
         this.status = status;
         this.code = code;
+        this.details = details;
     }
 }
 
-export type Method = "GET" | "POST" | "PATCH" | "DELETE";
+export type Method = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+
+/** `keepalive` lets a request outlive the page, for a close sent while the page unloads. */
+export type RequestOptions = { keepalive?: boolean };
 
 /** What carries a request to a Gateway: `fetch` by default, the in-memory demo Gateway in demo mode and tests. */
 export type Transport = (
     method: Method,
     path: string,
     body: unknown,
+    options?: RequestOptions,
 ) => Promise<{ status: number; payload: unknown }>;
 
 /**
@@ -23,9 +35,10 @@ export type Transport = (
  * `Content-Type: application/json` makes every mutation a preflighted request, which no other
  * origin can send.
  */
-const http: Transport = async (method, path, body) => {
+const http: Transport = async (method, path, body, options) => {
     const response = await fetch(path, {
         method,
+        ...(options?.keepalive === true ? { keepalive: true } : {}),
         headers: { Accept: "application/json", "Content-Type": "application/json" },
         ...(method === "GET" ? {} : { body: JSON.stringify(body ?? {}) }),
     });
@@ -45,15 +58,26 @@ export function setTransport(next: Transport | null, name: string | null = null)
 export const transportLabel = (): string | null => label;
 
 /** One Gateway API call: the `data` of a successful answer, or a GatewayError with the Gateway's own message. */
-export async function api<T>(method: Method, path: string, body?: unknown): Promise<T> {
-    const { status, payload } = await transport(method, path, body);
-    const answer = payload as { data?: T; error?: { code?: string; message?: string } } | null;
+export async function api<T>(
+    method: Method,
+    path: string,
+    body?: unknown,
+    options?: RequestOptions,
+): Promise<T> {
+    const { status, payload } = await (options === undefined
+        ? transport(method, path, body)
+        : transport(method, path, body, options));
+    const answer = payload as {
+        data?: T;
+        error?: { code?: string; message?: string; details?: unknown };
+    } | null;
 
     if (status < 200 || status >= 300 || answer === null) {
         throw new GatewayError(
             answer?.error?.message ?? `The Gateway answered ${status}.`,
             status,
             answer?.error?.code ?? null,
+            answer?.error?.details ?? null,
         );
     }
 

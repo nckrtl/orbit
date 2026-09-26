@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\AppInstances\AppInstanceState;
+use App\Domain\Logs\LogReadLimit;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\NodeRoleDependencySet;
@@ -95,7 +96,7 @@ it('installs and manages a systemd process through fixed SSH argv', function ():
         process_runtime_result(),
         process_runtime_result(),
         process_runtime_result(stdout: $ownedUnit),
-        process_runtime_result(stdout: "line one\nline two\n"),
+        process_runtime_result(stdout: "line two\nline one\n"),
         process_runtime_result(),
         process_runtime_result(stdout: $ownedUnit),
         process_runtime_result(),
@@ -137,7 +138,7 @@ it('installs and manages a systemd process through fixed SSH argv', function ():
             ['sudo', 'systemctl', 'disable', '--now', $unit],
             ['sudo', 'test', '-e', $path],
             ['sudo', 'cat', '--', $path],
-            ['sudo', 'journalctl', '--unit', $unit, '--lines', '50', '--no-pager', '--output', 'short-iso'],
+            ['sudo', 'sh', '-c', RemoteProcessRuntimeManager::JournalLogsScript, 'orbit-process-logs', $unit, '50', (string) LogReadLimit::Bytes],
             ['sudo', 'test', '-e', $path],
             ['sudo', 'cat', '--', $path],
             ['sudo', 'systemctl', 'disable', '--now', $unit],
@@ -160,7 +161,9 @@ it('installs and manages a systemd process through fixed SSH argv', function ():
             "\"VITE_DEV_SERVER_KEY=/home/orbit/.orbit/certificates/app-instance-{$this->instance->id}/current/key.pem\"",
         )
         ->and($logs)
-        ->toBe("line one\nline two\n");
+        ->toBe("line one\nline two\n")
+        ->and($this->ssh->commands[15]->maxOutputBytes)
+        ->toBe(LogReadLimit::Bytes);
 });
 
 it('rejects leftover Workspace ownership before systemd convergence', function (): void {
@@ -382,7 +385,7 @@ it('creates and manages a labeled Docker container through fixed SSH commands', 
             process_runtime_docker_owner_arguments($name),
             ['sudo', 'docker', 'container', 'restart', $name],
             process_runtime_docker_owner_arguments($name),
-            ['sudo', 'docker', 'container', 'logs', '--tail', '20', $name],
+            ['sudo', 'sh', '-c', 'exec docker container logs --tail "$1" "$2" 2>&1', 'orbit-process-logs', '20', $name],
             process_runtime_docker_inspect_arguments($name),
             process_runtime_docker_inspect_arguments("{$name}-rollback-running"),
             process_runtime_docker_inspect_arguments("{$name}-rollback-stopped"),
@@ -1526,7 +1529,7 @@ it('reads logs without the ownership check when a fresh agent view lists the exa
 
     expect($this->manager->logs($process, 20))->toBe("line one\n")
         ->and($this->ssh->commands)->toHaveCount(1)
-        ->and($this->ssh->commands[0]->arguments[1])->toBe('journalctl');
+        ->and($this->ssh->commands[0]->arguments[3])->toBe(RemoteProcessRuntimeManager::JournalLogsScript);
 });
 
 it('keeps the ownership check before logs when the agent view does not list the unit', function (string $case): void {

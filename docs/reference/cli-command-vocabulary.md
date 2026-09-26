@@ -62,7 +62,7 @@ Some families expose actions that are not the pairs above. Those last segments b
 | `env` | `import`, `sync` | The CLI imports or synchronizes Instance environment values. |
 | `firewall` | `allow`, `deny` | The CLI writes an allow or deny firewall rule. |
 | `gateway` | `status`, `trust`, `use` | The CLI reports Gateway status, pins the root certificate, or selects a profile. |
-| `instance` | `clone`, `deploy`, `register`, `rollback`, `scan`, `setup`, `transfer` | The CLI clones, deploys, registers, rolls back, or transfers an Instance, scans its dependencies, or runs its Project setup steps. |
+| `instance` | `clone`, `deploy`, `logs`, `register`, `rollback`, `scan`, `setup`, `transfer` | The CLI clones, deploys, registers, rolls back, or transfers an Instance, reads its application log, scans its dependencies, or runs its Project setup steps. |
 | `metrics` | `status` | The CLI reports Metrics role status. |
 | `proxycli` | `status` | The CLI reports the fleet CLIProxyAPI quota collector. |
 | `node` | `relocate`, `rename` | The CLI moves a relocatable singleton role (`gateway`, `websocket`, or `metrics`) to another Node, or changes a Node's unique registry name. |
