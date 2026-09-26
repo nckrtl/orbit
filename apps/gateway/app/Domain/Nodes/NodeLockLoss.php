@@ -24,15 +24,24 @@ final class NodeLockLoss
         );
     }
 
-    /** Whether the exception or one of its previous exceptions is a lost Node lock. */
-    public static function in(?Throwable $exception): bool
+    /**
+     * The lost Node lock in the exception's chain, and null for any other failure, for a caller that
+     * keeps no other failure as its previous exception because it may carry command output.
+     */
+    public static function keep(Throwable $exception): ?ResourceOperationException
     {
         for ($current = $exception; $current !== null; $current = $current->getPrevious()) {
             if ($current instanceof ResourceOperationException && $current->errorCode === self::ErrorCode) {
-                return true;
+                return $current;
             }
         }
 
-        return false;
+        return null;
+    }
+
+    /** Whether the exception or one of its previous exceptions is a lost Node lock. */
+    public static function in(?Throwable $exception): bool
+    {
+        return $exception instanceof Throwable && self::keep($exception) instanceof ResourceOperationException;
     }
 }

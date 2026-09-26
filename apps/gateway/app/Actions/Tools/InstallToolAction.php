@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Tools;
 
 use App\Data\Tools\InstallToolData;
+use App\Domain\Nodes\NodeLockLoss;
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tools\ToolActionResult;
@@ -239,7 +240,7 @@ final readonly class InstallToolAction
                 data: $data,
                 manager: $managerName,
                 toolId: $tool->id,
-                previous: $exception,
+                previous: NodeLockLoss::keep($exception),
             );
             $this->markToolFailure($tool, ToolOperation::Install, $failure);
             throw $failure;
@@ -308,7 +309,7 @@ final readonly class InstallToolAction
                     data: $data,
                     manager: $managerName,
                     toolId: $tool->id,
-                    previous: $exception,
+                    previous: NodeLockLoss::keep($exception),
                 );
             }
 
@@ -328,7 +329,7 @@ final readonly class InstallToolAction
                     data: $data,
                     manager: $managerName,
                     toolId: $tool->id,
-                    previous: $exception,
+                    previous: NodeLockLoss::keep($exception),
                 );
             }
 
@@ -391,7 +392,7 @@ final readonly class InstallToolAction
                 data: $data,
                 manager: $managerName,
                 toolId: $tool->id,
-                previous: $exception,
+                previous: NodeLockLoss::keep($exception),
             );
             $this->markToolFailure($tool, ToolOperation::Install, $failure);
             throw $failure;
@@ -427,7 +428,7 @@ final readonly class InstallToolAction
                 manager: $managerName,
                 outcome: ToolOutcome::CandidateVersionUnavailable,
                 toolId: $toolId,
-                previous: $exception,
+                previous: NodeLockLoss::keep($exception),
             );
         }
 

@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\Tools\UpdateToolAction;
+use App\Domain\Nodes\NodeLockLoss;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tools\ToolManagerException;
@@ -454,6 +455,17 @@ describe(UpdateToolAction::class, function (): void {
             ->toBe(['installedVersion', 'update'])
             ->and($lock->runs)
             ->toBe(1);
+    });
+
+    it('keeps a lost Node lock as the previous failure of an update', function (): void {
+        [$action, $manager, $lock, $tool] = update_action_fixture();
+        $manager->installedVersions = ['2.4.0'];
+        $manager->failures['update'] = [NodeLockLoss::exception('tool-manager:1:vp')];
+
+        $exception = update_action_exception(fn (): mixed => $action->execute($tool));
+
+        expect($exception->errorCode)->toBe('tool.update_failed')
+            ->and(NodeLockLoss::in($exception))->toBeTrue();
     });
 
     it('retains a post-update installed probe failure', function (mixed $after): void {

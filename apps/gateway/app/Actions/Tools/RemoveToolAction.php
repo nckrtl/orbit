@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Tools;
 
+use App\Domain\Nodes\NodeLockLoss;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tools\ToolActionResult;
 use App\Domain\Tools\ToolManager;
@@ -91,7 +92,7 @@ final readonly class RemoveToolAction
                     previous: $exception,
                 );
             } catch (Throwable $exception) {
-                throw $this->failure($tool, 'tool.remove_failed', 502, 'The tool removal plan failed.', previous: $exception);
+                throw $this->failure($tool, 'tool.remove_failed', 502, 'The tool removal plan failed.', previous: NodeLockLoss::keep($exception));
             }
 
             if (! $plan->removesOnly($tool->package)) {
@@ -120,7 +121,7 @@ final readonly class RemoveToolAction
                     previous: $exception,
                 );
             } catch (Throwable $exception) {
-                throw $this->failure($tool, 'tool.remove_failed', 502, 'The tool manager removal failed.', previous: $exception);
+                throw $this->failure($tool, 'tool.remove_failed', 502, 'The tool manager removal failed.', previous: NodeLockLoss::keep($exception));
             }
 
             $after = $this->installedVersion($tool, $node, $manager);
@@ -169,7 +170,7 @@ final readonly class RemoveToolAction
                 errorCode: 'tool.version_probe_failed',
                 status: 502,
                 message: 'The installed tool version could not be verified.',
-                previous: $exception,
+                previous: NodeLockLoss::keep($exception),
             );
         }
     }
