@@ -15,7 +15,7 @@ interface AgentDriver
 
     public function create(AgentThreadStart $intent): string;
 
-    public function send(AgentThread $thread, string $message): void;
+    public function send(AgentThread $thread, string $message, ?string $key = null): void;
 
     /** @param array<string, mixed> $answers */
     public function respond(AgentThread $thread, AgentInputRequest $request, array $answers): void;

@@ -43,8 +43,9 @@ final readonly class T3Driver implements AgentDriver
         return $this->creator->create($intent);
     }
 
-    public function send(AgentThread $thread, string $message): void
+    public function send(AgentThread $thread, string $message, ?string $key = null): void
     {
+        // T3 chooses its own command id. A reserved Pi resume key does not apply on this driver.
         $this->creator->startTurn($this->node($thread), $thread->external_id, $message, T3ModelSelection::forModel($thread->model ?? '', $thread->effort ?? ($thread->role === 'reviewer' ? TaskAgentDefaults::ReviewerEffort : TaskAgentDefaults::ImplementerEffort)));
     }
 

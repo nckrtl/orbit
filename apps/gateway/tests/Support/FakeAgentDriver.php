@@ -52,9 +52,13 @@ final class FakeAgentDriver implements AgentDriver
         return 'conversation-'.count($this->calls);
     }
 
-    public function send(AgentThread $thread, string $message): void
+    public function send(AgentThread $thread, string $message, ?string $key = null): void
     {
-        $this->calls[] = ['operation' => 'send', 'thread' => $thread->external_id, 'message' => $message];
+        $call = ['operation' => 'send', 'thread' => $thread->external_id, 'message' => $message];
+        if ($key !== null) {
+            $call['key'] = $key;
+        }
+        $this->calls[] = $call;
     }
 
     public function respond(AgentThread $thread, AgentInputRequest $request, array $answers): void

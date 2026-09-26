@@ -21,7 +21,8 @@ use Illuminate\Support\Str;
 /**
  * Runs agent threads on the Node's Pi server (ADR 0116). Orbit chooses the session ID, so the
  * external ID is known before the server answers. Each send carries a key; a retry reuses it,
- * so an ambiguous failure never starts a second turn.
+ * so an ambiguous failure never starts a second turn. A caller may supply that key, and this driver
+ * posts it unchanged (ADR 0167).
  */
 final readonly class PiDriver implements AgentDriver
 {
@@ -60,9 +61,9 @@ final readonly class PiDriver implements AgentDriver
         return $id;
     }
 
-    public function send(AgentThread $thread, string $message): void
+    public function send(AgentThread $thread, string $message, ?string $key = null): void
     {
-        $this->deliver($this->node($thread), $thread->external_id, $message);
+        $this->deliver($this->node($thread), $thread->external_id, $message, $key);
     }
 
     public function respond(AgentThread $thread, AgentInputRequest $request, array $answers): void
@@ -175,9 +176,9 @@ final readonly class PiDriver implements AgentDriver
             : null;
     }
 
-    private function deliver(Node $node, string $sessionId, string $message): void
+    private function deliver(Node $node, string $sessionId, string $message, ?string $key = null): void
     {
-        $key = (string) Str::uuid();
+        $key ??= (string) Str::uuid();
         try {
             $this->client->send($node, $sessionId, $key, $message);
         } catch (AgentDriverException) {

@@ -21,6 +21,7 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 use Throwable;
 
 final readonly class TaskScheduler
@@ -44,6 +45,21 @@ final readonly class TaskScheduler
 
     /** Re-evaluations of cancelled or unstarted checks on one head before the group asks for assistance (ADR 0164). */
     public const int InfrastructureCheckRetries = 5;
+
+    /** The Pi server reports this when it restarted while a turn was still active (ADR 0116, ADR 0167). */
+    public const string PiServerRestartError = 'The Pi server restarted during the turn.';
+
+    /** One continue, on the same thread, after that restart. It does not ask for assistance. */
+    public const string PiServerRestartContinue = 'Your previous turn was interrupted by a server restart. Check git status and git diff, finish the subtask, and hand off with the run script.';
+
+    /** Resumes reserved for one subtask before the next restart asks for assistance (ADR 0167). */
+    public const int PiServerRestartResumeLimit = 2;
+
+    private const string PiRestartPending = 'pending';
+
+    private const string PiRestartAccepted = 'accepted';
+
+    private const string PiRestartSuperseded = 'superseded';
 
     /** Reasons the scheduler sets when a claim returns a group to todo. A start, a capacity wait, or a move to backlog clears them. */
     public const array ClaimFailureReasons = [
@@ -231,9 +247,12 @@ final readonly class TaskScheduler
         if ($implementer === null) {
             return false;
         }
+        $this->reconcilePiRestart($task, $implementer);
         $state = AgentThreadState::tryFrom($implementer->sessState);
         if ($state === AgentThreadState::Failed) {
-            $this->requestAssistance($task, $group, 'The implementer thread failed.', $observation);
+            if ($this->resumePiServerRestart($task, $group, $implementer) !== 'handled') {
+                $this->requestAssistance($task, $group, 'The implementer thread failed.', $observation);
+            }
 
             return true;
         }
@@ -406,14 +425,20 @@ final readonly class TaskScheduler
     private function handleReviewerOutcome(TaskGroup $group, Task $task, TaskSessionObservation $observation): bool
     {
         $reviewer = $observation->thread(TaskThreadRole::Reviewer);
+        // The shared reviewer can still be on another conversation when this subtask reaches review.
+        // A Pi restart of that turn is not this subtask's review. Request the review first, and recover
+        // only a review that was already requested (ADR 0167).
         if ($reviewer === null || $task->review_notified_attempt !== $task->review_attempt) {
             $this->nudgeReviewer($task, $reviewer);
 
             return true;
         }
+        $this->reconcilePiRestart($task, $reviewer);
         $state = AgentThreadState::tryFrom($reviewer->sessState);
         if ($state === AgentThreadState::Failed) {
-            $this->requestAssistance($task, $group, 'The reviewer thread failed.', $observation);
+            if ($this->resumePiServerRestart($task, $group, $reviewer) !== 'handled') {
+                $this->requestAssistance($task, $group, 'The reviewer thread failed.', $observation);
+            }
 
             return true;
         }
@@ -985,6 +1010,80 @@ final readonly class TaskScheduler
         $task->update(['assistance_requested' => true, 'assistance_reason' => $reason]);
         $group->update(['assistance_requested' => true, 'assistance_reason' => $reason]);
         $this->coder->assistance($group, $reason);
+    }
+
+    /**
+     * Marks a pending Pi resume accepted or superseded from the turn now on the acting thread (ADR 0167).
+     * An accepted key is not sent again. A different turn does not reuse it either.
+     */
+    private function reconcilePiRestart(Task $task, TaskThreadObservation $acting): void
+    {
+        if ($task->pi_restart_reservation !== self::PiRestartPending || (int) $task->pi_restart_thread_id !== $acting->threadId) {
+            return;
+        }
+        $turnId = $acting->turnId;
+        if (! is_string($turnId) || $turnId === '') {
+            return;
+        }
+        if ($turnId === $task->pi_restart_key) {
+            $task->update(['pi_restart_reservation' => self::PiRestartAccepted]);
+
+            return;
+        }
+        if ($turnId !== $task->pi_restart_source_turn_id) {
+            $task->update(['pi_restart_reservation' => self::PiRestartSuperseded]);
+        }
+    }
+
+    /**
+     * Resumes a Pi turn that failed only because the server restarted.
+     *
+     * @return 'handled'|'assist'|'skip' handled owns the tick, assist asks for assistance, skip keeps today's failure path
+     */
+    private function resumePiServerRestart(Task $task, TaskGroup $group, TaskThreadObservation $acting): string
+    {
+        $record = AgentThread::query()->find($acting->threadId);
+        if (! $record instanceof AgentThread || $record->driver !== 'pi') {
+            return 'skip';
+        }
+        if ($acting->error !== self::PiServerRestartError || ! is_string($acting->turnId) || $acting->turnId === '') {
+            return 'skip';
+        }
+        if ($task->pi_restart_reservation === self::PiRestartPending
+            && (int) $task->pi_restart_thread_id === $acting->threadId
+            && $acting->turnId === $task->pi_restart_source_turn_id
+            && is_string($task->pi_restart_key)
+            && $task->pi_restart_key !== '') {
+            $this->sendPiRestartResume($task, $group, $acting, $task->pi_restart_key);
+
+            return 'handled';
+        }
+        if ((int) $task->pi_restart_resumes >= self::PiServerRestartResumeLimit) {
+            return 'assist';
+        }
+        $key = (string) Str::uuid();
+        $task->update([
+            'pi_restart_resumes' => (int) $task->pi_restart_resumes + 1,
+            'pi_restart_key' => $key,
+            'pi_restart_thread_id' => $acting->threadId,
+            'pi_restart_source_turn_id' => $acting->turnId,
+            'pi_restart_reservation' => self::PiRestartPending,
+        ]);
+        $this->sendPiRestartResume($task, $group, $acting, $key);
+
+        return 'handled';
+    }
+
+    private function sendPiRestartResume(Task $task, TaskGroup $group, TaskThreadObservation $acting, string $key): void
+    {
+        try {
+            $this->actor->resumeInterruptedTurn($group, $acting, self::PiServerRestartContinue, $key);
+        } catch (AgentDriverException $exception) {
+            $this->recordCommunicationFailure($task, $group, $exception->getMessage());
+
+            return;
+        }
+        $this->clearCommunicationFailures($task);
     }
 
     private function classifyAvailable(TaskGroup $group, TaskSessionObservation $observation): TaskSessionDecision
