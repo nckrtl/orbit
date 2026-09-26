@@ -12,7 +12,7 @@ While a settling group's pull request is open, the Gateway asks for assistance w
 
 Proposed.
 
-[ADR 0164](/decisions/0164-heal-a-settling-pull-request-with-a-fixup-subtask) amends the response to an open pull request. This record still detects conflicts and failed checks. A pull request that closes without merging still asks for assistance.
+[ADR 0164](/decisions/0164-heal-a-settling-pull-request-with-a-fixup-subtask) amends the response to an open pull request. This record still detects conflicts and failed checks. A check run that has not completed stays out of that detection until it has been pending for more than 60 minutes, which ADR 0164 counts as infrastructure. A pull request that closes without merging still asks for assistance.
 
 ## Context
 
@@ -28,7 +28,7 @@ GitHub reports a conflict in the pull request itself: `mergeable` is `false`, or
 
 - Each tick reads an open settling pull request with the pull request token: `merged`, `state`, `mergeable`, `mergeable_state`, `head.sha`, and `base.ref`. Merged and closed pull requests keep the behavior of ADR 0113.
 - The pull request conflicts when `mergeable` is `false` or `mergeable_state` is `dirty`. A `null` `mergeable` is not a conflict.
-- The Gateway lists the check runs of the head commit with a separate token that has only `checks: read`. A check run fails when it completes with `failure`, `timed_out`, `cancelled`, `startup_failure`, or `action_required`. Other conclusions, and runs that have not completed, are not problems.
+- The Gateway lists the check runs of the head commit with a separate token that has only `checks: read`. A check run fails when it completes with `failure`, `timed_out`, `cancelled`, `startup_failure`, or `action_required`. Other conclusions, and runs that have not completed, are not problems. [ADR 0164](/decisions/0164-heal-a-settling-pull-request-with-a-fixup-subtask) counts a run pending for more than 60 minutes as infrastructure and reports a completed genuine failure while another run is still pending.
 - When GitHub refuses the checks token, the Gateway skips the check runs and still reports conflicts. An unreadable check list alone never asks for assistance.
 - Problems produce one assistance reason. It starts with `The pull request needs attention: ` and has one sentence per problem, such as `It conflicts with main; merge main into the task branch and push.` or `Check Rust agent failed: <url>.` [ADR 0164](/decisions/0164-heal-a-settling-pull-request-with-a-fixup-subtask) appends a fixup subtask before that reason while the problem still has a fixup left.
 - The Gateway writes the reason and notifies Coder only when the reason differs from the stored one. The same problems on the next tick change nothing.

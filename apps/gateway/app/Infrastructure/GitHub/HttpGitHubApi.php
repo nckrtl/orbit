@@ -221,10 +221,13 @@ final readonly class HttpGitHubApi implements GitHubApi
             if ($name === null) {
                 continue;
             }
+            $id = $row['id'] ?? null;
             $runs[] = new GitHubCheckRun(
                 name: $name,
                 conclusion: $this->text($row['conclusion'] ?? null),
                 url: $this->text($row['html_url'] ?? null) ?? $this->text($row['details_url'] ?? null),
+                id: is_int($id) ? $id : null,
+                startedAt: $this->text($row['started_at'] ?? null),
             );
         }
 

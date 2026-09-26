@@ -50,7 +50,7 @@ final readonly class GitHubTaskBaseBranchFetcher implements TaskBaseBranchFetche
         }
     }
 
-    public function fastForward(TaskGroup $group): void
+    public function fastForward(TaskGroup $group, bool $missingRefOk = false): void
     {
         $group->loadMissing(['app', 'taskable']);
         $repository = GitHubRepository::fromOrigin((string) $group->app->repository_url);
@@ -67,9 +67,20 @@ final readonly class GitHubTaskBaseBranchFetcher implements TaskBaseBranchFetche
 
         $instance->loadMissing('node');
         // The remote-tracking ref may be replaced; the workspace only moves by a fast-forward merge.
+        // A missing task branch is left alone when the caller allows it, and is still a failure otherwise.
         $script = GitReadScript::for(GitReadEnvironment::forGitHubToken($token), <<<'BASH'
             checkout=$1
             branch=$2
+            if [ "${3:-}" = "missing-ok" ]; then
+                status=0
+                git_read git -C "$checkout" ls-remote --exit-code --heads origin "$branch" >/dev/null || status=$?
+                if [ "$status" -eq 2 ]; then
+                    exit 0
+                fi
+                if [ "$status" -ne 0 ]; then
+                    exit "$status"
+                fi
+            fi
             git_read git -C "$checkout" fetch --quiet origin "+refs/heads/$branch:refs/remotes/origin/$branch"
             head=$(git -C "$checkout" rev-parse HEAD)
             remote=$(git -C "$checkout" rev-parse "refs/remotes/origin/$branch")
@@ -77,9 +88,13 @@ final readonly class GitHubTaskBaseBranchFetcher implements TaskBaseBranchFetche
                 git -C "$checkout" merge --ff-only --quiet "$remote"
             fi
             BASH);
+        $arguments = ['bash', '-seu', '--', $instance->checkout_path, 'task-'.$group->id];
+        if ($missingRefOk) {
+            $arguments[] = 'missing-ok';
+        }
         try {
             $this->ssh->execute($instance->node, new RemoteCommand(
-                arguments: ['bash', '-seu', '--', $instance->checkout_path, 'task-'.$group->id],
+                arguments: $arguments,
                 input: $script->input,
                 protectedInput: $script->protectedInput,
             ), 'task-branch-sync', 'tasks.fetch_failed');

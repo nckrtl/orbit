@@ -149,7 +149,7 @@ it('fast-forwards a workspace that is strictly behind the task branch and leaves
     $approved = fetcher_git($checkout, ['rev-parse', 'HEAD']);
     fetcher_git($checkout, ['push', '--quiet', 'origin', 'HEAD:refs/heads/'.$branch]);
     $remote = $approved;
-    if ($case === 'behind' || $case === 'diverged') {
+    if ($case === 'behind' || $case === 'diverged' || $case === 'behind-missing-ok') {
         fetcher_git($checkout, ['commit', '--quiet', '--allow-empty', '-m', 'Merge main']);
         $remote = fetcher_git($checkout, ['rev-parse', 'HEAD']);
         fetcher_git($checkout, ['push', '--quiet', 'origin', 'HEAD:refs/heads/'.$branch]);
@@ -161,12 +161,12 @@ it('fast-forwards a workspace that is strictly behind the task branch and leaves
     }
     $before = fetcher_git($checkout, ['rev-parse', 'HEAD']);
 
-    fetcher(new LocalShellSshExecutor)->fastForward($group);
+    fetcher(new LocalShellSshExecutor)->fastForward($group, missingRefOk: $case === 'behind-missing-ok');
 
-    expect(fetcher_git($checkout, ['rev-parse', 'HEAD']))->toBe($case === 'behind' ? $remote : $before)
+    expect(fetcher_git($checkout, ['rev-parse', 'HEAD']))->toBe(in_array($case, ['behind', 'behind-missing-ok'], true) ? $remote : $before)
         ->and(fetcher_git($checkout, ['rev-parse', 'refs/remotes/origin/'.$branch]))->toBe($remote)
         ->and(fetcher_git($checkout, ['rev-parse', '--abbrev-ref', 'HEAD']))->toBe('task-7');
-})->with(['behind', 'level', 'ahead', 'diverged']);
+})->with(['behind', 'behind-missing-ok', 'level', 'ahead', 'diverged']);
 
 it('fast-forwards with the task branch as one argument, the token only on standard input, and never forces the workspace', function (): void {
     $transport = new AppDevFakeSshExecutor;
@@ -190,4 +190,33 @@ it('reports one failure when the task branch fetch fails', function (): void {
     expect(fn () => fetcher($transport)->fastForward(fetcher_group('/srv/orbit/apps/shop/task-7')))
         ->toThrow(TaskPullRequestException::class, 'The task branch could not be fetched.');
     expect($transport->commands)->toHaveCount(1);
+});
+
+it('passes missing-ok when a missing task branch should not fail the resume', function (): void {
+    $transport = new AppDevFakeSshExecutor;
+    $group = fetcher_group('/srv/orbit/apps/shop/task-7');
+
+    fetcher($transport)->fastForward($group, missingRefOk: true);
+
+    $script = (string) stream_get_contents($transport->commands[0]->protectedInput?->stream());
+    expect($transport->commands[0]->arguments)->toBe(['bash', '-seu', '--', '/srv/orbit/apps/shop/task-7', 'task-'.$group->id, 'missing-ok'])
+        ->and($script)->toContain('ls-remote --exit-code --heads origin "$branch"')
+        ->and($script)->toContain('missing-ok');
+});
+
+it('leaves the workspace alone when the task branch is missing and that absence is allowed', function (): void {
+    $root = TestOrbitHome::scratch('orbit-fast-forward-missing');
+    $checkout = $root.'/checkout';
+    (new Process(['git', 'init', '--quiet', '--bare', $root.'/origin.git']))->mustRun();
+    (new Process(['git', 'init', '--quiet', '-b', 'task-7', $checkout]))->mustRun();
+    $group = fetcher_group($checkout);
+    fetcher_git($checkout, ['remote', 'add', 'origin', $root.'/origin.git']);
+    fetcher_git($checkout, ['commit', '--quiet', '--allow-empty', '-m', 'Local']);
+    $before = fetcher_git($checkout, ['rev-parse', 'HEAD']);
+
+    fetcher(new LocalShellSshExecutor)->fastForward($group, missingRefOk: true);
+
+    expect(fetcher_git($checkout, ['rev-parse', 'HEAD']))->toBe($before);
+    expect(fn () => fetcher(new LocalShellSshExecutor)->fastForward($group))
+        ->toThrow(TaskPullRequestException::class, 'The task branch could not be fetched.');
 });

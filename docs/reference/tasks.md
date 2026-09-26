@@ -47,7 +47,7 @@ A **TaskGroup** is one parent feature. A **Task** is an ordered subtask. Each ro
 
 Group statuses: `backlog`, `todo`, `reserved`, `running`, `reviewing`, `settling`, `completed`, `failed`, `cancelled`. Task statuses: `todo`, `reserved`, `running`, `reviewing`, `completed`, `failed`, `cancelled`.
 
-`backlog` means the group is being prepared, and the scheduler never claims it. `todo` means the group is ready and waits for the scheduler. `settling` is the reviewable state: the pull request is open or the Gateway has finished the open attempt, and Coder may review. A `todo` subtask on an open settling pull request returns the group to `running`. Another assistance cause keeps it `settling`.
+`backlog` means the group is being prepared, and the scheduler never claims it. `todo` means the group is ready and waits for the scheduler. `settling` is the reviewable state: the pull request is open or the Gateway has finished the open attempt, and Coder may review. A `todo` subtask on an open settling pull request, or on a settling group with no `pr_url`, returns the group to `running`. Another assistance cause keeps it `settling`. A reason that starts with `The settling group has no reviewed pull request URL.` does not keep it `settling` when a `todo` subtask is waiting.
 
 v1 attaches the group to one Instance. A new decision is required before another morph target is stored.
 
@@ -76,7 +76,7 @@ Update changes a group's `title`, `brief`, or `status`. Title and brief change o
 
 Subtask create appends one subtask at the next position with status `todo`. It works in any group status, and it accepts `deliverables`. Outside `backlog`, a new subtask needs at least one deliverable. Subtask update changes `title`, `brief`, `position`, or `deliverables`, and the other subtasks shift to keep positions gapless from 1. A `deliverables` value replaces the whole list. Subtask destroy deletes the subtask and closes the gap. Subtask update and destroy work only while the group is in `backlog`, with one exception: the deliverables of a `todo` subtask can change in any group status.
 
-Create does not change the group status. When the group is `settling` and its pull request is open, the next tick returns the group to `running` and starts the subtask. Another assistance cause keeps the group `settling`. [Fix a settling pull request](#fix-a-settling-pull-request) owns that transition.
+Create does not change the group status. When the group is `settling` and its pull request is open, or when it is `settling` with no `pr_url`, the next tick returns the group to `running` and starts the subtask. Another assistance cause keeps the group `settling`. A reason that starts with `The settling group has no reviewed pull request URL.` does not keep the group `settling` when a `todo` subtask is waiting. [Fix a settling pull request](#fix-a-settling-pull-request) owns that transition.
 
 On a `running` subtask, `tasks:subtask:update` that includes `deliverables` refuses with HTTP 409 `tasks.deliverables_locked` and leaves the stored list unchanged. It never answers success while ignoring that list. The same refusal applies to every subtask that has started.
 
@@ -88,7 +88,9 @@ When the check cannot be stopped, the implementer may already be interrupted. Th
 
 After both stops succeed, Orbit records the cancel only when the subtask is still `running`. When a tick moved it on while Orbit stopped it, for example to `reviewing`, that new state stands and cancellation returns HTTP 409 `tasks.subtask_not_running`. The implementer and check were still stopped. Cancel the subtask again in its new state, or cancel the group.
 
-When cancellation leaves no `todo` subtask, the group moves to `settling` without a `pr_url`. Orbit opens a pull request only after the last subtask is approved, so the group asks for assistance. Use `tasks:cancel` to end it. For a group with an approved subtask, and when the Node answers, cancellation first pushes the latest stored approved commit to `task-{group id}` on `origin`. Each approval already pushes its commit; this push sends any approved commit that has not reached `origin`, so those commits stay on the branch. Open a pull request from that branch if you want to keep the work.
+When cancellation leaves no `todo` subtask, the group moves to `settling` without a `pr_url`. Orbit opens a pull request only after the last subtask is approved. With no `todo` subtask, the group asks for assistance. Use `tasks:cancel` to end it. Append a `todo` subtask to continue the work. The next tick returns the group to `running` and starts that subtask.
+
+For a group with an approved subtask, and when the Node answers, cancellation first pushes the latest stored approved commit to `task-{group id}` on `origin`. Each approval already pushes its commit; this push sends any approved commit that has not reached `origin`, so those commits stay on the branch. Open a pull request from that branch if you want to keep the work.
 
 When the Node is unreachable, cancel still marks the group `cancelled`, as [Cancel a stuck group](#cancel-a-stuck-group) describes.
 
@@ -539,7 +541,7 @@ On the last approval, after that push, the Gateway opens the pull request agains
 
 The group title is the pull request title. The description holds the summary, a Changes list, a Breaking changes list or `None.`, and one line that says each delivered subtask passed the Project's task check and reviewer approval. Without a task check, the line names only reviewer approval. That line does not count cancelled or failed subtasks.
 
-Settling watches the stored pull request through the GitHub App until it merges. A merged pull request completes the group, and a pull request that closes without merging requests assistance. A settling group without a URL requests assistance and remains incomplete until an operator cancels it.
+Settling watches the stored pull request through the GitHub App until it merges. A merged pull request completes the group, and a pull request that closes without merging requests assistance. A settling group without a URL and without a `todo` subtask requests assistance and remains incomplete until an operator cancels it. A `todo` subtask on that group returns it to `running` on the tick. [Fix a settling pull request](#fix-a-settling-pull-request) owns that return.
 
 ### Fix a settling pull request
 
@@ -549,13 +551,23 @@ While the pull request is open, each tick checks it. The pull request conflicts 
 
 The Gateway ignores the rollup check `Required checks` while another failed check explains the failure, so one real failure is one problem. A rollup that fails alone stays a problem.
 
-Only `failure`, `timed_out`, and `action_required` are genuine failures. `cancelled` and `startup_failure` are infrastructure, such as a GitHub Actions outage. They never get a fixup. When they are the only problems, the group waits and re-evaluates on the backoff of 1, 2, 5, 10, and 30 minutes. If they persist after that, it asks for assistance and adds `Those checks were cancelled or could not start, and did not recover. Re-run them.` to the reason.
+Only `failure`, `timed_out`, and `action_required` are genuine failures. `cancelled` and `startup_failure` are infrastructure, such as a GitHub Actions outage. They never get a fixup. When they are the only problems, the group waits and re-evaluates on the backoff of 1, 2, 5, 10, and 30 minutes. If they persist after that, it asks for assistance and adds `Those checks were cancelled or could not start, and did not recover. Re-run them.` to the reason. A genuine failure next to them still gets a fixup.
+
+A check run that has not completed is pending. When GitHub sends `started_at`, the age is that time compared with the tick. When `started_at` is null, the Gateway stores the first tick that read the run as not completed on that head. The check run id is the key. A run with no id uses its name on that head. Reading the run again does not move that stored time. The Gateway keeps it until the run completes or the head changes, and the age starts there.
+
+While any run on the head has been pending for 60 minutes or less, the Gateway still reports each completed genuine failure. The reason is the one [ADR 0140](/decisions/0140-watch-settling-pull-requests-for-conflicts-and-failed-checks) defines: it starts with `The pull request needs attention: ` and has one sentence per completed problem. Coder is notified only when that text changes. The Gateway appends no check fixup during that wait. A conflict does not wait.
+
+A run pending for more than 60 minutes is infrastructure, with `cancelled` and `startup_failure`. It never gets a fixup. The backoff of 1, 2, 5, 10, and 30 minutes starts only when every current problem is infrastructure and no run is still inside those 60 minutes. After the fifth wait, the reason adds the same re-run sentence. It also names each run that is still pending past 60 minutes: `Check {name} is still pending: {url}.` With no URL, the sentence is `Check {name} is still pending.`
+
+A genuine failure beside that run still gets a fixup. When the run completes, the pending classification ends. `failure`, `timed_out`, and `action_required` are genuine failures. `cancelled` and `startup_failure` stay infrastructure. Every other conclusion clears the problem.
 
 A conflict's identity is `conflict:` plus the base branch name. A failed check's identity is `check:` plus the check run name. The check URL is not part of the identity. The Gateway stores the identity on the fixup as `fixup_problem`. Show returns it. An operator subtask leaves it null, and the cap ignores that subtask.
 
 The Gateway appends at most two fixups for one identity, and at most three Gateway fixups for one group. Every status counts, including `cancelled` and `failed`. It does not append a third fixup for that identity. When the group already has three fixups and a problem remains, it asks for assistance and adds `Orbit already appended 3 fixups to this group.` to the reason.
 
-Each fixup records the pull request head it was created for. The Gateway appends no new fixup while the head is still that commit. After the head changes, it waits until every check on the new head has completed. A conflict does not wait for checks. When the last fixup changed nothing, because it was never approved or its approved commit is that same head, the Gateway asks for assistance instead of a second fixup on the same result. The reason adds `Fixup subtask #{id} changed nothing, so Orbit does not try again on the same result.` When the last fixup did commit, the Gateway waits for GitHub to report the new head.
+Each fixup records the pull request head it was created for. The Gateway appends no new fixup while the head is still that commit. After the head changes, it appends no check fixup until every check on the new head has completed or has been pending for more than 60 minutes. A conflict does not wait for checks.
+
+When the last fixup changed nothing, because it was never approved or its approved commit is that same head, the Gateway asks for assistance instead of a second fixup on the same result. The reason adds `Fixup subtask #{id} changed nothing, so Orbit does not try again on the same result.` When the last fixup did commit, the Gateway waits for GitHub to report the new head.
 
 When a problem has fewer than two fixups, one tick appends one fixup and returns the group to `running`. It picks the first such problem. A conflict comes first. Then a failed check that has a reproduction row, in the order GitHub returned. Then any other failed check, in that same order. A `todo` subtask that is already waiting stays first, and that tick appends no fixup.
 
@@ -584,17 +596,19 @@ When `pr_url` is already stored, the reviewer does not send `--pr-summary`, `--p
 
 Before that push, the Gateway reads the pull request state again. When the pull request has already merged or closed, Orbit does not push. It asks for assistance with a reason that starts with `An approved commit is not on the pull request: ` and names the commit. An unreadable state is a publication failure and waits out the backoff. When the group returns to `settling`, the Gateway reads the pull request once more. If it merged and its head is not the latest approved commit, the group asks for assistance naming that commit. The group then stays `settling`, and its workspace stays, until an operator completes or cancels it.
 
-Before a resumed subtask leaves `todo`, the Gateway fetches `origin/task-{group id}` with the pull request token. When the workspace is strictly behind that ref, it fast-forwards the workspace with `git merge --ff-only`. A workspace that is level, ahead, or diverged stays as it is. The Gateway never forces. A commit pushed to the task branch by someone else then does not cause a non-fast-forward push.
+Before a resumed subtask leaves `todo`, the Gateway fetches `origin/task-{group id}` with the pull request token. When the workspace is strictly behind that ref, it fast-forwards the workspace with `git merge --ff-only`. A workspace that is level, ahead, or diverged stays as it is. The Gateway never forces. A commit pushed to the task branch by someone else then does not cause a non-fast-forward push. On a group with no `pr_url`, a missing `origin/task-{group id}` is not a failure. The workspace stays as it is and the subtask starts. When that ref exists, the same fast-forward applies.
 
 Before a conflict fixup leaves `todo`, the Gateway also runs `git fetch --quiet origin {base}` with the pull request token. `{base}` is one argument. The fetch updates the remote-tracking ref only. A failed fetch leaves the subtask `todo`. It counts as a communication failure, and the next attempt waits out the backoff of 1, 2, 5, 10, and 30 minutes. The fifth consecutive failure asks for assistance. The implementer starts after the fetch succeeds, then merges `origin/{base}` and resolves the conflicts.
 
 The Gateway does not merge the pull request. The coordinator reviews and merges.
 
-A `todo` subtask on an open settling pull request returns the group to `running` on the tick. The Gateway's own fixup starts in that same tick. An operator's subtask starts on the following tick. The tick starts the lowest `todo` subtask and uses the usual baseline rule. It clears assistance only when the reason starts with `The pull request needs attention: `. Another cause stays, and the tick then starts nothing and appends nothing.
+A `todo` subtask on an open settling pull request, or on a settling group with no `pr_url`, returns the group to `running` on the tick. The Gateway's own fixup starts in that same tick. An operator's subtask starts on the following tick. The tick starts the lowest `todo` subtask and uses the usual baseline rule. The implementer is a new thread. The reviewer is the group's reviewer. When that subtask's approval is the last one and `pr_url` is not stored, Orbit opens the pull request and stores it.
+
+The tick clears assistance when the reason starts with `The pull request needs attention: ` or `The settling group has no reviewed pull request URL.` The missing-pull-request reason does not block the start. Another cause stays, and the tick then starts nothing and appends nothing.
 
 A check fixup or an operator subtask becomes `running` in the same commit that returns the group to `running`. The implementer starts after that commit. A conflict fixup returns the group to `running` before the base fetch, and becomes `running` only after the fetch succeeds. When a tick stops after the group is `running` and before the implementer exists, the next tick starts that same subtask and does not append another fixup.
 
-A merged pull request completes the group and does not start a `todo` subtask. A pull request that closed without merging asks for assistance and does not start one. A settling group with no `pr_url` does not start one.
+A merged pull request completes the group and does not start a `todo` subtask. A pull request that closed without merging asks for assistance and does not start one. A settling group with no `pr_url` and no `todo` subtask asks for assistance and does not start one. The reason is `The settling group has no reviewed pull request URL. Cancel the group to push its approved commits to task-{group id} and remove its workspace.` The Gateway writes that reason once and does not replace another assistance cause.
 
 When the group returns to `settling` and `pr_url` is already stored, Orbit refreshes settle metrics and does not post `task_group.settled` again.
 

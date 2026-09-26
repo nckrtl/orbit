@@ -273,3 +273,95 @@ it('reads the check runs of one head commit at most once a minute', function ():
 
     expect($checkRunReads())->toBe(2);
 });
+
+it('keeps a check pending for 60 minutes or less out of the problems and treats a longer one as infrastructure', function (int $ageSeconds, bool $young, array $problems): void {
+    GitHubTestSupport::storeApp();
+    watcher_fake_health([], [[
+        'name' => 'Web', 'status' => 'in_progress', 'conclusion' => null, 'id' => 11,
+        'started_at' => now()->subSeconds($ageSeconds)->toIso8601String(), 'html_url' => 'https://github.com/acme/orbit/runs/11',
+    ]]);
+
+    $health = app(HttpTaskPullRequestWatcher::class)->health(watcher_group());
+
+    expect($health?->checksPending)->toBeTrue()
+        ->and($health?->checksYoungPending)->toBe($young)
+        ->and($health?->problems)->toBe($problems)
+        ->and($health?->failedChecks)->toBe([])
+        ->and(array_map(static fn (TaskPullRequestCheck $check): string => $check->name, $health?->infrastructureChecks ?? []))->toBe($young ? [] : ['Web']);
+})->with([
+    'inside 60 minutes' => [59 * 60, true, []],
+    'past 60 minutes' => [61 * 60, false, ['Check Web is still pending: https://github.com/acme/orbit/runs/11.']],
+]);
+
+it('names a long-pending check without a url', function (): void {
+    GitHubTestSupport::storeApp();
+    watcher_fake_health([], [[
+        'name' => 'Web', 'status' => 'in_progress', 'conclusion' => null,
+        'started_at' => now()->subMinutes(61)->toIso8601String(),
+    ]]);
+
+    $health = app(HttpTaskPullRequestWatcher::class)->health(watcher_group());
+
+    expect($health?->problems)->toBe(['Check Web is still pending.'])
+        ->and($health?->checksYoungPending)->toBeFalse();
+});
+
+it('keeps the first read of a pending check with no started_at and does not move it', function (): void {
+    GitHubTestSupport::storeApp();
+    watcher_fake_health([], [[
+        'name' => 'Web', 'status' => 'in_progress', 'conclusion' => null, 'html_url' => 'https://github.com/acme/orbit/runs/11',
+    ]]);
+    $watcher = app(HttpTaskPullRequestWatcher::class);
+    $group = watcher_group();
+
+    $first = $watcher->health($group);
+    expect($first?->checksYoungPending)->toBeTrue()
+        ->and($first?->problems)->toBe([])
+        ->and($first?->infrastructureChecks)->toBe([]);
+
+    $this->travel(30)->minutes();
+    $second = $watcher->health($group->fresh(['app']));
+    expect($second?->checksYoungPending)->toBeTrue()
+        ->and($second?->problems)->toBe([]);
+
+    $this->travel(31)->minutes();
+    $third = $watcher->health($group->fresh(['app']));
+    expect($third?->checksYoungPending)->toBeFalse()
+        ->and($third?->checksPending)->toBeTrue()
+        ->and($third?->problems)->toBe(['Check Web is still pending: https://github.com/acme/orbit/runs/11.'])
+        ->and(array_map(static fn (TaskPullRequestCheck $check): string => $check->name, $third?->infrastructureChecks ?? []))->toBe(['Web']);
+});
+
+it('starts a new pending clock when the check run id changes and clears one that completed', function (): void {
+    GitHubTestSupport::storeApp();
+    $pending = static fn (int $id): array => [
+        'id' => $id, 'name' => 'Web', 'status' => 'in_progress', 'conclusion' => null, 'html_url' => 'https://github.com/acme/orbit/runs/'.$id,
+    ];
+    $success = ['id' => 1, 'name' => 'Web', 'status' => 'completed', 'conclusion' => 'success', 'html_url' => 'https://github.com/acme/orbit/runs/1'];
+    Http::fake([
+        'https://api.github.com/repos/acme/orbit/installation' => Http::response(['id' => 9]),
+        'https://api.github.com/app/installations/9/access_tokens' => Http::response(['token' => 'ghs_watch'], 201),
+        'https://api.github.com/repos/acme/orbit/pulls/42' => Http::response([
+            'merged' => false, 'state' => 'open', 'mergeable' => true, 'mergeable_state' => 'clean',
+            'head' => ['sha' => 'abc123'], 'base' => ['ref' => 'main'],
+        ]),
+        'https://api.github.com/repos/acme/orbit/commits/abc123/check-runs*' => Http::sequence()
+            ->push(['check_runs' => [$pending(1)]])
+            ->push(['check_runs' => [$success]])
+            ->push(['check_runs' => [$pending(2)]]),
+    ]);
+    $watcher = app(HttpTaskPullRequestWatcher::class);
+    $group = watcher_group();
+
+    expect($watcher->health($group)?->checksYoungPending)->toBeTrue();
+
+    $this->travel(61)->minutes();
+    $completed = $watcher->health($group->fresh(['app']));
+    expect($completed?->checksPending)->toBeFalse()
+        ->and($completed?->problems)->toBe([])
+        ->and($completed?->infrastructureChecks)->toBe([]);
+
+    $this->travel(61)->seconds();
+    expect($watcher->health($group->fresh(['app']))?->checksYoungPending)->toBeTrue()
+        ->and($watcher->health($group->fresh(['app']))?->problems)->toBe([]);
+});

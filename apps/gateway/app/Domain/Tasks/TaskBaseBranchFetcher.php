@@ -21,8 +21,9 @@ interface TaskBaseBranchFetcher
     /**
      * Fetches `origin/task-{group id}` and fast-forwards the workspace when it is strictly behind that ref,
      * before a resumed subtask starts. A workspace that is level, ahead, or diverged is left alone. Never forces.
+     * When `$missingRefOk` is true, a remote ref that does not exist is not a failure and the workspace stays.
      *
      * @throws TaskPullRequestException
      */
-    public function fastForward(TaskGroup $group): void;
+    public function fastForward(TaskGroup $group, bool $missingRefOk = false): void;
 }
