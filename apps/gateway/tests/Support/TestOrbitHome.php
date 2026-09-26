@@ -57,7 +57,7 @@ final class TestOrbitHome
         };
 
         register_shutdown_function($remove);
-        self::removeOnInterrupt($remove);
+        InterruptCleanup::register($remove);
     }
 
     public static function path(): string
@@ -80,40 +80,6 @@ final class TestOrbitHome
     private static function scratchDirectory(): string
     {
         return self::path().DIRECTORY_SEPARATOR.'scratch';
-    }
-
-    /**
-     * Removes the home as well when Ctrl-C or a termination signal ends the process, because PHP skips shutdown
-     * functions then. The previous handler still runs, or the default action ends the process.
-     */
-    private static function removeOnInterrupt(callable $remove): void
-    {
-        if (! function_exists('pcntl_signal') || ! function_exists('posix_kill')) {
-            return;
-        }
-
-        pcntl_async_signals(true);
-
-        foreach ([SIGINT, SIGTERM, SIGHUP] as $signal) {
-            $previous = pcntl_signal_get_handler($signal);
-
-            pcntl_signal($signal, static function (int $signal, mixed $information) use ($remove, $previous): void {
-                $remove();
-
-                if (is_callable($previous)) {
-                    $previous($signal, $information);
-
-                    return;
-                }
-
-                if ($previous === SIG_IGN) {
-                    return;
-                }
-
-                pcntl_signal($signal, SIG_DFL);
-                posix_kill(getmypid(), $signal);
-            });
-        }
     }
 
     /** Removes homes whose process no longer runs, such as those of a run ended by SIGKILL. */
