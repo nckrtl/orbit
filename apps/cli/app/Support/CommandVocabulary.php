@@ -35,6 +35,7 @@ final readonly class CommandVocabulary
         'instance' => [
             'clone',
             'deploy',
+            'logs',
             'register',
             'rollback',
             'scan',

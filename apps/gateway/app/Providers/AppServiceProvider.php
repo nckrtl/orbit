@@ -102,6 +102,7 @@ use App\Domain\Hibernation\AppInstanceRuntimeReadiness;
 use App\Domain\Hibernation\HibernationMarkerStore;
 use App\Domain\Hibernation\HibernationWakeFailureStore;
 use App\Domain\Hibernation\RuntimeHibernatorConverger;
+use App\Domain\Logs\LogStreamStore;
 use App\Domain\Metrics\MetricsAccessRevoker;
 use App\Domain\Metrics\MetricsCadvisorLifecycle;
 use App\Domain\Metrics\MetricsCredentialManager;
@@ -214,6 +215,7 @@ use App\Infrastructure\AppProd\RemoteAppProdCaddyManager;
 use App\Infrastructure\AppProd\RemoteAppProdPhpFpmManager;
 use App\Infrastructure\Apps\NativeAppUpdateProjectionMutator;
 use App\Infrastructure\Apps\RemoteAppUpdateSourceMutator;
+use App\Infrastructure\Broadcasting\ReverbBroadcaster;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuilder;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuildLock;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
@@ -262,6 +264,7 @@ use App\Infrastructure\Hibernation\NativeRuntimeHibernatorConverger;
 use App\Infrastructure\Hibernation\RemoteAppInstanceCheckoutInspector;
 use App\Infrastructure\Hibernation\RemoteAppInstanceRuntimeReadiness;
 use App\Infrastructure\Hibernation\RemoteHibernationMarkerStore;
+use App\Infrastructure\Logs\CacheLogStreamStore;
 use App\Infrastructure\Metrics\MetricsCadvisorRuntime;
 use App\Infrastructure\Metrics\MetricsCadvisorSshExecutor;
 use App\Infrastructure\Metrics\MetricsExporterRuntime;
@@ -350,6 +353,7 @@ use App\Infrastructure\WireGuard\WireGuardServerConfigRenderer;
 use App\Models\Activity;
 use App\Models\AppInstance;
 use App\Models\DatabaseConnection;
+use Illuminate\Broadcasting\BroadcastManager;
 use Illuminate\Cache\CacheManager;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Support\ServiceProvider;
@@ -525,6 +529,12 @@ final class AppServiceProvider extends ServiceProvider
                 idleSeconds: (int) config('orbit.hibernation.idle_seconds'),
                 dependencyIdleSeconds: (int) config('orbit.hibernation.dependency_idle_seconds'),
                 agents: $app->make(AgentProcessView::class),
+            ),
+        );
+        $this->app->singleton(
+            LogStreamStore::class,
+            static fn ($app): CacheLogStreamStore => new CacheLogStreamStore(
+                $app->make(CacheManager::class)->build(CacheAgentStateView::storeConfiguration((string) config('orbit.home'))),
             ),
         );
         $this->app->singleton(
@@ -850,6 +860,11 @@ final class AppServiceProvider extends ServiceProvider
             GatewayCacheStore::assertSupported($cache, $this->app->environment(), $this->app->configurationIsCached());
         }
         Activity::observe($activityPropertiesObserver);
+        // Reverb event bodies carry text as UTF-8, so non-ASCII log lines keep their length (ADR 0153).
+        $this->app->make(BroadcastManager::class)->extend(
+            'reverb',
+            fn ($app, array $config): ReverbBroadcaster => new ReverbBroadcaster($this->pusher($config), (bool) ($config['jsonp'] ?? false)),
+        );
         Relation::morphMap([
             'instance' => AppInstance::class,
         ]);

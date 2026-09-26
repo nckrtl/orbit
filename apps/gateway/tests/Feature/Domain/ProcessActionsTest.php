@@ -14,6 +14,7 @@ use App\Domain\Analytics\AnalyticsRoleSettings;
 use App\Domain\Analytics\AnalyticsRoleSettingsRepository;
 use App\Domain\Analytics\AnalyticsStorageConnection;
 use App\Domain\AppInstances\AppInstanceState;
+use App\Domain\Logs\LogRedactor;
 use App\Domain\Nodes\NodeRoleDependencySet;
 use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Nodes\RoleName;
@@ -589,7 +590,7 @@ it('runs idempotent lifecycle actions and returns bounded logs', function (): vo
     $stoppedState = $stopped->desired_state->value;
     $restarted = new RestartProcessAction($this->runtime, app(ProcessAdmissionLock::class))->execute($stopped);
     $restartedState = $restarted->desired_state->value;
-    $logs = new ShowProcessLogsAction($this->runtime, new CommandActivityInputSanitizer)->execute($restarted, 25);
+    $logs = new ShowProcessLogsAction($this->runtime, new LogRedactor(new CommandActivityInputSanitizer))->execute($restarted, 25);
 
     expect($this->runtime->started)
         ->toBe([$process->id])
