@@ -1,5 +1,9 @@
 import type { QueryClient } from "@tanstack/react-query";
-import { activityDetailQueryKey, activityListQueryKey } from "../api/activities";
+import {
+    activityDetailQueryKey,
+    insertActivityCreated,
+    patchActivityUpdated,
+} from "../api/activities";
 import { markProcessUsage } from "./process-usage";
 
 export type RealtimeEvent = { type: string; id: number; at: string; data: Record<string, unknown> };
@@ -77,7 +81,11 @@ const pendingRefetches = new Map<string, { queryKey: readonly string[]; exact: b
 let refetchTimer: ReturnType<typeof setTimeout> | undefined;
 let refetchClient: QueryClient | undefined;
 
-type RefetchFilters = { queryKey?: readonly unknown[]; exact?: boolean };
+type RefetchFilters = {
+    queryKey?: readonly unknown[];
+    exact?: boolean;
+    predicate?: (query: { queryKey: readonly unknown[] }) => boolean;
+};
 
 /**
  * Invalidates the matching active queries. TanStack Query keeps a first fetch that has not stored
@@ -180,21 +188,26 @@ function applyTaskEvent(client: QueryClient, type: string, data: Row): boolean {
 }
 
 /**
- * Activity events are notices. They name the row, and the page refetches the list it is showing.
- * `updated` also refetches that row when it is open. The list key keeps the filters and `before_id`.
+ * Activity events are notices. They carry every list column, so the page writes them into the
+ * cached log instead of refetching it. `updated` also refetches the open row from `activity:show`,
+ * which is where `properties` live. A burst of notices refetches that row once.
  */
 function applyActivityEvent(client: QueryClient, event: RealtimeEvent): boolean {
     if (event.type !== "activity.created" && event.type !== "activity.updated") {
         return false;
     }
 
-    scheduleRefetch(client, activityListQueryKey, false);
+    const data = event.data.id === undefined ? { ...event.data, id: event.id } : event.data;
+    if (event.type === "activity.created") {
+        insertActivityCreated(client, data);
 
-    if (event.type === "activity.updated") {
-        const id = keyId(event.data.id) ?? keyId(event.id);
-        if (id !== null) {
-            scheduleRefetch(client, activityDetailQueryKey(id), true);
-        }
+        return true;
+    }
+
+    patchActivityUpdated(client, data);
+    const id = keyId(data.id) ?? keyId(event.id);
+    if (id !== null) {
+        scheduleRefetch(client, activityDetailQueryKey(id), true);
     }
 
     return true;
