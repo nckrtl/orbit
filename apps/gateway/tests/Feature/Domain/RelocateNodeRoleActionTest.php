@@ -391,7 +391,7 @@ describe(RelocateNodeRoleAction::class, function (): void {
         expect($this->baselines->removed)->toBe([]);
     });
 
-    it('reports the Metrics code and the converge step when the real Metrics baseline fails on the target', function (): void {
+    it('keeps the Metrics code and names the converge step when the real Metrics baseline fails on the target', function (): void {
         $gateway = relocate_role_node('gateway', '10.44.0.1');
         $gateway->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
         $source = relocate_role_node('app-dev', '10.44.0.2');
@@ -416,7 +416,8 @@ describe(RelocateNodeRoleAction::class, function (): void {
 
         expect(fn () => app(RelocateNodeRoleAction::class)->execute($target, RoleName::Metrics, force: true))
             ->toThrow(function (NodeRoleOperationException $exception) use ($source, $target): void {
-                expect($exception->errorCode)->toBe('metrics.exporter_firewall_ownership_drift')
+                expect($exception->errorCode)->toBe('node_role.convergence_failed')
+                    ->and($exception->underlyingErrorCode)->toBe('metrics.exporter_firewall_ownership_drift')
                     ->and($exception->step)->toBe('converge:metrics-exporters')
                     ->and($exception->getMessage())->toStartWith("Role [metrics] now runs on node [{$target->name}], but the move from node [{$source->name}] is incomplete: Metrics exporter firewall ownership cannot be proved.");
             });
@@ -424,7 +425,7 @@ describe(RelocateNodeRoleAction::class, function (): void {
         expect($this->baselines->removed)->toBe([]);
     });
 
-    it('prefixes a source withdrawal step with remove and keeps its code', function (): void {
+    it('prefixes a source withdrawal step with remove and keeps its codes', function (): void {
         $source = relocate_role_node('beast', '10.44.0.1');
         $target = relocate_role_node('services', '10.44.0.11');
         $source->roles()->create(['role' => RoleName::WebSocket, 'status' => LifecycleStatus::Active]);
@@ -434,7 +435,8 @@ describe(RelocateNodeRoleAction::class, function (): void {
 
         expect(fn () => app(RelocateNodeRoleAction::class)->execute($target, RoleName::WebSocket, force: true))
             ->toThrow(function (NodeRoleOperationException $exception): void {
-                expect($exception->errorCode)->toBe('websocket.caddy_publication_failed')
+                expect($exception->errorCode)->toBe('node_role.convergence_failed')
+                    ->and($exception->underlyingErrorCode)->toBe('websocket.caddy_publication_failed')
                     ->and($exception->step)->toBe('remove:websocket-caddy');
             });
     });

@@ -238,9 +238,9 @@ final readonly class RelocateNodeRoleAction
 
     /**
      * The assignment already names the target. When converging the target or withdrawing the source fails,
-     * the move is incomplete: the error says so and names the command that finishes it. A step failure reports the
-     * step's own error code, such as `metrics.exporter_firewall_ownership_drift`, with `converge:STEP` or
-     * `remove:STEP`, because relocate records no failed step on a role row.
+     * the move is incomplete: the error keeps its codes, says so, and names the command that finishes it. A baseline
+     * step names itself `converge:STEP` on the target or `remove:STEP` on the source, because relocate records no
+     * failed step on a role row. The response carries the step's own code as `details.underlying_code`.
      * For `websocket`, the Gateway keeps serving both Reverb servers until then.
      *
      * @param  Closure(): void  $steps
@@ -255,7 +255,7 @@ final readonly class RelocateNodeRoleAction
                 ." Run `orbit node:role:relocate {$target->name} {$role->value} --from {$source->name} --force` to finish it once node [{$source->name}] is reachable.";
 
             throw $exception instanceof NodeRoleOperationException
-                ? new NodeRoleOperationException($exception->step, $exception->underlyingErrorCode, $exception->underlyingErrorCode, $message, $exception->result, $exception)
+                ? new NodeRoleOperationException($exception->step, $exception->errorCode, $exception->underlyingErrorCode, $message, $exception->result, $exception)
                 : new ResourceOperationException($exception->errorCode, $message, $exception->status, $exception, $exception->details);
         }
     }
