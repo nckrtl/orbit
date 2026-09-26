@@ -95,66 +95,102 @@ final readonly class ObservedPhpInputs
         if (array_keys($phases) !== self::PHASES) {
             throw new InvalidArgumentException('The observed PHP phase inventory is invalid.');
         }
-        foreach ($phases as $phase => $surfaces) {
-            if (! is_array($surfaces) || ! array_is_list($surfaces)) {
-                throw new InvalidArgumentException("The observed PHP {$phase} surfaces are invalid.");
-            }
-            $keys = [];
-            foreach ($surfaces as $surface) {
-                if (
-                    ! is_array($surface)
-                    || array_keys($surface) !== ['role', 'process_type', 'processes', 'paths']
-                    || ! is_string($surface['role'])
-                    || ! is_string($surface['process_type'])
-                    || ! is_array($surface['processes'])
-                    || ! is_array($surface['paths'])
-                ) {
-                    throw new InvalidArgumentException("An observed PHP {$phase} surface is invalid.");
-                }
-                $key = $surface['role'].':'.$surface['process_type'];
-                if (! in_array($key, ['app-dev:cli', 'gateway:cli', 'gateway:fpm'], true) || isset($keys[$key])) {
-                    throw new InvalidArgumentException("An observed PHP {$phase} surface is invalid.");
-                }
-                $keys[$key] = true;
-                $this->assertProcesses($surface['processes'], $phase, $key);
-                $this->assertPaths($surface['paths'], $phase, $key);
-            }
-            if (array_keys($keys) !== ['app-dev:cli', 'gateway:cli', 'gateway:fpm']) {
-                throw new InvalidArgumentException("The observed PHP {$phase} surfaces are incomplete.");
-            }
-        }
 
-        return $phases;
+        return [
+            'setup' => $this->phaseSurfaces($phases['setup'] ?? null, 'setup'),
+            'acceptance' => $this->phaseSurfaces($phases['acceptance'] ?? null, 'acceptance'),
+        ];
     }
 
-    /** @param array<array-key, mixed> $processes */
-    private function assertProcesses(array $processes, string $phase, string $surface): void
+    /**
+     * @return list<array{role: string, process_type: string, processes: list<array{id: string, started_at: string, finished_at: string}>, paths: list<string>}>
+     */
+    private function phaseSurfaces(mixed $surfaces, string $phase): array
+    {
+        if (! is_array($surfaces) || ! array_is_list($surfaces)) {
+            throw new InvalidArgumentException("The observed PHP {$phase} surfaces are invalid.");
+        }
+        $validated = [];
+        $keys = [];
+        foreach ($surfaces as $surface) {
+            if (
+                ! is_array($surface)
+                || array_keys($surface) !== ['role', 'process_type', 'processes', 'paths']
+                || ! is_string($surface['role'])
+                || ! is_string($surface['process_type'])
+                || ! is_array($surface['processes'])
+                || ! is_array($surface['paths'])
+            ) {
+                throw new InvalidArgumentException("An observed PHP {$phase} surface is invalid.");
+            }
+            $role = $surface['role'];
+            $processType = $surface['process_type'];
+            $key = $role.':'.$processType;
+            if (! in_array($key, ['app-dev:cli', 'gateway:cli', 'gateway:fpm'], true) || isset($keys[$key])) {
+                throw new InvalidArgumentException("An observed PHP {$phase} surface is invalid.");
+            }
+            $keys[$key] = true;
+            $validated[] = [
+                'role' => $role,
+                'process_type' => $processType,
+                'processes' => $this->processes($surface['processes'], $phase, $key),
+                'paths' => $this->trackedPaths($surface['paths'], $phase, $key),
+            ];
+        }
+        if (array_keys($keys) !== ['app-dev:cli', 'gateway:cli', 'gateway:fpm']) {
+            throw new InvalidArgumentException("The observed PHP {$phase} surfaces are incomplete.");
+        }
+
+        return $validated;
+    }
+
+    /**
+     * @param  array<array-key, mixed>  $processes
+     * @return list<array{id: string, started_at: string, finished_at: string}>
+     */
+    private function processes(array $processes, string $phase, string $surface): array
     {
         if (! array_is_list($processes) || $processes === []) {
             throw new InvalidArgumentException("Observed PHP {$phase} surface {$surface} has no process evidence.");
         }
+        $validated = [];
         $ids = [];
         foreach ($processes as $process) {
+            $id = is_array($process) ? ($process['id'] ?? null) : null;
+            $startedAt = is_array($process) ? ($process['started_at'] ?? null) : null;
+            $finishedAt = is_array($process) ? ($process['finished_at'] ?? null) : null;
             if (
                 ! is_array($process)
                 || array_keys($process) !== ['id', 'started_at', 'finished_at']
-                || ! is_string($process['id'])
-                || preg_match('/\A[0-9a-f]{32}\z/D', $process['id']) !== 1
-                || ! $this->timestamp($process['started_at'] ?? null)
-                || ! $this->timestamp($process['finished_at'] ?? null)
-                || $process['finished_at'] < $process['started_at']
-                || isset($ids[$process['id']])
+                || ! is_string($id)
+                || preg_match('/\A[0-9a-f]{32}\z/D', $id) !== 1
+                || ! is_string($startedAt)
+                || ! is_string($finishedAt)
+                || ! $this->timestamp($startedAt)
+                || ! $this->timestamp($finishedAt)
+                || $finishedAt < $startedAt
+                || isset($ids[$id])
             ) {
                 throw new InvalidArgumentException(
                     "Observed PHP {$phase} surface {$surface} has invalid process evidence.",
                 );
             }
-            $ids[$process['id']] = true;
+            $ids[$id] = true;
+            $validated[] = [
+                'id' => $id,
+                'started_at' => $startedAt,
+                'finished_at' => $finishedAt,
+            ];
         }
+
+        return $validated;
     }
 
-    /** @param array<array-key, mixed> $paths */
-    private function assertPaths(array $paths, string $phase, string $surface): void
+    /**
+     * @param  array<array-key, mixed>  $paths
+     * @return list<string>
+     */
+    private function trackedPaths(array $paths, string $phase, string $surface): array
     {
         if (! array_is_list($paths) || $paths === []) {
             throw new InvalidArgumentException("Observed PHP {$phase} surface {$surface} has no tracked paths.");
@@ -168,6 +204,15 @@ final readonly class ObservedPhpInputs
         ) {
             throw new InvalidArgumentException("Observed PHP {$phase} surface {$surface} paths are invalid.");
         }
+        $validated = [];
+        foreach ($paths as $path) {
+            if (! is_string($path)) {
+                throw new InvalidArgumentException("Observed PHP {$phase} surface {$surface} paths are invalid.");
+            }
+            $validated[] = $path;
+        }
+
+        return $validated;
     }
 
     private function timestamp(mixed $value): bool
