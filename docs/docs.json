@@ -147,7 +147,8 @@
               "solutions/sqlite-wal-default",
               "solutions/realtime-reverb",
               "solutions/relocate-gateway-role",
-              "solutions/cutover-proxycli"
+              "solutions/cutover-proxycli",
+              "solutions/node-add-private-dns-on-an-existing-node"
             ]
           }
         ]
