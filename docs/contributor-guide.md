@@ -48,9 +48,11 @@ composer test:affected
 composer check
 ```
 
-Gateway tests run the shell programs that Orbit installs on Ubuntu Nodes. On macOS, install the Linux tools they need with `brew install bash coreutils gnu-sed findutils caddy`. The test bootstrap puts these tools first on `PATH`, supplies `setsid` and `flock`, and stops with the missing package names when a tool is absent. Gateway tests read the tracked `.env.example`, never your `.env`.
+Gateway tests run the shell programs that Orbit installs on Ubuntu Nodes. On macOS, install the Linux tools they need with `brew install bash coreutils gnu-sed findutils caddy`. The test bootstrap puts these tools first on `PATH`, supplies `setsid` and `flock`, and stops with the missing package names when a tool is absent. The test application reads the tracked `.env.example`, not your `.env`. Child processes that boot the Gateway, such as `artisan` calls, still read `.env` when it exists.
 
-Tests of Node programs that use Linux kernel interfaces, such as `/proc/net/tcp` or `os.O_PATH`, run on beast, an Ubuntu machine like the Nodes. Each test process copies `apps/gateway` to beast with rsync, runs the test there over `ssh beast`, and removes the copy when it ends. `ssh beast` must work without a prompt; otherwise these tests fail. On Linux, such as in CI or on beast, they run directly.
+Tests of Node programs that use Linux kernel interfaces, such as `/proc/net/tcp` or `os.O_PATH`, run on a Linux test host: beast, an Ubuntu machine like the Nodes, or the SSH host that `ORBIT_LINUX_TEST_HOST` names. On Linux, such as in CI or on beast, they run directly. The host must accept `ssh` without a prompt; otherwise these tests fail.
+
+Each test process copies `apps/gateway` to the host with rsync once and reuses the copy. The copy holds only the files Git would track and `vendor/`, so ignored files such as keys, logs, caches, and databases stay local. It never holds `.env` files other than `.env.example`. It lives in a mode 700 directory under `/tmp/orbit-gateway-linux-tests-<uid>`. The process removes its copy when it ends, also on Ctrl-C or `SIGTERM`. A test that runs past five minutes, or `ORBIT_LINUX_TEST_TIMEOUT` seconds, is stopped on the host. A later run removes copies left by a killed process after six hours, including old copies in the earlier shared `/tmp/orbit-gateway-linux-tests`.
 
 Add regression coverage for behavior changes and their important failure modes. Confirm that the tests exercising the new behavior ran.
 

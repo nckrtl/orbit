@@ -22,6 +22,7 @@ use App\Domain\Nodes\CaddyRelease;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\RoleRegistry;
 use App\Domain\Shared\LifecycleStatus;
+use App\Infrastructure\Nodes\Roles\NodeRoleConvergeLock;
 use App\Models\NodeRole;
 use Illuminate\Database\Eloquent\Collection;
 
@@ -43,6 +44,7 @@ final readonly class RoleDoctorProbe implements DoctorFamilyProbe
         private GatewayVpnStateInspector $vpnInspector,
         private RoleRegistry $registry = new RoleRegistry,
         private ?CaddyBuildInspector $caddyBuilds = null,
+        private ?NodeRoleConvergeLock $roleLock = null,
     ) {}
 
     public function family(): DoctorFamily
@@ -62,7 +64,14 @@ final readonly class RoleDoctorProbe implements DoctorFamilyProbe
             if ($role->status === LifecycleStatus::Active) {
                 continue;
             }
-            $this->add($issues, $role, $this->issue(
+            $this->add($issues, $role, $role->isStaleClaim() && ! ($this->roleLock ?? app(NodeRoleConvergeLock::class))->isHeld($context->node) ? $this->issue(
+                $role,
+                RoleDoctorIssueCode::ClaimStale,
+                DoctorIssueKind::Drift,
+                'Role operation stopped without finishing.',
+                'active',
+                $role->status->value,
+            ) : $this->issue(
                 $role,
                 RoleDoctorIssueCode::LifecycleNotActive,
                 DoctorIssueKind::Drift,

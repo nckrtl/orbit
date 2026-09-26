@@ -58,6 +58,10 @@ it('names what each app role leaves behind', function (RoleName $role, string $e
         'Caddy site, PHP-FPM pool and serving checkout for the gateway role',
     ],
     'gateway firewall' => [RoleName::Gateway, 'Orbit firewall rule for the gateway role'],
+    'gateway private DNS route' => [
+        RoleName::Gateway,
+        'Private DNS route drop-in for wg-quick@orbit and the orbit link resolver settings',
+    ],
     'ingress caddy' => [RoleName::Ingress, 'Caddy configuration that serves the ingress role on every address'],
     'ingress firewall' => [RoleName::Ingress, 'Orbit firewall rules for public HTTP and HTTPS on the ingress role'],
 ]);

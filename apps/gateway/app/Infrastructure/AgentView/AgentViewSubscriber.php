@@ -40,6 +40,11 @@ use Throwable;
  * line counts stored when its workspace reports new ones, and, while a browser (`viewer.*` member) is
  * on any channel, has every Process's CPU and memory broadcast every `UsageSeconds`. The last two run
  * in a child process through `AgentViewPublisher`, so the socket loop never waits for them.
+ *
+ * ADR 0153 adds the log channel `presence-node-logs.{id}` of every Node. The subscriber records
+ * whether the agent joined it on any server and queues the agent's log events with the publisher,
+ * whose log relay runs redact and publish them for the viewers of live log streams. It never sends a
+ * client event there either.
  */
 final class AgentViewSubscriber
 {
@@ -71,6 +76,10 @@ final class AgentViewSubscriber
     private const float MaxBackoffSeconds = 30.0;
 
     private const string CHANNEL = '/\Apresence-node\.([1-9][0-9]*)\z/D';
+
+    private const string LOG_CHANNEL = '/\Apresence-node-logs\.([1-9][0-9]*)\z/D';
+
+    private const string VERSION = '/\A[0-9A-Za-z.+-]{1,32}\z/D';
 
     /** @var array<string, AgentViewLink> Links keyed by Reverb address, the serving address first. */
     private array $links = [];
@@ -385,6 +394,8 @@ final class AgentViewSubscriber
         $link->pingSentAt = null;
         $this->log->info('The agent view subscriber connected to Reverb.', ['address' => $link->address]);
         $this->refresh();
+        // Streams may have opened, or lost their viewer's access, while no subscriber watched.
+        $this->publisher?->logStreamsChanged();
     }
 
     private function isServingLink(AgentViewLink $link): bool
@@ -441,7 +452,8 @@ final class AgentViewSubscriber
 
             foreach (array_diff(array_keys($link->channels), $this->nodeIds) as $nodeId) {
                 $this->send($link, ['event' => 'pusher:unsubscribe', 'data' => ['channel' => "presence-node.{$nodeId}"]]);
-                unset($link->channels[$nodeId], $link->snapshotRequestedAt[$nodeId], $link->viewers[$nodeId]);
+                $this->send($link, ['event' => 'pusher:unsubscribe', 'data' => ['channel' => "presence-node-logs.{$nodeId}"]]);
+                unset($link->channels[$nodeId], $link->snapshotRequestedAt[$nodeId], $link->viewers[$nodeId], $link->logMembers[$nodeId], $link->agentVersions[$nodeId]);
                 $this->dirty[$nodeId] = true;
             }
 
@@ -463,9 +475,14 @@ final class AgentViewSubscriber
             return;
         }
 
-        if ($this->send($link, $this->subscription($nodeId, $link->socketId, $link->connection))) {
-            $link->channels[$nodeId] = new AgentChannelState;
+        if (! $this->send($link, $this->subscription($nodeId, $link->socketId, $link->connection))) {
+            return;
         }
+
+        $link->channels[$nodeId] = new AgentChannelState;
+        $logChannel = "presence-node-logs.{$nodeId}";
+        $signature = $this->signer->sign($link->socketId, $logChannel, $link->connection, "gateway.{$link->socketId}", ['kind' => 'gateway']);
+        $this->send($link, ['event' => 'pusher:subscribe', 'data' => ['channel' => $logChannel] + $signature]);
     }
 
     /** @return array<string, mixed> */
@@ -533,6 +550,12 @@ final class AgentViewSubscriber
 
         $channel = $message['channel'] ?? null;
 
+        if (is_string($event) && is_string($channel) && preg_match(self::LOG_CHANNEL, $channel, $matches) === 1) {
+            $this->handleLogChannel($link, (int) $matches[1], $event, $message);
+
+            return;
+        }
+
         if (! is_string($event) || ! is_string($channel) || preg_match(self::CHANNEL, $channel, $matches) !== 1) {
             return;
         }
@@ -563,6 +586,9 @@ final class AgentViewSubscriber
                 $this->dirty[$nodeId] = true;
             }
 
+            $hash = is_array($presence['hash'] ?? null) ? $presence['hash'] : [];
+            $this->setAgentVersion($link, $nodeId, is_array($hash[$agent] ?? null) ? $hash[$agent] : null);
+
             return;
         }
 
@@ -573,6 +599,8 @@ final class AgentViewSubscriber
             if ($member === $agent) {
                 $state->reset();
                 $this->dirty[$nodeId] = true;
+                $info = $data['user_info'] ?? null;
+                $this->setAgentVersion($link, $nodeId, $event === 'pusher_internal:member_added' && is_array($info) ? $info : null);
             } elseif (is_string($member) && str_starts_with($member, 'viewer.')) {
                 if ($event === 'pusher_internal:member_added') {
                     $link->viewers[$nodeId][$member] = true;
@@ -592,6 +620,104 @@ final class AgentViewSubscriber
         ) {
             $this->dirty[$nodeId] = true;
         }
+    }
+
+    /**
+     * Keeps the agent's log channel membership and queues its log events for the relay (ADR 0153).
+     * Reverb stamps a client event with the sender's member ID, so only `agent.{id}` can send lines
+     * for Node `{id}`. Nothing here waits: the relay runs outside the socket loop.
+     *
+     * @param  array<string, mixed>  $message
+     */
+    private function handleLogChannel(AgentViewLink $link, int $nodeId, string $event, array $message): void
+    {
+        if (! isset($link->channels[$nodeId])) {
+            return;
+        }
+
+        $agent = "agent.{$nodeId}";
+        $data = $this->data($message);
+
+        if ($event === 'pusher_internal:subscription_succeeded') {
+            $presence = is_array($data['presence'] ?? null) ? $data['presence'] : [];
+            $this->setLogMember($link, $nodeId, in_array($agent, is_array($presence['ids'] ?? null) ? $presence['ids'] : [], strict: true));
+
+            return;
+        }
+
+        if (in_array($event, ['pusher_internal:member_added', 'pusher_internal:member_removed'], strict: true)) {
+            if (($data['user_id'] ?? null) === $agent) {
+                $this->setLogMember($link, $nodeId, $event === 'pusher_internal:member_added');
+            }
+
+            return;
+        }
+
+        // The Gateway's own prompt to the agent: a stream opened, was renewed for the first time, or closed.
+        if ($event === 'log-streams.changed') {
+            $this->publisher?->logStreamsChanged();
+
+            return;
+        }
+
+        if (($message['user_id'] ?? null) === $agent && in_array($event, ['client-log', 'client-log-end'], strict: true)) {
+            $this->publisher?->queueLog($nodeId, $event, $data);
+        }
+    }
+
+    /**
+     * Records the version the agent signed into its membership of `presence-node.{id}` on one server, so
+     * the Gateway can tell an agent before 0.3.0 from one that has not joined its log channel yet.
+     *
+     * @param  array<mixed>|null  $info  The member's `user_info`, or null when the agent is not a member.
+     */
+    private function setAgentVersion(AgentViewLink $link, int $nodeId, ?array $info): void
+    {
+        $version = $info['version'] ?? null;
+
+        if (is_string($version) && preg_match(self::VERSION, $version) === 1) {
+            $link->agentVersions[$nodeId] = $version;
+        } else {
+            unset($link->agentVersions[$nodeId]);
+        }
+    }
+
+    /** The newest agent version any live server reports for the Node, or null when none does. */
+    private function agentVersion(int $nodeId): ?string
+    {
+        $newest = null;
+
+        foreach ($this->links as $link) {
+            $version = $link->agentVersions[$nodeId] ?? null;
+
+            if ($version !== null && ($newest === null || version_compare($version, $newest, '>'))) {
+                $newest = $version;
+            }
+        }
+
+        return $newest;
+    }
+
+    /** Records the agent's log channel membership on one server. The Node streams while any server has it. */
+    private function setLogMember(AgentViewLink $link, int $nodeId, bool $member): void
+    {
+        $was = $this->logMember($nodeId);
+        $link->logMembers[$nodeId] = $member;
+        $now = $this->logMember($nodeId);
+
+        if ($was !== $now) {
+            $this->dirty[$nodeId] = true;
+        }
+
+        if ($was && ! $now) {
+            $this->publisher?->queueLogAgentLeft($nodeId);
+        }
+    }
+
+    /** Whether the Node's agent is a member of its log channel on any live server. */
+    private function logMember(int $nodeId): bool
+    {
+        return array_any($this->links, static fn (AgentViewLink $link): bool => $link->logMembers[$nodeId] ?? false);
     }
 
     /**
@@ -642,7 +768,7 @@ final class AgentViewSubscriber
                 }
 
                 $changed = array_values(array_unique([...($this->unwrittenWorkspaces[$nodeId] ?? []), ...$changed]));
-                $this->view->putNode($nodeId, $newest->units, $newest->docker, $newest->sequence, (float) $newest->lastEventAt, $newest->agentAt, $newest->workspaces);
+                $this->view->putNode($nodeId, $newest->units, $newest->docker, $newest->sequence, (float) $newest->lastEventAt, $newest->agentAt, $newest->workspaces, $this->logMember($nodeId), $this->agentVersion($nodeId));
                 $this->stored[$nodeId] = true;
                 unset($this->unwrittenWorkspaces[$nodeId]);
 

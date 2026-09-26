@@ -4,6 +4,7 @@ import Pusher from "pusher-js";
 import { get } from "../api/client";
 import { applyEvent, type RealtimeEvent } from "./apply";
 import { downForMs, setLiveness } from "./liveness";
+import { authorizeChannel, setRealtimeSocket, type RealtimeSocket } from "./socket";
 import {
     acceptAgentEvent,
     agentMemberAdded,
@@ -83,14 +84,26 @@ export async function connectRealtime(client: QueryClient, signal: AbortSignal):
             wssPort: port,
             forceTLS: tls,
             enabledTransports: ["ws", "wss"],
-            channelAuthorization: {
-                endpoint: "/api/v1/broadcasting/auth",
-                transport: "ajax",
-                headers: { Accept: "application/json" },
-            },
+            // Log stream channels carry the signature their open response returned; see socket.ts.
+            channelAuthorization: { customHandler: authorizeChannel },
         });
 
         let wasLive = false;
+        // Log panes open their streams on this socket. A new socket ID invalidates every stream signature.
+        const publishSocket = () => {
+            const socketId = pusher.connection.socket_id;
+
+            if (typeof socketId !== "string" || socketId === "") {
+                return;
+            }
+
+            const socket: RealtimeSocket = {
+                socketId,
+                subscribe: (name) => pusher.subscribe(name),
+                unsubscribe: (name) => pusher.unsubscribe(name),
+            };
+            setRealtimeSocket(socket);
+        };
         const channel = pusher.subscribe(`private-${config.channel}`);
         const agentChannels = new Map<number, ReturnType<typeof pusher.subscribe>>();
         const syncAgentChannels = () => {
@@ -161,6 +174,7 @@ export async function connectRealtime(client: QueryClient, signal: AbortSignal):
             notifyAnnotationUpdates();
             wasLive = true;
             setLiveness("live");
+            publishSocket();
         });
 
         channel.bind_global((name: string, payload: unknown) => {
@@ -193,6 +207,7 @@ export async function connectRealtime(client: QueryClient, signal: AbortSignal):
 
         const onStateChange = ({ current }: { current: string }) => {
             if (!signal.aborted && current !== "connected") {
+                setRealtimeSocket(null);
                 setLiveness("reconnecting");
             }
         };
@@ -207,6 +222,7 @@ export async function connectRealtime(client: QueryClient, signal: AbortSignal):
             }
             agentChannels.clear();
             pusher.connection.unbind("state_change", onStateChange);
+            setRealtimeSocket(null);
             pusher.disconnect();
         };
         setLiveness("reconnecting");

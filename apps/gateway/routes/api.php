@@ -33,6 +33,7 @@ use App\Http\Controllers\Api\GatewayStatusesController;
 use App\Http\Controllers\Api\GitHubAppController;
 use App\Http\Controllers\Api\GrafanaAccessAuthorizationController;
 use App\Http\Controllers\Api\InstanceAnalyticsController;
+use App\Http\Controllers\Api\InstanceLogStreamsController;
 use App\Http\Controllers\Api\MetricsController;
 use App\Http\Controllers\Api\NodeAccessController;
 use App\Http\Controllers\Api\NodeExcludedProjectsController;
@@ -40,6 +41,7 @@ use App\Http\Controllers\Api\NodeMetricsController;
 use App\Http\Controllers\Api\NodeRolesController;
 use App\Http\Controllers\Api\NodesController;
 use App\Http\Controllers\Api\ProcessesController;
+use App\Http\Controllers\Api\ProcessLogStreamsController;
 use App\Http\Controllers\Api\ProjectExcludedNodesController;
 use App\Http\Controllers\Api\ProjectLifecycleStepsController;
 use App\Http\Controllers\Api\ProxyCliController;
@@ -90,6 +92,7 @@ Route::prefix('v1')->group(function (): void {
             Route::get('realtime', [AgentRealtimeController::class, 'show'])->name('agent:realtime');
             Route::post('broadcasting/auth', [AgentRealtimeController::class, 'authenticate'])->name('agent:realtime:auth');
             Route::get('workspaces', [AgentRealtimeController::class, 'workspaces'])->name('agent:workspaces');
+            Route::get('log-streams', [AgentRealtimeController::class, 'logStreams'])->name('agent:log-streams');
         });
 
     Route::middleware([
@@ -389,6 +392,19 @@ Route::prefix('v1')->group(function (): void {
             'instances/{instance}/logs',
             [AppInstanceLogsController::class, 'show'],
         )->whereNumber('instance')->name('instance:logs');
+        Route::post(
+            'instances/{instance}/log-streams',
+            [InstanceLogStreamsController::class, 'store'],
+        )->whereNumber('instance')->name('instance:log-stream:create');
+        Route::put(
+            'instances/{instance}/log-streams/{stream}',
+            [InstanceLogStreamsController::class, 'update'],
+        )->whereNumber('instance')->where('stream', '[0-9a-f]{32}')
+            ->withoutMiddleware(RecordCommandActivity::class)->name('instance:log-stream:renew');
+        Route::delete(
+            'instances/{instance}/log-streams/{stream}',
+            [InstanceLogStreamsController::class, 'destroy'],
+        )->whereNumber('instance')->where('stream', '[0-9a-f]{32}')->name('instance:log-stream:destroy');
         Route::get(
             'instances/{instance}/deployments',
             [AppInstanceDeploymentsController::class, 'index'],
@@ -461,6 +477,13 @@ Route::prefix('v1')->group(function (): void {
             ->name('process:list');
         Route::get('processes/{process}/logs', [ProcessesController::class, 'logs'])
             ->name('process:logs');
+        Route::post('processes/{process}/log-streams', [ProcessLogStreamsController::class, 'store'])
+            ->name('process:log-stream:create');
+        Route::put('processes/{process}/log-streams/{stream}', [ProcessLogStreamsController::class, 'update'])
+            ->where('stream', '[0-9a-f]{32}')
+            ->withoutMiddleware(RecordCommandActivity::class)->name('process:log-stream:renew');
+        Route::delete('processes/{process}/log-streams/{stream}', [ProcessLogStreamsController::class, 'destroy'])
+            ->where('stream', '[0-9a-f]{32}')->name('process:log-stream:destroy');
         Route::post('processes', [ProcessesController::class, 'store'])
             ->name('process:create');
         Route::post('processes/{process}/start', [ProcessesController::class, 'start'])

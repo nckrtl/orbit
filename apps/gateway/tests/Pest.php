@@ -10,14 +10,17 @@ use App\Domain\AppInstances\Deployment\DeploymentPhase;
 use App\Domain\AppInstances\Deployment\DeploymentStep;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Firewall\RouterLanIngressReconciler;
+use App\Domain\Logs\LogStreamStore;
 use App\Domain\Nodes\NodeAgentRuntime;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskRunReceipts;
+use App\Infrastructure\Activity\ActivityShutdownFinalizer;
 use App\Infrastructure\AgentView\CacheAgentStateView;
 use App\Infrastructure\AppInstances\DependencyUpdateSupervisorHost;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
+use App\Infrastructure\Logs\CacheLogStreamStore;
 use App\Infrastructure\Nodes\NodeLocks;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\NativeProcessRunner;
@@ -67,11 +70,14 @@ uses(TestCase::class, RefreshDatabase::class)
         app()->instance(NodeCaddyBuilds::class, new FakeNodeCaddyBuilds);
         // The view's file store under ORBIT_HOME would outlive a test; each test gets its own.
         app()->instance(CacheAgentStateView::class, new CacheAgentStateView(Cache::store('array')));
+        app()->instance(LogStreamStore::class, new CacheLogStreamStore(Cache::store('array')));
         // The same holds for the Node locks' file store.
         app()->instance(NodeLocks::class, new NodeLocks(Cache::store('array')));
         Classification::fake();
         // Transitions wait for private DNS answers to expire; tests assert those waits instead.
         Sleep::fake(syncWithCarbon: true);
+        // A streamed response a test never consumed stays armed; each test starts with none.
+        ActivityShutdownFinalizer::forgetArmed();
     })
     ->in('Feature');
 

@@ -751,6 +751,12 @@ it('renders local validation failures through the exact json boundary', function
         'process.log_lines_invalid',
         'Log lines must be between 1 and 1000.',
     ],
+    'instance log lines' => [
+        'instance:logs',
+        ['instance' => '1', '--lines' => '1001'],
+        'instance.log_lines_invalid',
+        'Log lines must be between 1 and 1000.',
+    ],
     'multiple firewall values fail at the first error' => [
         'firewall:allow',
         [

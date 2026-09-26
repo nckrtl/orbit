@@ -232,7 +232,7 @@ TAGS = [
     ('internal', 'Node callbacks', 'Endpoints that managed Nodes and Caddy call; operators do not call them.'),
 ]
 TAG_BY_PREFIX = {p: t for p, t, _ in TAGS}
-INTERNAL = {'tasks:agents', 'tasks:agent-stream', 'agent:realtime', 'agent:realtime:auth', 'agent:workspaces', 'metrics:grafana:authorize', 'schedule:complete', 'runtime-activation:app-instance', 'github:app:register', 'github:app:callback'}
+INTERNAL = {'tasks:agents', 'tasks:agent-stream', 'agent:realtime', 'agent:realtime:auth', 'agent:workspaces', 'agent:log-streams', 'metrics:grafana:authorize', 'schedule:complete', 'runtime-activation:app-instance', 'github:app:register', 'github:app:callback'}
 DEFINITION_ROUTES = {
     'AppRuntimeDefinitionsController@processIndex': 'List process definitions',
     'AppRuntimeDefinitionsController@processStore': 'Create a process definition',
@@ -284,6 +284,9 @@ SUMMARIES = {
     'realtime:auth': 'Authorize the orbit broadcast channel', 'realtime:show': 'Show the Reverb connection',
     'agent:realtime': "Show the agent's Reverb connection", 'agent:realtime:auth': "Authorize the agent's presence channel",
     'agent:workspaces': "List the task checkouts the agent watches",
+    'agent:log-streams': "List the live log streams the agent reads",
+    'instance:log-stream:create': 'Open a live Instance log stream', 'instance:log-stream:renew': 'Renew a live Instance log stream', 'instance:log-stream:destroy': 'Close a live Instance log stream',
+    'process:log-stream:create': 'Open a live Process log stream', 'process:log-stream:renew': 'Renew a live Process log stream', 'process:log-stream:destroy': 'Close a live Process log stream',
     'tasks:enable': 'Enable Tasks', 'tasks:disable': 'Disable Tasks', 'tasks:status': 'Show Tasks status',
     'tasks:agents': 'List task agent sessions', 'tasks:agent-stream': 'Watch a task agent session',
     'tasks:list': 'List Task groups', 'tasks:create': 'Create a Task group', 'tasks:show': 'Show a Task group', 'tasks:update': 'Update a Task group',
@@ -296,7 +299,16 @@ DESCRIPTIONS = {
     'realtime:auth': 'A Pusher-protocol channel authorization endpoint. A client requests access to the private `orbit` channel with its `socket_id` and `channel_name`; any active WireGuard peer Node is authorized.',
     'agent:realtime': "The `orbit-agent` on a managed Node calls this endpoint to find its Reverb connection. The Gateway identifies the Node from the WireGuard address and the agent's bearer secret, and returns the Reverb URL, serving address, and app key, the Node's `presence-node.{id}` channel, and the agent's `agent.{id}` member ID. Connection values are null when broadcasting is not configured.",
     'agent:workspaces': "The `orbit-agent` on a managed Node calls this endpoint every 60 seconds to learn which task checkouts to watch. The Gateway identifies the Node from the WireGuard address and the agent's bearer secret, and lists the Instances on that Node that hold the workspace of an unfinished task group, at most 64, with the checkout path, the Project's default branch as `base`, and the Instance's starting commit as `start`. The list is empty while the tasks extension is disabled.",
-    'agent:realtime:auth': "The `orbit-agent` on a managed Node calls this endpoint to join its own presence channel. The Gateway signs member `agent.{id}` on `presence-node.{id}` only for a request from that Node's WireGuard address that carries the Node's agent secret. The response carries the Pusher `auth` and `channel_data` values.",
+    'agent:realtime:auth': "The `orbit-agent` on a managed Node calls this endpoint to join its own presence channels. The Gateway signs member `agent.{id}` on `presence-node.{id}` or `presence-node-logs.{id}` only for a request from that Node's WireGuard address that carries the Node's agent secret. The response carries the Pusher `auth` and `channel_data` values.",
+    'instance:logs': "Returns one redacted tail of the Instance's application log, `storage/logs/laravel.log` or the newest `laravel-*.log`, read over SSH. `lines` is 1 to 1,000, default 100. Open a live log stream to follow new lines.",
+    'process:logs': "Returns one redacted tail of the Process's journal or container output, read over SSH. `lines` is 1 to 1,000, default 100. Open a live log stream to follow new lines.",
+    'agent:log-streams': "The `orbit-agent` on a managed Node calls this endpoint to learn which logs to read for live log streams: when it joins its log channel, after each `log-streams.changed` event, and every 15 seconds while it reads a stream. The Gateway identifies the Node from the WireGuard address and the agent's bearer secret, and lists at most 16 open streams whose source is on that Node, each with its ID, `lines`, and one `laravel`, `journal`, or `docker` source that the Gateway resolved from its own records.",
+    'instance:log-stream:create': "Opens a live log stream of the Instance's application log for one Reverb socket, with the access rule of `instance:logs`. The response signs the socket's subscription to `private-log-stream.{id}`; the Gateway then relays redacted lines from the Node agent there as `log.lines` events. Returns `logs.live_unavailable` with `details.reason` when the live path is not available, and `logs.stream_limit` when the Node already has 16 open streams.",
+    'instance:log-stream:renew': 'Extends the lease of a live Instance log stream to 60 seconds from now. Only the Node that opened the stream can renew it. Does not record Activity.',
+    'instance:log-stream:destroy': 'Closes a live Instance log stream at once and publishes `log.ended` with reason `closed`. Only the Node that opened the stream can close it.',
+    'process:log-stream:create': "Opens a live log stream of the Process's journal or container output for one Reverb socket, with the access rule of `process:logs`. The response signs the socket's subscription to `private-log-stream.{id}`; the Gateway then relays redacted lines from the Node agent there as `log.lines` events. Returns `logs.live_unavailable` with `details.reason` when the live path is not available, and `logs.stream_limit` when the Node already has 16 open streams.",
+    'process:log-stream:renew': 'Extends the lease of a live Process log stream to 60 seconds from now. Only the Node that opened the stream can renew it. Does not record Activity.',
+    'process:log-stream:destroy': 'Closes a live Process log stream at once and publishes `log.ended` with reason `closed`. Only the Node that opened the stream can close it.',
     'realtime:show': 'Returns the Reverb WebSocket URL, app key, and channel name a client needs to subscribe to record-change events, or null values when broadcasting is not configured.',
     'metrics:grafana:authorize': 'Caddy on the Gateway calls this endpoint for each Grafana request. The Gateway identifies the caller from the connection address and answers 204 when the caller may reach Grafana.',
     'schedule:complete': 'The installed Schedule callback on the host Node reports the latest run. The Gateway accepts it only from the Schedule\'s recorded host Node and records `last_run_at` and `last_run_status`.',
@@ -1082,8 +1094,9 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
             'address': {'type': ['string', 'null'], 'description': 'Address that serves Reverb on port 443.'},
             'key': {'type': ['string', 'null'], 'description': 'Reverb app key.'},
             'channel': {'type': 'string', 'description': "The Node's presence channel, `presence-node.{id}`."},
+            'log_channel': {'type': 'string', 'description': "The Node's log channel, `presence-node-logs.{id}`, for live log streams."},
             'member': {'type': 'string', 'description': "The agent's member ID, `agent.{id}`."},
-        }, 'required': ['url', 'address', 'key', 'channel', 'member']}
+        }, 'required': ['url', 'address', 'key', 'channel', 'log_channel', 'member']}
         responses['200'] = envelope(connection, 'The request succeeded.')
     elif route['name'] == 'agent:workspaces':
         workspace = {'type': 'object', 'properties': {
@@ -1093,6 +1106,41 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
             'start': {'type': ['string', 'null'], 'description': "The Instance's starting commit, or null."},
         }, 'required': ['instance_id', 'path', 'base', 'start']}
         responses['200'] = envelope({'type': 'array', 'items': workspace}, 'The request succeeded.')
+    elif route['name'] == 'agent:log-streams':
+        source = {'type': 'object', 'properties': {
+            'type': {'type': 'string', 'enum': ['laravel', 'journal', 'docker'], 'description': 'The source type.'},
+            'path': {'type': 'string', 'description': '`laravel`: the Instance checkout path.'},
+            'unit': {'type': 'string', 'description': '`journal`: the unit `orbit-process-{id}-{name}.service`.'},
+            'container': {'type': 'string', 'description': '`docker`: the container `orbit-process-{id}-{name}`.'},
+            'process_id': {'type': 'integer', 'description': '`docker`: the Process ID in the container name and label.'},
+        }, 'required': ['type']}
+        stream_item = {'type': 'object', 'properties': {
+            'id': {'type': 'string', 'pattern': '^[0-9a-f]{32}$', 'description': 'The stream ID.'},
+            'lines': {'type': 'integer', 'minimum': 1, 'maximum': 1000, 'description': 'The number of earlier lines to send first.'},
+            'source': source,
+        }, 'required': ['id', 'lines', 'source']}
+        responses['200'] = envelope({'type': 'array', 'items': stream_item}, 'The request succeeded.')
+    elif route['name'] in ('instance:log-stream:create', 'process:log-stream:create'):
+        opened = {'type': 'object', 'properties': {
+            'id': {'type': 'string', 'pattern': '^[0-9a-f]{32}$', 'description': 'The stream ID.'},
+            'channel': {'type': 'string', 'description': 'The private channel, `private-log-stream.{id}`.'},
+            'auth': {'type': 'string', 'description': "The Pusher signature of this channel for the request's `socket_id` only."},
+            'lines': {'type': 'integer', 'description': 'The number of earlier lines the stream sends first.'},
+            'lease_seconds': {'type': 'integer', 'description': 'Seconds the stream lives without a renewal.'},
+            'renew_seconds': {'type': 'integer', 'description': 'Seconds between renewals.'},
+        }, 'required': ['id', 'channel', 'auth', 'lines', 'lease_seconds', 'renew_seconds']}
+        responses['201'] = envelope(opened, 'Created.')
+        responses['429'] = error_response('The Node already has 16 open log streams (`logs.stream_limit`).')
+    elif route['name'] in ('instance:log-stream:renew', 'process:log-stream:renew'):
+        responses['200'] = envelope({'type': 'object', 'properties': {
+            'id': {'type': 'string', 'description': 'The stream ID.'},
+            'lease_seconds': {'type': 'integer', 'description': 'Seconds the stream lives from now without another renewal.'},
+        }, 'required': ['id', 'lease_seconds']}, 'The request succeeded.')
+    elif route['name'] in ('instance:log-stream:destroy', 'process:log-stream:destroy'):
+        responses['200'] = envelope({'type': 'object', 'properties': {
+            'id': {'type': 'string', 'description': 'The stream ID.'},
+            'closed': {'type': 'boolean', 'const': True, 'description': 'Always true.'},
+        }, 'required': ['id', 'closed']}, 'The request succeeded.')
     elif route['name'] == 'agent:realtime:auth':
         responses['200'] = {'description': 'The Pusher channel signature.', 'content': {'application/json': {'schema': {'type': 'object', 'properties': {
             'auth': {'type': 'string', 'description': 'Pusher channel signature.'},
@@ -1119,9 +1167,9 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
             responses['200'] = envelope(data, 'The request succeeded.')
         if route['name'] == 'gateway:trust':
             responses['503'] = error_response('The Gateway root CA is unavailable (`ca.unavailable`).')
-    if route['name'] in ('agent:realtime', 'agent:realtime:auth', 'agent:workspaces'):
+    if route['name'] in ('agent:realtime', 'agent:realtime:auth', 'agent:workspaces', 'agent:log-streams'):
         responses['401'] = error_response('The request carries no agent secret (`agent.secret_required`).')
-    if route['name'] in ('agent:realtime', 'agent:workspaces'):
+    if route['name'] in ('agent:realtime', 'agent:workspaces', 'agent:log-streams'):
         responses['403'] = error_response('The caller is not an active WireGuard peer (`peer.identity_unknown`), its agent secret does not match (`agent.secret_invalid`), or its Node is not eligible for an agent (`agent.node_ineligible`).')
     elif route['name'] == 'agent:realtime:auth':
         responses['403'] = error_response('The caller is not an active WireGuard peer (`peer.identity_unknown`), its agent secret does not match (`agent.secret_invalid`), its Node is not eligible for an agent (`agent.node_ineligible`), or it asked for another Node\'s channel (`agent.channel_forbidden`).')
@@ -1131,6 +1179,10 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
         responses['404'] = error_response('No record matches the path parameters.')
     if route['method'] in ('POST', 'PUT', 'PATCH', 'DELETE') and route['name'] not in INTERNAL:
         responses['409'] = error_response('A guard refused the change and the Gateway changed nothing; `error.code` names the guard.')
+    if route['name'] in ('instance:log-stream:create', 'process:log-stream:create'):
+        responses['409'] = error_response('The live log path is not available (`logs.live_unavailable`); `details.reason` is `ssh_only` for a production Instance, or `realtime_not_configured`, `subscriber_down`, `agent_unavailable`, `agent_not_joined`, or `agent_outdated`.')
+    if route['name'] in ('instance:log-stream:renew', 'instance:log-stream:destroy', 'process:log-stream:renew', 'process:log-stream:destroy'):
+        responses['404'] = error_response('The stream does not exist, has ended, belongs to another record, or was opened by another Node (`logs.stream_not_found`).')
     if route['name'] in ('tasks:list', 'tasks:show', 'tasks:agents', 'tasks:agent-stream'):
         responses['409'] = error_response('The tasks extension is disabled (`tasks.disabled`).')
     if route['name'] == 'tasks:cancel':

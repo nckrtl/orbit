@@ -119,7 +119,9 @@ The agent asks the Gateway which logs to read with `GET /api/v1/agent/log-stream
 
 The list holds the active streams whose source is on the caller's Node, at most 16. A stream becomes active with its viewer's first renewal. The endpoint uses the same rules and errors as the other [agent endpoints](#how-it-connects).
 
-The agent fetches the list when it joins its log channel, when the Gateway publishes `log-streams.changed` on that channel, and every 15 seconds while it reads at least one stream. The event carries no data. It only prompts the fetch, so the agent reads only what the HTTPS response names. The agent stops every stream that the list does not name. When it cannot fetch the list for 60 seconds, it stops every stream.
+The agent fetches the list when it joins its log channel, when the Gateway publishes `log-streams.changed` on that channel, and every 15 seconds while it reads at least one stream. The event carries no data. It only prompts the fetch, so the agent reads only what the HTTPS response names. The agent stops every stream that the list does not name.
+
+When it cannot fetch the list for 60 seconds, it stops reading every stream and ends each one with `client-log-end` and reason `list_unavailable`, after the lines it already read. It never reads such a stream again. While the list still names it, the agent sends the end again, in case the first one was lost. The Gateway ends the stream with `agent_left`, and the viewer opens a new stream that catches up.
 
 ### Sources
 

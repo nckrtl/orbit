@@ -194,7 +194,7 @@ orbit node:role:add <node> <role> [--converge] [--postgres-process=ID] [--clickh
 
 | Option | Meaning |
 | --- | --- |
-| `--converge` | Re-run convergence for an assignment that is active or whose failed step starts with `converge:`. |
+| `--converge` | Re-run convergence for an assignment that is active, whose failed step starts with `converge:`, or that has stayed `provisioning` for 11 minutes, the role lock's request term plus a 1-minute margin, while no operation holds the Node's role lock. |
 | `--postgres-process=ID` | For `analytics` only: the PostgreSQL 16 Process on a database Node that holds the Plausible accounts. |
 | `--clickhouse-process=ID` | For `analytics` only: the ClickHouse Process on a database Node that holds the events. |
 
@@ -209,6 +209,8 @@ The `analytics` role needs both Process options. In a terminal the command lists
 The command refuses a role that conflicts with one the Node holds, before it converges anything, with `validation.failed` and `Role [ingress] conflicts with assigned role [gateway].`. For example, `ingress` never runs on the Gateway Node. [Role compatibility](/reference/node-provisioning#role-compatibility) lists every conflicting pair.
 
 Role operations on one Node run one at a time, as [Node provisioning](/reference/node-provisioning#role-operations-on-one-node) describes. A command that waits too long fails with `node_role.convergence_failed`, `details.step` `converge:node-lock`, and `details.error_code` `node_role.node_busy`, and leaves the assignment as it was; run it again. Human output prints the step and the error code under the message.
+
+A convergence step that does not fail the role still reports its failure. The role stays `active`, and `follow_up` in the response names what failed and how to retry it. The command prints it as a warning after the result. Today only the `gateway` role's [private DNS route](/reference/private-dns#the-gateway-machine) reports this way, on `node:role:add` and on `node:role:relocate`.
 
 `gateway`, `websocket`, and `metrics` are mutable singletons. Prefer [`node:role:relocate`](#orbit-noderolerelocate) when the assignment already exists. Adding `gateway` grants directed access from that Node to the active `vpn` node and the active `metrics` node when those nodes exist and are not the Gateway itself. `vpn` is refused.
 
@@ -240,7 +242,7 @@ orbit node:role:relocate <node> <role> [--from] [--force] [--json]
 | `--from` | Optional source Node ID or name. Omit to use the current holder. Required to reconcile leftovers when the target already holds the role. |
 | `--force` | Confirm the transfer. Required in JSON and other non-interactive modes. |
 
-For `gateway`, the Gateway opens the gateway HTTPS firewall on the target, transfers the assignment, grants the new Gateway access to the `vpn` and `metrics` nodes, republishes private DNS on the `vpn` node, and retracts that firewall on the source. The target must not already hold `app-dev`, `app-prod`, or `database`. Relocate does not move `vpn`, stop Caddy or PHP-FPM on the source, or copy the serving checkout. After the split, `node:add` and peer converge install hub WireGuard credentials on the `vpn` node, not on the Gateway PHP host. [Relocate the gateway role](/solutions/relocate-gateway-role) owns ordering, the leftover serving stack, and CLI profile updates. The granted access set is `vpn` and `metrics`.
+For `gateway`, the Gateway opens the gateway HTTPS firewall on the target, transfers the assignment, grants the new Gateway access to the `vpn` and `metrics` nodes, republishes private DNS on the `vpn` node, and adds the [private DNS route](/reference/private-dns#the-gateway-machine) on the target. It then removes that route from the source and retracts that firewall there. A failed target route does not stop the move, and the command prints its `follow_up` as a warning. A failed source removal leaves the move incomplete, and the error names the `--from` command that finishes it. The target must not already hold `app-dev`, `app-prod`, or `database`. Relocate does not move `vpn`, stop Caddy or PHP-FPM on the source, or copy the serving checkout. After the split, `node:add` and peer converge install hub WireGuard credentials on the `vpn` node, not on the Gateway PHP host. [Relocate the gateway role](/solutions/relocate-gateway-role) owns ordering, the leftover serving stack, and CLI profile updates. The granted access set is `vpn` and `metrics`.
 
 For `websocket` and `metrics`, relocate copies missing role-owned credentials onto the target, transfers the assignment, converges the target baseline, and retracts the source publication and runtime. It does not overwrite credentials the target already has. When the target already holds the role, pass `--from` to move leftover source resources and retract that Node. When converging the target or retracting the source fails, the role already runs on the target. The command then fails with its usual error code and a message that the move is incomplete and names the `--from` command that finishes it once the source Node is reachable. A `websocket` relocation reconciles Metrics once, after the source is retracted, so a slow Metrics Node never holds the source retraction. A failed Metrics reconcile is reported the same way, and the `--from` command reruns it.
 
@@ -270,7 +272,9 @@ orbit node:role:remove beast database --force
 
 A role that still hosts a Route target, such as `app-dev` or `app-prod` with active Instances, is refused until those Instances are removed.
 
-The command removes a role that is `active`, or `failed` after a convergence (`failed_step=converge:STEP`) or an earlier removal (`failed_step=remove:STEP`). Each removal step repeats safely over what a failed convergence left behind: on a Node that never received Caddy or Docker, the Caddy build and the Metrics container cleanup find nothing to remove. A role that is still converging or being removed is refused. A failed removal leaves the role `failed` with `failed_step=remove:STEP`; run the same command again.
+When two removals of the same role run together, the second waits for the Node's role lock. If the first removed the role meanwhile, the second fails with `node_role.already_removed` (409) and changes nothing. A role the Node never had returns `http.404`.
+
+The command removes a role that is `active`, or `failed` after a convergence (`failed_step=converge:STEP`) or an earlier removal (`failed_step=remove:STEP`). Each removal step repeats safely over what a failed convergence left behind: on a Node that never received Caddy or Docker, the Caddy build and the Metrics container cleanup find nothing to remove. A role that is still converging or being removed is refused until it has stayed `provisioning` or `removing` for 11 minutes, the role lock's request term plus a 1-minute margin, and no operation holds the Node's role lock. A failed removal leaves the role `failed` with `failed_step=remove:STEP`; run the same command again.
 
 ## orbit node:access:add
 

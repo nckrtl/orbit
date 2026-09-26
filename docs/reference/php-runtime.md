@@ -111,7 +111,9 @@ The [service metrics](/reference/service-metrics) extension observes each dedica
 
 ## Process management
 
-Both roles use `pm = ondemand` with `pm.process_idle_timeout = 10s` and `pm.max_requests = 500`. `pm.max_children` is 10 on an app-dev pool and 20 on an app-prod pool. The Gateway's own `orbit-gateway` pool uses 8, because its host runs the scheduler and task ticks beside it, and each open agent stream holds one worker. A Gateway request ends after 600 seconds, and Caddy's FastCGI timeouts match. The Gateway ends an API command's remote work after 570 seconds, so a slow command fails with `command.deadline_exceeded` and records its Activity before PHP-FPM ends the request. The longest recorded operation, `instance:register`, took 522 seconds. An agent stream reconnects when its request ends. [ADR 0021](/decisions/0021-pin-sury-php-fpm-with-opcache-profiles-per-role) records why both roles use `ondemand`.
+Both roles use `pm = ondemand` with `pm.process_idle_timeout = 10s` and `pm.max_requests = 500`. `pm.max_children` is 10 on an app-dev pool and 20 on an app-prod pool. The Gateway's own `orbit-gateway` pool uses 8, because its host runs the scheduler and task ticks beside it, and each open agent stream holds one worker. A Gateway request has a 600-second limit, and Caddy's FastCGI timeouts match. The Gateway ends an API command's remote work after 570 seconds, so a slow command fails with `command.deadline_exceeded` and records its Activity before PHP-FPM ends the request. The longest recorded operation, `instance:register`, took 522 seconds. An agent stream reconnects when its request ends. [ADR 0021](/decisions/0021-pin-sury-php-fpm-with-opcache-profiles-per-role) records why both roles use `ondemand`.
+
+PHP-FPM checks the request limit every 200 seconds, a third of it, so a request can live until about 800 seconds. A request killed before it records its Activity, for example by that limit or by the OOM killer, ends as `activity.interrupted` within 20 minutes while the Gateway scheduler runs, as the [activity](/cli/activity#interrupted-requests) page explains.
 
 ## Caddy
 
@@ -135,7 +137,9 @@ Doctor also checks the service's loaded `ExecStart` and `PHP_INI_SCAN_DIR`, the 
 
 These observations establish the current configuration and the directly observable runtime association. They do not reconstruct every PHP-FPM directive loaded from an earlier configuration generation. Doctor does not compare an application's mutable working directory with the configured initial directory. It accepts an operating agent's `local.conf` changes when they preserve generated identity, does not compare allowed tuning with Orbit's seeded defaults, and does not require a tuning edit to be reloaded only to satisfy inspection.
 
-Doctor reports bounded drift when a current file or reliable live association does not match. It reports `instance.inspection_failed` as unverifiable when a required service, process, worker, or socket observation cannot be read or parsed, while retaining other findings that it established independently. However, an `ondemand` pool ends idle workers at any time, so a worker that exits while Doctor reads it is skipped. Inspection does not invoke PHP-FPM, create a FastCGI or application request, reload or signal a service, reset a cache, or rewrite a file.
+Doctor reports bounded drift when a current file or reliable live association does not match. It reports `instance.inspection_failed` as unverifiable when a required service, process, worker, or socket observation cannot be read or parsed, while retaining other findings that it established independently. Inspection does not invoke PHP-FPM, create a FastCGI or application request, reload or signal a service, reset a cache, or rewrite a file.
+
+When a process exits during inspection, Doctor does not report drift for it. An `ondemand` pool ends idle workers at any time, so Doctor skips a worker that exits while Doctor reads it. A master that exits while Doctor looks for its listening socket makes the observation unverifiable.
 
 ## Verification
 

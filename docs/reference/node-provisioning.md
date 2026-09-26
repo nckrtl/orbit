@@ -146,6 +146,10 @@ Run the command again. `node:role:relocate` and Cluster Router changes take the 
 
 Operations on different Nodes run in parallel.
 
+An operation that dies mid-way, such as a killed Gateway worker, leaves its role `provisioning` or `removing`. Once the claim is 11 minutes old, the request term of the role lock plus a 1-minute margin for whole-second times and PHP-FPM slack, and no operation holds the lock, the claim is stale: `node:role:add --converge` and `node:role:remove` take it over, and Doctor reports `role.claim_stale`. A live operation, even a long Artisan command, renews the lock before each command, so its claim never counts as stale. After a killed worker, the claim can be taken over at most one [term](#lock-renewal) after the operation's last command started, plus the 1-minute margin.
+
+The window can follow the lock term because adding and removing a role take the lock before they claim, and relocation and Cluster Router changes, which claim outside the lock, end within one Gateway request. `orbit:gateway-bootstrap` also claims outside the lock, but it sets the Node itself to `provisioning` first, and role add and remove refuse a Node that is not `active`.
+
 The Node agent converge at the `agent` step of `node:add` runs after the role steps released the lock. It holds only the Node agent lock. It installs the agent's own files and restarts only `orbit-agent.service`, so it can run beside a role operation.
 
 An offline role removal, for a Node the Gateway cannot reach, runs outside the lock. It changes only the Gateway and other Nodes, never the unreachable machine.
