@@ -100,6 +100,18 @@ describe(NodeLocks::class, function (): void {
         expect($inner->ran)->toHaveCount(1);
     });
 
+    it('refuses the next command once the lock expired, even when no other operation took it', function (): void {
+        $locks = new NodeLocks(Cache::store('array'));
+        $runner = new LockRenewingProcessRunner($inner = new RecordingProcessRunner, $locks);
+
+        expect($locks->lock('expired', 600)->get())->toBeTrue();
+
+        $this->travel(601)->seconds();
+
+        expect(fn () => $runner->run(node_locks_command()))->toThrow(ResourceOperationException::class, 'expired before it could be renewed')
+            ->and($inner->ran)->toBe([]);
+    });
+
     it('stops renewing a lock once it is released', function (): void {
         $locks = new NodeLocks(Cache::store('array'));
         $lock = $locks->lock('released', 600);

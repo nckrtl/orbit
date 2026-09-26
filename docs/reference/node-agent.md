@@ -246,7 +246,7 @@ A failure before the restart succeeded, such as a failed download or a failed `s
 
 One converge runs per Node at a time. The lock lives in a file cache store under `ORBIT_HOME`, whatever `CACHE_STORE` says. A second converge of the same Node waits up to 2 minutes and then fails with `agent.converge_busy`. The lock expires after 4 minutes, so a converge that dies without releasing it, such as a PHP-FPM worker killed at its 600-second request limit, blocks the Node's agent converges for at most 4 minutes.
 
-A running converge renews the lock before each step that changes the Node or the record, and stops with `agent.converge_lock_lost` when another converge took it over after it expired. The binary download is bounded to 20 seconds to connect and 120 seconds in total, so one step fits inside the lock's term.
+A running converge renews the lock before each step that changes the Node or the record, and stops with `agent.converge_lock_lost` when the renewal fails. A renewal fails once the lock has expired, whether or not another converge has taken it since. The binary download is bounded to 20 seconds to connect and 120 seconds in total, so one step fits inside the lock's term.
 
 ### Rollout
 
@@ -453,7 +453,6 @@ Doctor checks the agent in the `node` family on every eligible Node. It checks t
 | `node.agent_inactive` | The unit exists but is not active. |
 | `node.agent_outdated` | The binary's checksum differs from the pinned checksum for the Node's architecture. |
 | `node.agent_secret_mismatch` | The secret or the [exemption](#rollout) does not fit the pinned agent: `missing`, `mismatch`, `exempt`, or `not_exempt`. |
-
 | `node.agent_view_stale` | The agent unit is active and a `websocket` role is active, but the Gateway has no fresh view of the Node. |
 
 Run `orbit node:add <node>` to repair the first four. `node:add` refuses a Node that owns Instances; repair such a Node by converging one of its roles with `orbit node:role:add <node> <role> --converge`.

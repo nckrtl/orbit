@@ -77,9 +77,9 @@ final class NodeLocks
     }
 
     /**
-     * Renews every lock this process holds for its full term. When one expired and another operation
-     * took it, the command about to run must not run: it fails with `node.lock_lost`, and so does every
-     * later command until the operation releases the lock.
+     * Renews every lock this process holds for its full term. When one has expired, whether or not
+     * another operation has taken it since, the command about to run must not run: it fails with
+     * `node.lock_lost`, and so does every later command until the operation releases the lock.
      */
     public function renewHeld(): void
     {
@@ -87,7 +87,7 @@ final class NodeLocks
             if (! $lock->refresh()) {
                 throw new ResourceOperationException(
                     'node.lock_lost',
-                    "The operation lost its Node lock [{$name}] to another operation.",
+                    "The operation's Node lock [{$name}] expired before it could be renewed.",
                     409,
                 );
             }

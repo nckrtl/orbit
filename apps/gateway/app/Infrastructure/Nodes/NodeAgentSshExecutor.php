@@ -226,7 +226,7 @@ final readonly class NodeAgentSshExecutor implements NodeAgentRuntime
      *   also when the older binary starts after a converge that failed past the swap.
      *
      * Before each step that changes the Node or the record, the converge renews its lock and stops
-     * when another converge took it over after it expired.
+     * when the lock has expired, whether or not another converge has taken it since.
      */
     private function convergeLocked(NodeLock $lock, Node $node, string $checksum, string $architecture, ?string $root, string $configuration, string $certificate, string $unit): void
     {
@@ -271,13 +271,13 @@ final readonly class NodeAgentSshExecutor implements NodeAgentRuntime
     }
 
     /**
-     * Renews the Node's agent lock for another full term, or stops the converge when the lock expired
-     * and another converge now holds it, so two converges never write the secret or its record together.
+     * Renews the Node's agent lock for another full term, or stops the converge once the lock has expired,
+     * because another converge may hold it, so two converges never write the secret or its record together.
      */
     private function holdLock(NodeLock $lock): void
     {
         if (! $lock->refresh()) {
-            throw new ResourceOperationException('agent.converge_lock_lost', 'The Node agent converge lost its lock to another converge.', 409);
+            throw new ResourceOperationException('agent.converge_lock_lost', 'The Node agent converge lock expired before it could be renewed.', 409);
         }
     }
 

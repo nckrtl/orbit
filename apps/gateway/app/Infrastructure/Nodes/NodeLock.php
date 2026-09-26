@@ -77,8 +77,8 @@ final class NodeLock implements Lock
     }
 
     /**
-     * Extends the lock by its full term. False, now and on every later call, when the lock expired and
-     * another operation took it.
+     * Extends the lock by its full term. False, now and on every later call, once the lock has expired,
+     * whether or not another operation has taken it since.
      */
     public function refresh(): bool
     {
