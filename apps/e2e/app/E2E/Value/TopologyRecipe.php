@@ -13,7 +13,7 @@ final readonly class TopologyRecipe
     /** @var array<string, TopologyNode> */
     private array $nodesByKey;
 
-    /** @param list<TopologyNode> $nodes */
+    /** @param non-empty-list<TopologyNode> $nodes */
     public function __construct(
         public string $id,
         public array $nodes,
@@ -130,6 +130,9 @@ final readonly class TopologyRecipe
                 $node['checkout'],
                 $roles,
             );
+        }
+        if ($nodes === []) {
+            throw new InvalidArgumentException('The topology recipe identity or Node inventory is invalid.');
         }
 
         return new self($value['id'], $nodes);

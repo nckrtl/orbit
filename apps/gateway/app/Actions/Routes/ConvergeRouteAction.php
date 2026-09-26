@@ -215,14 +215,13 @@ final readonly class ConvergeRouteAction
     /** @return list<int> */
     private function targetIds(Route $route): array
     {
-        return $route
+        return array_values($route
             ->targets()
             ->orderBy('position')
             ->orderBy('app_instance_id')
             ->pluck('app_instance_id')
             ->map(static fn (mixed $id): int => (int) $id)
-            ->values()
-            ->all();
+            ->all());
     }
 
     private function awaitsPlacementWithdrawal(Route $route): bool
@@ -629,11 +628,10 @@ final readonly class ConvergeRouteAction
         ?RoutePublication $publication = null,
         bool $allowGenerated = false,
     ): array {
-        $targets = $route->targets
+        $targets = array_values($route->targets
             ->map(static fn ($row) => $row->appInstance)
             ->filter(static fn ($instance): bool => $instance instanceof AppInstance)
-            ->values()
-            ->all();
+            ->all());
 
         if ($targets === []) {
             app(RouteReconciliationGuard::class)->refuse();

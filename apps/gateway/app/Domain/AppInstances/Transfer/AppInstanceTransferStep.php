@@ -47,6 +47,12 @@ enum AppInstanceTransferStep: string
 
     public function rank(): int
     {
-        return array_search($this, self::ordered(), true);
+        $rank = array_search($this, self::ordered(), true);
+
+        if ($rank === false) {
+            throw new \LogicException('Transfer step is missing from the ordered list.');
+        }
+
+        return $rank;
     }
 }

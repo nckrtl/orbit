@@ -20,6 +20,12 @@ final readonly class CurlProfileRequestProfiler implements ProfileRequestProfile
      */
     public function profile(string $url, array $headers = [], ?string $caPath = null): array
     {
+        // An empty path is not a certificate bundle. libcurl would accept it and then fail
+        // the transfer; rejecting it here keeps that failure off the system trust store.
+        if ($caPath === '') {
+            return $this->failedProfile($url, 'Certificate bundle path is empty.');
+        }
+
         $handle = curl_init($url);
 
         if ($handle === false) {
@@ -28,35 +34,28 @@ final readonly class CurlProfileRequestProfiler implements ProfileRequestProfile
 
         $responseHeaders = [];
 
-        $options = [
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_FOLLOWLOCATION => false,
-            CURLOPT_HTTPGET => true,
-            CURLOPT_TIMEOUT => $this->profileTimeoutSeconds(),
-            CURLOPT_CONNECTTIMEOUT => self::CONNECT_TIMEOUT_SECONDS,
-            CURLOPT_SSL_VERIFYPEER => true,
-            CURLOPT_SSL_VERIFYHOST => 2,
-            CURLOPT_ENCODING => '',
-            CURLOPT_HTTPHEADER => $this->formatHeaders($headers),
-            CURLOPT_HEADERFUNCTION => function ($handle, string $header) use (&$responseHeaders): int {
-                $parts = explode(':', $header, 2);
+        curl_setopt($handle, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($handle, CURLOPT_FOLLOWLOCATION, false);
+        curl_setopt($handle, CURLOPT_HTTPGET, true);
+        curl_setopt($handle, CURLOPT_TIMEOUT, $this->profileTimeoutSeconds());
+        curl_setopt($handle, CURLOPT_CONNECTTIMEOUT, self::CONNECT_TIMEOUT_SECONDS);
+        curl_setopt($handle, CURLOPT_SSL_VERIFYPEER, true);
+        curl_setopt($handle, CURLOPT_SSL_VERIFYHOST, 2);
+        curl_setopt($handle, CURLOPT_ENCODING, '');
+        curl_setopt($handle, CURLOPT_HTTPHEADER, $this->formatHeaders($headers));
+        curl_setopt($handle, CURLOPT_HEADERFUNCTION, function ($handle, string $header) use (&$responseHeaders): int {
+            $parts = explode(':', $header, 2);
 
-                if (count($parts) === 2) {
-                    $responseHeaders[strtolower(trim($parts[0]))] = trim($parts[1]);
-                }
+            if (count($parts) === 2) {
+                $responseHeaders[strtolower(trim($parts[0]))] = trim($parts[1]);
+            }
 
-                return strlen($header);
-            },
-        ];
+            return strlen($header);
+        });
 
         if ($caPath !== null) {
-            // Assigned rather than unpacked into the literal above: array unpacking renumbers
-            // integer keys, and every CURLOPT_* constant is an integer, so a spread would
-            // silently drop this and leave the request verifying against the system store.
-            $options[CURLOPT_CAINFO] = $caPath;
+            curl_setopt($handle, CURLOPT_CAINFO, $caPath);
         }
-
-        curl_setopt_array($handle, $options);
 
         $response = curl_exec($handle);
         $errorMessage = $response === false ? curl_error($handle) : null;

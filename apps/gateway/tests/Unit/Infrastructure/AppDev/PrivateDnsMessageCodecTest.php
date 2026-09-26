@@ -22,6 +22,24 @@ it('decodes a question and ignores an EDNS client subnet identity', function ():
         ->toBe('10.44.0.9');
 });
 
+it('rejects a DNS name with an empty or overlong label', function (): void {
+    $codec = new PrivateDnsMessageCodec;
+
+    expect(fn (): string => $codec->encodeQuery('app..cluster.test'))
+        ->toThrow(InvalidArgumentException::class, 'DNS label is not encodable.')
+        ->and(fn (): string => $codec->encodeQuery(str_repeat('a', 64).'.test'))
+        ->toThrow(InvalidArgumentException::class, 'DNS label is not encodable.');
+});
+
+it('encodes a DNS name whose longest label is 63 characters', function (): void {
+    $codec = new PrivateDnsMessageCodec;
+    $name = str_repeat('a', 63).'.test';
+
+    $query = $codec->decodeQuestion($codec->encodeQuery($name));
+
+    expect($query->question->normalizedName())->toBe($name);
+});
+
 it('encodes an authoritative A answer for the asked name', function (): void {
     $codec = new PrivateDnsMessageCodec;
     $query = $codec->decodeQuestion($codec->encodeQuery('gateway.orbit'));

@@ -45,7 +45,11 @@ final class NodeRoleConvergeLock
             try {
                 return $callback();
             } finally {
-                $this->held[$name]['depth']--;
+                $depth = $this->held[$name]['depth'] - 1;
+
+                if ($depth >= 1) {
+                    $this->held[$name]['depth'] = $depth;
+                }
             }
         }
 

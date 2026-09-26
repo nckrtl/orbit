@@ -163,12 +163,11 @@ final readonly class NativeClusterRouterReplacementProjector implements ClusterR
     {
         $route->loadMissing('targets.appInstance.node');
 
-        return $route
+        return array_values($route
             ->targets
             ->map(static fn ($target) => $target->appInstance)
             ->filter(static fn ($target): bool => $target instanceof AppInstance)
-            ->values()
-            ->all();
+            ->all());
     }
 
     private function allowLan(AppInstance $appInstance, Route $route, Node $router): void

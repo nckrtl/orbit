@@ -117,7 +117,7 @@ final readonly class RouteDoctorProbe implements DoctorFamilyProbe
      */
     private function lifecycleIssues(Collection $routes): array
     {
-        return $routes
+        return array_values($routes
             ->reject(static fn (Route $route): bool => $route->status === RouteStatus::Active)
             ->map(static fn (Route $route): DoctorIssueData => new DoctorIssueData(
                 RouteDoctorIssueCode::LifecycleNotActive,
@@ -129,8 +129,7 @@ final readonly class RouteDoctorProbe implements DoctorFamilyProbe
                 RouteStatus::Active->value,
                 $route->status->value,
             ))
-            ->values()
-            ->all();
+            ->all());
     }
 
     /** @return list<DoctorIssueData> */

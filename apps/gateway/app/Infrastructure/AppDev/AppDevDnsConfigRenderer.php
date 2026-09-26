@@ -75,7 +75,7 @@ final readonly class AppDevDnsConfigRenderer
                 ->all()
                 ->groupBy('domain')
                 ->map(fn ($sites): string => $this->hostRecord(
-                    $sites->values()->all(),
+                    array_values($sites->all()),
                     $selectedRouters,
                 )));
         // `node:role:add gateway gateway --converge` marks the singleton assignment provisioning while

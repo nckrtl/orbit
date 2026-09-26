@@ -12,6 +12,7 @@ use App\Infrastructure\Caddy\Build\CaddySite;
 use App\Infrastructure\Caddy\Build\NodeCaddySiteSource;
 use App\Models\Node;
 use Illuminate\Support\Collection;
+use LogicException;
 
 /**
  * Every Route site on a Node: `app-dev` and `app-prod` workload and Router sites, custom proxy
@@ -40,18 +41,26 @@ final readonly class AppCaddySiteSource implements NodeCaddySiteSource
     {
         return array_values($sites
             ->sortBy(static fn (AppDevSite $site): string => $site->domain."\0".$site->scope)
-            ->map(fn (AppDevSite $site): CaddySite => new CaddySite(
-                source: $this->source($site),
-                name: $site->scope,
-                listener: $site->publicListener ? CaddyListenerRule::Public : CaddyListenerRule::Wildcard,
-                hosts: [$site->domain],
-                port: 443,
-                body: $this->renderer->render(collect([$site]), self::BindPlaceholder, self::BindPlaceholder),
-                bindPlaceholder: self::BindPlaceholder,
-                unixSockets: is_string($site->localUnixUpstream) && $site->localUnixUpstream !== ''
-                    ? [$site->localUnixUpstream]
-                    : [],
-            ))
+            ->map(function (AppDevSite $site): CaddySite {
+                $name = $site->scope;
+
+                if ($name === '') {
+                    throw new LogicException('A Caddy site scope must not be empty.');
+                }
+
+                return new CaddySite(
+                    source: $this->source($site),
+                    name: $name,
+                    listener: $site->publicListener ? CaddyListenerRule::Public : CaddyListenerRule::Wildcard,
+                    hosts: [$site->domain],
+                    port: 443,
+                    body: $this->renderer->render(collect([$site]), self::BindPlaceholder, self::BindPlaceholder),
+                    bindPlaceholder: self::BindPlaceholder,
+                    unixSockets: is_string($site->localUnixUpstream) && $site->localUnixUpstream !== ''
+                        ? [$site->localUnixUpstream]
+                        : [],
+                );
+            })
             ->all());
     }
 

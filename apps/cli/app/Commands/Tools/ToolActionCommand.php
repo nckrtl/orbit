@@ -35,12 +35,12 @@ abstract class ToolActionCommand extends ToolCommand
             $this->request($toolId),
             ToolResponse::class,
             $this->progressLabels(),
-            function (object $response): ProgressState|ProgressOutcome {
-                if (! $response instanceof ToolResponse || ! $this->accepts($response)) {
+            function (ToolResponse $response): ProgressState|ProgressOutcome {
+                if (! $this->accepts($response)) {
                     throw new GatewayApiException(
                         'Gateway response is invalid.',
                         'gateway.invalid_response',
-                        requestId: $response instanceof ToolResponse ? $response->requestId : null,
+                        requestId: $response->requestId,
                     );
                 }
 

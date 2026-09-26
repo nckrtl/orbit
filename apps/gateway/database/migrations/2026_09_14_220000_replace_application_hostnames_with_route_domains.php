@@ -126,11 +126,19 @@ return new class extends Migration
     {
         $index = collect(DB::select("PRAGMA index_list('route_targets')"))
             ->first(static function (object $index): bool {
-                if (! property_exists($index, 'unique') || (int) $index->unique !== 1) {
+                $indexColumns = get_object_vars($index);
+
+                if ((int) ($indexColumns['unique'] ?? 0) !== 1) {
                     return false;
                 }
 
-                $columns = collect(DB::select('PRAGMA index_info('.$index->name.')'))
+                $name = $indexColumns['name'] ?? null;
+
+                if (! is_string($name) || $name === '') {
+                    return false;
+                }
+
+                $columns = collect(DB::select('PRAGMA index_info('.$name.')'))
                     ->pluck('name')
                     ->all();
 

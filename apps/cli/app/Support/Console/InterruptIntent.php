@@ -56,7 +56,15 @@ final class InterruptIntent
             throw new InvalidArgumentException('Interrupt intent only records SIGINT and SIGTERM.');
         }
 
-        self::$scopes[array_key_last(self::$scopes)] = $signal;
+        $key = array_key_last(self::$scopes);
+
+        if (! is_int($key)) {
+            self::$scopes = [$signal];
+
+            return;
+        }
+
+        self::$scopes[$key] = $signal;
     }
 
     public static function pending(): ?int
@@ -78,6 +86,11 @@ final class InterruptIntent
     public static function consume(): ?int
     {
         $key = array_key_last(self::$scopes);
+
+        if (! is_int($key)) {
+            return null;
+        }
+
         $signal = self::$scopes[$key];
         self::$scopes[$key] = null;
 

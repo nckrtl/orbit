@@ -31,8 +31,14 @@ final class DeploymentStream implements IteratorAggregate
     /** @var Closure(): void|null */
     private ?Closure $onIdle = null;
 
-    /** Monotonic time (hrtime) the current run of empty, timed-out polls began; null while idle. */
-    private ?int $silentSinceNanoseconds = null;
+    /**
+     * Monotonic clock reading (seconds, nanoseconds) when this run of empty,
+     * timed-out polls began. Null while bytes are flowing. hrtime() keeps both
+     * parts as integers on 32-bit and 64-bit PHP; hrtime(true) is int|float.
+     *
+     * @var array{0: int, 1: int}|null
+     */
+    private ?array $silentSince = null;
 
     /**
      * @param  Closure(): void  $close
@@ -388,7 +394,7 @@ final class DeploymentStream implements IteratorAggregate
         }
 
         if ($chunk !== '') {
-            $this->silentSinceNanoseconds = null;
+            $this->silentSince = null;
 
             return $chunk;
         }
@@ -397,9 +403,12 @@ final class DeploymentStream implements IteratorAggregate
             return $chunk;
         }
 
-        $this->silentSinceNanoseconds ??= hrtime(true);
+        $now = hrtime();
+        $this->silentSince ??= $now;
 
-        if ((hrtime(true) - $this->silentSinceNanoseconds) / 1_000_000_000 >= $this->silenceLimitSeconds) {
+        $elapsedSeconds = ($now[0] - $this->silentSince[0]) + (($now[1] - $this->silentSince[1]) / 1_000_000_000);
+
+        if ($elapsedSeconds >= $this->silenceLimitSeconds) {
             throw $this->invalid();
         }
 

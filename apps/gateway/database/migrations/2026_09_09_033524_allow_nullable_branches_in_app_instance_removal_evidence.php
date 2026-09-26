@@ -59,7 +59,7 @@ return new class extends Migration
 
         DB::transaction(static function () use ($updated): void {
             DB::statement('DROP TRIGGER app_instance_removal_members_insert');
-            DB::unprepared($updated);
+            DB::statement($updated);
         });
     }
 };

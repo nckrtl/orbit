@@ -51,7 +51,7 @@ return new class extends Migration
      */
     private function servingNodeIds(string $role): array
     {
-        return DB::table('node_roles')
+        return array_values(DB::table('node_roles')
             ->where('role', $role)
             ->where(static fn ($query) => $query
                 ->whereIn('status', ['active', 'provisioning'])
@@ -62,8 +62,7 @@ return new class extends Migration
             ->pluck('node_id')
             ->map(static fn (mixed $id): int => (int) $id)
             ->unique()
-            ->values()
-            ->all();
+            ->all());
     }
 
     private function gatewaySetting(string $key): ?string
