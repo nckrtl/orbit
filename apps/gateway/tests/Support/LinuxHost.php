@@ -25,20 +25,30 @@ use Symfony\Component\Process\Process;
  * ignored files such as `.env`, keys, logs, caches, and databases never leave the machine. It lives in a mode 700
  * directory under a mode 700 base directory of the remote account. The process removes its copy when it ends,
  * also on Ctrl-C or SIGTERM. The process touches a marker in its copy before each test; a later process removes
- * copies whose marker is older than six hours, such as those of a run ended by SIGKILL.
+ * copies whose marker is older than six hours, such as those of a run ended by SIGKILL. A test that runs longer
+ * than five minutes, or ORBIT_LINUX_TEST_TIMEOUT seconds, is stopped on the host.
  */
 final class LinuxHost
 {
     public const string HostVariable = 'ORBIT_LINUX_TEST_HOST';
+
+    /** Overrides how many seconds a delegated test may run on the Linux test host. */
+    public const string TimeoutVariable = 'ORBIT_LINUX_TEST_TIMEOUT';
 
     private const string DefaultHost = 'beast';
 
     /** The remote account's base directory; `id -u` keeps accounts apart. */
     private const string RemoteBase = '/tmp/orbit-gateway-linux-tests-$(id -u)';
 
+    /** The shared base directory of an earlier runner; its old copies are still removed. */
+    public const string LegacyBase = '/tmp/orbit-gateway-linux-tests';
+
     public const int StaleMinutes = 360;
 
-    private const int TestTimeoutSeconds = 300;
+    private const int DefaultTimeoutSeconds = 300;
+
+    /** How long the local side waits beyond the remote timeout before it stops the remote test itself. */
+    private const int LocalGraceSeconds = 30;
 
     private static ?string $directory = null;
 
@@ -64,23 +74,29 @@ final class LinuxHost
         $gateway = $directory.'/gateway';
         $command = implode(' ', array_map(escapeshellarg(...), [
             'env', '-i', 'HOME=/tmp', 'LANG=C.UTF-8', 'PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
-            'timeout', '--kill-after=10', (string) self::TestTimeoutSeconds,
+            'timeout', '--kill-after=10', (string) self::timeoutSeconds(),
             'php', $gateway.'/vendor/bin/pest', '--colors=never', '--display-warnings', '--display-notices', '--display-deprecations',
             '--filter', self::filter($test), substr($file, strlen($root) + 1),
         ]));
         $process = self::ssh(
             sprintf('touch %s && cd %s && %s', escapeshellarg($directory.'/alive'), escapeshellarg($gateway), $command),
-            self::TestTimeoutSeconds + 30,
+            self::timeoutSeconds() + self::LocalGraceSeconds,
         );
 
         try {
             $process->run();
         } catch (ProcessTimedOutException) {
             self::ssh(self::stopScript($directory), 30)->run();
-            Assert::fail('The test timed out on the Linux test host (ssh '.self::host().').');
+            Assert::fail('The test did not finish on the Linux test host (ssh '.self::host().'), so it was stopped there.');
         }
 
         $output = $process->getOutput().$process->getErrorOutput();
+
+        // timeout(1) exits with 124 when it stopped the test, or 137 when it had to kill it.
+        if (in_array($process->getExitCode(), [124, 137], true)) {
+            Assert::fail('The test ran longer than '.self::timeoutSeconds().' seconds on the Linux test host (ssh '
+                .self::host()."), so it was stopped there:\n{$output}");
+        }
 
         Assert::assertSame(
             0,
@@ -96,6 +112,13 @@ final class LinuxHost
         return true;
     }
 
+    public static function timeoutSeconds(): int
+    {
+        $seconds = getenv(self::TimeoutVariable);
+
+        return is_string($seconds) && ctype_digit($seconds) && (int) $seconds > 0 ? (int) $seconds : self::DefaultTimeoutSeconds;
+    }
+
     public static function host(): string
     {
         $host = getenv(self::HostVariable);
@@ -104,7 +127,8 @@ final class LinuxHost
     }
 
     /**
-     * The paths, relative to $root, that the copy holds: every file Git would track, and `vendor`.
+     * The paths, relative to $root, that the copy holds: every file Git would track, and `vendor`. Environment
+     * files other than `.env.example` never leave the machine, even when no ignore rule covers them.
      *
      * @return list<string>
      */
@@ -119,7 +143,9 @@ final class LinuxHost
         // A tracked file deleted from the working tree is still listed, and a file can be listed twice.
         $paths = array_values(array_unique(array_filter(
             explode("\0", $list->getOutput()),
-            static fn (string $path): bool => $path !== '' && (is_file($root.'/'.$path) || is_link($root.'/'.$path)),
+            static fn (string $path): bool => $path !== ''
+                && (! str_starts_with(basename($path), '.env') || basename($path) === '.env.example')
+                && (is_file($root.'/'.$path) || is_link($root.'/'.$path)),
         )));
 
         if (is_dir($root.'/vendor')) {
@@ -132,8 +158,11 @@ final class LinuxHost
     /**
      * Creates a mode 700 copy directory with a fresh marker under a mode 700 base directory that the remote account
      * owns, removes stale copies, and prints the new directory. $base is a shell word, such as RemoteBase.
+     *
+     * Copies in the earlier shared $legacy directory have no marker, and rsync gave them the source's modification
+     * time, so their change time decides: this account's copies unchanged for $staleMinutes are removed.
      */
-    public static function prepareScript(string $base, string $id): string
+    public static function prepareScript(string $base, string $id, string $legacy = self::LegacyBase, int $staleMinutes = self::StaleMinutes): string
     {
         return strtr(<<<'SH'
             set -eu
@@ -144,6 +173,11 @@ final class LinuxHost
                 exit 1
             fi
             chmod 700 "$base"
+            legacy=__LEGACY__
+            if [ -d "$legacy" ] && [ ! -L "$legacy" ] && [ -O "$legacy" ]; then
+                find "$legacy" -mindepth 1 -maxdepth 1 -type d -user "$(id -u)" -cmin +__MINUTES__ -exec rm -rf {} + 2>/dev/null || true
+                rmdir "$legacy" 2>/dev/null || true
+            fi
             for copy in "$base"/*/; do
                 [ -d "$copy" ] || continue
                 if [ -n "$(find "$copy" -maxdepth 0 -mmin +__MINUTES__)" ] && [ -z "$(find "${copy}alive" -mmin -__MINUTES__ 2>/dev/null)" ]; then
@@ -153,7 +187,7 @@ final class LinuxHost
             mkdir -m 700 "$base/__ID__"
             touch "$base/__ID__/alive"
             printf '%s\n' "$base/__ID__"
-            SH, ['__BASE__' => $base, '__MINUTES__' => (string) self::StaleMinutes, '__ID__' => $id]);
+            SH, ['__BASE__' => $base, '__LEGACY__' => escapeshellarg($legacy), '__MINUTES__' => (string) $staleMinutes, '__ID__' => $id]);
     }
 
     /** Stops a test that still runs from $directory. */

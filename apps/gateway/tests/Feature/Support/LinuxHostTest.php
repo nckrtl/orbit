@@ -38,6 +38,11 @@ describe('the Linux test host copy', function (): void {
             unlink("{$root}/deleted.php");
             $files->put("{$root}/untracked-test.php", '<?php');
             $files->put("{$root}/.env", 'APP_KEY=secret');
+            // No ignore rule covers these; the copy leaves them out anyway.
+            $files->put("{$root}/.env.local", 'APP_KEY=secret');
+            $files->put("{$root}/.env.testing", 'APP_KEY=secret');
+            $files->ensureDirectoryExists("{$root}/config");
+            $files->put("{$root}/config/.env.production", 'APP_KEY=secret');
             $files->ensureDirectoryExists("{$root}/storage/app");
             $files->put("{$root}/storage/app/nested.key", 'secret');
             $files->ensureDirectoryExists("{$root}/bootstrap/cache");
@@ -72,7 +77,7 @@ describe('the Linux test host copy', function (): void {
                 linux_host_run(['touch', '-t', $old, "{$base}/{$copy}"]);
             }
 
-            $prepare = linux_host_run(['sh', '-c', LinuxHost::prepareScript(escapeshellarg($base), 'fresh')]);
+            $prepare = linux_host_run(['sh', '-c', LinuxHost::prepareScript(escapeshellarg($base), 'fresh', dirname($base).'/legacy')]);
 
             expect($prepare->getExitCode())->toBe(0, $prepare->getErrorOutput())
                 ->and(trim($prepare->getOutput()))->toBe("{$base}/fresh")
@@ -85,6 +90,53 @@ describe('the Linux test host copy', function (): void {
                 ->and(fileperms("{$base}/fresh") & 0o777)->toBe(0o700);
         } finally {
             new Filesystem()->deleteDirectory(dirname($base));
+        }
+    });
+
+    it('keeps a recently synced copy in the earlier shared directory and removes the directory once it is empty', function (): void {
+        $directory = linux_host_temporary_directory();
+        $legacy = "{$directory}/legacy";
+
+        try {
+            mkdir("{$legacy}/in-use", 0o755, true);
+            // rsync gave the copy the source's old modification time; its change time is recent.
+            linux_host_run(['touch', '-t', '200001010000', "{$legacy}/in-use"]);
+
+            $first = linux_host_run(['sh', '-c', LinuxHost::prepareScript(escapeshellarg("{$directory}/base"), 'one', $legacy)]);
+
+            expect($first->getExitCode())->toBe(0, $first->getErrorOutput())
+                ->and(is_dir("{$legacy}/in-use"))->toBeTrue();
+
+            rmdir("{$legacy}/in-use");
+            linux_host_run(['sh', '-c', LinuxHost::prepareScript(escapeshellarg("{$directory}/base"), 'two', $legacy)]);
+
+            expect(is_dir($legacy))->toBeFalse();
+        } finally {
+            new Filesystem()->deleteDirectory($directory);
+        }
+    });
+
+    it('removes copies in the earlier shared directory that have not changed for the stale period', function (): void {
+        // BSD find rounds -cmin ages differently, so the zero-minute case runs on Linux.
+        if (LinuxHost::delegate($this)) {
+            return;
+        }
+
+        $directory = linux_host_temporary_directory();
+        $legacy = "{$directory}/legacy";
+
+        try {
+            mkdir("{$legacy}/abandoned", 0o755, true);
+            sleep(2);
+
+            $prepare = linux_host_run(['sh', '-c', LinuxHost::prepareScript(escapeshellarg("{$directory}/base"), 'fresh', $legacy, 0)]);
+
+            expect($prepare->getExitCode())->toBe(0, $prepare->getErrorOutput())
+                ->and(is_dir("{$legacy}/abandoned"))->toBeFalse()
+                ->and(is_dir($legacy))->toBeFalse()
+                ->and("{$directory}/base/fresh/alive")->toBeFile();
+        } finally {
+            new Filesystem()->deleteDirectory($directory);
         }
     });
 
@@ -131,6 +183,23 @@ describe('the Linux test host copy', function (): void {
             $other->stop(0);
         } finally {
             new Filesystem()->deleteDirectory($directory);
+        }
+    });
+
+    it('stops a test after five minutes unless ORBIT_LINUX_TEST_TIMEOUT sets another positive number of seconds', function (): void {
+        $previous = getenv(LinuxHost::TimeoutVariable);
+
+        try {
+            putenv(LinuxHost::TimeoutVariable);
+            expect(LinuxHost::timeoutSeconds())->toBe(300);
+            putenv(LinuxHost::TimeoutVariable.'=5');
+            expect(LinuxHost::timeoutSeconds())->toBe(5);
+            putenv(LinuxHost::TimeoutVariable.'=0');
+            expect(LinuxHost::timeoutSeconds())->toBe(300);
+            putenv(LinuxHost::TimeoutVariable.'=soon');
+            expect(LinuxHost::timeoutSeconds())->toBe(300);
+        } finally {
+            putenv($previous === false ? LinuxHost::TimeoutVariable : LinuxHost::TimeoutVariable.'='.$previous);
         }
     });
 
