@@ -45,4 +45,4 @@ A Node that holds both `gateway` and `vpn` still publishes on the local machine.
 
 ## Verification
 
-`apps/gateway/tests/Feature/Actions/Nodes/ProvisionNodePrivateDnsTest.php` reprovisions a split gateway with `node:add`. Publication runs over SSH to the `vpn` Node, the local process runner is not used, and the Node stays `active`.
+`apps/gateway/tests/Feature/Actions/Nodes/ProvisionNodePrivateDnsTest.php` reprovisions a split gateway and a split vpn Node with `node:add`. Publication runs over SSH to the `vpn` Node, the local process runner is not used, and the Node stays `active`.

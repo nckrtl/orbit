@@ -141,7 +141,7 @@ Every publication checks that confirmation while the listener runs.
 
 A failed start or restart restores the previous units, DNS files, and services.
 
-A role converge marks its assignment `provisioning` while it runs. The Gateway still counts that Node as the role holder, and an active holder wins when both exist. So a `gateway` or `vpn` converge keeps the publication target, and a `gateway`, `metrics`, `websocket`, or `analytics` converge keeps `gateway.orbit`, `metrics.orbit`, `reverb.orbit`, `analytics.orbit`, and the analytics tracking hosts.
+A role converge marks its assignment `provisioning` while the Node stays active. `node:add` marks the Node `provisioning` while the assignment stays active. The Gateway counts a provisioning Node and a provisioning assignment, and an active Node wins over a provisioning Node. Re-running `node:add` on the gateway Node or the vpn Node therefore publishes on the Node that runs the VPN DNS listener. A `gateway` or `vpn` converge keeps that publication target, and a `gateway`, `metrics`, `websocket`, or `analytics` converge keeps `gateway.orbit`, `metrics.orbit`, `reverb.orbit`, `analytics.orbit`, and the analytics tracking hosts. [node:add private DNS on an existing Node](/solutions/node-add-private-dns-on-an-existing-node) records why the Node status matters.
 
 A publication or listener-activation failure restores the previous working DNS files and services on that node. It does not remove a Metrics runtime that already converged.
 

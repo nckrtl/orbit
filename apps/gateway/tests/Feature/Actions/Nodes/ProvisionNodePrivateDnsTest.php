@@ -25,7 +25,7 @@ use App\Infrastructure\Ssh\SshExecutor;
 use App\Models\Node;
 use Tests\Support\FakeToolManagerMaterializer;
 
-it('publishes private DNS on the vpn node when node:add reprovisions a split gateway', function (): void {
+it('publishes private DNS on the vpn node when node:add reprovisions a split gateway or vpn node', function (string $reprovisioned): void {
     $processes = new ProvisionNodePrivateDnsProcessRunner;
     $ssh = new ProvisionNodePrivateDnsSshExecutor;
     app()->instance(ProcessRunner::class, $processes);
@@ -80,19 +80,24 @@ it('publishes private DNS on the vpn node when node:add reprovisions a split gat
         'role' => RoleName::Gateway,
         'status' => LifecycleStatus::Active,
     ]);
+    $target = $reprovisioned === 'vpn' ? $vpn : $gateway;
 
     $node = app(ProvisionNodeAction::class)->execute(new ProvisionNodeData(
-        name: $gateway->name,
-        publicSshHost: $gateway->public_ssh_host,
+        name: $target->name,
+        publicSshHost: $target->public_ssh_host,
     ));
 
-    expect($node->status)->toBe(LifecycleStatus::Active)
+    expect($node->is($target->fresh()))->toBeTrue()
+        ->and($node->status)->toBe(LifecycleStatus::Active)
         ->and($node->getAttribute('failed_step'))->toBeNull()
         ->and($node->getAttribute('error_code'))->toBeNull()
         ->and($processes->calls)->toBe(0)
         ->and($ssh->hosts)->toBe(['10.44.0.1', '10.44.0.1'])
         ->and($ssh->users)->toBe([$vpn->user, $vpn->user]);
-});
+})->with([
+    'gateway node' => ['gateway'],
+    'vpn node' => ['vpn'],
+]);
 
 final class ProvisionNodePrivateDnsProcessRunner implements ProcessRunner
 {
