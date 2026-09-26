@@ -17,11 +17,15 @@ final readonly class GitHubCheckRun
     /**
      * @param  string|null  $conclusion  null until the check run completes
      * @param  string|null  $url  the check run page, or the details page of the check's own service
+     * @param  int|null  $id  the check run id, when GitHub sent one
+     * @param  string|null  $startedAt  when the run started, when GitHub sent `started_at`
      */
     public function __construct(
         public string $name,
         public ?string $conclusion,
         public ?string $url,
+        public ?int $id = null,
+        public ?string $startedAt = null,
     ) {}
 
     /** Whether the check run completed without passing. Neutral and skipped runs do not fail. */

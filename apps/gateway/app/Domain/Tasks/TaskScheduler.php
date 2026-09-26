@@ -39,6 +39,9 @@ final readonly class TaskScheduler
     /** Assistance set when an approved commit would reach, or reached, a pull request that already merged or closed (ADR 0164). */
     public const string OrphanedCommitPrefix = 'An approved commit is not on the pull request: ';
 
+    /** Assistance set when a settling group has no pull request and no todo subtask (ADR 0164). */
+    public const string MissingPullRequestPrefix = 'The settling group has no reviewed pull request URL.';
+
     /** Re-evaluations of cancelled or unstarted checks on one head before the group asks for assistance (ADR 0164). */
     public const int InfrastructureCheckRetries = 5;
 
@@ -101,7 +104,11 @@ final readonly class TaskScheduler
                 continue;
             }
             if (! is_string($group->pr_url) || $group->pr_url === '') {
-                $this->requestMissingPullRequest($group);
+                if ($this->lowestTodo($group->tasks) instanceof Task) {
+                    $this->resumeWaitingSubtask($group);
+                } else {
+                    $this->requestMissingPullRequest($group);
+                }
 
                 continue;
             }
@@ -1963,7 +1970,9 @@ final readonly class TaskScheduler
         $url = $group->pr_url;
 
         if (! is_string($url) || $url === '') {
-            $this->requestMissingPullRequest($group);
+            if (! $this->lowestTodo($group->tasks) instanceof Task) {
+                $this->requestMissingPullRequest($group);
+            }
 
             return $group->fresh(['tasks', 'app', 'taskable']) ?? $group;
         }
@@ -1994,9 +2003,10 @@ final readonly class TaskScheduler
      * current problem is at the cap. A waiting subtask starts instead, and no fixup is appended.
      *
      * ADR 0164 bounds the fixups. No fixup is appended while the head is the one the last fixup was
-     * created for, or while a check on the head is still running. A fixup that changed nothing asks for
-     * assistance instead of a second try on the same result. Cancelled checks and checks that could not
-     * start are infrastructure: the group waits with backoff and asks for assistance only if they persist.
+     * created for, or while a check on the head has been pending for 60 minutes or less. A completed
+     * genuine failure is still reported during that wait. A conflict does not wait. A check pending for
+     * more than 60 minutes is infrastructure, with cancelled checks and checks that could not start.
+     * A fixup that changed nothing asks for assistance instead of a second try on the same result.
      * A group keeps at most three Gateway fixups in total.
      */
     private function healOpenPullRequest(TaskGroup $group, TaskPullRequestHealth $health): void
@@ -2033,7 +2043,14 @@ final readonly class TaskScheduler
             return;
         }
 
-        if (! $health->conflicts && $health->checksPending) {
+        // A check pending for 60 minutes or less is not a result yet. Report a completed genuine
+        // failure, and append no check fixup. A conflict does not wait. Infrastructure backoff starts
+        // only once every current problem is infrastructure and nothing is still inside that span.
+        if ($health->checksYoungPending && ! $health->conflicts) {
+            if ($health->failedChecks !== []) {
+                $this->reportPullRequestHealth($group, $health);
+            }
+
             return;
         }
 
@@ -2043,7 +2060,7 @@ final readonly class TaskScheduler
             return;
         }
 
-        $plan = $this->nextFixup($group, $health);
+        $plan = $this->nextFixup($group, $health, $health->checksYoungPending);
         if (! $plan instanceof TaskSettlingFixup) {
             $this->reportPullRequestHealth($group, $health);
 
@@ -2078,9 +2095,10 @@ final readonly class TaskScheduler
     }
 
     /**
-     * Only cancelled checks, or checks that could not start, stand between the pull request and a merge.
-     * Those are not the branch's fault, so no fixup is appended. The group re-evaluates on the backoff
-     * of 1, 2, 5, 10, and 30 minutes, and asks for assistance when they persist after that.
+     * Only cancelled checks, checks that could not start, or checks pending for more than 60 minutes
+     * stand between the pull request and a merge. Those are not the branch's fault, so no fixup is
+     * appended. The group re-evaluates on the backoff of 1, 2, 5, 10, and 30 minutes, and asks for
+     * assistance when they persist after that.
      */
     private function awaitInfrastructureChecks(TaskGroup $group, TaskPullRequestHealth $health): void
     {
@@ -2116,7 +2134,7 @@ final readonly class TaskScheduler
         );
     }
 
-    private function nextFixup(TaskGroup $group, TaskPullRequestHealth $health): ?TaskSettlingFixup
+    private function nextFixup(TaskGroup $group, TaskPullRequestHealth $health, bool $conflictOnly = false): ?TaskSettlingFixup
     {
         $counts = [];
         foreach ($group->tasks as $task) {
@@ -2126,6 +2144,9 @@ final readonly class TaskScheduler
         }
 
         foreach (TaskSettlingFixup::plans((string) $group->app->slug, $health->conflicts, $health->baseRef, $health->failedChecks) as $plan) {
+            if ($conflictOnly && $plan->conflictBase() === null) {
+                continue;
+            }
             if (($counts[$plan->identity] ?? 0) < TaskSettlingFixup::Limit) {
                 return $plan;
             }
@@ -2203,7 +2224,7 @@ final readonly class TaskScheduler
         if ($group->status === TaskGroupStatus::Running && $group->assistance_requested) {
             return;
         }
-        if ($group->status === TaskGroupStatus::Settling && $this->otherAssistance($group)) {
+        if ($group->status === TaskGroupStatus::Settling && $this->resumeBlocked($group)) {
             return;
         }
         if ($this->hasBusyTask($group->tasks)) {
@@ -2233,6 +2254,7 @@ final readonly class TaskScheduler
      * Before a resumed subtask starts, fast-forwards the workspace to `origin/task-{group id}` when it is
      * strictly behind, and fetches a conflict fixup's base ref. A failure waits out #760's backoff of 1, 2,
      * 5, 10, and 30 minutes, leaves the subtask todo, and asks for assistance on the fifth failure.
+     * On a group with no pull request, a missing `origin/task-{group id}` is not a failure.
      */
     private function prepareResumedWorkspace(TaskGroup $group, Task $todo, ?string $base): bool
     {
@@ -2242,9 +2264,7 @@ final readonly class TaskScheduler
         }
         try {
             $fresh = $group->fresh() ?? $group;
-            if (is_string($fresh->pr_url) && $fresh->pr_url !== '') {
-                $this->bases->fastForward($fresh);
-            }
+            $this->bases->fastForward($fresh, ! is_string($fresh->pr_url) || $fresh->pr_url === '');
             if ($base !== null) {
                 $this->bases->fetch($fresh, $base);
             }
@@ -2263,10 +2283,7 @@ final readonly class TaskScheduler
     /** Records the return to running before a conflict fixup's base fetch, which stays outside the commit. */
     private function leaveSettling(TaskGroup $group): void
     {
-        if (TaskPullRequestHealth::isReason($group->assistance_reason)) {
-            $group->assistance_requested = false;
-            $group->assistance_reason = null;
-        }
+        $this->clearResumeAssistance($group);
         $group->status = TaskGroupStatus::Running;
         $group->save();
     }
@@ -2289,7 +2306,7 @@ final readonly class TaskScheduler
                 if ($group->status === TaskGroupStatus::Running && $group->assistance_requested) {
                     return null;
                 }
-                if ($group->status === TaskGroupStatus::Settling && $this->otherAssistance($group)) {
+                if ($group->status === TaskGroupStatus::Settling && $this->resumeBlocked($group)) {
                     return null;
                 }
 
@@ -2298,10 +2315,7 @@ final readonly class TaskScheduler
                     return null;
                 }
                 if ($group->status === TaskGroupStatus::Settling) {
-                    if (TaskPullRequestHealth::isReason($group->assistance_reason)) {
-                        $group->assistance_requested = false;
-                        $group->assistance_reason = null;
-                    }
+                    $this->clearResumeAssistance($group);
                     $group->status = TaskGroupStatus::Running;
                     $group->save();
                 }
@@ -2341,9 +2355,32 @@ final readonly class TaskScheduler
             return;
         }
 
-        $reason = 'The settling group has no reviewed pull request URL. Cancel the group to push its approved commits to task-'.$group->id.' and remove its workspace.';
+        $reason = self::MissingPullRequestPrefix.' Cancel the group to push its approved commits to task-'.$group->id.' and remove its workspace.';
         $group->update(['assistance_requested' => true, 'assistance_reason' => $reason]);
         $this->coder->assistance($group, $reason);
+    }
+
+    public static function isMissingPullRequestReason(?string $reason): bool
+    {
+        return is_string($reason) && str_starts_with($reason, self::MissingPullRequestPrefix);
+    }
+
+    /** Another assistance cause blocks a resume. The missing-pull-request reason does not. */
+    private function resumeBlocked(TaskGroup $group): bool
+    {
+        return $group->assistance_requested
+            && ! TaskPullRequestHealth::isReason($group->assistance_reason)
+            && ! self::isMissingPullRequestReason($group->assistance_reason);
+    }
+
+    /** Clears the pull-request and missing-pull-request reasons when a resumed subtask starts. */
+    private function clearResumeAssistance(TaskGroup $group): void
+    {
+        if (! TaskPullRequestHealth::isReason($group->assistance_reason) && ! self::isMissingPullRequestReason($group->assistance_reason)) {
+            return;
+        }
+        $group->assistance_requested = false;
+        $group->assistance_reason = null;
     }
 
     /**
