@@ -20,6 +20,7 @@ use Laravel\Prompts\Terminal;
 use Orbit\Sdk\Requests\Apps\ListAppsRequest;
 use Orbit\Sdk\Requests\Tasks\CancelSubtaskRequest;
 use Orbit\Sdk\Requests\Tasks\CancelTaskGroupRequest;
+use Orbit\Sdk\Requests\Tasks\CreateSubtaskRequest;
 use Orbit\Sdk\Requests\Tasks\CreateTaskCommentRequest;
 use Orbit\Sdk\Requests\Tasks\CreateTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\ListTaskGroupsRequest;
@@ -182,6 +183,84 @@ describe('requests', function (): void {
         $mock->assertSent(static fn (Request $request): bool => $request instanceof CancelSubtaskRequest
             && $request->resolveEndpoint() === '/api/v1/task-groups/13/tasks/57/cancel');
         $mock->assertNotSent(ShowTaskGroupRequest::class);
+    });
+
+    it('sends fails_on_base when creating and updating a subtask', function (bool $failsOnBase): void {
+        $path = $this->orbitHome.'/deliverables.json';
+        is_dir($this->orbitHome) || mkdir($this->orbitHome, 0700, true);
+        file_put_contents($path, json_encode([[
+            'id' => 'layout-repro',
+            'type' => 'test',
+            'description' => 'The layout fails before the fix',
+            'project' => 'apps/gateway',
+            'file' => 'tests/Feature/HomeScreenTest.php',
+            'name' => 'home screen layout',
+            'fails_on_base' => $failsOnBase,
+        ]], JSON_THROW_ON_ERROR));
+        $mock = MockClient::global([
+            ...gateway_fixture_mock('tasks/tasks-subtask-create/created'),
+            ...gateway_fixture_mock('tasks/tasks-subtask-update/updated'),
+        ]);
+        $encoded = $failsOnBase ? 'true' : 'false';
+
+        expect(Artisan::call('tasks:subtask:create', ['group' => '1', 'title' => 'Layout', '--brief' => 'Fix the layout.', '--deliverables' => $path, '--json' => true]))->toBe(0)
+            ->and(Artisan::call('tasks:subtask:update', ['group' => '1', 'subtask' => '2', '--deliverables' => $path, '--json' => true]))->toBe(0);
+
+        $mock->assertSent(static fn (Request $request): bool => $request instanceof CreateSubtaskRequest
+            && str_contains((string) $request->body(), '"fails_on_base":'.$encoded));
+        $mock->assertSent(static fn (Request $request): bool => $request instanceof UpdateSubtaskRequest
+            && str_contains((string) $request->body(), '"fails_on_base":'.$encoded));
+    })->with([
+        'true' => [true],
+        'false' => [false],
+    ]);
+
+    it('refuses fails_on_base on a deliverable that is not a test', function (string $type, array $extra): void {
+        $path = $this->orbitHome.'/deliverables.json';
+        is_dir($this->orbitHome) || mkdir($this->orbitHome, 0700, true);
+        file_put_contents($path, json_encode([[
+            'id' => 'docs',
+            'type' => $type,
+            'description' => 'Docs',
+            'fails_on_base' => true,
+            ...$extra,
+        ]], JSON_THROW_ON_ERROR));
+        $mock = MockClient::global([]);
+
+        expect(Artisan::call('tasks:subtask:update', ['group' => '1', 'subtask' => '2', '--deliverables' => $path, '--json' => true]))->toBe(1)
+            ->and(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['error']['message'])->toBe('The fails_on_base field is only allowed on a test deliverable (deliverable docs).');
+        $mock->assertNothingSent();
+
+        MockClient::destroyGlobal();
+        $mock = MockClient::global([]);
+
+        expect(Artisan::call('tasks:subtask:create', ['group' => '1', 'title' => 'Docs', '--brief' => 'Write the docs.', '--deliverables' => $path, '--json' => true]))->toBe(1)
+            ->and(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['error']['code'])->toBe('tasks.deliverables_invalid');
+        $mock->assertNothingSent();
+    })->with([
+        'a file' => ['file', ['path' => 'docs/a.md', 'change' => 'any']],
+        'a command' => ['command', ['command' => 'bun test']],
+        'a review' => ['review', []],
+    ]);
+
+    it('shows fails_on_base for a test deliverable', function (): void {
+        $fixture = json_decode((string) file_get_contents(gateway_fixture_path('tasks/tasks-show/default')), true, flags: JSON_THROW_ON_ERROR);
+        $fixture['body']['data']['tasks'][0]['deliverables'][1]['fails_on_base'] = true;
+        MockClient::global([
+            ShowTaskGroupRequest::class => MockResponse::make($fixture['body'], $fixture['status']),
+        ]);
+
+        expect(Artisan::call('tasks:show', ['group' => '1']))->toBe(0);
+        $human = Artisan::output();
+        expect($human)->toContain('Fails on the start commit')->toContain('sdk-test');
+
+        MockClient::destroyGlobal();
+        MockClient::global([
+            ShowTaskGroupRequest::class => MockResponse::make($fixture['body'], $fixture['status']),
+        ]);
+
+        expect(Artisan::call('tasks:show', ['group' => '1', '--json' => true]))->toBe(0);
+        expect(Artisan::output())->toContain('"fails_on_base":true');
     });
 
     it('returns the Gateway error code when a subtask cannot be cancelled', function (string $fixture, string $code): void {

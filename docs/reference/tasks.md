@@ -115,7 +115,7 @@ MCP tool names follow the API operation identifiers: `tasks-create`, `tasks-upda
 
 ## Deliverables
 
-A deliverable is one item that a subtask must deliver, in a form Orbit can check. The planner or operator writes them next to the brief. The implementer confirms each one when it hands off. Orbit then verifies the mechanical ones before the reviewer starts. [ADR 0133](/decisions/0133-verify-typed-subtask-deliverables-at-handoff) records the decision.
+A deliverable is one item that a subtask must deliver, in a form Orbit can check. The planner or operator writes them next to the brief. The implementer confirms each one when it hands off. Orbit then verifies the mechanical ones before the reviewer starts. [ADR 0133](/decisions/0133-verify-typed-subtask-deliverables-at-handoff) records the decision. [ADR 0163](/decisions/0163-prove-a-failing-test-on-the-start-commit) records the repro-first test.
 
 Each deliverable is an object with an `id`, a `type`, a `description`, and the fields of its type:
 
@@ -126,10 +126,13 @@ Each deliverable is an object with an `id`, a `type`, a `description`, and the f
 | `command` | `command`: the command to run. `directory`: where to run it, relative to the workspace root; default `.` | Orbit's run of the command exits with 0 |
 | `review` | none | The reviewer confirms it in its approval |
 
+A `test` deliverable may set `fails_on_base` to `true`. [Reproduce a bug on the start commit](#reproduce-a-bug-on-the-start-commit) defines that check.
+
 ```json
 [
   {"id": "reference-page", "type": "file", "description": "Document the export in the tasks reference", "path": "docs/reference/tasks.md", "change": "modified"},
   {"id": "export-test", "type": "test", "description": "A feature test for the export", "project": "apps/gateway", "file": "tests/Feature/ExportTest.php", "name": "exports every subtask"},
+  {"id": "layout-repro", "type": "test", "description": "The home-screen test fails before the fix", "project": "apps/gateway", "file": "tests/Feature/HomeScreenTest.php", "name": "home screen layout", "fails_on_base": true},
   {"id": "web-tests", "type": "command", "description": "The web app tests pass", "command": "bun test", "directory": "apps/web"},
   {"id": "error-copy", "type": "review", "description": "Error messages name the failing subtask"}
 ]
@@ -143,6 +146,7 @@ Each deliverable is an object with an `id`, a `type`, a `description`, and the f
 | `test` `file` | One path that ends in `.php`, with no `*`, `?`, `[`, `{`, or `..` |
 | `name` | At most 200 characters |
 | `command` | At most 1000 characters |
+| `fails_on_base` | A JSON boolean on a `test` deliverable. Omitted means `false` |
 | Number | At least one and at most five per subtask. Split a subtask that needs more; the [creating-tasks](https://github.com/nckrtl/orbit/blob/main/.agents/skills/creating-tasks/SKILL.md) skill explains how. |
 
 A field that belongs to another type is refused. Only a `file` deliverable's `path` accepts a glob. In that `path`, `*` matches within one directory, `**` matches across directories, and `?` matches one character.
@@ -152,6 +156,35 @@ A `test` deliverable's `file` is one exact Pest test file, relative to its `proj
 Group create, subtask create, and subtask update refuse any other `file` with HTTP 422 `validation.failed`. The error names that deliverable's `id`.
 
 The subtask's diff runs from its start commit to the working tree that Orbit's check sees, uncommitted and untracked files included. Orbit records the start commit when the subtask starts. Deleted and ignored files never match.
+
+### Reproduce a bug on the start commit
+
+A `test` deliverable may set `fails_on_base` to `true`. Omitted and `false` are the same: Orbit runs the file once, on the working tree. Show and the turn file include the boolean. An omitted input is stored as `false`.
+
+When the value is `true`, Orbit runs that file twice at handoff.
+
+| Run | Code under test | Passes when |
+| --- | --- | --- |
+| Base | The start commit, plus only this test file from the working tree | At least one test whose name contains `name` fails |
+| Working tree | The implementer's tree | Every test whose name contains `name` passes, and at least one such test exists |
+
+The base run reads that test file from the working tree, including an uncommitted or untracked file. No other file from the diff is present. Dependencies already installed in the workspace stay available, so Pest can run. The base run does not change the workspace.
+
+The base run builds the start commit in a directory under the clone's `.git/orbit/`. It archives that commit and extracts the archive there. It does not register a Git worktree, and the directory is not in the apps root. The check removes the directory when the base run finishes or the check is cancelled. A base run killed with SIGKILL can leave the directory. Nothing is registered, so removing the clone removes the leftover with it.
+
+At the start of a check, Orbit removes any `orbit-base-*` worktree this checkout registered earlier, prunes Git's worktree list, and removes a leftover base directory under `.git/orbit/`.
+
+The base run passes when at least one test whose name contains `name` fails. A matching test that passes does not fail that run when another matching test fails. When no matching test fails and a matching test passes, the deliverable fails. The reminder says that the test does not reproduce the bug. When no matching test fails and a matching test is skipped, the reminder names the skip. When no test name contains `name`, the reminder says so. When the test file cannot be placed on the start commit, the base run does not start, and the reminder names that failure.
+
+A JUnit `error` counts as a failure, including a missing class. The base run stops after 600 seconds. A timed-out base run counts as failing on the start commit.
+
+Each failed case on the base run records whether it was a `failure` or an `error`, and the tail of its message, at most 4096 characters. The review request shows those lines under a lead that says an error, such as a missing class, is not an assertion failure. It also says when the base run timed out and names the 600 second limit. [ADR 0163](/decisions/0163-prove-a-failing-test-on-the-start-commit) records the lines.
+
+The diff check from the table above still applies. Orbit reports a miss in the diff, a miss on the base run, and a miss on the working tree together. When the base run has no failing match, that miss is not hidden by another miss.
+
+Group create, subtask create, and subtask update accept `fails_on_base` only on a `test` deliverable. The value is the JSON boolean `true` or `false`. Any other value, and the field on another type, is HTTP 422 `validation.failed`. The error names that deliverable's `id`.
+
+The [creating-tasks](https://github.com/nckrtl/orbit/blob/main/.agents/skills/creating-tasks/SKILL.md) skill tells a planner when to set the field. A bug group's first code subtask carries it. That subtask is the first one that changes code. When a bug cannot be reproduced automatically, the brief says so. For example, an iOS behavior that shows up only on a device has no Pest test. That subtask adds a `review` deliverable for the manual check.
 
 ### Confirm deliverables
 
@@ -173,6 +206,8 @@ The script refuses a missing confirmation, an unknown ID, an ID given twice, emp
 ### Verify deliverables
 
 When every other item passes, Orbit runs its [Project check](#project-check) with the deliverables. After the Project's task check passes, or at once when the Project has none, the check script records the diff, runs each `test` file with `vendor/bin/pest FILE --log-junit=…` in its project, and runs each `command` in a login shell. A run that names a file turns off Pest's test impact analysis, so a cached result never counts. The check keeps the end of each command's output.
+
+A `test` with `fails_on_base` set to `true` runs twice, as [Reproduce a bug on the start commit](#reproduce-a-bug-on-the-start-commit) describes. The base run does not change the workspace. It stops after 600 seconds, and a timed-out base run counts as failing on the start commit. The review request includes the kind and the tail of each base failure message.
 
 The `deliverables` item fails when a confirmation is missing or a deliverable does not pass. The reminder names each failing deliverable and why, and the assistance reason repeats it. Like every item, it gets one reminder per completion attempt, then asks for assistance. The reviewer starts only when every deliverable passes.
 

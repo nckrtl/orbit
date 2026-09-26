@@ -54,10 +54,11 @@ final class TaskFields
     }
 
     /**
-     * A subtask's typed deliverables. Each is an object of string fields; a record without the list has none.
+     * A subtask's typed deliverables. String fields pass through, and a test deliverable may carry boolean
+     * fails_on_base. A record without the list has none.
      *
      * @param  array<string, mixed>  $data
-     * @return list<array<string, string>>
+     * @return list<array<string, string|bool>>
      */
     public static function deliverables(array $data, string $record, string $requestId): array
     {
@@ -74,10 +75,21 @@ final class TaskFields
                 throw self::invalid($record, $requestId);
             }
 
-            $deliverables[] = array_filter($deliverable, is_string(...));
+            $fields = [];
+
+            foreach ($deliverable as $key => $field) {
+                if (! is_string($key)) {
+                    throw self::invalid($record, $requestId);
+                }
+
+                if (is_string($field) || ($key === 'fails_on_base' && is_bool($field))) {
+                    $fields[$key] = $field;
+                }
+            }
+
+            $deliverables[] = $fields;
         }
 
-        /** @var list<array<string, string>> $deliverables */
         return $deliverables;
     }
 

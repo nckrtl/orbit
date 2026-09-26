@@ -3519,7 +3519,8 @@
                 "0121",
                 "0124",
                 "0125",
-                "0133"
+                "0133",
+                "0163"
             ]
         },
         {
@@ -4177,6 +4178,27 @@
             ]
         },
         {
+            "path": "docs/decisions/0163-prove-a-failing-test-on-the-start-commit.md",
+            "title": "ADR 0163: Prove a failing test on the start commit",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Gateway",
+                "Node",
+                "Project",
+                "Task"
+            ],
+            "governing_adrs": [
+                "0133",
+                "0163"
+            ]
+        },
+        {
             "path": "docs/decisions/0164-heal-a-settling-pull-request-with-a-fixup-subtask.md",
             "title": "ADR 0164: Heal a settling pull request with a fixup subtask",
             "kind": "decision",
@@ -4392,6 +4414,7 @@
                 "0159",
                 "0160",
                 "0161",
+                "0163",
                 "0164"
             ]
         },
@@ -5639,6 +5662,7 @@
                 "0134",
                 "0140",
                 "0160",
+                "0163",
                 "0164"
             ]
         },

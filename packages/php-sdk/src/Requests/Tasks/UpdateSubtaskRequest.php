@@ -18,7 +18,7 @@ final class UpdateSubtaskRequest extends GatewayRequest implements HasBody
     #[\Override]
     protected Method $method = Method::PATCH;
 
-    /** @param list<array<string, string>>|null $deliverables replaces the whole list; null leaves it unchanged */
+    /** @param list<array<string, string|bool>>|null $deliverables replaces the whole list; null leaves it unchanged */
     public function __construct(
         private readonly int $groupId,
         private readonly int $taskId,

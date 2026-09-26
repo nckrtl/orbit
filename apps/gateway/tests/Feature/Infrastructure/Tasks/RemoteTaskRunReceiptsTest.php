@@ -272,7 +272,7 @@ describe('deliverable confirmations', function (): void {
 
         expect(json_decode((string) file_get_contents($checkout.'/.git/orbit/turn.json'), true)['deliverables'])->toBe([
             ['id' => 'reference-page', 'type' => 'file', 'description' => 'Document the export'],
-            ['id' => 'export-test', 'type' => 'test', 'description' => 'Test the export'],
+            ['id' => 'export-test', 'type' => 'test', 'description' => 'Test the export', 'fails_on_base' => false],
             ['id' => 'error-copy', 'type' => 'review', 'description' => 'Errors name the subtask'],
         ]);
     });

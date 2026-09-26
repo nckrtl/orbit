@@ -2937,7 +2937,7 @@ describe('a thread that works outside the task phase', function (): void {
  * A running subtask with deliverables whose implementer hands off with the given confirmations, and a check that
  * passes with the given evidence.
  *
- * @param  list<array<string, string>>  $deliverables
+ * @param  list<array<string, string|bool>>  $deliverables
  * @param  array<string, string>  $confirmations
  * @param  array<string, mixed>|null  $evidence
  * @param  list<TaskCheckReading>|null  $readings  the check readings; null passes once with the evidence
@@ -3123,5 +3123,32 @@ describe('subtask deliverables at handoff', function (): void {
 
         expect($signer->messages)->toBe(["Models\n\nChecked."])
             ->and($task->comments()->sole()->deliverables)->toBe(['error-copy' => 'Each error names the subtask']);
+    });
+
+    it('asks the check to prove a fails_on_base test and returns it when that test passes on the start commit', function (): void {
+        $deliverable = ['id' => 'layout-repro', 'type' => 'test', 'description' => 'The layout fails before the fix', 'project' => 'apps/gateway', 'file' => 'tests/Feature/HomeScreenTest.php', 'name' => 'home screen layout', 'fails_on_base' => true];
+        $evidence = [
+            'start' => str_repeat('5', 40),
+            'diff' => [['status' => 'M', 'path' => 'apps/gateway/tests/Feature/HomeScreenTest.php']],
+            'tests' => ['layout-repro' => [
+                'exit_code' => 0,
+                'cases' => [['name' => 'it keeps the home screen layout', 'status' => 'passed']],
+                'base_placed' => true,
+                'base_exit_code' => 0,
+                'base_cases' => [['name' => 'it keeps the home screen layout', 'status' => 'passed']],
+            ]],
+            'commands' => [],
+        ];
+        [$group, $task, $checks] = tick_deliverables([$deliverable], ['layout-repro' => 'HomeScreenTest'], $evidence);
+
+        $reminder = tick_deliverable_reminder();
+
+        expect($checks->deliverables)->toBe([[
+            'start' => str_repeat('5', 40),
+            'tests' => [['id' => 'layout-repro', 'project' => 'apps/gateway', 'file' => 'tests/Feature/HomeScreenTest.php', 'fails_on_base' => true]],
+            'commands' => [],
+        ]])
+            ->and($task->fresh()?->status)->toBe(TaskStatus::Running)
+            ->and($reminder)->toContain('layout-repro (test): The test "it keeps the home screen layout" passes on the start commit, so it does not reproduce the bug.');
     });
 });

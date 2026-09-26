@@ -51,7 +51,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $subtask_start_commit
  * @property string|null $fixup_problem
  * @property string|null $fixup_head_sha
- * @property list<array<string, string>>|null $deliverables
+ * @property list<array<string, string|bool>>|null $deliverables
  * @property Carbon|null $settled_at
  * @property-read TaskGroup $taskGroup
  */

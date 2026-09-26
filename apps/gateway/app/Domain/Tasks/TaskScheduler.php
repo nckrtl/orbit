@@ -791,8 +791,9 @@ final readonly class TaskScheduler
 
     /**
      * ADR 0133: what the handoff check needs to record deliverable evidence, or null for a subtask without deliverables.
+     * ADR 0163: a test with fails_on_base true asks for the extra run on the start commit.
      *
-     * @return array{start: string|null, tests: list<array{id: string, project: string, file: string}>, commands: list<array{id: string, command: string, directory: string}>}|null
+     * @return array{start: string|null, tests: list<array{id: string, project: string, file: string, fails_on_base?: bool}>, commands: list<array{id: string, command: string, directory: string}>}|null
      */
     private function deliverableCheck(Task $task): ?array
     {
@@ -804,7 +805,11 @@ final readonly class TaskScheduler
         $commands = [];
         foreach ($deliverables as $deliverable) {
             if ($deliverable->type === TaskDeliverableType::Test) {
-                $tests[] = ['id' => $deliverable->id, 'project' => TaskDeliverable::relative($deliverable->project) ?: '.', 'file' => TaskDeliverable::relative($deliverable->file)];
+                $test = ['id' => $deliverable->id, 'project' => TaskDeliverable::relative($deliverable->project) ?: '.', 'file' => TaskDeliverable::relative($deliverable->file)];
+                if ($deliverable->fails_on_base) {
+                    $test['fails_on_base'] = true;
+                }
+                $tests[] = $test;
             } elseif ($deliverable->type === TaskDeliverableType::Command) {
                 $commands[] = ['id' => $deliverable->id, 'command' => $deliverable->command, 'directory' => TaskDeliverable::relative($deliverable->directory) ?: '.'];
             }
