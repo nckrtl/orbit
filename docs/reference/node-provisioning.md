@@ -123,6 +123,42 @@ Every Node with Caddy sites installs Caddy through this step before its first [N
 
 A Node that was never `active` still becomes `failed` at the step that stopped. A private DNS failure uses step `private-dns`.
 
+## Role operations on one Node
+
+The Gateway runs one role operation per Node at a time. The lock covers these steps on that Node:
+
+- the role's baseline convergence or removal, including its package, firewall, and service steps
+- the app manager setup for `app-dev` and `app-prod`
+- the [Node agent](/reference/node-agent) converge that follows a role convergence
+
+The Metrics fleet reconcile runs after a role convergence and outside this lock. It converges exporters on every Node, and holding one Node's lock while it waits for another's could deadlock two operations. An exporter converge can therefore still run beside a role operation on the same Node.
+
+`node:role:add`, `node:role:remove`, and the role steps of `node:add` take the lock before they claim the assignment. A second operation waits up to 2 minutes. If the Node is still busy, it fails and leaves the assignment as it was:
+
+| Command | Error |
+| --- | --- |
+| `node:role:add` | `node_role.convergence_failed` at step `converge:node-lock`, error code `node_role.node_busy` |
+| `node:role:remove` | `node_role.remove_failed` at step `node-lock`, error code `node_role.node_busy` |
+
+Run the command again. `node:role:relocate` and Cluster Router changes take the lock only around the baseline step, so a busy Node fails that step as their other baseline failures do.
+
+Operations on different Nodes run in parallel.
+
+### Per-Node locks
+
+Four kinds of lock guard work on one Node. They all live in a file cache store under `ORBIT_HOME`, whatever `CACHE_STORE` says.
+
+| Lock | Guards | Term | When it is busy |
+| --- | --- | --- | --- |
+| Tool | One package of one tool manager | 10 minutes | Fails at once with `tool.operation_locked` |
+| Tool manager | The shared state of `vp`, `composer`, `apt`, or `brew` | 10 minutes | Fails at once with `tool.operation_locked` or `node_role.tool_manager_locked` |
+| Role | Role operations | 10 minutes | Waits up to 2 minutes, then `node_role.node_busy` |
+| Node agent | The [agent converge](/reference/node-agent#agent-secret) | 4 minutes, renewed before each step | Waits up to 2 minutes, then `agent.converge_busy` |
+
+The 10-minute term is the Gateway's PHP-FPM request limit. A request cannot outlive it, so a worker that is killed mid-operation blocks the Node for at most 10 minutes.
+
+An operation takes the locks it needs in one fixed order: tool, then tool manager (`vp` before `composer`), then role, then Node agent. No code takes an earlier lock while it holds a later one. The tool and tool manager locks fail at once instead of waiting, so an operation that holds the role lock never waits for a tool manager. The locks therefore cannot deadlock.
+
 ## Node agent
 
 After the Metrics exporters, provisioning installs or upgrades the [Node agent](/reference/node-agent) on a managed Node, at step `agent`. A failure returns `node.agent_install_failed` and follows the converge rules above: a new Node becomes `failed`, and an existing active Node stays `active`.

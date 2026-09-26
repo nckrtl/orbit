@@ -11,13 +11,14 @@ use App\Domain\Tools\ToolOperation;
 use App\Domain\Tools\ToolOperationException;
 use App\Domain\Tools\ToolOperationLock;
 use App\Domain\Tools\ToolOutcome;
+use App\Infrastructure\Nodes\NodeLocks;
 use Closure;
-use Illuminate\Support\Facades\Cache;
 
 final readonly class NativeToolOperationLock implements ToolOperationLock
 {
     public function __construct(
         private ToolManagerScopeLock $managerScope,
+        private ?NodeLocks $locks = null,
     ) {}
 
     /**
@@ -34,9 +35,9 @@ final readonly class NativeToolOperationLock implements ToolOperationLock
         ?string $versionConstraint,
         Closure $callback,
     ): mixed {
-        $identity = Cache::lock(
-            "orbit:tool:{$nodeId}:{$manager->value}:".hash('sha256', $package),
-            3_600,
+        $identity = ($this->locks ?? app(NodeLocks::class))->lock(
+            "tool:{$nodeId}:{$manager->value}:".hash('sha256', $package),
+            NodeLocks::RequestSeconds,
         );
 
         if (! $identity->get()) {
