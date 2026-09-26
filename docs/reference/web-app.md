@@ -54,9 +54,37 @@ The web app keeps the task board, each task group, its agent threads, its commen
 
 The web app waits 100 milliseconds after a task event and then refetches each named query once, so the notices of one Gateway change show a group once.
 
-While realtime is live, these queries refetch every 5 minutes as a safety net for a lost notice, and a refetch that an event starts replaces a request already in flight. When the socket first subscribes, the web app refetches the task and Process queries, because a change between their first load and the subscription sent no event to the page. When the socket comes back after a drop, it refetches every query, because events sent during the drop are lost.
+While realtime is live, these queries refetch every 5 minutes as a safety net for a lost notice, and a refetch that an event starts replaces a request already in flight. When the socket first subscribes, the web app refetches the task, Process, and Activity queries, because a change between their first load and the subscription sent no event to the page. When the socket comes back after a drop, it refetches every query, because events sent during the drop are lost.
 
 While realtime is down or not configured, the task queries poll every 30 seconds. An active group's duration counts forward on the page between refetches. Token and line counts change with the next event for the group, and the agent thread stream shows live tokens for each thread.
+
+## Live Activity
+
+The web app lists Activity in the main navigation, after Tasks and before Quota. The page is `/activity`, and it shows stored Activity newest first, 25 rows at a time. Older rows load with `before_id` set to the smallest id on the page. Opening a row goes to `/activity/{id}` and loads it with `activity:show`. [ADR 0159](/decisions/0159-push-activity-changes-to-the-web-app) records the design.
+
+The page filters by status, command, caller Node, and target Node. An unused filter is omitted. Changing a filter clears `before_id` and loads the newest page that matches.
+
+| Filter | List query |
+| --- | --- |
+| Status | `status` of `running`, `succeeded`, or `failed` |
+| Command | `command`, the exact name, from 1 to 255 characters |
+| Caller Node | `caller_node_id` |
+| Target Node | `target_node_id` |
+
+A live refetch keeps those filters. On an older page it also keeps `before_id`. The 5-minute safety net, a reconnect, and the 30-second poll use that same query.
+
+On a phone, Activity is an entry in the menu the header button opens. The list, the filters, the control for older rows, and the detail stack in one column. Each can be reached by tap. Back from a detail returns to the same filters and the same page.
+
+| Event | The web app refetches |
+| --- | --- |
+| `activity.created`, `activity.updated` | The Activity list the page is showing, with its filters and cursor |
+| `activity.updated` for the open row | That row, with `activity:show` |
+
+The web app waits 100 milliseconds after an Activity event. It then refetches each named query once. A sweep that ends many rows therefore refetches the list once. A refetch that an event starts replaces a request already in flight.
+
+`activity:show` is the detail view. It returns `properties` and the other fields the [notice](/reference/events#activity) leaves out. The list payload is not reused as that view.
+
+While realtime is live, the list and the open row refetch every 5 minutes. That refetch is a safety net for a lost notice. While realtime is down or not configured, they poll every 30 seconds. The page's own list and show are `activity:*` commands, so the Gateway does not broadcast them and the refetch does not repeat itself.
 
 ## Polling
 
@@ -66,11 +94,12 @@ When realtime is down, or the Gateway offers none, those views poll with a backo
 
 A hidden tab never polls. When the tab is visible again, it reloads the views whose data is older than 30 seconds.
 
-The task views and the Process list's CPU and memory have events of their own, as [Live tasks](#live-tasks) and [Live Node and Process state](#live-node-and-process-state) describe:
+The task views, the Activity page, and the Process list's CPU and memory have events of their own, as [Live tasks](#live-tasks), [Live Activity](#live-activity), and [Live Node and Process state](#live-node-and-process-state) describe:
 
 | View | While realtime is live | While it is down |
 | --- | --- | --- |
 | Task board, agents, comments, and task status | Every 5 minutes | Every 30 seconds |
+| Activity list and the open Activity | Every 5 minutes | Every 30 seconds |
 | Process list, for CPU and memory | Only when no `process.usage` event arrived for 60 seconds | Every 15 seconds |
 
 Some views have no event and poll on their own clock while the tab is visible:
