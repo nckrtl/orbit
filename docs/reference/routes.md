@@ -362,6 +362,8 @@ The claimed assignment is `removing`, so it serves nothing. The Gateway builds t
 
 The command also removes an Ingress whose convergence failed (`failed_step=converge:STEP`), for example after `converge:caddy-config`, through the same steps. A failed step leaves the assignment `failed` with `failed_step=remove:STEP` and a bounded `error_code`. The same command retries every step. When the Node has no Ingress assignment, the command succeeds and changes nothing. With `--offline`, the Gateway removes an unreachable Ingress on its side only and lists the Caddy configuration and firewall rules that stay on the Node under `retained_on_node`.
 
+The error response carries that same code in `details.error_code`, next to `error.code` `node_role.remove_failed`. A failure at `remove:caddy-config` uses `ingress.caddy_config_failed` in `details.error_code`, and the message is the Caddy build message. An ingress SSH step says `Ingress step [STEP] failed on node [NODE].` and does not say `App development step [STEP]`. [Caddy configuration](/reference/caddy-configuration#when-a-build-fails) describes both messages.
+
 ### Publication ownership
 
 Only one operation can publish private Caddy, DNS, or Metrics configuration at a time. The Gateway takes a shared lock before reading current Route, target, Cluster, and Router state. It holds the lock through Caddy updates, DNS publication, and activation. Nested calls in the same request share the lock. Failure releases it so a retry can read fresh state.

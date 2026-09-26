@@ -3689,7 +3689,8 @@
                 "0139",
                 "0141",
                 "0146",
-                "0157"
+                "0157",
+                "0159"
             ]
         },
         {
@@ -4099,6 +4100,26 @@
             ]
         },
         {
+            "path": "docs/decisions/0159-set-a-stale-caddyfile-aside-when-caddy-is-absent.md",
+            "title": "ADR 0159: Set a stale Caddyfile aside when Caddy is absent",
+            "kind": "decision",
+            "components": [
+                "apps/docs",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Doctor",
+                "Gateway",
+                "Ingress",
+                "Node",
+                "Router"
+            ],
+            "governing_adrs": [
+                "0141",
+                "0159"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -4285,7 +4306,8 @@
                 "0155",
                 "0156",
                 "0157",
-                "0158"
+                "0158",
+                "0159"
             ]
         },
         {
@@ -4670,7 +4692,8 @@
                 "0138",
                 "0139",
                 "0141",
-                "0157"
+                "0157",
+                "0159"
             ]
         },
         {

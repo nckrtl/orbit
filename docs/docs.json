@@ -727,7 +727,8 @@
               "decisions/0155-authenticate-the-node-agent-with-a-per-node-secret",
               "decisions/0156-route-the-private-domain-on-the-gateway-machine-to-vpn-dns",
               "decisions/0157-keep-private-caddy-sites-off-the-public-listener",
-              "decisions/0158-end-interrupted-activity"
+              "decisions/0158-end-interrupted-activity",
+              "decisions/0159-set-a-stale-caddyfile-aside-when-caddy-is-absent"
             ]
           }
         ]

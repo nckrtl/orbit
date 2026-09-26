@@ -167,15 +167,23 @@ A failed check stops the build before any change. `/run/lock` is a tmpfs, so the
 
 Every Node with Caddy sites, the Gateway machine included, installs Caddy from the pinned source before its first build.
 
-A Node without `/usr/bin/caddy` and without a running `caddy` service serves nothing, so a build there that has nothing to publish changes nothing. A Caddy that still runs keeps serving the configuration it loaded, even with its binary gone, so a missing binary alone never skips a build. That is a file with no site, or any file while no Caddy role on the Node (`gateway`, `router`, `ingress`, `app-dev`, `app-prod`, `websocket`, `analytics`) is active or converging. The script then stops at step 2 and reports the build as unchanged.
+### When Caddy is absent
 
-So when two Caddy roles both failed to converge before Caddy was installed, removing either one succeeds, although the other still renders its sites.
+A Node without `/usr/bin/caddy` and without a running `caddy` service serves nothing. The build reports `unchanged` and stops at step 2 when the render has no site. It also stops there when no Caddy role on the Node (`gateway`, `router`, `ingress`, `app-dev`, `app-prod`, `websocket`, `analytics`) is active or converging, whatever the render contains. A running `caddy` service keeps serving the configuration it already loaded, even when the binary is gone, so a missing binary alone never skips the build. While a Caddy role is active or converging and the render has a site, a missing Caddy fails the build at step 2.
 
-The rule covers every build, not only removals. For example, a build that a Route change requests on a Node whose Ingress failed before Caddy was installed also reports `unchanged`, because nothing on that Node serves yet. The next convergence of a Caddy role there installs Caddy and builds the Node. While a Caddy role is active or converging, a missing Caddy still fails the build at step 2.
+On that skip, `/etc/caddy/Caddyfile` can name sites the render does not contain, and the certificates those sites use. Removal deletes a withdrawn site's certificate after the build. When the bytes behind the live path are not the rendered file, the build moves the live path into `/etc/caddy/orbit-backups/<UTC timestamp>/` and then reports `unchanged`.
+
+A symlink moves as a symlink. A regular file moves as a file. The timestamp directory uses the same names as a [replaced configuration](#replaced-configuration). The live path is then absent, so `systemctl start caddy` after the move does not open a removed certificate such as `/etc/caddy/orbit-websocket-cert-current/reverb.pem`. The build does not validate, start, or reload Caddy, and it does not delete the backup or the version directory. A live file whose bytes are already the render stays in place. A missing live path stays missing. [ADR 0159](/decisions/0159-set-a-stale-caddyfile-aside-when-caddy-is-absent) records this rule.
+
+When the build cannot move the live path into the backup directory, it fails at stage `release`, leaves the live path in place, and does not report `unchanged`.
+
+The next build that does not take this skip writes a new version and points `/etc/caddy/Caddyfile` at it. It validates that file before the path points at it.
+
+When two Caddy roles both failed to converge before Caddy was installed, removing either one succeeds, although the other still renders its sites. The rule covers every build, not only removals. A build that a Route change requests on a Node whose Ingress failed before Caddy was installed also reports `unchanged`, because nothing on that Node serves yet. The next convergence of a Caddy role there installs Caddy and builds the Node.
 
 ### When a build fails
 
-A build either publishes the whole file or changes nothing. It fails when a site cannot be rendered from stored state, when two sites collide, when Caddy is below the floor, when the Node lacks an address the file binds, when `caddy validate` rejects the file, or when Caddy fails to reload.
+A failed build does not publish a new file. The [absent-Caddy skip](#when-caddy-is-absent) is the success that moves a stale live path and still reports `unchanged`. A build fails when a site cannot be rendered from stored state, when two sites collide, when Caddy is below the floor, or when the Node lacks an address the file binds. It also fails when `caddy validate` rejects the file, or when Caddy fails to reload.
 
 A failed reload leaves Caddy on the configuration it already runs. The script then points `/etc/caddy/Caddyfile` back at the previous version and asks Caddy to load it again. It never restarts a running Caddy; it starts Caddy only when Caddy is not running. The live configuration keeps serving unless Caddy itself had stopped.
 
@@ -183,7 +191,9 @@ The command that requested the build fails with its usual error code:
 
 | Publisher | Error code |
 | --- | --- |
-| `app-dev` sites, including public Ingress sites | `app-dev.caddy_config_failed` |
+| `app-dev` role, and Route publication, including a public Ingress site | `app-dev.caddy_config_failed` |
+| `router` role convergence and removal | `router.caddy_config_failed` |
+| `ingress` role convergence and removal | `ingress.caddy_config_failed` |
 | `app-prod` role | `app-prod.caddy_config_failed` |
 | `websocket` role | `websocket.caddy_publication_failed` |
 | `analytics` role | `analytics.caddy_publication_failed` |
@@ -191,7 +201,11 @@ The command that requested the build fails with its usual error code:
 | Metrics and service metrics | `metrics.caddy_publication_failed` |
 | Gateway web convergence | `gateway.caddy_config_invalid` at `render` or `validate`, `gateway.caddy_start_failed` at `reload`, and `gateway.caddy_config_install_failed` at any other stage |
 
-Role convergence, such as `orbit node:role:add NODE app-dev --converge`, fails with `node_role.convergence_failed`; `orbit node:role:list` shows the publisher's code as the underlying error, and the error response carries it as `details.error_code`. The error message, the activity record, and the `node`, `stage`, and `message` fields of the error details name the Node, the failed stage, and Caddy's message. Each stage bounds the message at 2,000 bytes of UTF-8 and marks a cut with `…`. The CLI prints them under `error.details` with `--json`, next to the `step` that requested the build:
+The Caddy service-ordering step and the Caddy build step of `ingress`, `router`, `app-dev`, and `app-prod` use that role's code, `<role>.caddy_config_failed`. A package or prerequisite step keeps its own code, such as `ingress.prerequisite_failed`. Route publication of a public Ingress site stays `app-dev.caddy_config_failed`, because the Route publisher requests that build, not the `ingress` role.
+
+Role convergence, such as `orbit node:role:add NODE ingress --converge`, fails with `node_role.convergence_failed`. Role removal fails with `node_role.remove_failed`. `orbit node:role:list` shows the step's own code, and the error response carries that code as `details.error_code` next to `details.step`. A removal of `ingress`, `router`, or `app-dev` that stops in the Caddy build has `details.step` `remove:caddy-config` and `details.error_code` set to that role's `<role>.caddy_config_failed`. For `ingress` that code is `ingress.caddy_config_failed`. It is not `app-dev.caddy_config_failed`, and it is not the operation code `node_role.remove_failed`.
+
+Every failed SSH step of an `ingress` convergence names the ingress role: `Ingress step [STEP] failed on node [NODE].` Every failed SSH step of a `router` convergence names the router role: `Router step [STEP] failed on node [NODE].` Neither says `App development step [STEP]`. The `app-dev` role's SSH failure says `App development step [STEP] failed on node [NODE].` A failed Node Caddy build keeps the build message. The error message, the activity record, and the `node`, `stage`, and `message` fields of the error details name the Node, the failed stage, and Caddy's message. Each stage bounds the message at 2,000 bytes of UTF-8 and marks a cut with `…`. The CLI prints them under `error.details` with `--json`, next to the `step` that requested the build:
 
 ```text
 The Caddy build for Node [app-prod] failed at stage [validate]: Error: loading certificates: open /etc/caddy/orbit-websocket-cert-current/reverb.pem: no such file or directory
@@ -254,6 +268,8 @@ The build replaces a Caddyfile that does not start with its marker line. It neve
 | A build's version whose file differs from its digest | The whole version directory, also when prune removes it |
 
 A Node whose Caddyfile no build wrote, such as one restored from an earlier release's backup, keeps it until the first command that builds it. That first build backs up the old file or version and serves the Orbit sites from one file. Sites in a replaced file that Orbit does not render stop serving after that build, including an adopted `00-unmanaged.caddy` fragment. Move a hand-placed site into Orbit before the first build, for example as a [custom proxy Route](/reference/routes#custom-proxy-routes). The build never deletes a backup; remove it by hand when you do not need it.
+
+An [absent-Caddy build](#when-caddy-is-absent) moves a live path whose bytes are not the render into this same directory. That move leaves no `/etc/caddy/Caddyfile`.
 
 ## Check a Node with Doctor
 
