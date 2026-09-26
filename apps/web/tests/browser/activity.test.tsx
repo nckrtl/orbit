@@ -93,7 +93,6 @@ it("lists Activity after Tasks and opens the newest rows", async () => {
     await expect.element(pane("Activity")).toHaveTextContent("gateway");
     await expect.element(pane("Activity")).toHaveTextContent("beast");
     await expect.element(pane("Activity")).toHaveTextContent("8s");
-    await page.screenshot({ path: "expected/activity-desktop.png" });
 
     await userEvent.keyboard("{ArrowRight}{Enter}{Enter}");
     await expect.poll(app.url).toContain("/activity/150");
@@ -246,7 +245,6 @@ it("loads older rows as the log scrolls and then shows the end", async () => {
     log.dispatchEvent(new Event("scroll"));
     await expect.poll(reads).toBe(done);
     await expect.poll(app.url).not.toContain("before_id");
-    await page.screenshot({ path: "expected/activity-end.png" });
 });
 
 it("shows a new row and a finished row when their notices arrive", async () => {
@@ -326,7 +324,6 @@ it("shows a new row and a finished row when their notices arrive", async () => {
     await expect.element(pane("Activity")).toHaveTextContent("instance:deploy");
     expect(document.querySelector("[data-activity-new]")).toBeNull();
     expect(activityPaths).toHaveLength(before);
-    await page.screenshot({ path: "expected/activity-live.png" });
 });
 
 it("keeps the visible rows still and offers N new when a row arrives below the top", async () => {
@@ -382,7 +379,6 @@ it("keeps the visible rows still and offers N new when a row arrives below the t
         })
         .toBeLessThan(2);
     expect(activityLog().scrollTop).toBeGreaterThan(200);
-    await page.screenshot({ path: "expected/activity-new.png" });
 
     log.scrollTop = 0;
     log.dispatchEvent(new Event("scroll"));
@@ -502,7 +498,6 @@ it("keeps the menu, filters, older rows and detail usable on a phone", async () 
     expect(gap).toBeLessThan(80);
     expect(page.getByRole("button", { name: "Older rows" }).query()).toBeNull();
     await expect.element(page.getByRole("button", { name: "Open activity 150" })).toBeVisible();
-    await page.screenshot({ path: "expected/activity-phone.png" });
 
     await expect.element(page.getByRole("button", { name: "Open activity 150" })).toBeVisible();
     await page.getByRole("button", { name: "Open activity 150" }).click();
@@ -513,7 +508,6 @@ it("keeps the menu, filters, older rows and detail usable on a phone", async () 
     expect(frames.length).toBeGreaterThanOrEqual(2);
     expect((frames[1]?.top ?? 0) > (frames[0]?.top ?? 0) + (frames[0]?.height ?? 0) - 8).toBe(true);
     await expect.element(pane("Properties")).toBeVisible();
-    await page.screenshot({ path: "expected/activity-phone-detail.png" });
 
     app.router.history.back();
     await expect.poll(app.url).toBe("/activity");
@@ -596,7 +590,6 @@ it("scrolls, marks the end, and keeps its place on a phone", async () => {
                 : 999;
         })
         .toBeLessThan(2);
-    await page.screenshot({ path: "expected/activity-phone-new.png" });
     await page.getByRole("button", { name: "1 new" }).click();
     await expect.poll(() => activityLog().scrollTop).toBeLessThan(2);
     await expect.element(page.getByRole("button", { name: "Open activity 82" })).toBeVisible();
@@ -779,7 +772,6 @@ it("opens the phone filter sheet from the header and keeps the desktop bar", asy
     const done = page.getByRole("button", { name: "Done" }).query();
     if (!(done instanceof HTMLElement)) throw new Error("Done is missing.");
     expect(done.getBoundingClientRect().top).toBeGreaterThan(tops.at(-1) ?? 0);
-    await page.screenshot({ path: "expected/activity-phone-filters.png" });
 
     await page.getByRole("button", { name: "status: all ▾" }).click();
     await expect.poll(app.url).toContain("status=running");
