@@ -3547,7 +3547,8 @@
             "kind": "decision",
             "components": [
                 "apps/docs",
-                "apps/e2e"
+                "apps/e2e",
+                "apps/gateway"
             ],
             "concepts": [
                 "Database",
@@ -3558,7 +3559,8 @@
             "governing_adrs": [
                 "0005",
                 "0131",
-                "0135"
+                "0135",
+                "0160"
             ]
         },
         {
@@ -5133,7 +5135,8 @@
                 "Route",
                 "Router",
                 "Schedule",
-                "Task"
+                "Task",
+                "Task group"
             ],
             "governing_adrs": [
                 "0005",
@@ -5660,6 +5663,7 @@
                 "0132",
                 "0133",
                 "0134",
+                "0135",
                 "0140",
                 "0160",
                 "0163",

@@ -131,6 +131,8 @@ A task workspace is an independent clone, not a linked worktree, so it holds nei
 
 The bridge keeps its other ignored files, such as `.e2e/`, `.env`, and Gateway storage, because the harness and the guests write them into the mount. In a task workspace on branch `task-58`, run `bin/e2e-topology acquire TASK-58 .`, then the other commands with `TASK-58`. The mounted source is the bridge, so a file that the harness or a guest writes into the mount appears in the bridge, not in the clone. Set `ORBIT_E2E_BRIDGE=0` to run in the clone itself.
 
+Completing or cancelling the task group removes that bridge when its path is `<worktree root>/task-{id}-e2e` and its branch is `task-{id}-e2e`. A user's worktree stays. A missing bridge is not an error. [Tasks](/reference/tasks#complete-and-cleanup) describes that cleanup.
+
 `bin/worktree-remove ISSUE` releases the proof topology only after its closeout guard permits cleanup, then releases discovery and removes the worktree. [ADR 0049](/decisions/0049-keep-delivery-artifacts-off-the-merge-head) describes the artifact refs used by retained proof. Captured proof evidence and review records remain in the primary archive after worktree removal.
 
 ### Guest commands

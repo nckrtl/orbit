@@ -11,6 +11,7 @@ use App\Domain\Tasks\InstanceProvisioning;
 use App\Domain\Tasks\LocalTaskSettleMetricsCollector;
 use App\Domain\Tasks\TaskAgentSpawner;
 use App\Domain\Tasks\TaskBaseBranchFetcher;
+use App\Domain\Tasks\TaskBridgeWorktreeRemover;
 use App\Domain\Tasks\TaskBriefCoverage;
 use App\Domain\Tasks\TaskBroadcastObserver;
 use App\Domain\Tasks\TaskBroadcasts;
@@ -33,6 +34,7 @@ use App\Infrastructure\Tasks\HttpTaskPullRequestWatcher;
 use App\Infrastructure\Tasks\LaravelAiTaskBriefCoverage;
 use App\Infrastructure\Tasks\LaravelAiTaskSessionClassifier;
 use App\Infrastructure\Tasks\Pi\PiDriver;
+use App\Infrastructure\Tasks\RemoteTaskBridgeWorktreeRemover;
 use App\Infrastructure\Tasks\RemoteTaskCheckRunner;
 use App\Infrastructure\Tasks\RemoteTaskPlannerMcp;
 use App\Infrastructure\Tasks\RemoteTaskRunReceipts;
@@ -68,6 +70,7 @@ final class TasksServiceProvider extends ServiceProvider
         TaskWorkspaceSigner::class => RemoteTaskWorkspaceSigner::class,
         TaskWorkspaceDiffReader::class => AgentViewTaskWorkspaceDiffReader::class,
         TaskWorkspaceStateReader::class => RemoteTaskWorkspaceStateReader::class,
+        TaskBridgeWorktreeRemover::class => RemoteTaskBridgeWorktreeRemover::class,
         TaskRunReceipts::class => RemoteTaskRunReceipts::class,
         TaskCheckRunner::class => RemoteTaskCheckRunner::class,
         TaskBriefCoverage::class => LaravelAiTaskBriefCoverage::class,

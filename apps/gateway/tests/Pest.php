@@ -14,6 +14,7 @@ use App\Domain\Logs\LogStreamStore;
 use App\Domain\Nodes\NodeAgentRuntime;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Tasks\TaskBridgeWorktreeRemover;
 use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskRunReceipts;
 use App\Infrastructure\Activity\ActivityShutdownFinalizer;
@@ -25,6 +26,7 @@ use App\Infrastructure\Nodes\NodeLocks;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\NativeProcessRunner;
 use App\Infrastructure\Processes\ProcessInvocation;
+use App\Infrastructure\Tasks\RemoteTaskBridgeWorktreeRemover;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\Cluster;
@@ -67,6 +69,16 @@ uses(TestCase::class, RefreshDatabase::class)
         app()->instance(ClusterRouterDnsSelectionReconciler::class, new FakeClusterRouterDnsSelectionReconciler);
         app()->instance(TaskRunReceipts::class, new FakeTaskRunReceipts);
         app()->instance(TaskCheckRunner::class, new FakeTaskCheckRunner);
+        // Bridge removal runs Git on the Node. Feature tests skip it unless they opt in.
+        app()->instance(TaskBridgeWorktreeRemover::class, new class implements TaskBridgeWorktreeRemover
+        {
+            public function remove(AppInstance $instance): void
+            {
+                if (config('orbit.tasks.remove_bridge_worktree') === true) {
+                    app(RemoteTaskBridgeWorktreeRemover::class)->remove($instance);
+                }
+            }
+        });
         // A Node Caddy build runs local `sudo` on a Gateway Node; tests record build requests instead.
         app()->instance(NodeCaddyBuilds::class, new FakeNodeCaddyBuilds);
         // The view's file store under ORBIT_HOME would outlive a test; each test gets its own.

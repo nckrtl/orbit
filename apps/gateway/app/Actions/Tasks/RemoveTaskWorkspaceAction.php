@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Tasks;
 
 use App\Domain\AppInstances\AppInstanceRemover;
+use App\Domain\Tasks\TaskBridgeWorktreeRemover;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskWorkspaceName;
 use App\Models\AppInstance;
@@ -19,8 +20,10 @@ use Throwable;
  * workspace keeps that deterministic name and branch, so every path that ends a group finds it by name
  * when the group holds no Instance.
  *
- * The forced remover deletes the checkout and only then the Instance row. A refusal leaves both in place.
- * The caller records assistance and returns the error, so the checkout stays named by a record.
+ * The forced remover deletes the checkout and only then the Instance row. Before that, the group's
+ * bridge worktree is removed from the registered primary checkout. A refusal leaves both the checkout
+ * and the bridge in place. The caller records assistance and returns the error, so the checkout stays
+ * named by a record.
  */
 final readonly class RemoveTaskWorkspaceAction
 {
@@ -28,7 +31,10 @@ final readonly class RemoveTaskWorkspaceAction
 
     public const string MergeCleanupFailedPrefix = 'Merged pull request cleanup failed: ';
 
-    public function __construct(private AppInstanceRemover $remover) {}
+    public function __construct(
+        private AppInstanceRemover $remover,
+        private TaskBridgeWorktreeRemover $bridges,
+    ) {}
 
     /** The attached Instance, or the group's unattached `task-{group id}` workspace. */
     public function find(TaskGroup $group): ?AppInstance
@@ -77,9 +83,10 @@ final readonly class RemoveTaskWorkspaceAction
         return $instance;
     }
 
-    /** Removes the checkout through the forced Instance remover. The Instance row stays when removal refuses. */
+    /** Removes the group's bridge worktree, then the checkout. The Instance row stays when removal refuses. */
     public function remove(AppInstance $instance): void
     {
+        $this->bridges->remove($instance);
         $this->remover->execute($instance, true);
     }
 
