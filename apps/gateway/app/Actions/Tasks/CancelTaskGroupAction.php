@@ -13,6 +13,7 @@ use App\Models\AppInstance;
 use App\Models\Task;
 use App\Models\TaskGroup;
 use Illuminate\Support\Facades\DB;
+use Throwable;
 
 final readonly class CancelTaskGroupAction
 {
@@ -47,7 +48,7 @@ final readonly class CancelTaskGroupAction
             if ($unpublished) {
                 $this->pushApprovedWork($group);
             }
-            $this->workspace->remove($instance);
+            $this->removeWorkspace($group, $instance);
         }
 
         $removedId = $instance?->id;
@@ -65,7 +66,16 @@ final readonly class CancelTaskGroupAction
         });
 
         if ($attachedByClaim instanceof AppInstance) {
-            $this->workspace->remove($attachedByClaim);
+            try {
+                $this->removeWorkspace($group, $attachedByClaim);
+            } catch (Throwable $exception) {
+                $locked = TaskGroup::query()->findOrFail($group->id);
+                $locked->taskable()->associate($attachedByClaim);
+                $locked->save();
+                $this->workspace->recordFailure($locked, $exception);
+
+                throw $exception;
+            }
         }
 
         $group->tasks()
@@ -74,6 +84,18 @@ final readonly class CancelTaskGroupAction
         $group->tasks()->where('assistance_requested', true)->update(['assistance_requested' => false]);
 
         return $group->fresh(['app', 'tasks', 'taskable']) ?? $group;
+    }
+
+    /** A refused removal keeps the checkout and the Instance row, asks for assistance, and returns the error. */
+    private function removeWorkspace(TaskGroup $group, AppInstance $instance): void
+    {
+        try {
+            $this->workspace->remove($instance);
+        } catch (Throwable $exception) {
+            $this->workspace->recordFailure($group, $exception);
+
+            throw $exception;
+        }
     }
 
     /**

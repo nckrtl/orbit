@@ -147,7 +147,8 @@
               "solutions/sqlite-wal-default",
               "solutions/realtime-reverb",
               "solutions/relocate-gateway-role",
-              "solutions/cutover-proxycli"
+              "solutions/cutover-proxycli",
+              "solutions/node-add-private-dns-on-an-existing-node"
             ]
           }
         ]
@@ -728,7 +729,9 @@
               "decisions/0156-route-the-private-domain-on-the-gateway-machine-to-vpn-dns",
               "decisions/0157-keep-private-caddy-sites-off-the-public-listener",
               "decisions/0158-end-interrupted-activity",
-              "decisions/0159-set-a-stale-caddyfile-aside-when-caddy-is-absent"
+              "decisions/0159-push-activity-changes-to-the-web-app",
+              "decisions/0160-push-each-approved-subtask-and-remove-the-finished-workspace-clone",
+              "decisions/0161-set-a-stale-caddyfile-aside-when-caddy-is-absent"
             ]
           }
         ]

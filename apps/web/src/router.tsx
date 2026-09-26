@@ -4,6 +4,8 @@ import {
     createRouter,
     type RouterHistory,
 } from "@tanstack/react-router";
+import { readActivitySearch } from "./api/activities";
+import { ActivityDetail, ActivityPage } from "./pages/Activity";
 import { TasksBoard, TaskDetail, SubtaskDetail } from "./pages/Tasks";
 import { Dashboard } from "./pages/Dashboard";
 import { NodeCreate } from "./pages/NodeCreate";
@@ -26,6 +28,18 @@ const routeTree = rootRoute.addChildren([
         getParentRoute: () => rootRoute,
         path: "/tasks/$id/subtasks/$subtaskId",
         component: SubtaskDetail,
+    }),
+    createRoute({
+        getParentRoute: () => rootRoute,
+        path: "/activity",
+        component: ActivityPage,
+        validateSearch: (search: Record<string, unknown>) => readActivitySearch(search),
+    }),
+    createRoute({
+        getParentRoute: () => rootRoute,
+        path: "/activity/$id",
+        component: ActivityDetail,
+        validateSearch: (search: Record<string, unknown>) => readActivitySearch(search),
     }),
     createRoute({ getParentRoute: () => rootRoute, path: "/nodes/create", component: NodeCreate }),
     createRoute({

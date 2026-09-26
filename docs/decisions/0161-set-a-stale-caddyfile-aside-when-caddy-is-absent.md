@@ -1,10 +1,10 @@
 ---
-title: "ADR 0159: Set a stale Caddyfile aside when Caddy is absent"
-sidebarTitle: "0159 Set a stale Caddyfile aside when Caddy is absent"
+title: "ADR 0161: Set a stale Caddyfile aside when Caddy is absent"
+sidebarTitle: "0161 Set a stale Caddyfile aside when Caddy is absent"
 description: "Proposed. A Node Caddy build that skips because Caddy is absent moves a live Caddyfile that is not the render into the backup directory, so a start of Caddy after that move cannot load a removed certificate. Amends ADR 0141."
 ---
 
-# ADR 0159: Set a stale Caddyfile aside when Caddy is absent
+# ADR 0161: Set a stale Caddyfile aside when Caddy is absent
 
 When a Node Caddy build skips because `/usr/bin/caddy` is absent and the `caddy` service is not running, and the live Caddyfile is not the file the build rendered, the build moves that live path into `/etc/caddy/orbit-backups/`. `systemctl start caddy` after that move has no live file that names a removed certificate. The next build that can validate writes a fresh file.
 

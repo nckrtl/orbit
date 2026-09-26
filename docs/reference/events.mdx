@@ -50,7 +50,7 @@ Every event shares the same shape. The broadcast name equals `type`.
 | `type` | `<family>.<verb>`, for example `node.created`. Also the broadcast name a client subscribes to. |
 | `id` | The changed record's id. A string annotation ID for annotations; a numeric id for every family except deploy steps, which use the step's name. |
 | `at` | ISO 8601 timestamp of the broadcast, in the Gateway's timezone. |
-| `data` | For annotation notices, `{ id, instanceId, revision }`. For task notices and Process usage, the fields their tables below list. For other changes, the record exactly as its list or show endpoint returns it: the same Spatie Data object, unchanged. A `deleted` event carries a minimal snapshot instead, usually just `id` and a name or slug, because the action deletes the record before the broadcast and leaves nothing else to serialize. |
+| `data` | For annotation notices, `{ id, instanceId, revision }`. For task notices, Activity notices, and Process usage, the fields their tables below list. For other changes, the record exactly as its list or show endpoint returns it: the same Spatie Data object, unchanged. A `deleted` event carries a minimal snapshot instead, usually just `id` and a name or slug, because the action deletes the record before the broadcast and leaves nothing else to serialize. |
 
 ```json
 {
@@ -63,7 +63,7 @@ Every event shares the same shape. The broadcast name equals `type`.
 
 ## Verbs
 
-Most families broadcast `created`, `updated`, and `deleted`. Three families also broadcast `status`, reserved for a change to the Gateway's own recorded runtime state rather than to configuration: process start, stop, and restart. Node and Instance runtime state changes are not currently broadcast; see [Limits](#limits). `process.usage` is a periodic sample rather than a record change.
+Most families broadcast `created`, `updated`, and `deleted`. Three families also broadcast `status`, reserved for a change to the Gateway's own recorded runtime state rather than to configuration: process start, stop, and restart. Node and Instance runtime state changes are not currently broadcast; see [Limits](#limits). `process.usage` is a periodic sample rather than a record change. Activity broadcasts `created` and `updated`, not `deleted`, because the Gateway does not delete Activity rows.
 
 ## Event catalogue
 
@@ -140,6 +140,25 @@ Task events are notices. They carry identifiers, status, and counts, never title
 
 A change only to a group's or subtask's tokens, line counts, or duration does not broadcast by itself, because showing a group refreshes those values. They reach clients with the next other change. The Gateway collects the task changes of one request, one scheduler tick, or one agent view pass, and broadcasts each record once when that work ends.
 
+### Activity
+
+Activity events are notices on the `orbit` channel. They carry the list columns and never `properties`. `properties` can pass Reverb's 10,000-byte limit, and they hold operation input. A client calls [`activity:show`](/cli/activity) for the full record. [ADR 0159](/decisions/0159-push-activity-changes-to-the-web-app) records the design.
+
+| Type | Fires when | Data |
+| --- | --- | --- |
+| `activity.created` | A row is stored. | `{ id, request_id, command, status, caller_node_id, target_node_id, error_code, duration_ms, occurred_at }` |
+| `activity.updated` | A stored `running` row records its outcome. | The same fields as `activity.created`. |
+
+A command that can change something fires `activity.created` when its `running` row is stored. It fires `activity.updated` when that row records `succeeded` or `failed`.
+
+A read fires `activity.created` only, and only when a row is stored. [ADR 0152](/decisions/0152-sample-successful-read-activity) stores a successful read once per command, caller, and target in 60 seconds. A read that writes no row broadcasts nothing. A `schedule:*` read and a `:credentials` read are stored on every call, still as `created` only.
+
+The interrupted-Activity sweep and the shutdown finalizer fire `activity.updated` when they end a `running` row. [ADR 0158](/decisions/0158-end-interrupted-activity) defines that ending. The row is saved before the notice. A failed broadcast leaves the saved outcome in place.
+
+A row whose command starts with `activity:` is not broadcast. The page's own list and show therefore do not arrive as notices. A write that changes only `properties` is not broadcast, because the notice has no field for them.
+
+The envelope `id` and `data.id` are the Activity id. `occurred_at` is the time the Gateway recorded the row. `caller_node_id`, `target_node_id`, `error_code`, and `duration_ms` are null when the row has none.
+
 ### Process usage
 
 While a browser watches, the Gateway broadcasts the CPU and memory of every Process every 15 seconds.
@@ -181,7 +200,7 @@ A deploy step has no numeric id in its API shape, so `id` carries the step's nam
 
 ## Limits
 
-An event broadcasts only when its triggering action returns successfully. Deployment events are the exception: a failed run still records its outcome, so it still broadcasts `deployment.updated`. An operation that fails after it already wrote failure evidence onto a record, such as a `failed_step` or `error_code`, does not broadcast that write: the action throws before it reaches the broadcast call, and the HTTP response already reports the failure.
+An event broadcasts only when its triggering action returns successfully. Deployment events are one exception: a failed run still records its outcome, so it still broadcasts `deployment.updated`. Activity is the other: a failed command still stores a row, and that store still broadcasts. The interrupted-Activity sweep and the shutdown finalizer broadcast `activity.updated` from outside the request. An operation that fails after it already wrote failure evidence onto a record, such as a `failed_step` or `error_code`, does not broadcast that write: the action throws before it reaches the broadcast call, and the HTTP response already reports the failure.
 
 An idempotent create call, such as adding a Process, Schedule, or firewall rule that already exists with identical configuration, returns the existing record without change and does not broadcast. Only a call that creates a genuinely new record broadcasts a `created` event.
 

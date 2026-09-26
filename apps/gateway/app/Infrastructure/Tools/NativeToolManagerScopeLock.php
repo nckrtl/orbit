@@ -13,7 +13,8 @@ use Illuminate\Contracts\Cache\Lock;
 
 /**
  * Serializes each tool manager's shared state on one Node. The lock lives in the pinned NodeLocks store
- * with the request term, so a killed Gateway worker blocks the manager for at most 10 minutes.
+ * with the operation term and is renewed before each command, so a process that dies mid-operation
+ * blocks the manager for at most one term.
  */
 final class NativeToolManagerScopeLock implements ToolManagerScopeLock
 {
@@ -34,7 +35,8 @@ final class NativeToolManagerScopeLock implements ToolManagerScopeLock
             }
         }
 
-        $lock = ($this->locks ?? app(NodeLocks::class))->lock("tool-manager:{$nodeId}:{$manager->value}", NodeLocks::RequestSeconds);
+        $locks = $this->locks ?? app(NodeLocks::class);
+        $lock = $locks->lock("tool-manager:{$nodeId}:{$manager->value}", $locks->operationSeconds());
 
         if (! $lock->get()) {
             throw new ToolManagerScopeLockException($nodeId, $manager);

@@ -13,6 +13,7 @@ use App\Actions\Gateway\GatewayOperatingSystemGuard;
 use App\Actions\Hibernation\SweepIdleAppDevRuntimesAction;
 use App\Actions\Nodes\AssignRoleAction;
 use App\Console\GatewayBoostInstallCommand;
+use App\Domain\Activity\ActivityBroadcastObserver;
 use App\Domain\AgentView\AgentProcessView;
 use App\Domain\AgentView\AgentStateView;
 use App\Domain\AgentView\AgentViewConverger;
@@ -304,6 +305,7 @@ use App\Infrastructure\Nodes\Roles\NodeRoleConvergeLock;
 use App\Infrastructure\Nodes\SshManagedUserAccountResolver;
 use App\Infrastructure\Nodes\SshNodeReachabilityProbe;
 use App\Infrastructure\Processes\CommandDeadline;
+use App\Infrastructure\Processes\LockRenewingProcessRunner;
 use App\Infrastructure\Processes\NativeProcessAdmissionLock;
 use App\Infrastructure\Processes\NativeProcessRunner;
 use App\Infrastructure\Processes\NativeProcessRuntimeLease;
@@ -469,7 +471,6 @@ final class AppServiceProvider extends ServiceProvider
         ScheduleRuntimeManager::class => RemoteScheduleRuntimeManager::class,
         GitHubApi::class => HttpGitHubApi::class,
         RepositoryDefaultBranchResolver::class => NativeRepositoryDefaultBranchResolver::class,
-        ProcessRunner::class => NativeProcessRunner::class,
         SshExecutor::class => NativeSshExecutor::class,
         DatabaseInspectionExecutor::class => RegisteredDatabaseInspectionExecutor::class,
         ClusterRouterDnsSelectionReconciler::class => NativeClusterRouterDnsSelectionReconciler::class,
@@ -545,6 +546,14 @@ final class AppServiceProvider extends ServiceProvider
             NodeLocks::class,
             static fn ($app): NodeLocks => new NodeLocks(
                 $app->make(CacheManager::class)->build(NodeLocks::storeConfiguration((string) config('orbit.home'))),
+                console: $app->runningInConsole(),
+            ),
+        );
+        $this->app->bind(
+            ProcessRunner::class,
+            static fn ($app): ProcessRunner => new LockRenewingProcessRunner(
+                $app->make(NativeProcessRunner::class),
+                $app->make(NodeLocks::class),
             ),
         );
         $this->app->singleton(NodeRoleConvergeLock::class);
@@ -865,6 +874,7 @@ final class AppServiceProvider extends ServiceProvider
             GatewayCacheStore::assertSupported($cache, $this->app->environment(), $this->app->configurationIsCached());
         }
         Activity::observe($activityPropertiesObserver);
+        Activity::observe(ActivityBroadcastObserver::class);
         // Reverb event bodies carry text as UTF-8, so non-ASCII log lines keep their length (ADR 0153).
         $this->app->make(BroadcastManager::class)->extend(
             'reverb',

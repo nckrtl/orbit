@@ -1,4 +1,9 @@
 import type { QueryClient } from "@tanstack/react-query";
+import {
+    activityDetailQueryKey,
+    insertActivityCreated,
+    patchActivityUpdated,
+} from "../api/activities";
 import { markProcessUsage } from "./process-usage";
 
 export type RealtimeEvent = { type: string; id: number; at: string; data: Record<string, unknown> };
@@ -69,14 +74,45 @@ export function applyProcessUsage(client: QueryClient, data: Row): void {
     );
 }
 
-/** How long task refetches wait, so the notices of one Gateway flush refetch each query once. */
+/** How long task and Activity refetches wait, so the notices of one flush refetch each query once. */
 export const TASK_REFETCH_DELAY_MS = 100;
 
-const pendingRefetches = new Map<string, { queryKey: string[]; exact: boolean }>();
+const pendingRefetches = new Map<string, { queryKey: readonly string[]; exact: boolean }>();
 let refetchTimer: ReturnType<typeof setTimeout> | undefined;
 let refetchClient: QueryClient | undefined;
 
-/** Runs the waiting task refetches now, one per query key. */
+type RefetchFilters = {
+    queryKey?: readonly unknown[];
+    exact?: boolean;
+    predicate?: (query: { queryKey: readonly unknown[] }) => boolean;
+};
+
+/**
+ * Invalidates the matching active queries. TanStack Query keeps a first fetch that has not stored
+ * data yet, and that response then overwrites this refetch and clears the invalidation. Cancel that
+ * empty fetch first so the new read replaces it. A fetch that already has data is left to
+ * `invalidateQueries`, which cancels it itself.
+ */
+export function refetchReplacingInitial(client: QueryClient, filters?: RefetchFilters): void {
+    void client.cancelQueries(
+        {
+            ...filters,
+            type: "active",
+            predicate: (query) =>
+                query.state.data === undefined && query.state.fetchStatus !== "idle",
+        },
+        { silent: true, revert: false },
+    );
+
+    if (filters === undefined) {
+        void client.invalidateQueries();
+        return;
+    }
+
+    void client.invalidateQueries(filters);
+}
+
+/** Runs the waiting task and Activity refetches now, one per query key. */
 export function flushTaskRefetches(): void {
     clearTimeout(refetchTimer);
     refetchTimer = undefined;
@@ -84,17 +120,21 @@ export function flushTaskRefetches(): void {
     const refetches = [...pendingRefetches.values()];
     pendingRefetches.clear();
 
+    if (client === undefined) {
+        return;
+    }
+
     for (const filters of refetches) {
-        void client?.invalidateQueries(filters);
+        refetchReplacingInitial(client, filters);
     }
 }
 
 /**
- * Queues one refetch. One Gateway flush often names a group in `task_group.updated` and in
- * `agent_thread.updated`; both land here, so each tab shows the group once. The refetch replaces a
- * request already in flight, because that request may have started before the change.
+ * Queues one refetch. Notices from one Gateway flush share this queue, so each query runs once:
+ * a task group named twice, or a sweep that ends many Activity rows. The refetch replaces a
+ * request already in flight, including a first fetch that has not stored data yet.
  */
-function scheduleRefetch(client: QueryClient, queryKey: string[], exact: boolean): void {
+function scheduleRefetch(client: QueryClient, queryKey: readonly string[], exact: boolean): void {
     refetchClient = client;
     const key = JSON.stringify([queryKey, exact]);
     pendingRefetches.set(key, { queryKey, exact });
@@ -147,6 +187,32 @@ function applyTaskEvent(client: QueryClient, type: string, data: Row): boolean {
     }
 }
 
+/**
+ * Activity events are notices. They carry every list column, so the page writes them into the
+ * cached log instead of refetching it. `updated` also refetches the open row from `activity:show`,
+ * which is where `properties` live. A burst of notices refetches that row once.
+ */
+function applyActivityEvent(client: QueryClient, event: RealtimeEvent): boolean {
+    if (event.type !== "activity.created" && event.type !== "activity.updated") {
+        return false;
+    }
+
+    const data = event.data.id === undefined ? { ...event.data, id: event.id } : event.data;
+    if (event.type === "activity.created") {
+        insertActivityCreated(client, data);
+
+        return true;
+    }
+
+    patchActivityUpdated(client, data);
+    const id = keyId(data.id) ?? keyId(event.id);
+    if (id !== null) {
+        scheduleRefetch(client, activityDetailQueryKey(id), true);
+    }
+
+    return true;
+}
+
 /** Applies one realtime event on the `orbit` channel to the query cache. */
 export function applyEvent(client: QueryClient, event: RealtimeEvent): void {
     // A usage sample patches rows the Process list already has; it is not a Process record.
@@ -157,6 +223,10 @@ export function applyEvent(client: QueryClient, event: RealtimeEvent): void {
     }
 
     if (applyTaskEvent(client, event.type, event.data)) {
+        return;
+    }
+
+    if (applyActivityEvent(client, event)) {
         return;
     }
 

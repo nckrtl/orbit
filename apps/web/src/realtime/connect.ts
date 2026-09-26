@@ -2,7 +2,12 @@ import { notifyAnnotationUpdates } from "./annotations";
 import type { QueryClient } from "@tanstack/react-query";
 import Pusher from "pusher-js";
 import { get } from "../api/client";
-import { applyEvent, type RealtimeEvent } from "./apply";
+import {
+    activityListQueryKey,
+    isActivityListQueryKey,
+    mergeCachedActivityLists,
+} from "../api/activities";
+import { applyEvent, refetchReplacingInitial, type RealtimeEvent } from "./apply";
 import { downForMs, setLiveness } from "./liveness";
 import { authorizeChannel, setRealtimeSocket, type RealtimeSocket } from "./socket";
 import {
@@ -23,6 +28,34 @@ const RETRY_SECONDS = 30;
 export const FIRST_CONNECT_GRACE_MS = 5_000;
 
 type RealtimeConfig = { url: string | null; key: string | null; channel: string | null };
+
+/**
+ * Reloads the open Activity row with the other queries, and merges the newest log page into the
+ * cache. A list that has not stored a page yet is refetched, so a response from before the
+ * subscription cannot land on top of this one. A list that already has pages is not invalidated.
+ */
+function refreshAfterSubscribe(client: QueryClient, full: boolean): void {
+    if (full) {
+        refetchReplacingInitial(client, {
+            predicate: (query) => !isActivityListQueryKey(query.queryKey),
+        });
+    } else {
+        for (const queryKey of [["task-groups"], ["tasks-status"], ["processes"]]) {
+            refetchReplacingInitial(client, { queryKey });
+        }
+        refetchReplacingInitial(client, {
+            queryKey: ["activities"],
+            predicate: (query) => !isActivityListQueryKey(query.queryKey),
+        });
+    }
+
+    for (const query of client.getQueryCache().findAll({ queryKey: activityListQueryKey })) {
+        if (query.state.data === undefined) {
+            refetchReplacingInitial(client, { queryKey: query.queryKey, exact: true });
+        }
+    }
+    void mergeCachedActivityLists(client);
+}
 
 /**
  * Subscribes to the Gateway's record-change channel and patches the query cache from each event.
@@ -161,15 +194,11 @@ export async function connectRealtime(client: QueryClient, signal: AbortSignal):
             // Events sent while the socket was down are gone; reload what they would have changed.
             // That holds after a reconnect, and after a first connect that came late, when the
             // lists had been polling (a failed socket or a retried realtime discovery). On a prompt
-            // first subscription, reload what now polls only rarely: the task and Process queries,
-            // because a change between their first load and this moment sent no event to this page.
-            if (wasLive || downForMs() > FIRST_CONNECT_GRACE_MS) {
-                void client.invalidateQueries();
-            } else {
-                for (const queryKey of [["task-groups"], ["tasks-status"], ["processes"]]) {
-                    void client.invalidateQueries({ queryKey });
-                }
-            }
+            // first subscription, reload what now polls only rarely: the task, Process, and open
+            // Activity queries, because a change between their first load and this moment sent no
+            // event here. The Activity log is not in that refetch. Refetching the infinite query
+            // would request every loaded page. The newest page is fetched once and merged by id.
+            refreshAfterSubscribe(client, wasLive || downForMs() > FIRST_CONNECT_GRACE_MS);
 
             notifyAnnotationUpdates();
             wasLive = true;

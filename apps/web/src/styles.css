@@ -52,11 +52,13 @@
 
 /*
  * Safe area for an installed iPhone or iPad app. The shell reads these once.
- * A browser tab keeps them at zero: Safari can report a non-zero inset in a tab,
- * especially in landscape, and that must not move the page. Standalone display
- * mode, which a home-screen launch uses, falls back to env(). Turning the device
- * updates env(), so the shell follows. A test or a simulated device sets
- * --safe-area-inset-* and that value wins over env().
+ * html, body, and #app stay the exact height of the web view: no viewport unit
+ * and no inset of their own, or the footer would sit twice as far up. A browser
+ * tab keeps the shell padding at zero. Safari can report a non-zero inset in a
+ * tab, especially in landscape, and that must not move the page. Standalone
+ * display mode, which a home-screen launch uses, falls back to env(). Turning
+ * the device updates env(), so the shell follows. A test or a simulated device
+ * sets --safe-area-inset-* and that value wins over env().
  */
 :root {
     --shell-safe-top: var(--safe-area-inset-top, 0px);
@@ -85,11 +87,13 @@ html[data-standalone] {
 html,
 body,
 #app {
+    /* Fill the web view exactly. The shell's inset is the only safe-area pad. */
     height: 100%;
+    margin: 0;
+    padding: 0;
 }
 
 body {
-    margin: 0;
     background: var(--bg);
     color: var(--fg);
     font-family: var(--font-mono);
@@ -350,6 +354,30 @@ body {
 /* Property lists sit a step looser than the 20px grid so each line has room around it. */
 .frame-body.properties .row {
     height: 28px;
+}
+
+/* The activity log keeps its own scroll anchor. The browser's anchor would shift a prepend twice. */
+[data-activity-log] {
+    overflow-anchor: none;
+}
+
+/* Activity detail wraps every key and value. A phone has no hover, so the full path and request id stay in the layout. */
+.activity-detail-row {
+    display: grid;
+    grid-template-columns: minmax(12ch, 18ch) minmax(0, 1fr);
+    column-gap: 1ch;
+    align-items: start;
+    min-height: 28px;
+    padding: 4px 0;
+    white-space: normal;
+}
+
+.activity-detail-key,
+.activity-detail-value {
+    min-width: 0;
+    overflow: visible;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
 }
 
 .row[data-head] {

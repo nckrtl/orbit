@@ -38,7 +38,9 @@
                 "Router",
                 "Schedule"
             ],
-            "governing_adrs": []
+            "governing_adrs": [
+                "0159"
+            ]
         },
         {
             "path": "docs/api/php-sdk.mdx",
@@ -110,13 +112,15 @@
             "concepts": [
                 "Doctor",
                 "Gateway",
+                "Instance",
                 "Node",
                 "Route",
                 "Schedule"
             ],
             "governing_adrs": [
                 "0152",
-                "0158"
+                "0158",
+                "0159"
             ]
         },
         {
@@ -2790,7 +2794,8 @@
                 "0103",
                 "0112",
                 "0113",
-                "0122"
+                "0122",
+                "0160"
             ]
         },
         {
@@ -3238,7 +3243,8 @@
                 "0114",
                 "0117",
                 "0121",
-                "0132"
+                "0132",
+                "0160"
             ]
         },
         {
@@ -3690,7 +3696,7 @@
                 "0141",
                 "0146",
                 "0157",
-                "0159"
+                "0161"
             ]
         },
         {
@@ -4100,8 +4106,58 @@
             ]
         },
         {
-            "path": "docs/decisions/0159-set-a-stale-caddyfile-aside-when-caddy-is-absent.md",
-            "title": "ADR 0159: Set a stale Caddyfile aside when Caddy is absent",
+            "path": "docs/decisions/0159-push-activity-changes-to-the-web-app.md",
+            "title": "ADR 0159: Push Activity changes to the web app",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/gateway",
+                "apps/web",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Gateway",
+                "Node",
+                "Process",
+                "Schedule",
+                "Task"
+            ],
+            "governing_adrs": [
+                "0084",
+                "0151",
+                "0152",
+                "0158",
+                "0159"
+            ]
+        },
+        {
+            "path": "docs/decisions/0160-push-each-approved-subtask-and-remove-the-finished-workspace-clone.md",
+            "title": "ADR 0160: Push each approved subtask and remove the finished workspace clone",
+            "kind": "decision",
+            "components": [
+                "apps/docs",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Doctor",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Process",
+                "Project",
+                "Route",
+                "Task"
+            ],
+            "governing_adrs": [
+                "0103",
+                "0121",
+                "0160"
+            ]
+        },
+        {
+            "path": "docs/decisions/0161-set-a-stale-caddyfile-aside-when-caddy-is-absent.md",
+            "title": "ADR 0161: Set a stale Caddyfile aside when Caddy is absent",
             "kind": "decision",
             "components": [
                 "apps/docs",
@@ -4116,7 +4172,7 @@
             ],
             "governing_adrs": [
                 "0141",
-                "0159"
+                "0161"
             ]
         },
         {
@@ -4307,7 +4363,9 @@
                 "0156",
                 "0157",
                 "0158",
-                "0159"
+                "0159",
+                "0160",
+                "0161"
             ]
         },
         {
@@ -4693,7 +4751,7 @@
                 "0139",
                 "0141",
                 "0157",
-                "0159"
+                "0161"
             ]
         },
         {
@@ -4898,7 +4956,10 @@
                 "0129",
                 "0148",
                 "0151",
-                "0153"
+                "0152",
+                "0153",
+                "0158",
+                "0159"
             ]
         },
         {
@@ -4966,7 +5027,8 @@
             "governing_adrs": [
                 "0098",
                 "0121",
-                "0140"
+                "0140",
+                "0160"
             ]
         },
         {
@@ -5543,7 +5605,8 @@
                 "0132",
                 "0133",
                 "0134",
-                "0140"
+                "0140",
+                "0160"
             ]
         },
         {
@@ -5622,7 +5685,8 @@
             ],
             "governing_adrs": [
                 "0123",
-                "0151"
+                "0151",
+                "0159"
             ]
         },
         {
@@ -5700,6 +5764,24 @@
             ],
             "governing_adrs": [
                 "0080"
+            ]
+        },
+        {
+            "path": "docs/solutions/node-add-private-dns-on-an-existing-node.md",
+            "title": "node:add private DNS on an existing Node",
+            "kind": "solution",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Cluster",
+                "Gateway",
+                "Node",
+                "Process",
+                "Router"
+            ],
+            "governing_adrs": [
+                "0092"
             ]
         },
         {

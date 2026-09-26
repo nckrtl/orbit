@@ -188,6 +188,44 @@ it('reports an unreachable workspace and invalid output as check failures', func
     'invalid output' => [new CommandResult(0, 'not json', '', 1, false), 'The check answered with invalid output.'],
 ]);
 
+it('reads the same working tree as the check without touching the index', function (): void {
+    $checkout = check_runner_checkout('echo ok');
+    $instance = check_runner_instance($checkout);
+    $runner = check_runner(new LocalShellSshExecutor);
+    $status = (new Process(['git', 'status', '--porcelain'], $checkout))->mustRun()->getOutput();
+
+    $process = $runner->start($instance, 'echo ok');
+    $runner->cancel($instance, $process);
+    $snapshot = $runner->snapshot($instance);
+
+    expect($snapshot->head)->toBe($process->head)
+        ->and($snapshot->tree)->toBe($process->tree)
+        ->and((new Process(['git', 'status', '--porcelain'], $checkout))->mustRun()->getOutput())->toBe($status);
+
+    file_put_contents($checkout.'/extra.txt', "extra\n");
+    $written = (new Process(['git', 'status', '--porcelain'], $checkout))->mustRun()->getOutput();
+    $changed = $runner->snapshot($instance);
+    File::ensureDirectoryExists($checkout.'/ignored');
+    file_put_contents($checkout.'/ignored/cache', "cache\n");
+    $ignored = $runner->snapshot($instance);
+
+    expect($changed->head)->toBe($snapshot->head)
+        ->and($changed->tree)->not->toBe($snapshot->tree)
+        ->and($ignored->head)->toBe($changed->head)
+        ->and($ignored->tree)->toBe($changed->tree)
+        ->and((new Process(['git', 'status', '--porcelain'], $checkout))->mustRun()->getOutput())->toBe($written);
+});
+
+it('reports an unreachable workspace when the review tree cannot be read', function (CommandResult $result, string $message): void {
+    $runner = check_runner(new AppDevFakeSshExecutor([$result]));
+
+    expect(fn () => $runner->snapshot(check_runner_instance('/srv/orbit/apps/shop/task-8')))
+        ->toThrow(TaskCheckException::class, $message);
+})->with([
+    'unreachable' => [new CommandResult(255, '', 'Connection refused', 1, false), 'The task workspace could not be reached for the workspace tree.'],
+    'invalid output' => [new CommandResult(0, 'not json', '', 1, false), 'The workspace tree could not be read.'],
+]);
+
 it('runs setup steps in order before composer check, and records the tree after setup', function (): void {
     $checkout = check_runner_checkout('test -f ignored/installed && echo checked');
     $instance = check_runner_instance($checkout);

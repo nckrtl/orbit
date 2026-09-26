@@ -148,9 +148,13 @@ Run the command again. `node:role:relocate` and Cluster Router changes take the 
 
 Operations on different Nodes run in parallel.
 
-An operation that dies mid-way, such as a killed Gateway worker, leaves its role `provisioning` or `removing`. Once the claim is 11 minutes old, the role lock's term plus a 1-minute margin for whole-second times and PHP-FPM slack, and no operation holds the lock, the claim is stale: `node:role:add --converge` and `node:role:remove` take it over, and Doctor reports `role.claim_stale`.
+An operation that dies mid-way, such as a killed Gateway worker, leaves its role `provisioning` or `removing`. Once the claim is 11 minutes old, the request term of the role lock plus a 1-minute margin for whole-second times and PHP-FPM slack, and no operation holds the lock, the claim is stale: `node:role:add --converge` and `node:role:remove` take it over, and Doctor reports `role.claim_stale`. A live operation, even a long Artisan command, renews the lock before each command, so its claim never counts as stale. After a killed worker, the claim can be taken over at most one [term](#lock-renewal) after the operation's last command started, plus the 1-minute margin.
 
 The window can follow the lock term because adding and removing a role take the lock before they claim, and relocation and Cluster Router changes, which claim outside the lock, end within one Gateway request. `orbit:gateway-bootstrap` also claims outside the lock, but it sets the Node itself to `provisioning` first, and role add and remove refuse a Node that is not `active`.
+
+The Node agent converge at the `agent` step of `node:add` runs after the role steps released the lock. It holds only the Node agent lock. It installs the agent's own files and restarts only `orbit-agent.service`, so it can run beside a role operation.
+
+An offline role removal, for a Node the Gateway cannot reach, runs outside the lock. It changes only the Gateway and other Nodes, never the unreachable machine.
 
 ### Per-Node locks
 
@@ -163,9 +167,23 @@ Four kinds of lock guard work on one Node. They all live in a file cache store u
 | Role | Role operations | 10 minutes | Waits up to 2 minutes, then `node_role.node_busy` |
 | Node agent | The [agent converge](/reference/node-agent#agent-secret) | 4 minutes, renewed before each step | Waits up to 2 minutes, then `agent.converge_busy` |
 
-The 10-minute term matches the Gateway's PHP-FPM request limit, so a worker that is killed mid-request blocks the Node for at most 10 minutes. An Artisan command such as `orbit:node-provision` has no time limit and can hold a lock past its term.
+The 10-minute term matches the Gateway's PHP-FPM request limit. [Lock renewal](#lock-renewal) describes the term in an Artisan command and how a running operation keeps its locks.
 
-An operation takes the locks it needs in one fixed order: tool, then tool manager (in the order `apt`, `vp`, `composer`, `brew`), then role, then Node agent. No code takes an earlier lock while it holds a later one. The tool and tool manager locks fail at once instead of waiting, so an operation that holds the role lock never waits for a tool manager. The locks therefore cannot deadlock.
+A tool operation takes its tool lock, then its tool manager lock. An operation that needs several tool managers takes them in the order `apt`, `vp`, `composer`, `brew`. A role operation takes the role lock, then any tool manager locks its role needs, such as those that `app-dev` and `app-prod` set up. The Node agent lock comes last, inside or after the role lock.
+
+The locks cannot deadlock. The tool and tool manager locks fail at once instead of waiting, so no operation waits for one while it holds another lock. Only the role and Node agent locks wait, and no code takes the role lock while it holds the Node agent lock.
+
+### Lock renewal
+
+The terms above apply in a Gateway request. In an Artisan command, such as `orbit:node-provision`, the tool, tool manager, and role locks have a 20-minute term instead. An Artisan command has no time limit. Each command it runs has a timeout of 15 minutes by default, and no command that runs under a Node lock sets a longer one.
+
+Every lock that a process holds is renewed for its full term before each command the process runs, on the Node or on the Gateway. A long operation therefore keeps its locks for as long as it runs. A process that dies mid-operation blocks the Node for at most one term after its last command started.
+
+Another operation that waits for the same lock briefly holds its file each time it asks. A renewal that finds the file busy retries for up to 1 second. If the file stays busy that long, the lock still holds for the rest of its term, and the next command renews it.
+
+A renewal fails only once the lock has expired, whether or not another operation has taken it since. The command then does not run and fails with `node.lock_lost`. Every later command of the same operation fails in the same way. An operation that took the lock keeps it.
+
+A role operation that lost its lock stops at its current step. It reports its own `error.code`, such as `node_role.convergence_failed`, with `details.error_code` `node.lock_lost`, and the role becomes `failed` with error code `node.lock_lost`.
 
 ## Node agent
 

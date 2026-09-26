@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { ReactNode, Ref } from "react";
 
 type FrameProps = {
     title?: ReactNode;
@@ -9,6 +9,8 @@ type FrameProps = {
     state?: "hovered" | "focused" | "warn";
     className?: string;
     bodyClassName?: string;
+    /** The scrolling body, when the caller has to read its scroll position. */
+    bodyRef?: Ref<HTMLDivElement>;
     children: ReactNode;
     onMouseDown?: () => void;
     /** The name the keyboard knows this frame by, so the arrows can find it on the screen. */
@@ -27,6 +29,7 @@ export function Frame({
     state,
     className = "",
     bodyClassName = "",
+    bodyRef,
     children,
     onMouseDown,
     pane,
@@ -53,6 +56,7 @@ export function Frame({
             </div>
             {/* With labels in the bottom border, the body ends above them, so no row scrolls under a label. */}
             <div
+                ref={bodyRef}
                 className={`frame-body ${bodyClassName} ${bottomLeft !== undefined || bottomRight !== undefined ? "mb-[10px]" : ""}`}
             >
                 {children}

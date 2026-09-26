@@ -344,6 +344,35 @@ it('keeps another cause of assistance when the pull request merges', function ()
     $this->assertDatabaseHas('task_groups', ['id' => $group->id, 'status' => 'completed', 'assistance_requested' => true, 'assistance_reason' => 'The operator asked to hold this group.']);
 });
 
+it('backs off a merged pull request cleanup and retries it on a later tick', function (): void {
+    $group = tick_settling_group();
+    $calls = 0;
+    mock(AppInstanceRemover::class)->shouldReceive('execute')->andReturnUsing(function () use (&$calls): never {
+        $calls++;
+
+        throw new RuntimeException('disk full');
+    });
+    Http::preventStrayRequests();
+    Http::fake([
+        'https://api.github.com/repos/acme/orbit/installation' => Http::response(['id' => 9]),
+        'https://api.github.com/app/installations/9/access_tokens' => Http::response(['token' => 'ghs_watch'], 201),
+        'https://api.github.com/repos/acme/orbit/pulls/42' => Http::response(['merged' => true, 'state' => 'closed']),
+    ]);
+
+    app(TaskScheduler::class)->tick();
+    app(TaskScheduler::class)->tick();
+
+    expect($calls)->toBe(1)
+        ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Settling)
+        ->and($group->fresh()?->assistance_reason)->toBe('Merged pull request cleanup failed: disk full');
+
+    $this->travel(TaskScheduler::AbandonedWorkspaceBackoffSeconds + 1)->seconds();
+    app(TaskScheduler::class)->tick();
+
+    expect($calls)->toBe(2)
+        ->and($group->fresh()?->taskable_id)->toBe($group->taskable_id);
+});
+
 it('replaces its pull request assistance request with the cleanup failure when a merged group cannot complete', function (): void {
     $group = tick_settling_group();
     $group->update(['assistance_requested' => true, 'assistance_reason' => 'The pull request needs attention: It conflicts with main; merge main into the task branch and push.']);
@@ -1113,7 +1142,7 @@ it('retries review findings until the implementer receives them', function (): v
     $group = tick_group();
     $task = $group->tasks->sole();
     $group->update(['status' => TaskGroupStatus::Reviewing]);
-    $task->update(['status' => TaskStatus::Reviewing, 'review_notified_attempt' => $task->review_attempt]);
+    $task->update(['status' => TaskStatus::Reviewing, 'review_notified_attempt' => $task->review_attempt, ...tick_review_baseline()]);
     app()->instance(TaskRunReceipts::class, new FakeTaskRunReceipts([FakeTaskRunReceipts::contents('changes_requested', 'Add the missing test.')]));
     $dispatcher = new class implements T3Dispatcher
     {
@@ -1257,7 +1286,7 @@ it('relayed findings require a newer implementer turn, a new receipt, and a new 
     $group = tick_group();
     $task = $group->tasks->sole();
     $group->update(['status' => TaskGroupStatus::Reviewing]);
-    $task->update(['status' => TaskStatus::Reviewing, 'review_notified_attempt' => $task->review_attempt]);
+    $task->update(['status' => TaskStatus::Reviewing, 'review_notified_attempt' => $task->review_attempt, ...tick_review_baseline()]);
     app()->instance(TaskRunReceipts::class, new FakeTaskRunReceipts([
         FakeTaskRunReceipts::contents('changes_requested', 'Fix the regression before requesting review again.'),
         null,
@@ -1346,8 +1375,17 @@ it('retains reminder send failures across successful classifications and clears 
  * a later subtask waits behind it.
  *
  * @param  list<string|null>  $receipts
- * @return array{TaskGroup, Task, FakeTaskRunReceipts, object}
+ * @return array{TaskGroup, Task, FakeTaskRunReceipts, object, object}
  */
+/** @return array{review_workspace_head: string, review_workspace_tree: string} */
+function tick_review_baseline(): array
+{
+    return [
+        'review_workspace_head' => str_repeat('a', 40),
+        'review_workspace_tree' => str_repeat('b', 40),
+    ];
+}
+
 function tick_review(array $receipts, bool $onBranch = true, bool $last = false): array
 {
     $group = tick_group();
@@ -1356,7 +1394,7 @@ function tick_review(array $receipts, bool $onBranch = true, bool $last = false)
         Task::query()->create(['task_group_id' => $group->id, 'position' => 2, 'title' => 'Routes', 'brief' => 'Add the routes.', 'status' => TaskStatus::Todo]);
     }
     $group->update(['status' => TaskGroupStatus::Reviewing]);
-    $task->update(['status' => TaskStatus::Reviewing, 'review_notified_attempt' => $task->review_attempt, 'review_notified_turn_id' => 'handoff-turn']);
+    $task->update(['status' => TaskStatus::Reviewing, 'review_notified_attempt' => $task->review_attempt, 'review_notified_turn_id' => 'handoff-turn', ...tick_review_baseline()]);
     app(TaskExtensionState::class)->enable();
     app()->instance(T3Dispatcher::class, tick_dispatcher());
     app()->instance(T3ThreadReader::class, new class implements T3ThreadReader
@@ -1379,17 +1417,53 @@ function tick_review(array $receipts, bool $onBranch = true, bool $last = false)
         public function commit(AppInstance $instance, string $message): ?string
         {
             $this->messages[] = $message;
+            if ($this->fails) {
+                return null;
+            }
+            $sha = str_repeat('c', 40);
+            $checks = app(TaskCheckRunner::class);
+            if ($checks instanceof FakeTaskCheckRunner) {
+                $checks->head = $sha;
+            }
 
-            return $this->fails ? null : str_repeat('c', 40);
+            return $sha;
         }
     };
     app()->instance(TaskWorkspaceSigner::class, $signer);
+    $publisher = new class implements TaskPullRequestPublisher
+    {
+        /** @var list<int> */
+        public array $pushes = [];
 
-    return [$group->fresh(['app', 'tasks', 'taskable']) ?? $group, $task, $receipts, $signer];
+        /** @var list<string> */
+        public array $bodies = [];
+
+        public int $pushFailures = 0;
+
+        public function publish(TaskGroup $group, string $body): string
+        {
+            $this->bodies[] = $body;
+
+            return 'https://github.com/acme/orbit/pull/42';
+        }
+
+        public function push(TaskGroup $group): void
+        {
+            $this->pushes[] = $group->id;
+            if ($this->pushFailures > 0) {
+                $this->pushFailures--;
+
+                throw new TaskPullRequestException('The task branch could not be pushed.');
+            }
+        }
+    };
+    app()->instance(TaskPullRequestPublisher::class, $publisher);
+
+    return [$group->fresh(['app', 'tasks', 'taskable']) ?? $group, $task, $receipts, $signer, $publisher];
 }
 
 it('commits an approved subtask with the title and the reviewer summary, then starts the next subtask', function (): void {
-    [$group, $task, $receipts, $signer] = tick_review([FakeTaskRunReceipts::contents('approved', 'Checked the models and their tests.')]);
+    [$group, $task, $receipts, $signer, $publisher] = tick_review([FakeTaskRunReceipts::contents('approved', 'Checked the models and their tests.')]);
     $next = Task::query()->where('title', 'Routes')->sole();
     $spawner = new class implements AgentSpawner
     {
@@ -1423,6 +1497,8 @@ it('commits an approved subtask with the title and the reviewer summary, then st
         ->and($approval->author)->toBe('reviewer')
         ->and($approval->review_attempt)->toBe($task->review_attempt)
         ->and($approval->commit_sha)->toBe(str_repeat('c', 40))
+        ->and($publisher->pushes)->toBe([$group->id])
+        ->and($publisher->bodies)->toBe([])
         ->and($task->fresh()?->review_handled_comment_id)->toBe($approval->id)
         ->and($receipts->cleared)->toHaveCount(1);
     Classification::assertNothingClassified();
@@ -1575,6 +1651,9 @@ function tick_publishing(array $missing = [[]], int $failures = 0): object
         /** @var list<string> */
         public array $bodies = [];
 
+        /** @var list<int> */
+        public array $pushes = [];
+
         public function __construct(private int $failures) {}
 
         public function publish(TaskGroup $group, string $body): string
@@ -1587,7 +1666,10 @@ function tick_publishing(array $missing = [[]], int $failures = 0): object
             return 'https://github.com/acme/orbit/pull/42';
         }
 
-        public function push(TaskGroup $group): void {}
+        public function push(TaskGroup $group): void
+        {
+            $this->pushes[] = $group->id;
+        }
     };
     app()->instance(TaskBriefCoverage::class, $coverage);
     app()->instance(TaskPullRequestPublisher::class, $publisher);
@@ -1605,6 +1687,7 @@ it('commits the last approved subtask, opens the pull request with the reviewer 
 
     $approval = $task->comments()->sole();
     expect($signer->messages)->toBe(["Models\n\nChecked the feature."])
+        ->and($publishing->publisher->pushes)->toBe([$group->id])
         ->and($publishing->publisher->bodies)->toBe([TaskPullRequestDescription::render(new TaskRunPullRequest('Adds tick routing.', ['Tasks store their records.'], []), 1)])
         ->and($approval->pull_request)->toBe(['summary' => 'Adds tick routing.', 'changes' => ['Tasks store their records.'], 'breaking' => []])
         ->and($group->fresh()?->pr_url)->toBe('https://github.com/acme/orbit/pull/42')
@@ -1650,21 +1733,102 @@ it('names each subtask the change list misses and does not commit', function ():
 });
 
 it('retries opening the pull request without storing the approval twice', function (): void {
-    [$group, $task] = tick_review([tick_final_approval()], last: true);
+    [$group, $task, , $signer] = tick_review([tick_final_approval()], last: true);
     $publishing = tick_publishing([[], []], failures: 1);
 
     app(TaskScheduler::class)->tick();
 
     expect($task->fresh()?->communication_failures)->toBe(1)
         ->and($group->fresh()?->pr_url)->toBeNull()
-        ->and($task->fresh()?->status)->toBe(TaskStatus::Reviewing);
+        ->and($task->fresh()?->status)->toBe(TaskStatus::Reviewing)
+        ->and($task->comments()->sole()->commit_sha)->toBe(str_repeat('c', 40))
+        ->and($signer->messages)->toHaveCount(1)
+        ->and($publishing->publisher->pushes)->toBe([$group->id]);
 
     app(TaskScheduler::class)->tick();
 
     expect($task->comments()->count())->toBe(1)
+        ->and($task->comments()->sole()->commit_sha)->toBe(str_repeat('c', 40))
+        ->and($signer->messages)->toHaveCount(1)
+        ->and($publishing->publisher->pushes)->toBe([$group->id, $group->id])
         ->and($publishing->publisher->bodies)->toHaveCount(2)
         ->and($group->fresh()?->pr_url)->toBe('https://github.com/acme/orbit/pull/42')
         ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Settling);
+});
+
+it('retries publication after Orbit commits and changes HEAD itself', function (): void {
+    [$group, $task] = tick_review([tick_final_approval()], last: true);
+    $publishing = tick_publishing([[], []], failures: 1);
+    $checks = app(TaskCheckRunner::class);
+    if (! $checks instanceof FakeTaskCheckRunner) {
+        throw new RuntimeException('The publication retry needs the fake check runner.');
+    }
+    $signer = new class($checks) implements TaskWorkspaceSigner
+    {
+        public int $commits = 0;
+
+        public function __construct(private FakeTaskCheckRunner $checks) {}
+
+        public function commit(AppInstance $instance, string $message): ?string
+        {
+            $this->commits++;
+            $this->checks->head = str_repeat('c', 40);
+
+            return $this->checks->head;
+        }
+    };
+    app()->instance(TaskWorkspaceSigner::class, $signer);
+
+    app(TaskScheduler::class)->tick();
+
+    expect($task->comments()->sole()->commit_sha)->toBe(str_repeat('c', 40))
+        ->and($signer->commits)->toBe(1)
+        ->and($task->fresh()?->assistance_requested)->toBeFalse()
+        ->and($publishing->publisher->bodies)->toHaveCount(1);
+
+    app(TaskScheduler::class)->tick();
+
+    expect($signer->commits)->toBe(1)
+        ->and($publishing->publisher->bodies)->toHaveCount(2)
+        ->and($task->fresh()?->assistance_requested)->toBeFalse()
+        ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Settling);
+});
+
+it('refuses a reset to the pre-approval HEAD after Orbit committed', function (): void {
+    [$group, $task] = tick_review([tick_final_approval()], last: true);
+    $publishing = tick_publishing([[], []], failures: 1);
+    $checks = app(TaskCheckRunner::class);
+    if (! $checks instanceof FakeTaskCheckRunner) {
+        throw new RuntimeException('The publication retry needs the fake check runner.');
+    }
+    $signer = new class($checks) implements TaskWorkspaceSigner
+    {
+        public int $commits = 0;
+
+        public function __construct(private FakeTaskCheckRunner $checks) {}
+
+        public function commit(AppInstance $instance, string $message): ?string
+        {
+            $this->commits++;
+            $this->checks->head = str_repeat('c', 40);
+
+            return $this->checks->head;
+        }
+    };
+    app()->instance(TaskWorkspaceSigner::class, $signer);
+
+    app(TaskScheduler::class)->tick();
+
+    expect($task->comments()->sole()->commit_sha)->toBe(str_repeat('c', 40))
+        ->and($publishing->publisher->bodies)->toHaveCount(1);
+
+    $checks->head = str_repeat('a', 40);
+    app(TaskScheduler::class)->tick();
+
+    expect($publishing->publisher->bodies)->toHaveCount(1)
+        ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Reviewing)
+        ->and($signer->commits)->toBe(1)
+        ->and($task->fresh()?->assistance_requested)->toBeFalse();
 });
 
 it('counts a failed coverage answer as a communication failure', function (): void {
@@ -1923,7 +2087,7 @@ describe('a thread that works outside the task phase', function (): void {
         $group = tick_group();
         $task = $group->tasks->sole();
         $group->update(['status' => TaskGroupStatus::Reviewing]);
-        $task->update(['status' => TaskStatus::Reviewing, 'review_notified_attempt' => $task->review_attempt, 'review_notified_turn_id' => 'handoff-turn']);
+        $task->update(['status' => TaskStatus::Reviewing, 'review_notified_attempt' => $task->review_attempt, 'review_notified_turn_id' => 'handoff-turn', ...tick_review_baseline()]);
         app(TaskExtensionState::class)->enable();
         $dispatcher = tick_dispatcher();
         app()->instance(T3Dispatcher::class, $dispatcher);

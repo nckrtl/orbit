@@ -216,23 +216,27 @@ it('does not push a settling group without approved subtasks', function (): void
         ->and($cancelled->status)->toBe(TaskGroupStatus::Cancelled);
 });
 
-it('still cancels and drops the workspace record when removal refuses', function (): void {
+it('asks for assistance and keeps the clone when removal of a source-resolved workspace is refused', function (): void {
     app(TaskExtensionState::class)->enable();
     app()->instance(AppInstanceRemover::class, new class implements AppInstanceRemover
     {
         public function execute(AppInstance $instance, bool $force): AppInstanceRemoval
         {
-            throw new ResourceOperationException('instance.remove_refused', 'The checkout could not be inspected.', 409);
+            throw new ResourceOperationException('instance.force_failed', 'The checkout could not be inspected.', 409);
         }
     });
     $group = cancellable_task_group(TaskGroupStatus::Running);
     $instanceId = $group->taskable_id;
 
-    $cancelled = app(CancelTaskGroupAction::class)->execute($group);
+    expect(fn () => app(CancelTaskGroupAction::class)->execute($group))
+        ->toThrow(ResourceOperationException::class, 'The checkout could not be inspected.');
 
-    expect($cancelled->status)->toBe(TaskGroupStatus::Cancelled)
-        ->and($cancelled->taskable_id)->toBeNull()
-        ->and(AppInstance::query()->find($instanceId))->toBeNull();
+    $fresh = $group->fresh();
+    expect($fresh?->status)->toBe(TaskGroupStatus::Running)
+        ->and($fresh?->taskable_id)->toBe($instanceId)
+        ->and($fresh?->assistance_requested)->toBeTrue()
+        ->and($fresh?->assistance_reason)->toBe('Workspace removal failed: The checkout could not be inspected.')
+        ->and(AppInstance::query()->find($instanceId))->not->toBeNull();
 });
 
 /** A group that holds no Instance while its provisioned `task-{id}` workspace stays on the Node. */
@@ -348,7 +352,7 @@ describe('a workspace the group never attached', function (): void {
             ->and(AppInstance::query()->whereKey([$workspace->id, $late->id])->exists())->toBeFalse();
     });
 
-    it('drops the record of a half-provisioned workspace when removal refuses', function (): void {
+    it('keeps a half-provisioned workspace and asks for assistance when removal refuses', function (): void {
         app(TaskExtensionState::class)->enable();
         app()->instance(AppInstanceRemover::class, new class implements AppInstanceRemover
         {
@@ -359,10 +363,14 @@ describe('a workspace the group never attached', function (): void {
         });
         [$group, $workspace] = cancel_unattached_workspace(TaskGroupStatus::Todo, 'checkout_prepared');
 
-        $cancelled = app(CancelTaskGroupAction::class)->execute($group);
+        expect(fn () => app(CancelTaskGroupAction::class)->execute($group))
+            ->toThrow(ResourceOperationException::class, 'AppInstance is not active.');
 
-        expect($cancelled->status)->toBe(TaskGroupStatus::Cancelled)
-            ->and(AppInstance::query()->find($workspace->id))->toBeNull();
+        $fresh = $group->fresh();
+        expect($fresh?->status)->toBe(TaskGroupStatus::Todo)
+            ->and($fresh?->assistance_requested)->toBeTrue()
+            ->and($fresh?->assistance_reason)->toBe('Workspace removal failed: AppInstance is not active.')
+            ->and(AppInstance::query()->find($workspace->id))->not->toBeNull();
     });
 
     it('never removes an Instance that only shares the workspace name', function (): void {

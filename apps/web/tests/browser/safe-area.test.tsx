@@ -1,6 +1,8 @@
 import { expect, it } from "vite-plus/test";
 import { page } from "vite-plus/test/browser";
 import { ANNOTATION_HOST_ID } from "@nckrtl/annotate/host";
+import indexHtml from "../../index.html?raw";
+import { displayMode } from "../../src/ui/viewportReadout";
 import { openApp } from "./app";
 
 const EDGES = ["top", "right", "bottom", "left"] as const;
@@ -51,6 +53,44 @@ function clearInsets(): void {
     setInsets({});
 }
 
+/** html, body, and #app are the web view. Anything taller, or any pad of their own, is a second inset. */
+function expectWebViewFilled(): void {
+    const height = window.innerHeight;
+    for (const element of [
+        document.documentElement,
+        document.body,
+        document.getElementById("app"),
+    ]) {
+        if (!(element instanceof HTMLElement)) {
+            throw new Error("web view root missing");
+        }
+        const style = getComputedStyle(element);
+        expect(style.marginTop).toBe("0px");
+        expect(style.marginRight).toBe("0px");
+        expect(style.marginBottom).toBe("0px");
+        expect(style.marginLeft).toBe("0px");
+        expect(style.paddingTop).toBe("0px");
+        expect(style.paddingRight).toBe("0px");
+        expect(style.paddingBottom).toBe("0px");
+        expect(style.paddingLeft).toBe("0px");
+        expect(Math.abs(element.getBoundingClientRect().height - height)).toBeLessThan(1);
+    }
+    expect(Math.abs(shell().getBoundingClientRect().height - height)).toBeLessThan(1);
+    expect(Math.abs(shell().getBoundingClientRect().bottom - height)).toBeLessThan(1);
+}
+
+/** The footer sits on the shell's one bottom inset, plus the layout's own pad, and no further up. */
+function expectSingleBottomPad(): void {
+    const footer = document.querySelector("footer");
+    if (!(footer instanceof HTMLElement)) {
+        throw new Error("footer missing");
+    }
+    const shellPad = Number.parseFloat(getComputedStyle(shell()).paddingBottom);
+    const layoutPad = Number.parseFloat(getComputedStyle(layout()).paddingBottom);
+    const bottom = footer.getBoundingClientRect().bottom;
+    expect(Math.abs(bottom - (window.innerHeight - shellPad - layoutPad))).toBeLessThan(1.5);
+}
+
 function box(element: HTMLElement): { top: number; right: number; bottom: number; left: number } {
     const rect = element.getBoundingClientRect();
     const style = getComputedStyle(element);
@@ -87,6 +127,59 @@ function floatingControl(): HTMLElement {
     return fab;
 }
 
+function expectReadoutShowsProbe(): void {
+    const probe = document.querySelector("[data-safe-area-probe]");
+    const readout = document.querySelector("[data-viewport-readout]");
+    if (!(probe instanceof HTMLElement) || !(readout instanceof HTMLElement)) {
+        throw new Error("viewport readout missing");
+    }
+
+    const style = getComputedStyle(probe);
+    for (const edge of ["top", "right", "bottom", "left"] as const) {
+        const override = getComputedStyle(document.documentElement)
+            .getPropertyValue(`--safe-area-inset-${edge}`)
+            .trim();
+        if (override !== "") {
+            expect(style.getPropertyValue(`padding-${edge}`)).toBe(override);
+        }
+    }
+    const text = readout.textContent ?? "";
+    expect(probe.style.paddingTop).toContain("env(safe-area-inset-top");
+    expect(probe.style.paddingRight).toContain("env(safe-area-inset-right");
+    expect(probe.style.paddingBottom).toContain("env(safe-area-inset-bottom");
+    expect(probe.style.paddingLeft).toContain("env(safe-area-inset-left");
+    expect(text).toBe(
+        `${displayMode()} ${window.innerWidth}x${window.innerHeight} · ${window.screen.width}x${window.screen.height} · ${style.paddingTop} ${style.paddingRight} ${style.paddingBottom} ${style.paddingLeft}`,
+    );
+    const range = document.createRange();
+    range.selectNodeContents(readout);
+    const readoutStyle = getComputedStyle(readout);
+    const contentWidth =
+        readout.clientWidth -
+        Number.parseFloat(readoutStyle.paddingLeft) -
+        Number.parseFloat(readoutStyle.paddingRight);
+    expect(range.getBoundingClientRect().width).toBeLessThanOrEqual(contentWidth + 1);
+    expect(readout.getBoundingClientRect().height).toBeLessThanOrEqual(
+        Number.parseFloat(readoutStyle.lineHeight) + 1,
+    );
+}
+
+it("sets an opaque black status bar and keeps the viewport cover fit", () => {
+    const document = new DOMParser().parseFromString(indexHtml, "text/html");
+    expect(
+        document
+            .querySelector('meta[name="apple-mobile-web-app-status-bar-style"]')
+            ?.getAttribute("content"),
+    ).toBe("black");
+    expect(document.querySelector('meta[name="viewport"]')?.getAttribute("content")).toContain(
+        "viewport-fit=cover",
+    );
+    expect(document.querySelector('meta[name="theme-color"]')?.getAttribute("content")).toBe(
+        "#0d0f12",
+    );
+    expect(indexHtml).not.toContain("black-translucent");
+});
+
 it("leaves a zero-inset browser tab on the existing shell padding", async () => {
     await openApp("/");
     await expect.element(page.getByRole("region", { name: "Nav" })).toBeVisible();
@@ -108,6 +201,8 @@ it("leaves a zero-inset browser tab on the existing shell padding", async () => 
     setInsets({ top: "0px", right: "0px", bottom: "0px", left: "0px" });
     expect(padding(shell())).toEqual({ top: "0px", right: "0px", bottom: "0px", left: "0px" });
     expect(padding(layout())).toEqual(layoutPadding);
+    expectWebViewFilled();
+    expectSingleBottomPad();
     clearInsets();
 });
 
@@ -178,6 +273,8 @@ it("pads the shell from the safe-area overrides and keeps the page inside them",
         expectInside(header, portrait);
         expectInside(portraitFooter, portrait);
         expect(portraitFooter.getBoundingClientRect().bottom).toBeLessThanOrEqual(844 - 34 + 0.5);
+        expectWebViewFilled();
+        expectSingleBottomPad();
 
         await page.getByRole("button", { name: "Toggle navigation menu" }).click();
         const menu = [...document.querySelectorAll("[aria-label='Nav']")].find(
@@ -187,6 +284,7 @@ it("pads the shell from the safe-area overrides and keeps the page inside them",
             throw new Error("navigation menu missing");
         }
         expectInside(menu, box(shell()));
+        expectReadoutShowsProbe();
         expect(floatingControl().getBoundingClientRect().bottom).toBeLessThanOrEqual(
             844 - 34 + 0.5,
         );

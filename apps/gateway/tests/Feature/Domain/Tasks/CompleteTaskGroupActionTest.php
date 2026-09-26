@@ -77,16 +77,19 @@ it('removes the shared App instance and marks a settling group completed', funct
         ->and(AppInstance::query()->find($instanceId))->toBeNull();
 });
 
-it('is idempotent for an already completed group', function (): void {
+it('is idempotent for an already completed group and retries a leftover workspace', function (): void {
     app(TaskExtensionState::class)->enable();
     $group = complete_group(TaskGroupStatus::Completed);
+    $instanceId = $group->taskable_id;
     $remover = new class implements AppInstanceRemover
     {
-        public int $calls = 0;
+        /** @var list<array{0: int, 1: bool}> */
+        public array $calls = [];
 
         public function execute(AppInstance $instance, bool $force): AppInstanceRemoval
         {
-            $this->calls++;
+            $this->calls[] = [$instance->id, $force];
+            $instance->delete();
 
             return new AppInstanceRemoval;
         }
@@ -94,10 +97,36 @@ it('is idempotent for an already completed group', function (): void {
     app()->instance(AppInstanceRemover::class, $remover);
 
     $completed = app(CompleteTaskGroupAction::class)->execute($group);
+    $again = app(CompleteTaskGroupAction::class)->execute($completed);
 
     expect($completed->status)->toBe(TaskGroupStatus::Completed)
-        ->and($remover->calls)->toBe(0)
-        ->and($completed->taskable_id)->toBe($group->taskable_id);
+        ->and($again->status)->toBe(TaskGroupStatus::Completed)
+        ->and($remover->calls)->toBe([[$instanceId, true]])
+        ->and($again->taskable_id)->toBeNull()
+        ->and(AppInstance::query()->find($instanceId))->toBeNull();
+});
+
+it('asks for assistance and keeps the clone when removal of a settling workspace is refused', function (): void {
+    app(TaskExtensionState::class)->enable();
+    app()->instance(AppInstanceRemover::class, new class implements AppInstanceRemover
+    {
+        public function execute(AppInstance $instance, bool $force): AppInstanceRemoval
+        {
+            throw new ResourceOperationException('instance.force_failed', 'The Node is unreachable.', 409);
+        }
+    });
+    $group = complete_group();
+    $instanceId = $group->taskable_id;
+
+    expect(fn () => app(CompleteTaskGroupAction::class)->execute($group))
+        ->toThrow(ResourceOperationException::class, 'The Node is unreachable.');
+
+    $fresh = $group->fresh();
+    expect($fresh?->status)->toBe(TaskGroupStatus::Settling)
+        ->and($fresh?->taskable_id)->toBe($instanceId)
+        ->and($fresh?->assistance_requested)->toBeTrue()
+        ->and($fresh?->assistance_reason)->toBe('Workspace removal failed: The Node is unreachable.')
+        ->and(AppInstance::query()->find($instanceId))->not->toBeNull();
 });
 
 it('returns 409 tasks.not_settling when the group is still running', function (): void {

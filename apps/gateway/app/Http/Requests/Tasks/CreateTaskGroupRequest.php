@@ -11,6 +11,7 @@ use App\Domain\Tasks\TaskGroupStatus;
 use App\Http\Requests\TopLevelJsonObjectInspector;
 use App\Models\App;
 use App\Rules\DistinctDeliverableIds;
+use App\Rules\ExactPestTestFile;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Enum;
@@ -21,7 +22,7 @@ use UnexpectedValueException;
 
 final class CreateTaskGroupRequest extends FormRequest
 {
-    /** @return array<string, list<string|Exists|In|Enum|DistinctDeliverableIds>> */
+    /** @return array<string, list<string|Exists|In|Enum|DistinctDeliverableIds|ExactPestTestFile>> */
     public function rules(): array
     {
         return [
@@ -43,7 +44,7 @@ final class CreateTaskGroupRequest extends FormRequest
             'tasks.*.deliverables.*.path' => ['required_if:tasks.*.deliverables.*.type,file', 'prohibited_unless:tasks.*.deliverables.*.type,file', 'string', 'max:500', 'not_regex:#(?:\A/|(?:\A|/)\.\.(?:/|\z))#'],
             'tasks.*.deliverables.*.change' => ['required_if:tasks.*.deliverables.*.type,file', 'prohibited_unless:tasks.*.deliverables.*.type,file', 'string', Rule::in(['created', 'modified', 'any'])],
             'tasks.*.deliverables.*.project' => ['required_if:tasks.*.deliverables.*.type,test', 'prohibited_unless:tasks.*.deliverables.*.type,test', 'string', 'max:500', 'not_regex:#(?:\A/|(?:\A|/)\.\.(?:/|\z))#'],
-            'tasks.*.deliverables.*.file' => ['required_if:tasks.*.deliverables.*.type,test', 'prohibited_unless:tasks.*.deliverables.*.type,test', 'string', 'max:500', 'not_regex:#(?:\A/|(?:\A|/)\.\.(?:/|\z))#'],
+            'tasks.*.deliverables.*.file' => ['required_if:tasks.*.deliverables.*.type,test', 'prohibited_unless:tasks.*.deliverables.*.type,test', 'string', 'max:500', new ExactPestTestFile],
             'tasks.*.deliverables.*.name' => ['required_if:tasks.*.deliverables.*.type,test', 'prohibited_unless:tasks.*.deliverables.*.type,test', 'string', 'max:200'],
             'tasks.*.deliverables.*.command' => ['required_if:tasks.*.deliverables.*.type,command', 'prohibited_unless:tasks.*.deliverables.*.type,command', 'string', 'max:1000'],
             'tasks.*.deliverables.*.directory' => ['sometimes', 'prohibited_unless:tasks.*.deliverables.*.type,command', 'string', 'max:500', 'not_regex:#(?:\A/|(?:\A|/)\.\.(?:/|\z))#'],

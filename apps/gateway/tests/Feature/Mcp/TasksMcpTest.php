@@ -2,11 +2,13 @@
 
 declare(strict_types=1);
 
+use App\Domain\AppInstances\AppInstanceRemover;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
+use App\Models\AppInstanceRemoval;
 use App\Models\Node;
 use App\Models\TaskGroup;
 use Illuminate\Testing\TestResponse;
@@ -131,6 +133,15 @@ it('cancels a running or queued group through MCP and removes its shared Instanc
     ]);
     $group->taskable()->associate($instance);
     $group->save();
+    app()->instance(AppInstanceRemover::class, new class implements AppInstanceRemover
+    {
+        public function execute(AppInstance $instance, bool $force): AppInstanceRemoval
+        {
+            $instance->delete();
+
+            return new AppInstanceRemoval;
+        }
+    });
 
     $cancelled = tasks_mcp_message(tasks_mcp_call($this, 'tools/call', [
         'name' => 'tasks-cancel',
