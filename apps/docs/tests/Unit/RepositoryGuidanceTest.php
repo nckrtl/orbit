@@ -18,5 +18,5 @@ it('keeps documentation tooling guidance beside the project', function (): void 
     expect($composer['scripts']['guidance:check'] ?? null)
         ->toBe('ORBIT_TIA_DIRECTORY=vendor/.orbit-guidance-tia vendor/bin/pest --configuration=phpunit.guidance.xml --tia --fresh --compact')
         ->and($composer['scripts']['test'] ?? null)
-        ->toBe('vendor/bin/pest --parallel --tia --compact');
+        ->toBe('../../bin/pest-plain vendor/bin/pest --parallel --tia --compact --colors=never');
 });
