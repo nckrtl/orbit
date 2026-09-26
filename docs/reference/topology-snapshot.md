@@ -91,6 +91,8 @@ The rendered pools, Caddy sites, firewall rules, and DNS records then match the 
 
 Every Node in the promoted snapshot serves a built Caddyfile, so discovery starts from that layout without converging. Readiness verification requires it: the `metrics.orbit` probe, the `app-dev` Caddy probe, and the production Caddy probe read only the live Caddyfile and fail on a Node whose live file no build wrote. The production probe also requires exactly one copy of each production site directive. The Nodes still keep the fragment-layout versions and backups that their first builds retained, and `app-prod` keeps an unused `/etc/caddy/orbit-e2e-global.caddy`; no build imports them.
 
+The `metrics.orbit` probe compares that site with the current Metrics publication and the client guard the [Node Caddy build](/reference/caddy-configuration#listener-addresses) writes after its `bind` line. The guard's `remote_ip` ranges are the stored fleet VPN subnet, or `10.44.0.0/24` when no subnet is stored. A different range, a missing guard, or any other line in the site fails the probe.
+
 ### Sample compatibility
 
 The sample adapter selects its production creation contract before it changes sample state. When the complete candidate-clone and explicit-deployment command set is available, it creates production from the development candidate and deploys it explicitly. Otherwise it uses direct production creation. A failure after selection stops convergence and never switches to the older contract.

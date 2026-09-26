@@ -38,7 +38,9 @@
                 "Router",
                 "Schedule"
             ],
-            "governing_adrs": []
+            "governing_adrs": [
+                "0159"
+            ]
         },
         {
             "path": "docs/api/php-sdk.mdx",
@@ -110,13 +112,15 @@
             "concepts": [
                 "Doctor",
                 "Gateway",
+                "Instance",
                 "Node",
                 "Route",
                 "Schedule"
             ],
             "governing_adrs": [
                 "0152",
-                "0158"
+                "0158",
+                "0159"
             ]
         },
         {
@@ -4099,6 +4103,32 @@
             ]
         },
         {
+            "path": "docs/decisions/0159-push-activity-changes-to-the-web-app.md",
+            "title": "ADR 0159: Push Activity changes to the web app",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/gateway",
+                "apps/web",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Gateway",
+                "Node",
+                "Process",
+                "Schedule",
+                "Task"
+            ],
+            "governing_adrs": [
+                "0084",
+                "0151",
+                "0152",
+                "0158",
+                "0159"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -4285,7 +4315,8 @@
                 "0155",
                 "0156",
                 "0157",
-                "0158"
+                "0158",
+                "0159"
             ]
         },
         {
@@ -4875,7 +4906,10 @@
                 "0129",
                 "0148",
                 "0151",
-                "0153"
+                "0152",
+                "0153",
+                "0158",
+                "0159"
             ]
         },
         {
@@ -5599,7 +5633,8 @@
             ],
             "governing_adrs": [
                 "0123",
-                "0151"
+                "0151",
+                "0159"
             ]
         },
         {

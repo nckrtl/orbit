@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Tools;
 
 use RuntimeException;
+use Throwable;
 
 final class ToolOperationException extends RuntimeException
 {
@@ -18,7 +19,7 @@ final class ToolOperationException extends RuntimeException
         public readonly string $package,
         public readonly ?string $versionConstraint,
         string $message,
-        ?ToolManagerException $previous = null,
+        ?Throwable $previous = null,
         public readonly ?int $toolId = null,
     ) {
         parent::__construct($message, previous: $previous);

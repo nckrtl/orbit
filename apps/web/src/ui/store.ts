@@ -35,6 +35,8 @@ export type PaneHandle = {
     order: number;
     count: number;
     target: (index: number) => Target | null;
+    /** Enter opens the row when it is not a fleet record, such as an Activity. */
+    activate?: (index: number) => void;
     leaf: boolean;
 };
 

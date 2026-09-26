@@ -10,6 +10,11 @@ The script reads the Gateway route table through `php apps/gateway/artisan route
 controllers, form requests, data classes, and enums under apps/gateway/app, the request and response classes
 under packages/php-sdk/src, and the command descriptions from `php apps/cli/orbit list --format=json`. It writes
 docs/openapi.json, which docs/docs.json references for the API tab of the Mintlify site.
+
+A response schema uses the keys of a hand-written toArray() when each key is one constructor property.
+Otherwise it snake-cases constructor properties when the class uses SnakeCaseMapper, and keeps the
+constructor names when it does not. AnnotationData is the exception that sends camelCase on purpose:
+the controller returns the array fromModel() builds, and that schema is written below.
 """
 
 import json
@@ -99,6 +104,221 @@ def load_form_requests():
     return reqs
 
 
+PROP_VALUE = re.compile(r'^\$this->(\w+)(?:\?->value|->value|\?->toArray\(\)|->toArray\(\))?$')
+PROP_LIST = re.compile(r'^array_map\s*\(.*\$this->(\w+)\s*,?\s*\)$', re.S)
+
+
+def output_names(source, prop_names):
+    """Keys of a hand-written toArray(), each mapped to a constructor property, or None when that is not the whole shape."""
+    found = re.search(r'function toArray\(\)', source)
+    if not found:
+        return None
+    brace = source.find('{', found.end())
+    if brace < 0:
+        return None
+    arrays = {}
+    returns = []
+    for kind, name, expr in depth0_bindings(block(source, brace)):
+        if kind == 'assign' and expr.lstrip().startswith('['):
+            entries = parse_array_literal(expr)
+            if entries is not None:
+                arrays[name] = entries
+        elif kind == 'return':
+            returns.append(expr)
+    ordered = []
+    exprs = {}
+    for expr in returns:
+        resolved = resolve_entries(expr, arrays)
+        if not resolved:
+            continue
+        for key, value in resolved:
+            if key not in exprs:
+                ordered.append(key)
+            exprs[key] = re.sub(r'\s+', ' ', value).strip()
+    if not ordered:
+        return None
+    names = set(prop_names)
+    snaked = {snake(name): name for name in names}
+    mapped = []
+    for key in ordered:
+        value = exprs[key]
+        direct = PROP_VALUE.match(value)
+        listed = PROP_LIST.match(value)
+        if direct and direct.group(1) in names:
+            prop = direct.group(1)
+        elif listed and listed.group(1) in names:
+            prop = listed.group(1)
+        elif key in names:
+            prop = key
+        else:
+            prop = snaked.get(key)
+        if prop is None:
+            return None
+        mapped.append((key, prop))
+    return mapped
+
+
+def depth0_bindings(body):
+    i = 0
+    n = len(body)
+    depth = 0
+    while i < n:
+        skipped = skip_php_token(body, i)
+        if skipped is not None:
+            i = skipped
+            continue
+        c = body[i]
+        if c in '([{':
+            depth += 1
+            i += 1
+            continue
+        if c in ')]}':
+            depth -= 1
+            i += 1
+            continue
+        if depth == 0:
+            assign = re.match(r'\$(\w+)\s*=(?!=)\s*', body[i:])
+            if assign and word_before(body, i):
+                j = i + len(assign.group(0))
+                end = statement_end(body, j)
+                yield 'assign', assign.group(1), body[j:end].strip()
+                i = end + 1
+                continue
+            if body.startswith('return', i) and word_before(body, i) and word_after(body, i + 6):
+                j = i + 6
+                while j < n and body[j] in ' \t\r\n':
+                    j += 1
+                end = statement_end(body, j)
+                yield 'return', None, body[j:end].strip()
+                i = end + 1
+                continue
+        i += 1
+
+
+def resolve_entries(expr, arrays):
+    expr = expr.strip().rstrip(';').strip()
+    if expr.startswith('['):
+        entries = parse_array_literal(expr)
+        return None if entries is None else expand_entries(entries, arrays)
+    bare = re.fullmatch(r'\$(\w+)', expr)
+    if bare and bare.group(1) in arrays:
+        return expand_entries(arrays[bare.group(1)], arrays)
+    return None
+
+
+def expand_entries(entries, arrays):
+    out = []
+    for kind, first, *rest in entries:
+        if kind == 'key':
+            out.append((first, rest[0]))
+        elif kind == 'spread':
+            bare = re.fullmatch(r'\$(\w+)', first.strip())
+            if not bare or bare.group(1) not in arrays:
+                return None
+            nested = expand_entries(arrays[bare.group(1)], arrays)
+            if nested is None:
+                return None
+            out.extend(nested)
+        else:
+            return None
+    return out
+
+
+def parse_array_literal(text):
+    text = text.strip()
+    if not text.startswith('['):
+        return None
+    i = 1
+    n = len(text)
+    entries = []
+    depth = 1
+    start = i
+    while i < n and depth:
+        skipped = skip_php_token(text, i)
+        if skipped is not None:
+            i = skipped
+            continue
+        c = text[i]
+        if c in '([{':
+            depth += 1
+        elif c in ')]}':
+            depth -= 1
+            if depth == 0:
+                chunk = text[start:i].strip().rstrip(',').strip()
+                if chunk:
+                    parsed = parse_element(chunk)
+                    if parsed is None:
+                        return None
+                    entries.append(parsed)
+                return entries
+        elif c == ',' and depth == 1:
+            chunk = text[start:i].strip()
+            if chunk:
+                parsed = parse_element(chunk)
+                if parsed is None:
+                    return None
+                entries.append(parsed)
+            start = i + 1
+        i += 1
+    return None
+
+
+def parse_element(chunk):
+    chunk = chunk.strip()
+    if chunk.startswith('...'):
+        return ('spread', chunk[3:].strip(), None)
+    matched = re.match(r"""(['\"])([^'\"]+)\1\s*=>\s*(.*)$""", chunk, re.S)
+    if not matched:
+        return None
+    return ('key', matched.group(2), matched.group(3).strip())
+
+
+def statement_end(text, i):
+    n = len(text)
+    depth = 0
+    while i < n:
+        skipped = skip_php_token(text, i)
+        if skipped is not None:
+            i = skipped
+            continue
+        c = text[i]
+        if c in '([{':
+            depth += 1
+        elif c in ')]}':
+            depth -= 1
+        elif c == ';' and depth == 0:
+            return i
+        i += 1
+    return n
+
+
+def skip_php_token(text, i):
+    """Index after a string or comment starting at i, or None when i is ordinary code."""
+    n = len(text)
+    c = text[i]
+    if c == '/' and i + 1 < n and text[i + 1] == '/':
+        nl = text.find('\n', i + 2)
+        return n if nl < 0 else nl + 1
+    if c == '/' and i + 1 < n and text[i + 1] == '*':
+        end = text.find('*/', i + 2)
+        return n if end < 0 else end + 2
+    if c in '\'"':
+        q = c
+        i += 1
+        while i < n and text[i] != q:
+            i += 2 if text[i] == '\\' else 1
+        return min(n, i + 1)
+    return None
+
+
+def word_before(text, i):
+    return i == 0 or not (text[i - 1].isalnum() or text[i - 1] == '_')
+
+
+def word_after(text, i):
+    return i >= len(text) or not (text[i].isalnum() or text[i] == '_')
+
+
 def load_data_classes():
     data = {}
     for f in sorted((GW / 'app/Data').rglob('*.php')):
@@ -114,7 +334,11 @@ def load_data_classes():
         if ctor:
             for pm in re.finditer(r'public\s+(?:readonly\s+)?([\w|?\\]+)\s+\$(\w+)(\s*=\s*[^,)]+)?', ctor.group(1)):
                 props.append({'name': pm.group(2), 'type': pm.group(1), 'doc': docs.get(pm.group(2))})
-        data[m.group(1)] = {'props': props, 'snake': 'SnakeCaseMapper' in s}
+        data[m.group(1)] = {
+            'props': props,
+            'snake': 'SnakeCaseMapper' in s,
+            'outputs': output_names(s, [p['name'] for p in props]),
+        }
     return data
 
 
@@ -687,10 +911,20 @@ def ref(cls):
         components[name] = None
         d = gdata[cls]
         props = {}
-        for p in d['props']:
-            props[snake(p['name']) if d['snake'] else p['name']] = prop_schema(p)
+        for key, prop in schema_fields(d):
+            props[key] = prop_schema(prop)
         components[name] = {'type': 'object', 'properties': props}
     return {'$ref': f'#/components/schemas/{name}'}
+
+
+def schema_fields(d):
+    """Property names the API actually returns, paired with the constructor property that types each one."""
+    by_name = {p['name']: p for p in d['props']}
+    if d.get('outputs'):
+        return [(key, by_name[prop]) for key, prop in d['outputs']]
+    if d['snake']:
+        return [(snake(p['name']), p) for p in d['props']]
+    return [(p['name'], p) for p in d['props']]
 
 
 def prop_schema(p):
@@ -900,10 +1134,21 @@ def example_from_schema(sch, name, tag, depth=0, update=False):
     return 'example'
 
 
+ACTIVITY_LIST_EXAMPLES = {
+    'request_id': '9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81',
+    'before_id': 480,
+    'status': 'failed',
+    'command': 'instance:deploy',
+    'caller_node_id': 2,
+    'target_node_id': 4,
+}
+
+
 def bash_sample(route, path, body_schema, query, tag):
     url = 'https://gateway.orbit' + re.sub(r'\{(\w+)\}', lambda m: str(EXAMPLE_PATH.get(m.group(1), 1)), path)
     if query:
-        url += '?' + '&'.join(f'{q}={EXAMPLE_BY_NAME.get(q, 1)}' for q in query)
+        examples = {**EXAMPLE_BY_NAME, **ACTIVITY_LIST_EXAMPLES} if route['name'] == 'activity:list' else EXAMPLE_BY_NAME
+        url += '?' + '&'.join(f'{q}={examples.get(q, 1)}' for q in query)
     method = '' if route['method'] == 'GET' else f'-X {route["method"]} '
     lines = [f'curl -sS {method}"{url}" \\', '  --cacert /path/to/orbit-root-ca.pem \\', "  -H 'Accept: application/json' \\", "  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'"]
     if body_schema is not None:
@@ -1217,6 +1462,8 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
 spec['components']['schemas'].update({k: v for k, v in components.items() if v is not None})
 annotation_create = spec['paths']['/api/v1/instances/{instance}/annotations']['post']['requestBody']['content']['application/json']['schema']
 annotation_create['properties']['boundingBox'] = {'type': 'object', 'properties': {key: {'type': 'number'} for key in ('x', 'y', 'width', 'height')}, 'additionalProperties': False}
+# AnnotationData::fromModel() builds camelCase (`instanceId`, `syncError`, and the browser context).
+# The controller returns that array, so this schema stays camelCase. It has no toArray().
 spec['components']['schemas']['Annotation'] = {'type': 'object', 'properties': {
     **annotation_create['properties'], 'instanceId': {'type': 'integer'}, 'taskId': {'type': 'integer'}, 'taskGroupId': {'type': 'integer'},
     'revision': {'type': 'integer'}, 'status': {'type': 'string', 'enum': ['pending', 'in_progress', 'resolved', 'cancelled']},
