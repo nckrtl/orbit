@@ -110,6 +110,7 @@ The caller and target parameters are the node filters. Supplied filters combine.
 
 - An open Activity page shows a new or finished row on the next refetch while realtime is live. One burst of notices costs one list refetch, plus one show when a row is open.
 - The page's own reads do not broadcast, so a refetch does not schedule another refetch.
+- Almost every request now broadcasts within the request. A Reverb call gives up after 2 seconds to connect or 3 seconds in total, and a failed broadcast never fails the request, so a slow or unreachable Reverb delays a request by at most a few seconds.
 - A successful read inside a sampling window stores no row and broadcasts nothing.
 - A client that needs `properties`, the caller address, the subject, or the exit code calls `activity:show`.
 - `activity:list` can page past the newest 200 rows and can limit the result to one status, one command, one caller, or one target. The web page sends the same limits. Changing a filter shows the newest match. A live refetch keeps the filters and any open older page.

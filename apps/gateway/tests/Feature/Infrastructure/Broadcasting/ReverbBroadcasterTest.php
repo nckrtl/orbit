@@ -43,3 +43,20 @@ it('is the reverb driver', function (): void {
 
     expect($manager->connection('reverb'))->toBeInstanceOf(ReverbBroadcaster::class);
 });
+
+it('gives up on a slow Reverb within a few seconds', function (): void {
+    config([
+        'broadcasting.connections.reverb.key' => 'key',
+        'broadcasting.connections.reverb.secret' => 'secret',
+        'broadcasting.connections.reverb.app_id' => '7',
+        'broadcasting.connections.reverb.options.host' => 'gateway.orbit',
+    ]);
+
+    $broadcaster = app(BroadcastManager::class)->connection('reverb');
+    assert($broadcaster instanceof ReverbBroadcaster);
+    $pusher = $broadcaster->getPusher();
+    assert($pusher instanceof Pusher);
+
+    expect($pusher->getSettings()['timeout'])->toBe(3)
+        ->and(config('broadcasting.connections.reverb.client_options'))->toMatchArray(['connect_timeout' => 2, 'timeout' => 3]);
+});
