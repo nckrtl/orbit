@@ -6,7 +6,7 @@ namespace App\Infrastructure\Nodes;
 
 final readonly class NodeAgentFootprint
 {
-    public const string Version = '0.2.0';
+    public const string Version = '0.3.0';
 
     /**
      * SHA-256 checksums from each release's `SHA256SUMS` asset. `Version` selects the pin, so a

@@ -29,24 +29,14 @@ use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Log;
 use Symfony\Component\Process\Process;
 
-it('pins the real agent constant to its release manifest', function (): void {
-    $manifests = [
-        '0.2.0' => [
-            'x86_64' => 'ed3cb9978ef9e16683342cb11d5a3b3a4f54f6fc47b6ee0ec695090cef989b57',
-            'aarch64' => '34389c2cb4424468e94f42dff1ee05c3a6b490f4286e56fea53dede796c406e3',
-        ],
-        '0.3.0' => [
-            'x86_64' => 'f5125b2ab36abd79882b3b11eb5d40f5e457fbf23cc8bf3ff4c096e2cab4618a',
-            'aarch64' => '84306df202904277c6f6cd78d4050fae97e54c3e515a2ad09585dd5a5e568811',
-        ],
-    ];
-    $version = NodeAgentFootprint::Version;
-
-    expect($manifests)->toHaveKey($version)
-        ->and(NodeAgentFootprint::checksum('x86_64'))->toBe($manifests[$version]['x86_64'])
-        ->and(NodeAgentFootprint::checksum('aarch64'))->toBe($manifests[$version]['aarch64'])
+it('pins agent v0.3.0', function (): void {
+    expect(NodeAgentFootprint::Version)->toBe('0.3.0')
+        ->and(NodeAgentFootprint::checksum('x86_64'))->toBe('f5125b2ab36abd79882b3b11eb5d40f5e457fbf23cc8bf3ff4c096e2cab4618a')
+        ->and(NodeAgentFootprint::checksum('aarch64'))->toBe('84306df202904277c6f6cd78d4050fae97e54c3e515a2ad09585dd5a5e568811')
         ->and(NodeAgentFootprint::downloadUrl('x86_64'))
-        ->toBe('https://github.com/nckrtl/orbit/releases/download/agent-v'.$version.'/orbit-agent-'.$version.'-linux-x86_64');
+        ->toBe('https://github.com/nckrtl/orbit/releases/download/agent-v0.3.0/orbit-agent-0.3.0-linux-x86_64')
+        ->and(NodeAgentFootprint::downloadUrl('aarch64'))
+        ->toBe('https://github.com/nckrtl/orbit/releases/download/agent-v0.3.0/orbit-agent-0.3.0-linux-aarch64');
 });
 
 it('keeps the role converge going when the agent install fails', function (): void {
