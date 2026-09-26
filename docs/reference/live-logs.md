@@ -108,7 +108,9 @@ The agent follows a daily log file to the next day's file. When an earlier file 
 
 Journal lines match the one-shot read over SSH, which uses `journalctl --output short-iso --utc`. The agent makes at most 256 KiB of lines from one journal entry, one stream's queue, so a huge message cannot exhaust its memory.
 
-A longer entry ends with the line `[orbit] message cut at 256 KiB`. The one-shot read cuts each entry by the same rule, so the lines of a cut entry are the same in both reads, and a follow can switch between the reads there without a gap. Two rare entries still differ: a message whose terminal color codes make its text shorter than the indent that the lines add, and a message over 256 KiB that is not printable text. At such an entry, a follow that switches between the reads prints `[orbit] lines may be missing`.
+A longer entry ends with the line `[orbit] message cut at 256 KiB`. A single line longer than 256 KiB is cut there too, before a character rather than inside one. The one-shot read cuts each entry by the same rule, so the lines of a cut entry are the same in both reads, and a follow can switch between the reads there without a gap.
+
+Two rare entries still differ: a message over 256 KiB with terminal color codes or tabs, because the agent cuts the message before it removes the codes and widens the tabs, and a message over 256 KiB that is not printable text. At such an entry, a follow that switches between the reads prints `[orbit] lines may be missing`.
 
 The one-shot read of a systemd Process reads the journal newest entry first and stops after 4 MiB, because `journalctl --lines` counts entries and one entry can hold millions of lines. It cuts each entry at 256 KiB before that limit, so a huge entry does not hide the older entries. The one-shot read of a Docker Process also returns both streams in one, in the same order.
 

@@ -588,7 +588,13 @@ impl JournalFile {
                 };
                 let mut value = value;
                 if kind == Wanted::Message && value.len() > MAX_MESSAGE_BYTES {
-                    value.truncate(MAX_MESSAGE_BYTES);
+                    // Cut before a character, not inside one, so the rest stays text. The one-shot
+                    // read over SSH cuts a long line the same way (ADR 0153).
+                    let mut end = MAX_MESSAGE_BYTES;
+                    while end > 0 && value[end] & 0xc0 == 0x80 {
+                        end -= 1;
+                    }
+                    value.truncate(end);
                     entry.message_cut = true;
                 }
                 slot.get_or_insert(value);
@@ -1483,6 +1489,33 @@ mod tests {
         };
         assert_eq!(format_entry(&entry, "u.service"), expected);
         assert_eq!(expected.last().unwrap().trim_start(), MESSAGE_CUT);
+    }
+
+    /// A message of one 300 KB line. Its cut falls inside a two-byte character, so the line ends
+    /// one byte earlier. The Gateway's one-shot read gives the same lines (`JournalLogsScriptTest`).
+    #[test]
+    fn a_line_over_256_kib_gives_the_lines_of_the_one_shot_read() {
+        let message = format!("a{}", "\u{e9}".repeat(150_000));
+        let expected: Vec<String> = include_str!("../../tests/journalctl_cut_line.txt")
+            .lines()
+            .map(str::to_owned)
+            .collect();
+        let dir = TempDir::new();
+        let mut w = Writer::new(Options::default());
+        w.append(
+            T0,
+            &[
+                ("_SYSTEMD_UNIT", UNIT.as_bytes()),
+                ("_PID", b"7"),
+                ("_HOSTNAME", b"beast"),
+                ("SYSLOG_IDENTIFIER", b"lvtbig"),
+                ("MESSAGE", message.as_bytes()),
+            ],
+        );
+        w.write(&dir.0.join("system.journal"));
+        let lines = JournalTail::new(vec![dir.0.clone()], UNIT).start(1000);
+        assert_eq!(lines.len(), 2);
+        assert_eq!(lines, expected);
     }
 
     #[test]

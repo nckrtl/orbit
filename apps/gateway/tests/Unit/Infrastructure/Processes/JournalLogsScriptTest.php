@@ -96,3 +96,20 @@ it('reads a message over 256 KiB as the same lines the Node agent streams', func
         "2026-09-25T19:05:30+00:00 beast lvtbig[2773152]: older\n{$agent}2026-09-25T19:05:32+00:00 beast lvtbig[2773152]: newer\n",
     )->and(substr_count($agent, "\n"))->toBe(248);
 });
+
+it('reads a line over 256 KiB as the same lines the Node agent streams', function (): void {
+    // The agent's lines for this 300 KB line; its test `a_line_over_256_kib_gives_the_lines_of_the_one_shot_read` reads the same file.
+    $agent = file_get_contents(dirname(__DIR__, 5).'/agent/tests/journalctl_cut_line.txt');
+    $file = tempnam(sys_get_temp_dir(), 'orbit-journal-line-');
+    file_put_contents($file, "2026-09-25T10:15:03+00:00 beast lvtbig[7]: newer\n2026-09-25T10:15:02+00:00 beast lvtbig[7]: a".str_repeat('é', 150_000)."\n2026-09-25T10:15:01+00:00 beast lvtbig[7]: older\n");
+
+    try {
+        $output = readJournal("cat '{$file}'");
+    } finally {
+        unlink($file);
+    }
+
+    expect(LogReadLimit::journalInTimeOrder($output))->toBe(
+        "2026-09-25T10:15:01+00:00 beast lvtbig[7]: older\n{$agent}2026-09-25T10:15:03+00:00 beast lvtbig[7]: newer\n",
+    )->and(substr_count($agent, "\n"))->toBe(2);
+});
