@@ -49,7 +49,7 @@ it('maps a bounded successful SSH observation', function (): void {
                 ->toContain('sudo -n sha256sum -- /etc/orbit/agent/secret')
                 ->not->toContain('cat');
 
-            return new CommandResult(0, "Linux\nx86_64\n1\n1\n1\n1\n".NodeAgentFootprint::X8664Checksum."\n".str_repeat('b', 64)."\n", 'secret stderr', 1, false);
+            return new CommandResult(0, "Linux\nx86_64\n1\n1\n1\n1\n".NodeAgentFootprint::checksum('x86_64')."\n".str_repeat('b', 64)."\n", 'secret stderr', 1, false);
         }
     };
     $keys = new class implements SshKeyProvider
@@ -142,7 +142,7 @@ it('rejects truncated successful output', function (): void {
             SshConnection $connection,
             RemoteCommand $command,
         ): CommandResult {
-            return new CommandResult(0, "Linux\nx86_64\n1\n1\n1\n1\n".NodeAgentFootprint::X8664Checksum."\n\n", '', 1, true);
+            return new CommandResult(0, "Linux\nx86_64\n1\n1\n1\n1\n".NodeAgentFootprint::checksum('x86_64')."\n\n", '', 1, true);
         }
     };
     expect(fn (): mixed => new SshNodeStateInspector(
@@ -351,7 +351,7 @@ it('rejects a secret line that is not a SHA-256 hash', function (): void {
     {
         public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
         {
-            return new CommandResult(0, "Linux\nx86_64\n1\n1\n1\n1\n".NodeAgentFootprint::X8664Checksum."\nnot-a-hash\n", '', 1, false);
+            return new CommandResult(0, "Linux\nx86_64\n1\n1\n1\n1\n".NodeAgentFootprint::checksum('x86_64')."\nnot-a-hash\n", '', 1, false);
         }
     };
     $keys = new class implements SshKeyProvider

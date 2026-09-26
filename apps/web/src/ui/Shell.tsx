@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Outlet, useLocation } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useState } from "react";
 import { transportLabel } from "../api/client";
 import { queryClient } from "../api/queryClient";
 import { useFleet } from "../api/queries";
@@ -27,6 +27,24 @@ import { PageHeaderSlot } from "./PageHeader";
 import { ui, useUi } from "./store";
 
 declare const __ORBIT_GATEWAY__: string | null;
+
+/**
+ * One pad around the whole shell. Custom properties override the inset; env() is the fallback
+ * when those properties are unset. A browser tab sets the properties to zero in CSS, so a tab
+ * inset never reaches this fallback.
+ */
+const SHELL_SAFE_PADDING = {
+    paddingTop: "var(--shell-safe-top, env(safe-area-inset-top, 0px))",
+    paddingRight: "var(--shell-safe-right, env(safe-area-inset-right, 0px))",
+    paddingBottom: "var(--shell-safe-bottom, env(safe-area-inset-bottom, 0px))",
+    paddingLeft: "var(--shell-safe-left, env(safe-area-inset-left, 0px))",
+} as const;
+
+function homeScreenLaunch(): boolean {
+    const standalone = (navigator as Navigator & { standalone?: boolean }).standalone;
+
+    return window.matchMedia("(display-mode: standalone)").matches || standalone === true;
+}
 
 function navCount(
     key: Section,
@@ -165,6 +183,20 @@ export function Shell() {
         setMobileMenuOpen(false);
     }, [pathname]);
 
+    useLayoutEffect(() => {
+        const media = window.matchMedia("(display-mode: standalone)");
+        const sync = () => {
+            document.documentElement.toggleAttribute("data-standalone", homeScreenLaunch());
+        };
+        sync();
+        media.addEventListener("change", sync);
+
+        return () => {
+            media.removeEventListener("change", sync);
+            document.documentElement.removeAttribute("data-standalone");
+        };
+    }, []);
+
     useEffect(() => {
         const controller = new AbortController();
         void connectRealtime(queryClient, controller.signal);
@@ -187,176 +219,194 @@ export function Shell() {
 
     return (
         <PageHeaderSlot.Provider value={{ header: headerSlot, actions: actionsSlot }}>
-            <div className="grid h-full min-w-0 max-w-full overflow-x-hidden grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)_auto] md:grid-rows-[minmax(0,1fr)_auto] gap-y-[10px] px-[1ch] pt-[10px] md:pt-[14px] pb-[4px]">
-                {/* Mobile Header Bar */}
-                <header className="flex items-center justify-between gap-2 px-[0.5ch] py-[2px] md:hidden">
-                    <button
-                        type="button"
-                        className="cursor-pointer border border-line px-[1.5ch] py-[2px] font-bold text-fg hover:border-fg active:bg-fg active:text-bg"
-                        onClick={() => setMobileMenuOpen((open) => !open)}
-                        aria-label="Toggle navigation menu"
-                    >
-                        [ ☰ Menu ]
-                    </button>
-                    <span className="font-bold tracking-wider uppercase text-cyan">
-                        {SECTION_TITLES[section] ?? "Orbit"}
-                    </span>
-                    <span className="flex items-center gap-[1ch] text-xs text-dim">
-                        <span
-                            role="status"
-                            aria-label={status}
-                            title={status}
-                            className={`inline-block size-[8px] rounded-full ${
-                                liveness === "live"
-                                    ? "bg-green"
-                                    : liveness === "reconnecting"
-                                      ? "animate-pulse bg-yellow"
-                                      : "border border-dim"
-                            }`}
-                        />
-                        <span className="max-w-[100px] truncate">{gateway}</span>
-                    </span>
-                </header>
+            <div
+                data-app-shell=""
+                className="app-shell box-border h-full min-w-0 max-w-full"
+                style={SHELL_SAFE_PADDING}
+            >
+                <div
+                    data-shell-layout=""
+                    className="relative grid h-full min-w-0 max-w-full overflow-x-hidden grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)_auto] md:grid-rows-[minmax(0,1fr)_auto] gap-y-[10px] px-[1ch] pt-[10px] md:pt-[14px] pb-[4px]"
+                >
+                    {/* Mobile Header Bar */}
+                    <header className="flex items-center justify-between gap-2 px-[0.5ch] py-[2px] md:hidden">
+                        <button
+                            type="button"
+                            className="cursor-pointer border border-line px-[1.5ch] py-[2px] font-bold text-fg hover:border-fg active:bg-fg active:text-bg"
+                            onClick={() => setMobileMenuOpen((open) => !open)}
+                            aria-label="Toggle navigation menu"
+                        >
+                            [ ☰ Menu ]
+                        </button>
+                        <span className="font-bold tracking-wider uppercase text-cyan">
+                            {SECTION_TITLES[section] ?? "Orbit"}
+                        </span>
+                        <span className="flex items-center gap-[1ch] text-xs text-dim">
+                            <span
+                                role="status"
+                                aria-label={status}
+                                title={status}
+                                className={`inline-block size-[8px] rounded-full ${
+                                    liveness === "live"
+                                        ? "bg-green"
+                                        : liveness === "reconnecting"
+                                          ? "animate-pulse bg-yellow"
+                                          : "border border-dim"
+                                }`}
+                            />
+                            <span className="max-w-[100px] truncate">{gateway}</span>
+                        </span>
+                    </header>
 
-                {/* Mobile Navigation Drawer Overlay */}
-                {mobileMenuOpen && (
-                    <div
-                        className="fixed inset-0 z-50 flex flex-col bg-bg/95 p-[2ch] backdrop-blur-xs md:hidden"
-                        onClick={(e) => {
-                            if (e.target === e.currentTarget) setMobileMenuOpen(false);
-                        }}
-                    >
-                        <Frame
-                            title="Nav"
-                            topRight={
+                    {/* Mobile navigation. Absolute so it stays inside the shell's one safe-area pad. */}
+                    {mobileMenuOpen && (
+                        <div
+                            data-mobile-menu=""
+                            className="absolute inset-0 z-50 flex flex-col bg-bg/95 p-[2ch] backdrop-blur-xs md:hidden"
+                            onClick={(e) => {
+                                if (e.target === e.currentTarget) setMobileMenuOpen(false);
+                            }}
+                        >
+                            <Frame
+                                title="Nav"
+                                topRight={
+                                    <button
+                                        type="button"
+                                        className="cursor-pointer text-dim hover:text-fg"
+                                        onClick={() => setMobileMenuOpen(false)}
+                                    >
+                                        [× close]
+                                    </button>
+                                }
+                                className="max-h-[90vh] w-full"
+                            >
+                                <div className="flex flex-col gap-y-[4px]">
+                                    <div className="pb-[4px] text-xs font-bold tracking-wider text-dim uppercase">
+                                        Main
+                                    </div>
+                                    {nav.map((key) => {
+                                        const [count, warn] = navCount(key, totals, taskCount);
+                                        const isSelected = key === activeNav;
+
+                                        return (
+                                            <div
+                                                key={key}
+                                                className="row"
+                                                data-link=""
+                                                data-selected={isSelected ? "" : undefined}
+                                                onClick={() => {
+                                                    go.section(key);
+                                                    setMobileMenuOpen(false);
+                                                }}
+                                                style={{
+                                                    gridTemplateColumns: "minmax(0, 1fr) 4ch",
+                                                }}
+                                            >
+                                                <span
+                                                    className={
+                                                        isSelected ? "font-bold text-cyan" : ""
+                                                    }
+                                                >
+                                                    {SECTION_TITLES[key]}
+                                                </span>
+                                                <span
+                                                    className={`text-right ${warn > 0 ? "text-yellow" : "text-dim"}`}
+                                                >
+                                                    {count ?? ""}
+                                                </span>
+                                            </div>
+                                        );
+                                    })}
+
+                                    <div className="mt-[12px] border-t border-line pt-[8px] pb-[4px] text-xs font-bold tracking-wider text-dim uppercase">
+                                        Other Sections
+                                    </div>
+                                    {SECTIONS.filter((sec) => !nav.includes(sec)).map((sec) => {
+                                        const isSelected = sec === section;
+
+                                        return (
+                                            <div
+                                                key={sec}
+                                                className="row"
+                                                data-link=""
+                                                data-selected={isSelected ? "" : undefined}
+                                                onClick={() => {
+                                                    go.section(sec);
+                                                    setMobileMenuOpen(false);
+                                                }}
+                                            >
+                                                <span
+                                                    className={
+                                                        isSelected ? "font-bold text-cyan" : ""
+                                                    }
+                                                >
+                                                    {SECTION_TITLES[sec] ?? sec}
+                                                </span>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </Frame>
+                        </div>
+                    )}
+
+                    <div className="grid min-h-0 min-w-0 max-w-full grid-cols-[minmax(0,1fr)] md:grid-rows-[auto_minmax(0,1fr)] md:gap-y-[var(--panel-gap)]">
+                        <div className="hidden md:block">
+                            <Navigation
+                                section={section}
+                                id={second}
+                                headerRef={setHeaderSlot}
+                                actionsRef={setActionsSlot}
+                            />
+                        </div>
+                        <main className="page-content min-h-0 min-w-0 flex-1 overflow-y-auto">
+                            <Outlet />
+                        </main>
+                    </div>
+                    <footer className="flex gap-[2ch] whitespace-nowrap px-[1ch] text-dim">
+                        <span className="min-w-0 flex-1 overflow-hidden text-ellipsis">
+                            {footerHint(
+                                section,
+                                second === undefined,
+                                pathname === "/nodes/create",
+                                nav.length,
+                            )}
+                            {message !== "" && (
+                                <span className="selectable text-fg"> │ {message}</span>
+                            )}
+                        </span>
+                        <span className="flex items-center gap-[1ch]">
+                            {liveness !== "live" && (
                                 <button
                                     type="button"
-                                    className="cursor-pointer text-dim hover:text-fg"
-                                    onClick={() => setMobileMenuOpen(false)}
+                                    className="cursor-pointer text-yellow hover:text-fg"
+                                    title="Refresh now"
+                                    onClick={() => {
+                                        resetPollBackoff();
+                                        void queryClient.invalidateQueries();
+                                    }}
                                 >
-                                    [× close]
+                                    live updates paused
                                 </button>
-                            }
-                            className="max-h-[90vh] w-full"
-                        >
-                            <div className="flex flex-col gap-y-[4px]">
-                                <div className="pb-[4px] text-xs font-bold tracking-wider text-dim uppercase">
-                                    Main
-                                </div>
-                                {nav.map((key) => {
-                                    const [count, warn] = navCount(key, totals, taskCount);
-                                    const isSelected = key === activeNav;
-
-                                    return (
-                                        <div
-                                            key={key}
-                                            className="row"
-                                            data-link=""
-                                            data-selected={isSelected ? "" : undefined}
-                                            onClick={() => {
-                                                go.section(key);
-                                                setMobileMenuOpen(false);
-                                            }}
-                                            style={{ gridTemplateColumns: "minmax(0, 1fr) 4ch" }}
-                                        >
-                                            <span
-                                                className={isSelected ? "font-bold text-cyan" : ""}
-                                            >
-                                                {SECTION_TITLES[key]}
-                                            </span>
-                                            <span
-                                                className={`text-right ${warn > 0 ? "text-yellow" : "text-dim"}`}
-                                            >
-                                                {count ?? ""}
-                                            </span>
-                                        </div>
-                                    );
-                                })}
-
-                                <div className="mt-[12px] border-t border-line pt-[8px] pb-[4px] text-xs font-bold tracking-wider text-dim uppercase">
-                                    Other Sections
-                                </div>
-                                {SECTIONS.filter((sec) => !nav.includes(sec)).map((sec) => {
-                                    const isSelected = sec === section;
-
-                                    return (
-                                        <div
-                                            key={sec}
-                                            className="row"
-                                            data-link=""
-                                            data-selected={isSelected ? "" : undefined}
-                                            onClick={() => {
-                                                go.section(sec);
-                                                setMobileMenuOpen(false);
-                                            }}
-                                        >
-                                            <span
-                                                className={isSelected ? "font-bold text-cyan" : ""}
-                                            >
-                                                {SECTION_TITLES[sec] ?? sec}
-                                            </span>
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                        </Frame>
-                    </div>
-                )}
-
-                <div className="grid min-h-0 min-w-0 max-w-full grid-cols-[minmax(0,1fr)] md:grid-rows-[auto_minmax(0,1fr)] md:gap-y-[var(--panel-gap)]">
-                    <div className="hidden md:block">
-                        <Navigation
-                            section={section}
-                            id={second}
-                            headerRef={setHeaderSlot}
-                            actionsRef={setActionsSlot}
-                        />
-                    </div>
-                    <main className="page-content min-h-0 min-w-0 flex-1 overflow-y-auto">
-                        <Outlet />
-                    </main>
+                            )}{" "}
+                            {gateway}
+                            <span
+                                role="status"
+                                aria-label={status}
+                                title={status}
+                                className={`inline-block size-[8px] rounded-full ${
+                                    liveness === "live"
+                                        ? "bg-green"
+                                        : liveness === "reconnecting"
+                                          ? "animate-pulse bg-yellow"
+                                          : "border border-dim"
+                                }`}
+                            />
+                        </span>
+                    </footer>
+                    <MenuPopup />
+                    <Modal />
                 </div>
-                <footer className="flex gap-[2ch] whitespace-nowrap px-[1ch] text-dim">
-                    <span className="min-w-0 flex-1 overflow-hidden text-ellipsis">
-                        {footerHint(
-                            section,
-                            second === undefined,
-                            pathname === "/nodes/create",
-                            nav.length,
-                        )}
-                        {message !== "" && <span className="selectable text-fg"> │ {message}</span>}
-                    </span>
-                    <span className="flex items-center gap-[1ch]">
-                        {liveness !== "live" && (
-                            <button
-                                type="button"
-                                className="cursor-pointer text-yellow hover:text-fg"
-                                title="Refresh now"
-                                onClick={() => {
-                                    resetPollBackoff();
-                                    void queryClient.invalidateQueries();
-                                }}
-                            >
-                                live updates paused
-                            </button>
-                        )}{" "}
-                        {gateway}
-                        <span
-                            role="status"
-                            aria-label={status}
-                            title={status}
-                            className={`inline-block size-[8px] rounded-full ${
-                                liveness === "live"
-                                    ? "bg-green"
-                                    : liveness === "reconnecting"
-                                      ? "animate-pulse bg-yellow"
-                                      : "border border-dim"
-                            }`}
-                        />
-                    </span>
-                </footer>
-                <MenuPopup />
-                <Modal />
             </div>
         </PageHeaderSlot.Provider>
     );

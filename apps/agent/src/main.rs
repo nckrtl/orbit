@@ -2,6 +2,10 @@ use bollard::{container::ListContainersOptions, system::EventsOptions, Docker};
 use futures_util::{SinkExt, StreamExt};
 use orbit_agent::{
     docker_container_name, docker_status, frame, gateway_client, iso_now, lock_single_instance,
+    logs::{
+        controller::{run_controller, spawn_stream, GatewayList, LogHub},
+        limits::BATCH_INTERVAL,
+    },
     next_attempt, process_unit_name, retry_delay, snapshot_frames, tls_config,
     workspace::{
         configure_libgit2, lock_workspaces, watch_workspaces, SharedWorkspaces, WorkspaceUpdate,
@@ -43,6 +47,9 @@ struct Discovery {
     address: Option<String>,
     key: Option<String>,
     channel: String,
+    /// Absent from Gateways before agent 0.3.0; the agent then runs without log tails.
+    #[serde(default)]
+    log_channel: Option<String>,
     member: String,
 }
 #[derive(Deserialize)]
@@ -66,6 +73,14 @@ async fn main() {
 }
 
 async fn run() -> Result<(), Box<dyn Error + Send + Sync>> {
+    let cgroup = std::fs::read_to_string("/proc/self/cgroup").unwrap_or_default();
+    if !orbit_agent::runs_in_service_unit(&cgroup) {
+        return Err(format!(
+            "refusing to start outside {}; the Gateway runs the agent only through that unit",
+            orbit_agent::SERVICE_UNIT
+        )
+        .into());
+    }
     let config = Config::load()?;
     let _single_instance = lock_single_instance(LOCK_PATH)?;
     let secret = AgentSecret::load(SECRET_PATH)?;
@@ -99,6 +114,16 @@ async fn run() -> Result<(), Box<dyn Error + Send + Sync>> {
         config.gateway_url.clone(),
         workspaces.clone(),
         workspace_tx,
+    ));
+    let (log_hub, log_prompts) = LogHub::new();
+    tokio::spawn(run_controller(
+        log_hub.clone(),
+        log_prompts,
+        GatewayList {
+            client: client.clone(),
+            gateway: config.gateway_url.clone(),
+        },
+        spawn_stream,
     ));
     let (shutdown_tx, mut shutdown_rx) = watch::channel(false);
     tokio::spawn(async move {
@@ -134,6 +159,7 @@ async fn run() -> Result<(), Box<dyn Error + Send + Sync>> {
         {
             return Err("Gateway returned an invalid agent channel identity".into());
         }
+        let log_channel = accepted_log_channel(&discovery);
         let (Some(url), Some(address), Some(key)) =
             (discovery.url, discovery.address, discovery.key)
         else {
@@ -147,6 +173,8 @@ async fn run() -> Result<(), Box<dyn Error + Send + Sync>> {
             &address,
             &key,
             &discovery.channel,
+            log_channel.as_deref(),
+            &log_hub,
             tls.clone(),
             &manager,
             &mut sequence,
@@ -189,6 +217,21 @@ async fn wait_for_os_shutdown() {
         let _ = tokio::signal::ctrl_c().await;
     }
 }
+/// The log channel only when it is `presence-node-logs.{id}` for the same Node as the member ID.
+fn accepted_log_channel(discovery: &Discovery) -> Option<String> {
+    let id = discovery.member.strip_prefix("agent.")?;
+    match &discovery.log_channel {
+        Some(channel) if *channel == format!("presence-node-logs.{id}") => Some(channel.clone()),
+        Some(_) => {
+            eprintln!(
+                "orbit-agent: Gateway returned an invalid log channel; live log tails are off"
+            );
+            None
+        }
+        None => None,
+    }
+}
+
 async fn discover(
     client: &reqwest::Client,
     gateway: &str,
@@ -214,6 +257,8 @@ async fn connected_session(
     ws_address: &str,
     key: &str,
     channel: &str,
+    log_channel: Option<&str>,
+    log_hub: &LogHub,
     tls: Arc<rustls::ClientConfig>,
     manager: &Proxy<'_>,
     sequence: &mut Sequencer,
@@ -253,7 +298,7 @@ async fn connected_session(
                 .await?;
         protocol_handshake(socket, client, &auth_url, channel, VERSION).await
     };
-    let mut socket = tokio::time::timeout(JOIN_TIMEOUT, join)
+    let (mut socket, socket_id) = tokio::time::timeout(JOIN_TIMEOUT, join)
         .await
         .map_err(|_| "joining the Reverb channel timed out")??;
     // The caller starts the backoff again only when this session stays joined long enough.
@@ -282,6 +327,27 @@ async fn connected_session(
         workspaces,
     )
     .await?;
+    let mut log_subscribed = false;
+    // While the log channel subscription waits for an answer, a 4009 error refuses it, not the session.
+    let mut log_pending = false;
+    if let Some(log_channel) = log_channel {
+        match channel_auth(client, &auth_url, &socket_id, log_channel, VERSION).await {
+            Ok(auth) => {
+                send_control(
+                    &mut socket,
+                    "pusher:subscribe",
+                    json!({"channel":log_channel,"auth":auth.auth,"channel_data":auth.channel_data}),
+                )
+                .await?;
+                log_pending = true;
+            }
+            Err(error) => eprintln!(
+                "orbit-agent: log channel authorization failed; live log tails are off for this connection: {error}"
+            ),
+        }
+    }
+    let mut log_flush = tokio::time::interval(BATCH_INTERVAL);
+    log_flush.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     let mut pending = ChangeBatch::default();
     let debounce = tokio::time::sleep(Duration::from_secs(86400));
     tokio::pin!(debounce);
@@ -327,19 +393,68 @@ async fn connected_session(
                 WorkspaceUpdate::Changed(id)=>{let state=lock_workspaces(workspaces).get(&id).cloned();if let Some(state)=state{send_raw_frame(&mut socket,workspace_frame(channel,sequence.advance(),state)?).await?;}},
                 WorkspaceUpdate::List=>send_workspaces(&mut socket,channel,sequence,workspaces).await?,
             },
+            now=log_flush.tick(),if log_subscribed=>{
+                if let Some(log_channel)=log_channel{for event in log_hub.flush(log_channel,now)?{send_raw_frame(&mut socket,event).await?;}}
+            },
             _=&mut debounce,if !pending.is_empty()=>{if pending.due(Instant::now()){for unit in pending.take(){let event=orbit_agent::process_frame(channel,sequence.advance(),unit)?;send_raw_frame(&mut socket,event).await?;}}},
             message=socket.next()=>match message{
-                Some(Ok(Message::Text(text)))=>{liveness.message(Instant::now());let value:Value=serde_json::from_str(&text)?;match value["event"].as_str().unwrap_or(""){
-                    "pusher:ping"=>send_control(&mut socket,"pusher:pong",json!({})).await?,
-                    "pusher:error"|"pusher_internal:subscription_error"=>return Err(format!("Pusher rejected subscription: {}",value["data"]).into()),
-                    "pusher_internal:member_added"=>{let all=combined_units(systemd,docker_units);send_snapshots(&mut socket,channel,sequence,&all,if *docker_available{"available"}else{"absent"},workspaces).await?;snapshot_due.as_mut().reset(Instant::now()+SNAPSHOT_INTERVAL);},
-                    _=>{}
+                Some(Ok(Message::Text(text)))=>{liveness.message(Instant::now());let value:Value=serde_json::from_str(&text)?;match route(&value,channel,log_channel,log_pending){
+                    Route::Pong=>send_control(&mut socket,"pusher:pong",json!({})).await?,
+                    Route::Fail=>return Err(format!("Pusher rejected subscription: {}",value["data"]).into()),
+                    Route::Snapshot=>{let all=combined_units(systemd,docker_units);send_snapshots(&mut socket,channel,sequence,&all,if *docker_available{"available"}else{"absent"},workspaces).await?;snapshot_due.as_mut().reset(Instant::now()+SNAPSHOT_INTERVAL);},
+                    Route::LogSubscribed=>{log_subscribed=true;log_pending=false;log_hub.prompt();},
+                    Route::LogRefused=>{log_subscribed=false;log_pending=false;eprintln!("orbit-agent: log channel subscription refused; live log tails are off for this connection");},
+                    Route::FetchLogStreams=>log_hub.prompt(),
+                    Route::Ignore=>{}
                 }},
                 Some(Ok(Message::Ping(data)))=>{liveness.message(Instant::now());socket.send(Message::Pong(data)).await?},
                 Some(Ok(Message::Close(_)))|None=>return Err("Pusher closed connection".into()),
                 Some(Err(error))=>return Err(error.into()),_=>{}
             }
         }
+    }
+}
+
+/// What a Pusher message from Reverb asks for. The channel of every message is checked, so a message
+/// on the log channel never acts on the Node channel, and the reverse.
+#[derive(Debug, PartialEq, Eq)]
+enum Route {
+    Pong,
+    Fail,
+    Snapshot,
+    LogSubscribed,
+    LogRefused,
+    FetchLogStreams,
+    Ignore,
+}
+/// Reverb's `pusher:error` code for a subscription whose signature it refuses.
+const UNAUTHORIZED: i64 = 4009;
+
+fn route(value: &Value, channel: &str, log_channel: Option<&str>, log_pending: bool) -> Route {
+    let on = value["channel"].as_str();
+    let on_node = on == Some(channel);
+    let on_logs = on.is_some() && on == log_channel;
+    match value["event"].as_str().unwrap_or("") {
+        "pusher:ping" => Route::Pong,
+        // The Node channel is already joined, so an unauthorized error answers the log channel's subscription.
+        "pusher:error" if log_pending && error_code(value) == Some(UNAUTHORIZED) => {
+            Route::LogRefused
+        }
+        "pusher:error" => Route::Fail,
+        "pusher_internal:subscription_error" if on_logs => Route::LogRefused,
+        "pusher_internal:subscription_error" => Route::Fail,
+        "pusher_internal:subscription_succeeded" if on_logs => Route::LogSubscribed,
+        "pusher_internal:member_added" if on_node => Route::Snapshot,
+        "log-streams.changed" if on_logs => Route::FetchLogStreams,
+        _ => Route::Ignore,
+    }
+}
+
+/// The `code` of a `pusher:error`, whose `data` is an object or a JSON string.
+fn error_code(value: &Value) -> Option<i64> {
+    match &value["data"] {
+        Value::String(text) => serde_json::from_str::<Value>(text).ok()?["code"].as_i64(),
+        data => data["code"].as_i64(),
     }
 }
 
@@ -356,7 +471,7 @@ async fn protocol_handshake(
     auth_url: &str,
     channel: &str,
     version: &str,
-) -> Result<Socket, Box<dyn Error + Send + Sync>> {
+) -> Result<(Socket, String), Box<dyn Error + Send + Sync>> {
     let established = loop {
         let message = socket
             .next()
@@ -377,19 +492,11 @@ async fn protocol_handshake(
             .as_str()
             .ok_or("missing connection data")?,
     )?;
-    let socket_id = data["socket_id"].as_str().ok_or("missing socket id")?;
-    let auth: Auth = client
-        .post(auth_url)
-        .form(&[
-            ("socket_id", socket_id),
-            ("channel_name", channel),
-            ("version", version),
-        ])
-        .send()
-        .await?
-        .error_for_status()?
-        .json()
-        .await?;
+    let socket_id = data["socket_id"]
+        .as_str()
+        .ok_or("missing socket id")?
+        .to_owned();
+    let auth = channel_auth(client, auth_url, &socket_id, channel, version).await?;
     send_control(
         &mut socket,
         "pusher:subscribe",
@@ -405,7 +512,7 @@ async fn protocol_handshake(
             Message::Text(text) => {
                 let value: Value = serde_json::from_str(&text)?;
                 match value["event"].as_str().unwrap_or("") {
-                    "pusher_internal:subscription_succeeded" => return Ok(socket),
+                    "pusher_internal:subscription_succeeded" => return Ok((socket, socket_id)),
                     "pusher:error" | "pusher_internal:subscription_error" => {
                         return Err(
                             format!("Pusher rejected subscription: {}", value["data"]).into()
@@ -420,6 +527,29 @@ async fn protocol_handshake(
             _ => {}
         }
     }
+}
+
+async fn channel_auth(
+    client: &reqwest::Client,
+    auth_url: &str,
+    socket_id: &str,
+    channel: &str,
+    version: &str,
+) -> Result<Auth, Box<dyn Error + Send + Sync>> {
+    Ok(client
+        .post(auth_url)
+        .form(&[
+            ("socket_id", socket_id),
+            ("channel_name", channel),
+            ("version", version),
+        ])
+        .send()
+        .await
+        .map_err(reqwest::Error::without_url)?
+        .error_for_status()
+        .map_err(reqwest::Error::without_url)?
+        .json()
+        .await?)
 }
 
 async fn send_snapshots(
@@ -714,10 +844,12 @@ mod protocol_tests {
     struct FakeState {
         auths: Arc<AtomicUsize>,
         subscriptions: Arc<AtomicUsize>,
+        forms: Arc<std::sync::Mutex<Vec<HashMap<String, String>>>>,
     }
     async fn auth(
         State(state): State<FakeState>,
         headers: axum::http::HeaderMap,
+        axum::Form(form): axum::Form<HashMap<String, String>>,
     ) -> Result<Json<Value>, axum::http::StatusCode> {
         // The Gateway signs the membership only for the agent's secret (ADR 0155).
         if headers
@@ -728,6 +860,7 @@ mod protocol_tests {
             return Err(axum::http::StatusCode::UNAUTHORIZED);
         }
         state.auths.fetch_add(1, Ordering::SeqCst);
+        state.forms.lock().unwrap().push(form);
         Ok(Json(
             json!({"auth":"signed","channel_data":"{\"user_id\":\"agent.12\"}"}),
         ))
@@ -777,6 +910,7 @@ mod protocol_tests {
         let state = FakeState {
             auths: Arc::new(AtomicUsize::new(0)),
             subscriptions: Arc::new(AtomicUsize::new(0)),
+            forms: Arc::default(),
         };
         let app = Router::new()
             .route("/socket", get(ws_route))
@@ -789,6 +923,144 @@ mod protocol_tests {
         });
         (format!("http://{addr}"), state)
     }
+    #[test]
+    fn messages_act_only_on_their_own_channel() {
+        let node = "presence-node.12";
+        let logs = "presence-node-logs.12";
+        let message = |event: &str, channel: Option<&str>, log_channel: Option<&str>| {
+            let mut value = json!({"event": event, "data": {}});
+            if let Some(channel) = channel {
+                value["channel"] = json!(channel);
+            }
+            route(&value, node, log_channel, false)
+        };
+        let with_logs = |event: &str, channel: Option<&str>| message(event, channel, Some(logs));
+        assert_eq!(with_logs("pusher:ping", None), Route::Pong);
+        assert_eq!(with_logs("pusher:error", None), Route::Fail);
+        assert_eq!(
+            with_logs("pusher_internal:member_added", Some(node)),
+            Route::Snapshot
+        );
+        assert_eq!(
+            with_logs("pusher_internal:member_added", Some(logs)),
+            Route::Ignore
+        );
+        assert_eq!(
+            with_logs("pusher_internal:member_added", None),
+            Route::Ignore
+        );
+        assert_eq!(
+            with_logs("pusher_internal:subscription_succeeded", Some(logs)),
+            Route::LogSubscribed
+        );
+        assert_eq!(
+            with_logs("pusher_internal:subscription_succeeded", Some(node)),
+            Route::Ignore
+        );
+        assert_eq!(
+            with_logs("pusher_internal:subscription_error", Some(logs)),
+            Route::LogRefused
+        );
+        assert_eq!(
+            with_logs("pusher_internal:subscription_error", Some(node)),
+            Route::Fail
+        );
+        assert_eq!(
+            with_logs("log-streams.changed", Some(logs)),
+            Route::FetchLogStreams
+        );
+        assert_eq!(with_logs("log-streams.changed", Some(node)), Route::Ignore);
+        assert_eq!(with_logs("log-streams.changed", None), Route::Ignore);
+        assert_eq!(
+            with_logs("client-log-streams.changed", Some(logs)),
+            Route::Ignore
+        );
+        assert_eq!(with_logs("client-log", Some(logs)), Route::Ignore);
+        assert_eq!(
+            message("log-streams.changed", Some(logs), None),
+            Route::Ignore,
+            "without a log channel nothing prompts a fetch"
+        );
+        assert_eq!(
+            message("pusher_internal:subscription_succeeded", None, None),
+            Route::Ignore
+        );
+    }
+
+    #[test]
+    fn an_unauthorized_error_refuses_only_a_pending_log_subscription() {
+        let unauthorized = json!({"event": "pusher:error", "data": {"code": 4009, "message": "Connection is unauthorized"}});
+        let as_text = json!({"event": "pusher:error", "data": "{\"code\":4009,\"message\":\"Connection is unauthorized\"}"});
+        let other = json!({"event": "pusher:error", "data": {"code": 4201, "message": "Pong reply not received"}});
+        let logs = Some("presence-node-logs.12");
+        assert_eq!(
+            route(&unauthorized, "presence-node.12", logs, true),
+            Route::LogRefused
+        );
+        assert_eq!(
+            route(&as_text, "presence-node.12", logs, true),
+            Route::LogRefused
+        );
+        assert_eq!(
+            route(&unauthorized, "presence-node.12", logs, false),
+            Route::Fail
+        );
+        assert_eq!(route(&other, "presence-node.12", logs, true), Route::Fail);
+    }
+
+    #[test]
+    fn log_channel_is_accepted_only_for_the_same_node() {
+        let discovery = |log_channel: Value| -> Discovery {
+            serde_json::from_value(json!({
+                "url": null, "address": null, "key": null,
+                "channel": "presence-node.12", "member": "agent.12", "log_channel": log_channel
+            }))
+            .unwrap()
+        };
+        assert_eq!(
+            accepted_log_channel(&discovery(json!("presence-node-logs.12"))).as_deref(),
+            Some("presence-node-logs.12")
+        );
+        assert_eq!(
+            accepted_log_channel(&discovery(json!("presence-node-logs.13"))),
+            None
+        );
+        assert_eq!(
+            accepted_log_channel(&discovery(json!("presence-node.12"))),
+            None
+        );
+        assert_eq!(accepted_log_channel(&discovery(json!(null))), None);
+        let old: Discovery = serde_json::from_value(json!({
+            "url": null, "address": null, "key": null,
+            "channel": "presence-node.12", "member": "agent.12"
+        }))
+        .unwrap();
+        assert_eq!(accepted_log_channel(&old), None);
+    }
+
+    #[tokio::test]
+    async fn log_channel_auth_names_the_socket_channel_and_version() {
+        let (base, state) = fake_server().await;
+        let http = reqwest::Client::builder()
+            .default_headers(AgentSecret::parse(TEST_SECRET).unwrap().headers())
+            .build()
+            .unwrap();
+        let auth = channel_auth(
+            &http,
+            &format!("{base}/auth"),
+            "1.2",
+            "presence-node-logs.12",
+            VERSION,
+        )
+        .await
+        .unwrap();
+        assert_eq!(auth.auth, "signed");
+        let forms = state.forms.lock().unwrap();
+        assert_eq!(forms[0]["socket_id"], "1.2");
+        assert_eq!(forms[0]["channel_name"], "presence-node-logs.12");
+        assert_eq!(forms[0]["version"], "0.3.0");
+    }
+
     #[tokio::test]
     async fn opens_tcp_connections_to_literal_addresses_without_dns() {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -829,7 +1101,7 @@ mod protocol_tests {
                 connect_async(format!("{}/socket", base.replacen("http://", "ws://", 1)))
                     .await
                     .unwrap();
-            let mut socket = protocol_handshake(
+            let (mut socket, socket_id) = protocol_handshake(
                 socket,
                 &http,
                 &format!("{base}/auth"),
@@ -838,6 +1110,7 @@ mod protocol_tests {
             )
             .await
             .unwrap();
+            assert_eq!(socket_id, "1.2");
             let frame = frame(
                 "presence-node.12",
                 "client-snapshot",

@@ -6,11 +6,20 @@ use App\Actions\Nodes\RelocateNodeRoleAction;
 use App\Domain\AppDev\PrivateDnsAnswerExpiry;
 use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\Gateway\GatewayServingHost;
+use App\Domain\Metrics\MetricsCadvisorLifecycle;
+use App\Domain\Metrics\MetricsExporterLifecycle;
 use App\Domain\Metrics\MetricsFleetReconciler;
+use App\Domain\Metrics\MetricsGatewayResolver;
+use App\Domain\Metrics\MetricsPublicationManager;
+use App\Domain\Metrics\MetricsPublicationReport;
 use App\Domain\Metrics\MetricsReconcileDeferral;
+use App\Domain\Metrics\MetricsRuntimeLifecycle;
+use App\Domain\Nodes\GatewayPrivateDnsRoute;
 use App\Domain\Nodes\NodeRoleFirewallManager;
+use App\Domain\Nodes\NodeRoleFollowUpReport;
 use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Nodes\NodeRoleValidationException;
+use App\Domain\Nodes\RoleBaseline;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Settings\SettingRepository;
@@ -21,6 +30,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WebSocket\WebSocketCredentialManager;
 use App\Infrastructure\Metrics\NativeMetricsCredentialManager;
+use App\Infrastructure\Nodes\Roles\MetricsRoleBaseline;
 use App\Infrastructure\WebSocket\WebSocketFootprint;
 use App\Models\Cluster;
 use App\Models\Node;
@@ -38,6 +48,8 @@ describe(RelocateNodeRoleAction::class, function (): void {
         app()->instance(NodeRoleFirewallManager::class, $this->firewall);
         app()->instance(PrivateDnsManager::class, $this->dns);
         app()->instance(RoleBaselineConverger::class, $this->baselines);
+        $this->route = new RelocateNodeRoleRouteFake($this->firewall);
+        app()->instance(GatewayPrivateDnsRoute::class, $this->route);
     });
 
     it('transfers the singleton gateway assignment and leaves vpn on the source', function (): void {
@@ -70,6 +82,8 @@ describe(RelocateNodeRoleAction::class, function (): void {
             ->and($this->firewall->events)
             ->toBe([
                 "converge:gateway:{$target->name}",
+                "route:converge:{$target->name}",
+                "route:remove:{$source->name}",
                 "remove:gateway:{$source->name}",
             ])
             ->and($this->dns->calls)
@@ -78,6 +92,50 @@ describe(RelocateNodeRoleAction::class, function (): void {
             ->toBeEmpty()
             ->and(app(GatewayServingHost::class)->nodeId())
             ->toBe($source->id);
+    });
+
+    it('reports a gateway move whose source route removal failed as incomplete, and finishes it on retry', function (): void {
+        $source = relocate_role_node('gateway', '10.44.0.1');
+        $target = relocate_role_node('beast', '10.44.0.11');
+        $source->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
+        $source->roles()->create(['role' => RoleName::Vpn, 'status' => LifecycleStatus::Active]);
+        $this->route->removeFailure = new NodeRoleOperationException(
+            'gateway-private-dns-resolver',
+            'node_role.remove_failed',
+            'vpn.dns_resolver_failed',
+            'Gateway role step [gateway-private-dns-resolver] failed on node [gateway].',
+        );
+
+        expect(fn () => app(RelocateNodeRoleAction::class)->execute($target, RoleName::Gateway, force: true))
+            ->toThrow(function (NodeRoleOperationException $exception) use ($source, $target): void {
+                expect($exception->errorCode)->toBe('node_role.remove_failed')
+                    ->and($exception->underlyingErrorCode)->toBe('vpn.dns_resolver_failed')
+                    ->and($exception->step)->toBe('gateway-private-dns-resolver')
+                    ->and($exception->getMessage())->toBe(
+                        "Role [gateway] now runs on node [{$target->name}], but the move from node [{$source->name}] is incomplete: "
+                        .'Gateway role step [gateway-private-dns-resolver] failed on node [gateway].'
+                        ." Run `orbit node:role:relocate {$target->name} gateway --from {$source->name} --force` to finish it once node [{$source->name}] is reachable.",
+                    );
+            });
+
+        // The source keeps its gateway firewall until the route is gone, so the retry repeats both steps.
+        expect($this->firewall->events)->toBe([
+            "converge:gateway:{$target->name}",
+            "route:converge:{$target->name}",
+            "route:remove:{$source->name}",
+        ])
+            ->and($target->roles()->where('role', RoleName::Gateway)->value('status'))->toBe(LifecycleStatus::Active);
+
+        $this->route->removeFailure = null;
+        $this->firewall->events = [];
+        app(RelocateNodeRoleAction::class)->execute($target, RoleName::Gateway, force: true, from: $source);
+
+        expect($this->firewall->events)->toBe([
+            "converge:gateway:{$target->name}",
+            "route:converge:{$target->name}",
+            "route:remove:{$source->name}",
+            "remove:gateway:{$source->name}",
+        ]);
     });
 
     it('requires force before transferring the assignment', function (): void {
@@ -237,30 +295,47 @@ describe(RelocateNodeRoleAction::class, function (): void {
         ]]);
     });
 
-    it('leaves the source withdrawal ahead of a failing Metrics reconcile and names the command that retries it', function (): void {
+    it('finishes the move when the final Metrics reconcile fails and names the Metrics Node', function (): void {
+        $source = relocate_role_node('beast', '10.44.0.1');
+        $target = relocate_role_node('services', '10.44.0.11');
+        $metricsNode = relocate_role_node('app-dev', '10.44.0.2');
+        $metricsNode->roles()->create(['role' => RoleName::Metrics, 'status' => LifecycleStatus::Active]);
+        $source->roles()->create(['role' => RoleName::WebSocket, 'status' => LifecycleStatus::Active]);
+        app(WebSocketCredentialManager::class)->ensure($source);
+        Sleep::fake();
+        $metrics = new RelocateNodeRoleMetricsFake($this->baselines);
+        $metrics->failure = new ResourceOperationException(
+            'metrics.remote_command_timed_out',
+            'A Metrics command on node [app-dev] did not finish within 120 seconds.',
+            504,
+        );
+        app()->instance(MetricsFleetReconciler::class, $metrics);
+        $this->baselines->metrics = $metrics;
+
+        $assignment = app(RelocateNodeRoleAction::class)->execute($target, RoleName::WebSocket, force: true);
+
+        expect($assignment->node_id)->toBe($target->id)
+            ->and($this->baselines->removed)->toBe([['role' => 'websocket', 'node' => $source->name, 'purge_data' => false]])
+            ->and(app(NodeRoleFollowUpReport::class)->take())->toBe(
+                'Metrics on node [app-dev] was not reconciled after the move: A Metrics command on node [app-dev] did not finish within 120 seconds. '
+                .'Run `orbit node:role:add app-dev metrics --converge` once node [app-dev] is healthy.',
+            )
+            ->and(app(MetricsReconcileDeferral::class)->defers())->toBeFalse();
+    });
+
+    it('reports no follow-up when the final Metrics reconcile succeeds', function (): void {
         $source = relocate_role_node('beast', '10.44.0.1');
         $target = relocate_role_node('services', '10.44.0.11');
         $source->roles()->create(['role' => RoleName::WebSocket, 'status' => LifecycleStatus::Active]);
         app(WebSocketCredentialManager::class)->ensure($source);
         Sleep::fake();
         $metrics = new RelocateNodeRoleMetricsFake($this->baselines);
-        $metrics->failure = new ResourceOperationException(
-            'metrics.prometheus_configuration_check_timed_out',
-            'A Metrics command on node [app-dev] did not finish within 60 seconds.',
-            504,
-        );
         app()->instance(MetricsFleetReconciler::class, $metrics);
         $this->baselines->metrics = $metrics;
 
-        expect(fn () => app(RelocateNodeRoleAction::class)->execute($target, RoleName::WebSocket, force: true))
-            ->toThrow(function (ResourceOperationException $exception) use ($source, $target): void {
-                expect($exception->errorCode)->toBe('metrics.prometheus_configuration_check_timed_out')
-                    ->and($exception->status)->toBe(504)
-                    ->and($exception->getMessage())->toEndWith("Run `orbit node:role:relocate {$target->name} websocket --from {$source->name} --force` to finish it once node [{$source->name}] is reachable.");
-            });
+        app(RelocateNodeRoleAction::class)->execute($target, RoleName::WebSocket, force: true);
 
-        expect($this->baselines->removed)->toBe([['role' => 'websocket', 'node' => $source->name, 'purge_data' => false]])
-            ->and(app(MetricsReconcileDeferral::class)->defers())->toBeFalse();
+        expect(app(NodeRoleFollowUpReport::class)->take())->toBeNull();
     });
 
     it('withdraws websocket from the source only after the target serves and cached DNS answers expire', function (): void {
@@ -332,6 +407,56 @@ describe(RelocateNodeRoleAction::class, function (): void {
             });
 
         expect($this->baselines->removed)->toBe([]);
+    });
+
+    it('keeps the Metrics code and names the converge step when the real Metrics baseline fails on the target', function (): void {
+        $gateway = relocate_role_node('gateway', '10.44.0.1');
+        $gateway->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
+        $source = relocate_role_node('app-dev', '10.44.0.2');
+        $target = relocate_role_node('app-prod-2', '10.44.0.4');
+        $source->roles()->create(['role' => RoleName::Metrics, 'status' => LifecycleStatus::Active]);
+        $exporters = Mockery::mock(MetricsExporterLifecycle::class);
+        $exporters->shouldReceive('converge')->andThrow(new ResourceOperationException(
+            'metrics.exporter_firewall_ownership_drift',
+            'Metrics exporter firewall ownership cannot be proved.',
+            409,
+        ));
+        $exporters->shouldIgnoreMissing();
+        $baseline = new MetricsRoleBaseline(
+            Mockery::mock(MetricsRuntimeLifecycle::class)->shouldIgnoreMissing(),
+            $exporters,
+            Mockery::mock(MetricsPublicationManager::class)->shouldIgnoreMissing(),
+            new MetricsGatewayResolver,
+            new MetricsPublicationReport,
+            Mockery::mock(MetricsCadvisorLifecycle::class)->shouldIgnoreMissing(),
+        );
+        $this->baselines->delegate = $baseline;
+
+        expect(fn () => app(RelocateNodeRoleAction::class)->execute($target, RoleName::Metrics, force: true))
+            ->toThrow(function (NodeRoleOperationException $exception) use ($source, $target): void {
+                expect($exception->errorCode)->toBe('node_role.convergence_failed')
+                    ->and($exception->underlyingErrorCode)->toBe('metrics.exporter_firewall_ownership_drift')
+                    ->and($exception->step)->toBe('converge:metrics-exporters')
+                    ->and($exception->getMessage())->toStartWith("Role [metrics] now runs on node [{$target->name}], but the move from node [{$source->name}] is incomplete: Metrics exporter firewall ownership cannot be proved.");
+            });
+
+        expect($this->baselines->removed)->toBe([]);
+    });
+
+    it('prefixes a source withdrawal step with remove and keeps its codes', function (): void {
+        $source = relocate_role_node('beast', '10.44.0.1');
+        $target = relocate_role_node('services', '10.44.0.11');
+        $source->roles()->create(['role' => RoleName::WebSocket, 'status' => LifecycleStatus::Active]);
+        app(WebSocketCredentialManager::class)->ensure($source);
+        Sleep::fake();
+        $this->baselines->removeFailure = new NodeRoleOperationException('websocket-caddy', 'node_role.convergence_failed', 'websocket.caddy_publication_failed', 'The Caddy build failed.');
+
+        expect(fn () => app(RelocateNodeRoleAction::class)->execute($target, RoleName::WebSocket, force: true))
+            ->toThrow(function (NodeRoleOperationException $exception): void {
+                expect($exception->errorCode)->toBe('node_role.convergence_failed')
+                    ->and($exception->underlyingErrorCode)->toBe('websocket.caddy_publication_failed')
+                    ->and($exception->step)->toBe('remove:websocket-caddy');
+            });
     });
 
     it('transfers metrics and copies missing grafana credentials', function (): void {
@@ -527,6 +652,27 @@ final class RelocateNodeRoleFirewallFake implements NodeRoleFirewallManager
     public function trustWireGuardMembers(Node $node, string $managedUser): void {}
 }
 
+final class RelocateNodeRoleRouteFake implements GatewayPrivateDnsRoute
+{
+    public ?NodeRoleOperationException $removeFailure = null;
+
+    public function __construct(private RelocateNodeRoleFirewallFake $firewall) {}
+
+    public function convergeRoute(Node $node): void
+    {
+        $this->firewall->events[] = "route:converge:{$node->name}";
+    }
+
+    public function removeRoute(Node $node): void
+    {
+        $this->firewall->events[] = "route:remove:{$node->name}";
+
+        if ($this->removeFailure instanceof NodeRoleOperationException) {
+            throw $this->removeFailure;
+        }
+    }
+}
+
 final class RelocateNodeRoleDnsFake implements PrivateDnsManager
 {
     public int $calls = 0;
@@ -553,11 +699,16 @@ final class RelocateNodeRoleBaselineFake implements RoleBaselineConverger
     /** Requests a fleet Metrics reconcile after each change, as the native converger does. */
     public ?MetricsFleetReconciler $metrics = null;
 
+    /** A real baseline that converges the role instead of this fake. */
+    public ?RoleBaseline $delegate = null;
+
     public function converge(Node $node, NodeRole $assignment): void
     {
         if ($this->convergeFailure instanceof ResourceOperationException) {
             throw $this->convergeFailure;
         }
+
+        $this->delegate?->converge($node, $assignment);
 
         $this->converged[] = "{$assignment->role->value}:{$node->name}";
         $this->reconcileMetrics();

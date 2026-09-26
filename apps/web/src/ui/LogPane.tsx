@@ -10,11 +10,17 @@ export function LogPane({
     lines,
     loading,
     className = "",
+    error = null,
+    live = false,
 }: {
     title: string;
     lines: string[] | undefined;
     loading: boolean;
     className?: string;
+    /** Shown instead of the lines when the log cannot be read any more. */
+    error?: string | null;
+    /** True while a live stream appends the lines. */
+    live?: boolean;
 }) {
     const scroller = useRef<HTMLDivElement>(null);
     const count = lines?.length ?? 0;
@@ -66,7 +72,11 @@ export function LogPane({
             {/* The lines scroll inside the padding, so none of them passes under the title in the border. */}
             <div className="frame-body flex flex-col !overflow-hidden">
                 <div ref={scroller} className="selectable min-h-0 flex-1 overflow-auto">
-                    {count === 0 ? (
+                    {error !== null ? (
+                        <div role="alert" className="text-red">
+                            {error}
+                        </div>
+                    ) : count === 0 ? (
                         <Note>{loading ? "Loading…" : "No log lines yet."}</Note>
                     ) : virtual.getVirtualItems().length === 0 ? (
                         // Scrollport height 0 before layout — paint anyway so the body is not blank.
@@ -90,10 +100,10 @@ export function LogPane({
                     )}
                 </div>
             </div>
-            {count > 0 && (
+            {error === null && (count > 0 || live) && (
                 <div className="frame-edge" data-edge="bottom">
-                    <span />
-                    <span className="frame-label">{count} lines</span>
+                    {live ? <span className="frame-label">live</span> : <span />}
+                    {count > 0 ? <span className="frame-label">{count} lines</span> : <span />}
                 </div>
             )}
         </section>

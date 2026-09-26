@@ -6,6 +6,7 @@ namespace App\Infrastructure\Processes;
 
 use App\Domain\AgentView\AgentProcessView;
 use App\Domain\AppDev\ViteProcessLifecycle;
+use App\Domain\Logs\LogReadLimit;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessOperationException;
@@ -25,6 +26,41 @@ use SensitiveParameter;
 
 final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManager
 {
+    /** Reads a container's last lines with standard error merged into standard output, in order. */
+    /**
+     * Reads a unit's last entries newest first, as `journalctl --output short-iso --utc` prints them, in
+     * UTC as the Node agent writes live lines (ADR 0153), and stops after a number of bytes.
+     *
+     * `awk` cuts each entry as the agent does: it counts bytes, indent included, keeps the first line,
+     * and stops at the first further line that would take the entry past 256 KiB. A first line whose
+     * message is longer than 256 KiB is cut there, before a character rather than inside one. The
+     * entry then ends with the agent's cut marker, so a huge entry reads the same live and over SSH
+     * and cannot hide the older entries.
+     */
+    public const string JournalLogsScript = <<<'SH'
+        journalctl --unit "$1" --lines "$2" --reverse --no-pager --output short-iso --utc | LC_ALL=C awk '
+        /^ / {
+            if (cut) next
+            if (used + length($0) > 262144) { print indent "[orbit] message cut at 256 KiB"; cut = 1; next }
+            used += length($0); print; next
+        }
+        {
+            cut = 0; used = length($0); start = index($0, ": ")
+            prefix = start ? substr($0, 1, start + 1) : ""
+            gsub(/[\200-\277]/, "", prefix)
+            indent = sprintf("%" length(prefix) "s", "")
+            if (start && length($0) - start - 1 > 262144) {
+                keep = 262144
+                while (keep > 0 && substr($0, start + 2 + keep, 1) ~ /[\200-\277]/) keep--
+                print substr($0, 1, start + 1 + keep)
+                print indent "[orbit] message cut at 256 KiB"; cut = 1; next
+            }
+            print
+        }' | head -c "$3"
+        SH;
+
+    public const string DockerLogsScript = 'exec docker container logs --tail "$1" "$2" 2>&1';
+
     private ProcessRuntimeLease $lease;
 
     private AgentProcessView $agents;
@@ -367,34 +403,41 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
         }
 
         $arguments = match ($process->runtime) {
+            // Newest entry first, stopped after the byte limit, so the Node does bounded work.
             ProcessRuntime::Systemd => [
                 'sudo',
-                'journalctl',
-                '--unit',
+                'sh',
+                '-c',
+                self::JournalLogsScript,
+                'orbit-process-logs',
                 $this->systemd->unitName($process),
-                '--lines',
                 (string) $lines,
-                '--no-pager',
-                '--output',
-                'short-iso',
+                (string) LogReadLimit::Bytes,
             ],
+            // Standard output and standard error in one stream, in the order the container wrote
+            // them, as the Node agent streams them live (ADR 0153).
             ProcessRuntime::Docker => [
                 'sudo',
-                'docker',
-                'container',
-                'logs',
-                '--tail',
+                'sh',
+                '-c',
+                self::DockerLogsScript,
+                'orbit-process-logs',
                 (string) $lines,
                 $this->docker->containerName($process),
             ],
         };
 
-        return $this->executeSuccessfully(
+        $output = $this->executeSuccessfully(
             $process,
             $arguments,
             'logs',
             'process.logs_failed',
+            maxOutputBytes: LogReadLimit::Bytes,
         )->stdout;
+
+        return $process->runtime === ProcessRuntime::Systemd
+            ? LogReadLimit::journalInTimeOrder($output)
+            : LogReadLimit::wholeLines($output);
     }
 
     public function dockerSpecHash(#[SensitiveParameter] Process $process): string
@@ -1435,6 +1478,7 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
         #[SensitiveParameter]
         ?ProtectedInput $protectedInput = null,
         ?ProcessTarget $target = null,
+        ?int $maxOutputBytes = null,
     ): CommandResult {
         try {
             $target ??= $this->targets->forInspection($process);
@@ -1455,7 +1499,7 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
                     identityFile: $this->keys->privateKeyPath(),
                     knownHostsFile: $this->knownHosts->path(),
                 ),
-                new RemoteCommand($arguments, $input, $protectedInput),
+                new RemoteCommand($arguments, $input, $protectedInput, $maxOutputBytes),
             );
         } finally {
             $protectedInput?->close();
@@ -1474,8 +1518,9 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
         #[SensitiveParameter]
         ?ProtectedInput $protectedInput = null,
         ?ProcessTarget $target = null,
+        ?int $maxOutputBytes = null,
     ): CommandResult {
-        $result = $this->execute($process, $arguments, $input, $protectedInput, $target);
+        $result = $this->execute($process, $arguments, $input, $protectedInput, $target, $maxOutputBytes);
 
         if ($result->succeeded()) {
             return $result;

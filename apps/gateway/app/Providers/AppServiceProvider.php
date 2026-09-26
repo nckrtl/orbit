@@ -103,6 +103,7 @@ use App\Domain\Hibernation\AppInstanceRuntimeReadiness;
 use App\Domain\Hibernation\HibernationMarkerStore;
 use App\Domain\Hibernation\HibernationWakeFailureStore;
 use App\Domain\Hibernation\RuntimeHibernatorConverger;
+use App\Domain\Logs\LogStreamStore;
 use App\Domain\Metrics\MetricsAccessRevoker;
 use App\Domain\Metrics\MetricsCadvisorLifecycle;
 use App\Domain\Metrics\MetricsCredentialManager;
@@ -119,6 +120,7 @@ use App\Domain\Metrics\MetricsRoleManager;
 use App\Domain\Metrics\MetricsRuntimeLifecycle;
 use App\Domain\Metrics\MetricsStatusReader;
 use App\Domain\Metrics\ServiceMetricsLifecycle;
+use App\Domain\Nodes\GatewayPrivateDnsRoute;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\Metrics\NodeMetricsReader;
 use App\Domain\Nodes\NodeAgentRuntime;
@@ -128,6 +130,7 @@ use App\Domain\Nodes\NodeReachabilityProbe;
 use App\Domain\Nodes\NodeRoleDependencyInspector;
 use App\Domain\Nodes\NodeRoleDependentCleaner;
 use App\Domain\Nodes\NodeRoleFirewallManager;
+use App\Domain\Nodes\NodeRoleFollowUpReport;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\Storage\NodeStorageRootPreparer;
 use App\Domain\Processes\ProcessAdmissionLock;
@@ -215,6 +218,7 @@ use App\Infrastructure\AppProd\RemoteAppProdCaddyManager;
 use App\Infrastructure\AppProd\RemoteAppProdPhpFpmManager;
 use App\Infrastructure\Apps\NativeAppUpdateProjectionMutator;
 use App\Infrastructure\Apps\RemoteAppUpdateSourceMutator;
+use App\Infrastructure\Broadcasting\ReverbBroadcaster;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuilder;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuildLock;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
@@ -263,6 +267,7 @@ use App\Infrastructure\Hibernation\NativeRuntimeHibernatorConverger;
 use App\Infrastructure\Hibernation\RemoteAppInstanceCheckoutInspector;
 use App\Infrastructure\Hibernation\RemoteAppInstanceRuntimeReadiness;
 use App\Infrastructure\Hibernation\RemoteHibernationMarkerStore;
+use App\Infrastructure\Logs\CacheLogStreamStore;
 use App\Infrastructure\Metrics\MetricsCadvisorRuntime;
 use App\Infrastructure\Metrics\MetricsCadvisorSshExecutor;
 use App\Infrastructure\Metrics\MetricsExporterRuntime;
@@ -293,6 +298,7 @@ use App\Infrastructure\Nodes\NativeNodeRoleDependentCleaner;
 use App\Infrastructure\Nodes\NodeAgentSshExecutor;
 use App\Infrastructure\Nodes\NodeLocks;
 use App\Infrastructure\Nodes\RemoteNodeStorageRootPreparer;
+use App\Infrastructure\Nodes\Roles\GatewayRoleBaseline;
 use App\Infrastructure\Nodes\Roles\NativeNodeRoleFirewallManager;
 use App\Infrastructure\Nodes\Roles\NativeRoleBaselineConverger;
 use App\Infrastructure\Nodes\Roles\NodeRoleConvergeLock;
@@ -351,6 +357,7 @@ use App\Infrastructure\WireGuard\WireGuardServerConfigRenderer;
 use App\Models\Activity;
 use App\Models\AppInstance;
 use App\Models\DatabaseConnection;
+use Illuminate\Broadcasting\BroadcastManager;
 use Illuminate\Cache\CacheManager;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Support\ServiceProvider;
@@ -445,6 +452,7 @@ final class AppServiceProvider extends ServiceProvider
         RouterLanIngressPublisher::class => NativeNodeRoleFirewallManager::class,
         RouterLanIngressReconciler::class => NativeRouterLanIngressReconciler::class,
         RoleBaselineConverger::class => NativeRoleBaselineConverger::class,
+        GatewayPrivateDnsRoute::class => GatewayRoleBaseline::class,
         NodeAgentRuntime::class => NodeAgentSshExecutor::class,
         ManagedMysqlUserProvisioner::class => RemoteManagedMysqlUserProvisioner::class,
         ProcessRuntimeManager::class => RemoteProcessRuntimeManager::class,
@@ -526,6 +534,12 @@ final class AppServiceProvider extends ServiceProvider
                 idleSeconds: (int) config('orbit.hibernation.idle_seconds'),
                 dependencyIdleSeconds: (int) config('orbit.hibernation.dependency_idle_seconds'),
                 agents: $app->make(AgentProcessView::class),
+            ),
+        );
+        $this->app->singleton(
+            LogStreamStore::class,
+            static fn ($app): CacheLogStreamStore => new CacheLogStreamStore(
+                $app->make(CacheManager::class)->build(CacheAgentStateView::storeConfiguration((string) config('orbit.home'))),
             ),
         );
         $this->app->singleton(
@@ -660,6 +674,7 @@ final class AppServiceProvider extends ServiceProvider
         // Shared for one request so the Metrics baseline's removal outcome
         // reaches the disable response instead of being inferred a second time.
         $this->app->scoped(MetricsPublicationReport::class);
+        $this->app->scoped(NodeRoleFollowUpReport::class);
         // Scoped so the websocket role lookup it performs happens at most
         // once per request, and only when something actually asks for it.
         $this->app->scoped(
@@ -852,6 +867,11 @@ final class AppServiceProvider extends ServiceProvider
         }
         Activity::observe($activityPropertiesObserver);
         Activity::observe(ActivityBroadcastObserver::class);
+        // Reverb event bodies carry text as UTF-8, so non-ASCII log lines keep their length (ADR 0153).
+        $this->app->make(BroadcastManager::class)->extend(
+            'reverb',
+            fn ($app, array $config): ReverbBroadcaster => new ReverbBroadcaster($this->pusher($config), (bool) ($config['jsonp'] ?? false)),
+        );
         Relation::morphMap([
             'instance' => AppInstance::class,
         ]);

@@ -245,7 +245,7 @@ orbit instance:setup-step:create <name> --project=<id> --command=<command> [--ti
 | --- | --- | --- |
 | `--project=ID` | required | Numeric Project ID. |
 | `--command=COMMAND` | required | Shell command Orbit runs from the instance directory. |
-| `--timeout=SECONDS` | 600 | Timeout from 1 through 900 seconds. |
+| `--timeout=SECONDS` | 240 | Timeout from 1 through 540 seconds. The whole list may total at most 540 seconds. |
 | `--before=NAME` | none | Insert before this step. Exclusive with `--after`. |
 | `--after=NAME` | none | Insert after this step. Exclusive with `--before`. |
 

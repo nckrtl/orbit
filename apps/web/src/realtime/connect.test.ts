@@ -8,6 +8,7 @@ import { setTransport, type Transport } from "../api/client";
 import { flushTaskRefetches } from "./apply";
 import { connectRealtime } from "./connect";
 import { downForMs, setLiveness } from "./liveness";
+import { authorizeChannel, realtimeSocket, setRealtimeSocket } from "./socket";
 
 vi.mock("pusher-js", () => ({ default: vi.fn() }));
 vi.mock("./liveness", () => ({ setLiveness: vi.fn(), downForMs: vi.fn(() => 0) }));
@@ -49,12 +50,13 @@ function dispatcher() {
 
 function socket() {
     const channel = dispatcher();
-    const connection = dispatcher();
+    const connection = Object.assign(dispatcher(), { socket_id: "123.456" });
 
     return {
         channel,
         connection,
         subscribe: vi.fn(() => channel),
+        unsubscribe: vi.fn(),
         disconnect: vi.fn(() => connection.emit("state_change", { current: "disconnected" })),
     };
 }
@@ -88,6 +90,7 @@ afterEach(() => {
     controller.abort();
     client.clear();
     setTransport(null);
+    setRealtimeSocket(null);
     vi.useRealTimers();
     vi.unstubAllGlobals();
     vi.unstubAllEnvs();
@@ -211,14 +214,36 @@ it.each([
             wssPort: port,
             forceTLS: tls,
             enabledTransports: ["ws", "wss"],
-            channelAuthorization: {
-                endpoint: "/api/v1/broadcasting/auth",
-                transport: "ajax",
-                headers: { Accept: "application/json" },
-            },
+            channelAuthorization: { customHandler: authorizeChannel },
         });
     },
 );
+
+it("shares the socket with log panes while it is live, and withdraws it when it drops", async () => {
+    await connectRealtime(client, controller.signal);
+    const pusher = sockets[0]!;
+    expect(realtimeSocket()).toBeNull();
+
+    pusher.channel.emit("pusher:subscription_succeeded");
+    const live = realtimeSocket();
+    expect(live?.socketId).toBe("123.456");
+    live!.subscribe("private-log-stream.abc");
+    live!.unsubscribe("private-log-stream.abc");
+    expect(pusher.subscribe).toHaveBeenLastCalledWith("private-log-stream.abc");
+    expect(pusher.unsubscribe).toHaveBeenCalledWith("private-log-stream.abc");
+
+    pusher.connection.emit("state_change", { current: "unavailable" });
+    expect(realtimeSocket()).toBeNull();
+
+    // A reconnect brings a new socket ID, which invalidates every stream signature.
+    pusher.connection.socket_id = "789.012";
+    pusher.channel.emit("pusher:subscription_succeeded");
+    expect(realtimeSocket()?.socketId).toBe("789.012");
+    expect(realtimeSocket()).not.toBe(live);
+
+    controller.abort();
+    expect(realtimeSocket()).toBeNull();
+});
 
 it("reloads what stops polling on the first subscription and everything after a reconnect", async () => {
     const invalidate = vi.spyOn(client, "invalidateQueries");

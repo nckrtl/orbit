@@ -88,6 +88,7 @@ final readonly class NodeSideResidue
             RoleName::Gateway => [
                 'Caddy site, PHP-FPM pool and serving checkout for the gateway role',
                 'Orbit firewall rule for the gateway role',
+                'Private DNS route drop-in for wg-quick@orbit and the orbit link resolver settings',
             ],
             RoleName::Ingress => [
                 'Caddy configuration that serves the ingress role on every address',

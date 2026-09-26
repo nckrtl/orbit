@@ -24,17 +24,6 @@ use Throwable;
  */
 final readonly class NativeCaddyBuildInspector implements CaddyBuildInspector
 {
-    /** Roles whose convergence builds the Node, so the Node has a build even when it renders no site yet. */
-    private const array CaddyRoles = [
-        RoleName::Gateway,
-        RoleName::Router,
-        RoleName::Ingress,
-        RoleName::AppDev,
-        RoleName::AppProd,
-        RoleName::WebSocket,
-        RoleName::Analytics,
-    ];
-
     /** Well below the 30 seconds a build waits for the lock that Doctor holds while it reads. */
     public const float ReadTimeoutSeconds = 10.0;
 
@@ -91,7 +80,7 @@ final readonly class NativeCaddyBuildInspector implements CaddyBuildInspector
     {
         return NodeRole::query()
             ->where('node_id', $node->id)
-            ->whereIn('role', array_map(static fn (RoleName $role): string => $role->value, self::CaddyRoles))
+            ->whereIn('role', array_map(static fn (RoleName $role): string => $role->value, CaddySiteRoles::CaddyRoles))
             ->get()
             ->contains(static fn (NodeRole $role): bool => CaddySiteRoles::serves($role));
     }

@@ -59,7 +59,7 @@ Private DNS publication now SSHes to the `vpn` node when that node is not the se
 
 Peer converge and `node:add` project the WireGuard hub `PrivateKey` and `Address` onto the `vpn` node. After the roles split, that install SSHes to the `vpn` node and does not write those hub credentials onto the Gateway PHP host. The Gateway host keeps the peer configuration that already joined the mesh. Inspect `/etc/wireguard/orbit.conf` on the `vpn` node for hub identity. [ADR 0094](/decisions/0094-project-wireguard-hub-config-onto-the-vpn-node) owns that target.
 
-Relocate does not change the resolver on either machine. Run `orbit node:role:add <new-node> gateway --converge` on the new Gateway so it routes the private domain to Orbit VPN DNS and resolves names such as `reverb.orbit`. [Private DNS](/reference/private-dns#the-gateway-machine) describes that route.
+Relocate also moves the private DNS route that [Private DNS](/reference/private-dns#the-gateway-machine) describes. It adds the route on the target, so the new Gateway resolves names such as `reverb.orbit`. It then removes the route from the source before it retracts the source firewall. If the target route fails, the role still moves, and the response's `follow_up` names the command that retries it. If removing the source route fails, the move is incomplete. The error names the `--from` command that finishes it, and the source keeps its gateway firewall until then.
 
 `vpn` cannot be removed or added through the generic role commands.
 

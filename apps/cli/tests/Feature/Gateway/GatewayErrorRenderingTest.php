@@ -751,6 +751,12 @@ it('renders local validation failures through the exact json boundary', function
         'process.log_lines_invalid',
         'Log lines must be between 1 and 1000.',
     ],
+    'instance log lines' => [
+        'instance:logs',
+        ['instance' => '1', '--lines' => '1001'],
+        'instance.log_lines_invalid',
+        'Log lines must be between 1 and 1000.',
+    ],
     'multiple firewall values fail at the first error' => [
         'firewall:allow',
         [
@@ -1016,6 +1022,16 @@ it('keeps lifecycle failure names and safe outcomes without command output', fun
         ->and(GatewayFailureRenderer::safeDetails('instance.setup_step_failed', ['step' => "bad\nname", 'outcome' => 'secret']))->toBe([]);
 });
 
+it('keeps the step, deadline outcome, and cleanup of a setup the request deadline stopped', function (): void {
+    expect(GatewayFailureRenderer::safeDetails('command.deadline_exceeded', [
+        'step' => 'install',
+        'teardown_step' => 'drop-db',
+        'outcome' => 'deadline',
+        'cleanup' => 'incomplete',
+        'stdout' => 'secret',
+    ]))->toBe(['step' => 'install', 'teardown_step' => 'drop-db', 'outcome' => 'deadline', 'cleanup' => 'incomplete']);
+});
+
 it('keeps the details of a failed Node Caddy build for any error code and drops a partial or unsafe set', function (): void {
     expect(GatewayFailureRenderer::safeDetails('app-dev.caddy_config_failed', [
         'step' => 'app-dev-caddy',
@@ -1059,6 +1075,19 @@ it('keeps a bounded operation step without a Caddy build for any error code', fu
     'role convergence' => ['node_role.convergence_failed', 'converge:caddy'],
     'node provisioning' => ['node.provisioning_failed', 'wireguard-peer'],
     'tool manager' => ['tool.manager_failed', 'tool-manager-vp'],
+]);
+
+it('keeps the specific code behind a role operation failure', function (string $errorCode, bool $kept): void {
+    expect(GatewayFailureRenderer::safeDetails('node_role.convergence_failed', ['step' => 'converge:node-lock', 'error_code' => $errorCode]))
+        ->toBe($kept ? ['step' => 'converge:node-lock', 'error_code' => $errorCode] : ['step' => 'converge:node-lock']);
+})->with([
+    'role code' => ['node_role.node_busy', true],
+    'tool manager code' => ['node_role.tool_manager_locked', true],
+    'metrics code' => ['metrics.image_pull_failed', true],
+    'no namespace' => ['node_busy', false],
+    'upper case' => ['Node_role.Busy', false],
+    'control character' => ["node_role.node\nbusy", false],
+    'oversized' => ['node_role.'.str_repeat('a', 70), false],
 ]);
 
 it('drops a malformed operation field and keeps the valid ones', function (mixed $step): void {

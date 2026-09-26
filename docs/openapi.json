@@ -326,7 +326,7 @@
         "tags": [
           "Node callbacks"
         ],
-        "description": "The `orbit-agent` on a managed Node calls this endpoint to join its own presence channel. The Gateway signs member `agent.{id}` on `presence-node.{id}` only for a request from that Node's WireGuard address that carries the Node's agent secret. The response carries the Pusher `auth` and `channel_data` values.",
+        "description": "The `orbit-agent` on a managed Node calls this endpoint to join its own presence channels. The Gateway signs member `agent.{id}` on `presence-node.{id}` or `presence-node-logs.{id}` only for a request from that Node's WireGuard address that carries the Node's agent secret. The response carries the Pusher `auth` and `channel_data` values.",
         "requestBody": {
           "required": true,
           "content": {
@@ -433,6 +433,121 @@
         ]
       }
     },
+    "/api/v1/agent/log-streams": {
+      "get": {
+        "operationId": "agent-log-streams",
+        "summary": "List the live log streams the agent reads",
+        "tags": [
+          "Node callbacks"
+        ],
+        "description": "The `orbit-agent` on a managed Node calls this endpoint to learn which logs to read for live log streams: when it joins its log channel, after each `log-streams.changed` event, and every 15 seconds while it reads a stream. The Gateway identifies the Node from the WireGuard address and the agent's bearer secret, and lists at most 16 open streams whose source is on that Node, each with its ID, `lines`, and one `laravel`, `journal`, or `docker` source that the Gateway resolved from its own records.",
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "pattern": "^[0-9a-f]{32}$",
+                            "description": "The stream ID."
+                          },
+                          "lines": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 1000,
+                            "description": "The number of earlier lines to send first."
+                          },
+                          "source": {
+                            "type": "object",
+                            "properties": {
+                              "type": {
+                                "type": "string",
+                                "enum": [
+                                  "laravel",
+                                  "journal",
+                                  "docker"
+                                ],
+                                "description": "The source type."
+                              },
+                              "path": {
+                                "type": "string",
+                                "description": "`laravel`: the Instance checkout path."
+                              },
+                              "unit": {
+                                "type": "string",
+                                "description": "`journal`: the unit `orbit-process-{id}-{name}.service`."
+                              },
+                              "container": {
+                                "type": "string",
+                                "description": "`docker`: the container `orbit-process-{id}-{name}`."
+                              },
+                              "process_id": {
+                                "type": "integer",
+                                "description": "`docker`: the Process ID in the container name and label."
+                              }
+                            },
+                            "required": [
+                              "type"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "lines",
+                          "source"
+                        ]
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The request carries no agent secret (`agent.secret_required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`), its agent secret does not match (`agent.secret_invalid`), or its Node is not eligible for an agent (`agent.node_ineligible`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS \"https://gateway.orbit/api/v1/agent/log-streams\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+          }
+        ]
+      }
+    },
     "/api/v1/agent/realtime": {
       "get": {
         "operationId": "agent-realtime",
@@ -477,6 +592,10 @@
                           "type": "string",
                           "description": "The Node's presence channel, `presence-node.{id}`."
                         },
+                        "log_channel": {
+                          "type": "string",
+                          "description": "The Node's log channel, `presence-node-logs.{id}`, for live log streams."
+                        },
                         "member": {
                           "type": "string",
                           "description": "The agent's member ID, `agent.{id}`."
@@ -487,6 +606,7 @@
                         "address",
                         "key",
                         "channel",
+                        "log_channel",
                         "member"
                       ]
                     },
@@ -9432,6 +9552,380 @@
         ]
       }
     },
+    "/api/v1/instances/{instance}/log-streams": {
+      "post": {
+        "operationId": "instance-log-stream-create",
+        "summary": "Open a live Instance log stream",
+        "tags": [
+          "Instances"
+        ],
+        "parameters": [
+          {
+            "name": "instance",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Numeric Instance ID."
+          }
+        ],
+        "description": "Opens a live log stream of the Instance's application log for one Reverb socket, with the access rule of `instance:logs`. The response signs the socket's subscription to `private-log-stream.{id}`; the Gateway then relays redacted lines from the Node agent there as `log.lines` events. Returns `logs.live_unavailable` with `details.reason` when the live path is not available, and `logs.stream_limit` when the Node already has 16 open streams.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "socket_id": {
+                    "type": "string",
+                    "pattern": "^\\d+\\.\\d+$"
+                  },
+                  "lines": {
+                    "type": "integer",
+                    "maximum": 1000,
+                    "minimum": 1
+                  }
+                },
+                "required": [
+                  "socket_id"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "pattern": "^[0-9a-f]{32}$",
+                          "description": "The stream ID."
+                        },
+                        "channel": {
+                          "type": "string",
+                          "description": "The private channel, `private-log-stream.{id}`."
+                        },
+                        "auth": {
+                          "type": "string",
+                          "description": "The Pusher signature of this channel for the request's `socket_id` only."
+                        },
+                        "lines": {
+                          "type": "integer",
+                          "description": "The number of earlier lines the stream sends first."
+                        },
+                        "lease_seconds": {
+                          "type": "integer",
+                          "description": "Seconds the stream lives without a renewal."
+                        },
+                        "renew_seconds": {
+                          "type": "integer",
+                          "description": "Seconds between renewals."
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "channel",
+                        "auth",
+                        "lines",
+                        "lease_seconds",
+                        "renew_seconds"
+                      ]
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "The Node already has 16 open log streams (`logs.stream_limit`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No record matches the path parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The live log path is not available (`logs.live_unavailable`); `details.reason` is `ssh_only` for a production Instance, or `realtime_not_configured`, `subscriber_down`, `agent_unavailable`, `agent_not_joined`, or `agent_outdated`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/instances/12/log-streams\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"socket_id\": \"example\", \"lines\": 100}'\n"
+          }
+        ]
+      }
+    },
+    "/api/v1/instances/{instance}/log-streams/{stream}": {
+      "delete": {
+        "operationId": "instance-log-stream-destroy",
+        "summary": "Close a live Instance log stream",
+        "tags": [
+          "Instances"
+        ],
+        "parameters": [
+          {
+            "name": "instance",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Numeric Instance ID."
+          },
+          {
+            "name": "stream",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": ""
+          }
+        ],
+        "description": "Closes a live Instance log stream at once and publishes `log.ended` with reason `closed`. Only the Node that opened the stream can close it.",
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "description": "The stream ID."
+                        },
+                        "closed": {
+                          "type": "boolean",
+                          "const": true,
+                          "description": "Always true."
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "closed"
+                      ]
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The stream does not exist, has ended, belongs to another record, or was opened by another Node (`logs.stream_not_found`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS -X DELETE \"https://gateway.orbit/api/v1/instances/12/log-streams/1\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+          }
+        ]
+      },
+      "put": {
+        "operationId": "instance-log-stream-renew",
+        "summary": "Renew a live Instance log stream",
+        "tags": [
+          "Instances"
+        ],
+        "parameters": [
+          {
+            "name": "instance",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Numeric Instance ID."
+          },
+          {
+            "name": "stream",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": ""
+          }
+        ],
+        "description": "Extends the lease of a live Instance log stream to 60 seconds from now. Only the Node that opened the stream can renew it. Does not record Activity.",
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "description": "The stream ID."
+                        },
+                        "lease_seconds": {
+                          "type": "integer",
+                          "description": "Seconds the stream lives from now without another renewal."
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "lease_seconds"
+                      ]
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The stream does not exist, has ended, belongs to another record, or was opened by another Node (`logs.stream_not_found`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS -X PUT \"https://gateway.orbit/api/v1/instances/12/log-streams/1\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+          }
+        ]
+      }
+    },
     "/api/v1/instances/{instance}/logs": {
       "get": {
         "operationId": "instance-logs",
@@ -9470,6 +9964,7 @@
             }
           }
         ],
+        "description": "Returns one redacted tail of the Instance's application log, `storage/logs/laravel.log` or the newest `laravel-*.log`, read over SSH. `lines` is 1 to 1,000, default 100. Open a live log stream to follow new lines.",
         "responses": {
           "200": {
             "description": "The request succeeded.",
@@ -9534,6 +10029,11 @@
             "lang": "bash",
             "label": "curl",
             "source": "curl -sS \"https://gateway.orbit/api/v1/instances/12/logs?lines=100&follow=1\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\AppInstances\\InstanceLogsRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new InstanceLogsRequest(instanceId: 4))->dto();\n"
           }
         ]
       }
@@ -11201,6 +11701,16 @@
                 }
               }
             }
+          },
+          "502": {
+            "description": "A step failed on the Node; `error.details.step` names it. When a role step failed, `error.details.error_code` names that step's own code.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "x-codeSamples": [
@@ -11350,6 +11860,16 @@
           },
           "422": {
             "description": "The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "A step failed on the Node; `error.details.step` names it. When a role step failed, `error.details.error_code` names that step's own code.",
             "content": {
               "application/json": {
                 "schema": {
@@ -13022,7 +13542,7 @@
             }
           },
           "502": {
-            "description": "A role step failed on the Node (`node_role.convergence_failed` or `node_role.remove_failed`). `error.details.step` names the failed step.",
+            "description": "A role step failed on the Node (`node_role.convergence_failed` or `node_role.remove_failed`). `error.details.step` names the failed step, and `error.details.error_code` names its own code, such as `node_role.node_busy` or `node_role.tool_manager_locked`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -13183,7 +13703,7 @@
             }
           },
           "502": {
-            "description": "A role step failed on the Node (`node_role.convergence_failed` or `node_role.remove_failed`). `error.details.step` names the failed step.",
+            "description": "A role step failed on the Node (`node_role.convergence_failed` or `node_role.remove_failed`). `error.details.step` names the failed step, and `error.details.error_code` names its own code, such as `node_role.node_busy` or `node_role.tool_manager_locked`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -13341,7 +13861,7 @@
             }
           },
           "502": {
-            "description": "A role step failed on the Node (`node_role.convergence_failed` or `node_role.remove_failed`). `error.details.step` names the failed step.",
+            "description": "A role step failed on the Node (`node_role.convergence_failed` or `node_role.remove_failed`). `error.details.step` names the failed step, and `error.details.error_code` names its own code, such as `node_role.node_busy` or `node_role.tool_manager_locked`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -14236,6 +14756,380 @@
         ]
       }
     },
+    "/api/v1/processes/{process}/log-streams": {
+      "post": {
+        "operationId": "process-log-stream-create",
+        "summary": "Open a live Process log stream",
+        "tags": [
+          "Processes"
+        ],
+        "parameters": [
+          {
+            "name": "process",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Numeric Process ID."
+          }
+        ],
+        "description": "Opens a live log stream of the Process's journal or container output for one Reverb socket, with the access rule of `process:logs`. The response signs the socket's subscription to `private-log-stream.{id}`; the Gateway then relays redacted lines from the Node agent there as `log.lines` events. Returns `logs.live_unavailable` with `details.reason` when the live path is not available, and `logs.stream_limit` when the Node already has 16 open streams.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "socket_id": {
+                    "type": "string",
+                    "pattern": "^\\d+\\.\\d+$"
+                  },
+                  "lines": {
+                    "type": "integer",
+                    "maximum": 1000,
+                    "minimum": 1
+                  }
+                },
+                "required": [
+                  "socket_id"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "pattern": "^[0-9a-f]{32}$",
+                          "description": "The stream ID."
+                        },
+                        "channel": {
+                          "type": "string",
+                          "description": "The private channel, `private-log-stream.{id}`."
+                        },
+                        "auth": {
+                          "type": "string",
+                          "description": "The Pusher signature of this channel for the request's `socket_id` only."
+                        },
+                        "lines": {
+                          "type": "integer",
+                          "description": "The number of earlier lines the stream sends first."
+                        },
+                        "lease_seconds": {
+                          "type": "integer",
+                          "description": "Seconds the stream lives without a renewal."
+                        },
+                        "renew_seconds": {
+                          "type": "integer",
+                          "description": "Seconds between renewals."
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "channel",
+                        "auth",
+                        "lines",
+                        "lease_seconds",
+                        "renew_seconds"
+                      ]
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "The Node already has 16 open log streams (`logs.stream_limit`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No record matches the path parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The live log path is not available (`logs.live_unavailable`); `details.reason` is `ssh_only` for a production Instance, or `realtime_not_configured`, `subscriber_down`, `agent_unavailable`, `agent_not_joined`, or `agent_outdated`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/processes/41/log-streams\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"socket_id\": \"example\", \"lines\": 100}'\n"
+          }
+        ]
+      }
+    },
+    "/api/v1/processes/{process}/log-streams/{stream}": {
+      "delete": {
+        "operationId": "process-log-stream-destroy",
+        "summary": "Close a live Process log stream",
+        "tags": [
+          "Processes"
+        ],
+        "parameters": [
+          {
+            "name": "process",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Numeric Process ID."
+          },
+          {
+            "name": "stream",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": ""
+          }
+        ],
+        "description": "Closes a live Process log stream at once and publishes `log.ended` with reason `closed`. Only the Node that opened the stream can close it.",
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "description": "The stream ID."
+                        },
+                        "closed": {
+                          "type": "boolean",
+                          "const": true,
+                          "description": "Always true."
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "closed"
+                      ]
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The stream does not exist, has ended, belongs to another record, or was opened by another Node (`logs.stream_not_found`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS -X DELETE \"https://gateway.orbit/api/v1/processes/41/log-streams/1\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+          }
+        ]
+      },
+      "put": {
+        "operationId": "process-log-stream-renew",
+        "summary": "Renew a live Process log stream",
+        "tags": [
+          "Processes"
+        ],
+        "parameters": [
+          {
+            "name": "process",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Numeric Process ID."
+          },
+          {
+            "name": "stream",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": ""
+          }
+        ],
+        "description": "Extends the lease of a live Process log stream to 60 seconds from now. Only the Node that opened the stream can renew it. Does not record Activity.",
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "description": "The stream ID."
+                        },
+                        "lease_seconds": {
+                          "type": "integer",
+                          "description": "Seconds the stream lives from now without another renewal."
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "lease_seconds"
+                      ]
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The stream does not exist, has ended, belongs to another record, or was opened by another Node (`logs.stream_not_found`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS -X PUT \"https://gateway.orbit/api/v1/processes/41/log-streams/1\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+          }
+        ]
+      }
+    },
     "/api/v1/processes/{process}/logs": {
       "get": {
         "operationId": "process-logs",
@@ -14274,7 +15168,7 @@
             }
           }
         ],
-        "description": "Return one bounded process log tail.",
+        "description": "Returns one redacted tail of the Process's journal or container output, read over SSH. `lines` is 1 to 1,000, default 100. Open a live log stream to follow new lines.",
         "responses": {
           "200": {
             "description": "The request succeeded.",

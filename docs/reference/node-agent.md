@@ -119,7 +119,9 @@ The agent asks the Gateway which logs to read with `GET /api/v1/agent/log-stream
 
 The list holds the active streams whose source is on the caller's Node, at most 16. A stream becomes active with its viewer's first renewal. The endpoint uses the same rules and errors as the other [agent endpoints](#how-it-connects).
 
-The agent fetches the list when it joins its log channel, when the Gateway publishes `log-streams.changed` on that channel, and every 15 seconds while it reads at least one stream. The event carries no data. It only prompts the fetch, so the agent reads only what the HTTPS response names. The agent stops every stream that the list does not name. When it cannot fetch the list for 60 seconds, it stops every stream.
+The agent fetches the list when it joins its log channel, when the Gateway publishes `log-streams.changed` on that channel, and every 15 seconds while it reads at least one stream. The event carries no data. It only prompts the fetch, so the agent reads only what the HTTPS response names. The agent stops every stream that the list does not name.
+
+When it cannot fetch the list for 60 seconds, it stops reading every stream and ends each one with `client-log-end` and reason `list_unavailable`, after the lines it already read. It never reads such a stream again. While the list still names it, the agent sends the end again, in case the first one was lost. The Gateway ends the stream with `agent_left`, and the viewer opens a new stream that catches up.
 
 ### Sources
 
@@ -254,11 +256,11 @@ Agent 0.3.0 is the first release that sends the secret. Each Node record has `ag
 
 | Node | Agent endpoints |
 | --- | --- |
-| Converged with an agent older than 0.3.0, or existing before the secret was introduced | Exempt: accepted without a secret. The converge sets the exemption and clears any stored hash. |
-| Converged with agent 0.3.0 or later | Requires its own secret. The converge stores the hash and clears the exemption. |
+| Running agent 0.2.0 | Exempt until its converge. Accepted without a secret. |
+| Converged with agent 0.3.0 or a newer release | Requires its own secret. |
 | No stored hash and not exempt, such as a Node whose agent never converged | Refused |
 
-A new Node is never exempt once the pin reaches 0.3.0, because `node:add` converges its agent with the pinned release. The exemption ends for the fleet when every Node has converged once with 0.3.0 or later. Until then, an exempt Node keeps accepting a caller without a secret. Doctor reports its older agent as `node.agent_outdated` and the exemption as `node.agent_secret_mismatch` with `exempt`. While the pin is older than 0.3.0, the exemption is normal and Doctor does not report it. A Node without the exemption then reports `not_exempt`, because the Gateway refuses its agent.
+The Gateway pins agent 0.3.0. A new Node is never exempt, because `node:add` converges its agent with that release. Each converge writes the secret before it restarts the Node into 0.3.0. A Node still on 0.2.0 stays exempt until that converge and keeps accepting a caller without a secret. Doctor reports that Node as `node.agent_outdated` and as `node.agent_secret_mismatch` with `exempt`. The exemption ends when every Node has converged once.
 
 ## Gateway view
 
@@ -369,7 +371,7 @@ A failed usage sample is dropped, because the next one replaces it. After a subs
 
 ## Install and upgrade
 
-The Gateway pins one agent version and one SHA-256 checksum for each architecture. It picks the asset for the Node's recorded architecture, `x86_64` or `aarch64`.
+The Gateway pins agent 0.3.0 and one SHA-256 checksum for each architecture. It picks the asset for the Node's recorded architecture, `x86_64` or `aarch64`.
 
 | Item | Path or value |
 | --- | --- |
@@ -408,7 +410,9 @@ The Gateway converges the agent at these points:
 | `node:add`, for a new or an existing Node, after the Metrics exporters | Provisioning fails at step `agent` with `node.agent_install_failed`. A new Node becomes `failed`, and an existing active Node stays `active`. |
 | A role converge on the Node | The role converge continues. The Gateway logs a warning, and Doctor reports the drift. |
 
-To upgrade the fleet, publish a new release, update the pin in the Gateway, deploy the Gateway, and run `orbit node:add <node>` or a role converge on each Node. Doctor reports every Node that still runs another version. Version 0.1.1 requires `gateway_address` in its configuration. Version 0.2.0 reports task workspaces and needs the unit above. Version 0.3.0 requires the [agent secret](#agent-secret), which the converge writes before it restarts the agent, and tails logs for [live log streams](/reference/live-logs); the Gateway refuses streams for a Node with an older agent.
+Each converge writes the [agent secret](#agent-secret) before it restarts the Node into 0.3.0. A Node still on 0.2.0 stays exempt until that converge. Doctor reports that Node as `node.agent_secret_mismatch` with `exempt`.
+
+To upgrade the fleet, publish a new release, update the pin in the Gateway, deploy the Gateway, and run `orbit node:add <node>` or a role converge on each Node. Doctor reports every Node that still runs another version. Version 0.1.1 requires `gateway_address` in its configuration. Version 0.2.0 reports task workspaces and needs the unit above. Version 0.3.0 requires the agent secret and tails logs for [live log streams](/reference/live-logs). The Gateway refuses streams for a Node with an older agent.
 
 ## Failures
 

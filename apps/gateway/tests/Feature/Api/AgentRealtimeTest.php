@@ -28,7 +28,22 @@ describe('agent realtime endpoints', function (): void {
             ->assertJsonPath('data.address', $this->node->wireguard_ip)
             ->assertJsonPath('data.key', $credentials->appKey)
             ->assertJsonPath('data.channel', "presence-node.{$this->node->id}")
+            ->assertJsonPath('data.log_channel', "presence-node-logs.{$this->node->id}")
             ->assertJsonPath('data.member', "agent.{$this->node->id}");
+    });
+
+    it('signs the agent membership of its own log channel only', function (): void {
+        [, $credentials] = activate_websocket_role($this->node);
+        $channel = "presence-node-logs.{$this->node->id}";
+        $response = $this->postJson('/api/v1/agent/broadcasting/auth', ['socket_id' => '123.456', 'channel_name' => $channel, 'version' => '0.3.0'])->assertOk();
+
+        expect($response->json('auth'))->toBe($credentials->appKey.':'.hash_hmac('sha256', '123.456:'.$channel.':'.$response->json('channel_data'), $credentials->appSecret))
+            ->and(json_decode($response->json('channel_data'), true)['user_id'])->toBe("agent.{$this->node->id}");
+
+        foreach (['presence-node-logs.999', 'private-log-stream.'.str_repeat('a', 32), "presence-node-logs.{$this->node->id}x"] as $other) {
+            $this->postJson('/api/v1/agent/broadcasting/auth', ['socket_id' => '1.2', 'channel_name' => $other])
+                ->assertForbidden()->assertJsonPath('error.code', 'agent.channel_forbidden');
+        }
     });
 
     it('returns an eligibility error for an unmanaged node', function (): void {
@@ -94,6 +109,7 @@ function agent_endpoint_call(mixed $test, string $endpoint, ?string $token): Tes
     return match ($endpoint) {
         'realtime' => $test->getJson('/api/v1/agent/realtime', $headers),
         'workspaces' => $test->getJson('/api/v1/agent/workspaces', $headers),
+        'log-streams' => $test->getJson('/api/v1/agent/log-streams', $headers),
         'auth' => $test->postJson('/api/v1/agent/broadcasting/auth', [
             'socket_id' => '123.456', 'channel_name' => 'presence-node.'.$test->node->id,
         ], $headers),
@@ -128,18 +144,18 @@ describe('the agent secret', function (): void {
 
     it('refuses a request without the secret', function (string $endpoint): void {
         agent_endpoint_call($this, $endpoint, null)->assertUnauthorized()->assertJsonPath('error.code', 'agent.secret_required');
-    })->with(['realtime', 'auth', 'workspaces']);
+    })->with(['realtime', 'auth', 'workspaces', 'log-streams']);
 
     it('refuses a wrong secret and another Node\'s secret', function (string $endpoint): void {
         agent_endpoint_call($this, $endpoint, str_repeat('0', 64))->assertForbidden()->assertJsonPath('error.code', 'agent.secret_invalid');
         agent_endpoint_call($this, $endpoint, $this->other)->assertForbidden()->assertJsonPath('error.code', 'agent.secret_invalid');
         // The stored hash itself is not a secret the endpoint accepts.
         agent_endpoint_call($this, $endpoint, (string) $this->node->agent_secret_hash)->assertForbidden()->assertJsonPath('error.code', 'agent.secret_invalid');
-    })->with(['realtime', 'auth', 'workspaces']);
+    })->with(['realtime', 'auth', 'workspaces', 'log-streams']);
 
     it('accepts the Node\'s own secret', function (string $endpoint): void {
         agent_endpoint_call($this, $endpoint, $this->secret)->assertOk();
-    })->with(['realtime', 'auth', 'workspaces']);
+    })->with(['realtime', 'auth', 'workspaces', 'log-streams']);
 
     it('never signs a membership for another Node from its secret', function (): void {
         $this->withServerVariables(['REMOTE_ADDR' => '10.44.0.33']);

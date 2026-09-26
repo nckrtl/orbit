@@ -280,7 +280,7 @@ it("keeps the menu, filters, older rows and detail usable on a phone", async () 
 
     await expect
         .poll(() => {
-            const menu = document.querySelector(".fixed")?.textContent ?? "";
+            const menu = document.querySelector("[data-mobile-menu]")?.textContent ?? "";
 
             return (
                 menu.indexOf("Tasks") < menu.indexOf("Activity") &&
