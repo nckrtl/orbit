@@ -6,13 +6,13 @@ namespace App\Domain\Tasks;
 
 /**
  * What Orbit's handoff check recorded for a subtask's deliverables: the subtask's diff, each test file run,
- * and each command run.
+ * and each command run. A test with fails_on_base also carries the start-commit run (ADR 0163).
  */
 final readonly class TaskDeliverableEvidence
 {
     /**
      * @param  list<array{status: string, path: string}>|null  $diff  null when the check could not read the diff
-     * @param  array<string, array{exit_code: int, cases: list<array{name: string, status: string}>}>  $tests  by deliverable ID
+     * @param  array<string, array{exit_code: int, cases: list<array{name: string, status: string}>, base_placed?: bool, base_exit_code?: int, base_cases?: list<array{name: string, status: string}>}>  $tests  by deliverable ID
      * @param  array<string, array{exit_code: int, output: string}>  $commands  by deliverable ID
      */
     public function __construct(
@@ -40,13 +40,16 @@ final readonly class TaskDeliverableEvidence
             if (! is_string($id) || ! is_array($run) || ! is_int($run['exit_code'] ?? null)) {
                 continue;
             }
-            $cases = [];
-            foreach (is_array($run['cases'] ?? null) ? $run['cases'] : [] as $case) {
-                if (is_array($case) && is_string($case['name'] ?? null) && is_string($case['status'] ?? null)) {
-                    $cases[] = ['name' => $case['name'], 'status' => $case['status']];
-                }
+            $tests[$id] = ['exit_code' => $run['exit_code'], 'cases' => self::cases($run['cases'] ?? null)];
+            if (array_key_exists('base_placed', $run)) {
+                $tests[$id]['base_placed'] = $run['base_placed'] === true;
             }
-            $tests[$id] = ['exit_code' => $run['exit_code'], 'cases' => $cases];
+            if (is_int($run['base_exit_code'] ?? null)) {
+                $tests[$id]['base_exit_code'] = $run['base_exit_code'];
+            }
+            if (is_array($run['base_cases'] ?? null)) {
+                $tests[$id]['base_cases'] = self::cases($run['base_cases']);
+            }
         }
         $commands = [];
         foreach (is_array($data['commands'] ?? null) ? $data['commands'] : [] as $id => $run) {
@@ -56,5 +59,23 @@ final readonly class TaskDeliverableEvidence
         }
 
         return new self($diff, $tests, $commands);
+    }
+
+    /**
+     * @return list<array{name: string, status: string}>
+     */
+    private static function cases(mixed $value): array
+    {
+        if (! is_array($value)) {
+            return [];
+        }
+        $cases = [];
+        foreach ($value as $case) {
+            if (is_array($case) && is_string($case['name'] ?? null) && is_string($case['status'] ?? null)) {
+                $cases[] = ['name' => $case['name'], 'status' => $case['status']];
+            }
+        }
+
+        return $cases;
     }
 }

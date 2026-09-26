@@ -5,7 +5,8 @@ check start CHECKOUT [SETUP|-] [DELIVERABLES|-] [COMMAND]
                                 start the Project task check detached; print the process and the tree it checks.
                                 SETUP is a JSON file of setup steps to run first: [{"name", "command", "timeout_seconds"}]
                                 DELIVERABLES is a JSON file of the subtask's deliverables to verify after a passing check
-                                (ADR 0133): {"start", "tests": [{"id", "project", "file"}], "commands": [{"id", "command", "directory"}]}
+                                (ADR 0133): {"start", "tests": [{"id", "project", "file", "fails_on_base"}], "commands": [{"id", "command", "directory"}]}
+                                A test with fails_on_base runs on the start commit, with only that test file taken from the working tree, then on the working tree (ADR 0163).
                                 COMMAND is a file with the Project's task check command; an empty file runs no command.
                                 Without COMMAND, the check runs `composer check`.
 check run CHECKOUT HEAD TREE [SETUP|-] [DELIVERABLES|-] [COMMAND]
@@ -151,6 +152,118 @@ def test_cases(junit):
     return cases
 
 
+def deliverable_path(checkout, project, relative):
+    """The absolute path of a project file inside the checkout, or None when it escapes."""
+    if not isinstance(relative, str) or relative == '' or relative.startswith('/'):
+        return None
+    if not isinstance(project, str) or project in ('', '.'):
+        project = ''
+    elif project.startswith('/'):
+        return None
+    return inside(checkout, os.path.join(project, relative) if project else relative)
+
+
+def commit_exists(checkout, revision):
+    if not isinstance(revision, str) or revision == '' or revision.startswith('-') or any(character.isspace() for character in revision):
+        return False
+    return subprocess.run(['git', '-C', checkout, 'rev-parse', '--verify', '--quiet', revision + '^{commit}'],
+                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
+
+
+def share_vendor(checkout, worktree, project):
+    """Copy the project's installed vendor into the temporary checkout without a second install.
+
+    The copy is a reflink when the filesystem can clone, otherwise a full copy. It is never a hardlink, so a
+    Pest process in the temporary checkout cannot change the workspace's vendor files.
+    """
+    source_root = inside(checkout, project if isinstance(project, str) and project not in ('', '.') else '.')
+    destination_root = inside(worktree, project if isinstance(project, str) and project not in ('', '.') else '.')
+    if source_root is None or destination_root is None or not os.path.isdir(source := os.path.join(source_root, 'vendor')):
+        return
+    source_real = os.path.realpath(source)
+    checkout_real = os.path.realpath(checkout)
+    if source_real != checkout_real and not source_real.startswith(checkout_real + os.sep):
+        return
+    destination = os.path.join(destination_root, 'vendor')
+    if os.path.lexists(destination):
+        return
+    os.makedirs(destination_root, exist_ok=True)
+    if subprocess.run(['cp', '-a', '--reflink=auto', source_real, destination],
+                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0:
+        return
+    shutil.rmtree(destination, ignore_errors=True)
+    try:
+        shutil.copytree(source_real, destination, symlinks=False)
+    except OSError:
+        shutil.rmtree(destination, ignore_errors=True)
+
+
+def remove_base_checkout(checkout, scratch):
+    """Remove the temporary start-commit checkout and its worktree registration."""
+    checkout_real = os.path.realpath(checkout)
+    scratch_real = os.path.realpath(scratch)
+    if not os.path.basename(scratch_real).startswith('orbit-base-'):
+        return
+    if scratch_real == checkout_real or checkout_real.startswith(scratch_real + os.sep) or scratch_real.startswith(checkout_real + os.sep):
+        return
+    subprocess.run(['git', '-C', checkout, 'worktree', 'remove', '--force', scratch_real],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    if os.path.lexists(scratch_real):
+        shutil.rmtree(scratch_real, ignore_errors=True)
+    subprocess.run(['git', '-C', checkout, 'worktree', 'prune'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def cancelled(signum, _frame):
+    """Cancellation must unwind finally blocks. The default SIGTERM action would skip them and leave the base checkout."""
+    raise SystemExit(128 + signum)
+
+
+def base_run(checkout, start, test, log):
+    """Run the test file on the start commit with only that file taken from the working tree (ADR 0163).
+
+    The temporary worktree is the tree under test. The task workspace is not checked out or edited, and the
+    worktree is removed before this returns.
+    """
+    scratch = None
+    try:
+        source = deliverable_path(checkout, test.get('project'), test.get('file'))
+        if source is None or not os.path.isfile(source) or not commit_exists(checkout, start):
+            return {'base_placed': False}
+        parent = os.path.dirname(os.path.realpath(checkout))
+        try:
+            scratch = tempfile.mkdtemp(prefix='orbit-base-', dir=parent if os.path.isdir(parent) and os.access(parent, os.W_OK) else None)
+        except OSError:
+            return {'base_placed': False}
+        log.write(f'# orbit base checkout {scratch}\n'.encode())
+        log.flush()
+        if subprocess.run(['git', '-C', checkout, 'worktree', 'add', '--detach', '--quiet', scratch, start],
+                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode != 0:
+            return {'base_placed': False}
+        destination = deliverable_path(scratch, test.get('project'), test.get('file'))
+        if destination is None:
+            return {'base_placed': False}
+        try:
+            os.makedirs(os.path.dirname(destination), exist_ok=True)
+            shutil.copyfile(source, destination)
+        except OSError:
+            return {'base_placed': False}
+        share_vendor(checkout, scratch, test.get('project'))
+        project = test.get('project') if isinstance(test.get('project'), str) and test.get('project') not in ('', '.') else '.'
+        directory = inside(scratch, project)
+        junit = os.path.join(TEST_RESULTS, test['id'] + '-base.xml')
+        log.write(f"$ vendor/bin/pest {test['file']} --log-junit={junit}   # {test['id']} on the start commit in {project}\n".encode())
+        log.flush()
+        if directory is None:
+            return {'base_placed': True, 'base_exit_code': 127}
+        exit_code = run_logged(['bash', '-lc', 'exec vendor/bin/pest "$1" --log-junit="$2"', 'pest', test['file'], junit], directory, log)
+        if not os.path.isfile(junit):
+            return {'base_placed': True, 'base_exit_code': exit_code}
+        return {'base_placed': True, 'base_exit_code': exit_code, 'base_cases': test_cases(junit)}
+    finally:
+        if scratch is not None:
+            remove_base_checkout(checkout, scratch)
+
+
 def diff(checkout, start_commit, tree):
     """The subtask's diff from its start commit to the checked tree, as paths with their Git status."""
     try:
@@ -175,15 +288,20 @@ def verify_deliverables(checkout, tree, deliverables, log):
     shutil.rmtree(TEST_RESULTS, ignore_errors=True)
     os.makedirs(TEST_RESULTS, exist_ok=True)
     for test in spec.get('tests', []):
+        # The base run is first, and it is gone before the working-tree run, so that run still sees the implementer's tree.
+        base = base_run(checkout, spec.get('start'), test, log) if test.get('fails_on_base') is True else None
         directory = inside(checkout, test.get('project'))
         junit = os.path.join(TEST_RESULTS, test['id'] + '.xml')
         log.write(f"$ vendor/bin/pest {test['file']} --log-junit={junit}   # {test['id']} in {test.get('project') or '.'}\n".encode())
         log.flush()
         if directory is None:
-            evidence['tests'][test['id']] = {'exit_code': 127, 'cases': []}
-            continue
-        exit_code = run_logged(['bash', '-lc', 'exec vendor/bin/pest "$1" --log-junit="$2"', 'pest', test['file'], junit], directory, log)
-        evidence['tests'][test['id']] = {'exit_code': exit_code, 'cases': test_cases(junit)}
+            result = {'exit_code': 127, 'cases': []}
+        else:
+            exit_code = run_logged(['bash', '-lc', 'exec vendor/bin/pest "$1" --log-junit="$2"', 'pest', test['file'], junit], directory, log)
+            result = {'exit_code': exit_code, 'cases': test_cases(junit)}
+        if base is not None:
+            result.update(base)
+        evidence['tests'][test['id']] = result
     for command in spec.get('commands', []):
         directory = inside(checkout, command.get('directory'))
         log.write(f"$ {command['command']}   # {command['id']} in {command.get('directory') or '.'}\n".encode())
@@ -202,6 +320,7 @@ def verify_deliverables(checkout, tree, deliverables, log):
 
 
 def run(checkout, head, tree, setup=None, deliverables=None, command='composer check'):
+    signal.signal(signal.SIGTERM, cancelled)
     setup, deliverables = optional(setup), optional(deliverables)
     started_at = time.time()
     evidence = None

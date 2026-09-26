@@ -6,7 +6,8 @@ namespace App\Domain\Tasks;
 
 /**
  * Checks a subtask's deliverables against its run receipt and Orbit's handoff check
- * ([ADR 0133](/decisions/0133-verify-typed-subtask-deliverables-at-handoff)). Each failure is one sentence
+ * ([ADR 0133](/decisions/0133-verify-typed-subtask-deliverables-at-handoff),
+ * [ADR 0163](/decisions/0163-prove-a-failing-test-on-the-start-commit)). Each failure is one sentence
  * that names the deliverable and why it fails.
  */
 final readonly class TaskDeliverableVerifier
@@ -86,6 +87,23 @@ final readonly class TaskDeliverableVerifier
     private static function test(TaskDeliverable $deliverable, TaskDeliverableEvidence $evidence): ?string
     {
         $path = $deliverable->testPath();
+        $run = $evidence->tests[$deliverable->id] ?? null;
+        if (! $deliverable->fails_on_base) {
+            return self::testDiff($evidence, $path) ?? self::testRun($deliverable, $run, $path);
+        }
+
+        $parts = [];
+        foreach ([self::testDiff($evidence, $path), self::baseRun($deliverable, $run, $path), self::testRun($deliverable, $run, $path)] as $part) {
+            if ($part !== null) {
+                $parts[] = $part;
+            }
+        }
+
+        return $parts === [] ? null : implode(' ', $parts);
+    }
+
+    private static function testDiff(TaskDeliverableEvidence $evidence, string $path): ?string
+    {
         if ($evidence->diff === null) {
             return "Orbit could not read the subtask's diff.";
         }
@@ -93,11 +111,19 @@ final readonly class TaskDeliverableVerifier
         if ($inDiff === []) {
             return "{$path} is not added or modified in the subtask's diff.";
         }
-        $run = $evidence->tests[$deliverable->id] ?? null;
+
+        return null;
+    }
+
+    /**
+     * @param  array{exit_code: int, cases: list<array{name: string, status: string}>, base_placed?: bool, base_exit_code?: int, base_cases?: list<array{name: string, status: string}>}|null  $run
+     */
+    private static function testRun(TaskDeliverable $deliverable, ?array $run, string $path): ?string
+    {
         if ($run === null) {
             return "Orbit's check did not run {$path}, so the test has no executed result. A replayed or cached result does not count.";
         }
-        $cases = array_values(array_filter($run['cases'], static fn (array $case): bool => str_contains($case['name'], $deliverable->name)));
+        $cases = self::named($run['cases'], $deliverable->name);
         if ($cases === []) {
             $names = array_map(static fn (array $case): string => '"'.$case['name'].'"', array_slice($run['cases'], 0, self::CasesNamed));
 
@@ -110,6 +136,47 @@ final readonly class TaskDeliverableVerifier
         }
 
         return null;
+    }
+
+    /**
+     * ADR 0163: at least one test whose name contains the deliverable name must fail on the start commit.
+     *
+     * @param  array{exit_code: int, cases: list<array{name: string, status: string}>, base_placed?: bool, base_exit_code?: int, base_cases?: list<array{name: string, status: string}>}|null  $run
+     */
+    private static function baseRun(TaskDeliverable $deliverable, ?array $run, string $path): ?string
+    {
+        if ($run === null || ($run['base_placed'] ?? false) !== true) {
+            return "Orbit did not place {$path} on the start commit, so the base run did not start.";
+        }
+        if (! isset($run['base_cases'], $run['base_exit_code'])) {
+            return "Orbit did not run {$path} on the start commit (exit code ".($run['base_exit_code'] ?? 1).').';
+        }
+        $cases = self::named($run['base_cases'], $deliverable->name);
+        if (array_any($cases, static fn (array $case): bool => $case['status'] === 'failed')) {
+            return null;
+        }
+        $sentences = [];
+        foreach ($cases as $case) {
+            if ($case['status'] === 'passed') {
+                $sentences[] = 'The test "'.$case['name'].'" passes on the start commit, so it does not reproduce the bug.';
+            } elseif ($case['status'] === 'skipped') {
+                $sentences[] = 'The test "'.$case['name'].'" was skipped on the start commit.';
+            }
+        }
+        if ($sentences !== []) {
+            return implode(' ', $sentences);
+        }
+
+        return "Orbit ran {$path} on the start commit (exit code {$run['base_exit_code']}), and no test name contains \"{$deliverable->name}\".";
+    }
+
+    /**
+     * @param  list<array{name: string, status: string}>  $cases
+     * @return list<array{name: string, status: string}>
+     */
+    private static function named(array $cases, string $needle): array
+    {
+        return array_values(array_filter($cases, static fn (array $case): bool => str_contains($case['name'], $needle)));
     }
 
     private static function command(TaskDeliverable $deliverable, TaskDeliverableEvidence $evidence): ?string
