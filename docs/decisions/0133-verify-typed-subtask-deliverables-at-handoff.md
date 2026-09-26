@@ -12,7 +12,7 @@ Every new subtask carries a typed list of deliverables next to its prose brief. 
 
 Proposed.
 
-This extends [ADR 0121](/decisions/0121-end-agent-turns-with-a-run-receipt) (run receipts), [ADR 0114](/decisions/0114-judge-task-completion-as-separate-checks) (completion rubric), [ADR 0124](/decisions/0124-plan-backlog-groups-with-a-t3-planner) (planner), and [ADR 0125](/decisions/0125-run-the-project-check-when-the-implementer-hands-off) (handoff check). The rest of those records stays.
+This extends [ADR 0121](/decisions/0121-end-agent-turns-with-a-run-receipt) (run receipts), [ADR 0114](/decisions/0114-judge-task-completion-as-separate-checks) (completion rubric), [ADR 0124](/decisions/0124-plan-backlog-groups-with-a-t3-planner) (planner), and [ADR 0125](/decisions/0125-run-the-project-check-when-the-implementer-hands-off) (handoff check). The rest of those records stays. [ADR 0163](/decisions/0163-prove-a-failing-test-on-the-start-commit) extends a `test` deliverable with `fails_on_base`, so a bug repro fails on the start commit before it passes on the working tree.
 
 ## Context
 
@@ -128,7 +128,7 @@ The planner prompt and the `implementing-in-orbit` skill tell the planner to giv
 
 - A handoff is tied to the items the subtask asked for. A missing file, a missing or failing test, or a failing command returns to the implementer before a reviewer spends a turn.
 - The handoff check takes longer by the time of each test file and command.
-- A `test` deliverable proves that a named test exists in the diff and passes. It does not prove the test can fail. A reviewer still judges the test.
+- A `test` deliverable proves that a named test exists in the diff and passes. It does not prove the test can fail. [ADR 0163](/decisions/0163-prove-a-failing-test-on-the-start-commit) adds that proof when the deliverable sets `fails_on_base`. A reviewer still judges the test.
 - A planner must write deliverables before the group moves to Todo.
 - Groups that were past Backlog before this change run without verification until an operator adds deliverables to their `todo` subtasks.
 - A `test` deliverable runs one Pest file. A subtask that needs more than one file uses more than one deliverable, at most five, or a `command` deliverable.

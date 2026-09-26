@@ -33,6 +33,12 @@ A wide refactor is the exception to vertical slicing: one mechanical change that
 
 For example, an agent with two watchers and a protocol client is three subtasks, not one: the protocol client with its fake-server tests, then the first watcher, then the second.
 
+### Bug fixes
+
+Give a bug group's first code subtask a `test` deliverable with `fails_on_base` set to `true`. That subtask is the first one that changes code. A docs-only subtask is not it. At least one test whose name contains `name` fails on the subtask's start commit. Those tests pass on the working tree. [ADR 0163](../../../docs/decisions/0163-prove-a-failing-test-on-the-start-commit.md) and the [tasks reference](../../../docs/reference/tasks.md#reproduce-a-bug-on-the-start-commit) define the two runs.
+
+When the bug cannot be reproduced automatically, for example an iOS behavior that shows up only on a device, say so in the brief. Add a `review` deliverable for the manual check, and do not set `fails_on_base`.
+
 ## 3. Review the breakdown with the operator
 
 Present the subtasks as a numbered list. For each one, show:

@@ -3519,7 +3519,8 @@
                 "0121",
                 "0124",
                 "0125",
-                "0133"
+                "0133",
+                "0163"
             ]
         },
         {
@@ -4176,6 +4177,26 @@
             ]
         },
         {
+            "path": "docs/decisions/0163-prove-a-failing-test-on-the-start-commit.md",
+            "title": "ADR 0163: Prove a failing test on the start commit",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Gateway",
+                "Project",
+                "Task"
+            ],
+            "governing_adrs": [
+                "0133",
+                "0163"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -4365,7 +4386,8 @@
                 "0158",
                 "0159",
                 "0160",
-                "0161"
+                "0161",
+                "0163"
             ]
         },
         {
@@ -5606,7 +5628,8 @@
                 "0133",
                 "0134",
                 "0140",
-                "0160"
+                "0160",
+                "0163"
             ]
         },
         {
