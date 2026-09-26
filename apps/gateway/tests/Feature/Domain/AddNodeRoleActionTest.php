@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 use App\Actions\Nodes\AddNodeRoleAction;
 use App\Domain\AppDev\RuntimeConvergenceException;
+use App\Domain\Nodes\NodeLockLoss;
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Nodes\RoleAssignmentException;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tools\ToolManagerMaterializer;
 use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\ToolManagerRegistry;
@@ -167,6 +169,26 @@ describe(AddNodeRoleAction::class, function (): void {
             ->and($assignment->error_code)
             ->toBe('node.tool_manager_probe_failed');
     })->with(['VP' => ToolManagerName::Vp, 'Composer' => ToolManagerName::Composer]);
+
+    it('fails the role with node.lock_lost when its operation lost the Node lock', function (): void {
+        $baseline = new AddNodeRoleBaselineFake;
+        $baseline->failure = new ResourceOperationException(
+            'metrics.service_rollback_failed',
+            'Service metrics recovery did not complete.',
+            502,
+            NodeLockLoss::exception('node-role:id:1'),
+        );
+        app()->instance(RoleBaselineConverger::class, $baseline);
+        $node = add_role_node();
+
+        expect(fn () => app(AddNodeRoleAction::class)->execute($node, RoleName::AppProd))
+            ->toThrow(function (NodeRoleOperationException $exception): void {
+                expect($exception->errorCode)->toBe('node_role.convergence_failed')
+                    ->and($exception->underlyingErrorCode)->toBe(NodeLockLoss::ErrorCode);
+            });
+
+        expect($node->roles()->sole()->error_code)->toBe(NodeLockLoss::ErrorCode);
+    });
 
     it('reactivates retained app manager records when an app role is added again', function (): void {
         $baseline = new AddNodeRoleBaselineFake;

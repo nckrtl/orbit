@@ -90,8 +90,8 @@ final readonly class RemoveToolAction
                     message: 'The tool removal plan failed.',
                     previous: $exception,
                 );
-            } catch (Throwable) {
-                throw $this->failure($tool, 'tool.remove_failed', 502, 'The tool removal plan failed.');
+            } catch (Throwable $exception) {
+                throw $this->failure($tool, 'tool.remove_failed', 502, 'The tool removal plan failed.', previous: $exception);
             }
 
             if (! $plan->removesOnly($tool->package)) {
@@ -119,8 +119,8 @@ final readonly class RemoveToolAction
                     message: 'The tool manager removal failed.',
                     previous: $exception,
                 );
-            } catch (Throwable) {
-                throw $this->failure($tool, 'tool.remove_failed', 502, 'The tool manager removal failed.');
+            } catch (Throwable $exception) {
+                throw $this->failure($tool, 'tool.remove_failed', 502, 'The tool manager removal failed.', previous: $exception);
             }
 
             $after = $this->installedVersion($tool, $node, $manager);
@@ -163,12 +163,13 @@ final readonly class RemoveToolAction
                 message: 'The installed tool version could not be verified.',
                 previous: $exception,
             );
-        } catch (Throwable) {
+        } catch (Throwable $exception) {
             throw $this->failure(
                 tool: $tool,
                 errorCode: 'tool.version_probe_failed',
                 status: 502,
                 message: 'The installed tool version could not be verified.',
+                previous: $exception,
             );
         }
     }
@@ -214,7 +215,7 @@ final readonly class RemoveToolAction
         string $errorCode,
         int $status,
         string $message,
-        ?ToolManagerException $previous = null,
+        ?Throwable $previous = null,
     ): ToolOperationException {
         $record = ToolManagerRecord::query()->find($tool->tool_manager_id);
         $manager = $record instanceof ToolManagerRecord

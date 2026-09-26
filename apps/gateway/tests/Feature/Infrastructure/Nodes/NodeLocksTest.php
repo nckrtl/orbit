@@ -10,12 +10,32 @@ use App\Infrastructure\Processes\LockRenewingProcessRunner;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
 use App\Models\Node;
+use Illuminate\Cache\CacheManager;
+use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Sleep;
+use Symfony\Component\Process\Process;
 use Tests\Support\RecordingProcessRunner;
 
 function node_locks_another_process(): NodeLocks
 {
     return new NodeLocks(Cache::store('array'));
+}
+
+/** @return array{NodeLocks, string} A Node lock store in its own temporary ORBIT_HOME, and that home. */
+function node_locks_file_store(): array
+{
+    $home = sys_get_temp_dir().'/orbit-node-locks-'.bin2hex(random_bytes(4));
+
+    return [new NodeLocks(app(CacheManager::class)->build(NodeLocks::storeConfiguration($home))), $home];
+}
+
+/** The file that holds the named Node lock in the file store under the given home. */
+function node_locks_file(string $home, string $name): string
+{
+    $hash = sha1('file-store-lock:orbit:'.$name);
+
+    return $home.'/cache/node-locks/'.substr($hash, 0, 2).'/'.substr($hash, 2, 2).'/'.$hash;
 }
 
 function node_locks_command(): ProcessInvocation
@@ -110,6 +130,92 @@ describe(NodeLocks::class, function (): void {
 
         expect(fn () => $runner->run(node_locks_command()))->toThrow(ResourceOperationException::class, 'expired before it could be renewed')
             ->and($inner->ran)->toBe([]);
+    });
+
+    it('retries a renewal while another process briefly holds the lock file', function (): void {
+        [$locks, $home] = node_locks_file_store();
+
+        try {
+            $lock = $locks->lock('contended', 600);
+            expect($lock->get())->toBeTrue();
+
+            // A shared hold refuses the store's non-blocking exclusive renewal, as a polling operation's
+            // brief exclusive hold does, and still lets this process read the lock's owner.
+            $file = fopen(node_locks_file($home, 'contended'), 'r');
+            expect(flock($file, LOCK_SH))->toBeTrue();
+            Sleep::whenFakingSleep(static function () use ($file): void {
+                flock($file, LOCK_UN);
+            });
+
+            $locks->renewHeld();
+
+            Sleep::assertSleptTimes(1);
+            expect($lock->refresh())->toBeTrue();
+            fclose($file);
+        } finally {
+            (new Filesystem)->deleteDirectory($home);
+        }
+    });
+
+    it('keeps a lock it still owns when the lock file stays busy for every retry', function (): void {
+        [$locks, $home] = node_locks_file_store();
+
+        try {
+            $lock = $locks->lock('busy', 600);
+            expect($lock->get())->toBeTrue();
+
+            $file = fopen(node_locks_file($home, 'busy'), 'r');
+            expect(flock($file, LOCK_SH))->toBeTrue();
+
+            $locks->renewHeld();
+            Sleep::assertSleptTimes(49);
+
+            flock($file, LOCK_UN);
+            fclose($file);
+
+            expect($lock->refresh())->toBeTrue()
+                ->and($lock->release())->toBeTrue();
+        } finally {
+            (new Filesystem)->deleteDirectory($home);
+        }
+    });
+
+    it('keeps renewing while another process polls for the same lock', function (): void {
+        [$locks, $home] = node_locks_file_store();
+        $runner = new LockRenewingProcessRunner(new RecordingProcessRunner, $locks);
+
+        try {
+            $lock = $locks->lock('polled', 600);
+            expect($lock->get())->toBeTrue();
+
+            // The other process asks for the lock every millisecond for three seconds, like an operation
+            // that waits for it, and prints how many of its attempts found the lock taken.
+            $poller = new Process([PHP_BINARY, '-r', <<<'PHP'
+                require $argv[1].'/vendor/autoload.php';
+                $store = (new Illuminate\Cache\FileStore(new Illuminate\Filesystem\Filesystem, $argv[2]))->setLockDirectory($argv[2]);
+                $refused = 0;
+                $until = microtime(true) + 3;
+                while (microtime(true) < $until) {
+                    $store->lock('orbit:polled', 600)->get() ? exit(1) : $refused++;
+                    usleep(1000);
+                }
+                echo $refused;
+                PHP, base_path(), $home.'/cache/node-locks']);
+            $poller->start();
+
+            $commands = 0;
+            while ($poller->isRunning()) {
+                $runner->run(node_locks_command());
+                $commands++;
+            }
+
+            expect($poller->getExitCode())->toBe(0)
+                ->and((int) $poller->getOutput())->toBeGreaterThan(100)
+                ->and($commands)->toBeGreaterThan(100)
+                ->and($lock->release())->toBeTrue();
+        } finally {
+            (new Filesystem)->deleteDirectory($home);
+        }
     });
 
     it('stops renewing a lock once it is released', function (): void {

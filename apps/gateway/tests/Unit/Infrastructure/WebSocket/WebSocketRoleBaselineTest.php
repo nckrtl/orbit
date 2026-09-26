@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Nodes\NodeLockLoss;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -94,6 +95,15 @@ it('fails closed when convergence rollback does not complete', function (): void
         ->toBe('websocket.rollback_failed');
 });
 
+it('reports a lost Node lock instead of the rollback failure it causes', function (): void {
+    [$node, $assignment] = websocketBaselineTopology();
+    $events = [];
+    $baseline = websocketBaseline($events, failure: 'publication:converge', rollbackFailure: 'runtime:remove', lockLost: true);
+
+    expect(fn () => $baseline->converge($node, $assignment))
+        ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe(NodeLockLoss::ErrorCode));
+});
+
 it('removes publication and runtime before purging credentials', function (): void {
     [$node, $assignment] = websocketBaselineTopology();
     $events = [];
@@ -159,11 +169,12 @@ function websocketBaseline(
     array &$events,
     ?string $failure = null,
     ?string $rollbackFailure = null,
+    bool $lockLost = false,
 ): WebSocketRoleBaseline {
     return new WebSocketRoleBaseline(
-        runtime: new WebSocketBaselineRuntime($events, $failure, $rollbackFailure),
-        publication: new WebSocketBaselinePublication($events, $failure, $rollbackFailure),
-        credentials: new WebSocketBaselineCredentials($events, $failure, $rollbackFailure),
+        runtime: new WebSocketBaselineRuntime($events, $failure, $rollbackFailure, $lockLost),
+        publication: new WebSocketBaselinePublication($events, $failure, $rollbackFailure, $lockLost),
+        credentials: new WebSocketBaselineCredentials($events, $failure, $rollbackFailure, $lockLost),
     );
 }
 
@@ -173,6 +184,7 @@ final class WebSocketBaselineRuntime implements WebSocketRuntimeLifecycle
         private array &$events,
         private ?string $failure,
         private ?string $rollbackFailure,
+        private bool $lockLost = false,
     ) {}
 
     public function converge(Node $node, NodeRole $assignment, WebSocketCredentials $credentials): void
@@ -195,7 +207,7 @@ final class WebSocketBaselineRuntime implements WebSocketRuntimeLifecycle
         $this->events[] = $event;
 
         if ($this->failure === $event || $this->rollbackFailure === $event) {
-            throw new RuntimeException("{$event} failed");
+            throw $this->lockLost ? NodeLockLoss::exception('node-role:id:1') : new RuntimeException("{$event} failed");
         }
     }
 }
@@ -206,6 +218,7 @@ final class WebSocketBaselinePublication implements WebSocketPublicationManager
         private array &$events,
         private ?string $failure,
         private ?string $rollbackFailure,
+        private bool $lockLost = false,
     ) {}
 
     public function converge(Node $node): void
@@ -238,7 +251,7 @@ final class WebSocketBaselinePublication implements WebSocketPublicationManager
         $this->events[] = $event;
 
         if ($this->failure === $event || $this->rollbackFailure === $event) {
-            throw new RuntimeException("{$event} failed");
+            throw $this->lockLost ? NodeLockLoss::exception('node-role:id:1') : new RuntimeException("{$event} failed");
         }
     }
 }
@@ -249,6 +262,7 @@ final class WebSocketBaselineCredentials implements WebSocketCredentialManager
         private array &$events,
         private ?string $failure,
         private ?string $rollbackFailure,
+        private bool $lockLost = false,
     ) {}
 
     public function ensure(Node $node): WebSocketCredentials
@@ -273,7 +287,7 @@ final class WebSocketBaselineCredentials implements WebSocketCredentialManager
         $this->events[] = $event;
 
         if ($this->failure === $event || $this->rollbackFailure === $event) {
-            throw new RuntimeException("{$event} failed");
+            throw $this->lockLost ? NodeLockLoss::exception('node-role:id:1') : new RuntimeException("{$event} failed");
         }
     }
 }

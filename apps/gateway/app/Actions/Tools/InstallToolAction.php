@@ -233,12 +233,13 @@ final readonly class InstallToolAction
             );
             $this->markToolFailure($tool, ToolOperation::Install, $failure);
             throw $failure;
-        } catch (Throwable) {
+        } catch (Throwable $exception) {
             $failure = $this->managerFailure(
                 errorCode: 'tool.version_probe_failed',
                 data: $data,
                 manager: $managerName,
                 toolId: $tool->id,
+                previous: $exception,
             );
             $this->markToolFailure($tool, ToolOperation::Install, $failure);
             throw $failure;
@@ -301,12 +302,13 @@ final readonly class InstallToolAction
                     previous: $exception,
                     toolId: $tool->id,
                 );
-            } catch (Throwable) {
+            } catch (Throwable $exception) {
                 throw $this->managerFailure(
                     errorCode: 'tool.install_failed',
                     data: $data,
                     manager: $managerName,
                     toolId: $tool->id,
+                    previous: $exception,
                 );
             }
 
@@ -320,12 +322,13 @@ final readonly class InstallToolAction
                     previous: $exception,
                     toolId: $tool->id,
                 );
-            } catch (Throwable) {
+            } catch (Throwable $exception) {
                 throw $this->managerFailure(
                     errorCode: 'tool.version_probe_failed',
                     data: $data,
                     manager: $managerName,
                     toolId: $tool->id,
+                    previous: $exception,
                 );
             }
 
@@ -382,12 +385,13 @@ final readonly class InstallToolAction
                 installedVersion: $this->knownInstalledVersion($tool, $after ?? null),
             );
             throw $exception;
-        } catch (Throwable) {
+        } catch (Throwable $exception) {
             $failure = $this->managerFailure(
                 errorCode: 'tool.install_failed',
                 data: $data,
                 manager: $managerName,
                 toolId: $tool->id,
+                previous: $exception,
             );
             $this->markToolFailure($tool, ToolOperation::Install, $failure);
             throw $failure;
@@ -416,13 +420,14 @@ final readonly class InstallToolAction
                 previous: $exception,
                 toolId: $toolId,
             );
-        } catch (Throwable) {
+        } catch (Throwable $exception) {
             throw $this->managerFailure(
                 errorCode: 'tool.candidate_version_probe_failed',
                 data: $data,
                 manager: $managerName,
                 outcome: ToolOutcome::CandidateVersionUnavailable,
                 toolId: $toolId,
+                previous: $exception,
             );
         }
 
@@ -607,7 +612,7 @@ final readonly class InstallToolAction
         InstallToolData $data,
         ToolManagerName $manager,
         ToolOutcome $outcome = ToolOutcome::ManagerFailed,
-        ?ToolManagerException $previous = null,
+        ?Throwable $previous = null,
         ?int $toolId = null,
     ): ToolOperationException {
         return $this->failure(
@@ -629,7 +634,7 @@ final readonly class InstallToolAction
         InstallToolData $data,
         string $message,
         ?ToolManagerName $manager = null,
-        ?ToolManagerException $previous = null,
+        ?Throwable $previous = null,
         ?int $toolId = null,
     ): ToolOperationException {
         return new ToolOperationException(

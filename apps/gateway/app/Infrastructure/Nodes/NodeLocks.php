@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Nodes;
 
-use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Nodes\NodeLockLoss;
 use Illuminate\Cache\Lock as CacheLock;
 use Illuminate\Contracts\Cache\LockProvider;
 use Illuminate\Contracts\Cache\Repository;
@@ -73,7 +73,7 @@ final class NodeLocks
             throw new LogicException('The Node lock store cannot renew locks.');
         }
 
-        return new NodeLock($this, $lock, $name);
+        return new NodeLock($this, $lock, $name, $seconds);
     }
 
     /**
@@ -85,11 +85,7 @@ final class NodeLocks
     {
         foreach ($this->held as $name => $lock) {
             if (! $lock->refresh()) {
-                throw new ResourceOperationException(
-                    'node.lock_lost',
-                    "The operation's Node lock [{$name}] expired before it could be renewed.",
-                    409,
-                );
+                throw NodeLockLoss::exception($name);
             }
         }
     }

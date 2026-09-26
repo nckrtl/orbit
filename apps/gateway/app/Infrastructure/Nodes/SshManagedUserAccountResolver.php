@@ -55,11 +55,12 @@ final readonly class SshManagedUserAccountResolver implements ManagedUserAccount
             }
 
             return new ManagedUserAccount($user, $group, $home);
-        } catch (Throwable) {
+        } catch (Throwable $exception) {
             throw new NodeProvisioningException(
                 'managed-user',
                 'node.managed_user_unavailable',
                 'The managed user account is unavailable.',
+                $exception,
             );
         }
     }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Nodes\Roles;
 
+use App\Domain\Nodes\NodeLockLoss;
 use App\Domain\Nodes\RoleBaseline;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WebSocket\WebSocketCredentialManager;
@@ -38,6 +39,11 @@ final readonly class WebSocketRoleBaseline implements RoleBaseline
                     $this->runtime->remove($node, $assignment, false);
                 }
             } catch (Throwable $rollback) {
+                // A lost Node lock refuses the rollback's commands too; the loss is the failure to report.
+                if (NodeLockLoss::in($exception)) {
+                    throw $exception;
+                }
+
                 throw new ResourceOperationException(
                     'websocket.rollback_failed',
                     'WebSocket convergence rollback failed.',
