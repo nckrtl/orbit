@@ -48,7 +48,7 @@ The opaque `black` style avoids both faults. The web view starts below the statu
 
 ### Viewport readout
 
-The Menu drawer shows one line for support. Open it from the Menu button in the header on a narrow screen. The line lists the display mode, the `innerWidth` by `innerHeight` size, the `screen.width` by `screen.height` size, and the four resolved safe-area insets. Those insets follow the table above: top, bottom, left, then right.
+The Menu drawer shows one line for support. Open it from the Menu button in the header on a narrow screen. The line lists the display mode, the `innerWidth` by `innerHeight` size, the `screen.width` by `screen.height` size, and the four resolved safe-area insets. The insets are top, right, bottom, then left.
 
 ## How the Gateway site routes requests
 

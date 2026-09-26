@@ -26,6 +26,7 @@ import { Modal } from "./Modal";
 import { pageTarget } from "./page";
 import { PageHeaderSlot } from "./PageHeader";
 import { ui, useUi } from "./store";
+import { ViewportReadout } from "./viewportReadout";
 
 declare const __ORBIT_GATEWAY__: string | null;
 
@@ -344,6 +345,7 @@ export function Shell() {
                                         );
                                     })}
                                 </div>
+                                <ViewportReadout />
                             </Frame>
                         </div>
                     )}
