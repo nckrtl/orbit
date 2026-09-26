@@ -45,7 +45,7 @@ The Gateway refuses a duplicate name, a placement that names an unknown step, bo
 
 The upgrade to these limits lowers every stored step timeout above 540 seconds to 540. A list can still total more than 540 seconds after that, for example three steps of 540 seconds. Such a list accepts every change that does not raise its total, so it can always be lowered, reordered, or shortened. A new step or a longer timeout is refused until the total fits.
 
-When such a list runs, each step's timeout is cut to what remains of the request deadline, and the request fails with `command.deadline_exceeded` or `instance.setup_step_failed` before PHP-FPM ends it. A Gateway that reads a stored timeout above 540 seconds before its migrations ran refuses with `lifecycle_step.migration_pending`.
+When such a list runs, each step's timeout is cut to what remains of the request deadline, so the request ends before PHP-FPM ends it. A Gateway that reads a stored timeout above 540 seconds before its migrations ran refuses with `lifecycle_step.migration_pending`.
 
 One API request runs a whole list, so both limits fit inside its 570-second deadline, whose forward work ends 20 seconds early to leave time for cleanup. Provisioning shares that deadline, so keep normal setup and teardown well below the limit. Authorized reads return commands. Activity records omit command text and command output.
 
@@ -72,6 +72,8 @@ Linked worktrees share the Git cache store. Independent clones do not automatica
 Setup holds the same source and environment operation locks as removal. A second operation waits, then checks the current Instance state.
 
 The first command that exits non-zero or times out stops the remaining setup commands. Orbit then runs the full teardown list, including when setup stopped before the last step. It then removes the Instance and deletes the checkout created for that attempt, including a dirty or unpublished tree. Create rollback never removes another Instance; a linked registered checkout requires inspection and explicit removal. A teardown command that fails during this removal does not keep the Instance. The command exits non-zero with `instance.setup_step_failed` and the setup step name. When a teardown command also failed, the error includes that teardown step name.
+
+A step that the request deadline stops, or that has no time left to start, is not reported as a failed command. The request fails with `command.deadline_exceeded` (HTTP 504), `outcome: deadline`, and the step name, and the message says how many seconds the step ran against its own timeout. `instance:create` then rolls back the same way, with teardown limited to the 20-second cleanup reserve, and keeps that code. Lower the list's step timeouts until the whole list fits one request.
 
 When command failure and cleanup are confirmed, the failed attempt leaves no Instance. A lost SSH connection, an exhausted API deadline, or a cleanup failure retains the Instance and reports an unconfirmed outcome or incomplete cleanup. Inspect it before retrying. The Instance records setup as failed; `instance:create` refuses to report success until `instance:setup` succeeds. The next `instance:create` starts on an empty placement. Provisioning checkpoints before setup still resume. A setup failure is not one of those checkpoints.
 

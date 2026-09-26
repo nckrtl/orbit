@@ -47,6 +47,7 @@ use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Processes\CommandDeadline;
 use App\Models\Activity;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
@@ -3369,6 +3370,40 @@ it('tears down and removes a newly created instance after confirmed setup failur
         ->and(AppInstance::query()->sole()->id)->toBe($preservedId)
         ->and(Route::query()->count())->toBe(1);
 })->with([0, 1]);
+
+it('reports a setup step the request deadline stopped as a deadline, not a failed command, and still rolls back', function (): void {
+    foreach (['setup', 'teardown'] as $phase) {
+        ProjectLifecycleStep::query()->create(['app_id' => $this->orbitApp->id, 'phase' => $phase, 'name' => $phase, 'command' => $phase, 'timeout_seconds' => 540, 'position' => 0]);
+    }
+    $now = 0.0;
+    $deadline = new CommandDeadline(static function () use (&$now): float {
+        return $now;
+    });
+    $deadline->start(570.0, CommandDeadline::CleanupReserveSeconds);
+    $now = 300.0;
+    $transport = new LifecycleSshExecutor(result: static function (array $input) use (&$now): int {
+        if ($input['command'] !== 'setup') {
+            return 0;
+        }
+
+        $now += $input['timeout'];
+
+        return 124;
+    });
+    app()->instance(ProjectLifecycleRunner::class, $transport->runner($deadline));
+
+    $this->postJson('/api/v1/instances', ['app_id' => $this->orbitApp->id, 'node_id' => $this->node->id, 'name' => 'deadline-setup', 'branch' => 'dev'])
+        ->assertStatus(504)
+        ->assertJsonPath('error.code', 'command.deadline_exceeded')
+        ->assertJsonPath('error.details.step', 'setup')
+        ->assertJsonPath('error.details.outcome', 'deadline')
+        ->assertJsonPath('error.message', "Setup step [setup] was stopped by the request deadline after 245 seconds, before its own 540-second timeout. Lower the list's step timeouts so the whole list fits one request. The Instance was removed.");
+
+    // Teardown still ran inside the cleanup reserve, and the attempt left no Instance.
+    expect(array_column($transport->inputs, 'command'))->toBe(['setup', 'teardown'])
+        ->and($transport->inputs[1]['timeout'])->toBeLessThanOrEqual((int) CommandDeadline::CleanupReserveSeconds)
+        ->and(AppInstance::query()->count())->toBe(0);
+});
 
 it('retains the checkout when setup execution cannot be confirmed', function (): void {
     ProjectLifecycleStep::query()->create(['app_id' => $this->orbitApp->id, 'phase' => 'setup', 'name' => 'install', 'command' => 'install', 'timeout_seconds' => 30, 'position' => 0]);

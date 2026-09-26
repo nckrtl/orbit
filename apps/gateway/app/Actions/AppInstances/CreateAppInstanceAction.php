@@ -164,7 +164,12 @@ final readonly class CreateAppInstanceAction
             $runner->run($instance, LifecyclePhase::Setup);
         } catch (ResourceOperationException $setupFailure) {
             $details = $setupFailure->details;
-            $instance->update(['failed_step' => 'setup', 'error_code' => 'instance.setup_step_failed']);
+            // A step the request deadline stopped keeps that code, so it reads apart from a failed command.
+            $deadline = $setupFailure->errorCode === 'command.deadline_exceeded';
+            $code = $deadline ? 'command.deadline_exceeded' : 'instance.setup_step_failed';
+            $status = $deadline ? 504 : 422;
+            $cause = $deadline ? 'Setup ran out of the request deadline' : 'Setup failed';
+            $instance->update(['failed_step' => 'setup', 'error_code' => $code]);
 
             if (($details['outcome'] ?? null) === 'unconfirmed') {
                 throw $setupFailure;
@@ -175,9 +180,9 @@ final readonly class CreateAppInstanceAction
             } catch (ResourceOperationException $teardownFailure) {
                 if (($teardownFailure->details['outcome'] ?? null) === 'unconfirmed') {
                     throw new ResourceOperationException(
-                        errorCode: 'instance.setup_step_failed',
-                        message: 'Setup failed and teardown could not be confirmed. The Instance remains.',
-                        status: 422,
+                        errorCode: $code,
+                        message: "{$cause} and teardown could not be confirmed. The Instance remains.",
+                        status: $status,
                         details: [...$details, 'cleanup' => 'unconfirmed'],
                     );
                 }
@@ -193,17 +198,17 @@ final readonly class CreateAppInstanceAction
                 ($this->remover ?? app(RemoveAppInstanceAction::class))->execute($instance->fresh() ?? $instance, force: true, runTeardown: false, allowCascade: false);
             } catch (Throwable) {
                 throw new ResourceOperationException(
-                    errorCode: 'instance.setup_step_failed',
-                    message: 'Setup failed and cleanup is incomplete. Inspect the Instance before retrying removal.',
-                    status: 422,
+                    errorCode: $code,
+                    message: "{$cause} and cleanup is incomplete. Inspect the Instance before retrying removal.",
+                    status: $status,
                     details: [...$details, 'cleanup' => 'incomplete'],
                 );
             }
 
             throw new ResourceOperationException(
-                errorCode: 'instance.setup_step_failed',
-                message: 'Setup step failed.',
-                status: 422,
+                errorCode: $code,
+                message: $deadline ? $setupFailure->getMessage().' The Instance was removed.' : 'Setup step failed.',
+                status: $status,
                 previous: $setupFailure,
                 details: $details,
             );

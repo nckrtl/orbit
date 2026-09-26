@@ -1016,6 +1016,16 @@ it('keeps lifecycle failure names and safe outcomes without command output', fun
         ->and(GatewayFailureRenderer::safeDetails('instance.setup_step_failed', ['step' => "bad\nname", 'outcome' => 'secret']))->toBe([]);
 });
 
+it('keeps the step, deadline outcome, and cleanup of a setup the request deadline stopped', function (): void {
+    expect(GatewayFailureRenderer::safeDetails('command.deadline_exceeded', [
+        'step' => 'install',
+        'teardown_step' => 'drop-db',
+        'outcome' => 'deadline',
+        'cleanup' => 'incomplete',
+        'stdout' => 'secret',
+    ]))->toBe(['step' => 'install', 'teardown_step' => 'drop-db', 'outcome' => 'deadline', 'cleanup' => 'incomplete']);
+});
+
 it('keeps the details of a failed Node Caddy build for any error code and drops a partial or unsafe set', function (): void {
     expect(GatewayFailureRenderer::safeDetails('app-dev.caddy_config_failed', [
         'step' => 'app-dev-caddy',
