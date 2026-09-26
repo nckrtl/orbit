@@ -21,7 +21,9 @@ Enable and disable require Gateway access: the active Gateway peer, or a Node wi
 | --- | --- | --- |
 | `tasks:enable` | `POST /api/v1/tasks/enable` | Turns the extension on. Idempotent. |
 | `tasks:disable` | `POST /api/v1/tasks/disable` | Turns the extension off. Existing rows stay. Further group and subtask operations return `tasks.disabled`. |
-| `tasks:status` | `GET /api/v1/tasks/status` | Returns whether the extension is enabled. |
+| `tasks:status` | `GET /api/v1/tasks/status` | Returns whether the extension is enabled, and every group currently asking for assistance. |
+
+`tasks:status` returns `enabled` and `assistance`. `assistance` lists every group whose `assistance_requested` is true, in ascending group id order. Each entry has `id`, `app_id`, `app`, `project_code`, `title`, `status`, and `assistance_reason`. A group that is not asking is absent, even when it still stores an old reason. A flagged subtask does not add its group unless the group itself is asking. The list is present while the extension is off. `tasks:enable` and `tasks:disable` return only `enabled`.
 
 Every group and subtask operation below refuses with `tasks.disabled` and HTTP 409 while the extension is off.
 
@@ -35,6 +37,8 @@ A **TaskGroup** is one parent feature. A **Task** is an ordered subtask. Each ro
 | `brief` | both | Goal and acceptance |
 | `deliverables` | Task | Typed items the subtask must deliver. An empty list for subtasks created before deliverables existed |
 | `status` | both | Lifecycle state |
+| `assistance_requested` | both | True while that record is asking for assistance |
+| `assistance_reason` | both | Why it is asking. Clearing the flag can keep the last reason |
 | `position` | Task | Order inside the group, starting at 1 |
 | `taskable_type` / `taskable_id` | TaskGroup | Morph. v1 is an Instance only. Null until the scheduler assigns one |
 | `reviewer_agent_thread_id` | TaskGroup | Long-lived reviewer thread for the group |
@@ -677,6 +681,10 @@ After Coder review and PR merge, an authorized Gateway caller runs `tasks:comple
 
 Cancel and complete remove the workspace clone on the Node. The forced Instance remover deletes the checkout directory recorded on the Instance and writes a removal record whose `source_finalization` step deleted that directory. This includes a non-visitable task workspace that stayed `source_resolved` because it has no Route. The Instance row is deleted only after that record is complete. A successful cancel or complete leaves no checkout at the recorded path. [ADR 0160](/decisions/0160-push-each-approved-subtask-and-remove-the-finished-workspace-clone) records the decision.
 
+The same removal deletes that group's Incus bridge worktree on the Node. The bridge is the linked worktree `<worktree root>/task-{id}-e2e` on branch `task-{id}-e2e` of the primary checkout registered for the repository. [ADR 0135](/decisions/0135-run-incus-topologies-for-task-workspace-clones-through-a-bridge-worktree) records it. Removal deletes that worktree only when the path and the branch both match the group, including when the clone is checked out on another branch. A user's worktree stays. A missing bridge is not a failure.
+
+Branch `task-{id}-e2e` is deleted when no worktree has it checked out. A worktree on that branch at another path stays, and so does the branch. The `refs/orbit/e2e-bridge/task-{id}` ref is deleted either way. The sweep retries this with the checkout. Removal does not release an Incus topology the bridge still holds, so release that topology before the group ends.
+
 When `tasks:complete` cannot remove the workspace, it still marks the group `completed` and keeps the Instance attached. The group asks for assistance with `Workspace removal failed: `, and the response reports that removal failure on the completed group. A permanently lost Node does not stop the operator from completing the group. Merge cleanup that fails before the group is completed uses the reason prefix `Merged pull request cleanup failed: ` and leaves the group `settling`. Cancel, complete, and the tick's removal of a leftover workspace use `Workspace removal failed: ` once the group has ended. The checkout and the Instance row stay, so the clone is still named by a record.
 
 The next tick's sweep retries a `cancelled` or `completed` group that still has a workspace, including a failed manual complete, and a `settling` group whose merged pull request cleanup failed. For a cancelled group that still holds an unpushed stored approval, the sweep pushes that commit before it deletes the checkout. The backoff under [Scheduler and ceilings](#scheduler-and-ceilings) applies: 1 minute, then 2, 5, 10, and 30 minutes. Repeating `tasks:cancel` or `tasks:complete` retries at once. Success clears an assistance request only when its reason starts with `Workspace removal failed: ` or `Merged pull request cleanup failed: `. Another cause stays. The tick does not remove the workspace of a group that is still active.
@@ -699,7 +707,7 @@ Call `tasks-cancel` with `{ "group": 123 }`, or run `orbit tasks:cancel 123`, to
 
 Repeating cancellation is safe and also cleans up an Instance still attached to a group already marked `cancelled`. Subtasks that are not completed or failed become `cancelled`. When removal succeeds, cancellation clears `assistance_requested` on the group and its subtasks and keeps the last `assistance_reason`. An unreachable Node records `Workspace removal failed: ` instead. Subtask records and agent thread identifiers stay as history.
 
-Cancellation removes the workspace with the forced Instance remover, which deletes its checkout and cleans up its Routes, including a route-free workspace that never became active (`reserved`, `checkout_prepared`, or `source_resolved`). On success the checkout is gone. Cancellation does not interrupt the external agent conversation.
+Cancellation removes the workspace with the forced Instance remover, which deletes its checkout and cleans up its Routes, including a route-free workspace that never became active (`reserved`, `checkout_prepared`, or `source_resolved`). On success the checkout is gone. It also removes the group's bridge worktree, as [Complete and cleanup](#complete-and-cleanup) describes. Cancellation does not interrupt the external agent conversation.
 
 When the Node is unreachable, cancel still marks the group `cancelled` and keeps the Instance attached. It asks for assistance with `Workspace removal failed: ` and returns the group in that state. It does not wait for a push the Node cannot accept. A permanently lost Node does not keep the group open: the operator's cancel ends it, and the Instance row keeps the checkout named until the sweep deletes it or the operator deletes the directory. The sweep retries removal on the backoff under [Scheduler and ceilings](#scheduler-and-ceilings).
 
