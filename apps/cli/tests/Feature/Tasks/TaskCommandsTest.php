@@ -25,6 +25,7 @@ use Orbit\Sdk\Requests\Tasks\CreateTaskCommentRequest;
 use Orbit\Sdk\Requests\Tasks\CreateTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\ListTaskGroupsRequest;
 use Orbit\Sdk\Requests\Tasks\ShowTaskGroupRequest;
+use Orbit\Sdk\Requests\Tasks\ShowTasksStatusRequest;
 use Orbit\Sdk\Requests\Tasks\UpdateSubtaskRequest;
 use Orbit\Sdk\Requests\Tasks\UpdateTaskGroupRequest;
 use Saloon\Http\Faking\MockClient;
@@ -433,6 +434,80 @@ final class TaskPromptsCommand extends TaskCommand
         });
     }
 }
+
+describe('assistance columns', function (): void {
+    it('shows the assistance reason on the list and the group', function (): void {
+        $columns = getenv('COLUMNS');
+        putenv('COLUMNS=160');
+        $recorded = json_decode((string) file_get_contents(dirname(__DIR__, 5).'/packages/php-sdk/fixtures/tasks/tasks-show/default.json'), true, flags: JSON_THROW_ON_ERROR);
+        $group = $recorded['body']['data'];
+        $group['assistance_requested'] = true;
+        $group['assistance_reason'] = 'The implementer is blocked.';
+        $group['tasks'][0]['assistance_requested'] = true;
+        $group['tasks'][0]['assistance_reason'] = 'Which database should this use?';
+        $clear = $group;
+        $clear['id'] = 2;
+        $clear['title'] = 'Clear';
+        $clear['assistance_requested'] = false;
+        $clear['assistance_reason'] = 'An old reason.';
+        $clear['tasks'][0]['assistance_requested'] = false;
+        $clear['tasks'][0]['assistance_reason'] = 'An old reason.';
+        $body = static fn (array $data): array => ['data' => $data, 'meta' => ['request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844']];
+
+        MockClient::global([
+            ListTaskGroupsRequest::class => MockResponse::make($body([$group, $clear])),
+        ]);
+
+        expect(Artisan::call('tasks:list'))->toBe(0);
+        $list = Artisan::output();
+        expect($list)->toContain('ASSISTANCE')
+            ->and($list)->toContain('The implementer is blocked.')
+            ->and($list)->not->toContain('An old reason.');
+
+        MockClient::destroyGlobal();
+        MockClient::global([
+            ShowTaskGroupRequest::class => MockResponse::make($body($group)),
+        ]);
+
+        expect(Artisan::call('tasks:show', ['group' => '1']))->toBe(0);
+        $shown = Artisan::output();
+        expect($shown)->toContain('The implementer is blocked.')
+            ->and($shown)->toContain('Which database should this use?')
+            ->and($shown)->toContain('ASSISTANCE');
+
+        MockClient::destroyGlobal();
+        MockClient::global([
+            ShowTasksStatusRequest::class => MockResponse::make($body([
+                'enabled' => true,
+                'assistance' => [[
+                    'id' => 4,
+                    'app_id' => 1,
+                    'app' => 'orbit',
+                    'project_code' => 'ORB',
+                    'title' => 'Blocked implementer',
+                    'status' => 'running',
+                    'assistance_reason' => 'The implementer is blocked.',
+                ]],
+            ])),
+        ]);
+
+        expect(Artisan::call('tasks:status'))->toBe(0);
+        $status = Artisan::output();
+        expect($status)->toContain('ORB-4')
+            ->and($status)->toContain('Blocked implementer')
+            ->and($status)->toContain('The implementer is blocked.')
+            ->and($status)->not->toContain('An old reason.');
+
+        expect(Artisan::call('tasks:status', ['--json' => true]))->toBe(0);
+        $json = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+        expect($json['assistance'][0])->toMatchArray([
+            'id' => 4,
+            'project_code' => 'ORB',
+            'assistance_reason' => 'The implementer is blocked.',
+        ]);
+        putenv($columns === false ? 'COLUMNS' : 'COLUMNS='.$columns);
+    });
+});
 
 final class TaskPromptsTerminal extends Terminal
 {

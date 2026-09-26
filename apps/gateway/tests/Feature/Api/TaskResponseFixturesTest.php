@@ -76,6 +76,35 @@ describe('task response fixtures', function (): void {
         record_fixture($this->getJson('/api/v1/tasks/status')->assertOk(), 'tasks/tasks-status/enabled', ShowTasksStatusRequest::class, 'GET /api/v1/tasks/status');
     });
 
+    it('records groups asking for assistance', function (): void {
+        TaskGroup::query()->create([
+            'app_id' => $this->project->id,
+            'title' => 'Blocked implementer',
+            'brief' => 'Waiting on a decision.',
+            'status' => TaskGroupStatus::Running,
+            'assistance_requested' => true,
+            'assistance_reason' => 'The implementer is blocked.',
+        ]);
+        TaskGroup::query()->create([
+            'app_id' => $this->project->id,
+            'title' => 'Settling question',
+            'brief' => 'Waiting on review.',
+            'status' => TaskGroupStatus::Settling,
+            'assistance_requested' => true,
+            'assistance_reason' => 'Which database should this use?',
+        ]);
+        TaskGroup::query()->create([
+            'app_id' => $this->project->id,
+            'title' => 'Clear',
+            'brief' => 'Not waiting.',
+            'status' => TaskGroupStatus::Running,
+            'assistance_requested' => false,
+            'assistance_reason' => 'An old reason.',
+        ]);
+
+        record_fixture($this->getJson('/api/v1/tasks/status')->assertOk(), 'tasks/tasks-status/assistance', ShowTasksStatusRequest::class, 'GET /api/v1/tasks/status');
+    });
+
     it('records a created group and a refused todo create', function (): void {
         record_fixture($this->postJson('/api/v1/task-groups', [
             'app_id' => $this->project->id,
