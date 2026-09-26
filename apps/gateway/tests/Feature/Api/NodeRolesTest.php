@@ -8,10 +8,12 @@ use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Metrics\ExporterDegradationReason;
+use App\Domain\Nodes\GatewayPrivateDnsRoute;
 use App\Domain\Nodes\NodeReachabilityProbe;
 use App\Domain\Nodes\NodeRoleDependencySet;
 use App\Domain\Nodes\NodeRoleDependentCleaner;
 use App\Domain\Nodes\NodeRoleFirewallManager;
+use App\Domain\Nodes\NodeRoleFollowUpReport;
 use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
@@ -32,6 +34,7 @@ use App\Models\Route as OrbitRoute;
 use Illuminate\Routing\Route;
 use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
+use Tests\Support\FakeGatewayPrivateDnsRoute;
 use Tests\Support\FakeNodeRoleFirewallManager;
 use Tests\Support\FakeToolManagerMaterializer;
 use Tests\TestCase;
@@ -46,6 +49,8 @@ beforeEach(function (): void {
     {
         public function converge(?Node $pendingNode = null): void {}
     });
+    $this->route = new FakeGatewayPrivateDnsRoute;
+    app()->instance(GatewayPrivateDnsRoute::class, $this->route);
     $this->reachability = new NodeRoleApiReachabilityFake;
     app()->instance(NodeReachabilityProbe::class, $this->reachability);
 
@@ -264,6 +269,24 @@ it('returns 201 for a new assignment and 200 for explicit convergence', function
         ->assertJsonPath('meta.request_id', $requestId);
 
     expect($this->roleLifecycle->converged)->toBe(['app-dev', 'app-dev']);
+});
+
+it('returns an active role with the follow-up of a step that failed without failing the role', function (): void {
+    $this->postJson("/api/v1/nodes/{$this->node->id}/roles", ['role' => 'app-dev'])->assertCreated();
+    $this->roleLifecycle->followUp = 'The Gateway machine does not route the private domain to Orbit VPN DNS (vpn.dns_resolver_failed).';
+
+    $this
+        ->postJson("/api/v1/nodes/{$this->node->id}/roles", ['role' => 'app-dev', 'converge_existing' => true])
+        ->assertOk()
+        ->assertJsonPath('data.assignment.status', 'active')
+        ->assertJsonPath('data.degradation', null)
+        ->assertJsonPath('data.follow_up', 'The Gateway machine does not route the private domain to Orbit VPN DNS (vpn.dns_resolver_failed).');
+
+    // The next convergence succeeds, so it reports no follow-up.
+    $this
+        ->postJson("/api/v1/nodes/{$this->node->id}/roles", ['role' => 'app-dev', 'converge_existing' => true])
+        ->assertOk()
+        ->assertJsonPath('data.follow_up', null);
 });
 
 it('adds converges and removes the database role through the existing node role contract', function (): void {
@@ -978,7 +1001,20 @@ it('relocates the singleton gateway assignment onto the target node', function (
         ->and($this->caller->roles()->where('role', RoleName::Vpn)->exists())
         ->toBeTrue()
         ->and(NodeRole::query()->where('role', RoleName::Gateway)->count())
-        ->toBe(1);
+        ->toBe(1)
+        ->and($this->route->events)
+        ->toBe(["converge:{$this->node->name}", "remove:{$this->caller->name}"]);
+});
+
+it('returns the follow-up when the relocated gateway target does not get the private DNS route', function (): void {
+    $this->caller->roles()->create(['role' => RoleName::Vpn, 'status' => LifecycleStatus::Active]);
+    $this->route->followUp = 'The Gateway machine does not route the private domain to Orbit VPN DNS (vpn.dns_resolver_failed).';
+
+    $this
+        ->postJson("/api/v1/nodes/{$this->node->id}/roles/gateway/relocate", ['force' => true])
+        ->assertOk()
+        ->assertJsonPath('data.assignment.status', 'active')
+        ->assertJsonPath('data.follow_up', 'The Gateway machine does not route the private domain to Orbit VPN DNS (vpn.dns_resolver_failed).');
 });
 
 it('refuses to relocate the gateway role onto an Ingress Node', function (): void {
@@ -1626,6 +1662,9 @@ final class NodeRoleApiLifecycleFake implements NodeRoleDependentCleaner, RoleBa
 
     public ?NodeRoleOperationException $convergenceFailure = null;
 
+    /** A follow-up the next convergence records, as a step that fails without failing the role does. */
+    public ?string $followUp = null;
+
     public ?NodeRoleOperationException $removalFailure = null;
 
     /** @var list<string> */
@@ -1637,6 +1676,11 @@ final class NodeRoleApiLifecycleFake implements NodeRoleDependentCleaner, RoleBa
     public function converge(Node $node, NodeRole $assignment): void
     {
         $this->converged[] = $assignment->role->value;
+
+        if ($this->followUp !== null) {
+            app(NodeRoleFollowUpReport::class)->record($this->followUp);
+            $this->followUp = null;
+        }
 
         if ($this->convergenceFailure instanceof NodeRoleOperationException) {
             throw $this->convergenceFailure;

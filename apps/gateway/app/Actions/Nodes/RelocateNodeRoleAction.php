@@ -11,6 +11,7 @@ use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Metrics\MetricsReconcileDeferral;
+use App\Domain\Nodes\GatewayPrivateDnsRoute;
 use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Nodes\NodeRoleValidationException;
@@ -47,6 +48,7 @@ final readonly class RelocateNodeRoleAction
         private PrivateDnsAnswerExpiry $dnsAnswers = new PrivateDnsAnswerExpiry,
         private ?MetricsFleetReconciler $metrics = null,
         private ?MetricsReconcileDeferral $metricsDeferral = null,
+        private ?GatewayPrivateDnsRoute $privateDnsRoute = null,
     ) {}
 
     public function execute(Node $target, RoleName $role, bool $force = false, ?Node $from = null): NodeRole
@@ -204,6 +206,8 @@ final readonly class RelocateNodeRoleAction
         if ($role === RoleName::Gateway) {
             $this->access->execute($target);
             $this->dns->converge();
+            // A failure never fails the move; the response reports it as `follow_up`.
+            $this->privateDnsRoute()->convergeRoute($target);
 
             return;
         }
@@ -242,6 +246,9 @@ final readonly class RelocateNodeRoleAction
         }
 
         if ($role === RoleName::Gateway) {
+            // First, as role removal does: a failure leaves the move incomplete and names the `--from`
+            // command that finishes it, so the drop-in never stays unreported on the source.
+            $this->privateDnsRoute()->removeRoute($source);
             $this->firewall->remove($source, $role, $source->user);
             $this->forgetOwnedSettings($source, $role);
 
@@ -256,6 +263,11 @@ final readonly class RelocateNodeRoleAction
      * The moved assignment as the source held it. It keeps the assignment id because the source's
      * runtime still carries it, for example on the Metrics containers.
      */
+    private function privateDnsRoute(): GatewayPrivateDnsRoute
+    {
+        return $this->privateDnsRoute ?? app(GatewayPrivateDnsRoute::class);
+    }
+
     private function ghostAssignment(Node $source, NodeRole $assignment): NodeRole
     {
         $ghost = new NodeRole([
