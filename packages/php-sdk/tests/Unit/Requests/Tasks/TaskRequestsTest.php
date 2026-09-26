@@ -208,6 +208,13 @@ describe('task responses from recorded Gateway fixtures', function (): void {
             ->toBe(['resolution', 'approved', 'ready_for_review'])
             ->and($comments->comments[1]->commitSha)->toBe('3f2a9c1e5b7d4f6a8c0e2b4d6f8a0c2e4b6d8f0a')
             ->and($agents->agents[1]->observationError)->toBe('T3 did not answer in time.')
+            ->and($agents->agents[0]->inputTokens)->toBe(2100)
+            ->and($agents->agents[0]->cachedInputTokens)->toBe(40100)
+            ->and($agents->agents[0]->outputTokens)->toBe(6000)
+            ->and($agents->agents[0]->modelCalls)->toBe(4)
+            ->and($agents->agents[0]->peakContextTokens)->toBe(9800)
+            ->and($agents->agents[1]->inputTokens)->toBeNull()
+            ->and($agents->agents[1]->peakContextTokens)->toBeNull()
             ->and($agents->toArray()['agents'][0])->not->toHaveKey('request_id');
     });
 

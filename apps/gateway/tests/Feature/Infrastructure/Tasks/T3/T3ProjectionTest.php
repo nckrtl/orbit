@@ -71,6 +71,11 @@ it('retains a terminal outcome until new work starts and ignores historical inpu
 it('keeps missing metrics unknown and returns failure details', function (): void {
     $observation = new T3Projection()->observe(['thread' => ['session' => ['status' => 'failed', 'lastError' => 'Model refused the request.']]]);
     expect($observation->tokens)->toBeNull()
+        ->and($observation->inputTokens)->toBeNull()
+        ->and($observation->cachedInputTokens)->toBeNull()
+        ->and($observation->outputTokens)->toBeNull()
+        ->and($observation->modelCalls)->toBeNull()
+        ->and($observation->peakContextTokens)->toBeNull()
         ->and($observation->linesAdded)->toBeNull()
         ->and($observation->error)->toBe('Model refused the request.');
 });
@@ -79,6 +84,20 @@ it('preserves failure details when an idle snapshot has no new outcome', functio
     $observation = new T3Projection()->observe(['thread' => ['session' => ['status' => 'idle']]], AgentThreadState::Failed, 'Model refused the request.');
     expect($observation->state)->toBe(AgentThreadState::Failed)
         ->and($observation->error)->toBe('Model refused the request.');
+});
+
+it('projects a counted context-window update onto the observation', function (): void {
+    $observation = new T3Projection()->observe(['thread' => ['session' => ['status' => 'ready'], 'activities' => [[
+        'kind' => 'context-window.updated',
+        'payload' => ['totalProcessedTokens' => 130, 'inputTokens' => 100, 'cachedInputTokens' => 80, 'outputTokens' => 30],
+    ]]]]);
+
+    expect($observation->tokens)->toBe(130)
+        ->and($observation->inputTokens)->toBe(20)
+        ->and($observation->cachedInputTokens)->toBe(80)
+        ->and($observation->outputTokens)->toBe(30)
+        ->and($observation->modelCalls)->toBe(1)
+        ->and($observation->peakContextTokens)->toBe(100);
 });
 
 it('projects T3 session completion and checkpoint events into a completed turn', function (): void {

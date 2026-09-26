@@ -3685,6 +3685,11 @@ export interface components {
             observation_error?: string | null;
             error?: string | null;
             tokens?: number | null;
+            input_tokens?: number | null;
+            cached_input_tokens?: number | null;
+            output_tokens?: number | null;
+            model_calls?: number | null;
+            peak_context_tokens?: number | null;
             lines_added?: number | null;
             lines_deleted?: number | null;
         };

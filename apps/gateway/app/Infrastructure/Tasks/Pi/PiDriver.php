@@ -220,17 +220,36 @@ final readonly class PiDriver implements AgentDriver
     {
         $state = AgentThreadState::tryFrom(is_string($data['state'] ?? null) ? $data['state'] : '');
         $error = is_string($data['error'] ?? null) && $data['error'] !== '' ? $data['error'] : null;
-        $tokens = data_get($data, 'usage.total');
         $turnId = $data['turnId'] ?? null;
+        $input = $this->usageInt($data, 'input');
+        $cacheWrite = $this->usageInt($data, 'cacheWrite');
 
         return new AgentObservation(
             state: $state,
             entries: $entries,
-            tokens: is_int($tokens) ? $tokens : null,
+            tokens: $this->usageInt($data, 'total'),
+            inputTokens: $input !== null && $cacheWrite !== null ? $input + $cacheWrite : null,
+            cachedInputTokens: $this->usageInt($data, 'cacheRead'),
+            outputTokens: $this->usageInt($data, 'output'),
+            modelCalls: $this->usageInt($data, 'calls'),
+            peakContextTokens: $this->usageInt($data, 'peakContext'),
             error: $state === AgentThreadState::Failed ? ($error ?? 'Agent turn failed.') : null,
             cursor: $this->cursor($data),
             turnId: is_string($turnId) && $turnId !== '' ? $turnId : null,
         );
+    }
+
+    /**
+     * Pi reports each usage field as an integer. A missing or non-integer field is unknown,
+     * and a missing cache write leaves uncached input unknown rather than treating it as zero.
+     *
+     * @param  array<string, mixed>  $data
+     */
+    private function usageInt(array $data, string $key): ?int
+    {
+        $value = data_get($data, 'usage.'.$key);
+
+        return is_int($value) ? $value : null;
     }
 
     /**

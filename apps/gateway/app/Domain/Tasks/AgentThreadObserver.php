@@ -30,7 +30,16 @@ final readonly class AgentThreadObserver
             $values['state'] = $observation->state;
             $values['error'] = $observation->error;
         }
-        foreach (['tokens' => $observation->tokens, 'lines_added' => $observation->linesAdded, 'lines_deleted' => $observation->linesDeleted] as $key => $value) {
+        foreach ([
+            'tokens' => $observation->tokens,
+            'input_tokens' => $observation->inputTokens,
+            'cached_input_tokens' => $observation->cachedInputTokens,
+            'output_tokens' => $observation->outputTokens,
+            'model_calls' => $observation->modelCalls,
+            'peak_context_tokens' => $observation->peakContextTokens,
+            'lines_added' => $observation->linesAdded,
+            'lines_deleted' => $observation->linesDeleted,
+        ] as $key => $value) {
             if ($value !== null) {
                 $values[$key] = $value;
             }
