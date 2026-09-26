@@ -4,6 +4,7 @@ import { createServer } from "node:net";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import type { Paths } from "./contract";
+import { killProcessTree } from "./processes";
 
 const READY_MS = 60_000;
 
@@ -39,15 +40,9 @@ export class DemoServer {
         this.child = null;
         this.port = null;
         if (child?.pid === undefined) return;
+        if (child.exitCode !== null || child.signalCode !== null) return;
 
-        await signalGroup(child, "SIGTERM");
-        const deadline = Date.now() + 2_000;
-        while (Date.now() < deadline && child.exitCode === null && child.signalCode === null) {
-            await delay(50);
-        }
-        if (child.exitCode === null && child.signalCode === null) {
-            await signalGroup(child, "SIGKILL");
-        }
+        await killProcessTree(child.pid);
     }
 
     private async originIfHealthy(): Promise<string | null> {
@@ -106,20 +101,6 @@ export class DemoServer {
 
 function origin(port: number): string {
     return `http://127.0.0.1:${port}`;
-}
-
-async function signalGroup(child: ChildProcess, signal: NodeJS.Signals): Promise<void> {
-    if (child.pid === undefined) return;
-
-    try {
-        process.kill(-child.pid, signal);
-    } catch {
-        try {
-            child.kill(signal);
-        } catch {
-            // The process is already gone.
-        }
-    }
 }
 
 function freePort(): Promise<number> {

@@ -11,7 +11,7 @@ Run every command from the repository root. Stdout is one JSON object and nothin
 
 ## Commands
 
-`routes` reads the feature map and does not start the app. The other commands share one demo server for the checkout. A dead server is started again. [Active page](#active-page) states which page `click` uses.
+`routes` reads the feature map and does not start the app. `stop` stops the daemon for this checkout and does not start the app. The other commands share one daemon and one demo server for the checkout. A dead server is started again. [Active page](#active-page) states which page `click` uses. [Daemon](#daemon) states what keeps running and how to stop it.
 
 | Subcommand | What it does |
 | --- | --- |
@@ -20,12 +20,21 @@ Run every command from the repository root. Stdout is one JSON object and nothin
 | `click <selector>` | Clicks that selector on the active page. |
 | `screenshot <route>` | Writes a PNG for that route, device, and engine. |
 | `console-errors <route>` | Reports console errors for that route. |
+| `stop` | Stops this checkout's daemon and the processes it started. |
 
 `open`, `screenshot`, and `console-errors` take a concrete path. A concrete path contains no `$` segment. `/tasks/12` is concrete. `/tasks/$id` and `/$section` are only map patterns. Navigation rejects those strings with `unresolved-parameter`. Quote a route that contains `?`. `<selector>` is a Playwright selector. A mapped control is `[data-testid=VALUE]`, using the `testid` from the map.
 
 A path that the URL parser would send to another host is `usage`, including a tab, newline, or carriage return that turns the path into a protocol-relative URL. The browser aborts any request or socket whose host is not the demo server. Each load is answered with that checked response, so the browser does not send the request again and cannot follow a redirect that was not part of the check.
 
 The demo server is the `apps/web` dev server with `VITE_ORBIT_DEMO=1`, bound to `127.0.0.1` on a free port. Demo mode answers the API from the fixture fleet. It does not proxy to a Gateway, and it does not run the dev adapters that call the CLI, Commander, a transcription service, or a local annotation server. Those paths answer on the demo server and make no upstream call. The command waits up to 60 seconds for the server to answer.
+
+## Daemon
+
+`open`, `click`, `screenshot`, and `console-errors` use one background daemon for this checkout. The daemon keeps the demo server and any Playwright browser it has opened. `routes` and `stop` do not start it.
+
+The daemon writes `.orbit-artifacts/web/daemon.log`. The demo server writes `.orbit-artifacts/web/server.log`.
+
+The daemon exits after 5 minutes with no command. On that exit, and when `bin/web-verify stop` runs, it closes the browsers and the demo server, including their child processes. `stop` returns JSON and succeeds when no daemon is running. The next `open`, `screenshot`, or `console-errors` starts a daemon again. `ORBIT_WEB_VERIFY_IDLE_MS` overrides the idle wait as a whole number of milliseconds.
 
 ## Active page
 
@@ -127,7 +136,7 @@ Exit 0 means `"ok": true`. Exit 1 means the command ran and failed. Exit 2 means
 | `message` | On failure, one sentence. |
 | `next` | On failure, the command or edit that fixes it. |
 
-`console-errors` succeeds only when `errors` is empty. `source` is `console` for `console.error` and `pageerror` for an uncaught exception. A warning does not fail the command.
+`stop` returns `ok` and `command` only. `console-errors` succeeds only when `errors` is empty. `source` is `console` for `console.error` and `pageerror` for an uncaught exception. A warning does not fail the command.
 
 | `error` | Exit | What failed |
 | --- | --- | --- |

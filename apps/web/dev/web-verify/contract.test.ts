@@ -3,7 +3,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, expect, it } from "vite-plus/test";
+import { spawn } from "node:child_process";
 import { pathsFrom, screenshotFilename, screenshotSlug, USAGE_NEXT } from "./contract";
+import { descendantPids, IDLE_MS, idleTimeoutMs } from "./processes";
 import {
     canonicalRoute,
     concreteRoute,
@@ -133,6 +135,10 @@ it("parses subcommands, defaults, and required screenshot flags", () => {
         kind: "click",
         selector: "[data-testid=nav-menu]",
     });
+    expect(parseCommand(["stop"])).toEqual({ kind: "stop" });
+    const stopped = parseCommand(["stop", "/activity"]);
+    expect(stopped.kind).toBe("fail");
+    if (stopped.kind === "fail") expect(stopped.result.error).toBe("usage");
 
     const usage = parseCommand(["screenshot", "/activity"]);
     expect(usage.kind).toBe("fail");
@@ -149,6 +155,33 @@ it("parses subcommands, defaults, and required screenshot flags", () => {
     const missing = parseCommand([]);
     expect(missing.kind).toBe("fail");
     if (missing.kind === "fail") expect(missing.result.error).toBe("usage");
+});
+
+it("defaults the daemon idle wait to 5 minutes", () => {
+    expect(IDLE_MS).toBe(300_000);
+    expect(idleTimeoutMs({})).toBe(300_000);
+    expect(idleTimeoutMs({ ORBIT_WEB_VERIFY_IDLE_MS: "1500" })).toBe(1_500);
+    expect(idleTimeoutMs({ ORBIT_WEB_VERIFY_IDLE_MS: "" })).toBe(300_000);
+    expect(idleTimeoutMs({ ORBIT_WEB_VERIFY_IDLE_MS: "5s" })).toBe(300_000);
+});
+
+it("lists a child process started by this process", () => {
+    const child = spawn(process.execPath, ["-e", "setTimeout(() => {}, 30000)"], {
+        stdio: "ignore",
+    });
+    child.unref();
+    try {
+        expect(child.pid).toBeTypeOf("number");
+        expect(descendantPids(process.pid)).toContain(child.pid);
+    } finally {
+        if (child.pid !== undefined) {
+            try {
+                process.kill(child.pid, "SIGKILL");
+            } catch {
+                // The child already exited.
+            }
+        }
+    }
 });
 
 it("keeps a test session out of the shared artifact directory", () => {

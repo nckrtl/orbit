@@ -1,6 +1,6 @@
 import { isDevice, isEngine, usage, type Device, type Engine, type ToolResult } from "./contract";
 
-const COMMANDS = ["routes", "open", "click", "screenshot", "console-errors"] as const;
+const COMMANDS = ["routes", "open", "click", "screenshot", "console-errors", "stop"] as const;
 
 type CommandName = (typeof COMMANDS)[number];
 
@@ -10,6 +10,7 @@ export type Parsed =
     | { kind: "screenshot"; route: string; device: Device; engine: Engine }
     | { kind: "click"; selector: string }
     | { kind: "console-errors"; route: string }
+    | { kind: "stop" }
     | { kind: "fail"; result: ToolResult };
 
 function isCommand(value: string): value is CommandName {
@@ -51,7 +52,7 @@ export function parseCommand(argv: readonly string[]): Parsed {
 
     const [name, ...rest] = positionals;
     if (name === undefined) {
-        return fail("", "Choose routes, open, click, screenshot, or console-errors.");
+        return fail("", "Choose routes, open, click, screenshot, console-errors, or stop.");
     }
     if (!isCommand(name)) {
         return fail(name, `Unknown command ${name}.`);
@@ -72,6 +73,14 @@ export function parseCommand(argv: readonly string[]): Parsed {
         }
 
         return { kind: "routes" };
+    }
+
+    if (name === "stop") {
+        if (rest.length > 0 || flags.size > 0) {
+            return fail(name, "The stop command takes no route and no flags.");
+        }
+
+        return { kind: "stop" };
     }
 
     if (name === "click") {

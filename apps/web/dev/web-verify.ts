@@ -1,6 +1,6 @@
 import { fileURLToPath } from "node:url";
 import { exitCode, pathsFrom, type ToolResult } from "./web-verify/contract";
-import { daemonAlive, dispatch, runDaemon } from "./web-verify/daemon";
+import { daemonAlive, dispatch, runDaemon, stopDaemon } from "./web-verify/daemon";
 import { loadFeatureMap, mapInvalidMessage } from "./web-verify/map";
 import { parseCommand } from "./web-verify/parse";
 import { assessRoute } from "./web-verify/session";
@@ -21,6 +21,7 @@ async function execute(argv: readonly string[]): Promise<ToolResult> {
     const parsed = parseCommand(argv);
     if (parsed.kind === "fail") return parsed.result;
     if (parsed.kind === "routes") return routesResult();
+    if (parsed.kind === "stop") return stopDaemon(paths);
     if (parsed.kind === "click") {
         if (!daemonAlive(paths)) {
             return {

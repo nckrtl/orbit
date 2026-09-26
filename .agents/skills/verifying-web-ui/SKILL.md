@@ -49,4 +49,6 @@ WebKit device emulation catches layout, viewport, and safe-area padding mistakes
 
 ## Report
 
+Run `bin/web-verify stop` when you finish. That stops this checkout's daemon, the demo server, and the browsers. The daemon also exits after 5 minutes with no command and closes those processes, including their children. Its log is `.orbit-artifacts/web/daemon.log`.
+
 Return the routes checked, each `file` path, what you saw on the phone, and the emulation limit. Record the commit. After a fix, capture the affected routes again.

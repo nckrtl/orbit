@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
@@ -45,30 +45,124 @@ function run(
     };
 }
 
-async function stop(home: string): Promise<void> {
+function sessionPid(home: string): number | null {
     const sessionFile = join(home, "session.json");
-    if (!existsSync(sessionFile)) return;
-    const session = JSON.parse(readFileSync(sessionFile, "utf8")) as { pid?: unknown };
-    if (typeof session.pid !== "number") return;
+    if (!existsSync(sessionFile)) return null;
+    try {
+        const session = JSON.parse(readFileSync(sessionFile, "utf8")) as { pid?: unknown };
 
-    try {
-        process.kill(session.pid, "SIGTERM");
+        return typeof session.pid === "number" ? session.pid : null;
     } catch {
-        return;
+        return null;
     }
-    const deadline = Date.now() + 5_000;
-    while (Date.now() < deadline) {
-        try {
-            process.kill(session.pid, 0);
-        } catch {
-            return;
-        }
-        await delay(100);
-    }
+}
+
+function processState(pid: number): string | null {
     try {
-        process.kill(session.pid, "SIGKILL");
+        const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
+        const end = stat.lastIndexOf(")");
+        const state = stat.slice(end + 2).split(" ")[0];
+
+        return state === undefined || state === "" ? null : state;
+    } catch {
+        return null;
+    }
+}
+
+function processAlive(pid: number): boolean {
+    const state = processState(pid);
+
+    return state !== null && state !== "Z";
+}
+
+function childPids(parent: number): number[] {
+    const children: number[] = [];
+    let entries: string[];
+    try {
+        entries = readdirSync("/proc");
+    } catch {
+        return children;
+    }
+    for (const entry of entries) {
+        if (!/^[0-9]+$/.test(entry)) continue;
+        const state = readFileSyncOrNull(`/proc/${entry}/stat`);
+        if (state === null) continue;
+        const end = state.lastIndexOf(")");
+        const ppid = state.slice(end + 2).split(" ")[1];
+        if (ppid === String(parent)) children.push(Number(entry));
+    }
+
+    return children;
+}
+
+function descendantPids(root: number): number[] {
+    const out: number[] = [];
+    const walk = (pid: number): void => {
+        for (const child of childPids(pid)) {
+            walk(child);
+            out.push(child);
+        }
+    };
+    walk(root);
+
+    return out;
+}
+
+function cmdline(pid: number): string {
+    try {
+        return readFileSync(`/proc/${pid}/cmdline`).toString("utf8").replaceAll("\0", " ");
+    } catch {
+        return "";
+    }
+}
+
+function readFileSyncOrNull(path: string): string | null {
+    try {
+        return readFileSync(path, "utf8");
+    } catch {
+        return null;
+    }
+}
+
+async function waitUntilGone(pids: readonly number[]): Promise<void> {
+    const deadline = Date.now() + 10_000;
+    for (;;) {
+        const left = pids.filter(processAlive);
+        if (left.length === 0) return;
+        if (Date.now() > deadline) {
+            throw new Error(
+                `processes still running: ${left.map((pid) => `${pid} ${cmdline(pid)}`).join("; ")}`,
+            );
+        }
+        await delay(50);
+    }
+}
+
+async function stop(home: string): Promise<void> {
+    const pid = sessionPid(home);
+    if (pid === null) return;
+    const children = descendantPids(pid);
+    try {
+        process.kill(pid, "SIGTERM");
     } catch {
         // The daemon already exited.
+    }
+    const deadline = Date.now() + 10_000;
+    while (Date.now() < deadline && processAlive(pid)) await delay(100);
+    if (processAlive(pid)) {
+        try {
+            process.kill(pid, "SIGKILL");
+        } catch {
+            // The daemon already exited.
+        }
+    }
+    for (const child of children) {
+        if (!processAlive(child)) continue;
+        try {
+            process.kill(child, "SIGKILL");
+        } catch {
+            // The child already exited.
+        }
     }
 }
 
@@ -169,6 +263,20 @@ it("clicks nothing when the checkout has no active page", () => {
     });
     expect(result.json.next).toContain("open");
     expect(existsSync(join(fastHome, "session.json"))).toBe(false);
+});
+
+it("stops a checkout that has no daemon", () => {
+    const extra = run(fastHome, ["stop", "/activity"]);
+    expect(extra.status).toBe(2);
+    expect(extra.json.error).toBe("usage");
+    expect(extra.json.command).toBe("stop");
+
+    const stopped = run(fastHome, ["stop"]);
+    expect(stopped.status).toBe(0);
+    expect(stopped.stderr).toBe("");
+    expect(stopped.json).toEqual({ ok: true, command: "stop" });
+    expect(existsSync(join(fastHome, "session.json"))).toBe(false);
+    expect(existsSync(join(fastHome, "server.log"))).toBe(false);
 });
 
 it("screenshots phone and desktop pages, clicks the active page, and reports console errors", async () => {
@@ -437,17 +545,7 @@ it("does not let demo adapters call the CLI or an upstream service", async () =>
         });
         expect(hits.count).toBe(0);
     } finally {
-        const sessionPath = join(home, "session.json");
-        if (existsSync(sessionPath)) {
-            const session = JSON.parse(readFileSync(sessionPath, "utf8")) as { pid?: number };
-            if (session.pid !== undefined) {
-                try {
-                    process.kill(session.pid, "SIGTERM");
-                } catch {
-                    // The daemon already exited.
-                }
-            }
-        }
+        await stop(home);
         upstream.close();
         rmSync(home, { recursive: true, force: true });
     }
@@ -601,3 +699,68 @@ it("blocks a direct request and each redirect hop before another host is contact
         allowed.close();
     }
 }, 60_000);
+
+it("stops the daemon and leaves no child processes", async () => {
+    const home = mkdtempSync(join(tmpdir(), "orbit-web-verify-stop-"));
+    try {
+        const opened = run(home, ["open", "/activity", "--engine=chromium"], {
+            ORBIT_WEB_VERIFY_IDLE_MS: "600000",
+        });
+        expect(opened.status).toBe(0);
+        const webkit = run(home, ["open", "/activity", "--engine=webkit"], {
+            ORBIT_WEB_VERIFY_IDLE_MS: "600000",
+        });
+        expect(webkit.status).toBe(0);
+        const pid = sessionPid(home);
+        expect(pid).not.toBeNull();
+        const children = descendantPids(pid ?? 0);
+        const tree = children.map(cmdline).join("\n");
+        expect(tree).toMatch(/vp/);
+        expect(tree).toMatch(/chrom|headless_shell|chrome/i);
+        expect(tree).toMatch(/webkit/i);
+
+        const stopped = run(home, ["stop"]);
+        expect(stopped.status).toBe(0);
+        expect(stopped.stderr).toBe("");
+        expect(stopped.json).toEqual({ ok: true, command: "stop" });
+        expect(processAlive(pid ?? 0)).toBe(false);
+        await waitUntilGone(children);
+
+        const again = run(home, ["stop"]);
+        expect(again.status).toBe(0);
+        expect(again.json).toEqual({ ok: true, command: "stop" });
+        const click = run(home, ["click", "[data-testid=nav-menu]"]);
+        expect(click.status).toBe(1);
+        expect(click.json.error).toBe("no-page");
+        expect(sessionPid(home)).toBeNull();
+    } finally {
+        await stop(home);
+        rmSync(home, { recursive: true, force: true });
+    }
+}, 180_000);
+
+it("exits after the idle timeout and leaves no child processes", async () => {
+    const home = mkdtempSync(join(tmpdir(), "orbit-web-verify-idle-"));
+    try {
+        const opened = run(home, ["open", "/activity"], { ORBIT_WEB_VERIFY_IDLE_MS: "3000" });
+        expect(opened.status).toBe(0);
+        const pid = sessionPid(home);
+        expect(pid).not.toBeNull();
+        const children = descendantPids(pid ?? 0);
+        const tree = children.map(cmdline).join("\n");
+        expect(tree).toMatch(/vp/);
+        expect(children.length).toBeGreaterThan(0);
+
+        const deadline = Date.now() + 20_000;
+        while (pid !== null && processAlive(pid) && Date.now() < deadline) await delay(100);
+        expect(processAlive(pid ?? 0)).toBe(false);
+        await waitUntilGone(children);
+
+        const click = run(home, ["click", "[data-testid=nav-menu]"]);
+        expect(click.status).toBe(1);
+        expect(click.json.error).toBe("no-page");
+    } finally {
+        await stop(home);
+        rmSync(home, { recursive: true, force: true });
+    }
+}, 180_000);

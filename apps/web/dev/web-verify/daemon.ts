@@ -1,11 +1,12 @@
 import { spawn } from "node:child_process";
-import { closeSync, mkdirSync, openSync, readFileSync, rmSync } from "node:fs";
+import { closeSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { createConnection, createServer, type Socket } from "node:net";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { commandFailed, type Paths, type SessionCommand, type ToolResult } from "./contract";
+import { descendantPids, idleTimeoutMs, killProcessTree, pidAlive } from "./processes";
 import { Verifier } from "./session";
 
 const COMMAND_MS = 120_000;
@@ -31,23 +32,105 @@ export async function dispatch(paths: Paths, command: SessionCommand): Promise<T
 }
 
 export function daemonAlive(paths: Paths): boolean {
-    try {
-        const parsed = JSON.parse(readFileSync(paths.sessionFile, "utf8")) as { pid?: unknown };
+    const pid = readSessionPid(paths);
 
-        return typeof parsed.pid === "number" && pidAlive(parsed.pid);
-    } catch {
-        return false;
-    }
+    return pid !== null && pidAlive(pid);
 }
 
-/** Listens on the session socket until the process is signaled. One command runs at a time. */
+/** Stops this checkout's daemon. When none is running, the command still succeeds. */
+export async function stopDaemon(paths: Paths): Promise<ToolResult> {
+    const pid = readSessionPid(paths);
+    if (pid === null || !pidAlive(pid)) {
+        clearSession(paths);
+
+        return { ok: true, command: "stop" };
+    }
+
+    const tracked = descendantPids(pid);
+    try {
+        process.kill(pid, "SIGTERM");
+    } catch {
+        // The process exited as we signaled it.
+    }
+    await waitDead(pid, 10_000);
+    if (pidAlive(pid)) {
+        try {
+            process.kill(-pid, "SIGKILL");
+        } catch {
+            // Not a process group leader, or already gone.
+        }
+        try {
+            process.kill(pid, "SIGKILL");
+        } catch {
+            // Already gone.
+        }
+        await waitDead(pid, 1_000);
+    }
+    await killTracked(tracked);
+
+    if (pidAlive(pid) || tracked.some((child) => pidAlive(child))) {
+        return commandFailed(
+            "stop",
+            new Error("The web-verify daemon or one of its processes did not exit."),
+        );
+    }
+    clearSession(paths);
+
+    return { ok: true, command: "stop" };
+}
+
+/**
+ * Listens on the session socket until the process is idle or signaled. One command runs at a
+ * time. The idle wait does not run during a command.
+ */
 export async function runDaemon(paths: Paths): Promise<void> {
     mkdirSync(paths.home, { recursive: true });
     rmSync(paths.socketPath, { force: true });
     const verifier = new Verifier(paths);
+    const idleMs = idleTimeoutMs();
     let chain = Promise.resolve();
+    let inFlight = 0;
     let stopping = false;
+    let idleTimer: ReturnType<typeof setTimeout> | undefined;
+
+    const clearIdle = (): void => {
+        if (idleTimer === undefined) return;
+        clearTimeout(idleTimer);
+        idleTimer = undefined;
+    };
+    const scheduleIdle = (): void => {
+        clearIdle();
+        idleTimer = setTimeout(() => {
+            if (stopping || inFlight > 0) return;
+            shutdown("idle");
+        }, idleMs);
+    };
+    const shutdown = (reason: string): void => {
+        if (stopping) return;
+        stopping = true;
+        clearIdle();
+        process.stderr.write(`web-verify daemon stopping (${reason}).\n`);
+        void chain
+            .catch(() => undefined)
+            .then(() => verifier.close())
+            .catch(() => undefined)
+            .then(() => killProcessTree(process.pid, { includeRoot: false }))
+            .catch(() => undefined)
+            .finally(() => {
+                server.close();
+                clearSession(paths);
+                process.exit(0);
+            });
+    };
+
     const server = createServer((socket) => {
+        if (stopping) {
+            socket.destroy();
+
+            return;
+        }
+        inFlight += 1;
+        clearIdle();
         chain = chain
             .then(async () => {
                 const line = await readLine(socket, 30_000);
@@ -75,7 +158,9 @@ export async function runDaemon(paths: Paths): Promise<void> {
                 process.stderr.write(`${message}\n`);
             })
             .finally(() => {
+                inFlight -= 1;
                 socket.end();
+                if (!stopping && inFlight === 0) scheduleIdle();
             });
     });
 
@@ -83,24 +168,63 @@ export async function runDaemon(paths: Paths): Promise<void> {
         server.once("error", reject);
         server.listen(paths.socketPath, () => resolve());
     });
-    await writeFile(paths.sessionFile, JSON.stringify({ pid: process.pid }));
+    writeFileSync(paths.sessionFile, JSON.stringify({ pid: process.pid }));
 
-    const shutdown = (): void => {
-        if (stopping) return;
-        stopping = true;
-        void verifier
-            .close()
-            .catch(() => undefined)
-            .finally(() => {
-                server.close();
-                rmSync(paths.socketPath, { force: true });
-                process.exit(0);
-            });
-    };
-    process.on("SIGTERM", shutdown);
-    process.on("SIGINT", shutdown);
+    process.on("SIGTERM", () => shutdown("signal"));
+    process.on("SIGINT", () => shutdown("signal"));
+    if (inFlight === 0) scheduleIdle();
 
     await new Promise<void>(() => undefined);
+}
+
+function readSessionPid(paths: Paths): number | null {
+    try {
+        const parsed = JSON.parse(readFileSync(paths.sessionFile, "utf8")) as { pid?: unknown };
+
+        return typeof parsed.pid === "number" && Number.isInteger(parsed.pid) && parsed.pid > 0
+            ? parsed.pid
+            : null;
+    } catch {
+        return null;
+    }
+}
+
+function clearSession(paths: Paths): void {
+    rmSync(paths.socketPath, { force: true });
+    rmSync(paths.sessionFile, { force: true });
+}
+
+async function waitDead(pid: number, timeoutMs: number): Promise<void> {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline && pidAlive(pid)) await delay(50);
+}
+
+async function killTracked(pids: readonly number[]): Promise<void> {
+    for (const pid of pids) {
+        if (!pidAlive(pid)) continue;
+        try {
+            process.kill(pid, "SIGTERM");
+        } catch {
+            // Already gone.
+        }
+    }
+    const deadline = Date.now() + 2_000;
+    while (Date.now() < deadline && pids.some((pid) => pidAlive(pid))) await delay(50);
+    for (const pid of pids) {
+        if (!pidAlive(pid)) continue;
+        try {
+            process.kill(-pid, "SIGKILL");
+        } catch {
+            // Not a process group leader.
+        }
+        try {
+            process.kill(pid, "SIGKILL");
+        } catch {
+            // Already gone.
+        }
+    }
+    const killDeadline = Date.now() + 1_000;
+    while (Date.now() < killDeadline && pids.some((pid) => pidAlive(pid))) await delay(50);
 }
 
 async function connectOrStart(paths: Paths): Promise<Socket> {
@@ -237,16 +361,6 @@ async function lockHolderDead(dir: string): Promise<boolean> {
         return !Number.isInteger(pid) || !pidAlive(pid);
     } catch {
         return true;
-    }
-}
-
-function pidAlive(pid: number): boolean {
-    try {
-        process.kill(pid, 0);
-
-        return true;
-    } catch {
-        return false;
     }
 }
 

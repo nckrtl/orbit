@@ -25,7 +25,8 @@ WebKit device emulation can show a phone viewport and that safe-area padding. It
 ## Decision
 
 - `bin/web-verify` is the web verification tool. It runs the `apps/web` dev server with `VITE_ORBIT_DEMO=1` and drives that origin with Playwright from `apps/web`. It does not call a Gateway, and demo mode does not run dev adapters that call the CLI or another upstream service. The browser stays on the demo origin. It is shown the checked response, and a redirect is followed only when every hop stays on that origin.
-- The subcommands are `routes`, `open`, `click`, `screenshot`, and `console-errors`. Stdout is one JSON object. A failure carries `next`, which tells the agent the command or edit that fixes it.
+- The subcommands are `routes`, `open`, `click`, `screenshot`, `console-errors`, and `stop`. Stdout is one JSON object. A failure carries `next`, which tells the agent the command or edit that fixes it.
+- One daemon per checkout runs the demo server and the Playwright browsers for `open`, `click`, `screenshot`, and `console-errors`. `routes` does not start it. After 5 minutes with no command, the daemon closes the browsers and the demo server, including their child processes, and exits. `bin/web-verify stop` stops that daemon and returns JSON. When no daemon is running, `stop` succeeds and starts nothing. The daemon log is `.orbit-artifacts/web/daemon.log`. The demo server log is `.orbit-artifacts/web/server.log`.
 - `open`, `screenshot`, and `console-errors` take a concrete path. A path that still contains `$` fails. `click` uses the active page, which is the page from the latest `open`, or from the latest `screenshot` that loaded a route.
 - `screenshot` writes a PNG under `.orbit-artifacts/web/`. Git ignores `/.orbit-artifacts/`.
 - Phone devices are `iphone-15` and `pixel-8`. Desktop is `desktop`. Engines are `webkit` and `chromium`. A phone shot sets `--safe-area-inset-*` to the portrait insets in the reference. Desktop leaves those properties unset.
@@ -42,6 +43,8 @@ The command syntax, JSON fields, insets, and error codes live in [Web verificati
 - Drive the live Gateway origin: rejected because that needs WireGuard trust and live fleet data. Demo mode is local, and the fixture fleet does not change between runs.
 - Fail the check on a pixel diff of the PNGs: rejected because font and animation noise would reject a correct layout. A reviewer judges the pictures.
 - Require a physical iPhone for every UI change: rejected because that cost is too high for each change. The emulation limit is stated instead of hidden.
+- Leave the daemon running until the operator kills it: rejected because a checkout then keeps the Vite server and the WebKit and Chromium browsers. A server that is still running inside a checkout also blocks deleting that checkout.
+- Rely on the agent to run `stop` with no idle exit: rejected because a missed `stop` leaves those processes in place. The idle exit closes them, and `stop` closes them as soon as the agent finishes.
 
 ## Consequences
 
@@ -50,10 +53,11 @@ The command syntax, JSON fields, insets, and error codes live in [Web verificati
 - Review of a UI change includes the phone and desktop PNGs, not the diff alone.
 - This check leaves out home-screen quirks. [Web app](/reference/web-app) still describes the installed app.
 - Screenshot files stay on the machine that ran the command. They are not committed.
+- An agent runs `bin/web-verify stop` when a UI check is finished. Five minutes after the last command, the daemon exits and closes the demo server and the browsers.
 
 ## Affects
 
 - Components: apps/docs, apps/web
 - ADRs: none
 - Detail: [Web verification](/reference/web-verification)
-- Verify: `composer docs-lint`; the `apps/web` unit test that compares router paths with `apps/web/feature-map.json`; `bin/web-verify routes` prints that map
+- Verify: `composer docs-lint`; the `apps/web` unit test that compares router paths with `apps/web/feature-map.json`; `bunx vp test run dev/web-verify/run.test.ts` from `apps/web`; `bin/web-verify routes` prints the map and `bin/web-verify stop` stops the daemon
