@@ -155,7 +155,7 @@ A read fires `activity.created` only, and only when a row is stored. [ADR 0152](
 
 The interrupted-Activity sweep and the shutdown finalizer fire `activity.updated` when they end a `running` row. [ADR 0158](/decisions/0158-end-interrupted-activity) defines that ending. The row is saved before the notice. A failed broadcast leaves the saved outcome in place.
 
-A row whose command starts with `activity:` is not broadcast. The page's own list and show therefore do not cause another refetch. A write that changes only `properties` is not broadcast, because the notice has no field for them.
+A row whose command starts with `activity:` is not broadcast. The page's own list and show therefore do not arrive as notices. A write that changes only `properties` is not broadcast, because the notice has no field for them.
 
 The envelope `id` and `data.id` are the Activity id. `occurred_at` is the time the Gateway recorded the row. `caller_node_id`, `target_node_id`, `error_code`, and `duration_ms` are null when the row has none.
 
