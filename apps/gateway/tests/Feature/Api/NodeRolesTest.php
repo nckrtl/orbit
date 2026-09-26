@@ -32,6 +32,7 @@ use App\Models\Route as OrbitRoute;
 use Illuminate\Routing\Route;
 use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
+use Tests\Support\FakeGatewayPrivateDnsRoute;
 use Tests\Support\FakeNodeRoleFirewallManager;
 use Tests\Support\FakeToolManagerMaterializer;
 use Tests\TestCase;
@@ -46,7 +47,7 @@ beforeEach(function (): void {
     {
         public function converge(?Node $pendingNode = null): void {}
     });
-    $this->route = new NodeRoleApiRouteFake;
+    $this->route = new FakeGatewayPrivateDnsRoute;
     app()->instance(GatewayPrivateDnsRoute::class, $this->route);
     $this->reachability = new NodeRoleApiReachabilityFake;
     app()->instance(NodeReachabilityProbe::class, $this->reachability);
@@ -1624,28 +1625,6 @@ function node_roles_api_public_route(Cluster $cluster): OrbitRoute
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Public,
     ]);
-}
-
-final class NodeRoleApiRouteFake implements GatewayPrivateDnsRoute
-{
-    /** @var list<string> */
-    public array $events = [];
-
-    public ?string $followUp = null;
-
-    public function convergeRoute(Node $node): void
-    {
-        $this->events[] = "converge:{$node->name}";
-
-        if ($this->followUp !== null) {
-            app(NodeRoleFollowUpReport::class)->record($this->followUp);
-        }
-    }
-
-    public function removeRoute(Node $node): void
-    {
-        $this->events[] = "remove:{$node->name}";
-    }
 }
 
 final class NodeRoleApiLifecycleFake implements NodeRoleDependentCleaner, RoleBaselineConverger
