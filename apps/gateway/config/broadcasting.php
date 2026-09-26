@@ -39,10 +39,15 @@ return [
                 'port' => 443,
                 'scheme' => 'https',
                 'useTLS' => true,
+                // Every broadcast runs inside the request that caused it, including an Activity notice for
+                // almost every request (ADR 0159), so a slow or unreachable Reverb must not hold the request.
+                'timeout' => 3,
             ],
             'client_options' => [
                 // See available options: https://docs.guzzlephp.org/en/stable/request-options.html
                 // 'verify' is set at broadcast time to the Orbit CA root certificate.
+                'connect_timeout' => 2,
+                'timeout' => 3,
             ],
         ],
 

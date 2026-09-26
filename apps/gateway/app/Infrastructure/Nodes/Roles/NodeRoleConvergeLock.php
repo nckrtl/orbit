@@ -18,9 +18,6 @@ use Illuminate\Contracts\Cache\LockTimeoutException;
  */
 final class NodeRoleConvergeLock
 {
-    /** How long one role operation may hold the lock (NodeLocks::RequestSeconds). */
-    public const int LockSeconds = NodeLocks::RequestSeconds;
-
     /** @var array<string, array{lock: Lock, depth: positive-int}> */
     private array $held = [];
 
@@ -40,7 +37,7 @@ final class NodeRoleConvergeLock
      */
     public function run(Node $node, Closure $callback, string $errorCode = 'node_role.convergence_failed', string $step = 'node-lock'): mixed
     {
-        $name = 'node-role:'.($node->exists ? 'id:'.$node->getKey() : 'name:'.$node->name);
+        $name = self::name($node);
 
         if (isset($this->held[$name])) {
             $this->held[$name]['depth']++;
@@ -52,7 +49,7 @@ final class NodeRoleConvergeLock
             }
         }
 
-        $lock = $this->locks->lock($name, self::LockSeconds);
+        $lock = $this->locks->lock($name, $this->locks->operationSeconds());
 
         try {
             $lock->block($this->waitSeconds);
@@ -74,5 +71,16 @@ final class NodeRoleConvergeLock
             unset($this->held[$name]);
             $lock->release();
         }
+    }
+
+    /** Whether any process holds the Node's role lock now. */
+    public function isHeld(Node $node): bool
+    {
+        return $this->locks->lock(self::name($node), 1)->isLocked();
+    }
+
+    private static function name(Node $node): string
+    {
+        return 'node-role:'.($node->exists ? 'id:'.$node->getKey() : 'name:'.$node->name);
     }
 }

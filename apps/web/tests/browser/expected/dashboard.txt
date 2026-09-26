@@ -4,6 +4,7 @@
 │  Projects │ 3
 │  Databases │ 2
 │  Tasks │ 1
+│  Activity │
 ╰─
 
 ╭─ Worker nodes
@@ -55,4 +56,4 @@
 │  Firewall │ 22/tcp allow 10.44.0.0/16 │ app-prod │ failed !
 ╰─
 
-↑↓ sections · → into the page · 1-5 jump    live updates paused demo fleet
+↑↓ sections · → into the page · 1-6 jump    live updates paused demo fleet

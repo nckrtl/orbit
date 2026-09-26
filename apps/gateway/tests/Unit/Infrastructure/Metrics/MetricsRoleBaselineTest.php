@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Domain\AppDev\RuntimeConvergenceException;
+use App\Domain\Firewall\FirewallOperationException;
 use App\Domain\Metrics\MetricsCadvisorLifecycle;
 use App\Domain\Metrics\MetricsExporterLifecycle;
 use App\Domain\Metrics\MetricsGatewayResolver;
@@ -9,6 +11,8 @@ use App\Domain\Metrics\MetricsPublicationCleanup;
 use App\Domain\Metrics\MetricsPublicationManager;
 use App\Domain\Metrics\MetricsPublicationReport;
 use App\Domain\Metrics\MetricsRuntimeLifecycle;
+use App\Domain\Nodes\NodeProvisioningException;
+use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -65,7 +69,7 @@ it('rolls completed runtime and exporter stages back in reverse order', function
     $baseline = metricsBaseline($events, failure: $failure);
 
     expect(fn () => $baseline->converge($metrics, $assignment))
-        ->toThrow(RuntimeException::class, "{$failure} failed")
+        ->toThrow(NodeRoleOperationException::class, "{$failure} failed")
         ->and($events)
         ->toBe($expected);
 })->with([
@@ -96,16 +100,69 @@ it('fails closed when convergence rollback does not complete', function (): void
     try {
         $baseline->converge($metrics, $assignment);
         $exception = null;
-    } catch (ResourceOperationException $caught) {
+    } catch (NodeRoleOperationException $caught) {
         $exception = $caught;
     }
 
     expect($exception)
         ->not
         ->toBeNull()
-        ->and($exception?->errorCode)
+        ->and($exception?->step)
+        ->toBe('metrics-runtime')
+        ->and($exception?->underlyingErrorCode)
         ->toBe('metrics.rollback_failed');
 });
+
+it('names the failing Metrics step and its error code', function (string $failure, string $step): void {
+    [$metrics, $assignment] = metricsBaselineTopology();
+    $events = [];
+    $baseline = metricsBaseline($events, failure: $failure);
+
+    expect(fn () => $baseline->converge($metrics, $assignment))
+        ->toThrow(function (NodeRoleOperationException $exception) use ($failure, $step): void {
+            expect($exception->step)->toBe($step)
+                ->and($exception->errorCode)->toBe('node_role.convergence_failed')
+                ->and($exception->underlyingErrorCode)->toBe('metrics.test_'.str_replace(':', '_', $failure));
+        });
+})->with([
+    'exporters' => ['exporters:converge', 'metrics-exporters'],
+    'cadvisor' => ['cadvisors:converge', 'metrics-cadvisor'],
+    'runtime' => ['runtime:converge', 'metrics-runtime'],
+    'publication' => ['publication:converge', 'metrics-publication'],
+]);
+
+it('reports a failure without a Metrics code as metrics.convergence_failed with a fixed message', function (): void {
+    [$metrics, $assignment] = metricsBaselineTopology();
+    $baseline = metricsBaselineFailingExporters(new RuntimeException('raw command output: secret-token'));
+
+    expect(fn () => $baseline->converge($metrics, $assignment))
+        ->toThrow(function (NodeRoleOperationException $exception) use ($metrics): void {
+            expect($exception->step)->toBe('metrics-exporters')
+                ->and($exception->errorCode)->toBe('node_role.convergence_failed')
+                ->and($exception->underlyingErrorCode)->toBe('metrics.convergence_failed')
+                ->and($exception->getMessage())->toBe("Metrics step [metrics-exporters] failed on node [{$metrics->name}].")
+                ->and($exception->getMessage())->not->toContain('secret-token');
+        });
+});
+
+it('passes through a failure that already names its step', function (Throwable $failure): void {
+    [$metrics, $assignment] = metricsBaselineTopology();
+    $baseline = metricsBaselineFailingExporters($failure);
+
+    try {
+        $baseline->converge($metrics, $assignment);
+        $caught = null;
+    } catch (Throwable $exception) {
+        $caught = $exception;
+    }
+
+    expect($caught)->toBe($failure);
+})->with([
+    'runtime convergence' => fn (): Throwable => new RuntimeConvergenceException('private-dns', 'app-dev.dns_config_failed', 'DNS failed.'),
+    'firewall' => fn (): Throwable => new FirewallOperationException('host-firewall', 'node.firewall_convergence_failed', 'UFW failed.'),
+    'node role operation' => fn (): Throwable => new NodeRoleOperationException('role-prerequisites', 'node_role.convergence_failed', 'packages.failed', 'Packages failed.'),
+    'node provisioning' => fn (): Throwable => new NodeProvisioningException('role-prerequisites', 'packages.failed', 'Packages failed.'),
+]);
 
 it('removes publication, exporters, and runtime in that order', function (): void {
     [$metrics, $assignment] = metricsBaselineTopology();
@@ -311,7 +368,7 @@ final class MetricsBaselineRuntime implements MetricsRuntimeLifecycle
         $this->events[] = $event;
 
         if ($this->failure === $event || $this->rollbackFailure === $event) {
-            throw new RuntimeException("{$event} failed");
+            throw new ResourceOperationException('metrics.test_'.str_replace(':', '_', $event), "{$event} failed", 502);
         }
     }
 }
@@ -354,7 +411,7 @@ final class MetricsBaselineExporters implements MetricsExporterLifecycle
         $this->events[] = $event;
 
         if ($this->failure === $event || $this->rollbackFailure === $event) {
-            throw new RuntimeException("{$event} failed");
+            throw new ResourceOperationException('metrics.test_'.str_replace(':', '_', $event), "{$event} failed", 502);
         }
     }
 }
@@ -387,7 +444,7 @@ final class MetricsBaselineCadvisors implements MetricsCadvisorLifecycle
         $this->events[] = $event;
 
         if ($this->failure === $event || $this->rollbackFailure === $event) {
-            throw new RuntimeException("{$event} failed");
+            throw new ResourceOperationException('metrics.test_'.str_replace(':', '_', $event), "{$event} failed", 502);
         }
     }
 }
@@ -425,7 +482,23 @@ final class MetricsBaselinePublication implements MetricsPublicationManager
         $this->events[] = $event;
 
         if ($this->failure === $event || $this->rollbackFailure === $event) {
-            throw new RuntimeException("{$event} failed");
+            throw new ResourceOperationException('metrics.test_'.str_replace(':', '_', $event), "{$event} failed", 502);
         }
     }
+}
+
+function metricsBaselineFailingExporters(Throwable $failure): MetricsRoleBaseline
+{
+    $exporters = Mockery::mock(MetricsExporterLifecycle::class);
+    $exporters->shouldReceive('converge')->andThrow($failure);
+    $exporters->shouldIgnoreMissing();
+
+    return new MetricsRoleBaseline(
+        Mockery::mock(MetricsRuntimeLifecycle::class)->shouldIgnoreMissing(),
+        $exporters,
+        Mockery::mock(MetricsPublicationManager::class)->shouldIgnoreMissing(),
+        new MetricsGatewayResolver,
+        new MetricsPublicationReport,
+        Mockery::mock(MetricsCadvisorLifecycle::class)->shouldIgnoreMissing(),
+    );
 }

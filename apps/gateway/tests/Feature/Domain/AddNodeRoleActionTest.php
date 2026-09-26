@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 use App\Actions\Nodes\AddNodeRoleAction;
 use App\Domain\AppDev\RuntimeConvergenceException;
+use App\Domain\Nodes\NodeLockLoss;
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Nodes\RoleAssignmentException;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tools\ToolManagerMaterializer;
 use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\ToolManagerRegistry;
@@ -111,6 +113,52 @@ describe(AddNodeRoleAction::class, function (): void {
             ->and($node->roles()->sole()->status)->toBe(LifecycleStatus::Active);
     })->with(['new role' => [false], 'active role' => [true]]);
 
+    it('converges a role whose provisioning claim went stale, and refuses a fresh one', function (): void {
+        $baseline = new AddNodeRoleBaselineFake;
+        app()->instance(RoleBaselineConverger::class, $baseline);
+        $node = add_role_node();
+        $assignment = $node->roles()->create(['role' => RoleName::Metrics, 'status' => LifecycleStatus::Provisioning]);
+
+        expect(fn () => app(AddNodeRoleAction::class)->execute($node, RoleName::Metrics, convergeExisting: true))
+            ->toThrow(RoleAssignmentException::class, 'Role [metrics] cannot converge from status [provisioning].');
+
+        $this->travel(NodeRole::StaleClaimSeconds + 1)->seconds();
+        app(AddNodeRoleAction::class)->execute($node, RoleName::Metrics, convergeExisting: true);
+
+        expect($baseline->convergedRoles)->toBe([RoleName::Metrics])
+            ->and($assignment->refresh()->status)->toBe(LifecycleStatus::Active);
+    });
+
+    it('keeps a claim fresh for a margin past the lock term', function (): void {
+        $node = add_role_node();
+        $assignment = $node->roles()->create(['role' => RoleName::Metrics, 'status' => LifecycleStatus::Provisioning]);
+
+        $this->travel(NodeLocks::RequestSeconds + 1)->seconds();
+        expect($assignment->refresh()->isStaleClaim())->toBeFalse();
+
+        $this->travel(NodeRole::StaleClaimMarginSeconds)->seconds();
+        expect($assignment->refresh()->isStaleClaim())->toBeTrue()
+            ->and(NodeRole::StaleClaimSeconds)->toBe(660);
+    });
+
+    it('lets only one operation take a stale claim', function (): void {
+        $node = add_role_node();
+        $assignment = $node->roles()->create(['role' => RoleName::Metrics, 'status' => LifecycleStatus::Provisioning]);
+        $this->travel(NodeRole::StaleClaimSeconds + 1)->seconds();
+        $first = NodeRole::query()->findOrFail($assignment->id);
+        $second = NodeRole::query()->findOrFail($assignment->id);
+        $this->travel(1)->seconds();
+
+        expect($first->canClaimConvergence())->toBeTrue()
+            ->and($second->canClaimConvergence())->toBeTrue();
+
+        $first->claimConvergence();
+
+        expect(fn () => $second->claimConvergence())
+            ->toThrow(RoleAssignmentException::class, 'Role [metrics] changed while it was being claimed.')
+            ->and($first->isStaleClaim())->toBeFalse();
+    });
+
     it('materializes app managers after baseline while the assignment is provisioning', function (): void {
         $baseline = new AddNodeRoleBaselineFake;
         $materializer = new FakeToolManagerMaterializer;
@@ -167,6 +215,26 @@ describe(AddNodeRoleAction::class, function (): void {
             ->and($assignment->error_code)
             ->toBe('node.tool_manager_probe_failed');
     })->with(['VP' => ToolManagerName::Vp, 'Composer' => ToolManagerName::Composer]);
+
+    it('fails the role with node.lock_lost when its operation lost the Node lock', function (): void {
+        $baseline = new AddNodeRoleBaselineFake;
+        $baseline->failure = new ResourceOperationException(
+            'metrics.service_rollback_failed',
+            'Service metrics recovery did not complete.',
+            502,
+            NodeLockLoss::exception('node-role:id:1'),
+        );
+        app()->instance(RoleBaselineConverger::class, $baseline);
+        $node = add_role_node();
+
+        expect(fn () => app(AddNodeRoleAction::class)->execute($node, RoleName::AppProd))
+            ->toThrow(function (NodeRoleOperationException $exception): void {
+                expect($exception->errorCode)->toBe('node_role.convergence_failed')
+                    ->and($exception->underlyingErrorCode)->toBe(NodeLockLoss::ErrorCode);
+            });
+
+        expect($node->roles()->sole()->error_code)->toBe(NodeLockLoss::ErrorCode);
+    });
 
     it('reactivates retained app manager records when an app role is added again', function (): void {
         $baseline = new AddNodeRoleBaselineFake;

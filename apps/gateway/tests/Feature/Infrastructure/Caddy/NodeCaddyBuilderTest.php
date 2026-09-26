@@ -106,6 +106,34 @@ describe('building a Node', function (): void {
             ->and($this->ssh->commands)->toBe([]);
     });
 
+    it('tells the script whether a Caddy role on the Node expects Caddy', function (array $roles, string $expected): void {
+        $node = node_caddy_builder_node('app-prod', '10.44.0.4');
+        foreach ($roles as [$role, $status, $failedStep]) {
+            $node->roles()->create(['role' => $role, 'status' => $status, 'failed_step' => $failedStep]);
+        }
+        $this->ssh->results = [new CommandResult(0, "orbit-caddy-build-result=unchanged\n", '', 1, false)];
+
+        node_caddy_builder($this)->build($node);
+
+        // The script's tenth argument: 1 when nothing on the Node can be served without Caddy.
+        expect(array_slice($this->ssh->commands[0]->arguments, -1))->toBe([$expected]);
+    })->with([
+        'two Caddy roles failed before Caddy was installed' => [[
+            [RoleName::AppProd, LifecycleStatus::Failed, 'converge:role-prerequisites'],
+            [RoleName::WebSocket, LifecycleStatus::Removing, null],
+        ], '1'],
+        'an active Caddy role' => [[
+            [RoleName::AppProd, LifecycleStatus::Active, null],
+            [RoleName::WebSocket, LifecycleStatus::Failed, 'converge:role-prerequisites'],
+        ], '0'],
+        'a converging Caddy role' => [[
+            [RoleName::AppProd, LifecycleStatus::Provisioning, null],
+        ], '0'],
+        'only an active role without Caddy' => [[
+            [RoleName::Metrics, LifecycleStatus::Active, null],
+        ], '1'],
+    ]);
+
     it('reads stored state again once it holds the Node lock', function (): void {
         $node = node_caddy_builder_node('app-dev', '10.44.0.3');
         $stale = $node->replicate();

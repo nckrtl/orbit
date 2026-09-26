@@ -3130,21 +3130,21 @@ export interface components {
         };
         Activity: {
             id?: number;
-            requestId?: string;
+            request_id?: string;
             command?: string;
-            callerNodeId?: number | null;
-            targetNodeId?: number | null;
-            callerIp?: string | null;
+            caller_node_id?: number | null;
+            target_node_id?: number | null;
+            caller_ip?: string | null;
             status?: string;
-            durationMs?: number | null;
-            exitCode?: number | null;
-            errorCode?: string | null;
-            subjectType?: string | null;
-            subjectId?: number | null;
+            duration_ms?: number | null;
+            exit_code?: number | null;
+            error_code?: string | null;
+            subject_type?: string | null;
+            subject_id?: number | null;
             properties?: {
                 [key: string]: unknown;
             };
-            occurredAt?: string;
+            occurred_at?: string;
         };
         App: {
             id?: number;
@@ -3448,7 +3448,7 @@ export interface components {
             selected_release?: string | null;
         };
         MetricsMutation: {
-            nodeId?: number;
+            node_id?: number;
             status?: string;
             /** @enum {string|null} */
             publication?: "cleaned" | "uncleaned" | null;
@@ -3468,11 +3468,11 @@ export interface components {
         };
         MetricsAssignment: {
             id?: number;
-            nodeId?: number;
-            nodeName?: string;
+            node_id?: number;
+            node_name?: string;
             status?: string;
-            failedStep?: string | null;
-            errorCode?: string | null;
+            failed_step?: string | null;
+            error_code?: string | null;
         };
         MetricsExporter: {
             id?: number;
@@ -3482,7 +3482,7 @@ export interface components {
             /** @enum {string} */
             reason?: "ineligible" | "metrics_node" | "explicit_enabled" | "role_default" | "explicit_disabled" | "roleless_default_excluded";
             /** @enum {string|null} */
-            degradation?: "unreachable" | "firewall_inactive" | null;
+            degraded_reason?: "unreachable" | "firewall_inactive" | null;
         };
         Node: {
             id?: number;
@@ -3741,6 +3741,11 @@ export interface operations {
             query?: {
                 limit?: number;
                 request_id?: string;
+                before_id?: number;
+                status?: "running" | "succeeded" | "failed";
+                command?: string;
+                caller_node_id?: number;
+                target_node_id?: number;
             };
             header?: never;
             path?: never;
@@ -9900,6 +9905,15 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
+            /** @description A step failed on the Node; `error.details.step` names it. When a role step failed, `error.details.error_code` names that step's own code. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
     "node-show": {
@@ -10021,6 +10035,15 @@ export interface operations {
             };
             /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A step failed on the Node; `error.details.step` names it. When a role step failed, `error.details.error_code` names that step's own code. */
+            502: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -10883,7 +10906,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description A role step failed on the Node (`node_role.convergence_failed` or `node_role.remove_failed`). `error.details.step` names the failed step. */
+            /** @description A role step failed on the Node (`node_role.convergence_failed` or `node_role.remove_failed`). `error.details.step` names the failed step, and `error.details.error_code` names its own code, such as `node_role.node_busy` or `node_role.tool_manager_locked`. */
             502: {
                 headers: {
                     [name: string]: unknown;
@@ -10971,7 +10994,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description A role step failed on the Node (`node_role.convergence_failed` or `node_role.remove_failed`). `error.details.step` names the failed step. */
+            /** @description A role step failed on the Node (`node_role.convergence_failed` or `node_role.remove_failed`). `error.details.step` names the failed step, and `error.details.error_code` names its own code, such as `node_role.node_busy` or `node_role.tool_manager_locked`. */
             502: {
                 headers: {
                     [name: string]: unknown;
@@ -11057,7 +11080,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description A role step failed on the Node (`node_role.convergence_failed` or `node_role.remove_failed`). `error.details.step` names the failed step. */
+            /** @description A role step failed on the Node (`node_role.convergence_failed` or `node_role.remove_failed`). `error.details.step` names the failed step, and `error.details.error_code` names its own code, such as `node_role.node_busy` or `node_role.tool_manager_locked`. */
             502: {
                 headers: {
                     [name: string]: unknown;

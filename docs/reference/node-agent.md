@@ -248,7 +248,7 @@ A failure before the restart succeeded, such as a failed download or a failed `s
 
 One converge runs per Node at a time. The lock lives in a file cache store under `ORBIT_HOME`, whatever `CACHE_STORE` says. A second converge of the same Node waits up to 2 minutes and then fails with `agent.converge_busy`. The lock expires after 4 minutes, so a converge that dies without releasing it, such as a PHP-FPM worker killed at its 600-second request limit, blocks the Node's agent converges for at most 4 minutes.
 
-A running converge renews the lock before each step that changes the Node or the record, and stops with `agent.converge_lock_lost` when another converge took it over after it expired. The binary download is bounded to 20 seconds to connect and 120 seconds in total, so one step fits inside the lock's term.
+A running converge renews the lock before each step that changes the Node or the record, and stops with `agent.converge_lock_lost` when the renewal fails. A renewal fails once the lock has expired, whether or not another converge has taken it since. The Gateway also renews every per-Node lock before each command it runs, so an expired lock can instead stop the converge at its next command with `node.lock_lost`. The binary download is bounded to 20 seconds to connect and 120 seconds in total, so one step fits inside the lock's term.
 
 ### Rollout
 
@@ -256,11 +256,11 @@ Agent 0.3.0 is the first release that sends the secret. Each Node record has `ag
 
 | Node | Agent endpoints |
 | --- | --- |
-| Converged with an agent older than 0.3.0, or existing before the secret was introduced | Exempt: accepted without a secret. The converge sets the exemption and clears any stored hash. |
-| Converged with agent 0.3.0 or later | Requires its own secret. The converge stores the hash and clears the exemption. |
+| Running agent 0.2.0 | Exempt until its converge. Accepted without a secret. |
+| Converged with agent 0.3.0 or a newer release | Requires its own secret. |
 | No stored hash and not exempt, such as a Node whose agent never converged | Refused |
 
-A new Node is never exempt once the pin reaches 0.3.0, because `node:add` converges its agent with the pinned release. The exemption ends for the fleet when every Node has converged once with 0.3.0 or later. Until then, an exempt Node keeps accepting a caller without a secret. Doctor reports its older agent as `node.agent_outdated` and the exemption as `node.agent_secret_mismatch` with `exempt`. While the pin is older than 0.3.0, the exemption is normal and Doctor does not report it. A Node without the exemption then reports `not_exempt`, because the Gateway refuses its agent.
+The Gateway pins agent 0.3.0. A new Node is never exempt, because `node:add` converges its agent with that release. Each converge writes the secret before it restarts the Node into 0.3.0. A Node still on 0.2.0 stays exempt until that converge and keeps accepting a caller without a secret. Doctor reports that Node as `node.agent_outdated` and as `node.agent_secret_mismatch` with `exempt`. The exemption ends when every Node has converged once.
 
 ## Gateway view
 
@@ -371,7 +371,7 @@ A failed usage sample is dropped, because the next one replaces it. After a subs
 
 ## Install and upgrade
 
-The Gateway pins one agent version and one SHA-256 checksum for each architecture. It picks the asset for the Node's recorded architecture, `x86_64` or `aarch64`.
+The Gateway pins agent 0.3.0 and one SHA-256 checksum for each architecture. It picks the asset for the Node's recorded architecture, `x86_64` or `aarch64`.
 
 | Item | Path or value |
 | --- | --- |
@@ -410,7 +410,9 @@ The Gateway converges the agent at these points:
 | `node:add`, for a new or an existing Node, after the Metrics exporters | Provisioning fails at step `agent` with `node.agent_install_failed`. A new Node becomes `failed`, and an existing active Node stays `active`. |
 | A role converge on the Node | The role converge continues. The Gateway logs a warning, and Doctor reports the drift. |
 
-To upgrade the fleet, publish a new release, update the pin in the Gateway, deploy the Gateway, and run `orbit node:add <node>` or a role converge on each Node. Doctor reports every Node that still runs another version. Version 0.1.1 requires `gateway_address` in its configuration. Version 0.2.0 reports task workspaces and needs the unit above. Version 0.3.0 requires the [agent secret](#agent-secret), which the converge writes before it restarts the agent, and tails logs for [live log streams](/reference/live-logs); the Gateway refuses streams for a Node with an older agent.
+Each converge writes the [agent secret](#agent-secret) before it restarts the Node into 0.3.0. A Node still on 0.2.0 stays exempt until that converge. Doctor reports that Node as `node.agent_secret_mismatch` with `exempt`.
+
+To upgrade the fleet, publish a new release, update the pin in the Gateway, deploy the Gateway, and run `orbit node:add <node>` or a role converge on each Node. Doctor reports every Node that still runs another version. Version 0.1.1 requires `gateway_address` in its configuration. Version 0.2.0 reports task workspaces and needs the unit above. Version 0.3.0 requires the agent secret and tails logs for [live log streams](/reference/live-logs). The Gateway refuses streams for a Node with an older agent.
 
 ## Failures
 
@@ -455,7 +457,6 @@ Doctor checks the agent in the `node` family on every eligible Node. It checks t
 | `node.agent_inactive` | The unit exists but is not active. |
 | `node.agent_outdated` | The binary's checksum differs from the pinned checksum for the Node's architecture. |
 | `node.agent_secret_mismatch` | The secret or the [exemption](#rollout) does not fit the pinned agent: `missing`, `mismatch`, `exempt`, or `not_exempt`. |
-
 | `node.agent_view_stale` | The agent unit is active and a `websocket` role is active, but the Gateway has no fresh view of the Node. |
 
 Run `orbit node:add <node>` to repair the first four. `node:add` refuses a Node that owns Instances; repair such a Node by converging one of its roles with `orbit node:role:add <node> <role> --converge`.

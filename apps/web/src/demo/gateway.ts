@@ -10,6 +10,7 @@ import type {
     QuotaProvider,
     Schedule,
 } from "../api/types";
+import type { Activity } from "../api/activities";
 import type { TaskGroup } from "../api/tasks";
 
 type Fixture = { route: string; status: number; body: { data: unknown } };
@@ -50,6 +51,37 @@ const failure = (status: number, code: string, message: string): Answer => ({
 const notFound = (what: string): Answer =>
     failure(404, "resource.not_found", `${what} was not found.`);
 
+/** The Activity list the page asks for: newest id first, with the same filters `activity:list` accepts. */
+function activityPage(rows: readonly Activity[], query: string): Activity[] {
+    const params = new URLSearchParams(query);
+    const before = positiveParam(params.get("before_id"));
+    const caller = positiveParam(params.get("caller_node_id"));
+    const target = positiveParam(params.get("target_node_id"));
+    const status = params.get("status");
+    const command = params.get("command");
+    const limitParam = params.get("limit");
+    const limit = limitParam !== null && /^[1-9]\d*$/.test(limitParam) ? Number(limitParam) : 25;
+
+    return rows
+        .filter((row) => before === undefined || row.id < before)
+        .filter((row) => status === null || status === "" || row.status === status)
+        .filter((row) => command === null || command === "" || row.command === command)
+        .filter((row) => caller === undefined || row.caller_node_id === caller)
+        .filter((row) => target === undefined || row.target_node_id === target)
+        .sort((left, right) => right.id - left.id)
+        .slice(0, limit);
+}
+
+function positiveParam(value: string | null): number | undefined {
+    if (value === null || !/^[1-9]\d*$/.test(value)) {
+        return undefined;
+    }
+
+    const parsed = Number(value);
+
+    return Number.isSafeInteger(parsed) ? parsed : undefined;
+}
+
 export type DemoRequest = { method: Method; path: string; body: unknown };
 
 /**
@@ -75,6 +107,7 @@ export function createDemoGateway() {
     const databases = list<Database>("GET /api/v1/database-connections");
     const instances = list<Instance>("GET /api/v1/instances");
     const taskGroups = list<TaskGroup>("GET /api/v1/task-groups");
+    const activities = list<Activity>("GET /api/v1/activities");
     // The instances that publish a tracking host; none does until a test or a visitor enables one.
     const trackedInstances = new Set<string>();
     const quotaAccounts: QuotaAccount[] = [
@@ -269,6 +302,20 @@ export function createDemoGateway() {
 
                     return found === undefined ? notFound("Task group") : ok(found);
                 },
+            ],
+            [
+                "GET",
+                /^\/api\/v1\/activities\/(\d+)$/,
+                ([id = ""]) => {
+                    const found = activities.find((candidate) => String(candidate.id) === id);
+
+                    return found === undefined ? notFound("Activity") : ok(found);
+                },
+            ],
+            [
+                "GET",
+                /^\/api\/v1\/activities(?:\?(.*))?$/,
+                ([query = ""]) => ok(activityPage(activities, query)),
             ],
             [
                 "GET",

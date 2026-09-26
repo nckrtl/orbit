@@ -59,8 +59,30 @@ final class NodeOutput
                         ? $response->requestId : null);
         }
 
-        return ($response instanceof RemovedNodeResponse || $response instanceof NodeRoleMutationResponse)
-            && $response->degradation !== null ? ProgressState::Warning : ProgressState::Success;
+        $warning = match (true) {
+            $response instanceof RemovedNodeResponse => $response->degradation !== null,
+            $response instanceof NodeRoleMutationResponse => $response->degradation !== null || $response->followUp !== null,
+            default => false,
+        };
+
+        return $warning ? ProgressState::Warning : ProgressState::Success;
+    }
+
+    /**
+     * Warns about a convergence step that failed without failing the role, so the operator does not
+     * learn about it only from Doctor or the Gateway log.
+     */
+    public static function followUpWarning(ConsoleMode $mode, ?string $followUp): string
+    {
+        if ($followUp === null || $mode->machine) {
+            return '';
+        }
+
+        return TerminalText::style(
+            implode("\n", TerminalText::wrapWords(TerminalText::safe("Warning: {$followUp}"), $mode->columns)),
+            'orange',
+            $mode->decorated,
+        )."\n";
     }
 
     /**

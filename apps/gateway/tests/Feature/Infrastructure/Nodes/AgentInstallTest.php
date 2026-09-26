@@ -29,12 +29,14 @@ use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Log;
 use Symfony\Component\Process\Process;
 
-it('pins agent v0.2.0 assets and checksums from its release manifest', function (): void {
-    expect(NodeAgentFootprint::Version)->toBe('0.2.0')
-        ->and(NodeAgentFootprint::X8664Checksum)->toBe('ed3cb9978ef9e16683342cb11d5a3b3a4f54f6fc47b6ee0ec695090cef989b57')
-        ->and(NodeAgentFootprint::Aarch64Checksum)->toBe('34389c2cb4424468e94f42dff1ee05c3a6b490f4286e56fea53dede796c406e3')
+it('pins agent v0.3.0', function (): void {
+    expect(NodeAgentFootprint::Version)->toBe('0.3.0')
+        ->and(NodeAgentFootprint::checksum('x86_64'))->toBe('f5125b2ab36abd79882b3b11eb5d40f5e457fbf23cc8bf3ff4c096e2cab4618a')
+        ->and(NodeAgentFootprint::checksum('aarch64'))->toBe('84306df202904277c6f6cd78d4050fae97e54c3e515a2ad09585dd5a5e568811')
         ->and(NodeAgentFootprint::downloadUrl('x86_64'))
-        ->toBe('https://github.com/nckrtl/orbit/releases/download/agent-v0.2.0/orbit-agent-0.2.0-linux-x86_64');
+        ->toBe('https://github.com/nckrtl/orbit/releases/download/agent-v0.3.0/orbit-agent-0.3.0-linux-x86_64')
+        ->and(NodeAgentFootprint::downloadUrl('aarch64'))
+        ->toBe('https://github.com/nckrtl/orbit/releases/download/agent-v0.3.0/orbit-agent-0.3.0-linux-aarch64');
 });
 
 it('keeps the role converge going when the agent install fails', function (): void {
@@ -63,7 +65,7 @@ it('keeps the role converge going when the agent install fails', function (): vo
 });
 
 it('skips the download when the installed checksum matches', function (): void {
-    $ssh = new AgentInstallSsh(NodeAgentFootprint::X8664Checksum);
+    $ssh = new AgentInstallSsh(NodeAgentFootprint::checksum('x86_64'));
     $agent = nodeAgentExecutor($ssh);
 
     $agent->converge(nodeAgentNode());
@@ -90,7 +92,7 @@ it('bounds the binary download inside the lock term', function (): void {
 
 it('leaves the running agent alone on an unchanged converge', function (): void {
     $ssh = new AgentInstallStatefulSsh;
-    $agent = nodeAgentExecutor($ssh);
+    $agent = nodeAgentExecutor($ssh, version: '0.2.0');
 
     $agent->converge(nodeAgentNode());
     $ssh->commands = [];
@@ -318,9 +320,9 @@ describe('the agent secret', function (): void {
         $node = nodeAgentStoredNode();
         $node->forceFill(['agent_secret_hash' => str_repeat('c', 64), 'agent_secret_exempt' => false])->save();
 
-        nodeAgentExecutor($ssh)->converge($node);
+        nodeAgentExecutor($ssh, version: '0.2.0')->converge($node);
 
-        expect(NodeAgentFootprint::sendsSecret())->toBeFalse()
+        expect(NodeAgentFootprint::sendsSecret('0.2.0'))->toBeFalse()
             ->and($ssh->file(NodeAgentFootprint::SecretPath))->toBeNull()
             ->and($node->fresh()?->agent_secret_exempt)->toBeTrue()
             ->and($node->fresh()?->agent_secret_hash)->toBeNull();
@@ -510,7 +512,7 @@ describe('the agent secret', function (): void {
         $ssh->fails = $failing === null ? null : static fn (array $arguments): bool => $arguments === ['sudo', 'systemctl', $failing, 'orbit-agent'];
 
         try {
-            nodeAgentExecutor($ssh)->converge($node->fresh() ?? $node);
+            nodeAgentExecutor($ssh, version: '0.2.0')->converge($node->fresh() ?? $node);
         } catch (ResourceOperationException) {
             expect($failing)->not->toBeNull();
         }
@@ -526,7 +528,7 @@ describe('the agent secret', function (): void {
         $node = nodeAgentStoredNode();
         $node->forceFill(['agent_secret_hash' => str_repeat('c', 64), 'agent_secret_exempt' => false])->save();
 
-        expect(fn () => nodeAgentExecutor($ssh)->converge($node))->toThrow(ResourceOperationException::class);
+        expect(fn () => nodeAgentExecutor($ssh, version: '0.2.0')->converge($node))->toThrow(ResourceOperationException::class);
 
         expect($node->fresh()?->agent_secret_hash)->toBe(str_repeat('c', 64))
             ->and($node->fresh()?->agent_secret_exempt)->toBeFalse();
@@ -545,7 +547,7 @@ describe('the agent secret', function (): void {
         };
         $ssh->fails = static fn (array $arguments): bool => $arguments === ['sudo', 'systemctl', 'daemon-reload'];
 
-        expect(fn () => nodeAgentExecutor($ssh)->converge($node->fresh() ?? $node))->toThrow(ResourceOperationException::class);
+        expect(fn () => nodeAgentExecutor($ssh, version: '0.2.0')->converge($node->fresh() ?? $node))->toThrow(ResourceOperationException::class);
 
         expect($atSwap)->toBe(['agent_secret_hash' => null, 'agent_secret_exempt' => true])
             ->and($node->fresh()?->agent_secret_exempt)->toBeTrue();
@@ -592,9 +594,9 @@ describe('the agent secret', function (): void {
 
         $ssh = new AgentInstallStatefulSsh;
         $ssh->fails = static fn (array $arguments): bool => ($arguments[1] ?? null) === 'curl';
-        expect(fn () => nodeAgentExecutor($ssh, lockWaitSeconds: 0)->converge($node))->toThrow(ResourceOperationException::class);
+        expect(fn () => nodeAgentExecutor($ssh, version: '0.2.0', lockWaitSeconds: 0)->converge($node))->toThrow(ResourceOperationException::class);
 
-        nodeAgentExecutor(new AgentInstallStatefulSsh, lockWaitSeconds: 0)->converge($node);
+        nodeAgentExecutor(new AgentInstallStatefulSsh, version: '0.2.0', lockWaitSeconds: 0)->converge($node);
 
         expect($node->fresh()?->agent_secret_exempt)->toBeTrue();
     });
@@ -674,11 +676,13 @@ final class AgentInstallSsh implements SshExecutor
 
     public function __construct(
         private ?string $installedChecksum,
-        private string $candidateChecksum = NodeAgentFootprint::X8664Checksum,
+        private ?string $candidateChecksum = null,
         private bool $unitExists = false,
         public bool $runScriptsLocally = false,
         public ?CommandResult $scriptResult = null,
-    ) {}
+    ) {
+        $this->candidateChecksum ??= NodeAgentFootprint::checksum('x86_64');
+    }
 
     public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
     {
@@ -786,7 +790,7 @@ final class AgentInstallStatefulSsh implements SshExecutor
 
         if (($arguments[1] ?? null) === 'curl') {
             $candidate = $arguments[array_search('--output', $arguments, true) + 1];
-            $this->checksums[$candidate] = NodeAgentFootprint::X8664Checksum;
+            $this->checksums[$candidate] = NodeAgentFootprint::checksum('x86_64');
 
             return new CommandResult(0, '', '', 1, false);
         }

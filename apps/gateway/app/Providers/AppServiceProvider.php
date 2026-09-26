@@ -13,6 +13,7 @@ use App\Actions\Gateway\GatewayOperatingSystemGuard;
 use App\Actions\Hibernation\SweepIdleAppDevRuntimesAction;
 use App\Actions\Nodes\AssignRoleAction;
 use App\Console\GatewayBoostInstallCommand;
+use App\Domain\Activity\ActivityBroadcastObserver;
 use App\Domain\AgentView\AgentProcessView;
 use App\Domain\AgentView\AgentStateView;
 use App\Domain\AgentView\AgentViewConverger;
@@ -119,6 +120,7 @@ use App\Domain\Metrics\MetricsRoleManager;
 use App\Domain\Metrics\MetricsRuntimeLifecycle;
 use App\Domain\Metrics\MetricsStatusReader;
 use App\Domain\Metrics\ServiceMetricsLifecycle;
+use App\Domain\Nodes\GatewayPrivateDnsRoute;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\Metrics\NodeMetricsReader;
 use App\Domain\Nodes\NodeAgentRuntime;
@@ -128,6 +130,7 @@ use App\Domain\Nodes\NodeReachabilityProbe;
 use App\Domain\Nodes\NodeRoleDependencyInspector;
 use App\Domain\Nodes\NodeRoleDependentCleaner;
 use App\Domain\Nodes\NodeRoleFirewallManager;
+use App\Domain\Nodes\NodeRoleFollowUpReport;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\Storage\NodeStorageRootPreparer;
 use App\Domain\Processes\ProcessAdmissionLock;
@@ -295,12 +298,14 @@ use App\Infrastructure\Nodes\NativeNodeRoleDependentCleaner;
 use App\Infrastructure\Nodes\NodeAgentSshExecutor;
 use App\Infrastructure\Nodes\NodeLocks;
 use App\Infrastructure\Nodes\RemoteNodeStorageRootPreparer;
+use App\Infrastructure\Nodes\Roles\GatewayRoleBaseline;
 use App\Infrastructure\Nodes\Roles\NativeNodeRoleFirewallManager;
 use App\Infrastructure\Nodes\Roles\NativeRoleBaselineConverger;
 use App\Infrastructure\Nodes\Roles\NodeRoleConvergeLock;
 use App\Infrastructure\Nodes\SshManagedUserAccountResolver;
 use App\Infrastructure\Nodes\SshNodeReachabilityProbe;
 use App\Infrastructure\Processes\CommandDeadline;
+use App\Infrastructure\Processes\LockRenewingProcessRunner;
 use App\Infrastructure\Processes\NativeProcessAdmissionLock;
 use App\Infrastructure\Processes\NativeProcessRunner;
 use App\Infrastructure\Processes\NativeProcessRuntimeLease;
@@ -448,6 +453,7 @@ final class AppServiceProvider extends ServiceProvider
         RouterLanIngressPublisher::class => NativeNodeRoleFirewallManager::class,
         RouterLanIngressReconciler::class => NativeRouterLanIngressReconciler::class,
         RoleBaselineConverger::class => NativeRoleBaselineConverger::class,
+        GatewayPrivateDnsRoute::class => GatewayRoleBaseline::class,
         NodeAgentRuntime::class => NodeAgentSshExecutor::class,
         ManagedMysqlUserProvisioner::class => RemoteManagedMysqlUserProvisioner::class,
         ProcessRuntimeManager::class => RemoteProcessRuntimeManager::class,
@@ -465,7 +471,6 @@ final class AppServiceProvider extends ServiceProvider
         ScheduleRuntimeManager::class => RemoteScheduleRuntimeManager::class,
         GitHubApi::class => HttpGitHubApi::class,
         RepositoryDefaultBranchResolver::class => NativeRepositoryDefaultBranchResolver::class,
-        ProcessRunner::class => NativeProcessRunner::class,
         SshExecutor::class => NativeSshExecutor::class,
         DatabaseInspectionExecutor::class => RegisteredDatabaseInspectionExecutor::class,
         ClusterRouterDnsSelectionReconciler::class => NativeClusterRouterDnsSelectionReconciler::class,
@@ -541,6 +546,14 @@ final class AppServiceProvider extends ServiceProvider
             NodeLocks::class,
             static fn ($app): NodeLocks => new NodeLocks(
                 $app->make(CacheManager::class)->build(NodeLocks::storeConfiguration((string) config('orbit.home'))),
+                console: $app->runningInConsole(),
+            ),
+        );
+        $this->app->bind(
+            ProcessRunner::class,
+            static fn ($app): ProcessRunner => new LockRenewingProcessRunner(
+                $app->make(NativeProcessRunner::class),
+                $app->make(NodeLocks::class),
             ),
         );
         $this->app->singleton(NodeRoleConvergeLock::class);
@@ -669,6 +682,7 @@ final class AppServiceProvider extends ServiceProvider
         // Shared for one request so the Metrics baseline's removal outcome
         // reaches the disable response instead of being inferred a second time.
         $this->app->scoped(MetricsPublicationReport::class);
+        $this->app->scoped(NodeRoleFollowUpReport::class);
         // Scoped so the websocket role lookup it performs happens at most
         // once per request, and only when something actually asks for it.
         $this->app->scoped(
@@ -860,6 +874,7 @@ final class AppServiceProvider extends ServiceProvider
             GatewayCacheStore::assertSupported($cache, $this->app->environment(), $this->app->configurationIsCached());
         }
         Activity::observe($activityPropertiesObserver);
+        Activity::observe(ActivityBroadcastObserver::class);
         // Reverb event bodies carry text as UTF-8, so non-ASCII log lines keep their length (ADR 0153).
         $this->app->make(BroadcastManager::class)->extend(
             'reverb',

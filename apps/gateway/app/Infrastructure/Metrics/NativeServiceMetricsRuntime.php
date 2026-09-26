@@ -94,6 +94,7 @@ final readonly class NativeServiceMetricsRuntime implements ServiceMetricsRuntim
             ['sudo', 'python3', '-', base64_encode(json_encode($request, JSON_THROW_ON_ERROR))],
             input: $program,
             maxOutputBytes: 524288,
+            timeout: MetricsRemoteCommand::DefaultTimeoutSeconds,
         ), 'service-metrics-fpm', 'metrics.fpm_monitoring_failed');
         if ($result->truncated) {
             throw new ResourceOperationException('metrics.service_inspection_failed', 'FPM monitoring inspection was truncated.', 502);

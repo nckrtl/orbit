@@ -12,14 +12,18 @@ final class NodeRoleOperationException extends RuntimeException
 {
     public readonly ?CommandResult $result;
 
+    /** The failed step's own code, or `node.lock_lost` when the operation lost one of its Node locks. */
+    public readonly string $underlyingErrorCode;
+
     public function __construct(
         public readonly string $step,
         public readonly string $errorCode,
-        public readonly string $underlyingErrorCode,
+        string $underlyingErrorCode,
         string $message,
         ?CommandResult $result = null,
         ?Throwable $previous = null,
     ) {
+        $this->underlyingErrorCode = NodeLockLoss::in($previous) ? NodeLockLoss::ErrorCode : $underlyingErrorCode;
         $this->result = $result === null
             ? null
             : new CommandResult(
@@ -31,6 +35,24 @@ final class NodeRoleOperationException extends RuntimeException
             );
 
         parent::__construct($message, previous: $previous);
+    }
+
+    /**
+     * The specific error code of the first role operation failure in the exception chain, as API error
+     * details: `error_code`, such as `node_role.node_busy` or `metrics.image_pull_failed`. The top-level
+     * code stays the operation's (`node_role.convergence_failed`, `node_role.remove_failed`).
+     *
+     * @return array{error_code?: string}
+     */
+    public static function detailsIn(?Throwable $exception): array
+    {
+        for ($current = $exception; $current !== null; $current = $current->getPrevious()) {
+            if ($current instanceof self) {
+                return ['error_code' => $current->underlyingErrorCode];
+            }
+        }
+
+        return [];
     }
 
     /** @return array{message: string, step: string, errorCode: string, underlyingErrorCode: string} */

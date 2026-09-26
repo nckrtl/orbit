@@ -137,6 +137,56 @@
               "type": "string",
               "format": "uuid"
             }
+          },
+          {
+            "name": "before_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "running",
+                "succeeded",
+                "failed"
+              ]
+            }
+          },
+          {
+            "name": "command",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 255,
+              "minLength": 1
+            }
+          },
+          {
+            "name": "caller_node_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "target_node_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
           }
         ],
         "description": "List recent gateway command activity.",
@@ -181,7 +231,7 @@
           {
             "lang": "bash",
             "label": "curl",
-            "source": "curl -sS \"https://gateway.orbit/api/v1/activities?limit=25&request_id=1\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+            "source": "curl -sS \"https://gateway.orbit/api/v1/activities?limit=25&request_id=9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81&before_id=480&status=failed&command=instance:deploy&caller_node_id=2&target_node_id=4\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
           },
           {
             "lang": "php",
@@ -11651,6 +11701,16 @@
                 }
               }
             }
+          },
+          "502": {
+            "description": "A step failed on the Node; `error.details.step` names it. When a role step failed, `error.details.error_code` names that step's own code.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "x-codeSamples": [
@@ -11800,6 +11860,16 @@
           },
           "422": {
             "description": "The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "A step failed on the Node; `error.details.step` names it. When a role step failed, `error.details.error_code` names that step's own code.",
             "content": {
               "application/json": {
                 "schema": {
@@ -13472,7 +13542,7 @@
             }
           },
           "502": {
-            "description": "A role step failed on the Node (`node_role.convergence_failed` or `node_role.remove_failed`). `error.details.step` names the failed step.",
+            "description": "A role step failed on the Node (`node_role.convergence_failed` or `node_role.remove_failed`). `error.details.step` names the failed step, and `error.details.error_code` names its own code, such as `node_role.node_busy` or `node_role.tool_manager_locked`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -13633,7 +13703,7 @@
             }
           },
           "502": {
-            "description": "A role step failed on the Node (`node_role.convergence_failed` or `node_role.remove_failed`). `error.details.step` names the failed step.",
+            "description": "A role step failed on the Node (`node_role.convergence_failed` or `node_role.remove_failed`). `error.details.step` names the failed step, and `error.details.error_code` names its own code, such as `node_role.node_busy` or `node_role.tool_manager_locked`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -13791,7 +13861,7 @@
             }
           },
           "502": {
-            "description": "A role step failed on the Node (`node_role.convergence_failed` or `node_role.remove_failed`). `error.details.step` names the failed step.",
+            "description": "A role step failed on the Node (`node_role.convergence_failed` or `node_role.remove_failed`). `error.details.step` names the failed step, and `error.details.error_code` names its own code, such as `node_role.node_busy` or `node_role.tool_manager_locked`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -23434,25 +23504,25 @@
           "id": {
             "type": "integer"
           },
-          "requestId": {
+          "request_id": {
             "type": "string"
           },
           "command": {
             "type": "string"
           },
-          "callerNodeId": {
+          "caller_node_id": {
             "type": [
               "integer",
               "null"
             ]
           },
-          "targetNodeId": {
+          "target_node_id": {
             "type": [
               "integer",
               "null"
             ]
           },
-          "callerIp": {
+          "caller_ip": {
             "type": [
               "string",
               "null"
@@ -23461,31 +23531,31 @@
           "status": {
             "type": "string"
           },
-          "durationMs": {
+          "duration_ms": {
             "type": [
               "integer",
               "null"
             ]
           },
-          "exitCode": {
+          "exit_code": {
             "type": [
               "integer",
               "null"
             ]
           },
-          "errorCode": {
+          "error_code": {
             "type": [
               "string",
               "null"
             ]
           },
-          "subjectType": {
+          "subject_type": {
             "type": [
               "string",
               "null"
             ]
           },
-          "subjectId": {
+          "subject_id": {
             "type": [
               "integer",
               "null"
@@ -23495,7 +23565,7 @@
             "type": "object",
             "additionalProperties": true
           },
-          "occurredAt": {
+          "occurred_at": {
             "type": "string"
           }
         }
@@ -24688,7 +24758,7 @@
       "MetricsMutation": {
         "type": "object",
         "properties": {
-          "nodeId": {
+          "node_id": {
             "type": "integer"
           },
           "status": {
@@ -24762,22 +24832,22 @@
           "id": {
             "type": "integer"
           },
-          "nodeId": {
+          "node_id": {
             "type": "integer"
           },
-          "nodeName": {
+          "node_name": {
             "type": "string"
           },
           "status": {
             "type": "string"
           },
-          "failedStep": {
+          "failed_step": {
             "type": [
               "string",
               "null"
             ]
           },
-          "errorCode": {
+          "error_code": {
             "type": [
               "string",
               "null"
@@ -24811,7 +24881,7 @@
               "roleless_default_excluded"
             ]
           },
-          "degradation": {
+          "degraded_reason": {
             "type": [
               "string",
               "null"

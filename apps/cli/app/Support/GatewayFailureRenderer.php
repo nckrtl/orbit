@@ -33,11 +33,14 @@ final class GatewayFailureRenderer
      */
     private const array OPERATION_FIELDS = [
         'step' => self::STEP_PATTERN,
+        'teardown_step' => self::STEP_PATTERN,
         'outcome' => '/\A[a-z][a-z0-9_]{0,63}\z/D',
         'reason' => '/\A[a-z][a-z0-9_]{0,63}\z/D',
         'cleanup' => '/\A[a-z][a-z0-9_]{0,63}\z/D',
         'role' => '/\A[a-z][a-z0-9-]{0,63}\z/D',
         'field' => '/\A[a-z][a-z0-9_.-]{0,63}\z/D',
+        // The specific code behind a role operation failure, such as `node_role.node_busy`.
+        'error_code' => '/\A[a-z][a-z0-9_]{0,63}(?:\.[a-z][a-z0-9_]{0,63}){1,3}\z/D',
     ];
 
     /**

@@ -46,20 +46,7 @@ final readonly class MetricsExporterSshExecutor implements MetricsExporterRuntim
 
         try {
             $this->cleanupRetiredArtifacts($node);
-            $this->run(
-                $node,
-                new RemoteCommand([
-                    'sudo',
-                    'apt-get',
-                    'install',
-                    '--yes',
-                    '--no-install-recommends',
-                    '--',
-                    MetricsFootprint::ExporterPackage,
-                ]),
-                'metrics.exporter_install_failed',
-                'The Metrics exporter package could not be installed.',
-            );
+            $this->installPackage($node);
             $this->publishConfiguration($node, $expected, 'metrics.exporter_configuration_failed');
             $this->setServiceActive($node, true, 'metrics.exporter_service_failed');
 
@@ -102,6 +89,42 @@ final readonly class MetricsExporterSshExecutor implements MetricsExporterRuntim
                 previous: $exception,
             );
         }
+    }
+
+    /**
+     * Installs the exporter package only when the Node lacks it. A Node's first convergence, during
+     * `node:add`, installs it; every later reconcile only verifies it and never waits on apt.
+     */
+    private function installPackage(Node $node): void
+    {
+        $installed = $this->raw($node, new RemoteCommand([
+            'dpkg-query',
+            '--show',
+            '--showformat=${Status}',
+            '--',
+            MetricsFootprint::ExporterPackage,
+        ]));
+
+        if ($installed->succeeded() && trim($installed->stdout) === 'install ok installed') {
+            return;
+        }
+
+        $this->run(
+            $node,
+            new RemoteCommand([
+                'sudo',
+                'apt-get',
+                '-o',
+                'DPkg::Lock::Timeout=60',
+                'install',
+                '--yes',
+                '--no-install-recommends',
+                '--',
+                MetricsFootprint::ExporterPackage,
+            ], timeout: MetricsRemoteCommand::DownloadTimeoutSeconds),
+            'metrics.exporter_install_failed',
+            'The Metrics exporter package could not be installed.',
+        );
     }
 
     public function remove(Node $node, Node $metricsNode): void
@@ -597,7 +620,7 @@ final readonly class MetricsExporterSshExecutor implements MetricsExporterRuntim
 
     private function raw(Node $node, RemoteCommand $command): CommandResult
     {
-        return $this->ssh->execute($this->connection($node), $command);
+        return MetricsRemoteCommand::execute($this->ssh, $this->connection($node), $node, $command);
     }
 
     private function run(
