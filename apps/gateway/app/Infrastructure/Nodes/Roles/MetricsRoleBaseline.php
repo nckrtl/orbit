@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Nodes\Roles;
 
+use App\Domain\AppDev\RuntimeConvergenceException;
+use App\Domain\Firewall\FirewallOperationException;
 use App\Domain\Metrics\MetricsCadvisorLifecycle;
 use App\Domain\Metrics\MetricsExporterLifecycle;
 use App\Domain\Metrics\MetricsGatewayResolver;
@@ -12,11 +14,14 @@ use App\Domain\Metrics\MetricsPublicationManager;
 use App\Domain\Metrics\MetricsPublicationReport;
 use App\Domain\Metrics\MetricsRuntimeLifecycle;
 use App\Domain\Metrics\ServiceMetricsLifecycle;
+use App\Domain\Nodes\NodeProvisioningException;
+use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Nodes\RoleBaseline;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
 use App\Models\NodeRole;
+use Throwable;
 
 final readonly class MetricsRoleBaseline implements RoleBaseline
 {
@@ -30,28 +35,37 @@ final readonly class MetricsRoleBaseline implements RoleBaseline
         private ?ServiceMetricsLifecycle $services = null,
     ) {}
 
+    /**
+     * Converges exporters, cAdvisor, the runtime, and the publication in that order. A failure names the step that
+     * failed and its error code, so the assignment records `converge:metrics-<step>` instead of a generic baseline
+     * failure. A failure before the runtime converged rolls back the exporters and cAdvisor first.
+     */
     public function converge(Node $node, NodeRole $assignment): void
     {
         $gateway = $this->gateways->resolve();
         $exporters = false;
         $cadvisors = false;
         $runtime = false;
+        $step = 'metrics-exporters';
 
         try {
             $this->exporters->converge($node, $assignment);
             $exporters = true;
+            $step = 'metrics-cadvisor';
             $this->cadvisors->converge($node, $assignment);
             $cadvisors = true;
+            $step = 'metrics-runtime';
             if ($this->services !== null) {
                 $this->services->converge($node, fn () => $this->runtime->converge($node, $assignment));
             } else {
                 $this->runtime->converge($node, $assignment);
             }
             $runtime = true;
+            $step = 'metrics-publication';
             $this->publication->converge($gateway, $node);
-        } catch (\Throwable $exception) {
+        } catch (Throwable $exception) {
             if ($runtime) {
-                throw $exception;
+                throw $this->failure($node, $step, $exception);
             }
 
             try {
@@ -62,12 +76,13 @@ final readonly class MetricsRoleBaseline implements RoleBaseline
                 if ($exporters) {
                     $this->exporters->remove($node, $assignment);
                 }
-            } catch (\Throwable $rollback) {
-                throw new ResourceOperationException(
-                    'metrics.rollback_failed',
-                    'Metrics convergence rollback failed.',
-                    502,
-                    new ResourceOperationException(
+            } catch (Throwable $rollback) {
+                throw new NodeRoleOperationException(
+                    step: $step,
+                    errorCode: 'node_role.convergence_failed',
+                    underlyingErrorCode: 'metrics.rollback_failed',
+                    message: 'Metrics convergence rollback failed.',
+                    previous: new ResourceOperationException(
                         'metrics.convergence_failed',
                         $exception->getMessage(),
                         502,
@@ -76,8 +91,35 @@ final readonly class MetricsRoleBaseline implements RoleBaseline
                 );
             }
 
-            throw $exception;
+            throw $this->failure($node, $step, $exception);
         }
+    }
+
+    /**
+     * Keeps an exception that already names its step. Any other failure takes the Metrics step that raised it and
+     * the Metrics error code when it has one. Only a Metrics error message is shown, because other messages can
+     * carry command output.
+     */
+    private function failure(Node $node, string $step, Throwable $exception): Throwable
+    {
+        if (
+            $exception instanceof NodeRoleOperationException
+            || $exception instanceof RuntimeConvergenceException
+            || $exception instanceof FirewallOperationException
+            || $exception instanceof NodeProvisioningException
+        ) {
+            return $exception;
+        }
+
+        $known = $exception instanceof ResourceOperationException;
+
+        return new NodeRoleOperationException(
+            step: $step,
+            errorCode: 'node_role.convergence_failed',
+            underlyingErrorCode: $known ? $exception->errorCode : 'metrics.convergence_failed',
+            message: $known ? $exception->getMessage() : "Metrics step [{$step}] failed on node [{$node->name}].",
+            previous: $exception,
+        );
     }
 
     /**
@@ -111,7 +153,7 @@ final readonly class MetricsRoleBaseline implements RoleBaseline
 
         try {
             $this->publication->abandon($node);
-        } catch (\Throwable) {
+        } catch (Throwable) {
             // The report below already tells the operator the publication was
             // not cleaned, which is the whole signal a failure here would add.
         }

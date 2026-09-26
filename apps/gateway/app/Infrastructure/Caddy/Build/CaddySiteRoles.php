@@ -16,6 +16,31 @@ use Illuminate\Database\Eloquent\Builder;
  */
 final readonly class CaddySiteRoles
 {
+    /** Roles whose convergence installs Caddy and builds the Node, so the Node has a build even with no site yet. */
+    public const array CaddyRoles = [
+        RoleName::Gateway,
+        RoleName::Router,
+        RoleName::Ingress,
+        RoleName::AppDev,
+        RoleName::AppProd,
+        RoleName::WebSocket,
+        RoleName::Analytics,
+    ];
+
+    /**
+     * Whether the Node should have Caddy: one of its Caddy roles is active or converging. Every Caddy role installs
+     * Caddy before it builds the Node, so a Node whose Caddy roles all failed before that, or are being removed,
+     * may have no Caddy, and then nothing on it has ever been served.
+     */
+    public static function nodeExpectsCaddy(int $nodeId): bool
+    {
+        return NodeRole::query()
+            ->where('node_id', $nodeId)
+            ->whereIn('role', array_map(static fn (RoleName $role): string => $role->value, self::CaddyRoles))
+            ->whereIn('status', [LifecycleStatus::Active->value, LifecycleStatus::Provisioning->value])
+            ->exists();
+    }
+
     public static function serves(NodeRole $role): bool
     {
         return match ($role->status) {

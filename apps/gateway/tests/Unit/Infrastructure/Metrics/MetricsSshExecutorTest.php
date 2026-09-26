@@ -528,11 +528,12 @@ describe(MetricsSshExecutor::class, function (): void {
         expect($pulls)->toHaveCount(1)
             ->and($pulls[0]->arguments)->toBe(['sudo', 'docker', 'image', 'pull', '--', 'prom/prometheus:v3.5.0'])
             ->and($pulls[0]->timeout)->toBe(MetricsSshExecutor::ImagePullTimeoutSeconds)
-            ->and($ssh->commands[1])->toBe($pulls[0]);
+            ->and($ssh->commands[1]->arguments)->toBe(['sudo', 'docker', 'info', '--format={{.ServerVersion}}'])
+            ->and($ssh->commands[2])->toBe($pulls[0]);
     });
 
     it('refuses to publish when a missing pinned image cannot be pulled', function (): void {
-        $ssh = new MetricsCapturingSshExecutor([metricsCommandResult(exitCode: 1), metricsCommandResult(exitCode: 1)]);
+        $ssh = new MetricsCapturingSshExecutor([metricsCommandResult(exitCode: 1), metricsCommandResult(), metricsCommandResult(exitCode: 1)]);
         $bundle = new MetricsConfigurationRenderer()->render(
             [['name' => 'metrics-runtime', 'address' => '10.44.0.3']],
             'admin-password-sentinel',
@@ -543,7 +544,27 @@ describe(MetricsSshExecutor::class, function (): void {
                 expect($exception->errorCode)->toBe('metrics.image_pull_failed')
                     ->and($exception->getMessage())->toBe('The Metrics image [prom/prometheus:v3.5.0] could not be pulled.');
             })
-            ->and($ssh->commands)->toHaveCount(2);
+            ->and($ssh->commands)->toHaveCount(3);
+    });
+
+    it('reports a Docker daemon that does not answer instead of a pull failure', function (): void {
+        $ssh = new MetricsCapturingSshExecutor([metricsCommandResult(exitCode: 1), metricsCommandResult(exitCode: 1)]);
+        $bundle = new MetricsConfigurationRenderer()->render(
+            [['name' => 'metrics-runtime', 'address' => '10.44.0.3']],
+            'admin-password-sentinel',
+        );
+
+        expect(fn () => metricsSshExecutor($ssh)->publishConfiguration(metricsSshNode(), $bundle))
+            ->toThrow(function (ResourceOperationException $exception): void {
+                expect($exception->errorCode)->toBe('metrics.docker_unavailable')
+                    ->and($exception->status)->toBe(502)
+                    ->and($exception->getMessage())->toBe('Docker is not running on node [metrics-ssh]. Start it, then converge Metrics again.');
+            });
+
+        expect(array_filter(
+            $ssh->commands,
+            static fn (RemoteCommand $command): bool => array_slice($command->arguments, 0, 4) === ['sudo', 'docker', 'image', 'pull'],
+        ))->toBe([]);
     });
 
     it('reports a promtool check that does not finish as a timeout, not an invalid configuration', function (): void {

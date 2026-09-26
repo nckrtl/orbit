@@ -250,12 +250,35 @@ final readonly class RelocateNodeRoleAction
             return;
         }
 
-        $this->baselines->converge($target, $assignment);
+        try {
+            $this->baselines->converge($target, $assignment);
+        } catch (NodeRoleOperationException $exception) {
+            throw self::namespaced($exception, 'converge:');
+        }
+    }
+
+    /** Names a baseline step the way a role row records it: `converge:STEP` on the target, `remove:STEP` on the source. */
+    private static function namespaced(NodeRoleOperationException $exception, string $prefix): NodeRoleOperationException
+    {
+        if (str_starts_with($exception->step, 'converge:') || str_starts_with($exception->step, 'remove:')) {
+            return $exception;
+        }
+
+        return new NodeRoleOperationException(
+            $prefix.$exception->step,
+            $exception->errorCode,
+            $exception->underlyingErrorCode,
+            $exception->getMessage(),
+            $exception->result,
+            $exception,
+        );
     }
 
     /**
      * The assignment already names the target. When converging the target or withdrawing the source fails,
-     * the move is incomplete: the error keeps its codes, says so, and names the command that finishes it.
+     * the move is incomplete: the error keeps its codes, says so, and names the command that finishes it. A baseline
+     * step names itself `converge:STEP` on the target or `remove:STEP` on the source, because relocate records no
+     * failed step on a role row. The response carries the step's own code as `details.error_code`.
      * For `websocket`, the Gateway keeps serving both Reverb servers until then.
      *
      * @param  Closure(): void  $steps
@@ -293,7 +316,11 @@ final readonly class RelocateNodeRoleAction
             return;
         }
 
-        $this->baselines->remove($source, $this->ghostAssignment($source, $assignment), false);
+        try {
+            $this->baselines->remove($source, $this->ghostAssignment($source, $assignment), false);
+        } catch (NodeRoleOperationException $exception) {
+            throw self::namespaced($exception, 'remove:');
+        }
         $this->forgetOwnedSettings($source, $role);
     }
 
