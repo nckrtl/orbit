@@ -26,6 +26,7 @@ Each subtask must meet all of these:
 - **Verifiable alone.** Its own tests prove its goal, and the branch passes its checks when the subtask is done.
 - **Fits one context.** An implementer can read what it needs and finish in one session.
 - **Separate concerns.** CI, release, and deployment work stay apart from product code.
+- **Screenshots for UI.** A subtask that changes the web UI includes one screenshot `review` deliverable. [Verifying web UI](../verifying-web-ui/SKILL.md) is what the reviewer uses to judge the phone.
 
 Orbit runs subtasks in position order on one shared branch. Order them by dependency. A later subtask may build on an earlier one, but it never finishes an earlier one's work.
 
@@ -57,9 +58,12 @@ Create them in dependency order with `tasks-subtask-create`, and fix any drift w
 
 **Deliverables:**
 - One observable result per line, such as a behavior, an endpoint, a test that proves it, or a check that passes.
+- For a web UI change, a screenshot `review` deliverable. The reviewer opens the phone and desktop PNGs and judges the phone.
 
 **Acceptance:** the checks to run and what they must show.
 ```
+
+Every subtask that changes the web UI gets that screenshot `review` deliverable, even when the UI work is only part of the subtask. Its type is `review`, so Orbit checks it when the reviewer approves, as the [tasks reference](../../../docs/reference/tasks.md#deliverables) describes. The description names the phone and desktop PNGs from `bin/web-verify` and the phone judgment in [verifying web UI](../verifying-web-ui/SKILL.md): the log or content starts near the top, controls are reachable, filters are not an awkward stack, and long lists and filters use native patterns such as infinite scroll and sheets. Reading the diff is not that judgment. It counts toward the limit of five.
 
 Name file paths only where the contract fixes them, such as an install path or a documentation page. Leave other paths and code to the implementer, because they go stale.
 
