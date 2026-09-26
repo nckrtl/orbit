@@ -27,6 +27,7 @@ use App\Models\TaskCheck;
 use App\Models\TaskGroup;
 use Illuminate\Routing\Route;
 use Illuminate\Support\Facades\Event;
+use Orbit\Sdk\Responses\Tasks\TaskGroupResponse;
 use Tests\Support\FakeTaskCheckRunner;
 
 function tasks_gateway(): Node
@@ -578,4 +579,98 @@ it('cancels a running check and shows it on the task', function (): void {
         ->assertJsonPath('data.finished_at', fn (mixed $value): bool => is_string($value));
     expect($checks->cancels)->toBe(1);
     Event::assertDispatched(RecordBroadcast::class, static fn (RecordBroadcast $event): bool => $event->type === RecordEventType::TaskGroupUpdated && $event->id === $group->id);
+});
+
+/**
+ * `orbit tasks:show --json` and `orbit tasks:list --json` render this DTO, not the raw Gateway body.
+ *
+ * @param  array<string, mixed>  $group
+ * @return array<string, mixed>
+ */
+function tasks_cli_record(array $group): array
+{
+    static $loaded = false;
+
+    if (! $loaded) {
+        $src = dirname(__DIR__, 5).'/packages/php-sdk/src/Responses/Tasks';
+        require_once $src.'/TaskFields.php';
+        require_once $src.'/SubtaskResponse.php';
+        require_once $src.'/TaskGroupResponse.php';
+        $loaded = true;
+    }
+
+    return TaskGroupResponse::fromGatewayData($group, 'request')->toArray();
+}
+
+it('returns assistance fields on show and list for flagged and unflagged groups', function (): void {
+    tasks_gateway();
+    enable_tasks();
+    $app = tasks_app('assistance');
+    $create = function (string $title) use ($app): array {
+        $group = $this->postJson('/api/v1/task-groups', [
+            'app_id' => $app->id,
+            'title' => $title,
+            'brief' => "{$title} brief.",
+            'tasks' => [
+                ['title' => 'First', 'brief' => 'First brief.'],
+                ['title' => 'Second', 'brief' => 'Second brief.'],
+            ],
+        ])->assertCreated()->json('data');
+
+        expect($group)->toBeArray();
+
+        return $group;
+    };
+    $flagged = $create('Flagged');
+    $clear = $create('Clear');
+    $blocked = 'The implementer is blocked.';
+    $question = 'Which database should this use?';
+
+    TaskGroup::query()->whereKey($flagged['id'])->update([
+        'assistance_requested' => true,
+        'assistance_reason' => $blocked,
+    ]);
+    Task::query()->whereKey($flagged['tasks'][0]['id'])->update([
+        'assistance_requested' => true,
+        'assistance_reason' => $question,
+    ]);
+
+    $expectFields = function (array $group, bool $requested, ?string $reason, bool $firstRequested, ?string $firstReason): void {
+        expect($group)->toMatchArray([
+            'assistance_requested' => $requested,
+            'assistance_reason' => $reason,
+        ])->and($group['tasks'])->toHaveCount(2)
+            ->and($group['tasks'][0])->toMatchArray([
+                'assistance_requested' => $firstRequested,
+                'assistance_reason' => $firstReason,
+            ])->and($group['tasks'][1])->toMatchArray([
+                'assistance_requested' => false,
+                'assistance_reason' => null,
+            ]);
+
+        $cli = tasks_cli_record($group);
+        expect($cli)->toMatchArray([
+            'assistance_requested' => $group['assistance_requested'],
+            'assistance_reason' => $group['assistance_reason'],
+        ])->and($cli['tasks'][0])->toMatchArray([
+            'assistance_requested' => $group['tasks'][0]['assistance_requested'],
+            'assistance_reason' => $group['tasks'][0]['assistance_reason'],
+        ])->and($cli['tasks'][1])->toMatchArray([
+            'assistance_requested' => $group['tasks'][1]['assistance_requested'],
+            'assistance_reason' => $group['tasks'][1]['assistance_reason'],
+        ]);
+    };
+
+    $shown = $this->getJson('/api/v1/task-groups/'.$flagged['id'])->assertOk()->json('data');
+    $clearShown = $this->getJson('/api/v1/task-groups/'.$clear['id'])->assertOk()->json('data');
+    expect($shown)->toBeArray()->and($clearShown)->toBeArray();
+    $expectFields($shown, true, $blocked, true, $question);
+    $expectFields($clearShown, false, null, false, null);
+
+    $listed = collect($this->getJson('/api/v1/task-groups')->assertOk()->json('data'))->keyBy('id');
+    $flaggedList = $listed->get($flagged['id']);
+    $clearList = $listed->get($clear['id']);
+    expect($flaggedList)->toBeArray()->and($clearList)->toBeArray();
+    $expectFields($flaggedList, true, $blocked, true, $question);
+    $expectFields($clearList, false, null, false, null);
 });

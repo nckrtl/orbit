@@ -165,10 +165,67 @@ describe('task responses from recorded Gateway fixtures', function (): void {
             ->and($group->status)->toBe('backlog')
             ->and($group->app)->toBe('orbit')
             ->and($group->executionMode)->toBe('managed')
+            ->and($group->assistanceRequested)->toBeFalse()
+            ->and($group->assistanceReason)->toBeNull()
+            ->and($group->tasks[0]->assistanceRequested)->toBeFalse()
+            ->and($group->tasks[0]->assistanceReason)->toBeNull()
             ->and(array_map(static fn (SubtaskResponse $task): int => $task->position, $group->tasks))->toBe([1, 2])
             ->and($group->toArray())->not->toHaveKey('tasks.0.request_id')
             ->and($group->toArray()['tasks'][0])->not->toHaveKey('request_id')
             ->and($group->toArray()['request_id'])->toBe(task_request_id());
+    });
+
+    it('keeps an assistance request on the group and each subtask', function (): void {
+        $mockClient = new MockClient([ShowTaskGroupRequest::class => MockResponse::make([
+            'data' => [
+                'id' => 4,
+                'app_id' => 1,
+                'title' => 'Stalled',
+                'brief' => 'The group is waiting.',
+                'status' => 'running',
+                'assistance_requested' => true,
+                'assistance_reason' => 'The implementer is blocked.',
+                'tasks' => [
+                    [
+                        'id' => 8,
+                        'task_group_id' => 4,
+                        'position' => 1,
+                        'title' => 'Blocked step',
+                        'brief' => 'Needs a decision.',
+                        'status' => 'running',
+                        'assistance_requested' => true,
+                        'assistance_reason' => 'Which database should this use?',
+                    ],
+                    [
+                        'id' => 9,
+                        'task_group_id' => 4,
+                        'position' => 2,
+                        'title' => 'Later step',
+                        'brief' => 'Not blocked.',
+                        'status' => 'todo',
+                        'assistance_requested' => false,
+                        'assistance_reason' => null,
+                    ],
+                ],
+            ],
+            'meta' => ['request_id' => task_request_id()],
+        ])]);
+        $connector = new GatewayConnector('https://10.44.0.1');
+        $connector->withMockClient($mockClient);
+        $group = $connector->send(new ShowTaskGroupRequest(4))->dto();
+
+        expect($group)->toBeInstanceOf(TaskGroupResponse::class);
+        assert($group instanceof TaskGroupResponse);
+        expect($group->toArray())->toMatchArray([
+            'assistance_requested' => true,
+            'assistance_reason' => 'The implementer is blocked.',
+        ])->and($group->toArray()['tasks'][0])->toMatchArray([
+            'assistance_requested' => true,
+            'assistance_reason' => 'Which database should this use?',
+        ])->and($group->toArray()['tasks'][1])->toMatchArray([
+            'assistance_requested' => false,
+            'assistance_reason' => null,
+        ]);
     });
 
     it('keeps fails_on_base on a test deliverable', function (): void {
