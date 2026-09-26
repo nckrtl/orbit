@@ -38,6 +38,15 @@
     --toolbar-icon-size: 14px;
 }
 
+/*
+ * The shell publishes --shell-safe-* once. This control is fixed to the viewport,
+ * outside that pad, so it uses the same values. Unset, both are 0.
+ */
+#laravel-toolbar-annotation-root [data-orbit-annotation-fab] {
+    right: calc(var(--spacing, 0.25rem) * 5 + var(--shell-safe-right, 0px));
+    bottom: calc(var(--spacing, 0.25rem) * 5 + var(--shell-safe-bottom, 0px));
+}
+
 #laravel-toolbar-annotation-root {
     --radius: 0.625rem;
     --background: oklch(0.145 0 0);
