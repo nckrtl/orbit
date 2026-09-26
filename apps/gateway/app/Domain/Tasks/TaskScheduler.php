@@ -478,7 +478,7 @@ final readonly class TaskScheduler
             if ($confirmation instanceof TaskRubricItem) {
                 $items[] = $confirmation;
             }
-            if ($task->isLastSubtask()) {
+            if ($task->opensPullRequest()) {
                 $pullRequest = TaskRunPullRequest::fromArray($receipt->pull_request);
                 $items[] = new TaskRubricItem('pull_request_fields', $pullRequest instanceof TaskRunPullRequest, 'The approval of the last subtask needs --pr-summary, --pr-change, and --pr-breaking.');
             }
@@ -571,8 +571,10 @@ final readonly class TaskScheduler
     }
 
     /**
-     * Pushes the stored commit, then opens the pull request on the last subtask. The open pushes that commit again.
-     * The refspec names the commit, never HEAD. A failed push or open leaves the subtask in review and keeps commit_sha.
+     * Pushes the stored commit, then opens the pull request when this approval is the one that publishes it.
+     * The open pushes that commit again. The refspec names the commit, never HEAD, and is not a force push.
+     * When the pull request URL is already stored, the push updates that pull request and Orbit does not open another (ADR 0164).
+     * A failed push or open leaves the subtask in review and keeps commit_sha.
      */
     private function publishApprovedCommit(TaskGroup $group, Task $task, TaskComment $receipt): void
     {
@@ -593,7 +595,7 @@ final readonly class TaskScheduler
             return;
         }
 
-        if ($task->isLastSubtask() && (! is_string($group->pr_url) || $group->pr_url === '')) {
+        if ($task->opensPullRequest()) {
             $pullRequest = TaskRunPullRequest::fromArray($receipt->pull_request);
             if (! $pullRequest instanceof TaskRunPullRequest) {
                 $this->recordCommunicationFailure($task, $group, 'The approval of the last subtask needs --pr-summary, --pr-change, and --pr-breaking.');
@@ -814,7 +816,7 @@ final readonly class TaskScheduler
         if (! $instance instanceof AppInstance) {
             throw new TaskRunReceiptException('The task workspace is unavailable.');
         }
-        $this->receipts->prepare($instance, $role, $role === TaskThreadRole::Reviewer && $task->isLastSubtask(), $task->deliverableList());
+        $this->receipts->prepare($instance, $role, $role === TaskThreadRole::Reviewer && $task->opensPullRequest(), $task->deliverableList());
     }
 
     private function waitingItem(TaskThreadObservation $thread): ?TaskRubricItem
@@ -851,7 +853,7 @@ final readonly class TaskScheduler
         if ($task->{$reminder} !== $task->{$attempt}) {
             try {
                 $this->prepareTurn($group, $task, $thread->role);
-                $this->actor->remindRubric($group, $thread, TaskRubricReminder::compose($thread->role, $failures, ! $implementer && $task->isLastSubtask(), $task->deliverableList(), $group->app->taskCheckCommand()));
+                $this->actor->remindRubric($group, $thread, TaskRubricReminder::compose($thread->role, $failures, ! $implementer && $task->opensPullRequest(), $task->deliverableList(), $group->app->taskCheckCommand()));
             } catch (AgentDriverException|TaskRunReceiptException $exception) {
                 $this->recordCommunicationFailure($task, $group, $exception->getMessage());
 
@@ -1895,6 +1897,8 @@ final readonly class TaskScheduler
             return $group->fresh(['tasks', 'app', 'taskable']) ?? $group;
         }
 
+        // ADR 0164: returning to settling refreshes metrics and does not post task_group.settled again.
+        $returning = $group->settled_at !== null;
         $metrics = $this->metrics->collect($group);
         $group->tokens = $metrics->tokens;
         $group->line_diff = $metrics->lineDiff;
@@ -1904,7 +1908,7 @@ final readonly class TaskScheduler
 
         $settled = $group->fresh(['tasks', 'app', 'taskable']) ?? $group;
 
-        if ($settled->notify_coder) {
+        if ($settled->notify_coder && ! $returning) {
             $this->coder->notify($settled);
         }
 

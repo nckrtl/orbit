@@ -138,6 +138,21 @@ final class Task extends Model
     }
 
     /**
+     * Whether this approval opens the group's pull request.
+     * After a pull request URL is stored, the approval pushes to that pull request and does not require pull request fields (ADR 0164).
+     */
+    public function opensPullRequest(): bool
+    {
+        if (! $this->isLastSubtask()) {
+            return false;
+        }
+
+        $url = $this->taskGroup()->value('pr_url');
+
+        return ! is_string($url) || $url === '';
+    }
+
+    /**
      * ADR 0133: the typed items this subtask must deliver. Empty for subtasks created before deliverables existed.
      *
      * @return list<TaskDeliverable>
