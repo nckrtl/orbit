@@ -36,7 +36,7 @@ final readonly class NodeCaddyBuilder implements NodeCaddyBuilds
                 throw new NodeCaddyBuildException($current->name, 'render', implode(' ', $caddyfile->problems));
             }
 
-            $result = $this->transport->run($current, $this->script->command($caddyfile));
+            $result = $this->transport->run($current, $this->script->command($caddyfile, CaddySiteRoles::nodeExpectsCaddy($current->id)));
 
             if (! $result->succeeded()) {
                 throw new NodeCaddyBuildException(

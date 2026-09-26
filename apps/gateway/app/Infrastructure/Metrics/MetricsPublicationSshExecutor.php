@@ -220,7 +220,7 @@ final readonly class MetricsPublicationSshExecutor
         string $errorCode,
         string $message,
     ): CommandResult {
-        $result = $this->ssh->execute($this->connection($node), $command);
+        $result = MetricsRemoteCommand::execute($this->ssh, $this->connection($node), $node, $command);
 
         if (! $result->succeeded()) {
             throw new ResourceOperationException($errorCode, $message, 502);
