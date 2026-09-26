@@ -33,6 +33,9 @@ final readonly class TaskScheduler
 
     public const string WorkspaceChangedReminder = 'The workspace changed during the review. Revert your changes and request the changes from the implementer instead.';
 
+    /** Assistance set when an approved commit cannot be pushed or its pull request cannot be opened. */
+    public const string PublicationFailedPrefix = 'Approved commit publication failed: ';
+
     /** Reasons the scheduler sets when a claim returns a group to todo. A start, a capacity wait, or a move to backlog clears them. */
     public const array ClaimFailureReasons = [
         self::ProvisioningFailedReason,
@@ -531,6 +534,9 @@ final readonly class TaskScheduler
         if (! $receipt instanceof TaskComment || $this->receiptOutcome($receipt) !== TaskRunOutcome::Approved || ! $this->committedApproval($receipt)) {
             return false;
         }
+        if (! $this->retryIsDue($this->publicationBackoffKey($task), 'approved publication')) {
+            return true;
+        }
 
         try {
             $current = $this->workspaceSnapshot($group);
@@ -562,10 +568,13 @@ final readonly class TaskScheduler
 
             return;
         }
+        if (! $this->retryIsDue($this->publicationBackoffKey($task), 'approved publication')) {
+            return;
+        }
         try {
             $this->publisher->push($group, $commit);
         } catch (TaskPullRequestException $exception) {
-            $this->recordCommunicationFailure($task, $group, $exception->getMessage());
+            $this->failPublication($group, $task, $exception->getMessage());
 
             return;
         }
@@ -580,23 +589,46 @@ final readonly class TaskScheduler
             try {
                 $url = $this->publisher->publish($group, TaskPullRequestDescription::render($pullRequest, $group->tasks()->whereNotIn('status', [TaskStatus::Cancelled, TaskStatus::Failed])->count(), $group->app->taskCheckCommand()), $commit);
             } catch (TaskPullRequestException $exception) {
-                $this->recordCommunicationFailure($task, $group, $exception->getMessage());
+                $this->failPublication($group, $task, $exception->getMessage());
 
                 return;
             }
             $group->update(['pr_url' => $url]);
         }
 
-        if ($group->assistance_requested) {
-            $group->update(['assistance_requested' => false, 'assistance_reason' => null]);
-        }
+        $this->rememberBackoff($this->publicationBackoffKey($task), null, 'approved publication');
         $task->update([
             'review_handled_comment_id' => $receipt->id,
             'communication_failures' => 0,
-            'assistance_requested' => false,
-            'assistance_reason' => null,
         ]);
+        $this->clearPublicationAssistance($task, $group);
         $this->acceptReview($task);
+    }
+
+    /** A failed push or open waits out the backoff and asks for assistance on the fifth failure. */
+    private function failPublication(TaskGroup $group, Task $task, string $reason): void
+    {
+        $key = $this->publicationBackoffKey($task);
+        $this->extendBackoff($key, $this->readBackoff($key, 'approved publication'), 'approved publication');
+        $this->recordCommunicationFailure($task, $group, self::PublicationFailedPrefix.$reason);
+    }
+
+    /** Clears the publication failure only. A blocked question or any other cause stays on the subtask and the group. */
+    private function clearPublicationAssistance(Task $task, TaskGroup $group): void
+    {
+        $task->refresh();
+        $group->refresh();
+        if (is_string($task->assistance_reason) && str_starts_with($task->assistance_reason, self::PublicationFailedPrefix)) {
+            $task->update(['assistance_requested' => false, 'assistance_reason' => null]);
+        }
+        if (is_string($group->assistance_reason) && str_starts_with($group->assistance_reason, self::PublicationFailedPrefix)) {
+            $group->update(['assistance_requested' => false, 'assistance_reason' => null]);
+        }
+    }
+
+    private function publicationBackoffKey(Task $task): string
+    {
+        return 'tasks.approved-publication.'.$task->id;
     }
 
     private function relayFindings(TaskGroup $group, Task $task, TaskSessionObservation $observation, TaskComment $findings): void
@@ -1160,8 +1192,20 @@ final readonly class TaskScheduler
     /** Seconds one tick may spend removing abandoned workspaces, well inside the 300-second tick lock. */
     public const int AbandonedWorkspaceBudgetSeconds = 60;
 
-    /** The first retry delay after a failed removal. Each further failure doubles it, up to the reservation timeout. */
+    /** The first retry delay. The later delays are 2, 5, 10, and 30 minutes, and further failures stay at 30. */
     public const int AbandonedWorkspaceBackoffSeconds = 60;
+
+    /**
+     * Delay before the next push or removal attempt after this many failures.
+     * The first failure waits one minute, then 2, 5, 10, and 30 minutes.
+     */
+    public static function retryDelaySeconds(int $failures): int
+    {
+        $schedule = [self::AbandonedWorkspaceBackoffSeconds, 120, 300, 600, 1800];
+        $index = min(max($failures, 1), count($schedule)) - 1;
+
+        return $schedule[$index];
+    }
 
     /**
      * Removes the workspace of a cancelled or completed group, attached or found by its `task-{group id}` name and
@@ -1170,7 +1214,9 @@ final readonly class TaskScheduler
      *
      * One query selects the candidates. A failed removal is reported, asks for assistance, and backs off per
      * Instance, so a workspace that keeps failing never blocks the others. The sweep stops starting removals once
-     * it has spent its time budget; the rest wait for the next tick. Success clears that assistance.
+     * it has spent its time budget; the rest wait for the next tick. Success clears removal assistance only.
+     * A cancelled group pushes its stored approval before the checkout is deleted. A user Instance attached to a
+     * non-managed group is never a candidate.
      */
     public function removeAbandonedWorkspaces(): int
     {
@@ -1183,7 +1229,7 @@ final readonly class TaskScheduler
             }
 
             $backoffKey = 'tasks.workspace-removal.'.$workspace->id;
-            $backoff = $this->workspaceRemovalBackoff($backoffKey);
+            $backoff = $this->readBackoff($backoffKey, 'workspace removal');
             if ($backoff !== null && $backoff['due'] > now()->getTimestamp()) {
                 continue;
             }
@@ -1195,8 +1241,9 @@ final readonly class TaskScheduler
             }
 
             try {
+                $this->pushCancelledApproval($group, $instance);
                 $this->workspaces->remove($instance);
-                $this->rememberWorkspaceRemovalBackoff($backoffKey, null);
+                $this->rememberBackoff($backoffKey, null, 'workspace removal');
                 $this->releaseRemovedWorkspace($group, $instance->id);
                 Log::warning('Removed the workspace of an ended task group.', ['task_group_id' => $group->id, 'app_instance_id' => $instance->id]);
                 $removed++;
@@ -1206,7 +1253,7 @@ final readonly class TaskScheduler
                     ? RemoveTaskWorkspaceAction::MergeCleanupFailedPrefix
                     : RemoveTaskWorkspaceAction::RemovalFailedPrefix;
                 $this->workspaces->recordFailure($group, $exception, $prefix);
-                $this->extendWorkspaceRemovalBackoff($backoffKey, $backoff);
+                $this->extendBackoff($backoffKey, $backoff, 'workspace removal');
             }
         }
 
@@ -1219,7 +1266,7 @@ final readonly class TaskScheduler
         $attached = $group->taskable;
         $instance = $attached instanceof AppInstance ? $attached : $this->workspaces->find($group);
         $backoffKey = $instance instanceof AppInstance ? 'tasks.workspace-removal.'.$instance->id : null;
-        $backoff = is_string($backoffKey) ? $this->workspaceRemovalBackoff($backoffKey) : null;
+        $backoff = is_string($backoffKey) ? $this->readBackoff($backoffKey, 'workspace removal') : null;
 
         if ($backoff !== null && $backoff['due'] > now()->getTimestamp()) {
             return;
@@ -1229,9 +1276,9 @@ final readonly class TaskScheduler
             if (TaskPullRequestHealth::isReason($group->assistance_reason)) {
                 $group->update(['assistance_requested' => false, 'assistance_reason' => null]);
             }
-            $this->completeGroup->execute($group);
+            $this->completeGroup->execute($group, finishWhenRemovalFails: false);
             if (is_string($backoffKey)) {
-                $this->rememberWorkspaceRemovalBackoff($backoffKey, null);
+                $this->rememberBackoff($backoffKey, null, 'workspace removal');
             }
         } catch (Throwable $exception) {
             $group->update([
@@ -1239,14 +1286,34 @@ final readonly class TaskScheduler
                 'assistance_reason' => RemoveTaskWorkspaceAction::MergeCleanupFailedPrefix.$exception->getMessage(),
             ]);
             if (is_string($backoffKey)) {
-                $this->extendWorkspaceRemovalBackoff($backoffKey, $backoff);
+                $this->extendBackoff($backoffKey, $backoff, 'workspace removal');
             }
         }
     }
 
+    /** Pushes the latest stored approval before a cancelled checkout is deleted. A group with no approval is unchanged. */
+    private function pushCancelledApproval(TaskGroup $group, AppInstance $instance): void
+    {
+        if ($group->status !== TaskGroupStatus::Cancelled) {
+            return;
+        }
+        $commit = TaskComment::query()
+            ->where('task_group_id', $group->id)
+            ->where('type', TaskCommentType::Approved)
+            ->whereNotNull('commit_sha')
+            ->latest('id')
+            ->value('commit_sha');
+        if (! is_string($commit) || $commit === '') {
+            return;
+        }
+        $group->setRelation('taskable', $instance);
+        $group->loadMissing('app');
+        $this->publisher->push($group, $commit);
+    }
+
     private function shouldRemoveWorkspace(TaskGroup $group, AppInstance $instance): bool
     {
-        if ($instance->app_id !== $group->app_id) {
+        if ($instance->app_id !== $group->app_id || $this->attachedToUnmanagedGroup($instance)) {
             return false;
         }
 
@@ -1285,28 +1352,33 @@ final readonly class TaskScheduler
     /**
      * @param  array{failures: int, due: int}|null  $backoff
      */
-    private function extendWorkspaceRemovalBackoff(string $key, ?array $backoff): void
+    private function extendBackoff(string $key, ?array $backoff, string $label): void
     {
         $failures = ($backoff['failures'] ?? 0) + 1;
-        $delay = min(
-            self::AbandonedWorkspaceBackoffSeconds * 2 ** min($failures - 1, 20),
-            max(self::AbandonedWorkspaceBackoffSeconds, (int) config('orbit.tasks.reserved_timeout_seconds')),
-        );
-        $this->rememberWorkspaceRemovalBackoff($key, ['failures' => $failures, 'due' => now()->addSeconds($delay)->getTimestamp()], $delay * 2);
+        $delay = self::retryDelaySeconds($failures);
+        $this->rememberBackoff($key, ['failures' => $failures, 'due' => now()->addSeconds($delay)->getTimestamp()], $label, $delay * 2);
+    }
+
+    /** The next attempt waits until `due`. A missing backoff, or a cache read that fails, means try now. */
+    private function retryIsDue(string $key, string $label): bool
+    {
+        $backoff = $this->readBackoff($key, $label);
+
+        return $backoff === null || $backoff['due'] <= now()->getTimestamp();
     }
 
     /**
-     * Reads a workspace removal backoff. A cache error is logged and read as no backoff, so one bad read never
-     * stops the sweep or the tick.
+     * Reads a retry backoff. A cache error is logged and read as no backoff, so one bad read never stops the
+     * sweep or the tick.
      *
      * @return array{failures: int, due: int}|null
      */
-    private function workspaceRemovalBackoff(string $key): ?array
+    private function readBackoff(string $key, string $label): ?array
     {
         try {
             $backoff = Cache::get($key);
         } catch (Throwable $exception) {
-            Log::warning('The workspace removal backoff could not be read.', ['key' => $key, 'exception' => $exception::class, 'reason' => $exception->getMessage()]);
+            Log::warning('The '.$label.' backoff could not be read.', ['key' => $key, 'exception' => $exception::class, 'reason' => $exception->getMessage()]);
 
             return null;
         }
@@ -1317,11 +1389,11 @@ final readonly class TaskScheduler
     }
 
     /**
-     * Stores or clears a workspace removal backoff. A cache error is logged and the sweep continues.
+     * Stores or clears a retry backoff. A cache error is logged and the attempt continues.
      *
      * @param  array{failures: int, due: int}|null  $backoff
      */
-    private function rememberWorkspaceRemovalBackoff(string $key, ?array $backoff, int $seconds = 0): void
+    private function rememberBackoff(string $key, ?array $backoff, string $label, int $seconds = 0): void
     {
         try {
             if ($backoff === null) {
@@ -1330,8 +1402,18 @@ final readonly class TaskScheduler
                 Cache::put($key, $backoff, now()->addSeconds($seconds));
             }
         } catch (Throwable $exception) {
-            Log::warning('The workspace removal backoff could not be written.', ['key' => $key, 'exception' => $exception::class, 'reason' => $exception->getMessage()]);
+            Log::warning('The '.$label.' backoff could not be written.', ['key' => $key, 'exception' => $exception::class, 'reason' => $exception->getMessage()]);
         }
+    }
+
+    /** A user Instance that backs a non-managed group is never a task workspace the sweep may delete. */
+    private function attachedToUnmanagedGroup(AppInstance $instance): bool
+    {
+        return TaskGroup::query()
+            ->where('taskable_type', TaskableType::Instance)
+            ->where('taskable_id', $instance->id)
+            ->where('execution_mode', '!=', TaskExecutionMode::Managed->value)
+            ->exists();
     }
 
     /** @return Collection<int, AppInstance> */
@@ -1359,6 +1441,13 @@ final readonly class TaskScheduler
                     });
             })
             ->where('task_groups.execution_mode', TaskExecutionMode::Managed->value)
+            ->whereNotExists(function ($userGroup): void {
+                $userGroup->selectRaw('1')
+                    ->from('task_groups as user_groups')
+                    ->whereColumn('user_groups.taskable_id', 'app_instances.id')
+                    ->where('user_groups.taskable_type', TaskableType::Instance)
+                    ->where('user_groups.execution_mode', '!=', TaskExecutionMode::Managed->value);
+            })
             ->where(function ($ended) use ($cutoff, $mergePrefix): void {
                 $ended->where(function ($finished) use ($cutoff): void {
                     $finished->whereIn('task_groups.status', [TaskGroupStatus::Cancelled->value, TaskGroupStatus::Completed->value])

@@ -21,6 +21,7 @@ use App\Models\TaskGroup;
 use Illuminate\Testing\TestResponse;
 
 beforeEach(function (): void {
+    bind_task_node_reachability();
     $gateway = $this->markAsGateway(Node::query()->create([
         'name' => 'planner-gateway',
         'status' => LifecycleStatus::Active,

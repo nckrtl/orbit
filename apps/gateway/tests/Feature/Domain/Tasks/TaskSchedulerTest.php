@@ -1135,6 +1135,10 @@ it('retries a failed push of an approved subtask without committing again', func
         ->and(Task::query()->where('title', 'Routes')->sole()->status)->toBe(TaskStatus::Todo);
 
     app(TaskScheduler::class)->tick();
+    expect($publisher->pushes)->toBe([$group->id]);
+
+    $this->travel(TaskScheduler::retryDelaySeconds(1))->seconds();
+    app(TaskScheduler::class)->tick();
 
     expect($task->comments()->count())->toBe(1)
         ->and($task->comments()->sole()->commit_sha)->toBe($sha)
@@ -1159,6 +1163,7 @@ it('retries a failed push when the reviewer is unavailable', function (): void {
         }
     });
 
+    $this->travel(TaskScheduler::retryDelaySeconds(1))->seconds();
     app(TaskScheduler::class)->tick();
 
     expect($publisher->pushes)->toBe([$group->id, $group->id])
@@ -1190,17 +1195,23 @@ it('keeps retrying a failed push after the fifth failure asks for assistance', f
     $sha = str_repeat('c', 40);
 
     for ($attempt = 0; $attempt < 6; $attempt++) {
+        if ($attempt > 0) {
+            $this->travel(TaskScheduler::retryDelaySeconds($attempt))->seconds();
+        }
         app(TaskScheduler::class)->tick();
     }
 
     expect($task->fresh()?->status)->toBe(TaskStatus::Reviewing)
         ->and($task->fresh()?->assistance_requested)->toBeTrue()
+        ->and($task->fresh()?->assistance_reason)->toBe(TaskScheduler::PublicationFailedPrefix.'The task branch could not be pushed.')
         ->and($group->fresh()?->assistance_requested)->toBeTrue()
+        ->and($group->fresh()?->assistance_reason)->toBe(TaskScheduler::PublicationFailedPrefix.'The task branch could not be pushed.')
         ->and($task->comments()->sole()->commit_sha)->toBe($sha)
         ->and($signer->messages)->toHaveCount(1)
         ->and($publisher->pushes)->toHaveCount(6)
         ->and(Task::query()->where('title', 'Routes')->sole()->status)->toBe(TaskStatus::Todo);
 
+    $this->travel(TaskScheduler::retryDelaySeconds(6))->seconds();
     app(TaskScheduler::class)->tick();
 
     expect($task->comments()->count())->toBe(1)
@@ -1644,6 +1655,7 @@ it('accepts a lost commit response as the stored commit without a reminder or a 
         ->and($task->comments()->sole()->commit_sha)->toBe($stored)
         ->and($publisher->commits)->toBe([$stored]);
 
+    $this->travel(TaskScheduler::retryDelaySeconds(1))->seconds();
     app(TaskScheduler::class)->tick();
 
     expect($signer->calls)->toBe(0)

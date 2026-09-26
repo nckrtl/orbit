@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 use App\Actions\Tasks\CancelTaskCheckAction;
+use App\Actions\Tasks\CompleteTaskGroupAction;
+use App\Actions\Tasks\RemoveTaskWorkspaceAction;
 use App\Domain\AppInstances\AppInstanceRemover;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\AgentDriverException;
@@ -371,6 +373,146 @@ it('backs off a merged pull request cleanup and retries it on a later tick', fun
 
     expect($calls)->toBe(2)
         ->and($group->fresh()?->taskable_id)->toBe($group->taskable_id);
+});
+
+it('uses backoff for publication and removal retries and retries a failed manual complete', function (): void {
+    [$group, $task, , , $publisher] = tick_review([FakeTaskRunReceipts::contents('approved', 'Checked the models.')]);
+    $publisher->pushFailures = 1;
+    $hold = 'The operator asked to hold this group.';
+
+    app(TaskScheduler::class)->tick();
+    app(TaskScheduler::class)->tick();
+
+    expect($publisher->pushes)->toBe([$group->id])
+        ->and($task->fresh()?->status)->toBe(TaskStatus::Reviewing);
+
+    $task->update(['assistance_requested' => true, 'assistance_reason' => $hold]);
+    $group->update(['assistance_requested' => true, 'assistance_reason' => $hold]);
+    $this->travel(TaskScheduler::retryDelaySeconds(1))->seconds();
+    app(TaskScheduler::class)->tick();
+
+    expect($publisher->pushes)->toBe([$group->id, $group->id])
+        ->and($task->fresh()?->status)->toBe(TaskStatus::Completed)
+        ->and($task->fresh()?->assistance_requested)->toBeTrue()
+        ->and($task->fresh()?->assistance_reason)->toBe($hold)
+        ->and($group->fresh()?->assistance_requested)->toBeTrue()
+        ->and($group->fresh()?->assistance_reason)->toBe($hold);
+
+    $remover = new class implements AppInstanceRemover
+    {
+        /** @var list<int> */
+        public array $failing = [];
+
+        /** @var list<int> */
+        public array $attempts = [];
+
+        public function execute(AppInstance $instance, bool $force): AppInstanceRemoval
+        {
+            $this->attempts[] = $instance->id;
+            if (in_array($instance->id, $this->failing, true)) {
+                throw new RuntimeException('disk full');
+            }
+            $instance->delete();
+
+            return new AppInstanceRemoval;
+        }
+    };
+    app()->instance(AppInstanceRemover::class, $remover);
+    $ended = TaskGroup::query()->create([
+        'app_id' => $group->app_id,
+        'title' => 'Ended',
+        'brief' => 'Remove the workspace.',
+        'status' => TaskGroupStatus::Cancelled,
+    ]);
+    $workspace = AppInstance::query()->create([
+        'app_id' => $group->app_id,
+        'node_id' => $group->taskable->node_id,
+        'name' => 'ended-workspace',
+        'checkout_path' => '/tmp/ended-workspace',
+        'status' => 'source_resolved',
+    ]);
+    $ended->taskable()->associate($workspace);
+    $ended->save();
+    $remover->failing = [$workspace->id];
+
+    expect(app(TaskScheduler::class)->removeAbandonedWorkspaces())->toBe(0)
+        ->and($remover->attempts)->toBe([$workspace->id]);
+    app(TaskScheduler::class)->removeAbandonedWorkspaces();
+    $this->travel(TaskScheduler::retryDelaySeconds(1) - 1)->seconds();
+    app(TaskScheduler::class)->removeAbandonedWorkspaces();
+    expect($remover->attempts)->toBe([$workspace->id]);
+
+    $this->travel(2)->seconds();
+    app(TaskScheduler::class)->removeAbandonedWorkspaces();
+    expect($remover->attempts)->toBe([$workspace->id, $workspace->id]);
+
+    $this->travel(TaskScheduler::retryDelaySeconds(2) - 1)->seconds();
+    app(TaskScheduler::class)->removeAbandonedWorkspaces();
+    expect($remover->attempts)->toBe([$workspace->id, $workspace->id]);
+
+    $this->travel(2)->seconds();
+    app(TaskScheduler::class)->removeAbandonedWorkspaces();
+    expect($remover->attempts)->toBe([$workspace->id, $workspace->id, $workspace->id]);
+
+    // The third failure waits five minutes, not the four minutes a doubled delay would use.
+    $this->travel(239)->seconds();
+    app(TaskScheduler::class)->removeAbandonedWorkspaces();
+    expect($remover->attempts)->toBe([$workspace->id, $workspace->id, $workspace->id]);
+    $this->travel(62)->seconds();
+    app(TaskScheduler::class)->removeAbandonedWorkspaces();
+    expect($remover->attempts)->toHaveCount(4);
+
+    $settling = TaskGroup::query()->create([
+        'app_id' => $group->app_id,
+        'title' => 'Manual complete',
+        'brief' => 'The operator completes it.',
+        'status' => TaskGroupStatus::Settling,
+        'pr_url' => 'https://github.com/acme/orbit/pull/77',
+    ]);
+    $kept = AppInstance::query()->create([
+        'app_id' => $group->app_id,
+        'node_id' => $group->taskable->node_id,
+        'name' => 'manual-complete',
+        'checkout_path' => '/tmp/manual-complete',
+        'status' => 'source_resolved',
+    ]);
+    $settling->taskable()->associate($kept);
+    $settling->save();
+    $remover->failing[] = $kept->id;
+
+    $completed = app(CompleteTaskGroupAction::class)->execute($settling);
+
+    expect($completed->status)->toBe(TaskGroupStatus::Completed)
+        ->and($completed->taskable_id)->toBe($kept->id)
+        ->and($completed->assistance_reason)->toBe(RemoveTaskWorkspaceAction::RemovalFailedPrefix.'disk full');
+
+    $other = TaskGroup::query()->create([
+        'app_id' => $group->app_id,
+        'title' => 'Other cause',
+        'brief' => 'Keep the question.',
+        'status' => TaskGroupStatus::Cancelled,
+        'assistance_requested' => true,
+        'assistance_reason' => $hold,
+    ]);
+    $otherWorkspace = AppInstance::query()->create([
+        'app_id' => $group->app_id,
+        'node_id' => $group->taskable->node_id,
+        'name' => 'other-cause',
+        'checkout_path' => '/tmp/other-cause',
+        'status' => 'source_resolved',
+    ]);
+    $other->taskable()->associate($otherWorkspace);
+    $other->save();
+    $remover->failing = [$workspace->id];
+
+    expect(app(TaskScheduler::class)->removeAbandonedWorkspaces())->toBe(2)
+        ->and(AppInstance::query()->find($kept->id))->toBeNull()
+        ->and($settling->fresh()?->taskable_id)->toBeNull()
+        ->and($settling->fresh()?->assistance_requested)->toBeFalse()
+        ->and(AppInstance::query()->find($otherWorkspace->id))->toBeNull()
+        ->and($other->fresh()?->assistance_requested)->toBeTrue()
+        ->and($other->fresh()?->assistance_reason)->toBe($hold)
+        ->and(AppInstance::query()->find($workspace->id))->not->toBeNull();
 });
 
 it('replaces its pull request assistance request with the cleanup failure when a merged group cannot complete', function (): void {
@@ -1746,6 +1888,10 @@ it('retries opening the pull request without storing the approval twice', functi
         ->and($publishing->publisher->pushes)->toBe([$group->id]);
 
     app(TaskScheduler::class)->tick();
+    expect($publishing->publisher->pushes)->toBe([$group->id]);
+
+    $this->travel(TaskScheduler::retryDelaySeconds(1))->seconds();
+    app(TaskScheduler::class)->tick();
 
     expect($task->comments()->count())->toBe(1)
         ->and($task->comments()->sole()->commit_sha)->toBe(str_repeat('c', 40))
@@ -1786,6 +1932,7 @@ it('retries publication after Orbit commits and changes HEAD itself', function (
         ->and($task->fresh()?->assistance_requested)->toBeFalse()
         ->and($publishing->publisher->bodies)->toHaveCount(1);
 
+    $this->travel(TaskScheduler::retryDelaySeconds(1))->seconds();
     app(TaskScheduler::class)->tick();
 
     expect($signer->commits)->toBe(1)
