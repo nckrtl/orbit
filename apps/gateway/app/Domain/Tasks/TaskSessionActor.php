@@ -72,8 +72,8 @@ final readonly class TaskSessionActor
     }
 
     /**
-     * Continues one Pi thread after a server restart. The key was reserved before this call, and the
-     * driver posts that key instead of minting another (ADR 0167).
+     * Continues one thread after a server restart. The key was reserved before this call. Pi posts it
+     * as the send key. T3 posts it as the command id and the message id (ADR 0167).
      */
     public function resumeInterruptedTurn(TaskGroup $group, TaskThreadObservation $observed, string $message, string $key): void
     {

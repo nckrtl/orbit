@@ -20,6 +20,7 @@ return new class extends Migration
             $table->foreignId('pi_restart_thread_id')->nullable()->constrained('agent_threads')->nullOnDelete();
             $table->string('pi_restart_source_turn_id')->nullable();
             $table->string('pi_restart_reservation')->nullable();
+            $table->string('pi_restart_session_revision')->nullable();
         });
     }
 
@@ -32,6 +33,7 @@ return new class extends Migration
                 'pi_restart_key',
                 'pi_restart_source_turn_id',
                 'pi_restart_reservation',
+                'pi_restart_session_revision',
             ]);
         });
     }

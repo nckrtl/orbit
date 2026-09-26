@@ -446,7 +446,7 @@ For `approved`, the workspace must be on `task-{group id}`. Orbit commits the wh
 
 When that commit is already stored and the push or the pull request open fails, the next attempt retries publication only while HEAD is still that commit and the recorded hash still matches. It does not commit again. Those attempts back off, as [Pull request and settle metrics](#pull-request-and-settle-metrics) describes, instead of running on every tick. A reset back to the HEAD from before the approval keeps the hash, but the Gateway refuses it and does not publish. After the last subtask's pull request is stored, the group moves to `settling` and remains active until its expected pull request is merged.
 
-`thread.turn.start` sends the T3 0.0.42 message struct `{messageId, role: user, text, attachments: []}` plus `modelSelection`. A flat string message is rejected by T3.
+`thread.turn.start` sends the T3 0.0.42 message struct `{messageId, role: user, text, attachments: []}` plus `modelSelection`. A flat string message is rejected by T3. A resume after a server restart reuses one command id and one message id for that send. [Recover a Pi server restart](#recover-a-pi-server-restart) states when.
 
 ### Pi driver
 
@@ -489,7 +489,7 @@ The Gateway sends one reminder that names every failed code item. It starts and 
 
 The run script instructions name the commands for that role. The reminder installs the script again before it is sent. It does not say that the thread is blocked. An agent reports a blocker with a `blocked` receipt and a question for the operator. A receipt that the scheduler acted on is spent, so the next turn needs a new one.
 
-The next idle evaluation asks for assistance when any item still fails. Repeated reminder-send failures ask for assistance on the fifth failure. The same pending input does not count as that next evaluation. A `Failed` thread asks for assistance without a reminder, except a Pi restart, which [Recover a Pi server restart](#recover-a-pi-server-restart) resumes.
+The next idle evaluation asks for assistance when any item still fails. Repeated reminder-send failures ask for assistance on the fifth failure. The same pending input does not count as that next evaluation. A `Failed` thread asks for assistance without a reminder, except a Pi or T3 restart, which [Recover a Pi server restart](#recover-a-pi-server-restart) resumes.
 
 ### Recover a Pi server restart
 
@@ -499,15 +499,25 @@ The tick sends one message to that same thread and does not ask for assistance. 
 
 The resume uses a new key, stored before the send. It does not reuse the key of the interrupted turn. A repeated key starts no turn, including after a restart. The tick repeats the stored key only while that same send is still unresolved. The tick does not read a receipt, run the rubric, or send a reminder first. It does not install the run script again. The script from the interrupted turn stays at `.git/orbit/run`.
 
-The acting thread is the implementer while the subtask is `running`. It is the reviewer while the subtask is `reviewing`. That thread's driver must be `pi`. A planner thread is outside this rule.
+The acting thread is the implementer while the subtask is `running`. It is the reviewer while the subtask is `reviewing`. That thread's driver is `pi` or `t3`. A planner thread is outside this rule.
 
-One subtask gets at most two resumes. The implementer and the reviewer share that count. The subtask stores `pi_restart_resumes`, `pi_restart_key`, `pi_restart_thread_id`, `pi_restart_source_turn_id`, and `pi_restart_reservation`. The count starts at 0. The key, the thread id, and the source turn id start null. The reservation starts null, then `pending`, `accepted`, or `superseded`. A resolution does not reset the count or these fields. A process stop does not reset them either. Show, the web board, and the agents API do not add them.
+T3 0.0.42 reports an equivalent failure when a provider session does not survive a server restart. Continue threads after restarts is off by default, so the usual error is `Provider session did not survive a server restart. Send a new message to continue.` When continuation is on and the continue fails, the error is `Could not continue this thread after the server restart. Send a new message to continue.` The tick resumes either error with the same message and the same limit of two. Any other T3 error asks for assistance, including the Pi restart text on a T3 thread.
 
-The count increases when the tick reserves a resume, before it sends. That write stores a new key, the acting thread, and the interrupted turn id, and sets the reservation to `pending`. The Pi driver sends that key and does not mint a different one for this send.
+One subtask gets at most two resumes. The implementer and the reviewer share that count. The subtask stores `pi_restart_resumes`, `pi_restart_key`, `pi_restart_thread_id`, `pi_restart_source_turn_id`, `pi_restart_reservation`, and `pi_restart_session_revision`. The count starts at 0. The key, the thread id, and the source turn id start null. The reservation starts null, then `pending`, `accepted`, or `superseded`. A resolution does not reset the count or these fields. A process stop does not reset them either. Show, the web board, and the agents API do not add them.
+
+The count increases when the tick reserves a resume, before it sends. That write stores a new key, the acting thread, the interrupted turn id, and the exact `session.updatedAt` as `pi_restart_session_revision`, and sets the reservation to `pending`. The Pi driver sends that key and does not mint a different one for this send. On T3 the key is the command id and the message id. T3 0.0.42 keeps a receipt for that command id, so repeating it returns the receipt and starts no second turn.
 
 The tick sends that stored key again only when the reservation is `pending`, the acting thread is the stored thread, and the observed turn id is still the stored source turn. That send is still unresolved. The tick does not add to the count.
 
 When that same thread's turn id equals the stored key, Pi accepted the reservation. The tick marks it `accepted` and does not send the key again. A restart of that accepted turn is a new interruption.
+
+T3 does not use the command id as the turn id. The tick repeats the stored command id while the reservation is pending, the turn id is the source turn, and the snapshot has no message with that command id. A message with that id means T3 accepted the command. T3 stores that message before the provider worker sets the session to `starting` and clears the previous error.
+
+`pi_restart_session_revision` is the exact `session.updatedAt` from the observation that reserved the resume. The Gateway clock supplies the message time. The node clock supplies `session.updatedAt`. The tick does not order those two clocks, and it does not drop a fraction of a second from the stored text.
+
+When that message is present and `session.updatedAt` is the stored revision, the restart error is the one from before the command. The tick does not send and does not reserve another resume. The session can then start without a second restart. This includes a node clock that is ahead of the message time.
+
+When the message is present, the turn id is the source turn, and `session.updatedAt` is a different non-empty value, T3 wrote a new session error after the reservation and before it assigned a new turn id. A difference inside the same second counts. The new value can read earlier than the message. The tick marks the reservation accepted and does not send that command id again. It reserves a new command id when the count is below 2, and asks for assistance when the count is already 2. A different turn id supersedes a pending reservation.
 
 When the observed turn id is a different turn, the tick marks a `pending` reservation `superseded` and does not send the old key. A reminder, a review relay, or a resolution can start that turn after the resume was accepted. Pi keeps the old key, so sending it again starts no turn.
 
@@ -515,7 +525,7 @@ A reservation stored for the implementer is not sent to the reviewer. A reservat
 
 The third interruption asks for assistance and does not send. While the subtask is `running`, the reason is `The implementer thread failed.` While it is `reviewing`, the reason is `The reviewer thread failed.`
 
-Any other `failed` error asks for assistance on the first observation. A failed thread on another driver does the same. There is no resume. A restart error with no turn id asks for assistance and does not reserve a resume.
+Any other `failed` error asks for assistance on the first observation. A failed thread on another driver does the same. There is no resume. A restart error with no turn id asks for assistance and does not reserve a resume. A T3 thread whose error is not one of the two restart errors above asks for assistance on that first observation.
 
 A send that throws leaves the pending reservation in place. It is a communication failure. The fifth consecutive failure asks for assistance. The next tick repeats the stored key only when that same thread still shows the same source turn. A returned send clears communication failures and does not change the count or the reservation.
 
