@@ -1122,10 +1122,21 @@ def example_from_schema(sch, name, tag, depth=0, update=False):
     return 'example'
 
 
+ACTIVITY_LIST_EXAMPLES = {
+    'request_id': '9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81',
+    'before_id': 480,
+    'status': 'failed',
+    'command': 'instance:deploy',
+    'caller_node_id': 2,
+    'target_node_id': 4,
+}
+
+
 def bash_sample(route, path, body_schema, query, tag):
     url = 'https://gateway.orbit' + re.sub(r'\{(\w+)\}', lambda m: str(EXAMPLE_PATH.get(m.group(1), 1)), path)
     if query:
-        url += '?' + '&'.join(f'{q}={EXAMPLE_BY_NAME.get(q, 1)}' for q in query)
+        examples = {**EXAMPLE_BY_NAME, **ACTIVITY_LIST_EXAMPLES} if route['name'] == 'activity:list' else EXAMPLE_BY_NAME
+        url += '?' + '&'.join(f'{q}={examples.get(q, 1)}' for q in query)
     method = '' if route['method'] == 'GET' else f'-X {route["method"]} '
     lines = [f'curl -sS {method}"{url}" \\', '  --cacert /path/to/orbit-root-ca.pem \\', "  -H 'Accept: application/json' \\", "  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'"]
     if body_schema is not None:

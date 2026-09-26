@@ -137,6 +137,56 @@
               "type": "string",
               "format": "uuid"
             }
+          },
+          {
+            "name": "before_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "running",
+                "succeeded",
+                "failed"
+              ]
+            }
+          },
+          {
+            "name": "command",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 255,
+              "minLength": 1
+            }
+          },
+          {
+            "name": "caller_node_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "target_node_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
           }
         ],
         "description": "List recent gateway command activity.",
@@ -181,7 +231,7 @@
           {
             "lang": "bash",
             "label": "curl",
-            "source": "curl -sS \"https://gateway.orbit/api/v1/activities?limit=25&request_id=1\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+            "source": "curl -sS \"https://gateway.orbit/api/v1/activities?limit=25&request_id=9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81&before_id=480&status=failed&command=instance:deploy&caller_node_id=2&target_node_id=4\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
           },
           {
             "lang": "php",

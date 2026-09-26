@@ -552,7 +552,16 @@ it('describes the environment lifecycle in command help', function (): void {
 
 it('keeps the exact approved arguments options and defaults', function (): void {
     $expected = [
-        'activity:list' => [[], ['limit' => '25', 'request-id' => null, 'json' => false]],
+        'activity:list' => [[], [
+            'limit' => '25',
+            'request-id' => null,
+            'before-id' => null,
+            'status' => null,
+            'command' => null,
+            'caller' => null,
+            'target' => null,
+            'json' => false,
+        ]],
         'activity:show' => [['activity'], ['json' => false]],
         'analytics:credentials' => [[], ['set' => false, 'api-key' => null, 'unset' => false, 'json' => false]],
         'analytics:update' => [['version'], ['json' => false]],

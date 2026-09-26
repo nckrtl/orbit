@@ -46,6 +46,45 @@ it('lists a bounded typed activity collection', function (): void {
         ->toBe(activity_request_id());
 });
 
+it('sends activity list paging and filters and omits the ones that are absent', function (): void {
+    $mock = new MockClient([
+        ListActivitiesRequest::class => MockResponse::make([
+            'data' => [],
+            'meta' => ['request_id' => activity_request_id()],
+        ]),
+    ]);
+    $request = new ListActivitiesRequest(
+        beforeId: 480,
+        status: 'failed',
+        command: 'instance:deploy',
+        callerNodeId: 2,
+        targetNodeId: 4,
+    );
+    activity_connector($mock)->send($request);
+
+    expect($request->query()->all())->toBe([
+        'limit' => 25,
+        'before_id' => 480,
+        'status' => 'failed',
+        'command' => 'instance:deploy',
+        'caller_node_id' => 2,
+        'target_node_id' => 4,
+    ]);
+
+    $bare = new ListActivitiesRequest;
+    activity_connector($mock)->send($bare);
+
+    expect($bare->query()->all())->toBe(['limit' => 25]);
+
+    $emptyCommand = new ListActivitiesRequest(command: '');
+    activity_connector($mock)->send($emptyCommand);
+
+    expect($emptyCommand->query()->all())->toBe([
+        'limit' => 25,
+        'command' => '',
+    ]);
+});
+
 it('shows one typed activity', function (): void {
     $mock = new MockClient([
         ShowActivityRequest::class => MockResponse::make([

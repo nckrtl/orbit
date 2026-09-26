@@ -3630,6 +3630,11 @@ export interface operations {
             query?: {
                 limit?: number;
                 request_id?: string;
+                before_id?: number;
+                status?: "running" | "succeeded" | "failed";
+                command?: string;
+                caller_node_id?: number;
+                target_node_id?: number;
             };
             header?: never;
             path?: never;

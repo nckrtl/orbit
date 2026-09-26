@@ -127,6 +127,198 @@ describe('activity reads', function (): void {
             ->assertNotFound()
             ->assertJsonPath('error.code', 'http.404');
     });
+
+    it('pages older rows with before_id', function (): void {
+        $oldest = activity_api_record(
+            requestId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1',
+            command: 'app:list',
+            status: 'succeeded',
+            properties: [],
+        );
+        $middle = activity_api_record(
+            requestId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2',
+            command: 'node:add',
+            status: 'failed',
+            properties: [],
+        );
+        $newest = activity_api_record(
+            requestId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3',
+            command: 'instance:deploy',
+            status: 'running',
+            properties: [],
+        );
+
+        expect($newest->id)->toBeGreaterThan($middle->id)
+            ->and($middle->id)->toBeGreaterThan($oldest->id);
+
+        $this
+            ->getJson('/api/v1/activities?limit=2')
+            ->assertOk()
+            ->assertJsonCount(2, 'data')
+            ->assertJsonPath('data.0.id', $newest->id)
+            ->assertJsonPath('data.1.id', $middle->id)
+            ->assertJsonPath('meta.limit', 2)
+            ->assertJsonPath('meta.count', 2);
+
+        $this
+            ->getJson("/api/v1/activities?limit=2&before_id={$middle->id}")
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.id', $oldest->id)
+            ->assertJsonPath('meta.count', 1);
+
+        $this
+            ->getJson("/api/v1/activities?limit=2&before_id={$oldest->id}")
+            ->assertOk()
+            ->assertJsonCount(0, 'data')
+            ->assertJsonPath('meta.count', 0);
+    });
+
+    it('combines status, command, and node filters', function (): void {
+        $target = Node::query()->create([
+            'name' => 'activity-target',
+            'status' => LifecycleStatus::Active,
+            'platform' => 'linux',
+            'public_ssh_host' => '192.0.2.30',
+            'wireguard_ip' => '10.44.0.30',
+        ]);
+        $matchOld = activity_api_record(
+            requestId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1',
+            command: 'instance:deploy',
+            status: 'failed',
+            properties: [],
+            callerNodeId: $this->operator->id,
+            targetNodeId: $target->id,
+        );
+        $matchNew = activity_api_record(
+            requestId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb2',
+            command: 'instance:deploy',
+            status: 'failed',
+            properties: [],
+            callerNodeId: $this->operator->id,
+            targetNodeId: $target->id,
+        );
+        activity_api_record(
+            requestId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb3',
+            command: 'instance:deploy',
+            status: 'succeeded',
+            properties: [],
+            callerNodeId: $this->operator->id,
+            targetNodeId: $target->id,
+        );
+        activity_api_record(
+            requestId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb4',
+            command: 'node:add',
+            status: 'failed',
+            properties: [],
+            callerNodeId: $this->operator->id,
+            targetNodeId: $target->id,
+        );
+        activity_api_record(
+            requestId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb5',
+            command: 'instance:deploy',
+            status: 'failed',
+            properties: [],
+            targetNodeId: $target->id,
+        );
+        activity_api_record(
+            requestId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb6',
+            command: 'instance:deploy',
+            status: 'failed',
+            properties: [],
+            callerNodeId: $this->operator->id,
+        );
+        $filters = 'status=failed&command=instance:deploy'
+            ."&caller_node_id={$this->operator->id}&target_node_id={$target->id}";
+
+        $this
+            ->getJson('/api/v1/activities?'.$filters)
+            ->assertOk()
+            ->assertJsonCount(2, 'data')
+            ->assertJsonPath('data.0.id', $matchNew->id)
+            ->assertJsonPath('data.1.id', $matchOld->id)
+            ->assertJsonPath('meta.count', 2);
+
+        $this
+            ->getJson('/api/v1/activities?'.$filters."&before_id={$matchNew->id}&limit=25")
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.id', $matchOld->id);
+
+        $this
+            ->getJson('/api/v1/activities?'.$filters."&before_id={$matchOld->id}")
+            ->assertOk()
+            ->assertJsonCount(0, 'data');
+
+        $this
+            ->getJson('/api/v1/activities?command=missing:command')
+            ->assertOk()
+            ->assertJsonCount(0, 'data');
+
+        $this
+            ->getJson('/api/v1/activities?command=Instance:deploy')
+            ->assertOk()
+            ->assertJsonCount(0, 'data');
+
+        $this
+            ->getJson('/api/v1/activities?caller_node_id=999999')
+            ->assertOk()
+            ->assertJsonCount(0, 'data');
+
+        $this
+            ->getJson('/api/v1/activities?target_node_id=999999')
+            ->assertOk()
+            ->assertJsonCount(0, 'data');
+
+        $this
+            ->getJson('/api/v1/activities?status=running')
+            ->assertOk()
+            ->assertJsonCount(0, 'data');
+
+        $this
+            ->getJson('/api/v1/activities?request_id=bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb2&status=succeeded')
+            ->assertOk()
+            ->assertJsonCount(0, 'data');
+
+        $this
+            ->getJson('/api/v1/activities?request_id=bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb2&status=failed')
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.id', $matchNew->id);
+    });
+
+    it('accepts a command at the length bound', function (): void {
+        $command = str_repeat('a', 255);
+        $row = activity_api_record(
+            requestId: 'cccccccc-cccc-4ccc-8ccc-ccccccccccc1',
+            command: $command,
+            status: 'succeeded',
+            properties: [],
+        );
+
+        $this
+            ->getJson('/api/v1/activities?command='.$command)
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.id', $row->id);
+    });
+
+    it('rejects an invalid activity list filter', function (string $query, string $field, string $message): void {
+        $this
+            ->getJson('/api/v1/activities?'.$query)
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'validation.failed')
+            ->assertJsonPath("error.details.{$field}.0", $message);
+    })->with([
+        'before id zero' => ['before_id=0', 'before_id', 'The before id field must be at least 1.'],
+        'before id text' => ['before_id=nope', 'before_id', 'The before id field must be an integer.'],
+        'status' => ['status=success', 'status', 'The selected status is invalid.'],
+        'command empty' => ['command=', 'command', 'The command field must be a string.'],
+        'command too long' => ['command='.str_repeat('a', 256), 'command', 'The command field must not be greater than 255 characters.'],
+        'caller zero' => ['caller_node_id=0', 'caller_node_id', 'The caller node id field must be at least 1.'],
+        'caller text' => ['caller_node_id=node', 'caller_node_id', 'The caller node id field must be an integer.'],
+        'target negative' => ['target_node_id=-4', 'target_node_id', 'The target node id field must be at least 1.'],
+    ]);
 });
 
 describe('activity access and redaction', function (): void {
@@ -327,6 +519,8 @@ function activity_api_record(
     string $status,
     array $properties,
     ?string $errorCode = null,
+    ?int $callerNodeId = null,
+    ?int $targetNodeId = null,
 ): Activity {
     return Activity::query()->create([
         'log_name' => 'commands',
@@ -335,6 +529,8 @@ function activity_api_record(
         'properties' => $properties,
         'request_id' => $requestId,
         'command' => $command,
+        'caller_node_id' => $callerNodeId,
+        'target_node_id' => $targetNodeId,
         'caller_ip' => '10.44.0.2',
         'status' => $status,
         'duration_ms' => 12,

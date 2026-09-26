@@ -9,7 +9,12 @@
       "path_inputs": [],
       "query_inputs": [
         "limit",
-        "request_id"
+        "request_id",
+        "before_id",
+        "status",
+        "command",
+        "caller_node_id",
+        "target_node_id"
       ],
       "streams": false,
       "input_schema": {
@@ -23,6 +28,31 @@
           "request_id": {
             "type": "string",
             "format": "uuid"
+          },
+          "before_id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "running",
+              "succeeded",
+              "failed"
+            ]
+          },
+          "command": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1
+          },
+          "caller_node_id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "target_node_id": {
+            "type": "integer",
+            "minimum": 1
           }
         },
         "additionalProperties": false
