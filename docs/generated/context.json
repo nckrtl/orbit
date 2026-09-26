@@ -584,7 +584,8 @@
             "title": "Contributing to Orbit",
             "kind": "product",
             "components": [
-                "apps/cli"
+                "apps/cli",
+                "apps/gateway"
             ],
             "concepts": [
                 "Gateway",
@@ -3686,7 +3687,8 @@
                 "0138",
                 "0139",
                 "0141",
-                "0146"
+                "0146",
+                "0157"
             ]
         },
         {
@@ -4030,6 +4032,51 @@
             ]
         },
         {
+            "path": "docs/decisions/0156-route-the-private-domain-on-the-gateway-machine-to-vpn-dns.md",
+            "title": "ADR 0156: Route the private domain on the Gateway machine to VPN DNS",
+            "kind": "decision",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Cluster",
+                "Doctor",
+                "Gateway",
+                "Node",
+                "Project",
+                "Route",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0061",
+                "0094",
+                "0156"
+            ]
+        },
+        {
+            "path": "docs/decisions/0157-keep-private-caddy-sites-off-the-public-listener.md",
+            "title": "ADR 0157: Keep private Caddy sites off the public listener",
+            "kind": "decision",
+            "components": [
+                "apps/docs",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Cluster",
+                "Doctor",
+                "Gateway",
+                "Ingress",
+                "Node",
+                "Route",
+                "Router",
+                "proxycli"
+            ],
+            "governing_adrs": [
+                "0141",
+                "0157"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -4213,7 +4260,9 @@
                 "0152",
                 "0153",
                 "0154",
-                "0155"
+                "0155",
+                "0156",
+                "0157"
             ]
         },
         {
@@ -4597,7 +4646,8 @@
             "governing_adrs": [
                 "0138",
                 "0139",
-                "0141"
+                "0141",
+                "0157"
             ]
         },
         {
@@ -5159,6 +5209,7 @@
             ],
             "concepts": [
                 "Cluster",
+                "Database",
                 "Doctor",
                 "Gateway",
                 "Ingress",
@@ -5178,7 +5229,8 @@
                 "0094",
                 "0100",
                 "0138",
-                "0144"
+                "0144",
+                "0157"
             ]
         },
         {
@@ -5263,6 +5315,7 @@
             "components": [],
             "concepts": [
                 "Cluster",
+                "Doctor",
                 "Gateway",
                 "Node",
                 "Project",
@@ -5273,7 +5326,8 @@
             "governing_adrs": [
                 "0061",
                 "0062",
-                "0149"
+                "0149",
+                "0156"
             ]
         },
         {

@@ -12,7 +12,7 @@ use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
 use Symfony\Component\Process\Process as LocalProcess;
-use Tests\Support\LinuxContainer;
+use Tests\Support\LinuxHost;
 
 function local_vite_port_runtime(): RemoteVitePortRuntime
 {
@@ -36,7 +36,7 @@ function local_vite_port_runtime(): RemoteVitePortRuntime
 }
 
 it('skips actual occupied TCP ports and explicit exclusions on Linux', function (string $address): void {
-    if (LinuxContainer::delegate($this)) {
+    if (LinuxHost::delegate($this)) {
         return;
     }
 
@@ -53,7 +53,7 @@ it('skips actual occupied TCP ports and explicit exclusions on Linux', function 
 })->with(['IPv4' => 'tcp://127.0.0.1:0', 'IPv6' => 'tcp://[::1]:0']);
 
 it('reports finite exhaustion when the final candidate is excluded', function (): void {
-    if (LinuxContainer::delegate($this)) {
+    if (LinuxHost::delegate($this)) {
         return;
     }
 

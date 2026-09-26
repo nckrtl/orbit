@@ -5,8 +5,10 @@ declare(strict_types=1);
 use App\Domain\Doctor\DoctorInspectionException;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\Doctor\NativeRoleStateInspector;
 use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
+use App\Infrastructure\Gateway\GatewayPrivateDnsResolver;
 use App\Infrastructure\Nodes\NodeBootstrapPackageCatalog;
 use App\Infrastructure\Nodes\NodeRoleServiceCatalog;
 use App\Infrastructure\Processes\CommandDeadline;
@@ -105,6 +107,56 @@ it('inspects each role with exact package service and firewall requirements', fu
         [],
     ],
 ]);
+
+it('checks the private DNS route on the Gateway machine only while a Node serves VPN DNS', function (
+    string $probe,
+    ?bool $expected,
+): void {
+    app(VpnSettings::class)->configure(subnet: '10.44.0.0/24', dnsServer: '10.44.0.1', domain: 'orbit');
+    $ssh = new RoleInspectorSshExecutor([
+        role_inspector_result("1\n"),
+        role_inspector_result("1\n"),
+        role_inspector_result(role_inspector_ufw(['orbit:gateway-https'])),
+        role_inspector_result("v2.11.4\n"),
+        role_inspector_result($probe),
+    ]);
+
+    $gateway = role_state_inspector($ssh)->inspect(role_inspector_assignment(RoleName::Gateway));
+
+    expect($gateway->privateDnsRouteMatches)->toBe($expected)
+        ->and($ssh->calls)->toHaveCount(5)
+        ->and($ssh->calls[4]['command'])->toEqual(new GatewayPrivateDnsResolver()->inspectCommand('10.44.0.1', 'orbit'));
+})->with([
+    'the route matches' => ["1\n", true],
+    'the route is missing' => ["0\n", false],
+]);
+
+it('fails the Gateway role inspection closed on an unreadable private DNS probe', function (): void {
+    app(VpnSettings::class)->configure(subnet: '10.44.0.0/24', dnsServer: '10.44.0.1', domain: 'orbit');
+    $ssh = new RoleInspectorSshExecutor([
+        role_inspector_result("1\n"),
+        role_inspector_result("1\n"),
+        role_inspector_result(role_inspector_ufw(['orbit:gateway-https'])),
+        role_inspector_result("v2.11.4\n"),
+        role_inspector_result("maybe\n"),
+    ]);
+
+    expect(fn () => role_state_inspector($ssh)->inspect(role_inspector_assignment(RoleName::Gateway)))
+        ->toThrow(DoctorInspectionException::class);
+});
+
+it('leaves the private DNS route unchecked while no Node serves VPN DNS', function (): void {
+    $ssh = new RoleInspectorSshExecutor([
+        role_inspector_result("1\n"),
+        role_inspector_result("1\n"),
+        role_inspector_result(role_inspector_ufw(['orbit:gateway-https'])),
+        role_inspector_result("v2.11.4\n"),
+    ]);
+
+    expect(role_state_inspector($ssh)->inspect(role_inspector_assignment(RoleName::Gateway))->privateDnsRouteMatches)
+        ->toBeNull()
+        ->and($ssh->calls)->toHaveCount(4);
+});
 
 it('returns independent false projections for one missing requirement', function (
     RoleName $role,

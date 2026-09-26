@@ -440,7 +440,7 @@ describe('the build command', function (): void {
         $node = node_caddy_builder_node('app-dev', '10.44.0.3');
         $node->roles()->create(['role' => RoleName::WebSocket, 'status' => LifecycleStatus::Active]);
         CaddySiteCertificateFixtures::recordAll($node);
-        $this->ssh->results = [new CommandResult(0, "{\n    auto_https disable_certs\n    metrics {\n        per_host\n    }\n}\nold.test {\n    respond old\n}\n", '', 1, false)];
+        $this->ssh->results = [new CommandResult(0, "{\n    auto_https disable_certs\n    order abort first\n    metrics {\n        per_host\n    }\n}\nold.test {\n    respond old\n}\n", '', 1, false)];
         app()->instance(NodeCaddyTransport::class, node_caddy_builder_transport($this));
 
         $this->artisan('orbit:caddy-build', ['node' => 'app-dev', '--dry-run' => true, '--diff' => true])

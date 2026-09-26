@@ -94,6 +94,21 @@ describe('the Node Caddyfile', function (): void {
 
         expect(caddy_adapt(caddy_build_renderer()->render($node)->content)->succeeded())->toBeTrue();
     });
+
+    it('validates a Node that is the Router, the Ingress, and app-prod when a Caddy binary is installed', function (): void {
+        if (new ExecutableFinder()->find('caddy') === null) {
+            $this->markTestSkipped('Caddy is not installed.');
+        }
+
+        $edge = caddy_build_node('app-prod', '10.44.0.3');
+        [, $route] = caddy_build_private_route($edge, 'shop.test');
+        $edge->roles()->create(['role' => RoleName::Ingress, 'status' => LifecycleStatus::Active, 'cluster_id' => $route->cluster_id]);
+        $edge->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
+        $caddyfile = caddy_build_renderer()->render($edge->fresh() ?? $edge);
+
+        expect($caddyfile->problems)->toBe([])
+            ->and(caddy_adapt($caddyfile->content)->succeeded())->toBeTrue();
+    });
 });
 
 describe('site sources', function (): void {
@@ -105,7 +120,7 @@ describe('site sources', function (): void {
 
         $caddyfile = caddy_build_renderer()->render($node);
 
-        expect($caddyfile->content)->toContain("# orbit: gateway gateway.orbit\n".rtrim($expected)."\n")
+        expect($caddyfile->content)->toContain("# orbit: gateway gateway.orbit\n".rtrim(NodeCaddyfileRenderer::admitOnly($expected, '10.44.0.0/24'))."\n")
             ->and($caddyfile->sites[0]->listener)->toBe(CaddyListenerRule::WireGuard)
             ->and($caddyfile->sites[0]->hosts)->toBe(['gateway.orbit', '10.44.0.1']);
     });
@@ -119,7 +134,7 @@ describe('site sources', function (): void {
 
         $caddyfile = caddy_build_renderer()->render($gateway);
 
-        expect($caddyfile->content)->toContain(rtrim(new MetricsPublicationRenderer()->caddy('10.44.0.5', '10.44.0.1')))
+        expect($caddyfile->content)->toContain(rtrim(NodeCaddyfileRenderer::admitOnly(new MetricsPublicationRenderer()->caddy('10.44.0.5', '10.44.0.1'), '10.44.0.0/24')))
             ->and(caddy_build_renderer()->render($metrics)->content)->not->toContain('metrics.orbit');
     });
 
@@ -155,7 +170,7 @@ describe('site sources', function (): void {
 
         $caddyfile = $renderer->render($ingress);
 
-        expect($caddyfile->content)->toContain(rtrim(new ServiceMetricsConfigRenderer()->caddy('10.44.0.6', '10.44.0.5')))
+        expect($caddyfile->content)->toContain(rtrim(NodeCaddyfileRenderer::admitOnly(new ServiceMetricsConfigRenderer()->caddy('10.44.0.6', '10.44.0.5'), '10.44.0.0/24')))
             ->and($caddyfile->sites[0]->port)->toBe(9103)
             ->and($renderer->render($metrics)->sites)->toBe([]);
     });
@@ -208,9 +223,9 @@ describe('site sources', function (): void {
         $content = caddy_build_renderer()->render($node)->content;
 
         expect($content)
-            ->toContain("reverb.orbit {\n    bind 10.44.0.7\n")
-            ->toContain("analytics.orbit {\n    bind 10.44.0.7\n")
-            ->toContain("collector.cli-proxy-api.orbit {\n    bind 10.44.0.7\n")
+            ->toContain("reverb.orbit {\n    bind 10.44.0.7\n    @orbit_outside not remote_ip 10.44.0.0/24\n    abort @orbit_outside\n")
+            ->toContain("analytics.orbit {\n    bind 10.44.0.7\n    @orbit_outside not remote_ip 10.44.0.0/24\n    abort @orbit_outside\n")
+            ->toContain("collector.cli-proxy-api.orbit {\n    bind 10.44.0.7\n    @orbit_outside not remote_ip 10.44.0.0/24\n    abort @orbit_outside\n")
             ->not->toContain('__ORBIT_');
     });
 
@@ -286,58 +301,40 @@ describe('listener selection', function (): void {
             ->and($caddyfile->content)->not->toContain('0.0.0.0');
     });
 
-    it('binds first-row sites to every address on an Ingress Node', function (): void {
+    it('keeps first-row sites on the WireGuard and LAN addresses on an Ingress Node and admits only private clients', function (): void {
         $caddyfile = caddy_build_compose(
             [caddy_build_rendered_site(CaddyListenerRule::Wildcard, host: 'shop.test', source: 'app-dev')],
             lan: '192.168.1.9',
             ingress: true,
         );
 
-        expect($caddyfile->content)->toContain("shop.test {\n    bind 0.0.0.0\n");
+        expect($caddyfile->content)->toContain("shop.test {\n    bind 10.44.0.9 192.168.1.9\n    @orbit_outside not remote_ip private_ranges 100.64.0.0/10 10.44.0.0/24\n    abort @orbit_outside\n")
+            ->not->toContain('0.0.0.0');
     });
 
-    it('binds a shared site to the WireGuard address when no wildcard site shares its port', function (): void {
+    it('admits every client to first-row sites on a Node without ingress', function (): void {
+        $caddyfile = caddy_build_compose(
+            [caddy_build_rendered_site(CaddyListenerRule::Wildcard, host: 'shop.test', source: 'app-dev')],
+        );
+
+        expect($caddyfile->content)->not->toContain('@orbit_outside');
+    });
+
+    it('binds a shared site to the WireGuard address and admits only the VPN subnet', function (): void {
         $site = caddy_build_rendered_site(CaddyListenerRule::Shared);
 
-        expect(caddy_build_compose([$site])->content)->toContain('bind 10.44.0.9');
+        expect(caddy_build_compose([$site])->content)->toContain("reverb.orbit {\n    bind 10.44.0.9\n    @orbit_outside not remote_ip 10.44.0.0/24\n    abort @orbit_outside\n");
     });
 
-    it('keeps a shared site on WireGuard beside first-row sites on a Node without ingress', function (): void {
+    it('keeps a shared site on WireGuard beside first-row and public sites on an Ingress Node', function (): void {
         $caddyfile = caddy_build_compose([
-            caddy_build_rendered_site(CaddyListenerRule::Wildcard, host: 'shop.test', source: 'app-dev'),
-            caddy_build_rendered_site(CaddyListenerRule::Shared),
-        ]);
-
-        expect($caddyfile->content)->toContain("reverb.orbit {\n    bind 10.44.0.9\n")
-            ->and($caddyfile->buildable())->toBeTrue();
-    });
-
-    it('binds a shared site to every address beside first-row sites on an Ingress Node', function (): void {
-        $caddyfile = caddy_build_compose([
+            caddy_build_rendered_site(CaddyListenerRule::Public, host: 'shop.example.com', source: 'ingress'),
             caddy_build_rendered_site(CaddyListenerRule::Wildcard, host: 'shop.test', source: 'app-dev'),
             caddy_build_rendered_site(CaddyListenerRule::Shared),
         ], ingress: true);
 
-        expect($caddyfile->content)->toContain("reverb.orbit {\n    bind 0.0.0.0")
+        expect($caddyfile->content)->toContain("reverb.orbit {\n    bind 10.44.0.9\n    @orbit_outside not remote_ip 10.44.0.0/24\n    abort @orbit_outside\n")
             ->and($caddyfile->buildable())->toBeTrue();
-    });
-
-    it('keeps a shared site on WireGuard beside public Ingress sites', function (): void {
-        $caddyfile = caddy_build_compose([
-            caddy_build_rendered_site(CaddyListenerRule::Public, host: 'shop.example.com', source: 'ingress'),
-            caddy_build_rendered_site(CaddyListenerRule::Shared),
-        ], ingress: true);
-
-        expect($caddyfile->content)->toContain("reverb.orbit {\n    bind 10.44.0.9");
-    });
-
-    it('lets a WireGuard-only site share port 443 with public Ingress sites', function (): void {
-        $caddyfile = caddy_build_compose([
-            caddy_build_rendered_site(CaddyListenerRule::Public, host: 'shop.example.com', source: 'ingress'),
-            caddy_build_rendered_site(CaddyListenerRule::WireGuard, host: 'gateway.orbit', source: 'gateway'),
-        ], ingress: true);
-
-        expect($caddyfile->buildable())->toBeTrue();
     });
 
     it('builds a Gateway that is also the Router, with the Router sites on its WireGuard and LAN addresses', function (): void {
@@ -354,35 +351,47 @@ describe('listener selection', function (): void {
         expect($caddyfile->problems)->toBe([])
             ->and($caddyfile->listenAddresses)->toBe(['10.44.0.1', '192.168.1.1'])
             ->and($caddyfile->content)
-            ->toContain("gateway.orbit, 10.44.0.1 {\n    bind 10.44.0.1\n")
-            ->toContain("# orbit: app-dev route-{$route->id}-router\nhttps://shop.test {\n    bind 10.44.0.1 192.168.1.1\n")
-            ->toContain("reverb.orbit {\n    bind 10.44.0.1\n")
+            ->toContain("gateway.orbit, 10.44.0.1 {\n    bind 10.44.0.1\n    @orbit_outside not remote_ip 10.44.0.0/24\n    abort @orbit_outside\n")
+            ->toContain("# orbit: app-dev route-{$route->id}-router\nhttps://shop.test {\n    bind 10.44.0.1 192.168.1.1\n    tls ")
+            ->toContain("reverb.orbit {\n    bind 10.44.0.1\n    @orbit_outside not remote_ip 10.44.0.0/24\n    abort @orbit_outside\n")
             ->not->toContain('0.0.0.0');
     });
 
-    it('refuses a WireGuard-only site beside a first-row site on an Ingress Node and names both', function (): void {
-        $gateway = caddy_build_node('gateway', '10.44.0.1');
-        $gateway->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
-        CaddySiteCertificateFixtures::recordAll($gateway);
-        [, $route] = caddy_build_private_route($gateway, 'shop.test');
-        $gateway->roles()->create(['role' => RoleName::Ingress, 'status' => LifecycleStatus::Active, 'cluster_id' => $route->cluster_id]);
+    it('keeps the private sites of a Node that is the Router, the Ingress, and app-prod off every address', function (): void {
+        $edge = caddy_build_node('app-prod', '10.44.0.3');
+        $edge->update(['lan_ip' => '192.168.1.3']);
+        [, $route] = caddy_build_private_route($edge, 'shop.test');
+        $edge->roles()->create(['role' => RoleName::Ingress, 'status' => LifecycleStatus::Active, 'cluster_id' => $route->cluster_id]);
+        $edge->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
 
-        $caddyfile = caddy_build_renderer()->render($gateway);
+        $caddyfile = caddy_build_renderer()->render($edge->fresh() ?? $edge);
 
-        expect($caddyfile->buildable())->toBeFalse()
-            ->and($caddyfile->problems)->toBe([
-                'The gateway site gateway.orbit binds the WireGuard address on port 443, which the '
-                ."app-dev site route-{$route->id}-router serves on 0.0.0.0 on this Ingress Node. The app-dev site would be unreachable over WireGuard.",
-            ]);
+        expect($caddyfile->problems)->toBe([])
+            ->and($caddyfile->listenAddresses)->toBe(['10.44.0.3', '192.168.1.3'])
+            ->and($caddyfile->content)
+            ->toContain("# orbit: app-dev route-{$route->id}-router\nhttps://shop.test {\n    bind 10.44.0.3 192.168.1.3\n    @orbit_outside not remote_ip private_ranges 100.64.0.0/10 10.44.0.0/24\n    abort @orbit_outside\n")
+            ->not->toContain('0.0.0.0');
     });
 
-    it('allows a WireGuard-only site beside a first-row site on another port of an Ingress Node', function (): void {
+    it('binds public Ingress sites to every address and to the WireGuard and LAN addresses, and admits every client', function (): void {
         $caddyfile = caddy_build_compose([
+            caddy_build_rendered_site(CaddyListenerRule::Public, host: 'shop.example.com', source: 'ingress'),
             caddy_build_rendered_site(CaddyListenerRule::Wildcard, host: 'shop.test', source: 'app-dev'),
-            caddy_build_rendered_site(CaddyListenerRule::WireGuard, host: '10.44.0.9', source: 'service-metrics', port: 9103),
-        ], ingress: true);
+            caddy_build_rendered_site(CaddyListenerRule::WireGuard, host: 'gateway.orbit', source: 'gateway'),
+        ], lan: '192.168.1.9', ingress: true);
 
-        expect($caddyfile->buildable())->toBeTrue();
+        expect($caddyfile->buildable())->toBeTrue()
+            ->and($caddyfile->content)
+            ->toContain("shop.example.com {\n    bind 0.0.0.0 10.44.0.9 192.168.1.9\n}\n")
+            ->toContain("shop.test {\n    bind 10.44.0.9 192.168.1.9\n    @orbit_outside not remote_ip private_ranges 100.64.0.0/10 10.44.0.0/24\n    abort @orbit_outside\n")
+            ->toContain("gateway.orbit {\n    bind 10.44.0.9\n    @orbit_outside not remote_ip 10.44.0.0/24\n    abort @orbit_outside\n");
+    });
+
+    it('keeps the guard off a unix socket listener', function (): void {
+        $body = "unix.test {\n    bind unix//run/orbit/route.sock\n}\nhttps://shop.test {\n    bind 10.44.0.9\n}\n";
+
+        expect(NodeCaddyfileRenderer::admitOnly($body, '10.44.0.0/24'))
+            ->toBe("unix.test {\n    bind unix//run/orbit/route.sock\n}\nhttps://shop.test {\n    bind 10.44.0.9\n    @orbit_outside not remote_ip 10.44.0.0/24\n    abort @orbit_outside\n}\n");
     });
 });
 
@@ -409,17 +418,28 @@ describe('duplicate addresses', function (): void {
         ]));
 
         expect(caddy_build_compose($sites, ingress: true)->problems)->toBe([
-            'The ingress site route-1-ingress and the app-dev site route-1-router both serve shop.example.com:443 on 0.0.0.0.',
+            'The ingress site route-1-ingress and the app-dev site route-1-router both serve shop.example.com:443 on 10.44.0.9.',
         ]);
     });
 
-    it('treats the same domain on different listeners as different addresses', function (): void {
+    it('treats the same domain on different ports as different addresses', function (): void {
+        $caddyfile = caddy_build_compose([
+            caddy_build_rendered_site(CaddyListenerRule::Wildcard, host: 'app.test', source: 'app-dev', port: 8443),
+            caddy_build_rendered_site(CaddyListenerRule::Public, host: 'app.test', source: 'ingress', port: 443),
+        ], ingress: true);
+
+        expect($caddyfile->buildable())->toBeTrue();
+    });
+
+    it('refuses a WireGuard-only site and a public site for one domain on one port, which share the WireGuard address', function (): void {
         $caddyfile = caddy_build_compose([
             caddy_build_rendered_site(CaddyListenerRule::WireGuard, host: 'app.test', source: 'gateway', port: 8443),
             caddy_build_rendered_site(CaddyListenerRule::Public, host: 'app.test', source: 'ingress', port: 8443),
         ], ingress: true);
 
-        expect($caddyfile->buildable())->toBeTrue();
+        expect($caddyfile->problems)->toBe([
+            'The gateway site app.test and the ingress site app.test both serve app.test:8443 on 10.44.0.9.',
+        ]);
     });
 
     it('refuses two sites on one unix socket', function (): void {

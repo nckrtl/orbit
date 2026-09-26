@@ -126,6 +126,28 @@ it('removes publication, exporters, and runtime in that order', function (): voi
         ->toBe(MetricsPublicationCleanup::Cleaned);
 });
 
+it('keeps the fleet exporters when it retracts a Metrics Node the role relocated away from', function (): void {
+    [$source, $assignment] = metricsBaselineTopology();
+    $target = Node::query()->create([
+        'name' => 'app-prod-2',
+        'status' => LifecycleStatus::Active,
+        'platform' => 'linux',
+        'public_ssh_host' => '192.0.2.5',
+        'ssh_user' => 'orbit',
+        'wireguard_ip' => '10.44.0.5',
+    ]);
+    $assignment->update(['node_id' => $target->id, 'status' => LifecycleStatus::Active]);
+    $ghost = new NodeRole(['node_id' => $source->id, 'role' => RoleName::Metrics, 'status' => LifecycleStatus::Active]);
+    $events = [];
+
+    metricsBaseline($events)->remove($source, $ghost, false);
+
+    expect($events)->toBe([
+        'publication:remove',
+        'runtime:remove',
+    ]);
+});
+
 it('removes node state before abandoning the publication when no single Gateway is active', function (
     int $gatewayCount,
 ): void {

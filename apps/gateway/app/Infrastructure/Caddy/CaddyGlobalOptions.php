@@ -8,13 +8,15 @@ final readonly class CaddyGlobalOptions
 {
     /**
      * Every Node runs the same global options: no certificate automation unless a site opts in
-     * (ADR 0138), and per-host HTTP metrics that service metrics scrapes on Ingress (ADR 0139).
+     * (ADR 0138), `abort` before every other handler so a site's client guard runs first (ADR 0157),
+     * and per-host HTTP metrics that service metrics scrapes on Ingress (ADR 0139).
      */
     public static function render(): string
     {
         return <<<'CADDY'
             {
                 auto_https disable_certs
+                order abort first
                 metrics {
                     per_host
                 }

@@ -349,6 +349,12 @@ final readonly class NodeFirewallRuleCatalog
         );
     }
 
+    /** The same Metrics agent rule, sourced from another Metrics Node's address, as a relocation leaves it. */
+    public function metricsAgentFromSource(UfwManagedRule $rule, string $source): UfwManagedRule
+    {
+        return $this->metricsRule($rule->shape->comment, $source, $rule->shape->destination, $rule->shape->port);
+    }
+
     public function metricsService(Node $node, Node $metricsNode, string $kind, bool $allow): UfwManagedRule
     {
         $port = match ($kind) {

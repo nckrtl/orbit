@@ -717,7 +717,9 @@
               "decisions/0152-sample-successful-read-activity",
               "decisions/0153-tail-instance-and-process-logs-live-through-the-node-agent",
               "decisions/0154-recover-the-gateway-agent-view-without-a-membership-change",
-              "decisions/0155-authenticate-the-node-agent-with-a-per-node-secret"
+              "decisions/0155-authenticate-the-node-agent-with-a-per-node-secret",
+              "decisions/0156-route-the-private-domain-on-the-gateway-machine-to-vpn-dns",
+              "decisions/0157-keep-private-caddy-sites-off-the-public-listener"
             ]
           }
         ]

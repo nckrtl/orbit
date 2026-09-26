@@ -101,6 +101,20 @@ final class ScriptedWebSocketServer
         throw new RuntimeException("The test WebSocket server never printed [{$prefix}].");
     }
 
+    /** Waits until the server process has exited, so a reset it sent has reached the client. */
+    public function waitForExit(float $seconds = 5.0): void
+    {
+        $deadline = microtime(true) + $seconds;
+
+        while (proc_get_status($this->process)['running']) {
+            if (microtime(true) > $deadline) {
+                throw new RuntimeException('The test WebSocket server did not exit.');
+            }
+
+            usleep(10_000);
+        }
+    }
+
     public function stop(): void
     {
         if (is_resource($this->process)) {
@@ -205,6 +219,69 @@ describe(StreamWebSocketClient::class, function (): void {
             expect(websocket_messages($client, 1, 3.0))->toBe([])
                 ->and($client->isConnected())->toBeFalse()
                 ->and($server->waitFor('closed='))->toBe('closed=yes');
+        } finally {
+            $server->stop();
+        }
+    });
+
+    it('treats a connection reset as a closed connection', function (): void {
+        $server = ScriptedWebSocketServer::start('reset');
+
+        try {
+            $client = new StreamWebSocketClient;
+            $client->connect($server->endpoint(), 5.0);
+            $server->waitFor('reset=');
+            $server->waitForExit();
+
+            expect(websocket_messages($client, 1, 3.0))->toBe([])
+                ->and($client->isConnected())->toBeFalse();
+        } finally {
+            $server->stop();
+        }
+    });
+
+    it('delivers a message that arrived before a connection reset', function (): void {
+        $server = ScriptedWebSocketServer::start('reset-after-frame');
+
+        try {
+            $client = new StreamWebSocketClient;
+            $client->connect($server->endpoint(), 5.0);
+            $server->waitFor('reset=');
+            $server->waitForExit();
+
+            expect($client->receive(1.0))->toBe([['event' => 'last']])
+                ->and($client->isConnected())->toBeFalse();
+        } finally {
+            $server->stop();
+        }
+    });
+
+    it('closes instead of throwing when it cannot answer a ping', function (): void {
+        $server = ScriptedWebSocketServer::start('ping');
+
+        try {
+            $client = new StreamWebSocketClient;
+            $client->connect($server->endpoint(), 5.0);
+            stream_socket_shutdown((new ReflectionProperty($client, 'stream'))->getValue($client), STREAM_SHUT_WR);
+            $server->waitFor('pinged=');
+
+            expect(websocket_messages($client, 1, 3.0))->toBe([])
+                ->and($client->isConnected())->toBeFalse();
+        } finally {
+            $server->stop();
+        }
+    });
+
+    it('refuses a handshake that the server resets', function (): void {
+        $server = ScriptedWebSocketServer::start('reset-handshake');
+
+        try {
+            $client = new StreamWebSocketClient;
+
+            expect(fn () => $client->connect($server->endpoint(), 5.0))
+                ->toThrow(WebSocketException::class, 'Reverb refused the WebSocket handshake.')
+                ->and($client->isConnected())->toBeFalse()
+                ->and($server->waitFor('reset='))->toBe('reset=yes');
         } finally {
             $server->stop();
         }

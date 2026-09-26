@@ -8,10 +8,10 @@ use App\Domain\Doctor\DoctorInspectionException;
 use App\Domain\Doctor\PublicRouteEdgeInspector;
 use App\Domain\Doctor\PublicRouteEdgeObservation;
 use App\Domain\Nodes\RoleName;
-use App\Infrastructure\AppDev\AppDevCaddyConfigRenderer;
 use App\Infrastructure\AppDev\AppDevSite;
 use App\Infrastructure\AppDev\AppDevSiteRepository;
 use App\Infrastructure\AppDev\AppDevSshExecutor;
+use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
 use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Ssh\RemoteCommand;
@@ -23,7 +23,7 @@ use Throwable;
  * Compares the live public site with the site the App development publisher renders for the Ingress
  * Node, and the Ingress firewall with its managed public HTTP rules.
  *
- * The expected site comes from the same site repository and renderer the publisher uses, so a
+ * The expected site comes from the Node Caddy build's render of the Ingress Node, so a
  * separate Ingress expects a reverse proxy to the Router, and an Ingress that shares the Router and
  * the workload expects the composed site that serves the Instance directly. The probe reads the live
  * Caddy version as root, because published versions under /etc/caddy/orbit-versions are
@@ -35,7 +35,7 @@ final readonly class NativePublicRouteEdgeInspector implements PublicRouteEdgeIn
         private AppDevSshExecutor $ssh,
         private CommandDeadline $deadline,
         private AppDevSiteRepository $sites = new AppDevSiteRepository,
-        private AppDevCaddyConfigRenderer $renderer = new AppDevCaddyConfigRenderer,
+        private ?NodeCaddyfileRenderer $builds = null,
         private NodeFirewallRuleCatalog $firewall = new NodeFirewallRuleCatalog,
         private UfwManagedRulesCheck $ufw = new UfwManagedRulesCheck,
         private string $liveCaddyfilePath = '/etc/caddy/Caddyfile',
@@ -55,7 +55,7 @@ final readonly class NativePublicRouteEdgeInspector implements PublicRouteEdgeIn
                         '-seu',
                         '--',
                         $site->domain,
-                        base64_encode($this->expectedBlock($site)),
+                        base64_encode($this->expectedBlock($node, $site)),
                         $site->certificateDirectory(),
                         $this->liveCaddyfilePath,
                         ...$this->forwardingTargets($site),
@@ -166,10 +166,19 @@ final readonly class NativePublicRouteEdgeInspector implements PublicRouteEdgeIn
         return $targets;
     }
 
-    /** The rendered site without its trailing newline and without TLS lines. */
-    private function expectedBlock(AppDevSite $site): string
+    /**
+     * The public site as the Node Caddy build renders it on this Node, so it carries the build's listeners, without
+     * its source comment, its trailing newline, and its TLS lines.
+     */
+    private function expectedBlock(Node $node, AppDevSite $site): string
     {
-        $lines = explode("\n", rtrim($this->renderer->render(collect([$site])), "\n"));
+        $block = ($this->builds ?? app(NodeCaddyfileRenderer::class))->render($node)->blocksFor($site->scope)[0] ?? null;
+
+        if (! is_string($block)) {
+            throw new DoctorInspectionException;
+        }
+
+        $lines = array_slice(explode("\n", rtrim($block, "\n")), 1);
 
         return implode("\n", array_filter(
             $lines,

@@ -60,6 +60,22 @@ Each identity or architecture failure names the boundary that stopped the reques
 | `node.architecture_unavailable` | The Gateway could not read a machine architecture from the Node as the managed user. |
 | `node.architecture_mismatch` | The request names an architecture that differs from the observed one for a Node without a record. The Gateway records no architecture and converges no role. |
 
+## Role compatibility
+
+Some roles never share a Node. The Gateway refuses a conflicting role before it claims or converges anything. `node:role:add` and `node:role:relocate` answer `validation.failed` with `Role [ROLE] conflicts with assigned role [OTHER].`. `node:add` answers `node.role_conflict`, with `Role [ROLE] conflicts with requested role [OTHER].` when one request names both roles of a conflicting pair. For `gateway` and `ingress` it fails earlier: `ingress` cannot be assigned during provisioning (`Role [ingress] cannot be assigned during provisioning.`), and `gateway` is already assigned to the Gateway Node (`Role [gateway] is already assigned to node [NODE].`). Doctor reports each assignment of an existing conflicting pair as `role.assignment_conflict`.
+
+| Role | Never shares a Node with |
+| --- | --- |
+| `gateway` | `ingress`, `app-dev`, `app-prod`, `database`, `analytics` |
+| `ingress` | `gateway`, `app-dev`, `database` |
+| `vpn` | `database` |
+| `app-dev` | `gateway`, `ingress`, `app-prod` |
+| `app-prod` | `gateway`, `app-dev`, `database` |
+| `database` | `gateway`, `vpn`, `ingress`, `app-prod` |
+| `analytics` | `gateway` |
+
+`router`, `metrics`, and `websocket` share a Node with any role. Ingress is public and the Gateway is private, so a Gateway that is the Router places Ingress on another Node of the Cluster. [ADR 0157](/decisions/0157-keep-private-caddy-sites-off-the-public-listener) records that rule.
+
 ## Package sources
 
 A role installs its packages from the Ubuntu archive, except for the two Orbit pins.
@@ -73,7 +89,7 @@ Both sources work the same way. The Gateway downloads the publisher's signing ke
 
 Orbit installs Caddy this way because the Ubuntu archive ships Caddy 2.6.2, which does not know `log_skip` — a directive an `app-dev` site renders for every hibernating Instance — or `tls force_automate`, which every public Ingress site renders. A Node below **Caddy 2.9.0** fails the `caddy-package-source` step of role convergence with the installed and required release named. [ADR 0100](/decisions/0100-install-caddy-from-the-pinned-caddy-apt-source) records the decision and [ADR 0138](/decisions/0138-opt-public-ingress-sites-into-caddy-certificate-automation) raises the floor to 2.9.0.
 
-Roles that serve through Caddy are `gateway`, `router`, `ingress`, `app-dev`, `app-prod`, `websocket`, and `analytics`. Each one installs Caddy when it converges, so an Ingress-only Node can serve its public sites. An Ingress keeps serving its public sites while its role converges, so a converge keeps the public sites the Node already serves. Removing the `ingress` role rebuilds the Node Caddyfile without it, so the Node serves no public site and its other sites leave the all-address listener. The removal then closes the Orbit public HTTP and HTTPS rules and reconciles service metrics. The Caddy package stays installed. [Routes](/reference/routes#ingress-removal) describes the removal guard and retry.
+Roles that serve through Caddy are `gateway`, `router`, `ingress`, `app-dev`, `app-prod`, `websocket`, and `analytics`. Each one installs Caddy when it converges, so an Ingress-only Node can serve its public sites. An Ingress keeps serving its public sites while its role converges, so a converge keeps the public sites the Node already serves. Removing the `ingress` role rebuilds the Node Caddyfile without it, so the Node serves no public site and nothing listens on every address. The removal then closes the Orbit public HTTP and HTTPS rules and reconciles service metrics. The Caddy package stays installed. [Routes](/reference/routes#ingress-removal) describes the removal guard and retry.
 
 Converging a role on a Node that still carries the archive package upgrades it in place. Orbit owns `/etc/caddy/Caddyfile` as a symlink into its own versions directory, and the install keeps the existing file, so the live configuration survives the upgrade.
 
@@ -93,7 +109,7 @@ The setting does not help HTTP/1.1 clients. When the old Caddy configuration has
 
 The Gateway machine installs Caddy the same way. The `gateway` role lists the `caddy` package. Gateway bootstrap and Gateway web convergence (`php artisan orbit:gateway-web`) run the Caddy source step on the Gateway machine through local `sudo`, and then order the Caddy service after `wg-quick@orbit`. Both steps run after a read-only check of the checkout path and before any step that changes the checkout, the certificates, or Caddy's configuration. A failure stops at the `gateway-caddy-install` step with `gateway.caddy_install_failed` and leaves the live Caddy configuration unchanged.
 
-Converging the `gateway` role runs the same two steps over SSH before its firewall step. When the source step fails, the API returns `node_role.convergence_failed` for step `caddy-package-source`, and the role becomes `failed` with error code `gateway.caddy_install_failed`. So `orbit node:role:add <node> gateway --converge` repairs a Gateway that Doctor reports. A Gateway that still runs the archive package upgrades on its next bootstrap, web convergence, or `gateway` role convergence.
+Converging the `gateway` role runs the same two steps over SSH before its firewall step. When the source step fails, the API returns `node_role.convergence_failed` for step `caddy-package-source`, and the role becomes `failed` with error code `gateway.caddy_install_failed`. So `orbit node:role:add <node> gateway --converge` repairs a Gateway that Doctor reports. After it publishes private DNS, the convergence routes the private domain on the Gateway machine to Orbit VPN DNS, as [Private DNS](/reference/private-dns#the-gateway-machine) describes. A Gateway that still runs the archive package upgrades on its next bootstrap, web convergence, or `gateway` role convergence.
 
 Each `gateway` role convergence that installs a newer Caddy restarts it, and Caddy also serves the Gateway API. The CLI can then report `Could not reach the gateway.` while the Gateway finishes the operation. `orbit activity:list` shows the real result. Wait a minute and run the command again: the second run finds Caddy current and reports the result. On the Gateway machine, `php artisan orbit:gateway-web` makes the same repair without going through Caddy, while the `gateway` role is `active`.
 
@@ -115,16 +131,7 @@ The Gateway runs one role operation per Node at a time. The lock covers these st
 - the app manager setup for `app-dev` and `app-prod`
 - the [Node agent](/reference/node-agent) converge that follows a role convergence
 
-Two paths run steps on the Node outside this lock:
-
-- the Metrics fleet reconcile after a role convergence or removal, and after `node:add`
-- the Node agent converge at the `agent` step of `node:add`
-
-The Metrics fleet reconcile converges exporters on every Node. Holding one Node's lock while it waits for another's could deadlock two operations. An exporter converge can therefore still run beside a role operation on the same Node.
-
-The `agent` step of `node:add` runs after the role steps released the lock. It holds only the Node agent lock. It installs the agent's own files and restarts only `orbit-agent.service`, so it can run beside a role operation.
-
-An offline role removal, for a Node the Gateway cannot reach, also runs outside the lock. It changes only the Gateway and other Nodes, never the unreachable machine.
+The Metrics fleet reconcile runs after a role convergence and outside this lock. It converges exporters on every Node, and holding one Node's lock while it waits for another's could deadlock two operations. An exporter converge can therefore still run beside a role operation on the same Node.
 
 `node:role:add`, `node:role:remove`, and the role steps of `node:add` take the lock before they claim the assignment. A second operation waits up to 2 minutes. If the Node is still busy, it fails and leaves the assignment as it was:
 
@@ -137,29 +144,32 @@ Run the command again. `node:role:relocate` and Cluster Router changes take the 
 
 Operations on different Nodes run in parallel.
 
+The Node agent converge at the `agent` step of `node:add` runs after the role steps released the lock. It holds only the Node agent lock. It installs the agent's own files and restarts only `orbit-agent.service`, so it can run beside a role operation.
+
+An offline role removal, for a Node the Gateway cannot reach, runs outside the lock. It changes only the Gateway and other Nodes, never the unreachable machine.
+
 ### Per-Node locks
 
 Four kinds of lock guard work on one Node. They all live in a file cache store under `ORBIT_HOME`, whatever `CACHE_STORE` says.
 
 | Lock | Guards | Term | When it is busy |
 | --- | --- | --- | --- |
-| Tool | One package of one tool manager | Operation term | Fails at once with `tool.operation_locked` |
-| Tool manager | The shared state of `vp`, `composer`, `apt`, or `brew` | Operation term | Fails at once with `tool.operation_locked` or `node_role.tool_manager_locked` |
-| Role | Role operations | Operation term | Waits up to 2 minutes, then `node_role.node_busy` |
-| Node agent | The [agent converge](/reference/node-agent#agent-secret) | 4 minutes | Waits up to 2 minutes, then `agent.converge_busy` |
+| Tool | One package of one tool manager | 10 minutes | Fails at once with `tool.operation_locked` |
+| Tool manager | The shared state of `vp`, `composer`, `apt`, or `brew` | 10 minutes | Fails at once with `tool.operation_locked` or `node_role.tool_manager_locked` |
+| Role | Role operations | 10 minutes | Waits up to 2 minutes, then `node_role.node_busy` |
+| Node agent | The [agent converge](/reference/node-agent#agent-secret) | 4 minutes, renewed before each step | Waits up to 2 minutes, then `agent.converge_busy` |
 
-The operation term depends on the process that holds the lock:
-
-| Process | Term | Why |
-| --- | --- | --- |
-| Gateway request | 10 minutes | The Gateway's PHP-FPM request limit. A request cannot outlive it. |
-| Artisan command, such as `orbit:node-provision` | 20 minutes | An Artisan command has no time limit. The longest single step, one command, is bounded at 15 minutes. |
-
-Every lock is renewed for its full term before each command that an operation runs, on the Node or on the Gateway. A long operation therefore keeps its locks for as long as it runs, whatever its total length. A process that dies mid-operation blocks the Node for at most one term after its last command started.
-
-A renewal fails when the lock expired and another operation took it. The command then does not run, and it fails with `node.lock_lost`. Every later command of the same operation fails in the same way, so the operation stops at its current step and reports that step's error. The other operation keeps the lock.
+The 10-minute term is the Gateway's PHP-FPM request limit. A request cannot outlive it, so a worker that is killed mid-operation blocks the Node for at most 10 minutes.
 
 An operation takes the locks it needs in one fixed order: tool, then tool manager (`vp` before `composer`), then role, then Node agent. No code takes an earlier lock while it holds a later one. The tool and tool manager locks fail at once instead of waiting, so an operation that holds the role lock never waits for a tool manager. The locks therefore cannot deadlock.
+
+### Lock renewal
+
+The terms above apply in a Gateway request. In an Artisan command, such as `orbit:node-provision`, the tool, tool manager, and role locks have a 20-minute term instead. An Artisan command has no time limit, and its longest single command is bounded at 15 minutes.
+
+Every lock that a process holds is renewed for its full term before each command the process runs, on the Node or on the Gateway. A long operation therefore keeps its locks for as long as it runs. A process that dies mid-operation blocks the Node for at most one term after its last command started.
+
+A renewal fails once the lock has expired, whether or not another operation has taken it since. The command then does not run and fails with `node.lock_lost`. Every later command of the same operation fails in the same way, so the operation stops at its current step and reports that step's error. An operation that took the lock keeps it.
 
 ## Node agent
 
