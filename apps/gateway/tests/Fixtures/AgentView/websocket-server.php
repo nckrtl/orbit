@@ -136,7 +136,7 @@ for ($connection = 1; $connection <= $connections; $connection++) {
         exit(1);
     }
 
-    $socket = str_starts_with($mode, 'reset') ? socket_import_stream($client) : null;
+    $socket = str_starts_with($mode, 'reset') || $mode === 'corrupt-after-frame' ? socket_import_stream($client) : null;
 
     if (stream_socket_enable_crypto($client, true, STREAM_CRYPTO_METHOD_TLS_SERVER) !== true) {
         fclose($client);
@@ -171,6 +171,19 @@ for ($connection = 1; $connection <= $connections; $connection++) {
         usleep(200_000);
         fwrite($client, text(['event' => 'last']));
         reset_connection($socket);
+    }
+
+    if ($mode === 'corrupt-after-frame') {
+        // Once the client is connected and waiting, a whole message and then bytes that are no TLS
+        // record, written past the TLS layer. The client's next read fails instead of ending cleanly,
+        // on every platform, while the connection itself stays open.
+        usleep(200_000);
+        fwrite($client, text(['event' => 'last']));
+        socket_write($socket, str_repeat("\x00", 64));
+        say('corrupted=yes');
+        sleep(30);
+
+        continue;
     }
 
     if ($mode === 'ping') {
