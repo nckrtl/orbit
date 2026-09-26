@@ -8,6 +8,7 @@ use App\Actions\Tasks\DisableTasksAction;
 use App\Actions\Tasks\EnableTasksAction;
 use App\Actions\Tasks\ShowTasksStatusAction;
 use App\Data\Tasks\TaskExtensionStatusData;
+use App\Data\Tasks\TasksStatusData;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
@@ -33,7 +34,7 @@ final class TasksController extends Controller
         return $this->statusResponse($request, $action->execute());
     }
 
-    private function statusResponse(Request $request, TaskExtensionStatusData $status): JsonResponse
+    private function statusResponse(Request $request, TaskExtensionStatusData|TasksStatusData $status): JsonResponse
     {
         return response()->json([
             'data' => $status->toArray(),

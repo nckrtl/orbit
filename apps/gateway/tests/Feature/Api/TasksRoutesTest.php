@@ -674,3 +674,87 @@ it('returns assistance fields on show and list for flagged and unflagged groups'
     $expectFields($flaggedList, true, $blocked, true, $question);
     $expectFields($clearList, false, null, false, null);
 });
+
+it('summarises groups asking for assistance on tasks status', function (): void {
+    tasks_gateway();
+    $app = tasks_app('assist-status');
+
+    $this->getJson('/api/v1/tasks/status')
+        ->assertOk()
+        ->assertJsonPath('data.enabled', false)
+        ->assertJsonPath('data.assistance', []);
+
+    enable_tasks();
+    $create = function (string $title) use ($app): int {
+        $id = $this->postJson('/api/v1/task-groups', [
+            'app_id' => $app->id,
+            'title' => $title,
+            'brief' => "{$title} brief.",
+            'tasks' => [['title' => 'Step', 'brief' => 'Step brief.']],
+        ])->assertCreated()->json('data.id');
+
+        expect($id)->toBeInt();
+
+        return $id;
+    };
+    $first = $create('First stalled');
+    $clear = $create('Clear');
+    $second = $create('Second stalled');
+    $subtaskOnly = $create('Subtask only');
+    $question = 'Which database should this use?';
+
+    TaskGroup::query()->whereKey($first)->update([
+        'status' => 'running',
+        'assistance_requested' => true,
+        'assistance_reason' => 'The implementer is blocked.',
+    ]);
+    TaskGroup::query()->whereKey($clear)->update([
+        'assistance_requested' => false,
+        'assistance_reason' => 'An old reason.',
+    ]);
+    TaskGroup::query()->whereKey($second)->update([
+        'status' => 'settling',
+        'assistance_requested' => true,
+        'assistance_reason' => null,
+    ]);
+    Task::query()->where('task_group_id', $subtaskOnly)->update([
+        'assistance_requested' => true,
+        'assistance_reason' => $question,
+    ]);
+
+    $assistance = [
+        [
+            'id' => $first,
+            'app_id' => $app->id,
+            'app' => $app->slug,
+            'project_code' => $app->code,
+            'title' => 'First stalled',
+            'status' => 'running',
+            'assistance_reason' => 'The implementer is blocked.',
+        ],
+        [
+            'id' => $second,
+            'app_id' => $app->id,
+            'app' => $app->slug,
+            'project_code' => $app->code,
+            'title' => 'Second stalled',
+            'status' => 'settling',
+            'assistance_reason' => null,
+        ],
+    ];
+
+    $this->getJson('/api/v1/tasks/status')
+        ->assertOk()
+        ->assertJsonPath('data.enabled', true)
+        ->assertJsonPath('data.assistance', $assistance);
+
+    $this->postJson('/api/v1/tasks/disable')
+        ->assertOk()
+        ->assertJsonMissingPath('data.assistance')
+        ->assertJsonPath('data.enabled', false);
+
+    $this->getJson('/api/v1/tasks/status')
+        ->assertOk()
+        ->assertJsonPath('data.enabled', false)
+        ->assertJsonPath('data.assistance', $assistance);
+});
