@@ -115,7 +115,7 @@ Each deliverable is an object with an `id`, a `type`, a `description`, and the f
 | Type | Fields | Orbit checks |
 | --- | --- | --- |
 | `file` | `path`: a path or glob from the workspace root. `change`: `created`, `modified`, or `any` | A matching path in the subtask's diff, added for `created`, modified for `modified`, either for `any` |
-| `test` | `project`: the project directory, such as `apps/gateway`, or `.` for the root. `file`: the Pest test file in that project. `name`: a substring of the test name | The test file is added or modified in the diff, and Orbit's run of that file has at least one test whose name contains `name`, all passing |
+| `test` | `project`: the project directory, such as `apps/gateway`, or `.` for the root. `file`: one exact Pest file in that project that ends in `.php` and has no glob. `name`: a substring of the test name | The test file is added or modified in the diff, and Orbit's run of that file has at least one test whose name contains `name`, all passing |
 | `command` | `command`: the command to run. `directory`: where to run it, relative to the workspace root; default `.` | Orbit's run of the command exits with 0 |
 | `review` | none | The reviewer confirms it in its approval |
 
@@ -133,11 +133,16 @@ Each deliverable is an object with an `id`, a `type`, a `description`, and the f
 | `id` | A lowercase slug such as `export-test`, at most 64 characters, unique within the subtask |
 | `description` | At most 500 characters |
 | `path`, `file`, `project`, `directory` | Relative paths without `..`. At most 500 characters |
+| `test` `file` | One path that ends in `.php`, with no `*`, `?`, `[`, `{`, or `..` |
 | `name` | At most 200 characters |
 | `command` | At most 1000 characters |
 | Number | At least one and at most five per subtask. Split a subtask that needs more; the [creating-tasks](https://github.com/nckrtl/orbit/blob/main/.agents/skills/creating-tasks/SKILL.md) skill explains how. |
 
-A field that belongs to another type is refused. In a `path`, `*` matches within one directory, `**` matches across directories, and `?` matches one character.
+A field that belongs to another type is refused. Only a `file` deliverable's `path` accepts a glob. In that `path`, `*` matches within one directory, `**` matches across directories, and `?` matches one character.
+
+A `test` deliverable's `file` is one exact Pest test file, relative to its `project`. The path has no `*`, `?`, `[`, or `{`, has no `..`, and ends in `.php`.
+
+Group create, subtask create, and subtask update refuse any other `file` with HTTP 422 `validation.failed`. The error names that deliverable's `id`.
 
 The subtask's diff runs from its start commit to the working tree that Orbit's check sees, uncommitted and untracked files included. Orbit records the start commit when the subtask starts. Deleted and ignored files never match.
 
@@ -333,7 +338,9 @@ When an implementer is idle, done, or asking for input, the Gateway reads the im
 
 Before each agent turn, the Gateway installs the run script at `.git/orbit/run`, writes `.git/orbit/turn.json` with the role of the turn and the subtask's deliverables, and removes any earlier receipt. Git never tracks `.git/orbit/`. The agent ends its turn with `.git/orbit/run --outcome=OUTCOME --summary="…"`. An implementer uses `ready_for_review` or `blocked`. A reviewer uses `approved`, `changes_requested`, or `blocked`. The script refuses an outcome for the other role, an empty summary, a repeated flag, and unknown arguments. It also needs a `--deliverable` confirmation for each [deliverable](#confirm-deliverables) the outcome requires. It writes `.git/orbit/run.json` atomically. [ADR 0121](/decisions/0121-end-agent-turns-with-a-run-receipt) records the decision.
 
-Implementers and reviewers receive standing instructions to complete their work autonomously. They may create, modify, reset, and delete disposable fixtures within their task's allocated environment, including Routes and publications. They verify task ownership and the target environment before deletion, use the required CLI confirmation flags, and follow the environment's lease and cleanup rules. They resolve routine test prerequisites themselves. This authority does not extend to live or shared resources or another task's fixtures.
+Implementers receive standing instructions to complete their work autonomously. They may create, modify, reset, and delete disposable fixtures within their task's allocated environment, including Routes and publications. They verify task ownership and the target environment before deletion, use the required CLI confirmation flags, and follow the environment's lease and cleanup rules. They resolve routine test prerequisites themselves. This authority does not extend to live or shared resources or another task's fixtures.
+
+A reviewer turn is read-only. The reviewer prompt says so. The reviewer does not create, edit, reset, or delete workspace files, including disposable fixtures.
 
 A `blocked` turn pauses the whole group until the operator answers, so it must ask one specific question: `.git/orbit/run --outcome=blocked --summary="What stops you, what you tried, and the boundary you cannot cross" --question="The question the operator must answer"`. The role prompts and reminders reserve this outcome for uncertain ownership, changes to live or shared resources beyond the task's authorization, missing required access, or a product decision that needs the operator. They tell agents to keep working when they can decide or find the answer themselves. These are agent instructions; the script enforces a non-empty summary and question, not their meaning. It refuses `blocked` without a question and refuses `--question` with any other outcome. [ADR 0132](/decisions/0132-pause-only-for-the-acting-thread-and-a-real-question) records the decision.
 
@@ -345,11 +352,15 @@ When every item and the check pass, the Gateway sets the task to `reviewing` and
 
 The Gateway never sends a turn to a `working` thread. The shared reviewer can be working when a handoff passes, for example while the operator talks to it. The task still moves to `reviewing`, but the review request waits. The first tick after the reviewer stops working sends it. Until then, the task has no review request, so no reviewer receipt is read.
 
+When the Gateway sends the review request, it records the workspace HEAD and the working-tree hash. That is the hash the [Project check](#project-check) already stores: the whole working tree, uncommitted and untracked files included, without touching the Git index. The Gateway reads it at send time. The task keeps that pair for the review attempt.
+
+When the reviewer's receipt arrives, the Gateway reads HEAD and the hash again. A difference means the reviewer changed the workspace. The `workspace_unchanged` item fails. The Gateway keeps the receipt and does not apply `approved`, `changes_requested`, or `blocked`. The reminder tells the reviewer to revert its changes and to request changes from the implementer instead. The review sends one reminder. A second change on that review asks for assistance, and the assistance reason repeats the reminder. When HEAD and the hash match, the Gateway applies the outcome. A failed read is a communication failure, not a change.
+
 After review findings are relayed, the Gateway waits for a newer implementer turn to stop and requires a new receipt and a new passing check before handing back to the reviewer.
 
 For `changes_requested`, the Gateway relays the summary to the implementer and returns the task to `running` only after that send succeeds. A failed send stays in `reviewing` and is retried. While the implementer is working, the relay waits until it stops.
 
-For `approved`, the workspace must be on `task-{group id}`. Orbit commits the whole workspace, so the commit also waits while the implementer is working. The Gateway then commits every workspace change as `orbit <tasks@orbit>`, with the subtask title and the reviewer's summary as the message, and stores the commit on the approval comment. Reviewers do not commit. A failed commit counts as a communication failure and is retried. After the last subtask, the group moves to `settling` and remains active until its expected pull request is merged.
+For `approved`, the workspace must be on `task-{group id}`. Orbit commits the whole workspace, so the commit also waits while the implementer is working. The Gateway then commits every workspace change as `orbit <tasks@orbit>`, with the subtask title and the reviewer's summary as the message, and stores the commit on the approval comment. Reviewers do not change the workspace, and they do not commit. A failed commit counts as a communication failure and is retried. After the last subtask, the group moves to `settling` and remains active until its expected pull request is merged.
 
 `thread.turn.start` sends the T3 0.0.42 message struct `{messageId, role: user, text, attachments: []}` plus `modelSelection`. A flat string message is rejected by T3.
 
