@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use Pest\Plugins\Tia\WatchPatterns;
+use Pest\Support\Container;
 use Symfony\Component\Process\Process;
 
 it('leaves task models unloaded and not observed when an unrelated test boots the app', function (): void {
@@ -108,4 +110,41 @@ it('leaves task models unloaded and not observed when an unrelated test boots th
             unlink($reportPath);
         }
     }
+});
+
+it('selects only the tests that cover a non-PHP runtime resource', function (): void {
+    $watch = Container::getInstance()->get(WatchPatterns::class);
+    $root = dirname(__DIR__, 4);
+    $paths = [
+        'resources/tasks/check',
+        'resources/tasks/run',
+        'resources/mcp/tools.json',
+        'resources/scripts/service-metrics.py',
+        'resources/scripts/service-metrics-fpm.py',
+        'resources/proxycli/server.py',
+        'resources/instances/lifecycle.py',
+        'resources/analytics/clickhouse/config.d/logs.xml',
+        'resources/analytics/clickhouse/users.d/default-profile-low-resources-overrides.xml',
+        'resources/analytics/clickhouse/README.md',
+        'resources/scripts/horizon-queue.php',
+    ];
+    $selected = [];
+
+    foreach ($paths as $path) {
+        $selected[$path] = $watch->matchedDirectories($root, [$path]);
+    }
+
+    expect($selected)->toBe([
+        'resources/tasks/check' => ['tests/Feature/Infrastructure/Tasks/RemoteTaskCheckRunnerTest.php'],
+        'resources/tasks/run' => ['tests/Feature/Infrastructure/Tasks/RemoteTaskRunReceiptsTest.php'],
+        'resources/mcp/tools.json' => ['tests/Feature/Mcp'],
+        'resources/scripts/service-metrics.py' => ['tests/Feature/Infrastructure/Metrics/ServiceMetricsProgramTest.php'],
+        'resources/scripts/service-metrics-fpm.py' => ['tests/Feature/Infrastructure/Metrics/ServiceMetricsProgramTest.php'],
+        'resources/proxycli/server.py' => ['tests/Unit/Infrastructure/ProxyCli/ProxyCliCollectorValkeyClientTest.php'],
+        'resources/instances/lifecycle.py' => ['tests/Feature/Domain/ProjectLifecycleRunnerTest.php'],
+        'resources/analytics/clickhouse/config.d/logs.xml' => ['tests/Feature/Infrastructure/Analytics/NativeAnalyticsClickhouseConfigurationManagerTest.php'],
+        'resources/analytics/clickhouse/users.d/default-profile-low-resources-overrides.xml' => ['tests/Feature/Infrastructure/Analytics/NativeAnalyticsClickhouseConfigurationManagerTest.php'],
+        'resources/analytics/clickhouse/README.md' => [],
+        'resources/scripts/horizon-queue.php' => [],
+    ]);
 });

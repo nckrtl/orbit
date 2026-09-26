@@ -91,6 +91,18 @@ $tiaDirectory = getenv('ORBIT_TIA_DIRECTORY');
 
 pest()->tia()->directory(is_string($tiaDirectory) && $tiaDirectory !== '' ? $tiaDirectory : dirname(__DIR__).'/.orbit-tia');
 
+// The Gateway reads these as programs and catalogues, not as PHP, so coverage never records them.
+// A change reruns the tests that cover that file, and no others.
+pest()->tia()->watch([
+    'resources/tasks/check' => 'tests/Feature/Infrastructure/Tasks/RemoteTaskCheckRunnerTest.php',
+    'resources/tasks/run' => 'tests/Feature/Infrastructure/Tasks/RemoteTaskRunReceiptsTest.php',
+    'resources/mcp/tools.json' => 'tests/Feature/Mcp',
+    'resources/scripts/*.py' => 'tests/Feature/Infrastructure/Metrics/ServiceMetricsProgramTest.php',
+    'resources/proxycli/*.py' => 'tests/Unit/Infrastructure/ProxyCli/ProxyCliCollectorValkeyClientTest.php',
+    'resources/instances/*.py' => 'tests/Feature/Domain/ProjectLifecycleRunnerTest.php',
+    'resources/analytics/clickhouse/**/*.xml' => 'tests/Feature/Infrastructure/Analytics/NativeAnalyticsClickhouseConfigurationManagerTest.php',
+]);
+
 /** @param list<array{name: string, phase: string, command: string, timeout_seconds: int}> $steps */
 function store_deploy_steps(AppInstance $instance, array $steps): void
 {
