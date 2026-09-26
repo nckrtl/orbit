@@ -5680,6 +5680,24 @@
             ]
         },
         {
+            "path": "docs/solutions/node-add-private-dns-on-an-existing-node.md",
+            "title": "node:add private DNS on an existing Node",
+            "kind": "solution",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Cluster",
+                "Gateway",
+                "Node",
+                "Process",
+                "Router"
+            ],
+            "governing_adrs": [
+                "0092"
+            ]
+        },
+        {
             "path": "docs/solutions/realtime-reverb.mdx",
             "title": "Realtime events with Reverb",
             "kind": "solution",

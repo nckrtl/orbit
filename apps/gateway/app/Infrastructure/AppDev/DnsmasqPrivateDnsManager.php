@@ -647,31 +647,32 @@ final readonly class DnsmasqPrivateDnsManager implements PrivateDnsManager
     }
 
     /**
-     * The Node that holds a singleton role. `node:role:add --converge` marks the assignment
-     * provisioning while it runs, so a converging holder counts; an active holder wins when both exist.
+     * The Node that holds a singleton role. An active Node wins. `node:role:add --converge`
+     * marks the assignment provisioning while the Node stays active, and `node:add` marks the
+     * Node provisioning while the assignment stays active, so both count.
      */
     private function roleHolder(RoleName $role): ?Node
     {
-        return Node::query()
-            ->where('status', LifecycleStatus::Active)
-            ->whereNotNull('wireguard_ip')
-            ->whereHas(
-                'roles',
-                static fn ($query) => $query
-                    ->where('role', $role)
-                    ->where('status', LifecycleStatus::Active),
-            )
-            ->first()
-            ?? Node::query()
-                ->where('status', LifecycleStatus::Active)
-                ->whereNotNull('wireguard_ip')
-                ->whereHas(
-                    'roles',
-                    static fn ($query) => $query
-                        ->where('role', $role)
-                        ->where('status', LifecycleStatus::Provisioning),
-                )
-                ->first();
+        foreach ([LifecycleStatus::Active, LifecycleStatus::Provisioning] as $nodeStatus) {
+            foreach ([LifecycleStatus::Active, LifecycleStatus::Provisioning] as $roleStatus) {
+                $holder = Node::query()
+                    ->where('status', $nodeStatus)
+                    ->whereNotNull('wireguard_ip')
+                    ->whereHas(
+                        'roles',
+                        static fn ($query) => $query
+                            ->where('role', $role)
+                            ->where('status', $roleStatus),
+                    )
+                    ->first();
+
+                if ($holder instanceof Node) {
+                    return $holder;
+                }
+            }
+        }
+
+        return null;
     }
 
     /**

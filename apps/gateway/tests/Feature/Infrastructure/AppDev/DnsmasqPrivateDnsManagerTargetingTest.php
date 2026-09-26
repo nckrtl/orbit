@@ -66,6 +66,23 @@ it('publishes on the VPN node while the gateway or vpn role converges', function
     'vpn role converging' => [RoleName::Vpn],
 ]);
 
+it('publishes on the VPN node while node:add marks the gateway or vpn node provisioning', function (RoleName $reprovisioned): void {
+    dns_target_node('vpn', '10.44.0.1', RoleName::Vpn);
+    dns_target_node('gateway', '10.44.0.2', RoleName::Gateway);
+    Node::query()->whereHas('roles', static fn ($query) => $query->where('role', $reprovisioned))->sole()
+        ->update(['status' => LifecycleStatus::Provisioning]);
+    $processes = new DnsTargetProcessRunner;
+    $ssh = new DnsTargetSshExecutor;
+
+    dns_target_manager($processes, $ssh)->converge();
+
+    expect($processes->calls)->toBe(0)
+        ->and($ssh->hosts)->toBe(['10.44.0.1']);
+})->with([
+    'gateway node provisioning' => [RoleName::Gateway],
+    'vpn node provisioning' => [RoleName::Vpn],
+]);
+
 it('installs the listener from its release on a remote vpn node, not from a Gateway checkout', function (): void {
     dns_target_node('vpn', '10.44.0.1', RoleName::Vpn);
     dns_target_node('gateway', '10.44.0.2', RoleName::Gateway);
