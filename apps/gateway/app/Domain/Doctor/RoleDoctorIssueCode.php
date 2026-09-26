@@ -7,6 +7,7 @@ namespace App\Domain\Doctor;
 enum RoleDoctorIssueCode: string implements DoctorIssueCode
 {
     case LifecycleNotActive = 'role.lifecycle_not_active';
+    case ClaimStale = 'role.claim_stale';
     case AssignmentConflict = 'role.assignment_conflict';
     case SingletonConflict = 'role.singleton_conflict';
     case ClusterOwnershipMismatch = 'role.cluster_ownership_mismatch';

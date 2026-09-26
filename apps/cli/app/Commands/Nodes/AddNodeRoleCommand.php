@@ -6,6 +6,7 @@ namespace App\Commands\Nodes;
 
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
+use App\Support\Console\ConsoleWriter;
 use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\Requests\Nodes\AddNodeRoleRequest;
 use Orbit\Sdk\Requests\Processes\ListProcessesRequest;
@@ -73,6 +74,7 @@ final class AddNodeRoleCommand extends NodeCommand
         }
 
         $this->writeHumanMessage("Role [{$response->role}] added to node [{$response->nodeName}] (#{$response->nodeId}).");
+        ConsoleWriter::write($this->output, NodeOutput::followUpWarning($this->consoleMode(), $response->followUp));
         $this->writeHumanMessage("Request ID: {$response->requestId}");
 
         return self::SUCCESS;

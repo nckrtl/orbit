@@ -1196,7 +1196,9 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
     if body_schema is not None or stream:
         responses['422'] = error_response('The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`).')
     if route['name'] in ('node:role:add', 'node:role:remove', 'node:role:relocate'):
-        responses['502'] = error_response('A role step failed on the Node (`node_role.convergence_failed` or `node_role.remove_failed`). `error.details.step` names the failed step.')
+        responses['502'] = error_response('A role step failed on the Node (`node_role.convergence_failed` or `node_role.remove_failed`). `error.details.step` names the failed step, and `error.details.error_code` names its own code, such as `node_role.node_busy` or `node_role.tool_manager_locked`.')
+    if route['name'] in ('node:add', 'node:remove'):
+        responses['502'] = error_response('A step failed on the Node; `error.details.step` names it. When a role step failed, `error.details.error_code` names that step\'s own code.')
     if route['name'] == 'node:metrics':
         responses['409'] = error_response('No Node has the Metrics role (`metrics.assignment_missing`).')
         responses['422'] = error_response('The Node is not an active, WireGuard-managed Node (`node.metrics_unavailable`).')
