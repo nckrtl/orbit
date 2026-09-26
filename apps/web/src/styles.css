@@ -320,6 +320,25 @@ body {
     height: 28px;
 }
 
+/* Activity detail wraps every key and value. A phone has no hover, so the full path and request id stay in the layout. */
+.activity-detail-row {
+    display: grid;
+    grid-template-columns: minmax(12ch, 18ch) minmax(0, 1fr);
+    column-gap: 1ch;
+    align-items: start;
+    min-height: 28px;
+    padding: 4px 0;
+    white-space: normal;
+}
+
+.activity-detail-key,
+.activity-detail-value {
+    min-width: 0;
+    overflow: visible;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
 .row[data-head] {
     /* The head stays where it is drawn, below the frame's padding; its shadow hides the rows that scroll through that padding. */
     position: sticky;

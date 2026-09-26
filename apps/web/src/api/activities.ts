@@ -83,6 +83,40 @@ export function activityQuery(id: string | number) {
     });
 }
 
+/** Reads the Activity page's URL search. An invalid or unused filter is omitted, as the list request omits it. */
+export function readActivitySearch(search: Record<string, unknown>): ActivityListFilters {
+    const filters: ActivityListFilters = {};
+    const status = search.status;
+    const command = search.command;
+    if (status === "running" || status === "succeeded" || status === "failed") {
+        filters.status = status;
+    }
+    if (typeof command === "string" && command.length >= 1 && command.length <= 255) {
+        filters.command = command;
+    }
+    const beforeId = positiveId(search.before_id);
+    const caller = positiveId(search.caller_node_id);
+    const target = positiveId(search.target_node_id);
+    if (beforeId !== undefined) filters.before_id = beforeId;
+    if (caller !== undefined) filters.caller_node_id = caller;
+    if (target !== undefined) filters.target_node_id = target;
+
+    return filters;
+}
+
+/** A positive integer id from a URL search value. Anything else is an unused filter. */
+function positiveId(value: unknown): number | undefined {
+    if (typeof value === "number" && Number.isSafeInteger(value) && value >= 1) {
+        return value;
+    }
+    if (typeof value === "string" && /^[1-9]\d*$/.test(value)) {
+        const parsed = Number(value);
+        if (Number.isSafeInteger(parsed)) return parsed;
+    }
+
+    return undefined;
+}
+
 /**
  * The `before_id` of the next older page: the smallest id on a full page.
  * Fewer than `ACTIVITY_PAGE_LIMIT` rows means there is no older page.

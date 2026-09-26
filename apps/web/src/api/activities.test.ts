@@ -5,6 +5,7 @@ import {
     activitiesQuery,
     activityQuery,
     olderActivityBeforeId,
+    readActivitySearch,
 } from "./activities";
 import { setTransport } from "./client";
 
@@ -90,6 +91,36 @@ describe("activityQuery", () => {
             status: 404,
             code: "http.404",
         });
+    });
+});
+
+describe("readActivitySearch", () => {
+    it("keeps a valid filter and drops an empty or invalid one", () => {
+        expect(
+            readActivitySearch({
+                status: "failed",
+                command: "node:add",
+                caller_node_id: "3",
+                target_node_id: 8,
+                before_id: 40,
+            }),
+        ).toEqual({
+            status: "failed",
+            command: "node:add",
+            caller_node_id: 3,
+            target_node_id: 8,
+            before_id: 40,
+        });
+        expect(
+            readActivitySearch({
+                status: "pending",
+                command: "",
+                caller_node_id: 0,
+                target_node_id: "nope",
+                before_id: -1,
+            }),
+        ).toEqual({});
+        expect(readActivitySearch({ command: "x".repeat(256) }).command).toBeUndefined();
     });
 });
 

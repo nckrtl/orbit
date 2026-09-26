@@ -12,7 +12,6 @@ import { useTaskPoll } from "../realtime/polling";
 import { Frame } from "./Frame";
 import {
     FILTERED_SECTIONS,
-    NAV,
     navFor,
     useNav,
     SECTION_TITLES,
@@ -34,7 +33,7 @@ function navCount(
     totals: ReturnType<typeof counts>,
     taskCount: number | null,
 ): [number | null, number] {
-    if (key === "dashboard" || key === "quota") {
+    if (key === "dashboard" || key === "quota" || key === "activity") {
         return [null, 0];
     }
 
@@ -125,6 +124,10 @@ function footerHint(section: Section, onList: boolean, onForm: boolean, navCount
 
     if (section === "tasks") {
         return "Tab moves between links · Enter opens · Esc back";
+    }
+
+    if (section === "activity" && onList) {
+        return `↑↓ the log · Enter opens a row · Older loads previous rows · 1-${navCount} jump`;
     }
 
     if (!onList) {
@@ -240,7 +243,7 @@ export function Shell() {
                                 <div className="pb-[4px] text-xs font-bold tracking-wider text-dim uppercase">
                                     Main
                                 </div>
-                                {NAV.map((key) => {
+                                {nav.map((key) => {
                                     const [count, warn] = navCount(key, totals, taskCount);
                                     const isSelected = key === activeNav;
 
@@ -273,9 +276,7 @@ export function Shell() {
                                 <div className="mt-[12px] border-t border-line pt-[8px] pb-[4px] text-xs font-bold tracking-wider text-dim uppercase">
                                     Other Sections
                                 </div>
-                                {SECTIONS.filter(
-                                    (s) => !NAV.includes(s as (typeof NAV)[number]),
-                                ).map((sec) => {
+                                {SECTIONS.filter((sec) => !nav.includes(sec)).map((sec) => {
                                     const isSelected = sec === section;
 
                                     return (

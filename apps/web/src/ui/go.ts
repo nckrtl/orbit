@@ -16,6 +16,7 @@ export const SECTIONS = [
     "firewall",
     "quota",
     "tasks",
+    "activity",
 ] as const;
 export type Section = (typeof SECTIONS)[number];
 
@@ -26,6 +27,7 @@ export const NAV = [
     "projects",
     "databases",
     "tasks",
+    "activity",
 ] as const satisfies readonly Section[];
 
 /** Sidebar entries for this Gateway: the standard sections, plus Quota while the fleet feature is on. */
@@ -72,6 +74,7 @@ export const SECTION_TITLES: Record<Section, string> = {
     firewall: "Firewall",
     quota: "Quota",
     tasks: "Tasks",
+    activity: "Activity",
 };
 
 export const FILTERED_SECTIONS: readonly string[] = ["instances", "processes", "schedules"];
