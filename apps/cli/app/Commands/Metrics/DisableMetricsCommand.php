@@ -69,8 +69,7 @@ final class DisableMetricsCommand extends MetricsCommand
             new DisableMetricsRequest(force: true, purgeData: $purge),
             MetricsMutationResponse::class,
             ['Disable Metrics', 'Disabling Metrics', 'Disabled Metrics'],
-            static fn (object $response): ProgressState|ProgressOutcome => $response instanceof MetricsMutationResponse
-                && $response->publication === 'uncleaned'
+            static fn (MetricsMutationResponse $response): ProgressState|ProgressOutcome => $response->publication === 'uncleaned'
                 ? new ProgressOutcome(ProgressState::Warning, 'Disabled Metrics; publication not cleaned')
                 : ProgressState::Success,
         );

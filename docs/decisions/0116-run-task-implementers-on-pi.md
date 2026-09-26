@@ -12,7 +12,7 @@ Orbit adds a `pi` [AgentDriver](/decisions/0112-isolate-agent-threads-behind-dri
 
 Proposed.
 
-This amends the single driver selection per TaskGroup in [ADR 0112](/decisions/0112-isolate-agent-threads-behind-drivers). It keeps the thread states, observation rules, and driver boundary from that decision. It keeps the rubric in [ADR 0114](/decisions/0114-judge-task-completion-as-separate-checks). [ADR 0165](/decisions/0165-record-per-thread-token-metrics) keeps this record's cumulative token total and adds the per-thread split. [ADR 0167](/decisions/0167-resume-a-pi-turn-interrupted-by-a-server-restart) keeps this restart error and resumes that Pi turn instead of asking for assistance.
+This amends the single driver selection per TaskGroup in [ADR 0112](/decisions/0112-isolate-agent-threads-behind-drivers). It keeps the thread states, observation rules, and driver boundary from that decision. It keeps the rubric in [ADR 0114](/decisions/0114-judge-task-completion-as-separate-checks). [ADR 0165](/decisions/0165-record-per-thread-token-metrics) keeps this record's cumulative token total and adds the per-thread split. [ADR 0167](/decisions/0167-resume-a-pi-turn-interrupted-by-a-server-restart) keeps this restart error and resumes that Pi turn instead of asking for assistance. [ADR 0168](/decisions/0168-offload-large-pi-tool-output) stores a large `read` or `bash` result outside the model context.
 
 This slice starts after the ADR 0115 pilot (verify task evidence before review) has run on T3 and recorded baseline measurements. ADR 0115 is proposed on a separate branch.
 

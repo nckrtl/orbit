@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Domain\Tasks\TaskBroadcastObserver;
 use App\Domain\Tasks\TaskDeliverable;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskType;
+use Illuminate\Database\Eloquent\Attributes\ObservedBy;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -61,6 +63,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $settled_at
  * @property-read TaskGroup $taskGroup
  */
+#[ObservedBy([TaskBroadcastObserver::class])]
 final class Task extends Model
 {
     /** @var array<string, mixed> */

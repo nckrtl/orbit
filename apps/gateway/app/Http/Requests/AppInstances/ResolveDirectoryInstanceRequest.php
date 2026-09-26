@@ -23,6 +23,8 @@ final class ResolveDirectoryInstanceRequest extends FormRequest
             throw ValidationException::withMessages(['request' => ['Only the directory query parameter is supported, without a body.']]);
         }
 
-        return $query;
+        $directory = $query['directory'] ?? null;
+
+        return ['directory' => $directory];
     }
 }

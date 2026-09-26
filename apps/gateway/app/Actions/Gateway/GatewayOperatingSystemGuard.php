@@ -64,7 +64,9 @@ final readonly class GatewayOperatingSystemGuard
                 continue;
             }
 
-            $values[$name] = $matches[3] !== '' ? $matches[3] : $matches[4];
+            $quoted = $matches[3] ?? '';
+            $bare = $matches[4] ?? '';
+            $values[$name] = $quoted !== '' ? $quoted : $bare;
         }
 
         $id = $values['ID'] ?? null;

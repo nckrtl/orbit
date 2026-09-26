@@ -165,7 +165,7 @@ final readonly class ClusterRouterDnsSelection
             return [];
         }
 
-        return Cluster::query()->whereKey($ids)->orderBy('id')->get()->all();
+        return array_values(Cluster::query()->whereKey($ids)->orderBy('id')->get()->all());
     }
 
     /**

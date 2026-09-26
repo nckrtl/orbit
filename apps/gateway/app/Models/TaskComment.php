@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Domain\Tasks\TaskBroadcastObserver;
 use App\Domain\Tasks\TaskCommentType;
+use Illuminate\Database\Eloquent\Attributes\ObservedBy;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
@@ -13,6 +15,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon $posted_at
  * @property array<string, string>|null $deliverables the confirmations of a run receipt, by deliverable ID
  */
+#[ObservedBy([TaskBroadcastObserver::class])]
 final class TaskComment extends Model
 {
     #[\Override]

@@ -2733,15 +2733,14 @@ final readonly class TaskScheduler
 
             return;
         }
-        $setup = ProjectLifecycleStep::query()
+        $setup = array_values(ProjectLifecycleStep::query()
             ->where('app_id', $group->app_id)
             ->where('phase', LifecyclePhase::Setup->value)
             ->orderBy('position')
             ->orderBy('id')
             ->get()
             ->map(static fn (ProjectLifecycleStep $step): array => ['name' => $step->name, 'command' => $step->command, 'timeout_seconds' => $step->timeout_seconds])
-            ->values()
-            ->all();
+            ->all());
         $command = $instance->app->taskCheckCommand();
         if ($command !== null && preg_match('/(?:^|[\\s;&|(])composer(?=$|\\s)|\\bvendor\\//i', $command) === 1) {
             $setup[] = [

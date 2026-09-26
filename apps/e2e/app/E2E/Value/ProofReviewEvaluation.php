@@ -130,10 +130,29 @@ final readonly class ProofReviewEvaluation
             $value['candidate_sha'],
             new AttemptId($value['attempt_id']),
             $value['status'],
-            $value['required_incomplete'],
-            $value['required_failed'],
-            $value['exploratory_failed'],
+            self::stringList($value['required_incomplete']),
+            self::stringList($value['required_failed']),
+            self::stringList($value['exploratory_failed']),
             $value['evaluated_at'],
         );
+    }
+
+    /**
+     * @return list<string>
+     */
+    private static function stringList(mixed $values): array
+    {
+        if (! is_array($values) || ! array_is_list($values)) {
+            throw new InvalidArgumentException('The proof review evaluation schema is invalid.');
+        }
+        $list = [];
+        foreach ($values as $value) {
+            if (! is_string($value)) {
+                throw new InvalidArgumentException('The proof review evaluation schema is invalid.');
+            }
+            $list[] = $value;
+        }
+
+        return $list;
     }
 }

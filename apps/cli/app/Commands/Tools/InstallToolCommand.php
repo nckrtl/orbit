@@ -62,12 +62,12 @@ final class InstallToolCommand extends ToolCommand
             new InstallToolRequest($nodeId, $manager, $package, $this->stringOption('constraint')),
             ToolResponse::class,
             ['Install Tool', 'Installing Tool', 'Installed Tool'],
-            static function (object $response): ProgressState|ProgressOutcome {
-                if (! $response instanceof ToolResponse || ! in_array($response->outcome, ['applied', 'unchanged'], strict: true)) {
+            static function (ToolResponse $response): ProgressState|ProgressOutcome {
+                if (! in_array($response->outcome, ['applied', 'unchanged'], strict: true)) {
                     throw new GatewayApiException(
                         'Gateway response is invalid.',
                         'gateway.invalid_response',
-                        requestId: $response instanceof ToolResponse ? $response->requestId : null,
+                        requestId: $response->requestId,
                     );
                 }
 

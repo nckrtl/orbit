@@ -364,11 +364,11 @@ final readonly class MetricsSshExecutor implements MetricsCredentialRuntime, Met
         }
 
         foreach ($specs as $spec) {
-            if ($states[$spec->service->value] !== null) {
+            if (($states[$spec->service->value] ?? null) !== null) {
                 $this->removeContainer($node, $spec->name);
             }
 
-            if ($backupStates[$spec->service->value] !== null) {
+            if (($backupStates[$spec->service->value] ?? null) !== null) {
                 $this->removeContainer($node, $this->backupName($spec));
             }
         }
@@ -419,7 +419,7 @@ final readonly class MetricsSshExecutor implements MetricsCredentialRuntime, Met
         }
 
         foreach ($specs as $spec) {
-            if ($states[$spec->service->value] !== null) {
+            if (($states[$spec->service->value] ?? null) !== null) {
                 $this->run(
                     $node,
                     new RemoteCommand(['sudo', 'docker', 'volume', 'rm', '--', $spec->volume]),

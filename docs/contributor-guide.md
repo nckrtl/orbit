@@ -60,6 +60,31 @@ Add regression coverage for behavior changes and their important failure modes. 
 
 GitHub CI runs quality checks and affected tests for all five projects, including documentation lint. Root `composer check` can also run the complete local check on a clean commit.
 
+## Static analysis
+
+PHPStan checks each PHP project during `composer check`. Laravel projects use Larastan. The SDK uses PHPStan directly. [ADR 0166](/decisions/0166-raise-phpstan-one-level-at-a-time) raises all five projects from level 6 to level 9, one level at a time.
+
+The projects are `apps/gateway`, `apps/cli`, `packages/php-sdk`, `apps/e2e`, and `apps/docs`. A level is complete only when every project passes it. The next level starts only after that Task group's pull request merges. Do not raise one project ahead of the others. Until that merge, each project runs the level on main. That level is 6.
+
+Fix the code PHPStan reports. Stricter types catch escapes before review. That is part of tightening CI before auto-merge.
+
+Do not clear a finding with any of these:
+
+- an ignore, including `@phpstan-ignore`, or a baseline
+- `assert()` or an inline `@var` that overrides the inferred type
+- a cast that only silences the finding
+- a wider type that hides the finding
+
+The counted `ignoreErrors` entries already in CLI and E2E stay as recorded. Do not add an entry or raise a count to pass the next level.
+
+On 2026-09-26, PHPStan reported these error totals. A higher level includes the errors from the levels below it. Level 7 is the next change.
+
+| Level | Gateway | CLI | SDK | E2E | Docs |
+| --- | --- | --- | --- | --- | --- |
+| 7 | 74 | 21 | 3 | 14 | 0 |
+| 8 | 106 | 27 | 3 | 17 | 0 |
+| 9 | 438 | 81 | 25 | 98 | 2 |
+
 ## 4. Submit a complete pull request
 
 Explain the problem, resulting behavior, architectural decisions, documentation changes, verification results, and remaining limitations. Link an issue when one exists.

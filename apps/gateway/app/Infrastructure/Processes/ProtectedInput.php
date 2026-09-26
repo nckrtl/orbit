@@ -40,7 +40,11 @@ final class ProtectedInput
 
         try {
             $metadata = stream_get_meta_data($stream);
-            $path = $metadata['uri'];
+            $path = $metadata['uri'] ?? null;
+
+            if (! is_string($path) || $path === '') {
+                throw new RuntimeException('Unable to protect process input.');
+            }
 
             if (! chmod(filename: $path, permissions: 0o600)) {
                 throw new RuntimeException('Unable to protect process input.');

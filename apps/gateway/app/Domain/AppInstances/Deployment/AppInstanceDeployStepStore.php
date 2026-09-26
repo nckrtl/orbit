@@ -20,11 +20,10 @@ final readonly class AppInstanceDeployStepStore
             ? $instance->deploySteps
             : $instance->deploySteps()->get();
 
-        return $rows
+        return array_values($rows
             ->sortBy(static fn (AppInstanceDeployStep $row): int => ($row->phase === DeploymentPhase::BeforeActivation->value ? 0 : 1) * 1_000 + $row->position)
-            ->values()
             ->map(fn (AppInstanceDeployStep $row): DeploymentStep => $this->toDomain($row))
-            ->all();
+            ->all());
     }
 
     /** @param list<DeploymentStep> $steps */

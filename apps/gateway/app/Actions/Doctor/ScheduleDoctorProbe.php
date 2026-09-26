@@ -75,7 +75,10 @@ final readonly class ScheduleDoctorProbe implements DoctorFamilyProbe
         }
 
         try {
-            foreach ($this->inspector->orphanIds($context->node, $schedules->pluck('id')->all()) as $id) {
+            foreach ($this->inspector->orphanIds($context->node, array_values(array_filter(
+                $schedules->pluck('id')->all(),
+                is_string(...),
+            ))) as $id) {
                 $issues[] = new DoctorIssueData(
                     ScheduleDoctorIssueCode::OrphanArtifact,
                     DoctorIssueKind::Drift,

@@ -119,7 +119,7 @@ final class InstallGitHubAppCommand extends GitHubCommand
             return false;
         }
 
-        return $app instanceof GitHubAppResponse ? $app : false;
+        return $app;
     }
 
     private function resolveName(): ?string
@@ -249,10 +249,6 @@ final class InstallGitHubAppCommand extends GitHubCommand
             }
 
             throw $exception;
-        }
-
-        if (! $app instanceof GitHubAppResponse) {
-            return null;
         }
 
         foreach ($app->installations as $installation) {

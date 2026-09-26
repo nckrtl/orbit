@@ -44,15 +44,14 @@ final readonly class CaddySiteCertificates
      */
     public function nodeIds(string $site): array
     {
-        return Setting::query()
+        return array_values(Setting::query()
             ->where('scope_type', SettingScopeType::Node->value)
             ->where('key', self::KeyPrefix.$site)
             ->whereNotNull('value')
             ->orderBy('scope_id')
             ->pluck('scope_id')
             ->map(static fn (mixed $id): int => (int) $id)
-            ->values()
-            ->all();
+            ->all());
     }
 
     /** After the certificate step placed the certificate on the Node, before the build that names it. */

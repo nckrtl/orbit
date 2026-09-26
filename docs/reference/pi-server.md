@@ -94,6 +94,32 @@ The app needs `laravel/boost` installed, so run `composer install` in it first. 
 
 The tool stops Boost after the answer, after 60 seconds, or when the turn is interrupted. A failed search returns an error result to the agent. The error names the cause, such as no Laravel app, Boost not installed or not enabled, or a timeout.
 
+## Large tool output
+
+A `read` or `bash` result larger than 8 KiB does not enter the model context. The server writes the full text to a file and stores a short notice in the session. The stream shows that notice. [ADR 0168](/decisions/0168-offload-large-pi-tool-output) records the decision. `edit`, `write`, `search_docs`, and an image `read` are unchanged.
+
+8 KiB is 8,192 UTF-8 bytes. `read` measures the selected lines when the call sets `offset` or `limit`, and the whole file otherwise. `bash` measures stdout and stderr in the order the tool read them, without the exit line. A result of 8,192 bytes or fewer is returned in full. There is no line cap on that result.
+
+The file is new, under the session workspace at `.git/orbit/tool-output/`. The server creates the directory with mode `0700` when `.git` is a directory. The file mode is `0600`. Its name starts with the tool, the session id, and the tool call id. A second result does not replace an earlier file. The file contains the measured text only. The notice uses the absolute path.
+
+The notice is at most 8,192 bytes:
+
+```text
+<bytes> bytes, <lines> lines, saved to <absolute path>
+<preview>
+View more with the read tool using offset and limit, or grep on that file.
+```
+
+`read` previews the first 20 lines. `bash` previews the last 40. Lines split on newline. A final newline does not add a line. When the preview would make the notice larger than 8,192 bytes, whole lines drop from the end of a `read` preview or the start of a `bash` preview. A line is not split. The file keeps it. The first line then adds `Preview shows N lines.`
+
+A `bash` notice ends with `Exit code: N` when the process exits, including `0`. An abort ends with `Command aborted`. A timeout ends with `Command timed out after N seconds`. A non-zero exit, an abort, and a timeout stay failed tool results. The failure text is the notice.
+
+The files stay on the Node until the workspace clone is removed. Idle unload and a server restart leave them in place. They are not pushed and not copied off the Node. Git ignores paths inside `.git`, so they stay out of diffs and the review workspace tree. A workspace whose `.git` is not a directory returns the full text and writes no file.
+
+Reading the saved file follows the same rule. A slice of 8,192 bytes or fewer returns in full. When the file cannot be written, the result is an error: the byte count, the line count, and the reason. The error does not include the output. A `bash` error ends with the same exit, abort, or timeout line as a notice.
+
+The `read` and `bash` descriptions tell the model about this limit. They name `.git/orbit/tool-output/`, the path, the counts, and the short preview.
+
 ## API
 
 Every route requires `Authorization: Bearer <token>`. Errors return `{"error": {"code", "message"}}`.

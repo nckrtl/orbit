@@ -11,6 +11,7 @@ interface ProfileRequestProfiler
      * @param  string|null  $caPath  Certificate bundle to verify against, for a host that
      *                               presents an Orbit CA leaf rather than a public certificate.
      *                               Null verifies against the system store, as a public URL needs.
+     *                               An empty path is rejected and does not fall back to that store.
      * @return array{
      *     request: array{
      *         method: string,

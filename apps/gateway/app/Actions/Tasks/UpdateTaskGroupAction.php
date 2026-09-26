@@ -82,7 +82,7 @@ final readonly class UpdateTaskGroupAction
     {
         $missing = $tasks->sortBy('position')->filter(static fn (Task $task): bool => $task->deliverableList() === []);
         if ($missing->isNotEmpty()) {
-            throw TaskGroupGuard::deliverablesMissing($missing->map(static fn (Task $task): string => '#'.$task->id.' "'.$task->title.'"')->values()->all());
+            throw TaskGroupGuard::deliverablesMissing(array_values($missing->map(static fn (Task $task): string => '#'.$task->id.' "'.$task->title.'"')->all()));
         }
     }
 

@@ -97,7 +97,7 @@ return new class extends Migration
             DB::table('app_instance_removal_members')
                 ->where('environment', 'development')
                 ->update(['source_commit' => DB::raw('starting_commit')]);
-            DB::unprepared($immutableTrigger);
+            DB::statement($immutableTrigger);
         });
     }
 
