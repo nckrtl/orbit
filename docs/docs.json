@@ -379,6 +379,9 @@
               "DELETE /api/v1/instances/{instance}/deploy-steps/{step}",
               "PATCH /api/v1/instances/{instance}/deploy-steps/{step}",
               "GET /api/v1/instances/{instance}/deployments",
+              "POST /api/v1/instances/{instance}/log-streams",
+              "DELETE /api/v1/instances/{instance}/log-streams/{stream}",
+              "PUT /api/v1/instances/{instance}/log-streams/{stream}",
               "GET /api/v1/instances/{instance}/logs",
               "GET /api/v1/instances/{instance}/queue",
               "GET /api/v1/instances/{instance}/releases",
@@ -446,6 +449,9 @@
               "GET /api/v1/processes",
               "POST /api/v1/processes",
               "DELETE /api/v1/processes/{process}",
+              "POST /api/v1/processes/{process}/log-streams",
+              "DELETE /api/v1/processes/{process}/log-streams/{stream}",
+              "PUT /api/v1/processes/{process}/log-streams/{stream}",
               "GET /api/v1/processes/{process}/logs",
               "POST /api/v1/processes/{process}/restart",
               "POST /api/v1/processes/{process}/start",
@@ -545,6 +551,7 @@
             "openapi": "/openapi.json",
             "pages": [
               "POST /api/v1/agent/broadcasting/auth",
+              "GET /api/v1/agent/log-streams",
               "GET /api/v1/agent/realtime",
               "GET /api/v1/agent/workspaces",
               "GET /api/v1/github/app/callback",
@@ -719,7 +726,8 @@
               "decisions/0154-recover-the-gateway-agent-view-without-a-membership-change",
               "decisions/0155-authenticate-the-node-agent-with-a-per-node-secret",
               "decisions/0156-route-the-private-domain-on-the-gateway-machine-to-vpn-dns",
-              "decisions/0157-keep-private-caddy-sites-off-the-public-listener"
+              "decisions/0157-keep-private-caddy-sites-off-the-public-listener",
+              "decisions/0158-end-interrupted-activity"
             ]
           }
         ]

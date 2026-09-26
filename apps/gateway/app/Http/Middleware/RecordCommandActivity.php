@@ -26,6 +26,7 @@ use App\Domain\SourceControl\GitBranchName;
 use App\Domain\Tools\ToolOperationException;
 use App\Http\Requests\Nodes\RemoveNodeRoleInputParser;
 use App\Http\Requests\TopLevelJsonObjectInspector;
+use App\Infrastructure\Activity\ActivityShutdownFinalizer;
 use App\Infrastructure\Activity\CommandActivityInputSanitizer;
 use App\Infrastructure\Activity\CommandActivityTargetResolver;
 use App\Infrastructure\Processes\CommandDeadline;
@@ -92,20 +93,24 @@ final readonly class RecordCommandActivity
     {
         $startedAt = microtime(true);
         $activity = $this->start($request);
+        // A persisted `running` row is ended at shutdown if a fatal error stops the request first.
+        $shutdown = $activity->exists ? ActivityShutdownFinalizer::arm($activity) : null;
 
         try {
             /** @var Response $response */
             $response = $next($request);
 
             if ($response instanceof StreamedResponse) {
-                return $this->deferStreamCompletion($activity, $request, $response, $startedAt);
+                return $this->deferStreamCompletion($activity, $request, $response, $startedAt, $shutdown);
             }
 
             $this->complete($activity, $request, $response, $startedAt);
+            $shutdown?->disarm();
 
             return $response;
         } catch (Throwable $exception) {
             $this->fail($activity, $request, $exception, $startedAt);
+            $shutdown?->disarm();
 
             throw $exception;
         }
@@ -116,15 +121,18 @@ final readonly class RecordCommandActivity
         Request $request,
         StreamedResponse $response,
         float $startedAt,
+        ?ActivityShutdownFinalizer $shutdown,
     ): StreamedResponse {
         $callback = $response->getCallback();
 
-        $response->setCallback(function () use ($activity, $request, $response, $startedAt, $callback): void {
+        $response->setCallback(function () use ($activity, $request, $response, $startedAt, $callback, $shutdown): void {
             try {
                 $callback();
                 $this->complete($activity, $request, $response, $startedAt);
+                $shutdown?->disarm();
             } catch (Throwable $exception) {
                 $this->fail($activity, $request, $exception, $startedAt);
+                $shutdown?->disarm();
 
                 throw $exception;
             } finally {

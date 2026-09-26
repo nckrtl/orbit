@@ -114,6 +114,25 @@ it('shows deterministic human output for a relocated gateway role', function ():
         ->assertExitCode(0);
 });
 
+it('warns with the follow-up when the target does not get the private DNS route', function (): void {
+    MockClient::global([
+        RelocateNodeRoleRequest::class => MockResponse::make([
+            'data' => [
+                ...relocated_gateway_role_payload(),
+                'follow_up' => 'The Gateway machine does not route the private domain to Orbit VPN DNS (vpn.dns_resolver_failed).',
+            ],
+            'meta' => ['request_id' => relocate_node_role_request_id()],
+        ]),
+    ]);
+
+    $this
+        ->artisan('node:role:relocate', ['node' => '7', 'role' => 'gateway', '--force' => true])
+        ->expectsOutput('Role [gateway] relocated to node [beast] (#7).')
+        ->expectsOutputToContain('Warning: The Gateway machine does not route the private domain to Orbit VPN DNS')
+        ->expectsOutput('Request ID: '.relocate_node_role_request_id())
+        ->assertExitCode(0);
+});
+
 it('resolves a node name through the node list before relocating the role', function (): void {
     $mockClient = MockClient::global([
         ListNodesRequest::class => MockResponse::make([

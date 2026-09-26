@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Broadcasting\RecordBroadcast;
 use App\Domain\Broadcasting\RecordEventType;
+use App\Domain\Logs\LogStreamBroadcast;
 use App\Domain\Processes\ProcessUsageIndex;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskBroadcasts;
@@ -13,8 +14,11 @@ use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\TaskGroup;
+use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Event;
+use Symfony\Component\Console\Input\ArrayInput;
+use Symfony\Component\Console\Output\BufferedOutput;
 
 /** @return array{Node, AppInstance, TaskGroup} */
 function publish_group(): array
@@ -108,4 +112,42 @@ describe('orbit:agent-view-publish', function (): void {
             ->and($events[0]->id)->toBe(1_790_000_000)
             ->and($events[0]->data)->toBe(['part' => 1, 'parts' => 1, 'processes' => []]);
     });
+});
+
+/** Runs one `--logs` relay run with this standard input and returns its exit code and output. */
+function publish_logs(string $input): array
+{
+    $command = app(Kernel::class)->all()['orbit:agent-view-publish'];
+    $stdin = fopen('php://memory', 'r+');
+    fwrite($stdin, $input);
+    rewind($stdin);
+    $arguments = new ArrayInput(['--logs' => true]);
+    $arguments->setStream($stdin);
+    $output = new BufferedOutput;
+
+    return [$command->run($arguments, $output), $output->fetch()];
+}
+
+describe('orbit:agent-view-publish --logs', function (): void {
+    beforeEach(fn () => Event::fake([LogStreamBroadcast::class]));
+
+    it('relays the batch on standard input and prints the open stream count', function (): void {
+        activate_websocket_role();
+        [$code, $output] = publish_logs((string) json_encode(['relay' => 'relay-1', 'items' => [['type' => 'agent_left', 'item' => 1, 'node' => 3]], 'sweep' => true]));
+
+        expect($code)->toBe(0)
+            ->and(trim($output))->toBe('{"open_streams":0}');
+    });
+
+    it('fails on a batch it cannot read, so the subscriber runs it again', function (string $input): void {
+        [$code, $output] = publish_logs($input);
+
+        expect($code)->toBe(1)
+            ->and($output)->toContain('not valid');
+    })->with([
+        'not JSON' => ['{'],
+        'no relay' => ['{"items":[],"sweep":false}'],
+        'unknown item' => ['{"relay":"r","items":[{"type":"shout","item":1,"node":3}],"sweep":false}'],
+        'lines that are not strings' => ['{"relay":"r","items":[{"type":"lines","item":1,"node":3,"stream":"ab","lines":[1],"dropped":0,"skipped":0}],"sweep":false}'],
+    ]);
 });
