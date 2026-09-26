@@ -58,7 +58,7 @@ The file name is the tool name, the session id, and the tool call id, with every
 
 The file remains until the workspace clone is removed. Idle unload, a server restart, and the end of the turn do not delete it. The next turn can still open the path. Removing the clone removes the file. The server does not copy it to the Gateway, the web app, or another Node, and Git does not push it.
 
-When the file cannot be written, the tool result is an error. Its text is `{bytes} bytes, {lines} lines, not saved: {reason}`. It does not include the output.
+When the file cannot be written, the tool result is an error. Its text is `{bytes} bytes, {lines} lines, not saved: {reason}`. It does not include the output. A `bash` error ends with the same status line as a notice: `Exit code: N`, `Command aborted`, or `Command timed out after N seconds`.
 
 ### What the model receives
 
@@ -105,7 +105,7 @@ Exit code: 0
 - The Node holds the full text until the workspace clone is removed. A command that prints a large stream writes that stream once, under `.git`.
 - Diffs and the review workspace tree do not include the files.
 - A session whose workspace has no `.git` directory keeps a large result in context.
-- A failed write drops the output and returns an error that names the size and the reason.
+- A failed write drops the output and returns an error that names the size and the reason. A `bash` error keeps the exit, abort, or timeout line.
 - Idle unload and restart do not delete the files. Removing the workspace does.
 
 ## Affects
