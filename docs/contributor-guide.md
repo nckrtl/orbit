@@ -41,6 +41,8 @@ Build the feature and tests against the documented behavior. Keep proposed ADRs 
 
 `composer test:affected` selects tests with Pest test-impact analysis (TIA), which needs PCOV or Xdebug. Without a coverage driver, TIA is skipped and every test runs. On macOS, install PCOV with `brew install shivammathur/extensions/pcov@8.5`. Every project sets Composer's `process-timeout` to `0`, so a long test or check run is never stopped after Composer's default 300 seconds.
 
+The `test` and `test:affected` scripts in each PHP project, and root `bin/test`, pass `--colors=never` to Pest. `bin/pest-plain` strips leftover ANSI control sequences from that output. The output has no ANSI escape codes and still ends with the `Tests:` summary. The scripts do not pass `--no-progress`, because parallel Pest then omits that summary. Keep the flag on the scripts. `phpunit.xml` is a TIA input, and changing it rebuilds the test impact graph.
+
 Run these commands in each changed project, such as `apps/cli`:
 
 ```bash

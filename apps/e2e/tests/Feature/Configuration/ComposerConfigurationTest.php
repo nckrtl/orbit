@@ -36,6 +36,15 @@ describe('Composer configuration', function (): void {
                 /** @var array{scripts: array<string, mixed>} $composer */
                 $composer = json_decode($contents, true, flags: JSON_THROW_ON_ERROR);
 
+                foreach (['test', 'test:affected'] as $script) {
+                    $command = $composer['scripts'][$script] ?? null;
+
+                    expect($command)
+                        ->toBeString()
+                        ->toContain('vendor/bin/pest', '--colors=never')
+                        ->not->toContain('--no-progress');
+                }
+
                 array_walk_recursive($composer['scripts'], function (mixed $command): void {
                     if (! is_string($command) || ! str_contains($command, 'vendor/bin/pest')) {
                         return;
@@ -45,6 +54,12 @@ describe('Composer configuration', function (): void {
                 });
             } else {
                 expect($contents)->not->toMatch('/vendor\/bin\/pest[^\n]*tests\//');
+
+                if ($path === 'bin/test') {
+                    expect($contents)
+                        ->toContain('--colors=never')
+                        ->not->toContain('--no-progress');
+                }
 
                 if ($path !== '.github/workflows/ci.yml') {
                     expect($contents)->not->toContain('tests/');
@@ -70,6 +85,35 @@ describe('Composer configuration', function (): void {
                 ->toBeString()
                 ->toContain(...$contracts);
         }
+    });
+
+    it('strips ANSI from Pest output and keeps the summary and exit code', function (): void {
+        $root = base_path('../..');
+        $plain = $root.'/bin/pest-plain';
+
+        $passed = new Process([
+            $plain,
+            'php',
+            '-r',
+            'echo "\e[1ATests: 1 passed\n";',
+        ], $root);
+        $passed->mustRun();
+
+        expect($passed->getExitCode())->toBe(0)
+            ->and($passed->getOutput())->toBe("Tests: 1 passed\n")
+            ->and($passed->getErrorOutput())->toBe('');
+
+        $failed = new Process([
+            $plain,
+            'php',
+            '-r',
+            'fwrite(STDERR, "\e[31mfail\e[0m\n"); exit(2);',
+        ], $root);
+        $failed->run();
+
+        expect($failed->getExitCode())->toBe(2)
+            ->and($failed->getOutput())->toBe("fail\n")
+            ->and($failed->getErrorOutput())->toBe('');
     });
 
     it('requires analysis level 6 or higher in every Composer project', function (string $project): void {
@@ -102,7 +146,7 @@ describe('Composer configuration', function (): void {
             ->not
             ->toHaveKey('test:live-incus')
             ->and($composer['scripts']['test'])
-            ->toBe('vendor/bin/pest --parallel --tia --compact')
+            ->toBe('../../bin/pest-plain vendor/bin/pest --parallel --tia --compact --colors=never')
             ->and($composer['scripts']['test:fresh'])
             ->toBe('vendor/bin/pest --parallel --tia --fresh --compact')
             ->and($composer['scripts']['guidance:check'])

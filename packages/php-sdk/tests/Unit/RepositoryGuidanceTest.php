@@ -178,7 +178,7 @@ describe('repository guidance bootstrap', function (): void {
         expect($composer['scripts']['check'])->not->toContain('@test');
 
         expect($composer['scripts']['test'] ?? null)
-            ->toBe('vendor/bin/pest --parallel --tia --compact')
+            ->toBe('../../bin/pest-plain vendor/bin/pest --parallel --tia --compact --colors=never')
             ->and($composer['scripts'])
             ->not->toHaveKey('test:full');
 

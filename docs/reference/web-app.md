@@ -214,3 +214,7 @@ bin/web-deploy --switch <commit>
 ```
 
 The command refuses a commit that has no retained release. The Gateway serves the older release on the next request.
+
+## Browser tests
+
+Browser tests assert on the page, the URL, and the requests the demo Gateway received. They must never write tracked files. A passing `bun run test` in `apps/web` leaves the Git working tree unchanged.
