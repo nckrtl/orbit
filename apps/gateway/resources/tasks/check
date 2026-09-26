@@ -12,6 +12,7 @@ check run CHECKOUT HEAD TREE [SETUP|-] [DELIVERABLES|-] [COMMAND]
                                 run the setup steps and the command, then write check.json (started by `start`)
 check status PID STARTED        print running, finished (with the result), or lost
 check cancel PID STARTED        stop the check's process group
+check snapshot CHECKOUT         print HEAD and the working-tree hash, without touching the index
 """
 
 import json
@@ -271,6 +272,11 @@ def cancel(pid, started):
     print(json.dumps({'cancelled': True}))
 
 
+def snapshot(checkout):
+    """HEAD and the tree the check stores, read again without copying an earlier check row."""
+    print(json.dumps({'head': git(checkout, 'rev-parse', 'HEAD'), 'tree': working_tree(checkout)}))
+
+
 def main(arguments):
     command = arguments[0] if arguments else ''
     if command == 'start' and len(arguments) in (2, 3, 4, 5):
@@ -281,6 +287,8 @@ def main(arguments):
         status(int(arguments[1]), arguments[2])
     elif command == 'cancel' and len(arguments) == 3:
         cancel(int(arguments[1]), arguments[2])
+    elif command == 'snapshot' and len(arguments) == 2:
+        snapshot(arguments[1])
     else:
         print(__doc__, file=sys.stderr)
         return 2

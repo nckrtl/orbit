@@ -8,6 +8,7 @@ use App\Domain\Tasks\TaskCheckException;
 use App\Domain\Tasks\TaskCheckProcess;
 use App\Domain\Tasks\TaskCheckReading;
 use App\Domain\Tasks\TaskCheckRunner;
+use App\Domain\Tasks\TaskWorkspaceSnapshot;
 use App\Models\AppInstance;
 use Illuminate\Support\Facades\DB;
 
@@ -19,13 +20,23 @@ final class FakeTaskCheckRunner implements TaskCheckRunner
 
     public bool $failNextCancel = false;
 
+    public bool $failSnapshot = false;
+
+    public string $head;
+
+    public string $tree;
+
     /** @var list<int> the database transaction level at each cancel */
     public array $cancelTransactionLevels = [];
 
     /**
      * @param  list<TaskCheckReading>|null  $readings  one reading per read; null finishes every check with exit code 0
      */
-    public function __construct(private ?array $readings = null) {}
+    public function __construct(private ?array $readings = null)
+    {
+        $this->head = str_repeat('a', 40);
+        $this->tree = str_repeat('b', 40);
+    }
 
     /** @param array<array-key, mixed>|null $deliverables the deliverable evidence the check records */
     public static function passed(?array $deliverables = null): TaskCheckReading
@@ -70,5 +81,14 @@ final class FakeTaskCheckRunner implements TaskCheckRunner
 
             throw new TaskCheckException('The Node is unreachable.');
         }
+    }
+
+    public function snapshot(AppInstance $instance): TaskWorkspaceSnapshot
+    {
+        if ($this->failSnapshot) {
+            throw new TaskCheckException('The workspace tree could not be read.');
+        }
+
+        return new TaskWorkspaceSnapshot($this->head, $this->tree);
     }
 }

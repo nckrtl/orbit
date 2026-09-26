@@ -93,7 +93,11 @@ A reviewer turn is read-only. The reviewer prompt says that the reviewer does no
 
 When the Gateway sends the review request, it records the workspace HEAD and the working-tree hash. The hash is the one the handoff check already stores: the whole working tree, uncommitted and untracked files included, without touching the Git index. The Gateway reads that pair at send time and stores it on the task for the review attempt. It does not copy the hash from an earlier check row.
 
-When the reviewer's receipt arrives, the Gateway reads HEAD and the hash again. A difference fails `workspace_unchanged`. The Gateway keeps the receipt and does not apply `approved`, `changes_requested`, or `blocked`. The reminder tells the reviewer to revert its changes and to request changes from the implementer instead. The review sends one reminder. A second change on that review asks for assistance. When HEAD and the hash match, the Gateway applies the outcome under the rules above. A failed read is a communication failure, not a change.
+When the reviewer's receipt arrives, the Gateway reads HEAD and the hash again. A difference fails `workspace_unchanged`. The Gateway keeps the receipt and does not apply `approved`, `changes_requested`, or `blocked`. The reminder tells the reviewer to revert its changes and to request changes from the implementer instead.
+
+The review sends one reminder and records that stopped turn. Another poll of the same turn is not a second change. The Gateway does not apply the stored outcome, and it does not ask for assistance. It waits until a newer reviewer turn stops, then reads the workspace again. When that turn still differs, the Gateway asks for assistance. When HEAD and the hash match, the Gateway applies the outcome under the rules above. A failed read is a communication failure, not a change.
+
+A failed publication retries without committing again only while HEAD is still the commit Orbit stored and the recorded hash still matches. A reset back to the HEAD from before the approval is refused and is not published.
 
 ### Planner and agent instructions
 
@@ -121,7 +125,7 @@ The planner prompt and the `implementing-in-orbit` skill tell the planner to giv
 - A planner must write deliverables before the group moves to Todo.
 - Groups that were past Backlog before this change run without verification until an operator adds deliverables to their `todo` subtasks.
 - A `test` deliverable runs one Pest file. A subtask that needs more than one file uses more than one deliverable, at most five, or a `command` deliverable.
-- A reviewer that changes the workspace does not finish that review on the changed tree. The first change is a reminder. The second asks for assistance.
+- A reviewer that changes the workspace does not finish that review on the changed tree. The first change is a reminder. Another poll of that same stopped turn neither applies the outcome nor asks for assistance. A second change on a newer stopped reviewer turn asks for assistance.
 - Sending the review request reads the workspace tree, and the receipt reads it again.
 
 ## Affects
