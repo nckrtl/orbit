@@ -29,15 +29,16 @@ final readonly class RouterRoleBaseline implements RoleBaseline
         $account = $this->accounts->resolve($node);
         $caddySource = $this->commands->caddySource($node, RoleName::Router);
         if ($caddySource instanceof RemoteCommand) {
-            $this->ssh->execute($node, $caddySource, 'caddy-package-source', 'router.prerequisite_failed');
+            $this->ssh->execute($node, $caddySource, 'caddy-package-source', 'router.prerequisite_failed', failureLabel: CaddyRoleFailure::sshLabel(RoleName::Router));
         }
         $this->ssh->execute(
             $node,
             $this->commands->make($node, RoleName::Router, $account),
             'role-prerequisites',
             'router.prerequisite_failed',
+            failureLabel: CaddyRoleFailure::sshLabel(RoleName::Router),
         );
-        $this->caddy->converge($node);
+        $this->caddy->converge($node, RoleName::Router);
         $this->firewall->converge($node, RoleName::Router, $account->user);
     }
 
@@ -45,7 +46,7 @@ final readonly class RouterRoleBaseline implements RoleBaseline
     {
         $account = $this->accounts->resolve($node);
         // The build renders every Route site that stored state still places on the Node.
-        $this->caddy->remove($node);
+        $this->caddy->remove($node, RoleName::Router);
         $this->firewall->remove($node, RoleName::Router, $account->user);
     }
 

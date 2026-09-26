@@ -5,8 +5,11 @@ declare(strict_types=1);
 namespace App\Actions\Clusters;
 
 use App\Domain\AppDev\ClusterRouterDnsSelectionReconciler;
+use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Clusters\ClusterRouterOperationLock;
 use App\Domain\Clusters\ClusterState;
+use App\Domain\Firewall\FirewallOperationException;
+use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\RouteReconciliationGuard;
@@ -93,13 +96,33 @@ final readonly class ClearClusterRouterAction
 
                 $this->dnsSelection()->prune(clusterIds: [$clusterId]);
 
-                throw $exception;
+                throw $this->reportedRemoval($exception);
             }
         }
 
         $this->dnsSelection()->prune(clusterIds: [$clusterId]);
 
         return $cluster->refresh();
+    }
+
+    /**
+     * A Caddy or firewall failure keeps the stored step code and is reported as `node_role.remove_failed`
+     * with `details.step` `remove:<step>` and `details.error_code` set to that step's own code.
+     */
+    private function reportedRemoval(Throwable $exception): Throwable
+    {
+        if (! $exception instanceof RuntimeConvergenceException && ! $exception instanceof FirewallOperationException) {
+            return $exception;
+        }
+
+        return new NodeRoleOperationException(
+            step: 'remove:'.$exception->step,
+            errorCode: 'node_role.remove_failed',
+            underlyingErrorCode: $exception->errorCode,
+            message: $exception->getMessage(),
+            result: $exception->result,
+            previous: $exception,
+        );
     }
 
     private function dnsSelection(): ClusterRouterDnsSelectionReconciler
