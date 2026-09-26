@@ -16,6 +16,13 @@ use LogicException;
  */
 final readonly class NodeLocks
 {
+    /**
+     * The term of a lock that one Gateway request holds: the Gateway's PHP-FPM
+     * `request_terminate_timeout`. A request cannot outlive it, so a worker killed at that limit leaves a
+     * lock that has expired by the time the request failed.
+     */
+    public const int RequestSeconds = 600;
+
     public function __construct(private Repository $cache) {}
 
     /**

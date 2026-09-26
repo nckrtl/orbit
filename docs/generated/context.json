@@ -5243,6 +5243,8 @@
                 "Project",
                 "Route",
                 "Router",
+                "Tool",
+                "Tool Manager",
                 "proxycli"
             ],
             "governing_adrs": [
