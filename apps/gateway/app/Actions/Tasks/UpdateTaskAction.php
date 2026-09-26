@@ -32,14 +32,12 @@ final readonly class UpdateTaskAction
                 throw TaskGroupGuard::notInBacklog();
             }
 
-            // ADR 0133: the deliverables of a todo subtask change in any group status, but never to none outside backlog.
-            if (! $backlog && $data->deliverables !== null) {
-                if ($task->status !== TaskStatus::Todo) {
-                    throw TaskGroupGuard::deliverablesLocked();
-                }
-                if ($data->deliverables === []) {
-                    throw TaskGroupGuard::deliverablesRequired();
-                }
+            // ADR 0133: a started subtask keeps its deliverables. A todo subtask's list changes in any group status, but never to none outside backlog.
+            if ($data->deliverables !== null && $task->status !== TaskStatus::Todo) {
+                throw TaskGroupGuard::deliverablesLocked();
+            }
+            if (! $backlog && $data->deliverables === []) {
+                throw TaskGroupGuard::deliverablesRequired();
             }
 
             if (! $backlog && $data->deliverables === null) {

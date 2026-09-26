@@ -424,7 +424,8 @@ describe('subtask deliverables', function (): void {
             ->assertJsonPath('data.deliverables', $docs);
         $this->patchJson("/api/v1/task-groups/{$group['id']}/tasks/{$running}", ['deliverables' => $docs])
             ->assertConflict()
-            ->assertJsonPath('error.code', 'tasks.deliverables_locked');
+            ->assertJsonPath('error.code', 'tasks.deliverables_locked')
+            ->assertJsonPath('error.message', 'Deliverables change only while the group is in backlog or the subtask is todo.');
         $this->patchJson("/api/v1/task-groups/{$group['id']}/tasks/{$todo}", ['deliverables' => []])
             ->assertUnprocessable()
             ->assertJsonPath('error.code', 'tasks.subtask_deliverables_missing');
@@ -432,7 +433,11 @@ describe('subtask deliverables', function (): void {
             ->assertConflict()
             ->assertJsonPath('error.code', 'tasks.not_in_backlog');
 
-        expect(Task::query()->findOrFail($todo)->title)->toBe('Two');
+        expect(Task::query()->findOrFail($todo)->title)->toBe('Two')
+            ->and(Task::query()->findOrFail($running)->deliverables)->toBe([
+                ['id' => 'done', 'type' => 'review', 'description' => 'One is done.'],
+            ])
+            ->and(Task::query()->findOrFail($running)->status)->toBe(TaskStatus::Running);
     });
 
     it('returns 422 validation.failed when a test file is not one exact php path', function (string $file): void {

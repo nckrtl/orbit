@@ -12,6 +12,8 @@ use App\Domain\Tasks\TaskPlannerMcp;
 use App\Domain\Tasks\TaskPlannerSpawner;
 use App\Models\AppInstance;
 use App\Models\TaskGroup;
+use Illuminate\Support\Facades\Log;
+use Throwable;
 
 /**
  * ADR 0124: gives a new Backlog group its shared Instance and starts its planner thread.
@@ -22,7 +24,7 @@ final readonly class StartTaskPlannerAction
         private InstanceProvisioning $provisioning,
         private TaskPlannerSpawner $planners,
         private TaskPlannerMcp $mcp,
-        private CancelTaskGroupAction $cancel,
+        private RemoveTaskWorkspaceAction $workspaces,
     ) {}
 
     /** A group whose Instance or planner cannot start is removed, so create stores no group. */
@@ -48,8 +50,7 @@ final readonly class StartTaskPlannerAction
             : null;
 
         if ($thread === null) {
-            $this->cancel->execute($group);
-            $group->delete();
+            $this->discardUnstartedPlanner($group);
 
             throw TaskGroupGuard::plannerUnavailable();
         }
@@ -57,5 +58,26 @@ final readonly class StartTaskPlannerAction
         $group->update(['reviewer_agent_thread_id' => $thread]);
 
         return $group;
+    }
+
+    /** ADR 0124: drop the group. A removal failure leaves the Instance row and is logged. */
+    private function discardUnstartedPlanner(TaskGroup $group): void
+    {
+        $instance = $group->taskable;
+
+        if ($instance instanceof AppInstance) {
+            try {
+                $this->workspaces->remove($instance);
+            } catch (Throwable $exception) {
+                Log::error('The planner workspace could not be removed after the planner failed to start.', [
+                    'task_group_id' => $group->id,
+                    'app_instance_id' => $instance->id,
+                    'exception' => $exception::class,
+                    'reason' => $exception->getMessage(),
+                ]);
+            }
+        }
+
+        $group->delete();
     }
 }
