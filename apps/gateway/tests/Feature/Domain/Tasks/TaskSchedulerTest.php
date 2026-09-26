@@ -31,7 +31,9 @@ use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupMetricsRefresher;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskPullRequestException;
+use App\Domain\Tasks\TaskPullRequestHealth;
 use App\Domain\Tasks\TaskPullRequestPublisher;
+use App\Domain\Tasks\TaskPullRequestWatcher;
 use App\Domain\Tasks\TaskRunInstructions;
 use App\Domain\Tasks\TaskRunPullRequest;
 use App\Domain\Tasks\TaskRunReceiptException;
@@ -1187,6 +1189,220 @@ it('pushes the last approved subtask and opens one pull request', function (): v
         ->and($group->fresh()?->pr_url)->toBe('https://github.com/acme/orbit/pull/42')
         ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Settling)
         ->and($task->fresh()?->status)->toBe(TaskStatus::Completed);
+});
+
+it('pushes an approved fixup to the existing branch, keeps the pull request, and lets settling re-evaluate it', function (): void {
+    $url = 'https://github.com/acme/orbit/pull/77';
+    [$group, $task, $signer, $publisher] = scheduler_approved_subtask('fixup-same-pr', last: true);
+    $task->update([
+        'position' => 2,
+        'title' => 'Merge origin/main',
+        'brief' => 'Merge origin/main into the task branch and resolve the conflicts. Do not rebase and do not force-push.',
+        'fixup_problem' => 'conflict:main',
+    ]);
+    Task::query()->create([
+        'task_group_id' => $group->id,
+        'position' => 1,
+        'title' => 'Models',
+        'brief' => 'Store the records.',
+        'status' => TaskStatus::Completed,
+    ]);
+    $group->update([
+        'pr_url' => $url,
+        'notify_coder' => true,
+        'settled_at' => now()->subHour(),
+        'tokens' => 3,
+        'line_diff' => 4,
+        'duration_ms' => 5,
+    ]);
+    $settledAt = $group->fresh()?->settled_at;
+    $coverage = new class implements TaskBriefCoverage
+    {
+        public int $calls = 0;
+
+        public function missing(TaskGroup $group, TaskRunPullRequest $pullRequest): array
+        {
+            $this->calls++;
+
+            return ['Models'];
+        }
+    };
+    $notifier = new class implements CoderSettleNotifier
+    {
+        public int $settled = 0;
+
+        public function notify(TaskGroup $group): void
+        {
+            $this->settled++;
+        }
+
+        public function escalate(TaskGroup $group, TaskSessionObservation $observation, TaskSessionDecision $decision): void {}
+
+        public function assistance(TaskGroup $group, string $reason): void {}
+    };
+    $watcher = new class implements TaskPullRequestWatcher
+    {
+        /** @var list<string> */
+        public array $urls = [];
+
+        public function status(TaskGroup $group): ?string
+        {
+            return 'open';
+        }
+
+        public function health(TaskGroup $group): ?TaskPullRequestHealth
+        {
+            $this->urls[] = (string) $group->pr_url;
+
+            return new TaskPullRequestHealth(state: 'open', baseRef: 'main');
+        }
+    };
+    app()->instance(TaskBriefCoverage::class, $coverage);
+    app()->instance(TaskSettleMetricsCollector::class, new class implements TaskSettleMetricsCollector
+    {
+        public function collect(TaskGroup $group): TaskSettleMetrics
+        {
+            return new TaskSettleMetrics(tokens: 90, lineDiff: 18, durationMs: 2500);
+        }
+    });
+    app()->instance(CoderSettleNotifier::class, $notifier);
+    app()->instance(TaskPullRequestWatcher::class, $watcher);
+
+    app(TaskScheduler::class)->tick();
+
+    expect($signer->messages)->toBe(["Merge origin/main\n\nChecked the models."])
+        ->and($publisher->pushes)->toBe([$group->id])
+        ->and($publisher->commits)->toBe([str_repeat('c', 40)])
+        ->and($publisher->bodies)->toBe([])
+        ->and($coverage->calls)->toBe(0)
+        ->and($task->fresh()?->status)->toBe(TaskStatus::Completed)
+        ->and($task->comments()->sole()->commit_sha)->toBe(str_repeat('c', 40))
+        ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Settling)
+        ->and($group->fresh()?->pr_url)->toBe($url)
+        ->and($group->fresh()?->tokens)->toBe(90)
+        ->and($group->fresh()?->line_diff)->toBe(18)
+        ->and($group->fresh()?->duration_ms)->toBe(2500)
+        ->and($group->fresh()?->settled_at?->getTimestamp())->toBe($settledAt?->getTimestamp())
+        ->and($group->fresh()?->assistance_requested)->toBeFalse()
+        ->and($notifier->settled)->toBe(0)
+        ->and($watcher->urls)->toBe([$url])
+        ->and(Task::query()->where('task_group_id', $group->id)->orderBy('position')->get()->pluck('status')->all())->toBe([
+            TaskStatus::Completed,
+            TaskStatus::Completed,
+        ]);
+
+    app(TaskScheduler::class)->tick();
+
+    expect($watcher->urls)->toBe([$url, $url])
+        ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Settling)
+        ->and($group->fresh()?->pr_url)->toBe($url)
+        ->and($notifier->settled)->toBe(0)
+        ->and(Task::query()->where('fixup_problem', 'conflict:main')->count())->toBe(1);
+});
+
+/** A watcher whose pull request has the given status, and whose health reports the given state and head. */
+function scheduler_pull_request_watcher(?string $status, string $healthState = 'open', ?string $headSha = null): TaskPullRequestWatcher
+{
+    $watcher = new readonly class($status, $healthState, $headSha) implements TaskPullRequestWatcher
+    {
+        public function __construct(private ?string $state, private string $healthState, private ?string $headSha) {}
+
+        public function status(TaskGroup $group): ?string
+        {
+            return $this->state;
+        }
+
+        public function health(TaskGroup $group): ?TaskPullRequestHealth
+        {
+            return new TaskPullRequestHealth(state: $this->healthState, baseRef: 'main', headSha: $this->headSha);
+        }
+    };
+    app()->instance(TaskPullRequestWatcher::class, $watcher);
+
+    return $watcher;
+}
+
+it('does not push a fixup commit to a pull request that already merged or closed and names the commit', function (string $state): void {
+    $url = 'https://github.com/acme/orbit/pull/77';
+    [$group, $task, , $publisher] = scheduler_approved_subtask('fixup-orphan-'.$state, last: true);
+    $task->update(['position' => 2, 'fixup_problem' => 'check:Gateway']);
+    Task::query()->create(['task_group_id' => $group->id, 'position' => 1, 'title' => 'Models', 'brief' => 'Store the records.', 'status' => TaskStatus::Completed]);
+    $group->update(['pr_url' => $url, 'settled_at' => now()->subHour()]);
+    scheduler_pull_request_watcher($state);
+
+    app(TaskScheduler::class)->tick();
+
+    $reason = TaskScheduler::OrphanedCommitPrefix.'Orbit did not push commit '.str_repeat('c', 40).' of subtask #'.$task->id.' because '.$url.' is already '.$state.'. Push that commit to a new branch and open a pull request, or cancel the group.';
+    expect($publisher->pushes)->toBe([])
+        ->and($task->fresh()?->status)->toBe(TaskStatus::Reviewing)
+        ->and($group->fresh()?->assistance_reason)->toBe($reason)
+        ->and($task->comments()->sole()->commit_sha)->toBe(str_repeat('c', 40));
+
+    app(TaskScheduler::class)->tick();
+
+    expect($publisher->pushes)->toBe([]);
+})->with(['merged', 'closed']);
+
+it('does not push a fixup commit while the pull request state is unreadable', function (): void {
+    [$group, $task, , $publisher] = scheduler_approved_subtask('fixup-unknown', last: true);
+    $task->update(['position' => 2, 'fixup_problem' => 'check:Gateway']);
+    Task::query()->create(['task_group_id' => $group->id, 'position' => 1, 'title' => 'Models', 'brief' => 'Store the records.', 'status' => TaskStatus::Completed]);
+    $group->update(['pr_url' => 'https://github.com/acme/orbit/pull/77', 'settled_at' => now()->subHour()]);
+    scheduler_pull_request_watcher(null);
+
+    app(TaskScheduler::class)->tick();
+
+    expect($publisher->pushes)->toBe([])
+        ->and($task->fresh()?->status)->toBe(TaskStatus::Reviewing)
+        ->and($task->fresh()?->communication_failures)->toBe(1)
+        ->and($group->fresh()?->assistance_requested)->toBeFalse();
+});
+
+it('asks for assistance at settle when the pull request merged before the fixup commit reached it', function (): void {
+    $url = 'https://github.com/acme/orbit/pull/77';
+    [$group, $task, , $publisher] = scheduler_approved_subtask('fixup-late-merge', last: true);
+    $task->update(['position' => 2, 'fixup_problem' => 'check:Gateway']);
+    Task::query()->create(['task_group_id' => $group->id, 'position' => 1, 'title' => 'Models', 'brief' => 'Store the records.', 'status' => TaskStatus::Completed]);
+    $group->update(['pr_url' => $url, 'settled_at' => now()->subHour()]);
+    scheduler_pull_request_watcher('open', 'merged', 'abc123');
+
+    app(TaskScheduler::class)->tick();
+
+    $reason = TaskScheduler::OrphanedCommitPrefix.'Commit '.str_repeat('c', 40).' reached task-'.$group->id.' after '.$url.' merged at abc123. Open a pull request for task-'.$group->id.', or complete the group.';
+    expect($publisher->pushes)->toBe([$group->id])
+        ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Settling)
+        ->and($group->fresh()?->assistance_reason)->toBe($reason);
+
+    app(TaskScheduler::class)->tick();
+
+    expect($group->fresh()?->status)->toBe(TaskGroupStatus::Settling);
+});
+
+it('prepares a fixup review without pull request fields', function (): void {
+    $app = scheduler_app('fixup-review');
+    $instance = scheduler_instance($app, scheduler_node('fixup-review-node', '10.44.3.41'), 'workspace');
+    $group = queued_group($app, 'Fixup review', $instance);
+    scheduler_bind_claim($instance, new class implements AgentSpawner
+    {
+        public function spawnReviewer(Task $task): ?int
+        {
+            return test_agent_thread($task->taskGroup, 'reviewer-thread')->id;
+        }
+
+        public function spawnImplementer(Task $task): ?int
+        {
+            return test_agent_thread($task->taskGroup, 'implementer-thread', $task)->id;
+        }
+
+        public function requestReview(Task $task): void {}
+    });
+
+    app(TaskScheduler::class)->claimNext();
+    test_pass_baseline();
+    $group->update(['pr_url' => 'https://github.com/acme/orbit/pull/42']);
+    app(TaskScheduler::class)->settleImplementer($group->tasks()->sole());
+
+    expect(app(TaskRunReceipts::class)->prepared)->toBe(['implementer', 'reviewer']);
 });
 
 it('keeps retrying a failed push after the fifth failure asks for assistance', function (): void {

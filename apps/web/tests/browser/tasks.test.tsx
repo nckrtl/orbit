@@ -39,6 +39,7 @@ function group(id: number, status: TaskGroup["status"]): TaskGroup {
                 check: null,
                 assistance_requested: false,
                 assistance_reason: null,
+                fixup_problem: null,
                 position: 1,
                 title: "First step",
                 brief: "Acceptance details",

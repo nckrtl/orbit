@@ -37,6 +37,7 @@ final class TaskData extends Data
         public ?TaskCheckData $check,
         public bool $assistanceRequested,
         public ?string $assistanceReason,
+        public ?string $fixupProblem,
     ) {}
 
     public static function fromModel(Task $task): self
@@ -50,6 +51,7 @@ final class TaskData extends Data
             check: $check instanceof TaskCheck ? TaskCheckData::fromModel($check) : null,
             assistanceRequested: $task->assistance_requested,
             assistanceReason: $task->assistance_reason,
+            fixupProblem: $task->fixup_problem,
 
             id: $task->id,
             taskGroupId: $task->task_group_id,

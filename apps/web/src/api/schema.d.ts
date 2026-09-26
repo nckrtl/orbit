@@ -3654,6 +3654,7 @@ export interface components {
             check?: components["schemas"]["TaskCheck"] | null;
             assistance_requested?: boolean;
             assistance_reason?: string | null;
+            fixup_problem?: string | null;
         };
         TaskCheck: {
             id?: number;

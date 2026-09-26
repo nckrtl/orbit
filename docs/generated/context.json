@@ -3658,7 +3658,8 @@
                 "0098",
                 "0113",
                 "0121",
-                "0140"
+                "0140",
+                "0164"
             ]
         },
         {
@@ -4198,6 +4199,31 @@
             ]
         },
         {
+            "path": "docs/decisions/0164-heal-a-settling-pull-request-with-a-fixup-subtask.md",
+            "title": "ADR 0164: Heal a settling pull request with a fixup subtask",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/e2e",
+                "apps/gateway",
+                "apps/web",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Gateway",
+                "Project",
+                "Task"
+            ],
+            "governing_adrs": [
+                "0113",
+                "0121",
+                "0140",
+                "0160",
+                "0164"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -4388,7 +4414,8 @@
                 "0159",
                 "0160",
                 "0161",
-                "0163"
+                "0163",
+                "0164"
             ]
         },
         {
@@ -5051,7 +5078,8 @@
                 "0098",
                 "0121",
                 "0140",
-                "0160"
+                "0160",
+                "0164"
             ]
         },
         {
@@ -5595,8 +5623,12 @@
             "title": "Tasks",
             "kind": "reference",
             "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/e2e",
                 "apps/gateway",
-                "apps/web"
+                "apps/web",
+                "packages/php-sdk"
             ],
             "concepts": [
                 "Database",
@@ -5630,7 +5662,8 @@
                 "0134",
                 "0140",
                 "0160",
-                "0163"
+                "0163",
+                "0164"
             ]
         },
         {

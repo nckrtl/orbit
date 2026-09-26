@@ -262,6 +262,23 @@ it('shows the base failure kind and message to the reviewer', function (): void 
         ->and($dispatcher->commands[0]['message']['text'])->toContain('- layout-repro: "it breaks the home screen layout" failed on the start commit with an error: Class "HomeScreen" not found');
 });
 
+it('does not ask for pull request fields when reviewing a fixup on an open pull request', function (): void {
+    $group = t3_spawner_group();
+    $group->update([
+        'pr_url' => 'https://github.com/acme/orbit/pull/42',
+        'reviewer_agent_thread_id' => test_agent_thread($group, 'reviewer-existing')->id,
+    ]);
+    [$spawner, $dispatcher] = t3_spawner_stack();
+    $task = $group->tasks()->firstOrFail();
+
+    $spawner->requestReview($task);
+
+    expect($dispatcher->commands)->toHaveCount(1)
+        ->and($dispatcher->commands[0]['message']['text'])->toStartWith('Review subtask #'.$task->id)
+        ->and($dispatcher->commands[0]['message']['text'])->toEndWith(TaskRunInstructions::reviewer(final: false))
+        ->and($dispatcher->commands[0]['message']['text'])->not->toContain('--pr-summary');
+});
+
 it('sends the review request to the stored reviewer thread', function (): void {
     $group = t3_spawner_group();
     $group->reviewer_agent_thread_id = test_agent_thread($group, 'reviewer-existing')->id;

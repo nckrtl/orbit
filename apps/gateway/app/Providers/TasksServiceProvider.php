@@ -10,6 +10,7 @@ use App\Domain\Tasks\CoderSettleNotifier;
 use App\Domain\Tasks\InstanceProvisioning;
 use App\Domain\Tasks\LocalTaskSettleMetricsCollector;
 use App\Domain\Tasks\TaskAgentSpawner;
+use App\Domain\Tasks\TaskBaseBranchFetcher;
 use App\Domain\Tasks\TaskBriefCoverage;
 use App\Domain\Tasks\TaskBroadcastObserver;
 use App\Domain\Tasks\TaskBroadcasts;
@@ -25,6 +26,7 @@ use App\Domain\Tasks\TaskWorkspaceDiffReader;
 use App\Domain\Tasks\TaskWorkspaceSigner;
 use App\Domain\Tasks\TaskWorkspaceStateReader;
 use App\Infrastructure\Tasks\AgentViewTaskWorkspaceDiffReader;
+use App\Infrastructure\Tasks\GitHubTaskBaseBranchFetcher;
 use App\Infrastructure\Tasks\GitHubTaskPullRequestPublisher;
 use App\Infrastructure\Tasks\HttpCoderSettleNotifier;
 use App\Infrastructure\Tasks\HttpTaskPullRequestWatcher;
@@ -70,6 +72,7 @@ final class TasksServiceProvider extends ServiceProvider
         TaskCheckRunner::class => RemoteTaskCheckRunner::class,
         TaskBriefCoverage::class => LaravelAiTaskBriefCoverage::class,
         TaskPullRequestPublisher::class => GitHubTaskPullRequestPublisher::class,
+        TaskBaseBranchFetcher::class => GitHubTaskBaseBranchFetcher::class,
         TaskSettleMetricsCollector::class => LocalTaskSettleMetricsCollector::class,
         CoderSettleNotifier::class => HttpCoderSettleNotifier::class,
         TaskSessionClassifier::class => LaravelAiTaskSessionClassifier::class,

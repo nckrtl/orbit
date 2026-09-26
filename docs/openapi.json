@@ -25556,6 +25556,12 @@
               "string",
               "null"
             ]
+          },
+          "fixup_problem": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },
