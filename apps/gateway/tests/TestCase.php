@@ -23,6 +23,11 @@ abstract class TestCase extends BaseTestCase
     {
         $app = require Application::inferBasePath().'/bootstrap/app.php';
 
+        // Tests read the tracked `.env.example`, as CI does, and never the untracked `.env`. A checkout without
+        // `.env` would otherwise give every test a PHP warning from the environment loader, and a developer's
+        // `.env` would make local results differ from CI.
+        $app->loadEnvironmentFrom('.env.example');
+
         $this->traitsUsedByTest = class_uses_recursive(static::class);
 
         if (isset(CachedState::$cachedConfig, $this->traitsUsedByTest[WithCachedConfig::class])) {

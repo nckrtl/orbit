@@ -16,10 +16,10 @@ use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
-use Tests\Support\LinuxContainer;
+use Tests\Support\LinuxHost;
 
 it('creates and atomically replaces a complete protected environment file', function (): void {
-    if (LinuxContainer::delegate($this)) {
+    if (LinuxHost::delegate($this)) {
         return;
     }
 
@@ -64,7 +64,7 @@ it('creates and atomically replaces a complete protected environment file', func
 });
 
 it('retains file identity for an identical protected repeat and repairs mode drift', function (): void {
-    if (LinuxContainer::delegate($this)) {
+    if (LinuxHost::delegate($this)) {
         return;
     }
 
@@ -143,7 +143,7 @@ it('preserves the destination and unrelated candidates on confirmed writer failu
 ]);
 
 it('refuses a placement boundary change after preflight before writer effects', function (): void {
-    if (LinuxContainer::delegate($this)) {
+    if (LinuxHost::delegate($this)) {
         return;
     }
 
@@ -184,7 +184,7 @@ it('refuses a placement boundary change after preflight before writer effects', 
 });
 
 it('returns an unconfirmed result after a lost acknowledgement and accepts the protected retry', function (): void {
-    if (LinuxContainer::delegate($this)) {
+    if (LinuxHost::delegate($this)) {
         return;
     }
 
@@ -222,7 +222,7 @@ it('returns an unconfirmed result after a lost acknowledgement and accepts the p
 });
 
 it('returns an unconfirmed result when directory sync fails after atomic replacement', function (): void {
-    if (LinuxContainer::delegate($this)) {
+    if (LinuxHost::delegate($this)) {
         return;
     }
 

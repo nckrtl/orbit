@@ -225,6 +225,32 @@ it('restores the prior unit and service state when a convergence step fails', fu
     expect($ssh->configuration)->toBeNull()->and($ssh->serviceActive)->toBeFalse()->and($ssh->firewall)->toBeFalse();
 });
 
+it('re-points a firewall rule that admits a former Metrics Node, and restores it on failure', function (bool $fails): void {
+    $ssh = new CadvisorStatefulSsh(
+        binaryChecksum: MetricsFootprint::CadvisorChecksumSha256,
+        configuration: cadvisorUnit('10.44.0.4'),
+        serviceActive: true,
+        firewall: true,
+        failArguments: $fails ? ['sudo', 'ufw', 'status', 'numbered'] : null,
+        failOccurrence: 2,
+        firewallSource: '10.44.0.2',
+    );
+    $converge = fn () => cadvisorExecutor($ssh)->converge(
+        cadvisorNode('app-prod', '10.44.0.4'),
+        cadvisorNode('metrics', '10.44.0.3'),
+    );
+
+    $fails ? expect($converge)->toThrow(ResourceOperationException::class) : $converge();
+
+    expect($ssh->firewall)->toBeTrue()
+        ->and($ssh->firewallSource)->toBe($fails ? '10.44.0.2' : '10.44.0.3')
+        ->and(array_map(static fn (RemoteCommand $command): array => $command->arguments, $ssh->commands))
+        ->toContain(['sudo', 'ufw', '--force', 'delete', '5']);
+})->with([
+    'converges' => false,
+    'fails after re-pointing' => true,
+]);
+
 function cadvisorExecutor(SshExecutor $ssh): MetricsCadvisorSshExecutor
 {
     return new MetricsCadvisorSshExecutor(
@@ -256,12 +282,12 @@ function cadvisorUnit(string $address): string
         ."\nRestart=always\nRestartSec=2\n\n[Install]\nWantedBy=multi-user.target\n";
 }
 
-function cadvisorFirewallStatus(string $destination): string
+function cadvisorFirewallStatus(string $destination, string $source = '10.44.0.3'): string
 {
     return <<<STATUS
         Status: active
 
-        [ 5] {$destination} 9102/tcp on orbit ALLOW IN 10.44.0.3 # orbit:metrics-cadvisor
+        [ 5] {$destination} 9102/tcp on orbit ALLOW IN {$source} # orbit:metrics-cadvisor
         STATUS;
 }
 
@@ -299,6 +325,7 @@ final class CadvisorStatefulSsh implements SshExecutor
         public bool $firewall,
         private ?array $failArguments = null,
         private int $failOccurrence = 1,
+        public string $firewallSource = '10.44.0.3',
     ) {}
 
     public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
@@ -320,7 +347,7 @@ final class CadvisorStatefulSsh implements SshExecutor
                 stdout: $this->configuration ?? '',
             ),
             ['sudo', 'ufw', 'status', 'numbered'] => cadvisorResult(
-                stdout: $this->firewall ? cadvisorFirewallStatus($connection->host) : "Status: active\n",
+                stdout: $this->firewall ? cadvisorFirewallStatus($connection->host, $this->firewallSource) : "Status: active\n",
             ),
             ['sudo', 'sha256sum', '--', '/usr/local/bin/orbit-cadvisor'] => $this->binaryChecksum === null
                 ? cadvisorResult(exitCode: 1)
@@ -363,7 +390,11 @@ final class CadvisorStatefulSsh implements SshExecutor
             [
                 'sudo', 'ufw', 'allow', 'in', 'on', 'orbit', 'proto', 'tcp',
                 'from', '10.44.0.3', 'to', '10.44.0.4', 'port', '9102', 'comment', 'orbit:metrics-cadvisor',
-            ] => $this->addFirewall(),
+            ] => $this->addFirewall('10.44.0.3'),
+            [
+                'sudo', 'ufw', 'allow', 'in', 'on', 'orbit', 'proto', 'tcp',
+                'from', '10.44.0.2', 'to', '10.44.0.4', 'port', '9102', 'comment', 'orbit:metrics-cadvisor',
+            ] => $this->addFirewall('10.44.0.2'),
             ['sudo', 'ufw', '--force', 'delete', '5'] => $this->removeFirewall(),
             ['sudo', 'rm', '-f', '--', '/usr/local/bin/orbit-cadvisor'] => cadvisorResult(),
             default => cadvisorResult(),
@@ -424,9 +455,14 @@ final class CadvisorStatefulSsh implements SshExecutor
         return cadvisorResult();
     }
 
-    private function addFirewall(): CommandResult
+    private function addFirewall(string $source): CommandResult
     {
+        if ($this->firewall) {
+            return cadvisorResult(exitCode: 1);
+        }
+
         $this->firewall = true;
+        $this->firewallSource = $source;
 
         return cadvisorResult();
     }

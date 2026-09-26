@@ -224,7 +224,7 @@ it('activates only bootstrap roles while preserving colocated role outcomes', fu
     $orbitHome = sys_get_temp_dir().'/orbit-bootstrap-'.(string) Str::uuid();
     $node = bootstrap_gateway_existing_node();
     $node->roles()->create([
-        'role' => RoleName::Ingress,
+        'role' => RoleName::Router,
         'status' => LifecycleStatus::Active,
         'cluster_id' => $node->cluster_id,
     ]);
@@ -267,15 +267,15 @@ it('activates only bootstrap roles while preserving colocated role outcomes', fu
                     'failed_step' => null,
                     'error_code' => null,
                 ],
-                'ingress' => [
-                    'status' => LifecycleStatus::Active,
-                    'failed_step' => null,
-                    'error_code' => null,
-                ],
                 'metrics' => [
                     'status' => LifecycleStatus::Failed,
                     'failed_step' => 'converge:metrics-runtime',
                     'error_code' => 'metrics.runtime_failed',
+                ],
+                'router' => [
+                    'status' => LifecycleStatus::Active,
+                    'failed_step' => null,
+                    'error_code' => null,
                 ],
                 'vpn' => [
                     'status' => LifecycleStatus::Active,
@@ -605,7 +605,7 @@ it('records provisioning and failed host convergence state and activates an idem
     $orbitHome = sys_get_temp_dir().'/orbit-bootstrap-'.(string) Str::uuid();
     $node = bootstrap_gateway_existing_node();
     $node->roles()->create([
-        'role' => RoleName::Ingress,
+        'role' => RoleName::Router,
         'status' => LifecycleStatus::Active,
         'cluster_id' => $node->cluster_id,
     ]);
@@ -676,15 +676,15 @@ it('records provisioning and failed host convergence state and activates an idem
                         'failed_step' => null,
                         'error_code' => null,
                     ],
-                    'ingress' => [
-                        'status' => LifecycleStatus::Active,
-                        'failed_step' => null,
-                        'error_code' => null,
-                    ],
                     'metrics' => [
                         'status' => LifecycleStatus::Failed,
                         'failed_step' => 'converge:metrics-runtime',
                         'error_code' => 'metrics.runtime_failed',
+                    ],
+                    'router' => [
+                        'status' => LifecycleStatus::Active,
+                        'failed_step' => null,
+                        'error_code' => null,
                     ],
                     'vpn' => [
                         'status' => LifecycleStatus::Provisioning,
@@ -706,15 +706,15 @@ it('records provisioning and failed host convergence state and activates an idem
                     'failed_step' => 'gateway-caddy-validate',
                     'error_code' => 'gateway.caddy_config_invalid',
                 ],
-                'ingress' => [
-                    'status' => LifecycleStatus::Active,
-                    'failed_step' => null,
-                    'error_code' => null,
-                ],
                 'metrics' => [
                     'status' => LifecycleStatus::Failed,
                     'failed_step' => 'converge:metrics-runtime',
                     'error_code' => 'metrics.runtime_failed',
+                ],
+                'router' => [
+                    'status' => LifecycleStatus::Active,
+                    'failed_step' => null,
+                    'error_code' => null,
                 ],
                 'vpn' => [
                     'status' => LifecycleStatus::Failed,
@@ -741,15 +741,15 @@ it('records provisioning and failed host convergence state and activates an idem
                     'failed_step' => null,
                     'error_code' => null,
                 ],
-                'ingress' => [
-                    'status' => LifecycleStatus::Active,
-                    'failed_step' => null,
-                    'error_code' => null,
-                ],
                 'metrics' => [
                     'status' => LifecycleStatus::Failed,
                     'failed_step' => 'converge:metrics-runtime',
                     'error_code' => 'metrics.runtime_failed',
+                ],
+                'router' => [
+                    'status' => LifecycleStatus::Active,
+                    'failed_step' => null,
+                    'error_code' => null,
                 ],
                 'vpn' => [
                     'status' => LifecycleStatus::Active,
@@ -850,7 +850,7 @@ it('fails only bootstrap roles when VPN convergence fails', function (): void {
     $orbitHome = sys_get_temp_dir().'/orbit-bootstrap-'.(string) Str::uuid();
     $node = bootstrap_gateway_existing_node();
     $node->roles()->create([
-        'role' => RoleName::Ingress,
+        'role' => RoleName::Router,
         'status' => LifecycleStatus::Active,
         'cluster_id' => $node->cluster_id,
     ]);
@@ -910,15 +910,15 @@ it('fails only bootstrap roles when VPN convergence fails', function (): void {
                     'failed_step' => 'wireguard-config',
                     'error_code' => 'vpn.configuration_failed',
                 ],
-                'ingress' => [
-                    'status' => LifecycleStatus::Active,
-                    'failed_step' => null,
-                    'error_code' => null,
-                ],
                 'metrics' => [
                     'status' => LifecycleStatus::Failed,
                     'failed_step' => 'converge:metrics-runtime',
                     'error_code' => 'metrics.runtime_failed',
+                ],
+                'router' => [
+                    'status' => LifecycleStatus::Active,
+                    'failed_step' => null,
+                    'error_code' => null,
                 ],
                 'vpn' => [
                     'status' => LifecycleStatus::Failed,

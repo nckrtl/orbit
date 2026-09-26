@@ -15,7 +15,7 @@ use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
-use Tests\Support\LinuxContainer;
+use Tests\Support\LinuxHost;
 
 it('uses the same bounded remote check without reading environment contents', function (): void {
     $ssh = new EnvironmentObservationSshExecutor([
@@ -65,7 +65,7 @@ it('selects bounded write and required-capacity checks without environment input
 });
 
 it('checks a writable destination without reading its contents', function (): void {
-    if (LinuxContainer::delegate($this)) {
+    if (LinuxHost::delegate($this)) {
         return;
     }
 
@@ -171,7 +171,7 @@ it('refuses nonempty diagnostics while reading an otherwise valid remote value',
 });
 
 it('reads a maximum-size file through the explicit native output bound', function (): void {
-    if (LinuxContainer::delegate($this)) {
+    if (LinuxHost::delegate($this)) {
         return;
     }
 

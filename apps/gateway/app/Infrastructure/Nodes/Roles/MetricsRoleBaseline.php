@@ -13,6 +13,7 @@ use App\Domain\Metrics\MetricsPublicationReport;
 use App\Domain\Metrics\MetricsRuntimeLifecycle;
 use App\Domain\Metrics\ServiceMetricsLifecycle;
 use App\Domain\Nodes\RoleBaseline;
+use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
 use App\Models\NodeRole;
@@ -98,18 +99,14 @@ final readonly class MetricsRoleBaseline implements RoleBaseline
 
         if ($gateway instanceof Node) {
             $this->publication->remove($gateway, $node);
-            $this->exporters->remove($node, $assignment);
-            $this->cadvisors->remove($node, $assignment);
-            $this->services?->remove($node);
+            $this->removeAgents($node, $assignment);
             $this->runtime->remove($node, $assignment, $purgeData);
             $this->report->record(MetricsPublicationCleanup::Cleaned);
 
             return;
         }
 
-        $this->exporters->remove($node, $assignment);
-        $this->cadvisors->remove($node, $assignment);
-        $this->services?->remove($node);
+        $this->removeAgents($node, $assignment);
         $this->runtime->remove($node, $assignment, $purgeData);
 
         try {
@@ -120,6 +117,28 @@ final readonly class MetricsRoleBaseline implements RoleBaseline
         }
 
         $this->report->record(MetricsPublicationCleanup::Uncleaned);
+    }
+
+    /**
+     * Removes the node exporters, cAdvisor, and service metrics that the fleet runs for this Metrics Node.
+     *
+     * When the Metrics role now runs on another Node, relocation has already re-pointed those fleet
+     * agents at it, so they stay. Removing them here would stop every exporter the new Node scrapes.
+     */
+    private function removeAgents(Node $node, NodeRole $assignment): void
+    {
+        $relocated = NodeRole::query()
+            ->where('role', RoleName::Metrics->value)
+            ->where('node_id', '!=', $node->id)
+            ->exists();
+
+        if ($relocated) {
+            return;
+        }
+
+        $this->exporters->remove($node, $assignment);
+        $this->cadvisors->remove($node, $assignment);
+        $this->services?->remove($node);
     }
 
     /**

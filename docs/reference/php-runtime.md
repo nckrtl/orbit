@@ -135,7 +135,7 @@ Doctor also checks the service's loaded `ExecStart` and `PHP_INI_SCAN_DIR`, the 
 
 These observations establish the current configuration and the directly observable runtime association. They do not reconstruct every PHP-FPM directive loaded from an earlier configuration generation. Doctor does not compare an application's mutable working directory with the configured initial directory. It accepts an operating agent's `local.conf` changes when they preserve generated identity, does not compare allowed tuning with Orbit's seeded defaults, and does not require a tuning edit to be reloaded only to satisfy inspection.
 
-Doctor reports bounded drift when a current file or reliable live association does not match. It reports `instance.inspection_failed` as unverifiable when a required service, process, worker, or socket observation cannot be read or parsed, while retaining other findings that it established independently. Inspection does not invoke PHP-FPM, create a FastCGI or application request, reload or signal a service, reset a cache, or rewrite a file.
+Doctor reports bounded drift when a current file or reliable live association does not match. It reports `instance.inspection_failed` as unverifiable when a required service, process, worker, or socket observation cannot be read or parsed, while retaining other findings that it established independently. However, an `ondemand` pool ends idle workers at any time, so a worker that exits while Doctor reads it is skipped. Inspection does not invoke PHP-FPM, create a FastCGI or application request, reload or signal a service, reset a cache, or rewrite a file.
 
 ## Verification
 

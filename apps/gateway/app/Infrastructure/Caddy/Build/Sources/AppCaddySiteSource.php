@@ -46,8 +46,8 @@ final readonly class AppCaddySiteSource implements NodeCaddySiteSource
                 listener: $site->publicListener ? CaddyListenerRule::Public : CaddyListenerRule::Wildcard,
                 hosts: [$site->domain],
                 port: 443,
-                body: $this->renderer->render(collect([$site]), self::BindPlaceholder),
-                bindPlaceholder: $site->publicListener ? null : self::BindPlaceholder,
+                body: $this->renderer->render(collect([$site]), self::BindPlaceholder, self::BindPlaceholder),
+                bindPlaceholder: self::BindPlaceholder,
                 unixSockets: is_string($site->localUnixUpstream) && $site->localUnixUpstream !== ''
                     ? [$site->localUnixUpstream]
                     : [],

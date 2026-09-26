@@ -22,6 +22,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WebSocket\WebSocketCredentialManager;
 use App\Infrastructure\Metrics\NativeMetricsCredentialManager;
 use App\Infrastructure\WebSocket\WebSocketFootprint;
+use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\NodeAccess;
 use App\Models\NodeRole;
@@ -148,26 +149,33 @@ describe(RelocateNodeRoleAction::class, function (): void {
             ->toBe(1);
     });
 
-    it('refuses a target that already owns a conflicting role', function (): void {
+    it('refuses a target that already owns a conflicting role', function (RoleName $held): void {
         $source = relocate_role_node('gateway', '10.44.0.1');
         $target = relocate_role_node('beast', '10.44.0.11');
         $source->roles()->create([
             'role' => RoleName::Gateway,
             'status' => LifecycleStatus::Active,
         ]);
+        $cluster = Cluster::query()->create(['name' => "relocate-onto-{$held->value}"]);
+        $target->update(['cluster_id' => $cluster->id]);
         $target->roles()->create([
-            'role' => RoleName::AppDev,
+            'role' => $held,
             'status' => LifecycleStatus::Active,
+            'cluster_id' => $held === RoleName::Ingress ? $cluster->id : null,
         ]);
 
         expect(fn () => app(RelocateNodeRoleAction::class)->execute(
             $target,
             RoleName::Gateway,
             force: true,
-        ))->toThrow(NodeRoleValidationException::class, 'Role [gateway] conflicts with assigned role [app-dev].');
+        ))->toThrow(NodeRoleValidationException::class, "Role [gateway] conflicts with assigned role [{$held->value}].");
 
-        expect($source->roles()->where('role', RoleName::Gateway)->exists())->toBeTrue();
-    });
+        expect($source->roles()->where('role', RoleName::Gateway)->exists())->toBeTrue()
+            ->and($target->roles()->where('role', RoleName::Gateway)->exists())->toBeFalse();
+    })->with([
+        'app-dev' => [RoleName::AppDev],
+        'Ingress' => [RoleName::Ingress],
+    ]);
 
     it('transfers websocket, copies credentials, and retracts the source baseline', function (): void {
         $source = relocate_role_node('beast', '10.44.0.1');
@@ -192,6 +200,8 @@ describe(RelocateNodeRoleAction::class, function (): void {
             ->toBe(["websocket:{$target->name}"])
             ->and($this->baselines->removed)
             ->toBe([['role' => 'websocket', 'node' => $source->name, 'purge_data' => false]])
+            ->and($this->baselines->removedAssignmentIds)
+            ->toBe([$assignment->id])
             ->and($this->firewall->events)
             ->toBeEmpty();
 
@@ -535,6 +545,9 @@ final class RelocateNodeRoleBaselineFake implements RoleBaselineConverger
     /** @var list<array{role: string, node: string, purge_data: bool}> */
     public array $removed = [];
 
+    /** @var list<int|null> */
+    public array $removedAssignmentIds = [];
+
     public ?ResourceOperationException $convergeFailure = null;
 
     /** Requests a fleet Metrics reconcile after each change, as the native converger does. */
@@ -573,6 +586,7 @@ final class RelocateNodeRoleBaselineFake implements RoleBaselineConverger
             'node' => $node->name,
             'purge_data' => $purgeData,
         ];
+        $this->removedAssignmentIds[] = $assignment->id;
         $this->reconcileMetrics();
     }
 

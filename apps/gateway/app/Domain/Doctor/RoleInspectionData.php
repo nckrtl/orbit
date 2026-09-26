@@ -12,5 +12,7 @@ final readonly class RoleInspectionData
         public bool $firewallProjectionMatches,
         /** The release `caddy version` reports, or null when the role needs no Caddy or none is installed. */
         public ?string $caddyVersion = null,
+        /** Whether the Gateway machine routes the private domain to VPN DNS, or null when not checked. */
+        public ?bool $privateDnsRouteMatches = null,
     ) {}
 }

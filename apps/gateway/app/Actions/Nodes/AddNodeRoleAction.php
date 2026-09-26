@@ -25,6 +25,7 @@ use App\Domain\Tools\ToolManagerMaterializer;
 use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\ToolManagerScopeLock;
 use App\Domain\Tools\ToolManagerScopeLockException;
+use App\Infrastructure\Nodes\Roles\NodeRoleConvergeLock;
 use App\Models\Node;
 use App\Models\NodeRole;
 use Closure;
@@ -42,6 +43,7 @@ final readonly class AddNodeRoleAction
         private ?RecordEventBroadcaster $broadcaster = null,
         private ?AnalyticsStorageProcessGuard $analyticsStorage = null,
         private ?AnalyticsRoleSettingsRepository $analyticsSettings = null,
+        private ?NodeRoleConvergeLock $nodeLock = null,
     ) {}
 
     /**
@@ -61,7 +63,7 @@ final readonly class AddNodeRoleAction
             throw new RoleAssignmentException("Role [{$role->value}] is protected from generic mutation.");
         }
 
-        $result = $this->withAppManagerScope($node, $role, function () use ($node, $role, $convergeExisting, $analytics): array {
+        $result = $this->withAppManagerScope($node, $role, fn (): array => $this->nodeLock()->run($node, function () use ($node, $role, $convergeExisting, $analytics): array {
             $claim = $convergeExisting ? $this->claimExisting($node, $role) : $this->claimNew($node, $role);
 
             if ($analytics instanceof AnalyticsRoleSettings) {
@@ -76,7 +78,7 @@ final readonly class AddNodeRoleAction
             }
 
             return $this->convergeClaim($node, $role, $claim);
-        });
+        }, step: 'converge:node-lock'));
 
         ($this->broadcaster ?? app(RecordEventBroadcaster::class))->broadcast(
             RecordEventType::NodeUpdated,
@@ -99,7 +101,11 @@ final readonly class AddNodeRoleAction
         return $this->withAppManagerScope(
             $node,
             $role,
-            fn (): NodeRole => $this->convergeClaim($node, $role, $this->claimExisting($node, $role))['assignment'],
+            fn (): NodeRole => $this->nodeLock()->run(
+                $node,
+                fn (): NodeRole => $this->convergeClaim($node, $role, $this->claimExisting($node, $role))['assignment'],
+                step: 'converge:node-lock',
+            ),
         );
     }
 
@@ -174,8 +180,10 @@ final readonly class AddNodeRoleAction
     private function convergeClaim(Node $node, RoleName $role, array $claim): array
     {
         try {
-            $this->baselines->converge($node, $claim['assignment']);
-            $this->materializeAppManagers($node, $role, $claim['assignment']);
+            $this->nodeLock()->run($node, function () use ($node, $role, $claim): void {
+                $this->baselines->converge($node, $claim['assignment']);
+                $this->materializeAppManagers($node, $role, $claim['assignment']);
+            });
         } catch (NodeProvisioningException $exception) {
             $this->failConvergence($claim['assignment'], new NodeRoleOperationException(
                 step: $exception->step,
@@ -298,6 +306,15 @@ final readonly class AddNodeRoleAction
             ToolManagerName::Vp,
             ToolManagerName::Composer,
         );
+    }
+
+    /**
+     * The per-Node role lock. The action takes it before it claims the assignment, so a busy Node
+     * returns an error and leaves the assignment as it was.
+     */
+    private function nodeLock(): NodeRoleConvergeLock
+    {
+        return $this->nodeLock ?? app(NodeRoleConvergeLock::class);
     }
 
     private function unnamespacedStep(string $step): string

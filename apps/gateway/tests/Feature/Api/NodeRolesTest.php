@@ -672,6 +672,23 @@ it('supports Ingress compatibility and rejects app-dev in both assignment orders
     'app-dev after Ingress' => [['ingress'], 'app-dev', false],
 ]);
 
+it('refuses Ingress on a Gateway Node before any convergence', function (): void {
+    $cluster = Cluster::query()->create(['name' => 'public-private']);
+    $this->node->update(['cluster_id' => $cluster->id]);
+    $this->node->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
+
+    $this
+        ->postJson("/api/v1/nodes/{$this->node->id}/roles", ['role' => 'ingress'])
+        ->assertUnprocessable()
+        ->assertJsonPath('error.code', 'validation.failed')
+        ->assertJsonPath('error.message', 'Role [ingress] conflicts with assigned role [gateway].');
+
+    expect($this->node->roles()->pluck('role')->map->value->all())
+        ->toBe(['gateway'])
+        ->and($this->roleLifecycle->converged)
+        ->toBe([]);
+});
+
 it('removes Ingress repeatedly and supports remove then add replacement', function (): void {
     $cluster = Cluster::query()->create(['name' => 'replace-ingress-api']);
     $this->node->update(['cluster_id' => $cluster->id]);
@@ -960,6 +977,22 @@ it('relocates the singleton gateway assignment onto the target node', function (
         ->toBeTrue()
         ->and(NodeRole::query()->where('role', RoleName::Gateway)->count())
         ->toBe(1);
+});
+
+it('refuses to relocate the gateway role onto an Ingress Node', function (): void {
+    $assignment = $this->caller->roles()->where('role', RoleName::Gateway)->sole();
+    $cluster = Cluster::query()->create(['name' => 'relocate-onto-ingress']);
+    $this->node->update(['cluster_id' => $cluster->id]);
+    $this->node->roles()->create(['role' => RoleName::Ingress, 'status' => LifecycleStatus::Active, 'cluster_id' => $cluster->id]);
+
+    $this
+        ->postJson("/api/v1/nodes/{$this->node->id}/roles/gateway/relocate", ['force' => true])
+        ->assertUnprocessable()
+        ->assertJsonPath('error.code', 'validation.failed')
+        ->assertJsonPath('error.message', 'Role [gateway] conflicts with assigned role [ingress].');
+
+    expect($assignment->refresh()->node_id)->toBe($this->caller->id)
+        ->and($this->roleLifecycle->converged)->toBe([]);
 });
 
 it('requires force before relocating the gateway role', function (): void {
