@@ -296,6 +296,7 @@ describe('a failed build', function (): void {
         expect($result['exit'])->toBe(0, $result['stderr'])
             ->and($result['stdout'])->toBe("orbit-caddy-build-result=unchanged\n")
             ->and(file_exists($this->harness->path('Caddyfile')))->toBeFalse()
+            ->and(is_dir($this->harness->path('orbit-backups')))->toBeFalse()
             ->and($this->harness->directories('orbit-versions'))->toBe([])
             ->and($this->harness->serviceCalls())->toBe(['is-active --quiet caddy']);
     });
@@ -319,6 +320,7 @@ describe('a failed build', function (): void {
         expect($result['exit'])->toBe(0, $result['stderr'])
             ->and($result['stdout'])->toBe("orbit-caddy-build-result=unchanged\n")
             ->and(file_exists($this->harness->path('Caddyfile')))->toBeFalse()
+            ->and(is_dir($this->harness->path('orbit-backups')))->toBeFalse()
             ->and($this->harness->directories('orbit-versions'))->toBe([]);
     });
 
