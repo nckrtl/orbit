@@ -59,8 +59,9 @@ final readonly class NativeRoleBaselineConverger implements RoleBaselineConverge
             $this->baseline($assignment->role)->converge($node, $assignment);
         });
 
-        // The fleet reconcile converges exporters on other Nodes too, so it runs outside this Node's
-        // lock: holding one Node's lock while it waits for another's could deadlock two converges.
+        // The fleet reconcile converges exporters on other Nodes without taking their locks: waiting for
+        // another Node's lock while this one is held could deadlock two converges. It runs inside this
+        // Node's lock when the caller holds it for the whole operation, as role add and remove do.
         $this->reconcileMetrics($assignment);
 
         try {

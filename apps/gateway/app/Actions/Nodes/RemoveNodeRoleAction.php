@@ -25,6 +25,7 @@ use App\Domain\Nodes\RoleRegistry;
 use App\Domain\Processes\ProcessOperationException;
 use App\Domain\Routes\RouteRemovalGuard;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\ToolManagerScopeLock;
 use App\Domain\Tools\ToolManagerScopeLockException;
@@ -63,6 +64,10 @@ final readonly class RemoveNodeRoleAction
         if ($role === RoleName::Ingress && $this->ingressAlreadyRemoved($node, $force)) {
             return $this->announceUpdated($node, new NodeRoleRemovalOutcome(new NodeRoleDependencySet([], [], [], [])));
         }
+
+        // A role the Node never had is not found. One that disappears after this point was taken by a
+        // concurrent removal, which claim() reports as `node_role.already_removed`.
+        NodeRole::query()->where('node_id', $node->id)->where('role', $role)->firstOrFail();
 
         if ($role === RoleName::AppDev && $node->appInstances()->exists()) {
             throw new NodeRoleValidationException(
@@ -338,7 +343,17 @@ final readonly class RemoveNodeRoleAction
                 ->where('node_id', $node->id)
                 ->where('role', $role)
                 ->lockForUpdate()
-                ->firstOrFail();
+                ->first();
+
+            // The row existed when this removal started, so another removal took it while this one
+            // waited for the Node's role lock.
+            if (! $assignment instanceof NodeRole) {
+                throw new ResourceOperationException(
+                    'node_role.already_removed',
+                    "Role [{$role->value}] was already removed from node [{$node->name}] by another operation.",
+                    409,
+                );
+            }
             $this->routeGuard()->assertRoleRemovable($node, $role);
             $this->guardPolicy($node->refresh(), $role);
 
