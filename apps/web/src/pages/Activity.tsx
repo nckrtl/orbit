@@ -11,6 +11,7 @@ import {
     type CSSProperties,
     type ReactNode,
 } from "react";
+import { createPortal } from "react-dom";
 import {
     activitiesQuery,
     activityQuery,
@@ -32,7 +33,7 @@ import { panes, selectionKey, ui, useUi } from "../ui/store";
 
 const STATUSES = ["running", "succeeded", "failed"] as const;
 const ROW = 20; // --lh. Desktop rows are one line, so the virtualizer can trust the estimate.
-const CARD = 104; // A phone card is four lines plus its padding, until it is measured.
+const CARD = 89; // Four lines and a little padding, so eight rows fit on a phone.
 const NEAR_END_ROWS = 5;
 const TOP = 1;
 
@@ -99,6 +100,13 @@ function withFilters(
 
 function filtersKey(filters: ActivityListFilters): string {
     return JSON.stringify(filters);
+}
+
+/** How many of the four filters are set. An empty command counts as unset. */
+function activeFilterCount(filters: ActivityListFilters): number {
+    return [filters.status, filters.command, filters.caller_node_id, filters.target_node_id].filter(
+        (value) => value !== undefined && value !== "",
+    ).length;
 }
 
 function ActivityStatusText({ status }: { status: string }) {
@@ -171,7 +179,7 @@ function FilterButton({
         <button
             type="button"
             className={`m-0 cursor-pointer border-0 bg-transparent p-0 text-left font-[inherit] ${
-                stacked ? "min-h-[44px] w-full" : ""
+                stacked ? "flex min-h-[44px] w-full items-center" : ""
             } ${active ? "text-cyan" : "text-dim hover:text-fg"}`}
             onClick={onClick}
         >
@@ -180,20 +188,39 @@ function FilterButton({
     );
 }
 
+/** Clear calls this so an unfinished command is dropped before a later blur can commit it. */
+type CommandDiscard = { current: (() => void) | null };
+
 function CommandFilter({
     value,
     stacked,
     onCommit,
+    discard,
 }: {
     value: string;
     stacked: boolean;
     onCommit: (command: string | undefined) => void;
+    discard?: CommandDiscard;
 }) {
     const [draft, setDraft] = useState(value);
-    useEffect(() => setDraft(value), [value]);
+    const draftRef = useRef(value);
+    if (discard !== undefined) {
+        discard.current = () => {
+            draftRef.current = "";
+            setDraft("");
+        };
+    }
+    useEffect(() => {
+        draftRef.current = value;
+        setDraft(value);
+    }, [value]);
     const commit = () => {
-        const command = draft.trim();
+        const command = draftRef.current.trim();
         onCommit(command === "" ? undefined : command.slice(0, 255));
+    };
+    const edit = (next: string) => {
+        draftRef.current = next;
+        setDraft(next);
     };
 
     return (
@@ -207,7 +234,7 @@ function CommandFilter({
                 className={`border border-line bg-transparent px-[1ch] text-fg outline-none placeholder:text-dim focus:border-cyan ${
                     stacked ? "min-w-0 flex-1" : "w-[24ch]"
                 }`}
-                onChange={(event) => setDraft(event.target.value)}
+                onChange={(event) => edit(event.target.value)}
                 onBlur={commit}
                 onKeyDown={(event) => {
                     if (event.key !== "Enter") return;
@@ -225,11 +252,13 @@ function ActivityFilters({
     nodes,
     stacked,
     onChange,
+    discardCommand,
 }: {
     search: ActivityListFilters;
     nodes: readonly Node[];
     stacked: boolean;
     onChange: (patch: ActivityListFilters) => void;
+    discardCommand?: CommandDiscard;
 }) {
     return (
         <span
@@ -247,6 +276,7 @@ function ActivityFilters({
                 value={search.command ?? ""}
                 stacked={stacked}
                 onCommit={(command) => onChange({ command })}
+                discard={discardCommand}
             />
             <FilterButton
                 name="caller"
@@ -267,6 +297,190 @@ function ActivityFilters({
                 }
             />
         </span>
+    );
+}
+
+/**
+ * The phone filters. The fields write the URL as they change, the same filters the desktop bar
+ * writes. Clear removes every filter. Done only closes the sheet.
+ * Portaled into the shell layout so it stays inside the one safe-area pad, and drawn like a modal.
+ */
+const SHEET_FOCUSABLE =
+    'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled])';
+
+function sheetFocusable(root: HTMLElement): HTMLElement[] {
+    return [...root.querySelectorAll<HTMLElement>(SHEET_FOCUSABLE)].filter(
+        (element) => element.tabIndex >= 0,
+    );
+}
+
+function ActivityFilterSheet({
+    search,
+    nodes,
+    onChange,
+    onClear,
+    onClose,
+}: {
+    search: ActivityListFilters;
+    nodes: readonly Node[];
+    onChange: (patch: ActivityListFilters) => void;
+    onClear: () => void;
+    onClose: () => void;
+}) {
+    const sheetRef = useRef<HTMLDivElement>(null);
+    const panelRef = useRef<HTMLDivElement>(null);
+    const discardCommand = useRef<(() => void) | null>(null);
+    const releaseBackground = () => {
+        const root = sheetRef.current;
+        const layout = root?.parentElement;
+        if (!(layout instanceof HTMLElement)) return;
+        for (const child of layout.children) {
+            if (child instanceof HTMLElement && child !== root) child.removeAttribute("inert");
+        }
+    };
+    const close = () => {
+        const active = document.activeElement;
+        if (active instanceof HTMLElement && sheetRef.current?.contains(active)) {
+            active.blur();
+        }
+        releaseBackground();
+        onClose();
+    };
+    const closeRef = useRef(close);
+    closeRef.current = close;
+    const clear = () => {
+        discardCommand.current?.();
+        onClear();
+    };
+
+    useEffect(() => {
+        const onKey = (event: KeyboardEvent) => {
+            const root = sheetRef.current;
+            const target = event.target;
+            const field =
+                target instanceof HTMLElement &&
+                (target.tagName === "INPUT" || target.tagName === "TEXTAREA");
+            if (event.key === "Escape") {
+                event.preventDefault();
+                event.stopPropagation();
+                closeRef.current();
+
+                return;
+            }
+            if (event.key === "Tab" && root !== null) {
+                const items = sheetFocusable(root);
+                if (items.length === 0) {
+                    event.preventDefault();
+                    event.stopPropagation();
+
+                    return;
+                }
+                const active = document.activeElement;
+                const index = active instanceof HTMLElement ? items.indexOf(active) : -1;
+                const next = event.shiftKey
+                    ? index <= 0
+                        ? items[items.length - 1]
+                        : undefined
+                    : index === -1 || index === items.length - 1
+                      ? items[0]
+                      : undefined;
+                if (next !== undefined) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    next.focus();
+                }
+
+                return;
+            }
+            if (field) return;
+            if (event.metaKey || event.ctrlKey || event.altKey) return;
+            if (
+                target instanceof HTMLElement &&
+                target.closest("button, a") !== null &&
+                (event.key === "Enter" || event.key === " ")
+            ) {
+                return;
+            }
+            event.preventDefault();
+            event.stopPropagation();
+        };
+        window.addEventListener("keydown", onKey, true);
+
+        return () => window.removeEventListener("keydown", onKey, true);
+    }, []);
+
+    useLayoutEffect(() => {
+        const root = sheetRef.current;
+        const layout = root?.parentElement;
+        if (root === null || !(layout instanceof HTMLElement)) return;
+        const changed: HTMLElement[] = [];
+        for (const child of layout.children) {
+            if (!(child instanceof HTMLElement) || child === root || child.hasAttribute("inert")) {
+                continue;
+            }
+            child.setAttribute("inert", "");
+            changed.push(child);
+        }
+
+        return () => {
+            for (const child of changed) child.removeAttribute("inert");
+        };
+    }, []);
+
+    useEffect(() => {
+        panelRef.current?.focus({ preventScroll: true });
+    }, []);
+
+    const layout = document.querySelector("[data-shell-layout]");
+    if (!(layout instanceof HTMLElement)) return null;
+
+    return createPortal(
+        <div
+            ref={sheetRef}
+            data-activity-filter-sheet=""
+            className="absolute inset-0 z-40 bg-bg/70"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Filters"
+            onMouseDown={(event) => {
+                if (event.target === event.currentTarget) close();
+            }}
+        >
+            <div
+                ref={panelRef}
+                tabIndex={-1}
+                className="absolute top-1/2 left-1/2 flex max-h-[80%] w-[min(48ch,calc(100%-4ch))] -translate-x-1/2 -translate-y-1/2 flex-col bg-bg outline-none"
+                onMouseDown={(event) => event.stopPropagation()}
+            >
+                <Frame title="Filters" state="focused" bottomRight="Esc closes" className="w-full">
+                    <ActivityFilters
+                        search={search}
+                        nodes={nodes}
+                        stacked
+                        onChange={onChange}
+                        discardCommand={discardCommand}
+                    />
+                    <div className="mt-[12px] flex min-h-[44px] items-center justify-between gap-[2ch]">
+                        <button
+                            type="button"
+                            className="inline-flex min-h-[44px] cursor-pointer items-center border-0 bg-transparent px-[1ch] font-[inherit] text-dim hover:text-fg"
+                            onMouseDown={(event) => event.preventDefault()}
+                            onClick={clear}
+                        >
+                            Clear
+                        </button>
+                        <button
+                            type="button"
+                            className="inline-flex min-h-[44px] cursor-pointer items-center border border-line bg-transparent px-[2ch] font-[inherit] text-fg hover:border-fg"
+                            onClick={close}
+                        >
+                            Done
+                        </button>
+                    </div>
+                </Frame>
+            </div>
+        </div>,
+        layout,
     );
 }
 
@@ -910,7 +1124,7 @@ function ActivityLog({
                     data-activity-id={row.id}
                     ref={virtualizer.measureElement}
                     aria-label={`Open activity ${row.id}`}
-                    className="flex w-full flex-col items-start gap-y-[2px] border-b border-line py-[8px] text-left font-[inherit]"
+                    className="flex w-full flex-col items-start border-b border-line py-[4px] text-left font-[inherit]"
                     onClick={() => openAt(item.index, row)}
                 >
                     <span className="text-dim">{formatActivityTime(row.occurred_at)}</span>
@@ -1026,6 +1240,9 @@ export function ActivityPage() {
     const router = useRouter();
     const client = useQueryClient();
     const onDesktop = useDesktop();
+    const [filtersOpen, setFiltersOpen] = useState(false);
+    const filtersButtonRef = useRef<HTMLButtonElement>(null);
+    const returnFocus = useRef(false);
     const fleet = useFleet();
     const poll = useTaskPoll();
     const list = useInfiniteQuery(activitiesQuery(search));
@@ -1063,6 +1280,30 @@ export function ActivityPage() {
         if (JSON.stringify(next) === JSON.stringify(withFilters(search, {}))) return;
         void router.navigate({ to: "/activity", search: next });
     };
+    const filterCount = activeFilterCount(search);
+    const clearFilters = () => {
+        applyFilters({
+            status: undefined,
+            command: undefined,
+            caller_node_id: undefined,
+            target_node_id: undefined,
+        });
+    };
+
+    const closeFilters = () => {
+        returnFocus.current = true;
+        setFiltersOpen(false);
+    };
+
+    useEffect(() => {
+        if (onDesktop) setFiltersOpen(false);
+    }, [onDesktop]);
+
+    useLayoutEffect(() => {
+        if (filtersOpen || !returnFocus.current) return;
+        returnFocus.current = false;
+        filtersButtonRef.current?.focus({ preventScroll: true });
+    }, [filtersOpen]);
 
     useEffect(() => {
         const timer = setInterval(() => {
@@ -1083,47 +1324,55 @@ export function ActivityPage() {
                         stacked={false}
                         onChange={applyFilters}
                     />
-                ) : undefined}
+                ) : (
+                    <button
+                        ref={filtersButtonRef}
+                        type="button"
+                        aria-expanded={filtersOpen}
+                        aria-haspopup="dialog"
+                        className={`cursor-pointer border-0 bg-transparent p-0 font-[inherit] ${
+                            filterCount > 0 ? "text-cyan" : "text-dim hover:text-fg"
+                        }`}
+                        onClick={() => setFiltersOpen((open) => !open)}
+                    >
+                        Filters {filterCount}
+                    </button>
+                )}
             </PageHeader>
+            {!onDesktop && filtersOpen && (
+                <ActivityFilterSheet
+                    search={search}
+                    nodes={fleet.nodes}
+                    onChange={applyFilters}
+                    onClear={clearFilters}
+                    onClose={closeFilters}
+                />
+            )}
             {list.error !== null && list.data === undefined ? (
                 <ActivityError error={list.error} retry={() => void list.refetch()} />
             ) : list.data === undefined ? (
                 <p role="status">Loading activity…</p>
+            ) : rows.length === 0 ? (
+                <Frame title="Activity" className="w-full" pane="activity">
+                    <Note>No activity.</Note>
+                </Frame>
             ) : (
-                <>
-                    {!onDesktop && (
-                        <div className="px-[1ch]">
-                            <ActivityFilters
-                                search={search}
-                                nodes={fleet.nodes}
-                                stacked
-                                onChange={applyFilters}
-                            />
-                        </div>
-                    )}
-                    {rows.length === 0 ? (
-                        <Frame title="Activity" className="w-full" pane="activity">
-                            <Note>No activity.</Note>
-                        </Frame>
-                    ) : (
-                        <ActivityLog
-                            key={placeKey}
-                            rows={rows}
-                            columns={columns}
-                            nodes={fleet.nodes}
-                            onDesktop={onDesktop}
-                            placeKey={placeKey}
-                            restoreOnMount={restoreOnMount}
-                            hasNextPage={list.hasNextPage}
-                            isFetchingNextPage={list.isFetchingNextPage}
-                            isFetchNextPageError={list.isFetchNextPageError}
-                            onNearEnd={() => loadOlder(false)}
-                            onRetry={() => loadOlder(true)}
-                            onOpen={open}
-                            onReady={markLog.current}
-                        />
-                    )}
-                </>
+                <ActivityLog
+                    key={placeKey}
+                    rows={rows}
+                    columns={columns}
+                    nodes={fleet.nodes}
+                    onDesktop={onDesktop}
+                    placeKey={placeKey}
+                    restoreOnMount={restoreOnMount}
+                    hasNextPage={list.hasNextPage}
+                    isFetchingNextPage={list.isFetchingNextPage}
+                    isFetchNextPageError={list.isFetchNextPageError}
+                    onNearEnd={() => loadOlder(false)}
+                    onRetry={() => loadOlder(true)}
+                    onOpen={open}
+                    onReady={markLog.current}
+                />
             )}
         </div>
     );
