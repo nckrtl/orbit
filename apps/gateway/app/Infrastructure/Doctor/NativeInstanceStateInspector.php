@@ -438,6 +438,8 @@ final readonly class NativeInstanceStateInspector implements InstanceStateInspec
                     fi
                 done
 
+                # A master that exited during the scan held no descriptors to read, which proves nothing.
+                test -d "\$proc_root/\$main_pid" || return 2
                 return 1
             }
             php_fpm_matches() {
