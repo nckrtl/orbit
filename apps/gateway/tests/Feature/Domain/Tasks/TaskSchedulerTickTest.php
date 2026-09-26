@@ -1440,14 +1440,14 @@ function tick_review(array $receipts, bool $onBranch = true, bool $last = false)
 
         public int $pushFailures = 0;
 
-        public function publish(TaskGroup $group, string $body): string
+        public function publish(TaskGroup $group, string $body, string $commit): string
         {
             $this->bodies[] = $body;
 
             return 'https://github.com/acme/orbit/pull/42';
         }
 
-        public function push(TaskGroup $group): void
+        public function push(TaskGroup $group, string $commit): void
         {
             $this->pushes[] = $group->id;
             if ($this->pushFailures > 0) {
@@ -1656,7 +1656,7 @@ function tick_publishing(array $missing = [[]], int $failures = 0): object
 
         public function __construct(private int $failures) {}
 
-        public function publish(TaskGroup $group, string $body): string
+        public function publish(TaskGroup $group, string $body, string $commit): string
         {
             $this->bodies[] = $body;
             if ($this->failures-- > 0) {
@@ -1666,7 +1666,7 @@ function tick_publishing(array $missing = [[]], int $failures = 0): object
             return 'https://github.com/acme/orbit/pull/42';
         }
 
-        public function push(TaskGroup $group): void
+        public function push(TaskGroup $group, string $commit): void
         {
             $this->pushes[] = $group->id;
         }

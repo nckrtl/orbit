@@ -5,12 +5,14 @@ declare(strict_types=1);
 namespace App\Actions\Tasks;
 
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tasks\TaskCommentType;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskPullRequestException;
 use App\Domain\Tasks\TaskPullRequestPublisher;
 use App\Domain\Tasks\TaskStatus;
 use App\Models\AppInstance;
 use App\Models\Task;
+use App\Models\TaskComment;
 use App\Models\TaskGroup;
 use Illuminate\Support\Facades\DB;
 use Throwable;
@@ -107,9 +109,18 @@ final readonly class CancelTaskGroupAction
         if (! $group->tasks->contains(static fn (Task $task): bool => $task->status === TaskStatus::Completed)) {
             return;
         }
+        $commit = TaskComment::query()
+            ->where('task_group_id', $group->id)
+            ->where('type', TaskCommentType::Approved)
+            ->whereNotNull('commit_sha')
+            ->latest('id')
+            ->value('commit_sha');
+        if (! is_string($commit) || $commit === '') {
+            return;
+        }
 
         try {
-            $this->publisher->push($group);
+            $this->publisher->push($group, $commit);
         } catch (TaskPullRequestException $exception) {
             throw new ResourceOperationException(
                 errorCode: 'tasks.push_failed',

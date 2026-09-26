@@ -1047,20 +1047,25 @@ function scheduler_approved_subtask(string $slug, bool $last = false, ?string $r
         public array $pushes = [];
 
         /** @var list<string> */
+        public array $commits = [];
+
+        /** @var list<string> */
         public array $bodies = [];
 
         public int $pushFailures = 0;
 
-        public function publish(TaskGroup $group, string $body): string
+        public function publish(TaskGroup $group, string $body, string $commit): string
         {
             $this->bodies[] = $body;
+            $this->commits[] = $commit;
 
             return 'https://github.com/acme/orbit/pull/42';
         }
 
-        public function push(TaskGroup $group): void
+        public function push(TaskGroup $group, string $commit): void
         {
             $this->pushes[] = $group->id;
+            $this->commits[] = $commit;
             if ($this->pushFailures > 0) {
                 $this->pushFailures--;
 
@@ -1209,6 +1214,18 @@ it('keeps retrying a failed push after the fifth failure asks for assistance', f
         ->and(Task::query()->where('title', 'Routes')->sole()->status)->toBe(TaskStatus::Running);
 });
 
+it('pushes the stored commit rather than HEAD', function (): void {
+    [$group, $task, , $publisher] = scheduler_approved_subtask('push-stored-commit');
+    $stored = str_repeat('c', 40);
+
+    app(TaskScheduler::class)->tick();
+
+    expect($publisher->commits)->toBe([$stored])
+        ->and($publisher->pushes)->toBe([$group->id])
+        ->and($task->comments()->sole()->commit_sha)->toBe($stored)
+        ->and($task->fresh()?->status)->toBe(TaskStatus::Completed);
+});
+
 it('does not run a baseline for a group whose implementers already started', function (): void {
     $app = scheduler_app('started-app');
     $instance = scheduler_instance($app, scheduler_node('started-node', '10.44.0.96'), 'started');
@@ -1313,11 +1330,21 @@ function scheduler_review(array $receipts, bool $notified = true): array
     {
         public function __construct(public string $turnId) {}
 
+        public string $implementerTurnId = '';
+
+        public string $implementerState = 'completed';
+
         public function snapshot(Node $node, string $threadId): ?array
         {
+            $implementer = str_contains($threadId, 'implementer') && $this->implementerTurnId !== '';
+            $state = $implementer ? $this->implementerState : 'completed';
+
             return ['thread' => [
-                'session' => ['status' => 'done'],
-                'latestTurn' => ['id' => $this->turnId, 'state' => 'completed'],
+                'session' => ['status' => $state === 'running' ? 'running' : 'done'],
+                'latestTurn' => [
+                    'id' => $implementer ? $this->implementerTurnId : $this->turnId,
+                    'state' => $state,
+                ],
             ]];
         }
     };
@@ -1338,12 +1365,12 @@ function scheduler_review(array $receipts, bool $notified = true): array
     // ADR 0160: every approval pushes the task branch.
     app()->instance(TaskPullRequestPublisher::class, new class implements TaskPullRequestPublisher
     {
-        public function publish(TaskGroup $group, string $body): string
+        public function publish(TaskGroup $group, string $body, string $commit): string
         {
             return 'https://github.com/acme/orbit/pull/1';
         }
 
-        public function push(TaskGroup $group): void {}
+        public function push(TaskGroup $group, string $commit): void {}
     });
 
     return [$group->fresh(['tasks', 'taskable']) ?? $group, $task->fresh() ?? $task, $receipts, $signer, $checks, $dispatcher, $reader];
@@ -1479,3 +1506,226 @@ it('does not relay findings or accept a blocked question when the reviewer chang
     'changes requested' => ['changes_requested', null, 'tree'],
     'blocked' => ['blocked', 'Which contract should win?', 'head'],
 ]);
+
+it('treats a newer implementer turn during review as a new handoff without reminding the reviewer', function (): void {
+    [$group, $task, , $signer, $checks, $dispatcher, $reader] = scheduler_review([
+        FakeTaskRunReceipts::contents('approved', 'Checked the models.'),
+        null,
+        FakeTaskRunReceipts::contents('ready_for_review', 'Operator follow-up.'),
+    ]);
+    $task->update(['completion_handoff_turn_id' => 'implementer-handoff']);
+    $reader->implementerTurnId = 'implementer-operator';
+    $reader->implementerState = 'running';
+    $checks->tree = str_repeat('c', 40);
+
+    app(TaskScheduler::class)->tick();
+
+    expect($task->fresh()?->status)->toBe(TaskStatus::Reviewing)
+        ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Reviewing)
+        ->and($dispatcher->commands)->toBe([])
+        ->and($signer->messages)->toBe([])
+        ->and($task->fresh()?->assistance_requested)->toBeFalse()
+        ->and($task->comments()->sole()->commit_sha)->toBeNull();
+
+    $reader->implementerState = 'completed';
+    app(TaskScheduler::class)->tick();
+
+    expect($task->fresh()?->status)->toBe(TaskStatus::Running)
+        ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Running)
+        ->and($dispatcher->commands)->toBe([])
+        ->and($signer->messages)->toBe([])
+        ->and($task->fresh()?->assistance_requested)->toBeFalse()
+        ->and($task->fresh()?->review_attempt)->toBe($task->review_attempt + 1)
+        ->and($task->comments()->sole()->commit_sha)->toBeNull();
+
+    app(TaskScheduler::class)->tick();
+
+    expect($task->fresh()?->status)->toBe(TaskStatus::Running)
+        ->and(TaskCheck::query()->where('task_id', $task->id)->sole()->status)->toBe(TaskCheckStatus::Running)
+        ->and($dispatcher->commands)->toBe([]);
+
+    app(TaskScheduler::class)->tick();
+
+    expect($task->fresh()?->status)->toBe(TaskStatus::Reviewing)
+        ->and($task->fresh()?->review_notified_attempt)->toBe($task->fresh()?->review_attempt)
+        ->and($task->fresh()?->review_workspace_head)->toBe($checks->head)
+        ->and($task->fresh()?->review_workspace_tree)->toBe(str_repeat('c', 40))
+        ->and($dispatcher->commands)->toBe([])
+        ->and($signer->messages)->toBe([]);
+});
+
+it('does not remind the reviewer when a newer implementer turn explains a changes or blocked receipt', function (string $outcome, ?string $question): void {
+    [$group, $task, , $signer, $checks, $dispatcher, $reader] = scheduler_review([
+        FakeTaskRunReceipts::contents($outcome, 'Distinct findings that must not be applied.', $question),
+    ]);
+    $task->update(['completion_handoff_turn_id' => 'implementer-handoff']);
+    $reader->implementerTurnId = 'implementer-operator';
+    $checks->tree = str_repeat('c', 40);
+
+    app(TaskScheduler::class)->tick();
+
+    expect($task->fresh()?->status)->toBe(TaskStatus::Running)
+        ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Running)
+        ->and($dispatcher->commands)->toBe([])
+        ->and($signer->messages)->toBe([])
+        ->and($task->fresh()?->assistance_requested)->toBeFalse()
+        ->and($task->comments()->sole()->getRawOriginal('type'))->toBe($outcome);
+})->with([
+    'changes requested' => ['changes_requested', null],
+    'blocked' => ['blocked', 'Which contract should win?'],
+]);
+
+it('still reminds the reviewer when the implementer turn is the handoff turn', function (): void {
+    [, $task, , $signer, $checks, $dispatcher, $reader] = scheduler_review([
+        FakeTaskRunReceipts::contents('approved', 'Checked the models.'),
+    ]);
+    $task->update(['completion_handoff_turn_id' => 'review-turn']);
+    $reader->implementerTurnId = 'review-turn';
+    $checks->tree = str_repeat('c', 40);
+
+    app(TaskScheduler::class)->tick();
+
+    expect($task->fresh()?->status)->toBe(TaskStatus::Reviewing)
+        ->and($signer->messages)->toBe([])
+        ->and($dispatcher->commands)->toHaveCount(1)
+        ->and($dispatcher->commands[0]['message']['text'])->toContain(TaskScheduler::WorkspaceChangedReminder);
+});
+
+it('accepts a lost commit response as the stored commit without a reminder or a second commit', function (): void {
+    [$group, $task, , , $checks, $dispatcher] = scheduler_review([
+        FakeTaskRunReceipts::contents('approved', 'Checked the models.'),
+    ]);
+    $stored = str_repeat('d', 40);
+    $checks->head = $stored;
+    $checks->parent = str_repeat('a', 40);
+    $checks->commitTree = str_repeat('b', 40);
+    $signer = new class implements TaskWorkspaceSigner
+    {
+        public int $calls = 0;
+
+        public function commit(AppInstance $instance, string $message): ?string
+        {
+            $this->calls++;
+
+            return str_repeat('e', 40);
+        }
+    };
+    $publisher = new class implements TaskPullRequestPublisher
+    {
+        /** @var list<string> */
+        public array $commits = [];
+
+        public int $pushFailures = 1;
+
+        public function publish(TaskGroup $group, string $body, string $commit): string
+        {
+            return 'https://github.com/acme/orbit/pull/1';
+        }
+
+        public function push(TaskGroup $group, string $commit): void
+        {
+            $this->commits[] = $commit;
+            if ($this->pushFailures > 0) {
+                $this->pushFailures--;
+
+                throw new TaskPullRequestException('The task branch could not be pushed.');
+            }
+        }
+    };
+    app()->instance(TaskWorkspaceSigner::class, $signer);
+    app()->instance(TaskPullRequestPublisher::class, $publisher);
+
+    app(TaskScheduler::class)->tick();
+
+    expect($signer->calls)->toBe(0)
+        ->and($dispatcher->commands)->toBe([])
+        ->and($task->fresh()?->status)->toBe(TaskStatus::Reviewing)
+        ->and($task->fresh()?->assistance_requested)->toBeFalse()
+        ->and($task->comments()->sole()->commit_sha)->toBe($stored)
+        ->and($publisher->commits)->toBe([$stored]);
+
+    app(TaskScheduler::class)->tick();
+
+    expect($signer->calls)->toBe(0)
+        ->and($dispatcher->commands)->toBe([])
+        ->and($publisher->commits)->toBe([$stored, $stored])
+        ->and($task->comments()->count())->toBe(1)
+        ->and($task->comments()->sole()->commit_sha)->toBe($stored)
+        ->and($task->fresh()?->status)->toBe(TaskStatus::Completed)
+        ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Running);
+});
+
+it('stores the commit when its response is lost and pushes that stored commit without committing again', function (): void {
+    [$group, $task, , , $checks, $dispatcher] = scheduler_review([
+        FakeTaskRunReceipts::contents('approved', 'Checked the models.'),
+    ]);
+    $stored = str_repeat('d', 40);
+    $signer = new class($stored) implements TaskWorkspaceSigner
+    {
+        public int $calls = 0;
+
+        public function __construct(private string $sha) {}
+
+        public function commit(AppInstance $instance, string $message): ?string
+        {
+            $this->calls++;
+            $checks = app(TaskCheckRunner::class);
+            if ($checks instanceof FakeTaskCheckRunner) {
+                $checks->head = $this->sha;
+                $checks->parent = str_repeat('a', 40);
+                $checks->commitTree = str_repeat('b', 40);
+            }
+
+            return null;
+        }
+    };
+    $publisher = new class implements TaskPullRequestPublisher
+    {
+        /** @var list<string> */
+        public array $commits = [];
+
+        public function publish(TaskGroup $group, string $body, string $commit): string
+        {
+            return 'https://github.com/acme/orbit/pull/1';
+        }
+
+        public function push(TaskGroup $group, string $commit): void
+        {
+            $this->commits[] = $commit;
+        }
+    };
+    app()->instance(TaskWorkspaceSigner::class, $signer);
+    app()->instance(TaskPullRequestPublisher::class, $publisher);
+
+    app(TaskScheduler::class)->tick();
+
+    expect($signer->calls)->toBe(1)
+        ->and($dispatcher->commands)->toBe([])
+        ->and($task->comments()->sole()->commit_sha)->toBe($stored)
+        ->and($publisher->commits)->toBe([$stored])
+        ->and($task->fresh()?->status)->toBe(TaskStatus::Completed)
+        ->and($task->fresh()?->assistance_requested)->toBeFalse();
+
+    app(TaskScheduler::class)->tick();
+
+    expect($signer->calls)->toBe(1)
+        ->and($publisher->commits)->toBe([$stored])
+        ->and($task->comments()->count())->toBe(1);
+});
+
+it('refuses a workspace commit that is not the stored commit recorded for review', function (): void {
+    [, $task, , $signer, $checks, $dispatcher] = scheduler_review([
+        FakeTaskRunReceipts::contents('approved', 'Checked the models.'),
+    ]);
+    $checks->head = str_repeat('d', 40);
+    $checks->parent = str_repeat('a', 40);
+    $checks->commitTree = str_repeat('e', 40);
+
+    app(TaskScheduler::class)->tick();
+
+    expect($signer->messages)->toBe([])
+        ->and($task->comments()->sole()->commit_sha)->toBeNull()
+        ->and($task->fresh()?->status)->toBe(TaskStatus::Reviewing)
+        ->and($dispatcher->commands)->toHaveCount(1)
+        ->and($dispatcher->commands[0]['message']['text'])->toContain(TaskScheduler::WorkspaceChangedReminder);
+});

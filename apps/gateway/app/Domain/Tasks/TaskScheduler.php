@@ -282,7 +282,12 @@ final readonly class TaskScheduler
 
                 return;
             }
-            $task->update(['completion_handoff_comment_id' => $receipt->id, 'communication_failures' => 0]);
+            $handoff = ['completion_handoff_comment_id' => $receipt->id, 'communication_failures' => 0];
+            if (is_string($implementer->turnId) && $implementer->turnId !== '') {
+                // The turn that handed off. A later implementer turn during review is a new handoff, not a reviewer edit.
+                $handoff['completion_handoff_turn_id'] = $implementer->turnId;
+            }
+            $task->update($handoff);
             $this->settleImplementer($task, $observation->thread(TaskThreadRole::Reviewer));
 
             return;
@@ -404,9 +409,29 @@ final readonly class TaskScheduler
             return true;
         }
         if ($receipt instanceof TaskComment
-            && in_array($outcome, [TaskRunOutcome::Blocked, TaskRunOutcome::ChangesRequested, TaskRunOutcome::Approved], true)
-            && ! $this->workspaceUnchanged($group, $task, $reviewer, $receipt)) {
-            return true;
+            && in_array($outcome, [TaskRunOutcome::Blocked, TaskRunOutcome::ChangesRequested, TaskRunOutcome::Approved], true)) {
+            $decision = $this->reviewWorkspaceDecision($group, $task, $reviewer, $receipt, $observation);
+            if ($decision === 'orbit_commit') {
+                try {
+                    $recovered = $this->recoveredCommit($task, $this->workspaceSnapshot($group));
+                } catch (TaskCheckException $exception) {
+                    $this->recordCommunicationFailure($task, $group, $exception->getMessage());
+
+                    return true;
+                }
+                if ($recovered === null) {
+                    $this->recordCommunicationFailure($task, $group, 'Orbit could not commit the approved subtask.');
+
+                    return true;
+                }
+                $receipt->update(['commit_sha' => $recovered]);
+                $this->publishApprovedCommit($group, $task, $receipt);
+
+                return true;
+            }
+            if ($decision !== 'apply') {
+                return true;
+            }
         }
         if ($receipt instanceof TaskComment && $outcome === TaskRunOutcome::Approved && $this->committedApproval($receipt)) {
             // The commit is already stored and the workspace still holds it. Retry the push only; do not commit again.
@@ -466,6 +491,16 @@ final readonly class TaskScheduler
         }
 
         $commit = $instance instanceof AppInstance ? $this->signer->commit($instance, $task->title."\n\n".$receipt->body) : null;
+        if ($commit === null && $instance instanceof AppInstance) {
+            // The commit can land and the SHA response can still be lost. The parent and tree identify Orbit's commit.
+            try {
+                $commit = $this->recoveredCommit($task, $this->workspaceSnapshot($group));
+            } catch (TaskCheckException $exception) {
+                $this->recordCommunicationFailure($task, $group, $exception->getMessage());
+
+                return true;
+            }
+        }
         if ($commit === null) {
             $this->recordCommunicationFailure($task, $group, 'Orbit could not commit the approved subtask.');
 
@@ -516,13 +551,19 @@ final readonly class TaskScheduler
     }
 
     /**
-     * Pushes the approved HEAD, then opens the pull request on the last subtask. The open pushes again.
-     * A failed push or open leaves the subtask in review and keeps commit_sha.
+     * Pushes the stored commit, then opens the pull request on the last subtask. The open pushes that commit again.
+     * The refspec names the commit, never HEAD. A failed push or open leaves the subtask in review and keeps commit_sha.
      */
     private function publishApprovedCommit(TaskGroup $group, Task $task, TaskComment $receipt): void
     {
+        $commit = $receipt->commit_sha;
+        if (! is_string($commit) || $commit === '') {
+            $this->recordCommunicationFailure($task, $group, 'Orbit could not commit the approved subtask.');
+
+            return;
+        }
         try {
-            $this->publisher->push($group);
+            $this->publisher->push($group, $commit);
         } catch (TaskPullRequestException $exception) {
             $this->recordCommunicationFailure($task, $group, $exception->getMessage());
 
@@ -537,7 +578,7 @@ final readonly class TaskScheduler
                 return;
             }
             try {
-                $url = $this->publisher->publish($group, TaskPullRequestDescription::render($pullRequest, $group->tasks()->whereNotIn('status', [TaskStatus::Cancelled, TaskStatus::Failed])->count(), $group->app->taskCheckCommand()));
+                $url = $this->publisher->publish($group, TaskPullRequestDescription::render($pullRequest, $group->tasks()->whereNotIn('status', [TaskStatus::Cancelled, TaskStatus::Failed])->count(), $group->app->taskCheckCommand()), $commit);
             } catch (TaskPullRequestException $exception) {
                 $this->recordCommunicationFailure($task, $group, $exception->getMessage());
 
@@ -1355,36 +1396,42 @@ final readonly class TaskScheduler
 
     /**
      * ADR 0133: a reviewer turn is read-only. The receipt stays unapplied while the workspace differs
-     * from the pair recorded with the review request. One reminder, then the scheduler waits for a
-     * newer stopped reviewer turn before it looks again. That later turn applies the outcome when
-     * the workspace matches, and asks for assistance when it still differs. Another poll of the
-     * reminded turn does neither. A failed read is a communication failure, not a change. A review
-     * notified before a baseline existed has nothing to compare, so its outcome applies as before.
+     * from the pair recorded with the review request, unless a newer implementer turn explains the
+     * difference or the commit below is Orbit's. One reminder, then the scheduler waits for a newer
+     * stopped reviewer turn before it looks again. That later turn applies the outcome when the
+     * workspace matches, and asks for assistance when it still differs. Another poll of the reminded
+     * turn does neither. A failed read is a communication failure, not a change. A review notified
+     * before a baseline existed has nothing to compare, so its outcome applies as before.
      * A commit already stored on the receipt is Orbit's. Publication retries only while HEAD is
      * that commit and the working tree still matches. The HEAD from before the approval is not
      * accepted after Orbit has committed, so a reset that drops the commit is refused.
      *
-     * @return bool whether the workspace still matches and the outcome may be applied
+     * @return 'apply'|'orbit_commit'|'wait'|'reopened'|'reminded'|'unreadable'
      */
-    private function workspaceUnchanged(TaskGroup $group, Task $task, TaskThreadObservation $reviewer, TaskComment $receipt): bool
+    private function reviewWorkspaceDecision(TaskGroup $group, Task $task, TaskThreadObservation $reviewer, TaskComment $receipt, TaskSessionObservation $observation): string
     {
         try {
             $current = $this->workspaceSnapshot($group);
         } catch (TaskCheckException $exception) {
             $this->recordCommunicationFailure($task, $group, $exception->getMessage());
 
-            return false;
+            return 'unreadable';
         }
-        $head = $task->review_workspace_head;
-        $tree = $task->review_workspace_tree;
-        $storedCommit = $receipt->commit_sha;
-        $orbitCommit = is_string($storedCommit) && $storedCommit !== '' ? $storedCommit : null;
-        $treeMatches = ! is_string($tree) || $tree === '' || $current->tree === $tree;
-        $headMatches = $orbitCommit !== null
-            ? $current->head === $orbitCommit
-            : ! is_string($head) || $head === '' || $current->head === $head;
-        if ($headMatches && $treeMatches) {
-            return true;
+        if ($this->workspaceMatchesReview($task, $receipt, $current)) {
+            return 'apply';
+        }
+        if ($this->receiptOutcome($receipt) === TaskRunOutcome::Approved && ! $this->committedApproval($receipt) && $this->recoveredCommit($task, $current) !== null) {
+            return 'orbit_commit';
+        }
+        $implementer = $observation->thread(TaskThreadRole::Implementer);
+        if ($this->newerImplementerTurn($task, $implementer)) {
+            if ($implementer instanceof TaskThreadObservation && $this->newerTurnHasStopped($task->completion_handoff_turn_id, $implementer)) {
+                $this->reopenHandoff($group, $task, $receipt);
+
+                return 'reopened';
+            }
+
+            return 'wait';
         }
         $this->remindOrAssist($group, $task, $reviewer, [
             new TaskRubricItem('workspace_unchanged', false, self::WorkspaceChangedReminder),
@@ -1396,7 +1443,71 @@ final readonly class TaskScheduler
             $task->update(['review_notified_turn_id' => $reviewer->turnId]);
         }
 
-        return false;
+        return 'reminded';
+    }
+
+    private function workspaceMatchesReview(Task $task, TaskComment $receipt, TaskWorkspaceSnapshot $current): bool
+    {
+        $head = $task->review_workspace_head;
+        $tree = $task->review_workspace_tree;
+        $storedCommit = $receipt->commit_sha;
+        $orbitCommit = is_string($storedCommit) && $storedCommit !== '' ? $storedCommit : null;
+        $treeMatches = ! is_string($tree) || $tree === '' || $current->tree === $tree;
+        $headMatches = $orbitCommit !== null
+            ? $current->head === $orbitCommit
+            : ! is_string($head) || $head === '' || $current->head === $head;
+
+        return $headMatches && $treeMatches;
+    }
+
+    /**
+     * Orbit's commit after a lost response: HEAD's parent is the HEAD recorded with the review
+     * request, and HEAD's tree is the tree recorded with that request (ADR 0133).
+     */
+    private function recoveredCommit(Task $task, TaskWorkspaceSnapshot $current): ?string
+    {
+        $head = $task->review_workspace_head;
+        $tree = $task->review_workspace_tree;
+        if (! is_string($head) || $head === '' || ! is_string($tree) || $tree === '' || $current->head === '' || $current->head === $head) {
+            return null;
+        }
+        if ($current->parent !== $head || $current->commitTree !== $tree) {
+            return null;
+        }
+
+        return $current->head;
+    }
+
+    private function newerImplementerTurn(Task $task, ?TaskThreadObservation $implementer): bool
+    {
+        $handoff = $task->completion_handoff_turn_id;
+
+        return is_string($handoff) && $handoff !== ''
+            && $implementer instanceof TaskThreadObservation
+            && is_string($implementer->turnId) && $implementer->turnId !== ''
+            && $implementer->turnId !== $handoff;
+    }
+
+    /**
+     * A newer implementer turn changed the workspace during review. The reviewer outcome is not
+     * applied and the reviewer is not reminded. The subtask needs a new receipt and a passing check.
+     */
+    private function reopenHandoff(TaskGroup $group, Task $task, TaskComment $receipt): void
+    {
+        $task->update([
+            'status' => TaskStatus::Running,
+            'review_handled_comment_id' => $receipt->id,
+            'review_attempt' => $task->review_attempt + 1,
+            'review_reminder_attempt' => null,
+            'review_reminder_input_id' => null,
+            'completion_attempt' => $task->completion_attempt + 1,
+            'completion_handoff_attempt' => null,
+            'completion_handoff_comment_id' => null,
+            'completion_reminder_attempt' => null,
+            'completion_reminder_input_id' => null,
+            'communication_failures' => 0,
+        ]);
+        $group->update(['status' => TaskGroupStatus::Running]);
     }
 
     /** @throws TaskCheckException */

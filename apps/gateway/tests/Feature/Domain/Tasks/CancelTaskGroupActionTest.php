@@ -16,6 +16,7 @@ use App\Models\AppInstance;
 use App\Models\AppInstanceRemoval;
 use App\Models\Node;
 use App\Models\Task;
+use App\Models\TaskComment;
 use App\Models\TaskGroup;
 use Illuminate\Support\Facades\DB;
 
@@ -83,19 +84,23 @@ function cancel_recording_publisher(int $failures = 0): object
         /** @var list<int> */
         public array $pushes = [];
 
+        /** @var list<string> */
+        public array $commits = [];
+
         /** @var list<int> the database transaction level at each push */
         public array $transactionLevels = [];
 
         public function __construct(private int $failures) {}
 
-        public function publish(TaskGroup $group, string $body): string
+        public function publish(TaskGroup $group, string $body, string $commit): string
         {
             throw new LogicException('Cancel never opens a pull request.');
         }
 
-        public function push(TaskGroup $group): void
+        public function push(TaskGroup $group, string $commit): void
         {
             $this->pushes[] = $group->id;
+            $this->commits[] = $commit;
             $this->transactionLevels[] = DB::transactionLevel();
             if ($this->failures-- > 0) {
                 throw new TaskPullRequestException('The task branch could not be pushed.');
@@ -105,6 +110,20 @@ function cancel_recording_publisher(int $failures = 0): object
     app()->instance(TaskPullRequestPublisher::class, $publisher);
 
     return $publisher;
+}
+
+function cancel_approval(Task $task, string $commit): void
+{
+    TaskComment::query()->create([
+        'task_group_id' => $task->task_group_id,
+        'task_id' => $task->id,
+        'type' => 'approved',
+        'body' => 'Approved.',
+        'author' => 'reviewer',
+        'review_attempt' => 1,
+        'commit_sha' => $commit,
+        'posted_at' => now(),
+    ]);
 }
 
 function cancel_subtask(TaskGroup $group, TaskStatus $status, int $position = 1): Task
@@ -164,7 +183,8 @@ it('pushes approved commits before it cancels a settling group without a pull re
     $remover = cancel_recording_remover();
     $publisher = cancel_recording_publisher();
     $group = cancellable_task_group(TaskGroupStatus::Settling);
-    cancel_subtask($group, TaskStatus::Completed, 1);
+    $approved = cancel_subtask($group, TaskStatus::Completed, 1);
+    cancel_approval($approved, str_repeat('c', 40));
     $cancelledSubtask = cancel_subtask($group, TaskStatus::Cancelled, 2);
     $instanceId = $group->taskable_id;
     $testLevel = DB::transactionLevel();
@@ -172,6 +192,7 @@ it('pushes approved commits before it cancels a settling group without a pull re
     $cancelled = app(CancelTaskGroupAction::class)->execute($group);
 
     expect($publisher->pushes)->toBe([$group->id])
+        ->and($publisher->commits)->toBe([str_repeat('c', 40)])
         ->and($publisher->transactionLevels)->toBe([$testLevel])
         ->and($remover->calls)->toBe([[$instanceId, true]])
         ->and($cancelled->status)->toBe(TaskGroupStatus::Cancelled)
@@ -184,7 +205,7 @@ it('keeps the settling group and its Instance when the push fails', function ():
     $remover = cancel_recording_remover();
     cancel_recording_publisher(failures: 1);
     $group = cancellable_task_group(TaskGroupStatus::Settling);
-    cancel_subtask($group, TaskStatus::Completed);
+    cancel_approval(cancel_subtask($group, TaskStatus::Completed), str_repeat('c', 40));
     $instanceId = $group->taskable_id;
 
     expect(fn () => app(CancelTaskGroupAction::class)->execute($group))
