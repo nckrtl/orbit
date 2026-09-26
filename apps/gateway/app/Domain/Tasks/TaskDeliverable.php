@@ -71,6 +71,19 @@ final readonly class TaskDeliverable
         return self::join($this->project, $this->file);
     }
 
+    /** ADR 0133: one exact Pest file. No `*`, `?`, `[`, `{`, or `..`, and a `.php` suffix. */
+    public static function isExactTestFile(string $file): bool
+    {
+        if (! str_ends_with($file, '.php') || str_starts_with($file, '/')) {
+            return false;
+        }
+
+        return array_all(
+            ['*', '?', '[', '{', '..'],
+            static fn (string $forbidden): bool => ! str_contains($file, $forbidden),
+        );
+    }
+
     /** One line that names the deliverable and what it asks for, for agent prompts. */
     public function line(): string
     {

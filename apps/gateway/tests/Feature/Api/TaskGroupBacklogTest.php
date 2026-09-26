@@ -64,6 +64,21 @@ function backlog_group(mixed $test, array $subtasks = ['One', 'Two', 'Three'], a
     ])->assertCreated()->json('data');
 }
 
+/**
+ * @return array{id: string, type: string, description: string, project: string, file: string, name: string}
+ */
+function php_test_deliverable(string $file, string $id = 'export-test'): array
+{
+    return [
+        'id' => $id,
+        'type' => 'test',
+        'description' => 'Test the export',
+        'project' => 'apps/gateway',
+        'file' => $file,
+        'name' => 'exports every subtask',
+    ];
+}
+
 /** @return list<string> */
 function backlog_order(int $groupId): array
 {
@@ -418,5 +433,128 @@ describe('subtask deliverables', function (): void {
             ->assertJsonPath('error.code', 'tasks.not_in_backlog');
 
         expect(Task::query()->findOrFail($todo)->title)->toBe('Two');
+    });
+
+    it('returns 422 validation.failed when a test file is not one exact php path', function (string $file): void {
+        $group = backlog_group($this, []);
+        $deliverable = php_test_deliverable($file);
+        $message = 'The test file for deliverable export-test must be one exact .php path.';
+        $groups = TaskGroup::query()->count();
+
+        $created = $this->postJson("/api/v1/task-groups/{$group['id']}/tasks", [
+            'title' => 'Export',
+            'brief' => 'Add the export.',
+            'deliverables' => [$deliverable],
+        ]);
+
+        expect($created->assertUnprocessable()->json('error.code'))->toBe('validation.failed')
+            ->and($created->json('error.details')['deliverables.0.file'][0] ?? null)->toBe($message)
+            ->and(Task::query()->where('task_group_id', $group['id'])->count())->toBe(0);
+
+        $subtask = $this->postJson("/api/v1/task-groups/{$group['id']}/tasks", [
+            'title' => 'Export',
+            'brief' => 'Add the export.',
+            'deliverables' => [['id' => 'done', 'type' => 'review', 'description' => 'Done.']],
+        ])->assertCreated()->json('data');
+        $updated = $this->patchJson("/api/v1/task-groups/{$group['id']}/tasks/{$subtask['id']}", [
+            'deliverables' => [$deliverable],
+        ]);
+
+        expect($updated->assertUnprocessable()->json('error.code'))->toBe('validation.failed')
+            ->and($updated->json('error.details')['deliverables.0.file'][0] ?? null)->toBe($message)
+            ->and(Task::query()->findOrFail($subtask['id'])->deliverables)->toBe([
+                ['id' => 'done', 'type' => 'review', 'description' => 'Done.'],
+            ]);
+
+        $groupCreated = $this->postJson('/api/v1/task-groups', [
+            'app_id' => $this->appRecord->id,
+            'title' => 'Exact file',
+            'brief' => 'Refuse a glob.',
+            'tasks' => [[
+                'title' => 'Export',
+                'brief' => 'Add the export.',
+                'deliverables' => [$deliverable],
+            ]],
+        ]);
+
+        expect($groupCreated->assertUnprocessable()->json('error.code'))->toBe('validation.failed')
+            ->and($groupCreated->json('error.details')['tasks.0.deliverables.0.file'][0] ?? null)->toBe($message)
+            ->and(TaskGroup::query()->count())->toBe($groups);
+    })->with([
+        'a star' => 'tests/Feature/**/*.php',
+        'a question mark' => 'tests/Export?.php',
+        'an opening bracket' => 'tests/Export[0].php',
+        'an opening brace' => 'tests/{Export}Test.php',
+        'a parent directory' => 'tests/../ExportTest.php',
+        'a suffix other than php' => 'tests/ExportTest.md',
+    ]);
+
+    it('names the deliverable id when a later test file is a glob', function (): void {
+        $group = backlog_group($this, []);
+        $deliverables = [
+            php_test_deliverable('tests/Feature/ExportTest.php', 'export-test'),
+            php_test_deliverable('tests/Feature/*.php', 'glob-test'),
+        ];
+        $message = 'The test file for deliverable glob-test must be one exact .php path.';
+
+        $created = $this->postJson("/api/v1/task-groups/{$group['id']}/tasks", [
+            'title' => 'Export',
+            'brief' => 'Add the export.',
+            'deliverables' => $deliverables,
+        ]);
+
+        expect($created->assertUnprocessable()->json('error.code'))->toBe('validation.failed')
+            ->and($created->json('error.details')['deliverables.1.file'][0] ?? null)->toBe($message)
+            ->and($created->json('error.details'))->not->toHaveKey('deliverables.0.file');
+
+        $subtask = $this->postJson("/api/v1/task-groups/{$group['id']}/tasks", [
+            'title' => 'Export',
+            'brief' => 'Add the export.',
+            'deliverables' => [['id' => 'done', 'type' => 'review', 'description' => 'Done.']],
+        ])->assertCreated()->json('data');
+        $updated = $this->patchJson("/api/v1/task-groups/{$group['id']}/tasks/{$subtask['id']}", [
+            'deliverables' => $deliverables,
+        ]);
+
+        expect($updated->assertUnprocessable()->json('error.details')['deliverables.1.file'][0] ?? null)->toBe($message);
+
+        $groupCreated = $this->postJson('/api/v1/task-groups', [
+            'app_id' => $this->appRecord->id,
+            'title' => 'Exact file',
+            'brief' => 'Name the id.',
+            'tasks' => [['title' => 'Export', 'brief' => 'Add the export.', 'deliverables' => $deliverables]],
+        ]);
+
+        expect($groupCreated->assertUnprocessable()->json('error.details')['tasks.0.deliverables.1.file'][0] ?? null)->toBe($message);
+    });
+
+    it('accepts an exact php test file and still accepts a glob on a file deliverable', function (): void {
+        $group = backlog_group($this, []);
+        $deliverables = [
+            ['id' => 'reference-page', 'type' => 'file', 'description' => 'Docs across directories', 'path' => 'docs/**/*.md', 'change' => 'any'],
+            ['id' => 'question', 'type' => 'file', 'description' => 'One character', 'path' => 'docs/tasks?.md', 'change' => 'created'],
+            ['id' => 'bracket', 'type' => 'file', 'description' => 'A literal bracket', 'path' => 'docs/draft-[a].md', 'change' => 'modified'],
+            ['id' => 'brace', 'type' => 'file', 'description' => 'A literal brace', 'path' => 'docs/{draft}.md', 'change' => 'any'],
+            php_test_deliverable('tests/Feature/ExportTest.php'),
+        ];
+
+        $created = $this->postJson("/api/v1/task-groups/{$group['id']}/tasks", [
+            'title' => 'Export',
+            'brief' => 'Add the export.',
+            'deliverables' => $deliverables,
+        ])->assertCreated()->json('data');
+
+        expect($created['deliverables'])->toBe($deliverables);
+
+        $this->patchJson("/api/v1/task-groups/{$group['id']}/tasks/{$created['id']}", [
+            'deliverables' => $deliverables,
+        ])->assertOk()->assertJsonPath('data.deliverables', $deliverables);
+
+        $this->postJson('/api/v1/task-groups', [
+            'app_id' => $this->appRecord->id,
+            'title' => 'Exact file',
+            'brief' => 'Accept an exact path.',
+            'tasks' => [['title' => 'Export', 'brief' => 'Add the export.', 'deliverables' => $deliverables]],
+        ])->assertCreated()->assertJsonPath('data.tasks.0.deliverables', $deliverables);
     });
 });
