@@ -30,7 +30,7 @@
         }
     },
     "scripts": {
-        "test:affected": "vendor/bin/pest --parallel --processes=2 --tia --compact",
+        "test:affected": "../../bin/pest-plain vendor/bin/pest --parallel --processes=2 --tia --compact --colors=never",
         "analyse": "vendor/bin/phpstan analyse --no-progress --memory-limit=1G",
         "check": [
             "@guidance:check",
@@ -43,7 +43,7 @@
         "guidance:check": "ORBIT_TIA_DIRECTORY=vendor/.orbit-guidance-tia vendor/bin/pest --configuration=phpunit.guidance.xml --tia --fresh --compact",
         "lint": "@format:check",
         "rector": "vendor/bin/rector process --dry-run --no-progress-bar",
-        "test": "vendor/bin/pest --parallel --tia --compact"
+        "test": "../../bin/pest-plain vendor/bin/pest --parallel --tia --compact --colors=never"
     },
     "config": {
         "allow-plugins": {

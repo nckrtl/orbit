@@ -17,6 +17,10 @@ Cancelling subtask...
 │
 ├  Status               cancelled
 │
+├  Assistance           no
+│
+├  Reason               —
+│
 ├  Type                 implementation
 │
 ├  Implementer thread   —

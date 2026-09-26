@@ -28,12 +28,17 @@ final class AgentThreadData extends Data
         public ?string $observationError,
         public ?string $error,
         public ?int $tokens,
+        public ?int $inputTokens,
+        public ?int $cachedInputTokens,
+        public ?int $outputTokens,
+        public ?int $modelCalls,
+        public ?int $peakContextTokens,
         public ?int $linesAdded,
         public ?int $linesDeleted,
     ) {}
 
     public static function fromModel(AgentThread $thread): self
     {
-        return new self($thread->id, $thread->task_group_id, $thread->task_id, $thread->node_id, $thread->role, $thread->model, $thread->effort, $thread->driver, $thread->external_id, $thread->state, $thread->observed_at?->toIso8601String(), $thread->observation_error, $thread->error, $thread->tokens, $thread->lines_added, $thread->lines_deleted);
+        return new self($thread->id, $thread->task_group_id, $thread->task_id, $thread->node_id, $thread->role, $thread->model, $thread->effort, $thread->driver, $thread->external_id, $thread->state, $thread->observed_at?->toIso8601String(), $thread->observation_error, $thread->error, $thread->tokens, $thread->input_tokens, $thread->cached_input_tokens, $thread->output_tokens, $thread->model_calls, $thread->peak_context_tokens, $thread->lines_added, $thread->lines_deleted);
     }
 }

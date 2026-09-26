@@ -76,6 +76,35 @@ describe('task response fixtures', function (): void {
         record_fixture($this->getJson('/api/v1/tasks/status')->assertOk(), 'tasks/tasks-status/enabled', ShowTasksStatusRequest::class, 'GET /api/v1/tasks/status');
     });
 
+    it('records groups asking for assistance', function (): void {
+        TaskGroup::query()->create([
+            'app_id' => $this->project->id,
+            'title' => 'Blocked implementer',
+            'brief' => 'Waiting on a decision.',
+            'status' => TaskGroupStatus::Running,
+            'assistance_requested' => true,
+            'assistance_reason' => 'The implementer is blocked.',
+        ]);
+        TaskGroup::query()->create([
+            'app_id' => $this->project->id,
+            'title' => 'Settling question',
+            'brief' => 'Waiting on review.',
+            'status' => TaskGroupStatus::Settling,
+            'assistance_requested' => true,
+            'assistance_reason' => 'Which database should this use?',
+        ]);
+        TaskGroup::query()->create([
+            'app_id' => $this->project->id,
+            'title' => 'Clear',
+            'brief' => 'Not waiting.',
+            'status' => TaskGroupStatus::Running,
+            'assistance_requested' => false,
+            'assistance_reason' => 'An old reason.',
+        ]);
+
+        record_fixture($this->getJson('/api/v1/tasks/status')->assertOk(), 'tasks/tasks-status/assistance', ShowTasksStatusRequest::class, 'GET /api/v1/tasks/status');
+    });
+
     it('records a created group and a refused todo create', function (): void {
         record_fixture($this->postJson('/api/v1/task-groups', [
             'app_id' => $this->project->id,
@@ -181,7 +210,7 @@ describe('task response fixtures', function (): void {
     it('records comments and agent threads', function (): void {
         $group = task_fixture_group($this->project);
         $task = $group->tasks()->orderBy('position')->firstOrFail();
-        $implementer = AgentThread::query()->create(['task_group_id' => $group->id, 'task_id' => $task->id, 'node_id' => null, 'role' => 'implementer', 'model' => 'gpt-5.6-luna', 'effort' => 'low', 'driver' => 't3', 'runtime_key' => 'node:2', 'external_id' => 'thread-implementer', 'state' => 'done', 'observed_at' => now()->subMinute(), 'tokens' => 48_200, 'lines_added' => 120, 'lines_deleted' => 14]);
+        $implementer = AgentThread::query()->create(['task_group_id' => $group->id, 'task_id' => $task->id, 'node_id' => null, 'role' => 'implementer', 'model' => 'gpt-5.6-luna', 'effort' => 'low', 'driver' => 't3', 'runtime_key' => 'node:2', 'external_id' => 'thread-implementer', 'state' => 'done', 'observed_at' => now()->subMinute(), 'tokens' => 48_200, 'input_tokens' => 2_100, 'cached_input_tokens' => 40_100, 'output_tokens' => 6_000, 'model_calls' => 4, 'peak_context_tokens' => 9_800, 'lines_added' => 120, 'lines_deleted' => 14]);
         AgentThread::query()->create(['task_group_id' => $group->id, 'task_id' => null, 'node_id' => null, 'role' => 'reviewer', 'model' => 'claude-opus-5', 'effort' => 'high', 'driver' => 't3', 'runtime_key' => 'node:2', 'external_id' => 'thread-reviewer', 'state' => 'working', 'observed_at' => now()->subMinute(), 'observation_error' => 'T3 did not answer in time.']);
         TaskComment::query()->create(['task_group_id' => $group->id, 'task_id' => $task->id, 'agent_thread_id' => $implementer->id, 'type' => 'ready_for_review', 'body' => "Added the SDK requests.\ncomposer check passes.", 'author' => 'implementer', 'posted_at' => now()->subMinutes(10)]);
         TaskComment::query()->create(['task_group_id' => $group->id, 'task_id' => $task->id, 'type' => 'approved', 'body' => 'Approved.', 'author' => 'reviewer', 'review_attempt' => 1, 'commit_sha' => '3f2a9c1e5b7d4f6a8c0e2b4d6f8a0c2e4b6d8f0a', 'posted_at' => now()->subMinutes(5)]);

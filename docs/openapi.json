@@ -20751,7 +20751,7 @@
             }
           }
         ],
-        "description": "Lists Task groups, newest first. Optional `app_id` and `status` filters. Returns `tasks.disabled` while the extension is off.",
+        "description": "Lists Task groups, newest first. Optional `app_id` and `status` filters. The group and each subtask include `assistance_requested` and `assistance_reason`. Returns `tasks.disabled` while the extension is off.",
         "responses": {
           "200": {
             "description": "The request succeeded.",
@@ -21070,7 +21070,7 @@
             "description": "Numeric Task group ID."
           }
         ],
-        "description": "Shows one Task group and its Tasks in position order. Returns `tasks.disabled` while the extension is off.",
+        "description": "Shows one Task group and its Tasks in position order. The group and each subtask include `assistance_requested` and `assistance_reason`. Returns `tasks.disabled` while the extension is off.",
         "responses": {
           "200": {
             "description": "The request succeeded.",
@@ -22881,7 +22881,7 @@
         "tags": [
           "Tasks"
         ],
-        "description": "Returns whether the Gateway tasks extension is enabled.",
+        "description": "Returns whether the Gateway tasks extension is enabled, and every group currently asking for assistance. `assistance` lists those groups in ascending id order, each with its id, Project, title, status, and reason. The list is present while the extension is off. Enable and disable return only `enabled`.",
         "responses": {
           "200": {
             "description": "The request succeeded.",
@@ -22891,7 +22891,7 @@
                   "type": "object",
                   "properties": {
                     "data": {
-                      "type": "object"
+                      "$ref": "#/components/schemas/TasksStatus"
                     },
                     "meta": {
                       "$ref": "#/components/schemas/Meta"
@@ -25703,6 +25703,36 @@
               "null"
             ]
           },
+          "input_tokens": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "cached_input_tokens": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "output_tokens": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "model_calls": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "peak_context_tokens": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
           "lines_added": {
             "type": [
               "integer",
@@ -25788,6 +25818,60 @@
             "items": {
               "type": "string"
             }
+          }
+        }
+      },
+      "TasksStatus": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "assistance": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TaskAssistance"
+            }
+          }
+        }
+      },
+      "TaskAssistance": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "app_id": {
+            "type": "integer"
+          },
+          "app": {
+            "type": "string"
+          },
+          "project_code": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "backlog",
+              "todo",
+              "reserved",
+              "running",
+              "reviewing",
+              "settling",
+              "completed",
+              "failed",
+              "cancelled"
+            ]
+          },
+          "assistance_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },

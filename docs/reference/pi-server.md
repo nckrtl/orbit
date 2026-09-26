@@ -104,7 +104,7 @@ Every route requires `Authorization: Bearer <token>`. Errors return `{"error": {
 | `POST /sessions` | Creates a session from `id`, `cwd`, `model`, `thinkingLevel`, and an optional `appendSystemPrompt`. Repeating the same create returns `200` |
 | `POST /sessions/{id}/messages` | Starts a turn from `key` and `text`. A repeated key returns `200` with `duplicate: true` and starts no turn |
 | `POST /sessions/{id}/interrupt` | Aborts the active turn |
-| `GET /sessions/{id}` | Snapshot: session settings, state, error, turn ID, transcript entries, and cumulative token usage |
+| `GET /sessions/{id}` | Snapshot: session settings, state, error, turn ID, transcript entries, and [token usage](#token-usage) |
 | `GET /sessions/{id}/stream` | Newline-delimited JSON: a snapshot or, with `run` and `after`, a resumed start; then `entry` and `state` events, with a `heartbeat` every 15 seconds. See [Stream](#stream) |
 
 | Error code | Status | Meaning |
@@ -117,6 +117,22 @@ Every route requires `Authorization: Bearer <token>`. Errors return `{"error": {
 | `turn_active` | 409 | The session is already working on a turn |
 
 The turn ID is the key of the latest accepted send. The Gateway uses a new key for each turn and reuses it when it retries a send.
+
+## Token usage
+
+The snapshot and each stream `state` event include `usage`. The sums cover every assistant message that has numeric `input`, `output`, `cacheRead`, and `cacheWrite`. A message without that usage is not a call. [ADR 0165](/decisions/0165-record-per-thread-token-metrics) records how the Gateway stores these numbers on the agent thread.
+
+| Field | Meaning |
+| --- | --- |
+| `input` | Prompt tokens that are neither a cache read nor a cache write. This field alone is not Orbit's uncached input |
+| `output` | Output. A reasoning count on the message is already inside this number |
+| `cacheRead` | Input read from cache. This is Orbit's cached input |
+| `cacheWrite` | Input written to cache. A cache write is uncached input, so Orbit adds it to `input` |
+| `total` | `input + output + cacheRead + cacheWrite` |
+| `calls` | Assistant messages included in the sums |
+| `peakContext` | Largest prompt on one call: `input + cacheRead + cacheWrite`. That is uncached input plus cached input. Output is excluded |
+
+Orbit stores uncached input as `input + cacheWrite` and cached input as `cacheRead`. Per-call usage in the session file uses the same `input`, `cacheRead`, `cacheWrite`, and `output` fields. `totalTokens` on a call equals those four numbers added.
 
 ## Stream
 

@@ -57,7 +57,7 @@ final readonly class T3Projection
 
         return new AgentObservation(
             state: $state, inputRequests: $requests, entries: $entries,
-            tokens: $metrics->tokens, linesAdded: $metrics->linesAdded, linesDeleted: $metrics->linesDeleted,
+            tokens: $metrics->tokens, inputTokens: $metrics->inputTokens, cachedInputTokens: $metrics->cachedInputTokens, outputTokens: $metrics->outputTokens, modelCalls: $metrics->modelCalls, peakContextTokens: $metrics->peakContextTokens, linesAdded: $metrics->linesAdded, linesDeleted: $metrics->linesDeleted,
             error: $state === AgentThreadState::Failed ? ($this->text($error) ?: ($retained ? $previousError : null) ?? 'Agent turn failed.') : null,
             cursor: is_int($cursor) ? (string) $cursor : null,
             turnId: $turnId === '' ? null : $turnId,

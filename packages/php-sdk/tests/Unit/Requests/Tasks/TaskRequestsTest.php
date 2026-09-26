@@ -24,6 +24,7 @@ use Orbit\Sdk\Requests\Tasks\UpdateSubtaskRequest;
 use Orbit\Sdk\Requests\Tasks\UpdateTaskGroupRequest;
 use Orbit\Sdk\Responses\Tasks\SubtaskResponse;
 use Orbit\Sdk\Responses\Tasks\TaskAgentsResponse;
+use Orbit\Sdk\Responses\Tasks\TaskAssistanceResponse;
 use Orbit\Sdk\Responses\Tasks\TaskCommentResponse;
 use Orbit\Sdk\Responses\Tasks\TaskCommentsResponse;
 use Orbit\Sdk\Responses\Tasks\TaskGroupResponse;
@@ -139,6 +140,7 @@ describe('task responses from recorded Gateway fixtures', function (): void {
         'enable' => ['tasks-enable/enabled', new EnableTasksRequest, TasksStatusResponse::class],
         'disable' => ['tasks-disable/disabled', new DisableTasksRequest, TasksStatusResponse::class],
         'status' => ['tasks-status/enabled', new ShowTasksStatusRequest, TasksStatusResponse::class],
+        'assisted status' => ['tasks-status/assistance', new ShowTasksStatusRequest, TasksStatusResponse::class],
         'list' => ['tasks-list/default', new ListTaskGroupsRequest, TaskGroupsResponse::class],
         'empty list' => ['tasks-list/empty', new ListTaskGroupsRequest, TaskGroupsResponse::class],
         'create' => ['tasks-create/created', new CreateTaskGroupRequest(1, 'Add the tasks CLI', 'Brief'), TaskGroupResponse::class],
@@ -165,10 +167,95 @@ describe('task responses from recorded Gateway fixtures', function (): void {
             ->and($group->status)->toBe('backlog')
             ->and($group->app)->toBe('orbit')
             ->and($group->executionMode)->toBe('managed')
+            ->and($group->assistanceRequested)->toBeFalse()
+            ->and($group->assistanceReason)->toBeNull()
+            ->and($group->tasks[0]->assistanceRequested)->toBeFalse()
+            ->and($group->tasks[0]->assistanceReason)->toBeNull()
             ->and(array_map(static fn (SubtaskResponse $task): int => $task->position, $group->tasks))->toBe([1, 2])
             ->and($group->toArray())->not->toHaveKey('tasks.0.request_id')
             ->and($group->toArray()['tasks'][0])->not->toHaveKey('request_id')
             ->and($group->toArray()['request_id'])->toBe(task_request_id());
+    });
+
+    it('lists assisted groups on tasks status and omits the list from enable', function (): void {
+        $enabled = task_fixture_send('tasks-enable/enabled', new EnableTasksRequest);
+        $clear = task_fixture_send('tasks-status/enabled', new ShowTasksStatusRequest);
+        $assisted = task_fixture_send('tasks-status/assistance', new ShowTasksStatusRequest);
+
+        assert($enabled instanceof TasksStatusResponse && $clear instanceof TasksStatusResponse && $assisted instanceof TasksStatusResponse);
+
+        expect($enabled->assistance)->toBeNull()
+            ->and($enabled->toArray())->not->toHaveKey('assistance')
+            ->and($clear->assistance)->toBe([])
+            ->and($clear->toArray()['assistance'])->toBe([])
+            ->and(array_map(static fn (TaskAssistanceResponse $group): string => $group->reference(), $assisted->assistance ?? []))->toBe(['ORB-1', 'ORB-2'])
+            ->and($assisted->toArray()['assistance'][0])->toMatchArray([
+                'id' => 1,
+                'app' => 'orbit',
+                'project_code' => 'ORB',
+                'title' => 'Blocked implementer',
+                'status' => 'running',
+                'assistance_reason' => 'The implementer is blocked.',
+            ])
+            ->and($assisted->toArray()['assistance'][1])->toMatchArray([
+                'title' => 'Settling question',
+                'status' => 'settling',
+                'assistance_reason' => 'Which database should this use?',
+            ])
+            ->and($assisted->toArray()['assistance'])->toHaveCount(2);
+    });
+
+    it('keeps an assistance request on the group and each subtask', function (): void {
+        $mockClient = new MockClient([ShowTaskGroupRequest::class => MockResponse::make([
+            'data' => [
+                'id' => 4,
+                'app_id' => 1,
+                'title' => 'Stalled',
+                'brief' => 'The group is waiting.',
+                'status' => 'running',
+                'assistance_requested' => true,
+                'assistance_reason' => 'The implementer is blocked.',
+                'tasks' => [
+                    [
+                        'id' => 8,
+                        'task_group_id' => 4,
+                        'position' => 1,
+                        'title' => 'Blocked step',
+                        'brief' => 'Needs a decision.',
+                        'status' => 'running',
+                        'assistance_requested' => true,
+                        'assistance_reason' => 'Which database should this use?',
+                    ],
+                    [
+                        'id' => 9,
+                        'task_group_id' => 4,
+                        'position' => 2,
+                        'title' => 'Later step',
+                        'brief' => 'Not blocked.',
+                        'status' => 'todo',
+                        'assistance_requested' => false,
+                        'assistance_reason' => null,
+                    ],
+                ],
+            ],
+            'meta' => ['request_id' => task_request_id()],
+        ])]);
+        $connector = new GatewayConnector('https://10.44.0.1');
+        $connector->withMockClient($mockClient);
+        $group = $connector->send(new ShowTaskGroupRequest(4))->dto();
+
+        expect($group)->toBeInstanceOf(TaskGroupResponse::class);
+        assert($group instanceof TaskGroupResponse);
+        expect($group->toArray())->toMatchArray([
+            'assistance_requested' => true,
+            'assistance_reason' => 'The implementer is blocked.',
+        ])->and($group->toArray()['tasks'][0])->toMatchArray([
+            'assistance_requested' => true,
+            'assistance_reason' => 'Which database should this use?',
+        ])->and($group->toArray()['tasks'][1])->toMatchArray([
+            'assistance_requested' => false,
+            'assistance_reason' => null,
+        ]);
     });
 
     it('keeps fails_on_base on a test deliverable', function (): void {
@@ -208,6 +295,13 @@ describe('task responses from recorded Gateway fixtures', function (): void {
             ->toBe(['resolution', 'approved', 'ready_for_review'])
             ->and($comments->comments[1]->commitSha)->toBe('3f2a9c1e5b7d4f6a8c0e2b4d6f8a0c2e4b6d8f0a')
             ->and($agents->agents[1]->observationError)->toBe('T3 did not answer in time.')
+            ->and($agents->agents[0]->inputTokens)->toBe(2100)
+            ->and($agents->agents[0]->cachedInputTokens)->toBe(40100)
+            ->and($agents->agents[0]->outputTokens)->toBe(6000)
+            ->and($agents->agents[0]->modelCalls)->toBe(4)
+            ->and($agents->agents[0]->peakContextTokens)->toBe(9800)
+            ->and($agents->agents[1]->inputTokens)->toBeNull()
+            ->and($agents->agents[1]->peakContextTokens)->toBeNull()
             ->and($agents->toArray()['agents'][0])->not->toHaveKey('request_id');
     });
 
@@ -233,6 +327,8 @@ describe('task responses from recorded Gateway fixtures', function (): void {
         expect(fn (): mixed => $connector->send($request)->dto())->toThrow(GatewayApiException::class);
     })->with([
         'status without enabled' => [new ShowTasksStatusRequest, ['enabled' => 'yes']],
+        'status assistance is not a list' => [new ShowTasksStatusRequest, ['enabled' => true, 'assistance' => 'blocked']],
+        'status assistance entry without an id' => [new ShowTasksStatusRequest, ['enabled' => true, 'assistance' => [['title' => 'Stalled', 'status' => 'running']]]],
         'group without title' => [new ShowTaskGroupRequest(1), ['id' => 1, 'app_id' => 1, 'brief' => 'B', 'status' => 'backlog', 'tasks' => []]],
         'group with scalar subtasks' => [new ShowTaskGroupRequest(1), ['id' => 1, 'app_id' => 1, 'title' => 'T', 'brief' => 'B', 'status' => 'backlog', 'tasks' => 'none']],
         'group list member without id' => [new ListTaskGroupsRequest, [['title' => 'T']]],

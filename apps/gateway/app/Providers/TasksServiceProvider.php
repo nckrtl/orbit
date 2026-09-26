@@ -11,8 +11,8 @@ use App\Domain\Tasks\InstanceProvisioning;
 use App\Domain\Tasks\LocalTaskSettleMetricsCollector;
 use App\Domain\Tasks\TaskAgentSpawner;
 use App\Domain\Tasks\TaskBaseBranchFetcher;
+use App\Domain\Tasks\TaskBridgeWorktreeRemover;
 use App\Domain\Tasks\TaskBriefCoverage;
-use App\Domain\Tasks\TaskBroadcastObserver;
 use App\Domain\Tasks\TaskBroadcasts;
 use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskPlannerMcp;
@@ -33,6 +33,7 @@ use App\Infrastructure\Tasks\HttpTaskPullRequestWatcher;
 use App\Infrastructure\Tasks\LaravelAiTaskBriefCoverage;
 use App\Infrastructure\Tasks\LaravelAiTaskSessionClassifier;
 use App\Infrastructure\Tasks\Pi\PiDriver;
+use App\Infrastructure\Tasks\RemoteTaskBridgeWorktreeRemover;
 use App\Infrastructure\Tasks\RemoteTaskCheckRunner;
 use App\Infrastructure\Tasks\RemoteTaskPlannerMcp;
 use App\Infrastructure\Tasks\RemoteTaskRunReceipts;
@@ -46,11 +47,6 @@ use App\Infrastructure\Tasks\T3\T3Stream;
 use App\Infrastructure\Tasks\T3\T3TaskAgentStream;
 use App\Infrastructure\Tasks\T3\T3ThreadReader;
 use App\Infrastructure\Tasks\TaskWorkspaceProvisioner;
-use App\Models\AgentThread;
-use App\Models\Task;
-use App\Models\TaskCheck;
-use App\Models\TaskComment;
-use App\Models\TaskGroup;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Support\ServiceProvider;
 
@@ -68,6 +64,7 @@ final class TasksServiceProvider extends ServiceProvider
         TaskWorkspaceSigner::class => RemoteTaskWorkspaceSigner::class,
         TaskWorkspaceDiffReader::class => AgentViewTaskWorkspaceDiffReader::class,
         TaskWorkspaceStateReader::class => RemoteTaskWorkspaceStateReader::class,
+        TaskBridgeWorktreeRemover::class => RemoteTaskBridgeWorktreeRemover::class,
         TaskRunReceipts::class => RemoteTaskRunReceipts::class,
         TaskCheckRunner::class => RemoteTaskCheckRunner::class,
         TaskBriefCoverage::class => LaravelAiTaskBriefCoverage::class,
@@ -90,9 +87,8 @@ final class TasksServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
-        foreach ([TaskGroup::class, Task::class, TaskCheck::class, TaskComment::class, AgentThread::class] as $model) {
-            $model::observe(TaskBroadcastObserver::class);
-        }
+        // Observers are declared on the models with ObservedBy. Calling observe() here would load those
+        // models during every boot, so test impact analysis would rerun unrelated tests after a model edit.
 
         // One notice per changed record, when the request or command that changed it ends (ADR 0151).
         $this->app->terminating(function (): void {
