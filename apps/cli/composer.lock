@@ -2585,7 +2585,7 @@
             },
             "scripts": {
                 "test:affected": [
-                    "vendor/bin/pest --parallel --processes=2 --tia --compact"
+                    "../../bin/pest-plain vendor/bin/pest --parallel --processes=2 --tia --compact --colors=never"
                 ],
                 "analyse": [
                     "vendor/bin/phpstan analyse --no-progress --memory-limit=1G"
@@ -2612,7 +2612,7 @@
                     "vendor/bin/rector process --dry-run --no-progress-bar"
                 ],
                 "test": [
-                    "vendor/bin/pest --parallel --tia --compact"
+                    "../../bin/pest-plain vendor/bin/pest --parallel --tia --compact --colors=never"
                 ]
             },
             "license": [

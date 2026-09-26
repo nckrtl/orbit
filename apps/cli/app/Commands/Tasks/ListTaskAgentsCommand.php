@@ -53,7 +53,7 @@ final class ListTaskAgentsCommand extends TaskCommand
         }
 
         ConsoleWriter::write($this->output, $this->humanRenderer()->table(
-            ['ID', 'Role', 'Subtask', 'Driver', 'Model', 'State', 'Tokens', 'Line diff', 'Observed'],
+            ['ID', 'Role', 'Subtask', 'Driver', 'Model', 'State', 'Tokens', 'Input', 'Cached', 'Output', 'Calls', 'Peak', 'Line diff', 'Observed'],
             array_map(self::agentRow(...), $agents->agents),
             'No agent threads.',
         ));

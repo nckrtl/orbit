@@ -309,6 +309,58 @@ describe('observe', function (): void {
         expect(fn () => pi_driver()->observe(pi_thread(pi_node())))->toThrow(AgentDriverException::class, 'Agent observation identity does not match.');
     });
 
+    it('reads the token breakdown from Pi usage', function (): void {
+        $node = pi_node();
+        $thread = pi_thread($node);
+        $body = '';
+        Http::fake(function () use (&$body) {
+            return Http::response($body);
+        });
+
+        $snapshot = pi_snapshot('done');
+        $snapshot['usage'] = ['input' => 30, 'output' => 20, 'cacheRead' => 70, 'cacheWrite' => 10, 'total' => 130, 'calls' => 2, 'peakContext' => 80];
+        $body = json_encode($snapshot, JSON_THROW_ON_ERROR);
+        $observation = pi_driver()->observe($thread);
+
+        expect($observation->tokens)->toBe(130)
+            ->and($observation->inputTokens)->toBe(40)
+            ->and($observation->cachedInputTokens)->toBe(70)
+            ->and($observation->outputTokens)->toBe(20)
+            ->and($observation->modelCalls)->toBe(2)
+            ->and($observation->peakContextTokens)->toBe(80);
+
+        $snapshot['usage'] = ['input' => 0, 'output' => 0, 'cacheRead' => 0, 'cacheWrite' => 0, 'total' => 0, 'calls' => 0, 'peakContext' => 0];
+        $body = json_encode($snapshot, JSON_THROW_ON_ERROR);
+        $zeros = pi_driver()->observe($thread);
+        expect($zeros->inputTokens)->toBe(0)
+            ->and($zeros->cachedInputTokens)->toBe(0)
+            ->and($zeros->outputTokens)->toBe(0)
+            ->and($zeros->modelCalls)->toBe(0)
+            ->and($zeros->peakContextTokens)->toBe(0);
+
+        $snapshot['usage'] = ['input' => 30, 'output' => 20, 'cacheRead' => 70, 'total' => 120, 'calls' => '2', 'peakContext' => null];
+        $body = json_encode($snapshot, JSON_THROW_ON_ERROR);
+        $partial = pi_driver()->observe($thread);
+        expect($partial->tokens)->toBe(120)
+            ->and($partial->inputTokens)->toBeNull()
+            ->and($partial->cachedInputTokens)->toBe(70)
+            ->and($partial->outputTokens)->toBe(20)
+            ->and($partial->modelCalls)->toBeNull()
+            ->and($partial->peakContextTokens)->toBeNull();
+
+        $started = pi_snapshot('working');
+        $started['usage'] = ['input' => 1, 'output' => 0, 'cacheRead' => 0, 'cacheWrite' => 0, 'total' => 1];
+        $body = implode("\n", [
+            json_encode($started, JSON_THROW_ON_ERROR),
+            json_encode(['kind' => 'state', 'run' => 'run-1', 'sequence' => 8, 'state' => 'done', 'error' => null, 'turnId' => 'turn-key-1', 'usage' => ['input' => 30, 'output' => 20, 'cacheRead' => 70, 'cacheWrite' => 10, 'total' => 130, 'calls' => 2, 'peakContext' => 80]], JSON_THROW_ON_ERROR),
+        ])."\n";
+        $events = iterator_to_array(pi_driver()->events($thread, null), false);
+
+        expect($events[1]->data)->toMatchArray([
+            'tokens' => 130, 'input_tokens' => 40, 'cached_input_tokens' => 70, 'output_tokens' => 20, 'model_calls' => 2, 'peak_context_tokens' => 80,
+        ]);
+    });
+
     it('redacts the Node token from transcript text', function (): void {
         Http::fake([PI_BASE.'/sessions/session-1' => Http::response(pi_snapshot('done', [
             ['id' => 'e1', 'timestamp' => '2026-09-22T10:00:00.000Z', 'message' => ['role' => 'assistant', 'stopReason' => 'stop', 'content' => [['type' => 'text', 'text' => 'token '.PI_TOKEN]]]],

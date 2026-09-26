@@ -19,6 +19,11 @@
                 "observation_error": null,
                 "error": null,
                 "tokens": 38100,
+                "input_tokens": null,
+                "cached_input_tokens": null,
+                "output_tokens": null,
+                "model_calls": null,
+                "peak_context_tokens": null,
                 "lines_added": null,
                 "lines_deleted": null
             },
@@ -37,6 +42,11 @@
                 "observation_error": null,
                 "error": null,
                 "tokens": 146100,
+                "input_tokens": 8200,
+                "cached_input_tokens": 121400,
+                "output_tokens": 16500,
+                "model_calls": 11,
+                "peak_context_tokens": 118000,
                 "lines_added": 142,
                 "lines_deleted": 46
             }

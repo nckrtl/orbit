@@ -8,6 +8,7 @@ use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use App\Support\Console\ConsoleWriter;
 use Orbit\Sdk\Requests\Tasks\ShowTasksStatusRequest;
+use Orbit\Sdk\Responses\Tasks\TaskAssistanceResponse;
 use Orbit\Sdk\Responses\Tasks\TasksStatusResponse;
 
 final class ShowTasksStatusCommand extends TaskCommand
@@ -17,7 +18,7 @@ final class ShowTasksStatusCommand extends TaskCommand
         {--json : Return machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'Show whether the Gateway tasks extension is on.';
+    protected $description = 'Show whether the Gateway tasks extension is on and which groups are asking for assistance.';
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
     {
@@ -42,6 +43,16 @@ final class ShowTasksStatusCommand extends TaskCommand
         ConsoleWriter::write($this->output, $this->humanRenderer()->detail('Extension: tasks', [
             'Status' => $status->enabled ? 'enabled' : 'disabled',
         ]));
+        ConsoleWriter::write($this->output, $this->humanRenderer()->table(
+            ['Group', 'Title', 'Status', 'Reason'],
+            array_map(static fn (TaskAssistanceResponse $group): array => [
+                $group->reference(),
+                $group->title,
+                $group->status,
+                $group->assistanceReason,
+            ], $status->assistance ?? []),
+            'No groups are asking for assistance.',
+        ));
         $this->writeHumanMessage("Request ID: {$status->requestId}");
 
         return self::SUCCESS;

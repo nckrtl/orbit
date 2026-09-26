@@ -400,7 +400,7 @@ it('preserves project and installed testing guidance', function (): void {
         ->and($composer['scripts']['check'][0] ?? null)
         ->toBe('@guidance:check')
         ->and($composer['scripts']['test'] ?? null)
-        ->toBe('vendor/bin/pest --parallel --tia --compact')
+        ->toBe('../../bin/pest-plain vendor/bin/pest --parallel --tia --compact --colors=never')
         ->and($composer['scripts']['test:full'] ?? null)
         ->toBeNull()
         ->and($composer['scripts']['post-autoload-dump'] ?? null)

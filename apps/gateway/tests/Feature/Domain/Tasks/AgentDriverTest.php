@@ -260,3 +260,30 @@ it('rejects an older in-flight read after another reader records a new outcome',
     expect($older->fresh()->state)->toBe(AgentThreadState::Done)
         ->and($older->fresh()->tokens)->toBe(500);
 });
+
+it('stores a token breakdown and keeps it when a later read omits the fields', function (): void {
+    [, $task, , $registry] = driver_group();
+    $observer = new AgentThreadObserver($registry);
+    $thread = $task->implementerThread;
+
+    expect($observer->record($thread, new AgentObservation(
+        state: AgentThreadState::Done, tokens: 130, inputTokens: 40, cachedInputTokens: 70, outputTokens: 20, modelCalls: 2, peakContextTokens: 80,
+    )))->toBeTrue();
+    $stored = $thread->fresh();
+    expect($stored->input_tokens)->toBe(40)
+        ->and($stored->cached_input_tokens)->toBe(70)
+        ->and($stored->output_tokens)->toBe(20)
+        ->and($stored->model_calls)->toBe(2)
+        ->and($stored->peak_context_tokens)->toBe(80);
+
+    expect($observer->record($stored, new AgentObservation(state: AgentThreadState::Done, tokens: 130)))->toBeTrue();
+    $kept = $thread->fresh();
+    expect($kept->input_tokens)->toBe(40)
+        ->and($kept->cached_input_tokens)->toBe(70)
+        ->and($kept->peak_context_tokens)->toBe(80);
+
+    expect($observer->record($kept, new AgentObservation(state: AgentThreadState::Done, inputTokens: 0, modelCalls: 0)))->toBeTrue();
+    expect($thread->fresh()->input_tokens)->toBe(0)
+        ->and($thread->fresh()->model_calls)->toBe(0)
+        ->and($thread->fresh()->cached_input_tokens)->toBe(70);
+});
