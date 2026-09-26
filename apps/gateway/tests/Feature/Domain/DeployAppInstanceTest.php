@@ -255,6 +255,19 @@ it('reports each infrastructure failure boundary with its observed selection', f
     'PHP cache refresh' => ['cache:fresh', DeploymentFailureBoundary::CacheRefresh, 'fresh'],
 ]);
 
+it('reports a deployment or rollback that ran out of time as deployment.deadline_exceeded', function (bool $rollback, string $failAt): void {
+    $instance = orb219_deployment_instance([]);
+    [$deploy, $rollbackAction] = orb219_actions(new Orb219DeploymentTrace(failAt: $failAt));
+
+    $result = $rollback ? $rollbackAction->execute($instance, 'retained') : $deploy->execute($instance);
+
+    expect($result->succeeded)->toBeFalse()
+        ->and($result->failure?->errorCode)->toBe('deployment.deadline_exceeded');
+})->with([
+    'deployment' => [false, 'deadline:prepare:main'],
+    'rollback' => [true, 'deadline:retained:retained'],
+]);
+
 it('stops before later steps when cancellation is requested', function (): void {
     $instance = orb219_deployment_instance([
         ['name' => 'first', 'phase' => 'before_activation', 'command' => 'first', 'timeout_seconds' => 30],
@@ -539,6 +552,10 @@ final readonly class Orb219ProductionDeployment implements ProductionDeployment
     private function record(string $entry, ?string $failureKey = null): void
     {
         $this->trace->entries[] = $entry;
+
+        if ($this->trace->failAt === 'deadline:'.($failureKey ?? $entry)) {
+            throw new CommandDeadline()->exceeded();
+        }
 
         if ($this->trace->failAt === ($failureKey ?? $entry)) {
             throw new ResourceOperationException('deployment.step_failed', 'Injected deployment failure.', 409);

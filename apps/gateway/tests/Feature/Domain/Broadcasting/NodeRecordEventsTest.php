@@ -72,7 +72,11 @@ describe('Node record events', function (): void {
                 && $event->id === $node->id
                 && $event->data['name'] === 'app-dev',
         );
-        Event::assertDispatchedTimes(RecordBroadcast::class, 1);
+        // Provisioning also broadcasts the command's Activity notices. This asserts the Node event only.
+        expect(Event::dispatched(
+            RecordBroadcast::class,
+            fn (RecordBroadcast $event): bool => str_starts_with($event->type->value, 'node.'),
+        ))->toHaveCount(1);
     });
 
     it('broadcasts node.updated when settings change on an existing node', function (): void {

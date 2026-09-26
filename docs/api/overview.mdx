@@ -79,6 +79,8 @@ Codes are namespaced by family. The [CLI pages](/cli/overview) and the reference
 
 The Gateway records an Activity for every authorized request that can change something and for every failed request, with the operation, caller, target, result, and request ID, and never the body. It records a successful `GET` once per operation, caller, and target in any 60 seconds, and always for Schedule operations and credential reads. Read it with `GET /api/v1/activities` or [`orbit activity:list --request-id=<uuid>`](/cli/activity).
 
+The list is newest first. `before_id` returns older rows. `status`, `command`, `caller_node_id`, and `target_node_id` narrow it. The [activity command](/cli/activity) documents each option, and [ADR 0159](/decisions/0159-push-activity-changes-to-the-web-app) records why.
+
 ## Stream a deployment
 
 `POST /api/v1/instances/{instance}/deploy` and `POST /api/v1/instances/{instance}/rollback` answer `application/x-ndjson`. Each line is one event with `type`, a monotonically increasing `sequence`, and the `request_id`: `phase` events name the phase and step, `output` events carry at most 16 KiB of base64-encoded stdout or stderr, and exactly one final `result` event reports `succeeded` or `failed` with the selected release. A client closes the connection to cancel; the Gateway never replays events. The [production release layout](/reference/deployments#use-the-deployment-api) describes the phases and limits.

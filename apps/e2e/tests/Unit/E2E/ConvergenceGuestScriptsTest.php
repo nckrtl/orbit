@@ -555,12 +555,13 @@ function typed_cluster_creation_commands(): array
 }
 
 /** @return array{root:string,script:string,environment:array<string,string>,caddyfile:string,commands:string} */
-function metrics_publication_probe_fixture(bool $metricsAssigned): array
+function metrics_publication_probe_fixture(bool $metricsAssigned, ?string $vpnSubnet = null): array
 {
     $root = temporaryPath('orbit-metrics-publication-probe-', 5);
     $repositoryRoot = dirname(__DIR__, 5);
     $sourceRoot = "{$root}/source";
     $metricsSource = "{$sourceRoot}/apps/gateway/app/Infrastructure/Metrics";
+    $caddySource = "{$sourceRoot}/apps/gateway/app/Infrastructure/Caddy/Build";
     $version = "{$root}/etc/caddy/orbit-versions/1234567890abcdef";
     $caddyfile = "{$version}/Caddyfile";
     $certificateVersion = "{$root}/etc/caddy/orbit-metrics-cert-versions/1234567890abcdef";
@@ -572,10 +573,17 @@ function metrics_publication_probe_fixture(bool $metricsAssigned): array
     mkdir("{$root}/ssh", 0o700, true);
     mkdir("{$sourceRoot}/apps/gateway/vendor", 0o700, true);
     mkdir($metricsSource, 0o700, true);
+    mkdir($caddySource, 0o700, true);
     foreach (['MetricsFootprint', 'MetricsPublicationRenderer'] as $class) {
         file_put_contents(
             "{$metricsSource}/{$class}.php",
             file_get_contents("{$repositoryRoot}/apps/gateway/app/Infrastructure/Metrics/{$class}.php"),
+        );
+    }
+    foreach (['NodeCaddyListeners', 'NodeCaddyfileRenderer'] as $class) {
+        file_put_contents(
+            "{$caddySource}/{$class}.php",
+            file_get_contents("{$repositoryRoot}/apps/gateway/app/Infrastructure/Caddy/Build/{$class}.php"),
         );
     }
     file_put_contents("{$sourceRoot}/apps/gateway/vendor/autoload.php", <<<'PHP'
@@ -583,6 +591,8 @@ function metrics_publication_probe_fixture(bool $metricsAssigned): array
 
         require __DIR__.'/../app/Infrastructure/Metrics/MetricsFootprint.php';
         require __DIR__.'/../app/Infrastructure/Metrics/MetricsPublicationRenderer.php';
+        require __DIR__.'/../app/Infrastructure/Caddy/Build/NodeCaddyListeners.php';
+        require __DIR__.'/../app/Infrastructure/Caddy/Build/NodeCaddyfileRenderer.php';
         PHP);
     file_put_contents($caddyfile, metrics_publication_build(''));
     symlink($caddyfile, "{$root}/etc/caddy/Caddyfile");
@@ -607,13 +617,19 @@ function metrics_publication_probe_fixture(bool $metricsAssigned): array
         symlink($certificateVersion, $certificateCurrent);
         $pdo->exec("INSERT INTO nodes VALUES (2, 'app-dev', 'active', '10.44.0.2')");
         $pdo->exec("INSERT INTO node_roles VALUES (2, 'app-dev', 'active'), (2, 'metrics', 'active')");
+        $pdo->exec('CREATE TABLE settings (id INTEGER PRIMARY KEY, scope_type TEXT, scope_id INTEGER, key TEXT, value TEXT, is_secret INTEGER)');
+        if ($vpnSubnet !== null) {
+            $insert = $pdo->prepare('INSERT INTO settings (scope_type, scope_id, key, value, is_secret) VALUES (?, ?, ?, ?, ?)');
+            $insert->execute(['gateway', 0, 'vpn.subnet', $vpnSubnet, 0]);
+        }
         $render = new Process([
             PHP_BINARY,
             '-r',
-            'require $argv[1]; echo (new App\\Infrastructure\\Metrics\\MetricsPublicationRenderer)->caddy($argv[2], $argv[3]);',
+            'require $argv[1]; $body=(new App\\Infrastructure\\Metrics\\MetricsPublicationRenderer)->caddy($argv[2], $argv[3]); echo App\\Infrastructure\\Caddy\\Build\\NodeCaddyfileRenderer::admitOnly($body, $argv[4]);',
             "{$sourceRoot}/apps/gateway/vendor/autoload.php",
             '10.44.0.2',
             '10.44.0.1',
+            $vpnSubnet ?? '10.44.0.0/24',
         ]);
         file_put_contents($caddyfile, metrics_publication_build($render->mustRun()->getOutput()));
     }
@@ -2163,6 +2179,7 @@ describe('convergence guest scripts', function () {
             ))->toBeTrue();
 
             $current = file_get_contents($fixture['caddyfile']);
+            expect($current)->toContain("bind 10.44.0.1\n  @orbit_outside not remote_ip 10.44.0.0/24\n  abort @orbit_outside\n");
             file_put_contents($fixture['caddyfile'], metrics_publication_build("# stale Metrics publication\n"));
             $stale = new Process($command, env: $fixture['environment']);
             expect($stale->run())
@@ -2179,6 +2196,45 @@ describe('convergence guest scripts', function () {
             file_put_contents("{$foreignCertificate}/metrics.key", "fixture key\n");
             unlink($certificateCurrent);
             symlink($foreignCertificate, $certificateCurrent);
+            expect(new Process($command, env: $fixture['environment'])->run())->not->toBe(0);
+        } finally {
+            new Filesystem()->deleteDirectory($fixture['root']);
+        }
+    });
+
+    it('accepts a guarded Metrics site only when the guard names the stored VPN subnet', function (): void {
+        $subnet = '10.50.0.0/20';
+        $fixture = metrics_publication_probe_fixture(true, $subnet);
+        try {
+            $command = [
+                'bash',
+                $fixture['script'],
+                'metrics.publication',
+                'proof',
+                str_repeat('a', 40),
+                'orbit-e2e-topology-snapshot-gateway',
+                base64_encode(json_encode(TopologyProfile::ASSIGNMENTS, JSON_THROW_ON_ERROR)),
+            ];
+            $guarded = (string) file_get_contents($fixture['caddyfile']);
+
+            expect(new Process($command, env: $fixture['environment'])->run())->toBe(0)
+                ->and($guarded)->toContain("@orbit_outside not remote_ip {$subnet}\n  abort @orbit_outside\n");
+
+            file_put_contents($fixture['caddyfile'], str_replace($subnet, '10.44.0.0/24', $guarded));
+            expect(new Process($command, env: $fixture['environment'])->run())->not->toBe(0);
+
+            file_put_contents($fixture['caddyfile'], str_replace(
+                "  @orbit_outside not remote_ip {$subnet}\n  abort @orbit_outside\n",
+                '',
+                $guarded,
+            ));
+            expect(new Process($command, env: $fixture['environment'])->run())->not->toBe(0);
+
+            file_put_contents($fixture['caddyfile'], str_replace(
+                "  abort @orbit_outside\n",
+                "  abort @orbit_outside\n  log\n",
+                $guarded,
+            ));
             expect(new Process($command, env: $fixture['environment'])->run())->not->toBe(0);
         } finally {
             new Filesystem()->deleteDirectory($fixture['root']);

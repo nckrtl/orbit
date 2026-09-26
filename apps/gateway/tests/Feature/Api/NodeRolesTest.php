@@ -9,6 +9,7 @@ use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Metrics\ExporterDegradationReason;
 use App\Domain\Nodes\GatewayPrivateDnsRoute;
+use App\Domain\Nodes\NodeLockLoss;
 use App\Domain\Nodes\NodeReachabilityProbe;
 use App\Domain\Nodes\NodeRoleDependencySet;
 use App\Domain\Nodes\NodeRoleDependentCleaner;
@@ -867,7 +868,7 @@ it('removes any role whose convergence failed through its baseline', function (s
         ->toBeFalse()
         ->and($this->roleLifecycle->removed)
         ->toBe([['role' => $role, 'purge_data' => false]]);
-})->with(['ingress', 'app-dev', 'app-prod', 'metrics', 'websocket', 'analytics', 'database']);
+})->with(['gateway', 'ingress', 'app-dev', 'app-prod', 'metrics', 'websocket', 'analytics', 'database']);
 
 it('refuses to remove a role while another operation holds it', function (LifecycleStatus $status, ?string $failedStep): void {
     $this->node->roles()->create([
@@ -1405,6 +1406,22 @@ it('returns a safe correlated 502 for convergence failure', function (): void {
         ->toContain($sentinel)
         ->and(Activity::query()->where('request_id', $requestId)->sole()->error_code)
         ->toBe('node_role.convergence_failed');
+});
+
+it('names node.lock_lost in the error details when the role operation lost its Node lock', function (): void {
+    $this->roleLifecycle->convergenceFailure = new NodeRoleOperationException(
+        step: 'packages',
+        errorCode: 'node_role.convergence_failed',
+        underlyingErrorCode: 'packages.failed',
+        message: 'Role convergence failed.',
+        previous: NodeLockLoss::exception("node-role:id:{$this->node->id}"),
+    );
+
+    $this
+        ->postJson("/api/v1/nodes/{$this->node->id}/roles", ['role' => 'app-dev'])
+        ->assertStatus(502)
+        ->assertJsonPath('error.code', 'node_role.convergence_failed')
+        ->assertJsonPath('error.details', ['step' => 'converge:packages', 'error_code' => 'node.lock_lost']);
 });
 
 it('names node_role.node_busy in the error details when another role operation holds the Node', function (): void {

@@ -1,5 +1,12 @@
-import { environmentManager, QueryClient, QueryObserver } from "@tanstack/react-query";
+import {
+    environmentManager,
+    QueryClient,
+    QueryObserver,
+    type QueryFunction,
+} from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vite-plus/test";
+import { activitiesQuery, activityQuery } from "../api/activities";
+import { setTransport } from "../api/client";
 import { applyEvent, flushTaskRefetches, TASK_REFETCH_DELAY_MS } from "./apply";
 import { lastProcessUsageAt, processPollInterval, resetProcessUsage } from "./process-usage";
 
@@ -24,6 +31,8 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+    flushTaskRefetches();
+    setTransport(null);
     vi.useRealTimers();
 });
 
@@ -243,6 +252,212 @@ describe("task events", () => {
 
         expect(client.getQueryData(["tasks-status"])).toEqual({ enabled: true });
     });
+});
+
+describe("activity events", () => {
+    const notice = (type: string, data: Record<string, unknown>, id = 1) => ({
+        ...event(type, data),
+        id,
+    });
+
+    it("waits 100ms, then refetches the list once and each updated row", () => {
+        vi.useFakeTimers();
+        const invalidate = vi.spyOn(client, "invalidateQueries");
+        applyEvent(client, notice("activity.updated", { id: 4, status: "failed" }, 4));
+        applyEvent(client, notice("activity.updated", { id: 5, status: "failed" }, 5));
+        applyEvent(client, notice("activity.created", { id: 6, status: "succeeded" }, 6));
+
+        expect(invalidate).not.toHaveBeenCalled();
+        vi.advanceTimersByTime(TASK_REFETCH_DELAY_MS - 1);
+        expect(invalidate).not.toHaveBeenCalled();
+        vi.advanceTimersByTime(1);
+
+        expect(invalidated(invalidate)).toEqual([
+            { queryKey: ["activities", "list"], exact: false },
+            { queryKey: ["activities", "4"], exact: true },
+            { queryKey: ["activities", "5"], exact: true },
+        ]);
+    });
+
+    it("does not refetch an open row for activity.created", () => {
+        const invalidate = vi.spyOn(client, "invalidateQueries");
+        applyEvent(client, notice("activity.created", { id: 4, status: "succeeded" }, 4));
+
+        flushTaskRefetches();
+
+        expect(invalidated(invalidate)).toEqual([
+            { queryKey: ["activities", "list"], exact: false },
+        ]);
+    });
+
+    it("uses the envelope id when an update notice has none of its own", () => {
+        const invalidate = vi.spyOn(client, "invalidateQueries");
+        applyEvent(client, notice("activity.updated", { status: "failed" }, 9));
+
+        flushTaskRefetches();
+
+        expect(invalidated(invalidate)).toEqual([
+            { queryKey: ["activities", "list"], exact: false },
+            { queryKey: ["activities", "9"], exact: true },
+        ]);
+    });
+
+    it("refetches the filtered list and the open row, not a row that is closed", async () => {
+        const fetched: string[] = [];
+        const filters = {
+            status: "failed" as const,
+            command: "node:add",
+            before_id: 40,
+            caller_node_id: 2,
+        };
+        const list = activitiesQuery(filters);
+        const observe = (queryKey: readonly unknown[], name: string) =>
+            new QueryObserver(client, {
+                queryKey,
+                queryFn: () => {
+                    fetched.push(name);
+
+                    return name;
+                },
+                staleTime: Infinity,
+            }).subscribe(() => {});
+        const open = activityQuery(40);
+        const closed = activityQuery(7);
+        const observers = [
+            observe(list.queryKey, "list"),
+            observe(open.queryKey, "open"),
+            observe(closed.queryKey, "closed"),
+        ];
+        await vi.waitFor(() => {
+            expect(client.getQueryData(list.queryKey)).toBe("list");
+            expect(client.getQueryData(open.queryKey)).toBe("open");
+            expect(client.getQueryData(closed.queryKey)).toBe("closed");
+        });
+        fetched.length = 0;
+
+        applyEvent(client, notice("activity.created", { id: 41, status: "succeeded" }, 41));
+        applyEvent(client, notice("activity.updated", { id: 40, status: "failed" }, 40));
+        applyEvent(client, notice("activity.updated", { id: 41, status: "succeeded" }, 41));
+        applyEvent(client, notice("activity.updated", { id: 40, status: "failed" }, 40));
+        flushTaskRefetches();
+        await vi.waitFor(() => expect(fetched).toHaveLength(2));
+        observers.forEach((unsubscribe) => unsubscribe());
+
+        expect(fetched.sort()).toEqual(["list", "open"]);
+        expect(list.queryKey).toEqual([
+            "activities",
+            "list",
+            { before_id: 40, status: "failed", command: "node:add", caller_node_id: 2 },
+        ]);
+    });
+
+    it("does not patch the cached list from the notice", () => {
+        const key = [...activitiesQuery({ before_id: 10 }).queryKey];
+        const rows = [{ id: 1, status: "running", command: "node:add" }];
+        client.setQueryData(key, rows);
+        applyEvent(client, notice("activity.updated", { id: 1, status: "failed" }, 1));
+
+        expect(client.getQueryData(key)).toEqual(rows);
+        flushTaskRefetches();
+    });
+
+    it("lets an event's refetch replace a show that started before the change", async () => {
+        const key = ["activities", "8"];
+        let calls = 0;
+        let answerOldRequest: (value: unknown) => void = () => {};
+        const queryFn = () => {
+            calls += 1;
+            if (calls === 1) return Promise.resolve({ id: 8, status: "running" });
+            if (calls === 2) return new Promise((resolve) => (answerOldRequest = resolve));
+
+            return Promise.resolve({ id: 8, status: "failed" });
+        };
+        const unsubscribe = new QueryObserver(client, {
+            queryKey: key,
+            queryFn,
+            staleTime: Infinity,
+        }).subscribe(() => {});
+        await vi.waitFor(() =>
+            expect(client.getQueryData(key)).toEqual({ id: 8, status: "running" }),
+        );
+        void client.refetchQueries({ queryKey: key });
+        await vi.waitFor(() => expect(calls).toBe(2));
+
+        applyEvent(client, notice("activity.updated", { id: 8, status: "failed" }, 8));
+        flushTaskRefetches();
+        await vi.waitFor(() =>
+            expect(client.getQueryData(key)).toEqual({ id: 8, status: "failed" }),
+        );
+        answerOldRequest({ id: 8, status: "running" });
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        unsubscribe();
+
+        expect(calls).toBe(3);
+        expect(client.getQueryData(key)).toEqual({ id: 8, status: "failed" });
+    });
+
+    it.each([
+        {
+            name: "list",
+            options: () => activitiesQuery({ before_id: 20, status: "running" }),
+            path: "/api/v1/activities?limit=25&before_id=20&status=running",
+            stale: [{ id: 8, status: "running", command: "node:rename" }],
+            fresh: [{ id: 8, status: "succeeded", command: "node:rename" }],
+        },
+        {
+            name: "detail",
+            options: () => activityQuery(8),
+            path: "/api/v1/activities/8",
+            stale: { id: 8, status: "running", command: "node:rename" },
+            fresh: { id: 8, status: "succeeded", command: "node:rename" },
+        },
+    ])(
+        "replaces a pending first $name load that has not cached a row yet",
+        async ({ options, path, stale, fresh }) => {
+            const paths: string[] = [];
+            let calls = 0;
+            let releaseFirst: (data: unknown) => void = () => {};
+            setTransport(async (_method, requestPath) => {
+                paths.push(requestPath);
+                calls += 1;
+                if (calls === 1) {
+                    return await new Promise((resolve) => {
+                        releaseFirst = (data) => resolve({ status: 200, payload: { data } });
+                    });
+                }
+
+                return { status: 200, payload: { data: fresh } };
+            });
+            const query = options();
+            const unsubscribe = new QueryObserver(client, {
+                queryKey: query.queryKey,
+                queryFn: query.queryFn as QueryFunction<unknown>,
+                staleTime: Infinity,
+                retry: false,
+            }).subscribe(() => {});
+
+            try {
+                await vi.waitFor(() => expect(calls).toBe(1));
+                expect(client.getQueryData(query.queryKey)).toBeUndefined();
+
+                applyEvent(client, notice("activity.updated", { id: 8, status: "succeeded" }, 8));
+                flushTaskRefetches();
+
+                expect(calls).toBe(2);
+                releaseFirst(stale);
+                await vi.waitFor(() => expect(client.getQueryData(query.queryKey)).toEqual(fresh));
+                await new Promise((resolve) => setTimeout(resolve, 0));
+
+                expect(client.getQueryData(query.queryKey)).toEqual(fresh);
+                expect(client.getQueryState(query.queryKey)?.isInvalidated).toBe(false);
+                expect(calls).toBe(2);
+                expect(paths).toEqual([path, path]);
+            } finally {
+                releaseFirst(stale);
+                unsubscribe();
+            }
+        },
+    );
 });
 
 describe("process usage", () => {

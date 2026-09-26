@@ -47,6 +47,7 @@ use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Processes\CommandDeadline;
 use App\Models\Activity;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
@@ -3369,6 +3370,68 @@ it('tears down and removes a newly created instance after confirmed setup failur
         ->and(AppInstance::query()->sole()->id)->toBe($preservedId)
         ->and(Route::query()->count())->toBe(1);
 })->with([0, 1]);
+
+it('stops setup early enough in a create that the rollback still fits the request deadline', function (): void {
+    foreach (['setup', 'teardown'] as $phase) {
+        ProjectLifecycleStep::query()->create(['app_id' => $this->orbitApp->id, 'phase' => $phase, 'name' => $phase, 'command' => $phase, 'timeout_seconds' => 540, 'position' => 0]);
+    }
+    $now = 0.0;
+    $deadline = new CommandDeadline(static function () use (&$now): float {
+        return $now;
+    });
+    $deadline->start(570.0, CommandDeadline::CleanupReserveSeconds);
+    app()->instance(CommandDeadline::class, $deadline);
+    $now = 300.0;
+    // Both lists run until their timeout, as a remote `sleep` would.
+    $transport = new LifecycleSshExecutor(result: static function (array $input) use (&$now): int {
+        $now += $input['timeout'];
+
+        return $input['command'] === 'setup' ? 124 : 0;
+    });
+    app()->instance(ProjectLifecycleRunner::class, $transport->runner($deadline));
+
+    $this->postJson('/api/v1/instances', ['app_id' => $this->orbitApp->id, 'node_id' => $this->node->id, 'name' => 'deadline-setup', 'branch' => 'dev'])
+        ->assertStatus(504)
+        ->assertJsonPath('error.code', 'command.deadline_exceeded')
+        ->assertJsonPath('error.details.step', 'setup')
+        ->assertJsonPath('error.details.outcome', 'deadline')
+        ->assertJsonPath('error.message', "Setup step [setup] was stopped by the request deadline after 95 seconds, before its own 540-second timeout. Lower the list's step timeouts so the whole list fits one request. The Instance was removed.");
+
+    // Setup stopped 150 seconds early (60 for teardown, 90 for removal) plus the 20-second cleanup reserve.
+    // Teardown then ran within its share, and the removal still had its 90 seconds.
+    expect(array_column($transport->inputs, 'command'))->toBe(['setup', 'teardown'])
+        ->and(array_column($transport->inputs, 'timeout'))->toBe([95, 80])
+        ->and(570.0 - $now)->toBeGreaterThanOrEqual(CreateAppInstanceAction::RollbackRemovalSeconds)
+        ->and(AppInstance::query()->count())->toBe(0);
+});
+
+it('names the forced destroy that finishes a create rollback whose removal did not complete', function (): void {
+    foreach (['setup', 'teardown'] as $phase) {
+        ProjectLifecycleStep::query()->create(['app_id' => $this->orbitApp->id, 'phase' => $phase, 'name' => $phase, 'command' => $phase, 'timeout_seconds' => 30, 'position' => 0]);
+    }
+    $transport = new LifecycleSshExecutor(result: static fn (array $input): int => $input['command'] === 'setup' ? 1 : 0);
+    app()->instance(ProjectLifecycleRunner::class, $transport->runner());
+    // The Instance this create makes is the next id; its source removal is interrupted.
+    $this->removalSource->failPrepareFor = (int) AppInstance::query()->max('id') + 1;
+
+    $response = $this->postJson('/api/v1/instances', ['app_id' => $this->orbitApp->id, 'node_id' => $this->node->id, 'name' => 'stuck-rollback', 'branch' => 'dev'])
+        ->assertUnprocessable()
+        ->assertJsonPath('error.code', 'instance.setup_step_failed')
+        ->assertJsonPath('error.details.cleanup', 'incomplete');
+    $instance = AppInstance::query()->where('name', 'stuck-rollback')->sole();
+
+    expect($instance->id)->toBe($this->removalSource->failPrepareFor)
+        ->and($response->json('error.message'))->toBe(
+            "Setup failed and cleanup is incomplete. Inspect the Instance, then finish the removal with `orbit instance:destroy {$instance->id} --force`.",
+        );
+
+    // A plain destroy refuses the forced removal the rollback started; the named command finishes it.
+    $this->removalSource->failPrepareFor = null;
+    $this->deleteJson("/api/v1/instances/{$instance->id}")->assertConflict()->assertJsonPath('error.code', 'instance.removal_conflict');
+    $this->deleteJson("/api/v1/instances/{$instance->id}", ['force' => true])->assertOk();
+
+    expect(AppInstance::query()->whereKey($instance->id)->exists())->toBeFalse();
+});
 
 it('retains the checkout when setup execution cannot be confirmed', function (): void {
     ProjectLifecycleStep::query()->create(['app_id' => $this->orbitApp->id, 'phase' => 'setup', 'name' => 'install', 'command' => 'install', 'timeout_seconds' => 30, 'position' => 0]);

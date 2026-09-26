@@ -35,9 +35,10 @@ final readonly class NativeToolOperationLock implements ToolOperationLock
         ?string $versionConstraint,
         Closure $callback,
     ): mixed {
-        $identity = ($this->locks ?? app(NodeLocks::class))->lock(
+        $locks = $this->locks ?? app(NodeLocks::class);
+        $identity = $locks->lock(
             "tool:{$nodeId}:{$manager->value}:".hash('sha256', $package),
-            NodeLocks::RequestSeconds,
+            $locks->operationSeconds(),
         );
 
         if (! $identity->get()) {

@@ -21,7 +21,16 @@ final class ActivitiesController extends Controller
     public function index(ListActivitiesRequest $request, ListActivitiesAction $action): JsonResponse
     {
         $requestId = $request->attributes->getString('orbit.request_id');
-        $activities = $action->handle($request->limit(), $requestId, $request->requestId());
+        $activities = $action->handle(
+            limit: $request->limit(),
+            excludeRequestId: $requestId,
+            requestId: $request->requestId(),
+            beforeId: $request->beforeId(),
+            status: $request->status(),
+            command: $request->command(),
+            callerNodeId: $request->callerNodeId(),
+            targetNodeId: $request->targetNodeId(),
+        );
 
         return response()->json([
             'data' => $activities

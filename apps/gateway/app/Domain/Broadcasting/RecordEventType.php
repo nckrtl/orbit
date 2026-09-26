@@ -59,4 +59,7 @@ enum RecordEventType: string
     case TaskCommentCreated = 'task_comment.created';
     case AgentThreadUpdated = 'agent_thread.updated';
     case TasksUpdated = 'tasks.updated';
+
+    case ActivityCreated = 'activity.created';
+    case ActivityUpdated = 'activity.updated';
 }

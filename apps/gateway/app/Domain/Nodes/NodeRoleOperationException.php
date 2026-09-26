@@ -12,14 +12,18 @@ final class NodeRoleOperationException extends RuntimeException
 {
     public readonly ?CommandResult $result;
 
+    /** The failed step's own code, or `node.lock_lost` when the operation lost one of its Node locks. */
+    public readonly string $underlyingErrorCode;
+
     public function __construct(
         public readonly string $step,
         public readonly string $errorCode,
-        public readonly string $underlyingErrorCode,
+        string $underlyingErrorCode,
         string $message,
         ?CommandResult $result = null,
         ?Throwable $previous = null,
     ) {
+        $this->underlyingErrorCode = NodeLockLoss::in($previous) ? NodeLockLoss::ErrorCode : $underlyingErrorCode;
         $this->result = $result === null
             ? null
             : new CommandResult(

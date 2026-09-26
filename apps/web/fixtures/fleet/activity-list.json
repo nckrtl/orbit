@@ -1,0 +1,499 @@
+{
+    "schema": 1,
+    "route": "GET /api/v1/activities",
+    "status": 200,
+    "body": {
+        "data": [
+            {
+                "id": 27,
+                "request_id": "0198e15c-bf97-7c23-8f1f-00000000001b",
+                "command": "instance:deploy",
+                "caller_node_id": 1,
+                "target_node_id": 2,
+                "caller_ip": "10.44.0.1",
+                "status": "succeeded",
+                "duration_ms": 8420,
+                "exit_code": 0,
+                "error_code": null,
+                "subject_type": "instance",
+                "subject_id": 1,
+                "properties": {
+                    "release": "20260920140000",
+                    "output_truncated": false
+                },
+                "occurred_at": "2026-09-20T12:27:00Z"
+            },
+            {
+                "id": 26,
+                "request_id": "0198e15c-bf97-7c23-8f1f-00000000001a",
+                "command": "process:reload",
+                "caller_node_id": 2,
+                "target_node_id": 2,
+                "caller_ip": "10.44.0.2",
+                "status": "running",
+                "duration_ms": null,
+                "exit_code": null,
+                "error_code": null,
+                "subject_type": "process",
+                "subject_id": 1,
+                "properties": {
+                    "name": "horizon"
+                },
+                "occurred_at": "2026-09-20T12:26:00Z"
+            },
+            {
+                "id": 25,
+                "request_id": "0198e15c-bf97-7c23-8f1f-000000000019",
+                "command": "node:add",
+                "caller_node_id": 1,
+                "target_node_id": null,
+                "caller_ip": "10.44.0.1",
+                "status": "failed",
+                "duration_ms": 180,
+                "exit_code": 1,
+                "error_code": "node.ssh_host_fingerprint_required",
+                "subject_type": null,
+                "subject_id": null,
+                "properties": {
+                    "name": "spare",
+                    "public_ssh_host": "203.0.113.9",
+                    "password": "[REDACTED]"
+                },
+                "occurred_at": "2026-09-20T12:25:00Z"
+            },
+            {
+                "id": 24,
+                "request_id": "0198e15c-bf97-7c23-8f1f-000000000018",
+                "command": "firewall:delete",
+                "caller_node_id": 1,
+                "target_node_id": 3,
+                "caller_ip": "10.44.0.1",
+                "status": "succeeded",
+                "duration_ms": 340,
+                "exit_code": 0,
+                "error_code": null,
+                "subject_type": "firewall_rule",
+                "subject_id": 4,
+                "properties": {
+                    "name": "ssh-public"
+                },
+                "occurred_at": "2026-09-20T12:24:00Z"
+            },
+            {
+                "id": 23,
+                "request_id": "0198e15c-bf97-7c23-8f1f-000000000017",
+                "command": "process:stop",
+                "caller_node_id": 2,
+                "target_node_id": 2,
+                "caller_ip": "10.44.0.2",
+                "status": "succeeded",
+                "duration_ms": 90,
+                "exit_code": 0,
+                "error_code": null,
+                "subject_type": "process",
+                "subject_id": 2,
+                "properties": {
+                    "name": "vite"
+                },
+                "occurred_at": "2026-09-20T12:23:00Z"
+            },
+            {
+                "id": 22,
+                "request_id": "0198e15c-bf97-7c23-8f1f-000000000016",
+                "command": "process:start",
+                "caller_node_id": 2,
+                "target_node_id": 2,
+                "caller_ip": "10.44.0.2",
+                "status": "succeeded",
+                "duration_ms": 110,
+                "exit_code": 0,
+                "error_code": null,
+                "subject_type": "process",
+                "subject_id": 1,
+                "properties": {
+                    "name": "horizon"
+                },
+                "occurred_at": "2026-09-20T12:22:00Z"
+            },
+            {
+                "id": 21,
+                "request_id": "0198e15c-bf97-7c23-8f1f-000000000015",
+                "command": "instance:rollback",
+                "caller_node_id": 1,
+                "target_node_id": 3,
+                "caller_ip": "10.44.0.1",
+                "status": "failed",
+                "duration_ms": 12000,
+                "exit_code": 1,
+                "error_code": "instance.provision_failed",
+                "subject_type": "instance",
+                "subject_id": 4,
+                "properties": {
+                    "release": "20260919120000",
+                    "failed_step": "migrate"
+                },
+                "occurred_at": "2026-09-20T12:21:00Z"
+            },
+            {
+                "id": 20,
+                "request_id": "0198e15c-bf97-7c23-8f1f-000000000014",
+                "command": "schedule:run",
+                "caller_node_id": 1,
+                "target_node_id": 2,
+                "caller_ip": "10.44.0.1",
+                "status": "succeeded",
+                "duration_ms": 400,
+                "exit_code": 0,
+                "error_code": null,
+                "subject_type": null,
+                "subject_id": null,
+                "properties": {
+                    "id": "backup"
+                },
+                "occurred_at": "2026-09-20T12:20:00Z"
+            },
+            {
+                "id": 19,
+                "request_id": "0198e15c-bf97-7c23-8f1f-000000000013",
+                "command": "database:create",
+                "caller_node_id": 1,
+                "target_node_id": 2,
+                "caller_ip": "10.44.0.1",
+                "status": "succeeded",
+                "duration_ms": 2200,
+                "exit_code": 0,
+                "error_code": null,
+                "subject_type": null,
+                "subject_id": null,
+                "properties": {
+                    "slug": "charlie-shop"
+                },
+                "occurred_at": "2026-09-20T12:19:00Z"
+            },
+            {
+                "id": 18,
+                "request_id": "0198e15c-bf97-7c23-8f1f-000000000012",
+                "command": "doctor",
+                "caller_node_id": 2,
+                "target_node_id": null,
+                "caller_ip": "10.44.0.2",
+                "status": "succeeded",
+                "duration_ms": 40,
+                "exit_code": 0,
+                "error_code": null,
+                "subject_type": null,
+                "subject_id": null,
+                "properties": {},
+                "occurred_at": "2026-09-20T12:18:00Z"
+            },
+            {
+                "id": 17,
+                "request_id": "0198e15c-bf97-7c23-8f1f-000000000011",
+                "command": "node:delete",
+                "caller_node_id": 1,
+                "target_node_id": 3,
+                "caller_ip": "10.44.0.1",
+                "status": "failed",
+                "duration_ms": 50,
+                "exit_code": 1,
+                "error_code": "node.active_role",
+                "subject_type": "node",
+                "subject_id": 3,
+                "properties": {
+                    "name": "app-prod"
+                },
+                "occurred_at": "2026-09-20T12:17:00Z"
+            },
+            {
+                "id": 16,
+                "request_id": "0198e15c-bf97-7c23-8f1f-000000000010",
+                "command": "process:restart",
+                "caller_node_id": 1,
+                "target_node_id": 3,
+                "caller_ip": "10.44.0.1",
+                "status": "running",
+                "duration_ms": null,
+                "exit_code": null,
+                "error_code": null,
+                "subject_type": "process",
+                "subject_id": 3,
+                "properties": {
+                    "name": "queue"
+                },
+                "occurred_at": "2026-09-20T12:16:00Z"
+            },
+            {
+                "id": 15,
+                "request_id": "0198e15c-bf97-7c23-8f1f-00000000000f",
+                "command": "firewall:allow",
+                "caller_node_id": 1,
+                "target_node_id": 2,
+                "caller_ip": "10.44.0.1",
+                "status": "succeeded",
+                "duration_ms": 200,
+                "exit_code": 0,
+                "error_code": null,
+                "subject_type": "firewall_rule",
+                "subject_id": 2,
+                "properties": {
+                    "port": "443",
+                    "protocol": "tcp"
+                },
+                "occurred_at": "2026-09-20T12:15:00Z"
+            },
+            {
+                "id": 14,
+                "request_id": "0198e15c-bf97-7c23-8f1f-00000000000e",
+                "command": "instance:deploy",
+                "caller_node_id": 1,
+                "target_node_id": 2,
+                "caller_ip": "10.44.0.1",
+                "status": "succeeded",
+                "duration_ms": 7600,
+                "exit_code": 0,
+                "error_code": null,
+                "subject_type": "instance",
+                "subject_id": 1,
+                "properties": {
+                    "release": "20260919120000"
+                },
+                "occurred_at": "2026-09-20T12:14:00Z"
+            },
+            {
+                "id": 13,
+                "request_id": "0198e15c-bf97-7c23-8f1f-00000000000d",
+                "command": "process:stop",
+                "caller_node_id": 1,
+                "target_node_id": 2,
+                "caller_ip": "10.44.0.1",
+                "status": "succeeded",
+                "duration_ms": 70,
+                "exit_code": 0,
+                "error_code": null,
+                "subject_type": "process",
+                "subject_id": 3,
+                "properties": {
+                    "name": "queue"
+                },
+                "occurred_at": "2026-09-20T12:13:00Z"
+            },
+            {
+                "id": 12,
+                "request_id": "0198e15c-bf97-7c23-8f1f-00000000000c",
+                "command": "node:add",
+                "caller_node_id": 1,
+                "target_node_id": null,
+                "caller_ip": "10.44.0.1",
+                "status": "succeeded",
+                "duration_ms": 900,
+                "exit_code": 0,
+                "error_code": null,
+                "subject_type": "node",
+                "subject_id": 2,
+                "properties": {
+                    "name": "beast",
+                    "password": "[REDACTED]"
+                },
+                "occurred_at": "2026-09-20T12:12:00Z"
+            },
+            {
+                "id": 11,
+                "request_id": "0198e15c-bf97-7c23-8f1f-00000000000b",
+                "command": "app:list",
+                "caller_node_id": null,
+                "target_node_id": null,
+                "caller_ip": null,
+                "status": "succeeded",
+                "duration_ms": 30,
+                "exit_code": 0,
+                "error_code": null,
+                "subject_type": null,
+                "subject_id": null,
+                "properties": {},
+                "occurred_at": "2026-09-20T12:11:00Z"
+            },
+            {
+                "id": 10,
+                "request_id": "0198e15c-bf97-7c23-8f1f-00000000000a",
+                "command": "schedule:run",
+                "caller_node_id": 2,
+                "target_node_id": 2,
+                "caller_ip": "10.44.0.2",
+                "status": "failed",
+                "duration_ms": 1500,
+                "exit_code": 1,
+                "error_code": "schedule.run_failed",
+                "subject_type": null,
+                "subject_id": null,
+                "properties": {
+                    "id": "prune"
+                },
+                "occurred_at": "2026-09-20T12:10:00Z"
+            },
+            {
+                "id": 9,
+                "request_id": "0198e15c-bf97-7c23-8f1f-000000000009",
+                "command": "database:create",
+                "caller_node_id": 1,
+                "target_node_id": 3,
+                "caller_ip": "10.44.0.1",
+                "status": "failed",
+                "duration_ms": 100,
+                "exit_code": 1,
+                "error_code": "database.exists",
+                "subject_type": null,
+                "subject_id": null,
+                "properties": {
+                    "slug": "taken"
+                },
+                "occurred_at": "2026-09-20T12:09:00Z"
+            },
+            {
+                "id": 8,
+                "request_id": "0198e15c-bf97-7c23-8f1f-000000000008",
+                "command": "process:start",
+                "caller_node_id": 1,
+                "target_node_id": 2,
+                "caller_ip": "10.44.0.1",
+                "status": "succeeded",
+                "duration_ms": 80,
+                "exit_code": 0,
+                "error_code": null,
+                "subject_type": "process",
+                "subject_id": 4,
+                "properties": {
+                    "name": "valkey"
+                },
+                "occurred_at": "2026-09-20T12:08:00Z"
+            },
+            {
+                "id": 7,
+                "request_id": "0198e15c-bf97-7c23-8f1f-000000000007",
+                "command": "firewall:delete",
+                "caller_node_id": 2,
+                "target_node_id": 3,
+                "caller_ip": "10.44.0.2",
+                "status": "succeeded",
+                "duration_ms": 60,
+                "exit_code": 0,
+                "error_code": null,
+                "subject_type": "firewall_rule",
+                "subject_id": 8,
+                "properties": {
+                    "name": "old"
+                },
+                "occurred_at": "2026-09-20T12:07:00Z"
+            },
+            {
+                "id": 6,
+                "request_id": "0198e15c-bf97-7c23-8f1f-000000000006",
+                "command": "instance:deploy",
+                "caller_node_id": 1,
+                "target_node_id": 2,
+                "caller_ip": "10.44.0.1",
+                "status": "succeeded",
+                "duration_ms": 8100,
+                "exit_code": 0,
+                "error_code": null,
+                "subject_type": "instance",
+                "subject_id": 1,
+                "properties": {
+                    "release": "20260918100000"
+                },
+                "occurred_at": "2026-09-20T12:06:00Z"
+            },
+            {
+                "id": 5,
+                "request_id": "0198e15c-bf97-7c23-8f1f-000000000005",
+                "command": "process:restart",
+                "caller_node_id": 2,
+                "target_node_id": 2,
+                "caller_ip": "10.44.0.2",
+                "status": "succeeded",
+                "duration_ms": 140,
+                "exit_code": 0,
+                "error_code": null,
+                "subject_type": "process",
+                "subject_id": 1,
+                "properties": {
+                    "name": "horizon"
+                },
+                "occurred_at": "2026-09-20T12:05:00Z"
+            },
+            {
+                "id": 4,
+                "request_id": "0198e15c-bf97-7c23-8f1f-000000000004",
+                "command": "node:add",
+                "caller_node_id": null,
+                "target_node_id": null,
+                "caller_ip": null,
+                "status": "failed",
+                "duration_ms": 20,
+                "exit_code": 1,
+                "error_code": "validation.failed",
+                "subject_type": null,
+                "subject_id": null,
+                "properties": {
+                    "name": "",
+                    "password": "[REDACTED]"
+                },
+                "occurred_at": "2026-09-20T12:04:00Z"
+            },
+            {
+                "id": 3,
+                "request_id": "0198e15c-bf97-7c23-8f1f-000000000003",
+                "command": "app:list",
+                "caller_node_id": 1,
+                "target_node_id": null,
+                "caller_ip": "10.44.0.1",
+                "status": "succeeded",
+                "duration_ms": 25,
+                "exit_code": 0,
+                "error_code": null,
+                "subject_type": null,
+                "subject_id": null,
+                "properties": {},
+                "occurred_at": "2026-09-20T12:03:00Z"
+            },
+            {
+                "id": 2,
+                "request_id": "0198e15c-bf97-7c23-8f1f-000000000002",
+                "command": "database:create",
+                "caller_node_id": 1,
+                "target_node_id": 2,
+                "caller_ip": "10.44.0.1",
+                "status": "succeeded",
+                "duration_ms": 1800,
+                "exit_code": 0,
+                "error_code": null,
+                "subject_type": null,
+                "subject_id": null,
+                "properties": {
+                    "slug": "metrics"
+                },
+                "occurred_at": "2026-09-20T12:02:00Z"
+            },
+            {
+                "id": 1,
+                "request_id": "0198e15c-bf97-7c23-8f1f-000000000001",
+                "command": "schedule:run",
+                "caller_node_id": 1,
+                "target_node_id": 2,
+                "caller_ip": "10.44.0.1",
+                "status": "succeeded",
+                "duration_ms": 300,
+                "exit_code": 0,
+                "error_code": null,
+                "subject_type": null,
+                "subject_id": null,
+                "properties": {
+                    "id": "backup"
+                },
+                "occurred_at": "2026-09-20T12:01:00Z"
+            }
+        ],
+        "meta": {
+            "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844"
+        }
+    }
+}

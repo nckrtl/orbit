@@ -205,7 +205,9 @@ case "$probe" in
       esac
       expected_site=$(mktemp)
       trap 'rm -f -- "$expected_site"' EXIT
-      /usr/bin/php -r 'require $argv[1]; echo (new App\Infrastructure\Metrics\MetricsPublicationRenderer)->caddy($argv[2], $argv[3]);' -- "$source_root/apps/gateway/vendor/autoload.php" "$metrics_address" "$gateway_address" >"$expected_site"
+      # ADR 0157 writes the WireGuard client guard after this publication's bind line.
+      # The admitted range is the fleet VPN subnet, exactly, and the whole site must match.
+      /usr/bin/php -r 'require $argv[1]; $pdo=new PDO("sqlite:".$argv[4]); $statement=$pdo->prepare("SELECT value, is_secret FROM settings WHERE scope_type = ? AND scope_id = ? AND key = ?"); if ($statement===false || $statement->execute(["gateway", 0, "vpn.subnet"])===false) exit(1); $rows=$statement->fetchAll(PDO::FETCH_ASSOC); if (!is_array($rows) || count($rows)>1) exit(1); $subnet="10.44.0.0/24"; if (count($rows)===1) { $value=$rows[0]["value"] ?? null; $secret=$rows[0]["is_secret"] ?? 0; if ($secret===1 || $secret==="1" || $secret===true) exit(1); if ($value===null) { $value=$subnet; } if (!is_string($value)) exit(1); $subnet=$value; } if (preg_match("/\\A(?:(?:25[0-5]|2[0-4]\\d|[01]?\\d\\d?)\\.){3}(?:25[0-5]|2[0-4]\\d|[01]?\\d\\d?)\\/(?:[8-9]|[12]\\d|30)\\z/", $subnet)!==1) exit(1); $body=(new App\Infrastructure\Metrics\MetricsPublicationRenderer)->caddy($argv[2], $argv[3]); echo App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer::admitOnly($body, $subnet);' -- "$source_root/apps/gateway/vendor/autoload.php" "$metrics_address" "$gateway_address" "$db" >"$expected_site"
       php -r 'exit(str_contains(file_get_contents($argv[1]), "# orbit: metrics metrics.orbit\n".rtrim(file_get_contents($argv[2]))."\n") ? 0 : 1);' -- "$live_main" "$expected_site"
       openssl verify -CAfile /home/orbit/.orbit/ca/root.pem "$certificate_current/metrics.pem" >/dev/null
       openssl x509 -in "$certificate_current/metrics.pem" -noout -checkhost metrics.orbit >/dev/null
