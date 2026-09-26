@@ -1,7 +1,7 @@
 import { subscribeAnnotationUpdates } from "./annotations";
 import { getEventListeners } from "node:events";
 import { QueryClient, QueryObserver } from "@tanstack/react-query";
-import { activitiesQuery, activityQuery } from "../api/activities";
+import { activitiesQuery, activityQuery, type ActivityLog } from "../api/activities";
 import Pusher from "pusher-js";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import { setTransport, type Transport } from "../api/client";
@@ -258,7 +258,7 @@ it("reloads what stops polling on the first subscription and everything after a 
         { queryKey: ["task-groups"] },
         { queryKey: ["tasks-status"] },
         { queryKey: ["processes"] },
-        { queryKey: ["activities"] },
+        { queryKey: ["activities"], predicate: expect.any(Function) },
     ]);
     invalidate.mockClear();
 
@@ -266,7 +266,13 @@ it("reloads what stops polling on the first subscription and everything after a 
     expect(setLiveness).toHaveBeenLastCalledWith("reconnecting");
     pusher.channel.emit("pusher:subscription_succeeded");
     expect(setLiveness).toHaveBeenLastCalledWith("live");
-    expect(invalidate).toHaveBeenCalledExactlyOnceWith();
+    expect(invalidate).toHaveBeenCalledOnce();
+    const filters = invalidate.mock.calls[0]?.[0] as {
+        predicate?: (query: { queryKey: readonly unknown[] }) => boolean;
+    };
+    expect(filters.predicate?.({ queryKey: ["nodes"] })).toBe(true);
+    expect(filters.predicate?.({ queryKey: ["activities", "9"] })).toBe(true);
+    expect(filters.predicate?.({ queryKey: ["activities", "list", {}] })).toBe(false);
 });
 
 it("reloads every list on a first subscription that follows a polling period", async () => {
@@ -279,7 +285,12 @@ it("reloads every list on a first subscription that follows a polling period", a
     pusher.channel.emit("pusher:subscription_succeeded");
 
     expect(setLiveness).toHaveBeenLastCalledWith("live");
-    expect(invalidate).toHaveBeenCalledExactlyOnceWith();
+    expect(invalidate).toHaveBeenCalledOnce();
+    const filters = invalidate.mock.calls[0]?.[0] as {
+        predicate?: (query: { queryKey: readonly unknown[] }) => boolean;
+    };
+    expect(filters.predicate?.({ queryKey: ["activities", "list", {}] })).toBe(false);
+    expect(filters.predicate?.({ queryKey: ["nodes"] })).toBe(true);
 });
 
 it("reloads every list when a retried realtime discovery finally connects", async () => {
@@ -292,7 +303,11 @@ it("reloads every list when a retried realtime discovery finally connects", asyn
     vi.mocked(downForMs).mockReturnValue(30_000);
     pusher.channel.emit("pusher:subscription_succeeded");
 
-    expect(invalidate).toHaveBeenCalledExactlyOnceWith();
+    expect(invalidate).toHaveBeenCalledOnce();
+    const filters = invalidate.mock.calls[0]?.[0] as {
+        predicate?: (query: { queryKey: readonly unknown[] }) => boolean;
+    };
+    expect(filters.predicate?.({ queryKey: ["activities", "list", {}] })).toBe(false);
 });
 
 it("reloads the task, Process, and Activity queries on a first subscription right after page load", async () => {
@@ -306,7 +321,7 @@ it("reloads the task, Process, and Activity queries on a first subscription righ
         { queryKey: ["task-groups"] },
         { queryKey: ["tasks-status"] },
         { queryKey: ["processes"] },
-        { queryKey: ["activities"] },
+        { queryKey: ["activities"], predicate: expect.any(Function) },
     ]);
 });
 
@@ -450,43 +465,67 @@ it("forwards activity notices into one batched refetch of the list and the open 
     flushTaskRefetches();
 
     expect(invalidate.mock.calls.map(([filters]) => filters)).toEqual([
-        { queryKey: ["activities", "list"], exact: false },
         { queryKey: ["activities", "11"], exact: true },
     ]);
 });
 
-it("refetches the activity list and the open row when the socket reconnects", async () => {
-    const fetched: string[] = [];
-    const observe = (queryKey: readonly unknown[], name: string) =>
-        new QueryObserver(client, {
-            queryKey,
-            queryFn: () => {
-                fetched.push(name);
-
-                return name;
-            },
-            staleTime: Infinity,
-        }).subscribe(() => {});
-    const list = activitiesQuery({ status: "running", before_id: 9 });
+it("merges the newest activity page on subscribe and reconnect without refetching every page", async () => {
+    const listPaths: string[] = [];
     const row = activityQuery(9);
-    const unsubscribe = [observe(list.queryKey, "list"), observe(row.queryKey, "row")];
-    await vi.waitFor(() => {
-        expect(client.getQueryData(list.queryKey)).toBe("list");
-        expect(client.getQueryData(row.queryKey)).toBe("row");
+    const rowFetches: string[] = [];
+    const unsubscribe = new QueryObserver(client, {
+        queryKey: row.queryKey,
+        queryFn: () => {
+            rowFetches.push("row");
+
+            return "row";
+        },
+        staleTime: Infinity,
+    }).subscribe(() => {});
+    await vi.waitFor(() => expect(client.getQueryData(row.queryKey)).toBe("row"));
+    const list = activitiesQuery({ status: "running" });
+    client.setQueryData(list.queryKey, {
+        pages: [pageOf(100, 50), pageOf(50, 50)],
+        pageParams: [undefined, 51],
+    } as ActivityLog);
+    transport.mockImplementation(async (_method, path) => {
+        if (path.startsWith("/api/v1/activities?")) {
+            listPaths.push(path);
+
+            return response(pageOf(110, 50));
+        }
+
+        return response(configured);
     });
-    fetched.length = 0;
+    rowFetches.length = 0;
 
     await connectRealtime(client, controller.signal);
     const pusher = sockets[0]!;
     pusher.channel.emit("pusher:subscription_succeeded");
-    await vi.waitFor(() => expect(fetched.sort()).toEqual(["list", "row"]));
-    fetched.length = 0;
+    await vi.waitFor(() => expect(listPaths).toHaveLength(1));
+    await vi.waitFor(() => expect(rowFetches).toEqual(["row"]));
+    listPaths.length = 0;
+    rowFetches.length = 0;
 
     pusher.connection.emit("state_change", { current: "unavailable" });
     pusher.channel.emit("pusher:subscription_succeeded");
-    await vi.waitFor(() => expect(fetched.sort()).toEqual(["list", "row"]));
-    unsubscribe.forEach((stop) => stop());
+    await vi.waitFor(() =>
+        expect(listPaths).toEqual(["/api/v1/activities?limit=50&status=running"]),
+    );
+    await vi.waitFor(() => expect(rowFetches).toEqual(["row"]));
+    const ids = client
+        .getQueryData<ActivityLog>(list.queryKey)
+        ?.pages.flat()
+        .map((entry) => entry.id);
+    expect(ids).toEqual(Array.from({ length: 110 }, (_, index) => 110 - index));
+    expect(new Set(ids).size).toBe(ids?.length);
+    unsubscribe();
 });
+
+/** Newest id first. The merge only reads ids, so the other Activity fields can stay absent. */
+function pageOf(start: number, count: number): Array<{ id: number }> {
+    return Array.from({ length: count }, (_, index) => ({ id: start - index }));
+}
 
 /** An active Activity query whose first response is held, so the cache stays empty. */
 function holdFirstActivity(queryKey: readonly unknown[], fresh: unknown, stale: unknown) {
@@ -516,7 +555,7 @@ function holdFirstActivity(queryKey: readonly unknown[], fresh: unknown, stale: 
 }
 
 it("replaces a pending first activity load when the socket subscribes", async () => {
-    const list = activitiesQuery({ before_id: 20, status: "running" });
+    const list = activitiesQuery({ status: "running" });
     const detail = activityQuery(8);
     const listLoad = holdFirstActivity(
         list.queryKey,
@@ -557,7 +596,7 @@ it("replaces a pending first activity load when the socket reconnects", async ()
     const pusher = sockets[0]!;
     pusher.channel.emit("pusher:subscription_succeeded");
 
-    const list = activitiesQuery({ before_id: 20, status: "running" });
+    const list = activitiesQuery({ status: "running" });
     const detail = activityQuery(8);
     const listLoad = holdFirstActivity(
         list.queryKey,

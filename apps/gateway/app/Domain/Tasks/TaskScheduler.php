@@ -31,6 +31,8 @@ final readonly class TaskScheduler
 
     public const string ReservationExpiredReason = 'The group stayed reserved too long and returned to todo.';
 
+    public const string WorkspaceChangedReminder = 'The workspace changed during the review. Revert your changes and request the changes from the implementer instead.';
+
     /** Reasons the scheduler sets when a claim returns a group to todo. A start, a capacity wait, or a move to backlog clears them. */
     public const array ClaimFailureReasons = [
         self::ProvisioningFailedReason,
@@ -394,8 +396,20 @@ final readonly class TaskScheduler
         }
         $receipt = $this->pendingReceipt($task, TaskThreadRole::Reviewer);
         $outcome = $receipt instanceof TaskComment ? $this->receiptOutcome($receipt) : null;
+        if ($outcome === TaskRunOutcome::Approved && $this->isWorking($observation->thread(TaskThreadRole::Implementer))) {
+            // Orbit commits the whole workspace, so the approval waits until the implementer stops changing it.
+            return true;
+        }
+        if ($outcome === TaskRunOutcome::ChangesRequested && $this->isWorking($observation->thread(TaskThreadRole::Implementer))) {
+            return true;
+        }
+        if ($receipt instanceof TaskComment
+            && in_array($outcome, [TaskRunOutcome::Blocked, TaskRunOutcome::ChangesRequested, TaskRunOutcome::Approved], true)
+            && ! $this->workspaceUnchanged($group, $task, $reviewer, $receipt)) {
+            return true;
+        }
         if ($receipt instanceof TaskComment && $outcome === TaskRunOutcome::Approved && $this->committedApproval($receipt)) {
-            // The commit is already stored. Retry the push only; do not commit again or spend the approval.
+            // The commit is already stored and the workspace still holds it. Retry the push only; do not commit again.
             $this->publishApprovedCommit($group, $task, $receipt);
 
             return true;
@@ -409,10 +423,6 @@ final readonly class TaskScheduler
         if ($receipt instanceof TaskComment && $outcome === TaskRunOutcome::ChangesRequested) {
             $this->relayFindings($group, $task, $observation, $receipt);
 
-            return true;
-        }
-        if ($outcome === TaskRunOutcome::Approved && $this->isWorking($observation->thread(TaskThreadRole::Implementer))) {
-            // Orbit commits the whole workspace, so the approval waits until the implementer stops changing it.
             return true;
         }
 
@@ -484,6 +494,19 @@ final readonly class TaskScheduler
     {
         $receipt = $this->pendingReceipt($task, TaskThreadRole::Reviewer);
         if (! $receipt instanceof TaskComment || $this->receiptOutcome($receipt) !== TaskRunOutcome::Approved || ! $this->committedApproval($receipt)) {
+            return false;
+        }
+
+        try {
+            $current = $this->workspaceSnapshot($group);
+        } catch (TaskCheckException $exception) {
+            $this->recordCommunicationFailure($task, $group, $exception->getMessage());
+
+            return true;
+        }
+        $tree = $task->review_workspace_tree;
+        if ($current->head !== $receipt->commit_sha || (is_string($tree) && $tree !== '' && $current->tree !== $tree)) {
+            // ADR 0133: the workspace no longer holds the approved commit. The reviewer outcome path reminds or asks for assistance.
             return false;
         }
 
@@ -1331,6 +1354,63 @@ final readonly class TaskScheduler
     }
 
     /**
+     * ADR 0133: a reviewer turn is read-only. The receipt stays unapplied while the workspace differs
+     * from the pair recorded with the review request. One reminder, then the scheduler waits for a
+     * newer stopped reviewer turn before it looks again. That later turn applies the outcome when
+     * the workspace matches, and asks for assistance when it still differs. Another poll of the
+     * reminded turn does neither. A failed read is a communication failure, not a change. A review
+     * notified before a baseline existed has nothing to compare, so its outcome applies as before.
+     * A commit already stored on the receipt is Orbit's. Publication retries only while HEAD is
+     * that commit and the working tree still matches. The HEAD from before the approval is not
+     * accepted after Orbit has committed, so a reset that drops the commit is refused.
+     *
+     * @return bool whether the workspace still matches and the outcome may be applied
+     */
+    private function workspaceUnchanged(TaskGroup $group, Task $task, TaskThreadObservation $reviewer, TaskComment $receipt): bool
+    {
+        try {
+            $current = $this->workspaceSnapshot($group);
+        } catch (TaskCheckException $exception) {
+            $this->recordCommunicationFailure($task, $group, $exception->getMessage());
+
+            return false;
+        }
+        $head = $task->review_workspace_head;
+        $tree = $task->review_workspace_tree;
+        $storedCommit = $receipt->commit_sha;
+        $orbitCommit = is_string($storedCommit) && $storedCommit !== '' ? $storedCommit : null;
+        $treeMatches = ! is_string($tree) || $tree === '' || $current->tree === $tree;
+        $headMatches = $orbitCommit !== null
+            ? $current->head === $orbitCommit
+            : ! is_string($head) || $head === '' || $current->head === $head;
+        if ($headMatches && $treeMatches) {
+            return true;
+        }
+        $this->remindOrAssist($group, $task, $reviewer, [
+            new TaskRubricItem('workspace_unchanged', false, self::WorkspaceChangedReminder),
+        ]);
+        if ($task->assistance_requested) {
+            $task->update(['review_handled_comment_id' => $receipt->id]);
+        } elseif ($task->review_reminder_attempt === $task->review_attempt && is_string($reviewer->turnId) && $reviewer->turnId !== '') {
+            // The same stopped turn is not a second change. The next look waits for a newer one.
+            $task->update(['review_notified_turn_id' => $reviewer->turnId]);
+        }
+
+        return false;
+    }
+
+    /** @throws TaskCheckException */
+    private function workspaceSnapshot(TaskGroup $group): TaskWorkspaceSnapshot
+    {
+        $instance = $group->taskable;
+        if (! $instance instanceof AppInstance) {
+            throw new TaskCheckException('The task workspace is unavailable.');
+        }
+
+        return $this->checks->snapshot($instance);
+    }
+
+    /**
      * Starts the reviewer at the first handoff, or asks the existing reviewer for the next review.
      * A working reviewer gets no request. The task stays unnotified, so a later tick sends the request
      * once the reviewer is idle.
@@ -1343,6 +1423,8 @@ final readonly class TaskScheduler
         $group = $task->taskGroup()->with('taskable')->firstOrFail();
 
         try {
+            // Read at send time. Do not copy the hash from an earlier check row: the request may have waited.
+            $snapshot = $this->workspaceSnapshot($group);
             $this->prepareTurn($group, $task, TaskThreadRole::Reviewer);
             if ($group->reviewer_agent_thread_id === null) {
                 $threadId = $this->spawner->spawnReviewer($task);
@@ -1353,7 +1435,7 @@ final readonly class TaskScheduler
             } else {
                 $this->spawner->requestReview($task);
             }
-        } catch (AgentDriverException|TaskRunReceiptException $exception) {
+        } catch (AgentDriverException|TaskRunReceiptException|TaskCheckException $exception) {
             $this->recordCommunicationFailure($task, $group, $exception->getMessage());
 
             return;
@@ -1362,6 +1444,8 @@ final readonly class TaskScheduler
         $task->update([
             'review_notified_attempt' => $task->review_attempt,
             'review_notified_turn_id' => $reviewer?->turnId,
+            'review_workspace_head' => $snapshot->head,
+            'review_workspace_tree' => $snapshot->tree,
         ]);
         $this->clearCommunicationFailures($task);
     }

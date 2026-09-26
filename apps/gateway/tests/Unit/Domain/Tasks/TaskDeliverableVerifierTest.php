@@ -32,6 +32,24 @@ it('names the deliverables a receipt must confirm and does not, by role', functi
         ->and(TaskDeliverableVerifier::unconfirmed($deliverables, ['copy' => 'Checked'], TaskThreadRole::Reviewer))->toBe([]);
 });
 
+it('refuses a glob in a test deliverable file and accepts one exact php path', function (string $file, bool $exact): void {
+    expect(TaskDeliverable::isExactTestFile($file))->toBe($exact);
+})->with([
+    'a star' => ['tests/Feature/**/*.php', false],
+    'a question mark' => ['tests/Export?.php', false],
+    'an opening bracket' => ['tests/Export[0].php', false],
+    'an opening brace' => ['tests/{Export}Test.php', false],
+    'a parent directory' => ['tests/../ExportTest.php', false],
+    'a suffix other than php' => ['tests/ExportTest.md', false],
+    'an absolute path' => ['/tmp/ExportTest.php', false],
+    'an uppercase suffix' => ['tests/ExportTest.PHP', false],
+    'two dots in the name' => ['tests/foo..php', false],
+    'an exact path' => ['tests/Feature/ExportTest.php', true],
+    'a leading dot slash' => ['./tests/Feature/ExportTest.php', true],
+    'a closing bracket' => ['tests/Export].php', true],
+    'a closing brace' => ['tests/Export}.php', true],
+]);
+
 it('normalizes a relative path and joins a project and file', function (): void {
     expect(TaskDeliverable::join('.', 'tests/ExportTest.php'))->toBe('tests/ExportTest.php')
         ->and(TaskDeliverable::join('./apps/gateway/', './tests/ExportTest.php'))->toBe('apps/gateway/tests/ExportTest.php')

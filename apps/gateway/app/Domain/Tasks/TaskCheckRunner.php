@@ -29,4 +29,12 @@ interface TaskCheckRunner
 
     /** @throws TaskCheckException */
     public function cancel(AppInstance $instance, TaskCheckProcess $process): void;
+
+    /**
+     * Reads HEAD and the working-tree hash the check stores, without copying an earlier check row
+     * and without touching the Git index (ADR 0133).
+     *
+     * @throws TaskCheckException
+     */
+    public function snapshot(AppInstance $instance): TaskWorkspaceSnapshot;
 }

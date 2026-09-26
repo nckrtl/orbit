@@ -9,6 +9,7 @@ use App\Domain\Tasks\TaskCheckException;
 use App\Domain\Tasks\TaskCheckProcess;
 use App\Domain\Tasks\TaskCheckReading;
 use App\Domain\Tasks\TaskCheckRunner;
+use App\Domain\Tasks\TaskWorkspaceSnapshot;
 use App\Infrastructure\AppDev\AppDevSshExecutor;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\AppInstance;
@@ -78,6 +79,28 @@ final readonly class RemoteTaskCheckRunner implements TaskCheckRunner
         $this->run($instance, [(string) $process->pid, $process->started], 'python3 "$dir/check" cancel "$2" "$3"');
     }
 
+    public function snapshot(AppInstance $instance): TaskWorkspaceSnapshot
+    {
+        $script = file_get_contents(resource_path('tasks/check'));
+        if ($script === false) {
+            throw new TaskCheckException('The check script is missing from the Gateway.');
+        }
+        $data = $this->run($instance, [], "script='".base64_encode($script)."'\n".<<<'BASH'
+            install -d -m 0755 -- "$dir"
+            printf '%s' "$script" | base64 -d > "$dir/check.new"
+            chmod 0755 "$dir/check.new"
+            mv -f -- "$dir/check.new" "$dir/check"
+            python3 "$dir/check" snapshot "$checkout"
+            BASH, 'The task workspace could not be reached for the workspace tree.', 'The workspace tree could not be read.');
+        $head = $data['head'] ?? null;
+        $tree = $data['tree'] ?? null;
+        if (! is_string($head) || $head === '' || ! is_string($tree) || $tree === '') {
+            throw new TaskCheckException('The workspace tree could not be read.');
+        }
+
+        return new TaskWorkspaceSnapshot($head, $tree);
+    }
+
     private function finished(mixed $result, string $output): TaskCheckReading
     {
         if (! is_array($result) || ! is_int($result['exit_code'] ?? null) || ! is_string($result['head_after'] ?? null)
@@ -108,8 +131,13 @@ final readonly class RemoteTaskCheckRunner implements TaskCheckRunner
      * @param  list<string>  $arguments
      * @return array<string, mixed>
      */
-    private function run(AppInstance $instance, array $arguments, string $command): array
-    {
+    private function run(
+        AppInstance $instance,
+        array $arguments,
+        string $command,
+        string $unreachable = 'The task workspace could not be reached for the check.',
+        string $invalid = 'The check answered with invalid output.',
+    ): array {
         $instance->loadMissing('node');
         if ($instance->checkout_path === '') {
             throw new TaskCheckException('The task workspace has no checkout.');
@@ -120,15 +148,15 @@ final readonly class RemoteTaskCheckRunner implements TaskCheckRunner
                 input: "checkout=\$1\ndir=\$(git -C \"\$checkout\" rev-parse --absolute-git-dir)/orbit\n{$command}\n",
             ), 'task-check', 'tasks.check_failed');
         } catch (RuntimeConvergenceException $exception) {
-            throw new TaskCheckException('The task workspace could not be reached for the check.', previous: $exception);
+            throw new TaskCheckException($unreachable, previous: $exception);
         }
         try {
             $data = json_decode(trim($result->stdout), true, 8, JSON_THROW_ON_ERROR);
         } catch (JsonException $exception) {
-            throw new TaskCheckException('The check answered with invalid output.', previous: $exception);
+            throw new TaskCheckException($invalid, previous: $exception);
         }
         if (! is_array($data)) {
-            throw new TaskCheckException('The check answered with invalid output.');
+            throw new TaskCheckException($invalid);
         }
 
         /** @var array<string, mixed> $data */

@@ -356,6 +356,11 @@ body {
     height: 28px;
 }
 
+/* The activity log keeps its own scroll anchor. The browser's anchor would shift a prepend twice. */
+[data-activity-log] {
+    overflow-anchor: none;
+}
+
 /* Activity detail wraps every key and value. A phone has no hover, so the full path and request id stay in the layout. */
 .activity-detail-row {
     display: grid;

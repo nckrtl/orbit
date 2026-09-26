@@ -32,6 +32,8 @@ use Illuminate\Support\Carbon;
  * @property string|null $review_reminder_input_id
  * @property int|null $review_notified_attempt
  * @property string|null $review_notified_turn_id
+ * @property string|null $review_workspace_head
+ * @property string|null $review_workspace_tree
  * @property bool $assistance_requested
  * @property string|null $assistance_reason
  * @property int $communication_failures
@@ -92,6 +94,8 @@ final class Task extends Model
         'review_reminder_input_id',
         'review_notified_attempt',
         'review_notified_turn_id',
+        'review_workspace_head',
+        'review_workspace_tree',
         'assistance_requested', 'assistance_reason', 'communication_failures', 'resolution_delivered_comment_id',
     ];
 
