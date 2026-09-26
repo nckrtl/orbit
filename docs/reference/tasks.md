@@ -21,7 +21,9 @@ Enable and disable require Gateway access: the active Gateway peer, or a Node wi
 | --- | --- | --- |
 | `tasks:enable` | `POST /api/v1/tasks/enable` | Turns the extension on. Idempotent. |
 | `tasks:disable` | `POST /api/v1/tasks/disable` | Turns the extension off. Existing rows stay. Further group and subtask operations return `tasks.disabled`. |
-| `tasks:status` | `GET /api/v1/tasks/status` | Returns whether the extension is enabled. |
+| `tasks:status` | `GET /api/v1/tasks/status` | Returns whether the extension is enabled, and every group currently asking for assistance. |
+
+`tasks:status` returns `enabled` and `assistance`. `assistance` lists every group whose `assistance_requested` is true, in ascending group id order. Each entry has `id`, `app_id`, `app`, `project_code`, `title`, `status`, and `assistance_reason`. A group that is not asking is absent, even when it still stores an old reason. A flagged subtask does not add its group unless the group itself is asking. The list is present while the extension is off. `tasks:enable` and `tasks:disable` return only `enabled`.
 
 Every group and subtask operation below refuses with `tasks.disabled` and HTTP 409 while the extension is off.
 
@@ -35,6 +37,8 @@ A **TaskGroup** is one parent feature. A **Task** is an ordered subtask. Each ro
 | `brief` | both | Goal and acceptance |
 | `deliverables` | Task | Typed items the subtask must deliver. An empty list for subtasks created before deliverables existed |
 | `status` | both | Lifecycle state |
+| `assistance_requested` | both | True while that record is asking for assistance |
+| `assistance_reason` | both | Why it is asking. Clearing the flag can keep the last reason |
 | `position` | Task | Order inside the group, starting at 1 |
 | `taskable_type` / `taskable_id` | TaskGroup | Morph. v1 is an Instance only. Null until the scheduler assigns one |
 | `reviewer_agent_thread_id` | TaskGroup | Long-lived reviewer thread for the group |

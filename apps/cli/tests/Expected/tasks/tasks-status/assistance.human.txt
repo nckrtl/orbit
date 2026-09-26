@@ -1,0 +1,20 @@
+Loading tasks status...
+
+┌  Show tasks status
+│
+├  ● Loaded tasks status
+│
+└  Loaded tasks status.
+
+
+┌  Extension: tasks
+│
+└  Status   enabled
+
+ ┌───────┬─────────────────────┬──────────┬─────────────────────────────────┐
+ │ GROUP │ TITLE               │ STATUS   │ REASON                          │
+ ├───────┼─────────────────────┼──────────┼─────────────────────────────────┤
+ │ ORB-1 │ Blocked implementer │ running  │ The implementer is blocked.     │
+ │ ORB-2 │ Settling question   │ settling │ Which database should this use? │
+ └───────┴─────────────────────┴──────────┴─────────────────────────────────┘
+Request ID: 0198e15c-bf97-7c23-8f1f-61b8fe67a844
