@@ -167,7 +167,9 @@ A failed check stops the build before any change. `/run/lock` is a tmpfs, so the
 
 Every Node with Caddy sites, the Gateway machine included, installs Caddy from the pinned source before its first build.
 
-A Node without `/usr/bin/caddy` serves nothing, so a build there that has nothing to publish changes nothing. That is a file with no site, or any file while no Caddy role on the Node (`gateway`, `router`, `ingress`, `app-dev`, `app-prod`, `websocket`, `analytics`) is active or converging. The script then stops at step 2 and reports the build as unchanged. So when two Caddy roles both failed to converge before Caddy was installed, removing either one succeeds, although the other still renders its sites.
+A Node without `/usr/bin/caddy` and without a running `caddy` service serves nothing, so a build there that has nothing to publish changes nothing. A Caddy that still runs keeps serving the configuration it loaded, even with its binary gone, so a missing binary alone never skips a build. That is a file with no site, or any file while no Caddy role on the Node (`gateway`, `router`, `ingress`, `app-dev`, `app-prod`, `websocket`, `analytics`) is active or converging. The script then stops at step 2 and reports the build as unchanged.
+
+So when two Caddy roles both failed to converge before Caddy was installed, removing either one succeeds, although the other still renders its sites.
 
 The rule covers every build, not only removals. For example, a build that a Route change requests on a Node whose Ingress failed before Caddy was installed also reports `unchanged`, because nothing on that Node serves yet. The next convergence of a Caddy role there installs Caddy and builds the Node. While a Caddy role is active or converging, a missing Caddy still fails the build at step 2.
 
@@ -189,7 +191,7 @@ The command that requested the build fails with its usual error code:
 | Metrics and service metrics | `metrics.caddy_publication_failed` |
 | Gateway web convergence | `gateway.caddy_config_invalid` at `render` or `validate`, `gateway.caddy_start_failed` at `reload`, and `gateway.caddy_config_install_failed` at any other stage |
 
-Role convergence, such as `orbit node:role:add NODE app-dev --converge`, fails with `node_role.convergence_failed`; `orbit node:role:list` shows the publisher's code as the underlying error. The error message, the activity record, and the `node`, `stage`, and `message` fields of the error details name the Node, the failed stage, and Caddy's message. Each stage bounds the message at 2,000 bytes of UTF-8 and marks a cut with `…`. The CLI prints them under `error.details` with `--json`, next to the `step` that requested the build:
+Role convergence, such as `orbit node:role:add NODE app-dev --converge`, fails with `node_role.convergence_failed`; `orbit node:role:list` shows the publisher's code as the underlying error, and the error response carries it as `details.underlying_code`. The error message, the activity record, and the `node`, `stage`, and `message` fields of the error details name the Node, the failed stage, and Caddy's message. Each stage bounds the message at 2,000 bytes of UTF-8 and marks a cut with `…`. The CLI prints them under `error.details` with `--json`, next to the `step` that requested the build:
 
 ```text
 The Caddy build for Node [app-prod] failed at stage [validate]: Error: loading certificates: open /etc/caddy/orbit-websocket-cert-current/reverb.pem: no such file or directory

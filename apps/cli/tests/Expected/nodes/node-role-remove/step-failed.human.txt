@@ -8,3 +8,4 @@ Removing Node role...
 
 UFW is inactive on node [app-dev]. Retry with --offline if node [app-dev] is unreachable.
 step: remove:host-firewall
+underlying_code: firewall.inactive

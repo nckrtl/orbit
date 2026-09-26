@@ -154,7 +154,14 @@ return Application::configure(basePath: dirname(__DIR__))
                         'error' => [
                             'code' => $exception->errorCode,
                             'message' => $exception->getMessage(),
-                            'details' => ['step' => $exception->step, ...NodeCaddyBuildException::detailsIn($exception)],
+                            'details' => [
+                                'step' => $exception->step,
+                                // The failing component's own code, such as `metrics.image_pull_failed`, when it differs.
+                                ...($exception->underlyingErrorCode !== '' && $exception->underlyingErrorCode !== $exception->errorCode
+                                    ? ['underlying_code' => $exception->underlyingErrorCode]
+                                    : []),
+                                ...NodeCaddyBuildException::detailsIn($exception),
+                            ],
                         ],
                     ], 502)
                     ->header('X-Orbit-Request-Id', is_string($requestId) ? $requestId : '');

@@ -1358,7 +1358,7 @@ it('returns a safe correlated 502 for convergence failure', function (): void {
             'error' => [
                 'code' => 'node_role.convergence_failed',
                 'message' => 'Role convergence failed.',
-                'details' => ['step' => 'converge:packages'],
+                'details' => ['step' => 'converge:packages', 'underlying_code' => 'packages.failed'],
             ],
         ]);
 
@@ -1422,7 +1422,7 @@ it('returns a safe correlated 502 for removal failure', function (): void {
             'error' => [
                 'code' => 'node_role.remove_failed',
                 'message' => 'Role removal failed. Retry with --offline if node [role-target] is unreachable.',
-                'details' => ['step' => 'remove:firewall'],
+                'details' => ['step' => 'remove:firewall', 'underlying_code' => 'firewall.failed'],
             ],
         ]);
 

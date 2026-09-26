@@ -1060,6 +1060,8 @@ final readonly class MetricsSshExecutor implements MetricsCredentialRuntime, Met
                 continue;
             }
 
+            $this->assertDockerRunning($node);
+
             $this->run(
                 $node,
                 new RemoteCommand(['sudo', 'docker', 'image', 'pull', '--', $image], timeout: self::ImagePullTimeoutSeconds),
@@ -1068,6 +1070,23 @@ final readonly class MetricsSshExecutor implements MetricsCredentialRuntime, Met
                 timeoutErrorCode: 'metrics.image_pull_timed_out',
             );
         }
+    }
+
+    /**
+     * A missing image can also mean the Docker daemon does not answer, for example after `systemctl stop docker`.
+     * That cause gets its own code and message instead of a pull failure that names the image.
+     */
+    private function assertDockerRunning(Node $node): void
+    {
+        if ($this->raw($node, new RemoteCommand(['sudo', 'docker', 'info', '--format={{.ServerVersion}}']))->succeeded()) {
+            return;
+        }
+
+        throw new ResourceOperationException(
+            'metrics.docker_unavailable',
+            "Docker is not running on node [{$node->name}]. Start it, then converge Metrics again.",
+            502,
+        );
     }
 
     private function raw(

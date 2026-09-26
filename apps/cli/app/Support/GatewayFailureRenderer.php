@@ -38,6 +38,7 @@ final class GatewayFailureRenderer
         'cleanup' => '/\A[a-z][a-z0-9_]{0,63}\z/D',
         'role' => '/\A[a-z][a-z0-9-]{0,63}\z/D',
         'field' => '/\A[a-z][a-z0-9_.-]{0,63}\z/D',
+        'underlying_code' => '/\A[a-z][a-z0-9_-]{0,63}(?:\.[a-z][a-z0-9_-]{0,63}){1,3}\z/D',
     ];
 
     /**

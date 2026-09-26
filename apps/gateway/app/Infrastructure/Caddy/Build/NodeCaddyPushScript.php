@@ -18,8 +18,9 @@ use InvalidArgumentException;
  * It reports its last stage on stderr as `orbit-caddy-build-stage=<stage>` and its result on
  * stdout as `orbit-caddy-build-result=<published|unchanged>`.
  *
- * On a Node without Caddy nothing is served, so a build that only withdraws changes nothing and reports
- * `unchanged`. That holds for a render with no site, and for any render while no Caddy role on the Node is
+ * On a Node without the Caddy binary and without a running Caddy service nothing is served, so a build that
+ * only withdraws changes nothing and reports `unchanged`. A Caddy that still runs keeps serving its loaded
+ * configuration, so a missing binary alone never skips the build. That holds for a render with no site, and for any render while no Caddy role on the Node is
  * active or converging: then every Caddy role failed before Caddy was installed or is being removed, and a
  * removal must not fail on the sites another failed role still renders.
  */
@@ -178,7 +179,7 @@ final readonly class NodeCaddyPushScript
             {$lock}
 
             stage=release
-            if [ "\$unserved" = 1 ] && [ ! -e "\$caddy_bin" ]; then
+            if [ "\$unserved" = 1 ] && [ ! -e "\$caddy_bin" ] && ! systemctl is-active --quiet "\$caddy_service"; then
                 printf 'orbit-caddy-build-result=unchanged\\n'
                 exit 0
             fi
