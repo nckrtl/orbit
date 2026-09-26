@@ -9514,6 +9514,15 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
+            /** @description A step failed on the Node; `error.details.step` names it. When a role step failed, `error.details.error_code` names that step's own code. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
     "node-show": {
@@ -9635,6 +9644,15 @@ export interface operations {
             };
             /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A step failed on the Node; `error.details.step` names it. When a role step failed, `error.details.error_code` names that step's own code. */
+            502: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -10497,7 +10515,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description A role step failed on the Node (`node_role.convergence_failed` or `node_role.remove_failed`). `error.details.step` names the failed step. */
+            /** @description A role step failed on the Node (`node_role.convergence_failed` or `node_role.remove_failed`). `error.details.step` names the failed step, and `error.details.error_code` names its own code, such as `node_role.node_busy` or `node_role.tool_manager_locked`. */
             502: {
                 headers: {
                     [name: string]: unknown;
@@ -10585,7 +10603,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description A role step failed on the Node (`node_role.convergence_failed` or `node_role.remove_failed`). `error.details.step` names the failed step. */
+            /** @description A role step failed on the Node (`node_role.convergence_failed` or `node_role.remove_failed`). `error.details.step` names the failed step, and `error.details.error_code` names its own code, such as `node_role.node_busy` or `node_role.tool_manager_locked`. */
             502: {
                 headers: {
                     [name: string]: unknown;
@@ -10671,7 +10689,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description A role step failed on the Node (`node_role.convergence_failed` or `node_role.remove_failed`). `error.details.step` names the failed step. */
+            /** @description A role step failed on the Node (`node_role.convergence_failed` or `node_role.remove_failed`). `error.details.step` names the failed step, and `error.details.error_code` names its own code, such as `node_role.node_busy` or `node_role.tool_manager_locked`. */
             502: {
                 headers: {
                     [name: string]: unknown;
