@@ -129,8 +129,8 @@ The snapshot and each stream `state` event include `usage`. The sums cover every
 | `cacheRead` | Input read from cache. This is Orbit's cached input |
 | `cacheWrite` | Input written to cache. A cache write is uncached input, so Orbit adds it to `input` |
 | `total` | `input + output + cacheRead + cacheWrite` |
-| `modelCalls` | Assistant messages included in the sums |
-| `peakContextTokens` | Largest prompt on one call: `input + cacheRead + cacheWrite`. That is uncached input plus cached input. Output is excluded |
+| `calls` | Assistant messages included in the sums |
+| `peakContext` | Largest prompt on one call: `input + cacheRead + cacheWrite`. That is uncached input plus cached input. Output is excluded |
 
 Orbit stores uncached input as `input + cacheWrite` and cached input as `cacheRead`. Per-call usage in the session file uses the same `input`, `cacheRead`, `cacheWrite`, and `output` fields. `totalTokens` on a call equals those four numbers added.
 

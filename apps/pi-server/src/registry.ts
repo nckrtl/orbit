@@ -70,11 +70,20 @@ export interface TranscriptEntry {
 }
 
 export interface Usage {
+    /** Prompt tokens that are neither a cache read nor a cache write. */
     input: number;
+    /** Output tokens. A reasoning count on the call is already included. */
     output: number;
+    /** Input read from cache. */
     cacheRead: number;
+    /** Input written to cache. This is uncached input, not a cache read. */
     cacheWrite: number;
+    /** `input + output + cacheRead + cacheWrite`. */
     total: number;
+    /** Assistant messages included in the sums. */
+    calls: number;
+    /** Largest single-call context: `input + cacheRead + cacheWrite`. Output is excluded. */
+    peakContext: number;
 }
 
 export interface Snapshot {
@@ -585,12 +594,83 @@ function latestTurn(live: LiveSession): string | null {
     return live.record.acceptedKeys.at(-1) ?? null;
 }
 
+/**
+ * Cumulative usage over assistant messages with numeric `input`, `output`,
+ * `cacheRead`, and `cacheWrite`. A message missing one of those is not a call,
+ * and neither is a tool result, compaction, or other usage entry.
+ */
 function usage(session: AgentSession): Usage {
-    return { ...session.getSessionStats().tokens };
+    const totals: Usage = {
+        input: 0,
+        output: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+        total: 0,
+        calls: 0,
+        peakContext: 0,
+    };
+    for (const entry of session.sessionManager.getEntries()) {
+        if (entry.type !== "message") {
+            continue;
+        }
+        const call = countedCall(entry.message);
+        if (call === undefined) {
+            continue;
+        }
+        totals.input += call.input;
+        totals.output += call.output;
+        totals.cacheRead += call.cacheRead;
+        totals.cacheWrite += call.cacheWrite;
+        totals.peakContext = Math.max(
+            totals.peakContext,
+            call.input + call.cacheRead + call.cacheWrite,
+        );
+        totals.calls += 1;
+    }
+    totals.total = totals.input + totals.output + totals.cacheRead + totals.cacheWrite;
+
+    return totals;
+}
+
+interface CountedCall {
+    input: number;
+    output: number;
+    cacheRead: number;
+    cacheWrite: number;
+}
+
+/** A model call reports all four token counts. Anything else is not a call. */
+function countedCall(message: unknown): CountedCall | undefined {
+    if (typeof message !== "object" || message === null) {
+        return undefined;
+    }
+    const record = message as { role?: unknown; usage?: unknown };
+    if (record.role !== "assistant" || typeof record.usage !== "object" || record.usage === null) {
+        return undefined;
+    }
+    const usage = record.usage as Record<string, unknown>;
+    const input = usage.input;
+    const output = usage.output;
+    const cacheRead = usage.cacheRead;
+    const cacheWrite = usage.cacheWrite;
+    if (
+        !isTokenCount(input) ||
+        !isTokenCount(output) ||
+        !isTokenCount(cacheRead) ||
+        !isTokenCount(cacheWrite)
+    ) {
+        return undefined;
+    }
+
+    return { input, output, cacheRead, cacheWrite };
+}
+
+function isTokenCount(value: unknown): value is number {
+    return typeof value === "number" && Number.isFinite(value);
 }
 
 function stateKey(derived: DerivedState, tokens: Usage): string {
-    return JSON.stringify([derived.state, derived.error, tokens.total]);
+    return JSON.stringify([derived.state, derived.error, tokens]);
 }
 
 function sameConfig(a: SessionConfig, b: SessionConfig): boolean {

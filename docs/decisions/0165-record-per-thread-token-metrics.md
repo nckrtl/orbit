@@ -50,9 +50,9 @@ The Gateway does not recompute `tokens` from the split. For a Pi thread that rep
 
 ### Pi
 
-The Pi server adds `modelCalls` and `peakContextTokens` to `usage` on `GET /sessions/{id}` and on stream `state` events. `modelCalls` counts assistant messages with numeric `input`, `output`, `cacheRead`, and `cacheWrite`. `peakContextTokens` is the maximum of `input + cacheRead + cacheWrite` over those messages, which is that call's uncached input plus its cached input. The existing sums stay: `input`, `output`, `cacheRead`, `cacheWrite`, and `total`. Pi's `input` remains the portion of uncached input that is not a cache write.
+The Pi server adds `calls` and `peakContext` to `usage` on `GET /sessions/{id}` and on stream `state` events. `calls` counts assistant messages with numeric `input`, `output`, `cacheRead`, and `cacheWrite`. `peakContext` is the maximum of `input + cacheRead + cacheWrite` over those messages, which is that call's uncached input plus its cached input. The existing sums stay: `input`, `output`, `cacheRead`, `cacheWrite`, and `total`. Pi's `input` remains the portion of uncached input that is not a cache write.
 
-The Gateway maps one snapshot or state event as follows. `tokens` stays `usage.total`. `input_tokens` is `usage.input + usage.cacheWrite`. `cached_input_tokens` is `usage.cacheRead`. `output_tokens` is `usage.output`. Each of those three is null when its source is not an integer, and a null `cacheWrite` makes `input_tokens` null rather than treating the missing write as zero. `model_calls` is `usage.modelCalls` when that value is an integer, and otherwise null. `peak_context_tokens` is `usage.peakContextTokens` when that value is an integer, and otherwise null. A Pi server that has not sent the two new keys still fills the three sums from the usage object it already returns.
+The Gateway maps one snapshot or state event as follows. `tokens` stays `usage.total`. `input_tokens` is `usage.input + usage.cacheWrite`. `cached_input_tokens` is `usage.cacheRead`. `output_tokens` is `usage.output`. Each of those three is null when its source is not an integer, and a null `cacheWrite` makes `input_tokens` null rather than treating the missing write as zero. `model_calls` is `usage.calls` when that value is an integer, and otherwise null. `peak_context_tokens` is `usage.peakContext` when that value is an integer, and otherwise null. A Pi server that has not sent the two new keys still fills the three sums from the usage object it already returns.
 
 ### T3
 
@@ -81,7 +81,7 @@ Over the counted calls, `input_tokens` is the sum of `inputTokens - cachedInputT
 
 ## Consequences
 
-- A Pi thread reports all five fields once the Pi server sends `modelCalls` and `peakContextTokens`. Before those keys exist, the three sums still come from `usage`, and `model_calls` and `peak_context_tokens` stay null.
+- A Pi thread reports all five fields once the Pi server sends `calls` and `peakContext`. Before those keys exist, the three sums still come from `usage`, and `model_calls` and `peak_context_tokens` stay null.
 - A T3 Codex thread reports all five fields from the snapshot activities. A T3 thread whose activities omit `cachedInputTokens`, including Claude, keeps the five fields null.
 - `tokens` on the thread, the subtask, and the group stays the cumulative total. The webhook and the web board stay on that total.
 - Rows observed before this record stay null until the next successful observation.
