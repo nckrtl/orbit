@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Tools;
 
+use App\Domain\Nodes\NodeLockLoss;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tools\ToolActionResult;
 use App\Domain\Tools\ToolManager;
@@ -119,12 +120,13 @@ final readonly class UpdateToolAction
             );
             $this->markToolFailure($current, ToolOperation::Update, $failure);
             throw $failure;
-        } catch (Throwable) {
+        } catch (Throwable $exception) {
             $failure = $this->managerFailure(
                 tool: $current,
                 errorCode: 'tool.version_probe_failed',
                 status: 502,
                 message: 'The installed tool version could not be determined.',
+                previous: NodeLockLoss::keep($exception),
             );
             $this->markToolFailure($current, ToolOperation::Update, $failure);
             throw $failure;
@@ -183,13 +185,14 @@ final readonly class UpdateToolAction
                 );
                 $this->markToolFailure($current, ToolOperation::Update, $failure, $before);
                 throw $failure;
-            } catch (Throwable) {
+            } catch (Throwable $exception) {
                 $failure = $this->managerFailure(
                     tool: $current,
                     errorCode: 'tool.candidate_version_probe_failed',
                     status: 502,
                     message: 'The tool candidate version could not be determined.',
                     outcome: ToolOutcome::CandidateVersionUnavailable,
+                    previous: NodeLockLoss::keep($exception),
                 );
                 $this->markToolFailure($current, ToolOperation::Update, $failure, $before);
                 throw $failure;
@@ -245,12 +248,13 @@ final readonly class UpdateToolAction
             );
             $this->markToolFailure($current, ToolOperation::Update, $failure, $before);
             throw $failure;
-        } catch (Throwable) {
+        } catch (Throwable $exception) {
             $failure = $this->managerFailure(
                 tool: $current,
                 errorCode: 'tool.update_failed',
                 status: 502,
                 message: 'The tool update failed.',
+                previous: NodeLockLoss::keep($exception),
             );
             $this->markToolFailure($current, ToolOperation::Update, $failure, $before);
             throw $failure;
@@ -268,12 +272,13 @@ final readonly class UpdateToolAction
             );
             $this->markToolFailure($current, ToolOperation::Update, $failure, $before);
             throw $failure;
-        } catch (Throwable) {
+        } catch (Throwable $exception) {
             $failure = $this->managerFailure(
                 tool: $current,
                 errorCode: 'tool.version_probe_failed',
                 status: 502,
                 message: 'The updated tool version could not be determined.',
+                previous: NodeLockLoss::keep($exception),
             );
             $this->markToolFailure($current, ToolOperation::Update, $failure, $before);
             throw $failure;
@@ -438,7 +443,7 @@ final readonly class UpdateToolAction
         int $status,
         string $message,
         ToolOutcome $outcome = ToolOutcome::ManagerFailed,
-        ?ToolManagerException $previous = null,
+        ?Throwable $previous = null,
     ): ToolOperationException {
         return $this->failure(
             tool: $tool,
@@ -456,7 +461,7 @@ final readonly class UpdateToolAction
         ToolOutcome $outcome,
         int $status,
         string $message,
-        ?ToolManagerException $previous = null,
+        ?Throwable $previous = null,
     ): ToolOperationException {
         return new ToolOperationException(
             step: ToolOperation::Update->value,

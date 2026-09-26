@@ -305,6 +305,7 @@ use App\Infrastructure\Nodes\Roles\NodeRoleConvergeLock;
 use App\Infrastructure\Nodes\SshManagedUserAccountResolver;
 use App\Infrastructure\Nodes\SshNodeReachabilityProbe;
 use App\Infrastructure\Processes\CommandDeadline;
+use App\Infrastructure\Processes\LockRenewingProcessRunner;
 use App\Infrastructure\Processes\NativeProcessAdmissionLock;
 use App\Infrastructure\Processes\NativeProcessRunner;
 use App\Infrastructure\Processes\NativeProcessRuntimeLease;
@@ -470,7 +471,6 @@ final class AppServiceProvider extends ServiceProvider
         ScheduleRuntimeManager::class => RemoteScheduleRuntimeManager::class,
         GitHubApi::class => HttpGitHubApi::class,
         RepositoryDefaultBranchResolver::class => NativeRepositoryDefaultBranchResolver::class,
-        ProcessRunner::class => NativeProcessRunner::class,
         SshExecutor::class => NativeSshExecutor::class,
         DatabaseInspectionExecutor::class => RegisteredDatabaseInspectionExecutor::class,
         ClusterRouterDnsSelectionReconciler::class => NativeClusterRouterDnsSelectionReconciler::class,
@@ -546,6 +546,14 @@ final class AppServiceProvider extends ServiceProvider
             NodeLocks::class,
             static fn ($app): NodeLocks => new NodeLocks(
                 $app->make(CacheManager::class)->build(NodeLocks::storeConfiguration((string) config('orbit.home'))),
+                console: $app->runningInConsole(),
+            ),
+        );
+        $this->app->bind(
+            ProcessRunner::class,
+            static fn ($app): ProcessRunner => new LockRenewingProcessRunner(
+                $app->make(NativeProcessRunner::class),
+                $app->make(NodeLocks::class),
             ),
         );
         $this->app->singleton(NodeRoleConvergeLock::class);

@@ -8,7 +8,6 @@ use App\Domain\Nodes\NodeRoleOperationException;
 use App\Infrastructure\Nodes\NodeLocks;
 use App\Models\Node;
 use Closure;
-use Illuminate\Cache\Lock as CacheLock;
 use Illuminate\Contracts\Cache\Lock;
 use Illuminate\Contracts\Cache\LockTimeoutException;
 
@@ -19,9 +18,6 @@ use Illuminate\Contracts\Cache\LockTimeoutException;
  */
 final class NodeRoleConvergeLock
 {
-    /** How long one role operation may hold the lock (NodeLocks::RequestSeconds). */
-    public const int LockSeconds = NodeLocks::RequestSeconds;
-
     /** @var array<string, array{lock: Lock, depth: positive-int}> */
     private array $held = [];
 
@@ -53,7 +49,7 @@ final class NodeRoleConvergeLock
             }
         }
 
-        $lock = $this->locks->lock($name, self::LockSeconds);
+        $lock = $this->locks->lock($name, $this->locks->operationSeconds());
 
         try {
             $lock->block($this->waitSeconds);
@@ -80,9 +76,7 @@ final class NodeRoleConvergeLock
     /** Whether any process holds the Node's role lock now. */
     public function isHeld(Node $node): bool
     {
-        $lock = $this->locks->lock(self::name($node), 1);
-
-        return $lock instanceof CacheLock && $lock->isLocked();
+        return $this->locks->lock(self::name($node), 1)->isLocked();
     }
 
     private static function name(Node $node): string

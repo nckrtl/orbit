@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\Nodes\ManagedUserAccountResolver;
+use App\Domain\Nodes\NodeLockLoss;
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Infrastructure\Nodes\SshManagedUserAccountResolver;
 use App\Infrastructure\Processes\CommandResult;
@@ -247,3 +248,46 @@ it('bounds dependency exceptions and is registered as a singleton', function ():
         );
     expect(app(ManagedUserAccountResolver::class))->toBe(app(ManagedUserAccountResolver::class));
 });
+
+it('keeps a lost Node lock as the previous failure and nothing else', function (Throwable $failure, bool $kept): void {
+    $executor = new class($failure) implements SshExecutor
+    {
+        public function __construct(private readonly Throwable $failure) {}
+
+        public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
+        {
+            throw $this->failure;
+        }
+    };
+    $resolver = new SshManagedUserAccountResolver(
+        $executor,
+        new class implements SshKeyProvider
+        {
+            public function privateKeyPath(): string
+            {
+                return '/tmp/key';
+            }
+
+            public function publicKey(): string
+            {
+                return 'key';
+            }
+        },
+        new class implements KnownHostsStore
+        {
+            public function path(): string
+            {
+                return '/tmp/hosts';
+            }
+
+            public function put(string $host, int $port, HostKey $key): void {}
+        },
+    );
+
+    expect(fn () => $resolver->resolve(new Node(['user' => 'deploy', 'wireguard_ip' => '10.44.0.8'])))
+        ->toThrow(fn (NodeProvisioningException $e) => expect($e->errorCode)->toBe('node.managed_user_unavailable')
+            ->and($e->getPrevious())->toBe($kept ? $failure : null));
+})->with([
+    'lost Node lock' => [NodeLockLoss::exception('node-role:id:1'), true],
+    'other failure' => [new RuntimeException('secret stderr'), false],
+]);
