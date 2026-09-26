@@ -8,6 +8,7 @@ use App\Domain\Nodes\NodeRoleOperationException;
 use App\Infrastructure\Nodes\NodeLocks;
 use App\Models\Node;
 use Closure;
+use Illuminate\Cache\Lock as CacheLock;
 use Illuminate\Contracts\Cache\Lock;
 use Illuminate\Contracts\Cache\LockTimeoutException;
 
@@ -40,7 +41,7 @@ final class NodeRoleConvergeLock
      */
     public function run(Node $node, Closure $callback, string $errorCode = 'node_role.convergence_failed', string $step = 'node-lock'): mixed
     {
-        $name = 'node-role:'.($node->exists ? 'id:'.$node->getKey() : 'name:'.$node->name);
+        $name = self::name($node);
 
         if (isset($this->held[$name])) {
             $this->held[$name]['depth']++;
@@ -74,5 +75,18 @@ final class NodeRoleConvergeLock
             unset($this->held[$name]);
             $lock->release();
         }
+    }
+
+    /** Whether any process holds the Node's role lock now. */
+    public function isHeld(Node $node): bool
+    {
+        $lock = $this->locks->lock(self::name($node), 1);
+
+        return $lock instanceof CacheLock && $lock->isLocked();
+    }
+
+    private static function name(Node $node): string
+    {
+        return 'node-role:'.($node->exists ? 'id:'.$node->getKey() : 'name:'.$node->name);
     }
 }
