@@ -1,11 +1,11 @@
 ---
 title: "Web app"
-description: "How the Gateway serves the Orbit web app at https://gateway.orbit, how bin/web-deploy releases it, and how to roll a release back. An installed copy on iPhone and iPad stays clear of the screen edges."
+description: "How the Gateway serves the Orbit web app at https://gateway.orbit, how bin/web-deploy releases it, and how to roll a release back. An installed iPhone app fills the screen below an opaque status bar."
 ---
 
 # Web app
 
-This page tells an operator how the Gateway serves the Orbit web app, how to release a new build, and how to roll a release back. It also states how an installed copy on an iPhone or iPad stays clear of the screen edges. [ADR 0123](/decisions/0123-serve-the-web-app-from-the-gateway-origin) records why the app shares the Gateway origin.
+This page tells an operator how the Gateway serves the Orbit web app, how to release a new build, and how to roll a release back. It also states how an installed iPhone or iPad copy fills the screen and stays clear of the home indicator. [ADR 0123](/decisions/0123-serve-the-web-app-from-the-gateway-origin) records why the app shares the Gateway origin.
 
 ## Open the app
 
@@ -13,17 +13,13 @@ Open `https://gateway.orbit` from a machine on the Orbit WireGuard network. The 
 
 ## Installed app and safe areas
 
-Add the web app to the home screen on an iPhone or iPad and it opens full screen. The page draws under the status bar, under the notch or Dynamic Island, and under the home indicator. The same edges apply in portrait and in landscape.
+Add the web app to the home screen on an iPhone or iPad and it opens full screen. The installed app uses an opaque black status bar. The clock sits in that bar, not on the page. The web view starts below the bar and reaches the bottom edge of the screen. The top inset is 0. The shell is as tall as the web view, so the page fills that area. Padding from `env(safe-area-inset-bottom)` keeps the footer above the home indicator. A browser tab is unchanged.
 
-The app shell keeps the page header, the main navigation, and the footer hint clear of those edges. On a narrow screen the header holds the menu button, and the navigation is the menu that button opens. The header, the navigation, and the footer hint stay tappable.
+The app shell keeps the page header, the main navigation, and the footer hint clear of the screen edges. On a narrow screen the header holds the menu button, and the navigation is the menu that button opens. The header, the navigation, and the footer hint stay tappable.
 
 While the app is installed, the shell pads the top, the bottom, the left, and the right by the inset for that edge. A home screen launch uses standalone display mode. Turning the device updates the four insets, and the shell follows them. A normal browser tab receives no extra safe-area padding. Safari can report a non-zero inset in a tab, especially in landscape, so the shell does not add padding for a tab inset.
 
 Only the shell applies the padding for the installed app, and it does so once. Pages do not add their own inset padding. A second pad would move page content in from an edge the shell already cleared.
-
-The status bar stays translucent. The app background shows behind the clock. The shell does not cover that area with an opaque bar.
-
-[index.html](https://github.com/nckrtl/orbit/blob/main/apps/web/index.html) sets the viewport to include `viewport-fit=cover`. It sets `apple-mobile-web-app-status-bar-style` to `black-translucent`. Those two values let the page draw under the status bar while the background stays visible behind the clock.
 
 While the app is installed, the shell uses these four insets:
 
@@ -33,6 +29,26 @@ While the app is installed, the shell uses these four insets:
 | Bottom | `env(safe-area-inset-bottom)` |
 | Left | `env(safe-area-inset-left)` |
 | Right | `env(safe-area-inset-right)` |
+
+On the installed app the top value resolves to 0, because the web view already starts below the status bar. The bottom value is the home indicator. The left and right values are whatever the device reports for those edges.
+
+[index.html](https://github.com/nckrtl/orbit/blob/main/apps/web/index.html) sets the viewport to include `viewport-fit=cover`. It sets `apple-mobile-web-app-status-bar-style` to `black`. That opaque style places the web view below the status bar. The viewport value lets the web view reach the bottom edge, where the home indicator sits.
+
+iOS reads the `apple-mobile-web-app-*` tags only when the icon is added to the home screen. Remove an existing icon and add the app again after a release changes those tags. An icon left in place keeps the tags from the install.
+
+### Why the status bar is opaque on iOS 26
+
+A translucent status bar does not fill an installed iPhone on iOS 26. [WebKit bug 301108](https://bugs.webkit.org/show_bug.cgi?id=301108) records the failure. With `apple-mobile-web-app-status-bar-style` set to `black-translucent` and `viewport-fit=cover`, the web view starts at y=0, under the status bar. Its height is the screen height minus the top safe-area inset.
+
+`100%`, `100vh`, `100svh`, `100dvh`, and `innerHeight` each come out short by that inset. The missing strip is a dead band at the bottom, and page CSS cannot reach it. Published reports disagree on whether `100lvh` fills that band, so the app does not depend on it.
+
+The translucent bar also lays the iOS 26 edge blur over the top of the page. In production the blur sits on the header. The short web view plus the shell's bottom padding leaves a large empty band under the footer.
+
+The opaque `black` style avoids both faults. The web view starts below the status bar, the top inset is 0, and the view reaches the bottom edge. The shell's existing bottom padding keeps the footer above the home indicator.
+
+### Viewport readout
+
+The Menu drawer shows one line for support. Open it from the Menu button in the header on a narrow screen. The line lists the display mode, the `innerWidth` by `innerHeight` size, the `screen.width` by `screen.height` size, and the four resolved safe-area insets. Those insets follow the table above: top, bottom, left, then right.
 
 ## How the Gateway site routes requests
 
