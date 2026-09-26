@@ -93,15 +93,16 @@ it("lists Activity after Tasks and opens the newest rows", async () => {
     await page.screenshot({ path: "expected/activity-desktop.png" });
 
     await userEvent.keyboard("{ArrowRight}{Enter}{Enter}");
-    await expect.poll(app.url).toContain("/activity/27");
+    await expect.poll(app.url).toContain("/activity/150");
     app.router.history.back();
     await expect.element(pane("Activity")).toBeVisible();
 });
 
 it("filters by status, command and node, and a new filter clears the older page", async () => {
-    const app = await openApp("/activity?status=failed&before_id=3");
+    const app = await openApp("/activity?status=failed");
     await expect.element(page.getByRole("button", { name: "status: failed ▾" })).toBeVisible();
-    await expect.element(pane("Activity")).toHaveTextContent("No activity.");
+    await expect.element(pane("Activity")).toHaveTextContent("node:add");
+    await expect.element(pane("Activity")).not.toHaveTextContent("instance:deploy");
 
     await page.getByRole("button", { name: "status: failed ▾" }).click();
     await expect.poll(app.url).toBe("/activity");
@@ -148,14 +149,12 @@ it("loads the older page from its control and from scrolling the list", async ()
     await expect.element(page.getByRole("button", { name: "Older rows" })).toBeVisible();
     await page.getByRole("button", { name: "Older rows" }).click();
 
-    await expect.poll(app.url).toContain("before_id=3");
-    await expect.element(pane("Activity")).toHaveTextContent("database:create");
-    await expect.element(pane("Activity")).not.toHaveTextContent("instance:deploy");
-    expect(app.gateway.requests.some((request) => request.path.includes("before_id=3"))).toBe(true);
-
-    await page.getByRole("button", { name: "Newest" }).click();
-    await expect.poll(app.url).toBe("/activity");
+    await expect
+        .poll(() => app.gateway.requests.some((request) => request.path.includes("before_id=101")))
+        .toBe(true);
+    await expect.element(pane("Activity")).toHaveTextContent("node:list");
     await expect.element(pane("Activity")).toHaveTextContent("instance:deploy");
+    await expect.poll(app.url).not.toContain("before_id");
 
     await page.viewport(1280, 420);
     await expect.element(pane("Activity")).toHaveTextContent("instance:deploy");
@@ -164,7 +163,10 @@ it("loads the older page from its control and from scrolling the list", async ()
     expect(body.scrollHeight).toBeGreaterThan(body.clientHeight);
     body.scrollTop = body.scrollHeight;
     body.dispatchEvent(new Event("scroll"));
-    await expect.poll(app.url).toContain("before_id=3");
+    await expect
+        .poll(() => app.gateway.requests.some((request) => request.path.includes("before_id=51")))
+        .toBe(true);
+    await expect.poll(app.url).not.toContain("before_id");
 });
 
 it("shows a new row and a finished row when their notices arrive", async () => {
@@ -222,8 +224,9 @@ it("shows a new row and a finished row when their notices arrive", async () => {
             error_code: "activity.interrupted",
         },
     });
-    await expect.element(pane("Activity")).toHaveTextContent("No activity.");
-    expect(activityPaths.at(-1)).toContain("status=running");
+    await expect.element(pane("Activity")).toHaveTextContent("process:start");
+    await expect.element(pane("Activity")).toHaveTextContent("activity.interrupted");
+    const before = activityPaths.length;
 
     rows.current = [
         activity(4, {
@@ -234,7 +237,6 @@ it("shows a new row and a finished row when their notices arrive", async () => {
         }),
         ...rows.current,
     ];
-    const before = activityPaths.length;
     applyEvent(queryClient, {
         type: "activity.created",
         id: 4,
@@ -242,7 +244,7 @@ it("shows a new row and a finished row when their notices arrive", async () => {
         data: { id: 4, command: "instance:deploy", status: "running" },
     });
     await expect.element(pane("Activity")).toHaveTextContent("instance:deploy");
-    expect(activityPaths.slice(before).some((path) => path.includes("status=running"))).toBe(true);
+    expect(activityPaths).toHaveLength(before);
     await page.screenshot({ path: "expected/activity-live.png" });
 });
 
@@ -253,13 +255,13 @@ it("opens a row on its own route, including the stored properties, and back keep
         .getByRole("row", { name: /node.ssh_host_fingerprint_required/ })
         .click();
 
-    await expect.poll(app.url).toContain("/activity/25");
+    await expect.poll(app.url).toContain("/activity/148");
     await expect.poll(app.url).toContain("status=failed");
     await expect.element(pane("Activity")).toHaveTextContent("node.ssh_host_fingerprint_required");
     await expect.element(pane("Activity")).toHaveTextContent("10.44.0.1");
     await expect.element(pane("Properties")).toHaveTextContent("[REDACTED]");
     await expect.element(pane("Properties")).toHaveTextContent("spare");
-    expect(app.gateway.requests.some((request) => request.path === "/api/v1/activities/25")).toBe(
+    expect(app.gateway.requests.some((request) => request.path === "/api/v1/activities/148")).toBe(
         true,
     );
 
@@ -305,9 +307,9 @@ it("keeps the menu, filters, older rows and detail usable on a phone", async () 
     await expect.element(page.getByRole("button", { name: "Older rows" })).toBeVisible();
     await page.screenshot({ path: "expected/activity-phone.png" });
 
-    await expect.element(page.getByRole("button", { name: "Open activity 27" })).toBeVisible();
-    await page.getByRole("button", { name: "Open activity 27" }).click();
-    await expect.poll(app.url).toContain("/activity/27");
+    await expect.element(page.getByRole("button", { name: "Open activity 150" })).toBeVisible();
+    await page.getByRole("button", { name: "Open activity 150" }).click();
+    await expect.poll(app.url).toContain("/activity/150");
     const frames = [...document.querySelectorAll("main .frame")].map((frame) =>
         frame.getBoundingClientRect(),
     );

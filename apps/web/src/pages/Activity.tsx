@@ -1,10 +1,10 @@
-import { useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams, useRouter, useSearch } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import {
     activitiesQuery,
     activityQuery,
-    olderActivityBeforeId,
+    rebuildActivityList,
     type Activity,
     type ActivityListFilters,
     type ActivityStatus,
@@ -78,12 +78,11 @@ function nextNodeId(nodes: readonly Node[], current: number | undefined): number
     return ids[index + 1];
 }
 
-function withoutCursor(
+function withFilters(
     filters: ActivityListFilters,
     patch: ActivityListFilters,
 ): ActivityListFilters {
     const next: ActivityListFilters = { ...filters, ...patch };
-    delete next.before_id;
     for (const key of Object.keys(next) as (keyof ActivityListFilters)[]) {
         if (next[key] === undefined) delete next[key];
     }
@@ -214,17 +213,15 @@ function ActivityFilters({
     search,
     nodes,
     stacked,
-    olderBeforeId,
+    hasOlder,
     onChange,
-    onNewest,
     onOlder,
 }: {
     search: ActivityListFilters;
     nodes: readonly Node[];
     stacked: boolean;
-    olderBeforeId: number | null;
+    hasOlder: boolean;
     onChange: (patch: ActivityListFilters) => void;
-    onNewest: () => void;
     onOlder: () => void;
 }) {
     const controlClass = stacked
@@ -266,12 +263,7 @@ function ActivityFilters({
                     onChange({ target_node_id: nextNodeId(nodes, search.target_node_id) })
                 }
             />
-            {search.before_id !== undefined && (
-                <button type="button" className={controlClass} onClick={onNewest}>
-                    Newest
-                </button>
-            )}
-            {olderBeforeId !== null && (
+            {hasOlder && (
                 <button
                     type="button"
                     aria-label="Older rows"
@@ -298,35 +290,35 @@ function ActivityError({ error, retry }: { error: Error; retry: () => void }) {
     );
 }
 
-/** The Activity log: one page of 25 rows, filtered, with older rows on the cursor. */
+/** The Activity log: one continuous list, 50 rows at a time, filtered. The cursor is the next request. */
 export function ActivityPage() {
     const search = useSearch({ from: "/activity" });
     const router = useRouter();
+    const client = useQueryClient();
     const onDesktop = useDesktop();
     const fleet = useFleet();
-    const list = useQuery({ ...activitiesQuery(search), refetchInterval: useTaskPoll() });
-    const olderBeforeId = list.data === undefined ? null : olderActivityBeforeId(list.data);
-    const paging = useRef(false);
-    const olderRef = useRef<number | null>(null);
-    const searchRef = useRef(search);
-    olderRef.current = olderBeforeId;
-    searchRef.current = search;
+    const poll = useTaskPoll();
+    const list = useInfiniteQuery(activitiesQuery(search));
+    const listRef = useRef(list);
+    listRef.current = list;
+    const rows = useMemo(() => list.data?.pages.flat() ?? [], [list.data]);
 
     const loadOlder = () => {
-        const beforeId = olderRef.current;
-        if (beforeId === null || paging.current) return;
-        paging.current = true;
-        void router.navigate({
-            to: "/activity",
-            search: { ...searchRef.current, before_id: beforeId },
-        });
+        const current = listRef.current;
+        if (!current.hasNextPage || current.isFetchingNextPage) return;
+        void current.fetchNextPage();
     };
     const loadOlderRef = useRef(loadOlder);
     loadOlderRef.current = loadOlder;
 
     useEffect(() => {
-        paging.current = false;
-    }, [search]);
+        const timer = setInterval(() => {
+            if (document.hidden) return;
+            void rebuildActivityList(client, search);
+        }, poll);
+
+        return () => clearInterval(timer);
+    }, [client, poll, search]);
 
     useEffect(() => {
         if (list.data === undefined) return;
@@ -340,7 +332,7 @@ export function ActivityPage() {
         scroller.addEventListener("scroll", onScroll);
 
         return () => scroller.removeEventListener("scroll", onScroll);
-    }, [list.data, onDesktop, search.before_id]);
+    }, [list.data, onDesktop]);
 
     const open = (row: Activity) => {
         void router.navigate({
@@ -350,15 +342,11 @@ export function ActivityPage() {
         });
     };
     const applyFilters = (patch: ActivityListFilters) => {
-        const next = withoutCursor(search, patch);
-        if (JSON.stringify(next) === JSON.stringify(withoutCursor(search, {}))) return;
+        const next = withFilters(search, patch);
+        if (JSON.stringify(next) === JSON.stringify(withFilters(search, {}))) return;
         void router.navigate({ to: "/activity", search: next });
     };
-    const showNewest = () => {
-        void router.navigate({ to: "/activity", search: withoutCursor(search, {}) });
-    };
     const columns = useMemo(() => activityColumns(fleet.nodes), [fleet.nodes]);
-    const rows = list.data ?? [];
 
     return (
         <div className="flex min-w-0 flex-col gap-y-[var(--panel-gap)] md:h-full md:min-h-0">
@@ -368,9 +356,8 @@ export function ActivityPage() {
                         search={search}
                         nodes={fleet.nodes}
                         stacked={false}
-                        olderBeforeId={olderBeforeId}
+                        hasOlder={list.hasNextPage === true}
                         onChange={applyFilters}
-                        onNewest={showNewest}
                         onOlder={loadOlder}
                     />
                 ) : undefined}
@@ -399,9 +386,8 @@ export function ActivityPage() {
                             search={search}
                             nodes={fleet.nodes}
                             stacked
-                            olderBeforeId={olderBeforeId}
+                            hasOlder={list.hasNextPage === true}
                             onChange={applyFilters}
-                            onNewest={showNewest}
                             onOlder={loadOlder}
                         />
                     </div>

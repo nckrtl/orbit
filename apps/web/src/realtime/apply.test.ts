@@ -1,11 +1,12 @@
 import {
     environmentManager,
+    InfiniteQueryObserver,
     QueryClient,
     QueryObserver,
     type QueryFunction,
 } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vite-plus/test";
-import { activitiesQuery, activityQuery } from "../api/activities";
+import { activitiesQuery, activityQuery, type Activity, type ActivityLog } from "../api/activities";
 import { setTransport } from "../api/client";
 import { applyEvent, flushTaskRefetches, TASK_REFETCH_DELAY_MS } from "./apply";
 import { lastProcessUsageAt, processPollInterval, resetProcessUsage } from "./process-usage";
@@ -254,13 +255,37 @@ describe("task events", () => {
     });
 });
 
+function activity(id: number, patch: Partial<Activity> = {}): Activity {
+    return {
+        id,
+        request_id: "req",
+        command: "node:add",
+        caller_node_id: 1,
+        target_node_id: 2,
+        caller_ip: null,
+        status: "succeeded",
+        duration_ms: 10,
+        exit_code: 0,
+        error_code: null,
+        subject_type: null,
+        subject_id: null,
+        properties: { name: "spare" },
+        occurred_at: "2026-09-20T12:00:00Z",
+        ...patch,
+    };
+}
+
+function logOf(rows: Activity[]): ActivityLog {
+    return { pages: [rows], pageParams: [undefined] };
+}
+
 describe("activity events", () => {
     const notice = (type: string, data: Record<string, unknown>, id = 1) => ({
         ...event(type, data),
         id,
     });
 
-    it("waits 100ms, then refetches the list once and each updated row", () => {
+    it("waits 100ms, then refetches each updated row and does not refetch the list", () => {
         vi.useFakeTimers();
         const invalidate = vi.spyOn(client, "invalidateQueries");
         applyEvent(client, notice("activity.updated", { id: 4, status: "failed" }, 4));
@@ -273,7 +298,6 @@ describe("activity events", () => {
         vi.advanceTimersByTime(1);
 
         expect(invalidated(invalidate)).toEqual([
-            { queryKey: ["activities", "list"], exact: false },
             { queryKey: ["activities", "4"], exact: true },
             { queryKey: ["activities", "5"], exact: true },
         ]);
@@ -285,9 +309,7 @@ describe("activity events", () => {
 
         flushTaskRefetches();
 
-        expect(invalidated(invalidate)).toEqual([
-            { queryKey: ["activities", "list"], exact: false },
-        ]);
+        expect(invalidate).not.toHaveBeenCalled();
     });
 
     it("uses the envelope id when an update notice has none of its own", () => {
@@ -296,21 +318,142 @@ describe("activity events", () => {
 
         flushTaskRefetches();
 
-        expect(invalidated(invalidate)).toEqual([
-            { queryKey: ["activities", "list"], exact: false },
-            { queryKey: ["activities", "9"], exact: true },
-        ]);
+        expect(invalidated(invalidate)).toEqual([{ queryKey: ["activities", "9"], exact: true }]);
     });
 
-    it("refetches the filtered list and the open row, not a row that is closed", async () => {
+    it("inserts a matching created row at the top and skips one that does not match", () => {
+        const invalidate = vi.spyOn(client, "invalidateQueries");
+        const failed = activitiesQuery({ status: "failed", command: "node:add" });
+        const running = activitiesQuery({ status: "running" });
+        client.setQueryData(failed.queryKey, logOf([activity(4, { status: "failed" })]));
+        client.setQueryData(
+            running.queryKey,
+            logOf([activity(3, { status: "running", command: "process:start" })]),
+        );
+
+        applyEvent(
+            client,
+            notice(
+                "activity.created",
+                {
+                    id: 12,
+                    command: "node:add",
+                    status: "failed",
+                    caller_node_id: null,
+                    target_node_id: null,
+                },
+                12,
+            ),
+        );
+        applyEvent(
+            client,
+            notice(
+                "activity.created",
+                { id: 11, command: "node:add", status: "running", caller_node_id: 1 },
+                11,
+            ),
+        );
+        applyEvent(
+            client,
+            notice("activity.created", { id: 4, command: "node:add", status: "failed" }, 4),
+        );
+        flushTaskRefetches();
+
+        expect(invalidate).not.toHaveBeenCalled();
+        expect(
+            client
+                .getQueryData<ActivityLog>(failed.queryKey)
+                ?.pages.flat()
+                .map((row) => row.id),
+        ).toEqual([12, 4]);
+        expect(
+            client
+                .getQueryData<ActivityLog>(running.queryKey)
+                ?.pages.flat()
+                .map((row) => row.id),
+        ).toEqual([11, 3]);
+        expect(
+            client
+                .getQueryData<ActivityLog>(failed.queryKey)
+                ?.pages.flat()
+                .filter((row) => row.id === 4),
+        ).toHaveLength(1);
+    });
+
+    it("does not insert a row whose caller or target is null into that node filter", () => {
+        const callers = activitiesQuery({ caller_node_id: 2 });
+        client.setQueryData(callers.queryKey, logOf([activity(2, { caller_node_id: 2 })]));
+
+        applyEvent(
+            client,
+            notice(
+                "activity.created",
+                { id: 9, command: "app:list", status: "succeeded", caller_node_id: null },
+                9,
+            ),
+        );
+
+        expect(
+            client
+                .getQueryData<ActivityLog>(callers.queryKey)
+                ?.pages.flat()
+                .map((row) => row.id),
+        ).toEqual([2]);
+    });
+
+    it("patches a loaded row in place and leaves it when the new status leaves the filter", () => {
+        const running = activitiesQuery({ status: "running" });
+        client.setQueryData(
+            running.queryKey,
+            logOf([
+                activity(8, {
+                    status: "running",
+                    command: "process:start",
+                    properties: { name: "horizon" },
+                }),
+                activity(7, { status: "running" }),
+            ]),
+        );
+
+        applyEvent(
+            client,
+            notice(
+                "activity.updated",
+                {
+                    id: 8,
+                    command: "process:start",
+                    status: "failed",
+                    error_code: "activity.interrupted",
+                    duration_ms: null,
+                },
+                8,
+            ),
+        );
+        applyEvent(client, notice("activity.updated", { id: 99, status: "failed" }, 99));
+
+        const rows = client.getQueryData<ActivityLog>(running.queryKey)?.pages.flat();
+        expect(rows?.map((row) => row.id)).toEqual([8, 7]);
+        expect(rows?.[0]).toMatchObject({
+            status: "failed",
+            error_code: "activity.interrupted",
+            duration_ms: null,
+            properties: { name: "horizon" },
+        });
+    });
+
+    it("refetches the open row and not the list", async () => {
         const fetched: string[] = [];
-        const filters = {
-            status: "failed" as const,
-            command: "node:add",
-            before_id: 40,
-            caller_node_id: 2,
-        };
+        const filters = { status: "failed" as const, command: "node:add", caller_node_id: 2 };
         const list = activitiesQuery(filters);
+        const listObserver = new InfiniteQueryObserver(client, {
+            ...list,
+            queryFn: () => {
+                fetched.push("list");
+
+                return [activity(4, { status: "failed" })];
+            },
+            staleTime: Infinity,
+        });
         const observe = (queryKey: readonly unknown[], name: string) =>
             new QueryObserver(client, {
                 queryKey,
@@ -323,13 +466,10 @@ describe("activity events", () => {
             }).subscribe(() => {});
         const open = activityQuery(40);
         const closed = activityQuery(7);
-        const observers = [
-            observe(list.queryKey, "list"),
-            observe(open.queryKey, "open"),
-            observe(closed.queryKey, "closed"),
-        ];
+        const unsubscribeList = listObserver.subscribe(() => {});
+        const observers = [observe(open.queryKey, "open"), observe(closed.queryKey, "closed")];
         await vi.waitFor(() => {
-            expect(client.getQueryData(list.queryKey)).toBe("list");
+            expect(listObserver.getCurrentResult().data?.pages[0]?.[0]?.id).toBe(4);
             expect(client.getQueryData(open.queryKey)).toBe("open");
             expect(client.getQueryData(closed.queryKey)).toBe("closed");
         });
@@ -340,25 +480,16 @@ describe("activity events", () => {
         applyEvent(client, notice("activity.updated", { id: 41, status: "succeeded" }, 41));
         applyEvent(client, notice("activity.updated", { id: 40, status: "failed" }, 40));
         flushTaskRefetches();
-        await vi.waitFor(() => expect(fetched).toHaveLength(2));
+        await vi.waitFor(() => expect(fetched).toEqual(["open"]));
         observers.forEach((unsubscribe) => unsubscribe());
+        unsubscribeList();
 
-        expect(fetched.sort()).toEqual(["list", "open"]);
+        expect(fetched).toEqual(["open"]);
         expect(list.queryKey).toEqual([
             "activities",
             "list",
-            { before_id: 40, status: "failed", command: "node:add", caller_node_id: 2 },
+            { status: "failed", command: "node:add", caller_node_id: 2 },
         ]);
-    });
-
-    it("does not patch the cached list from the notice", () => {
-        const key = [...activitiesQuery({ before_id: 10 }).queryKey];
-        const rows = [{ id: 1, status: "running", command: "node:add" }];
-        client.setQueryData(key, rows);
-        applyEvent(client, notice("activity.updated", { id: 1, status: "failed" }, 1));
-
-        expect(client.getQueryData(key)).toEqual(rows);
-        flushTaskRefetches();
     });
 
     it("lets an event's refetch replace a show that started before the change", async () => {
@@ -397,13 +528,6 @@ describe("activity events", () => {
     });
 
     it.each([
-        {
-            name: "list",
-            options: () => activitiesQuery({ before_id: 20, status: "running" }),
-            path: "/api/v1/activities?limit=25&before_id=20&status=running",
-            stale: [{ id: 8, status: "running", command: "node:rename" }],
-            fresh: [{ id: 8, status: "succeeded", command: "node:rename" }],
-        },
         {
             name: "detail",
             options: () => activityQuery(8),
