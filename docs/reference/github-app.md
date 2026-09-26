@@ -46,7 +46,9 @@ The Gateway needs outbound HTTPS access to `api.github.com` for every read of a 
 
 ## How Orbit publishes a task pull request
 
-After the approval of the last subtask, the Gateway asks GitHub for a token with `Contents: write` and `Pull requests: write` for the Project repository. The token reaches the Node the same way as a read token, and `git` pushes the task branch with it. The Gateway then opens the pull request and later reads its state with the same kind of token. Unlike a read, publishing has no path without the App: without an App or an installation that covers the repository, the task counts a communication failure and then asks for assistance. [ADR 0121](/decisions/0121-end-agent-turns-with-a-run-receipt) owns this use.
+After the Gateway commits an approved subtask, it asks GitHub for a token with `Contents: write` and `Pull requests: write` for the Project repository. The token reaches the Node the same way as a read token, and `git` pushes `HEAD` to `origin/task-{group id}`. After the last approval, the Gateway opens the pull request with the same kind of token and then reads its state.
+
+Unlike a read, publishing has no path without the App: without an App or an installation that covers the repository, the task counts a communication failure and then asks for assistance. [ADR 0121](/decisions/0121-end-agent-turns-with-a-run-receipt) owns the pull request, and [ADR 0160](/decisions/0160-push-each-approved-subtask-and-remove-the-finished-workspace-clone) owns the push after every approval. The [tasks reference](/reference/tasks#pull-request-and-settle-metrics) describes the retry.
 
 An installation made before the App gained `Contents: write` and `Pull requests: write` keeps its old permissions until the account owner accepts the new ones in the installation settings on GitHub. Until then, GitHub refuses the publish token with 422, and the assistance reason quotes GitHub's message: "The permissions requested are not granted to this installation."
 
