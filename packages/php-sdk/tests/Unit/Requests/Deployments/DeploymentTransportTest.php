@@ -195,7 +195,34 @@ describe('deployment transport', function (): void {
             'Content-Type' => 'application/x-ndjson',
             'X-Orbit-Request-Id' => 'invalid-request-id',
         ]],
+        'missing content type' => [[
+            'X-Orbit-Request-Id' => deployment_transport_request_id(),
+        ]],
     ]);
+
+    it('rejects a repeated content type and closes the stream', function (): void {
+        $connector = new GatewayConnector(
+            'https://gateway.test',
+            requestIdResolver: static fn (): string => deployment_transport_request_id(),
+        );
+        $connector->sender()->getHandlerStack()->setHandler(
+            static function (): FulfilledPromise {
+                return new FulfilledPromise(new PsrResponse(
+                    200,
+                    [
+                        'Content-Type' => ['application/x-ndjson', 'application/json'],
+                        'X-Orbit-Request-Id' => deployment_transport_request_id(),
+                    ],
+                    new NoSeekStream(Utils::streamFor(deployment_transport_result())),
+                ));
+            },
+        );
+        $response = $connector->send(new DeployAppInstanceRequest(17));
+
+        expect(fn (): mixed => $response->dto())
+            ->toThrow(GatewayApiException::class, 'Gateway response is not a valid deployment stream.')
+            ->and($response->stream()->isReadable())->toBeFalse();
+    });
 
     it('does not resend or replay a truncated admitted stream', function (): void {
         $mock = new MockClient([
