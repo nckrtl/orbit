@@ -444,7 +444,7 @@ A new Project gets the task check of its type unless it sends one: `composer che
 
 When a Project has no task check, the baseline runs the setup steps and passes, and a handoff runs no command. A handoff still records the tree and verifies the deliverables. The implementer's instructions and the pull request description name the configured check, or leave it out when there is none.
 
-Before the first implementer of a group starts, Orbit runs the setup steps and the task check on the fresh workspace. Project setup runs before dependency preparation so it can configure credentials or install dependencies itself.
+Before the first implementer of a group starts, Orbit runs the setup steps and the task check on the fresh workspace. The setup steps keep the timeouts of the Project's setup list, so the [540-second step limit](/reference/instance-setup) applies to the baseline too. The baseline runs outside an API request, so no request deadline shortens the list further. Project setup runs before dependency preparation so it can configure credentials or install dependencies itself.
 
 Orbit prepares Composer dependencies when the task check runs `composer` or references `vendor/`: it walks tracked `composer.json` files and runs `composer install --no-interaction --prefer-dist` where `vendor/autoload.php` is missing and either the file is at the repository root or a sibling lockfile exists. A root package without a lockfile, such as a Laravel package, is installed too. Orbit then removes the `composer.lock` that the install wrote, so it cannot reach the task commit. Nested manifests without a lockfile are skipped because test fixtures use them.
 

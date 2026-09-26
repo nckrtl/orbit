@@ -17,7 +17,6 @@ use App\Models\Node;
 use JsonException;
 use RuntimeException;
 use SensitiveParameter;
-use Symfony\Component\Process\Exception\ProcessTimedOutException;
 use Throwable;
 
 final readonly class MetricsSshExecutor implements MetricsCredentialRuntime, MetricsRuntimeHost
@@ -37,13 +36,13 @@ final readonly class MetricsSshExecutor implements MetricsCredentialRuntime, Met
      * and Instance requests, so one stuck Docker call must fail that request with an error long before
      * PHP-FPM ends it.
      */
-    public const float CommandTimeoutSeconds = 120.0;
+    public const float CommandTimeoutSeconds = MetricsRemoteCommand::DefaultTimeoutSeconds;
 
     /** The longest the promtool check of the generated Prometheus configuration may run. */
     public const float ConfigurationCheckTimeoutSeconds = 60.0;
 
     /** The longest a missing pinned Metrics image may take to pull. */
-    public const float ImagePullTimeoutSeconds = 300.0;
+    public const float ImagePullTimeoutSeconds = MetricsRemoteCommand::DownloadTimeoutSeconds;
 
     /** @var non-empty-list<string> */
     private const array Images = [MetricsRuntimeSpec::PrometheusImage, MetricsRuntimeSpec::GrafanaImage];
@@ -1094,36 +1093,7 @@ final readonly class MetricsSshExecutor implements MetricsCredentialRuntime, Met
         RemoteCommand $command,
         string $timeoutErrorCode = 'metrics.remote_command_timed_out',
     ): CommandResult {
-        $timeout = $command->timeout ?? self::CommandTimeoutSeconds;
-
-        try {
-            return $this->ssh->execute($this->connection($node), $this->bounded($command, $timeout));
-        } catch (ProcessTimedOutException $exception) {
-            throw new ResourceOperationException(
-                $timeoutErrorCode,
-                sprintf('A Metrics command on node [%s] did not finish within %d seconds.', $node->name, (int) $timeout),
-                504,
-                $exception,
-            );
-        }
-    }
-
-    private function bounded(RemoteCommand $command, float $timeout): RemoteCommand
-    {
-        if ($command->timeout !== null) {
-            return $command;
-        }
-
-        return new RemoteCommand(
-            $command->arguments,
-            input: $command->input,
-            protectedInput: $command->protectedInput,
-            maxOutputBytes: $command->maxOutputBytes,
-            output: $command->output,
-            cancelled: $command->cancelled,
-            timeout: $timeout,
-            terminateGraceSeconds: $command->terminateGraceSeconds,
-        );
+        return MetricsRemoteCommand::execute($this->ssh, $this->connection($node), $node, $command, $timeoutErrorCode);
     }
 
     private function run(

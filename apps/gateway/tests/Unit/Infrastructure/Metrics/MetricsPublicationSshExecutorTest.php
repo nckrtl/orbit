@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Metrics\MetricsPublicationSshExecutor;
+use App\Infrastructure\Metrics\MetricsRemoteCommand;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
@@ -70,6 +71,15 @@ it('publishes and verifies an ordered Gateway allow and other-peer deny boundary
         metricsPublicationInsertAllowArguments(),
         ['sudo', 'ufw', 'status', 'numbered'],
     ]);
+});
+
+it('bounds every publication command like the other Metrics commands', function (): void {
+    $ssh = new MetricsPublicationCapturingSshExecutor(metricsPublicationConvergenceResults());
+
+    metricsPublicationSshExecutor($ssh)->converge(metricsPublicationNode('metrics', '10.44.0.3'), '10.44.0.1');
+
+    expect(array_unique(array_map(static fn (RemoteCommand $command): ?float => $command->timeout, $ssh->commands)))
+        ->toBe([MetricsRemoteCommand::DefaultTimeoutSeconds]);
 });
 
 it('leaves the deny rule in place when the Gateway allow cannot be applied', function (): void {

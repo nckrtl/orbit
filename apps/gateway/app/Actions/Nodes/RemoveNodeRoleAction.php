@@ -374,11 +374,7 @@ final readonly class RemoveNodeRoleAction
             }
 
             $dependencies = $this->inspector->inspect($node, $role);
-            $assignment->update([
-                'status' => LifecycleStatus::Removing,
-                'failed_step' => null,
-                'error_code' => null,
-            ]);
+            $assignment->claimRemoval();
             Process::query()
                 ->whereIn('id', $dependencies->processIds)
                 ->update([
@@ -448,7 +444,8 @@ final readonly class RemoveNodeRoleAction
         }
 
         return
-            $assignment->status === LifecycleStatus::Failed
+            $assignment->isStaleClaim()
+            || $assignment->status === LifecycleStatus::Failed
             && is_string($assignment->failed_step)
             && (str_starts_with($assignment->failed_step, 'converge:') || str_starts_with($assignment->failed_step, 'remove:'));
     }

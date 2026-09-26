@@ -34,8 +34,9 @@ final readonly class ProjectLifecycleStepStore
     ): LifecycleStep {
         return DB::transaction(function () use ($app, $phase, $step, $before, $after): LifecycleStep {
             OrbitApp::query()->lockForUpdate()->findOrFail($app->id);
-            $placed = $this->insert($this->ordered($app, $phase), $step, $before, $after);
-            $this->assertValid($placed);
+            $existing = $this->ordered($app, $phase);
+            $placed = $this->insert($existing, $step, $before, $after);
+            $this->assertValid($placed, $existing);
             $this->persist($app, $phase, $placed);
 
             return $step;
@@ -56,6 +57,7 @@ final readonly class ProjectLifecycleStepStore
         return DB::transaction(function () use ($app, $phase, $name, $command, $timeoutSeconds, $before, $after, $hasCommand, $hasTimeout): LifecycleStep {
             OrbitApp::query()->lockForUpdate()->findOrFail($app->id);
             $existing = $this->ordered($app, $phase);
+            $previous = $existing;
             $index = $this->indexByName($existing, $name, $phase);
             $current = $existing[$index];
             array_splice($existing, $index, 1);
@@ -73,7 +75,7 @@ final readonly class ProjectLifecycleStepStore
             $placed = $before === null && $after === null
                 ? $this->restore($existing, $index, $updated)
                 : $this->insert($existing, $updated, $before, $after);
-            $this->assertValid($placed);
+            $this->assertValid($placed, $previous);
             $this->persist($app, $phase, $placed);
 
             return $updated;
@@ -85,10 +87,11 @@ final readonly class ProjectLifecycleStepStore
         return DB::transaction(function () use ($app, $phase, $name): LifecycleStep {
             OrbitApp::query()->lockForUpdate()->findOrFail($app->id);
             $existing = $this->ordered($app, $phase);
+            $previous = $existing;
             $index = $this->indexByName($existing, $name, $phase);
             $removed = $existing[$index];
             array_splice($existing, $index, 1);
-            $this->assertValid($existing);
+            $this->assertValid($existing, $previous);
             $this->persist($app, $phase, $existing);
 
             return $removed;
@@ -169,21 +172,34 @@ final readonly class ProjectLifecycleStepStore
         );
     }
 
-    /** @param list<LifecycleStep> $steps */
-    private function assertValid(array $steps): void
+    /**
+     * A list may total at most `LifecycleStep::MaxTotalTimeoutSeconds`. A list stored before that limit
+     * can total more; it accepts any change that does not raise its total, so it can always be lowered
+     * or shortened. At run time the request deadline still ends such a list cleanly.
+     *
+     * @param  list<LifecycleStep>  $steps
+     * @param  list<LifecycleStep>  $previous
+     */
+    private function assertValid(array $steps, array $previous): void
     {
         if (count($steps) > 32) {
             $this->invalid('The lifecycle list has too many steps.');
         }
 
-        $totalTimeout = array_sum(array_map(
+        $total = $this->totalTimeout($steps);
+
+        if ($total > LifecycleStep::MaxTotalTimeoutSeconds && $total > $this->totalTimeout($previous)) {
+            $this->invalid('The lifecycle list timeout total is too large.');
+        }
+    }
+
+    /** @param list<LifecycleStep> $steps */
+    private function totalTimeout(array $steps): int
+    {
+        return array_sum(array_map(
             static fn (LifecycleStep $step): int => $step->timeoutSeconds,
             $steps,
         ));
-
-        if ($totalTimeout > 3_600) {
-            $this->invalid('The lifecycle list timeout total is too large.');
-        }
     }
 
     /** @param list<LifecycleStep> $steps */
@@ -208,6 +224,15 @@ final readonly class ProjectLifecycleStepStore
 
     private function toDomain(ProjectLifecycleStep $row): LifecycleStep
     {
+        if ($row->timeout_seconds > LifecycleStep::MaxTimeoutSeconds) {
+            throw new ResourceOperationException(
+                errorCode: 'lifecycle_step.migration_pending',
+                message: "Lifecycle step [{$row->name}] stores a {$row->timeout_seconds}-second timeout, above the "
+                    .LifecycleStep::MaxTimeoutSeconds.'-second limit. Run the Gateway database migrations.',
+                status: 409,
+            );
+        }
+
         return new LifecycleStep($row->name, $row->command, $row->timeout_seconds);
     }
 

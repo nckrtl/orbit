@@ -50,6 +50,38 @@
     --color-red: var(--red);
 }
 
+/*
+ * Safe area for an installed iPhone or iPad app. The shell reads these once.
+ * A browser tab keeps them at zero: Safari can report a non-zero inset in a tab,
+ * especially in landscape, and that must not move the page. Standalone display
+ * mode, which a home-screen launch uses, falls back to env(). Turning the device
+ * updates env(), so the shell follows. A test or a simulated device sets
+ * --safe-area-inset-* and that value wins over env().
+ */
+:root {
+    --shell-safe-top: var(--safe-area-inset-top, 0px);
+    --shell-safe-right: var(--safe-area-inset-right, 0px);
+    --shell-safe-bottom: var(--safe-area-inset-bottom, 0px);
+    --shell-safe-left: var(--safe-area-inset-left, 0px);
+}
+
+@media (display-mode: standalone) {
+    :root {
+        --shell-safe-top: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));
+        --shell-safe-right: var(--safe-area-inset-right, env(safe-area-inset-right, 0px));
+        --shell-safe-bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));
+        --shell-safe-left: var(--safe-area-inset-left, env(safe-area-inset-left, 0px));
+    }
+}
+
+/* Older iOS home-screen launches expose navigator.standalone and may miss the media query. */
+html[data-standalone] {
+    --shell-safe-top: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));
+    --shell-safe-right: var(--safe-area-inset-right, env(safe-area-inset-right, 0px));
+    --shell-safe-bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));
+    --shell-safe-left: var(--safe-area-inset-left, env(safe-area-inset-left, 0px));
+}
+
 html,
 body,
 #app {

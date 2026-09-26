@@ -37,7 +37,9 @@ The target convergence re-points every node exporter and cAdvisor firewall rule 
 
 Relocate does not overwrite credentials the target already has. Pass `--from` when the target already holds `metrics` and leftovers remain on another Node. Remove-then-add is not the supported path.
 
-Convergence pulls the pinned Prometheus and Grafana images only when the Metrics Node lacks them, within 300 seconds (`metrics.image_pull_failed` or `metrics.image_pull_timed_out`). Later convergence never pulls. `promtool` checks the generated Prometheus configuration from the local image within 60 seconds (`metrics.prometheus_configuration_check_timed_out`), and every other Metrics command on the Node ends within 120 seconds (`metrics.remote_command_timed_out`). Role, Route, and Instance changes reconcile Metrics inside their own request, so these bounds keep one stuck Docker call from holding that request until PHP-FPM ends it.
+Convergence pulls the pinned Prometheus and Grafana images only when the Metrics Node lacks them, within 300 seconds (`metrics.image_pull_failed` or `metrics.image_pull_timed_out`). Later convergence never pulls. `promtool` checks the generated Prometheus configuration from the local image within 60 seconds (`metrics.prometheus_configuration_check_timed_out`), and every other Metrics command on the Node ends within 120 seconds (`metrics.remote_command_timed_out`).
+
+The exporter package and the pinned cAdvisor binary are installed when a Node first converges, normally during `node:add`; later reconciles only verify them. A missing exporter package installs within 300 seconds, and the cAdvisor download connects within 10 seconds and ends within 120 seconds. Role, Route, and Instance changes reconcile Metrics inside their own request, so these bounds keep one stuck Docker call from holding that request until PHP-FPM ends it.
 
 When a pinned image is missing and the Docker daemon does not answer, for example because Docker is stopped, convergence fails with `metrics.docker_unavailable` and names the Node instead of reporting a pull failure. Start Docker and converge again.
 
