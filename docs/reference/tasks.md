@@ -1,13 +1,13 @@
 ---
 title: "Tasks"
-description: "How the Gateway tasks extension holds TaskGroup features in Backlog and runs Todo groups on a shared Instance. Agents end turns with run receipts, and Orbit commits approved work and opens the pull request."
+description: "How the Gateway tasks extension holds TaskGroup features in Backlog and runs Todo groups on a shared Instance. Agents end turns with run receipts. Orbit commits and pushes each approved subtask, opens the pull request, and removes the workspace clone when the group ends."
 ---
 
 # Tasks
 
-This page tells an operator how the optional Gateway `tasks` extension runs a Commander-style feature group. A group waits in Backlog while its branch, ADRs, documentation, and subtasks are prepared. Once the group is in Todo, the Gateway provisions its shared Instance, starts agents, and moves each task from turn to turn with run receipts and mechanical checks. It commits approved work, opens and watches the pull request, retains capacity through assistance and merge wait, and removes the instance after completion.
+This page tells an operator how the optional Gateway `tasks` extension runs a Commander-style feature group. A group waits in Backlog while its branch, ADRs, documentation, and subtasks are prepared. Once the group is in Todo, the Gateway provisions its shared Instance, starts agents, and moves each task from turn to turn with run receipts and mechanical checks. It commits approved work and pushes that commit to `origin`, opens and watches the pull request, retains capacity through assistance and merge wait, and removes the workspace clone when the group is cancelled or completed.
 
-[ADR 0103](/decisions/0103-absorb-commander-tasks-as-a-gateway-extension) owns the extension boundary. [ADR 0110](/decisions/0110-route-task-sessions-with-laravel-ai-jev) owns session routing. [ADR 0113](/decisions/0113-gate-task-completion-on-validation-and-review) owns completion gates. [ADR 0122](/decisions/0122-hold-task-groups-in-backlog-until-ready) owns Backlog and Todo. [ADR 0124](/decisions/0124-plan-backlog-groups-with-a-t3-planner) owns planning.
+[ADR 0103](/decisions/0103-absorb-commander-tasks-as-a-gateway-extension) owns the extension boundary. [ADR 0110](/decisions/0110-route-task-sessions-with-laravel-ai-jev) owns session routing. [ADR 0113](/decisions/0113-gate-task-completion-on-validation-and-review) owns completion gates. [ADR 0122](/decisions/0122-hold-task-groups-in-backlog-until-ready) owns Backlog and Todo. [ADR 0124](/decisions/0124-plan-backlog-groups-with-a-t3-planner) owns planning. [ADR 0160](/decisions/0160-push-each-approved-subtask-and-remove-the-finished-workspace-clone) owns the push after each approval and deletion of the workspace clone.
 
 The extension is off until an authorized Gateway caller enables it. There is no web UI for create. Agents create groups through the [MCP server](/reference/mcp). The [`tasks` CLI family](/cli/tasks) runs every operation on this page from a terminal when MCP is unavailable.
 
@@ -83,7 +83,7 @@ When the check cannot be stopped, the implementer may already be interrupted. Th
 
 After both stops succeed, Orbit records the cancel only when the subtask is still `running`. When a tick moved it on while Orbit stopped it, for example to `reviewing`, that new state stands and cancellation returns HTTP 409 `tasks.subtask_not_running`. The implementer and check were still stopped. Cancel the subtask again in its new state, or cancel the group.
 
-When cancellation leaves no `todo` subtask, the group moves to `settling` without a `pr_url`. Orbit opens a pull request only after the last subtask is approved, so the group asks for assistance. Use `tasks:cancel` to end it. For a group with an approved subtask, cancellation first pushes the workspace HEAD to `task-{group id}` on `origin`, so the approved commits stay on the branch. Open a pull request from that branch if you want to keep the work.
+When cancellation leaves no `todo` subtask, the group moves to `settling` without a `pr_url`. Orbit opens a pull request only after the last subtask is approved, so the group asks for assistance. Use `tasks:cancel` to end it. For a group with an approved subtask, cancellation first pushes the workspace HEAD to `task-{group id}` on `origin`. Each approval already pushes its commit; this push sends any approved commit that has not reached `origin`, so those commits stay on the branch. Open a pull request from that branch if you want to keep the work.
 
 Cancellation does not reset the shared checkout. The cancelled implementer's uncommitted edits stay in the shared checkout, and the next approval commits them.
 
@@ -269,9 +269,11 @@ A claim can stop after it provisions the `task-{group id}` workspace and before 
 
 An Instance that only shares the name, with another branch, is never resumed or removed. Provisioning refuses it, and the group returns to `todo` with the provisioning reason.
 
-When a group is cancelled while its claim runs, the claim removes the workspace it provisioned, or the part of it that exists when provisioning fails, and the group stays `cancelled`. When that claim stops before it can, each tick removes the `task-{group id}` workspace of a `cancelled` or `completed` group that holds no Instance and was reserved longer ago than `ORBIT_TASKS_RESERVED_TIMEOUT_SECONDS`, or never.
+When a group is cancelled while its claim runs, the claim removes the workspace it provisioned, or the part of it that exists when provisioning fails, and the group stays `cancelled`. When that claim stops before it can, each tick removes the workspace of a `cancelled` or `completed` group that still has one and was reserved longer ago than `ORBIT_TASKS_RESERVED_TIMEOUT_SECONDS`, or never. That workspace is the attached Instance, or the unattached `task-{group id}` checkout an interrupted claim left behind.
 
-A tick starts no new removal after it has spent 60 seconds on them, well inside its 300-second lock, and the rest wait for the next tick. A failed removal goes to the application log and backs off for that Instance only: 60 seconds after the first failure, doubling after each further failure, up to `ORBIT_TASKS_RESERVED_TIMEOUT_SECONDS`. A workspace that keeps failing therefore never blocks the removal of another one. When the Gateway cannot read or write a backoff in its cache, it logs a warning, tries the removal as if no backoff exists, and continues the sweep and the tick.
+A tick starts no new removal after it has spent 60 seconds on them, well inside its 300-second lock, and the rest wait for the next tick. A failed removal goes to the application log, asks the group for assistance with a reason prefixed `Workspace removal failed: `, and backs off for that Instance only: 60 seconds after the first failure, doubling after each further failure, up to `ORBIT_TASKS_RESERVED_TIMEOUT_SECONDS`.
+
+The checkout and the Instance row stay until a retry deletes the checkout, and that success clears the assistance request. A workspace that keeps failing therefore never blocks the removal of another one. When the Gateway cannot read or write a backoff in its cache, it logs a warning, tries the removal as if no backoff exists, and continues the sweep and the tick.
 
 If the stopped claim created a workspace, provisioning finds it by its `task-{group id}` name and resumes it on its Node. When that Node is at the ceiling, the group waits for capacity. When that Node does not fit the group, provisioning returns no Instance. A claim whose provision outlasts the bound finds its group in `todo`. It attaches the Instance to the group and leaves the group in `todo` for the next claim.
 
@@ -362,9 +364,9 @@ After review findings are relayed, the Gateway waits for a newer implementer tur
 
 For `changes_requested`, the Gateway relays the summary to the implementer and returns the task to `running` only after that send succeeds. A failed send stays in `reviewing` and is retried. While the implementer is working, the relay waits until it stops.
 
-For `approved`, the workspace must be on `task-{group id}`. Orbit commits the whole workspace, so the commit also waits while the implementer is working. The Gateway then commits every workspace change as `orbit <tasks@orbit>`, with the subtask title and the reviewer's summary as the message, and stores the commit on the approval comment. Reviewers do not change the workspace, and they do not commit. A failed commit counts as a communication failure and is retried.
+For `approved`, the workspace must be on `task-{group id}`. Orbit commits the whole workspace, so the commit also waits while the implementer is working. The Gateway then commits every workspace change as `orbit <tasks@orbit>`, with the subtask title and the reviewer's summary as the message, and stores the commit on the approval comment. Reviewers do not change the workspace, and they do not commit. A failed commit counts as a communication failure and is retried. The Gateway then pushes that `HEAD`, as [Pull request and settle metrics](#pull-request-and-settle-metrics) describes.
 
-When that commit is already stored and opening the pull request fails, the next tick retries publication only while HEAD is still that commit and the recorded hash still matches. It does not commit again. A reset back to the HEAD from before the approval keeps the hash, but the Gateway refuses it and does not publish. After the last subtask, the group moves to `settling` and remains active until its expected pull request is merged.
+When that commit is already stored and the push or the pull request open fails, the next tick retries publication only while HEAD is still that commit and the recorded hash still matches. It does not commit again. A reset back to the HEAD from before the approval keeps the hash, but the Gateway refuses it and does not publish. After the last subtask's pull request is stored, the group moves to `settling` and remains active until its expected pull request is merged.
 
 `thread.turn.start` sends the T3 0.0.42 message struct `{messageId, role: user, text, attachments: []}` plus `modelSelection`. A flat string message is rejected by T3.
 
@@ -409,7 +411,7 @@ The run script instructions name the commands for that role. The reminder instal
 
 The next idle evaluation asks for assistance when any item still fails. Repeated reminder-send failures ask for assistance on the fifth failure. The same pending input does not count as that next evaluation. A `Failed` thread asks for assistance without a reminder.
 
-A failed receipt read, script install, send, or commit counts as a communication failure for that task and asks for assistance on the fifth consecutive failure. The tick continues with the other tasks. The assistance reason names each remaining item.
+A failed receipt read, script install, send, commit, or push counts as a communication failure for that task and asks for assistance on the fifth consecutive failure. The tick continues with the other tasks. The assistance reason names each remaining item.
 
 Typed comments are the workflow record. They preserve the full body, author, timestamp, task and thread context, and reviewer attempt metadata. A stored receipt uses its outcome as the type and the role as the author. The final approval's comment also carries `pull_request`: the summary, changes, and breaking changes it proposed for the pull request. An approval that Orbit committed carries `commit_sha`. Other comments return `null` for both.
 
@@ -475,7 +477,11 @@ Orbit opens the pull request after the approval of the last subtask. That approv
 
 Before Orbit commits the last subtask, Jev checks that the change list covers every subtask of the group except cancelled and failed subtasks. Jev reads the group and subtask briefs and the pull request fields. For each checked subtask, it answers whether a listed change delivers it. A subtask counts as covered when Jev gives "yes" a probability of at least one half. Jev cannot read code, so this checks coverage, not correctness. Each missing subtask fails `brief_coverage`, and the reviewer's reminder names it. A failed Jev request counts as a communication failure.
 
-After the commit, the Gateway pushes the workspace HEAD to `task-{group id}` on `origin` and opens the pull request against the Project's default branch through the [Gateway GitHub App](/reference/github-app). When an open pull request already has that head, the Gateway uses it. The Gateway stores the URL as the group's `pr_url` and moves the group to `settling`. A failed push or request counts as a communication failure and is retried.
+After every approved commit, including the last, the Gateway pushes the workspace `HEAD` to `task-{group id}` on `origin` through the [Gateway GitHub App](/reference/github-app). The push uses that repository's installation token with `Contents: write` and `Pull requests: write`, passed on the SSH process standard input, and runs `git push --quiet origin HEAD:refs/heads/task-{group id}`. That is the same push that opens the pull request. [ADR 0160](/decisions/0160-push-each-approved-subtask-and-remove-the-finished-workspace-clone) records the decision.
+
+A failed push counts as a communication failure and is retried on the next tick. The commit stays in the workspace and on the approval comment as `commit_sha`. The Gateway does not reset the branch. The subtask stays in review, so the next subtask does not start and the pull request does not open, until the push succeeds.
+
+On the last approval, after that push, the Gateway opens the pull request against the Project's default branch. When an open pull request already has that head, the Gateway uses it. The Gateway stores the URL as the group's `pr_url` and moves the group to `settling`. A failed open counts as a communication failure and is retried. The open pushes the branch again with the same token; a branch that already matches `HEAD` stays as it is.
 
 The group title is the pull request title. The description holds the summary, a Changes list, a Breaking changes list or `None.`, and one line that says each delivered subtask passed the Project's task check and reviewer approval. Without a task check, the line names only reviewer approval. That line does not count cancelled or failed subtasks.
 
@@ -483,7 +489,7 @@ Settling watches the stored pull request through the GitHub App until it merges.
 
 While the pull request is open, each tick also checks it for problems ([ADR 0140](/decisions/0140-watch-settling-pull-requests-for-conflicts-and-failed-checks)). The pull request conflicts when GitHub reports it as not mergeable. A check fails when a check run on the head commit completes with `failure`, `timed_out`, `cancelled`, `startup_failure`, or `action_required`. Each problem adds one sentence to an assistance reason that starts with `The pull request needs attention: `, such as `It conflicts with main; merge main into the task branch and push.` or `Check Rust agent failed: <url>.`
 
-The Gateway notifies Coder once for each new reason, not on every tick. When the pull request has no problems again, or when it merges, the Gateway clears the request, but only when its reason starts with that prefix. A merged group therefore completes without that request. It never clears or replaces an assistance request with another cause. If completion fails after the merge, the group requests assistance with the cleanup failure as its reason.
+The Gateway notifies Coder once for each new reason, not on every tick. When the pull request has no problems again, or when it merges, the Gateway clears the request, but only when its reason starts with that prefix. A merged group therefore completes without that request. It never clears or replaces an assistance request with another cause. If completion fails after the merge, the group requests assistance with the cleanup failure as its reason, prefixed with `Merged pull request cleanup failed: `. The checkout and the Instance row stay, and the next tick retries the removal.
 
 A failed GitHub read changes nothing. The Gateway reads the check runs of one head commit at most once a minute, so a re-run on the same commit shows within a minute and a new push shows at once. Without the App permission `checks: read`, the Gateway reports conflicts only.
 
@@ -544,6 +550,12 @@ An `assistance_requested` comment or unresolved workflow omission posts `event` 
 
 After Coder review and PR merge, an authorized Gateway caller runs `tasks:complete` (`POST /api/v1/task-groups/{group}/complete`, MCP tool `tasks-complete`). That marks the group `completed` and removes the shared Instance through the existing Instance remover, including any visitable Routes.
 
+Cancel and complete remove the workspace clone on the Node. The forced Instance remover deletes the checkout directory recorded on the Instance and writes a removal record whose `source_finalization` step deleted that directory. This includes a non-visitable task workspace that stayed `source_resolved` because it has no Route. The Instance row is deleted only after that record is complete. A successful cancel or complete leaves no checkout at the recorded path. [ADR 0160](/decisions/0160-push-each-approved-subtask-and-remove-the-finished-workspace-clone) records the decision.
+
+When removal fails, the command returns an error and does not report success. The group asks for assistance. Merge cleanup uses the reason prefix `Merged pull request cleanup failed: `. Cancel, complete, and the tick's removal of a leftover workspace use `Workspace removal failed: `. The checkout and the Instance row stay, so the clone is still named by a record.
+
+The next tick retries a `cancelled` or `completed` group that still has a workspace, and a `settling` group whose merged pull request cleanup failed. The backoff under [Scheduler and ceilings](#scheduler-and-ceilings) applies. Repeating `tasks:cancel` or `tasks:complete` retries at once. The assistance request clears when the checkout is gone. The tick does not remove the workspace of a group that is still active.
+
 Complete is the documented cleanup path. The Gateway GitHub App receives no merge webhook. A second complete is idempotent. Completing a group that is not `settling` or already `completed` returns `tasks.not_settling` (HTTP 409). Operators may still call `DELETE /api/v1/instances/{instance}` directly; that leaves the group `settling` until complete runs.
 
 ## Out of this slice
@@ -562,7 +574,7 @@ Call `tasks-cancel` with `{ "group": 123 }`, or run `orbit tasks:cancel 123`, to
 
 Repeating cancellation is safe and also cleans up an Instance still attached to a group already marked `cancelled`. Subtasks that are not completed or failed become `cancelled`. Cancellation clears `assistance_requested` on the group and its subtasks and keeps the last `assistance_reason`. Subtask records and agent thread identifiers stay as history.
 
-Cancellation removes the workspace with the forced Instance remover, which also deletes its checkout and cleans up its Routes. When the remover refuses a route-free workspace that never became active (`reserved`, `checkout_prepared`, or `source_resolved`), cancellation deletes the Instance row, retains any checkout on disk, and Doctor reports it. Removal errors propagate and leave the group attached for retry. Cancellation does not interrupt the external agent conversation.
+Cancellation removes the workspace with the forced Instance remover, which deletes its checkout and cleans up its Routes, including a route-free workspace that never became active (`reserved`, `checkout_prepared`, or `source_resolved`). The result and a failed removal are the same as [complete](#complete-and-cleanup): the checkout is gone on success, and a failure asks for assistance and leaves the checkout and Instance row in place. Cancellation does not interrupt the external agent conversation.
 
 Before it removes the Instance of a `settling` group with an approved subtask, cancellation pushes the workspace HEAD to `task-{group id}` on `origin`. A failed push returns HTTP 502 with `tasks.push_failed` and keeps the group and its Instance, so you can retry. Uncommitted workspace changes are not pushed. The push runs outside any database transaction.
 

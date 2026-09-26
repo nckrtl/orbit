@@ -20,6 +20,7 @@ use App\Domain\Tasks\InstanceProvisionIntent;
 use App\Domain\Tasks\LocalTaskSettleMetricsCollector;
 use App\Domain\Tasks\NullCoderSettleNotifier;
 use App\Domain\Tasks\NullTaskWorkspaceDiffReader;
+use App\Domain\Tasks\TaskBriefCoverage;
 use App\Domain\Tasks\TaskCeilings;
 use App\Domain\Tasks\TaskCheckKind;
 use App\Domain\Tasks\TaskCheckReading;
@@ -29,7 +30,10 @@ use App\Domain\Tasks\TaskConcurrencyGuard;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupMetricsRefresher;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskPullRequestException;
+use App\Domain\Tasks\TaskPullRequestPublisher;
 use App\Domain\Tasks\TaskRunInstructions;
+use App\Domain\Tasks\TaskRunPullRequest;
 use App\Domain\Tasks\TaskRunReceiptException;
 use App\Domain\Tasks\TaskRunReceipts;
 use App\Domain\Tasks\TaskScheduler;
@@ -957,6 +961,254 @@ it('asks for assistance, and starts no agent, when the fresh workspace fails its
     'setup step' => ['Install', 'The Project setup step "Install" failed with exit code 1 on a fresh checkout of task-'],
 ]);
 
+/**
+ * A reviewing subtask whose reviewer has approved it. Unless it is the last, a later subtask waits behind it.
+ *
+ * @return array{TaskGroup, Task, object, object}
+ */
+function scheduler_approved_subtask(string $slug, bool $last = false, ?string $receipt = null): array
+{
+    $app = scheduler_app($slug);
+    $instance = scheduler_instance($app, scheduler_node($slug.'-node', '10.44.0.'.$app->id), $slug);
+    $group = queued_group($app, 'Push', $instance);
+    $task = $group->tasks->first();
+    if (! $task instanceof Task) {
+        throw new RuntimeException('The group has no subtask.');
+    }
+    if (! $last) {
+        scheduler_pending_task($group, 2, 'Routes');
+    }
+    $group->update(['status' => TaskGroupStatus::Reviewing]);
+    $task->update([
+        'status' => TaskStatus::Reviewing,
+        'review_attempt' => 1,
+        'review_notified_attempt' => 1,
+        'review_notified_turn_id' => 'handoff-turn',
+    ]);
+    test_link_agent_threads($group);
+    app(TaskExtensionState::class)->enable();
+    app()->instance(T3Dispatcher::class, new class implements T3Dispatcher
+    {
+        public function dispatch(Node $node, array $command): array
+        {
+            return ['sequence' => 1, 'thread_id' => (string) ($command['threadId'] ?? '')];
+        }
+    });
+    app()->instance(T3ThreadReader::class, new class implements T3ThreadReader
+    {
+        public function snapshot(Node $node, string $threadId): ?array
+        {
+            return ['thread' => ['session' => ['status' => 'done'], 'latestTurn' => ['id' => 'review-turn', 'state' => 'completed']]];
+        }
+    });
+    app()->instance(TaskWorkspaceStateReader::class, new readonly class('task-'.$group->id) implements TaskWorkspaceStateReader
+    {
+        public function __construct(private string $branch) {}
+
+        public function headCommit(AppInstance $instance): ?string
+        {
+            return null;
+        }
+
+        public function currentBranch(AppInstance $instance): ?string
+        {
+            return $this->branch;
+        }
+
+        public function definesComposerCheckScript(AppInstance $instance): bool
+        {
+            return true;
+        }
+    });
+    app()->instance(TaskRunReceipts::class, new FakeTaskRunReceipts([
+        $receipt ?? FakeTaskRunReceipts::contents('approved', 'Checked the models.'),
+    ]));
+    $signer = new class implements TaskWorkspaceSigner
+    {
+        /** @var list<string> */
+        public array $messages = [];
+
+        public function commit(AppInstance $instance, string $message): ?string
+        {
+            $this->messages[] = $message;
+            $sha = str_repeat('c', 40);
+            // Orbit's commit moves the workspace HEAD, which the retry compares with commit_sha (ADR 0133).
+            $checks = app(TaskCheckRunner::class);
+            if ($checks instanceof FakeTaskCheckRunner) {
+                $checks->head = $sha;
+            }
+
+            return $sha;
+        }
+    };
+    $publisher = new class implements TaskPullRequestPublisher
+    {
+        /** @var list<int> */
+        public array $pushes = [];
+
+        /** @var list<string> */
+        public array $bodies = [];
+
+        public int $pushFailures = 0;
+
+        public function publish(TaskGroup $group, string $body): string
+        {
+            $this->bodies[] = $body;
+
+            return 'https://github.com/acme/orbit/pull/42';
+        }
+
+        public function push(TaskGroup $group): void
+        {
+            $this->pushes[] = $group->id;
+            if ($this->pushFailures > 0) {
+                $this->pushFailures--;
+
+                throw new TaskPullRequestException('The task branch could not be pushed.');
+            }
+        }
+    };
+    app()->instance(TaskWorkspaceSigner::class, $signer);
+    app()->instance(TaskPullRequestPublisher::class, $publisher);
+    app()->instance(TaskBriefCoverage::class, new class implements TaskBriefCoverage
+    {
+        public function missing(TaskGroup $group, TaskRunPullRequest $pullRequest): array
+        {
+            return [];
+        }
+    });
+    app()->instance(TaskSettleMetricsCollector::class, new class implements TaskSettleMetricsCollector
+    {
+        public function collect(TaskGroup $group): TaskSettleMetrics
+        {
+            return new TaskSettleMetrics(tokens: 1, lineDiff: 1, durationMs: 1);
+        }
+    });
+    app()->instance(AgentSpawner::class, scheduler_recording_spawner());
+
+    return [$group->fresh(['app', 'tasks', 'taskable']) ?? $group, $task, $signer, $publisher];
+}
+
+function scheduler_final_approval(): string
+{
+    return json_encode([
+        'outcome' => 'approved',
+        'summary' => 'Checked the feature.',
+        'pull_request' => ['summary' => 'Adds the export.', 'changes' => ['Tasks store their records.'], 'breaking' => []],
+        'nonce' => bin2hex(random_bytes(8)),
+    ], JSON_THROW_ON_ERROR);
+}
+
+it('pushes each approved subtask to the task branch before the next one starts', function (): void {
+    [$group, $task, $signer, $publisher] = scheduler_approved_subtask('push-each');
+
+    app(TaskScheduler::class)->tick();
+
+    expect($publisher->pushes)->toBe([$group->id])
+        ->and($publisher->bodies)->toBe([])
+        ->and($signer->messages)->toBe(["Push first\n\nChecked the models."])
+        ->and($task->comments()->sole()->commit_sha)->toBe(str_repeat('c', 40))
+        ->and($task->fresh()?->status)->toBe(TaskStatus::Completed)
+        ->and(Task::query()->where('title', 'Routes')->sole()->status)->toBe(TaskStatus::Running)
+        ->and($group->fresh()?->pr_url)->toBeNull()
+        ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Running);
+});
+
+it('retries a failed push of an approved subtask without committing again', function (): void {
+    [$group, $task, $signer, $publisher] = scheduler_approved_subtask('push-retry');
+    $publisher->pushFailures = 1;
+    $sha = str_repeat('c', 40);
+
+    app(TaskScheduler::class)->tick();
+
+    expect($task->fresh()?->status)->toBe(TaskStatus::Reviewing)
+        ->and($task->fresh()?->communication_failures)->toBe(1)
+        ->and($task->comments()->sole()->commit_sha)->toBe($sha)
+        ->and($signer->messages)->toHaveCount(1)
+        ->and($publisher->pushes)->toBe([$group->id])
+        ->and($publisher->bodies)->toBe([])
+        ->and(Task::query()->where('title', 'Routes')->sole()->status)->toBe(TaskStatus::Todo);
+
+    app(TaskScheduler::class)->tick();
+
+    expect($task->comments()->count())->toBe(1)
+        ->and($task->comments()->sole()->commit_sha)->toBe($sha)
+        ->and($signer->messages)->toHaveCount(1)
+        ->and($publisher->pushes)->toBe([$group->id, $group->id])
+        ->and($task->fresh()?->status)->toBe(TaskStatus::Completed)
+        ->and(Task::query()->where('title', 'Routes')->sole()->status)->toBe(TaskStatus::Running);
+});
+
+it('retries a failed push when the reviewer is unavailable', function (): void {
+    [$group, $task, $signer, $publisher] = scheduler_approved_subtask('push-unavailable');
+    $publisher->pushFailures = 1;
+    $sha = str_repeat('c', 40);
+
+    app(TaskScheduler::class)->tick();
+
+    app()->instance(T3ThreadReader::class, new class implements T3ThreadReader
+    {
+        public function snapshot(Node $node, string $threadId): ?array
+        {
+            return null;
+        }
+    });
+
+    app(TaskScheduler::class)->tick();
+
+    expect($publisher->pushes)->toBe([$group->id, $group->id])
+        ->and($signer->messages)->toHaveCount(1)
+        ->and($task->comments()->count())->toBe(1)
+        ->and($task->comments()->sole()->commit_sha)->toBe($sha)
+        ->and($task->fresh()?->status)->toBe(TaskStatus::Completed)
+        ->and(Task::query()->where('title', 'Routes')->sole()->status)->toBe(TaskStatus::Running)
+        ->and($group->fresh()?->agent_unavailable_since)->toBeNull();
+});
+
+it('pushes the last approved subtask and opens one pull request', function (): void {
+    [$group, $task, $signer, $publisher] = scheduler_approved_subtask('push-last', last: true, receipt: scheduler_final_approval());
+
+    app(TaskScheduler::class)->tick();
+
+    expect($publisher->pushes)->toBe([$group->id])
+        ->and($publisher->bodies)->toHaveCount(1)
+        ->and($signer->messages)->toHaveCount(1)
+        ->and($task->comments()->sole()->commit_sha)->toBe(str_repeat('c', 40))
+        ->and($group->fresh()?->pr_url)->toBe('https://github.com/acme/orbit/pull/42')
+        ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Settling)
+        ->and($task->fresh()?->status)->toBe(TaskStatus::Completed);
+});
+
+it('keeps retrying a failed push after the fifth failure asks for assistance', function (): void {
+    [$group, $task, $signer, $publisher] = scheduler_approved_subtask('push-assist');
+    $publisher->pushFailures = 6;
+    $sha = str_repeat('c', 40);
+
+    for ($attempt = 0; $attempt < 6; $attempt++) {
+        app(TaskScheduler::class)->tick();
+    }
+
+    expect($task->fresh()?->status)->toBe(TaskStatus::Reviewing)
+        ->and($task->fresh()?->assistance_requested)->toBeTrue()
+        ->and($group->fresh()?->assistance_requested)->toBeTrue()
+        ->and($task->comments()->sole()->commit_sha)->toBe($sha)
+        ->and($signer->messages)->toHaveCount(1)
+        ->and($publisher->pushes)->toHaveCount(6)
+        ->and(Task::query()->where('title', 'Routes')->sole()->status)->toBe(TaskStatus::Todo);
+
+    app(TaskScheduler::class)->tick();
+
+    expect($task->comments()->count())->toBe(1)
+        ->and($task->comments()->sole()->commit_sha)->toBe($sha)
+        ->and($signer->messages)->toHaveCount(1)
+        ->and($publisher->pushes)->toHaveCount(7)
+        ->and($publisher->bodies)->toBe([])
+        ->and($task->fresh()?->assistance_requested)->toBeFalse()
+        ->and($group->fresh()?->assistance_requested)->toBeFalse()
+        ->and($task->fresh()?->status)->toBe(TaskStatus::Completed)
+        ->and(Task::query()->where('title', 'Routes')->sole()->status)->toBe(TaskStatus::Running);
+});
+
 it('does not run a baseline for a group whose implementers already started', function (): void {
     $app = scheduler_app('started-app');
     $instance = scheduler_instance($app, scheduler_node('started-node', '10.44.0.96'), 'started');
@@ -1083,6 +1335,16 @@ function scheduler_review(array $receipts, bool $notified = true): array
         }
     };
     app()->instance(TaskWorkspaceSigner::class, $signer);
+    // ADR 0160: every approval pushes the task branch.
+    app()->instance(TaskPullRequestPublisher::class, new class implements TaskPullRequestPublisher
+    {
+        public function publish(TaskGroup $group, string $body): string
+        {
+            return 'https://github.com/acme/orbit/pull/1';
+        }
+
+        public function push(TaskGroup $group): void {}
+    });
 
     return [$group->fresh(['tasks', 'taskable']) ?? $group, $task->fresh() ?? $task, $receipts, $signer, $checks, $dispatcher, $reader];
 }

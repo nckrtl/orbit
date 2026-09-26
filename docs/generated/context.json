@@ -2794,7 +2794,8 @@
                 "0103",
                 "0112",
                 "0113",
-                "0122"
+                "0122",
+                "0160"
             ]
         },
         {
@@ -3242,7 +3243,8 @@
                 "0114",
                 "0117",
                 "0121",
-                "0132"
+                "0132",
+                "0160"
             ]
         },
         {
@@ -4129,6 +4131,30 @@
             ]
         },
         {
+            "path": "docs/decisions/0160-push-each-approved-subtask-and-remove-the-finished-workspace-clone.md",
+            "title": "ADR 0160: Push each approved subtask and remove the finished workspace clone",
+            "kind": "decision",
+            "components": [
+                "apps/docs",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Doctor",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Process",
+                "Project",
+                "Route",
+                "Task"
+            ],
+            "governing_adrs": [
+                "0103",
+                "0121",
+                "0160"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -4316,7 +4342,8 @@
                 "0156",
                 "0157",
                 "0158",
-                "0159"
+                "0159",
+                "0160"
             ]
         },
         {
@@ -4977,7 +5004,8 @@
             "governing_adrs": [
                 "0098",
                 "0121",
-                "0140"
+                "0140",
+                "0160"
             ]
         },
         {
@@ -5554,7 +5582,8 @@
                 "0132",
                 "0133",
                 "0134",
-                "0140"
+                "0140",
+                "0160"
             ]
         },
         {

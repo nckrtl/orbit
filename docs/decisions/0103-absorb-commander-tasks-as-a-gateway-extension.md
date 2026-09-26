@@ -16,7 +16,7 @@ Proposed. Amended on 2026-09-21 for T3-capable placement and fail-closed spawns.
 
 [ADR 0113](/decisions/0113-gate-task-completion-on-validation-and-review) replaces this record's Gateway PR creation with reviewer ownership. The reviewer creates the final PR; the Gateway verifies and stores its URL before settling.
 
-[ADR 0122](/decisions/0122-hold-task-groups-in-backlog-until-ready) replaces this record's claim immediately after create. A group starts in Backlog, and the scheduler claims only Todo groups. The status `queued` becomes `todo`.
+[ADR 0122](/decisions/0122-hold-task-groups-in-backlog-until-ready) replaces this record's claim immediately after create. A group starts in Backlog, and the scheduler claims only Todo groups. The status `queued` becomes `todo`. [ADR 0160](/decisions/0160-push-each-approved-subtask-and-remove-the-finished-workspace-clone) deletes the workspace clone on cancel and complete. A failed removal asks for assistance and the Gateway retries it. The Instance row stays until the checkout is gone.
 
 ## Context
 

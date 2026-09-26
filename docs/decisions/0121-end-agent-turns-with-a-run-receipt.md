@@ -16,6 +16,8 @@ This amends [ADR 0113](/decisions/0113-gate-task-completion-on-validation-and-re
 
 [ADR 0132](/decisions/0132-pause-only-for-the-acting-thread-and-a-real-question) requires a `blocked` receipt to ask the operator one specific question.
 
+[ADR 0160](/decisions/0160-push-each-approved-subtask-and-remove-the-finished-workspace-clone) pushes the task branch after every approved commit, not only when the final pull request opens, and deletes the workspace clone when the group is cancelled or completed.
+
 ## Context
 
 The intended loop has seven steps:

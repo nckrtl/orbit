@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\AppInstances\AppInstanceRemover;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\AgentSpawner;
 use App\Domain\Tasks\InstanceProvisioning;
@@ -14,6 +15,7 @@ use App\Domain\Tasks\TaskPlannerSpawner;
 use App\Domain\Tasks\TaskWorkspaceSigner;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
+use App\Models\AppInstanceRemoval;
 use App\Models\Node;
 use App\Models\TaskGroup;
 use Illuminate\Testing\TestResponse;
@@ -117,6 +119,15 @@ beforeEach(function (): void {
     app()->instance(TaskPlannerSpawner::class, $this->planners);
     app()->instance(TaskWorkspaceSigner::class, $this->signer);
     app()->instance(AgentSpawner::class, new NullAgentSpawner);
+    app()->instance(AppInstanceRemover::class, new class implements AppInstanceRemover
+    {
+        public function execute(AppInstance $instance, bool $force): AppInstanceRemoval
+        {
+            $instance->delete();
+
+            return new AppInstanceRemoval;
+        }
+    });
 });
 
 /**
