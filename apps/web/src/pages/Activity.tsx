@@ -1224,10 +1224,10 @@ function ActivityLog({
                 <button
                     type="button"
                     data-activity-new=""
-                    className="absolute top-[12px] left-1/2 z-10 -translate-x-1/2 cursor-pointer border border-line bg-bg px-[1ch] text-cyan"
+                    className="absolute top-[12px] left-1/2 z-10 -translate-x-1/2 cursor-pointer border border-cyan bg-bg px-[1ch] text-cyan shadow-[0_2px_12px_rgba(0,0,0,0.6)]"
                     onClick={showNewest}
                 >
-                    {fresh} new
+                    ↑ {fresh} new
                 </button>
             )}
         </div>
@@ -1330,12 +1330,13 @@ export function ActivityPage() {
                         type="button"
                         aria-expanded={filtersOpen}
                         aria-haspopup="dialog"
+                        aria-label={filterCount > 0 ? `Filters, ${filterCount} active` : "Filters"}
                         className={`cursor-pointer border-0 bg-transparent p-0 font-[inherit] ${
                             filterCount > 0 ? "text-cyan" : "text-dim hover:text-fg"
                         }`}
                         onClick={() => setFiltersOpen((open) => !open)}
                     >
-                        Filters {filterCount}
+                        {filterCount > 0 ? `Filters · ${filterCount}` : "Filters"}
                     </button>
                 )}
             </PageHeader>

@@ -104,7 +104,7 @@ it("lists Activity after Tasks and opens the newest rows", async () => {
 it("filters by status, command and node, and a new filter clears the older page", async () => {
     const app = await openApp("/activity?status=failed");
     await expect.element(page.getByRole("button", { name: "status: failed ▾" })).toBeVisible();
-    expect(page.getByRole("button", { name: "Filters 1" }).query()).toBeNull();
+    expect(page.getByRole("button", { name: "Filters, 1 active" }).query()).toBeNull();
     await expect.element(pane("Activity")).toHaveTextContent("node:add");
     await expect.element(pane("Activity")).not.toHaveTextContent("instance:deploy");
 
@@ -482,11 +482,11 @@ it("keeps the menu, filters, older rows and detail usable on a phone", async () 
         .click();
     await expect.poll(app.url).toBe("/activity");
 
-    await expect.element(page.getByRole("button", { name: "Filters 0" })).toBeVisible();
+    await expect.element(page.getByRole("button", { name: "Filters", exact: true })).toBeVisible();
     expect(document.querySelector("[data-activity-filters]")).toBeNull();
     const crumb = document.querySelector("[aria-label='Breadcrumb']");
     const firstRow = document.querySelector("[data-activity-id]");
-    const filtersButton = page.getByRole("button", { name: "Filters 0" }).query();
+    const filtersButton = page.getByRole("button", { name: "Filters", exact: true }).query();
     if (
         !(crumb instanceof HTMLElement) ||
         !(firstRow instanceof HTMLElement) ||
@@ -732,15 +732,15 @@ it("keeps phone filters when nothing matches, and clearing them shows rows", asy
     await page.viewport(390, 800);
     const app = await openApp("/activity?command=review:does-not-exist");
     await expect.element(pane("Activity")).toHaveTextContent("No activity.");
-    await expect.element(page.getByRole("button", { name: "Filters 1" })).toBeVisible();
+    await expect.element(page.getByRole("button", { name: "Filters, 1 active" })).toBeVisible();
     expect(document.querySelector("[data-activity-filters]")).toBeNull();
-    await page.getByRole("button", { name: "Filters 1" }).click();
+    await page.getByRole("button", { name: "Filters, 1 active" }).click();
     expect(document.querySelector("[data-activity-filters]")).not.toBeNull();
     const command = page.getByRole("textbox", { name: "Command" });
     await command.fill("");
     await userEvent.keyboard("{Enter}");
     await expect.poll(app.url).toBe("/activity");
-    await expect.element(page.getByRole("button", { name: "Filters 0" })).toBeVisible();
+    await expect.element(page.getByRole("button", { name: "Filters", exact: true })).toBeVisible();
     await expect.element(pane("Activity")).not.toHaveTextContent("No activity.");
     await expect.element(page.getByRole("button", { name: "Open activity 150" })).toBeVisible();
 });
@@ -760,7 +760,7 @@ it("opens the phone filter sheet from the header and keeps the desktop bar", asy
     expect(gap).toBeGreaterThan(0);
     expect(gap).toBeLessThan(80);
 
-    await page.getByRole("button", { name: "Filters 0" }).click();
+    await page.getByRole("button", { name: "Filters", exact: true }).click();
     const sheet = document.querySelector("[data-activity-filter-sheet]");
     if (!(sheet instanceof HTMLElement)) throw new Error("Filter sheet is missing.");
     await expect.element(page.getByRole("dialog", { name: "Filters" })).toBeVisible();
@@ -783,34 +783,34 @@ it("opens the phone filter sheet from the header and keeps the desktop bar", asy
 
     await page.getByRole("button", { name: "status: all ▾" }).click();
     await expect.poll(app.url).toContain("status=running");
-    await expect.element(page.getByRole("button", { name: "Filters 1" })).toBeVisible();
+    await expect.element(page.getByRole("button", { name: "Filters, 1 active" })).toBeVisible();
 
     await page.getByRole("textbox", { name: "Command" }).fill("node:add");
     await userEvent.keyboard("{Enter}");
     await expect.poll(app.url).toContain("command=node");
-    await expect.element(page.getByRole("button", { name: "Filters 2" })).toBeVisible();
+    await expect.element(page.getByRole("button", { name: "Filters, 2 active" })).toBeVisible();
 
     await page.getByRole("button", { name: "caller: all ▾" }).click();
     await expect.element(page.getByRole("button", { name: "caller: gateway ▾" })).toBeVisible();
     await expect.poll(app.url).toContain("caller_node_id=1");
-    await expect.element(page.getByRole("button", { name: "Filters 3" })).toBeVisible();
+    await expect.element(page.getByRole("button", { name: "Filters, 3 active" })).toBeVisible();
 
     await page.getByRole("button", { name: "target: all ▾" }).click();
     await expect.element(page.getByRole("button", { name: "target: gateway ▾" })).toBeVisible();
     await expect.poll(app.url).toContain("target_node_id=1");
-    await expect.element(page.getByRole("button", { name: "Filters 4" })).toBeVisible();
+    await expect.element(page.getByRole("button", { name: "Filters, 4 active" })).toBeVisible();
 
     await page.getByRole("button", { name: "Done" }).click();
     await expect.poll(() => document.querySelector("[data-activity-filter-sheet]")).toBeNull();
     await expect.poll(app.url).toContain("status=running");
     await expect.poll(app.url).toContain("command=node");
-    await expect.element(page.getByRole("button", { name: "Filters 4" })).toBeVisible();
+    await expect.element(page.getByRole("button", { name: "Filters, 4 active" })).toBeVisible();
 
-    await page.getByRole("button", { name: "Filters 4" }).click();
+    await page.getByRole("button", { name: "Filters, 4 active" }).click();
     await expect.element(page.getByRole("button", { name: "status: running ▾" })).toBeVisible();
     await page.getByRole("button", { name: "Clear", exact: true }).click();
     await expect.poll(app.url).toBe("/activity");
-    await expect.element(page.getByRole("button", { name: "Filters 0" })).toBeVisible();
+    await expect.element(page.getByRole("button", { name: "Filters", exact: true })).toBeVisible();
     await expect.element(page.getByRole("button", { name: "status: all ▾" })).toBeVisible();
     await expect.element(page.getByRole("button", { name: "caller: all ▾" })).toBeVisible();
     await expect.element(page.getByRole("button", { name: "target: all ▾" })).toBeVisible();
@@ -830,7 +830,7 @@ it("opens the phone filter sheet from the header and keeps the desktop bar", asy
                 return shell instanceof HTMLElement ? getComputedStyle(shell).paddingTop : "";
             })
             .toBe("47px");
-        await page.getByRole("button", { name: "Filters 0" }).click();
+        await page.getByRole("button", { name: "Filters", exact: true }).click();
         const padded = document.querySelector("[data-activity-filter-sheet]");
         const frame = padded?.querySelector("section");
         if (!(padded instanceof HTMLElement) || !(frame instanceof HTMLElement)) {
@@ -848,7 +848,7 @@ it("opens the phone filter sheet from the header and keeps the desktop bar", asy
 
     await page.viewport(1280, 800);
     await expect.element(page.getByRole("button", { name: "status: all ▾" })).toBeVisible();
-    expect(page.getByRole("button", { name: "Filters 0" }).query()).toBeNull();
+    expect(page.getByRole("button", { name: "Filters", exact: true }).query()).toBeNull();
     expect(document.querySelector("[data-activity-filter-sheet]")).toBeNull();
     expect(document.querySelector("[data-activity-filters]")).not.toBeNull();
 });
@@ -875,8 +875,8 @@ function pressTab(shift = false): void {
 it("discards an unfinished command when Clear is used", async () => {
     await page.viewport(390, 800);
     const app = await openApp("/activity");
-    await expect.element(page.getByRole("button", { name: "Filters 0" })).toBeVisible();
-    await page.getByRole("button", { name: "Filters 0" }).click();
+    await expect.element(page.getByRole("button", { name: "Filters", exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Filters", exact: true }).click();
     await page.getByRole("textbox", { name: "Command" }).fill("node:add");
     expect(commandDraft()).toBe("node:add");
     expect(app.url()).toBe("/activity");
@@ -889,8 +889,8 @@ it("discards an unfinished command when Clear is used", async () => {
     expect(app.url()).toBe("/activity");
 
     await app.router.navigate({ to: "/activity", search: { status: "failed" } });
-    await expect.element(page.getByRole("button", { name: "Filters 1" })).toBeVisible();
-    await page.getByRole("button", { name: "Filters 1" }).click();
+    await expect.element(page.getByRole("button", { name: "Filters, 1 active" })).toBeVisible();
+    await page.getByRole("button", { name: "Filters, 1 active" }).click();
     await page.getByRole("textbox", { name: "Command" }).fill("node:add");
     expect(commandDraft()).toBe("node:add");
     await page.getByRole("button", { name: "Clear", exact: true }).click();
@@ -904,7 +904,7 @@ it("discards an unfinished command when Clear is used", async () => {
 it("keeps Tab inside the phone filter sheet and restores the Filters button", async () => {
     await page.viewport(390, 800);
     await openApp("/activity");
-    const openFilters = page.getByRole("button", { name: "Filters 0" });
+    const openFilters = page.getByRole("button", { name: "Filters", exact: true });
     await openFilters.click();
     const sheet = document.querySelector("[data-activity-filter-sheet]");
     const trigger = openFilters.query();
