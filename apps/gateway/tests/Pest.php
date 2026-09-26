@@ -16,6 +16,7 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskRunReceipts;
+use App\Infrastructure\Activity\ActivityShutdownFinalizer;
 use App\Infrastructure\AgentView\CacheAgentStateView;
 use App\Infrastructure\AppInstances\DependencyUpdateSupervisorHost;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
@@ -75,6 +76,8 @@ uses(TestCase::class, RefreshDatabase::class)
         Classification::fake();
         // Transitions wait for private DNS answers to expire; tests assert those waits instead.
         Sleep::fake(syncWithCarbon: true);
+        // A streamed response a test never consumed stays armed; each test starts with none.
+        ActivityShutdownFinalizer::forgetArmed();
     })
     ->in('Feature');
 
