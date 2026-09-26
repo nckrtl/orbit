@@ -98,11 +98,12 @@ it('pushes the task branch with a pull request token and opens the pull request'
     GitHubTestSupport::storeApp();
     publisher_github();
     $group = publisher_group($root.'/checkout');
+    $commit = publisher_git($root.'/checkout', ['rev-parse', 'HEAD']);
 
-    $url = publisher(new LocalShellSshExecutor)->publish($group, "Adds the export.\n");
+    $url = publisher(new LocalShellSshExecutor)->publish($group, "Adds the export.\n", $commit);
 
     expect($url)->toBe('https://github.com/acme/shop/pull/11')
-        ->and(publisher_git($root.'/origin.git', ['rev-parse', 'refs/heads/task-'.$group->id]))->toBe(publisher_git($root.'/checkout', ['rev-parse', 'HEAD']));
+        ->and(publisher_git($root.'/origin.git', ['rev-parse', 'refs/heads/task-'.$group->id]))->toBe($commit);
     Http::assertSent(static fn (Request $request): bool => str_ends_with($request->url(), '/access_tokens')
         && $request->data() === ['repositories' => ['shop'], 'permissions' => ['contents' => 'write', 'pull_requests' => 'write']]);
     Http::assertSent(static fn (Request $request): bool => $request->method() === 'POST' && $request->url() === 'https://api.github.com/repos/acme/shop/pulls'
@@ -115,14 +116,17 @@ it('pushes the task branch without opening a pull request', function (): void {
     (new Process(['git', 'init', '--quiet', '--bare', $root.'/origin.git']))->mustRun();
     (new Process(['git', 'init', '--quiet', '-b', 'task-7', $root.'/checkout']))->mustRun();
     publisher_git($root.'/checkout', ['commit', '--quiet', '--allow-empty', '-m', 'Approved subtask']);
+    $commit = publisher_git($root.'/checkout', ['rev-parse', 'HEAD']);
+    publisher_git($root.'/checkout', ['commit', '--quiet', '--allow-empty', '-m', 'Later HEAD']);
     publisher_git($root.'/checkout', ['remote', 'add', 'origin', $root.'/origin.git']);
     GitHubTestSupport::storeApp();
     publisher_github();
     $group = publisher_group($root.'/checkout');
 
-    publisher(new LocalShellSshExecutor)->push($group);
+    publisher(new LocalShellSshExecutor)->push($group, $commit);
 
-    expect(publisher_git($root.'/origin.git', ['rev-parse', 'refs/heads/task-'.$group->id]))->toBe(publisher_git($root.'/checkout', ['rev-parse', 'HEAD']));
+    expect(publisher_git($root.'/origin.git', ['rev-parse', 'refs/heads/task-'.$group->id]))->toBe($commit)
+        ->and(publisher_git($root.'/checkout', ['rev-parse', 'HEAD']))->not->toBe($commit);
     Http::assertNotSent(static fn (Request $request): bool => str_contains($request->url(), '/pulls'));
 });
 
@@ -131,20 +135,32 @@ it('sends the token only on the standard input of the push', function (): void {
     publisher_github();
     $transport = new AppDevFakeSshExecutor;
 
-    publisher($transport)->publish(publisher_group('/srv/orbit/apps/shop/task-7'), 'Body');
+    $commit = str_repeat('a', 40);
+    publisher($transport)->publish(publisher_group('/srv/orbit/apps/shop/task-7'), 'Body', $commit);
 
     $command = $transport->commands[0];
-    expect($command->arguments)->toBe(['bash', '-seu', '--', '/srv/orbit/apps/shop/task-7', 'task-'.TaskGroup::query()->sole()->id])
+    expect($command->arguments)->toBe(['bash', '-seu', '--', '/srv/orbit/apps/shop/task-7', 'task-'.TaskGroup::query()->sole()->id, $commit])
         ->and($command->input)->toBeNull()
         ->and(stream_get_contents($command->protectedInput?->stream()))->toContain(base64_encode('x-access-token:ghs_publish'))
-        ->and(stream_get_contents($command->protectedInput?->stream()))->toContain('git_read git -C "$checkout" push --quiet origin "HEAD:refs/heads/$branch"');
+        ->and(stream_get_contents($command->protectedInput?->stream()))->toContain('git_read git -C "$checkout" push --quiet origin "$commit:refs/heads/$branch"')
+        ->and(stream_get_contents($command->protectedInput?->stream()))->not->toContain('HEAD:refs/heads');
+});
+
+it('refuses a push that does not name a commit sha', function (): void {
+    GitHubTestSupport::storeApp();
+    publisher_github();
+    $transport = new AppDevFakeSshExecutor;
+
+    expect(fn () => publisher($transport)->push(publisher_group('/srv/orbit/apps/shop/task-7'), 'HEAD'))
+        ->toThrow(TaskPullRequestException::class, 'The approved commit is not a Git SHA.');
+    expect($transport->commands)->toBe([]);
 });
 
 it('uses the open pull request that already has the task branch as its head', function (): void {
     GitHubTestSupport::storeApp();
     publisher_github(422);
 
-    expect(publisher(new AppDevFakeSshExecutor)->publish(publisher_group('/srv/orbit/apps/shop/task-7'), 'Body'))->toBe('https://github.com/acme/shop/pull/12');
+    expect(publisher(new AppDevFakeSshExecutor)->publish(publisher_group('/srv/orbit/apps/shop/task-7'), 'Body', str_repeat('a', 40)))->toBe('https://github.com/acme/shop/pull/12');
 });
 
 it('refuses to publish without an App, for another host, or when the push fails', function (bool $app, string $repository, int $pushExit, string $message): void {
@@ -154,7 +170,7 @@ it('refuses to publish without an App, for another host, or when the push fails'
     publisher_github();
     $transport = new AppDevFakeSshExecutor([new CommandResult($pushExit, '', 'rejected', 1, false)]);
 
-    expect(fn () => publisher($transport)->publish(publisher_group('/srv/orbit/apps/shop/task-7', $repository), 'Body'))
+    expect(fn () => publisher($transport)->publish(publisher_group('/srv/orbit/apps/shop/task-7', $repository), 'Body', str_repeat('a', 40)))
         ->toThrow(TaskPullRequestException::class, $message);
 })->with([
     'no App' => [false, 'git@github.com:acme/shop.git', 0, 'The Gateway GitHub App is not registered.'],
@@ -170,7 +186,7 @@ it('names the permissions GitHub has not granted instead of an unreachable GitHu
     ]);
     $transport = new AppDevFakeSshExecutor;
 
-    expect(fn () => publisher($transport)->publish(publisher_group('/srv/orbit/apps/shop/task-7'), 'Body'))
+    expect(fn () => publisher($transport)->publish(publisher_group('/srv/orbit/apps/shop/task-7'), 'Body', str_repeat('a', 40)))
         ->toThrow(TaskPullRequestException::class, 'The pull request could not be opened: GitHub refused the App token request (422): The permissions requested are not granted to this installation.');
     expect($transport->commands)->toBe([]);
 });
@@ -182,6 +198,6 @@ it('still reports an unreachable GitHub when the token request fails on the serv
         'https://api.github.com/app/installations/9/access_tokens' => Http::response(['message' => 'Server Error'], 502),
     ]);
 
-    expect(fn () => publisher(new AppDevFakeSshExecutor)->publish(publisher_group('/srv/orbit/apps/shop/task-7'), 'Body'))
+    expect(fn () => publisher(new AppDevFakeSshExecutor)->publish(publisher_group('/srv/orbit/apps/shop/task-7'), 'Body', str_repeat('a', 40)))
         ->toThrow(TaskPullRequestException::class, 'The pull request could not be opened: GitHub could not be reached or refused the App credential.');
 });

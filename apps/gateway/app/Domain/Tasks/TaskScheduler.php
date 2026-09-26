@@ -33,6 +33,9 @@ final readonly class TaskScheduler
 
     public const string WorkspaceChangedReminder = 'The workspace changed during the review. Revert your changes and request the changes from the implementer instead.';
 
+    /** Assistance set when an approved commit cannot be pushed or its pull request cannot be opened. */
+    public const string PublicationFailedPrefix = 'Approved commit publication failed: ';
+
     /** Reasons the scheduler sets when a claim returns a group to todo. A start, a capacity wait, or a move to backlog clears them. */
     public const array ClaimFailureReasons = [
         self::ProvisioningFailedReason,
@@ -282,7 +285,12 @@ final readonly class TaskScheduler
 
                 return;
             }
-            $task->update(['completion_handoff_comment_id' => $receipt->id, 'communication_failures' => 0]);
+            $handoff = ['completion_handoff_comment_id' => $receipt->id, 'communication_failures' => 0];
+            if (is_string($implementer->turnId) && $implementer->turnId !== '') {
+                // The turn that handed off. A later implementer turn during review is a new handoff, not a reviewer edit.
+                $handoff['completion_handoff_turn_id'] = $implementer->turnId;
+            }
+            $task->update($handoff);
             $this->settleImplementer($task, $observation->thread(TaskThreadRole::Reviewer));
 
             return;
@@ -404,9 +412,29 @@ final readonly class TaskScheduler
             return true;
         }
         if ($receipt instanceof TaskComment
-            && in_array($outcome, [TaskRunOutcome::Blocked, TaskRunOutcome::ChangesRequested, TaskRunOutcome::Approved], true)
-            && ! $this->workspaceUnchanged($group, $task, $reviewer, $receipt)) {
-            return true;
+            && in_array($outcome, [TaskRunOutcome::Blocked, TaskRunOutcome::ChangesRequested, TaskRunOutcome::Approved], true)) {
+            $decision = $this->reviewWorkspaceDecision($group, $task, $reviewer, $receipt, $observation);
+            if ($decision === 'orbit_commit') {
+                try {
+                    $recovered = $this->recoveredCommit($task, $this->workspaceSnapshot($group));
+                } catch (TaskCheckException $exception) {
+                    $this->recordCommunicationFailure($task, $group, $exception->getMessage());
+
+                    return true;
+                }
+                if ($recovered === null) {
+                    $this->recordCommunicationFailure($task, $group, 'Orbit could not commit the approved subtask.');
+
+                    return true;
+                }
+                $receipt->update(['commit_sha' => $recovered]);
+                $this->publishApprovedCommit($group, $task, $receipt);
+
+                return true;
+            }
+            if ($decision !== 'apply') {
+                return true;
+            }
         }
         if ($receipt instanceof TaskComment && $outcome === TaskRunOutcome::Approved && $this->committedApproval($receipt)) {
             // The commit is already stored and the workspace still holds it. Retry the push only; do not commit again.
@@ -466,6 +494,16 @@ final readonly class TaskScheduler
         }
 
         $commit = $instance instanceof AppInstance ? $this->signer->commit($instance, $task->title."\n\n".$receipt->body) : null;
+        if ($commit === null && $instance instanceof AppInstance) {
+            // The commit can land and the SHA response can still be lost. The parent and tree identify Orbit's commit.
+            try {
+                $commit = $this->recoveredCommit($task, $this->workspaceSnapshot($group));
+            } catch (TaskCheckException $exception) {
+                $this->recordCommunicationFailure($task, $group, $exception->getMessage());
+
+                return true;
+            }
+        }
         if ($commit === null) {
             $this->recordCommunicationFailure($task, $group, 'Orbit could not commit the approved subtask.');
 
@@ -496,6 +534,9 @@ final readonly class TaskScheduler
         if (! $receipt instanceof TaskComment || $this->receiptOutcome($receipt) !== TaskRunOutcome::Approved || ! $this->committedApproval($receipt)) {
             return false;
         }
+        if (! $this->retryIsDue($this->publicationBackoffKey($task), 'approved publication')) {
+            return true;
+        }
 
         try {
             $current = $this->workspaceSnapshot($group);
@@ -516,15 +557,24 @@ final readonly class TaskScheduler
     }
 
     /**
-     * Pushes the approved HEAD, then opens the pull request on the last subtask. The open pushes again.
-     * A failed push or open leaves the subtask in review and keeps commit_sha.
+     * Pushes the stored commit, then opens the pull request on the last subtask. The open pushes that commit again.
+     * The refspec names the commit, never HEAD. A failed push or open leaves the subtask in review and keeps commit_sha.
      */
     private function publishApprovedCommit(TaskGroup $group, Task $task, TaskComment $receipt): void
     {
+        $commit = $receipt->commit_sha;
+        if (! is_string($commit) || $commit === '') {
+            $this->recordCommunicationFailure($task, $group, 'Orbit could not commit the approved subtask.');
+
+            return;
+        }
+        if (! $this->retryIsDue($this->publicationBackoffKey($task), 'approved publication')) {
+            return;
+        }
         try {
-            $this->publisher->push($group);
+            $this->publisher->push($group, $commit);
         } catch (TaskPullRequestException $exception) {
-            $this->recordCommunicationFailure($task, $group, $exception->getMessage());
+            $this->failPublication($group, $task, $exception->getMessage());
 
             return;
         }
@@ -537,25 +587,48 @@ final readonly class TaskScheduler
                 return;
             }
             try {
-                $url = $this->publisher->publish($group, TaskPullRequestDescription::render($pullRequest, $group->tasks()->whereNotIn('status', [TaskStatus::Cancelled, TaskStatus::Failed])->count(), $group->app->taskCheckCommand()));
+                $url = $this->publisher->publish($group, TaskPullRequestDescription::render($pullRequest, $group->tasks()->whereNotIn('status', [TaskStatus::Cancelled, TaskStatus::Failed])->count(), $group->app->taskCheckCommand()), $commit);
             } catch (TaskPullRequestException $exception) {
-                $this->recordCommunicationFailure($task, $group, $exception->getMessage());
+                $this->failPublication($group, $task, $exception->getMessage());
 
                 return;
             }
             $group->update(['pr_url' => $url]);
         }
 
-        if ($group->assistance_requested) {
-            $group->update(['assistance_requested' => false, 'assistance_reason' => null]);
-        }
+        $this->rememberBackoff($this->publicationBackoffKey($task), null, 'approved publication');
         $task->update([
             'review_handled_comment_id' => $receipt->id,
             'communication_failures' => 0,
-            'assistance_requested' => false,
-            'assistance_reason' => null,
         ]);
+        $this->clearPublicationAssistance($task, $group);
         $this->acceptReview($task);
+    }
+
+    /** A failed push or open waits out the backoff and asks for assistance on the fifth failure. */
+    private function failPublication(TaskGroup $group, Task $task, string $reason): void
+    {
+        $key = $this->publicationBackoffKey($task);
+        $this->extendBackoff($key, $this->readBackoff($key, 'approved publication'), 'approved publication');
+        $this->recordCommunicationFailure($task, $group, self::PublicationFailedPrefix.$reason);
+    }
+
+    /** Clears the publication failure only. A blocked question or any other cause stays on the subtask and the group. */
+    private function clearPublicationAssistance(Task $task, TaskGroup $group): void
+    {
+        $task->refresh();
+        $group->refresh();
+        if (is_string($task->assistance_reason) && str_starts_with($task->assistance_reason, self::PublicationFailedPrefix)) {
+            $task->update(['assistance_requested' => false, 'assistance_reason' => null]);
+        }
+        if (is_string($group->assistance_reason) && str_starts_with($group->assistance_reason, self::PublicationFailedPrefix)) {
+            $group->update(['assistance_requested' => false, 'assistance_reason' => null]);
+        }
+    }
+
+    private function publicationBackoffKey(Task $task): string
+    {
+        return 'tasks.approved-publication.'.$task->id;
     }
 
     private function relayFindings(TaskGroup $group, Task $task, TaskSessionObservation $observation, TaskComment $findings): void
@@ -1119,8 +1192,20 @@ final readonly class TaskScheduler
     /** Seconds one tick may spend removing abandoned workspaces, well inside the 300-second tick lock. */
     public const int AbandonedWorkspaceBudgetSeconds = 60;
 
-    /** The first retry delay after a failed removal. Each further failure doubles it, up to the reservation timeout. */
+    /** The first retry delay. The later delays are 2, 5, 10, and 30 minutes, and further failures stay at 30. */
     public const int AbandonedWorkspaceBackoffSeconds = 60;
+
+    /**
+     * Delay before the next push or removal attempt after this many failures.
+     * The first failure waits one minute, then 2, 5, 10, and 30 minutes.
+     */
+    public static function retryDelaySeconds(int $failures): int
+    {
+        $schedule = [self::AbandonedWorkspaceBackoffSeconds, 120, 300, 600, 1800];
+        $index = min(max($failures, 1), count($schedule)) - 1;
+
+        return $schedule[$index];
+    }
 
     /**
      * Removes the workspace of a cancelled or completed group, attached or found by its `task-{group id}` name and
@@ -1129,7 +1214,9 @@ final readonly class TaskScheduler
      *
      * One query selects the candidates. A failed removal is reported, asks for assistance, and backs off per
      * Instance, so a workspace that keeps failing never blocks the others. The sweep stops starting removals once
-     * it has spent its time budget; the rest wait for the next tick. Success clears that assistance.
+     * it has spent its time budget; the rest wait for the next tick. Success clears removal assistance only.
+     * A cancelled group pushes its stored approval before the checkout is deleted. A user Instance attached to a
+     * non-managed group is never a candidate.
      */
     public function removeAbandonedWorkspaces(): int
     {
@@ -1142,7 +1229,7 @@ final readonly class TaskScheduler
             }
 
             $backoffKey = 'tasks.workspace-removal.'.$workspace->id;
-            $backoff = $this->workspaceRemovalBackoff($backoffKey);
+            $backoff = $this->readBackoff($backoffKey, 'workspace removal');
             if ($backoff !== null && $backoff['due'] > now()->getTimestamp()) {
                 continue;
             }
@@ -1154,8 +1241,9 @@ final readonly class TaskScheduler
             }
 
             try {
+                $this->pushCancelledApproval($group, $instance);
                 $this->workspaces->remove($instance);
-                $this->rememberWorkspaceRemovalBackoff($backoffKey, null);
+                $this->rememberBackoff($backoffKey, null, 'workspace removal');
                 $this->releaseRemovedWorkspace($group, $instance->id);
                 Log::warning('Removed the workspace of an ended task group.', ['task_group_id' => $group->id, 'app_instance_id' => $instance->id]);
                 $removed++;
@@ -1165,7 +1253,7 @@ final readonly class TaskScheduler
                     ? RemoveTaskWorkspaceAction::MergeCleanupFailedPrefix
                     : RemoveTaskWorkspaceAction::RemovalFailedPrefix;
                 $this->workspaces->recordFailure($group, $exception, $prefix);
-                $this->extendWorkspaceRemovalBackoff($backoffKey, $backoff);
+                $this->extendBackoff($backoffKey, $backoff, 'workspace removal');
             }
         }
 
@@ -1178,7 +1266,7 @@ final readonly class TaskScheduler
         $attached = $group->taskable;
         $instance = $attached instanceof AppInstance ? $attached : $this->workspaces->find($group);
         $backoffKey = $instance instanceof AppInstance ? 'tasks.workspace-removal.'.$instance->id : null;
-        $backoff = is_string($backoffKey) ? $this->workspaceRemovalBackoff($backoffKey) : null;
+        $backoff = is_string($backoffKey) ? $this->readBackoff($backoffKey, 'workspace removal') : null;
 
         if ($backoff !== null && $backoff['due'] > now()->getTimestamp()) {
             return;
@@ -1188,9 +1276,9 @@ final readonly class TaskScheduler
             if (TaskPullRequestHealth::isReason($group->assistance_reason)) {
                 $group->update(['assistance_requested' => false, 'assistance_reason' => null]);
             }
-            $this->completeGroup->execute($group);
+            $this->completeGroup->execute($group, finishWhenRemovalFails: false);
             if (is_string($backoffKey)) {
-                $this->rememberWorkspaceRemovalBackoff($backoffKey, null);
+                $this->rememberBackoff($backoffKey, null, 'workspace removal');
             }
         } catch (Throwable $exception) {
             $group->update([
@@ -1198,14 +1286,34 @@ final readonly class TaskScheduler
                 'assistance_reason' => RemoveTaskWorkspaceAction::MergeCleanupFailedPrefix.$exception->getMessage(),
             ]);
             if (is_string($backoffKey)) {
-                $this->extendWorkspaceRemovalBackoff($backoffKey, $backoff);
+                $this->extendBackoff($backoffKey, $backoff, 'workspace removal');
             }
         }
     }
 
+    /** Pushes the latest stored approval before a cancelled checkout is deleted. A group with no approval is unchanged. */
+    private function pushCancelledApproval(TaskGroup $group, AppInstance $instance): void
+    {
+        if ($group->status !== TaskGroupStatus::Cancelled) {
+            return;
+        }
+        $commit = TaskComment::query()
+            ->where('task_group_id', $group->id)
+            ->where('type', TaskCommentType::Approved)
+            ->whereNotNull('commit_sha')
+            ->latest('id')
+            ->value('commit_sha');
+        if (! is_string($commit) || $commit === '') {
+            return;
+        }
+        $group->setRelation('taskable', $instance);
+        $group->loadMissing('app');
+        $this->publisher->push($group, $commit);
+    }
+
     private function shouldRemoveWorkspace(TaskGroup $group, AppInstance $instance): bool
     {
-        if ($instance->app_id !== $group->app_id) {
+        if ($instance->app_id !== $group->app_id || $this->attachedToUnmanagedGroup($instance)) {
             return false;
         }
 
@@ -1244,28 +1352,33 @@ final readonly class TaskScheduler
     /**
      * @param  array{failures: int, due: int}|null  $backoff
      */
-    private function extendWorkspaceRemovalBackoff(string $key, ?array $backoff): void
+    private function extendBackoff(string $key, ?array $backoff, string $label): void
     {
         $failures = ($backoff['failures'] ?? 0) + 1;
-        $delay = min(
-            self::AbandonedWorkspaceBackoffSeconds * 2 ** min($failures - 1, 20),
-            max(self::AbandonedWorkspaceBackoffSeconds, (int) config('orbit.tasks.reserved_timeout_seconds')),
-        );
-        $this->rememberWorkspaceRemovalBackoff($key, ['failures' => $failures, 'due' => now()->addSeconds($delay)->getTimestamp()], $delay * 2);
+        $delay = self::retryDelaySeconds($failures);
+        $this->rememberBackoff($key, ['failures' => $failures, 'due' => now()->addSeconds($delay)->getTimestamp()], $label, $delay * 2);
+    }
+
+    /** The next attempt waits until `due`. A missing backoff, or a cache read that fails, means try now. */
+    private function retryIsDue(string $key, string $label): bool
+    {
+        $backoff = $this->readBackoff($key, $label);
+
+        return $backoff === null || $backoff['due'] <= now()->getTimestamp();
     }
 
     /**
-     * Reads a workspace removal backoff. A cache error is logged and read as no backoff, so one bad read never
-     * stops the sweep or the tick.
+     * Reads a retry backoff. A cache error is logged and read as no backoff, so one bad read never stops the
+     * sweep or the tick.
      *
      * @return array{failures: int, due: int}|null
      */
-    private function workspaceRemovalBackoff(string $key): ?array
+    private function readBackoff(string $key, string $label): ?array
     {
         try {
             $backoff = Cache::get($key);
         } catch (Throwable $exception) {
-            Log::warning('The workspace removal backoff could not be read.', ['key' => $key, 'exception' => $exception::class, 'reason' => $exception->getMessage()]);
+            Log::warning('The '.$label.' backoff could not be read.', ['key' => $key, 'exception' => $exception::class, 'reason' => $exception->getMessage()]);
 
             return null;
         }
@@ -1276,11 +1389,11 @@ final readonly class TaskScheduler
     }
 
     /**
-     * Stores or clears a workspace removal backoff. A cache error is logged and the sweep continues.
+     * Stores or clears a retry backoff. A cache error is logged and the attempt continues.
      *
      * @param  array{failures: int, due: int}|null  $backoff
      */
-    private function rememberWorkspaceRemovalBackoff(string $key, ?array $backoff, int $seconds = 0): void
+    private function rememberBackoff(string $key, ?array $backoff, string $label, int $seconds = 0): void
     {
         try {
             if ($backoff === null) {
@@ -1289,8 +1402,18 @@ final readonly class TaskScheduler
                 Cache::put($key, $backoff, now()->addSeconds($seconds));
             }
         } catch (Throwable $exception) {
-            Log::warning('The workspace removal backoff could not be written.', ['key' => $key, 'exception' => $exception::class, 'reason' => $exception->getMessage()]);
+            Log::warning('The '.$label.' backoff could not be written.', ['key' => $key, 'exception' => $exception::class, 'reason' => $exception->getMessage()]);
         }
+    }
+
+    /** A user Instance that backs a non-managed group is never a task workspace the sweep may delete. */
+    private function attachedToUnmanagedGroup(AppInstance $instance): bool
+    {
+        return TaskGroup::query()
+            ->where('taskable_type', TaskableType::Instance)
+            ->where('taskable_id', $instance->id)
+            ->where('execution_mode', '!=', TaskExecutionMode::Managed->value)
+            ->exists();
     }
 
     /** @return Collection<int, AppInstance> */
@@ -1318,6 +1441,13 @@ final readonly class TaskScheduler
                     });
             })
             ->where('task_groups.execution_mode', TaskExecutionMode::Managed->value)
+            ->whereNotExists(function ($userGroup): void {
+                $userGroup->selectRaw('1')
+                    ->from('task_groups as user_groups')
+                    ->whereColumn('user_groups.taskable_id', 'app_instances.id')
+                    ->where('user_groups.taskable_type', TaskableType::Instance)
+                    ->where('user_groups.execution_mode', '!=', TaskExecutionMode::Managed->value);
+            })
             ->where(function ($ended) use ($cutoff, $mergePrefix): void {
                 $ended->where(function ($finished) use ($cutoff): void {
                     $finished->whereIn('task_groups.status', [TaskGroupStatus::Cancelled->value, TaskGroupStatus::Completed->value])
@@ -1355,36 +1485,42 @@ final readonly class TaskScheduler
 
     /**
      * ADR 0133: a reviewer turn is read-only. The receipt stays unapplied while the workspace differs
-     * from the pair recorded with the review request. One reminder, then the scheduler waits for a
-     * newer stopped reviewer turn before it looks again. That later turn applies the outcome when
-     * the workspace matches, and asks for assistance when it still differs. Another poll of the
-     * reminded turn does neither. A failed read is a communication failure, not a change. A review
-     * notified before a baseline existed has nothing to compare, so its outcome applies as before.
+     * from the pair recorded with the review request, unless a newer implementer turn explains the
+     * difference or the commit below is Orbit's. One reminder, then the scheduler waits for a newer
+     * stopped reviewer turn before it looks again. That later turn applies the outcome when the
+     * workspace matches, and asks for assistance when it still differs. Another poll of the reminded
+     * turn does neither. A failed read is a communication failure, not a change. A review notified
+     * before a baseline existed has nothing to compare, so its outcome applies as before.
      * A commit already stored on the receipt is Orbit's. Publication retries only while HEAD is
      * that commit and the working tree still matches. The HEAD from before the approval is not
      * accepted after Orbit has committed, so a reset that drops the commit is refused.
      *
-     * @return bool whether the workspace still matches and the outcome may be applied
+     * @return 'apply'|'orbit_commit'|'wait'|'reopened'|'reminded'|'unreadable'
      */
-    private function workspaceUnchanged(TaskGroup $group, Task $task, TaskThreadObservation $reviewer, TaskComment $receipt): bool
+    private function reviewWorkspaceDecision(TaskGroup $group, Task $task, TaskThreadObservation $reviewer, TaskComment $receipt, TaskSessionObservation $observation): string
     {
         try {
             $current = $this->workspaceSnapshot($group);
         } catch (TaskCheckException $exception) {
             $this->recordCommunicationFailure($task, $group, $exception->getMessage());
 
-            return false;
+            return 'unreadable';
         }
-        $head = $task->review_workspace_head;
-        $tree = $task->review_workspace_tree;
-        $storedCommit = $receipt->commit_sha;
-        $orbitCommit = is_string($storedCommit) && $storedCommit !== '' ? $storedCommit : null;
-        $treeMatches = ! is_string($tree) || $tree === '' || $current->tree === $tree;
-        $headMatches = $orbitCommit !== null
-            ? $current->head === $orbitCommit
-            : ! is_string($head) || $head === '' || $current->head === $head;
-        if ($headMatches && $treeMatches) {
-            return true;
+        if ($this->workspaceMatchesReview($task, $receipt, $current)) {
+            return 'apply';
+        }
+        if ($this->receiptOutcome($receipt) === TaskRunOutcome::Approved && ! $this->committedApproval($receipt) && $this->recoveredCommit($task, $current) !== null) {
+            return 'orbit_commit';
+        }
+        $implementer = $observation->thread(TaskThreadRole::Implementer);
+        if ($this->newerImplementerTurn($task, $implementer)) {
+            if ($implementer instanceof TaskThreadObservation && $this->newerTurnHasStopped($task->completion_handoff_turn_id, $implementer)) {
+                $this->reopenHandoff($group, $task, $receipt);
+
+                return 'reopened';
+            }
+
+            return 'wait';
         }
         $this->remindOrAssist($group, $task, $reviewer, [
             new TaskRubricItem('workspace_unchanged', false, self::WorkspaceChangedReminder),
@@ -1396,7 +1532,71 @@ final readonly class TaskScheduler
             $task->update(['review_notified_turn_id' => $reviewer->turnId]);
         }
 
-        return false;
+        return 'reminded';
+    }
+
+    private function workspaceMatchesReview(Task $task, TaskComment $receipt, TaskWorkspaceSnapshot $current): bool
+    {
+        $head = $task->review_workspace_head;
+        $tree = $task->review_workspace_tree;
+        $storedCommit = $receipt->commit_sha;
+        $orbitCommit = is_string($storedCommit) && $storedCommit !== '' ? $storedCommit : null;
+        $treeMatches = ! is_string($tree) || $tree === '' || $current->tree === $tree;
+        $headMatches = $orbitCommit !== null
+            ? $current->head === $orbitCommit
+            : ! is_string($head) || $head === '' || $current->head === $head;
+
+        return $headMatches && $treeMatches;
+    }
+
+    /**
+     * Orbit's commit after a lost response: HEAD's parent is the HEAD recorded with the review
+     * request, and HEAD's tree is the tree recorded with that request (ADR 0133).
+     */
+    private function recoveredCommit(Task $task, TaskWorkspaceSnapshot $current): ?string
+    {
+        $head = $task->review_workspace_head;
+        $tree = $task->review_workspace_tree;
+        if (! is_string($head) || $head === '' || ! is_string($tree) || $tree === '' || $current->head === '' || $current->head === $head) {
+            return null;
+        }
+        if ($current->parent !== $head || $current->commitTree !== $tree) {
+            return null;
+        }
+
+        return $current->head;
+    }
+
+    private function newerImplementerTurn(Task $task, ?TaskThreadObservation $implementer): bool
+    {
+        $handoff = $task->completion_handoff_turn_id;
+
+        return is_string($handoff) && $handoff !== ''
+            && $implementer instanceof TaskThreadObservation
+            && is_string($implementer->turnId) && $implementer->turnId !== ''
+            && $implementer->turnId !== $handoff;
+    }
+
+    /**
+     * A newer implementer turn changed the workspace during review. The reviewer outcome is not
+     * applied and the reviewer is not reminded. The subtask needs a new receipt and a passing check.
+     */
+    private function reopenHandoff(TaskGroup $group, Task $task, TaskComment $receipt): void
+    {
+        $task->update([
+            'status' => TaskStatus::Running,
+            'review_handled_comment_id' => $receipt->id,
+            'review_attempt' => $task->review_attempt + 1,
+            'review_reminder_attempt' => null,
+            'review_reminder_input_id' => null,
+            'completion_attempt' => $task->completion_attempt + 1,
+            'completion_handoff_attempt' => null,
+            'completion_handoff_comment_id' => null,
+            'completion_reminder_attempt' => null,
+            'completion_reminder_input_id' => null,
+            'communication_failures' => 0,
+        ]);
+        $group->update(['status' => TaskGroupStatus::Running]);
     }
 
     /** @throws TaskCheckException */

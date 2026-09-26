@@ -13,5 +13,7 @@ final readonly class TaskWorkspaceSnapshot
     public function __construct(
         public string $head,
         public string $tree,
+        public ?string $parent = null,
+        public ?string $commitTree = null,
     ) {}
 }

@@ -26,6 +26,10 @@ final class FakeTaskCheckRunner implements TaskCheckRunner
 
     public string $tree;
 
+    public ?string $parent = null;
+
+    public ?string $commitTree = null;
+
     /** @var list<int> the database transaction level at each cancel */
     public array $cancelTransactionLevels = [];
 
@@ -89,6 +93,6 @@ final class FakeTaskCheckRunner implements TaskCheckRunner
             throw new TaskCheckException('The workspace tree could not be read.');
         }
 
-        return new TaskWorkspaceSnapshot($this->head, $this->tree);
+        return new TaskWorkspaceSnapshot($this->head, $this->tree, $this->parent, $this->commitTree);
     }
 }

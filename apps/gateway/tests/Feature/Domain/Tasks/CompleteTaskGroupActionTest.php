@@ -106,27 +106,41 @@ it('is idempotent for an already completed group and retries a leftover workspac
         ->and(AppInstance::query()->find($instanceId))->toBeNull();
 });
 
-it('asks for assistance and keeps the clone when removal of a settling workspace is refused', function (): void {
+it('marks the group completed and reports the removal failure when the workspace cannot be removed', function (): void {
     app(TaskExtensionState::class)->enable();
-    app()->instance(AppInstanceRemover::class, new class implements AppInstanceRemover
+    $remover = new class implements AppInstanceRemover
     {
+        public bool $fail = true;
+
         public function execute(AppInstance $instance, bool $force): AppInstanceRemoval
         {
-            throw new ResourceOperationException('instance.force_failed', 'The Node is unreachable.', 409);
+            if ($this->fail) {
+                throw new ResourceOperationException('instance.force_failed', 'The Node is unreachable.', 409);
+            }
+            $instance->delete();
+
+            return new AppInstanceRemoval;
         }
-    });
+    };
+    app()->instance(AppInstanceRemover::class, $remover);
     $group = complete_group();
     $instanceId = $group->taskable_id;
 
-    expect(fn () => app(CompleteTaskGroupAction::class)->execute($group))
-        ->toThrow(ResourceOperationException::class, 'The Node is unreachable.');
+    $completed = app(CompleteTaskGroupAction::class)->execute($group);
 
-    $fresh = $group->fresh();
-    expect($fresh?->status)->toBe(TaskGroupStatus::Settling)
-        ->and($fresh?->taskable_id)->toBe($instanceId)
-        ->and($fresh?->assistance_requested)->toBeTrue()
-        ->and($fresh?->assistance_reason)->toBe('Workspace removal failed: The Node is unreachable.')
+    expect($completed->status)->toBe(TaskGroupStatus::Completed)
+        ->and($completed->taskable_id)->toBe($instanceId)
+        ->and($completed->assistance_requested)->toBeTrue()
+        ->and($completed->assistance_reason)->toBe('Workspace removal failed: The Node is unreachable.')
         ->and(AppInstance::query()->find($instanceId))->not->toBeNull();
+
+    $remover->fail = false;
+    $retried = app(CompleteTaskGroupAction::class)->execute($completed);
+
+    expect($retried->status)->toBe(TaskGroupStatus::Completed)
+        ->and($retried->taskable_id)->toBeNull()
+        ->and($retried->assistance_requested)->toBeFalse()
+        ->and(AppInstance::query()->find($instanceId))->toBeNull();
 });
 
 it('returns 409 tasks.not_settling when the group is still running', function (): void {

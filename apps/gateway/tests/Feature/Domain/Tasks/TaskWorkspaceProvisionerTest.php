@@ -573,6 +573,7 @@ function forget_checkout(string $checkout): void
 
 it('removes the orbit workspace clone on cancel and on complete', function (string $operation): void {
     app(TaskExtensionState::class)->enable();
+    bind_task_node_reachability();
     [$group, $instance, $checkout] = orbit_workspace_clone();
     if ($operation !== 'unattached') {
         $group->taskable()->associate($instance);
@@ -600,6 +601,7 @@ it('removes the orbit workspace clone on cancel and on complete', function (stri
 
 it('keeps the source-resolved orbit clone and asks for assistance when removal is refused', function (string $operation): void {
     app(TaskExtensionState::class)->enable();
+    bind_task_node_reachability();
     [$group, $instance, $checkout] = orbit_workspace_clone();
     if ($operation !== 'unattached') {
         $group->taskable()->associate($instance);
@@ -610,20 +612,27 @@ it('keeps the source-resolved orbit clone and asks for assistance when removal i
     {
         public function execute(AppInstance $instance, bool $force): AppInstanceRemoval
         {
-            throw new ResourceOperationException('instance.force_failed', 'The Node is unreachable.', 409);
+            throw new ResourceOperationException('instance.force_failed', 'The checkout could not be inspected.', 409);
         }
     });
 
     try {
-        expect(function () use ($operation, $group): void {
-            if ($operation === 'complete') {
-                app(CompleteTaskGroupAction::class)->execute($group);
+        if ($operation === 'complete') {
+            $completed = app(CompleteTaskGroupAction::class)->execute($group);
 
-                return;
-            }
+            expect($completed->status)->toBe(TaskGroupStatus::Completed)
+                ->and($completed->taskable_id)->toBe($instance->id)
+                ->and($completed->assistance_requested)->toBeTrue()
+                ->and($completed->assistance_reason)->toBe(RemoveTaskWorkspaceAction::RemovalFailedPrefix.'The checkout could not be inspected.')
+                ->and(is_dir($checkout))->toBeTrue()
+                ->and(file_get_contents($checkout.'/KEEP'))->toBe('clone')
+                ->and(AppInstance::query()->whereKey($instance->id)->exists())->toBeTrue();
 
-            app(CancelTaskGroupAction::class)->execute($group);
-        })->toThrow(ResourceOperationException::class, 'The Node is unreachable.');
+            return;
+        }
+
+        expect(fn () => app(CancelTaskGroupAction::class)->execute($group))
+            ->toThrow(ResourceOperationException::class, 'The checkout could not be inspected.');
 
         $fresh = $group->fresh();
         expect(is_dir($checkout))->toBeTrue()
@@ -631,8 +640,8 @@ it('keeps the source-resolved orbit clone and asks for assistance when removal i
             ->and(AppInstance::query()->whereKey($instance->id)->exists())->toBeTrue()
             ->and($fresh?->taskable_id)->toBe($operation === 'unattached' ? null : $instance->id)
             ->and($fresh?->assistance_requested)->toBeTrue()
-            ->and($fresh?->assistance_reason)->toBe(RemoveTaskWorkspaceAction::RemovalFailedPrefix.'The Node is unreachable.')
-            ->and($fresh?->status)->toBe($operation === 'complete' ? TaskGroupStatus::Settling : TaskGroupStatus::Running);
+            ->and($fresh?->assistance_reason)->toBe(RemoveTaskWorkspaceAction::RemovalFailedPrefix.'The checkout could not be inspected.')
+            ->and($fresh?->status)->toBe(TaskGroupStatus::Running);
     } finally {
         forget_checkout($checkout);
     }

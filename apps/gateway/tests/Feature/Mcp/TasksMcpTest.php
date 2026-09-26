@@ -111,6 +111,7 @@ it('returns tasks.disabled when MCP create runs before enable', function (): voi
 
 it('cancels a running or queued group through MCP and removes its shared Instance', function (TaskGroupStatus $status): void {
     app(TaskExtensionState::class)->enable();
+    bind_task_node_reachability();
     $node = Node::query()->create([
         'name' => 'tasks-mcp-instance-node',
         'status' => LifecycleStatus::Active,

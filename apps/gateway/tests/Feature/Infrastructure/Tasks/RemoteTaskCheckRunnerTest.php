@@ -200,6 +200,8 @@ it('reads the same working tree as the check without touching the index', functi
 
     expect($snapshot->head)->toBe($process->head)
         ->and($snapshot->tree)->toBe($process->tree)
+        ->and($snapshot->parent)->toBeNull()
+        ->and($snapshot->commitTree)->toBe(trim((new Process(['git', 'rev-parse', 'HEAD^{tree}'], $checkout))->mustRun()->getOutput()))
         ->and((new Process(['git', 'status', '--porcelain'], $checkout))->mustRun()->getOutput())->toBe($status);
 
     file_put_contents($checkout.'/extra.txt', "extra\n");

@@ -46,7 +46,7 @@ The Gateway needs outbound HTTPS access to `api.github.com` for every read of a 
 
 ## How Orbit publishes a task pull request
 
-After the Gateway commits an approved subtask, it asks GitHub for a token with `Contents: write` and `Pull requests: write` for the Project repository. The token reaches the Node the same way as a read token, and `git` pushes `HEAD` to `origin/task-{group id}`. After the last approval, the Gateway opens the pull request with the same kind of token and then reads its state.
+After the Gateway commits an approved subtask, it asks GitHub for a token with `Contents: write` and `Pull requests: write` for the Project repository. The token reaches the Node the same way as a read token, and `git` pushes that stored commit to `origin/task-{group id}` as `<commit_sha>:refs/heads/task-{group id}`. The push never uses `HEAD`. After the last approval, the Gateway opens the pull request with the same kind of token and then reads its state.
 
 Unlike a read, publishing has no path without the App: without an App or an installation that covers the repository, the task counts a communication failure and then asks for assistance. [ADR 0121](/decisions/0121-end-agent-turns-with-a-run-receipt) owns the pull request, and [ADR 0160](/decisions/0160-push-each-approved-subtask-and-remove-the-finished-workspace-clone) owns the push after every approval. The [tasks reference](/reference/tasks#pull-request-and-settle-metrics) describes the retry.
 

@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\Tasks\CancelTaskGroupAction;
+use App\Actions\Tasks\RemoveTaskWorkspaceAction;
 use App\Domain\AppInstances\AppInstanceRemover;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -10,12 +11,14 @@ use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskPullRequestException;
 use App\Domain\Tasks\TaskPullRequestPublisher;
+use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskStatus;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\AppInstanceRemoval;
 use App\Models\Node;
 use App\Models\Task;
+use App\Models\TaskComment;
 use App\Models\TaskGroup;
 use Illuminate\Support\Facades\DB;
 
@@ -83,19 +86,23 @@ function cancel_recording_publisher(int $failures = 0): object
         /** @var list<int> */
         public array $pushes = [];
 
+        /** @var list<string> */
+        public array $commits = [];
+
         /** @var list<int> the database transaction level at each push */
         public array $transactionLevels = [];
 
         public function __construct(private int $failures) {}
 
-        public function publish(TaskGroup $group, string $body): string
+        public function publish(TaskGroup $group, string $body, string $commit): string
         {
             throw new LogicException('Cancel never opens a pull request.');
         }
 
-        public function push(TaskGroup $group): void
+        public function push(TaskGroup $group, string $commit): void
         {
             $this->pushes[] = $group->id;
+            $this->commits[] = $commit;
             $this->transactionLevels[] = DB::transactionLevel();
             if ($this->failures-- > 0) {
                 throw new TaskPullRequestException('The task branch could not be pushed.');
@@ -105,6 +112,20 @@ function cancel_recording_publisher(int $failures = 0): object
     app()->instance(TaskPullRequestPublisher::class, $publisher);
 
     return $publisher;
+}
+
+function cancel_approval(Task $task, string $commit): void
+{
+    TaskComment::query()->create([
+        'task_group_id' => $task->task_group_id,
+        'task_id' => $task->id,
+        'type' => 'approved',
+        'body' => 'Approved.',
+        'author' => 'reviewer',
+        'review_attempt' => 1,
+        'commit_sha' => $commit,
+        'posted_at' => now(),
+    ]);
 }
 
 function cancel_subtask(TaskGroup $group, TaskStatus $status, int $position = 1): Task
@@ -117,6 +138,10 @@ function cancel_subtask(TaskGroup $group, TaskStatus $status, int $position = 1)
         'status' => $status,
     ]);
 }
+
+beforeEach(function (): void {
+    bind_task_node_reachability();
+});
 
 it('cancels an eligible group and removes its shared Instance with its checkout', function (): void {
     app(TaskExtensionState::class)->enable();
@@ -164,7 +189,8 @@ it('pushes approved commits before it cancels a settling group without a pull re
     $remover = cancel_recording_remover();
     $publisher = cancel_recording_publisher();
     $group = cancellable_task_group(TaskGroupStatus::Settling);
-    cancel_subtask($group, TaskStatus::Completed, 1);
+    $approved = cancel_subtask($group, TaskStatus::Completed, 1);
+    cancel_approval($approved, str_repeat('c', 40));
     $cancelledSubtask = cancel_subtask($group, TaskStatus::Cancelled, 2);
     $instanceId = $group->taskable_id;
     $testLevel = DB::transactionLevel();
@@ -172,6 +198,7 @@ it('pushes approved commits before it cancels a settling group without a pull re
     $cancelled = app(CancelTaskGroupAction::class)->execute($group);
 
     expect($publisher->pushes)->toBe([$group->id])
+        ->and($publisher->commits)->toBe([str_repeat('c', 40)])
         ->and($publisher->transactionLevels)->toBe([$testLevel])
         ->and($remover->calls)->toBe([[$instanceId, true]])
         ->and($cancelled->status)->toBe(TaskGroupStatus::Cancelled)
@@ -179,12 +206,47 @@ it('pushes approved commits before it cancels a settling group without a pull re
         ->and($cancelledSubtask->fresh()->status)->toBe(TaskStatus::Cancelled);
 });
 
+it('cancels an unreachable Node without pushing and the sweep retries removal', function (): void {
+    app(TaskExtensionState::class)->enable();
+    bind_task_node_reachability(unreachable: true);
+    $remover = cancel_recording_remover();
+    $publisher = cancel_recording_publisher();
+    $group = cancellable_task_group(TaskGroupStatus::Settling);
+    $approved = cancel_subtask($group, TaskStatus::Completed, 1);
+    cancel_approval($approved, str_repeat('c', 40));
+    $running = cancel_subtask($group, TaskStatus::Running, 2);
+    $instanceId = $group->taskable_id;
+
+    $cancelled = app(CancelTaskGroupAction::class)->execute($group);
+
+    expect($cancelled->status)->toBe(TaskGroupStatus::Cancelled)
+        ->and($cancelled->taskable_id)->toBe($instanceId)
+        ->and($cancelled->assistance_requested)->toBeTrue()
+        ->and($cancelled->assistance_reason)->toBe(RemoveTaskWorkspaceAction::RemovalFailedPrefix.'The Node is unreachable.')
+        ->and($publisher->pushes)->toBe([])
+        ->and($remover->calls)->toBe([])
+        ->and($running->fresh()?->status)->toBe(TaskStatus::Cancelled)
+        ->and(AppInstance::query()->find($instanceId))->not->toBeNull();
+
+    $again = app(CancelTaskGroupAction::class)->execute($cancelled);
+
+    expect($again->status)->toBe(TaskGroupStatus::Cancelled)
+        ->and($again->taskable_id)->toBe($instanceId)
+        ->and($remover->calls)->toBe([]);
+
+    expect(app(TaskScheduler::class)->removeAbandonedWorkspaces())->toBe(1)
+        ->and($remover->calls)->toBe([[$instanceId, true]])
+        ->and(AppInstance::query()->find($instanceId))->toBeNull()
+        ->and($group->fresh()?->taskable_id)->toBeNull()
+        ->and($group->fresh()?->assistance_requested)->toBeFalse();
+});
+
 it('keeps the settling group and its Instance when the push fails', function (): void {
     app(TaskExtensionState::class)->enable();
     $remover = cancel_recording_remover();
     cancel_recording_publisher(failures: 1);
     $group = cancellable_task_group(TaskGroupStatus::Settling);
-    cancel_subtask($group, TaskStatus::Completed);
+    cancel_approval(cancel_subtask($group, TaskStatus::Completed), str_repeat('c', 40));
     $instanceId = $group->taskable_id;
 
     expect(fn () => app(CancelTaskGroupAction::class)->execute($group))

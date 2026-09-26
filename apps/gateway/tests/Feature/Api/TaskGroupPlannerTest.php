@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\AppInstances\AppInstanceRemover;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\AgentSpawner;
 use App\Domain\Tasks\InstanceProvisioning;
 use App\Domain\Tasks\InstanceProvisionIntent;
@@ -17,10 +18,14 @@ use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\AppInstanceRemoval;
 use App\Models\Node;
+use App\Models\Task;
 use App\Models\TaskGroup;
+use Illuminate\Log\Events\MessageLogged;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Testing\TestResponse;
 
 beforeEach(function (): void {
+    bind_task_node_reachability();
     $gateway = $this->markAsGateway(Node::query()->create([
         'name' => 'planner-gateway',
         'status' => LifecycleStatus::Active,
@@ -119,15 +124,22 @@ beforeEach(function (): void {
     app()->instance(TaskPlannerSpawner::class, $this->planners);
     app()->instance(TaskWorkspaceSigner::class, $this->signer);
     app()->instance(AgentSpawner::class, new NullAgentSpawner);
-    app()->instance(AppInstanceRemover::class, new class implements AppInstanceRemover
+    $this->remover = new class implements AppInstanceRemover
     {
+        public bool $refuse = false;
+
         public function execute(AppInstance $instance, bool $force): AppInstanceRemoval
         {
+            if ($this->refuse) {
+                throw new ResourceOperationException('instance.remove_refused', 'The checkout could not be deleted.', 409);
+            }
+
             $instance->delete();
 
             return new AppInstanceRemoval;
         }
-    });
+    };
+    app()->instance(AppInstanceRemover::class, $this->remover);
 });
 
 /**
@@ -198,6 +210,42 @@ it('removes the workspace and stores no group when the planner cannot start', fu
     expect(TaskGroup::query()->count())->toBe(0)
         ->and(AppInstance::query()->count())->toBe(0);
 });
+
+it('returns 409 tasks.planner_unavailable and stores no group when removing the planner workspace also fails', function (string $cause): void {
+    if ($cause === 'mcp') {
+        $this->mcp->refuse = true;
+    } else {
+        $this->planners->refuse = true;
+    }
+    $this->remover->refuse = true;
+    $logged = [];
+    Event::listen(MessageLogged::class, static function (MessageLogged $event) use (&$logged): void {
+        $logged[] = $event;
+    });
+
+    planner_create($this, ['tasks' => [['title' => 'One', 'brief' => 'One.']]])
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'tasks.planner_unavailable')
+        ->assertJsonPath('error.message', 'The planner thread could not be started.');
+
+    $instance = AppInstance::query()->sole();
+    $removal = array_values(array_filter(
+        $logged,
+        static fn (MessageLogged $event): bool => $event->message === 'The planner workspace could not be removed after the planner failed to start.',
+    ));
+
+    expect(TaskGroup::query()->count())->toBe(0)
+        ->and(Task::query()->count())->toBe(0)
+        ->and($removal)->toHaveCount(1)
+        ->and($removal[0]->level)->toBe('error')
+        ->and($removal[0]->context['app_instance_id'])->toBe($instance->id)
+        ->and($removal[0]->context['reason'])->toBe('The checkout could not be deleted.')
+        ->and($removal[0]->context['exception'])->toBe(ResourceOperationException::class)
+        ->and(TaskGroup::query()->find($removal[0]->context['task_group_id']))->toBeNull();
+})->with([
+    'the planner thread' => 'planner',
+    'the planner MCP file' => 'mcp',
+]);
 
 it('commits the plan and reuses the workspace when the group moves to todo', function (): void {
     $group = planner_create($this, ['tasks' => [['title' => 'One', 'brief' => 'One.', 'deliverables' => [['id' => 'done', 'type' => 'review', 'description' => 'One is done.']]]]])->assertCreated()->json('data');
