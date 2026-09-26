@@ -7,22 +7,21 @@ namespace App\Domain\Tasks;
 use App\Models\AgentThread;
 use App\Models\AppInstance;
 use App\Models\Task;
-use App\Models\TaskCheck;
 use App\Models\TaskGroup;
 use Illuminate\Support\Facades\Log;
 
 final readonly class TaskAgentSpawner implements AgentSpawner, TaskPlannerSpawner
 {
-    public function __construct(private AgentDriverRegistry $drivers) {}
+    public function __construct(private AgentDriverRegistry $drivers, private TaskReviewPacketBuilder $packets) {}
 
     public function spawnReviewer(Task $task): ?int
     {
-        $group = $task->taskGroup;
-        if ($group->reviewer_agent_thread_id !== null) {
-            return $group->reviewer_agent_thread_id;
+        $existing = $this->subtaskReviewer($task);
+        if ($existing !== null) {
+            return $existing->id;
         }
 
-        return $this->spawn($group, null, TaskThreadRole::Reviewer, 'Orbit task #'.$group->id.' · Reviewer: '.$group->title, $this->reviewerPrompt($group)."\n\n".$this->reviewPrompt($task));
+        return $this->openReviewer($task);
     }
 
     public function spawnPlanner(TaskGroup $group): ?int
@@ -79,19 +78,50 @@ final readonly class TaskAgentSpawner implements AgentSpawner, TaskPlannerSpawne
 
     public function requestReview(Task $task): void
     {
-        $thread = $task->taskGroup->reviewerThread;
+        $thread = $this->subtaskReviewer($task);
         if ($thread === null) {
             throw new AgentDriverException('Reviewer conversation is unavailable.');
         }
-        $group = $task->taskGroup;
-        $prompt = $this->reviewPrompt($task);
+        try {
+            $this->drivers->get($thread->driver)->send($thread, $this->reviewPacket($task, true));
+        } catch (AgentDriverException) {
+            // ADR 0169: a continued thread that cannot take a turn is replaced by a fresh thread and a full packet.
+            $replacement = $this->openReviewer($task);
+            if ($replacement === null) {
+                throw new AgentDriverException('The reviewer conversation could not be started.');
+            }
+            $task->taskGroup->update(['reviewer_agent_thread_id' => $replacement]);
+        }
+    }
 
-        // ADR 0124: the planner thread becomes the reviewer with the group's first review request.
-        if ($group->plan && ! $group->tasks()->whereNotNull('review_notified_attempt')->exists()) {
-            $prompt = 'The plan is in Todo and Orbit has started the implementers. From now on you are the reviewer of this group, not its planner. Do not change the plan or the subtasks.'."\n\n".$this->reviewerPrompt($group)."\n\n".$prompt;
+    /** The reviewer thread for this subtask, preferring the one the group currently points at. */
+    private function subtaskReviewer(Task $task): ?AgentThread
+    {
+        $query = AgentThread::query()
+            ->where('task_group_id', $task->task_group_id)
+            ->where('task_id', $task->id)
+            ->where('role', TaskThreadRole::Reviewer->value);
+        $pointed = TaskGroup::query()->whereKey($task->task_group_id)->value('reviewer_agent_thread_id');
+        if (is_numeric($pointed)) {
+            $match = (clone $query)->whereKey((int) $pointed)->first();
+            if ($match instanceof AgentThread) {
+                return $match;
+            }
         }
 
-        $this->drivers->get($thread->driver)->send($thread, $prompt);
+        return $query->orderByDesc('id')->first();
+    }
+
+    private function openReviewer(Task $task): ?int
+    {
+        $group = $task->taskGroup;
+
+        return $this->spawn($group, $task->id, TaskThreadRole::Reviewer, 'Orbit task #'.$group->id.' · Review: '.$task->title, $this->reviewPacket($task, false));
+    }
+
+    private function reviewPacket(Task $task, bool $continued): string
+    {
+        return $this->packets->build($task, $continued);
     }
 
     private function plannerPrompt(TaskGroup $group): string
@@ -104,19 +134,7 @@ final readonly class TaskAgentSpawner implements AgentSpawner, TaskPlannerSpawne
             'Follow this repository\'s instructions for designing a feature. Write the ADRs and documentation in this workspace on the branch task-'.$group->id.' and leave them uncommitted. Orbit commits them when the group moves to Todo.',
             'Keep the group current through Orbit MCP: tasks-update for the title and brief, and tasks-subtask-create, tasks-subtask-update, and tasks-subtask-destroy for the subtasks. Split the feature with the creating-tasks skill (.agents/skills/creating-tasks/SKILL.md): each subtask has one concise goal that an implementer finishes and a reviewer verifies in one turn, and its brief names the ADR sections and documentation it implements.',
             'Give every subtask at least one deliverable and at most five in its deliverables list, and turn each explicit item of its brief into one. A subtask that needs more than five is too large: split it. A deliverable has an id (a lowercase slug, unique in the subtask), a type, and a description. Use type file with path and change (created, modified, or any) for a file the step must create or change; type test with project, file, and name for a Pest test it must add or change and that must pass, and set fails_on_base to true when at least one test whose name contains name must fail on the start commit before every such test passes; type command with command and directory for a check in another ecosystem that must exit 0; and type review for an item only the reviewer can judge. Orbit verifies file, test, and command deliverables before each review, and refuses to move the group to Todo while a subtask has none.',
-            'When the operator agrees the plan is ready, move the group to Todo with tasks-update and status todo. Orbit then runs the implementers, and this thread becomes the group\'s reviewer.',
-        ]);
-    }
-
-    private function reviewerPrompt(TaskGroup $group): string
-    {
-        return implode("\n\n", [
-            'You are the reviewer for this feature group. Orbit asks you to review one subtask at a time in this shared workspace.',
-            'Orbit task group #'.$group->id,
-            'Feature: '.$group->title,
-            $group->brief,
-            $this->contract($group).' Review each subtask against them.',
-            'The implementer works with a minimal toolset and has no web access. You do: use your web and documentation tools to confirm that framework and library usage matches current documentation for the versions this Project uses.',
+            'When the operator agrees the plan is ready, move the group to Todo with tasks-update and status todo. Orbit then runs the implementers. This thread stays the planner. Each subtask review starts a fresh reviewer thread.',
         ]);
     }
 
@@ -132,49 +150,7 @@ final readonly class TaskAgentSpawner implements AgentSpawner, TaskPlannerSpawne
             'Subtask: '.$task->title,
             $task->brief,
             TaskRunInstructions::deliverables($deliverables),
-            $this->contract($group).' Build to them.',
+            TaskRunInstructions::contract(is_string($group->app->default_branch) ? $group->app->default_branch : null).' Build to them.',
         ], static fn (string $part): bool => $part !== ''));
-    }
-
-    /** ADR 0122: the ADRs and documentation prepared on the branch while the group was in Backlog. */
-    private function contract(TaskGroup $group): string
-    {
-        $branch = $group->app->default_branch;
-        $base = is_string($branch) && $branch !== '' ? '`origin/'.$branch.'`' : 'the Project default branch';
-
-        return 'The ADRs and documentation that this branch changes against '.$base.' are the feature\'s contract.';
-    }
-
-    private function reviewPrompt(Task $task): string
-    {
-        $deliverables = $task->deliverableList();
-
-        return implode("\n\n", array_filter([
-            'Review subtask #'.$task->id.': '.$task->title,
-            $task->brief,
-            TaskRunInstructions::deliverables($deliverables),
-            $this->baseRunReview($task, $deliverables),
-            TaskRunInstructions::reviewer($task->opensPullRequest(), $deliverables),
-        ], static fn (string $part): bool => $part !== ''));
-    }
-
-    /**
-     * ADR 0163: the kind and message of each base failure, so a missing class is not read as a reproduction.
-     *
-     * @param  list<TaskDeliverable>  $deliverables
-     */
-    private function baseRunReview(Task $task, array $deliverables): string
-    {
-        $check = $task->checks()
-            ->where('kind', TaskCheckKind::Handoff->value)
-            ->where('status', TaskCheckStatus::Passed->value)
-            ->latest('id')
-            ->first();
-        if (! $check instanceof TaskCheck) {
-            return '';
-        }
-        $evidence = TaskDeliverableEvidence::fromArray($check->deliverable_evidence);
-
-        return $evidence instanceof TaskDeliverableEvidence ? $evidence->baseRunReview($deliverables) : '';
     }
 }

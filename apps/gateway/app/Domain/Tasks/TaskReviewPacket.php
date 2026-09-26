@@ -41,7 +41,8 @@ final readonly class TaskReviewPacket
     /**
      * @param  list<TaskDeliverable>  $deliverables
      * @param  list<array{title: string, summary: string}>  $approvals  earlier approved subtasks, oldest first
-     * @param  list<array{path: string, insertions: int, deletions: int}>  $diffFiles  tracked and untracked files
+     * @param  list<array{path: string, insertions: int, deletions: int}>  $diffFiles  tracked and untracked files, empty when the list was cut
+     * @param  array{files: int, insertions: int, deletions: int}|null  $diffCounts  full counts when the path list was cut
      * @param  string|null  $taskCheck  the Project task check, or null when the Project has none
      */
     public function __construct(
@@ -60,6 +61,10 @@ final readonly class TaskReviewPacket
         private string $startCommit,
         private bool $continued = false,
         private bool $opensPullRequest = false,
+        private string $contract = '',
+        private bool $diffFilesComplete = true,
+        private bool $diffAvailable = true,
+        private ?array $diffCounts = null,
     ) {}
 
     public function render(): string
@@ -123,11 +128,12 @@ final readonly class TaskReviewPacket
         }
         $rule .= ' Run another command only when you need evidence the handoff result does not give, and say why in the approved or changes_requested summary.';
 
-        return implode("\n\n", [
+        return implode("\n\n", array_filter([
             'Review subtask #'.$this->subtaskId.': '.$this->subtaskTitle,
             'The implementer works with a minimal toolset and has no web access. You do: use your web and documentation tools to confirm that framework and library usage matches current documentation for the versions this Project uses.',
             $rule,
-        ]);
+            $this->continued ? '' : $this->contract,
+        ], static fn (string $part): bool => $part !== ''));
     }
 
     private function section(string $heading, string $body): string
@@ -214,6 +220,11 @@ final readonly class TaskReviewPacket
     private function diffStat(): string
     {
         $summary = $this->diffSummary();
+        if (! $this->diffFilesComplete) {
+            $text = $summary."\nThe path list was cut. The stat command prints the rest.";
+
+            return mb_strlen($text) > self::DiffStatLimit ? mb_substr($text, 0, self::DiffStatLimit) : $text;
+        }
         if (mb_strlen($summary) > self::DiffStatLimit) {
             return mb_substr($summary, 0, self::DiffStatLimit);
         }
@@ -236,6 +247,11 @@ final readonly class TaskReviewPacket
 
     private function diffSummary(): string
     {
+        if (! $this->diffFilesComplete && is_array($this->diffCounts)) {
+            return $this->counted($this->diffCounts['files'], 'file changed', 'files changed').', '
+                .$this->counted($this->diffCounts['insertions'], 'insertion(+)', 'insertions(+)').', '
+                .$this->counted($this->diffCounts['deletions'], 'deletion(-)', 'deletions(-)');
+        }
         $insertions = 0;
         $deletions = 0;
         foreach ($this->diffFiles as $file) {
@@ -450,6 +466,9 @@ final readonly class TaskReviewPacket
     private function diffSection(array $before, array $after): string
     {
         $heading = "Diff\n";
+        if (! $this->diffAvailable) {
+            return $heading.'The diff could not be read. The diff command prints it.';
+        }
         $note = "\nThe end of the diff is cut. The diff command prints the rest, including the content of untracked files.";
         $used = mb_strlen(implode("\n\n", [...$before, ...$after])) + mb_strlen("\n\n");
         $remaining = max(0, self::Limit - $used - mb_strlen($heading));

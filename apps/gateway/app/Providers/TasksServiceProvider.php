@@ -20,6 +20,8 @@ use App\Domain\Tasks\TaskPlannerMcp;
 use App\Domain\Tasks\TaskPlannerSpawner;
 use App\Domain\Tasks\TaskPullRequestPublisher;
 use App\Domain\Tasks\TaskPullRequestWatcher;
+use App\Domain\Tasks\TaskReviewDiff;
+use App\Domain\Tasks\TaskReviewPacketBuilder;
 use App\Domain\Tasks\TaskRunReceipts;
 use App\Domain\Tasks\TaskSessionClassifier;
 use App\Domain\Tasks\TaskSettleMetricsCollector;
@@ -37,6 +39,7 @@ use App\Infrastructure\Tasks\Pi\PiDriver;
 use App\Infrastructure\Tasks\RemoteTaskBridgeWorktreeRemover;
 use App\Infrastructure\Tasks\RemoteTaskCheckRunner;
 use App\Infrastructure\Tasks\RemoteTaskPlannerMcp;
+use App\Infrastructure\Tasks\RemoteTaskReviewDiff;
 use App\Infrastructure\Tasks\RemoteTaskRunReceipts;
 use App\Infrastructure\Tasks\RemoteTaskWorkspaceSigner;
 use App\Infrastructure\Tasks\RemoteTaskWorkspaceStateReader;
@@ -69,6 +72,7 @@ final class TasksServiceProvider extends ServiceProvider
         T3ThreadReader::class => HttpT3ThreadReader::class,
         TaskWorkspaceSigner::class => RemoteTaskWorkspaceSigner::class,
         TaskWorkspaceDiffReader::class => AgentViewTaskWorkspaceDiffReader::class,
+        TaskReviewDiff::class => RemoteTaskReviewDiff::class,
         TaskWorkspaceStateReader::class => RemoteTaskWorkspaceStateReader::class,
         TaskBridgeWorktreeRemover::class => RemoteTaskBridgeWorktreeRemover::class,
         TaskRunReceipts::class => RemoteTaskRunReceipts::class,
@@ -88,6 +92,7 @@ final class TasksServiceProvider extends ServiceProvider
         parent::register();
 
         $this->app->bind(AgentDriverRegistry::class, fn (Application $app): AgentDriverRegistry => new AgentDriverRegistry([$app->make(T3Driver::class), $app->make(PiDriver::class)]));
+        $this->app->bind(TaskReviewPacketBuilder::class, fn (Application $app): TaskReviewPacketBuilder => new TaskReviewPacketBuilder($app->make(TaskReviewDiff::class)));
         $this->app->singleton(TaskBroadcasts::class);
     }
 

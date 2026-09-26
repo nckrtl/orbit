@@ -8,6 +8,7 @@ use App\Models\AgentThread;
 use App\Models\AppInstance;
 use App\Models\Task;
 use App\Models\TaskGroup;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Carbon;
 
 final readonly class TaskSessionObserver
@@ -15,25 +16,25 @@ final readonly class TaskSessionObserver
     public function __construct(private AgentThreadObserver $threads, private TaskWorkspaceDiffReader $diff) {}
 
     /**
-     * Observes the task's implementer and the group's reviewer. Only the thread that acts in the task's
-     * current phase defers the task while it works: the implementer while the task runs, the reviewer
-     * while it is in review. The other thread's work does not hide the acting thread.
+     * Observes the task's implementer and its reviewer. Only the thread that acts in the task's current
+     * phase defers the task while it works: the implementer while the task runs, and that subtask's
+     * reviewer while it is in review. The planner and an earlier subtask's reviewer do not.
      */
     public function observe(TaskGroup $group, Task $task): TaskSessionObservation
     {
         $group->loadMissing(['app', 'tasks', 'taskable']);
+        $records = AgentThread::query()->where('task_group_id', $group->id)->orderBy('id')->get();
+        $reviewerId = $this->subtaskReviewerId($records, $group, $task);
         $observations = [];
         $actingRole = $task->status === TaskStatus::Reviewing ? TaskThreadRole::Reviewer : TaskThreadRole::Implementer;
         $actingThreadWorks = false;
-        foreach (AgentThread::query()->where('task_group_id', $group->id)->orderBy('id')->get() as $thread) {
+        foreach ($records as $thread) {
             $role = TaskThreadRole::tryFrom($thread->role);
-            $belongsToTask = $thread->task_id === $task->id;
-            $sharedReviewer = $thread->task_id === null && $role === TaskThreadRole::Reviewer;
-            if ($role === null || (! $belongsToTask && ! $sharedReviewer)) {
+            if ($role === null || ! $this->includeThread($thread, $role, $task, $group, $reviewerId)) {
                 continue;
             }
             $observation = $this->threads->observe($thread);
-            $actingThreadWorks = $actingThreadWorks || ($role === $actingRole && $observation?->state === AgentThreadState::Working);
+            $actingThreadWorks = $actingThreadWorks || ($role === $actingRole && $this->acts($thread, $role, $task, $group, $reviewerId) && $observation?->state === AgentThreadState::Working);
             $observations[] = [$thread, $role, $observation];
         }
         if ($actingThreadWorks) {
@@ -72,6 +73,53 @@ final readonly class TaskSessionObserver
             prUrl: $group->pr_url, ciSummary: null, threads: $threads,
             available: ! array_any($threads, static fn (TaskThreadObservation $thread): bool => ! $thread->available),
         );
+    }
+
+    /** @param Collection<int, AgentThread> $records */
+    private function subtaskReviewerId(Collection $records, TaskGroup $group, Task $task): ?int
+    {
+        $fallback = null;
+        foreach ($records as $thread) {
+            if ($thread->role !== TaskThreadRole::Reviewer->value || $thread->task_id !== $task->id) {
+                continue;
+            }
+            $fallback = $thread->id;
+            if ($thread->id === $group->reviewer_agent_thread_id) {
+                return $thread->id;
+            }
+        }
+
+        return $fallback;
+    }
+
+    private function includeThread(AgentThread $thread, TaskThreadRole $role, Task $task, TaskGroup $group, ?int $reviewerId): bool
+    {
+        if ($role === TaskThreadRole::Implementer) {
+            return $thread->task_id === $task->id;
+        }
+        if ($reviewerId !== null) {
+            return $thread->id === $reviewerId;
+        }
+
+        return $thread->task_id === null && $thread->id === $group->reviewer_agent_thread_id;
+    }
+
+    /**
+     * The acting reviewer is this subtask's reviewer. A legacy shared reviewer acts only after this
+     * attempt was sent to it. The planner never acts for a subtask.
+     */
+    private function acts(AgentThread $thread, TaskThreadRole $role, Task $task, TaskGroup $group, ?int $reviewerId): bool
+    {
+        if ($role === TaskThreadRole::Implementer) {
+            return $thread->task_id === $task->id;
+        }
+        if ($reviewerId !== null) {
+            return $thread->id === $reviewerId;
+        }
+
+        return ! $group->plan
+            && $thread->id === $group->reviewer_agent_thread_id
+            && $task->review_notified_attempt === $task->review_attempt;
     }
 
     private function hasNewCommits(TaskGroup $group): bool

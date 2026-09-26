@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Actions\Tasks\ShowAgentThreadsAction;
 use App\Domain\AppInstances\AppInstanceDestinationGuard;
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\AppInstances\DevelopmentAppInstanceSourceLifecycle;
@@ -13,19 +14,23 @@ use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Tasks\AgentDriverRegistry;
 use App\Domain\Tasks\AgentSpawner;
+use App\Domain\Tasks\AgentThreadState;
 use App\Domain\Tasks\CoderSettleNotifier;
 use App\Domain\Tasks\InstanceProvisioning;
 use App\Domain\Tasks\InstanceProvisionIntent;
 use App\Domain\Tasks\LocalTaskSettleMetricsCollector;
 use App\Domain\Tasks\NullCoderSettleNotifier;
 use App\Domain\Tasks\NullTaskWorkspaceDiffReader;
+use App\Domain\Tasks\TaskAgentSpawner;
 use App\Domain\Tasks\TaskBriefCoverage;
 use App\Domain\Tasks\TaskCeilings;
 use App\Domain\Tasks\TaskCheckKind;
 use App\Domain\Tasks\TaskCheckReading;
 use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskCheckStatus;
+use App\Domain\Tasks\TaskCommentType;
 use App\Domain\Tasks\TaskConcurrencyGuard;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupMetricsRefresher;
@@ -34,6 +39,10 @@ use App\Domain\Tasks\TaskPullRequestException;
 use App\Domain\Tasks\TaskPullRequestHealth;
 use App\Domain\Tasks\TaskPullRequestPublisher;
 use App\Domain\Tasks\TaskPullRequestWatcher;
+use App\Domain\Tasks\TaskReviewDiff;
+use App\Domain\Tasks\TaskReviewDiffException;
+use App\Domain\Tasks\TaskReviewPacket;
+use App\Domain\Tasks\TaskReviewPacketBuilder;
 use App\Domain\Tasks\TaskRunInstructions;
 use App\Domain\Tasks\TaskRunPullRequest;
 use App\Domain\Tasks\TaskRunReceiptException;
@@ -45,6 +54,8 @@ use App\Domain\Tasks\TaskSessionObservation;
 use App\Domain\Tasks\TaskSettleMetrics;
 use App\Domain\Tasks\TaskSettleMetricsCollector;
 use App\Domain\Tasks\TaskStatus;
+use App\Domain\Tasks\TaskThreadObservation;
+use App\Domain\Tasks\TaskThreadRole;
 use App\Domain\Tasks\TaskWorkspaceSigner;
 use App\Domain\Tasks\TaskWorkspaceStateReader;
 use App\Infrastructure\Tasks\T3\NullT3ThreadReader;
@@ -57,7 +68,9 @@ use App\Models\Node;
 use App\Models\ProjectLifecycleStep;
 use App\Models\Task;
 use App\Models\TaskCheck;
+use App\Models\TaskComment;
 use App\Models\TaskGroup;
+use Tests\Support\FakeAgentDriver;
 use Tests\Support\FakeTaskCheckRunner;
 use Tests\Support\FakeTaskRunReceipts;
 
@@ -693,7 +706,7 @@ it('starts the next pending subtask as the sole running task after review is acc
         ->and($spawner->events)->toBe(['implementer:1', 'reviewer', 'implementer:2']);
 });
 
-it('starts the reviewer at the first handoff, reuses it for later handoffs, and starts the next implementer after approval', function (): void {
+it('starts a reviewer at each subtask handoff and starts the next implementer after approval', function (): void {
     $app = scheduler_app('handoff-app');
     $node = scheduler_node('handoff-node', '10.44.0.93');
     $instance = scheduler_instance($app, $node, 'handoff');
@@ -772,7 +785,7 @@ it('starts the reviewer at the first handoff, reuses it for later handoffs, and 
 
     $lastReview = app(TaskScheduler::class)->settleImplementer($advanced->tasks->last());
 
-    expect($spawner->events)->toBe(['implementer:1', 'reviewer', 'implementer:2', 'review:2']);
+    expect($spawner->events)->toBe(['implementer:1', 'reviewer', 'implementer:2', 'reviewer']);
     $settled = app(TaskScheduler::class)->acceptReview($lastReview->tasks->last());
 
     expect($settled->status)->toBe(TaskGroupStatus::Settling)
@@ -780,6 +793,232 @@ it('starts the reviewer at the first handoff, reuses it for later handoffs, and 
             TaskStatus::Completed,
             TaskStatus::Completed,
         ]);
+});
+
+it('retries a review when the diff cannot be read instead of sending an empty change', function (): void {
+    $app = scheduler_app('unread-diff');
+    $node = scheduler_node('unread-diff-node', '10.44.0.78');
+    $instance = scheduler_instance($app, $node, 'unread');
+    $group = TaskGroup::query()->create([
+        'app_id' => $app->id,
+        'title' => 'Unread diff',
+        'brief' => 'The diff read fails.',
+        'status' => TaskGroupStatus::Running,
+    ]);
+    $group->taskable()->associate($instance);
+    $group->save();
+    $task = Task::query()->create([
+        'task_group_id' => $group->id,
+        'position' => 1,
+        'title' => 'Review',
+        'brief' => 'Review it.',
+        'status' => TaskStatus::Running,
+        'subtask_start_commit' => str_repeat('a', 40),
+    ]);
+    $driver = new FakeAgentDriver('t3');
+    app()->instance(TaskReviewDiff::class, new class implements TaskReviewDiff
+    {
+        public function read(AppInstance $instance, string $startCommit): array
+        {
+            throw new TaskReviewDiffException('The review diff could not be read.');
+        }
+    });
+    app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
+    app()->forgetInstance(AgentSpawner::class);
+    app()->forgetInstance(TaskReviewPacketBuilder::class);
+
+    app(TaskScheduler::class)->settleImplementer($task);
+
+    expect($task->fresh()?->status)->toBe(TaskStatus::Reviewing)
+        ->and($task->fresh()?->review_notified_attempt)->toBeNull()
+        ->and($task->fresh()?->communication_failures)->toBe(1)
+        ->and($driver->calls)->toBe([]);
+});
+
+it('starts a fresh reviewer per subtask with the packet, and continues that thread on re-review', function (): void {
+    $app = scheduler_app('fresh-reviewer');
+    $app->update(['task_check' => 'composer check']);
+    $node = scheduler_node('fresh-reviewer-node', '10.44.0.77');
+    $instance = scheduler_instance($app, $node, 'fresh');
+    $group = TaskGroup::query()->create([
+        'app_id' => $app->id,
+        'title' => 'Fresh reviewers',
+        'brief' => 'Each subtask gets its own reviewer.',
+        'status' => TaskGroupStatus::Running,
+        'plan' => true,
+    ]);
+    $group->taskable()->associate($instance);
+    $group->save();
+    $planner = test_agent_thread($group, 'planner-thread');
+    $group->update(['reviewer_agent_thread_id' => $planner->id]);
+    $approved = Task::query()->create([
+        'task_group_id' => $group->id,
+        'position' => 1,
+        'title' => 'Packet',
+        'brief' => 'The packet is built.',
+        'status' => TaskStatus::Completed,
+    ]);
+    TaskComment::query()->create([
+        'task_group_id' => $group->id,
+        'task_id' => $approved->id,
+        'type' => TaskCommentType::Approved,
+        'body' => 'The packet matches ADR 0169.',
+        'author' => 'reviewer',
+        'posted_at' => now(),
+    ]);
+    $start = str_repeat('d', 40);
+    $first = Task::query()->create([
+        'task_group_id' => $group->id,
+        'position' => 2,
+        'title' => 'First review',
+        'brief' => 'Review the scheduler.',
+        'status' => TaskStatus::Running,
+        'subtask_start_commit' => $start,
+        'deliverables' => [['id' => 'scheduler-test', 'type' => 'review', 'description' => 'Fresh reviewer per subtask']],
+    ]);
+    $second = Task::query()->create([
+        'task_group_id' => $group->id,
+        'position' => 3,
+        'title' => 'Second review',
+        'brief' => 'Review the next subtask.',
+        'status' => TaskStatus::Todo,
+        'subtask_start_commit' => $start,
+    ]);
+    TaskCheck::query()->create([
+        'task_id' => $first->id,
+        'kind' => TaskCheckKind::Handoff,
+        'status' => TaskCheckStatus::Passed,
+        'pid' => 1,
+        'process_started' => 'Wed Sep 23 12:00:00 2026',
+        'head_before' => str_repeat('a', 40),
+        'tree_before' => str_repeat('b', 40),
+        'exit_code' => 0,
+        'started_at' => now(),
+    ]);
+    $driver = new FakeAgentDriver('t3');
+    app()->instance(TaskReviewDiff::class, new class implements TaskReviewDiff
+    {
+        public function read(AppInstance $instance, string $startCommit): array
+        {
+            return [
+                'files' => [['path' => 'apps/gateway/app/Domain/Tasks/TaskScheduler.php', 'insertions' => 4, 'deletions' => 1]],
+                'diff' => "diff --git a/apps/gateway/app/Domain/Tasks/TaskScheduler.php\n+fresh reviewer\n",
+                'files_complete' => true,
+                'diff_available' => true,
+                'summary' => ['files' => 1, 'insertions' => 4, 'deletions' => 1],
+            ];
+        }
+    });
+    app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
+    app()->instance(AgentSpawner::class, new TaskAgentSpawner(
+        app(AgentDriverRegistry::class),
+        new TaskReviewPacketBuilder(app(TaskReviewDiff::class)),
+    ));
+
+    $reviewing = app(TaskScheduler::class)->settleImplementer($first);
+    $thread = AgentThread::query()->where('task_id', $first->id)->where('role', 'reviewer')->sole();
+    $opening = $driver->calls[0]['prompt'];
+
+    expect($reviewing->fresh()?->reviewer_agent_thread_id)->toBe($thread->id)
+        ->and($thread->id)->not->toBe($planner->id)
+        ->and($planner->fresh()?->task_id)->toBeNull()
+        ->and($driver->calls[0]['title'])->toBe('Orbit task #'.$group->id.' · Review: First review')
+        ->and($driver->calls[0]['operation'])->toBe('create')
+        ->and($opening)->toContain('Review subtask #'.$first->id.': First review')
+        ->and($opening)->toContain('Do not re-run the Project task check or the deliverable tests and commands the handoff already passed.')
+        ->and($opening)->toContain('That includes `composer check`.')
+        ->and($opening)->toContain('Group brief')
+        ->and($opening)->toContain($group->brief)
+        ->and($opening)->toContain('Review the scheduler.')
+        ->and($opening)->toContain('- scheduler-test (review): Fresh reviewer per subtask')
+        ->and($opening)->toContain('- Packet: The packet matches ADR 0169.')
+        ->and($opening)->toContain('1 file changed, 4 insertions(+), 1 deletion(-)')
+        ->and($opening)->toContain('`composer check` in . exited 0')
+        ->and($opening)->toContain('+fresh reviewer')
+        ->and($opening)->toContain('git diff '.$start)
+        ->and($opening)->toContain('git diff --no-index -- /dev/null "$path" || true')
+        ->and(mb_strlen($opening))->toBeLessThanOrEqual(TaskReviewPacket::Limit)
+        ->and(array_column($driver->calls, 'thread'))->not->toContain('planner-thread');
+
+    $first->update(['status' => TaskStatus::Running, 'review_attempt' => $first->fresh()->review_attempt + 1]);
+    TaskGroup::query()->whereKey($group->id)->update(['status' => TaskGroupStatus::Running]);
+    app(TaskScheduler::class)->settleImplementer($first->fresh(), new TaskThreadObservation(
+        threadId: $thread->id,
+        role: TaskThreadRole::Reviewer,
+        sessState: AgentThreadState::Working->value,
+        idle: false,
+        pendingApprovalId: null,
+        pendingUserInputId: null,
+        lastAssistantText: null,
+        lastUserText: null,
+        hasNewCommitsSinceThreadStart: false,
+        prUrl: null,
+        ciSummary: null,
+    ));
+
+    expect($driver->calls)->toHaveCount(1)
+        ->and($first->fresh()?->review_notified_attempt)->not->toBe($first->fresh()?->review_attempt);
+
+    $first->update(['status' => TaskStatus::Running]);
+    TaskGroup::query()->whereKey($group->id)->update(['status' => TaskGroupStatus::Running]);
+    app(TaskScheduler::class)->settleImplementer($first->fresh());
+    $continued = $driver->calls[1]['message'];
+
+    expect($driver->calls[1])->toMatchArray(['operation' => 'send', 'thread' => 'conversation-1'])
+        ->and($continued)->toContain('Do not re-run the Project task check or the deliverable tests and commands the handoff already passed.')
+        ->and($continued)->toContain('+fresh reviewer')
+        ->and($continued)->toContain('git diff '.$start)
+        ->and($continued)->not->toContain('Group brief')
+        ->and($continued)->not->toContain('Earlier approved subtasks')
+        ->and($continued)->not->toContain('Deliverables')
+        ->and($group->fresh()?->reviewer_agent_thread_id)->toBe($thread->id)
+        ->and(mb_strlen($continued))->toBeLessThanOrEqual(TaskReviewPacket::Limit);
+
+    $driver->failNextSend = true;
+    $first->update(['status' => TaskStatus::Running, 'review_attempt' => $first->fresh()->review_attempt + 1]);
+    TaskGroup::query()->whereKey($group->id)->update(['status' => TaskGroupStatus::Running]);
+    app(TaskScheduler::class)->settleImplementer($first->fresh());
+    $replacement = AgentThread::query()->where('task_id', $first->id)->where('role', 'reviewer')->orderByDesc('id')->first();
+    $replaced = $driver->calls[3]['prompt'];
+
+    expect($replacement?->id)->not->toBe($thread->id)
+        ->and($group->fresh()?->reviewer_agent_thread_id)->toBe($replacement?->id)
+        ->and($driver->calls[3]['operation'])->toBe('create')
+        ->and($replaced)->toContain('Group brief')
+        ->and($replaced)->toContain('Do not re-run the Project task check or the deliverable tests and commands the handoff already passed.')
+        ->and(AgentThread::query()->whereKey($thread->id)->exists())->toBeTrue();
+
+    $second->update(['status' => TaskStatus::Running]);
+    TaskGroup::query()->whereKey($group->id)->update(['status' => TaskGroupStatus::Running]);
+    TaskCheck::query()->create([
+        'task_id' => $second->id,
+        'kind' => TaskCheckKind::Handoff,
+        'status' => TaskCheckStatus::Passed,
+        'pid' => 2,
+        'process_started' => 'Wed Sep 23 12:00:01 2026',
+        'head_before' => str_repeat('a', 40),
+        'tree_before' => str_repeat('b', 40),
+        'exit_code' => 0,
+        'started_at' => now(),
+    ]);
+    app(TaskScheduler::class)->settleImplementer($second->fresh());
+    $next = AgentThread::query()->where('task_id', $second->id)->where('role', 'reviewer')->sole();
+
+    expect($next->id)->not->toBe($replacement?->id)
+        ->and($group->fresh()?->reviewer_agent_thread_id)->toBe($next->id)
+        ->and($driver->calls[4]['prompt'])->toContain('Review subtask #'.$second->id.': Second review')
+        ->and($driver->calls[4]['prompt'])->toContain('Group brief')
+        ->and($driver->calls[4]['prompt'])->toContain('Do not re-run the Project task check');
+
+    app(TaskExtensionState::class)->enable();
+    $agents = app(ShowAgentThreadsAction::class)->execute($group->fresh());
+    $reviewers = $agents->where('role', 'reviewer')->pluck('id')->all();
+
+    expect($reviewers)->toContain($planner->id)
+        ->and($reviewers)->toContain($thread->id)
+        ->and($reviewers)->toContain($replacement?->id)
+        ->and($reviewers)->toContain($next->id)
+        ->and($agents->where('role', 'reviewer'))->toHaveCount(4);
 });
 
 it('keeps the reviewed pull request, writes settle metrics, and notifies Coder after the last sign-off', function (): void {

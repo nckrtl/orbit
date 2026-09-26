@@ -1710,13 +1710,17 @@ final readonly class TaskScheduler
     }
 
     /**
-     * Starts the reviewer at the first handoff, or asks the existing reviewer for the next review.
-     * A working reviewer gets no request. The task stays unnotified, so a later tick sends the request
-     * once the reviewer is idle.
+     * Starts a fresh reviewer for this subtask's first review, or continues that subtask's reviewer.
+     * A working continued reviewer gets no request. The planner and an earlier subtask's reviewer do not
+     * delay a fresh review. The task stays unnotified until the request is sent.
      */
     private function nudgeReviewer(Task $task, ?TaskThreadObservation $reviewer): void
     {
-        if ($task->review_notified_attempt === $task->review_attempt || $this->isWorking($reviewer)) {
+        if ($task->review_notified_attempt === $task->review_attempt) {
+            return;
+        }
+        $existing = $this->subtaskReviewer($task);
+        if ($existing !== null && $reviewer !== null && $reviewer->threadId === $existing->id && $this->isWorking($reviewer)) {
             return;
         }
         $group = $task->taskGroup()->with('taskable')->firstOrFail();
@@ -1725,16 +1729,18 @@ final readonly class TaskScheduler
             // Read at send time. Do not copy the hash from an earlier check row: the request may have waited.
             $snapshot = $this->workspaceSnapshot($group);
             $this->prepareTurn($group, $task, TaskThreadRole::Reviewer);
-            if ($group->reviewer_agent_thread_id === null) {
+            if ($existing === null) {
                 $threadId = $this->spawner->spawnReviewer($task);
                 if ($threadId === null) {
                     throw new AgentDriverException('The reviewer conversation could not be started.');
                 }
-                $group->update(['reviewer_agent_thread_id' => $threadId]);
             } else {
                 $this->spawner->requestReview($task);
+                $continued = $this->subtaskReviewer($task);
+                $threadId = $continued instanceof AgentThread ? $continued->id : $existing->id;
             }
-        } catch (AgentDriverException|TaskRunReceiptException|TaskCheckException $exception) {
+            $group->update(['reviewer_agent_thread_id' => $threadId]);
+        } catch (AgentDriverException|TaskRunReceiptException|TaskCheckException|TaskReviewDiffException $exception) {
             $this->recordCommunicationFailure($task, $group, $exception->getMessage());
 
             return;
@@ -1747,6 +1753,24 @@ final readonly class TaskScheduler
             'review_workspace_tree' => $snapshot->tree,
         ]);
         $this->clearCommunicationFailures($task);
+    }
+
+    /** The reviewer thread for this subtask, preferring the one the group currently points at. */
+    private function subtaskReviewer(Task $task): ?AgentThread
+    {
+        $query = AgentThread::query()
+            ->where('task_group_id', $task->task_group_id)
+            ->where('task_id', $task->id)
+            ->where('role', TaskThreadRole::Reviewer->value);
+        $pointed = TaskGroup::query()->whereKey($task->task_group_id)->value('reviewer_agent_thread_id');
+        if (is_numeric($pointed)) {
+            $match = (clone $query)->whereKey((int) $pointed)->first();
+            if ($match instanceof AgentThread) {
+                return $match;
+            }
+        }
+
+        return $query->orderByDesc('id')->first();
     }
 
     /**

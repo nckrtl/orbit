@@ -40,6 +40,16 @@ final readonly class TaskRunInstructions
     }
 
     /**
+     * ADR 0122: the ADRs and documentation prepared on the branch while the group was in Backlog.
+     */
+    public static function contract(?string $defaultBranch): string
+    {
+        $base = is_string($defaultBranch) && $defaultBranch !== '' ? '`origin/'.$defaultBranch.'`' : 'the Project default branch';
+
+        return 'The ADRs and documentation that this branch changes against '.$base.' are the feature\'s contract.';
+    }
+
+    /**
      * The deliverables as a list for an agent prompt, or an empty string without any.
      *
      * @param  list<TaskDeliverable>  $deliverables

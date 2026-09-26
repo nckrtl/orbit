@@ -9,6 +9,7 @@ use App\Infrastructure\Tasks\T3\T3ThreadReader;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\Node;
+use App\Models\Task;
 use App\Models\TaskGroup;
 
 function planner_observer_group(TaskGroupStatus $status, string $planner): TaskGroup
@@ -76,4 +77,39 @@ it('observes the planner thread of every Backlog and Todo group, and no other gr
         ->and($backlog->fresh()?->reviewerThread?->observed_at)->not->toBeNull()
         ->and($todo->fresh()?->reviewerThread?->tokens)->toBe(900)
         ->and($running->fresh()?->reviewerThread?->observed_at)->toBeNull();
+});
+
+it('keeps reading a planning group\'s planner after the review pointer moves', function (): void {
+    $group = planner_observer_group(TaskGroupStatus::Running, 'planner-running');
+    $group->update(['plan' => true]);
+    $planner = $group->reviewerThread;
+    $task = Task::query()->create([
+        'task_group_id' => $group->id,
+        'position' => 1,
+        'title' => 'Review',
+        'brief' => 'Review it.',
+        'status' => 'running',
+    ]);
+    $subtask = test_agent_thread($group, 'subtask-reviewer');
+    $subtask->update(['task_id' => $task->id]);
+    $group->update(['reviewer_agent_thread_id' => $subtask->id]);
+    $reader = new class implements T3ThreadReader
+    {
+        /** @var list<string> */
+        public array $read = [];
+
+        public function snapshot(Node $node, string $threadId): ?array
+        {
+            $this->read[] = $threadId;
+
+            return ['thread' => ['activities' => [], 'checkpoints' => []]];
+        }
+    };
+
+    $observed = new TaskPlannerObserver(test_agent_observer($reader))->observe();
+
+    expect($observed)->toBe(1)
+        ->and($reader->read)->toBe(['planner-running'])
+        ->and($planner?->fresh()?->observed_at)->not->toBeNull()
+        ->and($subtask->fresh()?->observed_at)->toBeNull();
 });

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks;
 
+use App\Models\AgentThread;
 use App\Models\AppInstance;
 use App\Models\Task;
 use App\Models\TaskGroup;
@@ -27,11 +28,16 @@ final readonly class TaskGroupMetricsRefresher
             return $group;
         }
 
-        $reviewer = $group->reviewerThread;
-        if ($reviewer !== null) {
+        $reviewerTokens = 0;
+        $hasReviewerTokens = false;
+        foreach (AgentThread::query()->where('task_group_id', $group->id)->where('role', TaskThreadRole::Reviewer->value)->orderBy('id')->get() as $reviewer) {
             $this->threads->observe($reviewer);
+            $reviewer->refresh();
+            if ($reviewer->tokens !== null) {
+                $hasReviewerTokens = true;
+                $reviewerTokens += max(0, $reviewer->tokens);
+            }
         }
-        $reviewerTokens = $reviewer?->tokens;
         $taskTokens = 0;
         $hasTaskTokens = false;
 
@@ -44,8 +50,8 @@ final readonly class TaskGroupMetricsRefresher
             }
         }
 
-        if ($hasTaskTokens || $reviewerTokens !== null) {
-            $group->tokens = $taskTokens + max(0, $reviewerTokens ?? 0);
+        if ($hasTaskTokens || $hasReviewerTokens) {
+            $group->tokens = $taskTokens + $reviewerTokens;
         }
 
         $instance = $group->taskable;

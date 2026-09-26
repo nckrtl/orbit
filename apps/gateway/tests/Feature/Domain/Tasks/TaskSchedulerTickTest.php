@@ -7,7 +7,6 @@ use App\Actions\Tasks\CompleteTaskGroupAction;
 use App\Actions\Tasks\RemoveTaskWorkspaceAction;
 use App\Domain\AppInstances\AppInstanceRemover;
 use App\Domain\Shared\LifecycleStatus;
-use App\Domain\Tasks\AgentDriverException;
 use App\Domain\Tasks\AgentSpawner;
 use App\Domain\Tasks\CoderSettleNotifier;
 use App\Domain\Tasks\NullAgentSpawner;
@@ -1545,13 +1544,13 @@ it('advances the current subtask when Jev marks it done', function (): void {
     $dispatcher = tick_dispatcher();
     $spawner = new class implements AgentSpawner
     {
-        public int $reviews = 0;
+        public int $spawned = 0;
 
         public function spawnReviewer(Task $task): ?int
         {
-            $group = $task->taskGroup;
+            $this->spawned++;
 
-            return test_agent_thread($group, 'reviewer-thread')->id;
+            return test_agent_thread($task->taskGroup, 'reviewer-thread')->id;
         }
 
         public function spawnImplementer(Task $task): ?int
@@ -1559,10 +1558,7 @@ it('advances the current subtask when Jev marks it done', function (): void {
             return test_agent_thread($task->taskGroup, 'implementer-thread', $task)->id;
         }
 
-        public function requestReview(Task $task): void
-        {
-            $this->reviews++;
-        }
+        public function requestReview(Task $task): void {}
     };
     app()->instance(T3Dispatcher::class, $dispatcher);
     app()->instance(T3ThreadReader::class, new class implements T3ThreadReader
@@ -1582,7 +1578,7 @@ it('advances the current subtask when Jev marks it done', function (): void {
         ->and($dispatcher->commands)->toBe([])
         ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Reviewing)
         ->and($group->fresh()?->tasks->first()?->status)->toBe(TaskStatus::Reviewing)
-        ->and($spawner->reviews)->toBe(1);
+        ->and($spawner->spawned)->toBe(1);
 });
 
 it('hands off only when Orbit can run the workspace check script', function (bool $definesCheckScript, TaskStatus $status, string $taskCheck = 'composer check'): void {
@@ -2078,11 +2074,18 @@ it('retries the reviewer nudge until the handoff send succeeds', function (): vo
     app(TaskExtensionState::class)->enable();
     $spawner = new class implements AgentSpawner
     {
-        public int $reviews = 0;
+        public int $spawns = 0;
 
         public function spawnReviewer(Task $task): ?int
         {
-            return null;
+            $this->spawns++;
+            if ($this->spawns === 1) {
+                return null;
+            }
+            $thread = test_agent_thread($task->taskGroup, 'reviewer-spawned');
+            $thread->update(['task_id' => $task->id]);
+
+            return $thread->id;
         }
 
         public function spawnImplementer(Task $task): ?int
@@ -2090,13 +2093,7 @@ it('retries the reviewer nudge until the handoff send succeeds', function (): vo
             return null;
         }
 
-        public function requestReview(Task $task): void
-        {
-            $this->reviews++;
-            if ($this->reviews === 1) {
-                throw new AgentDriverException('Reviewer send failed.');
-            }
-        }
+        public function requestReview(Task $task): void {}
     };
     app()->instance(AgentSpawner::class, $spawner);
     app()->instance(T3ThreadReader::class, new class implements T3ThreadReader
@@ -2111,21 +2108,21 @@ it('retries the reviewer nudge until the handoff send succeeds', function (): vo
     app(TaskScheduler::class)->tick();
 
     $task = $group->tasks()->first();
-    expect($spawner->reviews)->toBe(1)
+    expect($spawner->spawns)->toBe(1)
         ->and($task?->status)->toBe(TaskStatus::Reviewing)
         ->and($task?->review_notified_attempt)->toBeNull()
         ->and($group->fresh()?->assistance_requested)->toBeFalse();
 
     app(TaskScheduler::class)->tick();
 
-    expect($spawner->reviews)->toBe(2)
+    expect($spawner->spawns)->toBe(2)
         ->and($task?->fresh()?->review_notified_attempt)->toBe($task?->review_attempt)
         ->and($task?->fresh()?->status)->toBe(TaskStatus::Reviewing)
         ->and($group->fresh()?->assistance_requested)->toBeFalse();
 
     app(TaskScheduler::class)->tick();
 
-    expect($spawner->reviews)->toBe(2)
+    expect($spawner->spawns)->toBe(2)
         ->and($task?->fresh()?->status)->toBe(TaskStatus::Reviewing)
         ->and($group->fresh()?->assistance_requested)->toBeFalse();
 });
@@ -2253,18 +2250,23 @@ it('handoff waits while reviewer still reports its old turn', function (): void 
     {
         public function snapshot(Node $node, string $threadId): ?array
         {
-            $snapshot = tick_checked_thread('done');
-            $snapshot['thread']['latestTurn'] = ['id' => $threadId.'-old', 'state' => 'completed'];
+            $snapshot = tick_checked_thread($threadId === 'implementer-thread' || $threadId === 'reviewer-thread' ? 'done' : 'running');
+            $snapshot['thread']['latestTurn'] = [
+                'id' => $threadId === 'implementer-thread' || $threadId === 'reviewer-thread' ? $threadId.'-old' : 'opening',
+                'state' => $threadId === 'implementer-thread' || $threadId === 'reviewer-thread' ? 'completed' : 'running',
+            ];
 
             return $snapshot;
         }
     });
     app(TaskScheduler::class)->tick();
     app(TaskScheduler::class)->tick();
-    expect($group->fresh()->status)->toBe(TaskGroupStatus::Reviewing);
-    expect($dispatcher->commands)->toHaveCount(1);
+    $reviewerId = $group->fresh()?->reviewer_agent_thread_id;
+    expect($group->fresh()->status)->toBe(TaskGroupStatus::Reviewing)
+        ->and(array_column($dispatcher->commands, 'type'))->toBe(['project.create', 'thread.create', 'thread.turn.start'])
+        ->and(AgentThread::query()->find($reviewerId)?->task_id)->toBe($group->tasks()->sole()->id);
     app(TaskScheduler::class)->tick();
-    expect($dispatcher->commands)->toHaveCount(1);
+    expect($dispatcher->commands)->toHaveCount(3);
 });
 
 it('unavailable implementer uses observation grace instead of rubric', function (): void {
@@ -3075,6 +3077,7 @@ describe('a thread that works outside the task phase', function (): void {
     it('moves a passing handoff to review but asks for the review only once the reviewer is idle', function (): void {
         $group = tick_group();
         $task = $group->tasks->sole();
+        AgentThread::query()->whereKey($group->reviewer_agent_thread_id)->update(['task_id' => $task->id]);
         app(TaskExtensionState::class)->enable();
         $spawner = new class implements AgentSpawner
         {

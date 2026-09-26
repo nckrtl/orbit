@@ -7,6 +7,33 @@ use App\Domain\Tasks\TaskDeliverableEvidence;
 use App\Domain\Tasks\TaskReviewPacket;
 use App\Domain\Tasks\TaskRunInstructions;
 
+it('names the feature contract on the opening packet and leaves it off a continued turn', function (): void {
+    $contract = 'The ADRs and documentation that this branch changes against `origin/develop` are the feature\'s contract.';
+    $opening = review_packet(['contract' => $contract]);
+    $continued = review_packet(['contract' => $contract, 'continued' => true]);
+
+    expect($opening)->toContain($contract)
+        ->and($continued)->not->toContain('feature\'s contract');
+});
+
+it('keeps the full diff counts when the path list was cut and does not show a partial diff as complete', function (): void {
+    $packet = review_packet([
+        'diffFiles' => [['path' => 'only-the-tail.php', 'insertions' => 1, 'deletions' => 0]],
+        'diff' => 'partial tail that must not be shown',
+        'diffFilesComplete' => false,
+        'diffAvailable' => false,
+        'diffCounts' => ['files' => 40, 'insertions' => 90, 'deletions' => 3],
+    ]);
+
+    expect(packet_section($packet, 'Diff stat'))->toBe(implode("\n", [
+        '40 files changed, 90 insertions(+), 3 deletions(-)',
+        'The path list was cut. The stat command prints the rest.',
+    ]))
+        ->and($packet)->not->toContain('only-the-tail.php')
+        ->and(packet_section($packet, 'Diff'))->toBe('The diff could not be read. The diff command prints it.')
+        ->and($packet)->not->toContain('partial tail');
+});
+
 it('renders a review packet with the group brief, subtask brief, deliverables, approvals, diff stat, handoff, and diff', function (): void {
     $packet = review_packet();
 
@@ -417,6 +444,10 @@ function review_packet(array $overrides = []): string
         'startCommit' => str_repeat('a', 40),
         'continued' => false,
         'opensPullRequest' => false,
+        'contract' => '',
+        'diffFilesComplete' => true,
+        'diffAvailable' => true,
+        'diffCounts' => null,
     ];
     foreach ($overrides as $key => $value) {
         $values[$key] = $value;
@@ -438,6 +469,10 @@ function review_packet(array $overrides = []): string
         startCommit: $values['startCommit'],
         continued: $values['continued'],
         opensPullRequest: $values['opensPullRequest'],
+        contract: $values['contract'],
+        diffFilesComplete: $values['diffFilesComplete'],
+        diffAvailable: $values['diffAvailable'],
+        diffCounts: $values['diffCounts'],
     )->render();
 }
 
