@@ -187,7 +187,7 @@ In a terminal, the group list shows only `settling` groups. The question names t
 
 ## orbit tasks:subtask:create
 
-Append one subtask to a group at the next position, with status `todo`. This works in every group status. Outside `backlog`, the subtask needs deliverables.
+Append one subtask to a group at the next position, with status `todo`. This works in every group status. Outside `backlog`, the subtask needs deliverables. When the group is `settling` and its pull request is open, the next tick returns the group to `running` and starts this subtask. Another assistance cause keeps the group `settling`. The [tasks reference](/reference/tasks#fix-a-settling-pull-request) owns that transition.
 
 ```bash
 orbit tasks:subtask:create [group] [title] [--brief=TEXT] [--deliverables=FILE] [--json]

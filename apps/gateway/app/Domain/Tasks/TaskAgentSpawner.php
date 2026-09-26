@@ -152,7 +152,7 @@ final readonly class TaskAgentSpawner implements AgentSpawner, TaskPlannerSpawne
             'Review subtask #'.$task->id.': '.$task->title,
             $task->brief,
             TaskRunInstructions::deliverables($deliverables),
-            TaskRunInstructions::reviewer($task->isLastSubtask(), $deliverables),
+            TaskRunInstructions::reviewer($task->opensPullRequest(), $deliverables),
         ], static fn (string $part): bool => $part !== ''));
     }
 }
