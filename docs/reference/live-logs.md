@@ -131,7 +131,7 @@ The agent and the Gateway bound every stream, so a busy log cannot exhaust eithe
 | Waiting lines in the Gateway | 1 MiB for each stream and 16 MiB in all, and at most five failed relay runs in a row |
 | Lease | 60 seconds, renewed every 20 seconds |
 
-A line of many quotes or backslashes can be cut shorter than 8 KiB, because Reverb's request carries each quote and backslash twice and one line must fit one event.
+The 8 KiB counts the line's UTF-8 bytes, so a line of accented letters, CJK characters, or emoji keeps its full length: the Gateway sends Reverb each character as UTF-8, not as an escape. A line of many quotes or backslashes can be cut shorter than 8 KiB, because Reverb's request carries each quote and backslash twice and one line must fit one event.
 
 Lines above a rate are dropped and counted in `dropped`. The agent never queues more than one burst for each stream. The Gateway queues lines only while a relay run is slow or failing, up to its limit for waiting lines; past it, the stream ends with `relay_behind`. A flood therefore cannot grow the agent's or the Gateway's memory.
 

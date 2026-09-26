@@ -108,6 +108,7 @@ pub fn log_end_frame(channel: &str, stream: &str, reason: &str) -> ClientFrame {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::logs::limits::{cut_line, MAX_LINE_BYTES};
 
     const CHANNEL: &str = "presence-node-logs.18446744073709551615";
 
@@ -172,6 +173,22 @@ mod tests {
         assert_eq!(&seen[..601], &lines[..601]);
         assert!(seen[601].ends_with("[truncated]"));
         assert!(seen[601].len() < 8000);
+    }
+
+    /// A line of close to 8 KiB of non-ASCII text keeps every character: the frame carries it as UTF-8.
+    #[test]
+    fn a_line_of_close_to_8_kib_of_non_ascii_text_stays_whole() {
+        for character in ["é", "日", "😀"] {
+            let line = format!("text {}", character.repeat(8187 / character.len()));
+            assert!(line.len() > 8180);
+            assert_eq!(cut_line(&line, MAX_LINE_BYTES), line);
+            let mut sequence = 0;
+            let frames =
+                log_frames(CHANNEL, &stream(), &mut sequence, vec![line.clone()], 0, 0).unwrap();
+            assert_eq!(frames.len(), 1);
+            assert_eq!(frames[0].data["lines"], json!([line]));
+            assert!(serde_json::to_vec(&frames[0]).unwrap().len() <= PUSHER_FRAME_LIMIT);
+        }
     }
 
     #[test]

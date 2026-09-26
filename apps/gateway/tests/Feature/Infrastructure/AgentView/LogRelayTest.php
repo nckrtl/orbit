@@ -11,6 +11,7 @@ use App\Domain\Logs\LogStreamStore;
 use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AgentView\LogRelay;
+use App\Infrastructure\Broadcasting\ReverbBroadcaster;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\AppInstanceEnvironmentValue;
@@ -131,15 +132,25 @@ describe('a live log relay run', function (): void {
         $events = relayed('log.lines');
         $lines = relayed_lines();
         // The Reverb HTTP API body: the event JSON as an escaped string, with the event name and channel.
-        $bodies = array_map(static fn (LogStreamBroadcast $event): int => strlen((string) json_encode([
-            'name' => $event->name, 'data' => (string) json_encode($event->payload), 'channels' => [$event->channel],
-        ])), $events);
+        $bodies = array_map(static fn (LogStreamBroadcast $event): int => strlen(ReverbBroadcaster::body($event->name, $event->payload, [$event->channel])), $events);
 
         expect(count($lines))->toBe(401)
             ->and(array_slice($lines, 0, 400))->toBe($quoted)
             ->and($lines[400])->toEndWith('" [truncated]')
             ->and(max($bodies))->toBeLessThanOrEqual(8_700);
     });
+
+    it('relays a line of close to 8 KiB of non-ASCII text whole', function (string $character): void {
+        // What the agent sends at most: 8 KiB of text, whatever its characters.
+        $line = 'text '.str_repeat($character, intdiv(8_187, strlen($character)));
+        $this->relay->relay(relay_batch([relay_lines(1, $this->node->id, $this->stream->id, [$line, $line])]));
+
+        $events = relayed('log.lines');
+
+        expect(relayed_lines())->toBe([$line, $line])
+            ->and(strlen($line))->toBeGreaterThan(8_180)
+            ->and(max(array_map(static fn (LogStreamBroadcast $event): int => strlen(ReverbBroadcaster::body($event->name, $event->payload, [$event->channel])), $events)))->toBeLessThanOrEqual(8_700);
+    })->with(['é' => 'é', 'CJK' => '日', 'emoji' => '😀']);
 
     it('keeps the order of items and continues the sequence across runs', function (): void {
         $this->relay->relay(relay_batch([relay_lines(1, $this->node->id, $this->stream->id, ['one']), relay_lines(2, $this->node->id, $this->stream->id, ['two'])]));

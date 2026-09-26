@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Logs;
 
 use App\Domain\Broadcasting\RealtimeConnection;
+use App\Infrastructure\Broadcasting\ReverbBroadcaster;
 use DateTimeInterface;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Broadcast;
@@ -68,7 +69,8 @@ final readonly class LogStreamBroadcaster
 
     /**
      * The byte size of a `log.lines` payload for these lines as it travels in the Reverb HTTP API body,
-     * so the relay can split its parts. Quotes and backslashes in a line count twice there.
+     * so the relay can split its parts. Quotes and backslashes in a line count twice there; other
+     * characters count their UTF-8 bytes ({@see ReverbBroadcaster}).
      *
      * @param  list<string>  $lines
      */
@@ -81,7 +83,7 @@ final readonly class LogStreamBroadcaster
             'data' => ['sequence' => PHP_INT_MAX, 'lines' => $lines, 'dropped' => PHP_INT_MAX, 'skipped' => PHP_INT_MAX],
         ];
 
-        return strlen((string) json_encode((string) json_encode($payload, JSON_INVALID_UTF8_SUBSTITUTE)));
+        return strlen(json_encode(json_encode($payload, ReverbBroadcaster::JsonFlags), ReverbBroadcaster::JsonFlags));
     }
 
     /**

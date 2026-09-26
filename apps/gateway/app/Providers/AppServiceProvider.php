@@ -215,6 +215,7 @@ use App\Infrastructure\AppProd\RemoteAppProdCaddyManager;
 use App\Infrastructure\AppProd\RemoteAppProdPhpFpmManager;
 use App\Infrastructure\Apps\NativeAppUpdateProjectionMutator;
 use App\Infrastructure\Apps\RemoteAppUpdateSourceMutator;
+use App\Infrastructure\Broadcasting\ReverbBroadcaster;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuilder;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuildLock;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
@@ -352,6 +353,7 @@ use App\Infrastructure\WireGuard\WireGuardServerConfigRenderer;
 use App\Models\Activity;
 use App\Models\AppInstance;
 use App\Models\DatabaseConnection;
+use Illuminate\Broadcasting\BroadcastManager;
 use Illuminate\Cache\CacheManager;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Support\ServiceProvider;
@@ -858,6 +860,11 @@ final class AppServiceProvider extends ServiceProvider
             GatewayCacheStore::assertSupported($cache, $this->app->environment(), $this->app->configurationIsCached());
         }
         Activity::observe($activityPropertiesObserver);
+        // Reverb event bodies carry text as UTF-8, so non-ASCII log lines keep their length (ADR 0153).
+        $this->app->make(BroadcastManager::class)->extend(
+            'reverb',
+            fn ($app, array $config): ReverbBroadcaster => new ReverbBroadcaster($this->pusher($config), (bool) ($config['jsonp'] ?? false)),
+        );
         Relation::morphMap([
             'instance' => AppInstance::class,
         ]);
