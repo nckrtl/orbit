@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Actions\Broadcasting\PresenceChannelSigner;
 use App\Domain\AgentView\AgentStateView;
 use App\Domain\AgentView\AgentViewFreshness;
+use App\Domain\Logs\LogStreamBroadcast;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\WebSocket\WebSocketCredentialManager;
@@ -107,7 +108,7 @@ function subscriber_managed_node(string $name, string $address): Node
  * @param  list<FakeAgentViewSocket>  $extra  Receives each socket the subscriber makes for a second link.
  * @return array{AgentViewSubscriber, FakeAgentViewSocket, object{now: float, commit: string}}
  */
-function agent_view_subscriber(array &$extra = []): array
+function agent_view_subscriber(array &$extra = [], ?AgentViewPublisher $publisher = null): array
 {
     $socket = new FakeAgentViewSocket;
     $state = new class
@@ -130,6 +131,7 @@ function agent_view_subscriber(array &$extra = []): array
         sleep: static function (float $seconds) use ($state): void {
             $state->now += $seconds;
         },
+        publisher: $publisher,
         sockets: static function () use (&$extra): FakeAgentViewSocket {
             return $extra[] = new FakeAgentViewSocket;
         },
@@ -150,6 +152,14 @@ final class FakeAgentViewPublisher implements AgentViewPublisher
 
     public bool $stopped = false;
 
+    /** @var list<array{int, string, array<string, mixed>}> */
+    public array $logs = [];
+
+    /** @var list<int> */
+    public array $agentsLeft = [];
+
+    public int $streamsChanged = 0;
+
     public function queueWorkspaces(int $nodeId, array $instanceIds): void
     {
         $this->workspaces[] = [$nodeId, $instanceIds];
@@ -158,6 +168,21 @@ final class FakeAgentViewPublisher implements AgentViewPublisher
     public function queueUsage(int $sampledAt): void
     {
         $this->usage[] = $sampledAt;
+    }
+
+    public function queueLog(int $nodeId, string $event, array $data): void
+    {
+        $this->logs[] = [$nodeId, $event, $data];
+    }
+
+    public function queueLogAgentLeft(int $nodeId): void
+    {
+        $this->agentsLeft[] = $nodeId;
+    }
+
+    public function logStreamsChanged(): void
+    {
+        $this->streamsChanged++;
     }
 
     public function poll(): void
@@ -723,6 +748,38 @@ describe('the agent view subscriber during a websocket move', function (): void 
         $this->node = subscriber_managed_node('app-dev', '10.44.0.3');
     });
 
+    it('joins the log channel on both servers and ends log streams only when the agent left both', function (): void {
+        $extra = [];
+        $publisher = new FakeAgentViewPublisher;
+        [$subscriber, $new] = agent_view_subscriber($extra, $publisher);
+        $subscriber->pass();
+        $old = $extra[0];
+        $logChannel = "presence-node-logs.{$this->node->id}";
+        $member = fn (string $event): array => ['event' => $event, 'channel' => $logChannel, 'data' => json_encode(['user_id' => "agent.{$this->node->id}"])];
+
+        expect(collect($new->sent)->pluck('data.channel')->all())->toContain($logChannel)
+            ->and(collect($old->sent)->pluck('data.channel')->all())->toContain($logChannel);
+
+        $old->push(['event' => 'pusher_internal:subscription_succeeded', 'channel' => $logChannel, 'data' => json_encode(['presence' => ['ids' => ["agent.{$this->node->id}"]]])]);
+        $old->push(agent_snapshot($this->node->id, 3, []));
+        $subscriber->pass();
+        $subscriber->pass();
+        expect(app(AgentStateView::class)->node($this->node->id)->logs)->toBeTrue();
+
+        // The agent moves: it joins the new server before the old one reports it gone.
+        $new->push($member('pusher_internal:member_added'));
+        $subscriber->pass();
+        $old->push($member('pusher_internal:member_removed'));
+        $subscriber->pass();
+
+        expect($publisher->agentsLeft)->toBe([]);
+
+        $new->push($member('pusher_internal:member_removed'));
+        $subscriber->pass();
+
+        expect($publisher->agentsLeft)->toBe([$this->node->id]);
+    });
+
     it('listens on both Reverb servers and keeps a Node fresh while its agent moves between them', function (): void {
         $extra = [];
         [$subscriber, $new] = agent_view_subscriber($extra);
@@ -818,5 +875,117 @@ describe('the agent view subscriber during a websocket move', function (): void 
         $subscriber->pass();
 
         expect(app(AgentStateView::class)->node($this->node->id)->freshness)->toBe(AgentViewFreshness::Fresh);
+    });
+});
+
+/** @param array<string, mixed> $data */
+function agent_log_event(int $nodeId, string $event, array $data, ?string $sender = null): array
+{
+    return ['event' => $event, 'channel' => "presence-node-logs.{$nodeId}", 'data' => json_encode($data), 'user_id' => $sender ?? "agent.{$nodeId}"];
+}
+
+describe('the live log channels', function (): void {
+    beforeEach(function (): void {
+        activate_websocket_role();
+        $this->node = subscriber_managed_node('app-dev', '10.44.0.3');
+        [$this->subscriber, $this->socket, $this->clock, $this->publisher] = live_agent_view_subscriber();
+        $this->subscriber->pass();
+        $this->socket->push(agent_log_event($this->node->id, 'pusher_internal:subscription_succeeded', ['presence' => ['ids' => ["agent.{$this->node->id}", 'gateway.1234.5678']]]));
+        $this->socket->push(agent_snapshot($this->node->id, 1, []));
+        $this->subscriber->pass();
+        $this->subscriber->pass();
+    });
+
+    afterEach(fn () => Carbon::setTestNow());
+
+    it('joins every Node log channel with its own gateway membership and records the agent as a member', function (): void {
+        $subscribe = collect($this->socket->sent)->firstWhere('data.channel', "presence-node-logs.{$this->node->id}");
+
+        expect($subscribe['event'])->toBe('pusher:subscribe')
+            ->and(json_decode($subscribe['data']['channel_data'], true))->toBe(['user_id' => 'gateway.1234.5678', 'user_info' => ['kind' => 'gateway']])
+            ->and(app(AgentStateView::class)->node($this->node->id)->logs)->toBeTrue();
+    });
+
+    it('queues the agent log events in order and never relays them inside the socket loop', function (): void {
+        Event::fake([LogStreamBroadcast::class]);
+        $stream = str_repeat('ab', 16);
+        $this->socket->push(
+            agent_log_event($this->node->id, 'client-log', ['stream' => $stream, 'sequence' => 1, 'dropped' => 0, 'skipped' => 0, 'lines' => ['one']]),
+            agent_log_event($this->node->id, 'client-log', ['stream' => $stream, 'sequence' => 2, 'dropped' => 0, 'skipped' => 0, 'lines' => ['two']]),
+            agent_log_event($this->node->id, 'client-log-end', ['stream' => $stream, 'reason' => 'source_unavailable']),
+        );
+        $this->subscriber->pass();
+
+        expect(array_map(static fn (array $log): array => [$log[0], $log[1], $log[2]['lines'] ?? null], $this->publisher->logs))->toBe([
+            [$this->node->id, 'client-log', ['one']],
+            [$this->node->id, 'client-log', ['two']],
+            [$this->node->id, 'client-log-end', null],
+        ]);
+        Event::assertNotDispatched(LogStreamBroadcast::class);
+    });
+
+    it('ignores log events from another member, for another Node, or on the view channel', function (): void {
+        $other = subscriber_managed_node('app-dev-2', '10.44.0.4');
+        $this->subscriber->pass();
+        $line = ['stream' => str_repeat('ab', 16), 'sequence' => 1, 'dropped' => 0, 'skipped' => 0, 'lines' => ['forged']];
+
+        $this->socket->push(
+            agent_log_event($this->node->id, 'client-log', $line, sender: 'viewer.9.9'),
+            agent_log_event($this->node->id, 'client-log', $line, sender: "agent.{$other->id}"),
+            agent_event($this->node->id, 'client-log', $line),
+            agent_log_event($this->node->id, 'client-heartbeat', $line),
+        );
+        $this->subscriber->pass();
+
+        expect($this->publisher->logs)->toBe([]);
+    });
+
+    it('queues the end of the Node streams when its agent leaves the log channel', function (): void {
+        $this->socket->push(agent_log_event($this->node->id, 'pusher_internal:member_removed', ['user_id' => "agent.{$this->node->id}"]));
+        $this->subscriber->pass();
+
+        expect($this->publisher->agentsLeft)->toBe([$this->node->id])
+            ->and(app(AgentStateView::class)->node($this->node->id)->logs)->toBeFalse();
+    });
+
+    it('records the agent version from its Node channel membership', function (): void {
+        $agent = "agent.{$this->node->id}";
+        $this->socket->push(agent_event($this->node->id, 'pusher_internal:subscription_succeeded', ['presence' => [
+            'ids' => [$agent],
+            'hash' => [$agent => ['kind' => 'agent', 'node_id' => $this->node->id, 'version' => '0.2.0']],
+        ]], sender: ''));
+        $this->socket->push(agent_snapshot($this->node->id, 2, []));
+        $this->subscriber->pass();
+        $this->subscriber->pass();
+
+        expect(app(AgentStateView::class)->node($this->node->id)->agentVersion)->toBe('0.2.0');
+
+        $this->socket->push(
+            agent_event($this->node->id, 'pusher_internal:member_added', ['user_id' => $agent, 'user_info' => ['kind' => 'agent', 'version' => '0.3.0']], sender: ''),
+            agent_snapshot($this->node->id, 1, []),
+        );
+        $this->subscriber->pass();
+        $this->subscriber->pass();
+
+        expect(app(AgentStateView::class)->node($this->node->id)->agentVersion)->toBe('0.3.0');
+
+        $this->socket->push(
+            agent_event($this->node->id, 'pusher_internal:member_added', ['user_id' => $agent, 'user_info' => ['version' => 'not a version!']], sender: ''),
+            agent_snapshot($this->node->id, 1, []),
+        );
+        $this->subscriber->pass();
+        $this->subscriber->pass();
+
+        expect(app(AgentStateView::class)->node($this->node->id)->agentVersion)->toBeNull();
+    });
+
+    it('tells the publisher on connect and when the Gateway prompts an agent about its streams', function (): void {
+        // Streams may have opened while no subscriber watched.
+        expect($this->publisher->streamsChanged)->toBe(1);
+
+        $this->socket->push(['event' => 'log-streams.changed', 'channel' => "presence-node-logs.{$this->node->id}", 'data' => '{}']);
+        $this->subscriber->pass();
+
+        expect($this->publisher->streamsChanged)->toBe(2);
     });
 });

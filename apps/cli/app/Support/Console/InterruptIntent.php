@@ -71,6 +71,19 @@ final class InterruptIntent
         return $signal === null ? null : 128 + $signal;
     }
 
+    /**
+     * Take the pending signal out of the innermost scope, for a command whose contract ends
+     * successfully on Ctrl-C, such as a log follow. Outer scopes keep their own intent.
+     */
+    public static function consume(): ?int
+    {
+        $key = array_key_last(self::$scopes);
+        $signal = self::$scopes[$key];
+        self::$scopes[$key] = null;
+
+        return $signal;
+    }
+
     public static function clear(): void
     {
         self::$scopes = [null];

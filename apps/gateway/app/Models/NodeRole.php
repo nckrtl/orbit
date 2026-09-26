@@ -33,7 +33,7 @@ final class NodeRole extends Model
      * `node:add`, take the Node's role lock before they claim and keep it until the claim ends, so an
      * operation that finds a claim while it holds the lock knows no add or remove still works on it.
      *
-     * Three claimers hold a claim outside the lock:
+     * These claimers hold a claim outside the lock:
      *
      * - Relocation and Cluster Router changes, only inside one Gateway request, which PHP-FPM ends
      *   within the lock's term.

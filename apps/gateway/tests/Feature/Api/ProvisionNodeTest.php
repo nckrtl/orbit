@@ -189,7 +189,10 @@ describe('POST /api/v1/nodes', function (): void {
         ]);
         $activity = Activity::query()->where('request_id', $requestId)->sole();
 
-        $response->assertStatus(502)->assertJsonPath('error.code', 'node.role_convergence_failed');
+        $response->assertStatus(502)
+            ->assertJsonPath('error.code', 'node.role_convergence_failed')
+            ->assertJsonPath('error.details.step', 'role:converge:role-prerequisites')
+            ->assertJsonPath('error.details.error_code', 'node.role_prerequisites_failed');
         expect($response->getContent())
             ->not
             ->toContain('sentinel')

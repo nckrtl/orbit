@@ -11,7 +11,7 @@ use Illuminate\Routing\Route as IlluminateRoute;
 use Illuminate\Support\Facades\Route;
 
 it('declares node access scope on every active-peer API route', function (): void {
-    $agentRoutes = ['agent:realtime', 'agent:realtime:auth', 'agent:workspaces'];
+    $agentRoutes = ['agent:realtime', 'agent:realtime:auth', 'agent:workspaces', 'agent:log-streams'];
     $protectedRoutes = collect(Route::getRoutes()->getRoutes())
         ->filter(static fn (IlluminateRoute $route): bool => str_starts_with($route->uri(), 'api/v1/'))
         ->filter(
@@ -131,6 +131,9 @@ it('declares node access scope on every active-peer API route', function (): voi
         'instance:deployment:show' => ServingNode::DeploymentOwning,
         'instance:destroy' => ServingNode::InstanceOwning,
         'instance:list' => ServingNode::Collection,
+        'instance:log-stream:create' => ServingNode::InstanceOwning,
+        'instance:log-stream:destroy' => ServingNode::InstanceOwning,
+        'instance:log-stream:renew' => ServingNode::InstanceOwning,
         'instance:logs' => ServingNode::InstanceOwning,
         'instance:queue' => ServingNode::InstanceOwning,
         'instance:register' => ServingNode::Caller,
@@ -177,6 +180,9 @@ it('declares node access scope on every active-peer API route', function (): voi
         'process:create' => [ServingNode::AppOwning, ServingNode::ProcessOwning],
         'process:destroy' => [ServingNode::AppOwning, ServingNode::ProcessOwning],
         'process:list' => [ServingNode::AppOwning, ServingNode::ProcessOwning],
+        'process:log-stream:create' => ServingNode::ProcessOwning,
+        'process:log-stream:destroy' => ServingNode::ProcessOwning,
+        'process:log-stream:renew' => ServingNode::ProcessOwning,
         'process:logs' => ServingNode::ProcessOwning,
         'process:restart' => ServingNode::ProcessOwning,
         'process:show' => ServingNode::AppOwning,
@@ -333,7 +339,7 @@ it('keeps only bootstrap routes outside peer and node access middleware', functi
             continue;
         }
 
-        if (in_array($route->getName(), ['agent:realtime', 'agent:realtime:auth', 'agent:workspaces'], strict: true)) {
+        if (in_array($route->getName(), ['agent:realtime', 'agent:realtime:auth', 'agent:workspaces', 'agent:log-streams'], strict: true)) {
             expect($middleware)
                 ->toContain(RequireActiveWireGuardPeer::class)
                 ->toContain(RequireNodeAgentSecret::class)

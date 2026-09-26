@@ -162,7 +162,7 @@ return Application::configure(basePath: dirname(__DIR__))
                         'error' => [
                             'code' => $exception->errorCode,
                             'message' => $exception->getMessage(),
-                            'details' => ['step' => $exception->step, ...NodeCaddyBuildException::detailsIn($exception)],
+                            'details' => ['step' => $exception->step, ...NodeRoleOperationException::detailsIn($exception), ...NodeCaddyBuildException::detailsIn($exception)],
                         ],
                     ], 502)
                     ->header('X-Orbit-Request-Id', is_string($requestId) ? $requestId : '');
@@ -181,7 +181,7 @@ return Application::configure(basePath: dirname(__DIR__))
                         'error' => [
                             'code' => $exception->errorCode,
                             'message' => $exception->getMessage(),
-                            'details' => ['step' => $exception->step, ...NodeCaddyBuildException::detailsIn($exception)],
+                            'details' => ['step' => $exception->step, ...NodeRoleOperationException::detailsIn($exception), ...NodeCaddyBuildException::detailsIn($exception)],
                         ],
                     ], 502)
                     ->header('X-Orbit-Request-Id', is_string($requestId) ? $requestId : '');
@@ -200,7 +200,7 @@ return Application::configure(basePath: dirname(__DIR__))
                         'error' => [
                             'code' => $exception->errorCode,
                             'message' => $exception->getMessage(),
-                            'details' => ['step' => $exception->step],
+                            'details' => ['step' => $exception->step, ...NodeRoleOperationException::detailsIn($exception)],
                         ],
                     ], 502)
                     ->header('X-Orbit-Request-Id', is_string($requestId) ? $requestId : '');

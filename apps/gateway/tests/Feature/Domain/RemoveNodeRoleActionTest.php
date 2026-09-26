@@ -21,6 +21,7 @@ use App\Domain\Nodes\RoleRegistry;
 use App\Domain\Processes\ProcessOperationException;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\ToolManagerScopeLock;
 use App\Domain\Tools\ToolStatus;
@@ -32,6 +33,7 @@ use App\Models\NodeRole;
 use App\Models\Process;
 use App\Models\Tool;
 use App\Models\ToolManagerRecord;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Tests\Support\FakeNodeRoleFirewallManager;
@@ -287,6 +289,40 @@ describe(RemoveNodeRoleAction::class, function (): void {
         expect(fn () => $second->claimRemoval())
             ->toThrow(RoleAssignmentException::class, 'Role [metrics] changed while it was being claimed.')
             ->and($first->isStaleClaim())->toBeFalse();
+    });
+
+    it('reports node_role.already_removed when a concurrent removal took the role first', function (): void {
+        [$node, $assignment] = removal_role_fixture(role: RoleName::Metrics);
+        $inspector = new class($assignment) implements NodeRoleDependencyInspector
+        {
+            public function __construct(private readonly NodeRole $assignment) {}
+
+            public function inspect(Node $node, RoleName $role): NodeRoleDependencySet
+            {
+                // Another removal finishes while this one waits for the Node's role lock.
+                NodeRole::query()->whereKey($this->assignment->id)->delete();
+
+                return new NodeRoleDependencySet([], [], [], []);
+            }
+        };
+        $baseline = new RemovalBaselineFake;
+
+        expect(fn () => removal_action($inspector, new RemovalCleanerFake, $baseline)->execute($node, RoleName::Metrics, force: true))
+            ->toThrow(function (ResourceOperationException $exception) use ($node): void {
+                expect($exception->errorCode)->toBe('node_role.already_removed')
+                    ->and($exception->status)->toBe(409)
+                    ->and($exception->getMessage())->toBe("Role [metrics] was already removed from node [{$node->name}] by another operation.");
+            });
+
+        expect($baseline->calls)->toBe(0);
+    });
+
+    it('still reports a role the Node never had as not found', function (): void {
+        [$node] = removal_role_fixture(role: RoleName::Metrics);
+
+        expect(fn () => removal_action(new RemovalInspectorFake(new NodeRoleDependencySet([], [], [], [])), new RemovalCleanerFake, new RemovalBaselineFake)
+            ->execute($node, RoleName::Database, force: true))
+            ->toThrow(ModelNotFoundException::class);
     });
 
     it('removes either final app role while retaining Tool intent', function (RoleName $role): void {

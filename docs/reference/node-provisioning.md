@@ -131,14 +131,16 @@ The Gateway runs one role operation per Node at a time. The lock covers these st
 - the app manager setup for `app-dev` and `app-prod`
 - the [Node agent](/reference/node-agent) converge that follows a role convergence
 
-The Metrics fleet reconcile runs after a role convergence and outside this lock. It converges exporters on every Node, and holding one Node's lock while it waits for another's could deadlock two operations. An exporter converge can therefore still run beside a role operation on the same Node.
+The Metrics fleet reconcile follows a role convergence or removal. When `node:role:add`, `node:role:remove`, or the role steps of `node:add` run it, it runs inside this Node's lock, because those commands hold the lock for the whole operation. It converges exporters on every Node without taking their locks. Waiting for another Node's lock while it holds this one could deadlock two operations. An exporter converge on another Node can therefore run beside a role operation on that Node. `node:role:relocate` and Cluster Router changes take the lock only around the baseline step, so their reconcile runs outside it.
 
 `node:role:add`, `node:role:remove`, and the role steps of `node:add` take the lock before they claim the assignment. A second operation waits up to 2 minutes. If the Node is still busy, it fails and leaves the assignment as it was:
 
 | Command | Error |
 | --- | --- |
-| `node:role:add` | `node_role.convergence_failed` at step `converge:node-lock`, error code `node_role.node_busy` |
-| `node:role:remove` | `node_role.remove_failed` at step `node-lock`, error code `node_role.node_busy` |
+| `node:role:add` | `error.code` `node_role.convergence_failed`, `details.step` `converge:node-lock`, `details.error_code` `node_role.node_busy` |
+| `node:role:remove` | `error.code` `node_role.remove_failed`, `details.step` `node-lock`, `details.error_code` `node_role.node_busy` |
+
+Every failed role operation reports its step's own code in `details.error_code`, next to the operation's `error.code`, such as `node_role.tool_manager_locked` or a `metrics.*` code. `node:add` and `node:remove` do the same when a role step failed.
 
 Run the command again. `node:role:relocate` and Cluster Router changes take the lock only around the baseline step, so a busy Node fails that step as their other baseline failures do.
 
@@ -155,13 +157,13 @@ Four kinds of lock guard work on one Node. They all live in a file cache store u
 | Lock | Guards | Term | When it is busy |
 | --- | --- | --- | --- |
 | Tool | One package of one tool manager | 10 minutes | Fails at once with `tool.operation_locked` |
-| Tool manager | The shared state of `vp`, `composer`, `apt`, or `brew` | 10 minutes | Fails at once with `tool.operation_locked` or `node_role.tool_manager_locked` |
+| Tool manager | The shared state of `apt`, `vp`, `composer`, or `brew` | 10 minutes | Fails at once with `tool.operation_locked`, `node.tool_manager_locked` during `node:add`, or `node_role.tool_manager_locked` in a role operation |
 | Role | Role operations | 10 minutes | Waits up to 2 minutes, then `node_role.node_busy` |
 | Node agent | The [agent converge](/reference/node-agent#agent-secret) | 4 minutes, renewed before each step | Waits up to 2 minutes, then `agent.converge_busy` |
 
-The 10-minute term is the Gateway's PHP-FPM request limit. A request cannot outlive it, so a worker that is killed mid-operation blocks the Node for at most 10 minutes.
+The 10-minute term matches the Gateway's PHP-FPM request limit, so a worker that is killed mid-request blocks the Node for at most 10 minutes. An Artisan command such as `orbit:node-provision` has no time limit and can hold a lock past its term.
 
-An operation takes the locks it needs in one fixed order: tool, then tool manager (`vp` before `composer`), then role, then Node agent. No code takes an earlier lock while it holds a later one. The tool and tool manager locks fail at once instead of waiting, so an operation that holds the role lock never waits for a tool manager. The locks therefore cannot deadlock.
+An operation takes the locks it needs in one fixed order: tool, then tool manager (in the order `apt`, `vp`, `composer`, `brew`), then role, then Node agent. No code takes an earlier lock while it holds a later one. The tool and tool manager locks fail at once instead of waiting, so an operation that holds the role lock never waits for a tool manager. The locks therefore cannot deadlock.
 
 ## Node agent
 
