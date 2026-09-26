@@ -208,7 +208,7 @@ The `analytics` role needs both Process options. In a terminal the command lists
 
 The command refuses a role that conflicts with one the Node holds, before it converges anything, with `validation.failed` and `Role [ingress] conflicts with assigned role [gateway].`. For example, `ingress` never runs on the Gateway Node. [Role compatibility](/reference/node-provisioning#role-compatibility) lists every conflicting pair.
 
-Role operations on one Node run one at a time, as [Node provisioning](/reference/node-provisioning#role-operations-on-one-node) describes. A command that waits too long fails with `node_role.convergence_failed` at step `converge:node-lock` and error code `node_role.node_busy`, and leaves the assignment as it was; run it again.
+Role operations on one Node run one at a time, as [Node provisioning](/reference/node-provisioning#role-operations-on-one-node) describes. A command that waits too long fails with `node_role.convergence_failed`, `details.step` `converge:node-lock`, and `details.error_code` `node_role.node_busy`, and leaves the assignment as it was; run it again. Human output prints the step and the error code under the message.
 
 `gateway`, `websocket`, and `metrics` are mutable singletons. Prefer [`node:role:relocate`](#orbit-noderolerelocate) when the assignment already exists. Adding `gateway` grants directed access from that Node to the active `vpn` node and the active `metrics` node when those nodes exist and are not the Gateway itself. `vpn` is refused.
 
