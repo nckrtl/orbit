@@ -495,6 +495,11 @@ abstract class TaskCommand extends GatewayCommand
             $agent->model,
             $agent->state,
             self::tokens($agent->tokens),
+            self::tokenMetric($agent->inputTokens),
+            self::tokenMetric($agent->cachedInputTokens),
+            self::tokenMetric($agent->outputTokens),
+            self::tokenMetric($agent->modelCalls),
+            self::tokenMetric($agent->peakContextTokens),
             self::lineDiff(null, $agent->linesAdded, $agent->linesDeleted),
             self::time($agent->observedAt),
         ];
@@ -541,6 +546,14 @@ abstract class TaskCommand extends GatewayCommand
     protected static function tokens(?int $tokens): ?string
     {
         return $tokens === null ? null : number_format($tokens);
+    }
+
+    /**
+     * A reported count, or a space so an unknown split stays a blank cell rather than an em dash.
+     */
+    protected static function tokenMetric(?int $value): string
+    {
+        return $value === null ? ' ' : number_format($value);
     }
 
     protected static function lineDiff(?int $total, ?int $added, ?int $deleted): ?string

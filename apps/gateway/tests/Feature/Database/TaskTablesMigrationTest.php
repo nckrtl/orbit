@@ -40,6 +40,14 @@ it('creates task_groups and tasks with morph, metrics, and ordering columns', fu
             'tokens',
             'line_diff',
             'duration_ms',
+        ]))->toBeTrue()
+        ->and(Schema::hasColumns('agent_threads', [
+            'tokens',
+            'input_tokens',
+            'cached_input_tokens',
+            'output_tokens',
+            'model_calls',
+            'peak_context_tokens',
         ]))->toBeTrue();
 });
 

@@ -7,7 +7,7 @@ description: "How the Gateway tasks extension holds TaskGroup features in Backlo
 
 This page tells an operator how the optional Gateway `tasks` extension runs a Commander-style feature group. A group waits in Backlog while its branch, ADRs, documentation, and subtasks are prepared. Once the group is in Todo, the Gateway provisions its shared Instance, starts agents, and moves each task from turn to turn with run receipts and mechanical checks. It commits approved work and pushes that commit to `origin`, opens and watches the pull request, retains capacity through assistance and merge wait, and removes the workspace clone when the group is cancelled or completed.
 
-[ADR 0103](/decisions/0103-absorb-commander-tasks-as-a-gateway-extension) owns the extension boundary. [ADR 0110](/decisions/0110-route-task-sessions-with-laravel-ai-jev) owns session routing. [ADR 0113](/decisions/0113-gate-task-completion-on-validation-and-review) owns completion gates. [ADR 0122](/decisions/0122-hold-task-groups-in-backlog-until-ready) owns Backlog and Todo. [ADR 0124](/decisions/0124-plan-backlog-groups-with-a-t3-planner) owns planning. [ADR 0160](/decisions/0160-push-each-approved-subtask-and-remove-the-finished-workspace-clone) owns the push after each approval and deletion of the workspace clone. [ADR 0164](/decisions/0164-heal-a-settling-pull-request-with-a-fixup-subtask) owns the fixup that returns a settling group to running.
+[ADR 0103](/decisions/0103-absorb-commander-tasks-as-a-gateway-extension) owns the extension boundary. [ADR 0110](/decisions/0110-route-task-sessions-with-laravel-ai-jev) owns session routing. [ADR 0113](/decisions/0113-gate-task-completion-on-validation-and-review) owns completion gates. [ADR 0122](/decisions/0122-hold-task-groups-in-backlog-until-ready) owns Backlog and Todo. [ADR 0124](/decisions/0124-plan-backlog-groups-with-a-t3-planner) owns planning. [ADR 0160](/decisions/0160-push-each-approved-subtask-and-remove-the-finished-workspace-clone) owns the push after each approval and deletion of the workspace clone. [ADR 0164](/decisions/0164-heal-a-settling-pull-request-with-a-fixup-subtask) owns the fixup that returns a settling group to running. [ADR 0165](/decisions/0165-record-per-thread-token-metrics) owns the per-thread token split.
 
 The extension is off until an authorized Gateway caller enables it. There is no web UI for create. Agents create groups through the [MCP server](/reference/mcp). The [`tasks` CLI family](/cli/tasks) runs every operation on this page from a terminal when MCP is unavailable.
 
@@ -291,6 +291,30 @@ When the parent task is open, Tokens is the total for the current implementer of
 
 The line diff comes from the Node agent's [task workspace](/reference/node-agent#task-workspaces) state while the Gateway's view of that Node is fresh, and from `git diff --shortstat` over SSH otherwise or when the agent's diff is truncated. When the agent reports a new commit or new counts, the Gateway stores the group's line counts when the diff is complete and broadcasts `task_group.updated` in either case. Missing runtime metrics remain unknown; failed reads preserve stored values.
 
+### Thread token metrics
+
+Each agent thread records five fields beside `tokens`. Null means the driver did not report that field. A reported zero is stored as zero. A failed read keeps the last stored value. Task, TaskGroup, the web task board, and the Coder settle webhook keep the cumulative `tokens` total and do not store this split. `tasks:agents` and `GET /api/v1/task-groups/{group}/agents` show it. [ADR 0165](/decisions/0165-record-per-thread-token-metrics) records the decision.
+
+| Field | Meaning |
+| --- | --- |
+| `input_tokens` | Uncached input summed across model calls, including cache writes |
+| `cached_input_tokens` | Input read from cache, summed across model calls. Cache writes are not included |
+| `output_tokens` | Output, summed across model calls. Reasoning is already included and is not added again |
+| `model_calls` | Model calls that reported usage |
+| `peak_context_tokens` | Largest single-call context. Context is that call's uncached input plus its cached input, so a Pi cache write is inside the peak, and output is excluded |
+
+Average context per call is `(input_tokens + cached_input_tokens) / model_calls`. The cached share of input is `cached_input_tokens / (input_tokens + cached_input_tokens)`. Cache writes sit in that denominator with the other uncached input. The Gateway does not recompute `tokens` from the split.
+
+For Pi, the server's `usage` object carries the sums `input`, `output`, `cacheRead`, `cacheWrite`, and `total`, plus `calls` and `peakContext`. Pi's `input` excludes cache writes. `tokens` is `total`. `input_tokens` is `input + cacheWrite`. `cached_input_tokens` is `cacheRead`. `output_tokens` is `output`. A source that is not an integer leaves that Orbit field null, and a missing `cacheWrite` leaves `input_tokens` null. `calls` counts assistant messages with numeric usage. `peakContext` is the maximum of `input + cacheRead + cacheWrite` over those messages, the same quantity as that call's uncached input plus its cached input. Both are null when the server omits the key. The session file `~/.pi/agent/orbit-sessions/*.jsonl` records the same per-call `input`, `cacheRead`, `cacheWrite`, and `output`. The Gateway reads the snapshot, not the file.
+
+For T3, the snapshot has no thread-level usage object. Figures sit on `context-window.updated` activities: `usedTokens`, and optionally `totalProcessedTokens`, `inputTokens`, `cachedInputTokens`, `outputTokens`, `reasoningOutputTokens`, and `lastInputTokens`, `lastCachedInputTokens`, `lastOutputTokens`, and `lastReasoningOutputTokens`. `tokens` still prefers the largest `totalProcessedTokens`, then `usedTokens`. The Gateway does not open Codex rollout files.
+
+The five fields are null when any `totalProcessedTokens` is lower than an earlier one, when a call that advances the total lacks integer `inputTokens`, `cachedInputTokens`, and `outputTokens`, when `cachedInputTokens` is greater than `inputTokens` on a counted call, or when no call is counted. A counted call has those three integers and either a `totalProcessedTokens` greater than every earlier one, or no earlier `totalProcessedTokens` and a triple different from the previous counted call. `last*` is the latest update, not a total. `reasoningOutputTokens` is not added. `input_tokens` sums `inputTokens - cachedInputTokens`. `cached_input_tokens` sums `cachedInputTokens`. `output_tokens` sums `outputTokens`. `model_calls` is the number of counted calls. `peak_context_tokens` is the maximum `inputTokens`, which already includes cached input.
+
+On Codex, `inputTokens` includes `cachedInputTokens`, `total_tokens` equals input plus output, and the counted calls match the rollout's `token_usage_record` rows and `thread_token_usage`. A Claude snapshot omits `cachedInputTokens`, so the five fields stay null.
+
+Groups 109 through 125, measured on 2026-09-26, are the comparison baseline: 596 million tokens, 94 percent cached input on the share above, 118 thousand tokens of implementer context per call, 107 thousand for the reviewer, and a median implementer subtask of 5.97 million tokens.
+
 ## Scheduler and ceilings
 
 After a create or update stores a `todo` group, the Gateway scheduler claims the oldest `todo` group that still fits the Node ceiling. If provisioning fails, that group returns to `todo` with a visible assistance reason and the scheduler continues with the next eligible `todo` group. A group that waits for Node capacity returns to `todo` without a reason.
@@ -352,7 +376,7 @@ Doctor expects the same final state. A non-visitable task workspace is healthy i
 
 The task group page shows an Agents section below Subtasks. Vertical tabs select the shared reviewer or an implementer. A subtask page shows its implementer conversations and the shared reviewer. Finished conversations remain available. Activity and connection health have separate labels; a disconnected viewer retains the last known activity state.
 
-`GET /api/v1/task-groups/{group}/agents` lists persisted threads, including driver, external ID, state, observation time, errors, and metrics. `GET /api/v1/task-groups/{group}/agents/{session}/stream` streams normalized conversation data for an Orbit thread ID. Both routes require Gateway access and an enabled tasks extension. Runtime credentials stay server-side. A missing original Node leaves the link visible but unavailable for streaming.
+`GET /api/v1/task-groups/{group}/agents` lists persisted threads, including driver, external ID, state, observation time, errors, and metrics. Metrics include `tokens` and the [thread token metrics](#thread-token-metrics). Each split field is present and null when the driver did not report it. `GET /api/v1/task-groups/{group}/agents/{session}/stream` streams normalized conversation data for an Orbit thread ID. Both routes require Gateway access and an enabled tasks extension. Runtime credentials stay server-side. A missing original Node leaves the link visible but unavailable for streaming.
 
 Snapshots replace the browser transcript. Entries merge by ID and kind, so a repeated or updated entry replaces the earlier one in place.
 
@@ -430,7 +454,7 @@ The `pi` driver runs a thread on the [Pi server](/reference/pi-server) of the No
 
 The Gateway chooses the session ID and stores it as the external ID. It creates the session in the Instance checkout, then starts the opening turn. Each send uses a new key; a retry reuses that key, so an ambiguous failure never starts a second turn. The driver maps model names to Pi's `provider/model` form. When `ORBIT_PI_PROVIDER` is set, such as to a CLIProxyAPI provider, every plain name uses it. Otherwise `gpt-` and `o`-series names use `openai-codex`, and `grok-` names use `xai`. Claude models are refused, including through a proxy.
 
-Transcripts become normalized entries. A bash result is one activity that ends with the command and `exit code N`. Other tools show their name and target, not file contents. Tokens come from Pi's cumulative usage. Per-thread line counts are unavailable. Pi threads never report pending input, and `respond` fails as unsupported.
+Transcripts become normalized entries. A bash result is one activity that ends with the command and `exit code N`. Other tools show their name and target, not file contents. The cumulative token total comes from Pi's session usage, and the [thread token metrics](#thread-token-metrics) record the split. Per-thread line counts are unavailable. Pi threads never report pending input, and `respond` fails as unsupported.
 
 A tool call appears as soon as it starts: an activity labeled `Running` with text such as `Running: $ composer test`. Its result replaces that entry, with the same ID and kind. When the turn settles and a call still has no result, such as after a Pi server restart, the entry shows the call with `(stopped without a result)`.
 
@@ -635,7 +659,7 @@ The Gateway then writes settle metrics. Active groups also refresh these fields 
 | `lines_added`, `lines_deleted` | TaskGroup | Separate branch insertion and deletion counts; null before a successful observation |
 | `duration_ms` | TaskGroup | Elapsed milliseconds from `started_at` to settle, or to now while the group is still active, or `0` when `started_at` is empty |
 
-For T3, token totals use `totalProcessedTokens` when present and otherwise `usedTokens`. Per-thread line counts come from checkpoints. Other drivers supply metrics with the same meaning or leave them unavailable.
+For T3, token totals use `totalProcessedTokens` when present and otherwise `usedTokens`. Per-thread line counts come from checkpoints. Other drivers supply metrics with the same meaning or leave them unavailable. The [thread token metrics](#thread-token-metrics) are the per-call split beside that total.
 
 ## Coder settle webhook
 

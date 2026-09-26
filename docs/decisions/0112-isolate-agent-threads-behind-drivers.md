@@ -12,7 +12,7 @@ Orbit represents a persistent agent conversation as an `AgentThread`. An `AgentD
 
 Proposed.
 
-This amends the T3 integration boundary in [ADR 0103](/decisions/0103-absorb-commander-tasks-as-a-gateway-extension) and the observation and execution boundary in [ADR 0110](/decisions/0110-route-task-sessions-with-laravel-ai-jev). Task scheduling, review policy, and Jev classification remain Gateway responsibilities.
+This amends the T3 integration boundary in [ADR 0103](/decisions/0103-absorb-commander-tasks-as-a-gateway-extension) and the observation and execution boundary in [ADR 0110](/decisions/0110-route-task-sessions-with-laravel-ai-jev). Task scheduling, review policy, and Jev classification remain Gateway responsibilities. [ADR 0165](/decisions/0165-record-per-thread-token-metrics) adds the token split on this record's `AgentThread`.
 
 ## Context
 

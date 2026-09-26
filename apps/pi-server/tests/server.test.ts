@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai";
 import { afterEach, describe, expect, it } from "vite-plus/test";
@@ -340,6 +340,135 @@ describe("resume", () => {
     });
 });
 
+describe("token usage", () => {
+    it("sums several model calls and reports the peak context", async () => {
+        const h = await created();
+        expect((await h.request("GET", "/sessions/thread-1")).body.usage).toEqual({
+            input: 0,
+            output: 0,
+            cacheRead: 0,
+            cacheWrite: 0,
+            total: 0,
+            calls: 0,
+            peakContext: 0,
+        });
+        h.faux.setResponses([
+            fauxAssistantMessage([fauxToolCall("bash", { command: "echo probe" })], {
+                stopReason: "toolUse",
+            }),
+            fauxAssistantMessage("first answer"),
+        ]);
+        const collecting = h.stream("thread-1", (events) =>
+            events.some((event) => event.kind === "state" && event.state === "done"),
+        );
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        await h.request("POST", "/sessions/thread-1/messages", { key: "k1", text: "go" });
+        const done = (await collecting).at(-1);
+
+        h.faux.appendResponses([fauxAssistantMessage("second answer, with a longer completion")]);
+        await h.request("POST", "/sessions/thread-1/messages", { key: "k2", text: "again" });
+        const snapshot = await settled(h);
+        const calls = countedCalls(snapshot.entries);
+
+        expect(calls).toHaveLength(3);
+        expect(done.usage).toEqual(aggregate(calls.slice(0, 2)));
+        expect(snapshot.usage).toEqual(aggregate(calls));
+        expect(snapshot.usage.output).toBeGreaterThan(calls.at(-1)?.output ?? 0);
+        expect(snapshot.usage.peakContext).toBeLessThan(
+            calls.reduce((sum, call) => sum + call.input + call.cacheRead + call.cacheWrite, 0),
+        );
+        expect(snapshot.usage.total).toBe(
+            snapshot.usage.input +
+                snapshot.usage.output +
+                snapshot.usage.cacheRead +
+                snapshot.usage.cacheWrite,
+        );
+    });
+
+    it("skips an assistant message without numeric usage and a non-message usage entry", async () => {
+        const h = await created();
+        h.faux.setResponses([
+            fauxAssistantMessage([fauxToolCall("bash", { command: "echo probe" })], {
+                stopReason: "toolUse",
+            }),
+            fauxAssistantMessage("finished"),
+        ]);
+        await h.request("POST", "/sessions/thread-1/messages", { key: "k1", text: "go" });
+        const before = (await settled(h)).usage;
+        expect(before.calls).toBe(2);
+
+        appendSessionEntries(h.root, [
+            {
+                type: "message",
+                id: "partial1",
+                timestamp: "2026-09-26T00:00:00.000Z",
+                message: {
+                    role: "assistant",
+                    content: [{ type: "text", text: "ignored call" }],
+                    api: "faux",
+                    provider: "faux",
+                    model: "model-a",
+                    stopReason: "stop",
+                    timestamp: 1,
+                    usage: { input: 1000, output: 1000, cacheRead: 1000 },
+                },
+            },
+            {
+                type: "usage",
+                id: "warmuse1",
+                timestamp: "2026-09-26T00:00:01.000Z",
+                kind: "cache_warm",
+                provider: "faux",
+                model: "model-a",
+                usage: {
+                    input: 2000,
+                    output: 2000,
+                    cacheRead: 2000,
+                    cacheWrite: 2000,
+                    totalTokens: 8000,
+                    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+                },
+            },
+            {
+                type: "message",
+                id: "counted1",
+                timestamp: "2026-09-26T00:00:02.000Z",
+                message: {
+                    role: "assistant",
+                    content: [{ type: "text", text: "counted call" }],
+                    api: "faux",
+                    provider: "faux",
+                    model: "model-a",
+                    stopReason: "stop",
+                    timestamp: 2,
+                    usage: {
+                        input: 3,
+                        output: 4,
+                        cacheRead: 5,
+                        cacheWrite: 6,
+                        totalTokens: 18,
+                        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+                    },
+                },
+            },
+        ]);
+
+        harness = await h.restart();
+        const snapshot = (await harness.request("GET", "/sessions/thread-1")).body;
+
+        expect(snapshot.entries.some((entry: any) => entry.id === "partial1")).toBe(true);
+        expect(snapshot.usage).toEqual({
+            input: before.input + 3,
+            output: before.output + 4,
+            cacheRead: before.cacheRead + 5,
+            cacheWrite: before.cacheWrite + 6,
+            total: before.total + 18,
+            calls: before.calls + 1,
+            peakContext: Math.max(before.peakContext, 14),
+        });
+    });
+});
+
 describe("restart", () => {
     it("reloads the transcript and keeps completed outcomes", async () => {
         const h = await created();
@@ -376,3 +505,74 @@ describe("restart", () => {
         });
     });
 });
+
+interface CallUsage {
+    input: number;
+    output: number;
+    cacheRead: number;
+    cacheWrite: number;
+}
+
+/** Assistant messages that report all four token counts, in transcript order. */
+function countedCalls(entries: any[]): CallUsage[] {
+    return entries.flatMap((entry) => {
+        const usage = entry.message?.usage;
+        if (entry.message?.role !== "assistant" || usage === undefined || usage === null) {
+            return [];
+        }
+        const call = {
+            input: usage.input,
+            output: usage.output,
+            cacheRead: usage.cacheRead,
+            cacheWrite: usage.cacheWrite,
+        };
+        return Object.values(call).every((value) => typeof value === "number") ? [call] : [];
+    });
+}
+
+function aggregate(calls: CallUsage[]) {
+    const usage = {
+        input: 0,
+        output: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+        total: 0,
+        calls: calls.length,
+        peakContext: 0,
+    };
+    for (const call of calls) {
+        usage.input += call.input;
+        usage.output += call.output;
+        usage.cacheRead += call.cacheRead;
+        usage.cacheWrite += call.cacheWrite;
+        usage.peakContext = Math.max(
+            usage.peakContext,
+            call.input + call.cacheRead + call.cacheWrite,
+        );
+    }
+    usage.total = usage.input + usage.output + usage.cacheRead + usage.cacheWrite;
+
+    return usage;
+}
+
+/** Appends entries to Pi's session file, chained after the current leaf. */
+function appendSessionEntries(root: string, entries: Array<Record<string, unknown>>): void {
+    const dir = join(root, "sessions");
+    const name = readdirSync(dir).find((entry) => entry.endsWith("_thread-1.jsonl"));
+    if (name === undefined) {
+        throw new Error("Pi session file was not written.");
+    }
+    const path = join(dir, name);
+    const current = readFileSync(path, "utf8");
+    const lastLine = current.trimEnd().split("\n").at(-1) ?? "{}";
+    const last = JSON.parse(lastLine) as { id?: unknown };
+    let parentId = typeof last.id === "string" ? last.id : null;
+    const encoded = entries.map((entry) => {
+        const record = { ...entry, parentId };
+        parentId = typeof entry.id === "string" ? entry.id : parentId;
+
+        return JSON.stringify(record);
+    });
+    const separator = current.endsWith("\n") || current.length === 0 ? "" : "\n";
+    appendFileSync(path, `${separator}${encoded.join("\n")}\n`);
+}
