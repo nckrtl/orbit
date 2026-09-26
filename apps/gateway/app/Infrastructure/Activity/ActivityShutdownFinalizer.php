@@ -56,6 +56,16 @@ final class ActivityShutdownFinalizer
         return array_values(array_map(static fn (self $finalizer): int => $finalizer->activityId, self::$armed));
     }
 
+    /**
+     * Disarms every finalizer. PHP-FPM starts each request with empty static state; a long-lived
+     * process that serves several requests, such as the test runner, calls this between them so a
+     * request that never ended cannot finalize a later request's row.
+     */
+    public static function forgetArmed(): void
+    {
+        self::$armed = [];
+    }
+
     public function disarm(): void
     {
         unset(self::$armed[spl_object_id($this)]);

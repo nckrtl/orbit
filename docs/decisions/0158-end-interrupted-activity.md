@@ -29,7 +29,7 @@ Setting the API command deadline below the PHP-FPM limit lets a slow command fai
 
 A signal that kills the process, such as SIGKILL from the OOM killer or SIGTERM from the PHP-FPM request limit, runs no PHP code. PHP still runs shutdown functions after a fatal error. PHP also runs them after a client abort, but no recorded request stops on one: a request without a stream does not notice the abort, and the deployment and rollback streams ignore it.
 
-PHP-FPM does not end a request at exactly 600 seconds. It checks `request_terminate_timeout` on a heartbeat of a third of the limit, 200 seconds here. A request can therefore live until about 800 seconds. On an Incus proof, a 700-second request was killed at 663 seconds. Streamed deployments and rollbacks, Role relocations, and `instance:register`, the longest recorded operation at 522 seconds, are all bounded by this limit. Reads have no `running` row since ADR 0152.
+PHP-FPM does not end a request at exactly 600 seconds. It checks `request_terminate_timeout` on a heartbeat of a third of the limit, 200 seconds here. A request can therefore live until about 800 seconds. Incus proofs showed both outcomes past 600 seconds. A 700-second request was killed at 663 seconds in one run and at 646 seconds in another. In a third run, a 700-second request finished and recorded `succeeded`, although Caddy had already sent the client a 504 at 600 seconds. Streamed deployments and rollbacks, Role relocations, and `instance:register`, the longest recorded operation at 522 seconds, are all bounded by this limit. Reads have no `running` row since ADR 0152.
 
 ## Decision
 
@@ -52,6 +52,7 @@ PHP-FPM does not end a request at exactly 600 seconds. It checks `request_termin
 
 - `activity:list` and the MCP activity tools no longer show phantom running operations older than 15 minutes.
 - A killed request shows `running` for up to 20 minutes before the sweep ends it: 15 minutes of bound and up to five minutes until the next run. Without a running scheduler, it stays `running`.
+- A request that outlives Caddy's 600-second timeout can still finish on the Gateway and record `succeeded` after its client received a 504. The Activity, not the client's error, shows the outcome.
 - `activity.interrupted` says the Gateway lost the request. The operation may have finished on the target Node, so an operator checks the target before running it again.
 - When the PHP-FPM limit grows, the bound must grow with it. The configuration test fails when four thirds of the limit plus 60 seconds reaches the bound.
 

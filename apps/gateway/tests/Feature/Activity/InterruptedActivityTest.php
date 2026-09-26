@@ -120,6 +120,19 @@ describe('the shutdown finalizer', function (): void {
         expect(interrupted_activity_state($activity->id))->toMatchArray(['status' => 'failed', 'error_code' => 'activity.interrupted']);
     });
 
+    it('forgets every armed finalizer, so a request that never ended cannot touch a later row', function (): void {
+        $abandoned = Activity::query()->findOrFail(interrupted_activity_row('running', 1));
+        $finalizer = ActivityShutdownFinalizer::arm($abandoned);
+
+        ActivityShutdownFinalizer::forgetArmed();
+        $finalizer->finalize();
+        ActivityShutdownFinalizer::finalizeArmed();
+
+        expect(ActivityShutdownFinalizer::armedActivityIds())->toBe([])
+            ->and($finalizer->armed())->toBeFalse()
+            ->and(interrupted_activity_state($abandoned->id)['status'])->toBe('running');
+    });
+
     it('does nothing once the request recorded its outcome', function (): void {
         $running = Activity::query()->findOrFail(interrupted_activity_row('running', 1));
         $disarmed = ActivityShutdownFinalizer::arm($running);
@@ -180,17 +193,17 @@ describe('the command activity middleware', function (): void {
         $response = $this->postJson('/api/v1/activity-probe');
         $activity = Activity::query()->where('command', 'activity:probe')->sole();
 
-        expect($response->json('armed'))->toContain($activity->id)
+        expect($response->json('armed'))->toBe([$activity->id])
             ->and($activity->status)->toBe('succeeded')
-            ->and(ActivityShutdownFinalizer::armedActivityIds())->not->toContain($activity->id);
+            ->and(ActivityShutdownFinalizer::armedActivityIds())->toBe([]);
     });
 
     it('disarms the finalizer after recording a failed command', function (): void {
         $this->withoutExceptionHandling();
 
         expect(fn () => $this->postJson('/api/v1/activity-probe/fail'))->toThrow(RuntimeException::class, 'probe failure')
-            ->and($activity = Activity::query()->where('command', 'activity:probe-fail')->sole())->status->toBe('failed')
-            ->and(ActivityShutdownFinalizer::armedActivityIds())->not->toContain($activity->id);
+            ->and(Activity::query()->where('command', 'activity:probe-fail')->sole()->status)->toBe('failed')
+            ->and(ActivityShutdownFinalizer::armedActivityIds())->toBe([]);
     });
 
     it('keeps the finalizer armed until a streamed response ends', function (): void {
@@ -198,13 +211,13 @@ describe('the command activity middleware', function (): void {
         $activity = Activity::query()->where('command', 'activity:probe-stream')->sole();
 
         expect($activity->status)->toBe('running')
-            ->and(ActivityShutdownFinalizer::armedActivityIds())->toContain($activity->id);
+            ->and(ActivityShutdownFinalizer::armedActivityIds())->toBe([$activity->id]);
 
         $streamed = json_decode($response->streamedContent(), true, flags: JSON_THROW_ON_ERROR);
 
-        expect($streamed['armed'])->toContain($activity->id)
+        expect($streamed['armed'])->toBe([$activity->id])
             ->and($activity->refresh()->status)->toBe('succeeded')
-            ->and(ActivityShutdownFinalizer::armedActivityIds())->not->toContain($activity->id);
+            ->and(ActivityShutdownFinalizer::armedActivityIds())->toBe([]);
     });
 
     it('does not arm the finalizer for a read, which has no running row', function (): void {
@@ -213,8 +226,6 @@ describe('the command activity middleware', function (): void {
         ]))->name('activity:probe-read');
         Route::getRoutes()->refreshNameLookups();
 
-        $before = ActivityShutdownFinalizer::armedActivityIds();
-
-        expect($this->getJson('/api/v1/activity-probe')->json('armed'))->toBe($before);
+        expect($this->getJson('/api/v1/activity-probe')->json('armed'))->toBe([]);
     });
 });
