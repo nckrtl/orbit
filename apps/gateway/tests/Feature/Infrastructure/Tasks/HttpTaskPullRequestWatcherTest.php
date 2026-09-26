@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Tasks\TaskPullRequestCheck;
 use App\Infrastructure\Tasks\HttpTaskPullRequestWatcher;
 use App\Models\App as OrbitApp;
 use App\Models\TaskGroup;
@@ -118,6 +119,9 @@ it('reports an open pull request that conflicts with its base branch', function 
     $health = app(HttpTaskPullRequestWatcher::class)->health(watcher_group());
 
     expect($health?->state)->toBe('open')
+        ->and($health?->conflicts)->toBeTrue()
+        ->and($health?->baseRef)->toBe('main')
+        ->and($health?->failedChecks)->toBe([])
         ->and($health?->problems)->toBe(['It conflicts with main; merge main into the task branch and push.'])
         ->and($health?->reason())->toBe('The pull request needs attention: It conflicts with main; merge main into the task branch and push.');
 })->with([
@@ -132,6 +136,7 @@ it('does not report a conflict while GitHub still computes mergeability', functi
     $health = app(HttpTaskPullRequestWatcher::class)->health(watcher_group());
 
     expect($health?->state)->toBe('open')
+        ->and($health?->conflicts)->toBeFalse()
         ->and($health?->problems)->toBe([]);
 });
 
@@ -162,7 +167,14 @@ it('names each failed check run on the head commit with its URL, through a separ
         'Check Docs failed: https://github.com/acme/orbit/runs/3.',
         'Check CLI failed: https://github.com/acme/orbit/runs/4.',
         'Check Deploy failed.',
-    ]);
+    ])
+        ->and(array_map(static fn (TaskPullRequestCheck $check): array => [$check->name, $check->url], $health?->failedChecks ?? []))->toBe([
+            ['Rust agent', 'https://github.com/acme/orbit/runs/1'],
+            ['Gateway', 'https://ci.example.test/gateway'],
+            ['Docs', 'https://github.com/acme/orbit/runs/3'],
+            ['CLI', 'https://github.com/acme/orbit/runs/4'],
+            ['Deploy', null],
+        ]);
     Http::assertSent(static fn (Request $request): bool => $request->url() === 'https://api.github.com/repos/acme/orbit/commits/abc123/check-runs?per_page=100'
         && $request->hasHeader('Authorization', 'Bearer ghs_checks'));
     Http::assertSent(static fn (Request $request): bool => str_ends_with($request->url(), '/access_tokens')

@@ -16,8 +16,15 @@ final readonly class TaskPullRequestHealth
     /**
      * @param  'merged'|'closed'|'open'  $state
      * @param  list<string>  $problems  one plain sentence per problem of an open pull request
+     * @param  list<TaskPullRequestCheck>  $failedChecks  failed runs in the order GitHub returned them
      */
-    public function __construct(public string $state, public array $problems = []) {}
+    public function __construct(
+        public string $state,
+        public array $problems = [],
+        public ?string $baseRef = null,
+        public bool $conflicts = false,
+        public array $failedChecks = [],
+    ) {}
 
     public function reason(): string
     {

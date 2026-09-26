@@ -49,6 +49,7 @@ use Illuminate\Support\Carbon;
  * @property int|null $duration_ms
  * @property Carbon|null $started_at
  * @property string|null $subtask_start_commit
+ * @property string|null $fixup_problem
  * @property list<array<string, string>>|null $deliverables
  * @property Carbon|null $settled_at
  * @property-read TaskGroup $taskGroup
@@ -80,6 +81,7 @@ final class Task extends Model
         'duration_ms',
         'started_at',
         'subtask_start_commit',
+        'fixup_problem',
         'deliverables',
         'settled_at',
         'completion_attempt',

@@ -547,6 +547,8 @@ The Gateway does not merge the pull request. The coordinator reviews and merges.
 
 A `todo` subtask on an open settling pull request returns the group to `running` on the tick. The Gateway's own fixup starts in that same tick. An operator's subtask starts on the following tick. The tick starts the lowest `todo` subtask and uses the usual baseline rule. It clears assistance only when the reason starts with `The pull request needs attention: `. Another cause stays, and the tick then starts nothing and appends nothing.
 
+A check fixup or an operator subtask becomes `running` in the same commit that returns the group to `running`. The implementer starts after that commit. A conflict fixup returns the group to `running` before the base fetch, and becomes `running` only after the fetch succeeds. When a tick stops after the group is `running` and before the implementer exists, the next tick starts that same subtask and does not append another fixup.
+
 A merged pull request completes the group and does not start a `todo` subtask. A pull request that closed without merging asks for assistance and does not start one. A settling group with no `pr_url` does not start one.
 
 When the group returns to `settling` and `pr_url` is already stored, Orbit refreshes settle metrics and does not post `task_group.settled` again.

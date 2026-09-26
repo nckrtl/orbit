@@ -10,6 +10,7 @@ use App\Domain\GitHub\GitHubPullRequest;
 use App\Domain\GitHub\GitHubPullRequestState;
 use App\Domain\GitHub\GitHubRepository;
 use App\Domain\GitHub\RepositoryPullRequestAccess;
+use App\Domain\Tasks\TaskPullRequestCheck;
 use App\Domain\Tasks\TaskPullRequestHealth;
 use App\Domain\Tasks\TaskPullRequestWatcher;
 use App\Models\TaskGroup;
@@ -68,7 +69,16 @@ final readonly class HttpTaskPullRequestWatcher implements TaskPullRequestWatche
             $problems[] = 'Check '.$run->name.' failed'.($run->url !== null ? ': '.$run->url : '').'.';
         }
 
-        return new TaskPullRequestHealth('open', $problems);
+        return new TaskPullRequestHealth(
+            state: 'open',
+            problems: $problems,
+            baseRef: $pullRequest->baseRef,
+            conflicts: $pullRequest->conflicts(),
+            failedChecks: array_map(
+                static fn (GitHubCheckRun $run): TaskPullRequestCheck => new TaskPullRequestCheck($run->name, $run->url),
+                $failed,
+            ),
+        );
     }
 
     /**

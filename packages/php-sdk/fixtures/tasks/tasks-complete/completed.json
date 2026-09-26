@@ -63,7 +63,8 @@
                     "completion_summary": null,
                     "check": null,
                     "assistance_requested": false,
-                    "assistance_reason": null
+                    "assistance_reason": null,
+                    "fixup_problem": null
                 },
                 {
                     "id": 4,
@@ -97,7 +98,8 @@
                     "completion_summary": null,
                     "check": null,
                     "assistance_requested": false,
-                    "assistance_reason": null
+                    "assistance_reason": null,
+                    "fixup_problem": null
                 }
             ],
             "execution_mode": "managed"

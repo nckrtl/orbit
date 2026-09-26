@@ -66,6 +66,7 @@ final readonly class TaskScheduler
         private TaskCheckRunner $checks,
         private TaskBroadcasts $broadcasts,
         private RemoveTaskWorkspaceAction $workspaces,
+        private TaskBaseBranchFetcher $bases,
     ) {}
 
     /**
@@ -82,6 +83,12 @@ final readonly class TaskScheduler
             ->whereIn('status', [TaskGroupStatus::Running, TaskGroupStatus::Reviewing, TaskGroupStatus::Settling])
             ->orderBy('id')
             ->get();
+        $runningAtStart = [];
+        foreach ($groups as $group) {
+            if ($group->status === TaskGroupStatus::Running) {
+                $runningAtStart[$group->id] = true;
+            }
+        }
 
         foreach ($groups as $group) {
             if ($group->status !== TaskGroupStatus::Settling) {
@@ -99,13 +106,16 @@ final readonly class TaskScheduler
             } elseif ($status === 'closed') {
                 $group->update(['assistance_requested' => true, 'assistance_reason' => 'The expected pull request closed without merging.']);
             } elseif ($health instanceof TaskPullRequestHealth) {
-                $this->reportPullRequestHealth($group, $health);
+                $this->healOpenPullRequest($group, $health);
             }
         }
 
         $decisions = [];
 
         foreach ($groups as $group) {
+            if (isset($runningAtStart[$group->id])) {
+                $this->resumeStrandedSubtask($group);
+            }
             $tasks = $group->tasks
                 ->filter(static fn (Task $task): bool => in_array($task->status, [TaskStatus::Running, TaskStatus::Reviewing], true))
                 ->sortBy(static fn (Task $task): array => [$task->position, $task->id]);
@@ -130,7 +140,11 @@ final readonly class TaskScheduler
                     continue;
                 }
                 if ($task->status === TaskStatus::Running && ! $this->hasImplementer($task)) {
-                    $this->handleBaseline($group, $task);
+                    if ($this->needsBaseline($task)) {
+                        $this->handleBaseline($group, $task);
+                    } else {
+                        $this->beginRunningTask($task);
+                    }
 
                     continue;
                 }
@@ -1895,6 +1909,247 @@ final readonly class TaskScheduler
         }
 
         return $settled->fresh(['tasks', 'app', 'taskable']) ?? $settled;
+    }
+
+    /**
+     * Appends one fixup when a current problem still has one left, or asks for assistance when every
+     * current problem is at the cap. A waiting subtask starts instead, and no fixup is appended.
+     */
+    private function healOpenPullRequest(TaskGroup $group, TaskPullRequestHealth $health): void
+    {
+        if ($this->otherAssistance($group) || $this->hasBusyTask($group->tasks)) {
+            return;
+        }
+
+        if ($this->lowestTodo($group->tasks) instanceof Task) {
+            $this->resumeWaitingSubtask($group);
+
+            return;
+        }
+
+        if ($health->problems === []) {
+            $this->reportPullRequestHealth($group, $health);
+
+            return;
+        }
+
+        $plan = $this->nextFixup($group, $health);
+        if (! $plan instanceof TaskSettlingFixup) {
+            $this->reportPullRequestHealth($group, $health);
+
+            return;
+        }
+
+        if ($this->appendFixup($group, $plan) instanceof Task) {
+            $this->resumeWaitingSubtask($group);
+        }
+    }
+
+    /** Whether assistance was requested for a cause other than the open pull request's own problems. */
+    private function otherAssistance(TaskGroup $group): bool
+    {
+        return $group->assistance_requested && ! TaskPullRequestHealth::isReason($group->assistance_reason);
+    }
+
+    /** @param  Collection<int, Task>  $tasks */
+    private function hasBusyTask(Collection $tasks): bool
+    {
+        return $tasks->contains(
+            static fn (Task $task): bool => in_array($task->status, [TaskStatus::Running, TaskStatus::Reviewing], true),
+        );
+    }
+
+    private function nextFixup(TaskGroup $group, TaskPullRequestHealth $health): ?TaskSettlingFixup
+    {
+        $counts = [];
+        foreach ($group->tasks as $task) {
+            if (is_string($task->fixup_problem) && $task->fixup_problem !== '') {
+                $counts[$task->fixup_problem] = ($counts[$task->fixup_problem] ?? 0) + 1;
+            }
+        }
+
+        foreach (TaskSettlingFixup::plans((string) $group->app->slug, $health->conflicts, $health->baseRef, $health->failedChecks) as $plan) {
+            if (($counts[$plan->identity] ?? 0) < TaskSettlingFixup::Limit) {
+                return $plan;
+            }
+        }
+
+        return null;
+    }
+
+    private function appendFixup(TaskGroup $group, TaskSettlingFixup $plan): ?Task
+    {
+        return DB::transaction(function () use ($group, $plan): ?Task {
+            $locked = TaskGroup::query()->where('execution_mode', TaskExecutionMode::Managed)
+                ->lockForUpdate()
+                ->findOrFail($group->id);
+            if ($locked->status !== TaskGroupStatus::Settling || $this->otherAssistance($locked)) {
+                return null;
+            }
+
+            $tasks = $this->lockedTasks($locked);
+            if ($this->hasBusyTask($tasks) || $this->lowestTodo($tasks) instanceof Task) {
+                return null;
+            }
+            $count = $tasks->filter(static fn (Task $task): bool => $task->fixup_problem === $plan->identity)->count();
+            if ($count >= TaskSettlingFixup::Limit) {
+                return null;
+            }
+
+            return Task::query()->create([
+                'task_group_id' => $locked->id,
+                'position' => ((int) $tasks->max('position')) + 1,
+                'title' => $plan->title,
+                'brief' => $plan->brief,
+                'deliverables' => $plan->deliverables,
+                'fixup_problem' => $plan->identity,
+                'status' => TaskStatus::Todo,
+            ]);
+        });
+    }
+
+    /**
+     * Starts a later subtask left todo after the group returned to running, including a conflict fixup
+     * whose base fetch failed. The group's first subtask is started by claim, not by this retry.
+     */
+    private function resumeStrandedSubtask(TaskGroup $group): void
+    {
+        if ($group->assistance_requested || $this->hasBusyTask($group->tasks)) {
+            return;
+        }
+
+        $todo = $this->lowestTodo($group->tasks);
+        if (! $todo instanceof Task || ! $this->followedAnotherSubtask($todo, $group->tasks)) {
+            return;
+        }
+
+        $this->resumeWaitingSubtask($group);
+    }
+
+    /**
+     * Returns a settling group to running and starts its lowest todo subtask. A check fixup or an operator
+     * subtask becomes running in that same commit; the implementer starts afterwards. A conflict fixup
+     * returns the group to running before the base fetch, and a failed fetch leaves that subtask todo.
+     */
+    private function resumeWaitingSubtask(TaskGroup $group): void
+    {
+        if ($group->relationLoaded('tasks') && $this->hasBusyTask($group->tasks)) {
+            return;
+        }
+
+        $group = $group->fresh(['app', 'tasks', 'taskable']) ?? $group;
+        if (! in_array($group->status, [TaskGroupStatus::Settling, TaskGroupStatus::Running], true)) {
+            return;
+        }
+        if ($group->status === TaskGroupStatus::Running && $group->assistance_requested) {
+            return;
+        }
+        if ($group->status === TaskGroupStatus::Settling && $this->otherAssistance($group)) {
+            return;
+        }
+        if ($this->hasBusyTask($group->tasks)) {
+            return;
+        }
+
+        $todo = $this->lowestTodo($group->tasks);
+        if (! $todo instanceof Task) {
+            return;
+        }
+
+        $base = $this->conflictBase($todo);
+        if ($base !== null) {
+            if ($group->status === TaskGroupStatus::Settling) {
+                $this->leaveSettling($group);
+            }
+            try {
+                $this->bases->fetch($group->fresh() ?? $group, $base);
+            } catch (TaskPullRequestException $exception) {
+                $this->recordCommunicationFailure($todo, $group, $exception->getMessage());
+
+                return;
+            }
+            $this->clearCommunicationFailures($todo);
+        }
+
+        $started = $this->activateResumedTask($todo);
+        if ($started instanceof Task) {
+            $this->beginRunningTask($started);
+        }
+    }
+
+    /** Records the return to running before a conflict fixup's base fetch, which stays outside the commit. */
+    private function leaveSettling(TaskGroup $group): void
+    {
+        if (TaskPullRequestHealth::isReason($group->assistance_reason)) {
+            $group->assistance_requested = false;
+            $group->assistance_reason = null;
+        }
+        $group->status = TaskGroupStatus::Running;
+        $group->save();
+    }
+
+    /**
+     * Marks the resumed subtask running, and returns a settling group to running, in one transaction.
+     * The caller starts the implementer after the commit.
+     */
+    private function activateResumedTask(Task $todo): ?Task
+    {
+        try {
+            return DB::transaction(function () use ($todo): ?Task {
+                $locked = Task::query()->lockForUpdate()->findOrFail($todo->id);
+                $group = TaskGroup::query()->where('execution_mode', TaskExecutionMode::Managed)
+                    ->lockForUpdate()
+                    ->findOrFail($locked->task_group_id);
+                if (! in_array($group->status, [TaskGroupStatus::Settling, TaskGroupStatus::Running], true)) {
+                    return null;
+                }
+                if ($group->status === TaskGroupStatus::Running && $group->assistance_requested) {
+                    return null;
+                }
+                if ($group->status === TaskGroupStatus::Settling && $this->otherAssistance($group)) {
+                    return null;
+                }
+
+                $tasks = $this->lockedTasks($group);
+                if ($this->hasBusyTask($tasks)) {
+                    return null;
+                }
+                if ($group->status === TaskGroupStatus::Settling) {
+                    if (TaskPullRequestHealth::isReason($group->assistance_reason)) {
+                        $group->assistance_requested = false;
+                        $group->assistance_reason = null;
+                    }
+                    $group->status = TaskGroupStatus::Running;
+                    $group->save();
+                }
+
+                $this->markRunning($locked, $tasks);
+
+                return $locked->fresh(['taskGroup.tasks', 'taskGroup.app', 'taskGroup.taskable']) ?? $locked;
+            });
+        } catch (TaskSequenceException) {
+            return null;
+        }
+    }
+
+    /** @param  Collection<int, Task>  $tasks */
+    private function followedAnotherSubtask(Task $task, Collection $tasks): bool
+    {
+        return $this->orderedTasks($tasks)->contains(
+            static fn (Task $candidate): bool => $candidate->position < $task->position
+                || ($candidate->position === $task->position && $candidate->id < $task->id),
+        );
+    }
+
+    /** The base ref stored on a conflict fixup, or null when the subtask is not one. */
+    private function conflictBase(Task $task): ?string
+    {
+        $problem = $task->fixup_problem;
+        if (! is_string($problem) || ! str_starts_with($problem, 'conflict:')) {
+            return null;
+        }
+
+        return substr($problem, strlen('conflict:'));
     }
 
     private function requestMissingPullRequest(TaskGroup $group): void
