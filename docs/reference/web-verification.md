@@ -23,7 +23,9 @@ Run every command from the repository root. Stdout is one JSON object and nothin
 
 `open`, `screenshot`, and `console-errors` take a concrete path. A concrete path contains no `$` segment. `/tasks/12` is concrete. `/tasks/$id` and `/$section` are only map patterns. Navigation rejects those strings with `unresolved-parameter`. Quote a route that contains `?`. `<selector>` is a Playwright selector. A mapped control is `[data-testid=VALUE]`, using the `testid` from the map.
 
-The demo server is the `apps/web` dev server with `VITE_ORBIT_DEMO=1`, bound to `127.0.0.1` on a free port. Demo mode answers the API from the fixture fleet. It does not proxy to a Gateway. The command waits up to 60 seconds for the server to answer.
+A path that the URL parser would send to another host is `usage`, including a tab, newline, or carriage return that turns the path into a protocol-relative URL. The browser aborts any request or socket whose host is not the demo server. Each load is answered with that checked response, so the browser does not send the request again and cannot follow a redirect that was not part of the check.
+
+The demo server is the `apps/web` dev server with `VITE_ORBIT_DEMO=1`, bound to `127.0.0.1` on a free port. Demo mode answers the API from the fixture fleet. It does not proxy to a Gateway, and it does not run the dev adapters that call the CLI, Commander, a transcription service, or a local annotation server. Those paths answer on the demo server and make no upstream call. The command waits up to 60 seconds for the server to answer.
 
 ## Active page
 
@@ -140,8 +142,9 @@ Exit 0 means `"ok": true`. Exit 1 means the command ran and failed. Exit 2 means
 | `server-failed` | 1 | The demo server did not answer. |
 | `browser-missing` | 1 | The Playwright browser is not installed. |
 | `map-invalid` | 1 | The feature map breaks the schema above. |
+| `command-failed` | 1 | The command threw after it started. `message` is that error. |
 
-`next` names the recovery. `usage` includes the allowed devices and engines. `unknown-route` and `ambiguous-route` tell the agent to run `bin/web-verify routes`. `no-page` tells the agent to run `open` first. `unresolved-parameter` tells the agent to replace each `$name` with one segment, such as `open /tasks/12` instead of `open /tasks/$id`. `selector-missing` tells the agent to use a `testid` from the map, or to add the missing `data-testid` on the control and in the map. `browser-missing` includes the install command above. `map-invalid` names the first broken field.
+`next` names the recovery. `usage` includes the allowed devices and engines. `unknown-route` and `ambiguous-route` tell the agent to run `bin/web-verify routes`. `no-page` tells the agent to run `open` first. `unresolved-parameter` tells the agent to replace each `$name` with one segment, such as `open /tasks/12` instead of `open /tasks/$id`. `selector-missing` tells the agent to use a `testid` from the map, or to add the missing `data-testid` on the control and in the map. `browser-missing` includes the install command above. `map-invalid` names the first broken field. `command-failed` points at `.orbit-artifacts/web/daemon.log`.
 
 ## Limits
 

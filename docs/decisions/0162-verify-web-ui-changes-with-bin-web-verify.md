@@ -24,7 +24,7 @@ WebKit device emulation can show a phone viewport and that safe-area padding. It
 
 ## Decision
 
-- `bin/web-verify` is the web verification tool. It runs the `apps/web` dev server with `VITE_ORBIT_DEMO=1` and drives that origin with Playwright from `apps/web`. It does not call a Gateway.
+- `bin/web-verify` is the web verification tool. It runs the `apps/web` dev server with `VITE_ORBIT_DEMO=1` and drives that origin with Playwright from `apps/web`. It does not call a Gateway, and demo mode does not run dev adapters that call the CLI or another upstream service. The browser stays on the demo origin. It is shown the checked response, and a redirect is followed only when every hop stays on that origin.
 - The subcommands are `routes`, `open`, `click`, `screenshot`, and `console-errors`. Stdout is one JSON object. A failure carries `next`, which tells the agent the command or edit that fixes it.
 - `open`, `screenshot`, and `console-errors` take a concrete path. A path that still contains `$` fails. `click` uses the active page, which is the page from the latest `open`, or from the latest `screenshot` that loaded a route.
 - `screenshot` writes a PNG under `.orbit-artifacts/web/`. Git ignores `/.orbit-artifacts/`.
