@@ -2734,7 +2734,7 @@ export interface paths {
         };
         /**
          * List Task groups
-         * @description Lists Task groups, newest first. Optional `app_id` and `status` filters. Returns `tasks.disabled` while the extension is off.
+         * @description Lists Task groups, newest first. Optional `app_id` and `status` filters. The group and each subtask include `assistance_requested` and `assistance_reason`. Returns `tasks.disabled` while the extension is off.
          */
         get: operations["tasks-list"];
         put?: never;
@@ -2758,7 +2758,7 @@ export interface paths {
         };
         /**
          * Show a Task group
-         * @description Shows one Task group and its Tasks in position order. Returns `tasks.disabled` while the extension is off.
+         * @description Shows one Task group and its Tasks in position order. The group and each subtask include `assistance_requested` and `assistance_reason`. Returns `tasks.disabled` while the extension is off.
          */
         get: operations["tasks-show"];
         put?: never;
@@ -3004,7 +3004,7 @@ export interface paths {
         };
         /**
          * Show Tasks status
-         * @description Returns whether the Gateway tasks extension is enabled.
+         * @description Returns whether the Gateway tasks extension is enabled, and every group currently asking for assistance. `assistance` lists those groups in ascending id order, each with its id, Project, title, status, and reason. The list is present while the extension is off. Enable and disable return only `enabled`.
          */
         get: operations["tasks-status"];
         put?: never;
@@ -3710,6 +3710,20 @@ export interface components {
             summary?: string;
             changes?: string[];
             breaking?: string[];
+        };
+        TasksStatus: {
+            enabled?: boolean;
+            assistance?: components["schemas"]["TaskAssistance"][];
+        };
+        TaskAssistance: {
+            id?: number;
+            app_id?: number;
+            app?: string;
+            project_code?: string;
+            title?: string;
+            /** @enum {string} */
+            status?: "backlog" | "todo" | "reserved" | "running" | "reviewing" | "settling" | "completed" | "failed" | "cancelled";
+            assistance_reason?: string | null;
         };
         ToolManager: {
             id?: number | null;
@@ -16015,7 +16029,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        data: Record<string, never>;
+                        data: components["schemas"]["TasksStatus"];
                         meta: components["schemas"]["Meta"];
                     };
                 };
