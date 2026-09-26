@@ -1057,15 +1057,6 @@ it('cuts an oversized build message on a character boundary instead of dropping 
         ->and($details['message'] ?? '')->toEndWith('é…');
 });
 
-it('keeps the underlying code of a role operation and drops a malformed one', function (): void {
-    expect(GatewayFailureRenderer::safeDetails('node_role.convergence_failed', ['step' => 'converge:metrics-runtime', 'underlying_code' => 'metrics.image_pull_failed']))
-        ->toBe(['step' => 'converge:metrics-runtime', 'underlying_code' => 'metrics.image_pull_failed'])
-        ->and(GatewayFailureRenderer::safeDetails('node_role.convergence_failed', ['step' => 'converge:caddy', 'underlying_code' => "metrics.x\nsecret"]))
-        ->toBe(['step' => 'converge:caddy'])
-        ->and(GatewayFailureRenderer::safeDetails('node_role.convergence_failed', ['underlying_code' => 'no-dot']))
-        ->toBe([]);
-});
-
 it('keeps a bounded operation step without a Caddy build for any error code', function (string $code, string $step): void {
     expect(GatewayFailureRenderer::safeDetails($code, ['step' => $step, 'stdout' => 'private-output']))
         ->toBe(['step' => $step]);
@@ -1074,6 +1065,19 @@ it('keeps a bounded operation step without a Caddy build for any error code', fu
     'role convergence' => ['node_role.convergence_failed', 'converge:caddy'],
     'node provisioning' => ['node.provisioning_failed', 'wireguard-peer'],
     'tool manager' => ['tool.manager_failed', 'tool-manager-vp'],
+]);
+
+it('keeps the specific code behind a role operation failure', function (string $errorCode, bool $kept): void {
+    expect(GatewayFailureRenderer::safeDetails('node_role.convergence_failed', ['step' => 'converge:node-lock', 'error_code' => $errorCode]))
+        ->toBe($kept ? ['step' => 'converge:node-lock', 'error_code' => $errorCode] : ['step' => 'converge:node-lock']);
+})->with([
+    'role code' => ['node_role.node_busy', true],
+    'tool manager code' => ['node_role.tool_manager_locked', true],
+    'metrics code' => ['metrics.image_pull_failed', true],
+    'no namespace' => ['node_busy', false],
+    'upper case' => ['Node_role.Busy', false],
+    'control character' => ["node_role.node\nbusy", false],
+    'oversized' => ['node_role.'.str_repeat('a', 70), false],
 ]);
 
 it('drops a malformed operation field and keeps the valid ones', function (mixed $step): void {

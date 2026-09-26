@@ -191,7 +191,7 @@ The command that requested the build fails with its usual error code:
 | Metrics and service metrics | `metrics.caddy_publication_failed` |
 | Gateway web convergence | `gateway.caddy_config_invalid` at `render` or `validate`, `gateway.caddy_start_failed` at `reload`, and `gateway.caddy_config_install_failed` at any other stage |
 
-Role convergence, such as `orbit node:role:add NODE app-dev --converge`, fails with `node_role.convergence_failed`; `orbit node:role:list` shows the publisher's code as the underlying error, and the error response carries it as `details.underlying_code`. The error message, the activity record, and the `node`, `stage`, and `message` fields of the error details name the Node, the failed stage, and Caddy's message. Each stage bounds the message at 2,000 bytes of UTF-8 and marks a cut with `…`. The CLI prints them under `error.details` with `--json`, next to the `step` that requested the build:
+Role convergence, such as `orbit node:role:add NODE app-dev --converge`, fails with `node_role.convergence_failed`; `orbit node:role:list` shows the publisher's code as the underlying error, and the error response carries it as `details.error_code`. The error message, the activity record, and the `node`, `stage`, and `message` fields of the error details name the Node, the failed stage, and Caddy's message. Each stage bounds the message at 2,000 bytes of UTF-8 and marks a cut with `…`. The CLI prints them under `error.details` with `--json`, next to the `step` that requested the build:
 
 ```text
 The Caddy build for Node [app-prod] failed at stage [validate]: Error: loading certificates: open /etc/caddy/orbit-websocket-cert-current/reverb.pem: no such file or directory

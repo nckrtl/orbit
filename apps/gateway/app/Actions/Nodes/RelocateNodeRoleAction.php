@@ -240,7 +240,7 @@ final readonly class RelocateNodeRoleAction
      * The assignment already names the target. When converging the target or withdrawing the source fails,
      * the move is incomplete: the error keeps its codes, says so, and names the command that finishes it. A baseline
      * step names itself `converge:STEP` on the target or `remove:STEP` on the source, because relocate records no
-     * failed step on a role row. The response carries the step's own code as `details.underlying_code`.
+     * failed step on a role row. The response carries the step's own code as `details.error_code`.
      * For `websocket`, the Gateway keeps serving both Reverb servers until then.
      *
      * @param  Closure(): void  $steps
