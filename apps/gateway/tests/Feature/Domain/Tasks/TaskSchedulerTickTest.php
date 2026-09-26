@@ -344,6 +344,35 @@ it('keeps another cause of assistance when the pull request merges', function ()
     $this->assertDatabaseHas('task_groups', ['id' => $group->id, 'status' => 'completed', 'assistance_requested' => true, 'assistance_reason' => 'The operator asked to hold this group.']);
 });
 
+it('backs off a merged pull request cleanup and retries it on a later tick', function (): void {
+    $group = tick_settling_group();
+    $calls = 0;
+    mock(AppInstanceRemover::class)->shouldReceive('execute')->andReturnUsing(function () use (&$calls): never {
+        $calls++;
+
+        throw new RuntimeException('disk full');
+    });
+    Http::preventStrayRequests();
+    Http::fake([
+        'https://api.github.com/repos/acme/orbit/installation' => Http::response(['id' => 9]),
+        'https://api.github.com/app/installations/9/access_tokens' => Http::response(['token' => 'ghs_watch'], 201),
+        'https://api.github.com/repos/acme/orbit/pulls/42' => Http::response(['merged' => true, 'state' => 'closed']),
+    ]);
+
+    app(TaskScheduler::class)->tick();
+    app(TaskScheduler::class)->tick();
+
+    expect($calls)->toBe(1)
+        ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Settling)
+        ->and($group->fresh()?->assistance_reason)->toBe('Merged pull request cleanup failed: disk full');
+
+    $this->travel(TaskScheduler::AbandonedWorkspaceBackoffSeconds + 1)->seconds();
+    app(TaskScheduler::class)->tick();
+
+    expect($calls)->toBe(2)
+        ->and($group->fresh()?->taskable_id)->toBe($group->taskable_id);
+});
+
 it('replaces its pull request assistance request with the cleanup failure when a merged group cannot complete', function (): void {
     $group = tick_settling_group();
     $group->update(['assistance_requested' => true, 'assistance_reason' => 'The pull request needs attention: It conflicts with main; merge main into the task branch and push.']);

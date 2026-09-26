@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\Tasks\CancelTaskGroupAction;
+use App\Actions\Tasks\RemoveTaskWorkspaceAction;
 use App\Domain\AppInstances\AppInstanceRemover;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\AgentSpawner;
@@ -542,7 +543,10 @@ describe('the abandoned workspace sweep', function (): void {
         $goodWorkspace = claim_hol_workspace($app, $good, 'source_resolved');
 
         expect(app(TaskScheduler::class)->removeAbandonedWorkspaces())->toBe(1)
-            ->and(AppInstance::query()->find($goodWorkspace->id))->toBeNull();
+            ->and(AppInstance::query()->find($goodWorkspace->id))->toBeNull()
+            ->and(TaskGroup::query()->where('assistance_requested', true)->count())->toBe(5)
+            ->and(TaskGroup::query()->where('assistance_requested', true)->pluck('assistance_reason')->unique()->values()->all())
+            ->toBe([RemoveTaskWorkspaceAction::RemovalFailedPrefix.'The Node is unreachable.']);
         Exceptions::assertReportedCount(5);
 
         $this->travel(TaskScheduler::AbandonedWorkspaceBackoffSeconds - 1)->seconds();
@@ -604,6 +608,63 @@ describe('the abandoned workspace sweep', function (): void {
         $this->artisan('tasks:tick')->assertSuccessful();
 
         expect($remover->attempts)->toHaveCount(3);
+    });
+
+    it('removes an attached workspace of a cancelled group without waiting for the reservation bound', function (): void {
+        claim_hol_enable();
+        $app = claim_hol_app();
+        $group = claim_hol_group($app, 'Attached');
+        $workspace = claim_hol_workspace($app, $group, 'source_resolved');
+        $group->taskable()->associate($workspace);
+        $group->forceFill([
+            'status' => TaskGroupStatus::Cancelled,
+            'reserved_at' => now()->subSeconds(30),
+            'assistance_requested' => true,
+            'assistance_reason' => RemoveTaskWorkspaceAction::RemovalFailedPrefix.'The Node is unreachable.',
+        ])->save();
+        $removed = claim_hol_recording_remover();
+
+        expect(app(TaskScheduler::class)->removeAbandonedWorkspaces())->toBe(1)
+            ->and($removed->ids)->toBe([$workspace->id])
+            ->and($group->fresh()?->taskable_id)->toBeNull()
+            ->and($group->fresh()?->assistance_requested)->toBeFalse()
+            ->and($group->fresh()?->assistance_reason)->toBeNull();
+    });
+
+    it('retries removal for a settling group whose merged pull request cleanup failed', function (): void {
+        claim_hol_enable();
+        $app = claim_hol_app();
+        $group = claim_hol_group($app, 'Merged');
+        $workspace = claim_hol_workspace($app, $group, 'source_resolved');
+        $group->taskable()->associate($workspace);
+        $group->forceFill([
+            'status' => TaskGroupStatus::Settling,
+            'pr_url' => 'https://github.com/nckrtl/orbit/pull/120',
+            'assistance_requested' => true,
+            'assistance_reason' => RemoveTaskWorkspaceAction::MergeCleanupFailedPrefix.'disk full',
+        ])->save();
+        $removed = claim_hol_recording_remover();
+
+        expect(app(TaskScheduler::class)->removeAbandonedWorkspaces())->toBe(1)
+            ->and($removed->ids)->toBe([$workspace->id])
+            ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Settling)
+            ->and($group->fresh()?->taskable_id)->toBeNull()
+            ->and($group->fresh()?->assistance_requested)->toBeFalse()
+            ->and($group->fresh()?->assistance_reason)->toBeNull();
+    });
+
+    it('does not remove the workspace of a group that is still running', function (): void {
+        claim_hol_enable();
+        $app = claim_hol_app();
+        $group = claim_hol_group($app, 'Running');
+        $workspace = claim_hol_workspace($app, $group, 'source_resolved');
+        $group->taskable()->associate($workspace);
+        $group->forceFill(['status' => TaskGroupStatus::Running])->save();
+        $removed = claim_hol_recording_remover();
+
+        expect(app(TaskScheduler::class)->removeAbandonedWorkspaces())->toBe(0)
+            ->and($removed->ids)->toBe([])
+            ->and(AppInstance::query()->find($workspace->id))->not->toBeNull();
     });
 
     it('stops starting removals once the tick has spent its time budget', function (): void {

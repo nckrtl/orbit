@@ -90,14 +90,7 @@ final readonly class TaskScheduler
             $health = $this->pullRequestWatcher->health($group);
             $status = $health?->state;
             if ($status === 'merged') {
-                try {
-                    if (TaskPullRequestHealth::isReason($group->assistance_reason)) {
-                        $group->update(['assistance_requested' => false, 'assistance_reason' => null]);
-                    }
-                    $this->completeGroup->execute($group);
-                } catch (Throwable $exception) {
-                    $group->update(['assistance_requested' => true, 'assistance_reason' => 'Merged pull request cleanup failed: '.$exception->getMessage()]);
-                }
+                $this->completeMergedGroup($group);
             } elseif ($status === 'closed') {
                 $group->update(['assistance_requested' => true, 'assistance_reason' => 'The expected pull request closed without merging.']);
             } elseif ($health instanceof TaskPullRequestHealth) {
@@ -1053,6 +1046,7 @@ final readonly class TaskScheduler
         } catch (Throwable $exception) {
             // The workspace stays findable by name, so a repeated cancel removes it.
             report($exception);
+            $this->workspaces->recordFailure($group, $exception);
         }
     }
 
@@ -1106,14 +1100,13 @@ final readonly class TaskScheduler
     public const int AbandonedWorkspaceBackoffSeconds = 60;
 
     /**
-     * Removes the `task-{group id}` workspace (branch `task-{group id}`) of a cancelled or completed group that holds
-     * no Instance, once no claim can still own it: the group was never reserved, or its reservation is older than
-     * `orbit.tasks.reserved_timeout_seconds`. A cancel that lands during a live claim leaves the workspace to that
-     * claim, and this sweep removes it when the claim stopped first.
+     * Removes the workspace of a cancelled or completed group, attached or found by its `task-{group id}` name and
+     * branch, and of a settling group whose merged pull request cleanup failed. An unattached workspace waits while
+     * a live claim can still own it. The tick does not remove the workspace of a group that is still active.
      *
-     * One query selects the candidates. A failed removal is reported and backs off per Instance, so a workspace that
-     * keeps failing never blocks the others or costs a remote timeout on every tick. The sweep stops starting
-     * removals once it has spent its time budget; the rest wait for the next tick.
+     * One query selects the candidates. A failed removal is reported, asks for assistance, and backs off per
+     * Instance, so a workspace that keeps failing never blocks the others. The sweep stops starting removals once
+     * it has spent its time budget; the rest wait for the next tick. Success clears that assistance.
      */
     public function removeAbandonedWorkspaces(): int
     {
@@ -1132,27 +1125,110 @@ final readonly class TaskScheduler
             }
 
             $instance = AppInstance::query()->find($workspace->id);
-            if (! $instance instanceof AppInstance) {
+            $group = TaskGroup::query()->find($workspace->getAttribute('ended_task_group_id'));
+            if (! $instance instanceof AppInstance || ! $group instanceof TaskGroup || ! $this->shouldRemoveWorkspace($group, $instance)) {
                 continue;
             }
 
             try {
                 $this->workspaces->remove($instance);
                 $this->rememberWorkspaceRemovalBackoff($backoffKey, null);
-                Log::warning('Removed the workspace of an ended task group.', ['task_group_id' => (int) $workspace->getAttribute('ended_task_group_id'), 'app_instance_id' => $workspace->id]);
+                $this->releaseRemovedWorkspace($group, $instance->id);
+                Log::warning('Removed the workspace of an ended task group.', ['task_group_id' => $group->id, 'app_instance_id' => $instance->id]);
                 $removed++;
             } catch (Throwable $exception) {
                 report($exception);
-                $failures = ($backoff['failures'] ?? 0) + 1;
-                $delay = min(
-                    self::AbandonedWorkspaceBackoffSeconds * 2 ** min($failures - 1, 20),
-                    max(self::AbandonedWorkspaceBackoffSeconds, (int) config('orbit.tasks.reserved_timeout_seconds')),
-                );
-                $this->rememberWorkspaceRemovalBackoff($backoffKey, ['failures' => $failures, 'due' => now()->addSeconds($delay)->getTimestamp()], $delay * 2);
+                $prefix = $group->status === TaskGroupStatus::Settling
+                    ? RemoveTaskWorkspaceAction::MergeCleanupFailedPrefix
+                    : RemoveTaskWorkspaceAction::RemovalFailedPrefix;
+                $this->workspaces->recordFailure($group, $exception, $prefix);
+                $this->extendWorkspaceRemovalBackoff($backoffKey, $backoff);
             }
         }
 
         return $removed;
+    }
+
+    /** Retries merged pull request cleanup at once the first time, then on the same per-Instance backoff as the sweep. */
+    private function completeMergedGroup(TaskGroup $group): void
+    {
+        $attached = $group->taskable;
+        $instance = $attached instanceof AppInstance ? $attached : $this->workspaces->find($group);
+        $backoffKey = $instance instanceof AppInstance ? 'tasks.workspace-removal.'.$instance->id : null;
+        $backoff = is_string($backoffKey) ? $this->workspaceRemovalBackoff($backoffKey) : null;
+
+        if ($backoff !== null && $backoff['due'] > now()->getTimestamp()) {
+            return;
+        }
+
+        try {
+            if (TaskPullRequestHealth::isReason($group->assistance_reason)) {
+                $group->update(['assistance_requested' => false, 'assistance_reason' => null]);
+            }
+            $this->completeGroup->execute($group);
+            if (is_string($backoffKey)) {
+                $this->rememberWorkspaceRemovalBackoff($backoffKey, null);
+            }
+        } catch (Throwable $exception) {
+            $group->update([
+                'assistance_requested' => true,
+                'assistance_reason' => RemoveTaskWorkspaceAction::MergeCleanupFailedPrefix.$exception->getMessage(),
+            ]);
+            if (is_string($backoffKey)) {
+                $this->extendWorkspaceRemovalBackoff($backoffKey, $backoff);
+            }
+        }
+    }
+
+    private function shouldRemoveWorkspace(TaskGroup $group, AppInstance $instance): bool
+    {
+        if ($instance->app_id !== $group->app_id) {
+            return false;
+        }
+
+        $attached = $group->taskable_id === $instance->id;
+        $named = $group->taskable_id === null
+            && $instance->name === TaskWorkspaceName::for($group)
+            && $instance->branch_override === $instance->name;
+
+        if (! $attached && ! $named) {
+            return false;
+        }
+
+        if (in_array($group->status, [TaskGroupStatus::Cancelled, TaskGroupStatus::Completed], true)) {
+            return $attached
+                || ! $group->reserved_at instanceof Carbon
+                || $group->reserved_at->lessThanOrEqualTo(RemoveTaskWorkspaceAction::reservationCutoff());
+        }
+
+        return $group->status === TaskGroupStatus::Settling
+            && is_string($group->assistance_reason)
+            && str_starts_with($group->assistance_reason, RemoveTaskWorkspaceAction::MergeCleanupFailedPrefix);
+    }
+
+    private function releaseRemovedWorkspace(TaskGroup $group, int $instanceId): void
+    {
+        $group->refresh();
+
+        if ($group->taskable_id === $instanceId) {
+            $group->taskable()->dissociate();
+            $group->save();
+        }
+
+        $this->workspaces->clearFailure($group);
+    }
+
+    /**
+     * @param  array{failures: int, due: int}|null  $backoff
+     */
+    private function extendWorkspaceRemovalBackoff(string $key, ?array $backoff): void
+    {
+        $failures = ($backoff['failures'] ?? 0) + 1;
+        $delay = min(
+            self::AbandonedWorkspaceBackoffSeconds * 2 ** min($failures - 1, 20),
+            max(self::AbandonedWorkspaceBackoffSeconds, (int) config('orbit.tasks.reserved_timeout_seconds')),
+        );
+        $this->rememberWorkspaceRemovalBackoff($key, ['failures' => $failures, 'due' => now()->addSeconds($delay)->getTimestamp()], $delay * 2);
     }
 
     /**
@@ -1202,19 +1278,36 @@ final readonly class TaskScheduler
             default => "'task-' || task_groups.id",
         };
 
+        $cutoff = RemoveTaskWorkspaceAction::reservationCutoff();
+        $mergePrefix = RemoveTaskWorkspaceAction::MergeCleanupFailedPrefix.'%';
+
         return AppInstance::query()
             ->select('app_instances.*', 'task_groups.id as ended_task_group_id')
-            ->join('task_groups', static function ($join) use ($workspaceName): void {
+            ->join('task_groups', function ($join) use ($workspaceName): void {
                 $join->on('task_groups.app_id', '=', 'app_instances.app_id')
-                    ->whereRaw("app_instances.name = {$workspaceName}");
+                    ->where(function ($link) use ($workspaceName): void {
+                        $link->whereColumn('task_groups.taskable_id', 'app_instances.id')
+                            ->orWhere(function ($named) use ($workspaceName): void {
+                                $named->whereRaw("app_instances.name = {$workspaceName}")
+                                    ->whereColumn('app_instances.branch_override', 'app_instances.name')
+                                    ->whereNull('task_groups.taskable_id');
+                            });
+                    });
             })
-            ->whereColumn('app_instances.branch_override', 'app_instances.name')
             ->where('task_groups.execution_mode', TaskExecutionMode::Managed->value)
-            ->whereIn('task_groups.status', [TaskGroupStatus::Cancelled->value, TaskGroupStatus::Completed->value])
-            ->whereNull('task_groups.taskable_id')
-            ->where(static fn ($query) => $query
-                ->whereNull('task_groups.reserved_at')
-                ->orWhere('task_groups.reserved_at', '<=', RemoveTaskWorkspaceAction::reservationCutoff()))
+            ->where(function ($ended) use ($cutoff, $mergePrefix): void {
+                $ended->where(function ($finished) use ($cutoff): void {
+                    $finished->whereIn('task_groups.status', [TaskGroupStatus::Cancelled->value, TaskGroupStatus::Completed->value])
+                        ->where(function ($reservation) use ($cutoff): void {
+                            $reservation->whereColumn('task_groups.taskable_id', 'app_instances.id')
+                                ->orWhereNull('task_groups.reserved_at')
+                                ->orWhere('task_groups.reserved_at', '<=', $cutoff);
+                        });
+                })->orWhere(function ($settling) use ($mergePrefix): void {
+                    $settling->where('task_groups.status', TaskGroupStatus::Settling->value)
+                        ->where('task_groups.assistance_reason', 'like', $mergePrefix);
+                });
+            })
             ->orderBy('app_instances.id')
             ->get();
     }

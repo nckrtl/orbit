@@ -6,7 +6,9 @@ namespace App\Actions\Tasks;
 
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Models\AppInstance;
 use App\Models\TaskGroup;
+use Throwable;
 
 final readonly class CompleteTaskGroupAction
 {
@@ -23,7 +25,9 @@ final readonly class CompleteTaskGroupAction
         $group->loadMissing(['app', 'tasks', 'taskable']);
 
         if ($group->status === TaskGroupStatus::Completed) {
-            return $group;
+            $this->removeWorkspace($group);
+
+            return $group->fresh(['app', 'tasks', 'taskable']) ?? $group;
         }
 
         if ($group->status !== TaskGroupStatus::Settling) {
@@ -34,13 +38,39 @@ final readonly class CompleteTaskGroupAction
             );
         }
 
-        $this->workspace->execute($group);
+        $this->removeWorkspace($group);
 
+        $group->refresh();
         $group->taskable()->dissociate();
         $group->status = TaskGroupStatus::Completed;
         $group->settled_at ??= now();
         $group->save();
 
         return $group->fresh(['app', 'tasks', 'taskable']) ?? $group;
+    }
+
+    /**
+     * Deletes the checkout before the group is reported complete. A refusal keeps the checkout and the
+     * Instance row, asks for assistance, and returns the error. A repeated complete retries at once.
+     */
+    private function removeWorkspace(TaskGroup $group): void
+    {
+        $instanceId = $group->taskable_id;
+
+        try {
+            $this->workspace->execute($group);
+        } catch (Throwable $exception) {
+            $this->workspace->recordFailure($group, $exception);
+
+            throw $exception;
+        }
+
+        $this->workspace->clearFailure($group);
+
+        if ($instanceId !== null && ! AppInstance::query()->whereKey($instanceId)->exists()) {
+            $group->refresh();
+            $group->taskable()->dissociate();
+            $group->save();
+        }
     }
 }

@@ -2,7 +2,11 @@
 
 declare(strict_types=1);
 
+use App\Actions\Tasks\CancelTaskGroupAction;
+use App\Actions\Tasks\CompleteTaskGroupAction;
+use App\Actions\Tasks\RemoveTaskWorkspaceAction;
 use App\Domain\AppInstances\AppInstanceDestinationGuard;
+use App\Domain\AppInstances\AppInstanceRemover;
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\AppInstances\DevelopmentAppInstanceProvisioner;
 use App\Domain\AppInstances\DevelopmentAppInstanceSourceLifecycle;
@@ -20,12 +24,14 @@ use App\Domain\Tasks\InstanceProvisioning;
 use App\Domain\Tasks\InstanceProvisionIntent;
 use App\Domain\Tasks\TaskCapacityException;
 use App\Domain\Tasks\TaskCeilings;
+use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskWorkspaceName;
 use App\Infrastructure\Tasks\TaskWorkspaceProvisioner;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
+use App\Models\AppInstanceRemoval;
 use App\Models\Node;
 use App\Models\ProjectNodeExclusion;
 use App\Models\Task;
@@ -509,3 +515,125 @@ describe('a workspace an interrupted claim left unattached', function (): void {
         $this->assertDatabaseCount('app_instances', 1);
     });
 });
+
+/**
+ * @return array{0: TaskGroup, 1: AppInstance, 2: string}
+ */
+function orbit_workspace_clone(): array
+{
+    $app = provisioner_app('orbit', type: ProjectType::Monorepo);
+    provisioner_node('orbit-clone', '10.44.0.181');
+    $group = provisioner_group($app, 'Clone');
+    bind_task_workspace_fakes();
+    $instance = app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, false));
+    expect($instance)->toBeInstanceOf(AppInstance::class)
+        ->and($instance->status)->toBe(AppInstanceState::SourceResolved)
+        ->and($instance->routes()->count())->toBe(0);
+
+    $checkout = sys_get_temp_dir().'/orbit-task-'.$instance->id;
+    if (! is_dir($checkout)) {
+        mkdir($checkout);
+    }
+    file_put_contents($checkout.'/KEEP', 'clone');
+    $instance->update(['checkout_path' => $checkout]);
+
+    return [$group->fresh(['app', 'taskable']) ?? $group, $instance->fresh() ?? $instance, $checkout];
+}
+
+function bind_checkout_remover(): void
+{
+    app()->instance(AppInstanceRemover::class, new class implements AppInstanceRemover
+    {
+        public function execute(AppInstance $instance, bool $force): AppInstanceRemoval
+        {
+            expect($force)->toBeTrue();
+            $path = $instance->checkout_path;
+            if (is_string($path) && is_file($path.'/KEEP')) {
+                unlink($path.'/KEEP');
+            }
+            if (is_string($path) && is_dir($path)) {
+                rmdir($path);
+            }
+            $instance->delete();
+
+            return new AppInstanceRemoval;
+        }
+    });
+}
+
+function forget_checkout(string $checkout): void
+{
+    if (is_file($checkout.'/KEEP')) {
+        unlink($checkout.'/KEEP');
+    }
+    if (is_dir($checkout)) {
+        rmdir($checkout);
+    }
+}
+
+it('removes the orbit workspace clone on cancel and on complete', function (string $operation): void {
+    app(TaskExtensionState::class)->enable();
+    [$group, $instance, $checkout] = orbit_workspace_clone();
+    if ($operation !== 'unattached') {
+        $group->taskable()->associate($instance);
+    }
+    $group->status = $operation === 'complete' ? TaskGroupStatus::Settling : TaskGroupStatus::Running;
+    if ($operation === 'complete') {
+        $group->pr_url = 'https://github.com/nckrtl/orbit/pull/120';
+    }
+    $group->save();
+    bind_checkout_remover();
+
+    try {
+        $result = $operation === 'complete'
+            ? app(CompleteTaskGroupAction::class)->execute($group)
+            : app(CancelTaskGroupAction::class)->execute($group);
+
+        expect($result->status)->toBe($operation === 'complete' ? TaskGroupStatus::Completed : TaskGroupStatus::Cancelled)
+            ->and($result->taskable_id)->toBeNull()
+            ->and(is_dir($checkout))->toBeFalse()
+            ->and(AppInstance::query()->whereKey($instance->id)->exists())->toBeFalse();
+    } finally {
+        forget_checkout($checkout);
+    }
+})->with(['cancel', 'complete', 'unattached']);
+
+it('keeps the source-resolved orbit clone and asks for assistance when removal is refused', function (string $operation): void {
+    app(TaskExtensionState::class)->enable();
+    [$group, $instance, $checkout] = orbit_workspace_clone();
+    if ($operation !== 'unattached') {
+        $group->taskable()->associate($instance);
+    }
+    $group->status = $operation === 'complete' ? TaskGroupStatus::Settling : TaskGroupStatus::Running;
+    $group->save();
+    app()->instance(AppInstanceRemover::class, new class implements AppInstanceRemover
+    {
+        public function execute(AppInstance $instance, bool $force): AppInstanceRemoval
+        {
+            throw new ResourceOperationException('instance.force_failed', 'The Node is unreachable.', 409);
+        }
+    });
+
+    try {
+        expect(function () use ($operation, $group): void {
+            if ($operation === 'complete') {
+                app(CompleteTaskGroupAction::class)->execute($group);
+
+                return;
+            }
+
+            app(CancelTaskGroupAction::class)->execute($group);
+        })->toThrow(ResourceOperationException::class, 'The Node is unreachable.');
+
+        $fresh = $group->fresh();
+        expect(is_dir($checkout))->toBeTrue()
+            ->and(file_get_contents($checkout.'/KEEP'))->toBe('clone')
+            ->and(AppInstance::query()->whereKey($instance->id)->exists())->toBeTrue()
+            ->and($fresh?->taskable_id)->toBe($operation === 'unattached' ? null : $instance->id)
+            ->and($fresh?->assistance_requested)->toBeTrue()
+            ->and($fresh?->assistance_reason)->toBe(RemoveTaskWorkspaceAction::RemovalFailedPrefix.'The Node is unreachable.')
+            ->and($fresh?->status)->toBe($operation === 'complete' ? TaskGroupStatus::Settling : TaskGroupStatus::Running);
+    } finally {
+        forget_checkout($checkout);
+    }
+})->with(['cancel', 'complete', 'unattached']);
