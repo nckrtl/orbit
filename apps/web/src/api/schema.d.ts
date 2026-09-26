@@ -3019,21 +3019,21 @@ export interface components {
         };
         Activity: {
             id?: number;
-            requestId?: string;
+            request_id?: string;
             command?: string;
-            callerNodeId?: number | null;
-            targetNodeId?: number | null;
-            callerIp?: string | null;
+            caller_node_id?: number | null;
+            target_node_id?: number | null;
+            caller_ip?: string | null;
             status?: string;
-            durationMs?: number | null;
-            exitCode?: number | null;
-            errorCode?: string | null;
-            subjectType?: string | null;
-            subjectId?: number | null;
+            duration_ms?: number | null;
+            exit_code?: number | null;
+            error_code?: string | null;
+            subject_type?: string | null;
+            subject_id?: number | null;
             properties?: {
                 [key: string]: unknown;
             };
-            occurredAt?: string;
+            occurred_at?: string;
         };
         App: {
             id?: number;
@@ -3337,7 +3337,7 @@ export interface components {
             selected_release?: string | null;
         };
         MetricsMutation: {
-            nodeId?: number;
+            node_id?: number;
             status?: string;
             /** @enum {string|null} */
             publication?: "cleaned" | "uncleaned" | null;
@@ -3357,11 +3357,11 @@ export interface components {
         };
         MetricsAssignment: {
             id?: number;
-            nodeId?: number;
-            nodeName?: string;
+            node_id?: number;
+            node_name?: string;
             status?: string;
-            failedStep?: string | null;
-            errorCode?: string | null;
+            failed_step?: string | null;
+            error_code?: string | null;
         };
         MetricsExporter: {
             id?: number;
@@ -3371,7 +3371,7 @@ export interface components {
             /** @enum {string} */
             reason?: "ineligible" | "metrics_node" | "explicit_enabled" | "role_default" | "explicit_disabled" | "roleless_default_excluded";
             /** @enum {string|null} */
-            degradation?: "unreachable" | "firewall_inactive" | null;
+            degraded_reason?: "unreachable" | "firewall_inactive" | null;
         };
         Node: {
             id?: number;

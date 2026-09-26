@@ -22560,25 +22560,25 @@
           "id": {
             "type": "integer"
           },
-          "requestId": {
+          "request_id": {
             "type": "string"
           },
           "command": {
             "type": "string"
           },
-          "callerNodeId": {
+          "caller_node_id": {
             "type": [
               "integer",
               "null"
             ]
           },
-          "targetNodeId": {
+          "target_node_id": {
             "type": [
               "integer",
               "null"
             ]
           },
-          "callerIp": {
+          "caller_ip": {
             "type": [
               "string",
               "null"
@@ -22587,31 +22587,31 @@
           "status": {
             "type": "string"
           },
-          "durationMs": {
+          "duration_ms": {
             "type": [
               "integer",
               "null"
             ]
           },
-          "exitCode": {
+          "exit_code": {
             "type": [
               "integer",
               "null"
             ]
           },
-          "errorCode": {
+          "error_code": {
             "type": [
               "string",
               "null"
             ]
           },
-          "subjectType": {
+          "subject_type": {
             "type": [
               "string",
               "null"
             ]
           },
-          "subjectId": {
+          "subject_id": {
             "type": [
               "integer",
               "null"
@@ -22621,7 +22621,7 @@
             "type": "object",
             "additionalProperties": true
           },
-          "occurredAt": {
+          "occurred_at": {
             "type": "string"
           }
         }
@@ -23814,7 +23814,7 @@
       "MetricsMutation": {
         "type": "object",
         "properties": {
-          "nodeId": {
+          "node_id": {
             "type": "integer"
           },
           "status": {
@@ -23888,22 +23888,22 @@
           "id": {
             "type": "integer"
           },
-          "nodeId": {
+          "node_id": {
             "type": "integer"
           },
-          "nodeName": {
+          "node_name": {
             "type": "string"
           },
           "status": {
             "type": "string"
           },
-          "failedStep": {
+          "failed_step": {
             "type": [
               "string",
               "null"
             ]
           },
-          "errorCode": {
+          "error_code": {
             "type": [
               "string",
               "null"
@@ -23937,7 +23937,7 @@
               "roleless_default_excluded"
             ]
           },
-          "degradation": {
+          "degraded_reason": {
             "type": [
               "string",
               "null"
