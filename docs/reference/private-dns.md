@@ -56,7 +56,9 @@ If Orbit VPN DNS is unreachable, a private-name lookup on the Gateway machine ta
 | `getent hosts reverb.orbit` | The address of the Node that holds `websocket`. |
 | `getent ahostsv4 example.com` | An ordinary name resolves through the uplink resolvers. |
 
-To add the route to an existing Gateway, run `orbit node:role:add <gateway-node> gateway --converge`. A failure of this step does not fail the role. The role stays `active`, and the response's `follow_up` names the failed route and the command that retries it. The CLI prints that `follow_up` as a warning. The Gateway also logs a warning with the underlying error code, `vpn.dns_resolver_failed` when the command fails on the machine, and `orbit doctor --family=role` reports `role.private_dns_route_mismatch` until the route matches. [Relocating the gateway role](/solutions/relocate-gateway-role) adds the route on the target and removes it from the source. A failed target route is reported in `follow_up`. A failed source removal leaves the move incomplete, and the error names the `--from` command that finishes it.
+To add the route to an existing Gateway, run `orbit node:role:add <gateway-node> gateway --converge`. A failure of this step does not fail the role. The role stays `active`, and the response's `follow_up` names the failed route and the command that retries it. The CLI prints that `follow_up` as a warning. The Gateway also logs a warning with the underlying error code, `vpn.dns_resolver_failed` when the command fails on the machine, and `orbit doctor --family=role` reports `role.private_dns_route_mismatch` until the route matches.
+
+[Relocating the gateway role](/solutions/relocate-gateway-role) adds the route on the target and removes it from the source. A failed target route is reported in `follow_up`. A failed source removal leaves the move incomplete, and the error names the `--from` command that finishes it.
 
 ## Repair one peer
 
