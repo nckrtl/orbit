@@ -7,10 +7,13 @@ use App\Domain\Tools\ToolManagerScopeLockException;
 use App\Domain\Tools\ToolOperation;
 use App\Domain\Tools\ToolOperationException;
 use App\Infrastructure\Nodes\NodeLocks;
+use App\Infrastructure\Processes\LockRenewingProcessRunner;
+use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Tools\NativeToolManagerScopeLock;
 use App\Infrastructure\Tools\NativeToolOperationLock;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Cache;
+use Tests\Support\RecordingProcessRunner;
 
 describe(NativeToolOperationLock::class, function (): void {
     it('releases the shared manager scope when its callback fails', function (): void {
@@ -102,5 +105,25 @@ describe(NativeToolOperationLock::class, function (): void {
         $this->travel(NodeLocks::RequestSeconds + 1)->seconds();
 
         expect((new NativeToolManagerScopeLock)->run(7, ToolManagerName::Composer, static fn (): string => 'free'))->toBe('free');
+    });
+    it('keeps the tool and manager locks through an Artisan tool operation longer than any single term', function (): void {
+        $locks = new NodeLocks(Cache::store('array'), console: true);
+        $runner = new LockRenewingProcessRunner(new RecordingProcessRunner, $locks);
+        $lock = new NativeToolOperationLock(new NativeToolManagerScopeLock($locks), $locks);
+        $identity = 'tool:9:composer:'.hash('sha256', 'laravel/installer');
+
+        $lock->run(9, ToolManagerName::Composer, 'laravel/installer', ToolOperation::Install, null, function () use ($runner, $identity): void {
+            foreach (range(1, 3) as $step) {
+                $this->travel(NodeLocks::ConsoleSeconds - 60)->seconds();
+                $runner->run(new ProcessInvocation(['true']));
+            }
+
+            $this->travel(NodeLocks::ConsoleSeconds - 60)->seconds();
+
+            expect(new NodeLocks(Cache::store('array'))->lock($identity, 5)->get())->toBeFalse()
+                ->and(new NodeLocks(Cache::store('array'))->lock('tool-manager:9:composer', 5)->get())->toBeFalse();
+        });
+
+        expect(new NodeLocks(Cache::store('array'))->lock('tool-manager:9:composer', 5)->get())->toBeTrue();
     });
 });

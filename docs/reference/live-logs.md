@@ -110,7 +110,11 @@ Journal lines match the one-shot read over SSH, which uses `journalctl --output 
 
 A longer entry ends with the line `[orbit] message cut at 256 KiB`. A single line longer than 256 KiB is cut there too, before a character rather than inside one. The one-shot read cuts each entry by the same rule, so the lines of a cut entry are the same in both reads, and a follow can switch between the reads there without a gap.
 
-Two rare entries still differ: a message over 256 KiB with terminal color codes or tabs, because the agent cuts the message before it removes the codes and widens the tabs, and a message over 256 KiB that is not printable text. At such an entry, a follow that switches between the reads prints `[orbit] lines may be missing`.
+A few rare entries still differ between the live stream and the one-shot read. A message over 256 KiB with terminal color codes differs because the agent cuts the message before it removes the codes. At that entry, a follow that switches between the reads prints `[orbit] lines may be missing`.
+
+A single line over 256 KiB that contains tabs is cut at different places too. The agent cuts the raw journal message before each tab expands to 8 spaces, while the one-shot `awk` cuts after that expansion. The CLI still matches the lines, because the live side is cut at 8 KiB anyway, so only the text past the cut differs.
+
+A message over 256 KiB that is not printable text differs as well. At that entry, a follow that switches between the reads prints `[orbit] lines may be missing`.
 
 The one-shot read of a systemd Process reads the journal newest entry first and stops after 4 MiB, because `journalctl --lines` counts entries and one entry can hold millions of lines. It cuts each entry at 256 KiB before that limit, so a huge entry does not hide the older entries. The one-shot read of a Docker Process also returns both streams in one, in the same order.
 

@@ -7,6 +7,7 @@ namespace App\Infrastructure\Nodes;
 use App\Domain\Nodes\LinuxUserName;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
+use App\Domain\Nodes\NodeLockLoss;
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\RemoteCommand;
@@ -55,11 +56,12 @@ final readonly class SshManagedUserAccountResolver implements ManagedUserAccount
             }
 
             return new ManagedUserAccount($user, $group, $home);
-        } catch (Throwable) {
+        } catch (Throwable $exception) {
             throw new NodeProvisioningException(
                 'managed-user',
                 'node.managed_user_unavailable',
                 'The managed user account is unavailable.',
+                NodeLockLoss::keep($exception),
             );
         }
     }

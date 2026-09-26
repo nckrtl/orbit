@@ -6,6 +6,7 @@ namespace App\Infrastructure\Metrics;
 
 use App\Domain\Metrics\ExporterDegradationRepository;
 use App\Domain\Metrics\ServiceMetricsLifecycle;
+use App\Domain\Nodes\NodeLockLoss;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
 use Closure;
@@ -60,7 +61,8 @@ final readonly class NativeServiceMetricsLifecycle implements ServiceMetricsLife
                     $rollbackFailure ??= $rollback;
                 }
             }
-            if ($rollbackFailure !== null) {
+            // A lost Node lock refuses the rollback's commands too; the loss is the failure to report.
+            if ($rollbackFailure !== null && ! NodeLockLoss::in($failure)) {
                 throw new ResourceOperationException('metrics.service_rollback_failed', 'Service metrics recovery did not complete.', 502, $rollbackFailure);
             }
             throw $failure;
