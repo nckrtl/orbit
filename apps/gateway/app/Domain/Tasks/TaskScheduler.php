@@ -119,10 +119,18 @@ final readonly class TaskScheduler
                     continue;
                 }
                 if ($task->assistance_requested || $group->assistance_requested) {
+                    if ($task->status === TaskStatus::Reviewing) {
+                        $group = $group->fresh(['app', 'tasks', 'taskable']) ?? $group;
+                        $this->retryCommittedApproval($group, $task);
+                    }
+
                     continue;
                 }
 
                 $group = $group->fresh(['app', 'tasks', 'taskable']) ?? $group;
+                if ($task->status === TaskStatus::Reviewing && $this->retryCommittedApproval($group, $task)) {
+                    continue;
+                }
                 if ($task->status === TaskStatus::Running && ! $this->hasImplementer($task)) {
                     $this->handleBaseline($group, $task);
 
@@ -393,6 +401,12 @@ final readonly class TaskScheduler
         }
         $receipt = $this->pendingReceipt($task, TaskThreadRole::Reviewer);
         $outcome = $receipt instanceof TaskComment ? $this->receiptOutcome($receipt) : null;
+        if ($receipt instanceof TaskComment && $outcome === TaskRunOutcome::Approved && $this->committedApproval($receipt)) {
+            // The commit is already stored. Retry the push only; do not commit again or spend the approval.
+            $this->publishApprovedCommit($group, $task, $receipt);
+
+            return true;
+        }
         if ($receipt instanceof TaskComment && $outcome === TaskRunOutcome::Blocked) {
             $task->update(['review_handled_comment_id' => $receipt->id]);
             $this->requestAssistance($task, $group, 'The reviewer is blocked: '.$receipt->body, $observation);
@@ -455,20 +469,77 @@ final readonly class TaskScheduler
             return true;
         }
         $receipt->update(['commit_sha' => $commit]);
-        if ($pullRequest instanceof TaskRunPullRequest) {
+        $this->publishApprovedCommit($group, $task, $receipt);
+
+        return true;
+    }
+
+    /**
+     * ADR 0160: the approval already names its commit, so a later tick pushes that commit and does not make another.
+     */
+    private function committedApproval(TaskComment $receipt): bool
+    {
+        return is_string($receipt->commit_sha) && $receipt->commit_sha !== '';
+    }
+
+    /**
+     * Pushes an approved commit that is already stored, and reports whether this tick did that.
+     * The tick calls this before it observes the reviewer, so an unavailable reviewer does not skip the retry.
+     * A failed push asks for assistance on the fifth failure, and the tick keeps retrying it. This does not commit again.
+     */
+    private function retryCommittedApproval(TaskGroup $group, Task $task): bool
+    {
+        $receipt = $this->pendingReceipt($task, TaskThreadRole::Reviewer);
+        if (! $receipt instanceof TaskComment || $this->receiptOutcome($receipt) !== TaskRunOutcome::Approved || ! $this->committedApproval($receipt)) {
+            return false;
+        }
+
+        $this->publishApprovedCommit($group, $task, $receipt);
+
+        return true;
+    }
+
+    /**
+     * Pushes the approved HEAD, then opens the pull request on the last subtask. The open pushes again.
+     * A failed push or open leaves the subtask in review and keeps commit_sha.
+     */
+    private function publishApprovedCommit(TaskGroup $group, Task $task, TaskComment $receipt): void
+    {
+        try {
+            $this->publisher->push($group);
+        } catch (TaskPullRequestException $exception) {
+            $this->recordCommunicationFailure($task, $group, $exception->getMessage());
+
+            return;
+        }
+
+        if ($task->isLastSubtask() && (! is_string($group->pr_url) || $group->pr_url === '')) {
+            $pullRequest = TaskRunPullRequest::fromArray($receipt->pull_request);
+            if (! $pullRequest instanceof TaskRunPullRequest) {
+                $this->recordCommunicationFailure($task, $group, 'The approval of the last subtask needs --pr-summary, --pr-change, and --pr-breaking.');
+
+                return;
+            }
             try {
                 $url = $this->publisher->publish($group, TaskPullRequestDescription::render($pullRequest, $group->tasks()->whereNotIn('status', [TaskStatus::Cancelled, TaskStatus::Failed])->count(), $group->app->taskCheckCommand()));
             } catch (TaskPullRequestException $exception) {
                 $this->recordCommunicationFailure($task, $group, $exception->getMessage());
 
-                return true;
+                return;
             }
             $group->update(['pr_url' => $url]);
         }
-        $task->update(['review_handled_comment_id' => $receipt->id, 'communication_failures' => 0]);
-        $this->acceptReview($task);
 
-        return true;
+        if ($group->assistance_requested) {
+            $group->update(['assistance_requested' => false, 'assistance_reason' => null]);
+        }
+        $task->update([
+            'review_handled_comment_id' => $receipt->id,
+            'communication_failures' => 0,
+            'assistance_requested' => false,
+            'assistance_reason' => null,
+        ]);
+        $this->acceptReview($task);
     }
 
     private function relayFindings(TaskGroup $group, Task $task, TaskSessionObservation $observation, TaskComment $findings): void

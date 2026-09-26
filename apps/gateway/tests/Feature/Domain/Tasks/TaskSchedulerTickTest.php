@@ -1346,7 +1346,7 @@ it('retains reminder send failures across successful classifications and clears 
  * a later subtask waits behind it.
  *
  * @param  list<string|null>  $receipts
- * @return array{TaskGroup, Task, FakeTaskRunReceipts, object}
+ * @return array{TaskGroup, Task, FakeTaskRunReceipts, object, object}
  */
 function tick_review(array $receipts, bool $onBranch = true, bool $last = false): array
 {
@@ -1384,12 +1384,40 @@ function tick_review(array $receipts, bool $onBranch = true, bool $last = false)
         }
     };
     app()->instance(TaskWorkspaceSigner::class, $signer);
+    $publisher = new class implements TaskPullRequestPublisher
+    {
+        /** @var list<int> */
+        public array $pushes = [];
 
-    return [$group->fresh(['app', 'tasks', 'taskable']) ?? $group, $task, $receipts, $signer];
+        /** @var list<string> */
+        public array $bodies = [];
+
+        public int $pushFailures = 0;
+
+        public function publish(TaskGroup $group, string $body): string
+        {
+            $this->bodies[] = $body;
+
+            return 'https://github.com/acme/orbit/pull/42';
+        }
+
+        public function push(TaskGroup $group): void
+        {
+            $this->pushes[] = $group->id;
+            if ($this->pushFailures > 0) {
+                $this->pushFailures--;
+
+                throw new TaskPullRequestException('The task branch could not be pushed.');
+            }
+        }
+    };
+    app()->instance(TaskPullRequestPublisher::class, $publisher);
+
+    return [$group->fresh(['app', 'tasks', 'taskable']) ?? $group, $task, $receipts, $signer, $publisher];
 }
 
 it('commits an approved subtask with the title and the reviewer summary, then starts the next subtask', function (): void {
-    [$group, $task, $receipts, $signer] = tick_review([FakeTaskRunReceipts::contents('approved', 'Checked the models and their tests.')]);
+    [$group, $task, $receipts, $signer, $publisher] = tick_review([FakeTaskRunReceipts::contents('approved', 'Checked the models and their tests.')]);
     $next = Task::query()->where('title', 'Routes')->sole();
     $spawner = new class implements AgentSpawner
     {
@@ -1423,6 +1451,8 @@ it('commits an approved subtask with the title and the reviewer summary, then st
         ->and($approval->author)->toBe('reviewer')
         ->and($approval->review_attempt)->toBe($task->review_attempt)
         ->and($approval->commit_sha)->toBe(str_repeat('c', 40))
+        ->and($publisher->pushes)->toBe([$group->id])
+        ->and($publisher->bodies)->toBe([])
         ->and($task->fresh()?->review_handled_comment_id)->toBe($approval->id)
         ->and($receipts->cleared)->toHaveCount(1);
     Classification::assertNothingClassified();
@@ -1575,6 +1605,9 @@ function tick_publishing(array $missing = [[]], int $failures = 0): object
         /** @var list<string> */
         public array $bodies = [];
 
+        /** @var list<int> */
+        public array $pushes = [];
+
         public function __construct(private int $failures) {}
 
         public function publish(TaskGroup $group, string $body): string
@@ -1587,7 +1620,10 @@ function tick_publishing(array $missing = [[]], int $failures = 0): object
             return 'https://github.com/acme/orbit/pull/42';
         }
 
-        public function push(TaskGroup $group): void {}
+        public function push(TaskGroup $group): void
+        {
+            $this->pushes[] = $group->id;
+        }
     };
     app()->instance(TaskBriefCoverage::class, $coverage);
     app()->instance(TaskPullRequestPublisher::class, $publisher);
@@ -1605,6 +1641,7 @@ it('commits the last approved subtask, opens the pull request with the reviewer 
 
     $approval = $task->comments()->sole();
     expect($signer->messages)->toBe(["Models\n\nChecked the feature."])
+        ->and($publishing->publisher->pushes)->toBe([$group->id])
         ->and($publishing->publisher->bodies)->toBe([TaskPullRequestDescription::render(new TaskRunPullRequest('Adds tick routing.', ['Tasks store their records.'], []), 1)])
         ->and($approval->pull_request)->toBe(['summary' => 'Adds tick routing.', 'changes' => ['Tasks store their records.'], 'breaking' => []])
         ->and($group->fresh()?->pr_url)->toBe('https://github.com/acme/orbit/pull/42')
@@ -1650,18 +1687,24 @@ it('names each subtask the change list misses and does not commit', function ():
 });
 
 it('retries opening the pull request without storing the approval twice', function (): void {
-    [$group, $task] = tick_review([tick_final_approval()], last: true);
+    [$group, $task, , $signer] = tick_review([tick_final_approval()], last: true);
     $publishing = tick_publishing([[], []], failures: 1);
 
     app(TaskScheduler::class)->tick();
 
     expect($task->fresh()?->communication_failures)->toBe(1)
         ->and($group->fresh()?->pr_url)->toBeNull()
-        ->and($task->fresh()?->status)->toBe(TaskStatus::Reviewing);
+        ->and($task->fresh()?->status)->toBe(TaskStatus::Reviewing)
+        ->and($task->comments()->sole()->commit_sha)->toBe(str_repeat('c', 40))
+        ->and($signer->messages)->toHaveCount(1)
+        ->and($publishing->publisher->pushes)->toBe([$group->id]);
 
     app(TaskScheduler::class)->tick();
 
     expect($task->comments()->count())->toBe(1)
+        ->and($task->comments()->sole()->commit_sha)->toBe(str_repeat('c', 40))
+        ->and($signer->messages)->toHaveCount(1)
+        ->and($publishing->publisher->pushes)->toBe([$group->id, $group->id])
         ->and($publishing->publisher->bodies)->toHaveCount(2)
         ->and($group->fresh()?->pr_url)->toBe('https://github.com/acme/orbit/pull/42')
         ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Settling);
