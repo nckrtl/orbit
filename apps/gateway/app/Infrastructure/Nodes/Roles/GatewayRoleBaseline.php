@@ -7,6 +7,7 @@ namespace App\Infrastructure\Nodes\Roles;
 use App\Actions\Nodes\GrantGatewayRoleAccessAction;
 use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\AppDev\RuntimeConvergenceException;
+use App\Domain\Nodes\GatewayPrivateDnsRoute;
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\NodeRoleFollowUpReport;
@@ -22,7 +23,7 @@ use App\Models\Node;
 use App\Models\NodeRole;
 use Illuminate\Support\Facades\Log;
 
-final readonly class GatewayRoleBaseline implements RoleBaseline
+final readonly class GatewayRoleBaseline implements GatewayPrivateDnsRoute, RoleBaseline
 {
     private const string RESOLVER_STEP = 'gateway-private-dns-resolver';
 
@@ -38,6 +39,7 @@ final readonly class GatewayRoleBaseline implements RoleBaseline
         private ?VpnSettings $vpnSettings = null,
         private GatewayPrivateDnsResolver $resolver = new GatewayPrivateDnsResolver,
         private ?NodeRoleFollowUpReport $followUps = null,
+        private ?NodeRoleConvergeLock $nodeLock = null,
     ) {}
 
     /**
@@ -62,7 +64,7 @@ final readonly class GatewayRoleBaseline implements RoleBaseline
         $this->firewall->converge($node, RoleName::Gateway, $node->user);
         $this->grants()->execute($node);
         $this->dns->converge();
-        $this->convergeResolver($node);
+        $this->convergeRoute($node);
     }
 
     /**
@@ -71,7 +73,7 @@ final readonly class GatewayRoleBaseline implements RoleBaseline
      * response reports the failure as `follow_up`, the log keeps its underlying error code, and
      * Doctor reports a missing route as `role.private_dns_route_mismatch`.
      */
-    private function convergeResolver(Node $node): void
+    public function convergeRoute(Node $node): void
     {
         $settings = $this->vpnSettings ?? app(VpnSettings::class);
         $address = $this->resolver->vpnDnsAddress($settings);
@@ -81,13 +83,14 @@ final readonly class GatewayRoleBaseline implements RoleBaseline
         }
 
         try {
-            $this->run(
+            // Re-entrant: role convergence already holds it, and relocation takes it here.
+            $this->nodeLock()->run($node, fn () => $this->run(
                 $node,
                 $this->resolver->convergeCommand($address, $settings->domain()),
                 self::RESOLVER_STEP,
                 self::RESOLVER_ERROR,
                 60.0,
-            );
+            ));
         } catch (NodeRoleOperationException|NodeProvisioningException $exception) {
             $errorCode = $exception instanceof NodeRoleOperationException
                 ? $exception->underlyingErrorCode
@@ -129,6 +132,29 @@ final readonly class GatewayRoleBaseline implements RoleBaseline
         }
     }
 
+    public function removeRoute(Node $node): void
+    {
+        $this->nodeLock()->run($node, function () use ($node): void {
+            try {
+                $this->ssh->execute($node, $this->resolver->removeCommand(), self::RESOLVER_STEP, self::RESOLVER_ERROR, 60.0);
+            } catch (RuntimeConvergenceException $exception) {
+                throw new NodeRoleOperationException(
+                    step: self::RESOLVER_STEP,
+                    errorCode: 'node_role.remove_failed',
+                    underlyingErrorCode: $exception->errorCode,
+                    message: 'Gateway role step ['.self::RESOLVER_STEP."] failed on node [{$node->name}].",
+                    result: $exception->result,
+                    previous: $exception,
+                );
+            }
+        }, 'node_role.remove_failed', self::RESOLVER_STEP);
+    }
+
+    private function nodeLock(): NodeRoleConvergeLock
+    {
+        return $this->nodeLock ?? app(NodeRoleConvergeLock::class);
+    }
+
     private function grants(): GrantGatewayRoleAccessAction
     {
         return $this->access ?? app(GrantGatewayRoleAccessAction::class);
@@ -140,17 +166,7 @@ final readonly class GatewayRoleBaseline implements RoleBaseline
      */
     public function remove(Node $node, NodeRole $assignment, bool $purgeData): void
     {
-        try {
-            $this->ssh->execute($node, $this->resolver->removeCommand(), self::RESOLVER_STEP, self::RESOLVER_ERROR, 60.0);
-        } catch (RuntimeConvergenceException $exception) {
-            throw new RuntimeConvergenceException(
-                step: self::RESOLVER_STEP,
-                errorCode: self::RESOLVER_ERROR,
-                message: 'Gateway role step ['.self::RESOLVER_STEP."] failed on node [{$node->name}].",
-                previous: $exception,
-                result: $exception->result,
-            );
-        }
+        $this->removeRoute($node);
         $this->firewall->remove($node, RoleName::Gateway, $node->user);
         $this->dns->converge();
     }

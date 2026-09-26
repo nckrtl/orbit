@@ -12,7 +12,6 @@ use App\Domain\Analytics\AnalyticsStorageProcessGuard;
 use App\Domain\Analytics\PlausibleRuntimeLifecycle;
 use App\Domain\AppDev\AppDevCaddyManager;
 use App\Domain\AppDev\PrivateDnsManager;
-use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\AppProd\AppProdCaddyManager;
 use App\Domain\Clusters\ClusterRouterOperationLock;
 use App\Domain\Hibernation\RuntimeHibernation;
@@ -678,9 +677,10 @@ it('fails gateway role removal before any other step when the resolver drop-in c
     );
 
     expect(static fn () => $gateway->remove($node, $assignment, purgeData: false))
-        ->toThrow(static function (RuntimeConvergenceException $exception): void {
+        ->toThrow(static function (NodeRoleOperationException $exception): void {
             expect($exception->step)->toBe('gateway-private-dns-resolver')
-                ->and($exception->errorCode)->toBe('vpn.dns_resolver_failed')
+                ->and($exception->errorCode)->toBe('node_role.remove_failed')
+                ->and($exception->underlyingErrorCode)->toBe('vpn.dns_resolver_failed')
                 ->and($exception->getMessage())->toBe('Gateway role step [gateway-private-dns-resolver] failed on node [gateway-dns].')
                 ->and($exception->result?->exitCode)->toBe(1);
         })

@@ -31,7 +31,7 @@ The Gateway is the control plane. It must still resolve ordinary names, such as 
 - A machine whose tunnel is a managed peer keeps the resolver policy that peer convergence owns. The step changes nothing on its `orbit` link.
 - The step sets the routing domain and turns off the link's default DNS route before it sets the server, so the link never becomes a route for every name.
 - A failure in this step never fails bootstrap or the `gateway` role. A failed role would drop implicit Gateway authority, which realtime and metrics authorization rely on. The role convergence response reports the failure in `follow_up` instead, the Gateway logs a warning with the underlying error code, and Doctor reports the missing route.
-- Removing the `gateway` role removes the drop-in and reverts the `orbit` link it configured. A failure there fails the removal, as other removal steps do. The role stays `failed` until the removal runs again and succeeds.
+- Removing the `gateway` role removes the drop-in and reverts the `orbit` link it configured. Relocating it adds the route on the target and removes it from the source in the same way. A failure there fails the removal, as other removal steps do. The role stays `failed` until the removal runs again and succeeds.
 
 ## Rejected alternatives
 
@@ -44,7 +44,7 @@ The Gateway is the control plane. It must still resolve ordinary names, such as 
 
 - The Orbit CLI on the Gateway machine stays live, and other clients there resolve every private name that Orbit VPN DNS answers.
 - Names under Node or Cluster top-level domains still use the uplink resolvers on the Gateway machine.
-- An existing Gateway gets the route at its next `gateway` role convergence. After `node:role:relocate`, converge the role on the target to add it there.
+- An existing Gateway gets the route at its next `gateway` role convergence. `node:role:relocate` moves the route with the role.
 - A Gateway without systemd-resolved or without a `wg-quick@orbit` tunnel cannot use this route. Doctor reports it as `role.private_dns_route_mismatch`.
 - When Orbit VPN DNS is unreachable, a private-name lookup on the Gateway machine waits for systemd-resolved to give up, which takes about 40 seconds. Before this route it failed within about 100 ms. systemd-resolved has no per-link timeout to shorten this. Ordinary names are not affected.
 - A Gateway that runs on a machine that is already a managed peer keeps that peer's route-everything policy (`~.`). It does not get the suffix-only protection, so a VPN DNS outage there also affects ordinary names, as on every managed peer.
