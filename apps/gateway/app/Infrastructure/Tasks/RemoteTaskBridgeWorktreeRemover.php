@@ -6,7 +6,6 @@ namespace App\Infrastructure\Tasks;
 
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Nodes\Storage\StoragePath;
-use App\Domain\SourceControl\GitBranchName;
 use App\Domain\SourceControl\GitRepositoryOrigin;
 use App\Domain\Tasks\TaskBridgeWorktreeRemover;
 use App\Infrastructure\AppDev\AppDevSshExecutor;
@@ -41,21 +40,6 @@ final readonly class RemoteTaskBridgeWorktreeRemover implements TaskBridgeWorktr
             );
         }
 
-        $branch = $instance->branch_override;
-        if (! is_string($branch) || $branch === '') {
-            $branch = $instance->branch;
-        }
-        if (! is_string($branch) || $branch === '') {
-            $branch = $instance->name;
-        }
-        if (! GitBranchName::isValid($branch)) {
-            throw new RuntimeConvergenceException(
-                step: 'task-bridge-removal',
-                errorCode: 'tasks.bridge_removal_failed',
-                message: 'The task workspace branch is not a valid Git branch name.',
-            );
-        }
-
         $repository = $instance->app->repository_url;
         $origin = GitRepositoryOrigin::isValid($repository) ? $repository : '';
 
@@ -63,7 +47,7 @@ final readonly class RemoteTaskBridgeWorktreeRemover implements TaskBridgeWorktr
             $this->ssh->execute(
                 $instance->node,
                 new RemoteCommand(
-                    arguments: ['bash', '-seu', '--', $instance->name, $checkout->value, $origin, $branch],
+                    arguments: ['bash', '-seu', '--', $instance->name, $checkout->value, $origin],
                     input: self::SCRIPT,
                 ),
                 'task-bridge-removal',
@@ -90,13 +74,13 @@ final readonly class RemoteTaskBridgeWorktreeRemover implements TaskBridgeWorktr
     private const string SCRIPT = <<<'BASH'
 #!/usr/bin/env bash
 # Remove one task group's ADR 0135 bridge from the registered primary checkout.
-# Arguments: instance name, checkout path, fallback origin URL, clone branch.
+# Arguments: instance name, checkout path, fallback origin URL.
+# The bridge path and branch are both task-{id}-e2e. The clone's current branch is not used.
 set -euo pipefail
 
 instance_name=$1
 checkout=$2
 fallback_origin=$3
-clone_branch=$4
 
 if [[ ! $instance_name =~ ^task-[0-9]+$ ]]; then
     exit 0
@@ -127,17 +111,13 @@ if [[ -e $checkout ]] && git -C "$checkout" rev-parse --is-inside-work-tree >/de
     if [[ -n $detected ]]; then
         origin=$detected
     fi
-    live_branch=$(git -C "$checkout" symbolic-ref --quiet --short HEAD || true)
-    if [[ -n $live_branch ]]; then
-        clone_branch=$live_branch
-    fi
 fi
 
-if [[ -z $origin || -z $clone_branch ]]; then
+if [[ -z $origin ]]; then
     exit 0
 fi
 
-expected_branch=$clone_branch-e2e
+expected_branch=$instance_name-e2e
 key=$(origin_key "$origin")
 if [[ ! $key =~ ^[0-9a-f]{64}$ ]]; then
     exit 0
@@ -214,10 +194,8 @@ while IFS= read -r line; do
 done <<< "$listing"
 flush_record
 
-removed=0
 if [[ -n $registered_path && $registered_branch == "refs/heads/$expected_branch" ]]; then
     git -C "$primary" worktree remove --force "$registered_path"
-    removed=1
 fi
 
 expected_ref=refs/heads/$expected_branch
@@ -227,19 +205,11 @@ checked_out=0
 if printf '%s\n' "$listing" | grep -Fxq "branch $expected_ref"; then
     checked_out=1
 fi
-if [[ $checked_out == 0 ]]; then
-    staging_exists=0
-    if git -C "$primary" show-ref --verify --quiet "$staging"; then
-        staging_exists=1
-    fi
-    if [[ $removed == 1 || $staging_exists == 1 ]]; then
-        if git -C "$primary" show-ref --verify --quiet "$expected_ref"; then
-            git -C "$primary" branch -D "$expected_branch"
-        fi
-    fi
-    if [[ $staging_exists == 1 ]]; then
-        git -C "$primary" update-ref -d "$staging"
-    fi
+if [[ $checked_out == 0 ]] && git -C "$primary" show-ref --verify --quiet "$expected_ref"; then
+    git -C "$primary" branch -D "$expected_branch"
+fi
+if git -C "$primary" show-ref --verify --quiet "$staging"; then
+    git -C "$primary" update-ref -d "$staging"
 fi
 BASH;
 }

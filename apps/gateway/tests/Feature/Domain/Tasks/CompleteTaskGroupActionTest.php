@@ -266,6 +266,86 @@ it('prunes a bridge branch and ref left after the bridge directory is gone', fun
     }
 });
 
+it('removes the bridge worktree when the clone is no longer on the task branch', function (): void {
+    $world = bridge_workspace(TaskGroupStatus::Settling, 'detoured');
+
+    try {
+        bridge_bind();
+        $completed = app(CompleteTaskGroupAction::class)->execute($world['group']);
+
+        expect($completed->status)->toBe(TaskGroupStatus::Completed)
+            ->and($completed->assistance_requested)->toBeFalse()
+            ->and($completed->assistance_reason)->toBeNull()
+            ->and(is_dir($world['checkout']))->toBeFalse()
+            ->and(is_dir($world['bridge']))->toBeFalse()
+            ->and(bridge_lists_worktree($world['primary'], $world['bridge']))->toBeFalse()
+            ->and(bridge_has_ref($world['primary'], 'refs/heads/'.$world['name'].'-e2e'))->toBeFalse()
+            ->and(bridge_has_ref($world['primary'], 'refs/orbit/e2e-bridge/'.$world['name']))->toBeFalse()
+            ->and(is_dir($world['userWorktree']))->toBeTrue()
+            ->and(bridge_lists_worktree($world['primary'], $world['userWorktree']))->toBeTrue();
+    } finally {
+        ($world['restore'])();
+    }
+});
+
+it('keeps a bridge-path worktree checked out on the clone branch instead of the group bridge', function (): void {
+    $world = bridge_workspace(TaskGroupStatus::Settling, 'retargeted');
+
+    try {
+        bridge_bind();
+        $completed = app(CompleteTaskGroupAction::class)->execute($world['group']);
+
+        expect($completed->assistance_requested)->toBeFalse()
+            ->and($completed->assistance_reason)->toBeNull()
+            ->and(is_dir($world['bridge']))->toBeTrue()
+            ->and(bridge_lists_worktree($world['primary'], $world['bridge']))->toBeTrue()
+            ->and(trim(bridge_git(['-C', $world['bridge'], 'symbolic-ref', '--short', 'HEAD'])))->toBe('wip-e2e');
+    } finally {
+        ($world['restore'])();
+    }
+});
+
+it('keeps a worktree that has the group bridge branch checked out at another path', function (): void {
+    $world = bridge_workspace(TaskGroupStatus::Settling, 'held');
+
+    try {
+        bridge_bind();
+        $completed = app(CompleteTaskGroupAction::class)->execute($world['group']);
+
+        expect($completed->assistance_requested)->toBeFalse()
+            ->and($completed->assistance_reason)->toBeNull()
+            ->and(is_dir($world['checkout']))->toBeFalse()
+            ->and(is_dir($world['userWorktree']))->toBeTrue()
+            ->and(bridge_lists_worktree($world['primary'], $world['userWorktree']))->toBeTrue()
+            ->and(trim(bridge_git(['-C', $world['userWorktree'], 'symbolic-ref', '--short', 'HEAD'])))->toBe($world['name'].'-e2e')
+            ->and(bridge_has_ref($world['primary'], 'refs/heads/'.$world['name'].'-e2e'))->toBeTrue()
+            ->and(bridge_has_ref($world['primary'], 'refs/orbit/e2e-bridge/'.$world['name']))->toBeFalse();
+    } finally {
+        ($world['restore'])();
+    }
+});
+
+it('prunes a bridge registration whose directory is already gone', function (): void {
+    $world = bridge_workspace(TaskGroupStatus::Settling, 'prunable');
+
+    try {
+        bridge_bind();
+        $completed = app(CompleteTaskGroupAction::class)->execute($world['group']);
+
+        expect($completed->status)->toBe(TaskGroupStatus::Completed)
+            ->and($completed->assistance_requested)->toBeFalse()
+            ->and($completed->assistance_reason)->toBeNull()
+            ->and(is_dir($world['checkout']))->toBeFalse()
+            ->and(bridge_lists_worktree($world['primary'], $world['bridge']))->toBeFalse()
+            ->and(bridge_has_ref($world['primary'], 'refs/heads/'.$world['name'].'-e2e'))->toBeFalse()
+            ->and(bridge_has_ref($world['primary'], 'refs/orbit/e2e-bridge/'.$world['name']))->toBeFalse()
+            ->and(is_dir($world['userWorktree']))->toBeTrue()
+            ->and(bridge_lists_worktree($world['primary'], $world['userWorktree']))->toBeTrue();
+    } finally {
+        ($world['restore'])();
+    }
+});
+
 /**
  * A primary checkout, a task clone, and the bridge shape named by $kind.
  *
@@ -341,7 +421,7 @@ function bridge_workspace(TaskGroupStatus $status, string $kind): array
         bridge_git(['-C', $checkout, 'commit', '-q', '-m', 'clone']);
         bridge_git(['-C', $checkout, 'remote', 'add', 'origin', $origin]);
 
-        if ($kind === 'live') {
+        if ($kind === 'live' || $kind === 'detoured' || $kind === 'prunable') {
             bridge_git(['-C', $primary, 'worktree', 'add', '-q', '-b', $name.'-e2e', $bridge]);
             $files->put($bridge.'/README', "changed\n");
             $files->put($bridge.'/dirt.txt', "dirt\n");
@@ -350,6 +430,20 @@ function bridge_workspace(TaskGroupStatus $status, string $kind): array
             bridge_git(['-C', $primary, 'update-ref', 'refs/orbit/e2e-bridge/'.$name, 'HEAD']);
             bridge_git(['-C', $primary, 'branch', 'orb-1']);
             bridge_git(['-C', $primary, 'worktree', 'add', '-q', $userWorktree, 'orb-1']);
+            if ($kind === 'detoured') {
+                bridge_git(['-C', $checkout, 'checkout', '-q', '-b', 'wip']);
+            }
+            if ($kind === 'prunable') {
+                $files->deleteDirectory($bridge);
+            }
+        } elseif ($kind === 'retargeted') {
+            bridge_git(['-C', $checkout, 'checkout', '-q', '-b', 'wip']);
+            bridge_git(['-C', $primary, 'branch', 'wip-e2e']);
+            bridge_git(['-C', $primary, 'worktree', 'add', '-q', $bridge, 'wip-e2e']);
+        } elseif ($kind === 'held') {
+            bridge_git(['-C', $primary, 'branch', $name.'-e2e']);
+            bridge_git(['-C', $primary, 'worktree', 'add', '-q', $userWorktree, $name.'-e2e']);
+            bridge_git(['-C', $primary, 'update-ref', 'refs/orbit/e2e-bridge/'.$name, 'HEAD']);
         } elseif ($kind === 'foreign') {
             bridge_git(['-C', $primary, 'branch', 'orb-user']);
             bridge_git(['-C', $primary, 'worktree', 'add', '-q', $bridge, 'orb-user']);
