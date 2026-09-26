@@ -44,6 +44,8 @@ describe('RecordEventType', function (): void {
             'task_comment.created',
             'agent_thread.updated',
             'tasks.updated',
+            'activity.created',
+            'activity.updated',
         ]);
     });
 

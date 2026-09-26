@@ -291,13 +291,13 @@ describe('a failed build', function (): void {
     it('changes nothing for a render without sites on a Node without Caddy', function (): void {
         unlink($this->harness->root.'/bin/caddy');
 
-        $result = $this->harness->push(node_caddy_push_empty_file());
+        $result = $this->harness->push(node_caddy_push_empty_file(), ['HARNESS_CADDY_INACTIVE' => '1']);
 
         expect($result['exit'])->toBe(0, $result['stderr'])
             ->and($result['stdout'])->toBe("orbit-caddy-build-result=unchanged\n")
             ->and(file_exists($this->harness->path('Caddyfile')))->toBeFalse()
             ->and($this->harness->directories('orbit-versions'))->toBe([])
-            ->and($this->harness->serviceCalls())->toBe([]);
+            ->and($this->harness->serviceCalls())->toBe(['is-active --quiet caddy']);
     });
 
     it('still refuses a render with sites on a Node without Caddy', function (): void {
@@ -309,6 +309,35 @@ describe('a failed build', function (): void {
             ->and($result['stderr'])->toContain('reported no release')
             ->and($result['stderr'])->toContain('orbit-caddy-build-stage=release')
             ->and($this->harness->directories('orbit-versions'))->toBe([]);
+    });
+
+    it('changes nothing for a render with sites on a Node without Caddy when no Caddy role there is active or converging', function (): void {
+        unlink($this->harness->root.'/bin/caddy');
+
+        $result = $this->harness->push(node_caddy_push_file('shop.test'), ['HARNESS_CADDY_INACTIVE' => '1'], caddyExpected: false);
+
+        expect($result['exit'])->toBe(0, $result['stderr'])
+            ->and($result['stdout'])->toBe("orbit-caddy-build-result=unchanged\n")
+            ->and(file_exists($this->harness->path('Caddyfile')))->toBeFalse()
+            ->and($this->harness->directories('orbit-versions'))->toBe([]);
+    });
+
+    it('still fails while a Caddy service runs although its binary is gone', function (): void {
+        unlink($this->harness->root.'/bin/caddy');
+
+        $result = $this->harness->push(node_caddy_push_file('shop.test'), caddyExpected: false);
+
+        expect($result['exit'])->not->toBe(0)
+            ->and($result['stderr'])->toContain('reported no release')
+            ->and($result['stderr'])->toContain('orbit-caddy-build-stage=release')
+            ->and($this->harness->serviceCalls())->toContain('is-active --quiet caddy');
+    });
+
+    it('still publishes when Caddy is installed although no Caddy role expects it', function (): void {
+        $result = $this->harness->push(node_caddy_push_file('shop.test'), caddyExpected: false);
+
+        expect($result['exit'])->toBe(0, $result['stderr'])
+            ->and($result['stdout'])->toBe("orbit-caddy-build-result=published\n");
     });
 
     it('publishes a render without sites on a Node with Caddy', function (): void {

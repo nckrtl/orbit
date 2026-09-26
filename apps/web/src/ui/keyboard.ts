@@ -101,6 +101,12 @@ export function useKeyboard(pageTarget: () => Target | null): void {
                         ui.select(key, Math.max(0, index - 1));
                         return handled();
                     case "Enter": {
+                        if (pane?.activate !== undefined) {
+                            pane.activate(index);
+
+                            return handled();
+                        }
+
                         const target = pane?.target(index) ?? null;
 
                         if (target !== null) {

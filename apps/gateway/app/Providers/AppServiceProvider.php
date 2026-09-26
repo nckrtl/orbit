@@ -13,6 +13,7 @@ use App\Actions\Gateway\GatewayOperatingSystemGuard;
 use App\Actions\Hibernation\SweepIdleAppDevRuntimesAction;
 use App\Actions\Nodes\AssignRoleAction;
 use App\Console\GatewayBoostInstallCommand;
+use App\Domain\Activity\ActivityBroadcastObserver;
 use App\Domain\AgentView\AgentProcessView;
 use App\Domain\AgentView\AgentStateView;
 use App\Domain\AgentView\AgentViewConverger;
@@ -873,6 +874,7 @@ final class AppServiceProvider extends ServiceProvider
             GatewayCacheStore::assertSupported($cache, $this->app->environment(), $this->app->configurationIsCached());
         }
         Activity::observe($activityPropertiesObserver);
+        Activity::observe(ActivityBroadcastObserver::class);
         // Reverb event bodies carry text as UTF-8, so non-ASCII log lines keep their length (ADR 0153).
         $this->app->make(BroadcastManager::class)->extend(
             'reverb',

@@ -46,10 +46,10 @@ final readonly class NodeCaddyPushHarness
      * @param  array<string, string>  $environment
      * @return array{exit: int, stdout: string, stderr: string}
      */
-    public function push(NodeCaddyfile $caddyfile, array $environment = []): array
+    public function push(NodeCaddyfile $caddyfile, array $environment = [], bool $caddyExpected = true): array
     {
         $this->files->delete([$this->root.'/systemctl.log', $this->root.'/validate.log', $this->root.'/reload-failed']);
-        $command = $this->script()->command($caddyfile);
+        $command = $this->script()->command($caddyfile, $caddyExpected);
         $process = new Process(array_slice($command->arguments, 1), $this->root, [
             'PATH' => $this->root.'/bin:'.getenv('PATH'),
             'HARNESS_ROOT' => $this->root,

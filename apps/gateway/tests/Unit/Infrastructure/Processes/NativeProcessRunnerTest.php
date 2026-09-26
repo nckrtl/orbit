@@ -364,7 +364,7 @@ it('terminates its complete process group when the timeout expires', function ()
     expect(is_int($childPid) && @posix_kill($childPid, 0))->toBeFalse();
 });
 
-it('reports the API command deadline when it cut a process short', function (): void {
+it('reports the command deadline when it cut a process short', function (): void {
     $deadline = new CommandDeadline;
     $deadline->start(0.2);
     $runner = new NativeProcessRunner(deadline: $deadline);

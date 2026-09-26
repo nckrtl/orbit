@@ -37,6 +37,7 @@ it('installs the pinned binary, unit, and exact firewall rule on first convergen
         ->toContain(
             [
                 'sudo', 'curl', '--fail', '--location', '--silent', '--show-error',
+                '--connect-timeout', '10', '--max-time', '120',
                 '--output', '/usr/local/bin/orbit-cadvisor.orbit-candidate', '--', MetricsFootprint::CadvisorDownloadUrl,
             ],
             ['sudo', 'chown', 'root:root', '--', '/usr/local/bin/orbit-cadvisor.orbit-candidate'],
@@ -93,6 +94,7 @@ it('skips the download when the installed binary already matches the pinned chec
 
     expect($arguments)->not->toContain([
         'sudo', 'curl', '--fail', '--location', '--silent', '--show-error',
+        '--connect-timeout', '10', '--max-time', '120',
         '--output', '/usr/local/bin/orbit-cadvisor.orbit-candidate', '--', MetricsFootprint::CadvisorDownloadUrl,
     ]);
 });
@@ -355,6 +357,7 @@ final class CadvisorStatefulSsh implements SshExecutor
             ['sudo', 'rm', '-f', '--', '/usr/local/bin/orbit-cadvisor.orbit-candidate'] => cadvisorResult(),
             [
                 'sudo', 'curl', '--fail', '--location', '--silent', '--show-error',
+                '--connect-timeout', '10', '--max-time', '120',
                 '--output', '/usr/local/bin/orbit-cadvisor.orbit-candidate', '--', MetricsFootprint::CadvisorDownloadUrl,
             ] => cadvisorResult(),
             ['sudo', 'sha256sum', '--', '/usr/local/bin/orbit-cadvisor.orbit-candidate'] => cadvisorResult(
