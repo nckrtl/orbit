@@ -23,10 +23,13 @@ export function PageHeader({
     trail,
     children,
     actions,
+    titleTestId,
 }: {
     trail: Crumb[];
     children?: ReactNode;
     actions?: ReactNode;
+    /** Stable id for the current page crumb. Omitted when unset. */
+    titleTestId?: string;
 }) {
     const { header: slot, actions: actionsSlot } = useContext(PageHeaderSlot);
     const inNavigation = useSyncExternalStore(subscribe, desktop, () => false) && slot !== null;
@@ -49,6 +52,7 @@ export function PageHeader({
                                 <span
                                     className="selectable truncate text-dim"
                                     aria-current={last ? "page" : undefined}
+                                    data-testid={last ? titleTestId : undefined}
                                 >
                                     {crumb.label}
                                 </span>

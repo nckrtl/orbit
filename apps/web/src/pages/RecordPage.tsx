@@ -279,6 +279,7 @@ function NodePage({ fleet, node }: { fleet: Fleet; node: Node }) {
                 className={`w-full min-w-0 max-w-full col-span-1 flex flex-col md:col-span-2 md:grid md:grid-cols-[2fr_3fr] ${GAPS}`}
             >
                 <Properties
+                    testId="record-properties"
                     properties={[
                         { name: "Name", value: node.name },
                         { name: "Status", value: node.status, warn: !nodeHealthy(node) },
@@ -336,6 +337,7 @@ function ProjectPage({ fleet, project }: { fleet: Fleet; project: Project }) {
             className={`w-full min-w-0 max-w-full flex flex-col md:grid md:h-full md:grid-rows-[auto_minmax(0,1fr)_minmax(0,1fr)] ${GAPS}`}
         >
             <Properties
+                testId="record-properties"
                 properties={[
                     { name: "Name", value: project.name },
                     { name: "Slug", value: project.slug },
@@ -439,6 +441,9 @@ function InstancePage({ fleet, instance }: { fleet: Fleet; instance: Instance })
                         <button
                             key={section}
                             id={`instance-${instance.id}-${section}-tab`}
+                            data-testid={
+                                section === "overview" ? "instance-overview" : "instance-tasks"
+                            }
                             role="tab"
                             type="button"
                             aria-selected={tab === section}
@@ -515,6 +520,7 @@ function InstanceOverview({ fleet, instance }: { fleet: Fleet; instance: Instanc
                 className={`w-full min-w-0 max-w-full flex flex-col md:grid md:max-h-[40vh] ${hasDeployments ? "md:grid-cols-2" : "md:grid-cols-1"} ${GAPS}`}
             >
                 <Properties
+                    testId="record-properties"
                     properties={[
                         { name: "Name", value: instance.name },
                         {
@@ -592,6 +598,7 @@ function InstanceOverview({ fleet, instance }: { fleet: Fleet; instance: Instanc
             <QueuePanel instance={instance} />
             <LogPane
                 title="Application log"
+                testId="record-log"
                 className="min-h-[220px] flex-1"
                 lines={logs.lines}
                 loading={logs.loading}
@@ -622,6 +629,7 @@ function DatabasePage({ fleet, database }: { fleet: Fleet; database: Database })
             className={`w-full min-w-0 max-w-full flex flex-col md:grid md:h-full md:grid-cols-[45fr_55fr] md:grid-rows-[auto_minmax(0,1fr)] ${GAPS}`}
         >
             <Properties
+                testId="record-properties"
                 className="w-full col-span-1 md:col-span-2"
                 properties={[
                     { name: "Slug", value: database.slug },
@@ -685,6 +693,7 @@ function ProcessPage({ fleet, process }: { fleet: Fleet; process: Process }) {
             className={`w-full min-w-0 max-w-full flex flex-col md:grid md:h-full md:grid-rows-[auto_minmax(0,1fr)] ${GAPS}`}
         >
             <Properties
+                testId="record-properties"
                 properties={[
                     { name: "Name", value: process.name },
                     { name: "Owner", value: processOwner(fleet, process) },
@@ -705,6 +714,7 @@ function ProcessPage({ fleet, process }: { fleet: Fleet; process: Process }) {
             />
             <LogPane
                 title="Log"
+                testId="record-log"
                 className="min-h-[220px] flex-1"
                 lines={logs.lines}
                 loading={logs.loading}
@@ -723,6 +733,7 @@ function SchedulePage({ fleet, schedule }: { fleet: Fleet; schedule: Schedule })
             className={`w-full min-w-0 max-w-full flex flex-col md:grid md:h-full md:grid-rows-[auto_minmax(0,1fr)] ${GAPS}`}
         >
             <Properties
+                testId="record-properties"
                 properties={[
                     { name: "Name", value: schedule.name },
                     { name: "Instance", value: instanceName(fleet, schedule.target_id) },
@@ -741,6 +752,7 @@ function SchedulePage({ fleet, schedule }: { fleet: Fleet; schedule: Schedule })
             />
             <LogPane
                 title="Log"
+                testId="record-log"
                 className="min-h-[220px] flex-1"
                 lines={logs.data}
                 loading={logs.isPending}
@@ -753,6 +765,7 @@ function FirewallPage({ rule }: { rule: FirewallRule }) {
     return (
         <div className="w-full min-w-0 max-w-full flex flex-col md:grid md:h-full md:grid-rows-[auto]">
             <Properties
+                testId="record-properties"
                 properties={[
                     { name: "Name", value: rule.name },
                     { name: "Port", value: rule.port },
@@ -864,7 +877,10 @@ export function RecordPage() {
 
     return (
         page ?? (
-            <Frame title={section}>
+            <Frame
+                title={section}
+                testId={fleet.loading || !fleet.processesLoaded ? undefined : "record-missing"}
+            >
                 <Note>
                     {fleet.loading || !fleet.processesLoaded
                         ? "Loading…"
@@ -887,18 +903,22 @@ export function DeploymentPage() {
 
     if (deployment === undefined) {
         return (
-            <Frame title="Deployment">
+            <Frame
+                title="Deployment"
+                testId={deployments.isPending ? undefined : "deployment-missing"}
+            >
                 <Note>{deployments.isPending ? "Loading…" : `No deployment ${deploymentId}.`}</Note>
             </Frame>
         );
     }
 
     return (
-        <RecordLayout kind="deployments" row={deployment}>
+        <RecordLayout kind="deployments" row={deployment} titleTestId="deployment-title">
             <div
                 className={`w-full min-w-0 max-w-full flex flex-col md:grid md:h-full md:grid-rows-[auto_minmax(0,1fr)] ${GAPS}`}
             >
                 <Properties
+                    testId="deployment-properties"
                     properties={[
                         { name: "Release", value: deployment.release },
                         { name: "Branch", value: deployment.branch },
@@ -925,6 +945,7 @@ export function DeploymentPage() {
                 />
                 <LogPane
                     title="Log"
+                    testId="deployment-log"
                     className="min-h-[220px] flex-1"
                     lines={log.data}
                     loading={log.isPending}

@@ -206,17 +206,22 @@ export function QuotaList() {
 
     if (status.data?.enabled !== true || tasks.data?.enabled !== true) {
         return (
-            <Frame title="Quota" state="warn">
+            <Frame title="Quota" testId="section-list" state="warn">
                 <Note>
-                    Provider quota and token spend require both the CLIProxyAPI collector and the
-                    tasks extension. Enable both to view this data.
+                    <span data-testid="quota-unavailable">
+                        Provider quota and token spend require both the CLIProxyAPI collector and
+                        the tasks extension. Enable both to view this data.
+                    </span>
                 </Note>
             </Frame>
         );
     }
 
     return (
-        <div className="grid h-full grid-rows-[auto_minmax(0,1fr)] md:grid-rows-[minmax(0,1fr)] gap-y-[var(--panel-gap)]">
+        <div
+            data-testid="section-list"
+            className="grid h-full grid-rows-[auto_minmax(0,1fr)] md:grid-rows-[minmax(0,1fr)] gap-y-[var(--panel-gap)]"
+        >
             <PageHeader trail={[{ label: "Quota" }]} />
             <Pane
                 name="list"
@@ -299,6 +304,7 @@ export function QuotaProviderPage() {
                 value: (row) => (row.disabled ? "enable" : "disable"),
                 cell: (row) => (
                     <span
+                        data-testid="quota-account-toggle"
                         className="cursor-pointer text-cyan"
                         onClick={(event) => {
                             event.stopPropagation();
@@ -320,7 +326,7 @@ export function QuotaProviderPage() {
 
     if (status.data?.enabled !== true || tasks.data?.enabled !== true) {
         return (
-            <Frame title="Quota" state="warn">
+            <Frame title="Quota" testId="quota-unavailable" state="warn">
                 <Note>
                     Provider quota and token spend require both the CLIProxyAPI collector and the
                     tasks extension.
@@ -331,7 +337,7 @@ export function QuotaProviderPage() {
 
     if (provider.data === undefined) {
         return (
-            <Frame title={id}>
+            <Frame title={id} testId={provider.isPending ? undefined : "record-missing"}>
                 <Note>
                     {provider.isPending ? "Loading…" : `No provider ${id} in the snapshot.`}
                 </Note>
@@ -345,13 +351,17 @@ export function QuotaProviderPage() {
         <div
             className={`grid h-full gap-y-[var(--panel-gap)] ${toggleError ? "grid-rows-[auto_auto_auto_minmax(0,1fr)] md:grid-rows-[auto_auto_minmax(0,1fr)]" : "grid-rows-[auto_auto_minmax(0,1fr)] md:grid-rows-[auto_minmax(0,1fr)]"}`}
         >
-            <PageHeader trail={[{ label: "Quota" }, { label: providerName(pool.provider) }]} />
+            <PageHeader
+                titleTestId="record-title"
+                trail={[{ label: "Quota" }, { label: providerName(pool.provider) }]}
+            />
             {toggleError && (
                 <div role="alert" className="text-red">
                     {toggleError}
                 </div>
             )}
             <Properties
+                testId="record-properties"
                 properties={[
                     { name: "Provider", value: providerName(pool.provider) },
                     {
@@ -368,6 +378,7 @@ export function QuotaProviderPage() {
             />
             <Pane
                 name="accounts"
+                testId="quota-accounts"
                 order={1}
                 title="Accounts"
                 bottomLeft="Red line: even pace · Bar past line = on track"

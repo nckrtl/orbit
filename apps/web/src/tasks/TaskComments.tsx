@@ -207,6 +207,7 @@ export function TaskComments({ groupId, task }: { groupId: number; task: Task })
     return (
         <Frame
             title="Comments"
+            testId="task-comments"
             topRight={query.isSuccess ? comments.length : undefined}
             className="max-h-[560px] shrink-0 lg:max-h-none lg:min-h-0"
             bodyClassName="space-y-[var(--panel-padding)]"

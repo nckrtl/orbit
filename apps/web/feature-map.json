@@ -1,0 +1,214 @@
+[
+    {
+        "path": "/",
+        "purpose": "The fleet at a glance: nodes, projects, instances, processes, schedules, and what needs attention.",
+        "reach": "Open Dashboard in the main nav, or load the app.",
+        "controls": [
+            { "testid": "nav-menu", "purpose": "Opens the main nav on a phone." },
+            { "testid": "nav-close", "purpose": "Closes the phone menu." },
+            {
+                "testid": "nav-dashboard",
+                "purpose": "Dashboard in the main nav, after the phone menu is opened when the nav is collapsed."
+            },
+            { "testid": "dashboard-workers", "purpose": "The worker nodes pane." },
+            { "testid": "dashboard-clients", "purpose": "The client nodes pane." },
+            { "testid": "dashboard-projects", "purpose": "The projects pane." },
+            { "testid": "dashboard-instances", "purpose": "The instances pane." },
+            { "testid": "dashboard-processes", "purpose": "The processes pane." },
+            { "testid": "dashboard-schedules", "purpose": "The schedules pane." },
+            { "testid": "dashboard-attention", "purpose": "Rows that need a look." }
+        ]
+    },
+    {
+        "path": "/tasks",
+        "purpose": "The task board, with one column for each status.",
+        "reach": "Open Tasks in the main nav.",
+        "controls": [
+            {
+                "testid": "nav-tasks",
+                "purpose": "Tasks in the main nav, after the phone menu is opened when the nav is collapsed."
+            },
+            { "testid": "tasks-board", "purpose": "The status columns." },
+            { "testid": "task-group-card", "purpose": "Opens one task group." }
+        ]
+    },
+    {
+        "path": "/tasks/$id",
+        "purpose": "One task group, its subtasks, and its agent threads.",
+        "reach": "Open Tasks in the main nav, then choose a group.",
+        "controls": [
+            { "testid": "task-group-title", "purpose": "The group title." },
+            { "testid": "subtask-card", "purpose": "Opens one subtask." },
+            { "testid": "agent-sessions", "purpose": "The group's agent threads." }
+        ]
+    },
+    {
+        "path": "/tasks/$id/subtasks/$subtaskId",
+        "purpose": "One subtask, with its agent thread and comments.",
+        "reach": "Open Tasks in the main nav, choose a group, then choose a subtask.",
+        "controls": [
+            { "testid": "subtask-title", "purpose": "The subtask title." },
+            { "testid": "agent-sessions", "purpose": "The subtask's agent thread." },
+            { "testid": "task-comments", "purpose": "Comments on this subtask." }
+        ]
+    },
+    {
+        "path": "/activity",
+        "purpose": "The activity log, newest first, filtered by status, command, and node.",
+        "reach": "Open Activity in the main nav.",
+        "controls": [
+            {
+                "testid": "nav-activity",
+                "purpose": "Activity in the main nav, after the phone menu is opened when the nav is collapsed."
+            },
+            { "testid": "activity-filters", "purpose": "Opens the filter sheet on a phone." },
+            {
+                "testid": "activity-filter-status",
+                "purpose": "Cycles the status filter, from the bar or the phone sheet."
+            },
+            {
+                "testid": "activity-filter-command",
+                "purpose": "Sets the command filter, from the bar or the phone sheet."
+            },
+            {
+                "testid": "activity-filter-caller",
+                "purpose": "Cycles the caller node filter, from the bar or the phone sheet."
+            },
+            {
+                "testid": "activity-filter-target",
+                "purpose": "Cycles the target node filter, from the bar or the phone sheet."
+            },
+            {
+                "testid": "activity-filters-clear",
+                "purpose": "Clears every filter from the phone sheet."
+            },
+            { "testid": "activity-filters-done", "purpose": "Closes the phone filter sheet." },
+            { "testid": "activity-row", "purpose": "Opens one activity row." },
+            {
+                "testid": "activity-new",
+                "purpose": "Scrolls to rows that arrived above the viewport."
+            }
+        ]
+    },
+    {
+        "path": "/activity/$id",
+        "purpose": "One activity record and its stored properties.",
+        "reach": "Open Activity in the main nav, then choose a row.",
+        "controls": [
+            { "testid": "activity-detail", "purpose": "The activity's fields." },
+            { "testid": "activity-properties", "purpose": "The stored properties." }
+        ]
+    },
+    {
+        "path": "/nodes/create",
+        "purpose": "The form that adds a node.",
+        "reach": "Open Nodes in the main nav, then choose + create.",
+        "controls": [
+            { "testid": "node-name", "purpose": "The node name field." },
+            { "testid": "node-host", "purpose": "The SSH host field." },
+            { "testid": "node-port", "purpose": "The SSH port field." },
+            { "testid": "node-user", "purpose": "The SSH user field." },
+            { "testid": "node-role-app-dev", "purpose": "Toggles the app-dev role." },
+            { "testid": "node-role-app-prod", "purpose": "Toggles the app-prod role." },
+            { "testid": "node-role-gateway", "purpose": "Toggles the gateway role." },
+            { "testid": "node-tld", "purpose": "The domain TLD field." },
+            { "testid": "create-node", "purpose": "Submits the form." }
+        ]
+    },
+    {
+        "path": "/instances/$id/deployments/$deploymentId",
+        "purpose": "One deployment and its log.",
+        "reach": "Open Projects in the main nav, open a project, open an instance, then choose a deployment.",
+        "controls": [
+            { "testid": "deployment-title", "purpose": "The deployment's release title." },
+            { "testid": "deployment-properties", "purpose": "The deployment's properties." },
+            { "testid": "deployment-log", "purpose": "The deployment log." },
+            {
+                "testid": "deployment-missing",
+                "purpose": "Shown when that deployment is not in the list."
+            }
+        ]
+    },
+    {
+        "path": "/$section",
+        "purpose": "A section list for Nodes, Projects, Instances, Processes, Schedules, Databases, Firewall, or Quota.",
+        "reach": "Open Nodes, Projects, Databases, or Quota in the main nav, or open Instances, Processes, Schedules, or Firewall from Other Sections in the phone menu.",
+        "controls": [
+            {
+                "testid": "nav-nodes",
+                "purpose": "Nodes in the main nav, after the phone menu is opened when the nav is collapsed."
+            },
+            {
+                "testid": "nav-projects",
+                "purpose": "Projects in the main nav, after the phone menu is opened when the nav is collapsed."
+            },
+            {
+                "testid": "nav-databases",
+                "purpose": "Databases in the main nav, after the phone menu is opened when the nav is collapsed."
+            },
+            {
+                "testid": "nav-quota",
+                "purpose": "Quota in the main nav when quota is enabled, or under Other Sections on a phone when it is not."
+            },
+            {
+                "testid": "nav-instances",
+                "purpose": "Instances under Other Sections in the phone menu."
+            },
+            {
+                "testid": "nav-processes",
+                "purpose": "Processes under Other Sections in the phone menu."
+            },
+            {
+                "testid": "nav-schedules",
+                "purpose": "Schedules under Other Sections in the phone menu."
+            },
+            {
+                "testid": "nav-firewall",
+                "purpose": "Firewall under Other Sections in the phone menu."
+            },
+            {
+                "testid": "section-list",
+                "purpose": "The section's rows, or the message when the section is missing or quota is off."
+            },
+            { "testid": "nodes-create", "purpose": "Opens the create-node form from Nodes." },
+            {
+                "testid": "section-filter-node",
+                "purpose": "Cycles the node filter on Instances, Processes, and Schedules."
+            },
+            {
+                "testid": "section-filter-project",
+                "purpose": "Cycles the project filter on Instances, Processes, and Schedules."
+            },
+            {
+                "testid": "quota-unavailable",
+                "purpose": "Shown on Quota when collection or tasks are off."
+            }
+        ]
+    },
+    {
+        "path": "/$section/$id",
+        "purpose": "One node, project, instance, process, schedule, database, firewall rule, or quota provider.",
+        "reach": "Open a section from the main nav, then choose a row.",
+        "controls": [
+            { "testid": "record-title", "purpose": "The record name in the breadcrumb." },
+            {
+                "testid": "record-actions",
+                "purpose": "Opens the actions menu. A quota provider has no actions menu."
+            },
+            { "testid": "record-properties", "purpose": "The record's properties." },
+            { "testid": "record-log", "purpose": "The log on an instance, process, or schedule." },
+            { "testid": "record-missing", "purpose": "Shown when the id is not in that section." },
+            { "testid": "instance-overview", "purpose": "The Overview tab on an instance." },
+            { "testid": "instance-tasks", "purpose": "The Tasks tab on an instance." },
+            { "testid": "quota-accounts", "purpose": "Accounts in a quota provider pool." },
+            {
+                "testid": "quota-account-toggle",
+                "purpose": "Enables or disables one quota account."
+            },
+            {
+                "testid": "quota-unavailable",
+                "purpose": "Shown when quota collection or tasks are off."
+            }
+        ]
+    }
+]

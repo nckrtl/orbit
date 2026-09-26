@@ -17,6 +17,8 @@ type FrameProps = {
     pane?: string;
     /** The accessible name of a frame that shows no title. */
     label?: string;
+    /** Stable id for web verification. Omitted when unset. */
+    testId?: string;
 };
 
 /** A box with its labels in the border: title top left, and optional labels on the other corners. */
@@ -34,11 +36,13 @@ export function Frame({
     onMouseDown,
     pane,
     label,
+    testId,
 }: FrameProps) {
     return (
         <section
             className={`frame ${className}`}
             aria-label={label ?? (typeof title === "string" ? title : undefined)}
+            data-testid={testId}
             data-state={state}
             data-pane={pane}
             onMouseDown={onMouseDown}
