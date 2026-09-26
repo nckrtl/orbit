@@ -2,7 +2,7 @@ import { notifyAnnotationUpdates } from "./annotations";
 import type { QueryClient } from "@tanstack/react-query";
 import Pusher from "pusher-js";
 import { get } from "../api/client";
-import { applyEvent, type RealtimeEvent } from "./apply";
+import { applyEvent, refetchReplacingInitial, type RealtimeEvent } from "./apply";
 import { downForMs, setLiveness } from "./liveness";
 import {
     acceptAgentEvent,
@@ -148,13 +148,18 @@ export async function connectRealtime(client: QueryClient, signal: AbortSignal):
             // Events sent while the socket was down are gone; reload what they would have changed.
             // That holds after a reconnect, and after a first connect that came late, when the
             // lists had been polling (a failed socket or a retried realtime discovery). On a prompt
-            // first subscription, reload what now polls only rarely: the task and Process queries,
-            // because a change between their first load and this moment sent no event to this page.
+            // first subscription, reload what now polls only rarely: the task, Process, and Activity
+            // queries, because a change between their first load and this moment sent no event here.
             if (wasLive || downForMs() > FIRST_CONNECT_GRACE_MS) {
-                void client.invalidateQueries();
+                refetchReplacingInitial(client);
             } else {
-                for (const queryKey of [["task-groups"], ["tasks-status"], ["processes"]]) {
-                    void client.invalidateQueries({ queryKey });
+                for (const queryKey of [
+                    ["task-groups"],
+                    ["tasks-status"],
+                    ["processes"],
+                    ["activities"],
+                ]) {
+                    refetchReplacingInitial(client, { queryKey });
                 }
             }
 
