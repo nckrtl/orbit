@@ -7,7 +7,7 @@ description: "How the Gateway tasks extension holds TaskGroup features in Backlo
 
 This page tells an operator how the optional Gateway `tasks` extension runs a Commander-style feature group. A group waits in Backlog while its branch, ADRs, documentation, and subtasks are prepared. Once the group is in Todo, the Gateway provisions its shared Instance, starts agents, and moves each task from turn to turn with run receipts and mechanical checks. It commits approved work and pushes that commit to `origin`, opens and watches the pull request, retains capacity through assistance and merge wait, and removes the workspace clone when the group is cancelled or completed.
 
-[ADR 0103](/decisions/0103-absorb-commander-tasks-as-a-gateway-extension) owns the extension boundary. [ADR 0110](/decisions/0110-route-task-sessions-with-laravel-ai-jev) owns session routing. [ADR 0113](/decisions/0113-gate-task-completion-on-validation-and-review) owns completion gates. [ADR 0122](/decisions/0122-hold-task-groups-in-backlog-until-ready) owns Backlog and Todo. [ADR 0124](/decisions/0124-plan-backlog-groups-with-a-t3-planner) owns planning. [ADR 0160](/decisions/0160-push-each-approved-subtask-and-remove-the-finished-workspace-clone) owns the push after each approval and deletion of the workspace clone. [ADR 0164](/decisions/0164-heal-a-settling-pull-request-with-a-fixup-subtask) owns the fixup that returns a settling group to running. [ADR 0165](/decisions/0165-record-per-thread-token-metrics) owns the per-thread token split.
+[ADR 0103](/decisions/0103-absorb-commander-tasks-as-a-gateway-extension) owns the extension boundary. [ADR 0110](/decisions/0110-route-task-sessions-with-laravel-ai-jev) owns session routing. [ADR 0113](/decisions/0113-gate-task-completion-on-validation-and-review) owns completion gates. [ADR 0122](/decisions/0122-hold-task-groups-in-backlog-until-ready) owns Backlog and Todo. [ADR 0124](/decisions/0124-plan-backlog-groups-with-a-t3-planner) owns planning. [ADR 0160](/decisions/0160-push-each-approved-subtask-and-remove-the-finished-workspace-clone) owns the push after each approval and deletion of the workspace clone. [ADR 0164](/decisions/0164-heal-a-settling-pull-request-with-a-fixup-subtask) owns the fixup that returns a settling group to running. [ADR 0165](/decisions/0165-record-per-thread-token-metrics) owns the per-thread token split. [ADR 0167](/decisions/0167-resume-a-pi-turn-interrupted-by-a-server-restart) owns recovery of a Pi turn that a server restart interrupted.
 
 The extension is off until an authorized Gateway caller enables it. There is no web UI for create. Agents create groups through the [MCP server](/reference/mcp). The [`tasks` CLI family](/cli/tasks) runs every operation on this page from a terminal when MCP is unavailable.
 
@@ -454,6 +454,8 @@ The `pi` driver runs a thread on the [Pi server](/reference/pi-server) of the No
 
 The Gateway chooses the session ID and stores it as the external ID. It creates the session in the Instance checkout, then starts the opening turn. Each send uses a new key; a retry reuses that key, so an ambiguous failure never starts a second turn. The driver maps model names to Pi's `provider/model` form. When `ORBIT_PI_PROVIDER` is set, such as to a CLIProxyAPI provider, every plain name uses it. Otherwise `gpt-` and `o`-series names use `openai-codex`, and `grok-` names use `xai`. Claude models are refused, including through a proxy.
 
+A restart error on this driver is resumed on the same thread. The resume key is stored before the send and reused only while that same interruption is still unresolved. [Recover a Pi server restart](#recover-a-pi-server-restart) states the limit of two resumes.
+
 Transcripts become normalized entries. A bash result is one activity that ends with the command and `exit code N`. Other tools show their name and target, not file contents. The cumulative token total comes from Pi's session usage, and the [thread token metrics](#thread-token-metrics) record the split. Per-thread line counts are unavailable. Pi threads never report pending input, and `respond` fails as unsupported.
 
 A tool call appears as soon as it starts: an activity labeled `Running` with text such as `Running: $ composer test`. Its result replaces that entry, with the same ID and kind. When the turn settles and a call still has no result, such as after a Pi server restart, the entry shows the call with `(stopped without a result)`.
@@ -487,13 +489,45 @@ The Gateway sends one reminder that names every failed code item. It starts and 
 
 The run script instructions name the commands for that role. The reminder installs the script again before it is sent. It does not say that the thread is blocked. An agent reports a blocker with a `blocked` receipt and a question for the operator. A receipt that the scheduler acted on is spent, so the next turn needs a new one.
 
-The next idle evaluation asks for assistance when any item still fails. Repeated reminder-send failures ask for assistance on the fifth failure. The same pending input does not count as that next evaluation. A `Failed` thread asks for assistance without a reminder.
+The next idle evaluation asks for assistance when any item still fails. Repeated reminder-send failures ask for assistance on the fifth failure. The same pending input does not count as that next evaluation. A `Failed` thread asks for assistance without a reminder, except a Pi restart, which [Recover a Pi server restart](#recover-a-pi-server-restart) resumes.
+
+### Recover a Pi server restart
+
+A Pi turn that failed only because its server restarted is not a failed task. The error is `The Pi server restarted during the turn.` [Thread states](/reference/pi-server#thread-states) define it. [ADR 0167](/decisions/0167-resume-a-pi-turn-interrupted-by-a-server-restart) records the recovery.
+
+The tick sends one message to that same thread and does not ask for assistance. The message is `Your previous turn was interrupted by a server restart. Check git status and git diff, finish the subtask, and hand off with the run script.`
+
+The resume uses a new key, stored before the send. It does not reuse the key of the interrupted turn. A repeated key starts no turn, including after a restart. The tick repeats the stored key only while that same send is still unresolved. The tick does not read a receipt, run the rubric, or send a reminder first. It does not install the run script again. The script from the interrupted turn stays at `.git/orbit/run`.
+
+The acting thread is the implementer while the subtask is `running`. It is the reviewer while the subtask is `reviewing`. That thread's driver must be `pi`. A planner thread is outside this rule.
+
+One subtask gets at most two resumes. The implementer and the reviewer share that count. The subtask stores `pi_restart_resumes`, `pi_restart_key`, `pi_restart_thread_id`, `pi_restart_source_turn_id`, and `pi_restart_reservation`. The count starts at 0. The key, the thread id, and the source turn id start null. The reservation starts null, then `pending`, `accepted`, or `superseded`. A resolution does not reset the count or these fields. A process stop does not reset them either. Show, the web board, and the agents API do not add them.
+
+The count increases when the tick reserves a resume, before it sends. That write stores a new key, the acting thread, and the interrupted turn id, and sets the reservation to `pending`. The Pi driver sends that key and does not mint a different one for this send.
+
+The tick sends that stored key again only when the reservation is `pending`, the acting thread is the stored thread, and the observed turn id is still the stored source turn. That send is still unresolved. The tick does not add to the count.
+
+When that same thread's turn id equals the stored key, Pi accepted the reservation. The tick marks it `accepted` and does not send the key again. A restart of that accepted turn is a new interruption.
+
+When the observed turn id is a different turn, the tick marks a `pending` reservation `superseded` and does not send the old key. A reminder, a review relay, or a resolution can start that turn after the resume was accepted. Pi keeps the old key, so sending it again starts no turn.
+
+A reservation stored for the implementer is not sent to the reviewer. A reservation stored for the reviewer is not sent to the implementer. The acting thread gets a new reservation when the count is below 2. When the count is already 2, the tick asks for assistance and does not send. That includes a restart during the turn a resolution started after both resumes were reserved.
+
+The third interruption asks for assistance and does not send. While the subtask is `running`, the reason is `The implementer thread failed.` While it is `reviewing`, the reason is `The reviewer thread failed.`
+
+Any other `failed` error asks for assistance on the first observation. A failed thread on another driver does the same. There is no resume. A restart error with no turn id asks for assistance and does not reserve a resume.
+
+A send that throws leaves the pending reservation in place. It is a communication failure. The fifth consecutive failure asks for assistance. The next tick repeats the stored key only when that same thread still shows the same source turn. A returned send clears communication failures and does not change the count or the reservation.
+
+A lost response does not drop the count. The next observation on that thread carries the stored key as its turn id. The tick marks the reservation `accepted` and does not spend another resume on that same acceptance.
+
+The tick skips the resume while the subtask or the group is already asking for assistance. The stored reason stays.
 
 A failed receipt read, script install, send, commit, or push counts as a communication failure for that task and asks for assistance on the fifth consecutive failure. The tick continues with the other tasks. The assistance reason names each remaining item.
 
 Typed comments are the workflow record. They preserve the full body, author, timestamp, task and thread context, and reviewer attempt metadata. A stored receipt uses its outcome as the type and the role as the author. The final approval's comment also carries `pull_request`: the summary, changes, and breaking changes it proposed for the pull request. An approval that Orbit committed carries `commit_sha`. Other comments return `null` for both.
 
-Only `assistance_requested` and `resolution` comments come through the API. They do not create a separate validation-evidence record or API. `assistance_requested` flags the task and group, retains the active slot, and is notified once. A non-empty `resolution` comment preserves the history, resets the completion and communication attempts, and continues the blocked AgentThread idempotently; failed delivery leaves the task visibly blocked.
+Only `assistance_requested` and `resolution` comments come through the API. They do not create a separate validation-evidence record or API. `assistance_requested` flags the task and group, retains the active slot, and is notified once. A non-empty `resolution` is sent only when that subtask is already asking for assistance. The Gateway then clears the flag, resets the completion and communication attempts, and continues the blocked thread. A failed send leaves the task asking. A resolution posted before the flag is set is stored and not sent.
 
 Each observation includes normalized activity state, availability, errors, pending request IDs, and recent assistant and user text. It also reports new workspace commits, the pull request URL, and any available CI summary. The driver resolves pending requests from its runtime data. Missing or unavailable current conversations skip classification. The scheduler waits `ORBIT_TASKS_OBSERVATION_GRACE_SECONDS` (default `120`), then escalates once per continuous outage. Recovery resets the grace period and alert marker.
 
