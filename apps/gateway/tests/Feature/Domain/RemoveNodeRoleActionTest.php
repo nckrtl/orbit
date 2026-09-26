@@ -14,6 +14,7 @@ use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Nodes\NodeRoleValidationException;
 use App\Domain\Nodes\NodeSideResidue;
+use App\Domain\Nodes\RoleAssignmentException;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\RoleRegistry;
@@ -244,6 +245,49 @@ describe(RemoveNodeRoleAction::class, function (): void {
 
         expect(NodeRole::query()->whereKey($assignment->id)->exists())->toBeFalse();
     })->with([LifecycleStatus::Provisioning, LifecycleStatus::Removing]);
+
+    it('refreshes the claim time when it takes over a stale removing claim', function (): void {
+        [$node, $assignment] = removal_role_fixture(role: RoleName::Metrics);
+        $assignment->forceFill(['status' => LifecycleStatus::Removing])->save();
+        $this->travel(NodeRole::StaleClaimSeconds + 1)->seconds();
+        $baseline = new class($assignment) implements RoleBaselineConverger
+        {
+            /** @var array{0: string, 1: bool}|null */
+            public ?array $seen = null;
+
+            public function __construct(private readonly NodeRole $assignment) {}
+
+            public function converge(Node $node, NodeRole $assignment): void {}
+
+            public function remove(Node $node, NodeRole $assignment, bool $purgeData): void
+            {
+                $fresh = $this->assignment->refresh();
+                $this->seen = [$fresh->status->value, $fresh->isStaleClaim()];
+            }
+
+            public function removeUnreachable(Node $node, NodeRole $assignment): void {}
+        };
+
+        removal_action(new RemovalInspectorFake(new NodeRoleDependencySet([], [], [], [])), new RemovalCleanerFake, $baseline)
+            ->execute($node->refresh(), RoleName::Metrics, force: true);
+
+        expect($baseline->seen)->toBe(['removing', false]);
+    });
+
+    it('lets only one removal take a stale removing claim', function (): void {
+        [, $assignment] = removal_role_fixture(role: RoleName::Metrics);
+        $assignment->forceFill(['status' => LifecycleStatus::Removing])->save();
+        $this->travel(NodeRole::StaleClaimSeconds + 1)->seconds();
+        $first = NodeRole::query()->findOrFail($assignment->id);
+        $second = NodeRole::query()->findOrFail($assignment->id);
+        $this->travel(1)->seconds();
+
+        $first->claimRemoval();
+
+        expect(fn () => $second->claimRemoval())
+            ->toThrow(RoleAssignmentException::class, 'Role [metrics] changed while it was being claimed.')
+            ->and($first->isStaleClaim())->toBeFalse();
+    });
 
     it('removes either final app role while retaining Tool intent', function (RoleName $role): void {
         [$node, $assignment] = removal_role_fixture(role: $role);

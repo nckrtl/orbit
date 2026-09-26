@@ -7,6 +7,7 @@ namespace App\Models;
 use App\Domain\Nodes\RoleAssignmentException;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
+use App\Infrastructure\Nodes\NodeLocks;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -27,11 +28,14 @@ use Illuminate\Support\Carbon;
 final class NodeRole extends Model
 {
     /**
-     * How long a `provisioning` or `removing` claim may last before the Gateway treats it as stale.
-     * Every role operation ends within the Gateway's 600-second PHP-FPM request limit, so a claim this
-     * old belongs to an operation that died, such as a killed worker, and nothing still works on it.
+     * How long a `provisioning` or `removing` claim may last before the Gateway treats it as stale: the
+     * role lock's term. Adding and removing a role, and each role step of `node:add`, take the Node's
+     * role lock before they claim and keep it until the claim ends, so an operation that finds a claim
+     * while it holds the lock knows no add or remove still works on it. Relocation and Cluster Router
+     * changes hold a claim outside the lock, but only inside one Gateway request, which PHP-FPM ends
+     * within the same term. A claim older than the term therefore belongs to an operation that died.
      */
-    public const int StaleClaimSeconds = 1_200;
+    public const int StaleClaimSeconds = NodeLocks::RequestSeconds;
 
     protected static function booted(): void
     {
@@ -103,12 +107,26 @@ final class NodeRole extends Model
      */
     public function claimConvergence(): void
     {
+        $this->claimAs(LifecycleStatus::Provisioning);
+    }
+
+    /**
+     * Claims the assignment for removal with the same compare-and-set as claimConvergence. The claim
+     * always writes a fresh time, also when it takes over a stale `removing` claim.
+     */
+    public function claimRemoval(): void
+    {
+        $this->claimAs(LifecycleStatus::Removing);
+    }
+
+    private function claimAs(LifecycleStatus $status): void
+    {
         $query = self::query()->whereKey($this->getKey())->where('status', $this->status->value);
         $claimedAt = $this->getRawOriginal('updated_at');
         $claimedAt === null ? $query->whereNull('updated_at') : $query->where('updated_at', $claimedAt);
 
         $claimed = $query->update([
-            'status' => LifecycleStatus::Provisioning->value,
+            'status' => $status->value,
             'failed_step' => null,
             'error_code' => null,
             'updated_at' => $this->freshTimestampString(),

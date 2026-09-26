@@ -359,11 +359,7 @@ final readonly class RemoveNodeRoleAction
             }
 
             $dependencies = $this->inspector->inspect($node, $role);
-            $assignment->update([
-                'status' => LifecycleStatus::Removing,
-                'failed_step' => null,
-                'error_code' => null,
-            ]);
+            $assignment->claimRemoval();
             Process::query()
                 ->whereIn('id', $dependencies->processIds)
                 ->update([

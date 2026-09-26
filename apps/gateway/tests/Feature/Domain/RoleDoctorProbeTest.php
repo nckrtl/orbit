@@ -17,6 +17,7 @@ use App\Domain\Doctor\RoleInspectionData;
 use App\Domain\Doctor\RoleStateInspector;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
+use App\Infrastructure\Nodes\NodeLocks;
 use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\NodeRole;
@@ -822,3 +823,23 @@ it('reports a provisioning or removing claim that went stale as role.claim_stale
 
     expect($codes())->toBe([[$role->id, 'role.claim_stale', $status->value]]);
 })->with([LifecycleStatus::Provisioning, LifecycleStatus::Removing]);
+
+it('does not report a stale claim while another operation holds the Node role lock', function (): void {
+    $node = role_probe_node('held-claim');
+    $role = role_probe_assignment($node, RoleName::Metrics, LifecycleStatus::Provisioning);
+    $roleCalls = 0;
+    $vpnCalls = 0;
+    $this->travel(NodeRole::StaleClaimSeconds + 1)->seconds();
+    $held = app(NodeLocks::class)->lock("node-role:id:{$node->id}", 60);
+    expect($held->get())->toBeTrue();
+
+    try {
+        $issues = new RoleDoctorProbe(role_probe_state_inspector($roleCalls), role_probe_vpn_inspector($vpnCalls))
+            ->inspect(role_probe_context($node))->issues;
+    } finally {
+        $held->release();
+    }
+
+    expect(array_map(static fn (DoctorIssueData $issue): array => [$issue->resourceId, $issue->code], $issues))
+        ->toBe([[$role->id, 'role.lifecycle_not_active']]);
+});
