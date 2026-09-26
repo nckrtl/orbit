@@ -788,7 +788,7 @@ it('records a failed Ingress removal and completes it on retry', function (): vo
     $this->roleLifecycle->removalFailure = new NodeRoleOperationException(
         step: 'caddy-config',
         errorCode: 'node_role.remove_failed',
-        underlyingErrorCode: 'app-dev.caddy_config_failed',
+        underlyingErrorCode: 'ingress.caddy_config_failed',
         message: 'The Node Caddy build failed.',
     );
 
@@ -796,7 +796,8 @@ it('records a failed Ingress removal and completes it on retry', function (): vo
         ->deleteJson("/api/v1/nodes/{$this->node->id}/roles/ingress", ['force' => true])
         ->assertStatus(502)
         ->assertJsonPath('error.code', 'node_role.remove_failed')
-        ->assertJsonPath('error.details.step', 'remove:caddy-config');
+        ->assertJsonPath('error.details.step', 'remove:caddy-config')
+        ->assertJsonPath('error.details.error_code', 'ingress.caddy_config_failed');
 
     $failed = $this->node->roles()->where('role', RoleName::Ingress)->sole();
     expect($failed->status)
@@ -804,7 +805,7 @@ it('records a failed Ingress removal and completes it on retry', function (): vo
         ->and($failed->failed_step)
         ->toBe('remove:caddy-config')
         ->and($failed->error_code)
-        ->toBe('app-dev.caddy_config_failed');
+        ->toBe('ingress.caddy_config_failed');
 
     $this->roleLifecycle->removalFailure = null;
 
@@ -827,7 +828,7 @@ it('removes an Ingress whose convergence failed', function (): void {
         'cluster_id' => $cluster->id,
         'status' => LifecycleStatus::Failed,
         'failed_step' => 'converge:caddy-config',
-        'error_code' => 'app-dev.caddy_config_failed',
+        'error_code' => 'ingress.caddy_config_failed',
     ]);
     $statuses = [];
     $this->roleLifecycle->onRemove = static function (NodeRole $assignment) use (&$statuses): void {

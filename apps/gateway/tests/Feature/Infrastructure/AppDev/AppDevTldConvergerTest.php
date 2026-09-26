@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\AppDev\AppDevCaddyManager;
 use App\Domain\AppDev\AppDevTldRouteManager;
 use App\Domain\AppDev\PrivateDnsManager;
+use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AppDev\NativeAppDevTldConverger;
 use App\Models\Node;
@@ -71,12 +72,12 @@ function tld_converger_runtime(array &$events): NativeAppDevTldConverger
             private array &$events,
         ) {}
 
-        public function converge(Node $node): void
+        public function converge(Node $node, RoleName $role = RoleName::AppDev): void
         {
             $this->events[] = "caddy:{$node->id}";
         }
 
-        public function remove(Node $node): void {}
+        public function remove(Node $node, RoleName $role = RoleName::AppDev): void {}
     };
     $dns = new class($events) implements PrivateDnsManager
     {

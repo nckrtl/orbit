@@ -7,8 +7,10 @@ namespace App\Infrastructure\AppDev;
 use App\Domain\AppDev\AppDevCaddyManager;
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\AppDev\RuntimeConvergenceException;
+use App\Domain\Nodes\RoleName;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuildException;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
+use App\Infrastructure\Nodes\Roles\CaddyRoleFailure;
 use App\Infrastructure\Processes\SystemdVpnOrderingDropIn;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Node;
@@ -27,39 +29,45 @@ final readonly class RemoteAppDevCaddyManager implements AppDevCaddyManager
     ) {}
 
     /** Role convergence: orders Caddy after the WireGuard interface, then builds the Node. */
-    public function converge(Node $node): void
+    public function converge(Node $node, RoleName $role = RoleName::AppDev): void
     {
-        $this->owner()->run(function () use ($node): void {
+        $this->owner()->run(function () use ($node, $role): void {
             $this->ssh->execute(
                 $node,
                 new RemoteCommand($this->vpnOrdering->arguments('caddy'), $this->vpnOrdering->script()),
                 step: 'caddy-service-ordering',
-                errorCode: 'app-dev.caddy_config_failed',
+                errorCode: CaddyRoleFailure::code($role),
+                failureLabel: CaddyRoleFailure::sshLabel($role),
             );
-            $this->buildOwned($node);
+            $this->buildOwned($node, $role);
         });
     }
 
-    /** Builds the Node after a Route change that the caller already committed. */
+    /**
+     * Builds the Node after a Route change that the caller already committed.
+     *
+     * Route publication, including a public Ingress site, stays on the app-dev code. The ingress
+     * role's own build uses converge() and remove().
+     */
     public function build(Node $node): void
     {
-        $this->owner()->run(fn () => $this->buildOwned($node));
+        $this->owner()->run(fn () => $this->buildOwned($node, RoleName::AppDev));
     }
 
     /** Role removal: the build renders the Route sites that stored state still places on the Node. */
-    public function remove(Node $node): void
+    public function remove(Node $node, RoleName $role = RoleName::AppDev): void
     {
-        $this->build($node);
+        $this->owner()->run(fn () => $this->buildOwned($node, $role));
     }
 
-    private function buildOwned(Node $node): void
+    private function buildOwned(Node $node, RoleName $role): void
     {
         try {
             $this->builds->build($node);
         } catch (NodeCaddyBuildException $exception) {
             throw new RuntimeConvergenceException(
                 step: 'caddy-config',
-                errorCode: 'app-dev.caddy_config_failed',
+                errorCode: CaddyRoleFailure::code($role),
                 message: $exception->getMessage(),
                 previous: $exception,
                 result: $exception->result(),

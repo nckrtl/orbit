@@ -18,11 +18,13 @@ use InvalidArgumentException;
  * It reports its last stage on stderr as `orbit-caddy-build-stage=<stage>` and its result on
  * stdout as `orbit-caddy-build-result=<published|unchanged>`.
  *
- * On a Node without the Caddy binary and without a running Caddy service nothing is served, so a build that
- * only withdraws changes nothing and reports `unchanged`. A Caddy that still runs keeps serving its loaded
- * configuration, so a missing binary alone never skips the build. That holds for a render with no site, and for any render while no Caddy role on the Node is
- * active or converging: then every Caddy role failed before Caddy was installed or is being removed, and a
- * removal must not fail on the sites another failed role still renders.
+ * On a Node without the Caddy binary and without a running Caddy service, nothing is served. The build
+ * reports `unchanged` and does not validate or reload. That holds for a render with no site, and for any
+ * render while no Caddy role on the Node is active or converging: every such role failed before Caddy was
+ * installed or is being removed, and a removal must not fail on sites another failed role still renders.
+ * A live file whose bytes are not the render is moved into the backup directory first, so a later start
+ * of Caddy cannot load a removed certificate. A running Caddy keeps its loaded configuration, so a missing
+ * binary alone never skips the build.
  */
 final readonly class NodeCaddyPushScript
 {
@@ -158,8 +160,8 @@ final readonly class NodeCaddyPushScript
                 fi
                 [ "\$(sha256sum -- "\$1/Caddyfile" | awk '{ print substr(\$1, 1, 32) }')" = "\$name" ]
             }
-            make_backup() {
-                local source=\$1 kind=\$2 stamp backup suffix=1
+            reserve_backup() {
+                local stamp backup suffix=1
                 install -d -o root -g root -m 0700 -- "\$backups" || return 1
                 stamp=\$(date -u +%Y%m%dT%H%M%SZ)
                 backup="\$backups/\$stamp"
@@ -168,6 +170,11 @@ final readonly class NodeCaddyPushScript
                     [ "\$suffix" -le 100 ] || return 1
                     backup="\$backups/\$stamp-\$suffix"
                 done
+                printf '%s\\n' "\$backup"
+            }
+            make_backup() {
+                local source=\$1 kind=\$2 backup
+                backup=\$(reserve_backup) || return 1
                 if [ "\$kind" = directory ]; then
                     cp -a -- "\$source" "\$backup/\$(basename -- "\$source")" || return 1
                 else
@@ -180,6 +187,14 @@ final readonly class NodeCaddyPushScript
 
             stage=release
             if [ "\$unserved" = 1 ] && [ ! -e "\$caddy_bin" ] && ! systemctl is-active --quiet "\$caddy_service"; then
+                # Set aside a live path whose bytes are not this render, then report unchanged.
+                if [ -e "\$live" ] || [ -L "\$live" ]; then
+                    if ! printf '%s' '{$encoded}' | base64 --decode | cmp -s -- - "\$live"; then
+                        backup=\$(reserve_backup) || exit 1
+                        mv -T -- "\$live" "\$backup/Caddyfile"
+                        printf 'Moved %s to %s.\\n' "\$live" "\$backup" >&2
+                    fi
+                fi
                 printf 'orbit-caddy-build-result=unchanged\\n'
                 exit 0
             fi

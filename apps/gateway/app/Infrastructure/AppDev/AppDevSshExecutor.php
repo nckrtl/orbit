@@ -27,6 +27,7 @@ final readonly class AppDevSshExecutor
         string $step,
         string $errorCode,
         ?float $commandTimeout = null,
+        string $failureLabel = 'App development',
     ): CommandResult {
         if (! is_string($node->wireguard_ip) || $node->wireguard_ip === '') {
             throw new RuntimeConvergenceException(
@@ -52,7 +53,7 @@ final readonly class AppDevSshExecutor
             throw new RuntimeConvergenceException(
                 step: $step,
                 errorCode: $errorCode,
-                message: "App development step [{$step}] failed on node [{$node->name}].",
+                message: "{$failureLabel} step [{$step}] failed on node [{$node->name}].",
                 result: $result,
             );
         }
