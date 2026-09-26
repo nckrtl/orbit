@@ -115,7 +115,9 @@ Each `gateway` role convergence that installs a newer Caddy restarts it, and Cad
 
 A failed `gateway` role convergence leaves the role `failed`. `php artisan orbit:gateway-web` then refuses with `gateway.web_node_missing`, because it needs an active `gateway` role. Fix the cause, then run `orbit node:role:add <node> gateway --converge` again. A successful run returns the role to `active`.
 
-Every Node with Caddy sites installs Caddy through this step before its first [Node Caddy build](/reference/caddy-configuration#node-caddy-build). Role convergence runs it for each role that lists the `caddy` package, `analytics` and ProxyCli publication run it on their Node, and Gateway bootstrap and web convergence run it on the Gateway machine. The build uses only the packaged `/usr/bin/caddy` and checks the floor again before it writes a version. A build on a Node without that Caddy fails at stage `release` and changes nothing.
+Every Node with Caddy sites installs Caddy through this step before its first [Node Caddy build](/reference/caddy-configuration#node-caddy-build). Role convergence runs it for each role that lists the `caddy` package, `analytics` and ProxyCli publication run it on their Node, and Gateway bootstrap and web convergence run it on the Gateway machine. The build uses only the packaged `/usr/bin/caddy` and checks the floor again before it writes a version.
+
+While a Caddy role is active or converging and the render has a site, a Node without that Caddy fails the build at stage `release` and changes nothing. When the render has no site, or no Caddy role is active or converging, and the `caddy` service is not running, the build reports `unchanged` and moves a stale live file aside, as [Caddy configuration](/reference/caddy-configuration#when-caddy-is-absent) describes.
 
 ## Converge an existing Node
 
@@ -140,7 +142,7 @@ The Metrics fleet reconcile follows a role convergence or removal. When `node:ro
 | `node:role:add` | `error.code` `node_role.convergence_failed`, `details.step` `converge:node-lock`, `details.error_code` `node_role.node_busy` |
 | `node:role:remove` | `error.code` `node_role.remove_failed`, `details.step` `node-lock`, `details.error_code` `node_role.node_busy` |
 
-Every failed role operation reports its step's own code in `details.error_code`, next to the operation's `error.code`, such as `node_role.tool_manager_locked` or a `metrics.*` code. `node:add` and `node:remove` do the same when a role step failed.
+Every failed role operation reports its step's own code in `details.error_code`, next to the operation's `error.code`, such as `node_role.tool_manager_locked` or a `metrics.*` code. `node:add` and `node:remove` do the same when a role step failed. A Caddy removal that stops at `remove:caddy-config` does the same: `details.error_code` is that step's code, such as `ingress.caddy_config_failed`. [Caddy configuration](/reference/caddy-configuration#when-a-build-fails) lists the codes and the messages.
 
 Run the command again. `node:role:relocate` and Cluster Router changes take the lock only around the baseline step, so a busy Node fails that step as their other baseline failures do.
 

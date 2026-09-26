@@ -296,6 +296,7 @@ describe('a failed build', function (): void {
         expect($result['exit'])->toBe(0, $result['stderr'])
             ->and($result['stdout'])->toBe("orbit-caddy-build-result=unchanged\n")
             ->and(file_exists($this->harness->path('Caddyfile')))->toBeFalse()
+            ->and(is_dir($this->harness->path('orbit-backups')))->toBeFalse()
             ->and($this->harness->directories('orbit-versions'))->toBe([])
             ->and($this->harness->serviceCalls())->toBe(['is-active --quiet caddy']);
     });
@@ -319,10 +320,13 @@ describe('a failed build', function (): void {
         expect($result['exit'])->toBe(0, $result['stderr'])
             ->and($result['stdout'])->toBe("orbit-caddy-build-result=unchanged\n")
             ->and(file_exists($this->harness->path('Caddyfile')))->toBeFalse()
+            ->and(is_dir($this->harness->path('orbit-backups')))->toBeFalse()
             ->and($this->harness->directories('orbit-versions'))->toBe([]);
     });
 
     it('still fails while a Caddy service runs although its binary is gone', function (): void {
+        $stale = node_caddy_push_removed_certificate();
+        $this->harness->write('Caddyfile', $stale);
         unlink($this->harness->root.'/bin/caddy');
 
         $result = $this->harness->push(node_caddy_push_file('shop.test'), caddyExpected: false);
@@ -330,6 +334,8 @@ describe('a failed build', function (): void {
         expect($result['exit'])->not->toBe(0)
             ->and($result['stderr'])->toContain('reported no release')
             ->and($result['stderr'])->toContain('orbit-caddy-build-stage=release')
+            ->and(file_get_contents($this->harness->path('Caddyfile')))->toBe($stale)
+            ->and(is_dir($this->harness->path('orbit-backups')))->toBeFalse()
             ->and($this->harness->serviceCalls())->toContain('is-active --quiet caddy');
     });
 
@@ -351,6 +357,109 @@ describe('a failed build', function (): void {
         $result = $this->harness->push(node_caddy_push_file('shop.test'), ['HARNESS_CADDY_VERSION' => 'v2.9.0 h1:abc']);
 
         expect($result['exit'])->toBe(0, $result['stderr']);
+    });
+});
+
+describe('a skipped build', function (): void {
+    it('sets a stale live file aside on a skipped build', function (): void {
+        $stale = node_caddy_push_removed_certificate();
+        $this->harness->write('orbit-backups/20260101T000000Z/Caddyfile', "kept\n");
+        $this->harness->write('Caddyfile', $stale);
+        unlink($this->harness->root.'/bin/caddy');
+
+        $result = $this->harness->push(node_caddy_push_file('shop.test'), ['HARNESS_CADDY_INACTIVE' => '1'], caddyExpected: false);
+        $backups = $this->harness->directories('orbit-backups');
+        $created = array_values(array_filter($backups, static fn (string $name): bool => $name !== '20260101T000000Z'));
+
+        expect($result['exit'])->toBe(0, $result['stderr'])
+            ->and($result['stdout'])->toBe("orbit-caddy-build-result=unchanged\n")
+            ->and(file_exists($this->harness->path('Caddyfile')))->toBeFalse()
+            ->and(is_link($this->harness->path('Caddyfile')))->toBeFalse()
+            ->and($created)->toHaveCount(1)
+            ->and($created[0])->toMatch('/\A\d{8}T\d{6}Z\z/')
+            ->and(is_link($this->harness->path("orbit-backups/{$created[0]}/Caddyfile")))->toBeFalse()
+            ->and(file_get_contents($this->harness->path("orbit-backups/{$created[0]}/Caddyfile")))->toBe($stale)
+            ->and(file_get_contents($this->harness->path('orbit-backups/20260101T000000Z/Caddyfile')))->toBe("kept\n")
+            ->and($result['stderr'])->toContain('Moved '.$this->harness->path('Caddyfile').' to '.$this->harness->path("orbit-backups/{$created[0]}"))
+            ->and($this->harness->directories('orbit-versions'))->toBe([])
+            ->and($this->harness->validations())->toBe([])
+            ->and($this->harness->serviceCalls())->toBe(['is-active --quiet caddy']);
+    });
+
+    it('moves a stale live symlink aside and keeps the version it names', function (): void {
+        $stale = node_caddy_push_removed_certificate();
+        $target = $this->harness->path('orbit-versions/0123456789abcdef0123456789abcdef/Caddyfile');
+        $this->harness->write('orbit-versions/0123456789abcdef0123456789abcdef/Caddyfile', $stale);
+        $this->harness->link($target);
+        unlink($this->harness->root.'/bin/caddy');
+
+        $result = $this->harness->push(node_caddy_push_empty_file(), ['HARNESS_CADDY_INACTIVE' => '1']);
+        [$backup] = $this->harness->directories('orbit-backups');
+        $moved = $this->harness->path("orbit-backups/{$backup}/Caddyfile");
+
+        expect($result['exit'])->toBe(0, $result['stderr'])
+            ->and($result['stdout'])->toBe("orbit-caddy-build-result=unchanged\n")
+            ->and($backup)->toMatch('/\A\d{8}T\d{6}Z\z/')
+            ->and(is_link($this->harness->path('Caddyfile')))->toBeFalse()
+            ->and(file_exists($this->harness->path('Caddyfile')))->toBeFalse()
+            ->and(is_link($moved))->toBeTrue()
+            ->and(readlink($moved))->toBe($target)
+            ->and(file_get_contents($target))->toBe($stale)
+            ->and($this->harness->directories('orbit-versions'))->toBe(['0123456789abcdef0123456789abcdef'])
+            ->and($this->harness->validations())->toBe([])
+            ->and($this->harness->serviceCalls())->toBe(['is-active --quiet caddy']);
+    });
+
+    it('leaves a live file that matches the render in place when the build skips', function (): void {
+        $caddyfile = node_caddy_push_file('shop.test');
+        $this->harness->write('Caddyfile', $caddyfile->content);
+        unlink($this->harness->root.'/bin/caddy');
+
+        $result = $this->harness->push($caddyfile, ['HARNESS_CADDY_INACTIVE' => '1'], caddyExpected: false);
+
+        expect($result['exit'])->toBe(0, $result['stderr'])
+            ->and($result['stdout'])->toBe("orbit-caddy-build-result=unchanged\n")
+            ->and(is_link($this->harness->path('Caddyfile')))->toBeFalse()
+            ->and(file_get_contents($this->harness->path('Caddyfile')))->toBe($caddyfile->content)
+            ->and(is_dir($this->harness->path('orbit-backups')))->toBeFalse()
+            ->and($this->harness->validations())->toBe([])
+            ->and($this->harness->serviceCalls())->toBe(['is-active --quiet caddy']);
+    });
+
+    it('leaves a live symlink in place when its bytes match the render and the build skips', function (): void {
+        $caddyfile = node_caddy_push_file('shop.test');
+        $target = $this->harness->path('orbit-versions/fedcba9876543210fedcba9876543210/Caddyfile');
+        $this->harness->write('orbit-versions/fedcba9876543210fedcba9876543210/Caddyfile', $caddyfile->content);
+        $this->harness->link($target);
+        unlink($this->harness->root.'/bin/caddy');
+
+        $result = $this->harness->push($caddyfile, ['HARNESS_CADDY_INACTIVE' => '1'], caddyExpected: false);
+
+        expect($result['exit'])->toBe(0, $result['stderr'])
+            ->and($result['stdout'])->toBe("orbit-caddy-build-result=unchanged\n")
+            ->and(readlink($this->harness->path('Caddyfile')))->toBe($target)
+            ->and(file_get_contents($target))->toBe($caddyfile->content)
+            ->and(is_dir($this->harness->path('orbit-backups')))->toBeFalse()
+            ->and($this->harness->validations())->toBe([])
+            ->and($this->harness->serviceCalls())->toBe(['is-active --quiet caddy']);
+    });
+
+    it('fails at release and leaves the live file when a stale file cannot be set aside', function (): void {
+        $stale = node_caddy_push_removed_certificate();
+        $this->harness->write('Caddyfile', $stale);
+        $this->harness->write('orbit-backups', "not a directory\n");
+        unlink($this->harness->root.'/bin/caddy');
+
+        $result = $this->harness->push(node_caddy_push_file('shop.test'), ['HARNESS_CADDY_INACTIVE' => '1'], caddyExpected: false);
+
+        expect($result['exit'])->not->toBe(0)
+            ->and($result['stdout'])->not->toContain('orbit-caddy-build-result=unchanged')
+            ->and($result['stderr'])->toContain('orbit-caddy-build-stage=release')
+            ->and(file_get_contents($this->harness->path('Caddyfile')))->toBe($stale)
+            ->and(file_get_contents($this->harness->path('orbit-backups')))->toBe("not a directory\n")
+            ->and($this->harness->directories('orbit-versions'))->toBe([])
+            ->and($this->harness->validations())->toBe([])
+            ->and($this->harness->serviceCalls())->toBe(['is-active --quiet caddy']);
     });
 });
 
@@ -416,4 +525,9 @@ function node_caddy_push_file(string $domain): NodeCaddyfile
 function node_caddy_push_empty_file(): NodeCaddyfile
 {
     return new NodeCaddyfileRenderer([])->render(new Node(['name' => 'node', 'wireguard_ip' => '10.44.0.9']));
+}
+
+function node_caddy_push_removed_certificate(): string
+{
+    return "reverb.orbit {\n    tls /etc/caddy/orbit-websocket-cert-current/reverb.pem\n}\n";
 }

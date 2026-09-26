@@ -730,7 +730,8 @@
               "decisions/0157-keep-private-caddy-sites-off-the-public-listener",
               "decisions/0158-end-interrupted-activity",
               "decisions/0159-push-activity-changes-to-the-web-app",
-              "decisions/0160-push-each-approved-subtask-and-remove-the-finished-workspace-clone"
+              "decisions/0160-push-each-approved-subtask-and-remove-the-finished-workspace-clone",
+              "decisions/0161-set-a-stale-caddyfile-aside-when-caddy-is-absent"
             ]
           }
         ]

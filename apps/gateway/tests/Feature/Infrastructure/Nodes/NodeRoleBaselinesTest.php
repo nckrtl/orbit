@@ -381,9 +381,9 @@ it('passes a nondefault managed account into every baseline prerequisite command
         new AppDevSshExecutor($ssh, baseline_keys(), baseline_known_hosts()),
         new class implements AppDevCaddyManager
         {
-            public function converge(Node $node): void {}
+            public function converge(Node $node, RoleName $role = RoleName::AppDev): void {}
 
-            public function remove(Node $node): void {}
+            public function remove(Node $node, RoleName $role = RoleName::AppDev): void {}
         },
         baseline_firewall($events),
         new class implements PrivateDnsManager
@@ -1299,12 +1299,12 @@ function app_dev_role_baseline(array &$events): AppDevRoleBaseline
             private array &$events,
         ) {}
 
-        public function converge(Node $node): void
+        public function converge(Node $node, RoleName $role = RoleName::AppDev): void
         {
             $this->events[] = 'caddy:converge';
         }
 
-        public function remove(Node $node): void
+        public function remove(Node $node, RoleName $role = RoleName::AppDev): void
         {
             $this->events[] = 'caddy:remove';
         }
@@ -1395,12 +1395,12 @@ function router_role_baseline(array &$events): RouterRoleBaseline
             private array &$events,
         ) {}
 
-        public function converge(Node $node): void
+        public function converge(Node $node, RoleName $role = RoleName::AppDev): void
         {
             $this->events[] = 'caddy:converge';
         }
 
-        public function remove(Node $node): void
+        public function remove(Node $node, RoleName $role = RoleName::AppDev): void
         {
             $this->events[] = 'caddy:remove';
         }
@@ -1425,12 +1425,12 @@ function ingress_role_baseline(array &$events): IngressRoleBaseline
             private array &$events,
         ) {}
 
-        public function converge(Node $node): void
+        public function converge(Node $node, RoleName $role = RoleName::AppDev): void
         {
             $this->events[] = 'caddy:converge';
         }
 
-        public function remove(Node $node): void
+        public function remove(Node $node, RoleName $role = RoleName::AppDev): void
         {
             $this->events[] = 'caddy:remove';
         }

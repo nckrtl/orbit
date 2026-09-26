@@ -8,6 +8,8 @@ use App\Domain\AppDev\ClusterRouterDnsSelectionReconciler;
 use App\Domain\AppDev\PrivateDnsAnswerExpiry;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Clusters\ClusterRouterOperationLock;
+use App\Domain\Firewall\FirewallOperationException;
+use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\ClusterRouterReplacementProjector;
@@ -464,6 +466,20 @@ final readonly class SetClusterRouterAction
             'failed_step' => $replacementBoundary ? $boundary : "{$boundary}:{$step}",
             'error_code' => $errorCode,
         ]);
+
+        if (
+            $boundary === 'remove'
+            && ($exception instanceof RuntimeConvergenceException || $exception instanceof FirewallOperationException)
+        ) {
+            throw new NodeRoleOperationException(
+                step: 'remove:'.$exception->step,
+                errorCode: 'node_role.remove_failed',
+                underlyingErrorCode: $exception->errorCode,
+                message: $exception->getMessage(),
+                result: $exception->result,
+                previous: $exception,
+            );
+        }
 
         throw $exception;
     }
