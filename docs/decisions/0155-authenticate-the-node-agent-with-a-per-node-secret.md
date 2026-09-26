@@ -74,6 +74,8 @@ Agent 0.3.0 is the first release that sends the secret. The Gateway pins 0.3.0. 
 
 The exemption ends for the whole fleet when every Node has converged once with 0.3.0 or a newer release. After that, a cleanup change removes the column and its branch.
 
+The Gateway keeps the 0.2.0 release checksums, so the pin can move back. A converge that installs an agent older than 0.3.0 sets the exemption before it swaps the binary and clears the stored hash, so the older agent is never refused.
+
 ### Doctor
 
 Doctor reports `node.agent_secret_mismatch` in the `node` family for an eligible Node that has an agent binary. The pin is 0.3.0, so Doctor reports a Node that is still exempt as `exempt`, a missing secret file as `missing`, and a hash that differs from the stored one as `mismatch`. It reads only the file's SHA-256 hash with `sudo sha256sum`, within Doctor's existing 30-second Node inspection. The secret and both hashes stay out of the report.
