@@ -27,7 +27,7 @@ enum TaskDeliverableType: string
     {
         return match ($this) {
             self::File => ['path', 'change'],
-            self::Test => ['project', 'file', 'name'],
+            self::Test => ['project', 'file', 'name', 'fails_on_base'],
             self::Command => ['command', 'directory'],
             self::Review => [],
         };
