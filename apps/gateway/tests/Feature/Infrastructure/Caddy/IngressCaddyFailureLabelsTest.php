@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\AppDev\ClusterRouterDnsSelectionReconciler;
+use App\Domain\Nodes\NodeConverger;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
@@ -16,11 +17,13 @@ use App\Models\Node;
 use App\Models\NodeRole;
 use Tests\Support\FakeClusterRouterDnsSelectionReconciler;
 use Tests\Support\FakeNodeCaddyBuilds;
+use Tests\Support\FakeNodeConverger;
 
 beforeEach(function (): void {
     $this->caller = $this->markAsGateway(caddy_failure_node('gateway-peer', '10.44.0.1'));
     $this->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip]);
     app()->instance(SshExecutor::class, caddy_failure_ssh());
+    app()->instance(NodeConverger::class, new FakeNodeConverger);
 });
 
 it('names ingress and ingress.caddy_config_failed when ingress convergence cannot order Caddy', function (): void {

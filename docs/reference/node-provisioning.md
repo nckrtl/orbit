@@ -92,11 +92,11 @@ The `DNS =` line is in `/etc/wireguard/orbit.conf`, and `wg-quick` applies it wh
 
 A later `node:add` without `--role` keeps this setup. To call the Gateway API from the Node, grant it access with [`node:access:add`](/cli/node#orbit-nodeaccessadd). The Gateway identifies the caller by its WireGuard address.
 
-`node:role:add` accepts the same roles as on any other Node. The first active role closes public SSH. The `DNS =` line stays, because role changes and a later `node:add` of the active Node do not publish the WireGuard peer again.
+`node:role:add` accepts the same roles as on any other Node. Adding the first role closes public SSH and moves the Node to managed DNS in the same operation.
 
-[`orbit:node-dns-repair`](/reference/private-dns#repair-one-peer) refuses a Node without roles with `node.dns_repair_operator_owned`. After the Node gets a role, the repair fails with `vpn.peer_dns_state_unsupported`, because the Node has no `orbit.dns-link`.
+[`orbit:node-dns-repair`](/reference/private-dns#repair-one-peer) still refuses a Node without roles with `node.dns_repair_operator_owned`.
 
-[Node retarget](/reference/node-retarget) of a Node without roles publishes the peer again with the resolver policy of [Private DNS](/reference/private-dns#resolver-selection). The `DNS =` line goes, and the Node gets an `orbit.dns-link`.
+[Node retarget](/reference/node-retarget) keeps a Node without roles in operator DNS mode. The `DNS =` line stays, and the Node does not get an `orbit.dns-link`.
 
 Doctor checks a Node without roles like any other Node when the Gateway has a pinned SSH host key for it. The `role` family reports nothing. The `schedule` family skips its orphan scan unless the Node hosts a Schedule. A Node without roles and without a pinned SSH host key gets only the lifecycle check.
 
