@@ -4746,23 +4746,20 @@
             "path": "docs/reference/private-dns.md",
             "title": "Private DNS",
             "kind": "reference",
-            "components": [],
+            "components": [
+                "apps/gateway"
+            ],
             "concepts": [
-                "Activity",
                 "Cluster",
                 "Doctor",
                 "Gateway",
                 "Node",
-                "Project",
+                "Process",
                 "Role",
-                "Route"
+                "Route",
+                "Tool"
             ],
-            "governing_adrs": [
-                "0061",
-                "0062",
-                "0149",
-                "0156"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/reference/proof-plans.md",
@@ -5105,24 +5102,6 @@
             "governing_adrs": []
         },
         {
-            "path": "docs/solutions/node-add-private-dns-on-an-existing-node.md",
-            "title": "node:add private DNS on an existing Node",
-            "kind": "solution",
-            "components": [
-                "apps/gateway"
-            ],
-            "concepts": [
-                "Cluster",
-                "Gateway",
-                "Node",
-                "Process",
-                "Role"
-            ],
-            "governing_adrs": [
-                "0092"
-            ]
-        },
-        {
             "path": "docs/solutions/realtime-reverb.mdx",
             "title": "Realtime events with Reverb",
             "kind": "solution",
@@ -5190,19 +5169,6 @@
             "governing_adrs": [
                 "0083"
             ]
-        },
-        {
-            "path": "docs/solutions/vpn-dnsmasq-uplink-resolvers.md",
-            "title": "VPN dnsmasq uplink resolvers",
-            "kind": "solution",
-            "components": [
-                "apps/gateway"
-            ],
-            "concepts": [
-                "Gateway",
-                "Node"
-            ],
-            "governing_adrs": []
         },
         {
             "path": "docs/tech-stack.md",
