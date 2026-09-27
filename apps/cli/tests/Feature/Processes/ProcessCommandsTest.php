@@ -1148,7 +1148,7 @@ it('renders one exact json envelope for App-target process refusals', function (
             '--project' => 'abc',
             '--command' => ['/usr/bin/php'],
         ],
-        'project.id_invalid',
+        'app.id_invalid',
         'Project ID must be a positive integer.',
     ],
     'update app without for' => [

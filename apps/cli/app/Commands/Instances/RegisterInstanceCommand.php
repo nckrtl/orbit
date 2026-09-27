@@ -28,8 +28,8 @@ final class RegisterInstanceCommand extends GatewayCommand
         {--path= : Existing Git checkout or worktree; defaults to the current directory}
         {--include-worktrees : Adopt the checkout and every linked worktree}
         {--project= : Existing numeric Project ID}
-        {--project-name= : Confirmed Project display name}
-        {--project-slug= : Confirmed Project slug}
+        {--app-name= : Confirmed Project display name}
+        {--app-slug= : Confirmed Project slug}
         {--default-branch= : Confirmed Project default branch}
         {--name= : Optional non-default Instance name}
         {--root= : Confirmed Project root or existing-Project root override}
@@ -165,7 +165,7 @@ final class RegisterInstanceCommand extends GatewayCommand
 
             return null;
         }
-        $name = $this->stringOption('project-name');
+        $name = $this->stringOption('app-name');
         $nonInteractive = ! $this->consoleMode()->mayPrompt;
 
         if ($nonInteractive) {
@@ -305,7 +305,7 @@ final class RegisterInstanceCommand extends GatewayCommand
     private function explicitAppValues(): array
     {
         return [
-            'slug' => $this->stringOption('project-slug'),
+            'slug' => $this->stringOption('app-slug'),
             'branch' => $this->stringOption('default-branch'),
             'root' => $this->stringOption('root'),
         ];
@@ -315,7 +315,7 @@ final class RegisterInstanceCommand extends GatewayCommand
     private function inferredAppValues(): array
     {
         return [
-            'slug' => $this->stringOption('project-slug'),
+            'slug' => $this->stringOption('app-slug'),
             'branch' => $this->stringOption('default-branch'),
             'root' => $this->stringOption('root'),
         ];

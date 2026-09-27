@@ -810,7 +810,7 @@ final readonly class RecordCommandActivity
             $input = $this->jsonInspector->inspect($request->getContent(), [
                 'source_path',
                 'include_worktrees',
-                'app_id',
+                'project_id',
                 'app_name',
                 'app_slug',
                 'default_branch',

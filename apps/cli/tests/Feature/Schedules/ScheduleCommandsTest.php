@@ -531,7 +531,7 @@ it('renders one exact json envelope for App-target schedule refusals', function 
         schedule_cli_add_arguments([
             '--project' => 'abc',
         ]),
-        'project.id_invalid',
+        'app.id_invalid',
         'Project ID must be a positive integer.',
     ],
     'update app without for' => [

@@ -133,19 +133,6 @@
             "governing_adrs": []
         },
         {
-            "path": "docs/cli/app.mdx",
-            "title": "app",
-            "kind": "product",
-            "components": [],
-            "concepts": [
-                "Gateway",
-                "Project"
-            ],
-            "governing_adrs": [
-                "0177"
-            ]
-        },
-        {
             "path": "docs/cli/cluster.mdx",
             "title": "cluster",
             "kind": "product",

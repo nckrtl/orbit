@@ -451,7 +451,35 @@ it('records project update activity for project create and update targets', func
         ->and($updateActivity->subject_type)
         ->toBe(OrbitApp::class)
         ->and($updateActivity->subject_id)
-        ->toBe($project->id);
+        ->toBe($project->id)
+        ->and($updateActivity->properties?->get('input'))
+        ->toBe(['slug' => 'activity-project-updated']);
+});
+
+it('records project_id in register activity input', function (): void {
+    $operator = Node::query()->create([
+        'name' => 'register-activity-operator',
+        'status' => LifecycleStatus::Active,
+        'public_ssh_host' => '192.0.2.20',
+        'wireguard_ip' => '10.44.0.20',
+    ]);
+    $this->markAsGateway($operator);
+
+    $requestId = (string) Str::uuid();
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $operator->wireguard_ip])
+        ->withHeader('X-Orbit-Request-Id', $requestId)
+        ->postJson('/api/v1/instances/register', [
+            'source_path' => '/work/acme',
+            'project_id' => 73,
+        ])
+        ->assertUnprocessable();
+
+    $activity = Activity::query()->where('request_id', $requestId)->sole();
+    expect($activity->command)
+        ->toBe('instance:register')
+        ->and($activity->properties?->get('input'))
+        ->toBe(['project_id' => 73]);
 });
 
 it('records renamed App Cluster and Route lifecycle command names', function (): void {
@@ -566,7 +594,6 @@ it('recursively redacts sensitive input and URL userinfo before persistence', fu
         ->postJson('/api/v1/projects', [
             'slug' => 'secret-app',
             'type' => 'laravel-app',
-            'type' => 'laravel-app',
             'repository_url' => "https://alice:{$repositoryPassword}@example.com/acme/site.git",
             'defaults' => [
                 'services' => [
@@ -609,7 +636,6 @@ it('fails closed for new secret-named input fields on any command', function ():
         ->withHeader('X-Orbit-Request-Id', $requestId)
         ->postJson('/api/v1/projects', [
             'slug' => 'secret-app',
-            'type' => 'laravel-app',
             'type' => 'laravel-app',
             'deploy_signing_key' => $signingKey,
             'webhookSecret' => $webhookSecret,

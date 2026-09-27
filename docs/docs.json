@@ -181,7 +181,6 @@
             "group": "Applications",
             "pages": [
               "cli/project",
-              "cli/app",
               "cli/instance",
               "cli/route",
               "cli/env",
