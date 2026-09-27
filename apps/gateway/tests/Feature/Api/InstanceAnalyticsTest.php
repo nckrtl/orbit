@@ -398,10 +398,9 @@ describe('instance:analytics:enable', function (): void {
         $this->postJson($this->url)->assertOk();
 
         $this->postJson('/api/v1/routes', [
-            'app_id' => $this->orbitApp->id,
+            'app_instance_id' => $this->instance->id,
             'domain' => 'analytics.shop.example.com',
             'publication' => 'public',
-            'cluster_id' => $this->cluster->id,
         ])->assertConflict()->assertJsonPath('error.code', 'route.domain_conflict');
         $this->postJson('/api/v1/routes', [
             'domain' => 'analytics.shop.example.com',

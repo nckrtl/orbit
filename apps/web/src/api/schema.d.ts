@@ -12882,18 +12882,18 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
-                    /** @description Route domain */
                     domain: string;
-                    /**
-                     * @description Publication intent
-                     * @enum {string}
-                     */
+                    /** @enum {string} */
                     publication?: "private" | "public";
+                    app_instance_id: number;
+                } | ({
+                    domain: string;
+                    /** @enum {string} */
+                    publication?: "private";
                     node_id: number;
-                    /** @description Loopback HTTP URL for a custom proxy Route */
                     upstream?: string;
                     process_id?: number;
-                };
+                } & (unknown | unknown));
             };
         };
         responses: {

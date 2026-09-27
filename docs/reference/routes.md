@@ -80,7 +80,31 @@ A Project slug update recomputes every generated development Route domain from t
 
 ## Create and change targets
 
-`route:create` refuses a new explicit Project Route that would remain pending. A targetless Project Route in either Node or Cluster scope returns `route.target_required`; an explicit Project Route for an unassociated Instance returns `route.activation_unsupported`. These refusals leave Routes and target associations unchanged. An identical retry for an existing pending Project Route also returns `route.activation_unsupported`; `route:create` does not resume or activate it. Custom proxy Route creation remains separate and converges its Node-local serving path. The Gateway refuses reserved platform names: `gateway.orbit`, `metrics.orbit`, `reverb.orbit`, `analytics.orbit`, and `collector.cli-proxy-api.orbit`.
+Create an explicit app Route for an Instance with `route:create <instance> <domain> [--publication=private|public]`. The Instance ID determines the owning Project and the Node or active Cluster scope. Publication defaults to `private`. The Route targets that Instance and becomes active; an identical retry for an existing active Route returns that Route.
+
+Creation keeps the Route `activating` until workload projection and any public edge activation finish. If either step fails, an identical retry resumes convergence, including rebuilding the public Ingress when its handler-build checkpoint may have been written before a crash. It does not adopt an older pending Route created by Instance provisioning. This form does not accept a Project argument, `--target`, `--node`, or `--cluster`. The custom proxy form is `route:create <domain> --node=NODE --upstream=URL` or `route:create <domain> --node=NODE --process=PROCESS`; it is private only.
+
+```bash
+orbit route:create 12 shop.example.test
+orbit route:create 12 shop.example.com --publication=public
+```
+
+The Gateway API accepts `POST /api/v1/routes` with an app Route body such as `{"app_instance_id":12,"domain":"shop.example.test","publication":"private"}`. The Instance ID implies the Project and scope; the app Route request does not take `app_id`, `node_id`, or `cluster_id`. For a custom proxy Route, the request instead supplies `domain`, `node_id`, and exactly one of `upstream` or `process_id`. Custom proxy creation remains separate and converges its Node-local serving path.
+
+| Creation refusal | Meaning |
+| --- | --- |
+| `route.domain_invalid` | The domain is not a valid domain. |
+| `route.domain_conflict` | Another Route owns the domain, or it is a reserved name: `gateway.orbit`, `metrics.orbit`, `reverb.orbit`, `analytics.orbit`, or `collector.cli-proxy-api.orbit`. |
+| `route.retry_conflict` | A Route with this domain exists with a different Instance, publication, or custom proxy configuration. |
+| `route.scope_required` | A custom proxy Route needs a serving Node and uses the domain as its only positional argument. |
+| `route.target_inactive` | The Instance is not active. |
+| `route.target_web_root_unsupported` | The Instance has no supported relative web root, such as a package rooted at `.`. |
+| `route.target_conflict` | The target Instance already belongs to another Route. |
+| `route.router_required` | The Cluster has no active Router. |
+| `route.node_inactive`, `route.cluster_inactive` | The Instance's Node or Cluster, or the custom proxy's Node, is not active. |
+| `route.upstream_invalid` | The upstream is not a loopback HTTP URL. |
+| `route.upstream_unresolved` | The Process has no single Node-local listener. |
+| `route.process_conflict` | The Process is not a Node Process on the serving Node. |
 
 A Route target must have a supported relative web root. An Instance rooted at `.`, such as a package, returns `route.target_web_root_unsupported` until an operator sets a web-root override.
 

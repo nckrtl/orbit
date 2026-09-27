@@ -549,7 +549,7 @@ it('records renamed App Cluster and Route lifecycle command names', function ():
         'domain' => 'lifecycle.example.test',
         'publication' => 'private',
         'node_id' => $node->id,
-    ])->assertConflict()->assertJsonPath('error.code', 'route.target_required');
+    ])->assertUnprocessable();
     $route = Route::query()->create([
         'app_id' => $app->id,
         'node_id' => $node->id,

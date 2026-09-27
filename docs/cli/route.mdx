@@ -1,6 +1,6 @@
 ---
 title: "route"
-description: "Create explicit Project domains and Node-owned custom proxy domains, point Project Routes at Instances, change a domain or publication intent, and remove Routes."
+description: "Create Instance-targeted app Routes and Node-owned custom proxy Routes, change Route targets, domains, or publication intent, and remove Routes."
 covers:
   - apps/cli/app/Commands/Routes/**
   - packages/php-sdk/src/Requests/Routes/**
@@ -15,7 +15,7 @@ The [Routes reference](/reference/routes) describes the Route record, domain sel
 
 | Command | Result |
 | --- | --- |
-| [`route:create`](#orbit-routecreate) | Create a custom proxy Route or retry an existing active Project Route. |
+| [`route:create`](#orbit-routecreate) | Create an explicit app Route for an Instance or a Node-owned custom proxy Route. |
 | [`route:list`](#orbit-routelist) | List Routes. |
 | [`route:show`](#orbit-routeshow) | Show one Route. |
 | [`route:update`](#orbit-routeupdate) | Change the domain or publication of an explicit Project Route. |
@@ -27,54 +27,50 @@ Every command accepts `--json`. Route, Project, Instance, and Cluster arguments 
 
 ## orbit route:create
 
-Create an explicit Project Route or a custom proxy Route.
+Create an explicit app Route targeting an Instance, or create a custom proxy Route for a Node-local service.
 
 ```bash
-orbit route:create <project> <domain> [--publication=INTENT] [--target=ID | --node=ID | --cluster=ID]
+orbit route:create <instance> <domain> [--publication=private|public]
 orbit route:create <domain> --node=NODE --upstream=URL
 orbit route:create <domain> --node=NODE --process=PROCESS
 ```
 
 | Argument | Required | Meaning |
 | --- | --- | --- |
-| `project` | Project form | Numeric Project ID that owns the Route. |
+| `instance` | App form | Numeric Instance ID. Its Project owns the Route; its Node or active Cluster determines the scope. |
 | `domain` | yes | The Route domain. The Gateway normalizes it. |
 
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `--publication=INTENT` | `private` | `private` or `public`. A custom proxy Route is private only. |
-| `--target=ID` | none | Numeric Instance target. The scope comes from that Instance's Node or active Cluster. |
-| `--node=NODE` | none | Numeric Node scope for a Project Route without a target, or the serving Node ID or name for a custom proxy Route. |
-| `--cluster=ID` | none | Numeric Cluster scope for a Project Route without a target. |
+| `--publication=INTENT` | `private` | `private` or `public` for the app form. Custom proxy Routes are private only. |
+| `--node=NODE` | none | Serving Node ID or name, required only for the custom proxy form. |
 | `--upstream=URL` | none | Loopback HTTP URL for a custom proxy Route, such as `http://127.0.0.1:4788`. |
 | `--process=PROCESS` | none | Name or ID of a Node Process on the serving Node, for a custom proxy Route. |
 
 ```bash
-orbit route:create 4 shop.example.test --target=12
-orbit route:create 4 preview.example.test --cluster=3
+orbit route:create 12 shop.example.test
+orbit route:create 12 shop.example.com --publication=public
 orbit route:create executor.orbit --node=beast --upstream=http://127.0.0.1:4788
 orbit route:create executor.orbit --node=beast --process=executor
 ```
 
-`--upstream` or `--process` selects the custom proxy form. Its first argument is the domain, and it needs `--node`. It refuses a Project, `--target`, `--cluster`, and public publication. A successful custom proxy request converges its Node-local serving path.
+In a terminal, Orbit lists available Instances for an omitted Instance ID and prompts for an omitted domain. If no Instances are available or selection is cancelled, it creates nothing. In noninteractive or JSON mode, provide both arguments for the app form.
 
-The Project form does not create a new pending Route. The first Project example is refused with `route.activation_unsupported` when Instance 12 has no Route association; if another Route already targets it, the request returns `route.target_conflict`. An identical request for an existing active Route returns that Route. The targetless Cluster example is refused with `route.target_required`. Neither refusal creates a Route or target association. An identical retry for an existing pending Project Route returns `route.activation_unsupported`; it does not resume or activate the Route. The custom proxy examples use a separate flow and can succeed when their Node and upstream or Process are valid. See [Create and change targets](/reference/routes#create-and-change-targets).
+The app form creates and activates a Route for the Instance. The Instance implies the Project and scope. An inactive Instance returns `route.target_inactive`; an Instance already targeted by another Route returns `route.target_conflict`. An identical retry for an existing active Route returns that Route. See [Create and change targets](/reference/routes#create-and-change-targets).
 
-Before it sends a request, the CLI refuses `--target` together with a scope option (`route.scope_conflict`), and a Route without a target that lacks exactly one scope (`route.scope_required`). An identical retry for an existing active Project Route returns that Route.
+`--upstream` or `--process` selects the custom proxy form. Its first argument is the domain, and it needs `--node`. It cannot take an Instance or public publication. A successful custom proxy request converges its Node-local serving path.
 
 | Error code | Meaning |
 | --- | --- |
 | `route.domain_invalid` | The domain is not a valid domain. |
 | `route.domain_conflict` | Another Route owns the domain, or it is a reserved name: `gateway.orbit`, `metrics.orbit`, `reverb.orbit`, `analytics.orbit`, or `collector.cli-proxy-api.orbit`. |
-| `route.retry_conflict` | A Route with this domain exists with a different Project, publication, scope, target, or upstream. |
-| `route.target_app_conflict` | The target Instance belongs to another Project. |
-| `route.target_inactive` | The target Instance is not active. |
-| `route.target_required` | A new targetless Project Route would remain pending. |
-| `route.activation_unsupported` | The requested Instance Route cannot be activated here, or an existing pending Project Route was retried. |
+| `route.retry_conflict` | A Route with this domain exists with a different Instance, publication, or custom proxy configuration. |
+| `route.scope_required` | A custom proxy Route needs a serving Node and uses the domain as its only positional argument. |
+| `route.target_inactive` | The Instance is not active. |
 | `route.target_web_root_unsupported` | The target Instance has no supported relative web root, such as a package rooted at `.`. |
 | `route.target_conflict` | The target Instance already belongs to another Route. |
 | `route.router_required` | The Cluster has no active Router. |
-| `route.node_inactive`, `route.cluster_inactive` | The Node or Cluster scope is not active. |
+| `route.node_inactive`, `route.cluster_inactive` | The Instance's Node or Cluster, or the custom proxy's Node, is not active. |
 | `route.upstream_invalid` | The upstream is not a loopback HTTP URL. |
 | `route.upstream_unresolved` | The Process has no single Node-local listener. |
 | `route.process_conflict` | The Process is not a Node Process on the serving Node. |

@@ -8,9 +8,7 @@ use App\Data\Routes\CreateRouteData;
 use App\Domain\Routes\RouteDomain;
 use App\Domain\Routes\RoutePublication;
 use App\Http\Requests\TopLevelJsonObjectInspector;
-use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
-use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\Process;
 use Illuminate\Foundation\Http\FormRequest;
@@ -44,12 +42,9 @@ final class StoreRouteRequest extends FormRequest
         }
 
         return [
-            'app_id' => ['required', 'integer', Rule::exists(new OrbitApp()->getTable(), 'id')],
             'domain' => ['required', 'string', 'max:253'],
-            'publication' => ['required', Rule::enum(RoutePublication::class)],
-            'app_instance_id' => ['sometimes', 'integer', Rule::exists(new AppInstance()->getTable(), 'id')],
-            'node_id' => ['sometimes', 'integer', Rule::exists(new Node()->getTable(), 'id')],
-            'cluster_id' => ['sometimes', 'integer', Rule::exists(new Cluster()->getTable(), 'id')],
+            'publication' => ['sometimes', Rule::enum(RoutePublication::class)],
+            'app_instance_id' => ['required', 'integer', Rule::exists(new AppInstance()->getTable(), 'id')],
         ];
     }
 
@@ -60,12 +55,10 @@ final class StoreRouteRequest extends FormRequest
             return app(TopLevelJsonObjectInspector::class)->inspect(
                 $this->getContent(),
                 [
-                    'app_id',
                     'domain',
                     'publication',
                     'app_instance_id',
                     'node_id',
-                    'cluster_id',
                     'upstream',
                     'process_id',
                 ],
@@ -91,16 +84,8 @@ final class StoreRouteRequest extends FormRequest
                 return;
             }
 
-            $hasTarget = $this->input('app_instance_id') !== null;
-            $hasNode = $this->input('node_id') !== null;
-            $hasCluster = $this->input('cluster_id') !== null;
-
-            if ($hasTarget && ($hasNode || $hasCluster)) {
-                $validator->errors()->add('scope', 'Do not supply Route scope with a target.');
-            }
-
-            if (! $hasTarget && $hasNode === $hasCluster) {
-                $validator->errors()->add('scope', 'Supply exactly one Node or Cluster scope without a target.');
+            if ($this->exists('node_id')) {
+                $validator->errors()->add('node_id', 'An app Route derives its scope from the Instance.');
             }
         }];
     }
@@ -122,11 +107,8 @@ final class StoreRouteRequest extends FormRequest
 
         return new CreateRouteData(
             domain: $this->string('domain')->toString(),
-            publication: RoutePublication::from($this->string('publication')->toString()),
-            appId: $this->integer('app_id'),
-            appInstanceId: is_int($validated['app_instance_id'] ?? null) ? $validated['app_instance_id'] : null,
-            nodeId: is_int($validated['node_id'] ?? null) ? $validated['node_id'] : null,
-            clusterId: is_int($validated['cluster_id'] ?? null) ? $validated['cluster_id'] : null,
+            publication: RoutePublication::from(is_string($validated['publication'] ?? null) ? $validated['publication'] : RoutePublication::Private->value),
+            appInstanceId: $this->integer('app_instance_id'),
         );
     }
 

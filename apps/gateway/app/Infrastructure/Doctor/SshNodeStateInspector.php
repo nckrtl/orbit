@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\Doctor;
 
 use App\Domain\Doctor\DoctorInspectionException;
+use App\Domain\Doctor\NodeDiskFilesystemData;
 use App\Domain\Doctor\NodeInspectionData;
 use App\Domain\Doctor\NodeStateInspector;
 use App\Infrastructure\Nodes\NodeAgentFootprint;
@@ -38,8 +39,9 @@ final readonly class SshNodeStateInspector implements NodeStateInspector
         if sudo -n test -f /etc/orbit/agent/secret 2>/dev/null; then
             secret_checksum=$(sudo -n sha256sum -- /etc/orbit/agent/secret | cut -d ' ' -f 1)
         fi
-        printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n' \
-            "$platform" "$architecture" "$wireguard" "$binary_exists" "$unit_exists" "$agent_active" "$checksum" "$secret_checksum"
+        disk=$(LC_ALL=C df --output=source,avail,size,iavail,itotal -k -- / "$HOME")
+        printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n' \
+            "$platform" "$architecture" "$wireguard" "$binary_exists" "$unit_exists" "$agent_active" "$checksum" "$secret_checksum" "$disk"
         BASH;
 
     public function __construct(
@@ -78,7 +80,7 @@ final readonly class SshNodeStateInspector implements NodeStateInspector
             throw new DoctorInspectionException;
         }
         $lines = explode("\n", $result->stdout);
-        if (count($lines) !== 9 || $lines[8] !== '') {
+        if (count($lines) !== 12 || $lines[11] !== '' || preg_match('/\A\s*Filesystem\s+Avail\s+1K-blocks\s+IFree\s+Inodes\s*\z/', $lines[8]) !== 1) {
             throw new DoctorInspectionException;
         }
         $platform = strtolower($lines[0]);
@@ -106,6 +108,43 @@ final readonly class SshNodeStateInspector implements NodeStateInspector
             default => throw new DoctorInspectionException,
         };
 
+        // df returns one row per requested path, even when root and home share a mount.
+        // Keep the source only for deduplication; never include it in a Doctor report.
+        $filesystems = [];
+        $seenSources = [];
+        foreach (['root' => $lines[9], 'home' => $lines[10]] as $location => $line) {
+            if (preg_match('/\A(.+)\s+(-?[0-9]+)\s+([0-9]+)\s+([0-9]+|-)\s+([0-9]+|-)\z/', $line, $matches) !== 1) {
+                throw new DoctorInspectionException;
+            }
+            [$source, $available, $size, $freeInodes, $totalInodes] = array_slice($matches, 1);
+            if (filter_var($available, FILTER_VALIDATE_INT) === false
+                || filter_var($size, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]) === false
+                || (int) $available > (int) $size) {
+                throw new DoctorInspectionException;
+            }
+            // Some filesystems (including Btrfs) report 0/0, while df uses -/- for
+            // unavailable counters. Neither pair supplies a meaningful inode percentage.
+            if ($freeInodes === '-' || $totalInodes === '-') {
+                if ($freeInodes !== '-' || $totalInodes !== '-') {
+                    throw new DoctorInspectionException;
+                }
+                $freeInodeCount = $totalInodeCount = null;
+            } else {
+                if (filter_var($freeInodes, FILTER_VALIDATE_INT, ['options' => ['min_range' => 0]]) === false
+                    || filter_var($totalInodes, FILTER_VALIDATE_INT, ['options' => ['min_range' => 0]]) === false
+                    || (int) $freeInodes > (int) $totalInodes
+                    || ((int) $totalInodes === 0 && (int) $freeInodes !== 0)) {
+                    throw new DoctorInspectionException;
+                }
+                $freeInodeCount = (int) $totalInodes === 0 ? null : (int) $freeInodes;
+                $totalInodeCount = (int) $totalInodes === 0 ? null : (int) $totalInodes;
+            }
+            if (! isset($seenSources[$source])) {
+                $filesystems[] = new NodeDiskFilesystemData($location, max(0, (int) $available), (int) $size, $freeInodeCount, $totalInodeCount);
+                $seenSources[$source] = true;
+            }
+        }
+
         $agentArchitecture = match (strtolower($node->architecture ?? '')) {
             'amd64', 'x86_64' => 'x86_64',
             'arm64', 'aarch64' => 'aarch64',
@@ -124,6 +163,7 @@ final readonly class SshNodeStateInspector implements NodeStateInspector
                 ? null
                 : hash_equals(NodeAgentFootprint::checksum($agentArchitecture), $checksum),
             $secretChecksum === '' ? null : $secretChecksum,
+            $filesystems,
         );
     }
 }
