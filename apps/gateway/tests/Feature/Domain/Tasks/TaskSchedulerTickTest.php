@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Actions\Tasks\CancelTaskCheckAction;
 use App\Actions\Tasks\CompleteTaskGroupAction;
 use App\Actions\Tasks\RemoveTaskWorkspaceAction;
+use App\Actions\Tasks\StoreTaskCommentAction;
 use App\Domain\AppInstances\AppInstanceRemover;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\AgentDriverException;
@@ -12,6 +13,7 @@ use App\Domain\Tasks\AgentSpawner;
 use App\Domain\Tasks\CoderSettleNotifier;
 use App\Domain\Tasks\NullAgentSpawner;
 use App\Domain\Tasks\NullCoderSettleNotifier;
+use App\Domain\Tasks\NullTaskWorkspaceDiffReader;
 use App\Domain\Tasks\TaskBaseBranchFetcher;
 use App\Domain\Tasks\TaskBriefCoverage;
 use App\Domain\Tasks\TaskCheckException;
@@ -39,6 +41,7 @@ use App\Domain\Tasks\TaskSettleMetrics;
 use App\Domain\Tasks\TaskSettleMetricsCollector;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskThreadRole;
+use App\Domain\Tasks\TaskWorkspaceDiffReader;
 use App\Domain\Tasks\TaskWorkspaceSigner;
 use App\Domain\Tasks\TaskWorkspaceStateReader;
 use App\Infrastructure\Tasks\T3\T3Dispatcher;
@@ -53,6 +56,7 @@ use App\Models\Task;
 use App\Models\TaskCheck;
 use App\Models\TaskComment;
 use App\Models\TaskGroup;
+use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Laravel\Ai\Classification;
@@ -144,6 +148,58 @@ function tick_workspace(bool $definesCheckScript = true, ?string $branch = null)
             return $this->definesCheckScript;
         }
     });
+}
+
+/** @param object{turnId: string, error: string} $state */
+function tick_pi_failure(object $state): void
+{
+    Http::fake(function (Request $request) use ($state) {
+        if (str_ends_with($request->url(), '/messages')) {
+            return Http::response(['duplicate' => false], 202);
+        }
+        if (! str_contains($request->url(), '/sessions/implementer-thread')) {
+            return null;
+        }
+
+        return Http::response([
+            'kind' => 'snapshot', 'run' => 'run-1', 'sequence' => 4,
+            'session' => ['id' => 'implementer-thread'],
+            'state' => isset($state->state) ? $state->state : 'failed', 'error' => $state->error, 'turnId' => $state->turnId, 'entries' => [],
+        ]);
+    });
+}
+
+/** @return list<string> */
+function tick_pi_message_keys(): array
+{
+    return collect(Http::recorded())
+        ->map(fn (array $pair): Request => $pair[0])
+        ->filter(fn (Request $request): bool => str_ends_with($request->url(), '/messages'))
+        ->map(fn (Request $request): string => (string) $request['key'])
+        ->values()
+        ->all();
+}
+
+function tick_pi_implementer(): Task
+{
+    $group = tick_group();
+    $task = $group->tasks->sole();
+    $thread = AgentThread::query()->findOrFail($task->implementer_agent_thread_id);
+    $thread->update(['driver' => 'pi']);
+    $thread->node?->update([
+        'settings' => ['pi' => ['token' => 'pi-node-token-with-more-than-32-characters', 'url' => 'http://10.44.0.212:3774']],
+    ]);
+    app(TaskExtensionState::class)->enable();
+    app()->instance(TaskWorkspaceDiffReader::class, new NullTaskWorkspaceDiffReader);
+    app()->instance(T3ThreadReader::class, new class implements T3ThreadReader
+    {
+        public function snapshot(Node $node, string $threadId): ?array
+        {
+            return ['thread' => ['session' => ['status' => 'idle']]];
+        }
+    });
+
+    return $task;
 }
 
 function tick_dispatcher(): T3Dispatcher
@@ -1747,6 +1803,756 @@ it('asks for assistance with the summary of a blocked receipt', function (): voi
         ->and($dispatcher->commands)->toBe([]);
 });
 
+it('resumes a Pi implementer restarted during the turn instead of asking for assistance', function (): void {
+    $task = tick_pi_implementer();
+    $notifier = new class implements CoderSettleNotifier
+    {
+        public bool $called = false;
+
+        public function notify(TaskGroup $group): void
+        {
+            $this->called = true;
+        }
+
+        public function escalate(TaskGroup $group, TaskSessionObservation $observation, TaskSessionDecision $decision): void
+        {
+            $this->called = true;
+        }
+
+        public function assistance(TaskGroup $group, string $reason): void
+        {
+            $this->called = true;
+        }
+    };
+    app()->instance(CoderSettleNotifier::class, $notifier);
+    tick_pi_failure((object) ['turnId' => 'turn-key-1', 'error' => 'The Pi server restarted during the turn.']);
+
+    app(TaskScheduler::class)->tick();
+
+    $sent = collect(Http::recorded())
+        ->map(fn (array $pair): Request => $pair[0])
+        ->first(fn (Request $request): bool => str_ends_with($request->url(), '/messages'));
+    $fresh = $task->fresh();
+    expect($fresh?->assistance_reason)->toBeNull()
+        ->and($fresh?->assistance_requested)->toBeFalse()
+        ->and($fresh?->status)->toBe(TaskStatus::Running)
+        ->and($task->taskGroup->fresh()?->assistance_requested)->toBeFalse()
+        ->and($notifier->called)->toBeFalse()
+        ->and($sent)->toBeInstanceOf(Request::class)
+        ->and($sent['text'])->toBe('Your previous turn was interrupted by a server restart. Check git status and git diff, finish the subtask, and hand off with the run script.')
+        ->and($sent['key'])->not->toBe('turn-key-1')
+        ->and($sent['key'])->toBeUuid()
+        ->and($fresh?->pi_restart_resumes)->toBe(1)
+        ->and($fresh?->pi_restart_key)->toBe($sent['key'])
+        ->and($fresh?->pi_restart_source_turn_id)->toBe('turn-key-1')
+        ->and($fresh?->pi_restart_thread_id)->toBe($task->implementer_agent_thread_id)
+        ->and($fresh?->pi_restart_reservation)->toBe('pending')
+        ->and($fresh?->communication_failures)->toBe(0);
+});
+
+it('retries the same Pi resume key while that turn is still unaccepted', function (): void {
+    $task = tick_pi_implementer();
+    $state = (object) ['turnId' => 'turn-key-1', 'error' => 'The Pi server restarted during the turn.'];
+    tick_pi_failure($state);
+
+    app(TaskScheduler::class)->tick();
+    app(TaskScheduler::class)->tick();
+
+    $fresh = $task->fresh();
+    $reserved = $fresh?->pi_restart_key;
+    expect($reserved)->toBeString()->not->toBe('turn-key-1')
+        ->and(tick_pi_message_keys())->toBe([$reserved, $reserved])
+        ->and($fresh?->pi_restart_resumes)->toBe(1)
+        ->and($fresh?->pi_restart_reservation)->toBe('pending')
+        ->and($fresh?->assistance_requested)->toBeFalse();
+});
+
+it('asks for assistance when a Pi implementer fails for another reason', function (): void {
+    $task = tick_pi_implementer();
+    tick_pi_failure((object) ['turnId' => 'turn-key-1', 'error' => 'The turn was interrupted.']);
+
+    app(TaskScheduler::class)->tick();
+
+    expect($task->fresh()?->assistance_requested)->toBeTrue()
+        ->and($task->fresh()?->assistance_reason)->toBe('The implementer thread failed.')
+        ->and($task->taskGroup->fresh()?->assistance_requested)->toBeTrue()
+        ->and(tick_pi_message_keys())->toBe([])
+        ->and($task->fresh()?->pi_restart_resumes)->toBe(0);
+});
+
+it('asks for assistance after two reserved Pi resumes', function (): void {
+    $task = tick_pi_implementer();
+    $state = (object) ['turnId' => 'turn-key-1', 'error' => 'The Pi server restarted during the turn.'];
+    tick_pi_failure($state);
+    app(TaskScheduler::class)->tick();
+    $first = $task->fresh()?->pi_restart_key;
+    expect($first)->toBeString()->and($task->fresh()?->pi_restart_resumes)->toBe(1);
+
+    $state->turnId = (string) $first;
+    app(TaskScheduler::class)->tick();
+    $second = $task->fresh()?->pi_restart_key;
+    expect($second)->toBeString()->not->toBe($first)
+        ->and($task->fresh()?->pi_restart_resumes)->toBe(2)
+        ->and($task->fresh()?->pi_restart_source_turn_id)->toBe($first)
+        ->and($task->fresh()?->assistance_requested)->toBeFalse()
+        ->and(tick_pi_message_keys())->toBe([$first, $second]);
+
+    $state->turnId = (string) $second;
+    app(TaskScheduler::class)->tick();
+
+    expect($task->fresh()?->assistance_requested)->toBeTrue()
+        ->and($task->fresh()?->assistance_reason)->toBe('The implementer thread failed.')
+        ->and($task->fresh()?->pi_restart_resumes)->toBe(2)
+        ->and($task->fresh()?->pi_restart_key)->toBe($second)
+        ->and(tick_pi_message_keys())->toBe([$first, $second]);
+});
+
+it('retries the stored Pi resume key when the send throws before Pi accepts it', function (): void {
+    $task = tick_pi_implementer();
+    $posts = 0;
+    Http::fake(function (Request $request) use (&$posts) {
+        if (str_ends_with($request->url(), '/messages')) {
+            $posts++;
+            if ($posts <= 2) {
+                return Http::response(['error' => ['code' => 'unavailable', 'message' => 'down']], 503);
+            }
+
+            return Http::response(['duplicate' => false], 202);
+        }
+        if (! str_contains($request->url(), '/sessions/implementer-thread')) {
+            return Http::response([], 404);
+        }
+
+        return Http::response([
+            'kind' => 'snapshot', 'run' => 'run-1', 'sequence' => 4,
+            'session' => ['id' => 'implementer-thread'],
+            'state' => 'failed', 'error' => 'The Pi server restarted during the turn.', 'turnId' => 'turn-key-1', 'entries' => [],
+        ]);
+    });
+
+    app(TaskScheduler::class)->tick();
+
+    $reserved = $task->fresh()?->pi_restart_key;
+    expect($reserved)->toBeString()->not->toBe('turn-key-1')
+        ->and($task->fresh()?->pi_restart_resumes)->toBe(1)
+        ->and($task->fresh()?->pi_restart_reservation)->toBe('pending')
+        ->and($task->fresh()?->pi_restart_source_turn_id)->toBe('turn-key-1')
+        ->and($task->fresh()?->communication_failures)->toBe(1)
+        ->and($task->fresh()?->assistance_requested)->toBeFalse()
+        ->and(tick_pi_message_keys())->toBe([$reserved, $reserved]);
+
+    app(TaskScheduler::class)->tick();
+
+    expect($task->fresh()?->pi_restart_resumes)->toBe(1)
+        ->and($task->fresh()?->pi_restart_key)->toBe($reserved)
+        ->and($task->fresh()?->pi_restart_reservation)->toBe('pending')
+        ->and($task->fresh()?->communication_failures)->toBe(0)
+        ->and($task->fresh()?->assistance_requested)->toBeFalse()
+        ->and(tick_pi_message_keys())->toBe([$reserved, $reserved, $reserved]);
+});
+
+it('reserves a new Pi resume for a restart during the turn that followed an accepted resume', function (): void {
+    $task = tick_pi_implementer();
+    app()->instance(TaskRunReceipts::class, new FakeTaskRunReceipts([null, null]));
+    $state = (object) ['turnId' => 'turn-key-1', 'error' => 'The Pi server restarted during the turn.', 'state' => 'failed'];
+    tick_pi_failure($state);
+    app(TaskScheduler::class)->tick();
+    $accepted = $task->fresh()?->pi_restart_key;
+    expect($accepted)->toBeString()->and($task->fresh()?->pi_restart_resumes)->toBe(1);
+
+    $state->state = 'idle';
+    $state->turnId = (string) $accepted;
+    $state->error = null;
+    app(TaskScheduler::class)->tick();
+
+    $reminder = tick_pi_message_keys()[1] ?? null;
+    expect($task->fresh()?->pi_restart_reservation)->toBe('accepted')
+        ->and($task->fresh()?->pi_restart_resumes)->toBe(1)
+        ->and($task->fresh()?->pi_restart_key)->toBe($accepted)
+        ->and($reminder)->toBeString()->not->toBe($accepted)
+        ->and(collect(Http::recorded())->filter(fn (array $pair): bool => str_ends_with($pair[0]->url(), '/messages'))->values()[1][0]['text'])
+        ->toContain('No run receipt was found.');
+
+    $state->state = 'failed';
+    $state->turnId = (string) $reminder;
+    $state->error = 'The Pi server restarted during the turn.';
+    app(TaskScheduler::class)->tick();
+
+    $fresh = $task->fresh();
+    $keys = tick_pi_message_keys();
+    expect($fresh?->assistance_requested)->toBeFalse()
+        ->and($fresh?->pi_restart_resumes)->toBe(2)
+        ->and($fresh?->pi_restart_reservation)->toBe('pending')
+        ->and($fresh?->pi_restart_source_turn_id)->toBe($reminder)
+        ->and($fresh?->pi_restart_key)->toBeString()->not->toBe($accepted)->not->toBe($reminder)
+        ->and($keys)->toBe([$accepted, $reminder, $fresh?->pi_restart_key])
+        ->and(array_count_values($keys)[$accepted])->toBe(1);
+});
+
+it('does not reset Pi resumes when a resolution is delivered and asks after the cap', function (): void {
+    $task = tick_pi_implementer();
+    $state = (object) ['turnId' => 'turn-key-1', 'error' => 'The Pi server restarted during the turn.'];
+    tick_pi_failure($state);
+    app(TaskScheduler::class)->tick();
+    $first = (string) $task->fresh()?->pi_restart_key;
+    $state->turnId = $first;
+    app(TaskScheduler::class)->tick();
+    $second = (string) $task->fresh()?->pi_restart_key;
+    $state->turnId = $second;
+    app(TaskScheduler::class)->tick();
+    expect($task->fresh()?->pi_restart_resumes)->toBe(2)
+        ->and($task->fresh()?->assistance_requested)->toBeTrue();
+
+    app(StoreTaskCommentAction::class)->execute($task->fresh() ?? $task, [
+        'type' => 'resolution', 'body' => 'Continue from the checkout.', 'author' => 'operator',
+    ]);
+
+    $afterResolution = $task->fresh();
+    expect($afterResolution?->assistance_requested)->toBeFalse()
+        ->and($afterResolution?->pi_restart_resumes)->toBe(2)
+        ->and($afterResolution?->pi_restart_key)->toBe($second)
+        ->and($afterResolution?->pi_restart_reservation)->toBe('accepted')
+        ->and($afterResolution?->pi_restart_source_turn_id)->toBe($first)
+        ->and($afterResolution?->pi_restart_thread_id)->toBe($task->implementer_agent_thread_id);
+
+    $state->turnId = 'resolution-turn';
+    app(TaskScheduler::class)->tick();
+
+    $keys = tick_pi_message_keys();
+    expect($task->fresh()?->assistance_requested)->toBeTrue()
+        ->and($task->fresh()?->assistance_reason)->toBe('The implementer thread failed.')
+        ->and($task->fresh()?->pi_restart_resumes)->toBe(2)
+        ->and($task->fresh()?->pi_restart_key)->toBe($second)
+        ->and($task->fresh()?->pi_restart_reservation)->toBe('accepted')
+        ->and(array_count_values($keys)[$second] ?? 0)->toBe(1)
+        ->and($keys)->not->toContain('resolution-turn');
+});
+
+it('does not send an implementer Pi resume to the reviewer', function (): void {
+    $task = tick_pi_implementer();
+    $reviewer = AgentThread::query()->findOrFail($task->taskGroup->reviewer_agent_thread_id);
+    $reviewer->update(['driver' => 'pi']);
+    $implementer = (object) ['state' => 'failed', 'error' => 'The Pi server restarted during the turn.', 'turnId' => 'impl-turn'];
+    $review = (object) ['state' => 'idle', 'error' => null, 'turnId' => 'old-review'];
+    /** @var list<array{session: string, key: string, text: string}> $messages */
+    $messages = [];
+    Http::fake(function (Request $request) use ($implementer, $review, &$messages) {
+        if (preg_match('#/sessions/([^/]+)/messages$#', $request->url(), $match) === 1) {
+            $messages[] = ['session' => $match[1], 'key' => (string) $request['key'], 'text' => (string) $request['text']];
+
+            return Http::response(['duplicate' => false], 202);
+        }
+        if (preg_match('#/sessions/([^/]+)$#', $request->url(), $match) !== 1) {
+            return Http::response([], 404);
+        }
+        $snap = $match[1] === 'reviewer-thread' ? $review : $implementer;
+
+        return Http::response([
+            'kind' => 'snapshot', 'run' => 'run-1', 'sequence' => 4,
+            'session' => ['id' => $match[1]],
+            'state' => $snap->state, 'error' => $snap->error, 'turnId' => $snap->turnId, 'entries' => [],
+        ]);
+    });
+
+    app(TaskScheduler::class)->tick();
+
+    $implementerKey = $task->fresh()?->pi_restart_key;
+    expect($implementerKey)->toBeString()
+        ->and($task->fresh()?->pi_restart_resumes)->toBe(1)
+        ->and($task->fresh()?->pi_restart_thread_id)->toBe($task->implementer_agent_thread_id)
+        ->and($messages)->toHaveCount(1)
+        ->and($messages[0]['session'])->toBe('implementer-thread')
+        ->and($messages[0]['key'])->toBe($implementerKey);
+
+    $task->taskGroup->update(['status' => TaskGroupStatus::Reviewing]);
+    $task->update([
+        'status' => TaskStatus::Reviewing,
+        'review_notified_attempt' => $task->review_attempt,
+        'review_notified_turn_id' => 'handoff-turn',
+        ...tick_review_baseline(),
+    ]);
+    $review->state = 'failed';
+    $review->error = 'The Pi server restarted during the turn.';
+    $review->turnId = 'review-turn';
+    app(TaskScheduler::class)->tick();
+
+    $fresh = $task->fresh();
+    $reviewerKey = $fresh?->pi_restart_key;
+    expect($fresh?->assistance_requested)->toBeFalse()
+        ->and($fresh?->pi_restart_resumes)->toBe(2)
+        ->and($fresh?->pi_restart_reservation)->toBe('pending')
+        ->and($fresh?->pi_restart_thread_id)->toBe($reviewer->id)
+        ->and($fresh?->pi_restart_source_turn_id)->toBe('review-turn')
+        ->and($reviewerKey)->toBeString()->not->toBe($implementerKey)
+        ->and($messages)->toHaveCount(2)
+        ->and($messages[1]['session'])->toBe('reviewer-thread')
+        ->and($messages[1]['key'])->toBe($reviewerKey)
+        ->and($messages[1]['text'])->toBe('Your previous turn was interrupted by a server restart. Check git status and git diff, finish the subtask, and hand off with the run script.')
+        ->and(collect($messages)->where('session', 'reviewer-thread')->pluck('key')->all())->not->toContain($implementerKey);
+
+    $review->turnId = (string) $reviewerKey;
+    app(TaskScheduler::class)->tick();
+
+    expect($task->fresh()?->assistance_requested)->toBeTrue()
+        ->and($task->fresh()?->assistance_reason)->toBe('The reviewer thread failed.')
+        ->and($task->fresh()?->pi_restart_resumes)->toBe(2)
+        ->and($task->fresh()?->pi_restart_key)->toBe($reviewerKey)
+        ->and($messages)->toHaveCount(2);
+});
+
+it('asks for assistance when a Pi restart has no turn id', function (): void {
+    $task = tick_pi_implementer();
+    tick_pi_failure((object) ['turnId' => '', 'error' => 'The Pi server restarted during the turn.']);
+
+    app(TaskScheduler::class)->tick();
+
+    expect($task->fresh()?->assistance_requested)->toBeTrue()
+        ->and($task->fresh()?->assistance_reason)->toBe('The implementer thread failed.')
+        ->and(tick_pi_message_keys())->toBe([])
+        ->and($task->fresh()?->pi_restart_resumes)->toBe(0)
+        ->and($task->fresh()?->pi_restart_key)->toBeNull();
+});
+
+it('asks for assistance when a T3 thread fails instead of resuming a Pi restart', function (): void {
+    $group = tick_group();
+    $task = $group->tasks->sole();
+    app(TaskExtensionState::class)->enable();
+    $dispatcher = tick_dispatcher();
+    app()->instance(T3Dispatcher::class, $dispatcher);
+    app()->instance(T3ThreadReader::class, new class implements T3ThreadReader
+    {
+        public function snapshot(Node $node, string $threadId): ?array
+        {
+            $failed = $threadId === 'implementer-thread';
+
+            return ['thread' => [
+                'session' => ['status' => $failed ? 'failed' : 'idle'],
+                'error' => $failed ? 'The Pi server restarted during the turn.' : null,
+                'latestTurn' => [
+                    'id' => $threadId.'-turn',
+                    'state' => $failed ? 'failed' : 'completed',
+                    'error' => $failed ? 'The Pi server restarted during the turn.' : null,
+                ],
+            ]];
+        }
+    });
+
+    app(TaskScheduler::class)->tick();
+
+    expect($task->fresh()?->assistance_requested)->toBeTrue()
+        ->and($task->fresh()?->assistance_reason)->toBe('The implementer thread failed.')
+        ->and($dispatcher->commands)->toBe([])
+        ->and($task->fresh()?->pi_restart_resumes)->toBe(0)
+        ->and($task->fresh()?->pi_restart_key)->toBeNull();
+});
+
+it('keeps a Pi resume counted when the server accepts the key and both responses fail', function (): void {
+    $task = tick_pi_implementer();
+    $state = (object) ['turnId' => 'turn-key-1', 'error' => 'The Pi server restarted during the turn.', 'state' => 'failed'];
+    $accepted = [];
+    $failedKey = null;
+    Http::fake(function (Request $request) use ($state, &$accepted, &$failedKey) {
+        if (str_ends_with($request->url(), '/messages')) {
+            $key = (string) $request['key'];
+            $accepted[$key] = true;
+            $failedKey ??= $key;
+            if ($key === $failedKey) {
+                return Http::response(['error' => ['code' => 'unavailable', 'message' => 'down']], 503);
+            }
+
+            return Http::response(['duplicate' => false], 202);
+        }
+        if (! str_contains($request->url(), '/sessions/implementer-thread')) {
+            return Http::response([], 404);
+        }
+
+        return Http::response([
+            'kind' => 'snapshot', 'run' => 'run-1', 'sequence' => 4,
+            'session' => ['id' => 'implementer-thread'],
+            'state' => $state->state, 'error' => $state->error, 'turnId' => $state->turnId, 'entries' => [],
+        ]);
+    });
+
+    app(TaskScheduler::class)->tick();
+
+    $reserved = $task->fresh();
+    expect($reserved?->pi_restart_resumes)->toBe(1)
+        ->and($reserved?->pi_restart_reservation)->toBe('pending')
+        ->and($reserved?->pi_restart_key)->toBeString()
+        ->and($accepted)->toHaveKey($reserved?->pi_restart_key)
+        ->and($reserved?->communication_failures)->toBe(1)
+        ->and($reserved?->assistance_requested)->toBeFalse()
+        ->and(tick_pi_message_keys())->toBe([$reserved?->pi_restart_key, $reserved?->pi_restart_key]);
+
+    $state->turnId = (string) $reserved?->pi_restart_key;
+    app()->forgetInstance(TaskScheduler::class);
+    app(TaskScheduler::class)->tick();
+
+    $fresh = $task->fresh();
+    $keys = tick_pi_message_keys();
+    expect($fresh?->pi_restart_resumes)->toBe(2)
+        ->and($fresh?->pi_restart_reservation)->toBe('pending')
+        ->and($fresh?->pi_restart_source_turn_id)->toBe($reserved?->pi_restart_key)
+        ->and($fresh?->pi_restart_key)->toBeString()->not->toBe($reserved?->pi_restart_key)
+        ->and($fresh?->assistance_requested)->toBeFalse()
+        ->and($fresh?->communication_failures)->toBe(0)
+        ->and(array_count_values($keys)[(string) $reserved?->pi_restart_key])->toBe(2)
+        ->and($keys)->toBe([$reserved?->pi_restart_key, $reserved?->pi_restart_key, $fresh?->pi_restart_key]);
+
+    $state->turnId = (string) $fresh?->pi_restart_key;
+    app()->forgetInstance(TaskScheduler::class);
+    app(TaskScheduler::class)->tick();
+
+    expect($task->fresh()?->assistance_requested)->toBeTrue()
+        ->and($task->fresh()?->assistance_reason)->toBe('The implementer thread failed.')
+        ->and($task->fresh()?->pi_restart_resumes)->toBe(2)
+        ->and($task->fresh()?->pi_restart_key)->toBe($fresh?->pi_restart_key)
+        ->and($task->fresh()?->pi_restart_reservation)->toBe('accepted')
+        ->and(tick_pi_message_keys())->toBe($keys);
+});
+
+it('supersedes a pending Pi resume when a later turn is first observed', function (): void {
+    $task = tick_pi_implementer();
+    app()->instance(TaskRunReceipts::class, new FakeTaskRunReceipts([null, null]));
+    $state = (object) ['turnId' => 'turn-key-1', 'error' => 'The Pi server restarted during the turn.', 'state' => 'failed'];
+    tick_pi_failure($state);
+    app(TaskScheduler::class)->tick();
+    $reserved = (string) $task->fresh()?->pi_restart_key;
+
+    $state->state = 'idle';
+    $state->turnId = 'normal-turn';
+    $state->error = null;
+    app(TaskScheduler::class)->tick();
+
+    $fresh = $task->fresh();
+    $keys = tick_pi_message_keys();
+    expect($fresh?->pi_restart_reservation)->toBe('superseded')
+        ->and($fresh?->pi_restart_resumes)->toBe(1)
+        ->and($fresh?->pi_restart_key)->toBe($reserved)
+        ->and($fresh?->pi_restart_source_turn_id)->toBe('turn-key-1')
+        ->and($fresh?->assistance_requested)->toBeFalse()
+        ->and($keys)->toHaveCount(2)
+        ->and($keys[0])->toBe($reserved)
+        ->and($keys[1])->not->toBe($reserved)
+        ->and(collect(Http::recorded())->filter(fn (array $pair): bool => str_ends_with($pair[0]->url(), '/messages'))->values()[1][0]['text'])
+        ->toContain('No run receipt was found.');
+
+    $state->state = 'failed';
+    $state->turnId = 'normal-turn';
+    $state->error = 'The Pi server restarted during the turn.';
+    app(TaskScheduler::class)->tick();
+
+    $after = $task->fresh();
+    expect($after?->pi_restart_resumes)->toBe(2)
+        ->and($after?->pi_restart_reservation)->toBe('pending')
+        ->and($after?->pi_restart_source_turn_id)->toBe('normal-turn')
+        ->and($after?->pi_restart_key)->toBeString()->not->toBe($reserved)->not->toBe($keys[1])
+        ->and($after?->assistance_requested)->toBeFalse()
+        ->and(array_count_values(tick_pi_message_keys())[$reserved])->toBe(1);
+});
+
+it('resumes a T3 reviewer whose provider session did not survive a server restart', function (string $error): void {
+    $group = tick_group();
+    $task = $group->tasks->sole();
+    $group->update(['status' => TaskGroupStatus::Reviewing]);
+    $task->update([
+        'status' => TaskStatus::Reviewing,
+        'review_notified_attempt' => $task->review_attempt,
+        'review_notified_turn_id' => 'handoff-turn',
+        ...tick_review_baseline(),
+    ]);
+    app(TaskExtensionState::class)->enable();
+    $dispatcher = tick_dispatcher();
+    app()->instance(T3Dispatcher::class, $dispatcher);
+    $state = (object) ['turnId' => 'review-turn', 'error' => $error];
+    app()->instance(T3ThreadReader::class, new class($state) implements T3ThreadReader
+    {
+        public function __construct(private object $state) {}
+
+        public function snapshot(Node $node, string $threadId): ?array
+        {
+            $acting = $threadId === 'reviewer-thread';
+
+            return ['thread' => [
+                'session' => [
+                    'status' => $acting ? 'error' : 'idle',
+                    'lastError' => $acting ? $this->state->error : null,
+                    'activeTurnId' => null,
+                ],
+                'latestTurn' => [
+                    'turnId' => $acting ? $this->state->turnId : $threadId.'-turn',
+                    'state' => $acting ? 'error' : 'completed',
+                ],
+            ]];
+        }
+    });
+
+    app(TaskScheduler::class)->tick();
+    app(TaskScheduler::class)->tick();
+
+    $starts = array_values(array_filter(
+        $dispatcher->commands,
+        static fn (array $command): bool => ($command['type'] ?? '') === 'thread.turn.start',
+    ));
+    $fresh = $task->fresh();
+    expect($starts)->toHaveCount(2)
+        ->and($starts[0]['commandId'])->toBe($fresh?->pi_restart_key)
+        ->and($starts[0]['commandId'])->toBe($starts[1]['commandId'])
+        ->and($starts[0]['message']['messageId'])->toBe($starts[0]['commandId'])
+        ->and($starts[0]['message']['text'])->toBe(TaskScheduler::PiServerRestartContinue)
+        ->and($starts[0]['threadId'])->toBe('reviewer-thread')
+        ->and($fresh?->assistance_requested)->toBeFalse()
+        ->and($fresh?->pi_restart_resumes)->toBe(1)
+        ->and($fresh?->pi_restart_reservation)->toBe('pending')
+        ->and($fresh?->pi_restart_thread_id)->toBe($group->reviewer_agent_thread_id)
+        ->and($fresh?->pi_restart_source_turn_id)->toBe('review-turn');
+
+    $state->turnId = 'review-turn-2';
+    app(TaskScheduler::class)->tick();
+
+    $second = $task->fresh();
+    $starts = array_values(array_filter(
+        $dispatcher->commands,
+        static fn (array $command): bool => ($command['type'] ?? '') === 'thread.turn.start',
+    ));
+    expect($second?->assistance_requested)->toBeFalse()
+        ->and($second?->pi_restart_resumes)->toBe(2)
+        ->and($second?->pi_restart_source_turn_id)->toBe('review-turn-2')
+        ->and($second?->pi_restart_key)->toBeString()->not->toBe($fresh?->pi_restart_key)
+        ->and($starts)->toHaveCount(3)
+        ->and($starts[2]['commandId'])->toBe($second?->pi_restart_key)
+        ->and($starts[2]['message']['messageId'])->toBe($second?->pi_restart_key);
+
+    $state->turnId = 'review-turn-3';
+    app(TaskScheduler::class)->tick();
+
+    $starts = array_values(array_filter(
+        $dispatcher->commands,
+        static fn (array $command): bool => ($command['type'] ?? '') === 'thread.turn.start',
+    ));
+    expect($task->fresh()?->assistance_requested)->toBeTrue()
+        ->and($task->fresh()?->assistance_reason)->toBe('The reviewer thread failed.')
+        ->and($task->fresh()?->pi_restart_resumes)->toBe(2)
+        ->and($task->fresh()?->pi_restart_key)->toBe($second?->pi_restart_key)
+        ->and($starts)->toHaveCount(3);
+})->with([
+    'an orphaned provider session' => [TaskScheduler::T3ServerRestartError],
+    'a continuation that failed after the restart' => [TaskScheduler::T3ServerRestartContinuationError],
+]);
+
+it('does not repeat an accepted T3 resume that restarts before the turn id changes', function (): void {
+    $group = tick_group();
+    $task = $group->tasks->sole();
+    $group->update(['status' => TaskGroupStatus::Reviewing]);
+    $task->update([
+        'status' => TaskStatus::Reviewing,
+        'review_notified_attempt' => $task->review_attempt,
+        'review_notified_turn_id' => 'handoff-turn',
+        ...tick_review_baseline(),
+    ]);
+    app(TaskExtensionState::class)->enable();
+    $server = new class
+    {
+        /** @var list<string> */
+        public array $accepted = [];
+
+        public string $updatedAt = '2026-09-27T11:00:00.100Z';
+    };
+    $dispatcher = new class($server) implements T3Dispatcher
+    {
+        /** @var list<array<string, mixed>> */
+        public array $commands = [];
+
+        public function __construct(private object $server) {}
+
+        public function dispatch(Node $node, array $command): array
+        {
+            $id = (string) ($command['commandId'] ?? '');
+            $duplicate = in_array($id, $this->server->accepted, true);
+            $this->commands[] = [...$command, 'duplicate' => $duplicate];
+            if (! $duplicate && $id !== '') {
+                $this->server->accepted[] = $id;
+            }
+
+            return ['sequence' => $duplicate ? 1 : count($this->server->accepted) + 1, 'thread_id' => (string) ($command['threadId'] ?? '')];
+        }
+    };
+    app()->instance(T3Dispatcher::class, $dispatcher);
+    app()->instance(T3ThreadReader::class, new class($server) implements T3ThreadReader
+    {
+        public function __construct(private object $server) {}
+
+        public function snapshot(Node $node, string $threadId): ?array
+        {
+            $acting = $threadId === 'reviewer-thread';
+            $messages = [];
+            foreach ($this->server->accepted as $index => $id) {
+                $messages[] = [
+                    'id' => $id,
+                    'role' => 'user',
+                    'text' => TaskScheduler::PiServerRestartContinue,
+                    'createdAt' => '2026-09-27T15:00:00.000Z',
+                ];
+            }
+
+            return ['thread' => [
+                'session' => [
+                    'status' => $acting ? 'error' : 'idle',
+                    'lastError' => $acting ? TaskScheduler::T3ServerRestartError : null,
+                    'activeTurnId' => null,
+                    'updatedAt' => $this->server->updatedAt,
+                ],
+                'latestTurn' => ['turnId' => 'review-turn', 'state' => $acting ? 'error' : 'completed'],
+                'messages' => $acting ? $messages : [],
+            ]];
+        }
+    });
+
+    app(TaskScheduler::class)->tick();
+
+    $starts = array_values(array_filter(
+        $dispatcher->commands,
+        static fn (array $command): bool => ($command['type'] ?? '') === 'thread.turn.start',
+    ));
+    expect($starts)->toHaveCount(1)
+        ->and($starts[0]['duplicate'])->toBeFalse()
+        ->and($task->fresh()?->pi_restart_resumes)->toBe(1)
+        ->and($task->fresh()?->pi_restart_reservation)->toBe('pending')
+        ->and($task->fresh()?->pi_restart_source_turn_id)->toBe('review-turn')
+        ->and($task->fresh()?->pi_restart_session_revision)->toBe('2026-09-27T11:00:00.100Z');
+
+    $server->updatedAt = '2026-09-27T11:00:00.900Z';
+    app(TaskScheduler::class)->tick();
+
+    $starts = array_values(array_filter(
+        $dispatcher->commands,
+        static fn (array $command): bool => ($command['type'] ?? '') === 'thread.turn.start',
+    ));
+    $fresh = $task->fresh();
+    expect($starts)->toHaveCount(2)
+        ->and($starts[1]['duplicate'])->toBeFalse()
+        ->and($starts[1]['commandId'])->not->toBe($starts[0]['commandId'])
+        ->and($fresh?->pi_restart_resumes)->toBe(2)
+        ->and($fresh?->pi_restart_key)->toBe($starts[1]['commandId'])
+        ->and($fresh?->pi_restart_session_revision)->toBe('2026-09-27T11:00:00.900Z')
+        ->and($fresh?->pi_restart_source_turn_id)->toBe('review-turn')
+        ->and($fresh?->assistance_requested)->toBeFalse()
+        ->and(array_count_values(array_map(static fn (array $command): string => (string) $command['commandId'], $starts))[$starts[0]['commandId']])->toBe(1);
+
+    app(TaskScheduler::class)->tick();
+
+    expect($task->fresh()?->assistance_requested)->toBeFalse()
+        ->and($task->fresh()?->pi_restart_resumes)->toBe(2)
+        ->and($dispatcher->commands)->toHaveCount(2);
+
+    $server->updatedAt = '2026-09-27T11:00:01.000Z';
+    app(TaskScheduler::class)->tick();
+    app(TaskScheduler::class)->tick();
+
+    $starts = array_values(array_filter(
+        $dispatcher->commands,
+        static fn (array $command): bool => ($command['type'] ?? '') === 'thread.turn.start',
+    ));
+    expect($task->fresh()?->assistance_requested)->toBeTrue()
+        ->and($task->fresh()?->assistance_reason)->toBe('The reviewer thread failed.')
+        ->and($task->fresh()?->pi_restart_resumes)->toBe(2)
+        ->and($starts)->toHaveCount(2)
+        ->and(array_column($starts, 'duplicate'))->toBe([false, false]);
+});
+
+it('does not spend a second resume when the node clock is ahead of an accepted T3 command', function (): void {
+    $group = tick_group();
+    $task = $group->tasks->sole();
+    $group->update(['status' => TaskGroupStatus::Reviewing]);
+    $task->update([
+        'status' => TaskStatus::Reviewing,
+        'review_notified_attempt' => $task->review_attempt,
+        'review_notified_turn_id' => 'handoff-turn',
+        ...tick_review_baseline(),
+    ]);
+    app(TaskExtensionState::class)->enable();
+    $server = new class
+    {
+        /** @var list<string> */
+        public array $accepted = [];
+
+        public bool $starting = false;
+    };
+    $dispatcher = new class($server) implements T3Dispatcher
+    {
+        /** @var list<array<string, mixed>> */
+        public array $commands = [];
+
+        public function __construct(private object $server) {}
+
+        public function dispatch(Node $node, array $command): array
+        {
+            $id = (string) ($command['commandId'] ?? '');
+            $duplicate = in_array($id, $this->server->accepted, true);
+            $this->commands[] = [...$command, 'duplicate' => $duplicate];
+            if (! $duplicate && $id !== '') {
+                $this->server->accepted[] = $id;
+            }
+
+            return ['sequence' => count($this->server->accepted) + 1, 'thread_id' => (string) ($command['threadId'] ?? '')];
+        }
+    };
+    app()->instance(T3Dispatcher::class, $dispatcher);
+    app()->instance(T3ThreadReader::class, new class($server) implements T3ThreadReader
+    {
+        public function __construct(private object $server) {}
+
+        public function snapshot(Node $node, string $threadId): ?array
+        {
+            $acting = $threadId === 'reviewer-thread';
+            $messages = [];
+            foreach ($this->server->accepted as $index => $id) {
+                $messages[] = [
+                    'id' => $id,
+                    'role' => 'user',
+                    'text' => TaskScheduler::PiServerRestartContinue,
+                    'createdAt' => '2026-09-27T12:00:00.000Z',
+                ];
+            }
+            $starting = $acting && $this->server->starting;
+
+            return ['thread' => [
+                'session' => [
+                    'status' => $starting ? 'starting' : ($acting ? 'error' : 'idle'),
+                    'lastError' => $starting || ! $acting ? null : TaskScheduler::T3ServerRestartError,
+                    'activeTurnId' => null,
+                    'updatedAt' => '2026-09-27T13:00:00.900Z',
+                ],
+                'latestTurn' => ['turnId' => 'review-turn', 'state' => $starting || ! $acting ? 'completed' : 'error'],
+                'messages' => $acting ? $messages : [],
+            ]];
+        }
+    });
+
+    app(TaskScheduler::class)->tick();
+    app(TaskScheduler::class)->tick();
+    app(TaskScheduler::class)->tick();
+
+    $starts = array_values(array_filter(
+        $dispatcher->commands,
+        static fn (array $command): bool => ($command['type'] ?? '') === 'thread.turn.start',
+    ));
+    expect($starts)->toHaveCount(1)
+        ->and($starts[0]['duplicate'])->toBeFalse()
+        ->and($task->fresh()?->pi_restart_resumes)->toBe(1)
+        ->and($task->fresh()?->pi_restart_reservation)->toBe('pending')
+        ->and($task->fresh()?->pi_restart_session_revision)->toBe('2026-09-27T13:00:00.900Z')
+        ->and($task->fresh()?->assistance_requested)->toBeFalse();
+
+    $server->starting = true;
+    app(TaskScheduler::class)->tick();
+    app(TaskScheduler::class)->tick();
+
+    expect($task->fresh()?->assistance_requested)->toBeFalse()
+        ->and($task->fresh()?->pi_restart_resumes)->toBe(1)
+        ->and($dispatcher->commands)->toHaveCount(1);
+});
+
 it('reminds an implementer that ends a turn without a receipt once, then asks for assistance', function (): void {
     $group = tick_group();
     $task = $group->tasks->sole();
@@ -3118,6 +3924,98 @@ describe('a thread that works outside the task phase', function (): void {
             ->and($task->fresh()?->review_notified_attempt)->toBe($task->fresh()?->review_attempt)
             ->and($task->fresh()?->review_notified_turn_id)->toBe('reviewer-thread-turn')
             ->and(app(TaskRunReceipts::class)->prepared)->toBe(['reviewer:final']);
+    });
+
+    it('requests the current review when the shared reviewer fails before that review starts, and resumes a review that already started', function (): void {
+        $group = tick_group();
+        $task = $group->tasks->sole();
+        $reviewer = AgentThread::query()->findOrFail($group->reviewer_agent_thread_id);
+        $reviewer->update(['driver' => 'pi']);
+        $reviewer->node?->update([
+            'settings' => ['pi' => ['token' => 'pi-node-token-with-more-than-32-characters', 'url' => 'http://10.44.0.212:3774']],
+        ]);
+        app(TaskExtensionState::class)->enable();
+        $spawner = new class implements AgentSpawner
+        {
+            public int $reviews = 0;
+
+            public function spawnReviewer(Task $task): ?int
+            {
+                return null;
+            }
+
+            public function spawnImplementer(Task $task): ?int
+            {
+                return null;
+            }
+
+            public function requestReview(Task $task): void
+            {
+                $this->reviews++;
+            }
+        };
+        app()->instance(AgentSpawner::class, $spawner);
+        app()->instance(T3ThreadReader::class, tick_thread_states(['implementer-thread' => 'done']));
+        $pi = (object) ['state' => 'working', 'error' => null, 'turnId' => 'other-turn'];
+        /** @var list<array{key: string, text: string}> $messages */
+        $messages = [];
+        Http::fake(function (Request $request) use ($pi, &$messages) {
+            if (str_ends_with($request->url(), '/messages')) {
+                $messages[] = ['key' => (string) $request['key'], 'text' => (string) $request['text']];
+
+                return Http::response(['duplicate' => false], 202);
+            }
+            if (! str_contains($request->url(), '/sessions/reviewer-thread')) {
+                return null;
+            }
+
+            return Http::response([
+                'kind' => 'snapshot', 'run' => 'run-1', 'sequence' => 4,
+                'session' => ['id' => 'reviewer-thread'],
+                'state' => $pi->state, 'error' => $pi->error, 'turnId' => $pi->turnId, 'entries' => [],
+            ]);
+        });
+
+        app(TaskScheduler::class)->tick();
+        app(TaskScheduler::class)->tick();
+        app(TaskScheduler::class)->tick();
+
+        expect($task->fresh()?->status)->toBe(TaskStatus::Reviewing)
+            ->and($task->fresh()?->review_notified_attempt)->toBeNull()
+            ->and($spawner->reviews)->toBe(0)
+            ->and(app(TaskRunReceipts::class)->prepared)->toBe([])
+            ->and($task->fresh()?->pi_restart_resumes)->toBe(0)
+            ->and($messages)->toBe([]);
+
+        $pi->state = 'failed';
+        $pi->error = 'The Pi server restarted during the turn.';
+        app(TaskScheduler::class)->tick();
+
+        expect($spawner->reviews)->toBe(1)
+            ->and(app(TaskRunReceipts::class)->prepared)->toBe(['reviewer:final'])
+            ->and($task->fresh()?->review_notified_attempt)->toBe($task->fresh()?->review_attempt)
+            ->and($task->fresh()?->review_workspace_head)->toBe(str_repeat('a', 40))
+            ->and($task->fresh()?->review_workspace_tree)->toBe(str_repeat('b', 40))
+            ->and($task->fresh()?->pi_restart_resumes)->toBe(0)
+            ->and($task->fresh()?->pi_restart_key)->toBeNull()
+            ->and($task->fresh()?->assistance_requested)->toBeFalse()
+            ->and($messages)->toBe([]);
+
+        $pi->turnId = 'review-turn';
+        app(TaskScheduler::class)->tick();
+
+        $fresh = $task->fresh();
+        expect($spawner->reviews)->toBe(1)
+            ->and(app(TaskRunReceipts::class)->prepared)->toBe(['reviewer:final'])
+            ->and($fresh?->assistance_requested)->toBeFalse()
+            ->and($fresh?->pi_restart_resumes)->toBe(1)
+            ->and($fresh?->pi_restart_reservation)->toBe('pending')
+            ->and($fresh?->pi_restart_thread_id)->toBe($reviewer->id)
+            ->and($fresh?->pi_restart_source_turn_id)->toBe('review-turn')
+            ->and($messages)->toHaveCount(1)
+            ->and($messages[0]['text'])->toBe('Your previous turn was interrupted by a server restart. Check git status and git diff, finish the subtask, and hand off with the run script.')
+            ->and($messages[0]['key'])->toBe($fresh?->pi_restart_key)
+            ->and($messages[0]['key'])->not->toBe('review-turn');
     });
 
     it('relays review findings only once the implementer is idle', function (): void {

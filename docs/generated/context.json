@@ -3145,6 +3145,7 @@
                 "0114",
                 "0116",
                 "0165",
+                "0167",
                 "0168"
             ]
         },
@@ -4280,6 +4281,26 @@
             ]
         },
         {
+            "path": "docs/decisions/0167-resume-a-pi-turn-interrupted-by-a-server-restart.md",
+            "title": "ADR 0167: Resume a Pi turn interrupted by a server restart",
+            "kind": "decision",
+            "components": [
+                "apps/docs",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Gateway",
+                "Node",
+                "Process",
+                "Schedule",
+                "Task"
+            ],
+            "governing_adrs": [
+                "0116",
+                "0167"
+            ]
+        },
+        {
             "path": "docs/decisions/0168-offload-large-pi-tool-output.md",
             "title": "ADR 0168: Offload large Pi tool output",
             "kind": "decision",
@@ -4496,6 +4517,7 @@
                 "0164",
                 "0165",
                 "0166",
+                "0167",
                 "0168"
             ]
         },
@@ -5544,12 +5566,14 @@
                 "Process",
                 "Project",
                 "Route",
+                "Schedule",
                 "Task",
                 "Tool"
             ],
             "governing_adrs": [
                 "0116",
                 "0165",
+                "0167",
                 "0168"
             ]
         },
@@ -5751,7 +5775,8 @@
                 "0160",
                 "0163",
                 "0164",
-                "0165"
+                "0165",
+                "0167"
             ]
         },
         {

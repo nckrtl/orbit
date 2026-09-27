@@ -158,6 +158,15 @@ describe('create and send', function (): void {
         expect($keys)->toHaveCount(2)->and($keys[0])->toBe($keys[1]);
     });
 
+    it('posts a supplied key on the first send and on the retry', function (): void {
+        Http::fake([PI_BASE.'/sessions/*/messages' => Http::sequence()->push(['error' => ['code' => 'internal_error', 'message' => 'x']], 500)->push(['duplicate' => false], 202)]);
+
+        pi_driver()->send(pi_thread(pi_node()), 'Continue', 'resume-key-1');
+
+        $keys = collect(Http::recorded())->map(fn (array $pair): mixed => $pair[0]['key'])->all();
+        expect($keys)->toBe(['resume-key-1', 'resume-key-1']);
+    });
+
     it('names the server error when both attempts fail', function (): void {
         Http::fake([PI_BASE.'/sessions/*/messages' => Http::response(['error' => ['code' => 'turn_active', 'message' => 'Session is already working on a turn.']], 409)]);
 

@@ -61,6 +61,7 @@ final readonly class T3Projection
             error: $state === AgentThreadState::Failed ? ($this->text($error) ?: ($retained ? $previousError : null) ?? 'Agent turn failed.') : null,
             cursor: is_int($cursor) ? (string) $cursor : null,
             turnId: $turnId === '' ? null : $turnId,
+            sessionUpdatedAt: $this->text($session['updatedAt'] ?? '') ?: null,
         );
     }
 

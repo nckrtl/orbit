@@ -39,6 +39,12 @@ use Illuminate\Support\Carbon;
  * @property bool $assistance_requested
  * @property string|null $assistance_reason
  * @property int $communication_failures
+ * @property int $pi_restart_resumes
+ * @property string|null $pi_restart_key
+ * @property int|null $pi_restart_thread_id
+ * @property string|null $pi_restart_source_turn_id
+ * @property string|null $pi_restart_reservation
+ * @property string|null $pi_restart_session_revision
  * @property int|null $resolution_delivered_comment_id
  * @property string $title
  * @property string $brief
@@ -65,6 +71,7 @@ final class Task extends Model
     protected $attributes = [
         'status' => 'todo',
         'assistance_requested' => false,
+        'pi_restart_resumes' => 0,
         'type' => 'implementation',
     ];
 
@@ -104,6 +111,7 @@ final class Task extends Model
         'review_workspace_head',
         'review_workspace_tree',
         'assistance_requested', 'assistance_reason', 'communication_failures', 'resolution_delivered_comment_id',
+        'pi_restart_resumes', 'pi_restart_key', 'pi_restart_thread_id', 'pi_restart_source_turn_id', 'pi_restart_reservation', 'pi_restart_session_revision',
     ];
 
     /** @return BelongsTo<TaskGroup, $this> */
@@ -192,6 +200,8 @@ final class Task extends Model
             'review_notified_attempt' => 'integer',
             'assistance_requested' => 'boolean',
             'communication_failures' => 'integer',
+            'pi_restart_resumes' => 'integer',
+            'pi_restart_thread_id' => 'integer',
             'resolution_delivered_comment_id' => 'integer',
         ];
     }
