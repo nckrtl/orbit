@@ -392,9 +392,11 @@ The browser supplies an opaque `Last-Event-ID` on reconnect. A tab that returns 
 
 An `AgentThread` is one persistent conversation. It records the driver, external conversation ID, original Node, task links, role, model, and effort. Task and TaskGroup thread pointers refer to Orbit thread IDs. Existing T3 session links migrate with their IDs and ownership preserved. The external runtime retains the transcript. The integer `reviewer_agent_thread_id` and `implementer_agent_thread_id` fields replace external string pointers. The migration preserves old record IDs and imports missing legacy links.
 
+It is forward-only; reverting to an older Gateway requires restoring a database backup or a reviewed forward migration. Ownership conflicts are checked before schema changes. Take a backup before migrating. If a database without transactional DDL stops partway through a schema change, restore that backup before retrying; do not rerun against the partial schema.
+
 Orbit reserves a row before it starts a conversation, so the opening prompt can name the Orbit thread id. That row's external id starts with `pending:` until the conversation starts. It is not a conversation yet. The agents list, the Agents section, token totals, and `agent_thread.updated` leave it out, and Orbit does not read it from the driver. If starting the conversation throws, Orbit deletes the row. The next attempt does not reuse it.
 
-It is forward-only; reverting to an older Gateway requires restoring a database backup or a reviewed forward migration. Ownership conflicts are checked before schema changes. Take a backup before migrating. If a database without transactional DDL stops partway through a schema change, restore that backup before retrying; do not rerun against the partial schema.
+If a failed spawn leaves a `pending:` row behind, a tick deletes it when the row is older than the spawn attempt that created it. A later spawn does not reuse the row.
 
 | State | Meaning |
 | --- | --- |
@@ -409,6 +411,12 @@ Completion and failure remain visible until a new turn starts. Task completion s
 A group records an implementer driver and a reviewer driver. `ORBIT_TASKS_IMPLEMENTER_AGENT_DRIVER` and `ORBIT_TASKS_REVIEWER_AGENT_DRIVER` select them for new groups. Each defaults to `ORBIT_TASKS_AGENT_DRIVER`, which defaults to `t3`. Placement requires a Node that allows both drivers. Existing groups and threads keep their recorded drivers. The Gateway registers drivers; callers cannot supply arbitrary runtime URLs. Unsupported driver operations fail explicitly. An unknown configured driver rejects group creation with `tasks.agent_driver_unavailable` before any group is stored.
 
 The Gateway sends normalized conversation snapshots, entries, states, input requests, and metrics to the web app. Reconnect cursors belong to the selected driver. The browser renders Orbit data without parsing runtime-specific events. Laravel AI continues to select scheduler actions through Jev.
+
+### Archive finished threads
+
+Orbit archives T3 threads after their work ends. When a subtask reaches `completed` or `cancelled`, Orbit archives that subtask's reviewer thread, if it has one. It never archives the planner thread while the group is open. When a group reaches `completed` or `cancelled`, Orbit archives its planner thread and any remaining T3 threads for the group.
+
+If an archive command fails, the failure does not block the subtask or group from reaching its terminal status. A later tick retries the archive. Archiving does not delete the Orbit `agent_threads` row or its metrics. Pi sessions are files on the Node and are outside this cleanup.
 
 ### T3 driver
 
