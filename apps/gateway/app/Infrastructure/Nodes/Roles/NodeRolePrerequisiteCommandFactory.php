@@ -51,6 +51,22 @@ final readonly class NodeRolePrerequisiteCommandFactory
             shift 3
             BASH;
         $input .= "\n".OsReleaseParserProgram::render()."\n".<<<'BASH'
+            docker_ce_healthy=false
+            if [ "$(dpkg-query -W -f='${Status}' docker-ce 2>/dev/null)" = 'install ok installed' ] \
+                && [ "$(dpkg-query -W -f='${Status}' docker-ce-cli 2>/dev/null)" = 'install ok installed' ] \
+                && [ "$(dpkg-query -W -f='${Status}' containerd.io 2>/dev/null)" = 'install ok installed' ] \
+                && test -x /usr/bin/docker \
+                && systemctl is-active --quiet docker; then
+                docker_ce_healthy=true
+            fi
+            if [ "$docker_ce_healthy" = true ]; then
+                prerequisite_packages=()
+                for prerequisite_package in "$@"; do
+                    [ "$prerequisite_package" = docker.io ] || prerequisite_packages+=("$prerequisite_package")
+                done
+                set -- "${prerequisite_packages[@]}"
+            fi
+
             export DEBIAN_FRONTEND=noninteractive
             apt-get update
             apt-get install --yes --no-install-recommends --no-remove -- "$@"

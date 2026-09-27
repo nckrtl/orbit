@@ -28,7 +28,18 @@ final readonly class NativeRoleStateInspector implements RoleStateInspector
 {
     private const string PACKAGE_SCRIPT = <<<'BASH'
         present=1
+        docker_ce_healthy=false
+        if [ "$(dpkg-query -W -f='${Status}' docker-ce 2>/dev/null)" = 'install ok installed' ] \
+            && [ "$(dpkg-query -W -f='${Status}' docker-ce-cli 2>/dev/null)" = 'install ok installed' ] \
+            && [ "$(dpkg-query -W -f='${Status}' containerd.io 2>/dev/null)" = 'install ok installed' ] \
+            && test -x /usr/bin/docker \
+            && systemctl is-active --quiet docker; then
+            docker_ce_healthy=true
+        fi
         for package in "$@"; do
+            if [ "$package" = docker.io ] && [ "$docker_ce_healthy" = true ]; then
+                continue
+            fi
             if ! dpkg-query -W -f='${db:Status-Abbrev}\n' -- "$package" 2>/dev/null | grep -qx 'ii '; then
                 present=0
             fi

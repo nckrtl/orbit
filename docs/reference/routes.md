@@ -315,41 +315,11 @@ Clearing a Router while the Cluster owns Routes returns `route.reconciliation_re
 
 `route:update ROUTE --domain=DOMAIN` changes the domain of an `active`, explicit Route. For a `pending` explicit Route, it creates the replacement Route at once, with no projection steps. The Route can be development or production. A shared production Route moves its whole ordered pool to one replacement. This is how a production clone swaps its preview domain for its real domain.
 
-The Gateway reserves a `pending` replacement Route for the same Project and targets. The current Route stays the only authoritative Route. The Gateway refuses an invalid, occupied, or conflicting domain before it changes anything. It prepares the replacement's workload certificate and Caddy site, then the Router certificate, firewall rules, and Router Caddy site, then the Laravel URL or production environment. It publishes the new domain in private DNS last.
+The Gateway reserves a `pending` replacement Route for the same Project and targets. The current Route stays the only authoritative Route. The Gateway refuses an invalid, occupied, or conflicting domain before it changes anything. It prepares the replacement's workload certificate and Caddy site, then the Router certificate, firewall rules, and Router Caddy site, then the Laravel URL or production environment. It publishes the new domain in private DNS last. When a target has no recorded source profile, the Gateway returns HTTP 409 `instance.source_profile_missing`; Orbit does not recover missing profiles on older Instances, as ADR 0177 explains.
 
 Cutover is one database transition: the replacement becomes `activating` and the old Route `retiring`. Instance output shows only the new domain, and Route inspection shows both records. Cleanup removes the old projections, deletes the retiring Route, releases its domain, and marks the replacement `active`. A successful change therefore produces a new Route ID.
 
-Clearing a Router that would leave Cluster-owned Routes without a serving path still returns `route.reconciliation_required`.
-
-### Change Cluster membership
-
-The Gateway reconciles every private Route whose current target Node or retained generation basis uses the Node before attach or detach becomes authoritative. It inventories those Routes, validates the complete proposed domains, routing scopes, targets, and required Router, and refuses an invalid or occupied result before it changes membership, a Route record, environment configuration, or traffic. Cluster TLD, Cluster state, and Instance placement stay unchanged.
-
-The Gateway checks every Route it moves, and the Node's LAN address against the Cluster, before the first Route moves. A refusal therefore leaves every Route in place. Custom proxy Routes on the Node are not reconciled; they keep Node scope and keep serving. An [analytics tracking host](/reference/analytics#publish-a-tracking-host) moves with its Instance's Route.
-
-Attach to an active Cluster prepares and verifies the Cluster serving path before publication, including a TLD-less active Cluster that still uses Cluster scope and a Router. Detach prepares usable direct Node scope before it removes authoritative Cluster routing. Workload and Router Caddy, Route-scoped certificates, firewall policy, private DNS, and detected Laravel URLs agree with the published scope.
-
-A generated Route follows its current or retained generation basis. When a Node joins an active Cluster that has a TLD, generated domains move into that Cluster namespace. Detach falls back to the Node TLD. An explicit Route keeps its domain. When the resulting domain changes, the Gateway uses the replacement Route lifecycle. When only the routing scope changes, the Route keeps its ID. Old projections are removed only after publication. When Router and workload roles share one Node, the composed Caddy service uses a local next hop and does not proxy to its own HTTPS listener.
-
-The Gateway prepares and verifies those projections and the detected Laravel URL before it publishes the resulting scope. Development Laravel sources receive `APP_URL` in the environment file and cached configuration without Composer, Artisan, or application bootstrap. Production sources render stored configuration against the candidate Route. Making a stale application cache effective remains a separate application setup or deployment step.
-
-Failure before publication restores the previous membership, Route records, infrastructure intent, and Laravel URL. Each preparation, publication, database, cleanup, or rollback failure records `failed_step` and `error_code` with durable completed-step evidence. Retry revalidates that evidence and resumes from the earliest unverified step. A conflicting Node or Route mutation is refused. After publication, retry continues forward so two authoritative scopes are never exposed for the same Route.
-
-### Change an explicit private domain
-
-The Gateway can change a development or production Route domain when the Route is active, explicit, and private. A shared production Route keeps its complete ordered target pool on one replacement. This is the operation that replaces a production clone's preview domain with its intended private domain.
-
-The Gateway reserves a unique pending replacement Route for the same Project and complete target set while the existing Route stays the sole authoritative `active` Route. It refuses an invalid, occupied, or conflicting domain before it changes Route records, environment configuration, runtime projections, or traffic.
-
-When a target has no recorded source profile, the Gateway returns HTTP 409 `instance.source_profile_missing`. Orbit does not provide a compatibility recovery path for older Instances; see ADR 0177.
-
-The Gateway prepares the replacement workload certificate and Caddy site before it prepares the Router certificate, workload firewall policy, and Router Caddy site. For a detected development Laravel source, it aligns `APP_URL` in the environment file and cached configuration without running Composer, Artisan, or application bootstrap. A non-Laravel development source receives no application configuration change.
-
-For production, the Gateway checks the saved environment location and renders stored settings for the candidate Route. It resolves `{{app_instance.domain}}`, preserves other values and literal application keys, and replaces only the home's `.env`. It runs no Composer, Artisan, framework, cache, deployment, or restart commands. Add required cache or process commands to a separate deployment step. A stale cached URL or HTTP error does not block a valid infrastructure change. See [Instance environment variables](/reference/environment-variables#synchronize-during-a-domain-change).
-
-Cutover is one database transition. The Gateway publishes the replacement domain in private DNS only after it verifies every required projection, then marks the replacement `activating` and the old Route `retiring`. Instance output derives only the replacement domain. Route inspection exposes both records and their relationship. Cleanup then removes old projections, deletes the retiring Route, and marks the replacement `active`.
-
-Until cleanup, the replacement domain is served from staging certificates that the change issues for it. The workload uses `app-instance-<id>-hostname-change`, and a separate Router uses `route-<replacement id>-router-hostname-change`, also for a composed pool on a Router that holds one of the targets. The Instance's live `app-instance-<id>` certificate still names the current domain until cleanup. The Gateway chooses these scopes from the stored replacement. A `pending` replacement renders a site only after the step that issues its certificate completes, and a `failed` replacement renders no site. After cutover the `activating` replacement keeps the staging scopes until cleanup has issued the live certificates.
+Until cleanup, the new domain uses staging certificates, so the Instance's live certificate still names the old domain:
 
 | Certificate scope | Node | Issued at | Removed at |
 | --- | --- | --- | --- |

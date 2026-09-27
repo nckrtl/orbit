@@ -168,7 +168,7 @@ The next convergence of a Caddy role on the Node installs Caddy and builds the N
 
 ### When a build fails
 
-A failed build does not publish a new file. The [absent-Caddy skip](#when-caddy-is-absent) is the success that moves a stale live path and still reports `unchanged`. A build fails when a site cannot be rendered from stored state, when two sites collide, or when Caddy is below the floor. It also fails when the Node lacks an address the file binds, when `caddy validate` rejects the file, or when Caddy fails to reload.
+A failed build does not publish a new file. A build fails when a site cannot render from stored state, when two sites collide, when Caddy is below the floor, or when the Node lacks an address the file binds. It also fails when `caddy validate` rejects the file, or when Caddy fails to reload.
 
 A failed reload leaves Caddy on the configuration it already runs. The script points `/etc/caddy/Caddyfile` back at the previous version and asks Caddy to load it again. It never restarts a running Caddy. It starts Caddy only when Caddy is not running.
 
@@ -260,7 +260,7 @@ The `role` family renders the Node's build from stored state and compares it byt
 | `expected` | `observed` | Meaning |
 | --- | --- | --- |
 | The version of a fresh build | The version of the live file | Someone edited the live file, or stored state changed without a build. |
-| The version of a fresh build | `not_built` | No build wrote the live file: a foreign file or the package default. |
+| The version of a fresh build | `not_built` | No build wrote the live file. |
 | `buildable` | `refused` | Stored state renders no buildable file, as `Build refused:` in `orbit:caddy-build NODE --dry-run` shows. |
 
 To repair drift, run `php artisan orbit:caddy-build NODE` on the Gateway machine, or converge a role that publishes one of the listed sites. When Doctor cannot read the live file, it reports `role.inspection_failed`.

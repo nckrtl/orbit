@@ -21,6 +21,7 @@ use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\RoleRegistry;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tools\ToolManagerMaterializer;
 use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\ToolManagerScopeLock;
@@ -262,7 +263,11 @@ final readonly class AddNodeRoleAction
         $analytics ??= $this->analyticsSettings()->find($node);
 
         if (! $analytics instanceof AnalyticsRoleSettings) {
-            return;
+            throw new ResourceOperationException(
+                errorCode: 'analytics.settings_missing',
+                message: 'The analytics role requires a PostgreSQL Process and a ClickHouse Process.',
+                status: 422,
+            );
         }
 
         ($this->analyticsStorage ?? app(AnalyticsStorageProcessGuard::class))->assert(

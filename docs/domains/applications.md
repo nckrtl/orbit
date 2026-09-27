@@ -125,6 +125,8 @@ After creating or adopting source, the Gateway identifies its type and selects a
 
 At the first retained provisioning checkpoint, the Gateway records the complete development source profile in one database update: the selected PHP version, including no PHP runtime, and whether the source is Laravel. A retry at the `php-selected` or `url-configured` checkpoint inspects the source again and requires the exact same pair before it changes Laravel URL configuration or Route projection. A changed PHP version, a change between PHP and non-PHP, or a change between Laravel and plain PHP returns `app-dev.source_evidence_changed`.
 
+An Instance created before complete profiles were recorded can have a non-active `php-selected` or `url-configured` checkpoint with missing Laravel evidence. An ordinary retry returns `app-dev.source_evidence_changed` before URL, runtime, or Route projection changes. Orbit does not infer or backfill the missing classification during migration.
+
 Orbit does not recover missing source profiles on older Instances. ADR 0177 records the no-legacy-support rule.
 
 Orbit records each completed provisioning checkpoint so retries do not duplicate source or Routes. Database rollback preserves complete profiles at non-active `php-selected` or `url-configured` checkpoints. Once every provisioning checkpoint succeeds, Orbit runs the Project's setup steps. [Instance setup and teardown](/reference/instance-setup) owns those commands. The response returns the active Instance, Route, domain, and HTTPS URL only after that list succeeds or the list is empty.

@@ -33,6 +33,22 @@ describe(AddNodeRoleAction::class, function (): void {
         app()->instance(ToolManagerMaterializer::class, new FakeToolManagerMaterializer);
     });
 
+    it('refuses analytics role assignment when storage settings are missing', function (): void {
+        $baseline = new AddNodeRoleBaselineFake;
+        app()->instance(RoleBaselineConverger::class, $baseline);
+        $node = add_role_node();
+
+        expect(fn () => app(AddNodeRoleAction::class)->execute($node, RoleName::Analytics))
+            ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)
+                ->toBe('analytics.settings_missing')
+                ->and($exception->status)
+                ->toBe(422))
+            ->and($node->roles()->exists())
+            ->toBeFalse()
+            ->and($baseline->convergedRoles)
+            ->toBeEmpty();
+    });
+
     it('maps outer Composer contention without claiming the role', function (): void {
         $baseline = new AddNodeRoleBaselineFake;
         $materializer = new FakeToolManagerMaterializer;
