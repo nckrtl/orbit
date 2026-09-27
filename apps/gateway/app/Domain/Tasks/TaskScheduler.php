@@ -2084,27 +2084,67 @@ final readonly class TaskScheduler
     }
 
     /**
-     * Cancels a running subtask and starts the next one. `$stop` makes the remote calls that stop the
-     * subtask's implementer and check. It runs outside any database transaction, so a slow Node or agent
-     * never holds the Gateway's SQLite write lock. An exception from `$stop` leaves the subtask and its
-     * check running. The state change then applies only when the subtask is still running: when it moved
-     * on while `$stop` ran, its new state stands and the cancel returns a conflict.
+     * Cancels a todo subtask without starting anything, or cancels a running subtask and starts the next
+     * one. `$stop` makes the remote calls that stop a running subtask's implementer and check. It runs
+     * outside any database transaction, so a slow Node or agent never holds the Gateway's SQLite write
+     * lock. An exception from `$stop` leaves the subtask and its check running. The state change then
+     * applies only when the subtask is still running: when it moved on while `$stop` ran, its new state
+     * stands and the cancel returns a conflict.
      *
      * @param  Closure(Task): void  $stop
      */
     public function cancelRunningSubtask(TaskGroup $taskGroup, Task $task, Closure $stop): TaskGroup
     {
         $taskGroup->requireManagedExecution();
-        $running = Task::query()->where('task_group_id', $taskGroup->id)->findOrFail($task->id);
-        if ($running->status !== TaskStatus::Running) {
+        $candidate = Task::query()->where('task_group_id', $taskGroup->id)->findOrFail($task->id);
+
+        if ($candidate->status === TaskStatus::Todo) {
+            $group = DB::transaction(function () use ($taskGroup, $task): TaskGroup {
+                $locked = Task::query()->where('task_group_id', $taskGroup->id)->lockForUpdate()->findOrFail($task->id);
+                $group = TaskGroup::query()->where('execution_mode', TaskExecutionMode::Managed)
+                    ->lockForUpdate()
+                    ->findOrFail($locked->task_group_id);
+
+                if ($locked->status !== TaskStatus::Todo || ! in_array($group->status, [
+                    TaskGroupStatus::Todo,
+                    TaskGroupStatus::Running,
+                    TaskGroupStatus::Reviewing,
+                    TaskGroupStatus::Settling,
+                ], true)) {
+                    throw new ResourceOperationException(
+                        errorCode: 'tasks.subtask_not_running',
+                        message: __('Only a todo or running subtask can be cancelled.'),
+                        status: 409,
+                    );
+                }
+
+                $assistanceReason = $this->markSubtaskCancelled($locked);
+                $tasks = $this->lockedTasks($group);
+                $this->clearCancelledSubtaskAssistance($group, $locked, $assistanceReason);
+                if (! $this->hasOpenSubtask($tasks)) {
+                    $group->status = TaskGroupStatus::Settling;
+                }
+                $group->save();
+
+                return $group->fresh(['tasks', 'app', 'taskable']) ?? $group;
+            });
+
+            if ($group->status === TaskGroupStatus::Settling) {
+                return $this->settle($group, requestMissingPullRequest: false, checkReturningPullRequest: false);
+            }
+
+            return $group->fresh(['tasks', 'app', 'taskable']) ?? $group;
+        }
+
+        if ($candidate->status !== TaskStatus::Running) {
             throw new ResourceOperationException(
                 errorCode: 'tasks.subtask_not_running',
-                message: __('Only a running subtask can be cancelled.'),
+                message: __('Only a todo or running subtask can be cancelled.'),
                 status: 409,
             );
         }
 
-        $stop($running);
+        $stop($candidate);
 
         /** @var Task|null $next */
         $next = null;
@@ -2122,31 +2162,9 @@ final readonly class TaskScheduler
                 );
             }
 
-            TaskCheck::query()->where('task_id', $locked->id)
-                ->where('status', TaskCheckStatus::Running->value)
-                ->update(['status' => TaskCheckStatus::Cancelled->value, 'finished_at' => now(), 'updated_at' => now()]);
-
-            $assistanceReason = $locked->assistance_reason;
-            $locked->update([
-                'status' => TaskStatus::Cancelled,
-                'settled_at' => now(),
-                'completion_summary' => 'Cancelled by operator.',
-                'assistance_requested' => false,
-                'assistance_reason' => null,
-            ]);
-
+            $assistanceReason = $this->markSubtaskCancelled($locked);
             $tasks = $this->lockedTasks($group);
-            if ($group->assistance_requested && $assistanceReason !== null && $group->assistance_reason === $assistanceReason) {
-                $otherAssistance = $group->tasks()
-                    ->whereKeyNot($locked->id)
-                    ->where('assistance_requested', true)
-                    ->exists();
-
-                if (! $otherAssistance) {
-                    $group->assistance_requested = false;
-                    $group->assistance_reason = null;
-                }
-            }
+            $this->clearCancelledSubtaskAssistance($group, $locked, $assistanceReason);
 
             $next = $this->lowestTodo($tasks);
             if ($next instanceof Task) {
@@ -2155,10 +2173,10 @@ final readonly class TaskScheduler
                     $group->status = TaskGroupStatus::Running;
                 } catch (TaskSequenceException) {
                     $next = null;
-                    $group->status = $this->runningSibling($tasks) instanceof Task
-                        ? TaskGroupStatus::Running
-                        : TaskGroupStatus::Reviewing;
+                    $group->status = $this->statusWithOpenSubtasks($group, $tasks);
                 }
+            } elseif ($this->hasOpenSubtask($tasks)) {
+                $group->status = $this->statusWithOpenSubtasks($group, $tasks);
             } else {
                 $group->status = TaskGroupStatus::Settling;
             }
@@ -2232,8 +2250,11 @@ final readonly class TaskScheduler
         return $group->fresh(['tasks', 'app', 'taskable']) ?? $group;
     }
 
-    public function settle(TaskGroup $group): TaskGroup
-    {
+    public function settle(
+        TaskGroup $group,
+        bool $requestMissingPullRequest = true,
+        bool $checkReturningPullRequest = true,
+    ): TaskGroup {
         $group->requireManagedExecution();
         $group->loadMissing(['app', 'tasks', 'taskable']);
 
@@ -2244,7 +2265,7 @@ final readonly class TaskScheduler
         $url = $group->pr_url;
 
         if (! is_string($url) || $url === '') {
-            if (! $this->lowestTodo($group->tasks) instanceof Task) {
+            if ($requestMissingPullRequest && ! $this->lowestTodo($group->tasks) instanceof Task) {
                 $this->requestMissingPullRequest($group);
             }
 
@@ -2253,7 +2274,7 @@ final readonly class TaskScheduler
 
         // ADR 0164: returning to settling refreshes metrics and does not post task_group.settled again.
         $returning = $group->settled_at !== null;
-        if ($returning) {
+        if ($returning && $checkReturningPullRequest) {
             $this->checkReturningPullRequest($group);
         }
         $metrics = $this->metrics->collect($group);
@@ -3022,6 +3043,67 @@ final readonly class TaskScheduler
             return;
         }
         $task->update(['subtask_start_commit' => $head]);
+    }
+
+    private function markSubtaskCancelled(Task $task): ?string
+    {
+        TaskCheck::query()->where('task_id', $task->id)
+            ->where('status', TaskCheckStatus::Running->value)
+            ->update(['status' => TaskCheckStatus::Cancelled->value, 'finished_at' => now(), 'updated_at' => now()]);
+
+        $assistanceReason = $task->assistance_reason;
+        $task->update([
+            'status' => TaskStatus::Cancelled,
+            'settled_at' => now(),
+            'completion_summary' => 'Cancelled by operator.',
+            'assistance_requested' => false,
+            'assistance_reason' => null,
+        ]);
+
+        return $assistanceReason;
+    }
+
+    private function clearCancelledSubtaskAssistance(TaskGroup $group, Task $task, ?string $assistanceReason): void
+    {
+        if (! $group->assistance_requested || $assistanceReason === null || $group->assistance_reason !== $assistanceReason) {
+            return;
+        }
+
+        $otherAssistance = $group->tasks()
+            ->whereKeyNot($task->id)
+            ->where('assistance_requested', true)
+            ->exists();
+        if (! $otherAssistance) {
+            $group->assistance_requested = false;
+            $group->assistance_reason = null;
+        }
+    }
+
+    /** @param  Collection<int, Task>  $tasks */
+    private function hasOpenSubtask(Collection $tasks): bool
+    {
+        return $tasks->contains(static fn (Task $task): bool => in_array($task->status, [
+            TaskStatus::Todo,
+            TaskStatus::Reserved,
+            TaskStatus::Running,
+            TaskStatus::Reviewing,
+        ], true));
+    }
+
+    /** @param  Collection<int, Task>  $tasks */
+    private function statusWithOpenSubtasks(TaskGroup $group, Collection $tasks): TaskGroupStatus
+    {
+        if ($this->runningSibling($tasks) instanceof Task || $tasks->contains(static fn (Task $task): bool => $task->status === TaskStatus::Running)) {
+            return TaskGroupStatus::Running;
+        }
+        if ($tasks->contains(static fn (Task $task): bool => $task->status === TaskStatus::Reviewing)) {
+            return TaskGroupStatus::Reviewing;
+        }
+        if ($tasks->contains(static fn (Task $task): bool => $task->status === TaskStatus::Reserved)) {
+            return TaskGroupStatus::Reserved;
+        }
+
+        return $group->status;
     }
 
     /** @return Collection<int, Task> */
