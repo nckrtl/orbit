@@ -394,7 +394,7 @@ it('retries after an interrupt failure and settles when cancelling the last subt
         ]);
 });
 
-it('returns a conflict when the subtask is not running', function (): void {
+it('returns a conflict when the subtask is neither todo nor running', function (): void {
     $gateway = Node::query()->create([
         'name' => 'cancel-not-running-gateway',
         'status' => LifecycleStatus::Active,
@@ -422,14 +422,14 @@ it('returns a conflict when the subtask is not running', function (): void {
         'position' => 1,
         'title' => 'Queued subtask',
         'brief' => 'Still queued.',
-        'status' => TaskStatus::Todo,
+        'status' => TaskStatus::Completed,
     ]);
 
     $this->postJson("/api/v1/task-groups/{$group->id}/tasks/{$task->id}/cancel")
         ->assertConflict()
         ->assertJsonPath('error.code', 'tasks.subtask_not_running');
 
-    expect($task->fresh()->status)->toBe(TaskStatus::Todo)
+    expect($task->fresh()->status)->toBe(TaskStatus::Completed)
         ->and($group->fresh()->status)->toBe(TaskGroupStatus::Running);
 });
 
