@@ -8,7 +8,7 @@ description: "Accepted on 2026-08-30."
 
 ## Status
 
-Accepted on 2026-08-30.
+Accepted on 2026-08-30. The default worktree storage root and `worktree.path` setting described below are retired; they are not supported by the current Node settings contract.
 
 ## Context
 

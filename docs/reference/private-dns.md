@@ -16,7 +16,7 @@ The Gateway selects the resolver policy when it provisions a managed Linux peer.
 | No per-Node DNS override | Orbit VPN DNS | `~.` | The normal operating-system resolver sends private and ordinary queries to Orbit VPN DNS. The Node TLD and Cluster TLD do not change this selection. |
 | Per-Node `--dns-server` override | The supplied address | The private VPN domain and the Node TLD when present | The explicit resolver keeps suffix-only routing, including when its address is inside the WireGuard subnet. |
 
-The `~.` routing domain makes Orbit VPN DNS the preferred resolver. It leaves `/etc/resolv.conf` ownership unchanged and needs no local DNS server, hostname records, or Route suffix list. Operator-owned clients are excluded. A macOS operator installs caller-local TLD and exact Route overrides with [local resolver overrides](/reference/local-resolver-overrides). Existing peers keep their configuration until you provision them again or repair them individually.
+The `~.` routing domain makes Orbit VPN DNS the preferred resolver for managed Linux peers. It leaves `/etc/resolv.conf` ownership unchanged and needs no local DNS server, hostname records, or Route suffix list. On macOS, install caller-local TLD and exact Route overrides with [local resolver overrides](/reference/local-resolver-overrides). Existing peers keep their configuration until you provision them again or repair them individually.
 
 ## Inspect a peer
 
@@ -26,13 +26,13 @@ Use the saved state to find the managed resolver link, server, and routing domai
 | --- | --- |
 | `sudo cat /etc/wireguard/orbit.dns-link` | Line 1 is the resolver link, line 2 is the Orbit VPN DNS address, and the remaining state is `.`. |
 | `resolvectl status orbit` | The `orbit` link lists the Orbit VPN DNS address and routing domain `~.`. |
-| `sudo grep -E '^(PostUp|PreDown) =' /etc/wireguard/orbit.conf` | `PostUp` selects the DNS server and `~.`. `PreDown` is absent. |
+| `sudo grep '^PostUp =' /etc/wireguard/orbit.conf` | `PostUp` selects the DNS server and `~.`. |
 | `getent ahostsv4 <route-domain>` | The normal operating-system resolver returns the private Route address. |
 | `dig +noall +answer @<vpn-dns-address> <route-domain> A` | A direct query returns the same authoritative private answer. |
 | `getent ahostsv4 example.com` | An ordinary name resolves through the same default selection. |
 | `ip route` | Application routes remain independent from DNS server selection. |
 
-Provisioning and repair omit `PreDown` because systemd-resolved removes the link settings when WireGuard deletes the interface. If a managed `PreDown` hook is present, repair accepts it as input and removes it.
+Provisioning and repair rely on systemd-resolved to remove the link settings when WireGuard deletes the interface.
 
 An explicit underlay override can use a link other than `orbit`. Read line 1 of `orbit.dns-link`, then run `resolvectl status <link>` for that link.
 
@@ -68,7 +68,7 @@ Run this DNS repair on the Gateway to update one active managed Linux peer's res
 php artisan orbit:node-dns-repair <node-name>
 ```
 
-The command refuses a missing or inactive Node, an operator-owned client with no roles, and the Node that hosts the VPN role before it opens SSH. It also refuses a peer without a complete managed WireGuard and SSH identity.
+The command requires an active managed Linux Node eligible for Gateway-owned SSH operations and refuses the Node that hosts the VPN role before it opens SSH. It also refuses a peer without a complete managed WireGuard and SSH identity.
 
 Before the repair, record the commands in [Inspect a peer](#inspect-a-peer), `systemctl is-active wg-quick@orbit`, each role service state, and a fingerprint of `wg show orbit public-key`. Record the same values after the repair. The DNS server, routing domains, managed hooks, and saved DNS state can change. The public-key fingerprint, role services, WireGuard service state, application placement, and `ip route` output stay the same.
 
@@ -81,7 +81,7 @@ Each failure reports one bounded code without remote command output.
 | Failure code | Result and recovery |
 | --- | --- |
 | `node.dns_repair_missing`, `node.dns_repair_inactive` | The Gateway changes nothing. Correct the Node name or restore the Node through its owning lifecycle operation. |
-| `node.dns_repair_operator_owned`, `node.dns_repair_vpn_server`, `node.dns_repair_platform_unsupported`, `node.dns_repair_identity_missing` | The target is outside this command. Use the target's owning resolver or provisioning workflow. |
+| `node.dns_repair_vpn_server`, `node.dns_repair_platform_unsupported`, `node.dns_repair_identity_missing` | The target is outside this command. Use the target's owning resolver or provisioning workflow. |
 | `vpn.peer_dns_busy` | Another peer operation still holds the shared lock. Wait for it to finish, then retry. |
 | `vpn.peer_recovery_pending` | Another peer transaction owns the saved candidate or backup. Preserve the recovery files and finish or recover that operation before retrying. |
 | `vpn.peer_dns_state_unsupported`, `vpn.peer_dns_candidate_invalid` | The command publishes nothing. Inspect `orbit.conf` and `orbit.dns-link`, then repair the owning peer state through normal provisioning before retrying. |

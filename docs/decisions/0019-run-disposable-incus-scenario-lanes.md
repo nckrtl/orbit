@@ -46,8 +46,8 @@ without paying the cold-construction cost each time.
 
 The current topology profile also equates three physical VM identities with
 the `gateway`, `app-dev`, and `app-prod` role names. That is sufficient for the
-feature-development topology but cannot describe a roleless operator becoming
-an app-dev Node, an additional Node joining an existing topology, or more than
+feature-development topology but cannot describe a roleless Node becoming an
+app-dev Node, an additional Node joining an existing topology, or more than
 one Node carrying the same workload role.
 
 ## Decision
@@ -215,7 +215,7 @@ future nightly run may continue to execute the complete suite.
 - Snapshot scenarios can cover established-topology behavior cheaply while
   remaining isolated from feature discovery and proof.
 - Physical Node identity no longer has to equal a role name, enabling
-  roleless operators, additional Nodes, scale-out, role movement, and multiple
+  roleless Nodes, additional Nodes, scale-out, role movement, and multiple
   Nodes with the same workload role.
 - Independent Pest tests and aggregate reporting reveal all runnable failing
   flows in one run instead of stopping the suite at the first failed lifecycle

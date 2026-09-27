@@ -14,15 +14,12 @@ Accepted on 2026-09-08. Extends [ADR 0001](/decisions/0001-tool-management). Sup
 
 ## Context
 
-Ubuntu 24.04 is no longer supported. The references to ADR 0012 preserve its management boundary only; they do not authorize client support or enrollment.
-
 [ADR 0001](/decisions/0001-tool-management) makes APT available on managed Linux Nodes but makes VP and Composer available only through an application role. That prevents an operator from using a supported manager on another SSH-managed Node and makes role removal responsible for unrelated Tool intent. Installing every supported manager during Node provisioning would avoid that restriction at the cost of unnecessary software and mutations on every Node.
 
 ## Decision
 
 - The Gateway must treat each Tool Manager as a protected Node capability independent of Node roles.
 - The Gateway must allow Tool mutations only on an active Linux Node whose supported managed-node platform and SSH transport are controlled by the Gateway.
-- The Gateway must not manage Tools on a roleless operator client governed by [ADR 0012 (platform support withdrawn)](/decisions/0012-ubuntu-24-04-roleless-operator-clients).
 - The Gateway must materialize a missing Tool Manager when the first Tool operation needs it.
 - The Gateway must retain a failed materialization as retryable manager state.
 - The Gateway must not install every registered Tool Manager during Node provisioning.
@@ -35,7 +32,6 @@ Ubuntu 24.04 is no longer supported. The references to ADR 0012 preserve its man
 
 - Keep VP, Composer, and each added manager owned by application roles: rejected because Tool availability would continue to depend on workload placement rather than Node manageability.
 - Install every registered manager during Node provisioning: rejected because most Nodes do not use every manager and would receive unnecessary software and supply-chain exposure.
-- Manage roleless operator clients when SSH happens to be reachable: rejected because those clients remain outside Gateway-owned convergence under ADR 0012.
 
 ## Consequences
 
@@ -47,6 +43,6 @@ Ubuntu 24.04 is no longer supported. The references to ADR 0012 preserve its man
 ## Affects
 
 - Components: apps/cli, apps/gateway, packages/php-sdk
-- ADRs: extends [ADR 0001](/decisions/0001-tool-management); supersedes [ADR 0001](/decisions/0001-tool-management) for Tool Manager availability, application-role ownership, and final application-role removal; preserves [ADR 0012 (platform support withdrawn)](/decisions/0012-ubuntu-24-04-roleless-operator-clients)
+- ADRs: extends [ADR 0001](/decisions/0001-tool-management); supersedes [ADR 0001](/decisions/0001-tool-management) for Tool Manager availability, application-role ownership, and final application-role removal
 - Detail: [Tools](/reference/tools)
 - Verify: `bin/test`

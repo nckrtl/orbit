@@ -11,7 +11,7 @@ description: "What orbit-agent observes on a managed Node, including task checko
 
 ## Where it runs
 
-The Gateway installs the agent on every Node that uses the managed-node boundary of the Metrics exporters: an active Linux Node with a managed WireGuard address and Gateway-owned SSH management. [Exporter selection](/reference/metrics#exporter-selection) describes that boundary. Unlike an exporter, the agent needs no role or preference. An operator client, such as a Mac that runs the CLI, never runs the agent.
+The Gateway installs the agent on every Node that uses the managed-node boundary of the Metrics exporters: an active Linux Node with a managed WireGuard address and Gateway-owned SSH management. [Exporter selection](/reference/metrics#exporter-selection) describes that boundary. Unlike an exporter, the agent needs no role or preference.
 
 ## What it observes
 

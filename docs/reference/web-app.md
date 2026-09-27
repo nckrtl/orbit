@@ -78,7 +78,7 @@ The web app subscribes to `presence-node.{id}` for every active Node, next to th
 | Lost: the agent left, or sent nothing for 15 seconds | offline | The polled value from the Gateway. |
 | Not seen since the page subscribed | Prometheus `up`, as before | The polled value from the Gateway. |
 
-A Node without an agent, such as an operator client, always uses the last row. When realtime is not configured, the web app polls as before and shows every Node from Prometheus.
+A Node without an agent always uses the last row. When realtime is not configured, the web app polls as before and shows every Node from Prometheus.
 
 CPU and memory come from [`process.usage`](/reference/events#process-usage) events, which the Gateway sends every 15 seconds while a browser is subscribed. The web app writes each sample into its cached Process list. While realtime is live, it reloads the Process list only when no `process.usage` event arrived for 60 seconds. While realtime is down or not configured, it polls the list every 15 seconds. The Gateway answers that list from its [view of the agents](/reference/node-agent#gateway-view) when the view is fresh, so a reload causes no SSH even when Prometheus is down.
 

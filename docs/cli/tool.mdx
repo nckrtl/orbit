@@ -79,7 +79,7 @@ orbit tool:install ripgrep --node=12 --manager=brew
 When the manager is `uninstalled` or `failed`, the Gateway provisions or retries it first and records it `active` before it changes Tool intent. A failed provisioning returns `tool.manager_provision_failed`, keeps the bounded failure on the manager, and creates no Tool row; repeating the command retries from live Node state. The result reports `applied` for a new install and `unchanged` when the package is already installed.
 
 <Note>
-The Gateway refuses every Tool mutation with `tool.node_unmanaged` on a roleless operator client or any Node outside Gateway-owned SSH management. When an install creates a Tool row and then fails, for example with `tool.version_probe_failed`, the error names the Tool ID so you can retry or remove it.
+The Gateway refuses every Tool mutation with `tool.node_unmanaged` on a Node outside Gateway-owned SSH management. When an install creates a Tool row and then fails, for example with `tool.version_probe_failed`, the error names the Tool ID so you can retry or remove it.
 </Note>
 
 The `brew` manager accepts one unqualified lowercase Homebrew Core formula with a stable version and a Linux bottle for the Node architecture. It rejects a tap-qualified formula, cask, URL, local definition, Git reference, or caller option before package mutation, and it never builds from source.

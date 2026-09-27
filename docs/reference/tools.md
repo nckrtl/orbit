@@ -51,7 +51,7 @@ When the selected manager is `uninstalled` or `failed`, the Gateway first provis
 
 When an install creates a Tool row and then fails, including `tool.version_probe_failed`, the Gateway and CLI include that Tool ID in the error. Activity for the command identifies the Tool and its target Node.
 
-The Gateway rejects Tool mutations with `tool.node_unmanaged` when the Node is a roleless operator client or is otherwise outside Gateway-owned SSH management. Manager installation is independent of the Node's assigned infrastructure roles.
+The Gateway rejects Tool mutations with `tool.node_unmanaged` when the Node is outside Gateway-owned SSH management. Manager installation is independent of the Node's assigned infrastructure roles.
 
 Orbit does not install every registered manager during Node provisioning. A materialized manager remains active after its final Tool is removed, and Orbit exposes no manager-removal command.
 

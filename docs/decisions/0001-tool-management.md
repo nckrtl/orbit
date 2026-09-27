@@ -78,16 +78,9 @@ without a matching Tool row. It does not silently adopt that package. A
 user-directed Tool becomes removable only through Orbit's successful or
 retriable installation flow.
 
-Public operations cannot remove manager rows or protected Tools. APT must
-produce a dry-run plan that removes only the exact recorded package, and Orbit
-never runs `autoremove` as part of Tool removal. VP and Composer removal targets
-only the exact recorded root package in their Orbit-owned scopes.
+Public operations cannot remove manager rows. APT must produce a dry-run plan that removes only the exact recorded package, and Orbit never runs `autoremove` as part of Tool removal. VP and Composer removal targets only the exact recorded root package in their Orbit-owned scopes.
 
-Orbit blocks removal of the last app role while non-protected VP or Composer
-Tool intent remains. Role removal never removes packages or Tool intent
-implicitly. After a successful last-app-role removal, Orbit retains the manager
-rows and marks VP and Composer unavailable until app-role convergence activates
-them again.
+Orbit blocks removal of the last app role while VP or Composer Tool intent remains. Role removal never removes packages or Tool intent implicitly. After a successful last-app-role removal, Orbit retains the manager rows and marks VP and Composer unavailable until app-role convergence activates them again.
 
 ### Serialize mutations and retain recoverable state
 

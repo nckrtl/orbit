@@ -322,7 +322,4 @@ verification remain a separate release issue under
   trigger is accepted and final cleanup remains generation-safe.
 - Doctor makes Schedule drift visible without becoming a repair path and keeps
   the final model partition closed after Workspace removal.
-- Schedule requires a managed systemd Node. Role-less operator clients,
-  non-systemd hosts, automatic target movement, HA timer replication, editing,
-  disabling, run history, and generic remote execution require later
-  decisions.
+- Schedule requires a managed systemd Node. Non-systemd hosts, automatic target movement, HA timer replication, editing, disabling, run history, and generic remote execution require later decisions.

@@ -81,9 +81,7 @@ resolves the canonical Git top level and sends its absolute path as bounded
 registration input. The target Node is never caller-selectable input. The
 Gateway derives it from the request's authenticated active WireGuard peer, so
 the recorded placement and the filesystem containing the worktree are the same
-Node. The caller Node must be active, supported for managed roles, and have an
-active app-dev role. A role-less operator client cannot register its local path
-as source on another Node.
+Node. The caller Node must be active, supported for managed roles, and have an active app-dev role.
 
 The Gateway does not trust CLI-supplied Git observations. It independently
 inspects the exact path on the caller Node as the managed app-dev user and
