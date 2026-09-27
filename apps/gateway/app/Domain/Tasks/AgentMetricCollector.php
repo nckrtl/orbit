@@ -8,5 +8,6 @@ use App\Models\AgentThread;
 
 interface AgentMetricCollector
 {
-    public function collectMetrics(AgentThread $thread): void;
+    /** Returns true when the stream delivered a valid snapshot or event for this collection. */
+    public function collectMetrics(AgentThread $thread): bool;
 }

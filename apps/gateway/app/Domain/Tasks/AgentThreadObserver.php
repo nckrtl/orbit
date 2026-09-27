@@ -32,6 +32,7 @@ final readonly class AgentThreadObserver
         if ($observation->state !== null) {
             $values['state'] = $observation->state;
             $values['error'] = $observation->error;
+            $values['t3_metrics_observed_activity_version'] = $thread->t3_metrics_activity_version;
         }
         $partialMetrics = ($observation->metricsCheckpoint['t3_metrics_partial'] ?? false) === true;
         $tokens = $observation->tokens;
@@ -65,7 +66,11 @@ final readonly class AgentThreadObserver
     {
         $version = $thread->observation_version ?? 0;
         $before = [$thread->state, $thread->error, $thread->observation_error];
-        $query = AgentThread::query()->whereKey($thread->id)->where('observation_version', $version);
+        $query = AgentThread::query()
+            ->whereKey($thread->id)
+            ->where('observation_version', $version)
+            ->where('t3_metrics_activity_version', $thread->t3_metrics_activity_version)
+            ->whereDoesntHave('sendLeases', static fn ($leases) => $leases->where('expires_at', '>', now()));
         if (array_key_exists('t3_event_sequence', $values)) {
             $sequence = $thread->t3_event_sequence;
             if ($sequence === null) {

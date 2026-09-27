@@ -647,7 +647,11 @@ Run the tick with `php artisan tasks:tick` while the extension is enabled. One l
 
 A provisioning failure leaves the group in `todo` with its assistance reason visible, and the tick continues to the next eligible group. The tick tries each failing group once. A full fleet ends the claims for that tick without a reason on any group. Groups that are reserved, running, reviewing, settling, assisted, or awaiting merge count toward the limit of 10.
 
-The Gateway registers `tasks:tick` every ten seconds when the tasks extension is enabled. LIVE Ops must run Laravel's `php artisan schedule:work` process for this schedule to advance sessions; this feature does not provision that process or a fleet cron.
+The Gateway registers `tasks:tick` and `tasks:collect-t3-metrics` every ten seconds when the tasks extension is enabled. The T3 collector reads at most 20 due threads per run, least recently collected first. Failed or incomplete reads use an increasing retry delay so threads outside a failing batch remain eligible on the next run. A heartbeat-only timeout is incomplete; a final collection requires a valid snapshot or event.
+
+A new T3 turn makes its thread eligible again. A terminal thread state counts as settled only when an observation matches the current activity version; task and group terminal statuses are authoritative. T3 sends hold an owner-token lease for up to 60 seconds. The collector and thread observer ignore expired leases, and each collector run removes at most 100 expired lease rows. A late sender cleanup removes only its own lease. A settled thread is excluded only after one successful final read.
+
+LIVE Ops must run Laravel's `php artisan schedule:work` process for this schedule to advance sessions; this feature does not provision that process or a fleet cron.
 
 ### Project check
 
@@ -792,7 +796,7 @@ The Gateway then writes settle metrics. Active groups also refresh these fields 
 | `lines_added`, `lines_deleted` | TaskGroup | Separate branch insertion and deletion counts; null before a successful observation |
 | `duration_ms` | TaskGroup | Elapsed milliseconds from `started_at` to settle, or to now while the group is still active, or `0` when `started_at` is empty |
 
-For T3, token totals use `totalProcessedTokens` when present and otherwise `usedTokens`. Per-thread line counts come from checkpoints. Other drivers supply metrics with the same meaning or leave them unavailable. The [thread token metrics](#thread-token-metrics) are the per-call split beside that total.
+For T3, token totals use `totalProcessedTokens` when present and otherwise `usedTokens`. Per-thread line counts come from checkpoints. Other drivers supply metrics with the same meaning or leave them unavailable. The [thread token metrics](#thread-token-metrics) are the per-call split beside that total. The scheduled T3 collector reads no more than 20 eligible threads each run. Failed or incomplete reads back off exponentially, allowing later threads to make progress; heartbeat-only timeouts do not count as a successful final read. A new T3 turn reopens metrics collection for that thread. Collector failures are reported at most once per thread and exception kind per hour.
 
 ## Coder settle webhook
 

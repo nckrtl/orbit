@@ -58,7 +58,14 @@ it('creates task_groups and tasks with morph, metrics, and ordering columns', fu
             't3_event_sequence',
             't3_metrics_partial',
             't3_metrics_initialized',
-        ]))->toBeTrue();
+            't3_metrics_collected_at',
+            't3_metrics_final_at',
+            't3_metrics_retry_at',
+            't3_metrics_attempts',
+            't3_metrics_activity_version',
+            't3_metrics_observed_activity_version',
+        ]))->toBeTrue()
+        ->and(Schema::hasColumns('agent_thread_send_leases', ['agent_thread_id', 'owner_token', 'expires_at']))->toBeTrue();
 });
 
 it('persists a TaskGroup morph to an App instance and ordered subtasks', function (): void {

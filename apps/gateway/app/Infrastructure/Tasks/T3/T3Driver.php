@@ -27,6 +27,7 @@ final readonly class T3Driver implements AgentDriver, AgentMetricCollector
         private T3Stream $stream,
         private T3Projection $projection,
         private T3NodeEligibility $nodes,
+        private T3SendLeaseManager $sendLeases,
     ) {}
 
     public function key(): string
@@ -46,9 +47,16 @@ final readonly class T3Driver implements AgentDriver, AgentMetricCollector
 
     public function send(AgentThread $thread, string $message, ?string $key = null): void
     {
-        // A reserved resume key is the command id and the message id. T3 0.0.42 returns the
-        // existing receipt for that command id, so a retry does not start a second turn (ADR 0167).
-        $this->creator->startTurn($this->node($thread), $thread->external_id, $message, T3ModelSelection::forModel($thread->model ?? '', $thread->effort ?? ($thread->role === 'reviewer' ? TaskAgentDefaults::ReviewerEffort : TaskAgentDefaults::ImplementerEffort)), $key);
+        $leaseToken = $this->sendLeases->acquire($thread);
+        try {
+            $thread->refresh();
+            // A reserved resume key is the command id and the message id. T3 0.0.42 returns the
+            // existing receipt for that command id, so a retry does not start a second turn (ADR 0167).
+            $this->creator->startTurn($this->node($thread), $thread->external_id, $message, T3ModelSelection::forModel($thread->model ?? '', $thread->effort ?? ($thread->role === 'reviewer' ? TaskAgentDefaults::ReviewerEffort : TaskAgentDefaults::ImplementerEffort)), $key);
+        } finally {
+            $this->sendLeases->release($thread, $leaseToken);
+            $thread->refresh();
+        }
     }
 
     public function respond(AgentThread $thread, AgentInputRequest $request, array $answers): void
@@ -92,12 +100,16 @@ final readonly class T3Driver implements AgentDriver, AgentMetricCollector
         );
     }
 
-    public function collectMetrics(AgentThread $thread): void
+    public function collectMetrics(AgentThread $thread): bool
     {
         $cursor = $thread->t3_event_sequence === null ? null : (string) $thread->t3_event_sequence;
-        foreach ($this->events($thread, $cursor, 1.0) as $_) {
-            // The event iterator persists the checkpoint before yielding.
+        $caughtUp = false;
+        foreach ($this->events($thread, $cursor, 1.0) as $event) {
+            // Heartbeats only mean the stream stayed open; they do not prove a snapshot was read.
+            $caughtUp = $caughtUp || $event->kind !== 'heartbeat';
         }
+
+        return $caughtUp;
     }
 
     public function events(AgentThread $thread, ?string $cursor, ?float $timeoutSeconds = null): iterable
