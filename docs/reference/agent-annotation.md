@@ -49,13 +49,13 @@ A second `mountAnnotation` call updates the options and adds no second overlay. 
 
 Press Cmd+Shift+A on macOS, or Ctrl+Shift+A on Windows and Linux, to turn annotation mode on or off. Press Cmd+Shift+R or Ctrl+Shift+R to clear all annotations. Both shortcuts work while the comment field has focus. The page receives no reload for the clear shortcut when the browser passes the keys to the page.
 
-The comment field opens above the buttons, with the placeholder "Listening". The browser keeps annotations in local storage per path. The trash button next to the toggle clears the annotations of every path on the site and closes an open draft. It does not change annotation mode. Clearing hides annotations in this browser only. It does not cancel work that a server already holds.
+The comment field opens above the buttons, with the placeholder "Listening". The browser keeps annotations in local storage per path for seven days, and drops older ones when it reads them. The trash button next to the toggle clears the annotations of every path on the site and closes an open draft. It does not change annotation mode. Clearing hides annotations in this browser only. It does not cancel work that a server already holds.
 
 ## Speech
 
 Speech is off until you set `dictation.wsUrl`, or `postUrl` for [desktop dictation](#desktop-dictation).
 
-`dictation.wsUrl` is a Diction streaming endpoint: a `ws://` or `wss://` URL, or a path on the page origin. The overlay turns an `http` or `https` URL into its WebSocket form and refuses any other scheme. It sends Opus audio when the browser can record Opus, and PCM16 at 16 kHz otherwise. `dictation.codec` forces `opus` or `pcm`. It ends the audio with `{"action":"done"}` and reads `{"text":"..."}` back. The Diction service picks the model. Keep provider secrets out of the browser.
+`dictation.wsUrl` is a Diction streaming endpoint: a `ws://` or `wss://` URL, or a path on the page origin. The overlay turns an `http` or `https` URL into its WebSocket form and refuses any other scheme. It sends Opus audio when the browser can record Opus and the service accepts the `diction.opus.v1` subprotocol. Otherwise it sends PCM16 at 16 kHz. `dictation.codec: "pcm"` always sends PCM16. It ends the audio with `{"action":"done"}` and reads `{"text":"..."}` back. The Diction service picks the model. Keep provider secrets out of the browser.
 
 Recording starts when a new comment field opens. Set `autoStart: false` to record only when you press the microphone button. The browser allows the microphone only on HTTPS or `localhost`.
 
@@ -63,7 +63,7 @@ Recording starts when a new comment field opens. Set `autoStart: false` to recor
 
 Set `provider: "post"` and `postUrl` to a dictation service on your own machine, such as `http://127.0.0.1:12321/dictate`. The overlay then records nothing. A new annotation focuses its comment field and sends one POST with no body. Any successful response counts. The desktop service records and types the text. That service must allow the page origin through CORS, and the browser can ask for local-network permission.
 
-Also set `stopUrl`, such as `http://127.0.0.1:12321/dictate-stop`, to move straight to the next element. A click outside the open popup then sends a POST to `stopUrl`, and the placeholder changes to "Waiting for paste…". When the text arrives and the field stays unchanged for 500 ms, the overlay saves the annotation and opens a new one on the clicked element. A failed stop request, an empty field, or no text within 15 seconds keeps the annotation open with an error. Escape cancels the move.
+Also set `stopUrl`, such as `http://127.0.0.1:12321/dictate-stop`, to move straight to the next element. A click outside the open popup then sends a POST to `stopUrl`, and the placeholder changes to "Waiting for paste…". When the text arrives and the field stays unchanged for 500 ms, the overlay saves the annotation and opens a new one on the clicked element. A failed stop request, an empty field, or no text within 15 seconds keeps the annotation open with an error. Escape closes the draft without saving it, which also cancels a pending move.
 
 The browser Performance API keeps the latest `annotate:dictate-request`, `annotate:dictate-stop-request`, and `annotate:paste-wait` measures. A request measure includes connection and permission time in the browser.
 
@@ -136,8 +136,8 @@ Each annotation creates one task group with `execution_mode=existing_thread` and
 
 | Annotation status | Task status |
 | --- | --- |
-| `pending` | `todo` |
-| `in_progress` | `running` |
+| `pending` | `todo`, and every status not listed here, such as `failed` |
+| `in_progress` | `running` or `reviewing` |
 | `resolved` | `completed` |
 | `cancelled` | `cancelled` |
 
@@ -148,18 +148,18 @@ The [managed scheduler](/reference/tasks) never claims, provisions, reviews, or 
 The scheduler runs `annotations:dispatch` every ten seconds, with or without a browser. It takes queued annotations in submission order. Each T3 thread gets one unfinished annotation at a time. For each annotation, the Gateway reads the thread through the Instance Node's T3 connection and checks these:
 
 - The thread exists, and is neither archived nor deleted.
-- The thread's worktree is the Instance checkout.
+- The thread's worktree is the Instance checkout, or the path that the Instance was registered from.
 - The thread is idle. A busy thread waits for the next run.
 
 Then the Gateway starts a turn with the annotation as the message. The turn keeps the thread's runtime mode and interaction mode. The message tells the agent to report `in_progress` before it edits and `resolved` with a summary after it checks the work. A sent message does not complete the annotation. Only the `resolved` report does.
 
-The command and message IDs are fixed when the annotation is stored, so a repeated send creates no second turn. A missing thread ID or a failed send marks the delivery `error`. Retry sends it again. [Tasks](/reference/tasks#coder-settle-webhook) lists the T3 URL and token settings of a Node. Keep the T3 token on the Gateway, never in the browser.
+The command and message IDs are fixed when the annotation is stored, so a repeated send creates no second turn. A missing thread ID, a failed thread check other than a busy thread, or a failed send marks the delivery `error`. Retry sends it again. [Tasks](/reference/tasks#coder-settle-webhook) lists the T3 URL and token settings of a Node. Keep the T3 token on the Gateway, never in the browser.
 
 ### Live updates
 
 Every change sends an [`annotation.updated`](/reference/events#annotation) notice with the ID, Instance ID, and revision. The browser then fetches the list. It also fetches when it subscribes, reconnects, or refreshes. Submissions stay HTTP requests.
 
-The Orbit web app shares its own realtime connection through `realtime.subscribe` and `realtime.live`. Another host sets `realtime.configUrl`, normally `/api/v1/realtime`, and `realtime.authUrl`, normally `/api/v1/broadcasting/auth`, or it sets `realtime.url`, `key`, and `channel`. While no subscription is live, the browser fetches every 15 seconds and when a hidden tab becomes visible. It never fetches from a hidden tab.
+The Orbit web app shares its own realtime connection through `realtime.subscribe` and `realtime.live`. Another host sets `realtime.configUrl`, normally `/api/v1/realtime`, and `realtime.authUrl`, normally `/api/v1/broadcasting/auth`, or it sets `realtime.url`, `key`, and `channel`. While no subscription is live, the browser also fetches every 15 seconds and when a hidden tab becomes visible. That timed fetch skips a hidden tab. A realtime notice starts a fetch in a hidden tab too.
 
 ### Instance removal
 
