@@ -10,11 +10,6 @@ use App\Models\AppInstance;
 /** Lets a reviewer start in tests without writing `.mcp.json` over SSH. */
 final class AcceptingTaskWorkspaceMcp implements TaskWorkspaceMcp
 {
-    public function install(AppInstance $instance): bool
-    {
-        return true;
-    }
-
     public function installWhenMissing(AppInstance $instance): bool
     {
         return true;

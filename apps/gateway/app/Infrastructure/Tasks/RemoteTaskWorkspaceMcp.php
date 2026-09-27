@@ -21,17 +21,12 @@ final readonly class RemoteTaskWorkspaceMcp implements TaskWorkspaceMcp
 {
     public function __construct(private AppDevSshExecutor $ssh) {}
 
-    public function install(AppInstance $instance): bool
-    {
-        return $this->place($instance, onlyWhenMissing: false);
-    }
-
     public function installWhenMissing(AppInstance $instance): bool
     {
-        return $this->place($instance, onlyWhenMissing: true);
+        return $this->place($instance);
     }
 
-    private function place(AppInstance $instance, bool $onlyWhenMissing): bool
+    private function place(AppInstance $instance): bool
     {
         $instance->loadMissing('node');
 
@@ -50,7 +45,7 @@ final readonly class RemoteTaskWorkspaceMcp implements TaskWorkspaceMcp
                     'bash', '-seu', '--',
                     $instance->checkout_path,
                     base64_encode($config),
-                    $onlyWhenMissing ? 'missing' : 'always',
+                    'missing',
                 ],
                 input: <<<'BASH'
                     cd -- "$1"

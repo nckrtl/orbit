@@ -3143,6 +3143,7 @@
                 "Gateway",
                 "Instance",
                 "Node",
+                "Project",
                 "Role",
                 "Task",
                 "Task group"
@@ -3152,7 +3153,8 @@
                 "0112",
                 "0121",
                 "0122",
-                "0124"
+                "0124",
+                "0178"
             ]
         },
         {
@@ -4232,7 +4234,9 @@
             "kind": "decision",
             "components": [
                 "apps/cli",
-                "apps/gateway"
+                "apps/gateway",
+                "apps/web",
+                "packages/php-sdk"
             ],
             "concepts": [
                 "Extension",
@@ -5683,6 +5687,7 @@
                 "0132",
                 "0133",
                 "0134",
+                "0135",
                 "0140",
                 "0160",
                 "0163",

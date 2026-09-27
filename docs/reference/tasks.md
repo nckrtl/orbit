@@ -221,7 +221,7 @@ The message names the deliverable id and the bad value. A project that is not a 
 
 The group asks for assistance with each message. The implementer gets no reminder, because the implementer cannot change deliverables.
 
-When every other item passes, Orbit runs the Project's configured task check and verifies deliverables using the Gateway's generic validation contract. The Project check is opaque to the Gateway. It does not select a test runner, install dependencies, or infer policy from Project type or slug. Generic command deliverables, including `fails_on_base` and `paths`, replace test-specific deliverables and slug-specific command tables in a subsequent implementation group, as [ADR 0178](/decisions/0178-run-project-agnostic-tasks-without-a-planner) specifies.
+When every other item passes, Orbit runs the Project's configured task check and verifies deliverables. When the configured command runs `composer check`, including as part of a compound command, the Gateway adds a `check_script` rubric item; the task workspace must define that Composer script. Before the baseline check, the scheduler runs the Project's setup steps, then may prepare dependencies based on the task-check command as described in [Project check](#project-check). Handoff checks do not install dependencies.
 
 The `deliverables` item fails when a confirmation is missing or a deliverable does not pass. The reminder names each failing deliverable and why, and the assistance reason repeats it. Like every item, it gets one reminder per completion attempt, then asks for assistance. The reviewer starts only when every deliverable passes.
 
@@ -229,20 +229,20 @@ A subtask with no deliverables skips these steps. Groups that left Backlog befor
 
 ## Prepare a group in Backlog
 
-Use Backlog to prepare a group before any agent runs. Backlog groups have no Instance. The Project's external ADE plans and steers; the Gateway does not provide a planner.
+Use Backlog to prepare a group before any agent runs. Backlog groups have no Instance. An external ADE plans and steers, and Orbit runs the assigned subtasks.
 
 1. Create the group. It starts in `backlog`.
 2. Prepare the branch and feature contract using the Project's own task policy. For Orbit, see the [Orbit Tasks skill](https://github.com/nckrtl/orbit/blob/main/.agents/skills/orbit-tasks/SKILL.md).
 3. Add ordered subtasks and typed deliverables that the Gateway can validate.
 4. Move the group to `todo` with `tasks:update` when the Project is ready to execute.
 
-The provisioner checks out the branch for the shared Instance after the scheduler claims the group. Prompts and review behavior are described in [Review a subtask](#review-a-subtask). The Gateway does not inspect the repository to infer Project policy.
+The provisioner checks out the branch for the shared Instance after the scheduler claims the group. Prompts and review behavior are described in [Review a subtask](#review-a-subtask).
 
 ## Backlog and Project policy
 
-Backlog is for preparing a task group before it is claimed. A Backlog group has no Instance. An authorized caller creates the group and its ordered subtasks; moving it to `todo` makes it eligible for the scheduler to claim. The Gateway does not plan the feature, create a planner thread, or interpret repository policy. An external ADE plans and steers; Orbit runs the assigned subtasks. There is no `plan` option or planner compatibility path. [ADR 0178](/decisions/0178-run-project-agnostic-tasks-without-a-planner) records the decision.
+Backlog is for preparing a task group before it is claimed. A Backlog group has no Instance. An authorized caller creates the group and its ordered subtasks; moving it to `todo` makes it eligible for the scheduler to claim. An external ADE plans and steers; Orbit runs the assigned subtasks. The planner path was removed by [ADR 0178](/decisions/0178-run-project-agnostic-tasks-without-a-planner).
 
-Each Project keeps its own task policy in an `orbit-tasks` skill under `.agents/skills/` and enforces that policy through its own task-check command. See the Orbit repository's [task policy skill](https://github.com/nckrtl/orbit/blob/main/.agents/skills/orbit-tasks/SKILL.md) as an example. The Gateway treats the Project check as an opaque command; it does not infer language, framework, documentation, ADR, or test-runner rules.
+Each Project keeps its own task policy in an `orbit-tasks` skill under `.agents/skills/` and enforces that policy through its own task-check command. See the Orbit repository's [task policy skill](https://github.com/nckrtl/orbit/blob/main/.agents/skills/orbit-tasks/SKILL.md) as an example. The Gateway runs the configured task check as provided, while applying the current Project-type defaults, Composer check rubric, and baseline dependency preparation described in [Project check](#project-check).
 
 Prepare the group's contract and subtasks using the Project's own policy before setting the group to `todo`. The Tasks engine validates deliverables and lifecycle transitions, but does not decide how a Project should plan or split work.
 
@@ -352,10 +352,10 @@ One fresh Instance belongs to the group. Every subtask reuses it. The instance n
 
 | Intent | When | Result |
 | --- | --- | --- |
-| `visitable: false` | The Project's instance policy requests an isolated workspace | Isolated checkout on the feature branch. No Route and no public URL. The instance stays `source_resolved` |
-| `visitable: true` | The Project's instance policy requests a visitable workspace | Usual development provisioner and inspect subdomain. The instance becomes `active` |
+| `visitable: false` | The Project slug is `orbit` | Isolated checkout on the feature branch. No Route and no public URL. The instance stays `source_resolved` |
+| `visitable: true` | The Project slug is not `orbit` | Usual development provisioner and inspect subdomain. The instance becomes `active` |
 
-The Project provides the visitability intent, and the Gateway honors it without identifying the Project by slug. The provisioner does not invent a Route for a non-visitable workspace because an active Instance still requires exactly one Route.
+The Gateway currently derives visitability from the Project slug: `orbit` task workspaces are isolated, while other Projects receive visitable workspaces. The provisioner does not invent a Route for a non-visitable workspace because an active Instance still requires exactly one Route.
 
 Doctor expects the same final state. A non-visitable task workspace is healthy in `source_resolved`, and a visitable one is healthy in `active`. Doctor reports `instance.lifecycle_not_active` for any other state, such as a workspace stuck in `reserved` or `checkout_prepared`, or a visitable workspace stuck in `source_resolved`. The [Doctor instance family](/cli/doctor#what-each-family-checks) owns the check.
 
@@ -497,7 +497,7 @@ The input is a single JSON object with only the following fields. Field names an
 | `group.project_slug` | string | Project slug. |
 | `group.project_id` | integer | Project id. |
 | `group.default_branch` | string or null | Project default branch. |
-| `group.task_check` | string | Required Project task-check command. |
+| `group.task_check` | string or null | Project task-check command, or null when no check is configured. |
 | `subtask.id` | integer | Subtask id. |
 | `subtask.title` | string | Subtask title. |
 | `subtask.brief` | string | Subtask brief. |
@@ -694,13 +694,17 @@ The task stays `running` during the check. On each tick the scheduler reads the 
 
 The check never dies without a result. An unexpected error in the check script writes a failed result, and the output ends with the error. The task shows `failed` with the cause, not `lost`. `lost` means only that the check process was killed from outside.
 
-Each Project using Tasks must provide one task-check command in `task_check`. The Gateway does not infer the command from the Project's language or type. Configure it with `PATCH /api/v1/projects/{project}` or `orbit project:update <project> --task-check=COMMAND`. Once configured for a Project that uses Tasks, the command cannot be cleared. `project:show` shows it.
+A new Project gets the task check of its type unless the caller sends one: `composer check` for `laravel-app` and `laravel-package`, and none for `monorepo` and `node-package`. These type defaults apply to new Projects only. The upgrade sets `composer check` on every existing Project, whatever its type, because every Project ran that check before. An existing Project without a Composer `check` script, such as a `node-package` Project, does not hand off until an operator changes or clears its task check. Change it with `PATCH /api/v1/projects/{project}` or `orbit project:update <project> --task-check=COMMAND`. Clear it with `task_check: null` in the API or `--clear-task-check` in the CLI. `project:show` shows it.
 
-Before the first implementer starts, Orbit runs the Project's configured setup steps and then its task-check command on the fresh workspace. The Project owns those setup steps, including credentials, dependency installation, and any other preparation the command needs. The setup steps keep the timeouts of the Project's setup list, so the [540-second step limit](/reference/instance-setup) applies to the baseline too. The baseline runs outside an API request, so no request deadline shortens the list further.
+When a Project has no task check, the baseline runs the setup steps and passes, and a handoff runs no command. A handoff still records the tree and verifies the deliverables. The implementer's instructions and the pull request description name the configured check, or leave it out when there is none.
 
-The Gateway runs the task-check command as provided. It does not select or install a toolchain, prepare dependencies, inspect command output for missing dependencies, or infer setup steps. The Project must make its task-check command runnable through its own setup steps and repository policy. The same command runs at each handoff after the deliverable checks pass.
+Before the first implementer of a group starts, Orbit runs the Project's setup steps and the task check on the fresh workspace. The setup steps keep the timeouts of the Project's setup list, so the [540-second step limit](/reference/instance-setup) applies to the baseline too. The baseline runs outside an API request, so no request deadline shortens the list further. Project setup runs before dependency preparation so it can configure credentials or install dependencies itself.
 
-A failed setup step or task-check command asks for assistance and names the failed step. A failed baseline command reports `The Project baseline check failed` with its exit code and output. The Project owner fixes the cause in setup or check configuration, then cancels and recreates the group. A task's `check` shows the latest run, with `kind` `baseline` or `handoff` and the `failed_step`.
+Orbit prepares Composer dependencies when the task check runs `composer` or references `vendor/`: it walks tracked `composer.json` files and runs `composer install --no-interaction --prefer-dist` where `vendor/autoload.php` is missing and either the file is at the repository root or a sibling lockfile exists. A root package without a lockfile is installed too; Orbit removes the `composer.lock` that the install wrote, so it cannot reach the task commit. Nested manifests without a lockfile are skipped.
+
+Orbit prepares JavaScript dependencies when the task check references Bun, npm, pnpm, Yarn, Node, Vite+, or `node_modules`: it walks tracked `package.json` files and runs `vp install --frozen-lockfile` where a supported lockfile exists and `node_modules` is missing. Both guards skip projects whose dependencies are already installed. Other task checks receive no automatic install prep. Handoff checks do not prepare dependencies. Each implicit install step has a 600-second timeout.
+
+A failed setup or dependency install asks for assistance and names that step. A failed baseline command reports `The Project baseline check failed` with its exit code and output. If command output indicates missing `vendor/` or `node_modules` dependencies, assistance reports `Project dependencies appear to be missing` rather than calling the branch broken. Fix the cause, then cancel and create the group again. A task's `check` shows the latest run, with `kind` `baseline` or `handoff` and the `failed_step`.
 
 Call `tasks-check-cancel` with `{ "group": 123, "task": 456 }` to stop a running check. The API operation is `tasks:check:cancel`. A task without a running check answers `409` with `tasks.check_not_running`. A failed or cancelled check spends the reminder of that completion attempt, so a second failure asks for assistance. Each run is stored with its receipt, status, process, HEAD and trees, times, exit code, changed paths, and the last 16 KiB of output. The task's `check` field shows the latest run.
 
@@ -756,11 +760,11 @@ Each fixup records the pull request head it was created for. The Gateway appends
 
 When the last fixup changed nothing, because it was never approved or its approved commit is that same head, the Gateway asks for assistance instead of a second fixup on the same result. The reason adds `Fixup subtask #{id} changed nothing, so Orbit does not try again on the same result.` When the last fixup did commit, the Gateway waits for GitHub to report the new head.
 
-When a problem has fewer than two fixups, one tick appends one fixup and returns the group to `running`. It picks the first such problem. A conflict comes first, then failed checks in the order GitHub returned. The Project's own task policy supplies any check-specific fixup commands; the Gateway does not rank checks using a Project- or slug-specific reproduction table. A `todo` subtask that is already waiting stays first, and that tick appends no fixup.
+When a problem has fewer than two fixups, one tick appends one fixup and returns the group to `running`. It picks the first such problem. A conflict comes first, then failed checks for which the Gateway has an Orbit slug-keyed reproduction row, then the other failed checks; order within each check group follows GitHub's order. A `todo` subtask that is already waiting stays first, and that tick appends no fixup.
 
 A conflict fixup is titled `Merge origin/{base}`. Its brief is `Merge origin/{base} into the task branch and resolve the conflicts. Do not rebase and do not force-push.` A check fixup is titled `Fix {name}`, cut off at 160 characters. Its brief is `Check {name} failed: {url}. Do not rebase and do not force-push.` With no URL, the brief is `Check {name} failed. Do not rebase and do not force-push.`
 
-A fixup has a generic `command` deliverable for the failed check, with a command and working directory supplied by the Project's task policy. It also receives the Project's configured task check through the normal handoff gate. The Gateway does not map Project slugs or CI check names to commands. A subsequent implementation group replaces test reproduction and path-scoped command behavior with generic command deliverables, including `fails_on_base` and `paths`; see [ADR 0178](/decisions/0178-run-project-agnostic-tasks-without-a-planner).
+A fixup receives the normal `composer check` command deliverable. For a recognized failed check when the Project slug is `orbit`, it also receives the command and working directory from the Gateway's slug-keyed reproduction table. Other Project slugs and unrecognized check names receive only `composer check`. The configured Project task check also runs through the normal handoff gate.
 
 The fixup uses a new implementer thread and a new reviewer thread for that subtask. The handoff check runs the Project task check and the deliverable commands. After approval, Orbit commits and pushes that stored commit with the [ADR 0160](/decisions/0160-push-each-approved-subtask-and-remove-the-finished-workspace-clone) refspec. The push is not a force push. Orbit does not rebase. The open pull request takes the new commits. Orbit does not open a second pull request, and `pr_url` stays.
 
@@ -849,7 +853,9 @@ After Coder review and PR merge, an authorized Gateway caller runs `tasks:comple
 
 Cancel and complete remove the workspace clone on the Node. The forced Instance remover deletes the checkout directory recorded on the Instance and writes a removal record whose `source_finalization` step deleted that directory. This includes a non-visitable task workspace that stayed `source_resolved` because it has no Route. The Instance row is deleted only after that record is complete. A successful cancel or complete leaves no checkout at the recorded path. [ADR 0160](/decisions/0160-push-each-approved-subtask-and-remove-the-finished-workspace-clone) records the decision.
 
-Project-specific resources, such as an Incus bridge worktree, are not removed by the generic Tasks engine. The Project owns any such cleanup in its own teardown steps, as [ADR 0178](/decisions/0178-run-project-agnostic-tasks-without-a-planner) decides.
+The same removal deletes that group's Incus bridge worktree on the Node. The bridge is the linked worktree `<worktree root>/task-{id}-e2e` on branch `task-{id}-e2e` of the primary checkout registered for the repository. [ADR 0135](/decisions/0135-run-incus-topologies-for-task-workspace-clones-through-a-bridge-worktree) records it. `RemoveTaskWorkspaceAction` calls `RemoteTaskBridgeWorktreeRemover` before removing the task checkout. Removal deletes the bridge worktree only when its path and branch both match the group, including when the clone is checked out on another branch. A user's worktree stays. A missing bridge is not a failure.
+
+Branch `task-{id}-e2e` is deleted when no worktree has it checked out. A worktree on that branch at another path stays, and so does the branch. The `refs/orbit/e2e-bridge/task-{id}` ref is deleted either way. The sweep retries this with the checkout. Removal does not release an Incus topology the bridge still holds, so release that topology before the group ends.
 
 
 
@@ -875,7 +881,7 @@ Call `tasks-cancel` with `{ "group": 123 }`, or run `orbit tasks:cancel 123`, to
 
 Repeating cancellation is safe and also cleans up an Instance still attached to a group already marked `cancelled`. Subtasks that are not completed or failed become `cancelled`. When removal succeeds, cancellation clears `assistance_requested` on the group and its subtasks and keeps the last `assistance_reason`. An unreachable Node records `Workspace removal failed: ` instead. Subtask records and agent thread identifiers stay as history.
 
-Cancellation removes the workspace with the forced Instance remover, which deletes its checkout and cleans up its Routes, including a route-free workspace that never became active (`reserved`, `checkout_prepared`, or `source_resolved`). On success the checkout is gone. Cancellation does not interrupt the external agent conversation. Project-specific resources are cleaned up by the Project's teardown steps.
+Cancellation removes the workspace with the forced Instance remover, which deletes its checkout and cleans up its Routes, including a route-free workspace that never became active (`reserved`, `checkout_prepared`, or `source_resolved`). On success the checkout is gone. It also removes the group's bridge worktree, as [Complete and cleanup](#complete-and-cleanup) describes. Cancellation does not interrupt the external agent conversation.
 
 When the Node is unreachable, cancel still marks the group `cancelled` and keeps the Instance attached. It asks for assistance with `Workspace removal failed: ` and returns the group in that state. It does not wait for a push the Node cannot accept. A permanently lost Node does not keep the group open: the operator's cancel ends it, and the Instance row keeps the checkout named until the sweep deletes it or the operator deletes the directory. The sweep retries removal on the backoff under [Scheduler and ceilings](#scheduler-and-ceilings).
 

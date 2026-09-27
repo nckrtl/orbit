@@ -609,11 +609,6 @@ it('writes the search endpoint file before it starts a reviewer', function (): v
     {
         public int $missing = 0;
 
-        public function install(AppInstance $instance): bool
-        {
-            return true;
-        }
-
         public function installWhenMissing(AppInstance $instance): bool
         {
             $this->missing++;
@@ -632,11 +627,6 @@ it('does not start a reviewer when the search endpoint file cannot be written', 
     $group = t3_spawner_group();
     $mcp = new class implements TaskWorkspaceMcp
     {
-        public function install(AppInstance $instance): bool
-        {
-            return true;
-        }
-
         public function installWhenMissing(AppInstance $instance): bool
         {
             return false;

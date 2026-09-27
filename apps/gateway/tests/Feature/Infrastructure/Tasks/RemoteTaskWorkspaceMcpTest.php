@@ -68,8 +68,8 @@ it('writes an untracked .mcp.json that points at the Gateway search endpoint and
     $checkout = workspace_mcp_checkout();
     $instance = workspace_mcp_instance($checkout);
 
-    expect(workspace_mcp()->install($instance))->toBeTrue()
-        ->and(workspace_mcp()->install($instance))->toBeTrue();
+    expect(workspace_mcp()->installWhenMissing($instance))->toBeTrue()
+        ->and(workspace_mcp()->installWhenMissing($instance))->toBeTrue();
 
     $status = (new Process(['git', 'status', '--porcelain', '--untracked-files=all'], $checkout))->mustRun()->getOutput();
     $exclude = (string) file_get_contents($checkout.'/.git/info/exclude');
@@ -102,25 +102,13 @@ it('leaves an existing .mcp.json unchanged when a reviewer starts', function ():
         ->and((string) file_get_contents($checkout.'/.mcp.json'))->toBe("{\"mcpServers\":{\"kept\":true}}\n");
 });
 
-it('replaces an untracked .mcp.json with the search endpoint for the workspace', function (): void {
-    config()->set('app.url', 'https://gateway.orbit');
-    $checkout = workspace_mcp_checkout();
-    file_put_contents($checkout.'/.mcp.json', "{\"mcpServers\":{\"orbit\":{\"url\":\"https://gateway.orbit/mcp\"}}}\n");
-    $instance = workspace_mcp_instance($checkout);
-
-    expect(workspace_mcp()->install($instance))->toBeTrue();
-
-    expect(json_decode((string) file_get_contents($checkout.'/.mcp.json'), true))
-        ->toBe(['mcpServers' => ['orbit' => ['type' => 'http', 'url' => 'https://gateway.orbit/mcp/search']]]);
-});
-
 it('leaves a tracked .mcp.json unchanged', function (): void {
     $checkout = workspace_mcp_checkout();
     file_put_contents($checkout.'/.mcp.json', "{\"mcpServers\":{}}\n");
     (new Process(['git', 'add', '.mcp.json'], $checkout))->mustRun();
     $instance = workspace_mcp_instance($checkout);
 
-    expect(workspace_mcp()->install($instance))->toBeTrue()
+    expect(workspace_mcp()->installWhenMissing($instance))->toBeTrue()
         ->and((string) file_get_contents($checkout.'/.mcp.json'))->toBe("{\"mcpServers\":{}}\n");
 });
 
@@ -128,6 +116,5 @@ it('reports failure for a workspace without a checkout', function (): void {
     $instance = workspace_mcp_instance(workspace_mcp_checkout());
     $instance->checkout_path = '';
 
-    expect(workspace_mcp()->install($instance))->toBeFalse()
-        ->and(workspace_mcp()->installWhenMissing($instance))->toBeFalse();
+    expect(workspace_mcp()->installWhenMissing($instance))->toBeFalse();
 });
