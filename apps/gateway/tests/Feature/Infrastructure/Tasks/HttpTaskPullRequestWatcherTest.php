@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 use App\Domain\Tasks\TaskPullRequestCheck;
 use App\Infrastructure\Tasks\HttpTaskPullRequestWatcher;
+use App\Infrastructure\Tasks\Jev;
 use App\Models\App as OrbitApp;
+use App\Models\JevDecision;
+use App\Models\Task;
 use App\Models\TaskGroup;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
@@ -111,6 +114,101 @@ it('reports merged and closed pull requests without reading their checks', funct
     'merged' => [true, 'merged'],
     'closed' => [false, 'closed'],
 ]);
+
+it('fetches authoritative merge metadata and the complete commit-history source', function (): void {
+    GitHubTestSupport::storeApp();
+    $firstPage = array_map(static fn (int $index): array => [
+        'sha' => 'page-one-'.$index,
+        'commit' => ['message' => 'Ordinary change', 'committer' => ['date' => '2026-09-30T09:00:00Z']],
+    ], range(1, 100));
+    Http::fake([
+        'https://api.github.com/repos/acme/orbit/installation' => Http::response(['id' => 9]),
+        'https://api.github.com/app/installations/9/access_tokens' => Http::response(['token' => 'ghs_watch'], 201),
+        'https://api.github.com/repos/acme/orbit/pulls/42' => Http::response([
+            'merged' => true,
+            'state' => 'closed',
+            'head' => ['sha' => 'head-sha'],
+            'body' => "Summary\n\n## Changes\n\n- Deliver orders\n",
+            'merge_commit_sha' => 'merge-sha',
+            'merged_at' => '2026-10-01T10:00:00Z',
+        ]),
+        'https://api.github.com/repos/acme/orbit/pulls/42/commits*' => Http::sequence()
+            ->push($firstPage)
+            ->push([[
+                'sha' => 'fix-sha',
+                'commit' => ['message' => 'Fix orders\n\nOrbit-Coverage-Fix: task-42', 'committer' => ['date' => '2026-10-01T09:00:00Z']],
+            ]]),
+    ]);
+
+    $health = app(HttpTaskPullRequestWatcher::class)->health(watcher_group());
+
+    expect($health?->state)->toBe('merged')
+        ->and($health?->headSha)->toBe('head-sha')
+        ->and($health?->pullRequestNumber)->toBe(42)
+        ->and($health?->mergeBody)->toContain('## Changes')
+        ->and($health?->mergeSha)->toBe('merge-sha')
+        ->and($health?->mergedAt)->toBe('2026-10-01T10:00:00Z')
+        ->and($health?->mergeCommits)->toHaveCount(101)
+        ->and($health?->mergeCommits[100]->sha)->toBe('fix-sha');
+});
+
+it('leaves labels unknown when GitHub truncates a PR history at 250 commits', function (): void {
+    GitHubTestSupport::storeApp();
+    $group = watcher_group();
+    $task = Task::query()->create([
+        'task_group_id' => $group->id,
+        'position' => 1,
+        'title' => 'Deliver orders',
+        'brief' => 'Export orders as CSV.',
+        'status' => 'completed',
+    ]);
+    $decision = JevDecision::query()->create([
+        'purpose' => 'brief_coverage',
+        'task_group_id' => $group->id,
+        'task_ids' => [$task->id],
+        'approval_comment_id' => 7,
+        'approval_changes' => ['Deliver orders'],
+        'approval_changes_digest' => hash('sha256', json_encode(['Deliver orders'], JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE)),
+        'approval_changes_redacted' => false,
+        'call_started_at' => now()->toIso8601String(),
+        'questions' => ['subtask_'.$task->id => []],
+        'input_state' => ['subtasks' => [['title' => 'Deliver orders']], 'pull_request' => ['changes' => ['Deliver orders']]],
+        'answers' => ['subtask_'.$task->id => ['value' => true, 'selected_answer_probability' => 0.95]],
+    ]);
+    $rows = array_map(static fn (int $index): array => [
+        'sha' => 'commit-'.$index,
+        'commit' => ['message' => 'Ordinary change', 'committer' => ['date' => '2026-10-01T09:00:00Z']],
+    ], range(1, 250));
+    // This valid fix is after the 250 entries GitHub exposes, so it cannot be verified from this endpoint.
+    $fixBeyondEndpointCap = [
+        'sha' => 'commit-251',
+        'commit' => ['message' => "Fix the reviewed coverage\\n\\nOrbit-Coverage-Fix: task-{$task->id}"],
+    ];
+    Http::fake([
+        'https://api.github.com/repos/acme/orbit/installation' => Http::response(['id' => 9]),
+        'https://api.github.com/app/installations/9/access_tokens' => Http::response(['token' => 'ghs_watch'], 201),
+        'https://api.github.com/repos/acme/orbit/pulls/42' => Http::response([
+            'merged' => true, 'state' => 'closed', 'head' => ['sha' => 'head-sha'],
+            'body' => "## Changes\n\n- Deliver orders\n", 'merge_commit_sha' => 'merge-sha', 'merged_at' => '2026-10-01T10:00:00Z',
+        ]),
+        'https://api.github.com/repos/acme/orbit/pulls/42/commits*' => Http::sequence()
+            ->push(array_slice($rows, 0, 100))
+            ->push(array_slice($rows, 100, 100))
+            ->push(array_slice($rows, 200, 50)),
+    ]);
+
+    $health = app(HttpTaskPullRequestWatcher::class)->health($group);
+    expect($fixBeyondEndpointCap['sha'])->toBe('commit-251')
+        ->and($fixBeyondEndpointCap['commit']['message'])->toContain('Orbit-Coverage-Fix: task-'.$task->id)
+        ->and($health?->state)->toBe('merged')
+        ->and($health?->mergeCommits)->toBeNull();
+
+    Jev::labelMergedCoverage($group, $health);
+    expect($decision->fresh()->merge_history_complete)->toBeFalse()
+        ->and($decision->fresh()->merge_changes)->toBe(['Deliver orders'])
+        ->and($decision->fresh()->merge_commit_history)->toBeNull()
+        ->and($decision->fresh()->labels)->toBeNull();
+});
 
 it('reports an open pull request that conflicts with its base branch', function (array $pullRequest): void {
     GitHubTestSupport::storeApp();

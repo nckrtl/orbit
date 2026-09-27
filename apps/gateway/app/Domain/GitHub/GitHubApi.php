@@ -76,6 +76,9 @@ interface GitHubApi
     /** @throws GitHubApiException */
     public function pullRequest(#[SensitiveParameter] string $token, GitHubRepository $repository, int $number): GitHubPullRequest;
 
+    /** @return list<GitHubPullRequestCommit> Complete commit history in pull-request order. @throws GitHubApiException */
+    public function pullRequestCommits(#[SensitiveParameter] string $token, GitHubRepository $repository, int $number): array;
+
     /**
      * The latest check run of each check on the commit, up to 100 runs.
      *

@@ -49,12 +49,14 @@ use App\Models\AgentThread;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\AppInstanceRemoval;
+use App\Models\JevDecision;
 use App\Models\Node;
 use App\Models\Task;
 use App\Models\TaskCheck;
 use App\Models\TaskComment;
 use App\Models\TaskGroup;
 use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Laravel\Ai\Classification;
@@ -374,7 +376,7 @@ it('continues watching a prior settling PR and completes only after it merges', 
 
     $this->assertDatabaseHas('task_groups', ['id' => $group->id, 'status' => 'completed', 'pr_url' => $group->pr_url, 'taskable_id' => null]);
     $this->assertDatabaseMissing('app_instances', ['id' => $group->taskable_id]);
-    Http::assertSentCount(6);
+    Http::assertSentCount(8);
 });
 
 /** A settling group whose pull request the tick reads through the faked GitHub App. */
@@ -676,6 +678,70 @@ it('backs off a merged pull request cleanup and retries it on a later tick', fun
 
     expect($calls)->toBe(2)
         ->and($group->fresh()?->taskable_id)->toBe($group->taskable_id);
+});
+
+it('preserves labeled merge evidence and report metrics when cleanup retries lose GitHub evidence', function (): void {
+    $group = tick_settling_group();
+    $task = $group->tasks->sole();
+    $changes = [$task->title];
+    $decision = JevDecision::query()->create([
+        'purpose' => 'brief_coverage',
+        'task_group_id' => $group->id,
+        'task_ids' => [$task->id],
+        'approval_comment_id' => 901,
+        'approval_changes' => $changes,
+        'approval_changes_digest' => hash('sha256', json_encode($changes, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE)),
+        'approval_changes_redacted' => false,
+        'call_started_at' => now()->subMinute()->toIso8601String(),
+        'questions' => ['subtask_'.$task->id => []],
+        'input_state' => ['subtasks' => [['title' => $task->title]], 'pull_request' => ['changes' => $changes]],
+        'answers' => ['subtask_'.$task->id => ['value' => true, 'selected_answer_probability' => 0.97]],
+        'latency_ms' => 25,
+    ]);
+    mock(AppInstanceRemover::class)->shouldReceive('execute')->andThrow(new RuntimeException('disk full'));
+    Http::preventStrayRequests();
+    Http::fake([
+        'https://api.github.com/repos/acme/orbit/installation' => Http::response(['id' => 9]),
+        'https://api.github.com/app/installations/9/access_tokens' => Http::response(['token' => 'ghs_watch'], 201),
+        'https://api.github.com/repos/acme/orbit/pulls/42' => Http::sequence()
+            ->push([
+                'merged' => true, 'state' => 'closed', 'head' => ['sha' => 'head-sha'],
+                'body' => "## Changes\n\n- {$task->title}\n", 'merge_commit_sha' => 'actual-merge-sha', 'merged_at' => '2026-10-01T10:00:00Z',
+            ])
+            ->push([
+                'merged' => true, 'state' => 'closed', 'head' => ['sha' => 'head-sha'],
+                'merge_commit_sha' => 'actual-merge-sha', 'merged_at' => '2026-10-01T10:00:00Z',
+            ]),
+        'https://api.github.com/repos/acme/orbit/pulls/42/commits*' => Http::sequence()
+            ->push([[
+                'sha' => 'verified-commit',
+                'commit' => ['message' => 'Ordinary change', 'committer' => ['date' => '2026-10-01T09:00:00Z']],
+            ]])
+            ->push([], 502),
+    ]);
+
+    app(TaskScheduler::class)->tick();
+    $verified = $decision->fresh();
+    expect($group->fresh()?->status)->toBe(TaskGroupStatus::Settling)
+        ->and($verified?->merge_history_complete)->toBeTrue()
+        ->and($verified?->labels['questions']['subtask_'.$task->id]['label'])->toBe('correct');
+
+    app(TaskScheduler::class)->tick();
+    $retried = $decision->fresh();
+    Artisan::call('orbit:tasks:jev-report', ['--json' => true]);
+    $report = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['brief_coverage'];
+
+    expect($group->fresh()?->status)->toBe(TaskGroupStatus::Settling)
+        ->and($retried?->merge_history_complete)->toBeTrue()
+        ->and($retried?->merge_commit_history)->toBe($verified?->merge_commit_history)
+        ->and($retried?->merge_changes)->toBe($verified?->merge_changes)
+        ->and($retried?->merge_changes_digest)->toBe($verified?->merge_changes_digest)
+        ->and($retried?->merge_body_digest)->toBe($verified?->merge_body_digest)
+        ->and($retried?->labels)->toBe($verified?->labels)
+        ->and($report['calls'])->toBe(1)
+        ->and($report['labeled_share'])->toBe(1)
+        ->and($report['accuracy'])->toBe(1)
+        ->and($report['call_labels'])->toBe(['correct' => 1]);
 });
 
 it('uses backoff for publication and removal retries and retries a failed manual complete', function (): void {
@@ -3653,12 +3719,19 @@ function tick_publishing(array $missing = [[]], int $failures = 0): object
     {
         public int $calls = 0;
 
+        public ?int $approvalCommentId = null;
+
+        /** @var list<string>|null */
+        public ?array $approvalChanges = null;
+
         /** @param list<list<string>> $missing */
         public function __construct(private array $missing) {}
 
-        public function missing(TaskGroup $group, TaskRunPullRequest $pullRequest): array
+        public function missing(TaskGroup $group, TaskRunPullRequest $pullRequest, ?int $approvalCommentId = null, ?array $approvalChanges = null): array
         {
             $this->calls++;
+            $this->approvalCommentId = $approvalCommentId;
+            $this->approvalChanges = $approvalChanges;
 
             return array_shift($this->missing) ?? [];
         }
@@ -3707,6 +3780,8 @@ it('commits the last approved subtask, opens the pull request with the reviewer 
         ->and($publishing->publisher->pushes)->toBe([$group->id])
         ->and($publishing->publisher->bodies)->toBe([TaskPullRequestDescription::render(new TaskRunPullRequest('Adds tick routing.', ['Tasks store their records.'], []), 1)])
         ->and($approval->pull_request)->toBe(['summary' => 'Adds tick routing.', 'changes' => ['Tasks store their records.'], 'breaking' => []])
+        ->and($publishing->coverage->approvalCommentId)->toBe($approval->id)
+        ->and($publishing->coverage->approvalChanges)->toBe(['Tasks store their records.'])
         ->and($group->fresh()?->pr_url)->toBe('https://github.com/acme/orbit/pull/42')
         ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Settling)
         ->and($group->fresh()?->assistance_requested)->toBeFalse()
@@ -3858,7 +3933,7 @@ it('counts a failed coverage answer as a communication failure', function (): vo
     tick_publishing();
     app()->instance(TaskBriefCoverage::class, new class implements TaskBriefCoverage
     {
-        public function missing(TaskGroup $group, TaskRunPullRequest $pullRequest): array
+        public function missing(TaskGroup $group, TaskRunPullRequest $pullRequest, ?int $approvalCommentId = null, ?array $approvalChanges = null): array
         {
             throw new TaskSessionClassificationException('TypeSafe Jev request failed (ConnectionException).');
         }

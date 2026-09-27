@@ -10,6 +10,7 @@ use App\Domain\GitHub\GitHubAppCredentials;
 use App\Domain\GitHub\GitHubCheckRun;
 use App\Domain\GitHub\GitHubInstallation;
 use App\Domain\GitHub\GitHubPullRequest;
+use App\Domain\GitHub\GitHubPullRequestCommit;
 use App\Domain\GitHub\GitHubPullRequestDraft;
 use App\Domain\GitHub\GitHubPullRequestState;
 use App\Domain\GitHub\GitHubRepository;
@@ -203,7 +204,39 @@ final readonly class HttpGitHubApi implements GitHubApi
             mergeableState: $this->text($response->json('mergeable_state')),
             headSha: $this->text($response->json('head.sha')),
             baseRef: $this->text($response->json('base.ref')),
+            body: is_string($response->json('body')) ? $response->json('body') : null,
+            mergeCommitSha: $this->text($response->json('merge_commit_sha')),
+            mergedAt: $this->text($response->json('merged_at')),
         );
+    }
+
+    public function pullRequestCommits(#[SensitiveParameter] string $token, GitHubRepository $repository, int $number): array
+    {
+        $commits = [];
+        for ($page = 1; ; $page++) {
+            $response = $this->send(fn (): Response => $this->request()->withToken($token)
+                ->get($this->repositoryPath($repository).'/pulls/'.$number.'/commits', ['per_page' => 100, 'page' => $page]));
+            $rows = $response->json();
+            if (! $response->successful() || ! is_array($rows) || ! array_is_list($rows)) {
+                throw GitHubApiException::unavailable();
+            }
+            foreach ($rows as $row) {
+                $sha = is_array($row) ? $this->text($row['sha'] ?? null) : null;
+                $message = is_array($row) ? $this->text($row['commit']['message'] ?? null) : null;
+                $committedAt = is_array($row) ? $this->text($row['commit']['committer']['date'] ?? null) : null;
+                if ($sha === null || $message === null) {
+                    throw GitHubApiException::unavailable();
+                }
+                $commits[] = new GitHubPullRequestCommit($sha, $message, $committedAt);
+            }
+            if (count($commits) >= 250) {
+                // GitHub caps pull-request commit responses at 250 entries, even with pagination.
+                throw GitHubApiException::unavailable();
+            }
+            if (count($rows) < 100) {
+                return $commits;
+            }
+        }
     }
 
     public function checkRuns(#[SensitiveParameter] string $token, GitHubRepository $repository, string $sha): array

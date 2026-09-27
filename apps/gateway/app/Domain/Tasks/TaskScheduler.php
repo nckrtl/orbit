@@ -8,6 +8,7 @@ use App\Actions\Tasks\CompleteTaskGroupAction;
 use App\Actions\Tasks\RemoveTaskWorkspaceAction;
 use App\Domain\Projects\LifecyclePhase;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Tasks\Jev;
 use App\Models\AgentThread;
 use App\Models\AppInstance;
 use App\Models\ProjectLifecycleStep;
@@ -146,6 +147,7 @@ final readonly class TaskScheduler
             $health = $this->pullRequestWatcher->health($group);
             $status = $health?->state;
             if ($status === 'merged') {
+                Jev::labelMergedCoverage($group, $health);
                 if (! $this->orphanedCommit($group)) {
                     $this->completeMergedGroup($group);
                 }
@@ -568,7 +570,12 @@ final readonly class TaskScheduler
         }
         if ($this->failedItems($items) === [] && $pullRequest instanceof TaskRunPullRequest) {
             try {
-                $missing = $this->coverage->missing($group, $pullRequest);
+                $missing = $this->coverage->missing(
+                    $group,
+                    $pullRequest,
+                    $receipt instanceof TaskComment ? $receipt->id : null,
+                    $pullRequest->changes,
+                );
             } catch (TaskSessionClassificationException $exception) {
                 $this->recordCommunicationFailure($task, $group, $exception->getMessage());
 

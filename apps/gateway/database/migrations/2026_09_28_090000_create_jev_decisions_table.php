@@ -13,13 +13,28 @@ return new class extends Migration
         Schema::create('jev_decisions', function (Blueprint $table): void {
             $table->id();
             $table->string('purpose');
+            $table->timestamp('call_started_at')->nullable();
             $table->foreignId('task_group_id')->nullable()->constrained('task_groups')->nullOnDelete();
             $table->foreignId('task_id')->nullable()->constrained('tasks')->nullOnDelete();
             $table->json('task_ids')->nullable();
+            $table->unsignedBigInteger('approval_comment_id')->nullable();
+            $table->json('approval_changes')->nullable();
+            $table->char('approval_changes_digest', 64)->nullable();
+            $table->boolean('approval_changes_redacted')->nullable();
+            $table->unsignedInteger('merged_pull_request_number')->nullable();
+            $table->string('merge_commit_sha', 40)->nullable();
+            $table->timestamp('merged_at')->nullable();
+            $table->json('merge_changes')->nullable();
+            $table->char('merge_changes_digest', 64)->nullable();
+            $table->boolean('merge_changes_redacted')->nullable();
+            $table->char('merge_body_digest', 64)->nullable();
+            $table->json('merge_commit_history')->nullable();
+            $table->boolean('merge_history_complete')->nullable();
             $table->string('agent_thread_id')->nullable();
             $table->json('questions');
             $table->json('input_state');
             $table->json('answers')->nullable();
+            $table->json('labels')->nullable();
             $table->string('provider_model')->nullable();
             $table->unsignedInteger('latency_ms')->nullable();
             $table->string('error_code', 100)->nullable();

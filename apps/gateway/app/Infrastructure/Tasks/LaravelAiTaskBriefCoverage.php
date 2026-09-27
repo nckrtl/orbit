@@ -20,7 +20,11 @@ use Laravel\Ai\Responses\Data\BooleanAnswer;
  */
 final readonly class LaravelAiTaskBriefCoverage implements TaskBriefCoverage
 {
-    public function missing(TaskGroup $group, TaskRunPullRequest $pullRequest): array
+    /**
+     * @param  list<string>|null  $approvalChanges
+     * @return list<string>
+     */
+    public function missing(TaskGroup $group, TaskRunPullRequest $pullRequest, ?int $approvalCommentId = null, ?array $approvalChanges = null): array
     {
         $subtasks = $group->tasks()
             ->whereNotIn('status', [TaskStatus::Cancelled, TaskStatus::Failed])
@@ -42,6 +46,8 @@ final readonly class LaravelAiTaskBriefCoverage implements TaskBriefCoverage
         $answers = Jev::classify($classification, 'brief_coverage', [
             'task_group_id' => $group->id,
             'task_ids' => $subtasks->modelKeys(),
+            'approval_comment_id' => $approvalCommentId,
+            'approval_changes' => $approvalChanges ?? $pullRequest->changes,
         ]);
 
         $missing = [];

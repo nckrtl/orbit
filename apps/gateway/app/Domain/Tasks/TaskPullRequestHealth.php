@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks;
 
+use App\Domain\GitHub\GitHubPullRequestCommit;
+
 /**
  * The state of a settling group's pull request, and what keeps an open one from merging
  * ([ADR 0140](/decisions/0140-watch-settling-pull-requests-for-conflicts-and-failed-checks)).
@@ -31,6 +33,12 @@ final readonly class TaskPullRequestHealth
         public array $infrastructureChecks = [],
         public bool $checksPending = false,
         public bool $checksYoungPending = false,
+        public ?int $pullRequestNumber = null,
+        public ?string $mergeBody = null,
+        public ?string $mergeSha = null,
+        public ?string $mergedAt = null,
+        /** @var list<GitHubPullRequestCommit>|null */
+        public ?array $mergeCommits = null,
     ) {}
 
     public function reason(?string $extra = null): string

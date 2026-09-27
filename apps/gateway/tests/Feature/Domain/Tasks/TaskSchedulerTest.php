@@ -1733,7 +1733,7 @@ function scheduler_approved_subtask(string $slug, bool $last = false, ?string $r
     app()->instance(TaskPullRequestPublisher::class, $publisher);
     app()->instance(TaskBriefCoverage::class, new class implements TaskBriefCoverage
     {
-        public function missing(TaskGroup $group, TaskRunPullRequest $pullRequest): array
+        public function missing(TaskGroup $group, TaskRunPullRequest $pullRequest, ?int $approvalCommentId = null, ?array $approvalChanges = null): array
         {
             return [];
         }
@@ -1874,7 +1874,7 @@ it('pushes an approved fixup to the existing branch, keeps the pull request, and
     {
         public int $calls = 0;
 
-        public function missing(TaskGroup $group, TaskRunPullRequest $pullRequest): array
+        public function missing(TaskGroup $group, TaskRunPullRequest $pullRequest, ?int $approvalCommentId = null, ?array $approvalChanges = null): array
         {
             $this->calls++;
 
