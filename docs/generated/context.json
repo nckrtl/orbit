@@ -4388,7 +4388,7 @@
                 "apps/gateway"
             ],
             "concepts": [
-                "Database",
+                "Deliverable",
                 "Gateway",
                 "Task",
                 "Task group"
@@ -5832,6 +5832,7 @@
             "concepts": [
                 "Activity",
                 "Deliverable",
+                "Deployment",
                 "Doctor",
                 "Extension",
                 "Gateway",
