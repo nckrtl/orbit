@@ -110,7 +110,19 @@ A pane polls the one-shot read every 10 seconds instead when the Gateway refuses
 
 Added to the home screen, the app opens full screen below an opaque black status bar. [index.html](https://github.com/nckrtl/orbit/blob/main/apps/web/index.html) sets `apple-mobile-web-app-status-bar-style` to `black` and the viewport to `viewport-fit=cover`. iOS reads these tags only when the icon is added, so add the app again after a release changes them.
 
-In standalone display mode, the app shell pads each edge by its `env(safe-area-inset-*)` value. The top value is 0, because the web view starts below the status bar. The bottom value keeps the footer above the home indicator. A browser tab gets no safe-area padding, and pages never add their own. The Menu drawer shows one support line with the display mode, the window and screen sizes, and the four insets. [Web verification](/reference/web-verification) checks a phone-sized viewport.
+The app shell is a fixed box with the page background that fills the web view. iOS 26 blurs the top edge of an installed web app with its glass edge effect unless a fixed box with an opaque background covers that edge, so the shell keeps the header sharp.
+
+In standalone display mode, the shell pads each edge by its `env(safe-area-inset-*)` value, except the bottom edge on a phone. The top value is 0, because the web view starts below the status bar. Pages never add their own padding.
+
+| Window | Top, left, and right | Bottom |
+| --- | --- | --- |
+| Installed, phone | The shell pads by the inset | The page scrolls to the screen edge, and its content ends one inset higher, above the home indicator |
+| Installed, `md` and wider | The shell pads by the inset | The shell pads by the inset |
+| Browser tab | No padding | No padding |
+
+On a phone, the header shows the Gateway and its live status, so the footer is hidden. It appears only to show a message or that live updates are paused, and it then sits above the home indicator. From the `md` breakpoint up, the footer is always shown.
+
+The Menu drawer shows one support line with the display mode, the window and screen sizes, and the four insets. [Web verification](/reference/web-verification) checks a phone-sized viewport.
 
 ## Web directory
 
@@ -194,3 +206,5 @@ Each notice carries every list column. A refetch per notice would reload the pag
 ### An opaque status bar on iOS 26
 
 With a translucent status bar and `viewport-fit=cover`, iOS 26 starts the web view under the status bar and makes it shorter by the top inset. Every CSS height and `innerHeight` then leaves a dead band at the bottom, and the edge blur covers the header. [WebKit bug 301108](https://bugs.webkit.org/show_bug.cgi?id=301108) records the fault. The opaque `black` style starts the web view below the bar and lets it reach the bottom edge.
+
+The opaque bar does not stop the glass edge effect. iOS 26 still blurs about 38 points below the top of the web view when it cannot take one flat colour from that edge. WebKit takes the colour from a fixed or sticky box with an opaque background that covers the top edge, is taller than 10 pixels, and spans at least 90% of the width. No CSS property or meta tag turns the effect off. Padding the header down by that depth would leave an empty band, so the shell itself is that fixed box.

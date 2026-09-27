@@ -3,6 +3,8 @@ import { page } from "vite-plus/test/browser";
 import { ANNOTATION_HOST_ID } from "@nckrtl/annotate/host";
 import indexHtml from "../../index.html?raw";
 import { displayMode } from "../../src/ui/viewportReadout";
+import { setLiveness } from "../../src/realtime/liveness";
+import { ui } from "../../src/ui/store";
 import { openApp } from "./app";
 
 const EDGES = ["top", "right", "bottom", "left"] as const;
@@ -193,10 +195,13 @@ it("leaves a zero-inset browser tab on the existing shell padding", async () => 
     expect(
         getComputedStyle(document.documentElement).getPropertyValue("--shell-safe-top").trim(),
     ).toBe("0px");
-    expect(shell().style.paddingTop).toContain("env(safe-area-inset-top");
-    expect(shell().style.paddingRight).toContain("env(safe-area-inset-right");
-    expect(shell().style.paddingBottom).toContain("env(safe-area-inset-bottom");
-    expect(shell().style.paddingLeft).toContain("env(safe-area-inset-left");
+    // iOS 26 takes the colour of a fixed, opaque box over the top edge instead of blurring it.
+    const shellStyle = getComputedStyle(shell());
+    expect(shellStyle.position).toBe("fixed");
+    expect(shellStyle.backgroundColor).toBe(getComputedStyle(document.body).backgroundColor);
+    expect(shellStyle.backgroundColor).toMatch(/^rgb\(/);
+    expect(shell().getBoundingClientRect().top).toBe(0);
+    expect(shell().getBoundingClientRect().width).toBe(window.innerWidth);
 
     setInsets({ top: "0px", right: "0px", bottom: "0px", left: "0px" });
     expect(padding(shell())).toEqual({ top: "0px", right: "0px", bottom: "0px", left: "0px" });
@@ -258,23 +263,40 @@ it("pads the shell from the safe-area overrides and keeps the page inside them",
             .toBeVisible();
 
         const header = document.querySelector("header");
-        const portraitFooter = document.querySelector("footer");
-        if (!(header instanceof HTMLElement) || !(portraitFooter instanceof HTMLElement)) {
+        const phoneMain = document.querySelector("main");
+        if (!(header instanceof HTMLElement) || !(phoneMain instanceof HTMLElement)) {
             throw new Error("portrait shell missing");
         }
-        const portrait = box(shell());
+        // Live and quiet: the page runs to the bottom edge and ends its content above the home indicator.
+        setLiveness("live");
+        await expect.poll(() => document.querySelector("footer")).toBeNull();
         expect(padding(shell())).toEqual({
             top: "47px",
             right: "0px",
-            bottom: "34px",
+            bottom: "0px",
             left: "0px",
         });
         expect(padding(layout()).top).toBe("10px");
-        expectInside(header, portrait);
-        expectInside(portraitFooter, portrait);
-        expect(portraitFooter.getBoundingClientRect().bottom).toBeLessThanOrEqual(844 - 34 + 0.5);
+        expect(padding(layout()).bottom).toBe("0px");
+        expectInside(header, box(shell()));
+        expect(Math.abs(phoneMain.getBoundingClientRect().bottom - 844)).toBeLessThan(1);
+        expect(getComputedStyle(phoneMain).paddingBottom).toBe("34px");
         expectWebViewFilled();
-        expectSingleBottomPad();
+
+        // A message brings the footer back, above the home indicator.
+        ui.set({ message: "copied" });
+        await expect.poll(() => document.querySelector("footer")).not.toBeNull();
+        const portraitFooter = document.querySelector("footer") as HTMLElement;
+        expect(portraitFooter.textContent).toContain("copied");
+        expect(portraitFooter.textContent).not.toContain("Enter");
+        // The footer's own pad fills the inset; its text ends above the home indicator.
+        expect(Math.abs(portraitFooter.getBoundingClientRect().bottom - 844)).toBeLessThan(1);
+        expect(Math.abs(box(portraitFooter).bottom - (844 - 34 - 4))).toBeLessThan(1.5);
+        ui.set({ message: "" });
+        await expect.poll(() => document.querySelector("footer")).toBeNull();
+        setLiveness("polling");
+        await expect.poll(() => document.querySelector("footer")).not.toBeNull();
+        expect(document.querySelector("footer")?.textContent).toContain("live updates paused");
 
         await page.getByRole("button", { name: "Toggle navigation menu" }).click();
         const menu = [...document.querySelectorAll("[aria-label='Nav']")].find(

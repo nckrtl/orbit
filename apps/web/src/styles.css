@@ -51,7 +51,7 @@
 }
 
 /*
- * Safe area for an installed iPhone or iPad app. The shell reads these once.
+ * Safe area for an installed iPhone or iPad app. The shell and the phone page read these.
  * html, body, and #app stay the exact height of the web view: no viewport unit
  * and no inset of their own, or the footer would sit twice as far up. A browser
  * tab keeps the shell padding at zero. Safari can report a non-zero inset in a
@@ -82,6 +82,24 @@ html[data-standalone] {
     --shell-safe-right: var(--safe-area-inset-right, env(safe-area-inset-right, 0px));
     --shell-safe-bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));
     --shell-safe-left: var(--safe-area-inset-left, env(safe-area-inset-left, 0px));
+}
+
+/*
+ * The shell is a fixed, opaque box over the whole web view. iOS 26 blurs the top edge of an
+ * installed app unless a fixed box with an opaque background covers it; then it takes that colour.
+ * On a phone the page runs to the bottom edge and pads its own content, so the shell skips that inset.
+ */
+.app-shell {
+    position: fixed;
+    inset: 0;
+    background: var(--bg);
+    padding: var(--shell-safe-top) var(--shell-safe-right) 0 var(--shell-safe-left);
+}
+
+@media (min-width: 768px) {
+    .app-shell {
+        padding-bottom: var(--shell-safe-bottom);
+    }
 }
 
 html,

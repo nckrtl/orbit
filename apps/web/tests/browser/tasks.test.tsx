@@ -106,13 +106,36 @@ it("groups every status, opens details, and keeps unsuccessful outcomes visible"
     await expect.element(pane("Todo")).toBeVisible();
 });
 
-it("shows empty columns only after a successful response", async () => {
+it("says there are no tasks only after a successful response", async () => {
     await openTasks(async () => ({ status: 200, payload: { data: [] } }));
     expect(screenText()).toContain("Tasks │ 0");
-    await expect.element(pane("Backlog")).toHaveTextContent("No tasks being prepared.");
-    await expect.element(pane("Todo")).toHaveTextContent("No tasks waiting.");
-    await expect.element(pane("In progress")).toHaveTextContent("No tasks in progress.");
-    await expect.element(pane("Done")).toHaveTextContent("No finished tasks yet.");
+    await expect.element(page.getByText("No tasks yet.")).toBeVisible();
+    expect(document.querySelector('[data-testid="tasks-board"]')).toBeNull();
+});
+
+it("shows only the lanes that hold a card", async () => {
+    const app = await openTasks(async (_, path) => {
+        const groups = [group(1, "todo"), group(2, "completed")];
+        return {
+            status: 200,
+            payload: { data: path === "/api/v1/task-groups" ? groups : groups[0] },
+        };
+    });
+    await expect.element(pane("Todo")).toHaveTextContent("EXA-1");
+    const lanes = () =>
+        [...document.querySelectorAll('[data-testid="tasks-board"] > .frame')].map((frame) =>
+            frame.getAttribute("aria-label"),
+        );
+    expect(lanes()).toEqual(["Todo", "Done"]);
+    const board = document.querySelector('[data-testid="tasks-board"]') as HTMLElement;
+    expect(board.style.getPropertyValue("--lanes")).toBe("2");
+
+    await app.router.navigate({ to: "/tasks/$id", params: { id: "1" } });
+    await expect.element(pane("Todo")).toHaveTextContent("First step");
+    const subtaskLanes = [
+        ...document.querySelectorAll('[aria-label="Subtasks"] .kanban-board > .frame'),
+    ].map((frame) => frame.getAttribute("aria-label"));
+    expect(subtaskLanes).toEqual(["Todo"]);
 });
 
 it("explains a disabled extension and can retry a failed request", async () => {

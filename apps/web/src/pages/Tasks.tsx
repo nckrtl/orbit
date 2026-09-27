@@ -1,7 +1,7 @@
 import { AgentSessions } from "../tasks/AgentSessions";
 import { TaskComments } from "../tasks/TaskComments";
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { Link, useParams, useRouter } from "@tanstack/react-router";
 import { GatewayError } from "../api/client";
 import { lists } from "../api/queries";
@@ -34,6 +34,19 @@ import { useTaskPoll } from "../realtime/polling";
 
 const columns: TaskColumn[] = ["Backlog", "Todo", "In progress", "Done"];
 const subtaskColumns: TaskColumn[] = ["Todo", "In progress", "Done"];
+
+/** The lanes that hold at least one card, in board order. An empty lane is hidden. */
+function filledLanes<T extends TaskGroup | Task>(
+    lanes: TaskColumn[],
+    items: T[],
+): { column: TaskColumn; tasks: T[] }[] {
+    return lanes
+        .map((column) => ({
+            column,
+            tasks: items.filter((item) => taskColumn(item.status) === column),
+        }))
+        .filter((lane) => lane.tasks.length > 0);
+}
 
 /** The current time, updated every `intervalMs` while `enabled`, so an active group's duration counts forward. */
 function useNow(intervalMs: number, enabled: boolean): number {
@@ -272,63 +285,52 @@ export function TasksBoard({ instanceId }: { instanceId?: number } = {}) {
         60_000,
         (visibleGroups ?? []).some((group) => isActiveTaskGroup(group.status)),
     );
+    const lanes = filledLanes(columns, visibleGroups ?? []);
     return (
         <div className="flex min-w-0 flex-col gap-[var(--panel-gap)] md:h-full">
             {instanceId === undefined && <PageHeader trail={[{ label: "Tasks" }]} />}
             {groups.isPending && <p role="status">Loading tasks…</p>}
             {groups.error && <TaskError error={groups.error} retry={() => void groups.refetch()} />}
-            {groups.data && !groups.error && (
+            {groups.data && !groups.error && lanes.length === 0 && (
+                <p className="text-dim">No tasks yet.</p>
+            )}
+            {groups.data && !groups.error && lanes.length > 0 && (
                 <div
                     data-testid="tasks-board"
-                    className="kanban-board grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-4"
+                    className="kanban-board grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[repeat(var(--lanes),minmax(0,1fr))]"
+                    style={{ "--lanes": lanes.length } as CSSProperties}
                 >
-                    {columns.map((column) => {
-                        const tasks = (visibleGroups ?? []).filter(
-                            (group) => taskColumn(group.status) === column,
-                        );
-                        return (
-                            <Frame
-                                key={column}
-                                title={column}
-                                topRight={tasks.length}
-                                bodyClassName="space-y-[var(--panel-padding)]"
-                                className="min-h-[160px]"
-                            >
-                                {tasks.length === 0 && (
-                                    <p className="text-dim">
-                                        {column === "Backlog"
-                                            ? "No tasks being prepared."
-                                            : column === "Todo"
-                                              ? "No tasks waiting."
-                                              : column === "In progress"
-                                                ? "No tasks in progress."
-                                                : "No finished tasks yet."}
-                                    </p>
-                                )}
-                                {tasks.map((group) => (
-                                    <Link
-                                        key={group.id}
-                                        to="/tasks/$id"
-                                        params={{ id: String(group.id) }}
-                                        className={kanbanCardClassName}
-                                        data-testid="task-group-card"
-                                        aria-label={`Open task: ${group.title}`}
-                                    >
-                                        <KanbanCardBody
-                                            identity={taskIdentity(group.id, group.project_code)}
-                                            task={group}
-                                            durationMs={liveDurationMs(
-                                                group,
-                                                groups.dataUpdatedAt,
-                                                now,
-                                            )}
-                                            progress={completedSubtaskProgress(group.tasks)}
-                                        />
-                                    </Link>
-                                ))}
-                            </Frame>
-                        );
-                    })}
+                    {lanes.map(({ column, tasks }) => (
+                        <Frame
+                            key={column}
+                            title={column}
+                            topRight={tasks.length}
+                            bodyClassName="space-y-[var(--panel-padding)]"
+                            className="min-h-[160px]"
+                        >
+                            {tasks.map((group) => (
+                                <Link
+                                    key={group.id}
+                                    to="/tasks/$id"
+                                    params={{ id: String(group.id) }}
+                                    className={kanbanCardClassName}
+                                    data-testid="task-group-card"
+                                    aria-label={`Open task: ${group.title}`}
+                                >
+                                    <KanbanCardBody
+                                        identity={taskIdentity(group.id, group.project_code)}
+                                        task={group}
+                                        durationMs={liveDurationMs(
+                                            group,
+                                            groups.dataUpdatedAt,
+                                            now,
+                                        )}
+                                        progress={completedSubtaskProgress(group.tasks)}
+                                    />
+                                </Link>
+                            ))}
+                        </Frame>
+                    ))}
                 </div>
             )}
         </div>
@@ -359,6 +361,10 @@ function TaskDetailView({ id, subtaskId }: { id: string; subtaskId?: string }) {
     const countsForward =
         subtaskId === undefined && task !== undefined && isActiveTaskGroup(task.status);
     const now = useNow(1_000, countsForward);
+    const subtaskLanes = filledLanes(
+        subtaskColumns,
+        [...(task?.tasks ?? [])].sort((a, b) => a.position - b.position),
+    );
     return (
         <div className="flex min-w-0 flex-col gap-[var(--panel-gap)] md:h-full">
             <PageHeader
@@ -424,12 +430,14 @@ function TaskDetailView({ id, subtaskId }: { id: string; subtaskId?: string }) {
                             aria-label="Subtasks"
                             className="shrink-0 lg:flex lg:min-h-0 lg:flex-1 lg:basis-0 lg:flex-col"
                         >
-                            <div className="kanban-board grid grid-cols-1 lg:min-h-0 lg:flex-1 lg:grid-cols-3 lg:grid-rows-[minmax(0,1fr)]">
-                                {subtaskColumns.map((column) => {
-                                    const subtasks = task.tasks
-                                        .filter((subtask) => taskColumn(subtask.status) === column)
-                                        .sort((a, b) => a.position - b.position);
-                                    return (
+                            {subtaskLanes.length === 0 ? (
+                                <p className="text-dim">No subtasks yet.</p>
+                            ) : (
+                                <div
+                                    className="kanban-board grid grid-cols-1 lg:min-h-0 lg:flex-1 lg:grid-cols-[repeat(var(--lanes),minmax(0,1fr))] lg:grid-rows-[minmax(0,1fr)]"
+                                    style={{ "--lanes": subtaskLanes.length } as CSSProperties}
+                                >
+                                    {subtaskLanes.map(({ column, tasks: subtasks }) => (
                                         <Frame
                                             key={column}
                                             title={column}
@@ -437,15 +445,6 @@ function TaskDetailView({ id, subtaskId }: { id: string; subtaskId?: string }) {
                                             className="min-h-[160px]"
                                             bodyClassName="space-y-[var(--panel-padding)]"
                                         >
-                                            {subtasks.length === 0 && (
-                                                <p className="text-dim">
-                                                    {column === "Todo"
-                                                        ? "No subtasks waiting."
-                                                        : column === "In progress"
-                                                          ? "No subtasks in progress."
-                                                          : "No finished subtasks yet."}
-                                                </p>
-                                            )}
                                             {subtasks.map((subtask) => (
                                                 <Link
                                                     to="/tasks/$id/subtasks/$subtaskId"
@@ -465,9 +464,9 @@ function TaskDetailView({ id, subtaskId }: { id: string; subtaskId?: string }) {
                                                 </Link>
                                             ))}
                                         </Frame>
-                                    );
-                                })}
-                            </div>
+                                    ))}
+                                </div>
+                            )}
                         </section>
                     )}
                     {"tasks" in detail ? (

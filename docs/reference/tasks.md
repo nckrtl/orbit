@@ -282,6 +282,8 @@ Codes are unique across Projects. Edit a code in the Project properties; changin
 
 Cards show separate added and deleted line counts when available, an uppercase status outside Backlog and Todo, and elapsed duration in minutes and hours.
 
+The board shows only the lanes that hold a card. A lane with no card is hidden, and the remaining lanes share the width. When no lane holds a card, the board says that there are no tasks yet. The subtasks board follows the same rule.
+
 Select a card to read the task brief, its status, tokens, line diff, duration, and its subtasks. Subtasks use their own Todo, In progress, and Done board. `todo` subtasks appear in Todo; reserved, running, and reviewing subtasks appear in In progress. Completed, failed, and cancelled subtasks appear in Done with their outcomes visible. Cards retain their sequence numbers and briefs. Subtask cards show that subtask's tokens and line diff when the Gateway has observed them.
 
 Select a subtask to open its own detail page with its title, brief, status, Project, shared Instance, tokens, line diff, and duration. The subtask detail omits the subtasks board. Use the parent task breadcrumb to return to the board.
