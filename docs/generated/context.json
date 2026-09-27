@@ -3022,7 +3022,8 @@
                 "0103",
                 "0110",
                 "0112",
-                "0165"
+                "0165",
+                "0177"
             ]
         },
         {
@@ -4387,6 +4388,33 @@
             "governing_adrs": [
                 "0164",
                 "0171"
+            ]
+        },
+        {
+            "path": "docs/decisions/0177-remove-the-app-compatibility-surface.md",
+            "title": "ADR 0177: Remove the app compatibility surface",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Database",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Process",
+                "Project",
+                "Route",
+                "Schedule",
+                "Task"
+            ],
+            "governing_adrs": [
+                "0105",
+                "0112",
+                "0177"
             ]
         },
         {

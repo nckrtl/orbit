@@ -408,7 +408,7 @@ If the process stops before it can clean up a failed spawn, the `pending:` row m
 
 Completion and failure remain visible until a new turn starts. Task completion still requires the scheduler workflow and review. Failed observations preserve the last known state and metrics and mark them unavailable. Connection health does not change a thread to idle or failed. Unavailable observations use the outage grace period and cannot advance a task from cached state.
 
-A group records an implementer driver and a reviewer driver. `ORBIT_TASKS_IMPLEMENTER_AGENT_DRIVER` and `ORBIT_TASKS_REVIEWER_AGENT_DRIVER` select them for new groups. Each defaults to `ORBIT_TASKS_AGENT_DRIVER`, which defaults to `t3`. Placement requires a Node that allows both drivers. Existing groups and threads keep their recorded drivers. The Gateway registers drivers; callers cannot supply arbitrary runtime URLs. Unsupported driver operations fail explicitly. An unknown configured driver rejects group creation with `tasks.agent_driver_unavailable` before any group is stored.
+A group records an implementer driver and a reviewer driver. `ORBIT_TASKS_IMPLEMENTER_AGENT_DRIVER` and `ORBIT_TASKS_REVIEWER_AGENT_DRIVER` select them for new groups, and each defaults to `t3`. Placement requires a Node that allows both drivers. Existing groups and threads keep their recorded drivers. The Gateway registers drivers; callers cannot supply arbitrary runtime URLs. Unsupported driver operations fail explicitly. An unknown configured driver rejects group creation with `tasks.agent_driver_unavailable` before any group is stored.
 
 The Gateway sends normalized conversation snapshots, entries, states, input requests, and metrics to the web app. Reconnect cursors belong to the selected driver. The browser renders Orbit data without parsing runtime-specific events. Laravel AI continues to select scheduler actions through Jev.
 
@@ -810,9 +810,8 @@ When `notify_coder` is true, settle POSTs an HMAC-signed JSON body to Coder. Thi
 | `ORBIT_CODER_WEBHOOK_SECRET` | HMAC-SHA256 secret. The Gateway never returns it |
 | `ORBIT_TASKS_OBSERVATION_GRACE_SECONDS` | Seconds before one alert for an observation outage. Defaults to `120` |
 | `ORBIT_TASKS_RESERVED_TIMEOUT_SECONDS` | Seconds a group may stay `reserved` before the tick returns it to `todo`. Defaults to `3600`, with a minimum of `60`. Keep it above the slowest workspace provision |
-| `ORBIT_TASKS_AGENT_DRIVER` | Default driver key for both roles of new groups. Defaults to `t3` |
-| `ORBIT_TASKS_IMPLEMENTER_AGENT_DRIVER` | Driver key for implementers of new groups. Defaults to `ORBIT_TASKS_AGENT_DRIVER` |
-| `ORBIT_TASKS_REVIEWER_AGENT_DRIVER` | Driver key for the reviewer of new groups. Defaults to `ORBIT_TASKS_AGENT_DRIVER` |
+| `ORBIT_TASKS_IMPLEMENTER_AGENT_DRIVER` | Driver key for implementers of new groups. Defaults to `t3` |
+| `ORBIT_TASKS_REVIEWER_AGENT_DRIVER` | Driver key for the reviewer of new groups. Defaults to `t3` |
 | `ORBIT_TASKS_IMPLEMENTER_MODEL` | Implementer model for new groups. Defaults to `gpt-5.6-luna` |
 | `ORBIT_TASKS_REVIEWER_MODEL` | Reviewer model for new groups. Defaults to `claude-opus-5` |
 | `ORBIT_T3_PORT` | T3 HTTP port. Defaults to `3773` |
