@@ -26,13 +26,15 @@ Reviewers assess the proposed ADRs alongside the implementation and documentatio
 
 Update the pages under `docs/` before coding. Describe what users can do, the limits, and what happens when an operation fails. Write in the present tense and check that the pages and proposed ADRs agree. The documentation ships with the implementation.
 
-Run the deterministic impact check from [ADR 0175](/decisions/0175-deterministic-docs-impact-check) for the group's start commit and every planned path, including paths that do not exist yet:
+Run the deterministic impact check from [ADR 0175](/decisions/0175-docs-impact-check-in-orbit-repo) for the group's start commit and every planned path, including paths that do not exist yet:
 
 ```bash
 bin/docs-impact --base <start-commit> --paths <planned-path>
 ```
 
-Every group has this docs-first subtask. A `docs_required` report means the subtask updates each impacted page or runs its named generator. A `no_docs_change` report is the only fast path: hand off the complete JSON report and let the reviewer confirm the planned paths. The report, not an agent's opinion, is the evidence. Before the pull request opens, run the check again against the whole group diff; an uncovered impacted page or surface fails the final gate unless the reviewer records `docs-unaffected: <page> — <reason>` in the approval. Jev is optional later and never replaces this check.
+The start commit is the merge base with `origin/main`. Every Orbit group starts with this docs subtask, as required by Orbit's repository task policy. Today the policy is in the [creating-tasks skill](https://github.com/nckrtl/orbit/blob/main/.agents/skills/creating-tasks/SKILL.md); it will move to an `orbit-tasks` skill in a separate change. A `docs_required` report means the subtask updates each impacted page or runs its named generator. A `no_docs_change` report is the fast path: hand off the complete JSON report as evidence, and let the reviewer confirm the planned paths and result. The report, not an agent's opinion, is the evidence.
+
+At every subtask handoff, Orbit's own task check runs the impact check against the candidate diff from the group's start commit. An impacted page missing from that diff fails with the list of pages unless the candidate adds a matching `page: reason` line to `docs/.docs-unaffected` and the reviewer confirms it. Required generator checks still apply. This policy runs through Orbit's `composer check` and `bin/review-check`; the generic Gateway task engine does not know about docs-first or documentation conventions. Jev is out of scope for this version.
 
 Run from the repository root:
 

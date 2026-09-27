@@ -17,6 +17,8 @@ Look for prefactoring that makes the feature easier to build. Put it first, as i
 
 ## 2. Draft the slices
 
+The first subtask is always docs-first, before any implementation subtask. It runs `bin/docs-impact` for the group's start commit and every planned path. Its deliverable is either the required documentation changes or, for `no_docs_change`, the complete JSON report for reviewer confirmation. See the [contributor guide](../../../docs/contributor-guide.md) and [Tasks reference](../../../docs/reference/tasks.md#run-the-docs-first-impact-check) for the required check and handoff contract.
+
 Prefer a narrow vertical slice that a reviewer can verify from start to finish over a horizontal slice of one layer. When a behavior spans several projects, such as the Gateway, a Rust service, and the web app, the ADRs and documentation fix the contract between them. A slice per project is then fine, provided its tests prove its side of the contract.
 
 Each subtask must meet all of these:

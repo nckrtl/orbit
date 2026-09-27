@@ -742,7 +742,7 @@
               "decisions/0168-offload-large-pi-tool-output",
               "decisions/0169-start-each-subtask-review-in-a-fresh-thread",
               "decisions/0171-reset-fixup-caps-after-operator-work",
-              "decisions/0175-deterministic-docs-impact-check"
+              "decisions/0175-docs-impact-check-in-orbit-repo"
             ]
           }
         ]

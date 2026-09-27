@@ -4391,15 +4391,12 @@
             ]
         },
         {
-            "path": "docs/decisions/0175-deterministic-docs-impact-check.md",
-            "title": "ADR 0175: Decide the deterministic docs-impact check",
+            "path": "docs/decisions/0175-docs-impact-check-in-orbit-repo.md",
+            "title": "ADR 0175: Keep the docs-impact check in Orbit's repository",
             "kind": "decision",
             "components": [
                 "apps/cli",
-                "apps/docs",
-                "apps/gateway",
-                "apps/web",
-                "packages/php-sdk"
+                "apps/docs"
             ],
             "concepts": [
                 "Cluster",
