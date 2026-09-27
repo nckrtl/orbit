@@ -10,7 +10,7 @@ In the context of creating an AppInstance before its application dependencies an
 
 ## Status
 
-Accepted on 2026-09-05. Extends [ADR 0028](/decisions/0028-require-one-route-per-active-appinstance). Supersedes [ADR 0009](/decisions/0009-clustered-app-instance-routing) for application-health requirements before Route publication, and [ADR 0029](/decisions/0029-manage-laravel-application-urls-through-orbit) for effective Laravel runtime verification before provisioning completes. Amends [ADR 0011](/decisions/0011-clustered-production-ingress-and-app-prod-placement) only to permit explicitly configured App setup steps after provisioning.
+Accepted on 2026-09-05. Extends [ADR 0028](/reference/routes#one-route-per-active-instance). Supersedes [ADR 0009](/reference/routes#set-up-private-traffic) for application-health requirements before Route publication, and [ADR 0029](/decisions/0029-manage-laravel-application-urls-through-orbit) for effective Laravel runtime verification before provisioning completes. Amends [ADR 0011](/reference/routes#publish-a-public-route) only to permit explicitly configured App setup steps after provisioning.
 
 ## Context
 
@@ -47,6 +47,6 @@ A newly cloned Laravel application can lack Composer dependencies, an applicatio
 ## Affects
 
 - Components: apps/cli, apps/gateway, packages/php-sdk, apps/e2e
-- ADRs: extends [ADR 0028](/decisions/0028-require-one-route-per-active-appinstance); supersedes [ADR 0009](/decisions/0009-clustered-app-instance-routing) for application-health requirements before Route publication, and [ADR 0029](/decisions/0029-manage-laravel-application-urls-through-orbit) for effective Laravel runtime verification before provisioning completes; amends [ADR 0011](/decisions/0011-clustered-production-ingress-and-app-prod-placement) only to permit explicitly configured App setup steps after provisioning
+- ADRs: extends [ADR 0028](/reference/routes#one-route-per-active-instance); supersedes [ADR 0009](/reference/routes#set-up-private-traffic) for application-health requirements before Route publication, and [ADR 0029](/decisions/0029-manage-laravel-application-urls-through-orbit) for effective Laravel runtime verification before provisioning completes; amends [ADR 0011](/reference/routes#publish-a-public-route) only to permit explicitly configured App setup steps after provisioning
 - Detail: [Applications](/reference/apps) and [Routes](/reference/routes)
 - Verify: `composer docs-lint`; implementation conformance through `bin/test`

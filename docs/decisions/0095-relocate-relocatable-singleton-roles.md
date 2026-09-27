@@ -12,7 +12,7 @@ description: "Proposed. node:role:relocate moves relocatable singleton roles, st
 
 Proposed.
 
-This amends [ADR 0090](/cli/node#a-dedicated-relocate-for-gateway)'s "only gateway is accepted" rule and [ADR 0087](/decisions/0087-run-reverb-through-a-websocket-role)'s add-then-remove move. It keeps the verb `relocate` from [ADR 0071](/decisions/0071-use-one-verb-vocabulary-across-cli-routes-and-sdk). It does not change [ADR 0061](/decisions/0061-use-vpn-dns-by-default-on-managed-peers) or make `vpn` relocatable.
+This amends [ADR 0090](/cli/node#a-dedicated-relocate-for-gateway)'s "only gateway is accepted" rule and [ADR 0087](/decisions/0087-run-reverb-through-a-websocket-role)'s add-then-remove move. It keeps the verb `relocate` from [ADR 0071](/decisions/0071-use-one-verb-vocabulary-across-cli-routes-and-sdk). It does not change [ADR 0061](/reference/private-dns#resolver-selection) or make `vpn` relocatable.
 
 ## Context
 

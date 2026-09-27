@@ -12,7 +12,7 @@ After the `gateway` role leaves the `vpn` node, private DNS publication must run
 
 Proposed.
 
-This amends [ADR 0090](/cli/node#a-dedicated-relocate-for-gateway). It does not change [ADR 0061](/decisions/0061-use-vpn-dns-by-default-on-managed-peers) or the VPN baseline.
+This amends [ADR 0090](/cli/node#a-dedicated-relocate-for-gateway). It does not change [ADR 0061](/reference/private-dns#resolver-selection) or the VPN baseline.
 
 ## Context
 
@@ -46,6 +46,6 @@ The new Gateway node also had an empty `can_access` list. Operators needed direc
 ## Affects
 
 - Components: apps/gateway, apps/docs, apps/e2e
-- ADRs: amends [ADR 0090](/cli/node#a-dedicated-relocate-for-gateway); leaves [ADR 0061](/decisions/0061-use-vpn-dns-by-default-on-managed-peers) unchanged
+- ADRs: amends [ADR 0090](/cli/node#a-dedicated-relocate-for-gateway); leaves [ADR 0061](/reference/private-dns#resolver-selection) unchanged
 - Detail: [Relocate the gateway role](/solutions/relocate-gateway-role), [Private DNS](/reference/private-dns), [Metrics](/reference/metrics), [`node`](/cli/node)
 - Verify: Gateway DnsmasqPrivateDnsManager targeting tests, MetricsRoleBaseline publication-failure tests, RelocateNodeRoleAction and GatewayRoleBaseline access-grant tests, MCP `node-role-add` boolean schema
