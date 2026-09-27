@@ -47,10 +47,11 @@ final readonly class NativeDevelopmentAppInstanceProvisioner implements Developm
         AppInstance $appInstance,
         ?string $domain,
         bool $recoverSourceProfile = false,
+        bool $setupPending = false,
     ): AppInstance {
         if (! $appInstance->requiresRoute()) {
             return $this->owner()->run(
-                fn (): AppInstance => $this->completeWithoutRoute($appInstance->id, $recoverSourceProfile),
+                fn (): AppInstance => $this->completeWithoutRoute($appInstance->id, $recoverSourceProfile, $setupPending),
             );
         }
 
@@ -61,11 +62,12 @@ final readonly class NativeDevelopmentAppInstanceProvisioner implements Developm
                 $appInstance->id,
                 $route->id,
                 $recoverSourceProfile,
+                $setupPending,
             ),
         );
     }
 
-    private function completeWithoutRoute(int $appInstanceId, bool $recoverSourceProfile): AppInstance
+    private function completeWithoutRoute(int $appInstanceId, bool $recoverSourceProfile, bool $setupPending): AppInstance
     {
         $appInstance = AppInstance::query()->with(['app', 'node'])->findOrFail($appInstanceId);
 
@@ -76,12 +78,12 @@ final readonly class NativeDevelopmentAppInstanceProvisioner implements Developm
         $profile = $this->configuration->inspect($appInstance);
         $this->recordProfile($appInstance, $profile);
 
-        DB::transaction(static function () use ($appInstance): void {
+        DB::transaction(static function () use ($appInstance, $setupPending): void {
             $lockedInstance = AppInstance::query()->lockForUpdate()->findOrFail($appInstance->id);
             $lockedInstance->update([
                 'status' => AppInstanceState::Active,
                 'provisioning_step' => 'active',
-                'failed_step' => null,
+                'failed_step' => $setupPending ? 'setup' : null,
                 'error_code' => null,
             ]);
         });
@@ -93,6 +95,7 @@ final readonly class NativeDevelopmentAppInstanceProvisioner implements Developm
         int $appInstanceId,
         int $routeId,
         bool $recoverSourceProfile,
+        bool $setupPending,
     ): AppInstance {
         $appInstance = AppInstance::query()->with('node')->findOrFail($appInstanceId);
         $route = Route::query()
@@ -146,7 +149,7 @@ final readonly class NativeDevelopmentAppInstanceProvisioner implements Developm
         }
         $this->projection->converge($appInstance->refresh(), $route->refresh());
 
-        DB::transaction(static function () use ($appInstance, $route): void {
+        DB::transaction(static function () use ($appInstance, $route, $setupPending): void {
             $lockedInstance = AppInstance::query()->lockForUpdate()->findOrFail($appInstance->id);
             $lockedRoute = Route::query()->lockForUpdate()->findOrFail($route->id);
             $lockedRoute->update([
@@ -157,7 +160,7 @@ final readonly class NativeDevelopmentAppInstanceProvisioner implements Developm
             $lockedInstance->update([
                 'status' => AppInstanceState::Active,
                 'provisioning_step' => 'active',
-                'failed_step' => null,
+                'failed_step' => $setupPending ? 'setup' : null,
                 'error_code' => null,
             ]);
         });

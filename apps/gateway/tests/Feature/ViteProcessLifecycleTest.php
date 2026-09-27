@@ -41,20 +41,23 @@ it('leaves site asleep after a preset restart becomes ready', function (): void 
     expect($runtime->awakeInstances)->toBe([]);
 });
 
-it('preserves a healthy owned endpoint without restarting or projecting', function (): void {
+it('automatic start keeps healthy vite and preserves a healthy owned endpoint', function (): void {
     $instance = vite_lifecycle_instance();
     $runtime = Mockery::mock(VitePortRuntime::class);
     $runtime->shouldReceive('selectPort')->once()->andReturn(5173);
     $runtime->shouldReceive('ownsListener')->once()->andReturn(true);
     $runtime->shouldReceive('ready')->once()->andReturn(true);
-    $runtime->shouldReceive('markAwake')->once();
+    $runtime->shouldNotReceive('suspendTraffic');
+    $runtime->shouldNotReceive('prepare');
+    $runtime->shouldNotReceive('project');
+    $runtime->shouldNotReceive('markAwake');
     app()->instance(VitePortRuntime::class, $runtime);
     $launched = false;
     app(ViteProcessLifecycle::class)->run(new Process(['owner_id' => $instance->id]), function () use (&$launched): void {
         $launched = true;
     }, function (): void {
         throw new RuntimeException('Unexpected stop');
-    }, true, explicitStart: true);
+    }, true);
     expect($launched)->toBeFalse()->and($instance->refresh()->vite_port)->toBe(5173);
 });
 

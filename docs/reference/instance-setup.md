@@ -3,7 +3,9 @@ title: "Instance setup and teardown"
 description: "How a Project stores named setup and teardown commands, and when Orbit runs them for a development Instance."
 covers:
   - apps/gateway/app/Domain/Projects/{LifecyclePhase,LifecycleStep,ProjectLifecycleRunner,ProjectLifecycleStepStore}.php
-  - apps/gateway/app/Actions/AppInstances/RunInstanceSetupAction.php
+  - apps/gateway/app/Actions/AppInstances/{CreateAppInstanceAction,RunInstanceSetupAction}.php
+  - apps/gateway/app/Infrastructure/AppInstances/NativeDevelopmentAppInstanceProvisioner.php
+  - apps/gateway/app/Domain/AppInstances/DevelopmentAppInstanceProvisioner.php
   - apps/gateway/app/Http/Controllers/Api/ProjectLifecycleStepsController.php
   - apps/gateway/app/Models/ProjectLifecycleStep.php
   - apps/gateway/resources/instances/lifecycle.py
@@ -51,7 +53,11 @@ Authorized reads return the commands. [Activity](/cli/activity) records no input
 
 ## Run setup
 
-`instance:create` runs the setup list after the Instance and its Route are active. Each command runs with `bash -eu` in the checkout, on the Instance's Node, as the Node's managed user. Commands read no input, and Orbit discards their output. When a step ends, for any reason, Orbit kills its process group, so background processes do not survive the step. Each run holds a lifecycle lock on the Instance. If another operation holds that lock, Orbit reports the Instance as busy rather than treating the lock conflict as a failed setup step. A busy lock never removes the Instance.
+`instance:create` runs the setup list after the Instance and its Route are active. Activation records `failed_step: setup` in the same transaction, so a Gateway interruption before or during setup cannot make an identical create retry report success without setup. Orbit clears the marker only after setup completes.
+
+Each command runs with `bash -eu` in the checkout, on the Instance's Node, as the Node's managed user. Commands read no input, and Orbit discards their output. When a step ends, for any reason, Orbit kills its process group, so background processes do not survive the step. Each run holds a lifecycle lock on the Instance. If another operation holds that lock during `instance:create`, Orbit keeps the active Instance and records `error_code: instance.lifecycle_busy`.
+
+An identical create retry then reports that setup must run; use `instance:setup` to retry the list. A busy lock never removes the Instance.
 
 The first command that exits non-zero or times out stops the list. Then Orbit rolls back the new Instance:
 

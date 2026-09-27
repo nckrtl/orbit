@@ -2182,6 +2182,7 @@ it('keeps a failed attempt from overwriting a successful retry after lease relea
             AppInstance $appInstance,
             ?string $domain,
             bool $recoverSourceProfile = false,
+            bool $setupPending = false,
         ): AppInstance {
             $this->completions++;
 
@@ -2189,7 +2190,7 @@ it('keeps a failed attempt from overwriting a successful retry after lease relea
                 throw new ResourceOperationException('instance.first_attempt_failed', 'The first attempt failed.');
             }
 
-            return $this->native->complete($appInstance, $domain, $recoverSourceProfile);
+            return $this->native->complete($appInstance, $domain, $recoverSourceProfile, $setupPending);
         }
     };
     app()->instance(DevelopmentAppInstanceProvisioner::class, $provisioner);
@@ -2265,6 +2266,7 @@ it('persists unexpected provisioning failures before releasing the lease', funct
             AppInstance $appInstance,
             ?string $domain,
             bool $recoverSourceProfile = false,
+            bool $setupPending = false,
         ): AppInstance {
             throw new LogicException('Unexpected provisioning failure.');
         }
@@ -2308,6 +2310,7 @@ it('does not reserve or persist failure evidence when lease acquisition fails', 
             AppInstance $appInstance,
             ?string $domain,
             bool $recoverSourceProfile = false,
+            bool $setupPending = false,
         ): AppInstance {
             return $appInstance;
         }
@@ -2386,6 +2389,7 @@ it('persists reservation conflicts before releasing the lease', function (): voi
             AppInstance $appInstance,
             ?string $domain,
             bool $recoverSourceProfile = false,
+            bool $setupPending = false,
         ): AppInstance {
             return $appInstance;
         }
@@ -3374,7 +3378,7 @@ it('runs setup once on create and skips it for an already active instance', func
     expect($transport->inputs)->toHaveCount(1);
 });
 
-it('keeps the Instance when setup encounters a busy lifecycle lock', function (): void {
+it('busy setup retry points to instance:setup instead of treating the Instance as complete', function (): void {
     ProjectLifecycleStep::query()->create(['app_id' => $this->orbitApp->id, 'phase' => 'setup', 'name' => 'install', 'command' => 'install', 'timeout_seconds' => 30, 'position' => 0]);
     ProjectLifecycleStep::query()->create(['app_id' => $this->orbitApp->id, 'phase' => 'teardown', 'name' => 'cleanup', 'command' => 'cleanup', 'timeout_seconds' => 30, 'position' => 0]);
     $transport = new LifecycleSshExecutor(result: static fn (): int => 75);
@@ -3385,10 +3389,71 @@ it('keeps the Instance when setup encounters a busy lifecycle lock', function ()
         ->assertJsonPath('error.details.outcome', 'busy');
 
     $instance = AppInstance::query()->where('name', 'busy')->sole();
-    expect($instance->failed_step)->toBeNull()
-        ->and($instance->error_code)->toBeNull()
+    expect($instance->failed_step)->toBe('setup')
+        ->and($instance->error_code)->toBe('instance.lifecycle_busy')
         ->and(Route::query()->count())->toBe(1)
         ->and(array_column($transport->inputs, 'command'))->toBe(['install']);
+
+    $this->postJson('/api/v1/instances', ['project_id' => $this->orbitApp->id, 'node_id' => $this->node->id, 'name' => 'busy', 'branch' => 'dev'])
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'instance.setup_step_failed')
+        ->assertJsonPath('error.message', 'Setup is incomplete. Run instance:setup before using this Instance.');
+
+    expect(array_column($transport->inputs, 'command'))->toBe(['install']);
+});
+
+it('keeps setup pending when create is interrupted after activation before the busy result is saved', function (): void {
+    ProjectLifecycleStep::query()->create(['app_id' => $this->orbitApp->id, 'phase' => 'setup', 'name' => 'install', 'command' => 'install', 'timeout_seconds' => 30, 'position' => 0]);
+    $native = app(DevelopmentAppInstanceProvisioner::class);
+    app()->instance(DevelopmentAppInstanceProvisioner::class, new class($native) implements DevelopmentAppInstanceProvisioner
+    {
+        public function __construct(private readonly DevelopmentAppInstanceProvisioner $native) {}
+
+        public function reserve(AppInstance $appInstance, ?string $domain): void
+        {
+            $this->native->reserve($appInstance, $domain);
+        }
+
+        public function complete(
+            AppInstance $appInstance,
+            ?string $domain,
+            bool $recoverSourceProfile = false,
+            bool $setupPending = false,
+        ): AppInstance {
+            $this->native->complete($appInstance, $domain, $recoverSourceProfile, $setupPending);
+
+            throw new RuntimeException('Simulated interruption before setup result persistence.');
+        }
+    });
+    $transport = new LifecycleSshExecutor;
+    app()->instance(ProjectLifecycleRunner::class, $transport->runner());
+    $data = new CreateAppInstanceData(
+        appId: $this->orbitApp->id,
+        nodeId: $this->node->id,
+        name: 'interrupted-setup',
+        root: null,
+        domain: null,
+        branch: 'dev',
+    );
+
+    expect(fn () => app(CreateAppInstanceAction::class)->execute($data))
+        ->toThrow(RuntimeException::class, 'Simulated interruption before setup result persistence.');
+
+    $instance = AppInstance::query()->where('name', 'interrupted-setup')->sole();
+    expect($instance->status)->toBe(AppInstanceState::Active)
+        ->and($instance->failed_step)->toBe('setup')
+        ->and($instance->error_code)->toBeNull();
+
+    $this->postJson('/api/v1/instances', [
+        'project_id' => $this->orbitApp->id,
+        'node_id' => $this->node->id,
+        'name' => 'interrupted-setup',
+        'branch' => 'dev',
+    ])->assertConflict()
+        ->assertJsonPath('error.code', 'instance.setup_step_failed')
+        ->assertJsonPath('error.message', 'Setup is incomplete. Run instance:setup before using this Instance.');
+
+    expect($transport->inputs)->toBeEmpty();
 });
 
 it('keeps the Instance when rollback teardown encounters a busy lifecycle lock', function (): void {

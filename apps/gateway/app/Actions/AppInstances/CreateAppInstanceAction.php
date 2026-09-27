@@ -146,6 +146,7 @@ final readonly class CreateAppInstanceAction
                             $resolved,
                             $data->domain,
                             $data->recoverSourceProfile,
+                            setupPending: ! $wasActive,
                         );
 
                     } catch (Throwable $exception) {
@@ -178,8 +179,11 @@ final readonly class CreateAppInstanceAction
                 self::RollbackTeardownSeconds + self::RollbackRemovalSeconds,
                 fn (): bool => $runner->run($instance, LifecyclePhase::Setup),
             );
+            $instance->update(['failed_step' => null, 'error_code' => null]);
         } catch (ResourceOperationException $setupFailure) {
             if (($setupFailure->details['outcome'] ?? null) === 'busy') {
+                $instance->update(['failed_step' => 'setup', 'error_code' => 'instance.lifecycle_busy']);
+
                 throw $setupFailure;
             }
 

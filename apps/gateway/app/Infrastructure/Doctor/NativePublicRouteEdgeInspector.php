@@ -105,10 +105,23 @@ final readonly class NativePublicRouteEdgeInspector implements PublicRouteEdgeIn
                         ')
                         if [ -z "$certificate" ] || ! printf '%s\n' "$served" | grep -Fq 'Verify return code: 0 (ok)'; then
                             printf 'certificate=missing\n'
-                        elif ! printf '%s\n' "$certificate" | openssl x509 -noout -checkend 2592000 >/dev/null 2>&1; then
-                            printf 'certificate=expiring\n'
                         else
-                            printf 'certificate=ok\n'
+                            certificate_dates=$(printf '%s\n' "$certificate" | openssl x509 -noout -startdate -enddate 2>/dev/null)
+                            not_before=$(printf '%s\n' "$certificate_dates" | sed -n 's/^notBefore=//p')
+                            not_after=$(printf '%s\n' "$certificate_dates" | sed -n 's/^notAfter=//p')
+                            if [ -z "$not_before" ] || [ -z "$not_after" ]; then
+                                printf 'certificate=missing\n'
+                            else
+                                start_epoch=$(date -d "$not_before" +%s 2>/dev/null || true)
+                                end_epoch=$(date -d "$not_after" +%s 2>/dev/null || true)
+                                if [ -z "$start_epoch" ] || [ -z "$end_epoch" ] || [ "$end_epoch" -le "$start_epoch" ]; then
+                                    printf 'certificate=missing\n'
+                                elif [ $((end_epoch - $(date +%s))) -lt $(((end_epoch - start_epoch) / 6)) ]; then
+                                    printf 'certificate=expiring\n'
+                                else
+                                    printf 'certificate=ok\n'
+                                fi
+                            fi
                         fi
                         # The Ingress must reach every private address the public site forwards to. A composed
                         # site that serves the Instance directly forwards nowhere and always matches.

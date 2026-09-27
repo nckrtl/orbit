@@ -420,7 +420,9 @@ Doctor skips an Instance in `removing`. A removal that lasts 10 minutes or more 
 | `instance.related_node_unverifiable` | A required related Node is outside the selected set. |
 | `instance.inspection_failed` | A required observation is missing, malformed, or unreachable. |
 
-Doctor builds the expected public site the same way the build does. It also checks that a public Route's Let's Encrypt certificate exists and does not expire within the renewal margin. The forwarding check dials the Router, or the workload Nodes when the Ingress is also the Router. A site that serves the target directly forwards nowhere, so it always passes.
+Doctor builds the expected public site the same way the build does. It also checks that a public Route's Let's Encrypt certificate exists and does not expire within the renewal margin, defined as one sixth of that certificate's lifetime from `notBefore` to `notAfter`. This relative margin avoids raising an alarm at Caddy's own renewal point and scales to shorter certificate lifetimes. While a public Route is mid-issuance and the Ingress serves no valid public certificate yet, Doctor can report a transient TLS issue; it clears once issuance completes.
+
+The forwarding check dials the Router, or the workload Nodes when the Ingress is also the Router. A site that serves the target directly forwards nowhere, so it always passes.
 
 ## Why it works this way
 

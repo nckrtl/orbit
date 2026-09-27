@@ -159,6 +159,7 @@ function bind_task_workspace_fakes(): object
             AppInstance $appInstance,
             ?string $domain,
             bool $recoverSourceProfile = false,
+            bool $setupPending = false,
         ): AppInstance {
             $this->completes++;
 

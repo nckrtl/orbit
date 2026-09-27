@@ -14,5 +14,6 @@ interface DevelopmentAppInstanceProvisioner
         AppInstance $appInstance,
         ?string $domain,
         bool $recoverSourceProfile = false,
+        bool $setupPending = false,
     ): AppInstance;
 }

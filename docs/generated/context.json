@@ -1978,6 +1978,7 @@
                 "Instance",
                 "Node",
                 "Process",
+                "Project",
                 "Route"
             ],
             "governing_adrs": []
@@ -3009,9 +3010,7 @@
             ],
             "concepts": [
                 "Gateway",
-                "Instance",
                 "Node",
-                "Process",
                 "Role"
             ],
             "governing_adrs": []

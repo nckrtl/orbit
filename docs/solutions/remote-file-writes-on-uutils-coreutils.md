@@ -27,7 +27,7 @@ Creating a new file works, and overwriting from a regular file works. Only an ov
 
 ## Solution
 
-Never point a remote `install` from standard input at a live path. Remove any stale `<path>.orbit-candidate`, write the candidate, and then `mv -fT` it onto the target. The move is atomic, which running containers and systemd units need anyway. `MetricsSshExecutor::publishFile()`, `MetricsExporterSshExecutor::publishConfiguration()`, and `NodeAgentSshExecutor::publishFile()` use this sequence. `RemoteProcessRuntimeManager` writes each unit to its own candidate directory, `/etc/orbit/systemd-candidates`, first. It checks the Instance operation lock before installing or starting an Instance Process; a busy lifecycle operation is reported as a conflict instead of a generic remote failure.
+Never point a remote `install` from standard input at a live path. Remove any stale `<path>.orbit-candidate`, write the candidate, and then `mv -fT` it onto the target. The move is atomic, which running containers and systemd units need anyway. `MetricsSshExecutor::publishFile()`, `MetricsExporterSshExecutor::publishConfiguration()`, and `NodeAgentSshExecutor::publishFile()` use this sequence.
 
 ## Limits
 

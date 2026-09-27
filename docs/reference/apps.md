@@ -106,13 +106,11 @@ orbit project:update 3 --repository=https://github.com/acme/site.git --default-b
 | Field | Effect |
 | --- | --- |
 | `type` | Applies at once. A change to `laravel-app` is refused with `project.type_requires_route` while an active Instance has no Route. A change away from `laravel-app` keeps existing Routes. |
-| `slug` | Projects every Instance before publishing the new slug. Generated Routes use the new slug; explicit domains do not change. |
+| `slug` | Projects every Instance before publication, with no partial projection. Checkout paths, production users, and homes stay unchanged. Generated Routes use the new slug; explicit domains do not. |
 | `repository_url` | Runs `git remote set-url origin` in each development checkout. See [Repository changes](#repository-changes). |
 | `default_branch` | Must exist on the remote. Switches every development `default` Instance without a `branch_override`. Its name, path, and Route stay the same. |
 | `root` | Changes the effective root of every Instance without its own root. Orbit reprojects the runtime of each such Instance that has a Route. |
 | `task_check` | Applies at once. Send null or `--clear-task-check` to run no check. |
-
-A slug change projects every Instance before publication. Orbit reports a failure per Instance and never completes with a partial projection. Checkout paths, production users, and homes keep their recorded values.
 
 A type change must keep a valid root. When the stored root is `.` and the new type does not allow it, validation fails on `root`. Send a web root with the type change. A type or root change that leaves a Route target with root `.` returns `route.target_web_root_unsupported`.
 

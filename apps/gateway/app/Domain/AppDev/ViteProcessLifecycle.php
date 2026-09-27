@@ -43,8 +43,10 @@ final readonly class ViteProcessLifecycle
                     throw new ProcessOperationException('vite-prepare', 'vite.development_required', 'The Vite preset requires a development AppInstance.');
                 }
                 $owned = $this->runtime->ownsListener($process, $instance, $port);
-                if ($owned && $start && $explicitStart && ! $restart && $this->runtime->ready($process, $instance, $port)) {
-                    $this->runtime->markAwake($instance);
+                if ($owned && $start && ! $restart && $this->runtime->ready($process, $instance, $port)) {
+                    if ($explicitStart) {
+                        $this->runtime->markAwake($instance);
+                    }
 
                     return;
                 }
