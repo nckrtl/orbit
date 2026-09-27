@@ -6,6 +6,8 @@ use App\Domain\Metrics\ExporterDegradationReason;
 use App\Domain\Metrics\ExporterDegradationRepository;
 use App\Domain\Metrics\ExporterPreference;
 use App\Domain\Metrics\ExporterPreferenceRepository;
+use App\Domain\Metrics\MetricsFleetReconcileException;
+use App\Domain\Metrics\MetricsReconcileComponent;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -63,7 +65,11 @@ it('restores every earlier cadvisor mutation when a later fleet node fails', fun
         projection: app(NativeMetricsExporterProjection::class),
         degradations: app(ExporterDegradationRepository::class),
     )->converge($metrics, $assignment))
-        ->toThrow(ResourceOperationException::class, 'The later cadvisor failed.');
+        ->toThrow(function (MetricsFleetReconcileException $exception) use ($after): void {
+            expect($exception->component)->toBe(MetricsReconcileComponent::Cadvisor);
+            expect($exception->nodeId)->toBe($after->id);
+            expect($exception->errorCode)->toBe('metrics.cadvisor_failed');
+        });
 
     expect($runtime->events)->toBe([
         'snapshot:metrics',
@@ -76,6 +82,51 @@ it('restores every earlier cadvisor mutation when a later fleet node fails', fun
         'restore:before',
         'restore:metrics',
     ]);
+});
+
+it('reports cadvisor rollback failures with the node whose state could not be restored', function (): void {
+    $metrics = cadvisorLifecycleNode('metrics', '10.44.0.3');
+    $assignment = $metrics->roles()->create(['role' => RoleName::Metrics, 'status' => LifecycleStatus::Active]);
+    $candidate = cadvisorLifecycleNode('candidate', '10.44.0.4');
+    $candidate->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
+    $runtime = new class($candidate->name) implements MetricsCadvisorRuntime
+    {
+        public function __construct(private readonly string $candidate) {}
+
+        public function snapshot(Node $node, Node $metricsNode): MetricsExporterState
+        {
+            return new MetricsExporterState(null, false, UfwRuleOwnership::Missing);
+        }
+
+        public function converge(Node $node, Node $metricsNode): void
+        {
+            if ($node->name === $this->candidate) {
+                throw new ResourceOperationException('metrics.cadvisor_convergence_failed', 'converge failed', 502);
+            }
+        }
+
+        public function remove(Node $node, Node $metricsNode): void {}
+
+        public function restore(Node $node, Node $metricsNode, MetricsExporterState $state): void
+        {
+            if ($node->name === $this->candidate) {
+                throw new ResourceOperationException('metrics.cadvisor_restore_failed', 'restore failed', 502);
+            }
+        }
+    };
+
+    $lifecycle = new NativeMetricsCadvisorLifecycle(
+        executor: $runtime,
+        projection: app(NativeMetricsExporterProjection::class),
+        degradations: app(ExporterDegradationRepository::class),
+    );
+
+    expect(fn () => $lifecycle->converge($metrics, $assignment))
+        ->toThrow(function (MetricsFleetReconcileException $exception) use ($candidate): void {
+            expect($exception->component)->toBe(MetricsReconcileComponent::Cadvisor);
+            expect($exception->nodeId)->toBe($candidate->id);
+            expect($exception->errorCode)->toBe('metrics.cadvisor_fleet_rollback_failed');
+        });
 });
 
 it('skips a fleet node it cannot inspect and records why', function (): void {

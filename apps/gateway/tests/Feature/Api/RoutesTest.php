@@ -12,7 +12,9 @@ use App\Domain\AppInstances\Environment\AppInstanceEnvironmentResult;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentRouteDomain;
 use App\Domain\AppInstances\Environment\AppInstanceRouteEnvironmentSynchronizer;
 use App\Domain\Clusters\ClusterState;
+use App\Domain\Metrics\MetricsFleetReconcileException;
 use App\Domain\Metrics\MetricsFleetReconciler;
+use App\Domain\Metrics\MetricsReconcileComponent;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Projects\ProjectType;
 use App\Domain\Routes\PublicRouteEdgeProjector;
@@ -23,6 +25,7 @@ use App\Domain\Routes\RouteRemovalProjector;
 use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppDev\AppDevCaddyConfigRenderer;
 use App\Infrastructure\AppDev\AppDevSiteRepository;
 use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
@@ -173,6 +176,32 @@ it('creates, retries, lists, shows, updates, clears, and removes an explicit Rou
         ->toBe(0)
         ->and(Activity::query()->where('request_id', $destroyRequestId)->sole()->command)
         ->toBe('route:destroy');
+});
+
+it('preserves a structured Metrics runtime failure through the Route update API', function (): void {
+    $route = app(CreateRouteAction::class)->execute(new CreateRouteData(
+        appId: $this->orbitApp->id,
+        domain: 'metrics-error.example.test',
+        publication: RoutePublication::Private,
+        appInstanceId: $this->target->id,
+        nodeId: null,
+        clusterId: null,
+    ))['route'];
+    $metrics = Mockery::mock(MetricsFleetReconciler::class);
+    $metrics->shouldReceive('reconcile')->once()->andThrow(new MetricsFleetReconcileException(
+        MetricsReconcileComponent::Runtime,
+        $this->gateway->id,
+        'metrics.docker_unavailable',
+        'Metrics Docker is unavailable.',
+        502,
+        new ResourceOperationException('metrics.docker_unavailable', 'Metrics Docker is unavailable.', 502),
+    ));
+    app()->instance(MetricsFleetReconciler::class, $metrics);
+
+    $this->patchJson("/api/v1/routes/{$route->id}", ['publication' => 'public'])
+        ->assertStatus(502)
+        ->assertJsonPath('error.code', 'metrics.docker_unavailable')
+        ->assertJsonPath('error.message', 'Metrics Docker is unavailable.');
 });
 
 it('creates targetless exclusive Node and active Cluster scopes', function (): void {

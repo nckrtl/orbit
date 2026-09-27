@@ -9,6 +9,8 @@ use App\Domain\Metrics\ExporterDegradationRepository;
 use App\Domain\Metrics\MetricsCadvisorLifecycle;
 use App\Domain\Metrics\MetricsExporterProjection;
 use App\Domain\Metrics\MetricsExporterProjectionItem;
+use App\Domain\Metrics\MetricsFleetReconcileException;
+use App\Domain\Metrics\MetricsReconcileComponent;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
 use App\Models\NodeRole;
@@ -69,8 +71,16 @@ final readonly class NativeMetricsCadvisorLifecycle implements MetricsCadvisorLi
 
             try {
                 $state = $this->executor->snapshot($candidate, $metricsNode);
-            } catch (ResourceOperationException $exception) {
-                $this->degrade($candidate, $metricsNode, $exception);
+            } catch (Throwable $exception) {
+                if (! $exception instanceof ResourceOperationException) {
+                    throw $this->failure($candidate, $exception);
+                }
+
+                try {
+                    $this->degrade($candidate, $metricsNode, $exception);
+                } catch (Throwable $failure) {
+                    throw $this->failure($candidate, $failure);
+                }
 
                 continue;
             }
@@ -80,33 +90,63 @@ final readonly class NativeMetricsCadvisorLifecycle implements MetricsCadvisorLi
         }
 
         $mutated = [];
+        $failedNode = $metricsNode;
 
         try {
             foreach ($snapshots as $snapshot) {
+                $failedNode = $snapshot['item']->node;
                 $mutated[] = $snapshot;
                 $mutation($snapshot['item']);
             }
         } catch (Throwable $exception) {
+            $mutationFailedNode = $failedNode;
+            $rollbackFailedNode = null;
+
             try {
                 foreach (array_reverse($mutated) as $snapshot) {
-                    $this->executor->restore($snapshot['item']->node, $metricsNode, $snapshot['state']);
+                    $rollbackFailedNode = $snapshot['item']->node;
+                    $this->executor->restore($rollbackFailedNode, $metricsNode, $snapshot['state']);
                 }
             } catch (Throwable $rollback) {
-                throw new ResourceOperationException(
-                    'metrics.cadvisor_fleet_rollback_failed',
-                    'cAdvisor fleet state could not be restored.',
-                    502,
+                throw $this->failure(
+                    $rollbackFailedNode ?? $mutationFailedNode,
                     new ResourceOperationException(
-                        'metrics.cadvisor_fleet_convergence_failed',
-                        $exception->getMessage(),
+                        'metrics.cadvisor_fleet_rollback_failed',
+                        'cAdvisor fleet state could not be restored.',
                         502,
-                        $rollback,
+                        new ResourceOperationException(
+                            'metrics.cadvisor_fleet_convergence_failed',
+                            $exception->getMessage(),
+                            502,
+                            $rollback,
+                        ),
                     ),
                 );
             }
 
-            throw $exception;
+            throw $this->failure($mutationFailedNode, $exception);
         }
+    }
+
+    private function failure(Node $node, Throwable $exception): MetricsFleetReconcileException
+    {
+        $structured = null;
+        for ($cause = $exception; $cause !== null; $cause = $cause->getPrevious()) {
+            if ($cause instanceof ResourceOperationException) {
+                $structured = $cause;
+                break;
+            }
+        }
+
+        return new MetricsFleetReconcileException(
+            MetricsReconcileComponent::Cadvisor,
+            $node->id,
+            $structured->errorCode ?? 'metrics.cadvisor_reconcile_failed',
+            $structured === null ? 'Metrics cAdvisor reconciliation failed.' : $structured->getMessage(),
+            $structured->status ?? 502,
+            $exception,
+            $structured->details ?? [],
+        );
     }
 
     /** @see NativeMetricsExporterLifecycle::degrade() */
