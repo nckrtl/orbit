@@ -1,12 +1,22 @@
+---
+title: "CLI design standard"
+description: "How Orbit CLI commands collect input, ask for consent, and present results, progress, and failures."
+covers:
+  - apps/cli/app/Support/Console/**
+  - apps/cli/tests/Expected/**
+  - apps/cli/design/**
+  - bin/cli-contract
+---
+
 # CLI design standard
 
-This page tells authors and reviewers of commands in `apps/cli` how Orbit collects input and presents results. It defines the shared design standard. A command's adoption record states which requirements have been implemented and verified; publication of this standard does not establish compliance.
+This page tells authors and reviewers of commands in `apps/cli` how Orbit collects input and presents results. It defines the shared design standard. A command's adoption record states which requirements the command meets and how they were verified. This standard alone does not make a command compliant.
 
 ## Scope and authority
 
 The current command contract supplies the command name, permitted selectors, required inputs, defaults, response schema, error codes, exit statuses, and supported modes. This standard supplies the interaction and presentation rules, including explicit destructive consent. A documented exception names its governing contract and verification. An implementation gap is not an exception.
 
-Command vocabulary follows [ADR 0071](/decisions/0071-use-one-verb-vocabulary-across-cli-routes-and-sdk). Product boundaries remain in their owning references and ADRs. A rendering change does not introduce a target fallback, a permission, a new transport, or a new public option.
+Command names follow the [CLI command vocabulary](/reference/cli-command-vocabulary). Product boundaries stay in their owning references. A rendering change does not introduce a target fallback, a permission, a new transport, or a new public option.
 
 ## Input and output modes
 
@@ -160,7 +170,7 @@ These helpers do not migrate a command automatically. Keep its adoption verdict 
 
 ## Canonical renderings
 
-The agreed rendering of a command is its expected output under `apps/cli/tests/Expected`, which the CLI contract tests enforce against recorded Gateway responses. Copy the canonical example for a display instead of the nearest command, because some commands predate this standard. Every change to a rendering appears as a diff in these files, and the reviewer accepts that diff as the new agreed rendering.
+The agreed rendering of a command is its expected output under `apps/cli/tests/Expected`, which the CLI contract tests enforce against recorded Gateway responses. Copy the canonical example for a display instead of the nearest command, because some commands do not follow this standard yet. Every change to a rendering appears as a diff in these files, and the reviewer accepts that diff as the new agreed rendering.
 
 | Display | Canonical command | Expected output |
 | --- | --- | --- |
