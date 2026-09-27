@@ -1934,7 +1934,6 @@
                 "packages/php-sdk"
             ],
             "concepts": [
-                "Extension",
                 "Gateway",
                 "Node",
                 "Process",
@@ -2389,7 +2388,6 @@
                 "packages/php-sdk"
             ],
             "concepts": [
-                "Extension",
                 "Gateway",
                 "Node",
                 "Role",
@@ -3527,7 +3525,6 @@
                 "Activity",
                 "Cluster",
                 "Doctor",
-                "Extension",
                 "Gateway",
                 "Instance",
                 "Node",
@@ -5315,7 +5312,8 @@
                 "Node",
                 "Process",
                 "Role",
-                "Route"
+                "Route",
+                "Tool"
             ],
             "governing_adrs": []
         },
