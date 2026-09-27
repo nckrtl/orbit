@@ -10,7 +10,6 @@ use App\Domain\Doctor\DoctorInspectionException;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
-use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Nodes\Storage\StorageRootResolver;
 use App\Domain\SourceControl\GitRepositoryOrigin;
 use App\Infrastructure\Processes\CommandDeadline;
@@ -77,7 +76,7 @@ final readonly class NativeAppStateInspector implements AppStateInspector
             }
 
             $account ??= $this->accounts->resolve($node);
-            $root = $this->developmentRoot($node, $account, $appInstance->checkout_path);
+            $root = $this->developmentRoot($node, $account);
             $checkouts[] = [
                 'path' => $appInstance->checkout_path,
                 'root' => $root,
@@ -173,11 +172,8 @@ final readonly class NativeAppStateInspector implements AppStateInspector
         return new AppInspectionData(count($checkouts), $match);
     }
 
-    /**
-     * A development checkout lives under the Node's effective apps root, or under the managed
-     * user's home when it predates a configured apps root.
-     */
-    private function developmentRoot(Node $node, ManagedUserAccount $account, string $checkoutPath): string
+    /** Resolves the single managed apps root for development checkouts. */
+    private function developmentRoot(Node $node, ManagedUserAccount $account): string
     {
         try {
             $appsRoot = $this->storageRoots
@@ -187,10 +183,6 @@ final readonly class NativeAppStateInspector implements AppStateInspector
             throw new DoctorInspectionException;
         }
 
-        $checkout = StoragePath::tryParse($checkoutPath);
-
-        return $checkout instanceof StoragePath && $checkout->isInside($appsRoot)
-            ? $appsRoot->value
-            : $account->home;
+        return $appsRoot->value;
     }
 }

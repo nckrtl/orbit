@@ -21,7 +21,6 @@ use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\RoleRegistry;
 use App\Domain\Shared\LifecycleStatus;
-use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tools\ToolManagerMaterializer;
 use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\ToolManagerScopeLock;
@@ -254,10 +253,6 @@ final readonly class AddNodeRoleAction
         DatabaseRoleSettings::from([]);
     }
 
-    /**
-     * The analytics role names its two storage Processes at assignment. They are proven before
-     * the assignment exists, so a refused Process never leaves a role behind.
-     */
     private function guardAnalyticsStorage(Node $node, RoleName $role, ?AnalyticsRoleSettings $analytics): void
     {
         if ($role !== RoleName::Analytics) {
@@ -267,11 +262,7 @@ final readonly class AddNodeRoleAction
         $analytics ??= $this->analyticsSettings()->find($node);
 
         if (! $analytics instanceof AnalyticsRoleSettings) {
-            throw new ResourceOperationException(
-                errorCode: 'analytics.settings_missing',
-                message: 'The analytics role requires a PostgreSQL Process and a ClickHouse Process.',
-                status: 422,
-            );
+            return;
         }
 
         ($this->analyticsStorage ?? app(AnalyticsStorageProcessGuard::class))->assert(

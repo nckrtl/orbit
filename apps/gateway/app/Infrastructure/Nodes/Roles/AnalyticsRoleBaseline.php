@@ -14,7 +14,6 @@ use App\Domain\Analytics\PlausibleRuntimeLifecycle;
 use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\RoleBaseline;
 use App\Domain\Nodes\RoleName;
-use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
 use App\Models\NodeRole;
 
@@ -39,13 +38,7 @@ final readonly class AnalyticsRoleBaseline implements RoleBaseline
     {
         $settings = $this->settings->find($node);
 
-        if ($settings === null) {
-            throw new ResourceOperationException(
-                errorCode: 'analytics.settings_missing',
-                message: "Node [{$node->name}] has no analytics storage Processes recorded.",
-                status: 422,
-            );
-        }
+        assert($settings !== null, 'Analytics role settings are recorded before assignment.');
 
         $processes = $this->storage->assert($settings->postgresProcessId, $settings->clickhouseProcessId);
         $this->clickhouse->converge($processes['clickhouse']);

@@ -236,7 +236,7 @@ it('maps transport failures to an empty typed exception and keeps persisted attr
         ->toBe($before);
 });
 
-it('accepts only a complete healthy Docker CE stack as the Docker prerequisite', function (): void {
+it('requires the configured docker.io package and does not substitute Docker CE', function (): void {
     $ssh = new RoleInspectorSshExecutor([
         role_inspector_result("1\n"),
         role_inspector_result("1\n"),
@@ -251,33 +251,20 @@ it('accepts only a complete healthy Docker CE stack as the Docker prerequisite',
     $filesystem->makeDirectory("{$root}/bin", 0o755, true);
     $filesystem->put(
         "{$root}/bin/dpkg-query",
-        "#!/bin/sh\neval package=\\\${\$#}\n[ \"\$package\" = docker.io ] && exit 1\n[ \"\$package\" = git ] && [ \"\$DOCTOR_STATE\" = missing-git ] && exit 1\n[ \"\$DOCTOR_STATE\" = healthy ] || [ \"\$DOCTOR_STATE\" = missing-git ] || [ \"\$DOCTOR_STATE\" != \"missing-\$package\" ] || exit 1\ncase \"\$*\" in *db:Status-Abbrev*) printf 'ii \\n' ;; *) printf 'install ok installed\\n' ;; esac\n",
-    );
-    $filesystem->put(
-        "{$root}/bin/systemctl",
-        "#!/bin/sh\n[ \"\$DOCTOR_STATE\" != inactive ]\n",
+        "#!/bin/sh\neval package=\\\${\$#}\n[ \"\$package\" = docker.io ] && [ \"\$DOCTOR_STATE\" != docker-io ] && exit 1\n[ \"\$package\" = git ] && [ \"\$DOCTOR_STATE\" = missing-git ] && exit 1\ncase \"\$*\" in *db:Status-Abbrev*) printf 'ii \\n' ;; *) printf 'install ok installed\\n' ;; esac\n",
     );
     chmod("{$root}/bin/dpkg-query", 0o755);
-    chmod("{$root}/bin/systemctl", 0o755);
-    $docker = "{$root}/docker";
-    $filesystem->put($docker, "#!/bin/sh\nexit 0\n");
-    chmod($docker, 0o755);
     try {
         foreach ([
+            'docker-io',
             'healthy',
-            'missing-docker-ce',
-            'missing-docker-ce-cli',
-            'missing-containerd.io',
-            'missing-binary',
-            'inactive',
             'missing-git',
         ] as $state) {
-            chmod($docker, $state === 'missing-binary' ? 0o644 : 0o755);
             $process = new Process(['bash', '-seu', '--', 'acl', 'docker.io', 'git']);
             $process->setEnv(['PATH' => "{$root}/bin:".getenv('PATH'), 'DOCTOR_STATE' => $state]);
-            $process->setInput(str_replace('/usr/bin/docker', $docker, $script));
+            $process->setInput($script);
             $process->run();
-            expect($process->getOutput())->toBe($state === 'healthy' ? "1\n" : "0\n");
+            expect($process->getOutput())->toBe($state === 'docker-io' ? "1\n" : "0\n");
         }
     } finally {
         $filesystem->deleteDirectory($root);

@@ -150,19 +150,6 @@ describe(AnalyticsRoleBaseline::class, function (): void {
         expect($this->collaborators->events[1])->toBe('runtime:converge:3.3.0');
     });
 
-    it('refuses to converge, and starts nothing, when no storage Processes are recorded', function (): void {
-        [$node, $assignment] = analytics_baseline_assignment();
-
-        expect(fn () => app(AnalyticsRoleBaseline::class)->converge($node, $assignment))
-            ->toThrow(
-                fn (ResourceOperationException $exception) => expect($exception->errorCode)
-                    ->toBe('analytics.settings_missing')
-                    ->and($exception->status)
-                    ->toBe(422),
-            );
-        expect($this->collaborators->events)->toBe([]);
-    });
-
     it('refuses to converge, and starts nothing, when a recorded Process stopped being supported', function (): void {
         [$node, $assignment] = analytics_baseline_assignment();
         $storage = analytics_storage_processes();

@@ -995,7 +995,7 @@ it('still reports a truly different app origin despite an insteadOf rule', funct
     }
 });
 
-it('fails app inspection for a checkout outside both the apps root and the home', function (): void {
+it('fails app inspection for a checkout outside the effective apps root', function (): void {
     $app = application_inspector_app();
     $node = application_inspector_node();
     $fixture = application_instance_repository_fixture($app->repository_url);
@@ -1009,7 +1009,7 @@ it('fails app inspection for a checkout outside both the apps root and the home'
             new ProcessInvocation($ssh->commands[0]->arguments, input: $ssh->commands[0]->input),
         );
 
-        expect($ssh->commands[0]->arguments[5])->toBe('/srv/users/nckrtl')
+        expect($ssh->commands[0]->arguments[5])->toBe("{$fixture['sandbox']}/configured")
             ->and($result->succeeded())->toBeFalse()
             ->and($result->stdout)->toBe('');
     } finally {

@@ -35,66 +35,38 @@ it('uses fixed package lists for every role', function (): void {
         ->toBe(['true']);
 });
 
-it('uses healthy Docker CE as the private Docker prerequisite without allowing removals', function (): void {
-    $script =
-        new NodeRolePrerequisiteCommandFactory()->make(
-            new Node,
-            RoleName::AppProd,
-            default_managed_user_account(),
-        )->input ?? '';
+it('always installs docker.io as a prerequisite without allowing package removals', function (): void {
+    $script = new NodeRolePrerequisiteCommandFactory()->make(
+        new Node,
+        RoleName::AppProd,
+        default_managed_user_account(),
+    )->input ?? '';
     $preflight = Str::before($script, 'install -d -m 0755 /opt/orbit');
     $fixture = role_prerequisite_os_release_fixture("ID=ubuntu\nVERSION_CODENAME=\"resolute\"\n");
-    $root = sys_get_temp_dir().'/orbit-docker-ce-'.Str::uuid();
+    $root = sys_get_temp_dir().'/orbit-docker-io-'.Str::uuid();
     $filesystem = new Filesystem;
     $filesystem->makeDirectory("{$root}/bin", 0o755, true);
     $filesystem->put("{$root}/bin/apt-get", "#!/bin/sh\nprintf '%s\\n' \"\$*\" >> \"\$APT_LOG\"\n");
-    $filesystem->put(
-        "{$root}/bin/dpkg-query",
-        "#!/bin/sh\npackage=\${3##*=}\n[ \"\$DOCKER_CE\" = healthy ] || [ \"\$DOCKER_CE\" != missing-\"\$package\" ] && printf 'install ok installed\\n'\n",
-    );
-    $filesystem->put("{$root}/bin/systemctl", "#!/bin/sh\n[ \"\$DOCKER_CE\" = healthy ] && exit 0\nexit 1\n");
-    foreach (['apt-get', 'dpkg-query', 'systemctl'] as $binary) {
-        chmod("{$root}/bin/{$binary}", 0o755);
-    }
-    $docker = "{$root}/docker";
-    $filesystem->put($docker, "#!/bin/sh\nexit 0\n");
-    chmod($docker, 0o755);
+    chmod("{$root}/bin/apt-get", 0o755);
 
     try {
-        foreach ([
-            'healthy',
-            'inactive',
-            'missing-docker-ce',
-            'missing-docker-ce-cli',
-            'missing-containerd.io',
-        ] as $state) {
-            $log = "{$root}/{$state}.log";
-            $process = new Process(role_prerequisite_process_arguments(
-                RoleName::AppProd,
-                ['acl', 'docker.io', 'git'],
-            ));
-            $process->setEnv(['PATH' => "{$root}/bin:".getenv('PATH'), 'APT_LOG' => $log, 'DOCKER_CE' => $state]);
-            $process->setInput(str_replace(
-                ['/etc/os-release', '/usr/bin/docker', 'export DEBIAN_FRONTEND=noninteractive'],
-                [$fixture, $docker, 'export DEBIAN_FRONTEND=noninteractive'],
-                $preflight,
-            ));
-            $process->run();
+        $log = "{$root}/apt.log";
+        $process = new Process(role_prerequisite_process_arguments(
+            RoleName::AppProd,
+            ['acl', 'docker.io', 'git'],
+        ));
+        $process->setEnv(['PATH' => "{$root}/bin:".getenv('PATH'), 'APT_LOG' => $log]);
+        $process->setInput(str_replace('/etc/os-release', $fixture, $preflight));
+        $process->run();
 
-            expect($process->isSuccessful())->toBeTrue($process->getErrorOutput());
-            $commands = file($log, FILE_IGNORE_NEW_LINES);
-            expect($commands)
-                ->toHaveCount(2)
-                ->and($commands[0])
-                ->toBe('update')
-                ->and($commands[1])
-                ->toBe(
-                    $state === 'healthy'
-                        ? 'install --yes --no-install-recommends --no-remove -- acl git'
-                        : 'install --yes --no-install-recommends --no-remove -- acl docker.io git',
-                );
-            expect(implode(' ', $commands))->not->toContain(' remove ', ' purge ', ' autoremove ');
-        }
+        expect($process->isSuccessful())->toBeTrue($process->getErrorOutput())
+            ->and(file($log, FILE_IGNORE_NEW_LINES))
+            ->toBe([
+                'update',
+                'install --yes --no-install-recommends --no-remove -- acl docker.io git',
+            ])
+            ->and($script)
+            ->not->toContain('docker_ce_healthy', 'docker-ce', 'prerequisite_packages');
     } finally {
         $filesystem->deleteDirectory($root);
         if (is_file($fixture)) {
