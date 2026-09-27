@@ -70,11 +70,11 @@ Gateway tests run the shell programs that Orbit installs on Ubuntu Nodes. On mac
 
 Tests of Node programs that use Linux kernel interfaces, such as `/proc/net/tcp` or `os.O_PATH`, run on a Linux test host. The host is beast, an Ubuntu machine like the Nodes, or the SSH host that `ORBIT_LINUX_TEST_HOST` names. On Linux, such as in CI or on beast, these tests run directly. The host must accept `ssh` without a prompt, or these tests fail.
 
-Each test process copies `apps/gateway` to the host with rsync once and reuses the copy. The copy holds only the files that Git tracks and `vendor/`. So ignored files such as keys, logs, caches, and databases stay local, and no `.env` file except `.env.example` leaves your machine. The copy lives in a mode 700 directory under `/tmp/orbit-gateway-linux-tests-<uid>`. The process removes its copy when it ends, also on Ctrl-C or `SIGTERM`. The host stops a test that runs longer than five minutes, or `ORBIT_LINUX_TEST_TIMEOUT` seconds. A later run removes the copies that a killed process left, after six hours.
+Each test process copies `apps/gateway` to the host with rsync once and reuses the copy. The copy holds only the files that Git would track, as `git ls-files --cached --others --exclude-standard` lists them, and `vendor/`. So ignored files such as keys, logs, caches, and databases stay local, and no `.env` file except `.env.example` leaves your machine. The copy lives in a mode 700 directory under `/tmp/orbit-gateway-linux-tests-<uid>`. The process removes its copy when it ends, also on Ctrl-C or `SIGTERM`. The host stops a test that runs longer than five minutes, or `ORBIT_LINUX_TEST_TIMEOUT` seconds. A later run removes the copies that a killed process left, after six hours.
 
 Add regression tests for behavior changes and their important failure modes. Confirm that the tests that exercise the new behavior ran.
 
-GitHub CI runs quality checks and affected tests for all five projects, including documentation lint. Root `composer check` runs the complete local check on a clean commit.
+GitHub CI runs quality checks and affected tests for all five projects, including documentation lint. Root `composer check` runs `bin/review-check`. It runs `composer validate --strict`, `composer check`, and `composer test:affected` in each of the five projects. It checks the working tree as it is, uncommitted changes included, and writes a report under `<git-common-dir>/orbit-checks/<HEAD>/`.
 
 ## Static analysis
 

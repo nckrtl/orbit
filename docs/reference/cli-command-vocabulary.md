@@ -1,18 +1,17 @@
 ---
 title: "CLI command vocabulary"
-description: "The verbs, family actions, and noun-ending commands that name every CLI command, Gateway route, and SDK request."
+description: "The verbs, family actions, and noun-ending commands that name every CLI command and its Gateway route."
 covers:
   - apps/cli/app/Support/CommandVocabulary.php
   - apps/cli/tests/Feature/CommandSurfaceTest.php
   - apps/gateway/routes/api.php
-  - packages/php-sdk/src/Requests/**
 ---
 
 # CLI command vocabulary
 
 This page tells an operator or agent how to name a CLI command. It lists the verbs, how ownership selects a verb pair, the actions that only some families have, and the commands that end in a noun. The CLI lives in `apps/cli`. The [CLI design standard](/reference/cli-ux) covers input and output.
 
-Each command is one noun family and one last segment. The last segment is a verb from the pairs below, an action that its family lists, or a noun-ending command. `CommandVocabulary` in `apps/cli` holds these lists. `CommandSurfaceTest` fails when a registered command, or a Gateway route that serves one, breaks them. It also fails when this page and the lists differ.
+Each command is one noun family and one last segment. The last segment is a verb from the pairs below, an action that its family lists, or a noun-ending command. The vocabulary also allows one hidden internal command, `internal:database-local`. `CommandVocabulary` in `apps/cli` holds these lists. `CommandSurfaceTest` fails when a registered command, or a Gateway route that serves one, breaks them. It also fails when this page and the lists differ.
 
 ## Verb pairs
 
@@ -97,13 +96,11 @@ Five commands end in a noun.
 | `node:settings` | The CLI writes typed [Node settings](/reference/node-settings). |
 | `tasks:agents` | The CLI lists the agent threads of a [task group](/reference/tasks). |
 
-## Gateway routes and SDK requests
+## Gateway route names
 
 The Gateway lives in `apps/gateway`, and it records each route name as the Activity command. A named route must carry the name of its CLI command when two conditions hold. Its name without the last segment is the prefix of a CLI command, and its last segment is allowed for that family. `CommandSurfaceTest` checks every named route in `routes/api.php`.
 
 Some routes have no CLI command. `instance:dependencies:show` reads the stored dependency inventory for the API and SDK. The CLI has `instance:dependencies:scan` and `instance:dependencies:update`, as [Instance dependencies](/reference/instance-dependencies) describes. `tasks:agent-stream` is a server-sent event stream for the web task board.
-
-An SDK request class that serves a CLI command carries the command's verb, such as `CreateClusterRequest` for `cluster:create`.
 
 ## Why it works this way
 
