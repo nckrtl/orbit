@@ -173,7 +173,9 @@
             "path": "docs/cli/dns.mdx",
             "title": "dns",
             "kind": "product",
-            "components": [],
+            "components": [
+                "apps/cli"
+            ],
             "concepts": [
                 "Cluster",
                 "Gateway",
@@ -4554,24 +4556,6 @@
                 "Route"
             ],
             "governing_adrs": []
-        },
-        {
-            "path": "docs/reference/local-resolver-overrides.md",
-            "title": "Local resolver overrides",
-            "kind": "reference",
-            "components": [
-                "apps/cli"
-            ],
-            "concepts": [
-                "Cluster",
-                "Gateway",
-                "Instance",
-                "Node",
-                "Route"
-            ],
-            "governing_adrs": [
-                "0009"
-            ]
         },
         {
             "path": "docs/reference/mcp.mdx",
