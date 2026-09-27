@@ -64,6 +64,8 @@ Both presets refuse keep-alive. Idle halt stops both Processes. The next HTTP re
 
 ## Errors
 
+The Gateway refuses these cases with the listed code.
+
 | Code | Condition |
 | --- | --- |
 | `process.preset_target_invalid` | The target is not a development Instance. |

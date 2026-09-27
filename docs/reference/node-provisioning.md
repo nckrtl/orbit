@@ -217,8 +217,8 @@ Before each command that a process runs, on the Node or on the Gateway, the Gate
 
 The Gateway runs every remote command as a channel on one shared OpenSSH connection per Node. The first command opens the connection. Later commands reuse it, and it closes after 60 idle seconds. A command on a shared connection takes about 18 ms, and a command on a new connection about 190 ms.
 
-- The sockets live in `ORBIT_HOME/ssh/mux`, with mode `0700` on the directory. Every Gateway process runs as the `orbit` user, so web requests, the scheduler, and commands share them.
-- Each socket name hashes the user, the Node address, and the port. A Node with a new address or port gets a new connection at once.
+The sockets live in `ORBIT_HOME/ssh/mux`, and the directory has mode `0700`. Every Gateway process runs as the `orbit` user. So web requests, the scheduler, and commands share the same connections. Each socket name hashes the user, the Node address, and the port. A Node with a new address or port therefore gets a new connection at once.
+
 - A dead Node ends its connection within about 10 seconds, through `ServerAliveInterval=5` and `ServerAliveCountMax=2`.
 - A key or host-key change on the Node applies when the connection closes.
 - When the socket path is too long for a Unix socket, or the directory cannot be created, each command opens its own connection.
