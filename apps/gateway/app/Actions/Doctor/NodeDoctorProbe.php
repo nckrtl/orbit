@@ -12,6 +12,7 @@ use App\Domain\Doctor\DoctorFamily;
 use App\Domain\Doctor\DoctorFamilyProbe;
 use App\Domain\Doctor\DoctorIssueKind;
 use App\Domain\Doctor\DoctorNodeContext;
+use App\Domain\Doctor\NodeDiskFilesystemData;
 use App\Domain\Doctor\NodeDoctorIssueCode;
 use App\Domain\Doctor\NodeInspectionData;
 use App\Domain\Nodes\ManagedNodeEligibility;
@@ -137,6 +138,29 @@ final readonly class NodeDoctorProbe implements DoctorFamilyProbe
                 observed: $inspection->wireGuardAddressMatches,
             );
         }
+        foreach ($inspection->diskFilesystems as $filesystem) {
+            if (! $this->diskIsLow($filesystem)) {
+                continue;
+            }
+            $issues[] = new DoctorIssueData(
+                NodeDoctorIssueCode::DiskLow,
+                DoctorIssueKind::Drift,
+                'node',
+                $node->id,
+                $node->name,
+                'Node filesystem has low free space or free inodes.',
+                expected: 'at least 10% and 2 GiB free space and 10% free inodes',
+                observed: sprintf(
+                    '%s: %d KiB free of %d KiB; %s',
+                    $filesystem->location,
+                    $filesystem->availableKiB,
+                    $filesystem->sizeKiB,
+                    $filesystem->totalInodes === null
+                        ? 'inodes unavailable'
+                        : sprintf('%d of %d inodes free', $filesystem->freeInodes, $filesystem->totalInodes),
+                ),
+            );
+        }
         if ($this->eligibility->allows($node)) {
             if ($inspection->agentBinaryExists === true && $inspection->agentChecksumMatches === false) {
                 $issues[] = new DoctorIssueData(
@@ -203,6 +227,15 @@ final readonly class NodeDoctorProbe implements DoctorFamilyProbe
         }
 
         return DoctorFamilyReportData::fromIssues(DoctorFamily::Node, 1, $issues);
+    }
+
+    private function diskIsLow(NodeDiskFilesystemData $filesystem): bool
+    {
+        return $filesystem->availableKiB < 2 * 1024 * 1024
+            || $filesystem->availableKiB < $filesystem->sizeKiB / 10
+            || ($filesystem->totalInodes !== null
+                && $filesystem->freeInodes !== null
+                && $filesystem->freeInodes < $filesystem->totalInodes / 10);
     }
 
     /** Reports a missing or mismatched agent secret for an eligible managed Node (ADR 0155). */

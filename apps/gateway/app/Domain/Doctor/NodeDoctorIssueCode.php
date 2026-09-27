@@ -7,6 +7,7 @@ namespace App\Domain\Doctor;
 enum NodeDoctorIssueCode: string implements DoctorIssueCode
 {
     case LifecycleNotActive = 'node.lifecycle_not_active';
+    case DiskLow = 'node.disk_low';
     case SshUnreachable = 'node.ssh_unreachable';
     case PlatformMismatch = 'node.platform_mismatch';
     case ArchitectureMismatch = 'node.architecture_mismatch';

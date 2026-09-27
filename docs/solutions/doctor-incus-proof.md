@@ -15,7 +15,9 @@ A proof of the verify-only Doctor runs on a leased `gateway_app-dev_app-prod` to
 
 ## Cause
 
-Doctor reports one finding per inspector that fails, so a fixture must break exactly one inspector. The production Instance inspector runs `sudo bash`. The role inspector runs `sudo ufw`. The firewall inspector also runs it when the selected Node has a persisted or synthetic firewall target. The public Route edge inspector, in the `instance` family, runs `sudo ufw status numbered` on a Node that serves a public Route edge. Doctor checks current projections only. The proof does not need to fixture local DNS snippet compatibility checks.
+Doctor reports one finding per inspector that fails, so a fixture must break exactly one inspector. The Node inspector also reads the free space and free inodes for root and the managed user's home filesystem, including on the Gateway. Low disk space can therefore spoil a baseline even when the intended fixture affects another family.
+
+The production Instance inspector runs `sudo bash`. The role inspector runs `sudo ufw`. The firewall inspector also runs it when the selected Node has a persisted or synthetic firewall target. The public Route edge inspector, in the `instance` family, runs `sudo ufw status numbered` on a Node that serves a public Route edge. Doctor checks current projections only. The proof does not need to fixture local DNS snippet compatibility checks.
 
 A file inventory of the Gateway home also sees changes that are not Doctor writes. SQLite creates and removes its `-wal` and `-shm` sidecars for any connection, including a read-only one. The Caddy build check creates a lock file under the Orbit home's `locks/caddy-build/` directory, and the file stays.
 
@@ -48,7 +50,7 @@ A leased topology is a clone of the promoted snapshot generation, which the last
 bin/e2e-topology exec ISSUE gateway --argv='["orbit","doctor","--json"]' --record="doctor baseline"
 ```
 
-The entry shows exit `0` and no findings. When it shows a finding, converge the affected role with `orbit node:role:add NODE ROLE --converge`, and record the baseline again before you apply a fixture.
+The entry shows exit `0` and no findings. When it shows `node.disk_low`, check the affected Node with `df --output=source,avail,size,iavail,itotal -k -- / "$HOME"` as its managed user. Doctor does not free space; remove only fixtures owned by this lease, or use a fresh topology if the low-space files are not yours. Do not use a role converge to try to clear disk usage. For projection drift, converge the affected role with `orbit node:role:add NODE ROLE --converge`, and record the baseline again before you apply a fixture.
 
 ### Mutation scan, before
 
