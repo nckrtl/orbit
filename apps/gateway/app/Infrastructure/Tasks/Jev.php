@@ -30,6 +30,9 @@ final readonly class Jev
         $callStartedAt = now()->toIso8601String();
         $state = self::property($classification, 'state');
         $questions = self::property($classification, 'questions');
+        if (! is_array($questions)) {
+            $questions = [];
+        }
         $questionData = [];
         foreach ($questions as $key => $question) {
             $questionData[$key] = is_object($question) && method_exists($question, 'toArray')
@@ -429,15 +432,16 @@ final readonly class Jev
         }
         $commits = [];
         foreach ($stored as $commit) {
+            $committedAt = is_array($commit) ? ($commit['committed_at'] ?? null) : null;
             if (! is_array($commit) || ! is_string($commit['sha'] ?? null)
-                || (! is_string($commit['committed_at'] ?? null) && ($commit['committed_at'] ?? null) !== null)
+                || (! is_string($committedAt) && $committedAt !== null)
                 || ! is_array($commit['trailers'] ?? null) || ! array_is_list($commit['trailers'])
                 || array_filter($commit['trailers'], is_string(...)) !== $commit['trailers']) {
                 return null;
             }
             $trailers = $commit['trailers'];
             $message = $trailers === [] ? '' : "Persisted commit trailers\n\n".implode("\n", $trailers);
-            $commits[] = new GitHubPullRequestCommit($commit['sha'], $message, $commit['committed_at']);
+            $commits[] = new GitHubPullRequestCommit($commit['sha'], $message, $committedAt);
         }
 
         return $commits;

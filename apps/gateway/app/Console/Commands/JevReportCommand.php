@@ -37,7 +37,8 @@ final class JevReportCommand extends Command
                 }
                 $labelData = self::decode($call->labels);
                 $labels = is_array($labelData['questions'] ?? null) ? $labelData['questions'] : [];
-                $callLabel = $labelData['call']['label'] ?? null;
+                $callData = is_array($labelData['call'] ?? null) ? $labelData['call'] : [];
+                $callLabel = $callData['label'] ?? null;
                 if ($labels !== [] || is_string($callLabel)) {
                     $labeledCalls++;
                 }
@@ -50,7 +51,8 @@ final class JevReportCommand extends Command
                     }
                     $questionLabels[] = $detail['label'];
                     $answers = self::decode($call->answers);
-                    $probability = $answers[$key]['selected_answer_probability'] ?? null;
+                    $answerData = is_array($answers[$key] ?? null) ? $answers[$key] : [];
+                    $probability = $answerData['selected_answer_probability'] ?? null;
                     if (! is_numeric($probability) || $probability < 0 || $probability > 1 || $detail['label'] === 'unknown') {
                         continue;
                     }

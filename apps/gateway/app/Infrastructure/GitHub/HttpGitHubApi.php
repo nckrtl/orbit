@@ -221,9 +221,12 @@ final readonly class HttpGitHubApi implements GitHubApi
                 throw GitHubApiException::unavailable();
             }
             foreach ($rows as $row) {
-                $sha = is_array($row) ? $this->text($row['sha'] ?? null) : null;
-                $message = is_array($row) ? $this->text($row['commit']['message'] ?? null) : null;
-                $committedAt = is_array($row) ? $this->text($row['commit']['committer']['date'] ?? null) : null;
+                $rowData = is_array($row) ? $row : [];
+                $commit = is_array($rowData['commit'] ?? null) ? $rowData['commit'] : [];
+                $committer = is_array($commit['committer'] ?? null) ? $commit['committer'] : [];
+                $sha = $this->text($rowData['sha'] ?? null);
+                $message = $this->text($commit['message'] ?? null);
+                $committedAt = $this->text($committer['date'] ?? null);
                 if ($sha === null || $message === null) {
                     throw GitHubApiException::unavailable();
                 }
