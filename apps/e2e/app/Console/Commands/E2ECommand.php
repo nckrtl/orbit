@@ -44,6 +44,8 @@ abstract class E2ECommand extends Command
         $worktree = $this->hasOption('worktree') ? $this->option('worktree') : null;
         // argument() is typed from each subclass signature, and that type depends on
         // command discovery order. The input value is what a caller actually passed.
+        // A mixed parameter would still call argument(), which Larastan checks on every
+        // subclass, including commands that do not declare issue.
         $issue = $this->input->getArgument('issue');
         if (! is_string($issue)) {
             throw new InvalidArgumentException('The issue argument must be a string.');

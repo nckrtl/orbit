@@ -50,6 +50,10 @@ export function annotationThread(): Plugin {
                 }
                 response.setHeader("Content-Type", "application/json");
                 response.setHeader("Cache-Control", "no-store");
+                if (process.env.VITE_ORBIT_DEMO) {
+                    response.end(JSON.stringify({ status: "unavailable", reason: "demo" }));
+                    return;
+                }
                 response.end(
                     JSON.stringify(
                         discoverThread(

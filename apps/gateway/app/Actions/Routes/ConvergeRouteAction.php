@@ -76,10 +76,11 @@ final readonly class ConvergeRouteAction
 
             $this->dnsAnswers->waitAfter(Route::query()->find($pending->routeId)?->transition_dns_moved_at);
 
-            if ($pending->restores()) {
+            $failure = $pending->failure;
+            if ($failure instanceof Throwable) {
                 $this->owned($targetIds, fn (): ?Route => $this->restorePlacementOwned($pending->routeId));
 
-                throw $pending->failure;
+                throw $failure;
             }
 
             return $this->owned($targetIds, fn (): ?Route => $this->completePlacementOwned($pending->routeId))

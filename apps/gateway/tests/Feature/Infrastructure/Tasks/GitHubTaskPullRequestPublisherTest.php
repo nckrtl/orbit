@@ -178,6 +178,57 @@ it('refuses to publish without an App, for another host, or when the push fails'
     'rejected push' => [true, 'git@github.com:acme/shop.git', 1, 'The task branch could not be pushed.'],
 ]);
 
+it('names the Workflows permission when GitHub refuses a push that changes .github/workflows', function (): void {
+    GitHubTestSupport::storeApp();
+    publisher_github();
+    $stderr = "early-marker-should-not-appear ghs_publish\n"
+        .str_repeat("remote: counting objects\n", 80)
+        ."remote: refusing to allow a GitHub App to create or update workflow `.github/workflows/ci.yml` without `workflows` permission\n"
+        ."error: failed to push some refs to 'https://x-access-token:ghs_publish@github.com/acme/shop.git'\n";
+    $transport = new AppDevFakeSshExecutor([new CommandResult(1, '', $stderr, 1, false)]);
+
+    expect(fn () => publisher($transport)->push(publisher_group('/srv/orbit/apps/shop/task-7'), str_repeat('a', 40)))
+        ->toThrow(function (TaskPullRequestException $exception) use ($stderr): void {
+            $message = $exception->getMessage();
+
+            expect($message)->toContain('GitHub refused a change under .github/workflows/: grant the Orbit GitHub App the Workflows (read and write) permission, or push the commit yourself.')
+                ->toContain('refusing to allow a GitHub App to create or update workflow `.github/workflows/ci.yml` without `workflows` permission')
+                ->toContain('failed to push some refs')
+                ->not->toContain('ghs_publish')
+                ->not->toContain('early-marker-should-not-appear')
+                ->and(strlen($message))->toBeLessThan((int) (strlen($stderr) / 2));
+        });
+});
+
+it('includes the bounded tail of git stderr and redacts the token when another push fails', function (): void {
+    GitHubTestSupport::storeApp();
+    publisher_github();
+    $basic = base64_encode('x-access-token:ghs_publish');
+    $stderr = "early-marker-should-not-appear\n"
+        .str_repeat("remote: counting objects\n", 80)
+        .'huge-line-start-should-be-cut '.str_repeat('x', 4000)." still-in-the-tail\n"
+        ."error: failed to push some refs to 'https://github.com/acme/shop.git'\n"
+        ."fatal: credential ghs_publish rejected; Authorization: Basic {$basic}\n";
+    $transport = new AppDevFakeSshExecutor([new CommandResult(1, '', $stderr, 1, false)]);
+
+    expect(fn () => publisher($transport)->publish(publisher_group('/srv/orbit/apps/shop/task-7'), 'Body', str_repeat('b', 40)))
+        ->toThrow(function (TaskPullRequestException $exception) use ($stderr, $basic): void {
+            $message = $exception->getMessage();
+
+            expect($message)->toContain('The task branch could not be pushed.')
+                ->toContain("error: failed to push some refs to 'https://github.com/acme/shop.git'")
+                ->toContain('still-in-the-tail')
+                ->toContain('[REDACTED]')
+                ->not->toContain('Workflows')
+                ->not->toContain('ghs_publish')
+                ->not->toContain($basic)
+                ->not->toContain(base64_encode('ghs_publish'))
+                ->not->toContain('early-marker-should-not-appear')
+                ->not->toContain('huge-line-start-should-be-cut')
+                ->and(strlen($message))->toBeLessThan((int) (strlen($stderr) / 2));
+        });
+});
+
 it('names the permissions GitHub has not granted instead of an unreachable GitHub', function (): void {
     GitHubTestSupport::storeApp();
     Http::fake([

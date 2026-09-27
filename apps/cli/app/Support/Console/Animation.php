@@ -409,14 +409,16 @@ final class Animation
                     range(0, max(count($this->frames), count($prefix)) - 1),
                 );
 
-                if ($handoff && $this->parent !== null) {
+                $parent = $this->parent;
+
+                if ($handoff && $parent !== null) {
                     $this->send(json_encode(['frames' => $finalFrames], JSON_THROW_ON_ERROR)."\n");
                     $this->awaitPaint();
                     $this->rendererFrames = $finalFrames;
                     $this->displayedFrame = $finalFrames[0];
                     $this->settledFrame = $settled === '' ? '' : $settled.$this->childrenFrame();
                     $this->region?->record($this->displayedFrame);
-                    $this->parent->takeRenderer($this);
+                    $parent->takeRenderer($this);
 
                     return;
                 }

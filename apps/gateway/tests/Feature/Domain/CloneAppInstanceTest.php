@@ -32,6 +32,7 @@ use App\Domain\AppInstances\Sqlite\SqliteSeedResult;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Projects\ProjectType;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteReplacementStep;
@@ -473,6 +474,22 @@ it('refuses an invalid or occupied destination preview before target reservation
         ->and($this->source->calls)->toBeEmpty()
         ->and($this->writer->contents)->toBeNull();
 })->with(['missing TLD', 'occupied hostname']);
+
+it('refuses a route publication step when the Project no longer requires a Route', function (): void {
+    $this->projection->fail = 'certificate';
+    expect(fn () => $this->action->execute($this->candidate, $this->data))
+        ->toThrow(ResourceOperationException::class);
+
+    $this->projection->fail = null;
+    $this->orbitApp->update(['type' => ProjectType::NodePackage]);
+
+    expect(fn () => $this->action->execute($this->candidate, $this->data))
+        ->toThrow(ResourceOperationException::class, 'The clone preview Route changed.');
+
+    $target = AppInstance::query()->where('name', 'preview')->sole();
+    expect($target->provisioning_step)->toBe('clone-runtime-prepared')
+        ->and($target->error_code)->toBe('instance.lifecycle_conflict');
+});
 
 it('refuses candidate removal while an incomplete clone retains its source dependency', function (): void {
     $this->cloneProjection->fail = 'router-caddy';

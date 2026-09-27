@@ -18,6 +18,7 @@ use Tests\Support\FakeAppInstanceRuntimeReadiness;
 use Tests\Support\ProcessesApiFakeRuntimeManager;
 
 it('reports how many idle AppInstance groups the hibernator halted', function (): void {
+    $this->freezeTime();
     $runtime = new ProcessesApiFakeRuntimeManager;
     $markers = new class implements HibernationMarkerStore
     {

@@ -372,8 +372,8 @@ final readonly class CloneAppInstanceAction
             $this->checkpoint($target, 'clone-definitions-instantiated');
         }
 
-        if ($target->provisioning_step === 'clone-definitions-instantiated') {
-            if (! $route instanceof Route) {
+        if (! $route instanceof Route) {
+            if ($target->provisioning_step === 'clone-definitions-instantiated') {
                 $this->checkpoint($target, 'clone-completed', AppInstanceState::Active);
                 $target->update([
                     'clone_completed_at' => now(),
@@ -385,6 +385,24 @@ final readonly class CloneAppInstanceAction
                 return $target->refresh()->load('routes.targets');
             }
 
+            if (in_array($target->provisioning_step, [
+                'clone-runtime-prepared',
+                'clone-certificate-prepared',
+                'clone-firewall-prepared',
+                'clone-workload-caddy-published',
+                'clone-router-certificate-prepared',
+                'clone-route-firewall-prepared',
+                'clone-workload-verified',
+                'clone-router-caddy-published',
+                'clone-dns-published',
+            ], true)) {
+                throw $this->conflict('instance.lifecycle_conflict', 'The clone preview Route changed.');
+            }
+
+            return $target->refresh()->load('routes.targets');
+        }
+
+        if ($target->provisioning_step === 'clone-definitions-instantiated') {
             $this->prepareRuntime($target, $route);
             $this->checkpoint($target, 'clone-runtime-prepared');
         }

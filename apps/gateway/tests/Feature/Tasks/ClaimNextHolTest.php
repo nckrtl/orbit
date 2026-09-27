@@ -383,6 +383,10 @@ describe('a start that fails after provisioning', function (): void {
 });
 
 describe('the stale reservation sweep', function (): void {
+    beforeEach(function (): void {
+        $this->freezeTime();
+    });
+
     it('returns a group stranded in reserved past the bound to todo and claims it again', function (): void {
         claim_hol_enable();
         $app = claim_hol_app();
@@ -403,6 +407,7 @@ describe('the stale reservation sweep', function (): void {
     });
 
     it('leaves a group reserved within the bound', function (): void {
+        $this->freezeTime();
         claim_hol_enable();
         $fresh = claim_hol_group(claim_hol_app(), 'Provisioning');
         $fresh->forceFill(['status' => TaskGroupStatus::Reserved, 'reserved_at' => now()->subSeconds(3599)])->save();

@@ -11,6 +11,8 @@ This reference is for operators whose Projects live in private `github.com` repo
 
 Each Gateway owns at most one GitHub App. The App is a registration on GitHub with a private key that only this Gateway holds. It has four permissions, `Checks: read`, `Contents: write`, `Metadata: read`, and `Pull requests: write`, and it receives no webhooks. It cannot change repository settings. Each operation asks GitHub for a token with only the permissions it needs, so a read never carries write access.
 
+The list does not include `Workflows`. A push that changes `.github/workflows/` fails while the App lacks that permission. The task reason says so and names `Workflows` as the permission to grant. [Tasks](/reference/tasks#pull-request-and-settle-metrics) describes that failure.
+
 The App is public on GitHub. Public means that any GitHub account can install it, which lets you add organizations that do not own the registration. An installation gives your Gateway access to that account's repositories. It gives the installing account nothing.
 
 The Gateway stores the App ID, slug, and private key as encrypted settings. No API response, activity record, or [Doctor](/concepts#doctor) result contains the key or a token.

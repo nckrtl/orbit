@@ -99,6 +99,7 @@ describe('task workspace reads from the agent view', function (): void {
     });
 
     it('falls back to SSH when the view is stale, the workspace is missing, or its base or start differ', function (string $case): void {
+        $this->freezeTime();
         $instance = view_diff_instance();
         match ($case) {
             'stale' => view_workspace($instance, ageSeconds: 16.0),

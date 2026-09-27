@@ -211,11 +211,17 @@ The script refuses a missing confirmation, an unknown ID, an ID given twice, emp
 
 ### Verify deliverables
 
+Before the handoff check runs the Project check, it validates every `test` deliverable. The `project` is a directory in the checkout, `.` or a path such as `apps/gateway`. The `file` exists in that project. An invalid deliverable fails the check in seconds, and the Project check does not run.
+
+The message names the deliverable id and the bad value. A project that is not a directory fails as `Deliverable sweep-test names project gateway, which is not a directory in the checkout.` A file that does not exist fails as `Deliverable sweep-test names file tests/Feature/SweepTest.php, which does not exist in apps/gateway.` The same words name any other id and value. A bad project is reported on its own, and the file is checked only when that project is a directory. Each invalid `test` deliverable adds one message, in list order.
+
+The group asks for assistance with each message. The implementer gets no reminder, because the implementer cannot change deliverables.
+
 When every other item passes, Orbit runs its [Project check](#project-check) with the deliverables. After the Project's task check passes, or at once when the Project has none, the check script records the diff, runs each `test` file with `vendor/bin/pest FILE --log-junit=…` in its project, and runs each `command` in a login shell. A run that names a file turns off Pest's test impact analysis, so a cached result never counts. The check keeps the end of each command's output.
 
 A `test` with `fails_on_base` set to `true` runs twice, as [Reproduce a bug on the start commit](#reproduce-a-bug-on-the-start-commit) describes. The base run does not change the workspace. It stops after 600 seconds, and a timed-out base run counts as failing on the start commit. The review request includes the kind and the tail of each base failure message.
 
-The `deliverables` item fails when a confirmation is missing or a deliverable does not pass. The reminder names each failing deliverable and why, and the assistance reason repeats it. Like every item, it gets one reminder per completion attempt, then asks for assistance. The reviewer starts only when every deliverable passes.
+The `deliverables` item fails when a confirmation is missing or a deliverable does not pass. The reminder names each failing deliverable and why, and the assistance reason repeats it. Like every item, it gets one reminder per completion attempt, then asks for assistance. An invalid `test` project or file does not use that reminder. The reviewer starts only when every deliverable passes.
 
 A subtask with no deliverables skips these steps. Groups that left Backlog before deliverables existed keep running that way. To add deliverables to such a group, update its `todo` subtasks.
 
@@ -645,8 +651,10 @@ The task stays `running` during the check. On each tick the scheduler reads the 
 | Exit code 0, HEAD and tree unchanged | `passed`. Orbit [verifies the deliverables](#verify-deliverables). When they pass, the reviewer starts. |
 | Exit code not 0 | `failed`. The implementer's reminder holds the exit code and the end of the output. |
 | HEAD or tree changed during the run | `changed`. The check runs again once. A second change fails, and the reminder names the changed paths. |
-| The process is gone without a result | `lost`. The check runs again once. A second loss asks for assistance. |
+| Killed from outside, leaving no result | `lost`. The check runs again once. A second loss asks for assistance. |
 | Cancelled by an operator | `cancelled`. The implementer's reminder says so. |
+
+The check never dies without a result. An unexpected error in the check script writes a failed result, and the output ends with the error. The task shows `failed` with the cause, not `lost`. `lost` means only that the check process was killed from outside.
 
 A new Project gets the task check of its type unless it sends one: `composer check` for `laravel-app` and `laravel-package`, and none for `monorepo` and `node-package`. The type defaults apply to new Projects only. The upgrade sets `composer check` on every existing Project, whatever its type, because every Project ran that check before. An existing Project without a Composer `check` script, such as a `node-package` Project, does not hand off until an operator changes or clears its task check. Change it with `PATCH /api/v1/projects/{project}` or `orbit project:update <project> --task-check=COMMAND`. Clear it with `task_check: null` in the API or `--clear-task-check` in the CLI. `project:show` shows it.
 
@@ -672,9 +680,11 @@ After every approved commit, including the last, the Gateway pushes that stored 
 
 That push is the same one that opens the pull request. [ADR 0160](/decisions/0160-push-each-approved-subtask-and-remove-the-finished-workspace-clone) records the decision.
 
-A failed push counts as a communication failure. The commit stays in the workspace and on the approval comment as `commit_sha`. The Gateway does not reset the branch. The subtask stays in review, so the next subtask does not start and the pull request does not open, until the push succeeds.
+A failed push of an approved commit counts as a communication failure and names git's error. The commit stays in the workspace and on the approval comment as `commit_sha`. The Gateway does not reset the branch. The subtask stays in review, so the next subtask does not start and the pull request does not open, until the push succeeds.
 
 The tick retries the push after 1 minute, then 2, 5, 10, and 30 minutes, and further failures stay at 30 minutes. It does not push on every tick. The fifth consecutive failure asks for assistance with a reason prefixed `Approved commit publication failed: `, and the retries continue on that backoff. When the Gateway cannot read or write that backoff in its cache, it logs a warning and tries the push as if no backoff is stored.
+
+Every failed push of an approved commit names git's error. That includes this publication, cancel, and the sweep that pushes a stored approval before it deletes a cancelled checkout. When the Orbit GitHub App lacks the Workflows permission, GitHub refuses a push that changes `.github/workflows/`. The reason says so and names `Workflows` as the permission to grant.
 
 After the push succeeds, and after the open succeeds on the last subtask, the Gateway clears an assistance request only when its reason starts with `Approved commit publication failed: `. A request with any other cause stays on the subtask and on the group.
 
@@ -848,7 +858,7 @@ Cancellation removes the workspace with the forced Instance remover, which delet
 
 When the Node is unreachable, cancel still marks the group `cancelled` and keeps the Instance attached. It asks for assistance with `Workspace removal failed: ` and returns the group in that state. It does not wait for a push the Node cannot accept. A permanently lost Node does not keep the group open: the operator's cancel ends it, and the Instance row keeps the checkout named until the sweep deletes it or the operator deletes the directory. The sweep retries removal on the backoff under [Scheduler and ceilings](#scheduler-and-ceilings).
 
-When the Node answers, cancellation of a `settling` group with an approved subtask first pushes the latest stored approved commit to `task-{group id}` on `origin`, as `<commit_sha>:refs/heads/task-{group id}`. A failed push returns HTTP 502 with `tasks.push_failed` and keeps the group and its Instance, so you can retry. Uncommitted workspace changes are not pushed. The push runs outside any database transaction. A removal that fails while the Node answers also returns an error, leaves the group uncancelled, and asks for assistance with `Workspace removal failed: `.
+When the Node answers, cancellation of a `settling` group with an approved subtask first pushes the latest stored approved commit to `task-{group id}` on `origin`, as `<commit_sha>:refs/heads/task-{group id}`. A failed push returns HTTP 502 with `tasks.push_failed`, names git's error, and keeps the group and its Instance, so you can retry. Uncommitted workspace changes are not pushed. The push runs outside any database transaction. A removal that fails while the Node answers also returns an error, leaves the group uncancelled, and asks for assistance with `Workspace removal failed: `.
 
 When `origin` already has an unrelated `task-{group id}` branch, Git rejects the push, because it is not a force push. A Gateway rebuild that reuses group IDs causes this. Keep that branch under another name if you need it. Then delete `task-{group id}` on `origin` and cancel again.
 

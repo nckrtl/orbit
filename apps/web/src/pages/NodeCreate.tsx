@@ -147,6 +147,7 @@ export function NodeCreate() {
                     <Field label="Node name" error={errors.name}>
                         <input
                             type="text"
+                            data-testid="node-name"
                             autoFocus
                             placeholder="beast"
                             value={values.name}
@@ -156,6 +157,7 @@ export function NodeCreate() {
                     <Field label="SSH host" error={errors.host}>
                         <input
                             type="text"
+                            data-testid="node-host"
                             placeholder="10.0.0.12 or beast.example.test"
                             value={values.host}
                             onChange={set("host")}
@@ -164,13 +166,19 @@ export function NodeCreate() {
                     <Field label="SSH port" error={errors.port}>
                         <input
                             type="text"
+                            data-testid="node-port"
                             inputMode="numeric"
                             value={values.port}
                             onChange={set("port")}
                         />
                     </Field>
                     <Field label="SSH user" error={errors.user}>
-                        <input type="text" value={values.user} onChange={set("user")} />
+                        <input
+                            type="text"
+                            data-testid="node-user"
+                            value={values.user}
+                            onChange={set("user")}
+                        />
                     </Field>
                     <Field
                         label="Roles"
@@ -181,7 +189,17 @@ export function NodeCreate() {
                             const on = values.roles.includes(role);
 
                             return (
-                                <label key={role} className="option">
+                                <label
+                                    key={role}
+                                    data-testid={
+                                        role === "app-dev"
+                                            ? "node-role-app-dev"
+                                            : role === "app-prod"
+                                              ? "node-role-app-prod"
+                                              : "node-role-gateway"
+                                    }
+                                    className="option"
+                                >
                                     <input
                                         type="checkbox"
                                         className="sr-only"
@@ -205,11 +223,17 @@ export function NodeCreate() {
                         })}
                     </Field>
                     <Field label="TLD for its domains" error={errors.tld}>
-                        <input type="text" value={values.tld} onChange={set("tld")} />
+                        <input
+                            type="text"
+                            data-testid="node-tld"
+                            value={values.tld}
+                            onChange={set("tld")}
+                        />
                     </Field>
                     <div>
                         <button
                             type="submit"
+                            data-testid="create-node"
                             disabled={creating}
                             className="cursor-pointer font-bold text-cyan outline-0 focus:bg-fg focus:text-bg disabled:text-dim"
                         >

@@ -46,7 +46,7 @@ final readonly class LaravelAiTaskSessionClassifier implements TaskSessionClassi
             $outcome = TaskJevOutcome::AssistanceRequired;
         }
 
-        return new TaskJevDecision($outcome, $answer->confidence, 'Jev selected '.$outcome->value.'.');
+        return new TaskJevDecision($outcome, $this->confidence($answer, 'outcome'), 'Jev selected '.$outcome->value.'.');
     }
 
     public function classify(TaskSessionObservation $observation): TaskSessionDecision
@@ -65,18 +65,19 @@ final readonly class LaravelAiTaskSessionClassifier implements TaskSessionClassi
         }
 
         $action = TaskSessionNextAction::tryFrom($answer->choice) ?? TaskSessionNextAction::EscalateCoder;
+        $confidence = $this->confidence($answer, 'next_action');
         $threshold = $this->threshold();
 
-        if ($answer->confidence < $threshold) {
+        if ($confidence < $threshold) {
             return TaskSessionDecision::escalate(
-                'Choice confidence '.$answer->confidence.' is below '.$threshold.'.',
-                $answer->confidence,
+                'Choice confidence '.$confidence.' is below '.$threshold.'.',
+                $confidence,
             );
         }
 
         return new TaskSessionDecision(
             $action,
-            $answer->confidence,
+            $confidence,
             'Jev selected '.$action->value.'.',
         );
     }
@@ -90,6 +91,16 @@ final readonly class LaravelAiTaskSessionClassifier implements TaskSessionClassi
     private function answers(PendingClassification $classification): ClassificationResponse
     {
         return Jev::classify($classification);
+    }
+
+    private function confidence(ChoiceAnswer $answer, string $question): float
+    {
+        $confidence = $answer->confidence;
+        if (! is_float($confidence)) {
+            throw new TaskSessionClassificationException('TypeSafe Jev did not return a confidence for the '.$question.' Choice.');
+        }
+
+        return $confidence;
     }
 
     private function threshold(): float

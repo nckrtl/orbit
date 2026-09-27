@@ -89,6 +89,8 @@ function annotationSpeech(): Plugin {
     return {
         name: "annotation-speech",
         config(_, { mode }) {
+            // Demo mode must not open a socket to a transcription service.
+            if (process.env.VITE_ORBIT_DEMO) return;
             const target =
                 process.env.ANNOTATION_TRANSCRIPTION_TARGET ??
                 loadEnv(mode, rootDir, "ANNOTATION_").ANNOTATION_TRANSCRIPTION_TARGET;
@@ -145,7 +147,11 @@ export default defineConfig({
             // Pure logic: health rules, event application, log and uptime formatting.
             {
                 extends: true,
-                test: { name: "unit", environment: "node", include: ["src/**/*.test.ts"] },
+                test: {
+                    name: "unit",
+                    environment: "node",
+                    include: ["src/**/*.test.ts", "dev/**/*.test.ts"],
+                },
             },
             // The whole app in a real browser against the demo Gateway: keyboard, menus, forms, screens.
             {
