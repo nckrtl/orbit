@@ -3,6 +3,9 @@ title: "Tasks"
 description: "How the optional Gateway Tasks extension coordinates task groups, subtasks, typed deliverables, Project checks, and their lifecycle."
 covers:
   - "apps/gateway/app/Domain/Tasks/**"
+  - "apps/gateway/app/Console/Commands/RenderTaskPromptCommand.php"
+  - "apps/gateway/database/migrations/*_convert_test_deliverables_to_commands.php"
+  - "apps/gateway/resources/tasks/check"
   - "bin/review-check"
 ---
 
@@ -205,7 +208,7 @@ The base run uses a Git archive of the start commit under the clone's `.git/orbi
 
 When the recorded start commit is empty, the base run uses the same fallback as the review diff: the previous subtask's approved commit, or the workspace starting commit for the first subtask. The engine sets the base-run timeout and records its result and evidence. Each Project is responsible for making its command available in the workspace and interpreting runner-specific output. For example, a Project may implement test-name matching or JUnit result checks in its command.
 
-The `paths` list is not a glob. Every listed file must be a safe relative path within the workspace; the base overlay must not allow a path to escape the temporary archive. The handoff evidence records the base and working-tree command results. [ADR 0178](/decisions/0178-run-project-agnostic-tasks-without-a-planner) defines this generic contract.
+The `paths` list is not a glob. Every listed file must be a safe relative path within the workspace; the base overlay must not allow a path to escape the temporary archive. The handoff evidence records the base and working-tree command results. If the base command starts, evidence includes `base_exit_code` and `base_output`; a timed-out run also includes `base_timed_out` and `base_timeout_seconds`. A command with `fails_on_base` must provide `base_cases` as an array. When the base command cannot start, evidence records `base_output` and a nonzero `base_exit_code` without `base_cases`. [ADR 0163](/decisions/0163-prove-a-failing-test-on-the-start-commit) records the proof requirement; [ADR 0178](/decisions/0178-run-project-agnostic-tasks-without-a-planner) defines this generic contract.
 
 Group create, subtask create, and subtask update accept `fails_on_base` and `paths` only on a `command` deliverable. `fails_on_base` must be the JSON boolean `true` or `false`; any other value is HTTP 422 `validation.failed`. The `paths` value must be a list of strings. The error names the deliverable's `id`.
 

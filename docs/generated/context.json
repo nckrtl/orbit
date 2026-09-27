@@ -109,9 +109,11 @@
                 "Node",
                 "Node agent",
                 "Process",
+                "Project",
                 "Route",
                 "Schedule",
                 "Task",
+                "Task check",
                 "Tool"
             ],
             "governing_adrs": []
@@ -2060,6 +2062,7 @@
                 "apps/gateway"
             ],
             "concepts": [
+                "Activity",
                 "Deployment",
                 "Doctor",
                 "Gateway",
@@ -2070,7 +2073,8 @@
                 "Route",
                 "Schedule",
                 "Task",
-                "Task check"
+                "Task check",
+                "Tool"
             ],
             "governing_adrs": []
         },
@@ -2352,7 +2356,9 @@
             "concepts": [
                 "Gateway",
                 "Node",
-                "Route"
+                "Project",
+                "Route",
+                "Task"
             ],
             "governing_adrs": []
         },
@@ -2893,6 +2899,7 @@
                 "0134",
                 "0140",
                 "0160",
+                "0163",
                 "0164",
                 "0165",
                 "0167",

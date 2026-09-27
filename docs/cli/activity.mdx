@@ -14,7 +14,7 @@ covers:
 
 The Gateway records an Activity for every request that can change something and for every request that fails. It keeps a sample of successful reads, as [What the Gateway records](#what-the-gateway-records) explains. The `activity` family lists records and shows one in full. Use it to answer what changed, who changed it, and whether it succeeded.
 
-Every result that the CLI prints carries a Gateway request ID. That ID is the link between a command you ran and the Activity the Gateway kept for it.
+Every result that the CLI prints carries a Gateway request ID. That ID is the link between a command you ran and the Activity the Gateway kept for it. Project create and update requests record the sent source defaults, task check, and legacy test command as activity fields; an omitted field stays omitted.
 
 ## Commands
 
