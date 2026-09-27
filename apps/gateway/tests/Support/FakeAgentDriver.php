@@ -108,7 +108,7 @@ final class FakeAgentDriver implements AgentDriver
         return $this->observation ?? throw new AgentDriverException('Unavailable');
     }
 
-    public function events(AgentThread $thread, ?string $cursor): iterable
+    public function events(AgentThread $thread, ?string $cursor, ?float $timeoutSeconds = null): iterable
     {
         return [];
     }

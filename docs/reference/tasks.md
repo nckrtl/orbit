@@ -7,7 +7,9 @@ description: "How the Gateway tasks extension holds TaskGroup features in Backlo
 
 This page tells an operator how the optional Gateway `tasks` extension runs a Commander-style feature group. A group waits in Backlog while its branch, ADRs, documentation, and subtasks are prepared. Once the group is in Todo, the Gateway provisions its shared Instance, starts agents, and moves each task from turn to turn with run receipts and mechanical checks. It commits approved work and pushes that commit to `origin`, opens and watches the pull request, retains capacity through assistance and merge wait, and removes the workspace clone when the group is cancelled or completed.
 
-[ADR 0103](/decisions/0103-absorb-commander-tasks-as-a-gateway-extension) owns the extension boundary. [ADR 0110](/decisions/0110-route-task-sessions-with-laravel-ai-jev) owns session routing. [ADR 0113](/decisions/0113-gate-task-completion-on-validation-and-review) owns completion gates. [ADR 0122](/decisions/0122-hold-task-groups-in-backlog-until-ready) owns Backlog and Todo. [ADR 0124](/decisions/0124-plan-backlog-groups-with-a-t3-planner) owns planning. [ADR 0160](/decisions/0160-push-each-approved-subtask-and-remove-the-finished-workspace-clone) owns the push after each approval and deletion of the workspace clone. [ADR 0164](/decisions/0164-heal-a-settling-pull-request-with-a-fixup-subtask) owns the fixup that returns a settling group to running. [ADR 0171](/decisions/0171-reset-fixup-caps-after-operator-work) owns when its fixup caps reset. [ADR 0165](/decisions/0165-record-per-thread-token-metrics) owns the per-thread token split. [ADR 0167](/decisions/0167-resume-a-pi-turn-interrupted-by-a-server-restart) owns recovery of a Pi turn that a server restart interrupted. [ADR 0169](/decisions/0169-start-each-subtask-review-in-a-fresh-thread) owns the fresh reviewer thread for each subtask, the review packet, and the MCP search endpoint for the planner and the reviewer.
+[ADR 0103](/decisions/0103-absorb-commander-tasks-as-a-gateway-extension) owns the extension boundary. [ADR 0110](/decisions/0110-route-task-sessions-with-laravel-ai-jev) owns session routing. [ADR 0113](/decisions/0113-gate-task-completion-on-validation-and-review) owns completion gates. [ADR 0122](/decisions/0122-hold-task-groups-in-backlog-until-ready) owns Backlog and Todo. [ADR 0124](/decisions/0124-plan-backlog-groups-with-a-t3-planner) owns planning.
+
+[ADR 0160](/decisions/0160-push-each-approved-subtask-and-remove-the-finished-workspace-clone) owns the push after each approval and deletion of the workspace clone. [ADR 0164](/decisions/0164-heal-a-settling-pull-request-with-a-fixup-subtask) owns the fixup that returns a settling group to running. [ADR 0171](/decisions/0171-reset-fixup-caps-after-operator-work) owns when its fixup caps reset. [ADR 0165](/decisions/0165-record-per-thread-token-metrics) owns the per-thread token split. [ADR 0172](/decisions/0172-count-every-t3-model-call-in-thread-metrics) owns complete T3 per-call collection and gap handling. [ADR 0167](/decisions/0167-resume-a-pi-turn-interrupted-by-a-server-restart) owns recovery of a Pi turn that a server restart interrupted. [ADR 0169](/decisions/0169-start-each-subtask-review-in-a-fresh-thread) owns the fresh reviewer thread for each subtask, the review packet, and the MCP search endpoint for the planner and the reviewer.
 
 [ADR 0170](/decisions/0170-edit-todo-subtasks-after-a-group-starts) changes the rule in ADR 0122 that limits subtask editing to Backlog. It defines edits and cancellation for Todo subtasks after a group starts. It preserves [ADR 0133](/decisions/0133-verify-typed-subtask-deliverables-at-handoff)'s deliverable contract.
 
@@ -306,15 +308,17 @@ The line diff comes from the Node agent's [task workspace](/reference/node-agent
 
 ### Thread token metrics
 
-Each agent thread records five fields beside `tokens`. Null means the driver did not report that field. A reported zero is stored as zero. A failed read keeps the last stored value. Task, TaskGroup, the web task board, and the Coder settle webhook keep the cumulative `tokens` total and do not store this split. `tasks:agents` and `GET /api/v1/task-groups/{group}/agents` show it. [ADR 0165](/decisions/0165-record-per-thread-token-metrics) records the decision.
+Each agent thread records five fields beside `tokens`. Null means the driver did not report that field or a T3 split is partial. A reported zero is stored as zero. A failed read keeps the last stored value. Task, TaskGroup, the web task board, and the Coder settle webhook keep the cumulative `tokens` total and do not store this split. `tasks:agents` and `GET /api/v1/task-groups/{group}/agents` show it. [ADR 0165](/decisions/0165-record-per-thread-token-metrics) records the field meanings, and [ADR 0172](/decisions/0172-count-every-t3-model-call-in-thread-metrics) records complete T3 collection and partial-gap handling.
 
 | Field | Meaning |
 | --- | --- |
 | `input_tokens` | Uncached input summed across model calls, including cache writes |
 | `cached_input_tokens` | Input read from cache, summed across model calls. Cache writes are not included |
 | `output_tokens` | Output, summed across model calls. Reasoning is already included and is not added again |
-| `model_calls` | Model calls that reported usage |
+| `model_calls` | Model calls counted from the driver's per-call updates |
 | `peak_context_tokens` | Largest single-call context. Context is that call's uncached input plus its cached input, so a Pi cache write is inside the peak, and output is excluded |
+
+A T3 split that is partial sets all five fields to null; the internal accumulator retains its known lower bounds. A complete split reports the five fields, including a zero when the driver reports zero.
 
 Average context per call is `(input_tokens + cached_input_tokens) / model_calls`. The cached share of input is `cached_input_tokens / (input_tokens + cached_input_tokens)`. Cache writes sit in that denominator with the other uncached input. The Gateway does not recompute `tokens` from the split.
 
@@ -322,7 +326,15 @@ For Pi, the server's `usage` object carries the sums `input`, `output`, `cacheRe
 
 For T3, the snapshot has no thread-level usage object. Figures sit on `context-window.updated` activities: `usedTokens`, and optionally `totalProcessedTokens`, `inputTokens`, `cachedInputTokens`, `outputTokens`, `reasoningOutputTokens`, and `lastInputTokens`, `lastCachedInputTokens`, `lastOutputTokens`, and `lastReasoningOutputTokens`. `tokens` still prefers the largest `totalProcessedTokens`, then `usedTokens`. The Gateway does not open Codex rollout files.
 
-The five fields are null when any `totalProcessedTokens` is lower than an earlier one, when a call that advances the total lacks integer `inputTokens`, `cachedInputTokens`, and `outputTokens`, when `cachedInputTokens` is greater than `inputTokens` on a counted call, or when no call is counted. A counted call has those three integers and either a `totalProcessedTokens` greater than every earlier one, or no earlier `totalProcessedTokens` and a triple different from the previous counted call. `last*` is the latest update, not a total. `reasoningOutputTokens` is not added. `input_tokens` sums `inputTokens - cachedInputTokens`. `cached_input_tokens` sums `cachedInputTokens`. `output_tokens` sums `outputTokens`. `model_calls` is the number of counted calls. `peak_context_tokens` is the maximum `inputTokens`, which already includes cached input.
+The five fields come from the T3 thread event stream, not the bounded snapshot activity list. The Gateway durably accumulates each valid call payload with running sums, the last counted `totalProcessedTokens`, a separate last observed `totalProcessedTokens`, the greatest event sequence, and a partiality state. It applies the sums and sequence checkpoint atomically, ignores replayed sequences, and considers a payload only when its integer `totalProcessedTokens` advances past the observed watermark.
+
+The observed watermark advances even for an invalid advancing payload. A replay at that same total is ignored, even when the replay contains valid split fields. A valid advancing payload counts once. Repeated updates at the same total do not count another call. `last*` is the latest update, not a total. `reasoningOutputTokens` is not added.
+
+`input_tokens` adds `inputTokens - cachedInputTokens`. `cached_input_tokens` adds `cachedInputTokens`. `output_tokens` adds `outputTokens`. `model_calls` increments once per counted call. `peak_context_tokens` is the maximum `inputTokens`, which already includes cached input.
+
+An initial or fresh stream baseline is not a call. When its cumulative total includes calls before the saved checkpoint, the Gateway advances the observed watermark, marks the split partial, and does not claim a complete split. If the Gateway misses events and cannot resume history, an observed cumulative `totalProcessedTokens` delta still updates `tokens`, but it cannot reconstruct a precise call count or token split. The Gateway retains known sums and the known call count, marks the split partial, and never reports fewer calls than it has already counted.
+
+It does not infer calls or split categories from a total-token delta. A decreasing or unavailable cumulative baseline also marks the split partial rather than subtracting or double counting. Partial sums and peak context are lower bounds for observed calls, not complete thread metrics. Invalid call payloads are not added to the split and make it partial.
 
 On Codex, `inputTokens` includes `cachedInputTokens`, `total_tokens` equals input plus output, and the counted calls match the rollout's `token_usage_record` rows and `thread_token_usage`. A Claude snapshot omits `cachedInputTokens`, so the five fields stay null.
 
@@ -427,7 +439,7 @@ Each archive run, including a scheduler tick or `tasks:archive-threads`, archive
 
 Ticks delete leftover `pending:` reservations only when their task or group is completed or cancelled. While the owner remains active, Orbit keeps the reservation so `TaskAgentSpawner` can retry the spawn using that row; pending rows do not expire based on age.
 
-When the T3 metrics collector lands, the final metrics reading must happen before the thread is archived so it can still be observed. Until that collector is available, archive scheduling does not coordinate with a final T3 metrics reading.
+Orbit archives a T3 thread only after the collector completes a successful final metrics read and sets `t3_metrics_final_at`. If collection is incomplete or fails, the collector retries and archive scheduling leaves the thread available to read, even when a scheduler tick runs first.
 
 To process finished threads without waiting for a tick, run `php artisan tasks:archive-threads`; each invocation uses the same idempotent path and archives up to 10 eligible threads for completed and cancelled subtasks and groups. Archiving does not delete the Orbit `agent_threads` row or its metrics. Pi sessions are files on the Node and are outside this cleanup.
 
@@ -697,7 +709,11 @@ Run the tick with `php artisan tasks:tick` while the extension is enabled. One l
 
 A provisioning failure leaves the group in `todo` with its assistance reason visible, and the tick continues to the next eligible group. The tick tries each failing group once. A full fleet ends the claims for that tick without a reason on any group. Groups that are reserved, running, reviewing, settling, assisted, or awaiting merge count toward the limit of 10.
 
-The Gateway registers `tasks:tick` every ten seconds when the tasks extension is enabled. LIVE Ops must run Laravel's `php artisan schedule:work` process for this schedule to advance sessions; this feature does not provision that process or a fleet cron.
+The Gateway registers `tasks:tick` and `tasks:collect-t3-metrics` every ten seconds when the tasks extension is enabled. The T3 collector reads at most 20 due threads per run, least recently collected first. Failed or incomplete reads use an increasing retry delay so threads outside a failing batch remain eligible on the next run. A heartbeat-only timeout is incomplete; a final collection requires a valid snapshot or event.
+
+A new T3 turn makes its thread eligible again. A terminal thread state counts as settled only when an observation matches the current activity version; task and group terminal statuses are authoritative. T3 sends hold an owner-token lease for up to 60 seconds. The collector and thread observer ignore expired leases, and each collector run removes at most 100 expired lease rows. A late sender cleanup removes only its own lease. A settled thread is excluded only after one successful final read.
+
+LIVE Ops must run Laravel's `php artisan schedule:work` process for this schedule to advance sessions; this feature does not provision that process or a fleet cron.
 
 ### Project check
 
@@ -844,7 +860,7 @@ The Gateway then writes settle metrics. Active groups also refresh these fields 
 | `lines_added`, `lines_deleted` | TaskGroup | Separate branch insertion and deletion counts; null before a successful observation |
 | `duration_ms` | TaskGroup | Elapsed milliseconds from `started_at` to settle, or to now while the group is still active, or `0` when `started_at` is empty |
 
-For T3, token totals use `totalProcessedTokens` when present and otherwise `usedTokens`. Per-thread line counts come from checkpoints. Other drivers supply metrics with the same meaning or leave them unavailable. The [thread token metrics](#thread-token-metrics) are the per-call split beside that total.
+For T3, token totals use `totalProcessedTokens` when present and otherwise `usedTokens`. Per-thread line counts come from checkpoints. Other drivers supply metrics with the same meaning or leave them unavailable. The [thread token metrics](#thread-token-metrics) are the per-call split beside that total. The scheduled T3 collector reads no more than 20 eligible threads each run. Failed or incomplete reads back off exponentially, allowing later threads to make progress; heartbeat-only timeouts do not count as a successful final read. A new T3 turn reopens metrics collection for that thread. Collector failures are reported at most once per thread and exception kind per hour.
 
 ## Coder settle webhook
 
