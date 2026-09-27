@@ -16,7 +16,7 @@ to a Cluster, requires every application request to traverse a Cluster Router,
 and uses only a Cluster TLD for generated AppInstance hostnames. It extends
 [ADR 0011](/reference/routes#publish-a-public-route) with a
 standalone app-prod path and extends
-[ADR 0016](/decisions/0016-reconcile-app-identity-and-source-default-updates) with
+[ADR 0016](/reference/apps#update-a-project) with
 Node-to-Cluster routing-scope reconciliation. Their remaining source,
 placement, routing, ingress, and safety boundaries stay in force.
 
