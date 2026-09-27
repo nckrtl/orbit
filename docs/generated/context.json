@@ -2549,6 +2549,8 @@
                 "Role",
                 "Route",
                 "Schedule",
+                "Task",
+                "Task group",
                 "Tool"
             ],
             "governing_adrs": []

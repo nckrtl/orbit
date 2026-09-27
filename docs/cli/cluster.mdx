@@ -152,7 +152,7 @@ Attaching to an inactive Cluster records membership and leaves Node routing and 
 
 ## orbit cluster:node:remove
 
-Detach a Node from a Cluster. Routes on that Node return to Node scope before membership ends. Generated domains fall back to the Node TLD. The Gateway deletes the Node's `router` assignments that never became active. An active Router blocks the detach.
+Detach a Node from a Cluster. Routes on that Node return to Node scope before membership ends. Generated domains fall back to the Node TLD. The Gateway deletes the Node's `router` assignments that never became active. Any other `router` assignment blocks the detach with `cluster.router_detach_forbidden`.
 
 ```bash
 orbit cluster:node:remove <cluster> <node> [--force]
