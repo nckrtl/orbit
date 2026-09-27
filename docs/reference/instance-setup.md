@@ -51,7 +51,7 @@ Authorized reads return the commands. [Activity](/cli/activity) records no input
 
 ## Run setup
 
-`instance:create` runs the setup list after the Instance and its Route are active. Each command runs with `bash -eu` in the checkout, on the Instance's Node, as the Node's managed user. Commands read no input, and Orbit discards their output. When a step ends, for any reason, Orbit kills its process group, so background processes do not survive the step. Each run holds a lock on the checkout. A second run on the same checkout at the same time fails at once and counts as a failed step.
+`instance:create` runs the setup list after the Instance and its Route are active. Each command runs with `bash -eu` in the checkout, on the Instance's Node, as the Node's managed user. Commands read no input, and Orbit discards their output. When a step ends, for any reason, Orbit kills its process group, so background processes do not survive the step. Each run holds a lifecycle lock on the Instance. If another operation holds that lock, Orbit reports the Instance as busy rather than treating the lock conflict as a failed setup step. A busy lock never removes the Instance.
 
 The first command that exits non-zero or times out stops the list. Then Orbit rolls back the new Instance:
 

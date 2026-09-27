@@ -42,7 +42,7 @@ The type belongs to the Project, so every Instance of one repository behaves the
 | `laravel-package` | Only an explicit Route | No | Yes | `composer check` |
 | `node-package` | Only an explicit Route | No | Yes | none |
 
-`.` means the repository root. A Route cannot target an Instance whose root is `.`. Set a relative web root first.
+`.` means the repository root. A Route cannot target an Instance whose root is `.`. Set a relative web root first. A `laravel-package` Project does not need an `artisan` file.
 
 ## Create a Project
 
@@ -106,11 +106,13 @@ orbit project:update 3 --repository=https://github.com/acme/site.git --default-b
 | Field | Effect |
 | --- | --- |
 | `type` | Applies at once. A change to `laravel-app` is refused with `project.type_requires_route` while an active Instance has no Route. A change away from `laravel-app` keeps existing Routes. |
-| `slug` | Replaces each generated Route with one for the new slug. Explicit domains do not change. Checkout paths, production users, and homes keep their recorded values. |
+| `slug` | Projects every Instance before publishing the new slug. Generated Routes use the new slug; explicit domains do not change. |
 | `repository_url` | Runs `git remote set-url origin` in each development checkout. See [Repository changes](#repository-changes). |
 | `default_branch` | Must exist on the remote. Switches every development `default` Instance without a `branch_override`. Its name, path, and Route stay the same. |
 | `root` | Changes the effective root of every Instance without its own root. Orbit reprojects the runtime of each such Instance that has a Route. |
 | `task_check` | Applies at once. Send null or `--clear-task-check` to run no check. |
+
+A slug change projects every Instance before publication. Orbit reports a failure per Instance and never completes with a partial projection. Checkout paths, production users, and homes keep their recorded values.
 
 A type change must keep a valid root. When the stored root is `.` and the new type does not allow it, validation fails on `root`. Send a web root with the type change. A type or root change that leaves a Route target with root `.` returns `route.target_web_root_unsupported`.
 
@@ -123,13 +125,13 @@ The Gateway applies `slug`, `repository_url`, `default_branch`, and `root` as on
 | `reserved` | Records the request and the previous values. |
 | `preflighted` | Checks every affected checkout, worktree, and generated domain. |
 | `prepared` | Switches branches, changes origins, and creates replacement Routes. The old values stay in effect. |
-| `publishing` | Stores the new Project values. Replaces generated Routes and updates each Instance's Laravel URL, environment, and runtime. Reprojects routed Instances that inherit a changed root. |
+| `publishing` | Publishes the new Project values after projection succeeds. Replaces generated Routes and updates Instance URLs, environments, and runtimes. |
 | `cleaning_up` | Checks that no production Instance changed. |
 | `complete` | Done. |
 
 A failure before `publishing` rolls back: Orbit restores origins, branches, and Routes and ends in `rolled_back`. A rollback that fails stays `rolling_back`, and an identical retry continues it. A failure after `publishing` starts stays in place, and an identical retry continues forward. A different update while one is incomplete returns `app.update_in_progress`.
 
-In the `publishing` step, a failure to update one Instance's Laravel URL, environment, or runtime does not fail the update. Run [Doctor](/cli/doctor) after a slug change to find an Instance that needs attention.
+Run [Doctor](/cli/doctor) to inspect any projection that needs attention.
 
 ### Repository changes
 
@@ -141,7 +143,7 @@ Every origin check reads the `remote.origin.url` stored in the checkout. It igno
 
 `project:destroy` removes a Project that has no Instances and no Routes. It deletes the Project's process and Schedule definitions, setup and teardown steps, Node exclusions, and update records.
 
-A Project with task groups cannot be removed. The database refuses the delete, and the Gateway returns the generic `gateway.unhandled` error with HTTP 500, not an Orbit code.
+A Project with task groups cannot be removed. The Gateway refuses the request with HTTP 409 and `project.has_task_groups`.
 
 ## Errors
 

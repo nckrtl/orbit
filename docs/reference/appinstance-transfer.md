@@ -43,13 +43,13 @@ The destination gets an independent checkout, even when the source is a worktree
 
 Every transfer runs in this order:
 
-1. Orbit copies the source checkout to the destination.
-2. It stops the source Processes and timers, with or without SQLite.
+1. Orbit stops the source Processes and timers, with or without SQLite.
+2. It copies the source checkout to the destination.
 3. When you select a SQLite file, it takes one consistent snapshot and installs it at the destination.
 
-The checkout is copied before the stop. A file that a running Process writes between steps 1 and 2 does not reach the destination. Orbit copies no other database or data path.
+Stopping Processes before the final checkout copy prevents their writes from being missed. Orbit copies no other database or data path.
 
-Orbit imports the source `.env` into the [stored environment](/reference/environment-variables). A key that is already stored keeps its stored value. When Orbit cannot read the source `.env`, it imports nothing and continues. Then Orbit writes the destination `.env` from the stored environment.
+Orbit imports the source `.env` into the [stored environment](/reference/environment-variables). A key that is already stored keeps its stored value. An unreadable source `.env` refuses the transfer. If a failure occurs before cutover, Orbit removes environment keys imported by that transfer along with the other prepared destination state.
 
 Process and Schedule records keep their IDs, definitions, and desired states. Orbit stops their source units, creates them on the destination, and leaves no duplicate. The destination gets its own [Vite port](/reference/assigned-vite-ports), and Orbit releases the source port after cleanup.
 
@@ -65,7 +65,7 @@ Cutover is the moment the destination becomes authoritative.
 
 - A failure before cutover restarts the source Processes and Schedules and keeps the source Route.
 - It also deletes the destination checkout, the destination Vite port, and a replacement Route that is not active yet.
-- Keys imported into the stored environment stay.
+- Keys imported into the stored environment are removed; keys that were already stored before the transfer remain.
 - After cutover, recovery only goes forward. Orbit never restarts the source. It finishes the Route, runtime, and cleanup without copying the source again.
 
 A failed or unfinished transfer stays open. Only the identical request resumes it, and it is the only way to close it: a different transfer returns `instance.transfer_retry_conflict`, and removal returns `instance.transfer_incomplete`. For a pending transfer, the CLI offers the retry and names the original source Node.

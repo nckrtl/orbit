@@ -51,12 +51,12 @@ Orbit writes `ORBIT_DEV_SERVER_PORT` to the environment file before each start. 
 Every start of the preset runs one preparation step:
 
 1. A start does nothing when the preset's own Vite already answers on the port.
-2. Orbit removes the Instance's awake marker, so requests go to the [wake page](/reference/app-dev-runtime-hibernation#wake) until a wake writes it again.
+2. An explicit start of the `vp-dev` preset leaves the Instance's awake marker in place, so an awake site stays awake.
 3. Orbit checks the port again. Another listener on the port makes Orbit pick a new port. The other listener keeps running.
 4. It writes the environment file and points the workload Caddy's `/__orbit/vite` path at the port.
 5. It starts Vite and waits until Vite answers the client request on that port.
 
-When a port is taken between the check and the bind, Orbit retries with a new port. It makes at most three attempts within the deadline. Another startup error does not change the port. After `process:start` or `process:restart` of the preset, the next HTTP request goes through the wake page. When Vite does not become ready, the start fails with `vite.not_ready` and wake stays incomplete.
+When a port is taken between the check and the bind, Orbit retries with a new port. It makes at most three attempts within the deadline. Another startup error does not change the port. After `process:restart` of the preset, the next HTTP request goes through the wake page. An explicit `process:start` does not put an awake site back to sleep. When Vite does not become ready, the start fails with `vite.not_ready`.
 
 ## Application setup
 

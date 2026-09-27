@@ -116,11 +116,11 @@ An identical `instance:create` for an active Instance returns it unchanged and r
 
 ## Laravel application URL
 
-Orbit treats a source as Laravel when it has a regular `artisan` file and a `composer.json` that declares `laravel/framework` exactly once, in `require` or `require-dev`. A source with a `composer.json` and neither marker is plain PHP. A source without `composer.json` has no PHP. Every Project type runs this check, including packages.
+For Project types other than `laravel-package`, Orbit treats a source as Laravel when it has a regular `artisan` file and a `composer.json` that declares `laravel/framework` exactly once, in `require` or `require-dev`. A source with a `composer.json` and neither marker is plain PHP. A source without `composer.json` has no PHP. A `laravel-package` Project is exempt from this application-marker validation: it needs no `artisan`, and a `laravel/framework` declaration alone is valid.
 
 | Source | Code |
 | --- | --- |
-| `artisan` without the declaration, the declaration without `artisan`, the declaration in both sections, or a symlinked `artisan` | `app-dev.laravel_source_invalid` |
+| For a non-package Project: `artisan` without the declaration, the declaration without `artisan`, the declaration in both sections, or a symlinked `artisan` | `app-dev.laravel_source_invalid` |
 | `composer.json` is a symlink, is not a regular file, or is not owned by the Node's managed user; or `artisan` exists without `composer.json` | `app-dev.source_metadata_unsafe` |
 | `composer.json` is invalid JSON, or no supported PHP version meets its constraint | `app-dev.php_version_unsupported` |
 

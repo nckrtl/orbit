@@ -258,7 +258,7 @@ The Ingress firewall opens `orbit:ingress-http` (port 80) and `orbit:ingress-htt
 
 A publication-only change keeps the Route ID and the domain. To publish, the Gateway verifies the private hops, stores `public-activated`, and builds the Ingress Node, so Caddy can obtain the certificate. Then it opens the Ingress firewall and stores `ingress-firewall`. The public site stays unreachable until those steps succeed, also when another Route already keeps the Ingress ports open. A failed step returns its error to the caller. On a Route that is not `active`, it also stores `failed_step` and `error_code`.
 
-Nothing in Orbit waits for or watches certificate issuance. Caddy requests the certificate after the build and retries on its own. Doctor checks only that the site asks Caddy to manage its certificate. So a Let's Encrypt failure shows only in Caddy's log on the Ingress Node, and as a TLS failure for clients.
+Nothing in Orbit waits for or watches certificate issuance. Caddy requests the certificate after the build and retries on its own. Doctor reports a public Route whose Let's Encrypt certificate is missing or expires within the renewal margin, in addition to checking that the site asks Caddy to manage its certificate. Other issuance failures appear in Caddy's log on the Ingress Node and as a TLS failure for clients.
 
 A change of both domain and publication reserves a replacement Route with the new publication. The current Route stays authoritative until cutover, as in [Change an explicit domain](#change-an-explicit-domain). Only a Route whose targets are production Instances can be public.
 
@@ -412,13 +412,13 @@ Doctor skips an Instance in `removing`. A removal that lasts 10 minutes or more 
 | `instance.target_set_mismatch` | Router Caddy does not publish the Route's ordered target set. |
 | `instance.route_association_mismatch` | An Instance has no Route, or more than one. |
 | `instance.public_ingress_mismatch` | The Ingress Caddyfile lacks the public site that a build renders for it. |
-| `instance.public_tls_mismatch` | The public site pins an Orbit CA leaf, or it lacks `tls force_automate` while the Node disables certificate management. |
+| `instance.public_tls_mismatch` | The public site pins an Orbit CA leaf, lacks `tls force_automate` while the Node disables certificate management, or its Let's Encrypt certificate is missing or expires within the renewal margin. |
 | `instance.private_forwarding_mismatch` | The Ingress cannot open a TCP connection to an address its public site forwards to. |
 | `instance.public_firewall_mismatch` | The Ingress firewall is inactive, or it lacks a managed rule for port 80 or 443. |
 | `instance.related_node_unverifiable` | A required related Node is outside the selected set. |
 | `instance.inspection_failed` | A required observation is missing, malformed, or unreachable. |
 
-Doctor builds the expected public site the same way the build does. The forwarding check dials the Router, or the workload Nodes when the Ingress is also the Router. A site that serves the target directly forwards nowhere, so it always passes.
+Doctor builds the expected public site the same way the build does. It also checks that a public Route's Let's Encrypt certificate exists and does not expire within the renewal margin. The forwarding check dials the Router, or the workload Nodes when the Ingress is also the Router. A site that serves the target directly forwards nowhere, so it always passes.
 
 ## Why it works this way
 

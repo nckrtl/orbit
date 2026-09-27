@@ -26,7 +26,7 @@ Every command accepts `--json`. `gateway:use` and `gateway:remove` work locally.
 Add a Gateway profile. The CLI trusts the Gateway root CA first and saves the profile after that. The first profile becomes the active profile.
 
 ```bash
-orbit gateway:add <gateway> [--name=NAME] [--ca=PATH] [--use] [--json]
+orbit gateway:add <gateway> [--name=NAME] [--ca=PATH] [--accept-ca-change] [--use] [--json]
 ```
 
 | Argument | Required | Meaning |
@@ -35,7 +35,7 @@ orbit gateway:add <gateway> [--name=NAME] [--ca=PATH] [--use] [--json]
 
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `--name=NAME` | `default` | Local profile name. Adding a profile with an existing name replaces it, including its pin. |
+| `--name=NAME` | `default` | Local profile name. If the name already exists, a changed CA is refused with `gateway.ca_changed` unless `--accept-ca-change` is passed. |
 | `--ca=PATH` | none | Absolute path to a root CA certificate that the fetched certificate must match. |
 | `--use` | off | Make the profile active. |
 
@@ -44,7 +44,7 @@ orbit gateway:add 10.70.0.1 --use
 orbit gateway:add https://gateway.example.com --name=production --ca=/etc/orbit/production-root.pem
 ```
 
-`gateway:add` compares the fetched certificate only with `--ca`. It does not compare it with the pin of a profile it replaces, so adding an existing name without `--ca` replaces a trusted pin with no check.
+When the profile name already exists, `gateway:add` compares the fetched certificate with that profile's pin, as `gateway:trust` does. A changed CA fails with `gateway.ca_changed` unless `--accept-ca-change` is passed. `--ca`, when supplied, must also match the fetched certificate.
 
 JSON output returns the profile with its `url` and `ca_path`, whether it is active, `trust_status` (`trusted` or `already_trusted`), the certificate `sha256` fingerprint, and the Gateway `request_id`.
 
@@ -54,7 +54,7 @@ JSON output returns the profile with its `url` and `ca_path`, whether it is acti
 | `gateway.ca_unavailable`, `gateway.ca_fetch_failed` | The CLI could not reach or safely fetch the root CA endpoint. An error code from the Gateway's answer, such as `ca.unavailable`, passes through. |
 | `gateway.ca_invalid` | The Gateway returned invalid certificate material, or a fingerprint that does not match. |
 | `gateway.ca_pin_invalid` | The `--ca` file is not a readable certificate. |
-| `gateway.ca_changed` | The fetched certificate differs from the `--ca` file. |
+| `gateway.ca_changed` | The fetched certificate differs from the `--ca` file or the existing profile pin. |
 | `gateway.ca_verification_failed` | The pinned HTTPS request did not return the same certificate. |
 | `gateway.ca_store_failed` | The CLI could not store the certificate under `ORBIT_HOME`. |
 | `gateway.ca_install_failed` | The CLI could not check or update the operating-system trust store. |
