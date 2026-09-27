@@ -15,7 +15,7 @@ The [Routes reference](/reference/routes) describes the Route record, domain sel
 
 | Command | Result |
 | --- | --- |
-| [`route:create`](#orbit-routecreate) | Create an explicit Project Route or a custom proxy Route. |
+| [`route:create`](#orbit-routecreate) | Create a custom proxy Route or retry an existing active Project Route. |
 | [`route:list`](#orbit-routelist) | List Routes. |
 | [`route:show`](#orbit-routeshow) | Show one Route. |
 | [`route:update`](#orbit-routeupdate) | Change the domain or publication of an explicit Project Route. |
@@ -56,9 +56,11 @@ orbit route:create executor.orbit --node=beast --upstream=http://127.0.0.1:4788
 orbit route:create executor.orbit --node=beast --process=executor
 ```
 
-`--upstream` or `--process` selects the custom proxy form. Its first argument is the domain, and it needs `--node`. It refuses a Project, `--target`, `--cluster`, and public publication. A Project Route is stored with `pending` status and gets no traffic path. See [Create and change targets](/reference/routes#create-and-change-targets).
+`--upstream` or `--process` selects the custom proxy form. Its first argument is the domain, and it needs `--node`. It refuses a Project, `--target`, `--cluster`, and public publication. A successful custom proxy request converges its Node-local serving path.
 
-Before it sends a request, the CLI refuses `--target` together with a scope option (`route.scope_conflict`), and a Route without a target that lacks exactly one scope (`route.scope_required`). An identical second request returns the existing Route.
+The Project form does not create a new pending Route. The first Project example is refused with `route.activation_unsupported` when Instance 12 has no Route association; if another Route already targets it, the request returns `route.target_conflict`. An identical request for an existing active Route returns that Route. The targetless Cluster example is refused with `route.target_required`. Neither refusal creates a Route or target association. An identical retry for an existing pending Project Route returns `route.activation_unsupported`; it does not resume or activate the Route. The custom proxy examples use a separate flow and can succeed when their Node and upstream or Process are valid. See [Create and change targets](/reference/routes#create-and-change-targets).
+
+Before it sends a request, the CLI refuses `--target` together with a scope option (`route.scope_conflict`), and a Route without a target that lacks exactly one scope (`route.scope_required`). An identical retry for an existing active Project Route returns that Route.
 
 | Error code | Meaning |
 | --- | --- |
@@ -67,6 +69,8 @@ Before it sends a request, the CLI refuses `--target` together with a scope opti
 | `route.retry_conflict` | A Route with this domain exists with a different Project, publication, scope, target, or upstream. |
 | `route.target_app_conflict` | The target Instance belongs to another Project. |
 | `route.target_inactive` | The target Instance is not active. |
+| `route.target_required` | A new targetless Project Route would remain pending. |
+| `route.activation_unsupported` | The requested Instance Route cannot be activated here, or an existing pending Project Route was retried. |
 | `route.target_web_root_unsupported` | The target Instance has no supported relative web root, such as a package rooted at `.`. |
 | `route.target_conflict` | The target Instance already belongs to another Route. |
 | `route.router_required` | The Cluster has no active Router. |
@@ -123,6 +127,7 @@ During a domain change, `route:show` shows both Routes, `replacement_step`, `fai
 | `route.domain_conflict` | Another Route owns the new domain. |
 | `route.domain_change_conflict` | Another domain change is in progress. |
 | `route.reconciliation_required` | The Route or its targets do not allow this change, for example a public domain for development Instances. |
+| `instance.source_profile_missing` | A target has no recorded source profile. Orbit does not recover missing profiles on older Instances; see ADR 0177. |
 
 ## orbit route:target:set
 
@@ -169,7 +174,7 @@ orbit route:destroy <route> [--yes]
 ```
 
 <Warning>
-The Gateway refuses removal with `route.target_conflict` while an active Instance depends on the Route. Remove the Instance with `instance:destroy` instead. That removal deletes the Route when it removes the last target.
+The Gateway refuses removal with `route.target_conflict` while an active Instance depends on the Route. Remove the Instance with `instance:destroy` instead. That removal deletes the Route when it removes the last target. The Gateway also refuses direct removal of analytics tracking Routes with `route.tracking_managed`; disable analytics on the Instance instead. A Route kind that cannot be destroyed returns `route.kind_invalid`.
 </Warning>
 
 `route:destroy` and `route:target:unset` resolve the Route and then ask for confirmation, with No selected. Pass `--yes` for automation, also with `--json`. Declining, Ctrl-C, or end of input returns `input.cancelled` and sends nothing. A call without a terminal and without `--yes` returns `input.confirmation_required`.

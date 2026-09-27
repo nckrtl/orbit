@@ -176,9 +176,12 @@ final class Orb245TransferRuntime implements AppInstanceTransferRuntime
     /** @var list<string> */
     public array $calls = [];
 
+    public ?Closure $onPause = null;
+
     public function pause(AppInstance $instance): void
     {
         $this->calls[] = 'pause';
+        ($this->onPause)?->__invoke($instance);
     }
 
     public function restore(AppInstance $instance): void

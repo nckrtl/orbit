@@ -114,47 +114,6 @@ describe('node storage settings', function (): void {
         expect(Node::query()->where('name', 'app-dev')->sole()->settings)->toBeNull();
     });
 
-    it('patches and unsets apps without retaining leftover storage keys', function (): void {
-        $node = Node::query()->create([
-            'name' => 'app-dev',
-            'status' => LifecycleStatus::Active,
-            'public_ssh_host' => '192.0.2.10',
-            'user' => 'orbit',
-            'wireguard_ip' => '10.44.0.3',
-            'settings' => [
-                'apps' => ['path' => '/srv/orbit/apps'],
-                'instance' => ['path' => '/srv/orbit/instances'],
-                'worktree' => ['path' => '/srv/orbit/worktrees'],
-            ],
-        ]);
-        $node->roles()->create([
-            'role' => RoleName::AppDev,
-            'status' => LifecycleStatus::Active,
-        ]);
-
-        $this
-            ->patchJson("/api/v1/nodes/{$node->id}/settings", [
-                'apps' => ['path' => '/mnt/apps'],
-            ])
-            ->assertOk()
-            ->assertJsonPath('data.settings.apps.path', '/mnt/apps')
-            ->assertJsonMissingPath('data.settings.instance')
-            ->assertJsonMissingPath('data.settings.worktree');
-
-        expect($node->refresh()->settings)->toBe([
-            'apps' => ['path' => '/mnt/apps'],
-        ]);
-
-        $this
-            ->patchJson("/api/v1/nodes/{$node->id}/settings", [
-                'apps' => null,
-            ])
-            ->assertOk()
-            ->assertJsonPath('data.settings', null);
-
-        expect($node->refresh()->settings)->toBeNull();
-    });
-
     it('rejects unknown settings keys without persisting', function (): void {
         $node = Node::query()->create([
             'name' => 'app-dev',
@@ -172,35 +131,6 @@ describe('node storage settings', function (): void {
             ->assertJsonPath('error.code', 'node.settings_invalid');
 
         expect($node->refresh()->settings)->toBeNull();
-    });
-
-    it('stores an apps root without consulting leftover worktree settings', function (): void {
-        $node = Node::query()->create([
-            'name' => 'app-dev',
-            'status' => LifecycleStatus::Active,
-            'public_ssh_host' => '192.0.2.10',
-            'user' => 'orbit',
-            'wireguard_ip' => '10.44.0.3',
-            'settings' => [
-                'worktree' => ['path' => '/srv/orbit/source/worktrees'],
-            ],
-        ]);
-        $node->roles()->create([
-            'role' => RoleName::AppDev,
-            'status' => LifecycleStatus::Active,
-        ]);
-
-        $this
-            ->patchJson("/api/v1/nodes/{$node->id}/settings", [
-                'apps' => ['path' => '/srv/orbit/source'],
-            ])
-            ->assertOk()
-            ->assertJsonPath('data.settings.apps.path', '/srv/orbit/source')
-            ->assertJsonMissingPath('data.settings.worktree');
-
-        expect($node->refresh()->settings)->toBe([
-            'apps' => ['path' => '/srv/orbit/source'],
-        ]);
     });
 
     it('rejects protected roots on a node without app-dev before persisting', function (): void {
@@ -351,9 +281,6 @@ describe('node storage settings', function (): void {
             'public_ssh_host' => '192.0.2.10',
             'user' => 'orbit',
             'wireguard_ip' => '10.44.0.3',
-            'settings' => [
-                'worktree' => ['path' => '/srv/orbit/worktrees'],
-            ],
         ]);
         $node->roles()->create([
             'role' => RoleName::AppDev,
@@ -367,41 +294,6 @@ describe('node storage settings', function (): void {
             ->assertUnprocessable()
             ->assertJsonPath('error.code', 'node.settings_path_protected');
 
-        expect($node->refresh()->settings)->toBe([
-            'worktree' => ['path' => '/srv/orbit/worktrees'],
-        ]);
-    });
-
-    it('updates apps without writing leftover worktree settings', function (): void {
-        $inspected = [];
-        $prepared = [];
-        app()->instance(NodeStorageRootPreparer::class, recording_storage_preparer($inspected, $prepared));
-        $node = Node::query()->create([
-            'name' => 'app-dev',
-            'status' => LifecycleStatus::Active,
-            'public_ssh_host' => '192.0.2.10',
-            'user' => 'orbit',
-            'wireguard_ip' => '10.44.0.3',
-            'settings' => [
-                'worktree' => ['path' => '/home/orbit/.orbit/worktrees'],
-            ],
-        ]);
-        $node->roles()->create([
-            'role' => RoleName::AppDev,
-            'status' => LifecycleStatus::Active,
-        ]);
-
-        $this
-            ->patchJson("/api/v1/nodes/{$node->id}/settings", [
-                'apps' => ['path' => '/srv/orbit/apps'],
-            ])
-            ->assertOk()
-            ->assertJsonPath('data.settings.apps.path', '/srv/orbit/apps');
-
-        expect($node->refresh()->settings)
-            ->toBe([
-                'apps' => ['path' => '/srv/orbit/apps'],
-            ]);
     });
 
     it('rejects an apps root that is a descendant of the worktree default', function (): void {
@@ -411,9 +303,6 @@ describe('node storage settings', function (): void {
             'public_ssh_host' => '192.0.2.10',
             'user' => 'orbit',
             'wireguard_ip' => '10.44.0.3',
-            'settings' => [
-                'worktree' => ['path' => '/srv/orbit/worktrees'],
-            ],
         ]);
         $node->roles()->create([
             'role' => RoleName::AppDev,
@@ -427,9 +316,6 @@ describe('node storage settings', function (): void {
             ->assertUnprocessable()
             ->assertJsonPath('error.code', 'node.settings_path_protected');
 
-        expect($node->refresh()->settings)->toBe([
-            'worktree' => ['path' => '/srv/orbit/worktrees'],
-        ]);
     });
 
     it('uses the managed-home apps default when the typed override is unset', function (): void {
@@ -444,7 +330,6 @@ describe('node storage settings', function (): void {
             'wireguard_ip' => '10.44.0.3',
             'settings' => [
                 'apps' => ['path' => '/srv/orbit/apps'],
-                'instance' => ['path' => '/srv/orbit/instances'],
             ],
         ]);
         $node->roles()->create([
@@ -489,7 +374,6 @@ describe('node storage settings', function (): void {
             'wireguard_ip' => '10.44.0.3',
             'settings' => [
                 'apps' => ['path' => '/srv/orbit/apps'],
-                'worktree' => ['path' => '/srv/orbit/worktrees'],
             ],
         ]);
         $node->roles()->create([
@@ -507,7 +391,6 @@ describe('node storage settings', function (): void {
         expect($node->refresh()->settings)
             ->toBe([
                 'apps' => ['path' => '/srv/orbit/apps'],
-                'worktree' => ['path' => '/srv/orbit/worktrees'],
             ]);
     });
 
@@ -566,7 +449,7 @@ describe('node storage settings', function (): void {
                 'host_key_fingerprint' => 'SHA256:'.str_repeat('A', 43),
                 'settings' => [],
             ],
-            ['instance' => ['path' => '/srv/orbit/instances']],
+            null,
         ],
         'provision nested list' => [
             'POST',
@@ -581,7 +464,7 @@ describe('node storage settings', function (): void {
                 'host_key_fingerprint' => 'SHA256:'.str_repeat('A', 43),
                 'settings' => ['apps' => []],
             ],
-            ['instance' => ['path' => '/srv/orbit/instances']],
+            null,
         ],
     ]);
 });

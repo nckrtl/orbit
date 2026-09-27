@@ -17,6 +17,7 @@ use App\Domain\Metrics\ExporterDegradationReason;
 use App\Domain\Metrics\MetricsPublicationCleanup;
 use App\Domain\Metrics\MetricsRoleManager;
 use App\Domain\Nodes\GatewayPrivateDnsRoute;
+use App\Domain\Nodes\NodeConverger;
 use App\Domain\Nodes\NodeReachabilityProbe;
 use App\Domain\Nodes\NodeRoleDependencySet;
 use App\Domain\Nodes\NodeRoleDependentCleaner;
@@ -49,6 +50,7 @@ use App\Models\Tool;
 use App\Models\ToolManagerRecord;
 use Illuminate\Support\Str;
 use Tests\Support\FakeGatewayPrivateDnsRoute;
+use Tests\Support\FakeNodeConverger;
 use Tests\Support\FakeNodeRoleFirewallManager;
 use Tests\Support\FakeRouteRemovalProjector;
 use Tests\Support\FakeToolManager;
@@ -542,13 +544,20 @@ it('records renamed App Cluster and Route lifecycle command names', function ():
         'wireguard_ip' => '10.44.0.12',
         'tld' => 'test',
     ]);
-    expect($recorded('POST', '/api/v1/routes', [
+    $this->postJson('/api/v1/routes', [
         'app_id' => $app->id,
         'domain' => 'lifecycle.example.test',
         'publication' => 'private',
         'node_id' => $node->id,
-    ]))->toBe('route:create');
-    $route = Route::query()->where('domain', 'lifecycle.example.test')->sole();
+    ])->assertConflict()->assertJsonPath('error.code', 'route.target_required');
+    $route = Route::query()->create([
+        'app_id' => $app->id,
+        'node_id' => $node->id,
+        'domain' => 'lifecycle.example.test',
+        'provenance' => 'explicit',
+        'publication' => 'private',
+        'status' => 'pending',
+    ]);
     expect($recorded('DELETE', "/api/v1/routes/{$route->id}/target"))->toBe('route:target:unset');
     expect($recorded('DELETE', "/api/v1/routes/{$route->id}"))->toBe('route:destroy');
 });
@@ -850,6 +859,7 @@ it('records node access add and remove commands against the serving node and pre
 
 it('records node role commands against the node with bounded inputs and stable failures', function (): void {
     app()->instance(ToolManagerMaterializer::class, new FakeToolManagerMaterializer);
+    app()->instance(NodeConverger::class, new FakeNodeConverger);
     $gateway = $this->markAsGateway(Node::query()->create([
         'name' => 'role-activity-gateway',
         'status' => LifecycleStatus::Active,

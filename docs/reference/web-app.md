@@ -12,7 +12,7 @@ covers:
 
 # Web app
 
-The web app is Orbit's live view of the fleet. It is a static single-page app that reads the Gateway API and follows [realtime events](/reference/events). The Gateway serves it from its own origin.
+The web app is Orbit's live view of the fleet. It is a static single-page app that reads the Gateway API and follows [realtime events](/reference/events). Its TypeScript API schema is generated from the Gateway OpenAPI document and checked in with the app. The Gateway serves it from its own origin.
 
 ## Open the app
 
@@ -166,6 +166,10 @@ Browser tests assert on the page, the URL, and the requests that the demo Gatewa
 ## Why it works this way
 
 These reasons explain the design. Check them before you propose a change.
+
+### One live fleet view
+
+The web app is the only live fleet view, and the CLI has none. A terminal screen is rejected: it would need its own copy of the metrics queries, and it would have to follow every change to shared requests and realtime events. Without a browser, use the list commands and `realtime:tail`.
 
 ### The Gateway origin
 

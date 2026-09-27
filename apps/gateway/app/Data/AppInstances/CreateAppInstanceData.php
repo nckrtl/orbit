@@ -13,6 +13,5 @@ final readonly class CreateAppInstanceData
         public ?string $root,
         public ?string $domain,
         public ?string $branch,
-        public bool $recoverSourceProfile = false,
     ) {}
 }

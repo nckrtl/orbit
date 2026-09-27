@@ -11,7 +11,7 @@ covers:
 
 # Caddy configuration
 
-Orbit owns `/etc/caddy/Caddyfile` on every Node that serves sites through Caddy. The Gateway builds that whole file for one Node from its database and pushes it in one step. No role writes Caddy files on a Node. This page describes what a build contains, when it runs, how it reaches the Node, and how to fix a Node whose build fails. [Node provisioning](/reference/node-provisioning#package-sources) describes how Orbit installs Caddy.
+Orbit owns `/etc/caddy/Caddyfile` on every Node that serves sites through Caddy. The Gateway builds that whole file for one Node from its database and pushes it in one step. No role writes Caddy files on a Node. Doctor compares the live Caddyfile with a fresh Node Caddy build. This page describes what a build contains, when it runs, how it reaches the Node, and how to fix a Node whose build fails. [Node provisioning](/reference/node-provisioning#package-sources) describes how Orbit installs Caddy.
 
 ## Published layout
 

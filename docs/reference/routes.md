@@ -8,6 +8,7 @@ covers:
   - apps/gateway/app/Infrastructure/AppDev/{AppDevCaddyConfigRenderer,AppDevSiteRepository,NativeDevelopmentProjectionOperationLock}.php
   - apps/gateway/app/Domain/AppDev/{DevelopmentServerEndpoint,AgentationEndpoint,PrivateDnsAnswerExpiry}.php
   - apps/gateway/app/Infrastructure/Clusters/NativeClusterRouterOperationLock.php
+  - apps/gateway/app/Infrastructure/AppInstances/NativeProductionRouteProjector.php
 ---
 
 # Routes
@@ -71,13 +72,15 @@ The source branch does not change the generated domain. `instance:create <projec
 
 Cluster membership decides routing scope, independently of the domain. A Node in an active Cluster uses Cluster scope, also when the Cluster has no TLD and the domain uses the Node TLD. Every other Node uses Node scope. A Cluster that owns Routes needs exactly one active Router.
 
+A Node keeps its own TLD while it belongs to a Cluster. [cluster](/cli/cluster#placement-and-tlds) lists which Node or Cluster may own a TLD.
+
 ### Generated domains after a Project slug update
 
 A Project slug update recomputes every generated development Route domain from the new slug, the Instance name, and the effective TLD. Orbit creates a replacement Route for each domain that changes. The replacement keeps the Project, scope, provenance, publication, and target. Explicit domains never change. A default-branch update changes no Route. [Projects](/reference/apps#update-a-project) owns the update lifecycle.
 
 ## Create and change targets
 
-`route:create` stores an explicit `app` Route with `pending` status, for a target Instance or with a Node or Cluster scope. It sets up no traffic path. The only step that activates such a Route is a production target-set change on another Route that reassigns an Instance to it, as [Change a production target set](#change-a-production-target-set) describes. Until then Doctor reports it as `route.lifecycle_not_active`. A second identical request returns the existing Route. A request that changes the Project, publication, scope, or target fails with `route.retry_conflict`. The Gateway refuses a reserved platform name: `gateway.orbit`, `metrics.orbit`, `reverb.orbit`, `analytics.orbit`, and `collector.cli-proxy-api.orbit`.
+`route:create` refuses a new explicit Project Route that would remain pending. A targetless Project Route in either Node or Cluster scope returns `route.target_required`; an explicit Project Route for an unassociated Instance returns `route.activation_unsupported`. These refusals leave Routes and target associations unchanged. An identical retry for an existing pending Project Route also returns `route.activation_unsupported`; `route:create` does not resume or activate it. Custom proxy Route creation remains separate and converges its Node-local serving path. The Gateway refuses reserved platform names: `gateway.orbit`, `metrics.orbit`, `reverb.orbit`, `analytics.orbit`, and `collector.cli-proxy-api.orbit`.
 
 A Route target must have a supported relative web root. An Instance rooted at `.`, such as a package, returns `route.target_web_root_unsupported` until an operator sets a web-root override.
 
@@ -315,7 +318,7 @@ Clearing a Router while the Cluster owns Routes returns `route.reconciliation_re
 
 `route:update ROUTE --domain=DOMAIN` changes the domain of an `active`, explicit Route. For a `pending` explicit Route, it creates the replacement Route at once, with no projection steps. The Route can be development or production. A shared production Route moves its whole ordered pool to one replacement. This is how a production clone swaps its preview domain for its real domain.
 
-The Gateway reserves a `pending` replacement Route for the same Project and targets. The current Route stays the only authoritative Route. The Gateway refuses an invalid, occupied, or conflicting domain before it changes anything. It prepares the replacement's workload certificate and Caddy site, then the Router certificate, firewall rules, and Router Caddy site, then the Laravel URL or production environment. It publishes the new domain in private DNS last.
+The Gateway reserves a `pending` replacement Route for the same Project and targets. The current Route stays the only authoritative Route. The Gateway refuses an invalid, occupied, or conflicting domain before it changes anything. It prepares the replacement's workload certificate and Caddy site, then the Router certificate, firewall rules, and Router Caddy site, then the Laravel URL or production environment. It publishes the new domain in private DNS last. When a target has no recorded source profile, the Gateway returns HTTP 409 `instance.source_profile_missing`; Orbit does not recover missing profiles on older Instances, as ADR 0177 explains.
 
 Cutover is one database transition: the replacement becomes `activating` and the old Route `retiring`. Instance output shows only the new domain, and Route inspection shows both records. Cleanup removes the old projections, deletes the retiring Route, releases its domain, and marks the replacement `active`. A successful change therefore produces a new Route ID.
 

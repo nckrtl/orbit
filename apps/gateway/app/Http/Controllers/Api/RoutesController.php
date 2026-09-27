@@ -46,7 +46,7 @@ final class RoutesController extends Controller
     #[RequiresNodeAccess(ServingNode::RouteOwning)]
     public function store(StoreRouteRequest $request, CreateRouteAction $action): JsonResponse
     {
-        $result = $action->execute($request->payload());
+        $result = $action->executeForRouteCreate($request->payload());
 
         return response()->json(
             [

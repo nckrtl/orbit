@@ -29,7 +29,9 @@ A topology snapshot generation is a coordinated set of three Incus snapshots, on
 
 ## Prepared fingerprint
 
-`apps/e2e/resources/prepared-state.json` lists the repository files that shape the prepared state. The prepared fingerprint is the SHA-256 of those files' hashes, the cold epoch, the base image alias, the declared epochs, and the topology profile. The sample Laravel release pin is part of it too. When the structural inputs change, `refresh` pins the newest stable `laravel/laravel` tag at `13.0.0` or later for the sample app. Otherwise it keeps the pinned release. The main SHA is the source identity, not a fingerprint input. So a merge that changes none of these inputs leaves the snapshot alone.
+`apps/e2e/resources/prepared-state.json` lists the repository files that shape the prepared state. The prepared fingerprint is the SHA-256 of those files' hashes, the cold epoch, the base image alias, the declared epochs, and the topology profile. The sample Laravel release pin is part of it too. When the structural inputs change, `refresh` pins the newest stable `laravel/laravel` tag at `13.0.0` or later for the sample app. Otherwise it keeps the pinned release. The main SHA is the source identity, not a fingerprint input.
+
+Guest convergence scripts are listed as structural inputs. Changing one therefore invalidates the prepared snapshot. A merge that changes none of the structural inputs leaves the snapshot alone.
 
 ## Commands
 

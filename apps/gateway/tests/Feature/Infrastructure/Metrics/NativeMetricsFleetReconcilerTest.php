@@ -2,8 +2,13 @@
 
 declare(strict_types=1);
 
+use App\Domain\Metrics\ExporterDegradationReason;
+use App\Domain\Metrics\ExporterDegradationRepository;
 use App\Domain\Metrics\MetricsCadvisorLifecycle;
 use App\Domain\Metrics\MetricsExporterLifecycle;
+use App\Domain\Metrics\MetricsFleetReconcileException;
+use App\Domain\Metrics\MetricsReconcileComponent;
+use App\Domain\Metrics\MetricsReconcileDegradationRepository;
 use App\Domain\Metrics\MetricsRuntimeLifecycle;
 use App\Domain\Nodes\RoleAssignmentException;
 use App\Domain\Nodes\RoleName;
@@ -138,6 +143,75 @@ it('fails closed when active Metrics assignments drift', function (): void {
 
     expect($reconciler->reconcile(...))
         ->toThrow(RoleAssignmentException::class, 'Active Metrics role assignment drift detected.');
+});
+
+it('records a failed exporter Node even when another Node is being provisioned', function (): void {
+    $metricsNode = metrics_fleet_node('metrics');
+    $metricsNode->roles()->create(['role' => RoleName::Metrics, 'status' => LifecycleStatus::Active]);
+    $affected = metrics_fleet_node('fleet-failure');
+    $affected->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
+    $errorCode = 'metrics.exporter_fleet_rollback_failed';
+    $exporters = Mockery::mock(MetricsExporterLifecycle::class);
+    $exporters->shouldReceive('converge')->once()->andThrow(new MetricsFleetReconcileException(
+        MetricsReconcileComponent::Exporter,
+        $affected->id,
+        $errorCode,
+        'Exporter rollback failed.',
+        502,
+        new ResourceOperationException($errorCode, 'Exporter rollback failed.', 502),
+    ));
+
+    expect(fn () => (new NativeMetricsFleetReconciler(
+        $exporters,
+        Mockery::mock(MetricsCadvisorLifecycle::class),
+        Mockery::mock(MetricsRuntimeLifecycle::class),
+    ))->reconcile())->toThrow(MetricsFleetReconcileException::class);
+
+    expect(app(MetricsReconcileDegradationRepository::class)->errorCode($affected->id))->toBe($errorCode)
+        ->and(app(ExporterDegradationRepository::class)->get($affected->id))
+        ->toBe(ExporterDegradationReason::ReconcileFailed);
+});
+
+it('preserves structured Docker runtime failures through the shared reconcile boundary', function (): void {
+    $metricsNode = metrics_fleet_node('metrics-runtime');
+    $metricsNode->roles()->create(['role' => RoleName::Metrics, 'status' => LifecycleStatus::Active]);
+    $exporters = Mockery::mock(MetricsExporterLifecycle::class);
+    $cadvisors = Mockery::mock(MetricsCadvisorLifecycle::class);
+    $runtime = Mockery::mock(MetricsRuntimeLifecycle::class);
+    $exporters->shouldReceive('converge')->once();
+    $cadvisors->shouldReceive('converge')->once();
+    $runtime->shouldReceive('converge')->once()->andThrow(
+        new ResourceOperationException('metrics.docker_unavailable', 'Docker is unavailable.', 502),
+    );
+
+    expect(fn () => (new NativeMetricsFleetReconciler($exporters, $cadvisors, $runtime))->reconcile())
+        ->toThrow(function (MetricsFleetReconcileException $exception): void {
+            expect($exception->errorCode)->toBe('metrics.docker_unavailable');
+            expect($exception->getMessage())->toBe('Docker is unavailable.');
+            expect($exception->status)->toBe(502);
+        });
+});
+
+it('clears failure degradation after a later successful reconcile', function (): void {
+    $metricsNode = metrics_fleet_node('metrics-recovery');
+    $metricsNode->roles()->create(['role' => RoleName::Metrics, 'status' => LifecycleStatus::Active]);
+    $affected = metrics_fleet_node('recovering');
+    $affected->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
+    $errors = app(MetricsReconcileDegradationRepository::class);
+    $degradations = app(ExporterDegradationRepository::class);
+    $errors->put($affected->id, 'metrics.cadvisor_fleet_rollback_failed');
+    $degradations->put($affected->id, ExporterDegradationReason::ReconcileFailed);
+    $exporters = Mockery::mock(MetricsExporterLifecycle::class);
+    $cadvisors = Mockery::mock(MetricsCadvisorLifecycle::class);
+    $runtime = Mockery::mock(MetricsRuntimeLifecycle::class);
+    $exporters->shouldReceive('converge')->once();
+    $cadvisors->shouldReceive('converge')->once();
+    $runtime->shouldReceive('converge')->once();
+
+    (new NativeMetricsFleetReconciler($exporters, $cadvisors, $runtime))->reconcile();
+
+    expect($errors->errorCode($affected->id))->toBeNull()
+        ->and($degradations->get($affected->id))->toBeNull();
 });
 
 function metrics_fleet_node(string $name): Node

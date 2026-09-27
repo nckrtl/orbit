@@ -94,12 +94,15 @@ describe(RetargetNodeAction::class, function (): void {
 
             public ?SshConnection $connection = null;
 
+            public ?bool $rolelessOperator = null;
+
             public ?Throwable $throws = null;
 
             public function converge(Node $node, SshConnection $connection, bool $rolelessOperator = false): void
             {
                 $this->node = $node;
                 $this->connection = $connection;
+                $this->rolelessOperator = $rolelessOperator;
 
                 if ($this->throws instanceof Throwable) {
                     throw $this->throws;
@@ -108,7 +111,7 @@ describe(RetargetNodeAction::class, function (): void {
         });
     });
 
-    it('retargets an active node without roles over public ssh and preserves its identity fields', function (): void {
+    it('retargets a roleless node in operator DNS mode over public ssh and preserves its identity fields', function (): void {
         $node = Node::query()->create([
             'name' => 'app-dev',
             'status' => LifecycleStatus::Active,
@@ -132,7 +135,7 @@ describe(RetargetNodeAction::class, function (): void {
 
         /** @var KnownHostsStore&object{writes:list<array{host:string,port:int,fingerprint:string}>} $knownHosts */
         $knownHosts = app(KnownHostsStore::class);
-        /** @var WireGuardPeerConverger&object{connection:?SshConnection} $wireGuard */
+        /** @var WireGuardPeerConverger&object{connection:?SshConnection,rolelessOperator:?bool} $wireGuard */
         $wireGuard = app(WireGuardPeerConverger::class);
         /** @var SshExecutor&object{calls:list<array{connection:SshConnection,command:RemoteCommand}>} $ssh */
         $ssh = app(SshExecutor::class);
@@ -172,6 +175,8 @@ describe(RetargetNodeAction::class, function (): void {
             ->toBe(2202)
             ->and($wireGuard->connection?->user)
             ->toBe('nckrtl')
+            ->and($wireGuard->rolelessOperator)
+            ->toBeTrue()
             ->and($ssh->calls)
             ->toHaveCount(1)
             ->and($ssh->calls[0]['connection']->user)

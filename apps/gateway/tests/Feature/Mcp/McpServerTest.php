@@ -108,13 +108,14 @@ describe('POST /mcp', function (): void {
             'wireguard_ip' => '10.44.0.40',
             'user' => 'orbit',
         ]);
-        $created = $this->postJson('/api/v1/routes', [
+        $routeId = Route::query()->create([
             'app_id' => $app->id,
-            'domain' => 'mcp-destroy.example.test',
-            'publication' => 'private',
             'node_id' => $node->id,
-        ])->assertCreated();
-        $routeId = $created->json('data.id');
+            'domain' => 'mcp-destroy.example.test',
+            'provenance' => 'explicit',
+            'publication' => 'private',
+            'status' => 'pending',
+        ])->id;
 
         $response = mcp_call($this, 'tools/call', [
             'name' => 'route-destroy',

@@ -8,6 +8,7 @@ covers:
   - apps/gateway/app/Infrastructure/Nodes/{NodeAgentSshExecutor,NodeAgentFootprint}.php
   - apps/gateway/app/Http/Controllers/Api/AgentRealtimeController.php
   - apps/gateway/app/Http/Middleware/RequireNodeAgentSecret.php
+  - apps/gateway/database/migrations/2026_09_30_090000_drop_agent_secret_exempt_from_nodes.php
   - .github/workflows/orbit-agent-release.yml
 ---
 

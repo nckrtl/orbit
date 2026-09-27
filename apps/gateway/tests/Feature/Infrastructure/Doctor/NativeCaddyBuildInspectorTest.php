@@ -68,7 +68,6 @@ it('reports a live Caddyfile that no build wrote as not built', function (string
     expect($observation?->matches)->toBeFalse()
         ->and($observation?->liveVersion)->toBeNull();
 })->with([
-    'the fragment layout of an earlier release' => ["{\n    auto_https disable_certs\n}\nimport /etc/caddy/orbit-versions/0123456789abcdef/fragments/*.caddy\n"],
     'a foreign file' => ["hand.example.test {\n    respond hi\n}\n"],
     'no file' => [''],
 ]);

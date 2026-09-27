@@ -378,7 +378,7 @@ One fresh Instance belongs to the group. Every subtask reuses it. The instance n
 
 The Gateway currently derives visitability from the Project slug: `orbit` task workspaces are isolated, while other Projects receive visitable workspaces. The provisioner does not invent a Route for a non-visitable workspace because an active Instance still requires exactly one Route.
 
-Doctor expects the same final state. A non-visitable task workspace is healthy in `source_resolved`, and a visitable one is healthy in `active`. A non-null provisioning step is unfinished unless it is the terminal `active` or `clone-completed` step. Doctor also treats a lifecycle state before the settled state as provisioning. A non-null `failed_step` reports immediately; Doctor skips other unfinished provisioning for up to 20 minutes after the last update, and older provisioning reports only `instance.provisioning_stuck`. A state later than the settled state reports `instance.lifecycle_not_active`.
+Doctor expects the same final state. A non-visitable task workspace is healthy in `source_resolved`, and a visitable one is healthy in `active`. A non-null provisioning step is unfinished unless it is the terminal `active` step. Doctor also treats a lifecycle state before the settled state as provisioning. A non-null `failed_step` reports immediately; Doctor skips other unfinished provisioning for up to 20 minutes after the last update, and older provisioning reports only `instance.provisioning_stuck`. A state later than the settled state reports `instance.lifecycle_not_active`.
 
 The `instance` Doctor probe skips a workspace already in `removing`, except that removal lasting 10 minutes or more reports `instance.removal_stuck`; it drops findings if removal starts or the row is deleted during inspection. The `app` probe excludes removing workspaces when selecting eligible checkouts. The `process` probe skips Processes owned by a removing workspace and drops findings if removal starts or the workspace is deleted during inspection. The `database_connection` probe skips attachments whose workspace is removing, including on its post-inspection reread. Other Doctor probes do not generally skip removing Instances; see the [Doctor family rules](/cli/doctor#what-each-family-checks).
 
@@ -735,6 +735,8 @@ Orbit opens the pull request after the approval of the last subtask. That approv
 Before Orbit commits the last subtask, Jev checks that the change list covers every subtask of the group except cancelled and failed subtasks. Jev reads the group and subtask briefs and the pull request fields. For each checked subtask, it answers whether a listed change delivers it. A subtask counts as covered when Jev gives "yes" a probability of at least one half. Jev cannot read code, so this checks coverage, not correctness. Each missing subtask fails `brief_coverage`, and the reviewer's reminder names it. A failed Jev request counts as a communication failure.
 
 On the last subtask, the reviewer owns the pull request change list, summary, and breaking-changes list in its approval. A missing or incomplete entry is never a reason to request changes; the reviewer writes the complete entries as part of its approval.
+
+The reviewer reports a missing guarantee against injected failures as a finding when the subtask adds or changes that state transition, or when the brief, an ADR, or a deliverable names the guarantee. Otherwise, the reviewer lists the gap as a follow-up in its summary.
 
 ### Jev decision records and report
 
