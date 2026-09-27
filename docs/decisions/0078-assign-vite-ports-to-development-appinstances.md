@@ -12,7 +12,7 @@ Orbit stores a preferred Vite port for each development App instance and checks 
 
 Proposed.
 
-This proposal supersedes the fixed `127.0.0.1:5173` upstream in [ADR 0067](/decisions/0067-serve-development-servers-on-the-route-origin). It preserves that decision's Route origin, reserved path, and HTTPS proxy boundaries. The feature PR implements this decision.
+This proposal supersedes the fixed `127.0.0.1:5173` upstream in [ADR 0067](/reference/routes#development-server-endpoint). It preserves that decision's Route origin, reserved path, and HTTPS proxy boundaries. The feature PR implements this decision.
 
 ## Context
 
@@ -55,6 +55,6 @@ The chosen design favors a stored preferred assignment over startup discovery. A
 ## Affects
 
 - Components: apps/gateway, apps/cli, packages/php-sdk, apps/e2e
-- ADRs: supersedes the fixed upstream in [ADR 0067](/decisions/0067-serve-development-servers-on-the-route-origin); extends [ADR 0066](/decisions/0066-transfer-development-appinstances-between-nodes) and [ADR 0074](/decisions/0074-hibernate-idle-app-dev-appinstance-processes)
+- ADRs: supersedes the fixed upstream in [ADR 0067](/reference/routes#development-server-endpoint); extends [ADR 0066](/decisions/0066-transfer-development-appinstances-between-nodes) and [ADR 0074](/decisions/0074-hibernate-idle-app-dev-appinstance-processes)
 - Detail: [Assigned Vite ports proposal](/reference/assigned-vite-ports)
 - Verify: allocator concurrency and exhaustion tests; lifecycle retry, removal, and transfer tests; Process environment and Caddy projection tests; Incus wake, bind-conflict, and browser asset/HMR checks for Laravel and plain Vite applications
