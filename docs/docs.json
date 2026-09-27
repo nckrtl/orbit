@@ -555,15 +555,12 @@
           {
             "group": "Records",
             "pages": [
-              "decisions/0001-tool-management",
               "decisions/0002-candidate-deployment-proof-boundary",
               "decisions/0005-rolling-incus-development-topology",
               "decisions/0006-topology-led-feature-development",
-              "decisions/0008-typed-app-dev-node-storage-settings",
               "decisions/0009-clustered-app-instance-routing",
               "decisions/0010-record-decisions-before-implementation-issues",
               "decisions/0011-clustered-production-ingress-and-app-prod-placement",
-              "decisions/0012-ubuntu-24-04-roleless-operator-clients",
               "decisions/0013-native-systemd-schedule-management",
               "decisions/0014-maintain-verified-documentation-context",
               "decisions/0015-retain-incus-proof-by-recorded-input-equivalence",
@@ -592,8 +589,6 @@
               "decisions/0039-use-round-robin-for-production-route-pools",
               "decisions/0040-extend-issue-proof-with-one-app-prod-node",
               "decisions/0041-delete-an-empty-route-during-appinstance-removal",
-              "decisions/0042-provision-tool-managers-on-demand",
-              "decisions/0043-manage-homebrew-core-formulae",
               "decisions/0044-own-appinstance-environment-configuration-in-orbit",
               "decisions/0045-isolate-production-php-fpm-by-unix-user",
               "decisions/0046-own-production-release-deployment-in-orbit",
@@ -616,18 +611,13 @@
               "decisions/0065-replace-routes-when-domains-change",
               "decisions/0066-transfer-development-appinstances-between-nodes",
               "decisions/0067-serve-development-servers-on-the-route-origin",
-              "decisions/0068-accept-only-apps-path-node-storage-setting",
               "decisions/0069-allow-node-process-targets",
-              "decisions/0070-keep-the-database-role-as-a-docker-baseline",
               "decisions/0071-use-one-verb-vocabulary-across-cli-routes-and-sdk",
-              "decisions/0072-add-and-remove-nodes-without-changing-the-machine",
               "decisions/0073-store-deploy-steps-as-named-appinstance-records",
               "decisions/0074-hibernate-idle-app-dev-appinstance-processes",
               "decisions/0075-prune-idle-app-dev-checkout-dependencies",
               "decisions/0076-deliver-features-through-complete-pull-requests",
-              "decisions/0077-allow-database-beside-router",
               "decisions/0078-assign-vite-ports-to-development-appinstances",
-              "decisions/0079-publish-orbit-cli-binaries-from-github-actions",
               "decisions/0080-add-node-owned-custom-proxy-routes",
               "decisions/0081-query-registered-databases-through-pdo",
               "decisions/0082-wire-agentation-watch-mode-through-appinstance-processes",
@@ -636,13 +626,9 @@
               "decisions/0085-build-orbit-top-as-a-thin-tui-client",
               "decisions/0086-offer-the-api-as-mcp-tools",
               "decisions/0087-run-reverb-through-a-websocket-role",
-              "decisions/0088-cli-reads-display-metrics-from-grafana",
               "decisions/0089-index-appinstance-dependencies",
-              "decisions/0090-relocate-the-gateway-role-independently-of-vpn",
-              "decisions/0091-rename-a-node-without-changing-wireguard-identity",
               "decisions/0092-publish-private-dns-on-the-vpn-node-after-gateway-relocate",
               "decisions/0093-show-live-ufw-and-desired-rules-that-match-converge",
-              "decisions/0094-project-wireguard-hub-config-onto-the-vpn-node",
               "decisions/0095-relocate-relocatable-singleton-roles",
               "decisions/0097-publish-analytics-tracking-hosts-for-app-instances",
               "decisions/0098-read-github-repositories-through-a-gateway-owned-github-app",
@@ -671,9 +657,7 @@
               "decisions/0125-run-the-project-check-when-the-implementer-hands-off",
               "decisions/0126-limit-browser-api-calls-to-orbit-origins",
               "decisions/0127-share-one-ssh-connection-per-node",
-              "decisions/0128-run-a-visibility-only-agent-on-managed-nodes",
               "decisions/0129-publish-node-presence-and-process-state-on-per-node-presence-channels",
-              "decisions/0130-publish-agent-binaries-as-github-releases",
               "decisions/0131-seed-task-workspace-clones-from-the-registered-main-cache-store",
               "decisions/0132-pause-only-for-the-acting-thread-and-a-real-question",
               "decisions/0133-verify-typed-subtask-deliverables-at-handoff",
@@ -686,16 +670,12 @@
               "decisions/0140-watch-settling-pull-requests-for-conflicts-and-failed-checks",
               "decisions/0141-build-each-node-caddyfile-on-the-gateway",
               "decisions/0143-record-topology-evidence-and-sync-without-verification",
-              "decisions/0144-migrate-waiting-connections-when-caddy-reloads",
               "decisions/0145-publish-the-proxycli-collector-on-collector-cli-proxy-api-orbit",
               "decisions/0147-retire-orbit-top",
-              "decisions/0148-keep-a-gateway-view-of-node-agent-state",
               "decisions/0150-keep-extension-commands-local-and-confirm-the-proxycli-fleet-stop",
               "decisions/0151-push-task-and-process-usage-changes-over-realtime",
               "decisions/0152-sample-successful-read-activity",
               "decisions/0153-tail-instance-and-process-logs-live-through-the-node-agent",
-              "decisions/0154-recover-the-gateway-agent-view-without-a-membership-change",
-              "decisions/0155-authenticate-the-node-agent-with-a-per-node-secret",
               "decisions/0156-route-the-private-domain-on-the-gateway-machine-to-vpn-dns",
               "decisions/0157-keep-private-caddy-sites-off-the-public-listener",
               "decisions/0158-end-interrupted-activity",
@@ -789,6 +769,86 @@
     {
       "source": "/decisions/0146-retire-the-herdr-integration",
       "destination": "/cli/extension"
+    },
+    {
+      "source": "/decisions/0001-tool-management",
+      "destination": "/reference/tools#why-it-works-this-way"
+    },
+    {
+      "source": "/decisions/0008-typed-app-dev-node-storage-settings",
+      "destination": "/reference/node-settings"
+    },
+    {
+      "source": "/decisions/0012-ubuntu-24-04-roleless-operator-clients",
+      "destination": "/reference/node-provisioning#add-a-node"
+    },
+    {
+      "source": "/decisions/0042-provision-tool-managers-on-demand",
+      "destination": "/reference/tools#managers-on-demand-independent-of-roles"
+    },
+    {
+      "source": "/decisions/0043-manage-homebrew-core-formulae",
+      "destination": "/reference/tools#homebrew-formulae"
+    },
+    {
+      "source": "/decisions/0068-accept-only-apps-path-node-storage-setting",
+      "destination": "/reference/node-settings#one-typed-setting"
+    },
+    {
+      "source": "/decisions/0070-keep-the-database-role-as-a-docker-baseline",
+      "destination": "/reference/database-role"
+    },
+    {
+      "source": "/decisions/0072-add-and-remove-nodes-without-changing-the-machine",
+      "destination": "/reference/node-provisioning#removal-does-not-clean-the-machine"
+    },
+    {
+      "source": "/decisions/0077-allow-database-beside-router",
+      "destination": "/reference/database-role#the-remaining-conflicts"
+    },
+    {
+      "source": "/decisions/0079-publish-orbit-cli-binaries-from-github-actions",
+      "destination": "/reference/cli-binaries"
+    },
+    {
+      "source": "/decisions/0088-cli-reads-display-metrics-from-grafana",
+      "destination": "/reference/metrics#read-node-metrics"
+    },
+    {
+      "source": "/decisions/0090-relocate-the-gateway-role-independently-of-vpn",
+      "destination": "/cli/node#a-dedicated-relocate-for-gateway"
+    },
+    {
+      "source": "/decisions/0091-rename-a-node-without-changing-wireguard-identity",
+      "destination": "/cli/node#orbit-noderename"
+    },
+    {
+      "source": "/decisions/0094-project-wireguard-hub-config-onto-the-vpn-node",
+      "destination": "/reference/node-provisioning#the-hub-stays-on-the-vpn-node"
+    },
+    {
+      "source": "/decisions/0128-run-a-visibility-only-agent-on-managed-nodes",
+      "destination": "/reference/node-agent#the-agent-only-observes"
+    },
+    {
+      "source": "/decisions/0130-publish-agent-binaries-as-github-releases",
+      "destination": "/reference/node-agent#releases"
+    },
+    {
+      "source": "/decisions/0144-migrate-waiting-connections-when-caddy-reloads",
+      "destination": "/reference/node-provisioning#caddy-reloads"
+    },
+    {
+      "source": "/decisions/0148-keep-a-gateway-view-of-node-agent-state",
+      "destination": "/reference/node-agent#gateway-view"
+    },
+    {
+      "source": "/decisions/0154-recover-the-gateway-agent-view-without-a-membership-change",
+      "destination": "/reference/node-agent#rejoin-to-ask-for-a-snapshot"
+    },
+    {
+      "source": "/decisions/0155-authenticate-the-node-agent-with-a-per-node-secret",
+      "destination": "/reference/node-agent#agent-secret"
     }
   ]
 }

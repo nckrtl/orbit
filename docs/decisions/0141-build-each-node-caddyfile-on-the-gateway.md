@@ -115,7 +115,7 @@ The Gateway owns every Caddy file on a Node through one build per Node. The rule
 - Adopt a foreign Caddyfile as a carried fragment: rejected because it keeps the Node's files as an input to every build, which is the problem this decision removes. A backup keeps the content without serving it.
 - Save the placement candidate as a second Route row: rejected because `routes.domain` is unique and both rows would carry the same domain.
 - Choose `0.0.0.0` for every site on a port whenever one site needs it: rejected because it would put `gateway.orbit` and `metrics.orbit` on the public listener of a Node that also holds `ingress`.
-- Render on the Node from data the Gateway sends: rejected because the Node would need Orbit's renderers, and [ADR 0128](/decisions/0128-run-a-visibility-only-agent-on-managed-nodes) keeps Nodes free of agents that run commands.
+- Render on the Node from data the Gateway sends: rejected because the Node would need Orbit's renderers, and [ADR 0128](/reference/node-agent#the-agent-only-observes) keeps Nodes free of agents that run commands.
 - Coalesce build requests in a queue: rejected because the Gateway runs infrastructure steps synchronously and has no queue. Deterministic renders make a repeated build cheap.
 - Give the Gateway machine its own renderer and publisher: rejected because it keeps a second publication path with its own gaps, as the missing global block, lock, and rollback show.
 

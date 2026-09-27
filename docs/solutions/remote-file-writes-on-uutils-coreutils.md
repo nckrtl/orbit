@@ -1,48 +1,38 @@
 ---
 title: "Remote file writes on uutils coreutils"
-description: "Why remote file writes broke on uutils coreutils and the portable write sequence that fixes it."
+description: "Why writing a remote file from standard input with install fails on uutils coreutils, and the write sequence that works."
+covers:
+  - apps/gateway/app/Infrastructure/Metrics/{MetricsSshExecutor,MetricsExporterSshExecutor}.php
+  - apps/gateway/app/Infrastructure/Nodes/NodeAgentSshExecutor.php
+  - apps/gateway/app/Infrastructure/Processes/RemoteProcessRuntimeManager.php
 ---
 
 # Remote file writes on uutils coreutils
 
 ## Problem
 
-Metrics convergence succeeded once and failed on every later run with
-`metrics.configuration_publish_failed` and
-`metrics.exporter_configuration_failed`. The remote command printed only
-`install: No such file or directory`, and the destination directory existed.
+A convergence that writes a file on a Node succeeds once and fails on every later run. The remote command prints only `install: No such file or directory`, although the directory exists. In Metrics, the codes are `metrics.configuration_publish_failed` and `metrics.exporter_configuration_failed`.
 
 ## Cause
 
-The fleet nodes ship uutils coreutils, not GNU coreutils. Its `install`
-refuses an existing destination when the source is `/dev/stdin`:
+Ubuntu 26.04 ships uutils coreutils, not GNU coreutils. Its `install` refuses an existing destination when the source is `/dev/stdin`:
 
-```
+```text
 $ printf a | sudo install -m 0640 /dev/stdin /etc/orbit/metrics/marker   # first run
 $ printf a | sudo install -m 0640 /dev/stdin /etc/orbit/metrics/marker   # second run
 install: No such file or directory
 ```
 
-Creating a new file works, and overwriting from a regular file works. Only the
-overwrite-from-standard-input combination fails, so the failure appears one
-convergence after the code that causes it.
+Creating a new file works, and overwriting from a regular file works. Only an overwrite from standard input fails, so the failure shows one convergence after the code that causes it.
 
 ## Solution
 
-Never point a remote `install` at a live path. Write to
-`<path>.orbit-candidate`, remove any stale candidate first, then `mv -fT` the
-candidate onto the target. The move is atomic, which running containers and
-systemd units need anyway. `MetricsSshExecutor::publishFile()` and
-`MetricsExporterSshExecutor::publishConfiguration()` follow this shape, and
-`RemoteProcessRuntimeManager` already did.
+Never point a remote `install` from standard input at a live path. Remove any stale `<path>.orbit-candidate`, write the candidate, and then `mv -fT` it onto the target. The move is atomic, which running containers and systemd units need anyway. `MetricsSshExecutor::publishFile()`, `MetricsExporterSshExecutor::publishConfiguration()`, and `NodeAgentSshExecutor::publishFile()` use this sequence. `RemoteProcessRuntimeManager` writes each unit to its own candidate directory, `/etc/orbit/systemd-candidates`, first.
 
 ## Limits
 
-The quirk is specific to `/dev/stdin` sources. Directory creation
-(`install -d`), mode-only changes, and regular-file sources are unaffected.
-Numeric container identities such as Grafana's `472` also need a separate
-`chown`, because `install -o`/`-g` reject an identity with no `passwd` entry.
+The problem affects only `/dev/stdin` sources. `install -d`, mode changes, and regular-file sources work. A numeric container identity, such as Grafana's `472`, also needs a separate `chown`, because `install -o` and `-g` refuse an identity without a `passwd` entry.
 
 ## Verification
 
-A live verification plan under `.loop/proof/` disables and re-enables the `app-prod` exporter and then recovers a failed assignment. Each step reconverges over configuration that already exists, which is exactly the case that failed before. [ADR 0022](/decisions/0022-track-the-issue-workspace-and-delete-it-before-merge) governs the issue-local plan and fixtures. Unit coverage lives in `apps/gateway/tests/Unit/Infrastructure/Metrics/MetricsSshExecutorTest.php` and `MetricsExporterSshExecutorLifecycleTest.php`.
+Converge the same role twice over existing configuration, which is the case that fails. Unit tests cover the sequence in `apps/gateway/tests/Unit/Infrastructure/Metrics/MetricsSshExecutorTest.php` and `MetricsExporterSshExecutorLifecycleTest.php`.
