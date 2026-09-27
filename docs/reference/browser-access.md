@@ -1,11 +1,16 @@
 ---
 title: "Browser access to the Gateway"
 description: "Which web pages may call the Gateway API and MCP endpoints from a browser, and how the Gateway refuses the rest."
+covers:
+  - apps/gateway/app/Http/Middleware/GuardBrowserOrigins.php
+  - apps/gateway/app/Domain/Gateway/BrowserOriginPolicy.php
+  - apps/gateway/config/cors.php
+  - apps/web/vite.config.ts
 ---
 
 # Browser access to the Gateway
 
-This page tells an operator which web pages may call the Gateway API from a browser. The Gateway identifies a caller by its WireGuard address, so any page open on a WireGuard peer would otherwise act with that peer's authority. [ADR 0126](/decisions/0126-limit-browser-api-calls-to-orbit-origins) records the decision.
+This page tells an operator which web pages may call the Gateway API from a browser. The Gateway identifies a caller by its WireGuard address. So without this check, any page open in a browser on a WireGuard peer would act with that peer's authority.
 
 ## Allowed callers
 
@@ -13,14 +18,15 @@ The check covers `/api/*`, `/mcp`, and `/mcp/*`. It runs before CORS, routing, a
 
 | Caller | Result |
 | --- | --- |
-| CLI, SDK, MCP clients, and other programs that send no `Origin` or `Sec-Fetch-Site` | Allowed, as before. |
-| A page on the Gateway origin, such as the [web app](/reference/web-app) | Allowed. |
-| A page on `https://<domain>` of an active App Route with private publication | Allowed, with a CORS response for that exact origin. |
+| The CLI, the SDK, MCP clients, and other programs that send no `Origin` and no cross-site `Sec-Fetch-Site` | Allowed. |
+| A page on the Gateway's own origin, such as the [web app](/reference/web-app) | Allowed. |
+| A page on `https://<gateway node>.<private domain>` | Allowed, with a CORS response for that exact origin. |
+| A page on `https://<domain>` of an active `app` Route with private publication | Allowed, with a CORS response for that exact origin. |
 | Any other page | Refused with HTTP 403 and `api.origin_refused`. |
 
-A refused request includes a CORS preflight, a request whose origin is `null`, and a cross-site request without an `Origin` header, such as a link opened from another site. The Gateway never answers CORS with `*` and never allows credentials.
+A request without `Origin` passes only when its `Sec-Fetch-Site` is absent, `same-origin`, or `none`. So a cross-site request without an `Origin`, such as a link opened from another site, is refused. A request whose origin is `null` is refused. A CORS preflight from a refused page is refused too. The Gateway never answers CORS with `*` and never allows credentials.
 
-Public Routes, custom proxy Routes, analytics tracking hosts, and Routes that are not `active` grant no browser access. The Gateway origin is `https://<gateway node>.<private domain>`, which is `https://gateway.orbit` by default.
+Public Routes, custom proxy Routes, analytics tracking hosts, and Routes that are not `active` grant no browser access.
 
 ## Annotation package
 
@@ -37,3 +43,15 @@ A refused request receives this JSON body with HTTP 403.
 ```json
 {"error": {"code": "api.origin_refused", "message": "Browser requests from this origin cannot reach the Gateway API."}}
 ```
+
+## Why it works this way
+
+These reasons explain the design. Check them before you propose a change.
+
+### Route records as the trust list
+
+The Gateway has no login, so a browser on a peer carries the peer's authority. CORS alone does not help, because a cross-site form `POST` reaches the server without a preflight. The annotation package must keep working on development applications, so the Gateway origin alone is too narrow. A fixed list of TLDs such as `*.test` is rejected, because an unrelated site can use those names. The Route list names exactly the applications that Orbit serves. A page on one of them keeps API access, because those applications belong to the operator.
+
+### No browser login
+
+A login or token for browsers is rejected, because it would change the identity model of every client. The origin check closes the exposure without it.

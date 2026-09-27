@@ -4065,6 +4065,7 @@
             "title": "Browser access to the Gateway",
             "kind": "reference",
             "components": [
+                "apps/gateway",
                 "apps/web"
             ],
             "concepts": [
@@ -4073,9 +4074,7 @@
                 "Node",
                 "Route"
             ],
-            "governing_adrs": [
-                "0126"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/reference/caddy-configuration.md",
