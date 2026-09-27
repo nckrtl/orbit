@@ -11,6 +11,7 @@ use App\Domain\SourceControl\GitRepositoryOrigin;
 use App\Domain\SourceControl\ProjectRoot;
 use App\Http\Requests\TopLevelJsonObjectInspector;
 use App\Models\App as OrbitApp;
+use App\Rules\FileAwareTestCommand;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -30,6 +31,7 @@ final class UpdateAppRequest extends FormRequest
             'default_branch' => ['sometimes', 'required', 'string', 'max:255'],
             'root' => ['sometimes', 'required', 'string', 'max:255'],
             'task_check' => ['sometimes', 'nullable', 'string', 'max:4096'],
+            'test_command' => ['sometimes', 'nullable', 'string', 'max:4096', new FileAwareTestCommand],
         ];
     }
 
@@ -39,7 +41,7 @@ final class UpdateAppRequest extends FormRequest
         try {
             return app(TopLevelJsonObjectInspector::class)->inspect(
                 $this->getContent(),
-                ['code', 'type', 'slug', 'repository_url', 'default_branch', 'root', 'task_check'],
+                ['code', 'type', 'slug', 'repository_url', 'default_branch', 'root', 'task_check', 'test_command'],
             );
         } catch (UnexpectedValueException $exception) {
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
@@ -58,6 +60,7 @@ final class UpdateAppRequest extends FormRequest
                 && ! $this->exists('default_branch')
                 && ! $this->exists('root')
                 && ! $this->exists('task_check')
+                && ! $this->exists('test_command')
             ) {
                 $validator->errors()->add('body', 'Provide at least one Project update.');
             }
@@ -110,6 +113,8 @@ final class UpdateAppRequest extends FormRequest
             root: is_string($validated['root'] ?? null) ? $validated['root'] : null,
             taskCheckProvided: array_key_exists('task_check', $validated),
             taskCheck: is_string($validated['task_check'] ?? null) ? $validated['task_check'] : null,
+            testCommandProvided: array_key_exists('test_command', $validated),
+            testCommand: is_string($validated['test_command'] ?? null) ? $validated['test_command'] : null,
         );
     }
 }

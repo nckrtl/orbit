@@ -10,7 +10,7 @@ use Illuminate\Contracts\Validation\DataAwareRule;
 use Illuminate\Contracts\Validation\ValidationRule;
 
 /**
- * ADR 0163: fails_on_base is a JSON boolean, and only a test deliverable may set it.
+ * ADR 0163: fails_on_base is a JSON boolean, and only a command deliverable may set it.
  * The error names that deliverable's id. Implicit so an empty or null value is refused too.
  */
 final class FailsOnBase implements DataAwareRule, ValidationRule
@@ -25,8 +25,8 @@ final class FailsOnBase implements DataAwareRule, ValidationRule
         $id = $this->sibling($attribute, 'id');
         $who = is_string($id) && $id !== '' ? "deliverable {$id}" : 'this deliverable';
 
-        if ($this->sibling($attribute, 'type') !== TaskDeliverableType::Test->value) {
-            $fail("The fails_on_base field is only allowed on a test deliverable ({$who}).");
+        if ($this->sibling($attribute, 'type') !== TaskDeliverableType::Command->value) {
+            $fail("The fails_on_base field is only allowed on a command deliverable ({$who}).");
 
             return;
         }

@@ -65,6 +65,7 @@ final class ShowAppCommand extends GatewayCommand
             'Default branch' => $app->defaultBranch,
             'Web root' => $app->root,
             'Task check' => $app->taskCheck,
+            'Test command' => $app->testCommand,
             ...($app->excludedNodes === null ? [] : [
                 'Excluded nodes' => array_map(static fn (array $exclusion): string => $exclusion['node_name'], $app->excludedNodes) ?: null,
             ]),

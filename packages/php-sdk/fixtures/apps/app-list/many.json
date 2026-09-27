@@ -15,7 +15,8 @@
                 "default_branch": "release",
                 "root": "web/public",
                 "defaults": null,
-                "task_check": null
+                "task_check": null,
+                "test_command": null
             },
             {
                 "id": 2,
@@ -27,7 +28,8 @@
                 "default_branch": "main",
                 "root": "public",
                 "defaults": null,
-                "task_check": null
+                "task_check": null,
+                "test_command": null
             },
             {
                 "id": 3,
@@ -39,7 +41,8 @@
                 "default_branch": "main",
                 "root": "public",
                 "defaults": null,
-                "task_check": null
+                "task_check": null,
+                "test_command": null
             },
             {
                 "id": 4,
@@ -51,7 +54,8 @@
                 "default_branch": "main",
                 "root": "public",
                 "defaults": null,
-                "task_check": null
+                "task_check": null,
+                "test_command": null
             },
             {
                 "id": 5,
@@ -63,7 +67,8 @@
                 "default_branch": "release",
                 "root": "public",
                 "defaults": null,
-                "task_check": null
+                "task_check": null,
+                "test_command": null
             },
             {
                 "id": 6,
@@ -75,7 +80,8 @@
                 "default_branch": "main",
                 "root": "web/public",
                 "defaults": null,
-                "task_check": null
+                "task_check": null,
+                "test_command": null
             },
             {
                 "id": 7,
@@ -87,7 +93,8 @@
                 "default_branch": "main",
                 "root": "public",
                 "defaults": null,
-                "task_check": null
+                "task_check": null,
+                "test_command": null
             },
             {
                 "id": 8,
@@ -99,7 +106,8 @@
                 "default_branch": "main",
                 "root": "public",
                 "defaults": null,
-                "task_check": null
+                "task_check": null,
+                "test_command": null
             },
             {
                 "id": 9,
@@ -111,7 +119,8 @@
                 "default_branch": "release",
                 "root": "public",
                 "defaults": null,
-                "task_check": null
+                "task_check": null,
+                "test_command": null
             },
             {
                 "id": 10,
@@ -123,7 +132,8 @@
                 "default_branch": "main",
                 "root": "public",
                 "defaults": null,
-                "task_check": null
+                "task_check": null,
+                "test_command": null
             },
             {
                 "id": 11,
@@ -135,7 +145,8 @@
                 "default_branch": "main",
                 "root": "web/public",
                 "defaults": null,
-                "task_check": null
+                "task_check": null,
+                "test_command": null
             },
             {
                 "id": 12,
@@ -147,7 +158,8 @@
                 "default_branch": "main",
                 "root": "public",
                 "defaults": null,
-                "task_check": null
+                "task_check": null,
+                "test_command": null
             },
             {
                 "id": 13,
@@ -159,7 +171,8 @@
                 "default_branch": "release",
                 "root": "public",
                 "defaults": null,
-                "task_check": null
+                "task_check": null,
+                "test_command": null
             },
             {
                 "id": 14,
@@ -171,7 +184,8 @@
                 "default_branch": "main",
                 "root": "public",
                 "defaults": null,
-                "task_check": null
+                "task_check": null,
+                "test_command": null
             },
             {
                 "id": 15,
@@ -183,7 +197,8 @@
                 "default_branch": "main",
                 "root": "public",
                 "defaults": null,
-                "task_check": null
+                "task_check": null,
+                "test_command": null
             },
             {
                 "id": 16,
@@ -195,7 +210,8 @@
                 "default_branch": "main",
                 "root": "web/public",
                 "defaults": null,
-                "task_check": null
+                "task_check": null,
+                "test_command": null
             },
             {
                 "id": 17,
@@ -207,7 +223,8 @@
                 "default_branch": "release",
                 "root": "public",
                 "defaults": null,
-                "task_check": null
+                "task_check": null,
+                "test_command": null
             },
             {
                 "id": 18,
@@ -219,7 +236,8 @@
                 "default_branch": "main",
                 "root": "public",
                 "defaults": null,
-                "task_check": null
+                "task_check": null,
+                "test_command": null
             },
             {
                 "id": 19,
@@ -231,7 +249,8 @@
                 "default_branch": "main",
                 "root": "public",
                 "defaults": null,
-                "task_check": null
+                "task_check": null,
+                "test_command": null
             },
             {
                 "id": 20,
@@ -243,7 +262,8 @@
                 "default_branch": "main",
                 "root": "public",
                 "defaults": null,
-                "task_check": null
+                "task_check": null,
+                "test_command": null
             },
             {
                 "id": 21,
@@ -255,7 +275,8 @@
                 "default_branch": "release",
                 "root": "web/public",
                 "defaults": null,
-                "task_check": null
+                "task_check": null,
+                "test_command": null
             },
             {
                 "id": 22,
@@ -267,7 +288,8 @@
                 "default_branch": "main",
                 "root": "public",
                 "defaults": null,
-                "task_check": null
+                "task_check": null,
+                "test_command": null
             },
             {
                 "id": 23,
@@ -279,7 +301,8 @@
                 "default_branch": "main",
                 "root": "public",
                 "defaults": null,
-                "task_check": null
+                "task_check": null,
+                "test_command": null
             },
             {
                 "id": 24,
@@ -291,7 +314,8 @@
                 "default_branch": "main",
                 "root": "public",
                 "defaults": null,
-                "task_check": null
+                "task_check": null,
+                "test_command": null
             }
         ],
         "meta": {

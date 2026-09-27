@@ -180,6 +180,21 @@ describe('app requests', function (): void {
             ->toBe('stable');
     });
 
+    it('transports a file-aware test command on create and update', function (): void {
+        $create = new CreateAppRequest(
+            slug: 'kit',
+            repositoryUrl: 'https://github.com/acme/kit.git',
+            root: '.',
+            testCommand: 'phpunit {file} --filter {name}',
+        );
+        $update = new UpdateAppRequest(appId: 3, testCommand: 'phpunit {file} --filter {name}', testCommandProvided: true);
+        $clear = new UpdateAppRequest(appId: 3, testCommandProvided: true);
+
+        expect($create->body()->all())->toMatchArray(['test_command' => 'phpunit {file} --filter {name}'])
+            ->and($update->body()->all())->toBe(['test_command' => 'phpunit {file} --filter {name}'])
+            ->and($clear->body()->all())->toBe(['test_command' => null]);
+    });
+
     it('transports a task check update and an explicit clear', function (): void {
         $set = new UpdateAppRequest(appId: 3, taskCheck: 'vp run check', taskCheckProvided: true);
         $clear = new UpdateAppRequest(appId: 3, taskCheckProvided: true);
@@ -218,10 +233,13 @@ describe('app requests', function (): void {
             'root' => '.',
             'defaults' => null,
             'task_check' => 'composer check',
+            'test_command' => 'phpunit {file} --filter {name}',
         ], 'request-id');
 
         expect($response->taskCheck)->toBe('composer check')
+            ->and($response->testCommand)->toBe('phpunit {file} --filter {name}')
             ->and($response->toArray()['task_check'])->toBe('composer check')
+            ->and($response->toArray()['test_command'])->toBe('phpunit {file} --filter {name}')
             ->and(AppResponse::fromGatewayData(['id' => 4], 'request-id')->taskCheck)->toBeNull();
     });
 
@@ -250,6 +268,7 @@ function app_gateway_data(): array
         'default_branch' => 'main',
         'root' => 'public',
         'task_check' => 'composer check',
+        'test_command' => null,
         'defaults' => null,
     ];
 }

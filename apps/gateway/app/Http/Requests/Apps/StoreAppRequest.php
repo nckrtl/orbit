@@ -10,6 +10,7 @@ use App\Domain\SourceControl\GitBranchName;
 use App\Domain\SourceControl\GitRepositoryOrigin;
 use App\Domain\SourceControl\ProjectRoot;
 use App\Http\Requests\TopLevelJsonObjectInspector;
+use App\Rules\FileAwareTestCommand;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -35,6 +36,7 @@ final class StoreAppRequest extends FormRequest
             'root' => ['required', 'string', 'max:255'],
             'defaults' => ['nullable', 'array'],
             'task_check' => ['sometimes', 'nullable', 'string', 'max:4096'],
+            'test_command' => ['sometimes', 'nullable', 'string', 'max:4096', new FileAwareTestCommand],
         ];
     }
 
@@ -44,7 +46,7 @@ final class StoreAppRequest extends FormRequest
         try {
             return app(TopLevelJsonObjectInspector::class)->inspect(
                 $this->getContent(),
-                ['code', 'name', 'slug', 'type', 'repository_url', 'default_branch', 'root', 'defaults', 'task_check'],
+                ['code', 'name', 'slug', 'type', 'repository_url', 'default_branch', 'root', 'defaults', 'task_check', 'test_command'],
             );
         } catch (UnexpectedValueException $exception) {
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
@@ -90,6 +92,8 @@ final class StoreAppRequest extends FormRequest
             defaults: $defaults,
             taskCheckProvided: array_key_exists('task_check', $validated),
             taskCheck: is_string($validated['task_check'] ?? null) ? $validated['task_check'] : null,
+            testCommand: is_string($validated['test_command'] ?? null) ? $validated['test_command'] : null,
+            testCommandProvided: array_key_exists('test_command', $validated),
         );
     }
 

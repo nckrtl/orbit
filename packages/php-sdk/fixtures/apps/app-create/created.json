@@ -14,7 +14,8 @@
             "default_branch": "main",
             "root": "public",
             "defaults": null,
-            "task_check": "composer check"
+            "task_check": "composer check",
+            "test_command": null
         },
         "meta": {
             "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844"

@@ -83,7 +83,7 @@ final readonly class TaskScheduler
 
     private const string BASELINE_JAVASCRIPT_INSTALL_STEP = '[Orbit internal] Install JavaScript dependencies';
 
-    /** The check script sets this when a test deliverable names a project or file that is not in the checkout. */
+    /** The check script sets this when a command deliverable names an invalid directory or overlay path. */
     private const string INVALID_DELIVERABLE_STEP = 'invalid_deliverable';
 
     /** The check script sets this when an unexpected error still leaves a result. */
@@ -385,7 +385,7 @@ final readonly class TaskScheduler
             $this->requestAssistance(
                 $task,
                 $group,
-                $reason !== '' ? $reason : 'A test deliverable names a project or file that is not in the checkout.',
+                $reason !== '' ? $reason : 'A command deliverable names an invalid directory or overlay path.',
                 $observation,
             );
 
@@ -881,9 +881,9 @@ final readonly class TaskScheduler
 
     /**
      * ADR 0133: what the handoff check needs to record deliverable evidence, or null for a subtask without deliverables.
-     * ADR 0163: a test with fails_on_base true asks for the extra run on the same base as the review diff.
+     * ADR 0163: a command with fails_on_base true also runs against the start commit with its paths overlaid.
      *
-     * @return array{start: string|null, tests: list<array{id: string, project: string, file: string, fails_on_base?: bool}>, commands: list<array{id: string, command: string, directory: string}>}|null
+     * @return array{start: string|null, commands: list<array{id: string, command: string, directory: string, fails_on_base?: bool, paths?: list<string>}>}|null
      */
     private function deliverableCheck(Task $task): ?array
     {
@@ -891,23 +891,22 @@ final readonly class TaskScheduler
         if ($deliverables === []) {
             return null;
         }
-        $tests = [];
         $commands = [];
         foreach ($deliverables as $deliverable) {
-            if ($deliverable->type === TaskDeliverableType::Test) {
-                $test = ['id' => $deliverable->id, 'project' => TaskDeliverable::relative($deliverable->project) ?: '.', 'file' => TaskDeliverable::relative($deliverable->file)];
-                if ($deliverable->fails_on_base) {
-                    $test['fails_on_base'] = true;
-                }
-                $tests[] = $test;
-            } elseif ($deliverable->type === TaskDeliverableType::Command) {
-                $commands[] = ['id' => $deliverable->id, 'command' => $deliverable->command, 'directory' => TaskDeliverable::relative($deliverable->directory) ?: '.'];
+            if ($deliverable->type !== TaskDeliverableType::Command) {
+                continue;
             }
+            $command = ['id' => $deliverable->id, 'command' => $deliverable->command, 'directory' => TaskDeliverable::relative($deliverable->directory) ?: '.'];
+            if ($deliverable->fails_on_base) {
+                $command['fails_on_base'] = true;
+                $command['paths'] = $deliverable->paths;
+            }
+            $commands[] = $command;
         }
 
         $start = TaskReviewBase::commit($task);
 
-        return ['start' => $start !== '' ? $start : null, 'tests' => $tests, 'commands' => $commands];
+        return ['start' => $start !== '' ? $start : null, 'commands' => $commands];
     }
 
     private function receiptItem(?TaskRunReceipt $read, ?TaskComment $receipt): TaskRubricItem

@@ -407,6 +407,7 @@
             "kind": "product",
             "components": [],
             "concepts": [
+                "Deliverable",
                 "Deployment",
                 "Gateway",
                 "Instance",

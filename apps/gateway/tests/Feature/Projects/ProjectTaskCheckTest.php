@@ -62,6 +62,34 @@ it('stores the task check a new Project sends, including null', function (): voi
         ->assertJsonPath('data.task_check', null);
 });
 
+it('stores a file-aware test command separately from the task check', function (): void {
+    $created = $this->postJson('/api/v1/projects', [
+        'slug' => 'file-aware-test',
+        'type' => ProjectType::LaravelPackage->value,
+        'repository_url' => 'https://github.com/acme/file-aware-test.git',
+        'default_branch' => 'main',
+        'root' => '.',
+        'task_check' => 'cd apps/gateway && composer test',
+        'test_command' => 'cd {project} && phpunit {project_file} --filter {name}',
+    ])->assertCreated()
+        ->assertJsonPath('data.task_check', 'cd apps/gateway && composer test')
+        ->assertJsonPath('data.test_command', 'cd {project} && phpunit {project_file} --filter {name}');
+
+    $this->patchJson('/api/v1/projects/'.$created->json('data.id'), [
+        'test_command' => 'phpunit {file} --filter {name}',
+    ])->assertOk()
+        ->assertJsonPath('data.test_command', 'phpunit {file} --filter {name}')
+        ->assertJsonPath('data.task_check', 'cd apps/gateway && composer test');
+
+    $this->patchJson('/api/v1/projects/'.$created->json('data.id'), ['test_command' => null])
+        ->assertOk()
+        ->assertJsonPath('data.test_command', null);
+
+    $this->patchJson('/api/v1/projects/'.$created->json('data.id'), ['test_command' => 'phpunit tests/Test.php'])
+        ->assertUnprocessable()
+        ->assertJsonPath('error.details.test_command.0', 'The test_command must include the {file} or {project_file} placeholder.');
+});
+
 it('still refuses a Project create without a type', function (): void {
     $this->postJson('/api/v1/projects', [
         'slug' => 'untyped',

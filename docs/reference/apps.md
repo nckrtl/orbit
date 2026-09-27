@@ -46,10 +46,13 @@ The public Project contract uses these source fields.
 | `--default-branch` | Optional CLI input for `project:create`. |
 | `root` and `--root` | Required API and SDK field. A normalized repository-relative path; `.` is allowed for package types and means the repository root. |
 | `task_check` and `--task-check` | Optional command that task baselines and handoffs run ([Project check](/reference/tasks#project-check)). When omitted, `laravel-app` and `laravel-package` get `composer check`, and `monorepo` and `node-package` get null, which runs no check command. An explicit null also stores no command. |
+| `test_command` and `--test-command` | Optional file-aware template for converting legacy named test deliverables. It is separate from the quality check in `task_check`. |
+
+A `test_command` template must include `{file}` or `{project_file}`, and `{name}`. The migration shell-quotes these values and runs the template from the workspace root. Templates may also use `{project}`. When no template is configured, the migration explicitly maps legacy Pest test deliverables to Pest rather than reusing `task_check`. It changes to the former Project directory before running its local `vendor/bin/pest`, so that Project's PHPUnit configuration and bootstrap apply. The legacy test name becomes a case-sensitive, regex-escaped substring filter; overlay paths remain relative to the workspace.
 
 The type defaults apply to new Projects only. The upgrade gives every existing Project `composer check`, whatever its type. An operator clears it with `project:update --clear-task-check`, for example on an existing `node-package` Project without a Composer `check` script.
 
-SDK Project responses and the `project:list` and `project:show` commands expose the stored type, repository, default branch, root, and task check. The task check is an ordinary setting, like setup steps, so activity records it as sent. The API, SDK, CLI, activity, Doctor, and validation contracts expose no `main_branch` or `--main-branch` compatibility name.
+SDK Project responses and the `project:list` and `project:show` commands expose the stored type, repository, default branch, root, task check, and test command. The task check is an ordinary setting, like setup steps, so activity records it as sent. The API, SDK, CLI, activity, Doctor, and validation contracts expose no `main_branch` or `--main-branch` compatibility name.
 
 ## Keep one repository owner
 
@@ -79,7 +82,7 @@ Valid explicit values fill only unresolved or optional values. They do not overr
 
 ## Retry creation safely
 
-Repeating `project:create` with the same name, slug, type, repository access URL, default branch, root, defaults, and any sent task check returns the existing Project. A retry does not look up an omitted branch again.
+Repeating `project:create` with the same name, slug, type, repository access URL, default branch, root, defaults, and any sent task or test command returns the existing Project. A retry does not look up an omitted branch again.
 
 A retry that changes any creation value fails with `app.identity_conflict` and does not mutate the Project. A different repository access URL is a changed value even when it has the same canonical repository identity, so creation never switches the stored URL.
 
@@ -91,7 +94,7 @@ Edit the code in the web Project properties, or send `PATCH /api/v1/projects/{pr
 
 ## Update a Project
 
-Use `project:update` when an existing Project must change its type, slug, repository access URL, default branch, relative web root, or task check. The Gateway API accepts `PATCH /api/v1/projects/{project}` with those same fields. The PHP SDK sends `UpdateAppRequest` to that path. Omitted fields stay unchanged; send `task_check: null` to clear the task check. The MCP `project-update` tool accepts the same string-or-null field. [ADR 0016](/decisions/0016-reconcile-app-identity-and-source-default-updates) owns the source reconciliation lifecycle. The API, SDK, CLI, activity, Doctor, and validation contracts expose no `main_branch` or `--main-branch` name.
+Use `project:update` when an existing Project must change its type, slug, repository access URL, default branch, relative web root, task check, or test command. The Gateway API accepts `PATCH /api/v1/projects/{project}` with those same fields. The PHP SDK sends `UpdateAppRequest` to that path. Omitted fields stay unchanged; send `task_check: null` to clear the task check or `test_command: null` to clear the test command. A non-null test command must contain `{file}` or `{project_file}`, and `{name}`. The MCP `project-update` tool accepts the same string-or-null fields. [ADR 0016](/decisions/0016-reconcile-app-identity-and-source-default-updates) owns the source reconciliation lifecycle. The API, SDK, CLI, activity, Doctor, and validation contracts expose no `main_branch` or `--main-branch` name.
 
 ```bash
 orbit project:update 3 --repository=https://github.com/acme/site.git --default-branch=stable
@@ -105,6 +108,7 @@ orbit project:update 3 --repository=https://github.com/acme/site.git --default-b
 | `default_branch` and `--default-branch` | Store the new Project default and switch every development `default` Instance that inherits it. An explicit `branch_override` stays unchanged even when it matched the old default. |
 | `root` and `--root` | Change the inherited root of every Instance without its own override. Production resolves the new root inside the active release. |
 | `task_check` and `--task-check` | Store the command that task baselines and handoffs run. Send null or use `--clear-task-check` to run no check command. A type change keeps the stored value. |
+| `test_command` and `--test-command` | Set the legacy file-aware test template, or clear it with null or `--clear-test-command`. A type change keeps the stored value. |
 
 A type change must keep a root that the new type allows. When the stored root is `.` and the new type is `laravel-app` or `monorepo`, validation fails on `root` and the message names the type. Send a web root with the type change. A type or root change that leaves a Route target inheriting an unsupported root, such as `.`, returns `route.target_web_root_unsupported`.
 

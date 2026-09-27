@@ -7,8 +7,8 @@ namespace App\Http\Requests\Tasks;
 use App\Data\Tasks\UpdateTaskData;
 use App\Domain\Tasks\TaskDeliverableType;
 use App\Http\Requests\TopLevelJsonObjectInspector;
+use App\Rules\CommandPaths;
 use App\Rules\DistinctDeliverableIds;
-use App\Rules\ExactPestTestFile;
 use App\Rules\FailsOnBase;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -19,7 +19,7 @@ use UnexpectedValueException;
 
 final class UpdateTaskRequest extends FormRequest
 {
-    /** @return array<string, list<string|Enum|In|DistinctDeliverableIds|ExactPestTestFile|FailsOnBase>> */
+    /** @return array<string, list<string|Enum|In|DistinctDeliverableIds|FailsOnBase|CommandPaths>> */
     public function rules(): array
     {
         return [
@@ -27,18 +27,17 @@ final class UpdateTaskRequest extends FormRequest
             'brief' => ['sometimes', 'string', 'max:8000'],
             'position' => ['sometimes', 'integer:strict', 'min:1'],
             'deliverables' => ['sometimes', 'array', 'list', 'max:5', new DistinctDeliverableIds],
-            'deliverables.*' => ['required', 'array:id,type,description,path,change,project,file,name,command,directory,fails_on_base'],
+            'deliverables.*' => ['required', 'array:id,type,description,path,change,command,directory,fails_on_base,paths'],
             'deliverables.*.id' => ['required', 'string', 'max:64', 'regex:/\A[a-z0-9]+(?:-[a-z0-9]+)*\z/'],
             'deliverables.*.type' => ['required', 'string', Rule::enum(TaskDeliverableType::class)],
             'deliverables.*.description' => ['required', 'string', 'max:500'],
             'deliverables.*.path' => ['required_if:deliverables.*.type,file', 'prohibited_unless:deliverables.*.type,file', 'string', 'max:500', 'not_regex:#(?:\A/|(?:\A|/)\.\.(?:/|\z))#'],
             'deliverables.*.change' => ['required_if:deliverables.*.type,file', 'prohibited_unless:deliverables.*.type,file', 'string', Rule::in(['created', 'modified', 'any'])],
-            'deliverables.*.project' => ['required_if:deliverables.*.type,test', 'prohibited_unless:deliverables.*.type,test', 'string', 'max:500', 'not_regex:#(?:\A/|(?:\A|/)\.\.(?:/|\z))#'],
-            'deliverables.*.file' => ['required_if:deliverables.*.type,test', 'prohibited_unless:deliverables.*.type,test', 'string', 'max:500', new ExactPestTestFile],
-            'deliverables.*.name' => ['required_if:deliverables.*.type,test', 'prohibited_unless:deliverables.*.type,test', 'string', 'max:200'],
             'deliverables.*.fails_on_base' => ['sometimes', new FailsOnBase, 'boolean:strict'],
             'deliverables.*.command' => ['required_if:deliverables.*.type,command', 'prohibited_unless:deliverables.*.type,command', 'string', 'max:1000'],
             'deliverables.*.directory' => ['sometimes', 'prohibited_unless:deliverables.*.type,command', 'string', 'max:500', 'not_regex:#(?:\A/|(?:\A|/)\.\.(?:/|\z))#'],
+            'deliverables.*.paths' => [new CommandPaths, 'prohibited_unless:deliverables.*.type,command', 'array', 'list', 'max:100'],
+            'deliverables.*.paths.*' => ['required', 'string', 'max:500', 'not_regex:#(?:\A/|(?:\A|/)\.\.(?:/|\z))#'],
         ];
     }
 

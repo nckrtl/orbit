@@ -1,165 +1,146 @@
-#!/usr/bin/env php
-<?php
+#!/usr/bin/env python3
+"""Orbit run receipt. The Gateway installs this script and turn.json in .git/orbit/.
 
-declare(strict_types=1);
+An agent ends its turn with .git/orbit/run --thread=ID --outcome=OUTCOME --summary="..."
+Every required deliverable confirmation is passed as --deliverable=ID=evidence.
+"""
 
-/*
- * Orbit run receipt. The Gateway installs this script and turn.json in .git/orbit/.
- * An agent ends its turn with: .git/orbit/run --thread=ID --outcome=OUTCOME --summary="..."
- * --thread is the Orbit thread id from that thread's instructions. The tick applies the receipt only
- * when it is the acting thread.
- * A blocked turn also asks the operator one specific question: --question="..."
- * The approval of the last subtask also describes the pull request:
- * --pr-summary="..." --pr-change="..." (repeat) --pr-breaking="..." (repeat, or none)
- * Each subtask deliverable in turn.json is confirmed with --deliverable=ID=evidence (repeat):
- * every deliverable for ready_for_review, and every review deliverable for approved.
- */
+import json
+import os
+import re
+import secrets
+import sys
 
-const OUTCOMES = [
-    'implementer' => ['ready_for_review', 'blocked'],
-    'reviewer' => ['approved', 'changes_requested', 'blocked'],
-];
-
-const REPEATABLE = ['pr-change', 'pr-breaking', 'deliverable'];
-
-function refuse(string $message): never
-{
-    fwrite(STDERR, "orbit run: {$message}\n");
-    exit(2);
+OUTCOMES = {
+    'implementer': {'ready_for_review', 'blocked'},
+    'reviewer': {'approved', 'changes_requested', 'blocked'},
+}
+REPEATABLE = {'pr-change', 'pr-breaking', 'deliverable'}
+OUTCOME_ORDER = {
+    'implementer': ['ready_for_review', 'blocked'],
+    'reviewer': ['approved', 'changes_requested', 'blocked'],
 }
 
-$turn = json_decode((string) @file_get_contents(__DIR__.'/turn.json'), true);
-$role = is_array($turn) ? ($turn['role'] ?? null) : null;
-if (! is_string($role) || ! array_key_exists($role, OUTCOMES)) {
-    refuse('Orbit has not started a turn in this workspace.');
-}
-$final = ($turn['final'] ?? false) === true;
-$deliverables = [];
-foreach (is_array($turn['deliverables'] ?? null) ? $turn['deliverables'] : [] as $deliverable) {
-    if (is_array($deliverable) && is_string($deliverable['id'] ?? null)) {
-        $deliverables[$deliverable['id']] = is_string($deliverable['type'] ?? null) ? $deliverable['type'] : '';
-    }
-}
 
-$options = [];
-$arguments = array_slice($argv, 1);
-while ($arguments !== []) {
-    $argument = array_shift($arguments);
-    if (preg_match('/\A--(outcome|summary|question|pr-summary|pr-change|pr-breaking|deliverable|thread)(?:=(.*))?\z/s', $argument, $match) !== 1) {
-        refuse("unknown argument {$argument}.");
-    }
-    $name = $match[1];
-    $value = array_key_exists(2, $match) ? $match[2] : array_shift($arguments);
-    if (! is_string($value)) {
-        refuse("--{$name} needs a value.");
-    }
-    if (! in_array($name, REPEATABLE, true) && array_key_exists($name, $options)) {
-        refuse("pass --{$name} once.");
-    }
-    $value = trim($value);
-    if ($value === '') {
-        refuse("--{$name} cannot be empty.");
-    }
-    if (in_array($name, REPEATABLE, true)) {
-        $options[$name][] = $value;
-    } else {
-        $options[$name] = $value;
-    }
-}
+def refuse(message):
+    print(f'orbit run: {message}', file=sys.stderr)
+    raise SystemExit(2)
 
-$allowed = OUTCOMES[$role];
-$outcome = $options['outcome'] ?? '';
-if (! in_array($outcome, $allowed, true)) {
-    refuse('--outcome must be one of: '.implode(', ', $allowed).'.');
-}
-if (! array_key_exists('summary', $options)) {
-    refuse('--summary is required.');
-}
-if ($outcome === 'blocked' && ! array_key_exists('question', $options)) {
-    refuse('blocked needs --question with one specific question the operator can answer. If you can decide or find the answer yourself, keep working instead.');
-}
-if ($outcome !== 'blocked' && array_key_exists('question', $options)) {
-    refuse('--question is only for --outcome=blocked.');
-}
 
-$confirmations = [];
-foreach ($options['deliverable'] ?? [] as $confirmation) {
-    if (preg_match('/\A([a-z0-9]+(?:-[a-z0-9]+)*)=(.*)\z/s', $confirmation, $match) !== 1) {
-        refuse('--deliverable needs the form ID=evidence, such as --deliverable=export-test="tests/Feature/ExportTest.php".');
-    }
-    [, $id, $evidence] = $match;
-    if (! array_key_exists($id, $deliverables)) {
-        refuse("unknown deliverable {$id}. This subtask's deliverables are: ".($deliverables === [] ? 'none' : implode(', ', array_keys($deliverables))).'.');
-    }
-    if (array_key_exists($id, $confirmations)) {
-        refuse("confirm deliverable {$id} once.");
-    }
-    if (trim($evidence) === '') {
-        refuse("--deliverable={$id} needs evidence after the equals sign.");
-    }
-    $confirmations[$id] = trim($evidence);
-}
-$confirms = $role === 'implementer' ? $outcome === 'ready_for_review' : $outcome === 'approved';
-if (! $confirms && $confirmations !== []) {
-    refuse('--deliverable is only for --outcome='.($role === 'implementer' ? 'ready_for_review' : 'approved').'.');
-}
-if ($confirms) {
-    $required = $role === 'implementer'
-        ? array_keys($deliverables)
-        : array_keys(array_filter($deliverables, static fn (string $type): bool => $type === 'review'));
-    $missing = array_values(array_diff($required, array_keys($confirmations)));
-    if ($missing !== []) {
-        refuse(($role === 'implementer' ? 'ready_for_review' : 'approved').' needs --deliverable=ID=evidence for: '.implode(', ', $missing).'. Say where or how each one is met.');
-    }
-}
+def main(argv):
+    directory = os.path.dirname(os.path.abspath(__file__))
+    try:
+        with open(os.path.join(directory, 'turn.json'), encoding='utf-8') as source:
+            turn = json.load(source)
+    except (OSError, json.JSONDecodeError):
+        turn = None
+    role = turn.get('role') if isinstance(turn, dict) else None
+    if role not in OUTCOMES:
+        refuse('Orbit has not started a turn in this workspace.')
+    final = turn.get('final') is True
+    deliverables = {}
+    for item in turn.get('deliverables', []):
+        if isinstance(item, dict) and isinstance(item.get('id'), str):
+            deliverables[item['id']] = item.get('type', '')
 
-$threadId = null;
-if (array_key_exists('thread', $options)) {
-    if (preg_match('/\A[1-9][0-9]*\z/', $options['thread']) !== 1) {
-        refuse('--thread must be the Orbit thread id.');
-    }
-    $threadId = (int) $options['thread'];
-}
+    options = {}
+    arguments = list(argv)
+    while arguments:
+        argument = arguments.pop(0)
+        match = re.fullmatch(r'--(outcome|summary|question|pr-summary|pr-change|pr-breaking|deliverable|thread)(?:=(.*))?', argument, re.S)
+        if not match:
+            refuse(f'unknown argument {argument}.')
+        name, value = match.group(1), match.group(2)
+        if value is None:
+            if not arguments:
+                refuse(f'--{name} needs a value.')
+            value = arguments.pop(0)
+        value = value.strip()
+        if not value:
+            refuse(f'--{name} cannot be empty.')
+        if name in REPEATABLE:
+            options.setdefault(name, []).append(value)
+        elif name in options:
+            refuse(f'pass --{name} once.')
+        else:
+            options[name] = value
 
-$receipt = ['outcome' => $outcome, 'summary' => $options['summary']];
-if ($threadId !== null) {
-    $receipt['thread'] = $threadId;
-}
-if ($confirmations !== []) {
-    $receipt['deliverables'] = $confirmations;
-}
-if ($outcome === 'blocked') {
-    $receipt['question'] = $options['question'];
-}
-$describesPullRequest = array_key_exists('pr-summary', $options) || array_key_exists('pr-change', $options) || array_key_exists('pr-breaking', $options);
-if ($final && $role === 'reviewer' && $outcome === 'approved') {
-    if (! array_key_exists('pr-summary', $options)) {
-        refuse('approving the last subtask needs --pr-summary.');
-    }
-    if (! array_key_exists('pr-change', $options)) {
-        refuse('approving the last subtask needs at least one --pr-change.');
-    }
-    if (! array_key_exists('pr-breaking', $options)) {
-        refuse('approving the last subtask needs at least one --pr-breaking. Use --pr-breaking=none when nothing breaks.');
-    }
-    $breaking = $options['pr-breaking'];
-    if (in_array('none', array_map(strtolower(...), $breaking), true)) {
-        if (count($breaking) > 1) {
-            refuse('--pr-breaking=none cannot be combined with other breaking changes.');
-        }
-        $breaking = [];
-    }
-    $receipt['pull_request'] = ['summary' => $options['pr-summary'], 'changes' => $options['pr-change'], 'breaking' => $breaking];
-} elseif ($describesPullRequest) {
-    refuse('--pr-summary, --pr-change, and --pr-breaking are only for approving the last subtask.');
-}
-$receipt['nonce'] = bin2hex(random_bytes(16));
+    outcome = options.get('outcome', '')
+    if outcome not in OUTCOMES[role]:
+        refuse('--outcome must be one of: ' + ', '.join(OUTCOME_ORDER[role]) + '.')
+    if 'summary' not in options:
+        refuse('--summary is required.')
+    if outcome == 'blocked' and 'question' not in options:
+        refuse('blocked needs --question with one specific question the operator can answer. If you can decide or find the answer yourself, keep working instead.')
+    if outcome != 'blocked' and 'question' in options:
+        refuse('--question is only for --outcome=blocked.')
 
-$contents = json_encode($receipt, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
-$temporary = __DIR__.'/run.json.'.getmypid();
-if (file_put_contents($temporary, $contents."\n") === false || ! rename($temporary, __DIR__.'/run.json')) {
-    @unlink($temporary);
-    refuse('could not write the run receipt.');
-}
+    confirmations = {}
+    for confirmation in options.get('deliverable', []):
+        match = re.fullmatch(r'([a-z0-9]+(?:-[a-z0-9]+)*)=(.*)', confirmation, re.S)
+        if not match:
+            refuse('--deliverable needs the form ID=evidence, such as --deliverable=export-test="tests/Feature/ExportTest.php".')
+        deliverable_id, evidence = match.groups()
+        if deliverable_id not in deliverables:
+            refuse(f"unknown deliverable {deliverable_id}. This subtask's deliverables are: " + (', '.join(deliverables) if deliverables else 'none') + '.')
+        if deliverable_id in confirmations:
+            refuse(f'confirm deliverable {deliverable_id} once.')
+        if not evidence.strip():
+            refuse(f'--deliverable={deliverable_id} needs evidence after the equals sign.')
+        confirmations[deliverable_id] = evidence.strip()
+    confirms = (role == 'implementer' and outcome == 'ready_for_review') or (role == 'reviewer' and outcome == 'approved')
+    if not confirms and confirmations:
+        refuse('--deliverable is only for --outcome=' + ('ready_for_review' if role == 'implementer' else 'approved') + '.')
+    if confirms:
+        required = list(deliverables) if role == 'implementer' else [key for key, kind in deliverables.items() if kind == 'review']
+        missing = [key for key in required if key not in confirmations]
+        if missing:
+            refuse(('ready_for_review' if role == 'implementer' else 'approved') + ' needs --deliverable=ID=evidence for: ' + ', '.join(missing) + '. Say where or how each one is met.')
 
-fwrite(STDOUT, "Orbit recorded the run receipt ({$outcome}). End your turn now.\n");
+    thread_id = None
+    if 'thread' in options:
+        if not re.fullmatch(r'[1-9][0-9]*', options['thread']):
+            refuse('--thread must be the Orbit thread id.')
+        thread_id = int(options['thread'])
+
+    receipt = {'outcome': outcome, 'summary': options['summary']}
+    if thread_id is not None:
+        receipt['thread'] = thread_id
+    if confirmations:
+        receipt['deliverables'] = confirmations
+    if outcome == 'blocked':
+        receipt['question'] = options['question']
+    describes_pr = any(key in options for key in ('pr-summary', 'pr-change', 'pr-breaking'))
+    if final and role == 'reviewer' and outcome == 'approved':
+        if 'pr-summary' not in options:
+            refuse('approving the last subtask needs --pr-summary.')
+        if 'pr-change' not in options:
+            refuse('approving the last subtask needs at least one --pr-change.')
+        if 'pr-breaking' not in options:
+            refuse('approving the last subtask needs at least one --pr-breaking. Use --pr-breaking=none when nothing breaks.')
+        breaking = options['pr-breaking']
+        if any(item.lower() == 'none' for item in breaking):
+            if len(breaking) > 1:
+                refuse('--pr-breaking=none cannot be combined with other breaking changes.')
+            breaking = []
+        receipt['pull_request'] = {'summary': options['pr-summary'], 'changes': options['pr-change'], 'breaking': breaking}
+    elif describes_pr:
+        refuse('--pr-summary, --pr-change, and --pr-breaking are only for approving the last subtask.')
+    receipt['nonce'] = secrets.token_hex(16)
+    temporary = os.path.join(directory, f'run.json.{os.getpid()}')
+    try:
+        with open(temporary, 'w', encoding='utf-8') as output:
+            json.dump(receipt, output, ensure_ascii=False, indent=2)
+            output.write('\n')
+        os.replace(temporary, os.path.join(directory, 'run.json'))
+    except OSError:
+        try:
+            os.unlink(temporary)
+        except OSError:
+            pass
+        refuse('could not write the run receipt.')
+    print(f'Orbit recorded the run receipt ({outcome}). End your turn now.')
+
+
+if __name__ == '__main__':
+    main(sys.argv[1:])

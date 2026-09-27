@@ -40,10 +40,11 @@ it('renders a review packet with the group brief, subtask brief, deliverables, a
     expect(packet_section($packet, 'Group brief'))->toBe('Ship the export.')
         ->and(packet_section($packet, 'Subtask brief'))->toBe('Return the packet as text within the size limits.')
         ->and(packet_section($packet, 'Deliverables'))->toBe(implode("\n", [
-            '- reference-page (file): Document the export',
-            '- layout-repro (test): The home-screen test fails before the fix',
-            '- web-tests (command): The web app tests pass',
-            '- error-copy (review): Error messages name the failing subtask',
+            '- reference-page (file: docs/reference/tasks.md, modified): Document the export',
+            '- layout-repro (command: `vendor/bin/pest tests/Feature/HomeScreenTest.php --filter=\'home screen layout\'` in apps/gateway; paths apps/gateway/tests/Feature/HomeScreenTest.php are overlaid on the start commit, where it must fail before passi',
+            '- web-tests (command: `bun test` in apps/web): The web app tests pass',
+            '- error-copy (review: confirmed by the reviewer): Error messages name the failing subtask',
+            'tasks-show returns every field.',
         ]))
         ->and(packet_section($packet, 'Earlier approved subtasks'))->toBe('- Decide the packet: ADR 0169 records the caps.')
         ->and(packet_section($packet, 'Diff stat'))->toBe(implode("\n", [
@@ -54,9 +55,9 @@ it('renders a review packet with the group brief, subtask brief, deliverables, a
         ->and(packet_section($packet, 'Handoff'))->toBe(implode("\n", [
             'Status: passed',
             '`composer check` in . exited 0',
-            '`vendor/bin/pest tests/Feature/HomeScreenTest.php` in apps/gateway exited 2 on the start commit with an error and a failure: Class "HomeScreen" not found; Failed asserting that 1 is 2.',
-            '`vendor/bin/pest tests/Feature/HomeScreenTest.php` in apps/gateway exited 0',
-            '`bun test` in apps/web exited 0',
+            "`vendor/bin/pest tests/Feature/HomeScreenTest.php --filter='home screen layout'` in apps/gateway exited 2 on the start commit: Class \"HomeScreen\" not found",
+            "`vendor/bin/pest tests/Feature/HomeScreenTest.php --filter='home screen layout'` in apps/gateway exited 0: ok",
+            '`bun test` in apps/web exited 0: ok',
         ]))
         ->and(packet_section($packet, 'Diff'))->toBe("diff --git a/packet.php b/packet.php\n+packet")
         ->and($packet)->toContain('The approval must confirm each review deliverable (error-copy) with --deliverable=ID=evidence')
@@ -97,9 +98,9 @@ it('keeps each packet deliverable line within 240 characters and drops lines tha
 
     expect(mb_strlen($body))->toBeLessThanOrEqual(TaskReviewPacket::DeliverablesLimit)
         ->and($kept)->not->toBeEmpty()
-        ->and($kept[0])->toStartWith('- item-1 (review): item-1 ')
+        ->and($kept[0])->toStartWith('- item-1 (review: confirmed by the reviewer): item-1 ')
         ->and(mb_strlen($kept[0]))->toBeLessThanOrEqual(TaskReviewPacket::DeliverableLineLimit)
-        ->and(mb_strlen(substr($kept[0], strpos($kept[0], ': ') + 2)))->toBeLessThanOrEqual(TaskReviewPacket::DescriptionLimit)
+        ->and(mb_strlen(substr($kept[0], strrpos($kept[0], '): ') + 3)))->toBeLessThanOrEqual(TaskReviewPacket::DescriptionLimit)
         ->and($body)->not->toContain('item-20')
         ->and($body)->toEndWith((20 - count($kept)).' deliverables were omitted. tasks-show returns every field.');
 });
@@ -152,7 +153,7 @@ it('lists packet handoff commands with their directory and exit code and keeps a
     $handoff = packet_section(review_packet(), 'Handoff');
 
     expect($handoff)->toContain('`composer check` in . exited 0')
-        ->and($handoff)->toContain('`vendor/bin/pest tests/Feature/HomeScreenTest.php` in apps/gateway exited 2 on the start commit with an error and a failure: Class "HomeScreen" not found')
+        ->and($handoff)->toContain("`vendor/bin/pest tests/Feature/HomeScreenTest.php --filter='home screen layout'` in apps/gateway exited 2 on the start commit: Class \"HomeScreen\" not found")
         ->and($handoff)->toContain('`bun test` in apps/web exited 0')
         ->and($handoff)->not->toContain('reference-page')
         ->and($handoff)->not->toContain('.git/orbit/check.log');
@@ -174,7 +175,7 @@ it('cuts a packet handoff command to 160 characters and drops lines that do not 
     }
     $body = packet_section(review_packet([
         'deliverables' => $deliverables,
-        'evidence' => TaskDeliverableEvidence::fromArray(['diff' => [], 'tests' => [], 'commands' => $commands]),
+        'evidence' => TaskDeliverableEvidence::fromArray(['diff' => [], 'commands' => $commands]),
         'taskCheck' => null,
         'handoffExitCode' => null,
     ]), 'Handoff');
@@ -198,7 +199,7 @@ it('includes a packet base-run message tail only while it fits in the handoff ca
 
     expect($fits)->toContain('Class "HomeScreen" not found')
         ->and($fits)->not->toContain('.git/orbit/check.log')
-        ->and($cut)->toContain('with an error and a failure')
+        ->and($cut)->toContain('exited 2 on the start commit')
         ->and($cut)->not->toContain($tail)
         ->and(mb_strlen($cut))->toBeLessThanOrEqual(TaskReviewPacket::HandoffLimit)
         ->and($cut)->toContain('.git/orbit/check.log holds the command text and any cut tail.');
@@ -271,7 +272,7 @@ it('keeps the whole review packet within 16000 characters', function (): void {
         'approvals' => $approvals,
         'diffFiles' => $files,
         'diff' => str_repeat('D', 30_000),
-        'evidence' => TaskDeliverableEvidence::fromArray(['diff' => [], 'tests' => [], 'commands' => $commands]),
+        'evidence' => TaskDeliverableEvidence::fromArray(['diff' => [], 'commands' => $commands]),
         'opensPullRequest' => true,
     ]);
 
@@ -327,7 +328,7 @@ it('tells the packet reviewer not to re-run passed checks and that the turn is r
     $other = review_packet(['taskCheck' => 'vp run check']);
     $none = review_packet(['taskCheck' => null, 'handoffExitCode' => null]);
 
-    expect($composer)->toContain('Do not re-run the Project task check or the deliverable tests and commands the handoff already passed. That includes `composer check`.')
+    expect($composer)->toContain('Do not re-run the Project task check or deliverable commands the handoff already passed. That includes `composer check`.')
         ->and($composer)->toContain('The implementer works with a minimal toolset and has no web access.')
         ->and($composer)->toContain('current documentation for the versions this Project uses.')
         ->and($composer)->toContain('This review is read-only. Do not create, edit, reset, or delete workspace files')
@@ -372,7 +373,7 @@ it('keeps a review packet within 16000 characters when the task check and every 
         'diffFiles' => $files,
         'diff' => str_repeat('D', 30_000),
         'taskCheck' => $taskCheck,
-        'evidence' => TaskDeliverableEvidence::fromArray(['diff' => [], 'tests' => [], 'commands' => $commands]),
+        'evidence' => TaskDeliverableEvidence::fromArray(['diff' => [], 'commands' => $commands]),
         'startCommit' => $start,
         'opensPullRequest' => true,
     ]);
@@ -457,7 +458,7 @@ function review_packet(array $overrides = []): string
         'subtaskBrief' => 'Return the packet as text within the size limits.',
         'deliverables' => [
             TaskDeliverable::fromArray(['id' => 'reference-page', 'type' => 'file', 'description' => 'Document the export', 'path' => 'docs/reference/tasks.md', 'change' => 'modified']),
-            TaskDeliverable::fromArray(['id' => 'layout-repro', 'type' => 'test', 'description' => 'The home-screen test fails before the fix', 'project' => 'apps/gateway', 'file' => 'tests/Feature/HomeScreenTest.php', 'name' => 'home screen layout', 'fails_on_base' => true]),
+            TaskDeliverable::fromArray(['id' => 'layout-repro', 'type' => 'command', 'description' => 'The home-screen test fails before the fix', 'command' => 'vendor/bin/pest tests/Feature/HomeScreenTest.php --filter=\'home screen layout\'', 'directory' => 'apps/gateway', 'fails_on_base' => true, 'paths' => ['apps/gateway/tests/Feature/HomeScreenTest.php']]),
             TaskDeliverable::fromArray(['id' => 'web-tests', 'type' => 'command', 'description' => 'The web app tests pass', 'command' => 'bun test', 'directory' => 'apps/web']),
             TaskDeliverable::fromArray(['id' => 'error-copy', 'type' => 'review', 'description' => 'Error messages name the failing subtask']),
         ],
@@ -512,19 +513,14 @@ function handoff_evidence(string $baseMessage = 'Class "HomeScreen" not found'):
 {
     $evidence = TaskDeliverableEvidence::fromArray([
         'diff' => [],
-        'tests' => [
+        'commands' => [
             'layout-repro' => [
                 'exit_code' => 0,
-                'cases' => [['name' => 'it works on the working tree', 'status' => 'passed']],
+                'output' => 'ok',
+                'base_started' => true,
                 'base_exit_code' => 2,
-                'base_cases' => [
-                    ['name' => 'it breaks the home screen layout', 'status' => 'failed', 'kind' => 'error', 'message' => $baseMessage],
-                    ['name' => 'it still renders', 'status' => 'passed'],
-                    ['name' => 'it counts the rows', 'status' => 'failed', 'kind' => 'failure', 'message' => 'Failed asserting that 1 is 2.'],
-                ],
+                'base_output' => $baseMessage,
             ],
-        ],
-        'commands' => [
             'web-tests' => ['exit_code' => 0, 'output' => 'ok'],
         ],
     ]);

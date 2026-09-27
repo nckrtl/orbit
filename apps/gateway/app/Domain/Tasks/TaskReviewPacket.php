@@ -125,7 +125,7 @@ final readonly class TaskReviewPacket
 
     private function preamble(): string
     {
-        $rule = 'Do not re-run the Project task check or the deliverable tests and commands the handoff already passed.';
+        $rule = 'Do not re-run the Project task check or deliverable commands the handoff already passed.';
         if ($this->taskCheck === 'composer check') {
             $rule .= ' That includes `composer check`.';
         } elseif (is_string($this->taskCheck) && $this->taskCheck !== '') {
@@ -190,7 +190,8 @@ final readonly class TaskReviewPacket
     /** @return array{text: string, cut: bool} */
     private function deliverableLine(TaskDeliverable $deliverable): array
     {
-        $prefix = '- '.$deliverable->id.' ('.$deliverable->type->value.'): ';
+        $line = $deliverable->line();
+        $prefix = mb_substr($line, 0, mb_strlen($line) - mb_strlen($deliverable->description));
         $room = self::DeliverableLineLimit - mb_strlen($prefix);
         if ($room <= 0) {
             return ['text' => mb_substr($prefix, 0, self::DeliverableLineLimit), 'cut' => true];
@@ -347,9 +348,7 @@ final readonly class TaskReviewPacket
         return trim($dropped.' .git/orbit/check.log holds the command text and any cut tail. .git/orbit/check.json stores the exit codes.');
     }
 
-    /**
-     * The Project task check, then each deliverable test and command. A fails_on_base test adds its base run first.
-     *
+    /** The Project task check, then each deliverable command, including its base run when requested.
      * @return list<array{line: string, tail: ?string, truncated: bool}>
      */
     private function commandRecords(): array
@@ -358,95 +357,21 @@ final readonly class TaskReviewPacket
         if (is_string($this->taskCheck) && $this->taskCheck !== '' && is_int($this->handoffExitCode)) {
             $records[] = $this->commandRecord($this->taskCheck, '.', $this->handoffExitCode, null);
         }
-        $evidence = $this->evidence;
         foreach ($this->deliverables as $deliverable) {
-            if ($deliverable->type === TaskDeliverableType::Test) {
-                $run = $evidence === null ? null : ($evidence->tests[$deliverable->id] ?? null);
-                if ($deliverable->fails_on_base) {
-                    $base = $this->baseRecord($deliverable, $run);
-                    if ($base !== null) {
-                        $records[] = $base;
-                    }
-                }
-                if (is_array($run)) {
-                    $records[] = $this->commandRecord(
-                        'vendor/bin/pest '.$deliverable->file,
-                        $this->directory($deliverable->project),
-                        $run['exit_code'],
-                        null,
-                    );
-                }
+            if ($deliverable->type !== TaskDeliverableType::Command) {
+                continue;
             }
-            if ($deliverable->type === TaskDeliverableType::Command) {
-                $run = $evidence === null ? null : ($evidence->commands[$deliverable->id] ?? null);
-                if (is_array($run)) {
-                    $records[] = $this->commandRecord($deliverable->command, $this->directory($deliverable->directory), $run['exit_code'], null);
-                }
+            $run = $this->evidence?->commands[$deliverable->id] ?? null;
+            if (! is_array($run)) {
+                continue;
             }
+            if (isset($run['base_exit_code'])) {
+                $records[] = $this->commandRecord($deliverable->command, $this->directory($deliverable->directory), $run['base_exit_code'], $run['base_output'] ?? null, ' on the start commit');
+            }
+            $records[] = $this->commandRecord($deliverable->command, $this->directory($deliverable->directory), $run['exit_code'], $run['output']);
         }
 
         return $records;
-    }
-
-    /**
-     * @param  array{exit_code: int, cases: list<array{name: string, status: string, kind?: string, message?: string}>, base_placed?: bool, base_exit_code?: int, base_timed_out?: bool, base_timeout_seconds?: int, base_cases?: list<array{name: string, status: string, kind?: string, message?: string}>}|null  $run
-     * @return array{line: string, tail: ?string, truncated: bool}|null
-     */
-    private function baseRecord(TaskDeliverable $deliverable, ?array $run): ?array
-    {
-        if ($run === null) {
-            return null;
-        }
-        $exitCode = $run['base_exit_code'] ?? null;
-        if (! is_int($exitCode)) {
-            return null;
-        }
-        $suffix = ' on the start commit';
-        if (($run['base_timed_out'] ?? false) === true) {
-            $seconds = $run['base_timeout_seconds'] ?? null;
-            $suffix .= is_int($seconds) ? ' and timed out after '.$seconds.' seconds' : ' and timed out';
-        }
-        $kinds = [];
-        $messages = [];
-        foreach ($run['base_cases'] ?? [] as $case) {
-            if ($case['status'] !== 'failed') {
-                continue;
-            }
-            $kinds[] = ($case['kind'] ?? '') === 'error' ? 'error' : 'failure';
-            $message = trim($case['message'] ?? '');
-            if ($message !== '') {
-                $messages[] = $message;
-            }
-        }
-        if ($kinds !== []) {
-            $suffix .= ' with '.$this->kindPhrase($kinds);
-        }
-
-        return $this->commandRecord(
-            'vendor/bin/pest '.$deliverable->file,
-            $this->directory($deliverable->project),
-            $exitCode,
-            $messages === [] ? null : implode('; ', $messages),
-            $suffix,
-        );
-    }
-
-    /** @param list<string> $kinds */
-    private function kindPhrase(array $kinds): string
-    {
-        $unique = [];
-        foreach ($kinds as $kind) {
-            if (! in_array($kind, $unique, true)) {
-                $unique[] = $kind;
-            }
-        }
-        $words = array_map(static fn (string $kind): string => $kind === 'error' ? 'an error' : 'a failure', $unique);
-        if (count($words) === 1) {
-            return $words[0];
-        }
-        $last = array_pop($words);
-
-        return implode(', ', $words).' and '.$last;
     }
 
     /**

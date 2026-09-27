@@ -43,12 +43,14 @@ orbit project:create <slug> <type> <repository> [options]
 | `--default-branch=BRANCH` | the remote default | Stored default branch. The Gateway verifies that an explicit branch exists. |
 | `--root=PATH` | `.` for `laravel-package` and `node-package`; `public` otherwise | Normalized repository-relative root that Instances inherit. `.` means the repository root. |
 | `--task-check=COMMAND` | `composer check` for `laravel-app` and `laravel-package`; none otherwise | Command that task baselines and handoffs run in the workspace. See [Project check](/reference/tasks#project-check). |
+| `--test-command=TEMPLATE` | None | Optional file-aware command template for legacy named test-deliverable conversion. It must include `{file}` or `{project_file}`, and `{name}`. The migration shell-quotes replacements and runs it from the workspace root; `{project}` is also available. This is separate from `--task-check`. |
 
 ```bash
 orbit project:create acme laravel-app https://github.com/acme/site.git
 orbit project:create acme laravel-app git@github.com:acme/site.git --default-branch=stable --root=web/public
 orbit project:create support laravel-package git@github.com:acme/support.git --root=.
 orbit project:create node-kit node-package git@github.com:acme/node-kit.git --task-check="vp run check"
+orbit project:create php-kit laravel-package git@github.com:acme/php-kit.git --test-command='vendor/bin/phpunit {file} --filter {name}'
 ```
 
 Creation is idempotent. Repeating the command with the same values returns the existing Project. A retry that changes any value fails with `app.identity_conflict`, and a second Project for the same repository fails with `app.repository_identity_conflict`.
@@ -67,7 +69,7 @@ orbit project:list [--json]
 
 ## orbit project:show
 
-Show one Project with its source defaults and task check. Null `default_branch` or root values mean the source defaults are incomplete, and new Instance creation fails with `app.source_defaults_incomplete` until they exist. A null task check means tasks run no check command.
+Show one Project with its source defaults, task check, and test command. Null `default_branch` or root values mean the source defaults are incomplete, and new Instance creation fails with `app.source_defaults_incomplete` until they exist. A null task check means tasks run no check command. A null test command selects the documented legacy Pest mapping during conversion.
 
 ```bash
 orbit project:show <project> [--json]
@@ -79,10 +81,10 @@ orbit project:show <project> [--json]
 
 ## orbit project:update
 
-Change a Project's type, source defaults, or task check. Omitted fields stay unchanged. The Gateway reconciles affected development sources, inherited web roots, and generated domains before publishing the change. It does not start a production deployment. See [Update a Project](/reference/apps#update-a-project) for validation, rollback, and retry behavior.
+Change a Project's type, source defaults, task check, or test command. Omitted fields stay unchanged. The Gateway reconciles affected development sources, inherited web roots, and generated domains before publishing the change. It does not start a production deployment. See [Update a Project](/reference/apps#update-a-project) for validation, rollback, and retry behavior.
 
 ```bash
-orbit project:update <project> [--type=TYPE] [--slug=SLUG] [--repository=URL] [--default-branch=BRANCH] [--root=PATH] [--task-check=COMMAND] [--clear-task-check]
+orbit project:update <project> [--type=TYPE] [--slug=SLUG] [--repository=URL] [--default-branch=BRANCH] [--root=PATH] [--task-check=COMMAND] [--clear-task-check] [--test-command=TEMPLATE] [--clear-test-command]
 ```
 
 The command accepts these options.
@@ -96,6 +98,8 @@ The command accepts these options.
 | `--root=PATH` | New normalized repository-relative root for Instances without an override. Package types may use `.`. |
 | `--task-check=COMMAND` | New command that task baselines and handoffs run. A type change does not change it. |
 | `--clear-task-check` | Remove the task check so tasks run no check command. Combining it with `--task-check` fails with `app.task_check_conflict`. |
+| `--test-command=TEMPLATE` | Set a file-aware template used when converting legacy named tests. It must include `{file}` or `{project_file}`, and `{name}`. |
+| `--clear-test-command` | Clear the custom template and use the explicit legacy Pest mapping. Combining it with `--test-command` fails with `app.test_command_conflict`. |
 
 ## orbit project:destroy
 

@@ -16,6 +16,7 @@ describe(AppResponse::class, function (): void {
             'root' => 'public',
             'defaults' => ['php_version' => '8.5'],
             'task_check' => 'composer check',
+            'test_command' => 'phpunit {file} --filter {name}',
         ], '0198e15c-bf97-7c23-8f1f-61b8fe67a844');
 
         expect($response->toArray())->toBe([
@@ -27,6 +28,7 @@ describe(AppResponse::class, function (): void {
             'default_branch' => 'main',
             'root' => 'public',
             'task_check' => 'composer check',
+            'test_command' => 'phpunit {file} --filter {name}',
             'defaults' => ['php_version' => '8.5'],
             'request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844',
         ]);
@@ -40,6 +42,8 @@ describe(AppResponse::class, function (): void {
             ->and($response->root)
             ->toBeNull()
             ->and($response->defaults)
+            ->toBeNull()
+            ->and($response->testCommand)
             ->toBeNull();
     });
 });

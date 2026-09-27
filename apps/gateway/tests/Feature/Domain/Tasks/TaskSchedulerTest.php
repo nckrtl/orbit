@@ -1307,12 +1307,12 @@ it('starts a fresh reviewer per subtask with the packet, and continues that thre
         ->and($driver->calls[0]['title'])->toBe('Orbit task #'.$group->id.' · Review: First review')
         ->and($driver->calls[0]['operation'])->toBe('create')
         ->and($opening)->toContain('Review subtask #'.$first->id.': First review')
-        ->and($opening)->toContain('Do not re-run the Project task check or the deliverable tests and commands the handoff already passed.')
+        ->and($opening)->toContain('Do not re-run the Project task check or deliverable commands the handoff already passed.')
         ->and($opening)->toContain('That includes `composer check`.')
         ->and($opening)->toContain('Group brief')
         ->and($opening)->toContain($group->brief)
         ->and($opening)->toContain('Review the scheduler.')
-        ->and($opening)->toContain('- scheduler-test (review): Fresh reviewer per subtask')
+        ->and($opening)->toContain('- scheduler-test (review: confirmed by the reviewer): Fresh reviewer per subtask')
         ->and($opening)->toContain('- Packet: The packet matches ADR 0169.')
         ->and($opening)->toContain('1 file changed, 4 insertions(+), 1 deletion(-)')
         ->and($opening)->toContain('`composer check` in . exited 0')
@@ -1346,7 +1346,7 @@ it('starts a fresh reviewer per subtask with the packet, and continues that thre
     $continued = $driver->calls[1]['message'];
 
     expect($driver->calls[1])->toMatchArray(['operation' => 'send', 'thread' => 'conversation-1'])
-        ->and($continued)->toContain('Do not re-run the Project task check or the deliverable tests and commands the handoff already passed.')
+        ->and($continued)->toContain('Do not re-run the Project task check or deliverable commands the handoff already passed.')
         ->and($continued)->toContain('+fresh reviewer')
         ->and($continued)->toContain('git diff '.$start)
         ->and($continued)->not->toContain('Group brief')
@@ -1366,7 +1366,7 @@ it('starts a fresh reviewer per subtask with the packet, and continues that thre
         ->and($group->fresh()?->reviewer_agent_thread_id)->toBe($replacement?->id)
         ->and($driver->calls[3]['operation'])->toBe('create')
         ->and($replaced)->toContain('Group brief')
-        ->and($replaced)->toContain('Do not re-run the Project task check or the deliverable tests and commands the handoff already passed.')
+        ->and($replaced)->toContain('Do not re-run the Project task check or deliverable commands the handoff already passed.')
         ->and(AgentThread::query()->whereKey($thread->id)->exists())->toBeTrue();
 
     $second->update(['status' => TaskStatus::Running]);

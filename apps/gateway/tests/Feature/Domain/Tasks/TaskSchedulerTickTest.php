@@ -21,7 +21,6 @@ use App\Domain\Tasks\TaskCheckException;
 use App\Domain\Tasks\TaskCheckReading;
 use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskCheckStatus;
-use App\Domain\Tasks\TaskCommentType;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskPullRequestDescription;
@@ -4508,7 +4507,7 @@ function tick_all_deliverables(): array
 {
     return [
         ['id' => 'reference-page', 'type' => 'file', 'description' => 'Document the export', 'path' => 'docs/reference/*.md', 'change' => 'modified'],
-        ['id' => 'export-test', 'type' => 'test', 'description' => 'Test the export', 'project' => 'apps/gateway', 'file' => 'tests/Feature/ExportTest.php', 'name' => 'exports every subtask'],
+        ['id' => 'export-test', 'type' => 'command', 'description' => 'Test the export', 'command' => 'vendor/bin/pest tests/Feature/ExportTest.php', 'directory' => 'apps/gateway'],
         ['id' => 'web-tests', 'type' => 'command', 'description' => 'The web tests pass', 'command' => 'bun test', 'directory' => 'apps/web'],
         ['id' => 'error-copy', 'type' => 'review', 'description' => 'Errors name the subtask'],
     ];
@@ -4534,8 +4533,10 @@ function tick_evidence(array $overrides = []): array
             ['status' => 'M', 'path' => 'docs/reference/tasks.md'],
             ['status' => 'A', 'path' => 'apps/gateway/tests/Feature/ExportTest.php'],
         ],
-        'tests' => ['export-test' => ['exit_code' => 0, 'cases' => [['name' => 'it exports every subtask', 'status' => 'passed']]]],
-        'commands' => ['web-tests' => ['exit_code' => 0, 'output' => "12 pass\n"]],
+        'commands' => [
+            'export-test' => ['exit_code' => 0, 'output' => ''],
+            'web-tests' => ['exit_code' => 0, 'output' => "12 pass\n"],
+        ],
     ], ...$overrides];
 }
 
@@ -4549,7 +4550,7 @@ function tick_deliverable_reminder(): string
 }
 
 describe('subtask deliverables at handoff', function (): void {
-    it('asks the check for the diff, the test files, and the commands, then starts the reviewer when every deliverable passes', function (): void {
+    it('asks the check for the diff and commands, then starts the reviewer when every deliverable passes', function (): void {
         [$group, $task, $checks, , $receipts] = tick_deliverables(tick_all_deliverables(), tick_all_confirmations(), tick_evidence());
 
         app(TaskScheduler::class)->tick();
@@ -4557,8 +4558,10 @@ describe('subtask deliverables at handoff', function (): void {
 
         expect($checks->deliverables)->toBe([[
             'start' => str_repeat('5', 40),
-            'tests' => [['id' => 'export-test', 'project' => 'apps/gateway', 'file' => 'tests/Feature/ExportTest.php']],
-            'commands' => [['id' => 'web-tests', 'command' => 'bun test', 'directory' => 'apps/web']],
+            'commands' => [
+                ['id' => 'export-test', 'command' => 'vendor/bin/pest tests/Feature/ExportTest.php', 'directory' => 'apps/gateway'],
+                ['id' => 'web-tests', 'command' => 'bun test', 'directory' => 'apps/web'],
+            ],
         ]])
             ->and($task->fresh()?->status)->toBe(TaskStatus::Reviewing)
             ->and($task->comments()->sole()->deliverables)->toBe(tick_all_confirmations())
@@ -4578,7 +4581,7 @@ describe('subtask deliverables at handoff', function (): void {
 
     it('returns a failing file deliverable to the implementer with the reason', function (array $diff, string $change, string $reason): void {
         $deliverable = ['id' => 'reference-page', 'type' => 'file', 'description' => 'Document the export', 'path' => 'docs/reference/*.md', 'change' => $change];
-        [$group, $task] = tick_deliverables([$deliverable], ['reference-page' => 'Done'], ['start' => str_repeat('5', 40), 'diff' => $diff, 'tests' => [], 'commands' => []]);
+        [$group, $task] = tick_deliverables([$deliverable], ['reference-page' => 'Done'], ['start' => str_repeat('5', 40), 'diff' => $diff, 'commands' => []]);
 
         $reminder = tick_deliverable_reminder();
 
@@ -4593,30 +4596,14 @@ describe('subtask deliverables at handoff', function (): void {
         'a deleted file' => [[['status' => 'D', 'path' => 'docs/reference/tasks.md']], 'any', 'the diff deletes docs/reference/tasks.md, but the deliverable needs docs/reference/*.md modified.'],
     ]);
 
-    it('returns a failing test deliverable to the implementer with the reason', function (array $overrides, string $reason): void {
-        $deliverable = ['id' => 'export-test', 'type' => 'test', 'description' => 'Test the export', 'project' => 'apps/gateway', 'file' => 'tests/Feature/ExportTest.php', 'name' => 'exports every subtask'];
-        [$group, $task] = tick_deliverables([$deliverable], ['export-test' => 'ExportTest'], tick_evidence([...['commands' => []], ...$overrides]));
+    it('returns a failing command deliverable to the implementer with the reason', function (): void {
+        $deliverable = ['id' => 'export-test', 'type' => 'command', 'description' => 'Test the export', 'command' => 'vendor/bin/pest tests/Feature/ExportTest.php', 'directory' => 'apps/gateway'];
+        [$group, $task] = tick_deliverables([$deliverable], ['export-test' => 'ExportTest'], tick_evidence(['commands' => []]));
 
         $reminder = tick_deliverable_reminder();
 
         expect($task->fresh()?->status)->toBe(TaskStatus::Running)
-            ->and($reminder)->toContain("- export-test (test): {$reason}");
-    })->with([
-        'absent from the diff' => [['diff' => [['status' => 'M', 'path' => 'apps/gateway/tests/Feature/OtherTest.php']]], "apps/gateway/tests/Feature/ExportTest.php is not added or modified in the subtask's diff."],
-        'failed' => [['tests' => ['export-test' => ['exit_code' => 1, 'cases' => [['name' => 'it exports every subtask', 'status' => 'failed']]]]], 'Orbit ran apps/gateway/tests/Feature/ExportTest.php, and "it exports every subtask" failed.'],
-        'only replayed, so never run by the check' => [['tests' => []], "Orbit's check did not run apps/gateway/tests/Feature/ExportTest.php, so the test has no executed result. A replayed or cached result does not count."],
-        'without a test of that name' => [['tests' => ['export-test' => ['exit_code' => 0, 'cases' => [['name' => 'it renders', 'status' => 'passed']]]]], 'Orbit ran apps/gateway/tests/Feature/ExportTest.php (exit code 0), and no test name contains "exports every subtask". The run reported "it renders".'],
-        'skipped' => [['tests' => ['export-test' => ['exit_code' => 0, 'cases' => [['name' => 'it exports every subtask', 'status' => 'skipped']]]]], 'Orbit ran apps/gateway/tests/Feature/ExportTest.php, and "it exports every subtask" skipped.'],
-    ]);
-
-    it('returns a command that exits non-zero to the implementer with the end of its output', function (): void {
-        $deliverable = ['id' => 'web-tests', 'type' => 'command', 'description' => 'The web tests pass', 'command' => 'bun test', 'directory' => 'apps/web'];
-        [$group, $task] = tick_deliverables([$deliverable], ['web-tests' => 'Passes'], tick_evidence(['commands' => ['web-tests' => ['exit_code' => 1, 'output' => "1 fail\n"]]]));
-
-        $reminder = tick_deliverable_reminder();
-
-        expect($task->fresh()?->status)->toBe(TaskStatus::Running)
-            ->and($reminder)->toContain("- web-tests (command): `bun test` in apps/web exited with 1. The end of its output:\n\n```\n1 fail\n```");
+            ->and($reminder)->toContain("- export-test (command): Orbit's check did not run `vendor/bin/pest tests/Feature/ExportTest.php` in apps/gateway.");
     });
 
     it('fails every mechanical deliverable when the check recorded no evidence', function (): void {
@@ -4635,7 +4622,10 @@ describe('subtask deliverables at handoff', function (): void {
     });
 
     it('asks for assistance when a deliverable still fails after the reminder', function (): void {
-        $failing = FakeTaskCheckRunner::passed(tick_evidence(['commands' => ['web-tests' => ['exit_code' => 2, 'output' => "boom\n"]]]));
+        $failing = FakeTaskCheckRunner::passed(tick_evidence(['commands' => [
+            'export-test' => ['exit_code' => 0, 'output' => ''],
+            'web-tests' => ['exit_code' => 2, 'output' => "boom\n"],
+        ]]));
         [$group, $task, $checks, $notifier] = tick_deliverables(
             tick_all_deliverables(),
             tick_all_confirmations(),
@@ -4675,131 +4665,48 @@ describe('subtask deliverables at handoff', function (): void {
             ->and($task->comments()->sole()->deliverables)->toBe(['error-copy' => 'Each error names the subtask']);
     });
 
-    it('asks the check to prove a fails_on_base test and returns it when that test passes on the start commit', function (): void {
-        $deliverable = ['id' => 'layout-repro', 'type' => 'test', 'description' => 'The layout fails before the fix', 'project' => 'apps/gateway', 'file' => 'tests/Feature/HomeScreenTest.php', 'name' => 'home screen layout', 'fails_on_base' => true];
-        $evidence = [
-            'start' => str_repeat('5', 40),
-            'diff' => [['status' => 'M', 'path' => 'apps/gateway/tests/Feature/HomeScreenTest.php']],
-            'tests' => ['layout-repro' => [
-                'exit_code' => 0,
-                'cases' => [['name' => 'it keeps the home screen layout', 'status' => 'passed']],
-                'base_placed' => true,
-                'base_exit_code' => 0,
-                'base_cases' => [['name' => 'it keeps the home screen layout', 'status' => 'passed']],
-            ]],
-            'commands' => [],
+    it('asks the check to prove a fails_on_base command and returns it when base also passes', function (): void {
+        $deliverable = [
+            'id' => 'layout-repro', 'type' => 'command', 'description' => 'The layout fails before the fix',
+            'command' => 'vendor/bin/pest tests/Feature/HomeScreenTest.php', 'directory' => 'apps/gateway',
+            'fails_on_base' => true, 'paths' => ['apps/gateway/tests/Feature/HomeScreenTest.php'],
         ];
-        [$group, $task, $checks] = tick_deliverables([$deliverable], ['layout-repro' => 'HomeScreenTest'], $evidence);
-
-        $reminder = tick_deliverable_reminder();
-
-        expect($checks->deliverables)->toBe([[
-            'start' => str_repeat('5', 40),
-            'tests' => [['id' => 'layout-repro', 'project' => 'apps/gateway', 'file' => 'tests/Feature/HomeScreenTest.php', 'fails_on_base' => true]],
-            'commands' => [],
-        ]])
-            ->and($task->fresh()?->status)->toBe(TaskStatus::Running)
-            ->and($reminder)->toContain('layout-repro (test): The test "it keeps the home screen layout" passes on the start commit, so it does not reproduce the bug.');
-    });
-
-    it('proves a fails_on_base test from the workspace starting commit when the start commit was never recorded', function (): void {
-        $starting = str_repeat('c', 40);
-        $later = str_repeat('d', 40);
-        $deliverable = ['id' => 'layout-repro', 'type' => 'test', 'description' => 'The layout fails before the fix', 'project' => 'apps/gateway', 'file' => 'tests/Feature/HomeScreenTest.php', 'name' => 'home screen layout', 'fails_on_base' => true];
-        [$group, $task, $checks] = tick_deliverables([$deliverable], ['layout-repro' => 'HomeScreenTest'], null);
-        $task->update(['subtask_start_commit' => null]);
-        $group->taskable?->update(['starting_commit' => $starting]);
-        app()->instance(TaskWorkspaceStateReader::class, new class($later) implements TaskWorkspaceStateReader
-        {
-            public function __construct(private string $later) {}
-
-            public function headCommit(AppInstance $instance): ?string
-            {
-                return $this->later;
-            }
-
-            public function currentBranch(AppInstance $instance): ?string
-            {
-                return 'task-21';
-            }
-
-            public function definesComposerCheckScript(AppInstance $instance): bool
-            {
-                return true;
-            }
-        });
+        $evidence = tick_evidence(['commands' => [
+            'layout-repro' => ['base_started' => true, 'base_exit_code' => 0, 'base_output' => '', 'exit_code' => 0, 'output' => ''],
+        ]]);
+        [$group, $task, $checks] = tick_deliverables([$deliverable], ['layout-repro' => 'The command is in the Pest file'], $evidence);
 
         app(TaskScheduler::class)->tick();
-
-        expect($checks->deliverables[0]['start'] ?? null)->toBe($starting)
-            ->and($task->fresh()?->subtask_start_commit)->toBeNull();
-    });
-
-    it('proves a fails_on_base test from the previous approved commit when the start commit was never recorded', function (): void {
-        $approved = str_repeat('e', 40);
-        $starting = str_repeat('f', 40);
-        $later = str_repeat('9', 40);
-        $deliverable = ['id' => 'layout-repro', 'type' => 'test', 'description' => 'The layout fails before the fix', 'project' => 'apps/gateway', 'file' => 'tests/Feature/HomeScreenTest.php', 'name' => 'home screen layout', 'fails_on_base' => true];
-        [$group, $task, $checks] = tick_deliverables([$deliverable], ['layout-repro' => 'HomeScreenTest'], null);
-        $earlier = Task::query()->create([
-            'task_group_id' => $group->id,
-            'position' => 0,
-            'title' => 'Earlier',
-            'brief' => 'Already approved.',
-            'status' => TaskStatus::Completed,
-        ]);
-        TaskComment::query()->create([
-            'task_group_id' => $group->id,
-            'task_id' => $earlier->id,
-            'type' => TaskCommentType::Approved,
-            'body' => 'Approved.',
-            'author' => 'reviewer',
-            'commit_sha' => $approved,
-            'posted_at' => now(),
-        ]);
-        $task->update(['subtask_start_commit' => null]);
-        $group->taskable?->update(['starting_commit' => $starting]);
-        app()->instance(TaskWorkspaceStateReader::class, new class($later) implements TaskWorkspaceStateReader
-        {
-            public function __construct(private string $later) {}
-
-            public function headCommit(AppInstance $instance): ?string
-            {
-                return $this->later;
-            }
-
-            public function currentBranch(AppInstance $instance): ?string
-            {
-                return 'task-21';
-            }
-
-            public function definesComposerCheckScript(AppInstance $instance): bool
-            {
-                return true;
-            }
-        });
-
         app(TaskScheduler::class)->tick();
 
-        expect($checks->deliverables[0]['start'] ?? null)->toBe($approved)
-            ->and($checks->deliverables[0]['start'] ?? null)->not->toBe($starting)
-            ->and($checks->deliverables[0]['start'] ?? null)->not->toBe($later)
-            ->and($task->fresh()?->subtask_start_commit)->toBeNull();
+        expect($task->fresh()?->status)->toBe(TaskStatus::Running)
+            ->and($checks->deliverables)->toBe([[
+                'start' => str_repeat('5', 40),
+                'commands' => [[
+                    'id' => 'layout-repro',
+                    'command' => 'vendor/bin/pest tests/Feature/HomeScreenTest.php',
+                    'directory' => 'apps/gateway',
+                    'fails_on_base' => true,
+                    'paths' => ['apps/gateway/tests/Feature/HomeScreenTest.php'],
+                ]],
+            ]])
+            ->and(app(T3Dispatcher::class)->commands[0]['message']['text'])->toContain('also exited 0 on the start commit');
     });
 
-    it('asks for assistance when a test deliverable project or file is invalid, without reminding the implementer', function (): void {
-        $reason = "Deliverable sweep-test names project gateway, which is not a directory in the checkout.\nDeliverable sweep-test names file tests/Feature/SweepTest.php, which does not exist in apps/gateway.";
+    it('asks for assistance when a command overlay path is invalid, without reminding the implementer', function (): void {
+        $reason = 'Deliverable sweep-test names invalid overlay path missing.sh.';
         $failed = TaskCheckReading::finished(1, str_repeat('a', 40), str_repeat('b', 40), [], $reason."\n", failedStep: 'invalid_deliverable');
         [$group, $task, $checks, $notifier] = tick_deliverables(
             [[
                 'id' => 'sweep-test',
-                'type' => 'test',
+                'type' => 'command',
                 'description' => 'Repro the sweep',
-                'project' => 'gateway',
-                'file' => 'tests/Feature/SweepTest.php',
-                'name' => 'sweep',
+                'command' => 'vendor/bin/pest tests/Feature/SweepTest.php',
+                'directory' => 'apps/gateway',
+                'fails_on_base' => true,
+                'paths' => ['missing.sh'],
             ]],
-            ['sweep-test' => 'The check names the project'],
+            ['sweep-test' => 'The check names the missing path'],
             null,
             [$failed],
         );
@@ -4818,18 +4725,19 @@ describe('subtask deliverables at handoff', function (): void {
     });
 
     it('asks for assistance for an invalid deliverable even when the tree changed', function (): void {
-        $reason = 'Deliverable sweep-test names project gateway, which is not a directory in the checkout.';
+        $reason = 'Deliverable sweep-test names invalid overlay path missing.sh.';
         $failed = TaskCheckReading::finished(1, str_repeat('d', 40), str_repeat('c', 40), ['app'], $reason."\n", failedStep: 'invalid_deliverable');
         [$group, $task, $checks, $notifier] = tick_deliverables(
             [[
                 'id' => 'sweep-test',
-                'type' => 'test',
+                'type' => 'command',
                 'description' => 'Repro the sweep',
-                'project' => 'gateway',
-                'file' => 'tests/Feature/SweepTest.php',
-                'name' => 'sweep',
+                'command' => 'vendor/bin/pest tests/Feature/SweepTest.php',
+                'directory' => 'apps/gateway',
+                'fails_on_base' => true,
+                'paths' => ['missing.sh'],
             ]],
-            ['sweep-test' => 'The check names the project'],
+            ['sweep-test' => 'The check names the missing path'],
             null,
             [$failed],
         );

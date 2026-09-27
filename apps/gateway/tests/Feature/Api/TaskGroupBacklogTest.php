@@ -69,17 +69,16 @@ function backlog_group(mixed $test, array $subtasks = ['One', 'Two', 'Three'], a
 }
 
 /**
- * @return array{id: string, type: string, description: string, project: string, file: string, name: string}
+ * @return array{id: string, type: string, description: string, command: string, directory: string}
  */
 function php_test_deliverable(string $file, string $id = 'export-test'): array
 {
     return [
         'id' => $id,
-        'type' => 'test',
+        'type' => 'command',
         'description' => 'Test the export',
-        'project' => 'apps/gateway',
-        'file' => $file,
-        'name' => 'exports every subtask',
+        'command' => 'vendor/bin/pest '.escapeshellarg($file),
+        'directory' => 'apps/gateway',
     ];
 }
 
@@ -472,14 +471,14 @@ describe('subtask deliverables', function (): void {
 
         $created = $this->postJson("/api/v1/task-groups/{$group['id']}/tasks", ['title' => 'Export', 'brief' => 'Add the export.', 'deliverables' => [
             ['id' => 'reference-page', 'type' => 'file', 'description' => 'Document the export', 'path' => 'docs/reference/tasks.md', 'change' => 'modified'],
-            ['id' => 'export-test', 'type' => 'test', 'description' => 'Test the export', 'project' => 'apps/gateway', 'file' => 'tests/Feature/ExportTest.php', 'name' => 'exports every subtask'],
+            ['id' => 'export-test', 'type' => 'command', 'description' => 'Test the export', 'command' => 'vendor/bin/pest tests/Feature/ExportTest.php', 'directory' => 'apps/gateway'],
             ['id' => 'web-tests', 'type' => 'command', 'description' => 'The web tests pass', 'command' => 'bun test'],
             ['id' => 'error-copy', 'type' => 'review', 'description' => 'Errors name the subtask'],
         ]])->assertCreated()->json('data');
 
         expect($this->getJson("/api/v1/task-groups/{$group['id']}")->assertOk()->json('data.tasks.0.deliverables'))->toBe([
             ['id' => 'reference-page', 'type' => 'file', 'description' => 'Document the export', 'path' => 'docs/reference/tasks.md', 'change' => 'modified'],
-            ['id' => 'export-test', 'type' => 'test', 'description' => 'Test the export', 'project' => 'apps/gateway', 'file' => 'tests/Feature/ExportTest.php', 'name' => 'exports every subtask', 'fails_on_base' => false],
+            ['id' => 'export-test', 'type' => 'command', 'description' => 'Test the export', 'command' => 'vendor/bin/pest tests/Feature/ExportTest.php', 'directory' => 'apps/gateway'],
             ['id' => 'web-tests', 'type' => 'command', 'description' => 'The web tests pass', 'command' => 'bun test', 'directory' => '.'],
             ['id' => 'error-copy', 'type' => 'review', 'description' => 'Errors name the subtask'],
         ])->and($created['deliverables'])->toHaveCount(4);
@@ -504,8 +503,7 @@ describe('subtask deliverables', function (): void {
         'a file with an unknown change' => [['id' => 'docs', 'type' => 'file', 'description' => 'Docs', 'path' => 'docs/a.md', 'change' => 'deleted'], 'deliverables.0.change', 'The selected deliverables.0.change is invalid.'],
         'a path outside the workspace' => [['id' => 'docs', 'type' => 'file', 'description' => 'Docs', 'path' => '../secrets.md', 'change' => 'any'], 'deliverables.0.path', 'The deliverables.0.path field format is invalid.'],
         'an absolute path' => [['id' => 'docs', 'type' => 'file', 'description' => 'Docs', 'path' => '/etc/passwd', 'change' => 'any'], 'deliverables.0.path', 'The deliverables.0.path field format is invalid.'],
-        'a test without a name' => [['id' => 'export-test', 'type' => 'test', 'description' => 'Test', 'project' => 'apps/gateway', 'file' => 'tests/ExportTest.php'], 'deliverables.0.name', 'The deliverables.0.name field is required when deliverables.0.type is test.'],
-        'a test without a project' => [['id' => 'export-test', 'type' => 'test', 'description' => 'Test', 'file' => 'tests/ExportTest.php', 'name' => 'exports'], 'deliverables.0.project', 'The deliverables.0.project field is required when deliverables.0.type is test.'],
+        'the removed test type' => [['id' => 'export-test', 'type' => 'test', 'description' => 'Test'], 'deliverables.0.type', 'The selected deliverables.0.type is invalid.'],
         'a command without a command' => [['id' => 'web', 'type' => 'command', 'description' => 'Web tests'], 'deliverables.0.command', 'The deliverables.0.command field is required when deliverables.0.type is command.'],
         'a command directory outside the workspace' => [['id' => 'web', 'type' => 'command', 'description' => 'Web tests', 'command' => 'bun test', 'directory' => 'apps/../../etc'], 'deliverables.0.directory', 'The deliverables.0.directory field format is invalid.'],
         'a field of another type' => [['id' => 'docs', 'type' => 'review', 'description' => 'Docs', 'path' => 'docs/a.md'], 'deliverables.0.path', 'The deliverables.0.path field is prohibited unless deliverables.0.type is in file.'],
@@ -597,134 +595,31 @@ describe('subtask deliverables', function (): void {
             ->and(Task::query()->findOrFail($running)->status)->toBe(TaskStatus::Running);
     });
 
-    it('returns 422 validation.failed when a test file is not one exact php path', function (string $file): void {
-        $group = backlog_group($this, []);
-        $deliverable = php_test_deliverable($file);
-        $message = 'The test file for deliverable export-test must be one exact .php path.';
-        $groups = TaskGroup::query()->count();
-
-        $created = $this->postJson("/api/v1/task-groups/{$group['id']}/tasks", [
-            'title' => 'Export',
-            'brief' => 'Add the export.',
-            'deliverables' => [$deliverable],
-        ]);
-
-        expect($created->assertUnprocessable()->json('error.code'))->toBe('validation.failed')
-            ->and($created->json('error.details')['deliverables.0.file'][0] ?? null)->toBe($message)
-            ->and(Task::query()->where('task_group_id', $group['id'])->count())->toBe(0);
-
-        $subtask = $this->postJson("/api/v1/task-groups/{$group['id']}/tasks", [
-            'title' => 'Export',
-            'brief' => 'Add the export.',
-            'deliverables' => [['id' => 'done', 'type' => 'review', 'description' => 'Done.']],
-        ])->assertCreated()->json('data');
-        $updated = $this->patchJson("/api/v1/task-groups/{$group['id']}/tasks/{$subtask['id']}", [
-            'deliverables' => [$deliverable],
-        ]);
-
-        expect($updated->assertUnprocessable()->json('error.code'))->toBe('validation.failed')
-            ->and($updated->json('error.details')['deliverables.0.file'][0] ?? null)->toBe($message)
-            ->and(Task::query()->findOrFail($subtask['id'])->deliverables)->toBe([
-                ['id' => 'done', 'type' => 'review', 'description' => 'Done.'],
-            ]);
-
-        $groupCreated = $this->postJson('/api/v1/task-groups', [
-            'app_id' => $this->appRecord->id,
-            'title' => 'Exact file',
-            'brief' => 'Refuse a glob.',
-            'tasks' => [[
-                'title' => 'Export',
-                'brief' => 'Add the export.',
-                'deliverables' => [$deliverable],
-            ]],
-        ]);
-
-        expect($groupCreated->assertUnprocessable()->json('error.code'))->toBe('validation.failed')
-            ->and($groupCreated->json('error.details')['tasks.0.deliverables.0.file'][0] ?? null)->toBe($message)
-            ->and(TaskGroup::query()->count())->toBe($groups);
-    })->with([
-        'a star' => 'tests/Feature/**/*.php',
-        'a question mark' => 'tests/Export?.php',
-        'an opening bracket' => 'tests/Export[0].php',
-        'an opening brace' => 'tests/{Export}Test.php',
-        'a parent directory' => 'tests/../ExportTest.php',
-        'a suffix other than php' => 'tests/ExportTest.md',
-    ]);
-
-    it('names the deliverable id when a later test file is a glob', function (): void {
-        $group = backlog_group($this, []);
-        $deliverables = [
-            php_test_deliverable('tests/Feature/ExportTest.php', 'export-test'),
-            php_test_deliverable('tests/Feature/*.php', 'glob-test'),
-        ];
-        $message = 'The test file for deliverable glob-test must be one exact .php path.';
-
-        $created = $this->postJson("/api/v1/task-groups/{$group['id']}/tasks", [
-            'title' => 'Export',
-            'brief' => 'Add the export.',
-            'deliverables' => $deliverables,
-        ]);
-
-        expect($created->assertUnprocessable()->json('error.code'))->toBe('validation.failed')
-            ->and($created->json('error.details')['deliverables.1.file'][0] ?? null)->toBe($message)
-            ->and($created->json('error.details'))->not->toHaveKey('deliverables.0.file');
-
-        $subtask = $this->postJson("/api/v1/task-groups/{$group['id']}/tasks", [
-            'title' => 'Export',
-            'brief' => 'Add the export.',
-            'deliverables' => [['id' => 'done', 'type' => 'review', 'description' => 'Done.']],
-        ])->assertCreated()->json('data');
-        $updated = $this->patchJson("/api/v1/task-groups/{$group['id']}/tasks/{$subtask['id']}", [
-            'deliverables' => $deliverables,
-        ]);
-
-        expect($updated->assertUnprocessable()->json('error.details')['deliverables.1.file'][0] ?? null)->toBe($message);
-
-        $groupCreated = $this->postJson('/api/v1/task-groups', [
-            'app_id' => $this->appRecord->id,
-            'title' => 'Exact file',
-            'brief' => 'Name the id.',
-            'tasks' => [['title' => 'Export', 'brief' => 'Add the export.', 'deliverables' => $deliverables]],
-        ]);
-
-        expect($groupCreated->assertUnprocessable()->json('error.details')['tasks.0.deliverables.1.file'][0] ?? null)->toBe($message);
-    });
-
-    it('accepts an exact php test file and still accepts a glob on a file deliverable', function (): void {
+    it('accepts generic command deliverables with a base-run path list and file globs', function (): void {
         $group = backlog_group($this, []);
         $deliverables = [
             ['id' => 'reference-page', 'type' => 'file', 'description' => 'Docs across directories', 'path' => 'docs/**/*.md', 'change' => 'any'],
-            ['id' => 'question', 'type' => 'file', 'description' => 'One character', 'path' => 'docs/tasks?.md', 'change' => 'created'],
-            ['id' => 'bracket', 'type' => 'file', 'description' => 'A literal bracket', 'path' => 'docs/draft-[a].md', 'change' => 'modified'],
-            ['id' => 'brace', 'type' => 'file', 'description' => 'A literal brace', 'path' => 'docs/{draft}.md', 'change' => 'any'],
-            php_test_deliverable('tests/Feature/ExportTest.php'),
+            ['id' => 'layout-repro', 'type' => 'command', 'description' => 'Reproduce the layout regression', 'command' => 'vendor/bin/pest tests/Feature/HomeScreenTest.php', 'directory' => 'apps/gateway', 'fails_on_base' => true, 'paths' => ['apps/gateway/tests/Feature/HomeScreenTest.php']],
         ];
-
         $created = $this->postJson("/api/v1/task-groups/{$group['id']}/tasks", [
-            'title' => 'Export',
-            'brief' => 'Add the export.',
-            'deliverables' => $deliverables,
+            'title' => 'Layout', 'brief' => 'Fix the layout.', 'deliverables' => $deliverables,
         ])->assertCreated()->json('data');
 
-        $stored = stored_test_deliverables($deliverables);
+        expect($created['deliverables'])->toBe($deliverables);
 
-        expect($created['deliverables'])->toBe($stored);
-
-        $this->patchJson("/api/v1/task-groups/{$group['id']}/tasks/{$created['id']}", [
-            'deliverables' => $deliverables,
-        ])->assertOk()->assertJsonPath('data.deliverables', $stored);
-
+        $this->patchJson("/api/v1/task-groups/{$group['id']}/tasks/{$created['id']}", ['deliverables' => $deliverables])
+            ->assertOk()->assertJsonPath('data.deliverables', $deliverables);
         $this->postJson('/api/v1/task-groups', [
             'app_id' => $this->appRecord->id,
-            'title' => 'Exact file',
-            'brief' => 'Accept an exact path.',
-            'tasks' => [['title' => 'Export', 'brief' => 'Add the export.', 'deliverables' => $deliverables]],
-        ])->assertCreated()->assertJsonPath('data.tasks.0.deliverables', $stored);
+            'title' => 'Layout group',
+            'brief' => 'Fix the layout.',
+            'tasks' => [['title' => 'Layout', 'brief' => 'Fix the layout.', 'deliverables' => $deliverables]],
+        ])->assertCreated()->assertJsonPath('data.tasks.0.deliverables', $deliverables);
     });
 
-    it('stores fails_on_base on a test deliverable and returns 422 validation.failed when another type or value sets it', function (mixed $value, string $message): void {
+    it('stores fails_on_base on a command deliverable and rejects invalid values', function (mixed $value, string $message): void {
         $group = backlog_group($this, []);
-        $repro = ['id' => 'layout-repro', 'type' => 'test', 'description' => 'The layout fails before the fix', 'project' => 'apps/gateway', 'file' => 'tests/Feature/HomeScreenTest.php', 'name' => 'home screen layout', 'fails_on_base' => $value];
+        $repro = ['id' => 'layout-repro', 'type' => 'command', 'description' => 'The layout fails before the fix', 'command' => 'vendor/bin/pest tests/Feature/HomeScreenTest.php', 'directory' => 'apps/gateway', 'fails_on_base' => $value, 'paths' => ['apps/gateway/tests/Feature/HomeScreenTest.php']];
         $groups = TaskGroup::query()->count();
 
         if ($value === true || $value === false) {
@@ -794,9 +689,43 @@ describe('subtask deliverables', function (): void {
         'null' => [null, 'The fails_on_base value for deliverable layout-repro must be true or false.'],
     ]);
 
-    it('returns 422 validation.failed when fails_on_base is set on a deliverable that is not a test', function (array $deliverable): void {
+    it('enforces base paths and command-only paths across create, update, and group-create requests', function (array $deliverable, string $message): void {
         $group = backlog_group($this, []);
-        $message = 'The fails_on_base field is only allowed on a test deliverable (deliverable docs).';
+        $existing = $this->postJson("/api/v1/task-groups/{$group['id']}/tasks", [
+            'title' => 'Existing', 'brief' => 'Existing task.',
+            'deliverables' => [['id' => 'done', 'type' => 'review', 'description' => 'Done.']],
+        ])->assertCreated()->json('data');
+
+        $created = $this->postJson("/api/v1/task-groups/{$group['id']}/tasks", [
+            'title' => 'Invalid', 'brief' => 'Invalid task.', 'deliverables' => [$deliverable],
+        ]);
+        $updated = $this->patchJson("/api/v1/task-groups/{$group['id']}/tasks/{$existing['id']}", [
+            'deliverables' => [$deliverable],
+        ]);
+        $groupCreated = $this->postJson('/api/v1/task-groups', [
+            'app_id' => $this->appRecord->id,
+            'title' => 'Invalid group',
+            'brief' => 'Invalid task.',
+            'tasks' => [['title' => 'Invalid', 'brief' => 'Invalid task.', 'deliverables' => [$deliverable]]],
+        ]);
+
+        expect($created->assertUnprocessable()->json('error.details')['deliverables.0.paths'][0] ?? null)->toBe($message)
+            ->and($updated->assertUnprocessable()->json('error.details')['deliverables.0.paths'][0] ?? null)->toBe($message)
+            ->and($groupCreated->assertUnprocessable()->json('error.details')['tasks.0.deliverables.0.paths'][0] ?? null)->toBe($message);
+    })->with([
+        'base command needs paths' => [
+            ['id' => 'base-check', 'type' => 'command', 'description' => 'Reproduce the issue', 'command' => 'phpunit tests/ExampleTest.php', 'fails_on_base' => true],
+            'The paths value for deliverable base-check must contain at least one path when fails_on_base is true.',
+        ],
+        'review cannot have empty paths' => [
+            ['id' => 'review-check', 'type' => 'review', 'description' => 'Review the result', 'paths' => []],
+            'The paths field is only allowed on a command deliverable (deliverable review-check).',
+        ],
+    ]);
+
+    it('returns 422 validation.failed when fails_on_base is set on a deliverable that is not a command', function (array $deliverable): void {
+        $group = backlog_group($this, []);
+        $message = 'The fails_on_base field is only allowed on a command deliverable (deliverable docs).';
         $groups = TaskGroup::query()->count();
 
         $created = $this->postJson("/api/v1/task-groups/{$group['id']}/tasks", [
@@ -831,7 +760,6 @@ describe('subtask deliverables', function (): void {
             ->and(TaskGroup::query()->count())->toBe($groups);
     })->with([
         'a file' => [['id' => 'docs', 'type' => 'file', 'description' => 'Docs', 'path' => 'docs/a.md', 'change' => 'any', 'fails_on_base' => true]],
-        'a command' => [['id' => 'docs', 'type' => 'command', 'description' => 'Docs', 'command' => 'bun test', 'fails_on_base' => false]],
         'a review' => [['id' => 'docs', 'type' => 'review', 'description' => 'Docs', 'fails_on_base' => true]],
     ]);
 });
@@ -840,10 +768,6 @@ describe('subtask deliverables', function (): void {
 function stored_test_deliverables(array $deliverables): array
 {
     return array_map(static function (array $deliverable): array {
-        if (($deliverable['type'] ?? null) === 'test' && ! array_key_exists('fails_on_base', $deliverable)) {
-            $deliverable['fails_on_base'] = false;
-        }
-
         return $deliverable;
     }, $deliverables);
 }

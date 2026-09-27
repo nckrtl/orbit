@@ -15,7 +15,8 @@
                 "default_branch": null,
                 "root": null,
                 "defaults": null,
-                "task_check": null
+                "task_check": null,
+                "test_command": null
             }
         ],
         "meta": {

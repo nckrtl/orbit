@@ -139,7 +139,7 @@ The `directory` is relative to the workspace root and defaults to `.`. `fails_on
 
 The engine runs each command and owns the base archive, timeout, and recorded evidence. It does not interpret test names or runner output; the Project's own task policy and command define runner-specific matching, such as Pest test names or JUnit results. [Prove a command fails on the start commit](#prove-a-command-fails-on-the-start-commit) defines the two-run check.
 
-The engine has no `test` deliverable type or compatibility path. A data migration converts stored `test` deliverables in open groups to `command` deliverables that run the Project's configured test command for the former file, carry over `fails_on_base`, and overlay that file through `paths` for the base run. Test-name matching is Project policy, not a separate engine field.
+The engine has no `test` deliverable type or compatibility path. A data migration converts stored `test` deliverables in open groups to `command` deliverables; it does not reuse or modify the Project's `task_check`, which remains the workspace-root quality check. A Project may configure a separate `test_command` template with `{file}` or `{project_file}` and `{name}` placeholders; the migration expands these shell-quoted values at the workspace root. Since the removed `test` type explicitly represented named Pest tests, an unset `test_command` uses an explicit legacy mapping to the former Project's Pest executable, file, and filter. The migration normalizes the former project/file paths, carries over `fails_on_base`, and overlays the normalized file through `paths` for a base run.
 
 ```json
 [

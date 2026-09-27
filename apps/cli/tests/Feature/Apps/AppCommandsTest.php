@@ -71,7 +71,7 @@ describe('project:create', function (): void {
             ]);
     });
 
-    it('sends a task check on create only when --task-check is given', function (): void {
+    it('sends task and file-aware test commands on Project create', function (): void {
         $mockClient = MockClient::global([CreateAppRequest::class => app_mock_response(201)]);
 
         $this->artisan('project:create', [
@@ -79,9 +79,13 @@ describe('project:create', function (): void {
             'type' => 'node-package',
             'repository' => 'git@github.com:acme/kit.git',
             '--task-check' => 'vp run check',
+            '--test-command' => 'cd {project} && phpunit {project_file} --filter {name}',
         ])->assertExitCode(0);
 
-        expect($mockClient->getLastRequest()?->body()->all())->toMatchArray(['task_check' => 'vp run check']);
+        expect($mockClient->getLastRequest()?->body()->all())->toMatchArray([
+            'task_check' => 'vp run check',
+            'test_command' => 'cd {project} && phpunit {project_file} --filter {name}',
+        ]);
 
         $defaultClient = MockClient::global([CreateAppRequest::class => app_mock_response(201)]);
 
@@ -91,7 +95,8 @@ describe('project:create', function (): void {
             'repository' => 'git@github.com:acme/kit.git',
         ])->assertExitCode(0);
 
-        expect($defaultClient->getLastRequest()?->body()->all())->not->toHaveKey('task_check');
+        expect($defaultClient->getLastRequest()?->body()->all())->not->toHaveKey('task_check')
+            ->and($defaultClient->getLastRequest()?->body()->all())->not->toHaveKey('test_command');
     });
 
     it('creates a node-package Project through the typed SDK request', function (): void {
@@ -511,7 +516,7 @@ describe('project:update', function (): void {
             ->toHaveKey('main_branch');
     });
 
-    it('sets or clears the Project task check through the SDK request', function (): void {
+    it('sets or clears Project task and file-aware test commands through the SDK request', function (): void {
         $setClient = MockClient::global([UpdateAppRequest::class => app_mock_response()]);
 
         $this->artisan('project:update', [
@@ -530,6 +535,22 @@ describe('project:update', function (): void {
 
         expect($clearClient->getLastRequest()?->body()->all())
             ->toBe(['task_check' => null]);
+
+        $testClient = MockClient::global([UpdateAppRequest::class => app_mock_response()]);
+        $this->artisan('project:update', [
+            'project' => '3',
+            '--test-command' => 'cd {project} && phpunit {project_file} --filter {name}',
+        ])->assertExitCode(0);
+        expect($testClient->getLastRequest()?->body()->all())
+            ->toBe(['test_command' => 'cd {project} && phpunit {project_file} --filter {name}']);
+
+        $clearTestClient = MockClient::global([UpdateAppRequest::class => app_mock_response()]);
+        $this->artisan('project:update', [
+            'project' => '3',
+            '--clear-test-command' => true,
+        ])->assertExitCode(0);
+        expect($clearTestClient->getLastRequest()?->body()->all())
+            ->toBe(['test_command' => null]);
     });
 
     it('refuses --task-check with --clear-task-check before contacting the Gateway', function (): void {
@@ -652,6 +673,7 @@ function app_payload(): array
         'default_branch' => 'main',
         'root' => 'public',
         'task_check' => 'composer check',
+        'test_command' => null,
         'defaults' => ['php_version' => '8.5'],
     ];
 }

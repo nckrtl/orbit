@@ -39,8 +39,9 @@ final readonly class RemoteTaskRunReceipts implements TaskRunReceipts
                 $fields = [
                     'id' => $deliverable->id, 'type' => $deliverable->type->value, 'description' => $deliverable->description,
                 ];
-                if ($deliverable->type === TaskDeliverableType::Test) {
-                    $fields['fails_on_base'] = $deliverable->fails_on_base;
+                if ($deliverable->type === TaskDeliverableType::Command && $deliverable->fails_on_base) {
+                    $fields['fails_on_base'] = true;
+                    $fields['paths'] = $deliverable->paths;
                 }
 
                 return $fields;

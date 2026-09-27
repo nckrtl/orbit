@@ -24,6 +24,7 @@ use SensitiveParameter;
  * @property string|null $root
  * @property array<string, mixed>|null $defaults
  * @property string|null $task_check
+ * @property string|null $test_command
  * @property-read Collection<int, TaskGroup> $taskGroups
  */
 final class App extends Model
@@ -36,7 +37,7 @@ final class App extends Model
 
     /** @var list<string> */
     #[\Override]
-    protected $fillable = ['name', 'code', 'slug', 'type', 'repository_url', 'default_branch', 'root', 'defaults', 'task_check'];
+    protected $fillable = ['name', 'code', 'slug', 'type', 'repository_url', 'default_branch', 'root', 'defaults', 'task_check', 'test_command'];
 
     /** @var list<string> */
     #[\Override]
@@ -57,6 +58,13 @@ final class App extends Model
         return self::query()
             ->where('repository_identity', GitRepositoryIdentity::derive($repository))
             ->first();
+    }
+
+    public function testCommandTemplate(): ?string
+    {
+        $command = $this->test_command;
+
+        return is_string($command) && trim($command) !== '' ? trim($command) : null;
     }
 
     /** @return HasMany<AppInstance, $this> */
