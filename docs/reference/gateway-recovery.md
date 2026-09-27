@@ -7,6 +7,14 @@ description: "Preserve source, state, and keys through an update or recovery."
 
 This guide helps an operator preserve Gateway state during a source update and recover when an update fails. It covers the installation layout from the [Quickstart](/quickstart#install-orbit). Test the procedure on a disposable copy before relying on it for important data.
 
+## Gateway request logs
+
+An exception rendered as an HTTP status below 500 is an expected client refusal and is recorded at `INFO`, not `ERROR`, so client mistakes and operation guards do not inflate the server-error signal. Exceptions rendered with a status of 500 or higher are reported at `ERROR`.
+
+Every log entry written during an HTTP request carries that request's `request_id`. When the request creates an Activity row, its `activity_log.request_id` has the same value. Search the Gateway logs for the Activity row's request ID to find all related request log entries.
+
+Gateway log files rotate daily and retain 14 days. The daily rotation bounds disk usage instead of writing indefinitely to one file.
+
 Gateway web setup grants Caddy access to regular files and directories under the checkout’s `public` directory, including files restored with restrictive permissions. It does not follow public symlinks or change private source permissions. The Gateway `.env` stays at mode `0600`.
 
 ## Preserve a complete state set
