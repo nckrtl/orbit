@@ -33,17 +33,19 @@ final readonly class ViteProcessLifecycle
      * @param  Closure(): void  $launch
      * @param  Closure(): void  $stop
      */
-    public function run(Process $process, Closure $launch, Closure $stop, bool $start, bool $restart = false): void
+    public function run(Process $process, Closure $launch, Closure $stop, bool $start, bool $restart = false, bool $explicitStart = false): void
     {
         $instance = AppInstance::query()->with('node')->findOrFail($process->owner_id);
-        $this->owner->synchronized($instance->node_id, function () use ($process, $instance, $launch, $stop, $start, $restart): void {
+        $this->owner->synchronized($instance->node_id, function () use ($process, $instance, $launch, $stop, $start, $restart, $explicitStart): void {
             try {
                 $port = $this->ports->assign($instance);
                 if ($port === null) {
                     throw new ProcessOperationException('vite-prepare', 'vite.development_required', 'The Vite preset requires a development AppInstance.');
                 }
                 $owned = $this->runtime->ownsListener($process, $instance, $port);
-                if ($owned && $start && ! $restart && $this->runtime->ready($process, $instance, $port)) {
+                if ($owned && $start && $explicitStart && ! $restart && $this->runtime->ready($process, $instance, $port)) {
+                    $this->runtime->markAwake($instance);
+
                     return;
                 }
 
@@ -68,6 +70,10 @@ final readonly class ViteProcessLifecycle
                     $attemptDeadline = min($deadline, ($this->clock)() + 15);
                     do {
                         if ($this->runtime->ready($process, $instance, (int) $port)) {
+                            if ($explicitStart && ! $restart) {
+                                $this->runtime->markAwake($instance);
+                            }
+
                             return;
                         }
                         ($this->wait)();

@@ -1312,7 +1312,7 @@ final class RemoveNodeFakeProcessRuntimeManager implements ProcessRuntimeManager
         $this->commands[] = 'converge';
     }
 
-    public function start(Process $process): void
+    public function start(Process $process, bool $explicit = false): void
     {
         $this->commands[] = 'start';
     }

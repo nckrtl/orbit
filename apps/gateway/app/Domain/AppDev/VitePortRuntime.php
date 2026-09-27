@@ -19,6 +19,8 @@ interface VitePortRuntime
 
     public function suspendTraffic(AppInstance $instance): void;
 
+    public function markAwake(AppInstance $instance): void;
+
     public function prepare(Process $process, AppInstance $instance): void;
 
     public function project(AppInstance $instance): void;
