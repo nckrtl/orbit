@@ -27,62 +27,15 @@ The Gateway reads the source's `composer.json` once, before it publishes the run
 
 The Instance records the selected version in its [source profile](/domains/applications#provision-the-application-endpoint). There is no input or output field to choose a version. The Node role installs, configures, and removes every selected version.
 
-## Development runtime
-
 Orbit does not recover missing source profiles on older Instances. ADR 0177 records the no-legacy-support rule.
 
-Instance input, persisted Instance state, API responses, the PHP SDK, and the CLI do not expose a PHP-version field. The Node application role owns installation, configuration, and removal of every selected PHP runtime.
+## Development runtime
 
-## Runtime ownership
+Development sites share the distribution service `php<version>-fpm`. Each site has its own pool and socket.
 
-Development sites for one PHP version share the distribution PHP-FPM service. Each new production PHP Instance uses the service, pool, socket, and OPcache instance recorded for its production Unix user. Production users on the same Node share the installed PHP version packages but do not share a PHP-FPM master.
+Orbit publishes one module per version at `/etc/php/<version>/mods-available/orbit-runtime.ini` and enables it for FPM only, as `/etc/php/<version>/fpm/conf.d/99-orbit-runtime.ini`. The CLI keeps stock settings. At each convergence, the Gateway compares the module with the installed file, repairs the link, and reloads the service only when the module or its enablement changed.
 
-The production identity follows fixed names that an operator can inspect.
-
-| Projection | Name or path | Owner | Lifecycle |
-| --- | --- | --- | --- |
-| Service | `orbit-<production-user>-php<version>-fpm.service` | Gateway | Created and activated for the recorded production user; removed with that Instance's runtime projection. |
-| Socket | `/run/php/<production-user>.sock` | Gateway | Created by the owning service and removed when that service stops. |
-| Generated identity | Generated PHP-FPM files below `/etc/orbit/php-fpm/<production-user>/generated/`, including the service-specific `master.ini` | Gateway | Replaced only after the complete candidate validates against the recorded user, service, pool, socket, version, home, source paths, and effective master settings. |
-| Local tuning | `/etc/orbit/php-fpm/<production-user>/local.conf` | Operating agent | Seeded with Orbit defaults for a new runtime and then preserved byte-for-byte by provisioning, retry, and cleanup. |
-
-Production runtime convergence keeps the shared `/etc/orbit` directory owned by `root:root` with mode `0711`. This mode lets production users traverse to their protected Schedule scripts without letting them list the shared directory. Convergence creates the directory when it is absent and repairs a real `root:root` directory, including mode `0700`. It refuses a symlink, a non-directory, or a directory with different ownership before it changes runtime contents.
-
-The shared-parent repair does not relax its children. In particular, `/etc/orbit/php-fpm` and its protected runtime state remain inaccessible to application users. Convergence preserves sibling contents, generated runtime identity, and local operator tuning.
-
-The generated configuration establishes runtime identity and includes the separate local tuning file. Before activation or an Orbit-owned reload, the Gateway validates the effective configuration and refuses a local or conflicting file that changes the recorded user, service, pool, socket, PHP version, home, or application path. It does not adopt an existing user, service, socket, generated directory, or file whose identity or ownership conflicts with the Instance record.
-
-An interrupted publication resumes from the recorded production identity. A failed candidate activation restores the exact generated files and service state captured before publication. It never replaces the local tuning file during recovery.
-
-Preparation, retry, and removal of a dedicated runtime affect only that Instance. They do not rewrite or adopt another placement. A Node can also run the Gateway or development PHP service; production runtime operations leave those service masters and caches unchanged.
-
-## Project updates
-
-A slug or web-root update may reproject the owning production PHP-FPM service so the effective document root matches the Instance. The Gateway validates the complete effective configuration before it activates or reloads that service. It preserves `/etc/orbit/php-fpm/<production-user>/local.conf` byte-for-byte and does not reload, restart, or reset another production user's service or OPcache. [Applications](/domains/applications#reconcile-an-app-update) describes when this reprojection runs.
-
-## Shared runtime module
-
-Development sites use a normal Debian PHP module at `/etc/php/<version>/mods-available/orbit-runtime.ini`, enabled for the FPM Server Application Programming Interface (SAPI) as `/etc/php/<version>/fpm/conf.d/99-orbit-runtime.ini` through `phpenmod`. On every development-runtime convergence the Gateway compares the rendered module with the installed file, repairs a missing or wrong `conf.d` link, and verifies the effective managed directives through `php-fpm<version> -i`.
-
-The Gateway reloads the development PHP-FPM service only when its managed module, enablement, or FPM PCOV enablement changes. A dedicated production operation does not use this publication path. The command-line interface (CLI) SAPI keeps stock defaults (`opcache.enable_cli=0`).
-
-## Runtime defaults
-
-The shared development module and each generated dedicated production master profile apply these directives.
-
-| Directive | app-dev | app-prod |
-| --- | --- | --- |
-| `opcache.enable` | On | On |
-| `opcache.memory_consumption` | 512 | 256 |
-| `opcache.interned_strings_buffer` | 64 | 32 |
-| `opcache.max_accelerated_files` | 65407 | 65407 |
-| `opcache.jit` / `opcache.jit_buffer_size` | disable / 0 | disable / 0 |
-
-The shared development service on a Node that carries both roles receives the app-dev profile for every PHP version. Each dedicated production master keeps its own app-prod allocation regardless of other Node roles. `opcache.preload`, `file_cache`, and `huge_code_pages` stay off in Orbit defaults.
-
-## Pool policy
-
-An `app-dev` pool revalidates every cached file on every request and leaves `opcache.file_update_protection` at its stock value of 2, so a request serves the file on disk:
+A development pool checks every file on every request, so a saved file is served at once:
 
 ```ini
 php_admin_value[opcache.validate_timestamps] = 1

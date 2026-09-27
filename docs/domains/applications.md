@@ -108,6 +108,12 @@ After the source is ready, the Gateway continues in this order:
 
 An Instance without a Route skips steps 2 and 3.
 
+For an Instance with a Route, a retry after step 1 inspects the source again. If the PHP version or the Laravel flag changed, the retry returns `app-dev.source_evidence_changed`. For an Instance without a Route, a retry records the new profile.
+
+A failed setup step during `instance:create` runs the teardown steps and removes the new Instance. See [Run setup](/reference/instance-setup#run-setup).
+
+An identical `instance:create` for an active Instance returns it unchanged and runs no setup. An Instance can stay active with a failed setup: after `instance:setup` or `instance:register --setup` fails, or when Orbit could not confirm the failed step or finish the rollback. Then `instance:create` returns `instance.setup_step_failed` until `instance:setup` succeeds.
+
 Orbit does not recover missing source profiles on older Instances. ADR 0177 records the no-legacy-support rule.
 
 ## Laravel application URL
