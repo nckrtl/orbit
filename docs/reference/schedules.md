@@ -116,7 +116,7 @@ Schedule operations return these codes in the Orbit error envelope.
 
 | Error code | Meaning |
 | --- | --- |
-| `schedule.name_invalid`, `schedule.calendar_invalid`, `schedule.command_invalid`, `schedule.timeout_invalid` | The input is outside the accepted form. `schedule.calendar_invalid` also covers a calendar that the host's systemd refuses. |
+| `schedule.name_invalid`, `schedule.calendar_invalid`, `schedule.command_invalid`, `schedule.timeout_invalid` | The input is outside the accepted form. The CLI checks this before it sends a request, and the API answers malformed input with `validation.failed` (422). `schedule.calendar_invalid` also covers a calendar that the host's systemd refuses. |
 | `schedule.target_invalid` | The target does not exist, or the operation does not apply to it. The Gateway also uses it with 403 when a completion report comes from another Node. |
 | `schedule.target_unavailable` | The target, its Node, its user, or its working directory cannot run the operation. |
 | `schedule.retry_conflict` | The target already has a Schedule with this name and a different specification. |
