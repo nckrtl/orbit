@@ -4215,6 +4215,7 @@
                 "apps/gateway"
             ],
             "concepts": [
+                "Activity",
                 "Gateway",
                 "Process",
                 "Task"
