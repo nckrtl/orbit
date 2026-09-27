@@ -506,5 +506,3 @@ Cluster DNS sends the browser to the Router, not to the workload Node. So the de
 ### Custom proxy Routes for Node services
 
 A Node service that is not an application still needs a unique name, private DNS, a certificate, `route:list`, and Doctor. A synthetic Instance would attach the wrong lifecycle. A separate proxy resource would duplicate Route identity. Operator-supplied Caddy or certificate files would leave unmanaged configuration on the Node.
-
-Instance Route targets use the public `instance` morph alias. The target Node role, not an Instance environment column, determines placement.

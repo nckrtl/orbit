@@ -70,5 +70,3 @@ The web app's demo mode and its tests run against the files under `apps/web/fixt
 ## Families with fixtures
 
 The directories under `packages/php-sdk/fixtures` list the families that have recorded fixtures and contract tests. Add a family by recording from its Gateway tests with `record_fixture()` and writing its CLI contract test in the same change. `bin/cli-contract --coverage` shows the commands that still have no expected output.
-
-Instance response fixtures use the public `instance` morph alias and omit the removed environment field.

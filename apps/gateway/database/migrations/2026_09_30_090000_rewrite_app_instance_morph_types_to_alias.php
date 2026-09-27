@@ -35,8 +35,5 @@ return new class extends Migration
         }
     }
 
-    public function down(): void
-    {
-        throw new RuntimeException('Morph alias migration cannot distinguish legacy class names from aliases written after the upgrade.');
-    }
+    public function down(): void {}
 };

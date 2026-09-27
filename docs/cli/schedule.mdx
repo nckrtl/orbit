@@ -16,9 +16,9 @@ A Schedule runs one command on a native systemd timer for a Node or an Instance.
 
 | Selector | Owner | Result |
 | --- | --- | --- |
-| `--node=ID` | Node | The command runs as the Node's managed `orbit` user. The timer installs enabled. |
-| `--instance=ID` | Instance | The command runs as the Instance runtime user in its checkout or `current` release. The timer can install disabled. |
-| `--project=APP --for=production` | Project definition | The Gateway records a reusable production definition. Production preparation copies it into a stopped Instance Schedule. |
+| `--node=ID` | Node | The command runs as the Node's managed user. The timer installs enabled. |
+| `--instance=ID` | Instance | The command runs as the Instance's runtime user in its checkout or `current` release. The timer can install disabled. |
+| `--project=ID --for=production` | Project definition | The Gateway records a definition. Production preparation copies it into a stopped Instance Schedule. |
 
 `schedule:list`, `schedule:show`, `schedule:update`, and `schedule:destroy` take `--project` to work on definitions. `schedule:run`, `schedule:logs`, and `schedule:enable` take the UUID of an installed Schedule.
 
@@ -42,7 +42,7 @@ Every command accepts `--json`. Output shows `desired_timer_state` apart from th
 Create one Schedule for a Node or an Instance, or record a Project Schedule definition.
 
 ```bash
-orbit schedule:create <name> (--node=ID | --instance=ID | --project=APP --for=production) --calendar=CALENDAR --command=COMMAND [options]
+orbit schedule:create <name> (--node=ID | --instance=ID | --project=ID --for=production) --calendar=CALENDAR --command=COMMAND [options]
 ```
 
 | Argument | Required | Meaning |
@@ -53,9 +53,9 @@ orbit schedule:create <name> (--node=ID | --instance=ID | --project=APP --for=pr
 | --- | --- | --- |
 | `--node=ID` | none | Positive Node ID. |
 | `--instance=ID` | none | Positive Instance ID. |
-| `--project=APP` | none | Numeric Project ID for a definition. |
-| `--for=production` | none | Required with `--project`; definitions apply to production. |
-| `--calendar=CALENDAR` | none | Native systemd calendar expression of at most 255 printable ASCII bytes, such as `daily`, `hourly`, or `Mon..Fri 02:00`. |
+| `--project=ID` | none | Numeric Project ID for a definition. |
+| `--for=production` | none | Definition environments. Required with `--project`. Only definitions for `production` are copied. |
+| `--calendar=CALENDAR` | none | A systemd calendar expression of at most 255 printable ASCII bytes, such as `daily`, `hourly`, or `Mon..Fri 02:00`. |
 | `--command=COMMAND` | none | One non-empty line of at most 4,096 bytes. |
 | `--timeout=SECONDS` | `3600` | Execution timeout, 1 through 86,400 seconds. |
 | `--no-start` | off | Install an Instance Schedule with its timer disabled and stopped. |
@@ -67,16 +67,6 @@ orbit schedule:create daily-report --node=7 --calendar=daily --command='php repo
 orbit schedule:create hourly-report --instance=12 --calendar=hourly --command='php artisan report:send' --no-start
 orbit schedule:create hourly-report --project=1 --for=production --calendar=hourly --command='php artisan report:send' --timeout=600
 ```
-
-The target Node's `systemd-analyze calendar` accepts or rejects the calendar for a Node or Instance Schedule. A definition stores the calendar without that check, because it has no host Node yet; the check runs when Orbit copies the definition into an Instance.
-
-An identical create returns the same Schedule without changing its desired timer state. A different specification with the same owner and name returns `schedule.retry_conflict`. Orbit changes a specification only when you destroy the Schedule and create its replacement.
-
-<Note>
-The caller command appears only in the protected script that root owns. It never appears in an SSH, `sudo`, `systemctl`, or `journalctl` argument, and it is absent from Activity, Doctor findings, and errors.
-</Note>
-
-Production Schedule creation requires `current` to select a release, whether the timer starts or remains stopped with `--no-start`.
 
 ## orbit schedule:list
 
@@ -103,7 +93,7 @@ orbit schedule:show <schedule> [--project=ID] [--json]
 Replace one Project Schedule definition with a complete specification. The change affects later copies only.
 
 ```bash
-orbit schedule:update <name> --project=APP --for=production --calendar=CALENDAR --command=COMMAND [--timeout=SECONDS] [--json]
+orbit schedule:update <name> --project=ID --for=production --calendar=CALENDAR --command=COMMAND [--timeout=SECONDS] [--json]
 ```
 
 ## orbit schedule:run

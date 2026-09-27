@@ -144,5 +144,3 @@ A completed transfer is history, so it survives removal. An unfinished or failed
 ### Production keeps its content
 
 Production data and releases are hard to rebuild. Removal stops serving the Instance but leaves its home for recovery.
-
-Instance-owned runtime records use the stable `instance` morph alias. Removal does not depend on legacy PHP class-name morph values.

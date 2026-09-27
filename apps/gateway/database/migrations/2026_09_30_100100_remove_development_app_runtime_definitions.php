@@ -34,8 +34,5 @@ return new class extends Migration
         }
     }
 
-    public function down(): void
-    {
-        throw new RuntimeException('Removed development-only runtime definitions cannot be restored. Restore a database backup or apply a forward migration.');
-    }
+    public function down(): void {}
 };

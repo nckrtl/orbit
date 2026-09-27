@@ -7,6 +7,7 @@ covers:
   - apps/gateway/app/Http/Controllers/Api/AppInstanceEnvironment*Controller.php
   - apps/gateway/app/Infrastructure/AppInstances/{RemoteAppInstanceEnvironmentAccess,NativeAppInstanceEnvironmentOperationLock}.php
   - apps/gateway/app/Models/{AppInstance,AppInstanceEnvironmentValue}.php
+  - apps/gateway/database/migrations/2026_09_30_*.php
   - apps/cli/app/Commands/Environment/**
   - packages/php-sdk/src/{Requests,Responses}/Environment/**
 ---
@@ -158,4 +159,4 @@ Synchronization must work before dependencies are installed and before the appli
 
 An operator may set `APP_ENV` to `local` or `staging` on a production Instance. If `APP_ENV` decided the layout or the Unix user, that edit would turn off release layout or user isolation. So the Node role decides them, and `APP_ENV` stays an application setting.
 
-The Instance environment comes from its Node role. The Gateway stores no separate `app_instances.environment` column.
+The Instance environment comes from its Node role.

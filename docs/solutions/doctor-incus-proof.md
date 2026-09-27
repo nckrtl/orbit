@@ -120,5 +120,3 @@ These fixtures depend on these properties of the harness and the Nodes.
 ## Verification
 
 `<worktree>/.e2e/evidence.log` holds every labelled entry in order. `doctor baseline` and both restored reports show exit `0` and no findings. `doctor app-prod drift` shows exit `1` and exactly one `instance.php_fpm_projection_mismatch`. `doctor app-prod unverifiable` shows exit `1` and exactly one `role.inspection_failed`. The before and after scan entries differ only in the `activity_log` row count.
-
-Doctor reads Instance targets through their registered morph aliases and derives placement from the owning Node role.

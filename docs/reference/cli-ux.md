@@ -198,5 +198,3 @@ Use disposable fixtures for mutations. Exercise the real candidate in the assign
 Run `bin/cli-contract --changed` to find and run the contract tests that a changed Gateway response reaches, and rewrite expected output only with `ORBIT_EXPECTED=update` after the diff is reviewed.
 
 A regression check for a recovered UX requirement demonstrates both an accepted and a rejected case. Check observable behavior rather than similarity of wording or implementation style. For example, a state analyzer accepts a running row that reaches a terminal state and rejects the same row returning to waiting. Apply each check only to the surface it covers.
-
-Instance prompts display placement from the target Node and omit the removed environment column.

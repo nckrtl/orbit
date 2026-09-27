@@ -138,5 +138,3 @@ A soft wake and a cold wake show the same progress and failure pages. Separate p
 ### Keep-alive blocks the prune
 
 A keep-alive Process can still need `vendor` or `node_modules`. So Orbit never prunes an Instance with one.
-
-The `vp-dev` preset starts a development Process on wake; it does not depend on a persisted Instance environment value.

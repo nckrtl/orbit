@@ -9,7 +9,6 @@ covers:
   - apps/gateway/app/Http/{Controllers/Api/Schedule*,Requests/Schedules/*}.php
   - apps/gateway/app/Models/Schedule.php
   - packages/php-sdk/src/{Requests,Responses}/Schedules/**
-  - apps/gateway/database/migrations/2026_09_30_*.php
 ---
 
 # Schedules
@@ -53,26 +52,6 @@ Create takes `target_type`, `target_id`, `name`, `calendar`, and `command`, and 
 
 Each operation except Complete records one Activity entry. The entry names the Schedule and its target. It never holds the command, calendar, journal lines, paths, users, or unit text.
 
-## CLI commands
-
-Use these commands to create and manage Node, Instance, and Project Schedule definitions.
-
-| Command | Result |
-| --- | --- |
-| `orbit schedule:create NAME --node=ID --calendar=CALENDAR --command=COMMAND` | Create a Schedule for one positive Node ID. Add `--timeout=SECONDS` to change the 3600-second execution timeout. |
-| `orbit schedule:create NAME --instance=ID --calendar=CALENDAR --command=COMMAND` | Create a Schedule for one positive Instance ID. Add `--no-start` to install its timer disabled and stopped. |
-| `orbit schedule:create NAME --project=APP --for=production --calendar=CALENDAR --command=COMMAND` | Record a production Schedule definition on the Project. Add `--timeout=SECONDS` to change the 3600-second execution timeout. |
-| `orbit schedule:list` | List authorized Schedule summaries without command text. |
-| `orbit schedule:list --project=APP` | List the Project's Schedule definitions. |
-| `orbit schedule:show UUID` | Show one authorized Schedule. |
-| `orbit schedule:show NAME --project=APP` | Show one Schedule definition by name. |
-| `orbit schedule:update NAME --project=APP --for=production --calendar=CALENDAR --command=COMMAND` | Replace one Schedule definition with a complete specification. |
-| `orbit schedule:run UUID` | Start one manual invocation without changing the desired timer state. |
-| `orbit schedule:logs UUID` | Show only the bounded lines returned by the Gateway. |
-| `orbit schedule:destroy UUID [--yes]` | Destroy one Schedule through the Gateway. Interactive confirmation defaults to No. |
-| `orbit schedule:destroy NAME --project=APP [--yes]` | Destroy one Schedule definition by name. Interactive confirmation defaults to No. |
-| `orbit schedule:enable UUID` | Enable and start an installed Instance timer without replacing the Schedule. |
-
 ## Execution context
 
 The caller picks only the target. The Gateway derives the host Node, the user, the working directory, and the shell from the target's placement.
@@ -83,7 +62,7 @@ The caller picks only the target. The Gateway derives the host Node, the user, t
 | Instance on `app-dev` | The Node's managed user | The Instance checkout | The user's login shell, with `-lc` |
 | Instance on `app-prod` | The Instance's production user | `<production-home>/current` | `/bin/bash -c`, without a login |
 
-The target Node must be an active Linux Node with a WireGuard address. An Instance target must be active. A production Schedule resolves `current` each time it runs, so a new release changes later runs. A production Instance with no selected release accepts a Schedule with a disabled timer. A run, an enable, or an enabled install then fails with `schedule.target_unavailable` until [a deployment](/reference/deployments) selects a release.
+The target Node must be an active Linux Node with a WireGuard address. An Instance target must be active. A production Schedule resolves `current` each time it runs, so a new release changes later runs. A production Instance needs a selected release before it can install a Schedule, even with a disabled timer.
 
 A Schedule does not follow its target. While a Schedule exists, the Gateway refuses to remove its target Node or host Node with `schedule.target_in_use` (409). [Instance transfer](/reference/appinstance-transfer) does not check Schedules. After a transfer, list and show still work, and an identical create returns `schedule.target_in_use`. Run, logs, enable, and destroy fail with `schedule.target_unavailable`, because the Instance runs on another Node than the host Node. Destroy the Instance's Schedules before a transfer. Instance removal removes the Instance's Schedules itself.
 
@@ -176,5 +155,3 @@ The completion report is informational. The Gateway stores only the latest resul
 ### A stopped timer for copied Schedules
 
 A copied Schedule on a new production Instance can run before the data of that Instance is ready. So an Instance Schedule can install with its timer disabled, and enable is a separate step. A manual run is not an enable, because one run does not start the recurring timer.
-
-Schedule targets use the stable `instance` morph alias, and the Gateway derives Instance placement from the owning Node role.

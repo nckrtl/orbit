@@ -149,5 +149,3 @@ Tarball and Git URLs can carry credentials or tokens. A digest keeps two sources
 ### Fail instead of an empty graph
 
 An unsupported format that returned an empty graph would look like a project with no dependencies. So every unsupported case fails and keeps the last observation.
-
-Instance identity in runtime records uses the public `instance` morph alias rather than a PHP model class name.

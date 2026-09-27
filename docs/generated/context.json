@@ -392,7 +392,6 @@
                 "Node agent",
                 "Process",
                 "Project",
-                "Role",
                 "Route",
                 "Schedule"
             ],
@@ -429,7 +428,6 @@
                 "Node",
                 "Process",
                 "Project",
-                "Role",
                 "Route",
                 "Schedule",
                 "Task",
@@ -482,7 +480,6 @@
                 "Node",
                 "Process",
                 "Project",
-                "Role",
                 "Route"
             ],
             "governing_adrs": []
@@ -495,7 +492,6 @@
                 "apps/cli"
             ],
             "concepts": [
-                "Activity",
                 "Doctor",
                 "Gateway",
                 "Instance",
@@ -1961,7 +1957,6 @@
                 "Node",
                 "Process",
                 "Project",
-                "Role",
                 "Route",
                 "Schedule",
                 "Task",
@@ -2247,7 +2242,6 @@
             ],
             "concepts": [
                 "Gateway",
-                "Instance",
                 "Node",
                 "Route"
             ],
@@ -2378,7 +2372,6 @@
                 "Node",
                 "Process",
                 "Project",
-                "Role",
                 "Route",
                 "Schedule"
             ],
@@ -2717,19 +2710,15 @@
             "concepts": [
                 "Access grant",
                 "Activity",
-                "Deployment",
                 "Doctor",
                 "Gateway",
                 "Instance",
                 "Node",
                 "Process",
                 "Project",
-                "Role",
                 "Schedule"
             ],
-            "governing_adrs": [
-                "3600"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/reference/service-metrics.md",
@@ -3022,9 +3011,7 @@
             ],
             "concepts": [
                 "Gateway",
-                "Instance",
                 "Node",
-                "Process",
                 "Role"
             ],
             "governing_adrs": []

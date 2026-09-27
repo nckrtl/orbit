@@ -1,6 +1,7 @@
 import type { Fleet } from "../api/queries";
 import type { Instance, Process, Schedule } from "../api/types";
 import {
+    instanceEnvironment,
     instanceName,
     instanceNodeName,
     processCpu,
@@ -63,7 +64,7 @@ export const scheduleListColumns = (fleet: Fleet): Column<Schedule>[] => [
     { header: "Last run", width: 20, value: (s) => s.last_run_status ?? "never" },
 ];
 
-export const instanceColumns = (show: "project" | "node"): Column<Instance>[] => [
+export const instanceColumns = (fleet: Fleet, show: "project" | "node"): Column<Instance>[] => [
     ...(show === "project"
         ? [{ header: "Project", width: 22, value: (i: Instance) => i.project.slug }]
         : []),
@@ -71,6 +72,8 @@ export const instanceColumns = (show: "project" | "node"): Column<Instance>[] =>
     ...(show === "node"
         ? [{ header: "Node", width: 14, value: (i: Instance) => i.node.name }]
         : []),
-    { header: "Domain", width: show === "project" ? 32 : 40, value: (i) => i.domain ?? "—" },
+    { header: "Environment", width: 20, value: (i) => instanceEnvironment(fleet, i) },
+    { header: "Domain", width: show === "project" ? 24 : 32, value: (i) => i.domain ?? "—" },
+
     { header: "Status", width: 12, value: (i) => i.status },
 ];

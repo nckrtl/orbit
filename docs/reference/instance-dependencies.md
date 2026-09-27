@@ -145,5 +145,3 @@ Orbit supports npm, pnpm, and Bun, the managers that Vite+ drives with a verifie
 ### Nightly scans as well as updates
 
 Dependencies also change outside Orbit. A scan after each Orbit update would miss those changes, so one Schedule scans the fleet every night.
-
-Dependency scans resolve the Instance from its owning Node role; they do not depend on a legacy environment column.

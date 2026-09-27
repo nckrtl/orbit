@@ -35,6 +35,7 @@ import type {
 import {
     deploymentHealthy,
     firewallHealthy,
+    instanceEnvironment,
     instanceHealthy,
     instanceName,
     instanceNodeName,
@@ -269,7 +270,7 @@ function intendedLine(rule: ManagedFirewallRule, index: number): FirewallLine {
 }
 
 function NodePage({ fleet, node }: { fleet: Fleet; node: Node }) {
-    const columns = useMemo(() => instanceColumns("project"), []);
+    const columns = useMemo(() => instanceColumns(fleet, "project"), [fleet]);
 
     return (
         <div
@@ -329,7 +330,7 @@ function NodePage({ fleet, node }: { fleet: Fleet; node: Node }) {
 }
 
 function ProjectPage({ fleet, project }: { fleet: Fleet; project: Project }) {
-    const columns = useMemo(() => instanceColumns("node"), []);
+    const columns = useMemo(() => instanceColumns(fleet, "node"), [fleet]);
     const schedules = useMemo(() => scheduleColumns(fleet, "instance"), [fleet]);
 
     return (
@@ -534,6 +535,7 @@ function InstanceOverview({ fleet, instance }: { fleet: Fleet; instance: Instanc
                             value: instance.node.name,
                             onOpen: node === undefined ? undefined : () => go.record("nodes", node),
                         },
+                        { name: "Environment", value: instanceEnvironment(fleet, instance) },
                         {
                             name: "Domain",
                             value: instance.domain,

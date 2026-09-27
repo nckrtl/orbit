@@ -36,5 +36,3 @@ The problem affects only `/dev/stdin` sources. `install -d`, mode changes, and r
 ## Verification
 
 Converge the same role twice over existing configuration, which is the case that fails. Unit tests cover the sequence in `apps/gateway/tests/Unit/Infrastructure/Metrics/MetricsSshExecutorTest.php` and `MetricsExporterSshExecutorLifecycleTest.php`.
-
-Instance Process presets are restricted to development targets and use the placement selected from the owning Node role.

@@ -116,5 +116,3 @@ A shared master would reduce monitoring cost. It would also break independent de
 ### No automatic tuning
 
 Observing a service and changing its capacity have different effects. So Metrics enablement never tunes PHP-FPM, resets caches, or runs application commands. FPM Tune and Laravel metrics need their own opt-in.
-
-Runtime placement is determined by Node roles; metric responses do not expose the removed Instance environment column.

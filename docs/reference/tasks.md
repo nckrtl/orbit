@@ -3,7 +3,6 @@ title: "Tasks"
 description: "How the optional Gateway Tasks extension coordinates task groups, subtasks, typed deliverables, Project checks, and their lifecycle."
 covers:
   - "apps/gateway/app/Domain/Tasks/**"
-  - apps/gateway/database/migrations/2026_09_26_120000_drop_plan_from_task_groups.php
   - "bin/review-check"
 ---
 
@@ -953,5 +952,3 @@ When the Node answers, cancellation of a `settling` group with an approved subta
 When `origin` already has an unrelated `task-{group id}` branch, Git rejects the push, because it is not a force push. A Gateway rebuild that reuses group IDs causes this. Keep that branch under another name if you need it. Then delete `task-{group id}` on `origin` and cancel again.
 
 A `completed` group, or a `settling` group with a `pr_url`, returns HTTP 409 with `tasks.not_cancellable` (an MCP error result). Use `tasks-complete` for a settling group after review and merge.
-
-Task targets use registered morph aliases rather than PHP model class names.
