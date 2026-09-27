@@ -89,6 +89,115 @@ it('leaves metrics unknown for an empty or malformed snapshot', function (): voi
         ->and(T3ThreadMetrics::fromSnapshot([])->modelCalls)->toBeNull();
 });
 
+it('counts every model call from the event stream between observations', function (): void {
+    $baseline = T3ThreadMetrics::baseline(['thread' => ['activities' => [[
+        'kind' => 'context-window.updated',
+        'payload' => ['totalProcessedTokens' => 0, 'inputTokens' => 0, 'cachedInputTokens' => 0, 'outputTokens' => 0],
+    ]]]], null, 10);
+
+    $metrics = $baseline;
+    foreach ([
+        [11, 250, 110, 30, 20],
+        [12, 400, 140, 40, 30],
+        [13, 550, 160, 50, 40],
+    ] as [$sequence, $total, $input, $cached, $output]) {
+        $metrics = T3ThreadMetrics::fromEvent([
+            'type' => 'thread.activity-appended',
+            'payload' => ['activity' => [
+                'kind' => 'context-window.updated',
+                'payload' => [
+                    'totalProcessedTokens' => $total,
+                    'inputTokens' => $input,
+                    'cachedInputTokens' => $cached,
+                    'outputTokens' => $output,
+                ],
+            ]],
+        ], $metrics->checkpoint, $sequence);
+    }
+
+    $observed = T3ThreadMetrics::fromPersisted(['thread' => ['activities' => [[
+        'kind' => 'context-window.updated',
+        'payload' => ['totalProcessedTokens' => 550, 'inputTokens' => 160, 'cachedInputTokens' => 50, 'outputTokens' => 40],
+    ]]]], $metrics->checkpoint);
+
+    expect($baseline->modelCalls)->toBeNull()
+        ->and($observed->tokens)->toBe(550)
+        ->and($observed->modelCalls)->toBe(3)
+        ->and($observed->inputTokens)->toBe(290)
+        ->and($observed->cachedInputTokens)->toBe(120)
+        ->and($observed->outputTokens)->toBe(90)
+        ->and($observed->checkpoint['t3_event_sequence'])->toBe(13);
+});
+
+it('marks a fresh nonzero baseline partial without counting it', function (): void {
+    $metrics = T3ThreadMetrics::baseline(['thread' => ['activities' => [[
+        'kind' => 'context-window.updated',
+        'payload' => ['totalProcessedTokens' => 100, 'inputTokens' => 90, 'cachedInputTokens' => 20, 'outputTokens' => 10],
+    ]]]], null, 10);
+
+    expect($metrics->modelCalls)->toBeNull()
+        ->and($metrics->checkpoint['t3_observed_total_processed_tokens'])->toBe(100)
+        ->and($metrics->checkpoint['t3_metrics_partial'])->toBeTrue();
+});
+
+it('marks an unknown nonzero baseline partial after a non-usage event', function (): void {
+    $checkpoint = T3ThreadMetrics::fromEvent([
+        'type' => 'thread.session-set',
+        'payload' => [],
+    ], null, 10)->checkpoint;
+    $metrics = T3ThreadMetrics::baseline(['thread' => ['activities' => [[
+        'kind' => 'context-window.updated',
+        'payload' => ['totalProcessedTokens' => 100, 'inputTokens' => 90, 'cachedInputTokens' => 20, 'outputTokens' => 10],
+    ]]]], $checkpoint, 11);
+
+    expect($metrics->modelCalls)->toBeNull()
+        ->and($metrics->checkpoint['t3_observed_total_processed_tokens'])->toBe(100)
+        ->and($metrics->checkpoint['t3_metrics_partial'])->toBeTrue();
+});
+
+it('marks a decreasing baseline partial and preserves the observed watermark', function (): void {
+    $metrics = T3ThreadMetrics::baseline(['thread' => ['activities' => [[
+        'kind' => 'context-window.updated',
+        'payload' => ['totalProcessedTokens' => 100, 'inputTokens' => 90, 'cachedInputTokens' => 20, 'outputTokens' => 10],
+    ]]]], [
+        't3_input_tokens' => 40,
+        't3_cached_input_tokens' => 20,
+        't3_output_tokens' => 10,
+        't3_model_calls' => 1,
+        't3_peak_context_tokens' => 60,
+        't3_counted_total_processed_tokens' => 80,
+        't3_observed_total_processed_tokens' => 200,
+        't3_metrics_partial' => false,
+        't3_metrics_initialized' => true,
+        't3_event_sequence' => 10,
+    ], 11);
+
+    expect($metrics->modelCalls)->toBeNull()
+        ->and($metrics->checkpoint['t3_observed_total_processed_tokens'])->toBe(200)
+        ->and($metrics->checkpoint['t3_metrics_partial'])->toBeTrue();
+});
+
+it('does not lower tokens from a stale polling snapshot', function (): void {
+    $metrics = T3ThreadMetrics::fromPersisted(['thread' => ['activities' => [[
+        'kind' => 'context-window.updated',
+        'payload' => ['totalProcessedTokens' => 100, 'inputTokens' => 90, 'cachedInputTokens' => 20, 'outputTokens' => 10],
+    ]]]], [
+        't3_input_tokens' => 70,
+        't3_cached_input_tokens' => 20,
+        't3_output_tokens' => 10,
+        't3_model_calls' => 1,
+        't3_peak_context_tokens' => 90,
+        't3_counted_total_processed_tokens' => 200,
+        't3_observed_total_processed_tokens' => 200,
+        't3_metrics_partial' => false,
+        't3_metrics_initialized' => true,
+        't3_event_sequence' => 12,
+    ]);
+
+    expect($metrics->tokens)->toBe(200)
+        ->and($metrics->modelCalls)->toBe(1);
+});
+
 it('sums counted context-window calls and skips a repeated update', function (): void {
     $metrics = T3ThreadMetrics::fromSnapshot(['thread' => ['activities' => [
         ['kind' => 'context-window.updated', 'payload' => [

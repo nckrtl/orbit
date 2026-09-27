@@ -111,8 +111,8 @@ Run Doctor for the Tool family when you need to verify the Node after removal.
 orbit doctor --node=<node-id> --family=tool
 ```
 
-A retained Tool row for an absent package produces bounded `tool.not_installed` drift. After successful removal deletes that row, Doctor reports the Tool family as healthy when no other Tool finding exists. Doctor never includes the raw dpkg status or retained package version in its report. [ADR 0004](/decisions/0004-verify-only-doctor-boundary) defines the verify-only and bounded-report boundary.
+A retained Tool row for an absent package produces bounded `tool.not_installed` drift. After successful removal deletes that row, Doctor reports the Tool family as healthy when no other Tool finding exists. Doctor never includes the raw dpkg status or retained package version in its report. [Doctor](/cli/doctor#why-it-works-this-way) defines the verify-only and bounded-report boundary.
 
 ## Limits
 
-[ADR 0001](/decisions/0001-tool-management) governs Tool ownership and removal limits. [ADR 0004](/decisions/0004-verify-only-doctor-boundary) governs Doctor inspection and reporting limits.
+[ADR 0001](/decisions/0001-tool-management) governs Tool ownership and removal limits. [Doctor](/cli/doctor#why-it-works-this-way) states the Doctor inspection and reporting limits.

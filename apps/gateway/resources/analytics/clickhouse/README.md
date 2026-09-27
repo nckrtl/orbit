@@ -1,6 +1,6 @@
 # Plausible's ClickHouse configuration
 
-These four files are copied unchanged from [plausible/community-edition](https://github.com/plausible/community-edition) at commit `ec6c4da77654`, from its `clickhouse/` directory. The analytics role publishes them on the ClickHouse Process's Node and mounts them read-only where Plausible's `compose.yml` mounts them ([ADR 0142](../../../../../docs/decisions/0142-apply-plausibles-clickhouse-configuration-from-the-analytics-role.md)).
+These four files are copied unchanged from [plausible/community-edition](https://github.com/plausible/community-edition) at commit `ec6c4da77654`, from its `clickhouse/` directory. The analytics role publishes them on the ClickHouse Process's Node and mounts them read-only where Plausible's `compose.yml` mounts them ([Analytics role](../../../../../docs/reference/analytics.md#clickhouse-configuration)).
 
 | File | Container path |
 | --- | --- |

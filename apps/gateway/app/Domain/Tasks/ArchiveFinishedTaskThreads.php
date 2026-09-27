@@ -30,6 +30,7 @@ final readonly class ArchiveFinishedTaskThreads
             })->delete();
 
         $threads = AgentThread::query()->where('driver', 't3')->whereNull('archived_at')
+            ->whereNotNull('t3_metrics_final_at')
             ->where(static fn ($query) => $query->whereNull('archive_retry_at')->orWhere('archive_retry_at', '<=', now()))
             ->where('external_id', 'not like', TaskAgentSpawner::PendingPrefix.'%')
             ->where(static function ($query): void {

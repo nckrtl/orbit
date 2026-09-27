@@ -579,8 +579,6 @@
             "pages": [
               "decisions/0001-tool-management",
               "decisions/0002-candidate-deployment-proof-boundary",
-              "decisions/0003-singleton-metrics-role",
-              "decisions/0004-verify-only-doctor-boundary",
               "decisions/0005-rolling-incus-development-topology",
               "decisions/0006-topology-led-feature-development",
               "decisions/0008-typed-app-dev-node-storage-settings",
@@ -629,9 +627,7 @@
               "decisions/0052-seed-worktrees-from-successful-main-test-baselines",
               "decisions/0053-use-local-review-checks-for-feature-landing",
               "decisions/0054-maintain-main-caches-asynchronously",
-              "decisions/0055-restrict-grafana-access-to-authorized-gateway-peers",
               "decisions/0056-retain-proof-topologies-for-interactive-review",
-              "decisions/0057-limit-metrics-exporters-to-managed-nodes",
               "decisions/0058-separate-incus-requirements-from-delivery-flow",
               "decisions/0059-make-the-builder-own-the-candidate-quality-gate",
               "decisions/0060-record-latest-schedule-run-status",
@@ -670,13 +666,10 @@
               "decisions/0093-show-live-ufw-and-desired-rules-that-match-converge",
               "decisions/0094-project-wireguard-hub-config-onto-the-vpn-node",
               "decisions/0095-relocate-relocatable-singleton-roles",
-              "decisions/0096-run-plausible-through-an-analytics-role",
               "decisions/0097-publish-analytics-tracking-hosts-for-app-instances",
               "decisions/0098-read-github-repositories-through-a-gateway-owned-github-app",
-              "decisions/0099-collect-role-specific-service-metrics",
               "decisions/0100-install-caddy-from-the-pinned-caddy-apt-source",
               "decisions/0101-simplify-route-publication-and-use-lets-encrypt-on-public-ingress",
-              "decisions/0102-read-app-instance-analytics-through-a-fleet-driver",
               "decisions/0103-absorb-commander-tasks-as-a-gateway-extension",
               "decisions/0104-own-cliproxyapi-quota-through-the-proxycli-extension",
               "decisions/0105-name-applications-as-project-and-instance",
@@ -714,11 +707,9 @@
               "decisions/0139-collect-caddy-http-metrics-on-every-node",
               "decisions/0140-watch-settling-pull-requests-for-conflicts-and-failed-checks",
               "decisions/0141-build-each-node-caddyfile-on-the-gateway",
-              "decisions/0142-apply-plausibles-clickhouse-configuration-from-the-analytics-role",
               "decisions/0143-record-topology-evidence-and-sync-without-verification",
               "decisions/0144-migrate-waiting-connections-when-caddy-reloads",
               "decisions/0145-publish-the-proxycli-collector-on-collector-cli-proxy-api-orbit",
-              "decisions/0146-retire-the-herdr-integration",
               "decisions/0147-retire-orbit-top",
               "decisions/0148-keep-a-gateway-view-of-node-agent-state",
               "decisions/0150-keep-extension-commands-local-and-confirm-the-proxycli-fleet-stop",
@@ -785,6 +776,42 @@
     {
       "source": "/reference/first-app",
       "destination": "/quickstart"
+    },
+    {
+      "source": "/decisions/0003-singleton-metrics-role",
+      "destination": "/reference/metrics"
+    },
+    {
+      "source": "/decisions/0004-verify-only-doctor-boundary",
+      "destination": "/cli/doctor#why-it-works-this-way"
+    },
+    {
+      "source": "/decisions/0055-restrict-grafana-access-to-authorized-gateway-peers",
+      "destination": "/reference/metrics#grafana-access"
+    },
+    {
+      "source": "/decisions/0057-limit-metrics-exporters-to-managed-nodes",
+      "destination": "/reference/metrics#exporter-selection"
+    },
+    {
+      "source": "/decisions/0096-run-plausible-through-an-analytics-role",
+      "destination": "/reference/analytics"
+    },
+    {
+      "source": "/decisions/0099-collect-role-specific-service-metrics",
+      "destination": "/reference/service-metrics"
+    },
+    {
+      "source": "/decisions/0102-read-app-instance-analytics-through-a-fleet-driver",
+      "destination": "/reference/instance-analytics-stats"
+    },
+    {
+      "source": "/decisions/0142-apply-plausibles-clickhouse-configuration-from-the-analytics-role",
+      "destination": "/reference/analytics#clickhouse-configuration"
+    },
+    {
+      "source": "/decisions/0146-retire-the-herdr-integration",
+      "destination": "/cli/extension"
     }
   ]
 }

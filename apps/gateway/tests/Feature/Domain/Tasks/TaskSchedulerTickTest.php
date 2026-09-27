@@ -237,6 +237,7 @@ it('archives the reviewer thread after a subtask completes', function (): void {
         'role' => 'reviewer', 'node_id' => $group->taskable->node_id,
     ]);
     $task->update(['status' => TaskStatus::Completed]);
+    $reviewer->update(['t3_metrics_final_at' => now()]);
     app(TaskExtensionState::class)->enable();
     $dispatcher = tick_dispatcher();
     app()->instance(T3Dispatcher::class, $dispatcher);
@@ -250,14 +251,34 @@ it('archives the reviewer thread after a subtask completes', function (): void {
         ->and($reviewer->fresh()?->archived_at)->not->toBeNull();
 });
 
+it('archives remaining T3 threads when a group completes', function (): void {
+    $group = tick_group();
+    test_link_agent_threads($group);
+    $task = $group->tasks->firstOrFail();
+    $task->update(['status' => TaskStatus::Completed]);
+    $group->update(['status' => TaskGroupStatus::Completed]);
+    AgentThread::query()->where('task_group_id', $group->id)->update(['t3_metrics_final_at' => now()]);
+    app(TaskExtensionState::class)->enable();
+    $dispatcher = tick_dispatcher();
+    app()->instance(T3Dispatcher::class, $dispatcher);
+
+    app(TaskScheduler::class)->tick();
+
+    expect(collect($dispatcher->commands)->where('type', 'thread.archive')->pluck('threadId')->all())
+        ->toContain('reviewer-thread', 'implementer-thread')
+        ->and(AgentThread::query()->where('task_group_id', $group->id)->whereNull('archived_at')->count())->toBe(0);
+});
+
 it('archives only a bounded per tick, oldest first, then continues on the next tick', function (): void {
     $group = tick_group();
     $group->update(['status' => TaskGroupStatus::Completed]);
+    AgentThread::query()->where('task_group_id', $group->id)->update(['t3_metrics_final_at' => now()]);
     for ($index = 0; $index < 9; $index++) {
         AgentThread::query()->create([
             'task_group_id' => $group->id, 'driver' => 't3',
             'runtime_key' => 'node:'.$group->taskable->node_id, 'external_id' => 'finished-thread-'.$index,
             'role' => 'implementer', 'node_id' => $group->taskable->node_id,
+            't3_metrics_final_at' => now(),
         ]);
     }
     $expected = AgentThread::query()->where('task_group_id', $group->id)->orderBy('id')->pluck('external_id')->all();
@@ -277,6 +298,7 @@ it('archives only a bounded per tick, oldest first, then continues on the next t
 it('backs off a failed archive and clears its backoff after a bounded per tick retry succeeds', function (): void {
     $group = tick_group();
     $group->update(['status' => TaskGroupStatus::Completed]);
+    AgentThread::query()->where('task_group_id', $group->id)->update(['t3_metrics_final_at' => now()]);
     app(TaskExtensionState::class)->enable();
     $dispatcher = new class implements T3Dispatcher
     {
@@ -316,6 +338,7 @@ it('retries failed archives on a later tick with the same command id without blo
     $group = tick_group();
     test_link_agent_threads($group);
     $group->update(['status' => TaskGroupStatus::Completed]);
+    AgentThread::query()->where('task_group_id', $group->id)->update(['t3_metrics_final_at' => now()]);
     app(TaskExtensionState::class)->enable();
     $dispatcher = new class implements T3Dispatcher
     {
