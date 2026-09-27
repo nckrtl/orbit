@@ -4810,9 +4810,11 @@
             "path": "docs/reference/routes.md",
             "title": "Routes",
             "kind": "reference",
-            "components": [],
+            "components": [
+                "apps/gateway"
+            ],
             "concepts": [
-                "Activity",
+                "Access grant",
                 "Cluster",
                 "Deployment",
                 "Doctor",
@@ -4822,30 +4824,9 @@
                 "Process",
                 "Project",
                 "Role",
-                "Route",
-                "Tool"
+                "Route"
             ],
-            "governing_adrs": [
-                "0009",
-                "0011",
-                "0023",
-                "0024",
-                "0025",
-                "0028",
-                "0029",
-                "0030",
-                "0033",
-                "0039",
-                "0041",
-                "0062",
-                "0063",
-                "0065",
-                "0067",
-                "0080",
-                "0082",
-                "0101",
-                "0138"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/reference/schedules.md",
