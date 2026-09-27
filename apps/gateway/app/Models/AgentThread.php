@@ -27,6 +27,8 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $observed_at
  * @property Carbon|null $archived_at
  * @property string|null $archive_command_id
+ * @property int $archive_attempts
+ * @property Carbon|null $archive_retry_at
  * @property string|null $observation_error
  * @property string|null $error
  * @property int|null $tokens
@@ -44,7 +46,7 @@ final class AgentThread extends Model
 {
     /** @var list<string> */
     #[\Override]
-    protected $fillable = ['task_group_id', 'task_id', 'node_id', 'driver', 'runtime_key', 'external_id', 'role', 'model', 'effort', 'state', 'observation_version', 'observed_at', 'observation_error', 'error', 'tokens', 'input_tokens', 'cached_input_tokens', 'output_tokens', 'model_calls', 'peak_context_tokens', 'lines_added', 'lines_deleted', 'archived_at', 'archive_command_id'];
+    protected $fillable = ['task_group_id', 'task_id', 'node_id', 'driver', 'runtime_key', 'external_id', 'role', 'model', 'effort', 'state', 'observation_version', 'observed_at', 'observation_error', 'error', 'tokens', 'input_tokens', 'cached_input_tokens', 'output_tokens', 'model_calls', 'peak_context_tokens', 'lines_added', 'lines_deleted', 'archived_at', 'archive_command_id', 'archive_attempts', 'archive_retry_at'];
 
     /** @return BelongsTo<Node, $this> */
     public function node(): BelongsTo
@@ -55,6 +57,6 @@ final class AgentThread extends Model
     /** @return array<string, string> */
     protected function casts(): array
     {
-        return ['state' => AgentThreadState::class, 'observation_version' => 'integer', 'observed_at' => 'datetime', 'archived_at' => 'datetime', 'tokens' => 'integer', 'input_tokens' => 'integer', 'cached_input_tokens' => 'integer', 'output_tokens' => 'integer', 'model_calls' => 'integer', 'peak_context_tokens' => 'integer', 'lines_added' => 'integer', 'lines_deleted' => 'integer'];
+        return ['state' => AgentThreadState::class, 'observation_version' => 'integer', 'observed_at' => 'datetime', 'archived_at' => 'datetime', 'archive_retry_at' => 'datetime', 'archive_attempts' => 'integer', 'tokens' => 'integer', 'input_tokens' => 'integer', 'cached_input_tokens' => 'integer', 'output_tokens' => 'integer', 'model_calls' => 'integer', 'peak_context_tokens' => 'integer', 'lines_added' => 'integer', 'lines_deleted' => 'integer'];
     }
 }

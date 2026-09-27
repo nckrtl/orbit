@@ -267,6 +267,68 @@ it('archives the planner and remaining T3 threads when a group completes', funct
         ->and(AgentThread::query()->where('task_group_id', $group->id)->whereNull('archived_at')->count())->toBe(0);
 });
 
+it('archives only a bounded per tick, oldest first, then continues on the next tick', function (): void {
+    $group = tick_group();
+    $group->update(['status' => TaskGroupStatus::Completed]);
+    for ($index = 0; $index < 9; $index++) {
+        AgentThread::query()->create([
+            'task_group_id' => $group->id, 'driver' => 't3',
+            'runtime_key' => 'node:'.$group->taskable->node_id, 'external_id' => 'finished-thread-'.$index,
+            'role' => 'implementer', 'node_id' => $group->taskable->node_id,
+        ]);
+    }
+    $expected = AgentThread::query()->where('task_group_id', $group->id)->orderBy('id')->pluck('external_id')->all();
+    app(TaskExtensionState::class)->enable();
+    $dispatcher = tick_dispatcher();
+    app()->instance(T3Dispatcher::class, $dispatcher);
+
+    app(ArchiveFinishedTaskThreads::class)->run();
+    $firstTick = collect($dispatcher->commands)->where('type', 'thread.archive')->pluck('threadId')->all();
+    app(ArchiveFinishedTaskThreads::class)->run();
+    $allTicks = collect($dispatcher->commands)->where('type', 'thread.archive')->pluck('threadId')->all();
+
+    expect($firstTick)->toBe(array_slice($expected, 0, 10))
+        ->and($allTicks)->toBe($expected);
+});
+
+it('backs off a failed archive and clears its backoff after a bounded per tick retry succeeds', function (): void {
+    $group = tick_group();
+    $group->update(['status' => TaskGroupStatus::Completed]);
+    app(TaskExtensionState::class)->enable();
+    $dispatcher = new class implements T3Dispatcher
+    {
+        public bool $fail = true;
+
+        /** @var list<array<string, mixed>> */
+        public array $commands = [];
+
+        public function dispatch(Node $node, array $command): array
+        {
+            $this->commands[] = $command;
+            if (($command['type'] ?? null) === 'thread.archive' && $this->fail) {
+                throw new T3DispatchException;
+            }
+
+            return ['sequence' => count($this->commands), 'thread_id' => (string) ($command['threadId'] ?? '')];
+        }
+    };
+    app()->instance(T3Dispatcher::class, $dispatcher);
+    $thread = AgentThread::query()->where('external_id', 'reviewer-thread')->sole();
+
+    app(ArchiveFinishedTaskThreads::class)->run();
+    $retryAt = $thread->fresh()?->archive_retry_at;
+    app(ArchiveFinishedTaskThreads::class)->run();
+    $attemptsBeforeRetry = collect($dispatcher->commands)->where('type', 'thread.archive')->where('threadId', $thread->external_id)->count();
+    $dispatcher->fail = false;
+    $this->travelTo($retryAt->copy()->addSecond());
+    app(ArchiveFinishedTaskThreads::class)->run();
+
+    expect($attemptsBeforeRetry)->toBe(1)
+        ->and($thread->fresh()?->archived_at)->not->toBeNull()
+        ->and($thread->fresh()?->archive_retry_at)->toBeNull()
+        ->and($thread->fresh()?->archive_attempts)->toBe(0);
+});
+
 it('retries failed archives on a later tick with the same command id without blocking', function (): void {
     $group = tick_group();
     test_link_agent_threads($group);
@@ -295,6 +357,7 @@ it('retries failed archives on a later tick with the same command id without blo
     app(TaskScheduler::class)->tick();
     $archiveId = collect($dispatcher->commands)->firstWhere('type', 'thread.archive')['commandId'];
     $this->assertDatabaseHas('task_groups', ['id' => $group->id, 'status' => TaskGroupStatus::Completed->value]);
+    $this->travel(1)->minutes();
     app(TaskScheduler::class)->tick();
 
     $commands = collect($dispatcher->commands)->where('type', 'thread.archive')->where('threadId', 'reviewer-thread');
