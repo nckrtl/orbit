@@ -9,7 +9,7 @@ covers:
 
 # Instance analytics stats
 
-The Gateway reports visits for an Instance that publishes a tracking host. The report comes from the fleet analytics driver, which reads the Plausible Community Edition Stats API of the analytics role. [Analytics role](/reference/analytics) owns the role, the tracking host, and the Stats API key.
+The Gateway reports visits for an Instance that publishes a tracking host. The report comes from the fleet analytics driver, which reads the Plausible Community Edition Stats API of the analytics role. The driver reads community-edition stats directly from the Stats API. [Analytics role](/reference/analytics) owns the role, the tracking host, and the Stats API key.
 
 ## Read the stats
 

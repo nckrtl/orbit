@@ -72,7 +72,7 @@ final readonly class NativeDevelopmentAppInstanceProvisioner implements Developm
         $appInstance = AppInstance::query()->with(['app', 'node'])->findOrFail($appInstanceId);
 
         if ($appInstance->status === AppInstanceState::Active) {
-            return $this->recoverActiveSourceProfile($appInstance, $recoverSourceProfile);
+            return $appInstance->load('routes.targets');
         }
 
         $profile = $this->configuration->inspect($appInstance);
@@ -113,7 +113,7 @@ final readonly class NativeDevelopmentAppInstanceProvisioner implements Developm
         }
 
         if ($appInstance->status === AppInstanceState::Active && $route->status === RouteStatus::Active) {
-            return $this->recoverActiveSourceProfile($appInstance, $recoverSourceProfile);
+            return $appInstance->load('routes.targets');
         }
 
         if (
@@ -123,15 +123,13 @@ final readonly class NativeDevelopmentAppInstanceProvisioner implements Developm
             throw $this->sourceEvidenceChanged();
         }
 
-        $legacyIncompleteProfile = $appInstance->provisioning_step !== null && $appInstance->source_is_laravel === null;
-
-        if ($legacyIncompleteProfile && ! $recoverSourceProfile) {
+        if ($appInstance->provisioning_step !== null && $appInstance->source_is_laravel === null) {
             throw $this->sourceEvidenceChanged();
         }
 
         $profile = $this->configuration->inspect($appInstance);
 
-        if ($appInstance->provisioning_step === null || $legacyIncompleteProfile) {
+        if ($appInstance->provisioning_step === null) {
             $this->recordProfile($appInstance, $profile);
         } elseif (
             $appInstance->selected_php_version !== $profile->phpVersion
@@ -171,23 +169,6 @@ final readonly class NativeDevelopmentAppInstanceProvisioner implements Developm
     private function owner(): DevelopmentProjectionOperationLock
     {
         return $this->projectionOwner ?? app(DevelopmentProjectionOperationLock::class);
-    }
-
-    private function recoverActiveSourceProfile(
-        AppInstance $appInstance,
-        bool $recoverSourceProfile,
-    ): AppInstance {
-        if (! $recoverSourceProfile || $appInstance->source_is_laravel !== null) {
-            return $appInstance->load('routes.targets');
-        }
-
-        $profile = $this->configuration->inspect($appInstance);
-        $appInstance->update([
-            'source_is_laravel' => $profile->laravel,
-            ...($appInstance->selected_php_version === null ? ['selected_php_version' => $profile->phpVersion] : []),
-        ]);
-
-        return $appInstance->refresh()->load('routes.targets');
     }
 
     private function recordProfile(

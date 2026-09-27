@@ -15,7 +15,7 @@ A proof of the verify-only Doctor runs on a leased `gateway_app-dev_app-prod` to
 
 ## Cause
 
-Doctor reports one finding per inspector that fails, so a fixture must break exactly one inspector. The production Instance inspector runs `sudo bash`. The role inspector runs `sudo ufw`. The firewall inspector also runs it when the selected Node has a persisted or synthetic firewall target. The public Route edge inspector, in the `instance` family, runs `sudo ufw status numbered` on a Node that serves a public Route edge.
+Doctor reports one finding per inspector that fails, so a fixture must break exactly one inspector. The production Instance inspector runs `sudo bash`. The role inspector runs `sudo ufw`. The firewall inspector also runs it when the selected Node has a persisted or synthetic firewall target. The public Route edge inspector, in the `instance` family, runs `sudo ufw status numbered` on a Node that serves a public Route edge. Doctor checks current projections only. The proof does not need to fixture local DNS snippet compatibility checks.
 
 The public Route edge inspector checks the certificate actually served by the ingress against Mozilla roots, the Route hostname, and a 30-day expiry window. A certificate finding is distinct from the proof's declared drift and must be absent in the healthy baseline. A file inventory of the Gateway home also sees changes that are not Doctor writes. SQLite creates and removes its `-wal` and `-shm` sidecars for any connection, including a read-only one. The Caddy build check creates a lock file under the Orbit home's `locks/caddy-build/` directory, and the file stays.
 

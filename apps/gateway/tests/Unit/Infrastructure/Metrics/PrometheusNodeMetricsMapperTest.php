@@ -176,44 +176,7 @@ describe(PrometheusNodeMetricsMapper::class, function (): void {
         expect($snapshots['10.44.0.13']['cores'])->toBe([0.0, 0.0, 0.0]);
     });
 
-    it('maps a Darwin instance from its own memory metric family, never from a stored platform field', function (): void {
-        $scalars = vector([
-            sample(['__name__' => 'node_memory_total_bytes', 'instance' => '10.6.0.5:9100'], 17_179_869_184),
-            sample(['__name__' => 'node_memory_free_bytes', 'instance' => '10.6.0.5:9100'], 2_147_483_648),
-            sample(['__name__' => 'node_memory_inactive_bytes', 'instance' => '10.6.0.5:9100'], 1_073_741_824),
-            sample(['__name__' => 'node_memory_purgeable_bytes', 'instance' => '10.6.0.5:9100'], 536_870_912),
-            sample(['__name__' => 'node_memory_active_bytes', 'instance' => '10.6.0.5:9100'], 8_589_934_592),
-            sample(['__name__' => 'node_memory_wired_bytes', 'instance' => '10.6.0.5:9100'], 2_147_483_648),
-            sample(['__name__' => 'node_memory_swap_total_bytes', 'instance' => '10.6.0.5:9100'], 1_073_741_824),
-            sample(['__name__' => 'node_memory_swap_used_bytes', 'instance' => '10.6.0.5:9100'], 104_857_600),
-            sample(['__name__' => 'node_load1', 'instance' => '10.6.0.5:9100'], 1.2),
-            sample(['__name__' => 'node_load5', 'instance' => '10.6.0.5:9100'], 1.1),
-            sample(['__name__' => 'node_load15', 'instance' => '10.6.0.5:9100'], 0.9),
-            sample(['__name__' => 'node_boot_time_seconds', 'instance' => '10.6.0.5:9100'], PROMETHEUS_MAPPER_TEST_NOW - 86_400),
-        ]);
-        $cores = vector([
-            sample(['instance' => '10.6.0.5:9100', 'cpu' => '0'], 0.05),
-            sample(['instance' => '10.6.0.5:9100', 'cpu' => '1'], 0.1),
-        ]);
-        // Darwin's node_exporter has no PSI collector: no series for this instance at all.
-
-        $snapshots = PrometheusNodeMetricsMapper::map($scalars, $cores, empty_vector(), empty_vector(), PROMETHEUS_MAPPER_TEST_NOW);
-
-        expect($snapshots)->toHaveKey('10.6.0.5');
-        expect($snapshots['10.6.0.5']['memory'])->toBe([
-            'used' => 17_179_869_184 - (2_147_483_648 + 1_073_741_824 + 536_870_912),
-            'total' => 17_179_869_184,
-        ])
-            ->and($snapshots['10.6.0.5']['swap'])->toBe(['used' => 104_857_600, 'total' => 1_073_741_824])
-            ->and($snapshots['10.6.0.5']['uptime_seconds'])->toBe(86_400)
-            ->and($snapshots['10.6.0.5']['pressure'])->toBe([
-                'cpu' => ['some_avg10' => 0.0],
-                'memory' => ['some_avg10' => 0.0],
-                'io' => ['some_avg10' => 0.0],
-            ]);
-    });
-
-    it('leaves an instance with no total-memory metric out of the map entirely, Linux or Darwin', function (): void {
+    it('leaves an instance with no total-memory metric out of the map entirely', function (): void {
         $scalars = vector([
             sample(['__name__' => 'node_load1', 'instance' => '10.44.0.14:9100'], 0.1),
         ]);

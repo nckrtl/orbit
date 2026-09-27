@@ -13,7 +13,7 @@ covers:
 
 # Instance cloning
 
-Every production Instance starts as a clone. The Gateway copies a candidate Instance's committed source, stored environment, and optionally one SQLite database to a new Instance on an `app-prod` Node. The candidate keeps running. The clone ends with a prepared production home and no release. Its first [deployment](/reference/deployments) selects code.
+Every production Instance starts as a clone. The Gateway copies a candidate Instance's committed source, stored environment, and optionally one SQLite database to a new Instance on an `app-prod` Node. The candidate keeps running. The clone ends with a prepared production home and no release. Its first [deployment](/reference/deployments) selects code. Provisioning creates the production PHP runtime through the native provisioner and projects its Route through the shared native Route projector.
 
 `instance:create` on an `app-prod` Node returns `instance.candidate_required`. The `app-prod` role decides this, not `APP_ENV`.
 

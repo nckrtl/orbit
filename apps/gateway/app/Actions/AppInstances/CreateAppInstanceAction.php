@@ -145,7 +145,6 @@ final readonly class CreateAppInstanceAction
                         $result = $this->provisioner->complete(
                             $resolved,
                             $data->domain,
-                            $data->recoverSourceProfile,
                             setupPending: ! $wasActive,
                         );
 

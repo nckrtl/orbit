@@ -106,7 +106,7 @@ describe(PlausibleCommunityEditionStatsDriver::class, function (): void {
             ->and($read->pages)->toBe([]);
     });
 
-    it('reads live visitors, period counts, and top pages for the site domain', function (): void {
+    it('reads the Plausible 3.2.1 breakdown rows, live visitors, and period counts for the site domain', function (): void {
         plausible_analytics_node();
         Http::fake(plausible_stats_ok());
 

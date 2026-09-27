@@ -114,6 +114,8 @@ A failed setup step during `instance:create` runs the teardown steps and removes
 
 An identical `instance:create` for an active Instance returns it unchanged and runs no setup. An Instance can stay active with a failed setup: after `instance:setup` or `instance:register --setup` fails, or when Orbit could not confirm the failed step or finish the rollback. Then `instance:create` returns `instance.setup_step_failed` until `instance:setup` succeeds.
 
+Orbit does not recover missing source profiles on older Instances. ADR 0177 records the no-legacy-support rule.
+
 ## Laravel application URL
 
 For Project types other than `laravel-package`, Orbit treats a source as Laravel when it has a regular `artisan` file and a `composer.json` that declares `laravel/framework` exactly once, in `require` or `require-dev`. A source with a `composer.json` and neither marker is plain PHP. A source without `composer.json` has no PHP. A `laravel-package` Project is exempt from this application-marker validation: it needs no `artisan`, and a `laravel/framework` declaration alone is valid.
