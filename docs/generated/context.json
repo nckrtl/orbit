@@ -36,9 +36,7 @@
                 "Route",
                 "Schedule"
             ],
-            "governing_adrs": [
-                "0159"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/api/php-sdk.mdx",
@@ -97,22 +95,26 @@
             "path": "docs/cli/activity.mdx",
             "title": "activity",
             "kind": "product",
-            "components": [],
+            "components": [
+                "apps/cli",
+                "apps/gateway"
+            ],
             "concepts": [
+                "Access grant",
                 "Activity",
                 "Deployment",
                 "Doctor",
                 "Gateway",
                 "Instance",
                 "Node",
+                "Node agent",
+                "Process",
                 "Route",
-                "Schedule"
+                "Schedule",
+                "Task",
+                "Tool"
             ],
-            "governing_adrs": [
-                "0152",
-                "0158",
-                "0159"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/cli/analytics.mdx",
@@ -261,7 +263,10 @@
             "path": "docs/cli/gateway.mdx",
             "title": "gateway",
             "kind": "product",
-            "components": [],
+            "components": [
+                "apps/cli",
+                "apps/gateway"
+            ],
             "concepts": [
                 "Activity",
                 "Gateway",
@@ -273,12 +278,15 @@
             "path": "docs/cli/github.mdx",
             "title": "github",
             "kind": "product",
-            "components": [],
+            "components": [
+                "apps/cli"
+            ],
             "concepts": [
                 "Gateway",
                 "Instance",
                 "Node",
-                "Project"
+                "Project",
+                "Task"
             ],
             "governing_adrs": []
         },
@@ -286,7 +294,10 @@
             "path": "docs/cli/instance.mdx",
             "title": "instance",
             "kind": "product",
-            "components": [],
+            "components": [
+                "apps/cli",
+                "packages/php-sdk"
+            ],
             "concepts": [
                 "Cluster",
                 "Deployment",
@@ -390,14 +401,15 @@
             "path": "docs/cli/profile.mdx",
             "title": "profile",
             "kind": "product",
-            "components": [],
+            "components": [
+                "apps/cli"
+            ],
             "concepts": [
                 "Activity",
                 "Doctor",
                 "Gateway",
                 "Instance",
-                "Node",
-                "Process"
+                "Node"
             ],
             "governing_adrs": []
         },
@@ -405,7 +417,10 @@
             "path": "docs/cli/project.mdx",
             "title": "project",
             "kind": "product",
-            "components": [],
+            "components": [
+                "apps/cli",
+                "packages/php-sdk"
+            ],
             "concepts": [
                 "Deployment",
                 "Gateway",
@@ -439,17 +454,14 @@
             "path": "docs/cli/realtime.mdx",
             "title": "realtime",
             "kind": "product",
-            "components": [],
+            "components": [
+                "apps/cli"
+            ],
             "concepts": [
-                "Activity",
-                "Deployment",
                 "Gateway",
-                "Instance",
                 "Node",
                 "Process",
-                "Role",
-                "Schedule",
-                "Tool"
+                "Role"
             ],
             "governing_adrs": []
         },
@@ -528,17 +540,6 @@
             "governing_adrs": []
         },
         {
-            "path": "docs/cli/workspace.mdx",
-            "title": "Git worktrees",
-            "kind": "product",
-            "components": [],
-            "concepts": [
-                "Instance",
-                "Node"
-            ],
-            "governing_adrs": []
-        },
-        {
             "path": "docs/concepts.md",
             "title": "Concepts",
             "kind": "product",
@@ -591,24 +592,6 @@
             "governing_adrs": []
         },
         {
-            "path": "docs/decisions/0016-reconcile-app-identity-and-source-default-updates.md",
-            "title": "ADR 0016: Reconcile App identity and source-default updates",
-            "kind": "decision",
-            "components": [],
-            "concepts": [
-                "Cluster",
-                "Deployment",
-                "Gateway",
-                "Instance",
-                "Node",
-                "Role",
-                "Route"
-            ],
-            "governing_adrs": [
-                "0016"
-            ]
-        },
-        {
             "path": "docs/decisions/0017-optional-cluster-placement-and-tld-precedence.md",
             "title": "ADR 0017: Make Cluster placement optional",
             "kind": "decision",
@@ -619,309 +602,12 @@
                 "Gateway",
                 "Instance",
                 "Node",
+                "Project",
                 "Role",
                 "Route"
             ],
             "governing_adrs": [
-                "0016",
                 "0017"
-            ]
-        },
-        {
-            "path": "docs/decisions/0018-register-caller-local-development-worktrees.md",
-            "title": "ADR 0018: Register caller-local development worktrees as AppInstances",
-            "kind": "decision",
-            "components": [],
-            "concepts": [
-                "Activity",
-                "Cluster",
-                "Doctor",
-                "Gateway",
-                "Instance",
-                "Node",
-                "Role",
-                "Route",
-                "Tool"
-            ],
-            "governing_adrs": [
-                "0016",
-                "0017",
-                "0018"
-            ]
-        },
-        {
-            "path": "docs/decisions/0021-pin-sury-php-fpm-with-opcache-profiles-per-role.md",
-            "title": "ADR 0021: Pin Sury PHP-FPM with OPcache profiles per role",
-            "kind": "decision",
-            "components": [
-                "apps/gateway"
-            ],
-            "concepts": [
-                "Gateway",
-                "Node",
-                "Role"
-            ],
-            "governing_adrs": [
-                "0021"
-            ]
-        },
-        {
-            "path": "docs/decisions/0025-stabilize-the-default-appinstance-identity.md",
-            "title": "ADR 0025: Stabilize the default AppInstance identity",
-            "kind": "decision",
-            "components": [
-                "apps/cli",
-                "apps/gateway",
-                "packages/php-sdk"
-            ],
-            "concepts": [
-                "Gateway",
-                "Instance",
-                "Project",
-                "Role",
-                "Route"
-            ],
-            "governing_adrs": [
-                "0016",
-                "0025",
-                "0105"
-            ]
-        },
-        {
-            "path": "docs/decisions/0026-identify-each-app-by-one-repository.md",
-            "title": "ADR 0026: Identify each App by one repository",
-            "kind": "decision",
-            "components": [
-                "apps/cli",
-                "apps/gateway",
-                "packages/php-sdk"
-            ],
-            "concepts": [
-                "Gateway"
-            ],
-            "governing_adrs": [
-                "0016",
-                "0026"
-            ]
-        },
-        {
-            "path": "docs/decisions/0027-adopt-local-git-sources-into-appinstance-ownership.md",
-            "title": "ADR 0027: Adopt local Git sources into AppInstance ownership",
-            "kind": "decision",
-            "components": [
-                "apps/cli",
-                "apps/gateway",
-                "packages/php-sdk"
-            ],
-            "concepts": [
-                "Gateway",
-                "Instance",
-                "Node",
-                "Route"
-            ],
-            "governing_adrs": [
-                "0016",
-                "0018",
-                "0025",
-                "0026",
-                "0027"
-            ]
-        },
-        {
-            "path": "docs/decisions/0029-manage-laravel-application-urls-through-orbit.md",
-            "title": "ADR 0029: Manage Laravel application URLs through Orbit",
-            "kind": "decision",
-            "components": [
-                "apps/cli",
-                "apps/gateway",
-                "packages/php-sdk"
-            ],
-            "concepts": [
-                "Cluster",
-                "Deployment",
-                "Gateway",
-                "Instance",
-                "Route",
-                "Tool"
-            ],
-            "governing_adrs": [
-                "0029"
-            ]
-        },
-        {
-            "path": "docs/decisions/0030-complete-appinstance-provisioning-without-application-health-gates.md",
-            "title": "ADR 0030: Complete AppInstance provisioning without application health gates",
-            "kind": "decision",
-            "components": [
-                "apps/cli",
-                "apps/e2e",
-                "apps/gateway",
-                "packages/php-sdk"
-            ],
-            "concepts": [
-                "Deployment",
-                "Gateway",
-                "Instance",
-                "Route"
-            ],
-            "governing_adrs": [
-                "0029",
-                "0030"
-            ]
-        },
-        {
-            "path": "docs/decisions/0031-clone-initial-production-source-during-provisioning.md",
-            "title": "ADR 0031: Clone initial production source during provisioning",
-            "kind": "decision",
-            "components": [
-                "apps/cli",
-                "apps/e2e",
-                "apps/gateway",
-                "packages/php-sdk"
-            ],
-            "concepts": [
-                "Deployment",
-                "Gateway",
-                "Route"
-            ],
-            "governing_adrs": [
-                "0030",
-                "0031",
-                "0032"
-            ]
-        },
-        {
-            "path": "docs/decisions/0032-preserve-explicit-appinstance-branch-selection.md",
-            "title": "ADR 0032: Preserve explicit AppInstance branch selection",
-            "kind": "decision",
-            "components": [
-                "apps/cli",
-                "apps/gateway",
-                "packages/php-sdk"
-            ],
-            "concepts": [
-                "Deployment",
-                "Gateway",
-                "Instance",
-                "Route"
-            ],
-            "governing_adrs": [
-                "0025",
-                "0032"
-            ]
-        },
-        {
-            "path": "docs/decisions/0034-select-appinstance-php-from-composer-constraints.md",
-            "title": "ADR 0034: Select AppInstance PHP from Composer constraints",
-            "kind": "decision",
-            "components": [
-                "apps/cli",
-                "apps/docs",
-                "apps/gateway",
-                "packages/php-sdk"
-            ],
-            "concepts": [
-                "Gateway",
-                "Node",
-                "Project",
-                "Role"
-            ],
-            "governing_adrs": [
-                "0021",
-                "0034"
-            ]
-        },
-        {
-            "path": "docs/decisions/0036-support-only-appinstances.md",
-            "title": "ADR 0036: Support only AppInstances",
-            "kind": "decision",
-            "components": [
-                "apps/cli",
-                "apps/e2e",
-                "apps/gateway",
-                "packages/php-sdk"
-            ],
-            "concepts": [
-                "Deployment",
-                "Gateway",
-                "Instance",
-                "Route"
-            ],
-            "governing_adrs": [
-                "0036"
-            ]
-        },
-        {
-            "path": "docs/decisions/0038-cascade-appinstance-removal-through-processes-and-schedules.md",
-            "title": "ADR 0038: Cascade AppInstance removal through processes and schedules",
-            "kind": "decision",
-            "components": [
-                "apps/cli",
-                "apps/gateway",
-                "packages/php-sdk"
-            ],
-            "concepts": [
-                "Gateway",
-                "Instance",
-                "Node",
-                "Process",
-                "Schedule"
-            ],
-            "governing_adrs": [
-                "0036",
-                "0038"
-            ]
-        },
-        {
-            "path": "docs/decisions/0045-isolate-production-php-fpm-by-unix-user.md",
-            "title": "ADR 0045: Isolate production PHP-FPM by Unix user",
-            "kind": "decision",
-            "components": [
-                "apps/gateway"
-            ],
-            "concepts": [
-                "Deployment",
-                "Gateway",
-                "Instance",
-                "Node",
-                "Project",
-                "Role",
-                "Route"
-            ],
-            "governing_adrs": [
-                "0021",
-                "0045",
-                "0106"
-            ]
-        },
-        {
-            "path": "docs/decisions/0047-create-production-appinstances-from-candidates.md",
-            "title": "ADR 0047: Create production AppInstances from candidates",
-            "kind": "decision",
-            "components": [
-                "apps/cli",
-                "apps/e2e",
-                "apps/gateway",
-                "packages/php-sdk"
-            ],
-            "concepts": [
-                "Deployment",
-                "Gateway",
-                "Instance",
-                "Node",
-                "Process",
-                "Project",
-                "Role",
-                "Route",
-                "Schedule"
-            ],
-            "governing_adrs": [
-                "0030",
-                "0031",
-                "0032",
-                "0045",
-                "0047",
-                "0106"
             ]
         },
         {
@@ -1030,67 +716,6 @@
             ]
         },
         {
-            "path": "docs/decisions/0066-transfer-development-appinstances-between-nodes.md",
-            "title": "ADR 0066: Transfer development AppInstances between Nodes",
-            "kind": "decision",
-            "components": [
-                "apps/gateway"
-            ],
-            "concepts": [
-                "Cluster",
-                "Gateway",
-                "Instance",
-                "Node",
-                "Process",
-                "Route",
-                "Schedule"
-            ],
-            "governing_adrs": [
-                "0027",
-                "0038",
-                "0066"
-            ]
-        },
-        {
-            "path": "docs/decisions/0074-hibernate-idle-app-dev-appinstance-processes.md",
-            "title": "ADR 0074: Hibernate idle app-dev AppInstance Processes",
-            "kind": "decision",
-            "components": [
-                "apps/gateway"
-            ],
-            "concepts": [
-                "Activity",
-                "Doctor",
-                "Gateway",
-                "Node",
-                "Process",
-                "Role",
-                "Schedule"
-            ],
-            "governing_adrs": [
-                "0021",
-                "0036",
-                "0074"
-            ]
-        },
-        {
-            "path": "docs/decisions/0075-prune-idle-app-dev-checkout-dependencies.md",
-            "title": "ADR 0075: Prune idle app-dev checkout dependencies",
-            "kind": "decision",
-            "components": [
-                "apps/gateway"
-            ],
-            "concepts": [
-                "Gateway",
-                "Node",
-                "Process"
-            ],
-            "governing_adrs": [
-                "0074",
-                "0075"
-            ]
-        },
-        {
             "path": "docs/decisions/0076-deliver-features-through-complete-pull-requests.md",
             "title": "ADR 0076: Deliver features through complete pull requests",
             "kind": "decision",
@@ -1113,30 +738,6 @@
             ]
         },
         {
-            "path": "docs/decisions/0078-assign-vite-ports-to-development-appinstances.md",
-            "title": "ADR 0078: Assign Vite ports to development App instances",
-            "kind": "decision",
-            "components": [
-                "apps/cli",
-                "apps/e2e",
-                "apps/gateway",
-                "packages/php-sdk"
-            ],
-            "concepts": [
-                "Cluster",
-                "Gateway",
-                "Instance",
-                "Node",
-                "Process",
-                "Route"
-            ],
-            "governing_adrs": [
-                "0066",
-                "0074",
-                "0078"
-            ]
-        },
-        {
             "path": "docs/decisions/0082-wire-agentation-watch-mode-through-appinstance-processes.md",
             "title": "ADR 0082: Wire Agentation watch mode through App instance Processes",
             "kind": "decision",
@@ -1156,193 +757,7 @@
                 "Route"
             ],
             "governing_adrs": [
-                "0074",
-                "0078",
                 "0082"
-            ]
-        },
-        {
-            "path": "docs/decisions/0083-default-sqlite-journal-mode-to-wal.md",
-            "title": "ADR 0083: Default SQLite journal_mode to WAL",
-            "kind": "decision",
-            "components": [
-                "apps/docs",
-                "apps/gateway"
-            ],
-            "concepts": [
-                "Gateway",
-                "Node",
-                "Process",
-                "Task"
-            ],
-            "governing_adrs": [
-                "0083"
-            ]
-        },
-        {
-            "path": "docs/decisions/0084-broadcast-record-changes-through-reverb.md",
-            "title": "ADR 0084: Broadcast record changes through Reverb",
-            "kind": "decision",
-            "components": [
-                "apps/cli",
-                "apps/docs",
-                "apps/gateway",
-                "packages/php-sdk"
-            ],
-            "concepts": [
-                "Deployment",
-                "Gateway",
-                "Instance",
-                "Node",
-                "Process",
-                "Role",
-                "Route",
-                "Schedule"
-            ],
-            "governing_adrs": [
-                "0084",
-                "0085",
-                "0087"
-            ]
-        },
-        {
-            "path": "docs/decisions/0085-build-orbit-top-as-a-thin-tui-client.md",
-            "title": "ADR 0085: Build orbit top as a thin TUI client",
-            "kind": "decision",
-            "components": [
-                "apps/cli",
-                "apps/docs"
-            ],
-            "concepts": [
-                "Deployment",
-                "Doctor",
-                "Gateway",
-                "Instance",
-                "Node",
-                "Process",
-                "Route",
-                "Schedule"
-            ],
-            "governing_adrs": [
-                "0084",
-                "0085",
-                "0147"
-            ]
-        },
-        {
-            "path": "docs/decisions/0086-offer-the-api-as-mcp-tools.md",
-            "title": "ADR 0086: Offer the API as MCP tools",
-            "kind": "decision",
-            "components": [
-                "apps/docs",
-                "apps/gateway"
-            ],
-            "concepts": [
-                "Activity",
-                "Deployment",
-                "Gateway",
-                "Instance",
-                "Node",
-                "Process",
-                "Route",
-                "Schedule",
-                "Tool"
-            ],
-            "governing_adrs": [
-                "0085",
-                "0086"
-            ]
-        },
-        {
-            "path": "docs/decisions/0087-run-reverb-through-a-websocket-role.md",
-            "title": "ADR 0087: Run Reverb through a websocket role",
-            "kind": "decision",
-            "components": [
-                "apps/cli",
-                "apps/docs",
-                "apps/gateway",
-                "packages/php-sdk"
-            ],
-            "concepts": [
-                "Deployment",
-                "Gateway",
-                "Instance",
-                "Node",
-                "Process",
-                "Role",
-                "Route"
-            ],
-            "governing_adrs": [
-                "0084",
-                "0087",
-                "0095"
-            ]
-        },
-        {
-            "path": "docs/decisions/0089-index-appinstance-dependencies.md",
-            "title": "ADR 0089: Index App instance dependencies",
-            "kind": "decision",
-            "components": [
-                "apps/cli",
-                "apps/docs",
-                "apps/e2e",
-                "apps/gateway",
-                "packages/php-sdk"
-            ],
-            "concepts": [
-                "Deployment",
-                "Gateway",
-                "Instance",
-                "Node",
-                "Project",
-                "Route",
-                "Schedule",
-                "Task"
-            ],
-            "governing_adrs": [
-                "0075",
-                "0089"
-            ]
-        },
-        {
-            "path": "docs/decisions/0092-publish-private-dns-on-the-vpn-node-after-gateway-relocate.md",
-            "title": "ADR 0092: Publish private DNS on the VPN node after gateway relocate",
-            "kind": "decision",
-            "components": [
-                "apps/docs",
-                "apps/e2e",
-                "apps/gateway"
-            ],
-            "concepts": [
-                "Gateway",
-                "Node",
-                "Process",
-                "Role"
-            ],
-            "governing_adrs": [
-                "0092"
-            ]
-        },
-        {
-            "path": "docs/decisions/0095-relocate-relocatable-singleton-roles.md",
-            "title": "ADR 0095: Relocate relocatable singleton roles as one Orbit action",
-            "kind": "decision",
-            "components": [
-                "apps/cli",
-                "apps/docs",
-                "apps/gateway",
-                "packages/php-sdk"
-            ],
-            "concepts": [
-                "Gateway",
-                "Node",
-                "Process",
-                "Role"
-            ],
-            "governing_adrs": [
-                "0087",
-                "0092",
-                "0095"
             ]
         },
         {
@@ -1369,33 +784,6 @@
             ]
         },
         {
-            "path": "docs/decisions/0098-read-github-repositories-through-a-gateway-owned-github-app.md",
-            "title": "ADR 0098: Read GitHub repositories through a Gateway-owned GitHub App",
-            "kind": "decision",
-            "components": [
-                "apps/cli",
-                "apps/docs",
-                "apps/e2e",
-                "apps/gateway",
-                "packages/php-sdk"
-            ],
-            "concepts": [
-                "Activity",
-                "Doctor",
-                "Gateway",
-                "Instance",
-                "Node",
-                "Process",
-                "Schedule",
-                "Tool"
-            ],
-            "governing_adrs": [
-                "0026",
-                "0031",
-                "0098"
-            ]
-        },
-        {
             "path": "docs/decisions/0103-absorb-commander-tasks-as-a-gateway-extension.md",
             "title": "ADR 0103: Absorb Commander tasks as a Gateway extension",
             "kind": "decision",
@@ -1415,9 +803,6 @@
                 "Task"
             ],
             "governing_adrs": [
-                "0036",
-                "0086",
-                "0098",
                 "0103",
                 "0112",
                 "0113",
@@ -1448,60 +833,6 @@
                 "0104",
                 "0109",
                 "0150"
-            ]
-        },
-        {
-            "path": "docs/decisions/0105-name-applications-as-project-and-instance.md",
-            "title": "ADR 0105: Name applications as Project and Instance",
-            "kind": "decision",
-            "components": [
-                "apps/cli",
-                "apps/docs",
-                "apps/e2e",
-                "apps/gateway",
-                "packages/php-sdk"
-            ],
-            "concepts": [
-                "Activity",
-                "Gateway",
-                "Instance",
-                "Node",
-                "Process",
-                "Project",
-                "Route",
-                "Schedule"
-            ],
-            "governing_adrs": [
-                "0025",
-                "0036",
-                "0086",
-                "0105"
-            ]
-        },
-        {
-            "path": "docs/decisions/0106-derive-instance-capabilities-from-project-type.md",
-            "title": "ADR 0106: Derive instance capabilities from Project type",
-            "kind": "decision",
-            "components": [
-                "apps/cli",
-                "apps/docs",
-                "apps/e2e",
-                "apps/gateway",
-                "packages/php-sdk"
-            ],
-            "concepts": [
-                "Extension",
-                "Gateway",
-                "Instance",
-                "Node",
-                "Project",
-                "Route"
-            ],
-            "governing_adrs": [
-                "0045",
-                "0103",
-                "0105",
-                "0106"
             ]
         },
         {
@@ -1549,21 +880,6 @@
                 "0110",
                 "0112",
                 "0132"
-            ]
-        },
-        {
-            "path": "docs/decisions/0111-retain-transfer-history-through-instance-removal.md",
-            "title": "ADR 0111: Retain completed transfer history through AppInstance removal",
-            "kind": "decision",
-            "components": [
-                "apps/gateway"
-            ],
-            "concepts": [
-                "Gateway",
-                "Instance"
-            ],
-            "governing_adrs": [
-                "0111"
             ]
         },
         {
@@ -1649,30 +965,6 @@
             ]
         },
         {
-            "path": "docs/decisions/0115-run-project-setup-commands-on-development-instances.md",
-            "title": "ADR 0115: Run Project setup commands on development Instances",
-            "kind": "decision",
-            "components": [
-                "apps/cli",
-                "apps/docs",
-                "apps/e2e",
-                "apps/gateway",
-                "packages/php-sdk"
-            ],
-            "concepts": [
-                "Activity",
-                "Gateway",
-                "Instance",
-                "Process",
-                "Project",
-                "Route"
-            ],
-            "governing_adrs": [
-                "0027",
-                "0115"
-            ]
-        },
-        {
             "path": "docs/decisions/0116-run-task-implementers-on-pi.md",
             "title": "ADR 0116: Run task implementers on Pi",
             "kind": "decision",
@@ -1719,33 +1011,6 @@
             "governing_adrs": [
                 "0114",
                 "0117"
-            ]
-        },
-        {
-            "path": "docs/decisions/0118-exclude-app-dev-nodes-per-project.md",
-            "title": "ADR 0118: Skip selected Nodes for a Project",
-            "kind": "decision",
-            "components": [
-                "apps/cli",
-                "apps/docs",
-                "apps/gateway",
-                "packages/php-sdk"
-            ],
-            "concepts": [
-                "Extension",
-                "Gateway",
-                "Instance",
-                "Node",
-                "Project",
-                "Role",
-                "Task",
-                "Tool"
-            ],
-            "governing_adrs": [
-                "0066",
-                "0086",
-                "0103",
-                "0118"
             ]
         },
         {
@@ -1808,7 +1073,6 @@
                 "Task group"
             ],
             "governing_adrs": [
-                "0098",
                 "0113",
                 "0114",
                 "0117",
@@ -1839,25 +1103,6 @@
             ]
         },
         {
-            "path": "docs/decisions/0123-serve-the-web-app-from-the-gateway-origin.md",
-            "title": "ADR 0123: Serve the web app from the Gateway origin",
-            "kind": "decision",
-            "components": [
-                "apps/gateway",
-                "apps/web"
-            ],
-            "concepts": [
-                "Gateway",
-                "Node"
-            ],
-            "governing_adrs": [
-                "0084",
-                "0085",
-                "0123",
-                "0147"
-            ]
-        },
-        {
             "path": "docs/decisions/0124-plan-backlog-groups-with-a-t3-planner.md",
             "title": "ADR 0124: Plan Backlog groups with a T3 planner",
             "kind": "decision",
@@ -1875,7 +1120,6 @@
                 "Task group"
             ],
             "governing_adrs": [
-                "0086",
                 "0112",
                 "0121",
                 "0122",
@@ -1896,7 +1140,6 @@
             "concepts": [
                 "Activity",
                 "Gateway",
-                "Instance",
                 "Node",
                 "Process",
                 "Project",
@@ -1906,7 +1149,6 @@
                 "Tool"
             ],
             "governing_adrs": [
-                "0106",
                 "0114",
                 "0121",
                 "0125"
@@ -1930,29 +1172,6 @@
             ],
             "governing_adrs": [
                 "0127"
-            ]
-        },
-        {
-            "path": "docs/decisions/0129-publish-node-presence-and-process-state-on-per-node-presence-channels.md",
-            "title": "ADR 0129: Publish Node presence and Process state on per-Node presence channels",
-            "kind": "decision",
-            "components": [
-                "apps/docs",
-                "apps/gateway"
-            ],
-            "concepts": [
-                "Gateway",
-                "Node",
-                "Node agent",
-                "Process",
-                "Role",
-                "Task"
-            ],
-            "governing_adrs": [
-                "0084",
-                "0087",
-                "0129",
-                "0151"
             ]
         },
         {
@@ -2058,7 +1277,6 @@
                 "Task"
             ],
             "governing_adrs": [
-                "0098",
                 "0113",
                 "0121",
                 "0140",
@@ -2099,13 +1317,9 @@
             "concepts": [
                 "Extension",
                 "Gateway",
-                "Node",
-                "Process"
+                "Node"
             ],
             "governing_adrs": [
-                "0085",
-                "0123",
-                "0129",
                 "0147"
             ]
         },
@@ -2126,112 +1340,6 @@
             "governing_adrs": [
                 "0104",
                 "0150"
-            ]
-        },
-        {
-            "path": "docs/decisions/0151-push-task-and-process-usage-changes-over-realtime.md",
-            "title": "ADR 0151: Push task and Process usage changes over realtime",
-            "kind": "decision",
-            "components": [
-                "apps/docs",
-                "apps/gateway",
-                "apps/web"
-            ],
-            "concepts": [
-                "Activity",
-                "Extension",
-                "Gateway",
-                "Instance",
-                "Node",
-                "Node agent",
-                "Process",
-                "Project",
-                "Role",
-                "Schedule",
-                "Task",
-                "Task group",
-                "Task workspace"
-            ],
-            "governing_adrs": [
-                "0084",
-                "0103",
-                "0122",
-                "0129",
-                "0151"
-            ]
-        },
-        {
-            "path": "docs/decisions/0152-sample-successful-read-activity.md",
-            "title": "ADR 0152: Sample successful read activity",
-            "kind": "decision",
-            "components": [
-                "apps/docs",
-                "apps/gateway"
-            ],
-            "concepts": [
-                "Activity",
-                "Doctor",
-                "Gateway",
-                "Node",
-                "Node agent",
-                "Process",
-                "Route",
-                "Schedule",
-                "Tool"
-            ],
-            "governing_adrs": [
-                "0086",
-                "0152"
-            ]
-        },
-        {
-            "path": "docs/decisions/0158-end-interrupted-activity.md",
-            "title": "ADR 0158: End interrupted Activity",
-            "kind": "decision",
-            "components": [
-                "apps/docs",
-                "apps/gateway"
-            ],
-            "concepts": [
-                "Activity",
-                "Deployment",
-                "Gateway",
-                "Instance",
-                "Node",
-                "Process",
-                "Role",
-                "Schedule"
-            ],
-            "governing_adrs": [
-                "0152",
-                "0158"
-            ]
-        },
-        {
-            "path": "docs/decisions/0159-push-activity-changes-to-the-web-app.md",
-            "title": "ADR 0159: Push Activity changes to the web app",
-            "kind": "decision",
-            "components": [
-                "apps/cli",
-                "apps/docs",
-                "apps/gateway",
-                "apps/web",
-                "packages/php-sdk"
-            ],
-            "concepts": [
-                "Activity",
-                "Gateway",
-                "Node",
-                "Process",
-                "Schedule",
-                "Task"
-            ],
-            "governing_adrs": [
-                "0084",
-                "0151",
-                "0152",
-                "0158",
-                "0159"
             ]
         },
         {
@@ -2324,14 +1432,12 @@
                 "Activity",
                 "Extension",
                 "Gateway",
-                "Process",
                 "Task"
             ],
             "governing_adrs": [
                 "0103",
                 "0112",
                 "0116",
-                "0151",
                 "0165"
             ]
         },
@@ -2422,7 +1528,6 @@
                 "Tool"
             ],
             "governing_adrs": [
-                "0086",
                 "0103",
                 "0112",
                 "0121",
@@ -2532,7 +1637,6 @@
                 "Task"
             ],
             "governing_adrs": [
-                "0105",
                 "0112",
                 "0177"
             ]
@@ -2603,48 +1707,18 @@
                 "Tool"
             ],
             "governing_adrs": [
-                "0016",
                 "0017",
-                "0018",
-                "0021",
-                "0025",
-                "0026",
-                "0027",
-                "0029",
-                "0030",
-                "0031",
-                "0032",
-                "0034",
-                "0036",
-                "0038",
-                "0045",
-                "0047",
                 "0051",
                 "0052",
                 "0053",
                 "0054",
                 "0058",
                 "0059",
-                "0066",
-                "0074",
-                "0075",
                 "0076",
-                "0078",
                 "0082",
-                "0083",
-                "0084",
-                "0085",
-                "0086",
-                "0087",
-                "0089",
-                "0092",
-                "0095",
                 "0097",
-                "0098",
                 "0103",
                 "0104",
-                "0105",
-                "0106",
                 "0109",
                 "0110",
                 "0112",
@@ -2655,11 +1729,9 @@
                 "0120",
                 "0121",
                 "0122",
-                "0123",
                 "0124",
                 "0125",
                 "0127",
-                "0129",
                 "0131",
                 "0132",
                 "0133",
@@ -2668,10 +1740,6 @@
                 "0145",
                 "0147",
                 "0150",
-                "0151",
-                "0152",
-                "0158",
-                "0159",
                 "0160",
                 "0163",
                 "0164",
@@ -2700,28 +1768,21 @@
             "path": "docs/domains/applications.md",
             "title": "Applications",
             "kind": "domain",
-            "components": [],
+            "components": [
+                "apps/cli",
+                "apps/gateway"
+            ],
             "concepts": [
-                "Activity",
                 "Cluster",
                 "Deployment",
-                "Doctor",
                 "Gateway",
                 "Instance",
                 "Node",
-                "Process",
                 "Project",
                 "Role",
                 "Route"
             ],
-            "governing_adrs": [
-                "0025",
-                "0027",
-                "0032",
-                "0066",
-                "0105",
-                "0106"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/index.mdx",
@@ -2848,8 +1909,11 @@
             "path": "docs/reference/app-dev-runtime-hibernation.md",
             "title": "App-dev runtime hibernation",
             "kind": "reference",
-            "components": [],
+            "components": [
+                "apps/gateway"
+            ],
             "concepts": [
+                "Access grant",
                 "Activity",
                 "Doctor",
                 "Gateway",
@@ -2857,13 +1921,9 @@
                 "Node",
                 "Node agent",
                 "Process",
-                "Project",
                 "Role"
             ],
-            "governing_adrs": [
-                "0074",
-                "0075"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/reference/app-processes-and-schedules.md",
@@ -2893,30 +1953,31 @@
             "title": "Instance cloning",
             "kind": "reference",
             "components": [
-                "apps/gateway"
+                "apps/cli",
+                "apps/gateway",
+                "packages/php-sdk"
             ],
             "concepts": [
+                "Access grant",
                 "Cluster",
                 "Deployment",
                 "Gateway",
                 "Instance",
                 "Node",
-                "Process",
                 "Project",
                 "Role",
-                "Route",
-                "Schedule"
+                "Route"
             ],
-            "governing_adrs": [
-                "0047",
-                "0106"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/reference/appinstance-removal.md",
             "title": "Instance removal",
             "kind": "reference",
-            "components": [],
+            "components": [
+                "apps/cli",
+                "apps/gateway"
+            ],
             "concepts": [
                 "Activity",
                 "Cluster",
@@ -2928,24 +1989,21 @@
                 "Route",
                 "Schedule",
                 "Task",
-                "Task group",
                 "Task workspace"
             ],
-            "governing_adrs": [
-                "0027",
-                "0031",
-                "0038",
-                "0045",
-                "0106",
-                "0111"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/reference/appinstance-transfer.md",
             "title": "Instance transfer",
             "kind": "reference",
-            "components": [],
+            "components": [
+                "apps/cli",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
             "concepts": [
+                "Access grant",
                 "Cluster",
                 "Gateway",
                 "Instance",
@@ -2956,52 +2014,47 @@
                 "Route",
                 "Schedule"
             ],
-            "governing_adrs": [
-                "0066"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/reference/apps.md",
             "title": "Projects",
             "kind": "reference",
-            "components": [],
+            "components": [
+                "apps/cli",
+                "apps/gateway"
+            ],
             "concepts": [
-                "Activity",
                 "Deployment",
                 "Doctor",
                 "Gateway",
                 "Instance",
                 "Node",
+                "Process",
                 "Project",
                 "Route",
+                "Schedule",
                 "Task",
-                "Task check",
-                "Tool"
+                "Task check"
             ],
-            "governing_adrs": [
-                "0016",
-                "0025",
-                "0026",
-                "0105",
-                "0106"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/reference/assigned-vite-ports.md",
             "title": "Assigned Vite ports",
             "kind": "reference",
-            "components": [],
+            "components": [
+                "apps/gateway"
+            ],
             "concepts": [
+                "Cluster",
                 "Gateway",
                 "Instance",
                 "Node",
                 "Process",
-                "Project",
                 "Route"
             ],
-            "governing_adrs": [
-                "0078"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/reference/browser-access.md",
@@ -3164,7 +2217,11 @@
             "path": "docs/reference/development-node-exclusions.md",
             "title": "Development node exclusions",
             "kind": "reference",
-            "components": [],
+            "components": [
+                "apps/cli",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
             "concepts": [
                 "Gateway",
                 "Instance",
@@ -3173,11 +2230,10 @@
                 "Role",
                 "Route",
                 "Task",
+                "Task group",
                 "Tool"
             ],
-            "governing_adrs": [
-                "0118"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/reference/environment-variables.md",
@@ -3207,8 +2263,11 @@
             "path": "docs/reference/events.mdx",
             "title": "Realtime events",
             "kind": "reference",
-            "components": [],
+            "components": [
+                "apps/gateway"
+            ],
             "concepts": [
+                "Access grant",
                 "Activity",
                 "Deployment",
                 "Extension",
@@ -3224,13 +2283,7 @@
                 "Task",
                 "Task group"
             ],
-            "governing_adrs": [
-                "0129",
-                "0151",
-                "0152",
-                "0158",
-                "0159"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/reference/gateway-recovery.md",
@@ -3262,11 +2315,8 @@
                 "packages/php-sdk"
             ],
             "concepts": [
-                "Deployment",
                 "Gateway",
-                "Instance",
                 "Node",
-                "Role",
                 "Route"
             ],
             "governing_adrs": []
@@ -3275,7 +2325,11 @@
             "path": "docs/reference/gateway-trust.md",
             "title": "Gateway trust",
             "kind": "reference",
-            "components": [],
+            "components": [
+                "apps/cli",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
             "concepts": [
                 "Gateway"
             ],
@@ -3285,7 +2339,9 @@
             "path": "docs/reference/github-app.md",
             "title": "GitHub App",
             "kind": "reference",
-            "components": [],
+            "components": [
+                "apps/gateway"
+            ],
             "concepts": [
                 "Activity",
                 "Deployment",
@@ -3295,15 +2351,10 @@
                 "Instance",
                 "Node",
                 "Project",
+                "Schedule",
                 "Task"
             ],
-            "governing_adrs": [
-                "0098",
-                "0121",
-                "0140",
-                "0160",
-                "0164"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/reference/implementation-loop.md",
@@ -3383,28 +2434,12 @@
             "path": "docs/reference/instance-dependencies.md",
             "title": "Instance dependencies",
             "kind": "reference",
-            "components": [],
-            "concepts": [
-                "Deployment",
-                "Gateway",
-                "Instance",
-                "Node",
-                "Process",
-                "Project",
-                "Route",
-                "Schedule",
-                "Task"
+            "components": [
+                "apps/cli",
+                "apps/gateway"
             ],
-            "governing_adrs": [
-                "0089"
-            ]
-        },
-        {
-            "path": "docs/reference/instance-dependency-contracts.md",
-            "title": "Gateway dependency contracts",
-            "kind": "reference",
-            "components": [],
             "concepts": [
+                "Access grant",
                 "Deployment",
                 "Gateway",
                 "Instance",
@@ -3414,9 +2449,24 @@
                 "Route",
                 "Schedule"
             ],
-            "governing_adrs": [
-                "0089"
-            ]
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/instance-dependency-contracts.md",
+            "title": "Dependency contracts",
+            "kind": "reference",
+            "components": [
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Gateway",
+                "Instance",
+                "Node",
+                "Project",
+                "Route"
+            ],
+            "governing_adrs": []
         },
         {
             "path": "docs/reference/instance-logs.md",
@@ -3453,7 +2503,10 @@
             "path": "docs/reference/instance-setup.md",
             "title": "Instance setup and teardown",
             "kind": "reference",
-            "components": [],
+            "components": [
+                "apps/cli",
+                "apps/gateway"
+            ],
             "concepts": [
                 "Activity",
                 "Gateway",
@@ -3462,11 +2515,10 @@
                 "Process",
                 "Project",
                 "Route",
-                "Task"
+                "Task",
+                "Task check"
             ],
-            "governing_adrs": [
-                "0115"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/reference/live-logs.md",
@@ -3501,9 +2553,11 @@
                 "Gateway",
                 "Instance",
                 "Node",
+                "Node agent",
                 "Process",
                 "Route",
                 "Schedule",
+                "Task",
                 "Tool"
             ],
             "governing_adrs": []
@@ -3610,13 +2664,13 @@
             "path": "docs/reference/php-runtime.md",
             "title": "PHP runtimes",
             "kind": "reference",
-            "components": [],
+            "components": [
+                "apps/gateway"
+            ],
             "concepts": [
                 "Activity",
-                "Cluster",
                 "Deployment",
                 "Doctor",
-                "Extension",
                 "Gateway",
                 "Instance",
                 "Node",
@@ -3624,14 +2678,9 @@
                 "Project",
                 "Role",
                 "Route",
-                "Schedule",
-                "Task"
+                "Schedule"
             ],
-            "governing_adrs": [
-                "0021",
-                "0034",
-                "0045"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/reference/pi-server.md",
@@ -3865,6 +2914,7 @@
             "title": "Web app",
             "kind": "reference",
             "components": [
+                "apps/gateway",
                 "apps/web"
             ],
             "concepts": [
@@ -3876,14 +2926,11 @@
                 "Node",
                 "Node agent",
                 "Process",
+                "Role",
                 "Task",
                 "Task group"
             ],
-            "governing_adrs": [
-                "0123",
-                "0151",
-                "0159"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/reference/web-verification.md",
@@ -3960,7 +3007,9 @@
                 "Node",
                 "Role",
                 "Route",
-                "Schedule"
+                "Schedule",
+                "Task",
+                "Task workspace"
             ],
             "governing_adrs": []
         },
@@ -3987,12 +3036,15 @@
             "path": "docs/solutions/realtime-reverb.mdx",
             "title": "Realtime events with Reverb",
             "kind": "solution",
-            "components": [],
+            "components": [
+                "apps/gateway"
+            ],
             "concepts": [
                 "Doctor",
                 "Gateway",
                 "Instance",
                 "Node",
+                "Node agent",
                 "Process",
                 "Project",
                 "Role",
@@ -4005,21 +3057,18 @@
             "title": "Relocate the gateway role",
             "kind": "solution",
             "components": [
-                "apps/e2e"
+                "apps/e2e",
+                "apps/gateway"
             ],
             "concepts": [
                 "Doctor",
                 "Gateway",
                 "Node",
-                "Process",
-                "Project",
+                "Node agent",
                 "Role",
                 "Route"
             ],
-            "governing_adrs": [
-                "0092",
-                "0095"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/solutions/remote-file-writes-on-uutils-coreutils.md",
@@ -4047,9 +3096,7 @@
                 "Node",
                 "Process"
             ],
-            "governing_adrs": [
-                "0083"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/tech-stack.md",

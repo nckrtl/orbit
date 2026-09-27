@@ -431,6 +431,8 @@ final class Orb199ProductionPhpRuntime implements ProductionPhpRuntimeManager
         $this->converged[] = $appInstance->id;
     }
 
+    public function convergeMonitoring(AppInstance $appInstance, bool $enabled): void {}
+
     public function refreshCache(AppInstance $appInstance): void {}
 
     public function remove(AppInstance $appInstance): void {}

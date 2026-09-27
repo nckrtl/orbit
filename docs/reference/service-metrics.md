@@ -53,7 +53,7 @@ Each production master has its own OPcache. Deployment and rollback reset that c
 
 Status monitoring uses a separate local socket, `<socket>.status`. So busy application workers do not block status collection. Cbox's OPcache helpers run through that socket, outside the web root.
 
-When monitoring adds or removes its status lines, Orbit reloads only a changed master that runs. The reload can warm its cache again. A stopped master stays stopped. Orbit never changes `local.conf`. When an operator's own status directive conflicts with monitoring, convergence fails and keeps the directive.
+The Gateway renders the PHP-FPM status lines into each production Instance's `pool.conf` and sends that configuration to the Node. The Node-side metrics script does not edit `pool.conf`. When monitoring adds or removes its status lines, Orbit reloads only a changed master that runs. The reload can warm its cache again. A stopped master stays stopped. Orbit never changes `local.conf`. When an operator's own status directive conflicts with monitoring, convergence fails and keeps the directive.
 
 ## Private access
 
@@ -69,12 +69,13 @@ Cbox can emit zero OPcache fields after a failed probe. The cache panels require
 
 ## Lifecycle
 
-Role and preference changes converge the services first, and then publish the new Prometheus configuration. These events also reconcile service metrics across the fleet:
+Role and preference changes converge the services first, and then publish the new Prometheus configuration. Service metrics also reconcile across the fleet whenever a public site appears or disappears. This includes:
 
-- a production clone completes;
-- a production Instance is created on `app-prod`;
-- an Instance is removed; and
-- a Route is updated or removed.
+- a Route is created, updated, or removed;
+- a Route target is set or cleared; and
+- a Route is published as public.
+
+Production clone completion and production Instance creation or removal also reconcile service metrics.
 
 Removing Metrics, or disabling a Node's exporter, removes the owned listeners, firewall rules, exporter unit, binary, and pool status lines. It keeps the application runtimes and local tuning. The small recovery directory `/etc/orbit/service-metrics` stays.
 

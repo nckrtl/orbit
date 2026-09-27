@@ -42,7 +42,7 @@ GitHub reports a conflict in the pull request itself: `mergeable` is `false`, or
 - Add `checks: read` to the pull request token: rejected because GitHub refuses the whole token for an installation without that permission. Pull request publishing and merge watching would stop.
 - Read the combined commit status instead of check runs: rejected because GitHub Actions reports through check runs, not commit statuses.
 - Ask for assistance when the check runs are unreadable: rejected because every existing installation would ask for assistance on each settling group until its owner accepts the new permission.
-- Receive GitHub webhooks for check and pull request events: rejected because the Gateway App receives no webhooks ([ADR 0098](/decisions/0098-read-github-repositories-through-a-gateway-owned-github-app)).
+- Receive GitHub webhooks for check and pull request events: rejected because the Gateway App receives no webhooks ([ADR 0098](/reference/github-app#why-it-works-this-way)).
 - Notify on every tick while a problem lasts: rejected because the scheduler ticks every 10 seconds, and Coder would receive the same message repeatedly.
 
 ## Consequences
@@ -56,6 +56,6 @@ GitHub reports a conflict in the pull request itself: `mergeable` is `false`, or
 ## Affects
 
 - Components: apps/gateway, apps/docs
-- ADRs: extends [ADR 0113](/decisions/0113-gate-task-completion-on-validation-and-review) for open settling pull requests; amends [ADR 0121](/decisions/0121-end-agent-turns-with-a-run-receipt) and [ADR 0098](/decisions/0098-read-github-repositories-through-a-gateway-owned-github-app) with the `checks: read` App permission
+- ADRs: extends [ADR 0113](/decisions/0113-gate-task-completion-on-validation-and-review) for open settling pull requests; amends [ADR 0121](/decisions/0121-end-agent-turns-with-a-run-receipt) and [ADR 0098](/reference/github-app#why-it-works-this-way) with the `checks: read` App permission
 - Detail: [Tasks](/reference/tasks#pull-request-and-settle-metrics), [GitHub App](/reference/github-app#how-orbit-watches-a-task-pull-request)
 - Verify: `apps/gateway` Pest tests `HttpTaskPullRequestWatcherTest`, `TaskSchedulerTickTest` settling cases, and `GitHubAppApiTest` manifest permissions

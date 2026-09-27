@@ -57,6 +57,8 @@ Build the feature and its tests against the documented behavior. Keep the propos
 
 `composer test:affected` selects tests with Pest test-impact analysis (TIA), which needs PCOV or Xdebug. Without a coverage driver, TIA is skipped and every test runs. On macOS, install PCOV with `brew install shivammathur/extensions/pcov@8.5`. Every project sets Composer's `process-timeout` to `0`, so Composer never stops a long test or check run.
 
+CI uses different test selection for pull requests and pushes to `main`. Pull requests run the TIA-selected tests plus every architecture test, so TIA cannot omit architecture checks when a new file has no coverage links yet. A push to `main` runs the full test suite without TIA and refreshes the TIA graph for later pull-request selections. Orbit's task gate, `bin/review-check`, also runs every architecture test in addition to its affected-test checks.
+
 The `test` and `test:affected` scripts in each PHP project, and root `bin/test`, pass `--colors=never` to Pest. `bin/pest-plain` strips any ANSI control sequences that remain. The output has no ANSI escape codes and still ends with the `Tests:` summary. The scripts do not pass `--no-progress`, because parallel Pest then omits that summary. Keep the flag on the scripts. `phpunit.xml` is a TIA input, and a change to it rebuilds the test impact graph.
 
 Run these commands in each changed project, such as `apps/cli`:

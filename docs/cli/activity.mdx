@@ -1,9 +1,18 @@
 ---
 title: "activity"
-description: "Read the Gateway's log of every authorized command: who ran it, what it targeted, and how it ended."
+description: "Read the Gateway's log of requests: who ran each command, what it targeted, and how it ended."
+covers:
+  - apps/cli/app/Commands/Activities/**
+  - apps/gateway/app/Http/Middleware/RecordCommandActivity.php
+  - apps/gateway/app/Http/Controllers/Api/ActivitiesController.php
+  - apps/gateway/app/Http/Requests/Activities/**
+  - apps/gateway/app/Actions/Activities/**
+  - apps/gateway/app/Infrastructure/Activity/**
+  - apps/gateway/app/Console/Commands/FinalizeInterruptedActivitiesCommand.php
+  - apps/gateway/app/Console/Commands/RedactActivitySecretsCommand.php
 ---
 
-The Gateway records an Activity for every command it authorizes that can change something or that fails. It samples successful reads, as [What the Gateway records](#what-the-gateway-records) explains. The `activity` family lists recent records and shows one attempt in full. Use it to answer what changed, who changed it, and whether it succeeded, without rebuilding the story from several machines.
+The Gateway records an Activity for every request that can change something and for every request that fails. It keeps a sample of successful reads, as [What the Gateway records](#what-the-gateway-records) explains. The `activity` family lists records and shows one in full. Use it to answer what changed, who changed it, and whether it succeeded.
 
 Every result that the CLI prints carries a Gateway request ID. That ID is the link between a command you ran and the Activity the Gateway kept for it.
 
@@ -14,7 +23,7 @@ Every result that the CLI prints carries a Gateway request ID. That ID is the li
 | [`activity:list`](#orbit-activitylist) | List recent Gateway command activity. |
 | [`activity:show`](#orbit-activityshow) | Show one Gateway command activity attempt. |
 
-Every command accepts `--json`. Human requests show progress while waiting. Lists use uppercase table headers; one Activity uses a detail tree. Inputs remain explicit in every mode.
+Every command accepts `--json`. The list and show commands need Gateway access.
 
 ## orbit activity:list
 
@@ -34,7 +43,7 @@ orbit activity:list [--limit=COUNT] [--request-id=UUID] [--before-id=ID] [--stat
 | `--caller=ID` | none | Only rows whose caller Node is this positive integer. A null caller does not match. Another value fails with `activity.caller_invalid`. |
 | `--target=ID` | none | Only rows whose target Node is this positive integer. A null target does not match. Another value fails with `activity.target_invalid`. |
 
-The CLI sends the filters as `before_id`, `status`, `command`, `caller_node_id`, and `target_node_id`. The Gateway rejects an invalid filter with `validation.failed` (422). It still excludes the list request itself. Fewer rows than `--limit` means there is no older page. [ADR 0159](/decisions/0159-push-activity-changes-to-the-web-app) records the paging and filters.
+The CLI sends the filters as `before_id`, `status`, `command`, `caller_node_id`, and `target_node_id`. The Gateway rejects an invalid filter with `validation.failed` (422). The list never includes the list request itself. Fewer rows than `--limit` means there is no older page.
 
 ```bash
 orbit activity:list --limit=50
@@ -61,29 +70,34 @@ orbit activity:show <activity> [--json]
 orbit activity:show 481
 ```
 
-Human output uses a detail tree with the command and status, the request ID the Gateway assigned to that attempt, the time, duration, exit code, and error code. JSON output returns every field below.
+An `activity` that is not a positive integer fails with `activity.id_invalid`. Human output uses a detail tree with the command and status, the request ID the Gateway assigned to that attempt, the time, duration, exit code, and error code. JSON output returns every field below.
 
 ## What the Gateway records
 
 | Request | Activity |
 | --- | --- |
-| Any method other than `GET` or `HEAD` | Always. The record is `running` while the request is in flight. A request that ends without recording its outcome is marked interrupted, as [Interrupted requests](#interrupted-requests) explains. |
+| Any method other than `GET` or `HEAD` | Always, except on the routes listed below. The record is `running` while the request is in flight. A request that ends without recording its outcome is marked interrupted, as [Interrupted requests](#interrupted-requests) explains. |
 | A `GET` or `HEAD` request that fails | Always, written when the request ends. |
 | A successful `GET` or `HEAD` request | Once per command, caller address, and target path in any 60 seconds. Other identical reads in that window write nothing. |
 | A `schedule:*` operation | Always. |
 | A successful read of a `:credentials` route | Always. |
 
-A polling client therefore adds about one record per command and target per minute. Reading the logs of two Processes keeps a record for each. If the sampling cache fails, the Gateway records the read. `--request-id` finds no record for a successful read that fell inside another read's window. [ADR 0152](/decisions/0152-sample-successful-read-activity) records this rule.
+The target is the request path, so reading the logs of two Processes keeps a record for each. A polling client therefore adds about one record per command and target per minute. When the sampling cache fails, the Gateway records the read and logs a warning. `--request-id` finds no record for a successful read inside another read's window. A read has no `running` state, because the Gateway writes it once, when it ends.
+
+These routes record no Activity, for any method: the Node agent endpoints, the annotation event stream, the Grafana access check, the two GitHub App registration pages, the Schedule completion report, the Instance wake check, the log stream renewals, and the task agent list and stream. An MCP tool call records the Activity of the API request it runs.
 
 ## Interrupted requests
 
 A request can end before it records its outcome. PHP-FPM ends a Gateway request that passes its 600-second limit, the kernel can kill a worker that runs out of memory, and a Gateway deploy restarts its workers. The Gateway then ends the record as `failed` with the error code `activity.interrupted`. Its duration and exit code stay null.
 
 - After a fatal error in PHP, such as exhausted memory or an exceeded execution time, the Gateway ends the record when the request shuts down.
-- A killed worker runs no code. The Gateway scheduler runs `php artisan orbit:activity-finalize-interrupted` every five minutes. It ends every record still `running` 900 seconds after it started, at most 500 records per run, oldest first. PHP-FPM checks its 600-second limit every 200 seconds, so a request ends by about 800 seconds. The sweep therefore never ends a command that is still working.
+- A killed worker runs no code. The Gateway scheduler runs `php artisan orbit:activity-finalize-interrupted` every five minutes, without overlap. It ends every record still `running` 900 seconds after it started, at most 500 records per run, oldest first. PHP-FPM checks its 600-second limit every 200 seconds, so a request ends by about 800 seconds. The sweep therefore never ends a command that still works.
+- The sweep's overlap lock expires after 10 minutes, so a killed sweep blocks later runs for at most 10 minutes.
 - The sweep runs only while the Gateway scheduler, `php artisan schedule:work` in the Gateway checkout, is running. The Gateway install does not start the scheduler. Without it, a killed request stays `running`.
 
-`activity.interrupted` means the Gateway lost the request, not that the operation failed on its target. The operation may have finished on the Node, so check the target before you run the command again. [ADR 0158](/decisions/0158-end-interrupted-activity) records this rule.
+Caddy gives up on a Gateway request after 600 seconds and sends the client a 504. PHP-FPM can let the request finish later, and the record then shows `succeeded`. The Activity, not the client's error, shows the outcome.
+
+`activity.interrupted` means the Gateway lost the request, not that the operation failed on its target. The operation may have finished on the Node, so check the target before you run the command again. `orbit.activity_interrupted_after` in the Gateway configuration holds the 900-second bound. A test keeps it more than 60 seconds above four thirds of the PHP-FPM limit.
 
 ## What a record holds
 
@@ -100,10 +114,10 @@ A request can end before it records its outcome. PHP-FPM ends a Gateway request 
 | `duration_ms` | How long the Gateway took, or null while running and for an interrupted request. |
 | `exit_code` | The exit code of a remote operation, when one applies. |
 | `error_code` | The stable error code of a failed attempt, or null. |
-| `properties` | Bounded operation metadata such as the step that failed or the release a deployment selected. |
-| `occurred_at` | When the Gateway recorded the attempt. |
+| `properties` | The request method and path, the redacted request input, and the outcome details that the command adds. |
+| `occurred_at` | When the request started. A read keeps its start time, although the Gateway writes it when the request ends. |
 
-A record identifies the operation, its target, its caller, and its result. It never holds a command line, a calendar, a journal line, an environment value, a credential, a path, a runtime user, unit or container content, application output, or raw remote output. The SDK redacts credential-shaped values from `properties` before the CLI prints them. Deployment and rollback records carry only the terminal status, selected release, failed step, and error code.
+`properties` holds `method`, `path`, and `input`: the request body after [redaction](#redaction). So a `process:create` record keeps the Process command and working directory, and an environment map keeps its variable names without values. A command that returns a remote command result adds its redacted `stdout` and `stderr` and `output_truncated`. A deployment or rollback adds its terminal status, selected release, failed step, and error code. The SDK redacts credential-shaped values from `properties` again before the CLI prints them.
 
 ## Redaction
 
@@ -111,7 +125,7 @@ The Gateway redacts `properties` before it stores a record, for every command:
 
 - A field is stored as `[REDACTED]` when any word of its name is `key`, `token`, `secret`, `password`, `passwd`, `passphrase`, `credential`, `bearer`, `pem`, `authorization`, or `cookie`, singular or plural. Words are split on case changes and separators, so `cliproxy_management_key`, `managementKEY`, `apiToken`, `X-Api-Key`, and `Set-Cookie` all match. The joined forms `apikey`, `appkey`, `authtoken`, `accesstoken`, and `privatekey` count too. `valkey_connection` does not match. A new field that matches this rule is redacted without a code change.
 - The rule covers header maps, so `Authorization`, `Proxy-Authorization`, `Cookie`, and `Set-Cookie` values are redacted.
-- Numbers are redacted too, except usage counts whose name ends in `tokens` or `count`, such as `input_tokens` or `token_count`. Booleans and null stay.
+- A number in a matching field is redacted too, except a usage count whose name ends in `tokens` or `count`, such as `input_tokens` or `token_count`. Booleans and null stay.
 - A short list of public fields is exempt: `public_key`, `wireguard_public_key`, `ssh_public_key`, `public_pem`, `host_key_fingerprint`, `runtime_key`, `env_key`, `idempotency_key`, and `token_expires_at`.
 - Environment maps keep variable names and replace every value.
 - Inside other text values, the Gateway redacts secret assignments such as `MANAGEMENT_KEY=value`, `PASSWORD_HASH=value`, and `SECRET_KEY_BASE=value`, URL user information, `Authorization` headers, bearer tokens, and PEM blocks. Prose with a bare key, such as `Missing key: APP_NAME`, stays.
@@ -119,9 +133,23 @@ The Gateway redacts `properties` before it stores a record, for every command:
 
 These rules apply when an Activity is stored. They do not rewrite records that are already stored.
 
-<Note>
-Doctor writes one ordinary Activity for each run and stores no findings in it. Schedule completion callbacks create no Activity at all.
-</Note>
+Doctor writes one ordinary Activity for each run and stores no findings in it.
+
+## Why it works this way
+
+These reasons explain the design. Check them before you propose a change.
+
+### Sampled reads
+
+The log answers what changed, who changed it, and whether it succeeded. A successful read changes nothing. Keeping every read would cost two SQLite writes per poll and would hide the changes between thousands of polls. Dropping every successful read would hide whether a Node or an agent reads the API at all. One record per command, caller, and target each minute keeps that answer. A failed read stays, because it can show a broken Node or a missing access grant. A credential read stays, because it shows who holds a secret. Every `schedule:*` operation stays, as the Schedule contract promises.
+
+### Interrupted, not a new status
+
+A new status would force every client and filter to learn it. `failed` with a stable error code says the same thing. One bound for every command follows the one PHP-FPM limit that ends every request. The Gateway keeps interrupted rows, because the attempt, its caller, and its target are audit history.
+
+### Filters on the Gateway, paging by id
+
+`before_id` keeps an older page on the same rows when new rows arrive. An offset would shift. Caller and target stay two filters, because the log separates who called from what changed.
 
 ## Related
 

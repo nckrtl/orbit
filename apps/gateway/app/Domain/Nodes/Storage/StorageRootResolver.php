@@ -18,20 +18,19 @@ final readonly class StorageRootResolver
     public function resolveApps(
         ?NodeSettingsData $settings,
         ManagedUserAccount $account,
-    ): EffectiveStorageRoots {
-        $instanceDefault = $this->catalog->instanceDefault($account);
-        $worktreeDefault = $this->catalog->worktreeDefault($account);
+    ): StoragePath {
+        $default = $this->catalog->instanceDefault($account);
 
-        if (! $instanceDefault instanceof StoragePath || ! $worktreeDefault instanceof StoragePath) {
+        if (! $default instanceof StoragePath) {
             throw new ResourceOperationException(
                 'node.managed_user_unavailable',
                 'Managed user account is unavailable.',
             );
         }
+
         $normalized = $this->normalizer->normalize($settings);
         $appsPath = $normalized?->appsPath();
-        $apps = $appsPath === null ? $instanceDefault : StoragePath::parse($appsPath);
 
-        return new EffectiveStorageRoots($apps, $worktreeDefault);
+        return $appsPath === null ? $default : StoragePath::parse($appsPath);
     }
 }

@@ -200,8 +200,7 @@ final readonly class NativeAppStateInspector implements AppStateInspector
     {
         try {
             $appsRoot = $this->storageRoots
-                ->resolveApps($this->nodeSettings->fromStored($node->settings), $account)
-                ->instance;
+                ->resolveApps($this->nodeSettings->fromStored($node->settings), $account);
         } catch (\Throwable) {
             throw new DoctorInspectionException;
         }

@@ -104,7 +104,7 @@ final readonly class CreateAppInstanceAction
                 $this->nodeSettings->fromStored($requestedNode->settings),
                 $account,
             );
-            $checkout = $roots->instance->append($app->slug, $data->name);
+            $checkout = $roots->append($app->slug, $data->name);
             $this->checkoutOverlap->assertAvailable(
                 $requestedNode->id,
                 $checkout,

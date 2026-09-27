@@ -16,6 +16,9 @@ function orb247_gate_fixture(): array
     foreach (['apps/cli', 'apps/docs', 'apps/gateway', 'apps/e2e', 'packages/php-sdk'] as $project) {
         mkdir($root.'/'.$project, 0o700, true);
         file_put_contents($root.'/'.$project.'/.gitkeep', '');
+        mkdir($root.'/'.$project.'/vendor/bin', 0o700, true);
+        file_put_contents($root.'/'.$project.'/vendor/bin/pest', "#!/usr/bin/env sh\nexit 0\n");
+        chmod($root.'/'.$project.'/vendor/bin/pest', 0o700);
     }
 
     copy(base_path('../../bin/review-check'), $root.'/bin/review-check');
@@ -164,6 +167,8 @@ it('checks a candidate with uncommitted changes as it is and records its working
         ->and($receipts[0]['committed'] ?? null)->toBeFalse()
         ->and($receipts[0]['tree'] ?? null)->toBe($expected)
         ->and($receipts[0]['changed_paths'] ?? null)->toBe(['apps/cli/.gitkeep', 'apps/cli/new-file.php'])
+        ->and(collect($receipts[0]['checks'] ?? [])->pluck('command')->all())
+        ->toContain(['vendor/bin/pest', 'tests/Feature/CommandSurfaceTest.php'])
         ->and($receipts[0]['passed'] ?? null)->toBeTrue()
         ->and((new Process(['git', 'status', '--porcelain'], $fixture['root']))->mustRun()->getOutput())->toBe($status);
 });

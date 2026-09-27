@@ -12,48 +12,18 @@ A record is not an implementation task, an issue lifecycle rule, or an agent ins
 
 | Record | Decision | Status |
 | --- | --- | --- |
-| [0016](/decisions/0016-reconcile-app-identity-and-source-default-updates) | Reconcile App identity and source-default updates | Accepted 2026-09-02 |
 | [0017](/decisions/0017-optional-cluster-placement-and-tld-precedence) | Make Cluster placement optional | Accepted 2026-09-03 |
-| [0018](/decisions/0018-register-caller-local-development-worktrees) | Register caller-local development worktrees as AppInstances | Accepted 2026-09-03 |
-| [0021](/decisions/0021-pin-sury-php-fpm-with-opcache-profiles-per-role) | Pin Sury PHP-FPM with OPcache profiles per role | Accepted 2026-09-03 |
-| [0025](/decisions/0025-stabilize-the-default-appinstance-identity) | Stabilize the default AppInstance identity | Accepted 2026-09-05; amended by 0105 |
-| [0026](/decisions/0026-identify-each-app-by-one-repository) | Identify each App by one repository | Accepted 2026-09-05 |
-| [0027](/decisions/0027-adopt-local-git-sources-into-appinstance-ownership) | Adopt local Git sources into AppInstance ownership | Accepted 2026-09-05 |
-| [0029](/decisions/0029-manage-laravel-application-urls-through-orbit) | Manage Laravel application URLs through Orbit | Accepted 2026-09-05 |
-| [0030](/decisions/0030-complete-appinstance-provisioning-without-application-health-gates) | Complete AppInstance provisioning without application health gates | Accepted 2026-09-05 |
-| [0031](/decisions/0031-clone-initial-production-source-during-provisioning) | Clone initial production source during provisioning | Accepted 2026-09-05 |
-| [0032](/decisions/0032-preserve-explicit-appinstance-branch-selection) | Preserve explicit AppInstance branch selection | Accepted 2026-09-05 |
-| [0034](/decisions/0034-select-appinstance-php-from-composer-constraints) | Select AppInstance PHP from Composer constraints | Accepted 2026-09-05 |
-| [0036](/decisions/0036-support-only-appinstances) | Support only AppInstances | Accepted 2026-09-06 |
-| [0038](/decisions/0038-cascade-appinstance-removal-through-processes-and-schedules) | Cascade AppInstance removal through processes and schedules | Accepted 2026-09-06 |
-| [0045](/decisions/0045-isolate-production-php-fpm-by-unix-user) | Isolate production PHP-FPM by Unix user | Accepted 2026-09-10; amended by 0106 and 0107 |
-| [0047](/decisions/0047-create-production-appinstances-from-candidates) | Create production AppInstances from candidates | Accepted 2026-09-10; amended by 0106 and 0107 |
 | [0051](/decisions/0051-select-discovery-only-feature-delivery) | Select discovery-only feature delivery | Accepted 2026-09-10 |
 | [0052](/decisions/0052-seed-worktrees-from-successful-main-test-baselines) | Seed worktrees from successful main test baselines | Accepted 2026-09-10 |
 | [0053](/decisions/0053-use-local-review-checks-for-feature-landing) | Use local review checks for feature landing | Accepted 2026-09-10 |
 | [0054](/decisions/0054-maintain-main-caches-asynchronously) | Maintain main caches asynchronously | Accepted 2026-09-10 |
 | [0058](/decisions/0058-separate-incus-requirements-from-delivery-flow) | Separate Incus requirements from delivery flow | Accepted 2026-09-10 |
 | [0059](/decisions/0059-make-the-builder-own-the-candidate-quality-gate) | Make the Builder own the candidate quality gate | Accepted 2026-09-10 |
-| [0066](/decisions/0066-transfer-development-appinstances-between-nodes) | Transfer development AppInstances between Nodes | Accepted 2026-09-13; amended by 0107 |
-| [0074](/decisions/0074-hibernate-idle-app-dev-appinstance-processes) | Hibernate idle app-dev AppInstance Processes | Accepted 2026-09-14 |
-| [0075](/decisions/0075-prune-idle-app-dev-checkout-dependencies) | Prune idle app-dev checkout dependencies | Accepted 2026-09-14 |
 | [0076](/decisions/0076-deliver-features-through-complete-pull-requests) | Deliver features through complete pull requests | Proposed; accepted through merge |
-| [0078](/decisions/0078-assign-vite-ports-to-development-appinstances) | Assign Node-scoped Vite ports to development App instances | Proposed |
 | [0082](/decisions/0082-wire-agentation-watch-mode-through-appinstance-processes) | Wire Agentation watch mode through App instance Processes | Proposed |
-| [0083](/decisions/0083-default-sqlite-journal-mode-to-wal) | Default SQLite journal_mode to WAL | Proposed |
-| [0084](/decisions/0084-broadcast-record-changes-through-reverb) | Broadcast record changes through Reverb | Proposed; amended by 0087; extended by 0129, 0151, and 0159 |
-| [0085](/decisions/0085-build-orbit-top-as-a-thin-tui-client) | Build orbit top as a thin TUI client | Proposed; amended by 0123; superseded by 0147 |
-| [0086](/decisions/0086-offer-the-api-as-mcp-tools) | Offer the API as MCP tools | Proposed |
-| [0087](/decisions/0087-run-reverb-through-a-websocket-role) | Run Reverb through a websocket role | Proposed; amended by 0095 |
-| [0089](/decisions/0089-index-appinstance-dependencies) | Index App instance dependencies | Proposed |
-| [0092](/decisions/0092-publish-private-dns-on-the-vpn-node-after-gateway-relocate) | Publish private DNS on the VPN node after gateway relocate | Proposed; amended by 0149 |
-| [0095](/decisions/0095-relocate-relocatable-singleton-roles) | Relocate relocatable singleton roles as one Orbit action | Proposed |
 | [0097](/decisions/0097-publish-analytics-tracking-hosts-for-app-instances) | Publish analytics tracking hosts for App instances | Proposed |
-| [0098](/decisions/0098-read-github-repositories-through-a-gateway-owned-github-app) | Read GitHub repositories through a Gateway-owned GitHub App | Proposed |
 | [0103](/decisions/0103-absorb-commander-tasks-as-a-gateway-extension) | Absorb Commander tasks as a Gateway extension | Proposed; amended by 0122, 0160, and 0169; extended by 0165 |
 | [0104](/decisions/0104-own-cliproxyapi-quota-through-the-proxycli-extension) | Own CLIProxyAPI quota through the proxycli extension | Proposed; amended by 0109 and 0150 |
-| [0105](/decisions/0105-name-applications-as-project-and-instance) | Name applications as Project and Instance | Proposed |
-| [0106](/decisions/0106-derive-instance-capabilities-from-project-type) | Derive Instance capabilities from Project type | Proposed |
 | [0109](/decisions/0109-publish-the-proxycli-collector-on-a-subdomain) | Publish the proxycli collector on collector.proxycli.orbit | Proposed; amended by 0145 |
 | [0110](/decisions/0110-route-task-sessions-with-laravel-ai-jev) | Route idle T3 task sessions with Laravel AI Jev | Proposed; amended by 0113, 0114, and 0132 |
 | [0112](/decisions/0112-isolate-agent-threads-behind-drivers) | Isolate agent threads behind drivers | Proposed; amended by 0116 and 0169; extended by 0165 |
@@ -65,11 +35,9 @@ A record is not an implementation task, an issue lifecycle rule, or an agent ins
 | [0120](/decisions/0120-extract-agent-annotation-package) | Extract the agent annotation package | Proposed |
 | [0121](/decisions/0121-end-agent-turns-with-a-run-receipt) | End agent turns with a run receipt | Proposed; amended by 0132, 0160, and 0169; extended by 0133 |
 | [0122](/decisions/0122-hold-task-groups-in-backlog-until-ready) | Hold task groups in Backlog until they are ready | Proposed; amended by 0178; extended by 0124 |
-| [0123](/decisions/0123-serve-the-web-app-from-the-gateway-origin) | Serve the web app from the Gateway origin | Proposed; amended by 0126 and 0147 |
 | [0124](/decisions/0124-plan-backlog-groups-with-a-t3-planner) | Plan Backlog groups with a T3 planner | Superseded by 0178; amended by 0169; extended by 0133 |
 | [0125](/decisions/0125-run-the-project-check-when-the-implementer-hands-off) | Run the Project check when the implementer hands off | Proposed; amended by 0178; extended by 0133 |
 | [0127](/decisions/0127-share-one-ssh-connection-per-node) | Share one SSH connection per Node | Proposed; agent deferral lifted for visibility by 0128 |
-| [0129](/decisions/0129-publish-node-presence-and-process-state-on-per-node-presence-channels) | Publish Node presence and Process state on per-Node presence channels | Proposed; amended by 0148, 0151, 0153, 0154, and 0155 |
 | [0131](/decisions/0131-seed-task-workspace-clones-from-the-registered-main-cache-store) | Seed task workspace clones from the registered main cache store | Proposed; extended by 0135 |
 | [0132](/decisions/0132-pause-only-for-the-acting-thread-and-a-real-question) | Pause a task only for its acting thread or a real question | Proposed; amended by 0169 |
 | [0133](/decisions/0133-verify-typed-subtask-deliverables-at-handoff) | Verify typed subtask deliverables at handoff | Proposed; amended by 0178; extended by 0163 |
@@ -78,10 +46,6 @@ A record is not an implementation task, an issue lifecycle rule, or an agent ins
 | [0145](/decisions/0145-publish-the-proxycli-collector-on-collector-cli-proxy-api-orbit) | Publish the proxycli collector on collector.cli-proxy-api.orbit | Proposed |
 | [0147](/decisions/0147-retire-orbit-top) | Retire orbit top | Proposed |
 | [0150](/decisions/0150-keep-extension-commands-local-and-confirm-the-proxycli-fleet-stop) | Keep extension commands local and confirm the proxycli fleet stop | Proposed |
-| [0151](/decisions/0151-push-task-and-process-usage-changes-over-realtime) | Push task and Process usage changes over realtime | Proposed |
-| [0152](/decisions/0152-sample-successful-read-activity) | Sample successful read activity | Proposed; extended by 0158 |
-| [0158](/decisions/0158-end-interrupted-activity) | End interrupted Activity | Proposed; extended by 0159 |
-| [0159](/decisions/0159-push-activity-changes-to-the-web-app) | Push Activity changes to the web app | Proposed |
 | [0160](/decisions/0160-push-each-approved-subtask-and-remove-the-finished-workspace-clone) | Push each approved subtask and remove the finished workspace clone | Proposed |
 | [0163](/decisions/0163-prove-a-failing-test-on-the-start-commit) | Prove a failing test on the start commit | Proposed; amended by 0178 and 0169 |
 | [0164](/decisions/0164-heal-a-settling-pull-request-with-a-fixup-subtask) | Heal a settling pull request with a fixup subtask | Proposed; amended by 0178, 0169, and 0171 |
@@ -114,21 +78,36 @@ These decisions are built and absorbed into the documentation. The link goes to 
 | 0013 | Manage schedules with native systemd timers | [Schedules](/reference/schedules) |
 | 0014 | Maintain verified documentation as implementation context | [Contributor guide: One documentation corpus](/contributor-guide#one-documentation-corpus) |
 | 0015 | Retain Incus proof by recorded-input equivalence (superseded) | [Contributor guide: Review reproduces on a discovery topology](/contributor-guide#review-reproduces-on-a-discovery-topology) |
+| 0016 | Reconcile App identity and source-default updates | [Projects: Update a Project](/reference/apps#update-a-project) |
+| 0018 | Register caller-local development worktrees as AppInstances | [Applications: Registration takes ownership (superseded by 0027)](/domains/applications#registration-takes-ownership) |
 | 0019 | Run disposable Incus scenario lanes | [Incus topology registry: On-demand scenarios](/reference/incus-topologies#on-demand-scenarios) |
+| 0021 | Pin Sury PHP-FPM with OPcache profiles per role | [PHP runtimes: Why it works this way](/reference/php-runtime#why-it-works-this-way) |
 | 0022 | Track the issue workspace and delete it before merge (superseded) | [Contributor guide: Review reproduces on a discovery topology](/contributor-guide#review-reproduces-on-a-discovery-topology) |
 | 0023 | Separate hostname selection from Cluster routing | [Routes: Why it works this way](/reference/routes#routes-own-domains-and-cluster-membership-owns-scope) |
 | 0024 | Make generated Route identity follow its target | [Routes: Why it works this way](/reference/routes#generated-identity-follows-the-target) |
+| 0025 | Stabilize the default AppInstance identity | [Applications: The default Instance keeps its name](/domains/applications#the-default-instance-keeps-its-name) |
+| 0026 | Identify each App by one repository | [Projects: Repository identity](/reference/apps#repository-identity) |
+| 0027 | Adopt local Git sources into AppInstance ownership | [Applications: Register an existing checkout](/domains/applications#register-an-existing-checkout) |
 | 0028 | Require one Route per active AppInstance | [Routes: Why it works this way](/reference/routes#one-route-per-active-instance) |
+| 0029 | Manage Laravel application URLs through Orbit | [Applications: Laravel application URL](/domains/applications#laravel-application-url) |
+| 0030 | Complete AppInstance provisioning without application health gates | [Applications: Active does not mean healthy](/domains/applications#active-does-not-mean-healthy) |
+| 0031 | Clone initial production source during provisioning | [Instance cloning (superseded by 0047)](/reference/appinstance-cloning) |
+| 0032 | Preserve explicit AppInstance branch selection | [Applications: An explicit branch stays explicit](/domains/applications#an-explicit-branch-stays-explicit) |
 | 0033 | Trust WireGuard members for private Node traffic | [Routes: Private network trust](/reference/routes#private-network-trust) |
+| 0034 | Select AppInstance PHP from Composer constraints | [PHP runtimes: Select the PHP version](/reference/php-runtime#select-the-php-version) |
 | 0035 | Close out mutating proofs by refreshing the topology snapshot (superseded) | [Topology snapshot: Refresh](/reference/topology-snapshot#refresh) |
+| 0036 | Support only AppInstances | [Applications: One application model](/domains/applications#one-application-model) |
 | 0037 | Promote fresh three-node topology snapshots (superseded) | [Topology snapshot: Rebuild and recover](/reference/topology-snapshot#rebuild-and-recover) |
+| 0038 | Cascade AppInstance removal through processes and schedules | [Instance removal: Processes and Schedules](/reference/appinstance-removal#processes-and-schedules) |
 | 0039 | Use round-robin for production Route pools | [Routes: Serve a production pool](/reference/routes#serve-a-production-pool) |
 | 0040 | Extend issue proof with one app-prod Node | [Incus topology registry: The app-prod-2 extension](/reference/incus-topologies#the-app-prod-2-extension) |
 | 0041 | Delete an empty Route during AppInstance removal | [Routes: Remove a Route](/reference/routes#remove-a-route) |
 | 0042 | Provision Tool Managers on demand | [Tools: Managers on demand](/reference/tools#managers-on-demand-independent-of-roles) |
 | 0043 | Manage Homebrew Core formulae | [Tools: Homebrew formulae](/reference/tools#homebrew-formulae) |
 | 0044 | Own AppInstance environment configuration in Orbit | [Instance environment variables](/reference/environment-variables) |
+| 0045 | Isolate production PHP-FPM by Unix user | [PHP runtimes: Production runtime](/reference/php-runtime#production-runtime) |
 | 0046 | Own production release deployment in Orbit | [Production release layout](/reference/deployments) |
+| 0047 | Create production AppInstances from candidates | [Instance cloning](/reference/appinstance-cloning) |
 | 0048 | Copy App process and schedule definitions into AppInstances | [Processes and schedules: Production copies](/reference/app-processes-and-schedules#production-copies) |
 | 0049 | Keep delivery artifacts off the merge head (superseded) | [Contributor guide: Review reproduces on a discovery topology](/contributor-guide#review-reproduces-on-a-discovery-topology) |
 | 0050 | Release successful proof resources before landing (superseded) | [Contributor guide: Review reproduces on a discovery topology](/contributor-guide#review-reproduces-on-a-discovery-topology) |
@@ -141,6 +120,7 @@ These decisions are built and absorbed into the documentation. The link goes to 
 | 0063 | Prefer active Cluster TLDs for generated Routes | [Routes: Select a domain and scope](/reference/routes#select-a-domain-and-scope) |
 | 0064 | Name application endpoints as domains | [Routes: Why it works this way](/reference/routes#domains-and-hostnames) |
 | 0065 | Replace Routes when domains change | [Routes: Change an explicit domain](/reference/routes#change-an-explicit-domain) |
+| 0066 | Transfer development AppInstances between Nodes | [Instance transfer](/reference/appinstance-transfer) |
 | 0067 | Serve development servers on the Route origin | [Routes: Development-server endpoint](/reference/routes#development-server-endpoint) |
 | 0068 | Accept only apps.path as the node storage setting path | [Node settings: One typed setting](/reference/node-settings#one-typed-setting) |
 | 0069 | Allow Process targets of AppInstance or managed Node | [Processes and schedules: Owners](/reference/app-processes-and-schedules#owners) |
@@ -148,25 +128,44 @@ These decisions are built and absorbed into the documentation. The link goes to 
 | 0071 | Use one verb vocabulary across the CLI, route names, and SDK | [CLI command vocabulary: Why it works this way](/reference/cli-command-vocabulary#why-it-works-this-way) |
 | 0072 | Add and remove Nodes without changing the machine | [Node provisioning: Removal does not clean the machine](/reference/node-provisioning#removal-does-not-clean-the-machine) |
 | 0073 | Store deploy steps as named AppInstance records | [Production release layout: Deploy steps](/reference/deployments#deploy-steps) |
+| 0074 | Hibernate idle app-dev AppInstance Processes | [App-dev runtime hibernation](/reference/app-dev-runtime-hibernation) |
+| 0075 | Prune idle app-dev checkout dependencies | [App-dev runtime hibernation: Dependency prune](/reference/app-dev-runtime-hibernation#dependency-prune) |
 | 0077 | Allow the database role beside router | [Database role: The remaining conflicts](/reference/database-role#the-remaining-conflicts) |
+| 0078 | Assign Vite ports to development App instances | [Assigned Vite ports](/reference/assigned-vite-ports) |
 | 0079 | Publish linux-x64 from hosted GitHub Actions and macos-arm64 from mini | [CLI binaries](/reference/cli-binaries) |
 | 0080 | Add node-owned custom proxy Routes for arbitrary hostnames | [Routes: Custom proxy Routes](/reference/routes#custom-proxy-routes) |
 | 0081 | Query registered mysql, pgsql, and sqlite connections through PDO | [Database connections: Inspect a registered connection](/reference/database-connections#inspect-a-registered-connection) |
+| 0083 | Default SQLite journal_mode to WAL | [SQLite WAL default](/solutions/sqlite-wal-default) |
+| 0084 | Broadcast record changes through Reverb | [Realtime events](/reference/events) |
+| 0085 | Build orbit top as a thin TUI client | [Web app (orbit top is removed)](/reference/web-app) |
+| 0086 | Offer the API as MCP tools | [MCP server: Why it works this way](/reference/mcp#why-it-works-this-way) |
+| 0087 | Run Reverb through a websocket role | [Realtime events with Reverb](/solutions/realtime-reverb) |
 | 0088 | CLI reads display metrics from Grafana | [Metrics role: Read Node metrics](/reference/metrics#read-node-metrics) |
+| 0089 | Index App instance dependencies | [Instance dependencies](/reference/instance-dependencies) |
 | 0090 | Relocate the gateway role independently of vpn | [node: A dedicated relocate for gateway](/cli/node#a-dedicated-relocate-for-gateway) |
 | 0091 | Rename a Node without changing WireGuard identity | [node: node:rename](/cli/node#orbit-noderename) |
+| 0092 | Publish private DNS on the VPN node after gateway relocate | [Relocate the gateway role](/solutions/relocate-gateway-role) |
 | 0093 | Show live UFW and desired rules that match converge | [firewall: Read the managed and live rules](/cli/firewall#read-the-managed-and-live-rules) |
 | 0094 | Project WireGuard hub config onto the VPN node | [Node provisioning: The hub stays on the vpn Node](/reference/node-provisioning#the-hub-stays-on-the-vpn-node) |
+| 0095 | Relocate relocatable singleton roles as one Orbit action | [node: node:role:relocate](/cli/node#orbit-noderolerelocate) |
 | 0096 | Run Plausible through an analytics role | [Analytics role](/reference/analytics) |
+| 0098 | Read GitHub repositories through a Gateway-owned GitHub App | [GitHub App: Why it works this way](/reference/github-app#why-it-works-this-way) |
 | 0099 | Collect role-specific service metrics | [Service metrics](/reference/service-metrics) |
 | 0100 | Install Caddy from the pinned Caddy apt source | [Node provisioning: Package sources](/reference/node-provisioning#package-sources) |
 | 0101 | Keep one Route publication field and terminate public Ingress with Let's Encrypt | [Routes: Publish a public Route](/reference/routes#publish-a-public-route) |
 | 0102 | Read App instance analytics through a fleet driver | [Instance analytics stats](/reference/instance-analytics-stats) |
+| 0105 | Name applications as Project and Instance | [Projects: Project and Instance](/reference/apps#project-and-instance) |
+| 0106 | Derive instance capabilities from Project type | [Projects: Project types](/reference/apps#project-types) |
 | 0107 | Key isolation and releases to Node role | [Instance environment variables: Laravel mode](/reference/environment-variables#laravel-mode), [Production release layout](/reference/deployments), and [Instance cloning](/reference/appinstance-cloning) |
 | 0108 | Persist managed environment on systemd Processes | [Processes and schedules: Environment of a systemd Process](/reference/app-processes-and-schedules#environment-of-a-systemd-process) |
+| 0111 | Retain completed transfer history through AppInstance removal | [Instance removal: Keep unfinished transfer history](/reference/appinstance-removal#keep-unfinished-transfer-history) |
 | 0114 | Expand the three-node Incus Cluster | [Incus topology registry: Three Nodes](/reference/incus-topologies#three-nodes) |
+| 0115 | Run Project setup commands on development Instances | [Instance setup and teardown](/reference/instance-setup) |
+| 0118 | Skip selected Nodes for a Project | [Development node exclusions](/reference/development-node-exclusions) |
+| 0123 | Serve the web app from the Gateway origin | [Web app: Why it works this way](/reference/web-app#why-it-works-this-way) |
 | 0126 | Limit browser API calls to Orbit origins | [Browser access to the Gateway](/reference/browser-access) |
 | 0128 | Run a visibility-only agent on managed Nodes | [Node agent: The agent only observes](/reference/node-agent#the-agent-only-observes) |
+| 0129 | Publish Node presence and Process state on per-Node presence channels | [Realtime events: Node agent channels](/reference/events#node-agent-channels) |
 | 0130 | Publish agent binaries as GitHub releases | [Node agent: Releases](/reference/node-agent#releases) |
 | 0135 | Run Incus topologies for task workspace clones through a bridge worktree | [Incus topology registry: Task workspace clones](/reference/incus-topologies#task-workspace-clones) |
 | 0136 | Run long-lived topology processes as transient units | [Incus topology registry: Long-lived processes as systemd units](/reference/incus-topologies#long-lived-processes-as-systemd-units) |
@@ -180,10 +179,14 @@ These decisions are built and absorbed into the documentation. The link goes to 
 | 0146 | Retire the Herdr integration | [extension (Herdr is removed)](/cli/extension) |
 | 0148 | Keep a Gateway view of Node agent state | [Node agent: Gateway view](/reference/node-agent#gateway-view) |
 | 0149 | Install the private DNS listener from the Gateway | [Private DNS: Release and sockets](/reference/private-dns#release-and-sockets) |
+| 0151 | Push task and Process usage changes over realtime | [Realtime events: Tasks](/reference/events#tasks) |
+| 0152 | Sample successful read activity | [activity: What the Gateway records](/cli/activity#what-the-gateway-records) |
 | 0153 | Tail Instance and Process logs live through the Node agent | [Live logs](/reference/live-logs) |
 | 0154 | Recover the Gateway agent view without a membership change | [Node agent: Rejoin to ask for a snapshot](/reference/node-agent#rejoin-to-ask-for-a-snapshot) |
 | 0155 | Authenticate the Node agent with a per-Node secret | [Node agent: Agent secret](/reference/node-agent#agent-secret) |
 | 0156 | Route the private domain on the Gateway machine to VPN DNS | [Private DNS: The Gateway machine](/reference/private-dns#the-gateway-machine) |
 | 0157 | Keep private Caddy sites off the public listener | [Caddy configuration: Listener addresses](/reference/caddy-configuration#listener-addresses) |
+| 0158 | End interrupted Activity | [activity: Interrupted requests](/cli/activity#interrupted-requests) |
+| 0159 | Push Activity changes to the web app | [Realtime events: Activity](/reference/events#activity) |
 | 0161 | Set a stale Caddyfile aside when Caddy is absent | [Caddy configuration: When Caddy is absent](/reference/caddy-configuration#when-caddy-is-absent) |
 | 0162 | Verify web UI changes with bin/web-verify | [Web verification: Why it works this way](/reference/web-verification#why-it-works-this-way) |

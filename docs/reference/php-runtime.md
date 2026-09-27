@@ -1,27 +1,33 @@
 ---
 title: "PHP runtimes"
-description: "How Orbit selects, installs, and tunes the PHP-FPM runtime for development and production Instances."
+description: "How Orbit selects a PHP version for an Instance, runs shared development and dedicated production PHP-FPM services, and refreshes production OPcache."
+covers:
+  - apps/gateway/app/Domain/AppInstances/{AppInstancePhpVersionCatalog,ProductionPhpRuntimeIdentity,ProductionPhpRuntimeManager}.php
+  - apps/gateway/app/Infrastructure/AppInstances/{RemoteProductionPhpRuntimeManager,ProductionPhpRuntimeConfigRenderer,ProductionPhpRuntimeConfiguration}.php
+  - apps/gateway/app/Infrastructure/Nodes/{PhpFpmRuntimeIniRenderer,RemotePhpPackageManager}.php
+  - apps/gateway/app/Infrastructure/AppDev/{AppDevPhpFpmConfigRenderer,RemoteAppDevPhpFpmManager}.php
+  - apps/gateway/app/Infrastructure/SharedOrbitDirectory.php
 ---
 
 # PHP runtimes
 
-Orbit provisions PHP-FPM from the pinned Sury apt source and fronts every site with Caddy over a Unix socket. This page tells an operator or deployer how development and production services differ, where generated identity and local tuning live on a Node, and how to verify each runtime. [ADR 0021](/decisions/0021-pin-sury-php-fpm-with-opcache-profiles-per-role) owns the shared package source and role defaults, while [ADR 0045](/decisions/0045-isolate-production-php-fpm-by-unix-user) owns production service isolation and tuning ownership.
+Orbit installs PHP from the pinned Sury apt source and serves each site through PHP-FPM over a Unix socket. Development Instances on a Node share one PHP-FPM service per PHP version. Each production Instance that serves PHP gets its own PHP-FPM service, with its own OPcache.
 
-## Select an Instance runtime
+## Select the PHP version
 
-For a development or standalone production Instance, the Gateway reads source metadata after initial source preparation and before runtime or Domain Name System (DNS) publication. [ADR 0034](/decisions/0034-select-appinstance-php-from-composer-constraints) defines this source-driven selection boundary.
+The Gateway reads the source's `composer.json` once, before it publishes the runtime or DNS. It tries PHP 8.5, then PHP 8.4, and picks the first version that the `require.php` constraint allows.
 
-Orbit tries PHP 8.5, then PHP 8.4, against the source's Composer constraint. It selects no other version, even if the constraint permits one.
+| Source | Result |
+| --- | --- |
+| No `composer.json` | No PHP. Orbit prepares no PHP runtime. |
+| `composer.json` without `require.php` | PHP 8.5. |
+| A constraint that 8.5 or 8.4 meets | The first match, 8.5 before 8.4. |
+| An invalid constraint, or one that neither version meets | `app-dev.php_version_unsupported` or `app-prod.php_version_unsupported`. |
+| The version is missing from the Sury source | `app-dev.php_package_source_unavailable` or `app-prod.php_package_source_unavailable`. |
 
-| Source or package result | Runtime result | Error code |
-| --- | --- | --- |
-| No `composer.json` file | Orbit classifies the source as non-PHP and prepares no PHP runtime. | None |
-| Valid `composer.json` without a PHP platform constraint | Orbit selects PHP 8.5. | None |
-| Valid `composer.json` whose PHP platform constraint matches a candidate | Orbit selects the first matching candidate: PHP 8.5 before PHP 8.4. | None |
-| Invalid PHP platform constraint, or a constraint below, between, or above all candidates | The Gateway stops at PHP selection. | `app-dev.php_version_unsupported` or `app-prod.php_version_unsupported` |
-| Selected candidate is unavailable from the pinned Sury source | The Gateway stops when it verifies the runtime source. | `app-dev.php_package_source_unavailable` or `app-prod.php_package_source_unavailable` |
+The Instance records the selected version in its [source profile](/domains/applications#provision-the-application-endpoint). There is no input or output field to choose a version. The Node role installs, configures, and removes every selected version.
 
-Both failures happen before runtime or DNS publication. At its first provisioning checkpoint, the Gateway stores the selected version together with the Laravel classification as one complete source profile. A development retry at a retained checkpoint requires both values to match before Laravel URL configuration or runtime and Route projection. A changed development profile returns `app-dev.source_evidence_changed`. Production source changes after successful provisioning are operator-owned and an identical creation retry does not inspect them.
+## Development runtime
 
 Orbit does not recover missing source profiles on older Instances. ADR 0177 records the no-legacy-support rule.
 
@@ -62,7 +68,7 @@ The Gateway reloads the development PHP-FPM service only when its managed module
 
 ## Runtime defaults
 
-The shared development module and each generated dedicated production master profile apply these directives; [ADR 0021](/decisions/0021-pin-sury-php-fpm-with-opcache-profiles-per-role) records the reason for each value.
+The shared development module and each generated dedicated production master profile apply these directives.
 
 | Directive | app-dev | app-prod |
 | --- | --- | --- |
@@ -83,65 +89,75 @@ php_admin_value[opcache.validate_timestamps] = 1
 php_admin_value[opcache.revalidate_freq] = 0
 ```
 
-An `app-prod` service sets timestamp validation in its generated service-specific `master.ini`, so compiled code stays in its owning master's memory until a verified cache refresh:
+`opcache.file_update_protection` stays at its stock 2 seconds, because file times have one-second resolution.
 
-```ini
-opcache.validate_timestamps = 0
-```
+## Production runtime
 
-[ADR 0021](/decisions/0021-pin-sury-php-fpm-with-opcache-profiles-per-role) records why each role gets its policy.
+Each production Instance that serves PHP has a dedicated service for its Unix user. Production users on one Node share the installed PHP packages, but not a PHP-FPM master.
 
-## Production cache boundary
+| Part | Name or path | Owner |
+| --- | --- | --- |
+| Service | `orbit-<production-user>-php<version>-fpm.service` | Gateway |
+| Pool | `orbit-<production-user>` | Gateway |
+| Socket | `/run/php/<production-user>.sock`, mode `0660`, group `caddy` | Gateway |
+| Generated files | `/etc/orbit/php-fpm/<production-user>/generated/`, including `master.ini` | Gateway |
+| Local tuning | `/etc/orbit/php-fpm/<production-user>/local.conf` | Operator |
 
-Runtime provisioning establishes the dedicated master and its isolated OPcache instance. Production deployment and verified cache refresh are separate operations.
+Orbit seeds `local.conf` with its defaults for a new service. After that, provisioning, retries, updates, and removal never change it. The generated files set the identity: the user, pool, socket, PHP version, home, and application path. Before it starts or reloads the service, the Gateway validates the effective configuration. It refuses a `local.conf` that changes the identity. It never adopts an existing user, service, socket, or file that belongs to something else.
 
-The Gateway derives the production user's service, pool, socket, and OPcache from the Instance's recorded runtime identity. It verifies that the owning service is active and owns the expected socket before it requests a reset through that socket. The reset runs inside the owning FastCGI Process Manager (FPM) runtime. Running `opcache_reset()` from the PHP command line cannot establish this result.
+A failed start restores the generated files and service state from before the change. An interrupted change resumes from the recorded identity.
 
-The Gateway reports success only after a later FastCGI observation shows that the reset completed. A reset request that returns successfully is not completion evidence by itself. The operation has a bounded deadline and reports an unavailable socket, a wrong service association, a rejected reset, and a reset still pending at the deadline as distinct failures.
+The shared `/etc/orbit` directory stays `root:root` with mode `0711`, so production users can reach their Schedule scripts without listing the directory. `/etc/orbit/php-fpm` stays closed to application users.
 
-Cache refresh never tries another Instance's socket and never reloads a service as a fallback. A generic reload of the distribution `php<version>-fpm` service does not target a dedicated production runtime. Laravel's `php artisan optimize` caches remain application deployment work.
+A `laravel-app` Instance serves PHP. A `monorepo` Instance serves PHP only when it has a Route and a Laravel source. Other types start no PHP-FPM master.
 
-## Proposed monitoring
+## OPcache settings
 
-The [service metrics](/reference/service-metrics) extension observes each dedicated master's pool and OPcache without changing this deployment boundary. Runtime tuning remains separate from metrics enablement.
+The development module and each production `master.ini` apply these values.
+
+| Directive | `app-dev` | `app-prod` |
+| --- | --- | --- |
+| `opcache.enable` | On | On |
+| `opcache.memory_consumption` | 512 | 256 |
+| `opcache.interned_strings_buffer` | 64 | 32 |
+| `opcache.max_accelerated_files` | 65407 | 65407 |
+| `opcache.validate_timestamps` | 1, per pool | 0 |
+| `opcache.jit` / `opcache.jit_buffer_size` | disable / 0 | disable / 0 |
+
+A shared service on a Node with both roles uses the `app-dev` values. A dedicated production master always uses the `app-prod` values. `opcache.preload`, `file_cache`, and `huge_code_pages` stay off.
 
 ## Process management
 
-Both roles use `pm = ondemand` with `pm.process_idle_timeout = 10s` and `pm.max_requests = 500`. `pm.max_children` is 10 on an app-dev pool and 20 on an app-prod pool. The Gateway's own `orbit-gateway` pool uses 8, because its host runs the scheduler and task ticks beside it, and each open agent stream holds one worker. A Gateway request has a 600-second limit, and Caddy's FastCGI timeouts match.
+Every pool uses `pm = ondemand` with `pm.process_idle_timeout = 10s` and `pm.max_requests = 500`. `pm.max_children` is 10 for a development pool and 20 for a production pool. Production tuning lives in `local.conf`.
 
-The Gateway gives an API command's remote work a 570-second deadline. Forward work ends 20 seconds before it, so rollback and cleanup still run, and a slow command fails with `command.deadline_exceeded` and records its Activity before PHP-FPM ends the request. A deployment or rollback reports the same event as `deployment.deadline_exceeded`. The longest recorded operation, `instance:register`, took 522 seconds. An agent stream reconnects when its request ends. [ADR 0021](/decisions/0021-pin-sury-php-fpm-with-opcache-profiles-per-role) records why both roles use `ondemand`.
+The Gateway's own `orbit-gateway` pool uses 8 children and a 600-second request limit. Its API commands stop remote work after 570 seconds; see [Activity](/cli/activity#interrupted-requests).
 
-PHP-FPM checks the request limit every 200 seconds, a third of it, so a request can live until about 800 seconds. A request killed before it records its Activity, for example by that limit or by the OOM killer, ends as `activity.interrupted` within 20 minutes while the Gateway scheduler runs, as the [activity](/cli/activity#interrupted-requests) page explains.
+## Refresh production code
 
-## Caddy
+A production master keeps compiled code until a cache refresh. Each [deployment](/reference/deployments) and rollback refreshes the cache of its own service:
 
-Production sites add an immutable cache header for Vite build output:
+1. The Gateway checks that the service is active and owns the expected socket.
+2. It asks for `opcache_reset()` through that socket, inside the service.
+3. It reports success only after a later request shows the reset finished.
 
-```caddyfile
-@vite {
-    path /build/assets/*
-    file
-}
-header @vite Cache-Control "public, max-age=31536000, immutable"
-```
+The refresh never touches another Instance's socket and never reloads a service. `opcache_reset()` from the PHP CLI cannot reach the service's cache. Laravel's `php artisan optimize` is an application deploy step.
 
-Laravel's Vite plugin fingerprints every file under `public/build/assets`, so browsers can keep them for a year. The `file` matcher limits the header to assets that exist on disk. A request for a removed fingerprint falls through to Laravel's front controller without the header, so a 404 is never cached as immutable. Development sites set no caching header. Workload Caddy reverse-proxies `/__orbit/vite` to `127.0.0.1:5173` for live assets, as the [development-server endpoint](/reference/routes#development-server-endpoint) describes. `php_fastcgi`, `encode zstd gzip`, and `file_server` keep Caddy defaults; Orbit renders no `try_files`, and the `php_fastcgi` default tries `{path}`, then `{path}/index.php`, then `index.php`.
+| Code | Cause |
+| --- | --- |
+| `app-prod.php_cache_socket_unavailable` | The socket does not answer. |
+| `app-prod.php_cache_association_invalid` | The service or socket does not match the record. |
+| `app-prod.php_cache_reset_rejected` | PHP rejected the reset. |
+| `app-prod.php_cache_reset_pending` | The reset did not finish before the deadline. |
 
-## Inspect production runtime with Doctor
+## Doctor
 
-Doctor checks that each production PHP Instance has one dedicated service, pool, and socket association and that another Instance does not share them. It compares the current generated identity files and rejects a `local.conf` override of the recorded user, home, pool, socket, or application path.
+[Doctor](/cli/doctor) checks that each production PHP Instance has one service, pool, and socket, and shares none of them. It compares the generated files and rejects a `local.conf` that changes the identity. It also checks the service's `ExecStart` and `PHP_INI_SCAN_DIR`, the master process, its socket, and the user and parent of each worker. An idle pool with no workers is valid.
 
-Doctor also checks the service's loaded `ExecStart` and `PHP_INI_SCAN_DIR`, the active master's executable and root identity, and the master's ownership of the expected service-owned socket. For each worker that exists during inspection, it checks the parent, user IDs, group IDs, and process root. An idle `ondemand` pool with no workers is valid. The workload Caddy check applies to standalone and Cluster-scoped Routes; it does not inspect the Router as a second Instance runtime.
+Doctor reads only. It never starts PHP-FPM, sends a request, reloads a service, or resets a cache. It does not compare allowed tuning with Orbit's defaults. A process that exits while Doctor reads it is not drift. When Doctor cannot read a required fact, it reports `instance.inspection_failed`.
 
-These observations establish the current configuration and the directly observable runtime association. They do not reconstruct every PHP-FPM directive loaded from an earlier configuration generation. Doctor does not compare an application's mutable working directory with the configured initial directory. It accepts an operating agent's `local.conf` changes when they preserve generated identity, does not compare allowed tuning with Orbit's seeded defaults, and does not require a tuning edit to be reloaded only to satisfy inspection.
+## Check a Node
 
-Doctor reports bounded drift when a current file or reliable live association does not match. It reports `instance.inspection_failed` as unverifiable when a required service, process, worker, or socket observation cannot be read or parsed, while retaining other findings that it established independently. Inspection does not invoke PHP-FPM, create a FastCGI or application request, reload or signal a service, reset a cache, or rewrite a file.
-
-When a process exits during inspection, Doctor does not report drift for it. An `ondemand` pool ends idle workers at any time, so Doctor skips a worker that exits while Doctor reads it. A master that exits while Doctor looks for its listening socket makes the observation unverifiable.
-
-## Verification
-
-On a Node, an operator checks a dedicated service, socket, generated identity, and local tuning separately:
+Run these commands on the Node to inspect one production runtime:
 
 ```sh
 systemctl is-active orbit-<production-user>-php8.5-fpm.service
@@ -150,4 +166,36 @@ stat /run/php/<production-user>.sock
 find /etc/orbit/php-fpm/<production-user> -maxdepth 2 -type f -print
 ```
 
-Effective PHP values are visible from inside a request with `ini_get('opcache.validate_timestamps')` or `opcache_get_configuration()['directives']`. A service PID and OPcache instance belong only to the recorded production user; inspecting another production user must show a different master, service, socket, and cache.
+Another production user must show a different service, socket, master, and cache.
+
+## Why it works this way
+
+These reasons explain the design. Check them before you propose a change.
+
+### Sury packages, not a custom PHP build
+
+A static-php build is 10 to 15 percent slower on Orbit's Nodes, lacks `pdo_sqlite` and `pdo_pgsql`, and its glibc variant crashes on some CPUs. A custom build would also make Orbit own PHP security updates. So Orbit uses the pinned Sury packages.
+
+### OPcache sizing per role
+
+The stock limit of 10,000 cached files overflows with two Laravel checkouts on one Node. OPcache memory belongs to the master, so sizing is set per service. Timestamp checks are a per-pool setting.
+
+### Development checks every file
+
+Checking every file costs about 1.5 ms per request. Turning OPcache off costs about 80 ms. So development keeps OPcache on and checks every request.
+
+### No JIT
+
+The tracing JIT gives a Laravel request no measurable gain and has known crash classes.
+
+### One master per production user
+
+All pools under one master share one OPcache. A reset through one pool's socket clears the cache of every pool. So each production user gets its own master, and a refresh never affects another application. The cost is one cache allocation and service per production Instance.
+
+### Tuning stays on the Node
+
+The operator tunes `local.conf` on the Node. Storing tuning in the Gateway was rejected: it adds storage and synchronization for settings the operator can edit in place. Tuning in the generated files was rejected, because Orbit rewrites them.
+
+### PHP from Composer
+
+A PHP project already states its supported versions in `composer.json`. A PHP version field on the Instance was rejected, because it would duplicate that intent and need its own update lifecycle.

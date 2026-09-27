@@ -198,7 +198,7 @@ function typedHydrationReadinessFixture(
 it('uses the Orbit runtime profile when root invokes typed hydration', function (): void {
     $response = typedHydrationResponse([[
         'id' => 4,
-        'app_id' => 1,
+        'project_id' => 1,
         'node_id' => 2,
         'name' => 'e2e-dev',
         'status' => 'active',
@@ -243,7 +243,7 @@ it('uses the Orbit runtime profile when root invokes typed hydration', function 
 it('hydrates once after readiness and six transient preflight failures within the 30 second bound', function (): void {
     $response = typedHydrationResponse([[
         'id' => 4,
-        'app_id' => 1,
+        'project_id' => 1,
         'node_id' => 2,
         'name' => 'e2e-dev',
         'status' => 'active',
@@ -379,7 +379,7 @@ it('retries malformed instance envelopes before a bounded validation failure', f
 it('refuses hydration when development no longer contains its registered source', function (): void {
     $response = typedHydrationResponse([[
         'id' => 4,
-        'app_id' => 1,
+        'project_id' => 1,
         'node_id' => 2,
         'name' => 'e2e-dev',
         'status' => 'active',
@@ -441,7 +441,7 @@ it('fails immediately before checkout mutation for semantic typed state', functi
         json_encode([
             'instances' => [[
                 'id' => 4,
-                'app_id' => 1,
+                'project_id' => 1,
                 'node_id' => 2,
                 'name' => 'e2e-dev',
                 'status' => 'active',
@@ -452,11 +452,11 @@ it('fails immediately before checkout mutation for semantic typed state', functi
             ]],
         ], JSON_THROW_ON_ERROR),
     ],
-    'wrong app identity' => [
+    'wrong project identity' => [
         json_encode([
             'instances' => [[
                 'id' => 4,
-                'app_id' => 9,
+                'project_id' => 9,
                 'node_id' => 2,
                 'name' => 'e2e-dev',
                 'status' => 'active',
@@ -471,7 +471,7 @@ it('fails immediately before checkout mutation for semantic typed state', functi
         json_encode([
             'instances' => [[
                 'id' => 4,
-                'app_id' => 1,
+                'project_id' => 1,
                 'node_id' => 9,
                 'name' => 'e2e-dev',
                 'status' => 'active',
@@ -486,7 +486,7 @@ it('fails immediately before checkout mutation for semantic typed state', functi
         json_encode([
             'instances' => [[
                 'id' => 4,
-                'app_id' => 1,
+                'project_id' => 1,
                 'node_id' => 2,
                 'name' => 'e2e-dev',
                 'status' => 'failed',
