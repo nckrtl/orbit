@@ -105,7 +105,7 @@ it('pushes the task branch with a pull request token and opens the pull request'
     expect($url)->toBe('https://github.com/acme/shop/pull/11')
         ->and(publisher_git($root.'/origin.git', ['rev-parse', 'refs/heads/task-'.$group->id]))->toBe($commit);
     Http::assertSent(static fn (Request $request): bool => str_ends_with($request->url(), '/access_tokens')
-        && $request->data() === ['repositories' => ['shop'], 'permissions' => ['contents' => 'write', 'pull_requests' => 'write']]);
+        && $request->data() === ['repositories' => ['shop'], 'permissions' => ['contents' => 'write', 'pull_requests' => 'write', 'workflows' => 'write']]);
     Http::assertSent(static fn (Request $request): bool => $request->method() === 'POST' && $request->url() === 'https://api.github.com/repos/acme/shop/pulls'
         && $request->data() === ['title' => 'Export orders', 'head' => 'task-'.TaskGroup::query()->sole()->id, 'base' => 'main', 'body' => "Adds the export.\n"]
         && $request->hasHeader('Authorization', 'Bearer ghs_publish'));

@@ -29,6 +29,7 @@ final readonly class GitHubAppManifestPage
                 'contents' => 'write',
                 'metadata' => 'read',
                 'pull_requests' => 'write',
+                'workflows' => 'write',
             ],
         ];
     }
