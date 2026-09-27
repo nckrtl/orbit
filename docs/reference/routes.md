@@ -68,7 +68,7 @@ The API, PHP software development kit (SDK), and command-line interface (CLI) ex
 
 | Operation | Result |
 | --- | --- |
-| Create | Store an explicit Project Route, or persist a custom proxy Route and converge its private projection. |
+| Create | Refuse a new explicit Project Route when `route:create` cannot converge and activate its serving path; persist a custom proxy Route and converge its private projection. |
 | List | Return the Routes visible to the caller in stable order, including both kinds. |
 | Show | Return one Route with its kind, stored scope, provenance, generation basis, intent, lifecycle, failure metadata, Instance targets or custom proxy upstream, and ordered target set. |
 | Update | Reserve a replacement Route for an explicit domain change, or change publication intent on the same Route ID. |
@@ -77,6 +77,10 @@ The API, PHP software development kit (SDK), and command-line interface (CLI) ex
 | Destroy | The Gateway deletes an eligible Route after untargeted private projection cleanup. It refuses a targeted Route before cleanup. |
 
 The CLI names these operations `route:create`, `route:list`, `route:show`, `route:update`, `route:target:set`, `route:target:unset`, and `route:destroy`.
+
+`route:create` does not create a new Project Route that would remain `pending`. A targetless Project Route in either Node or Cluster scope is refused with `route.target_required`; an explicit Project Route for an unassociated Instance is refused with `route.activation_unsupported` because creation does not project or activate that serving path. These refusals leave both Routes and target associations unchanged. Create a serving Project Route through Instance provisioning, or use a supported Route replacement operation. Custom proxy Route creation is separate: it projects its Node-local serving path and returns an active Route on success.
+
+An identical retry for an already active Route returns that Route. An identical retry for a stored pending Project Route returns `route.activation_unsupported` and does not change it; `route:create` does not resume or activate a pending Project Route. A retry with changed intent returns `route.retry_conflict`. A target already associated with another Route retains the `route.target_conflict` response rather than being masked by the activation refusal. A refused new Project Route creates neither a Route nor a target row.
 
 ## Change or clear a target
 

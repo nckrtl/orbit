@@ -48,12 +48,24 @@ final readonly class CreateRouteAction
     /** @return array{route: Route, created: bool} */
     public function execute(CreateRouteData $data): array
     {
+        return $this->run($data, refuseNewExplicitProjectRoute: false);
+    }
+
+    /** @return array{route: Route, created: bool} */
+    public function executeForRouteCreate(CreateRouteData $data): array
+    {
+        return $this->run($data, refuseNewExplicitProjectRoute: true);
+    }
+
+    /** @return array{route: Route, created: bool} */
+    private function run(CreateRouteData $data, bool $refuseNewExplicitProjectRoute): array
+    {
         $domain = RouteDomain::validate($data->domain);
         ReservedPrivateHostname::assertAvailable($domain);
 
         $result = $data->isCustomProxy()
             ? $this->persistCustomProxy($data, $domain)
-            : $this->persistExplicit($data, $domain);
+            : $this->persistExplicit($data, $domain, $refuseNewExplicitProjectRoute);
 
         if ($result['created']) {
             ($this->broadcaster ?? app(RecordEventBroadcaster::class))->broadcast(
@@ -278,7 +290,7 @@ final readonly class CreateRouteAction
     }
 
     /** @return array{route: Route, created: bool} */
-    private function persistExplicit(CreateRouteData $data, string $domain): array
+    private function persistExplicit(CreateRouteData $data, string $domain, bool $refuseNewProjectRoute = false): array
     {
         if ($data->appId === null) {
             throw new ResourceOperationException(
@@ -313,6 +325,24 @@ final readonly class CreateRouteAction
             $this->assertIdenticalRetry($existing, $data, $nodeId, $clusterId, $target);
 
             return ['route' => $existing->load(['targets', 'customProxy']), 'created' => false];
+        }
+
+        if ($refuseNewProjectRoute) {
+            if ($target instanceof AppInstance) {
+                DB::transaction(fn () => $this->associations->assertTargetUnassociated($target));
+
+                throw new ResourceOperationException(
+                    errorCode: 'route.activation_unsupported',
+                    message: 'route:create cannot activate an explicit Project Route for this Instance. Use Instance provisioning or a supported Route replacement operation.',
+                    status: 409,
+                );
+            }
+
+            throw new ResourceOperationException(
+                errorCode: 'route.target_required',
+                message: 'A targetless Project Route has no serving path. Create it through Instance provisioning instead.',
+                status: 409,
+            );
         }
 
         return [

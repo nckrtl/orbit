@@ -29,6 +29,22 @@ use App\Models\RouteTarget;
 use Tests\Support\FakeCustomProxyRouteProjector;
 use Tests\Support\FakeRouteRemovalProjector;
 
+function customProxyAppRouteFixture(OrbitApp $app, Node $node, string $domain, AppInstance $target): Route
+{
+    $route = Route::query()->create([
+        'kind' => RouteKind::App,
+        'app_id' => $app->id,
+        'node_id' => $node->id,
+        'domain' => $domain,
+        'provenance' => 'explicit',
+        'publication' => 'private',
+        'status' => 'pending',
+    ]);
+    $route->targets()->create(['app_instance_id' => $target->id, 'position' => 0]);
+
+    return $route;
+}
+
 beforeEach(function (): void {
     $this->projector = new FakeCustomProxyRouteProjector;
     $this->removal = new FakeRouteRemovalProjector;
@@ -136,14 +152,7 @@ describe('custom proxy Route refusals', function (): void {
     ]);
 
     it('refuses stealing an App Route domain', function (): void {
-        $this
-            ->postJson('/api/v1/routes', [
-                'app_id' => $this->orbitApp->id,
-                'domain' => 'executor.orbit',
-                'publication' => 'private',
-                'app_instance_id' => $this->target->id,
-            ])
-            ->assertCreated();
+        customProxyAppRouteFixture($this->orbitApp, $this->node, 'executor.orbit', $this->target);
 
         $this
             ->postJson('/api/v1/routes', [
@@ -257,15 +266,7 @@ describe('custom proxy Route list, show, destroy, and App mutations', function (
     });
 
     it('destroys a custom proxy without touching an App Route', function (): void {
-        $appRoute = $this
-            ->postJson('/api/v1/routes', [
-                'app_id' => $this->orbitApp->id,
-                'domain' => 'app.example.test',
-                'publication' => 'private',
-                'app_instance_id' => $this->target->id,
-            ])
-            ->assertCreated()
-            ->json('data.id');
+        $appRoute = customProxyAppRouteFixture($this->orbitApp, $this->node, 'app.example.test', $this->target)->id;
         $proxyRoute = $this
             ->postJson('/api/v1/routes', [
                 'domain' => 'executor.orbit',
