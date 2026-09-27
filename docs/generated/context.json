@@ -4373,6 +4373,24 @@
             ]
         },
         {
+            "path": "docs/decisions/0172-count-every-t3-model-call-in-thread-metrics.md",
+            "title": "ADR 0172: Count every T3 model call in thread metrics",
+            "kind": "decision",
+            "components": [
+                "apps/docs",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Gateway",
+                "Process",
+                "Task"
+            ],
+            "governing_adrs": [
+                "0165",
+                "0172"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -5829,7 +5847,8 @@
                 "0164",
                 "0165",
                 "0167",
-                "0169"
+                "0169",
+                "0172"
             ]
         },
         {
