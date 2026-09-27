@@ -39,7 +39,7 @@ orbit analytics:update 3.2.1 --json
 
 In a terminal the command asks for the version you left out. With `--json` or `--no-interaction` it refuses a missing version.
 
-The Gateway stores the version and converges the role again, which replaces the `plausible` Process. Plausible keeps no data in its container, and it migrates its PostgreSQL database each time it starts, so the replaced Process continues with the same data. When the new version does not converge, the Gateway stores the earlier version again and returns the error. It does not converge the earlier version again, so the `plausible` Process can stay failed. Run the command again with the earlier version to restore it. Naming the version that already runs changes nothing.
+The Gateway stores the version and converges the role again, which replaces the `plausible` Process. Plausible keeps no data in its container, and it migrates its PostgreSQL database each time it starts, so the replaced Process continues with the same data. When the new version does not converge, the Gateway stores the earlier version again and returns the error. It does not converge the earlier version again, so the `plausible` Process can stay failed. Converge the role again with `orbit node:role:add NODE analytics --converge` to restore it. Naming the version that already runs changes nothing.
 
 Human output names the Node, the version, and the previous version. JSON returns `node_id`, `node_name`, `version`, `previous_version`, and the request ID.
 
