@@ -73,12 +73,16 @@ final readonly class IncusInstance
     private function assertDisks(array $disks): void
     {
         foreach ($disks as $device => $disk) {
+            $source = $disk['source'] ?? null;
+            $path = $disk['path'] ?? null;
             if (
                 preg_match('/\A[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}\z/', $device) !== 1
                 || $device === 'root'
                 || array_keys($disk) !== ['source', 'path']
-                || ! str_starts_with($disk['source'], '/')
-                || ! str_starts_with($disk['path'], '/')
+                || ! is_string($source)
+                || ! is_string($path)
+                || ! str_starts_with($source, '/')
+                || ! str_starts_with($path, '/')
             ) {
                 throw new InvalidArgumentException('Invalid Incus instance disk device.');
             }

@@ -55,16 +55,27 @@ final readonly class ProofCaptureService
 
             $captured = $localCapture ?? $hostCapture;
             if ($captured === null) {
-                $proof = $evidence['proof'];
+                $proof = $evidence['proof'] ?? null;
+                $topology = $evidence['topology'] ?? null;
+                $manifest = $evidence['manifest'] ?? null;
+                if (! is_array($proof) || ! is_array($topology) || ! is_array($manifest)) {
+                    throw new RuntimeException('Proof capture evidence is invalid.');
+                }
+                $candidateSha = $proof['candidate_sha'] ?? null;
+                $planSha256 = $proof['plan_sha256'] ?? null;
+                $manifestSha256 = $proof['manifest_sha256'] ?? null;
+                if (! is_string($candidateSha) || ! is_string($planSha256) || ! is_string($manifestSha256)) {
+                    throw new RuntimeException('Proof capture evidence is invalid.');
+                }
                 $captured = new CapturedProof(
                     $request->issue,
                     $attempt,
-                    (string) $proof['candidate_sha'],
-                    (string) $proof['plan_sha256'],
-                    (string) $proof['manifest_sha256'],
+                    $candidateSha,
+                    $planSha256,
+                    $manifestSha256,
                     $proof,
-                    FeatureTopology::fromArray($evidence['topology']),
-                    $evidence['manifest'],
+                    FeatureTopology::fromArray($topology),
+                    $manifest,
                     gmdate('Y-m-d\TH:i:s\Z'),
                 );
             } elseif ($captured->evidence() !== $evidence) {

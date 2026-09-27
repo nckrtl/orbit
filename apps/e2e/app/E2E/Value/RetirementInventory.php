@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\E2E\Value;
 
+use App\E2E\StringKeyedMap;
 use DateTimeImmutable;
 use InvalidArgumentException;
 
@@ -143,6 +144,10 @@ final readonly class RetirementInventory
                     throw new InvalidArgumentException('Each retirement inventory resource must be an object.');
                 }
                 self::validateResource($kind, $resource);
+                $resource = StringKeyedMap::of(
+                    $resource,
+                    new InvalidArgumentException('A retirement inventory resource contains an extra field.'),
+                );
                 $reference = self::resourceReference($kind, $resource);
                 if (
                     isset($seen[$reference])
@@ -228,12 +233,17 @@ final readonly class RetirementInventory
             }
         }
         $identityKey = in_array($kind, ['source_paths', 'manifests', 'locks', 'evidence'], true) ? 'path' : 'name';
-        foreach ([$identityKey, 'classification', 'resource_sha256'] as $key) {
-            if (! is_string($resource[$key] ?? null) || $resource[$key] === '') {
-                throw new InvalidArgumentException(
-                    'A retirement inventory resource is missing a required string field.',
-                );
-            }
+        $identityValue = $resource[$identityKey] ?? null;
+        $classification = $resource['classification'] ?? null;
+        $resourceSha = $resource['resource_sha256'] ?? null;
+        if (
+            ! is_string($identityValue) || $identityValue === ''
+            || ! is_string($classification) || $classification === ''
+            || ! is_string($resourceSha) || $resourceSha === ''
+        ) {
+            throw new InvalidArgumentException(
+                'A retirement inventory resource is missing a required string field.',
+            );
         }
         $expectedFilesystemType = match ($kind) {
             'source_paths' => 'directory',
@@ -247,14 +257,15 @@ final readonly class RetirementInventory
             throw new InvalidArgumentException('A retirement inventory filesystem type is invalid.');
         }
         if (
-            ! in_array($resource['classification'], ['legacy', 'preserve'], true)
-            || preg_match('/\A[a-f0-9]{64}\z/', $resource['resource_sha256']) !== 1
+            ! in_array($classification, ['legacy', 'preserve'], true)
+            || preg_match('/\A[a-f0-9]{64}\z/', $resourceSha) !== 1
         ) {
             throw new InvalidArgumentException('A retirement inventory classification or digest is invalid.');
         }
+        $contentSha = $resource['content_sha256'] ?? '';
         if (
             $expectedFilesystemType !== null
-            && preg_match('/\A[a-f0-9]{64}\z/', $resource['content_sha256'] ?? '') !== 1
+            && (! is_string($contentSha) || preg_match('/\A[a-f0-9]{64}\z/', $contentSha) !== 1)
         ) {
             throw new InvalidArgumentException('A retirement inventory content digest is invalid.');
         }
@@ -302,7 +313,7 @@ final readonly class RetirementInventory
         }
         $digestInput = $resource;
         unset($digestInput['resource_sha256']);
-        if (! hash_equals($resource['resource_sha256'], hash('sha256', json_encode(
+        if (! hash_equals($resourceSha, hash('sha256', json_encode(
             $digestInput,
             JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES,
         )))) {
