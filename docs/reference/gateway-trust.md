@@ -1,63 +1,63 @@
 ---
 title: "Gateway trust"
-description: "How the CLI registers, selects, and removes Gateway profiles and pins the Gateway root certificate in the operating-system trust store."
+description: "How the CLI stores Gateway profiles, pins the Gateway root certificate, installs it in the operating-system trust store, and recovers when a profile changes during a trust command."
+covers:
+  - apps/cli/app/Services/Trust/**
+  - apps/cli/app/Repositories/GatewayConfigRepository.php
+  - apps/cli/app/Data/GatewayProfile.php
+  - apps/cli/app/Support/OrbitHome.php
+  - packages/php-sdk/src/GatewayRootCaClient.php
+  - apps/gateway/app/Http/Controllers/Api/RootCaCertificatesController.php
 ---
 
 # Gateway trust
 
-This page tells an operator how the CLI registers, selects, and removes Gateway profiles, and how it pins a Gateway root certificate. It also covers operating-system trust-store changes and recovery when a local profile changes during a trust command.
+The CLI reaches the Gateway over HTTPS. The Gateway certificate chains to the Orbit root certificate authority (CA). The CLI pins that root certificate on each Gateway profile and installs it in the operating-system trust store. The [`gateway`](/cli/gateway) commands run these steps.
+
+## Profiles
+
+The CLI keeps its profiles in `$ORBIT_HOME/config.json`. `ORBIT_HOME` defaults to `$HOME/.orbit`. The file holds the active profile name and one entry per profile with its `url` and `ca_path`. The CLI writes the file with mode `0600` under a lock.
+
+A profile name has 1 to 63 characters: lowercase letters, digits, `.`, `_`, and `-`, starting with a letter or digit. A profile URL is an HTTPS origin without a user, password, path, query, or fragment.
+
+The first profile that `gateway:add` saves becomes the active profile. Later profiles become active only with `--use` or `gateway:use`.
+
+The pinned certificate lives in `$ORBIT_HOME/gateways/<slug>-<hash>/ca/`, where `<slug>` comes from the profile name and `<hash>` is the first 12 characters of the name's SHA-256. The directories have mode `0700`, and the certificate file has mode `0600`.
 
 ## Trust sequence
 
-`gateway:trust` reads the active Gateway profile and completes each trust boundary in this order.
+`gateway:add` and `gateway:trust` run the same steps.
 
-| Step | Observable result |
-| --- | --- |
-| Bootstrap fetch | The CLI fetches the Gateway root certificate without following redirects and validates its reported SHA-256 fingerprint. |
-| Pinned verification | The CLI stores the certificate privately, repeats the request with it as the Transport Layer Security (TLS) trust root, and refuses a certificate that changed between requests. |
-| Operating-system trust | The CLI verifies the certificate in the operating-system trust store, installs it with visible local privilege escalation when needed, and verifies the installed result. |
-| Profile pin | The CLI saves the private certificate path only when the profile still has the name, URL, and pin that the command started with. |
+1. **Bootstrap fetch.** The CLI calls `GET /api/v1/ca/root` without certificate verification and without following redirects. The Gateway answers this endpoint for any caller. The CLI checks that the certificate matches the SHA-256 fingerprint in the response.
+2. **Pin check.** `gateway:add --ca` compares the certificate with the given file. `gateway:trust` compares it with the profile's pin. A different certificate fails with `gateway.ca_changed`. `gateway:trust --accept-ca-change` skips this check.
+3. **Pinned verification.** The CLI stores the certificate privately. It repeats the request with that certificate as the only trust root. A different certificate fails with `gateway.ca_verification_failed`.
+4. **Operating-system trust.** The CLI checks the trust store and installs the certificate when it is missing. On macOS it runs `sudo security add-trusted-cert` into the System keychain. On Linux it runs `sudo install` and `sudo update-ca-certificates`. Then it checks the trust store again.
+5. **Profile save.** `gateway:add` saves the profile. `gateway:trust` saves the pin under the [profile guard](#profile-guard).
 
-The command returns the certificate fingerprint, private certificate path, trust status, and Gateway request ID in JSON mode. Human output reports the trust status and request ID. Neither output includes certificate material or underlying operating-system errors.
+JSON output returns the certificate fingerprint, the trust status (`trusted` or `already_trusted`), and the Gateway request ID. `gateway:trust` also returns the certificate path. No output holds certificate material.
 
-## Existing profile guard
+## Profile guard
 
-The final profile save compares current profile content while it holds the local configuration lock. A switch to another active profile does not change that content and does not block the save. A concurrent command that already saved the same target certificate path is also successful.
+`gateway:trust` saves the pin only when the profile still has the name and URL that the command started with, and its pin is still the old path or the new one. The CLI checks this under the configuration lock. A switch of the active profile does not block the save.
 
-If another operation replaces the same profile URL or saves a different certificate path first, `gateway:trust` keeps that replacement and exits with `gateway.ca_profile_update_failed`. The error states that the root certificate was trusted but the profile could not be updated, and it includes the valid Gateway request ID.
+When another command changed the profile first, `gateway:trust` keeps that change and fails with `gateway.ca_profile_update_failed`. The certificate is then already in the operating-system trust store, because the two stores are separate. Check which profile is active, and run `gateway:trust` again for the profile you want.
 
-Operating-system trust and the local profile file are separate stores. The operating-system trust change may therefore be complete when the guarded profile save fails. Inspect the current profile selection and run `gateway:trust` again for the intended profile; the repeated command verifies the current Gateway and completes or confirms its pin.
+## Removal
 
-## Registration and replacement
+`gateway:remove` deletes the profile entry and its pinned certificate file. It does not change the operating-system trust store.
 
-`gateway:add` owns profile registration and explicit same-name replacement. It completes certificate verification and operating-system trust before it publishes the supplied profile, and `--use` selects that profile after registration. The existing-profile guard used by `gateway:trust` does not change this replacement behavior.
+## Why it works this way
 
-`gateway:use` selects an existing profile as the active Gateway. It does not change certificate pins or the operating-system trust store.
+These reasons explain the design. Check them before you propose a change.
 
-## Profile removal
+### Fetch without verification, then verify with the pin
 
-`gateway:remove` removes a named Gateway profile from the CLI configuration. The CLI deletes that profile entry and, when the profile records a pinned certificate path and that file exists, deletes the pinned certificate file. The command does not change the operating-system trust store.
+A new operator machine has no Orbit root certificate, so the first request cannot verify the Gateway. The CLI checks the fingerprint in the response and then repeats the request with the fetched certificate as the only root. A certificate that changes between the two requests fails, and nothing reaches the trust store.
 
-Removal requires default-No interactive confirmation or explicit `--yes`. Removing the active profile also requires the independent `--force` override. See [gateway:remove](/cli/gateway#orbit-gatewayremove) for refusal codes and automation examples.
+### A changed certificate needs an explicit flag
 
-The CLI refuses the active profile and leaves the configuration unchanged. With `--force`, the CLI removes the active profile and clears the active selection. An unknown name exits with `gateway.profile_not_found`. An active profile without `--force` exits with `gateway.profile_active`.
+A new root certificate on a known Gateway can mean a rebuilt Gateway or an attacker on the path. The CLI refuses it until the operator checks the fingerprint and passes `--accept-ca-change`.
 
-Human output names the removed profile. `--json` returns the removed profile name.
+### Removal leaves the trust store alone
 
-The remove options change whether the active profile may be deleted, or the output format.
-
-| Option | Behavior |
-| --- | --- |
-| `--force` | Removes the active profile and clears the active selection. Without this option the CLI refuses the active profile. |
-| `--json` | Emits one structured success or error object. Success includes the removed profile name. |
-
-## Options
-
-The trust options change certificate acceptance or output format.
-
-| Option | Behavior |
-| --- | --- |
-| `--accept-ca-change` | Accepts a fetched certificate that differs from the profile's current pin only after the operator verifies the new fingerprint. |
-| `--json` | Emits one structured success or error object, including the request ID. |
-
-Without `--accept-ca-change`, the CLI exits with `gateway.ca_changed` before pinned verification or operating-system installation when a pinned Gateway presents another certificate.
+Several profiles can share one Orbit root certificate, and other programs can rely on it. So `gateway:remove` deletes only what the CLI owns: the profile and its private copy of the certificate.
