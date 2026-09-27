@@ -29,7 +29,7 @@ A topology snapshot generation is a coordinated set of three Incus snapshots, on
 
 ## Prepared fingerprint
 
-`apps/e2e/resources/prepared-state.json` lists the repository files that shape the prepared state. The prepared fingerprint is the SHA-256 of those files' hashes, the cold epoch, the base image alias, the declared epochs, and the topology profile. The sample Laravel release pin is part of it too. The main SHA is the source identity, not a fingerprint input. So a merge that changes none of these inputs leaves the snapshot alone.
+`apps/e2e/resources/prepared-state.json` lists the repository files that shape the prepared state. The prepared fingerprint is the SHA-256 of those files' hashes, the cold epoch, the base image alias, the declared epochs, and the topology profile. The sample Laravel release pin is part of it too. When the structural inputs change, `refresh` pins the newest stable `laravel/laravel` tag at `13.0.0` or later for the sample app. Otherwise it keeps the pinned release. The main SHA is the source identity, not a fingerprint input. So a merge that changes none of these inputs leaves the snapshot alone.
 
 ## Commands
 
@@ -59,10 +59,11 @@ A failed refresh keeps the old generation promoted. It stops and restores the VM
 
 ### Convergence
 
-Convergence runs every Orbit step that a fresh topology needs, in this order.
+Convergence runs every Orbit step that a fresh topology needs, in this order. The steps marked "Router" run only when the Gateway Node has the `router` role, as in the registered profile.
 
 | Step | Work |
 | --- | --- |
+| `validate.prerequisites` | Checks the network identity of every Node |
 | `align.identity` | Aligns each Node's machine identity with the new network |
 | `prerequisites.gateway`, `bootstrap.gateway` | Installs the Gateway prerequisites and bootstraps the Gateway |
 | `authorize.gateway-ssh`, `retarget.vpn` | Authorizes Gateway SSH on the workload Nodes and points their VPN at the Gateway |
@@ -71,9 +72,9 @@ Convergence runs every Orbit step that a fresh topology needs, in this order.
 | `create.sample-resources` | Creates or reuses the sample Project, Instances, and Route |
 | `converge.metrics`, `reproject.product-state`, `refresh.metrics-publication` | Converges Metrics and runs `node:role:add --converge` for every app role, so every projection matches the checkout |
 | `await.instance-api-readiness` | Waits until `instance:list --json` answers on app-dev |
-| `converge.shared-cluster`, `refresh.private-dns` | Joins the three Nodes to `e2e-development`, sets the Gateway Router, and refreshes private DNS |
+| `converge.shared-cluster`, `refresh.private-dns` | Router: joins the three Nodes to `e2e-development`, sets the Gateway Router, and refreshes private DNS |
 | `hydrate.sample-apps` | Prepares the sample checkouts, environment files, databases, and production release |
-| `converge.sample-fixtures` | Creates or checks the [sample resources](/reference/incus-topologies#sample-resources) |
+| `converge.sample-fixtures` | Router: creates or checks the [sample resources](/reference/incus-topologies#sample-resources), then records the sample placement again, because a deployment can move the current release |
 | `normalize.permissions` | Normalizes file permissions on every Node |
 
 The harness writes no Caddy file on any Node. Every Caddyfile comes from a [Node Caddy build](/reference/caddy-configuration#node-caddy-build), so Doctor reports no `role.caddy_build_drift`. The sample production site answers over TLS with the Orbit CA leaf that the Gateway publishes. Hydration and verification trust the Orbit root CA.
@@ -96,7 +97,7 @@ A manifest that names snapshots or VMs that the host does not hold is stale, not
 
 ### Recover
 
-`recover-legacy` handles a snapshot whose resources are still present. It accepts only a readable promoted manifest. It authorizes only the three snapshot VMs, their `-next` copies, and `oe-topo-snap`. Each VM must carry the owner and operation metadata, the snapshot network and MAC, no extra disk, and the promoted snapshot. The network may have only those VMs as users. Any other evidence fails closed, and a name, prefix, glob, or age never authorizes deletion.
+`recover-legacy` handles a snapshot whose resources are still present. It accepts only a readable promoted manifest. It authorizes the snapshot VMs, their `-next` copies, and the snapshot network. Each VM must carry the owner and operation metadata, the snapshot network and MAC, no extra disk, and the promoted snapshot. The network may have only those VMs as users. Any other evidence fails closed, and a name, prefix, glob, or age never authorizes deletion.
 
 Recovery writes the journal `topology-snapshot/recovery.json` before it changes anything. The journal holds the inventory, its SHA-256 digest, the requested SHA, and the phase history, from `authorized` to `construction_verified` or `failed`. Recovery deletes the VMs, the network, and the manifests, and verifies each step in the journal. Then it runs a cold build and verifies the new generation. A retry with the same SHA resumes from the journal when the digest still matches the host. A new recovery archives a finished journal to `topology-snapshot/recoveries/<operation-id>.json`.
 
@@ -125,7 +126,7 @@ A merge that leaves the fingerprint unchanged does not start the VMs. A refresh 
 
 ### Promotion only after every gate
 
-A partial generation is never promoted. A failed refresh keeps the old generation. A stale or failed snapshot blocks only new acquisitions. It never rolls back merged source.
+A partial generation is never promoted. A failed refresh keeps the old generation. A generation behind `main` still serves acquisition. A missing snapshot resource or a changed cold base blocks only new acquisitions. A failed refresh never rolls back merged source.
 
 ### Recovery by exact inventory
 

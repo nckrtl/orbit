@@ -17,7 +17,7 @@ This page is for the contributor, agent, or reviewer who runs Orbit on disposabl
 
 ## Registered profile
 
-Every issue topology uses the three-Node profile `gateway_app-dev_app-prod`.
+An issue topology uses the three-Node profile `gateway_app-dev_app-prod`. The [extension](#the-app-prod-2-extension) adds a fourth Node.
 
 | Field | Value |
 | --- | --- |
@@ -27,11 +27,11 @@ Every issue topology uses the three-Node profile `gateway_app-dev_app-prod`.
 | Network | `oe-<hash>` on `10.232.<slot>.0/24`. The hash is 12 hex characters of the SHA-256 of `<issue>:<attempt>`. |
 | Instances | `orbit-e2e-<issue-lowercase>-<attempt-prefix>-<node>`, with the first 8 characters of the attempt ID |
 | Addresses | Incus `.10`, `.11`, and `.12`. WireGuard `10.44.0.1`, `.2`, and `.3`. |
-| Issue ID | Matches `[A-Z][A-Z0-9]{1,9}-[1-9][0-9]{0,8}`. It must appear in the worktree branch or directory name. |
+| Issue ID | Matches `[A-Z][A-Z0-9]{1,9}-[1-9][0-9]{0,8}`. `acquire` and `sync` require it in the worktree's branch name, such as `TASK-58` on branch `task-58`. |
 
 The three Nodes share the active `e2e-development` Cluster. It has no Cluster TLD. Gateway is its Router, and app-prod is its Ingress. Development traffic goes from the Gateway Router to app-dev. Public production Routes enter app-prod and pass through the Gateway Router to the workload.
 
-A change to this recipe does not change the saved snapshot. Acquisition clones the saved generation and does not provision new roles. A generation with other assignments fails the readiness checks. Run a snapshot `refresh` to adopt a new recipe.
+A change to this recipe does not change the saved snapshot. Acquisition clones the saved generation and does not provision new roles. `acquire` verifies readiness against the assignments that the generation records, so it passes on a generation with other assignments. A full `sync` and `verify` check the current recipe, and they fail on that generation. Run a snapshot `refresh` to adopt a new recipe.
 
 ## Sample resources
 
@@ -53,6 +53,31 @@ An issue holds one discovery topology at a time. `acquire` creates it and `relea
 
 A lease names the issue, the attempt ID, the purpose, the operation ID, and the acquisition time. There is no reaper. A topology lives until someone releases it.
 
+### The app-prod-2 extension
+
+A topology can carry one extra production Node, `app-prod-2`. It is the recipe `gateway_app-dev_app-prod_app-prod`.
+
+| Physical Node key | Source | Incus address | WireGuard address | Roles |
+| --- | --- | --- | --- | --- |
+| `app-prod-2` | The `orbit-base-ubuntu-26.04-runtime` image | `.13` | `10.44.0.4` | `app-prod` |
+
+The three standard Nodes still come from the snapshot. The harness builds `app-prod-2` from the base image inside the same attempt and network, and it records the image fingerprint. It refuses when the image changes between the check and the build. Convergence provisions `app-prod-2` as an `app-prod` Node. It stays outside the `e2e-development` Cluster and gets no Instance. An extended topology reserves four VMs.
+
+The committed scenario `snapshot-extension` uses the extension. A discovery topology gets it only when `<worktree>/.loop/proof/<ISSUE>.json` declares `"extension": "app-prod"` (see [what acquire reads](#what-acquire-reads)).
+
+### What acquire reads
+
+`acquire` checks that the worktree belongs to this repository and to the current user, and that its branch names the issue. It refuses a worktree without the Gateway, CLI, and SDK `vendor/` autoloaders.
+
+It clones the promoted generation, even when that generation is behind `main`. It refuses when no generation is promoted, when the generation's identity does not match its manifest, or when a snapshot resource is missing. It also refuses when the worktree's `apps/e2e/resources/prepared-state.json` changes the cold epoch or the base image alias of the generation. The snapshot must then be [built again](/reference/topology-snapshot#rebuild-and-recover) from the new base.
+
+`acquire` also reads two optional files in the worktree. A malformed file makes it fail.
+
+| File | Effect |
+| --- | --- |
+| `.loop/flow.json` | `{"schema":1,"flow":"proof"}` makes `acquire` refuse a generation that does not match current `main`. Without the file, the flow is `discovery`. |
+| `.loop/proof/<ISSUE>.json` | `"extension": "app-prod"` adds `app-prod-2`. `acquire` and a full `sync` then converge the whole topology before readiness. |
+
 ### Capacity
 
 The harness counts capacity from `incus list`, never from a ledger. It counts the VMs that carry `user.orbit.e2e.owner=orbit-e2e` and the `10.232.<slot>.0/24` subnets in use.
@@ -62,9 +87,9 @@ The harness counts capacity from `incus list`, never from a ledger. It counts th
 | VM size | 1 vCPU, 2 GiB memory, 16 GiB root disk (`e2e.incus.cpu`, `e2e.incus.memory`, `e2e.incus.root_size`) |
 | VM budget | `e2e.incus.max_vms`, default 24, minimum 9. `ORBIT_E2E_INCUS_MAX_VMS` sets it for one run. |
 | Network slots | Slot 1 belongs to the topology snapshot. Disposable topologies take slots 2 to 200. |
-| Incus scope | `e2e.incus.remote`, `e2e.incus.project`, and `e2e.incus.storage_pool`, from `ORBIT_E2E_INCUS_REMOTE`, `ORBIT_E2E_INCUS_PROJECT`, and `ORBIT_E2E_INCUS_STORAGE_POOL`. The defaults are `local`, `default`, and `orbit-e2e`. |
+| Incus scope | `e2e.incus.remote`, `e2e.incus.project`, and `e2e.incus.storage_pool`, from `ORBIT_E2E_INCUS_REMOTE`, `ORBIT_E2E_INCUS_PROJECT`, and `ORBIT_E2E_INCUS_STORAGE_POOL`. The defaults are `local`, `default`, and `orbit-e2e`. The remote must be `local`, because network creation and deletion also change host firewall rules. |
 
-Every `incus` call carries the configured project. The harness reserves three VMs before it creates a network or a VM. It refuses `acquire` when the budget cannot hold them, and it names the count and the limit. At the default budget, seven topologies fit beside the snapshot.
+Every `incus` call carries the configured project. The harness reserves the recipe's VMs, three or four, before it creates a network or a VM. It refuses `acquire` when the budget cannot hold them, and it names the count and the limit. At the default budget, seven topologies fit beside the snapshot.
 
 ### Locks
 
@@ -87,7 +112,7 @@ Every command except `status` and `shell` holds the lock `topology-<ISSUE>` unde
 | `status ISSUE` | Reports the state files without touching Incus |
 | `release ISSUE` | Removes the topology and verifies that it is gone |
 
-`NODE` is a physical Node key: `gateway`, `app-dev`, or `app-prod`. `--argv-file=PATH` can replace `--argv` on `exec` and `spawn`. The file holds `{"argv":[...],"stdin":null}`, and only `exec` accepts stdin. The harness refuses both options together.
+`NODE` is a physical Node key: `gateway`, `app-dev`, `app-prod`, or `app-prod-2` on an extended topology. `--argv-file=PATH` can replace `--argv` on `exec` and `spawn`. The file holds `{"argv":[...],"stdin":null}`, and only `exec` accepts stdin. The harness refuses both options together.
 
 ### Guest commands
 
@@ -97,7 +122,7 @@ The harness links `apps/cli/orbit` to `/usr/local/bin/orbit` on each checkout No
 
 With `--json`, `exec` prints `{"state":"executed","exit_code":N,"stdout":"...","stderr":"..."}`. Without it, `exec` prints the guest stdout. It exits `0` only when the guest command does.
 
-Incus waits for every process that an `exec` session starts. A command that leaves a background process holds `exec` open until the timeout. Start a long-lived process with `spawn` instead. `spawn` runs `systemd-run --collect` with the same user, directory, and environment as `exec`. A name has 1 to 40 lowercase letters, digits, or hyphens. Kill a unit before you spawn another one with the same name. `spawn` works on discovery only.
+Incus waits for every process that an `exec` session starts. A command that leaves a background process holds `exec` open until the timeout. Start a long-lived process with `spawn` instead. `spawn` runs `systemd-run --collect` with the same user, directory, and environment as `exec`. A name has 1 to 40 lowercase letters, digits, or hyphens. Kill a unit before you spawn another one with the same name. `spawn` works on discovery only. The harness log `<worktree>/.e2e/log` records every `exec`, `spawn`, and `kill`, with the redacted argv and the exit code.
 
 ### Evidence log
 
@@ -138,12 +163,14 @@ A task workspace is an independent clone, not a linked worktree. It holds neithe
 
 | Step | What happens |
 | --- | --- |
-| Find the primary | Reads `$XDG_STATE_HOME/orbit/e2e-primary-checkouts/{origin key}`. `$XDG_STATE_HOME` defaults to `~/.local/state`. Without a live registration, the command runs in the clone. |
+| Find the primary | Reads `$XDG_STATE_HOME/orbit/e2e-primary-checkouts/{origin key}`, with `$XDG_STATE_HOME` defaulting to `~/.local/state`. Without a live registration, the command runs in the clone. |
 | Update the bridge | Checks out the clone's HEAD in `<worktree root>/<clone directory>-e2e`, on branch `<clone branch>-e2e`. The worktree root is the primary's `orbit.worktreeRoot`, default `/fast/worktrees/orbit`. |
 | Mirror the work | Copies the clone's modified and untracked files, removes its deleted tracked files, and mirrors each `vendor/` directory |
 | Run | Runs the bridge's `bin/e2e-topology`, with each clone path replaced by the bridge path and `--worktree` set to the bridge |
 
-The mirror leaves the bridge's other ignored files, such as `.e2e/`, `.env`, and Gateway storage, because the harness and the guests write them. So a file that a guest writes into the mount appears in the bridge, not in the clone. The evidence log is in the bridge too. Every command mirrors the clone first, so any command, such as `status`, pushes an edit. Set `ORBIT_E2E_BRIDGE=0` to run in the clone itself.
+The origin key is the SHA-256 of the origin URL's lowercase host and its path, so every clone of one repository finds the same primary.
+
+The mirror leaves the bridge's other ignored files, such as `.e2e/`, `.env`, and Gateway storage, because the harness and the guests write them. So a file that a guest writes into the mount appears in the bridge, not in the clone. The evidence log is in the bridge too. Every command mirrors the clone first, so any command, such as `status`, pushes an edit. Set `ORBIT_E2E_BRIDGE=0` to run in the clone itself. `bin/e2e-topology-snapshot` never bridges, because snapshot operations belong to the primary checkout.
 
 In a task workspace on branch `task-58`, run `bin/e2e-topology acquire TASK-58 .`, then the other commands with `TASK-58`. The topology snapshot [registers](/reference/topology-snapshot#commands) the primary checkout. When the Gateway ends a task group, it removes the group's bridge. [Tasks](/reference/tasks#complete-and-cleanup) describes that cleanup. Release the topology before the group ends, because bridge removal does not release it.
 
@@ -153,9 +180,15 @@ In a task workspace on branch `task-58`, run `bin/e2e-topology acquire TASK-58 .
 
 An ownership mismatch stops the release and keeps every unrelated resource. The attempt record stays for diagnosis. A retry continues from the same exact target.
 
-Every network named `oe-*` belongs to the harness and never outlives its topology. Every release ends with an orphan sweep. The sweep deletes each harness network in the configured project whose `used_by` list is empty, except `oe-topo-snap`. It holds the `topology-create` lock, so it never deletes a network that a starting acquisition just created.
+Every network named `oe-*` or `orbit-e2e-*` belongs to the harness and never outlives its topology. Every release ends with an orphan sweep. The sweep selects networks by those name prefixes, not by ownership metadata. It deletes each one in the configured project whose `used_by` list is empty, except the snapshot networks `oe-topo-snap` and `oe-standby`. It holds the `topology-create` lock, so it never deletes a network that a starting acquisition just created.
 
-`bin/worktree-remove ISSUE` verifies the merge, releases the discovery topology, and removes the worktree.
+`bin/worktree-remove ISSUE` cleans up after a merge. It works in this order:
+
+1. It refuses a dirty worktree and a branch that `origin/main` does not contain.
+2. It refuses while `.e2e/` holds a successful proof.
+3. It queues a TIA cache refresh.
+4. It releases a failed proof topology, then the discovery topology, and removes the worktree.
+5. It deletes the merged branch and prunes the worktree list.
 
 ## On-demand scenarios
 
@@ -165,14 +198,28 @@ Every network named `oe-*` belongs to the harness and never outlives its topolog
 | --- | --- |
 | `cold [CANDIDATE_SHA] [--scenario=ID ...]` | Runs the cold scenarios, or only the named ones in the given order |
 | `snapshot [CANDIDATE_SHA] [--scenario=ID ...]` | Runs the snapshot scenarios, or only the named ones |
-| `run [CANDIDATE_SHA] --workers=COUNT [--scenario=ID ...]` | Runs cold and snapshot scenarios with at most `COUNT` workers at once |
+| `run [CANDIDATE_SHA] --workers=COUNT [--scenario=ID ...]` | Runs cold and snapshot scenarios with at most `COUNT` workers at once. `cold` and `snapshot` run their scenarios one after another. |
 | `cleanup RUN_ID SCENARIO_ID ATTEMPT_ID` | Retries exact cleanup from the retained attempt record |
+
+The catalog holds five committed scenarios.
+
+| ID | Lane | Recipe | What it proves |
+| --- | --- | --- | --- |
+| `cold-four-node` | cold | Cold acceptance, four Nodes | Orbit builds and verifies the whole topology from the base image, and cleanup removes it |
+| `cold-construction-cleanup` | cold | Cold acceptance, four Nodes | After an injected source failure during construction, cleanup removes exactly the recorded resources |
+| `snapshot-lifecycle` | snapshot | Registered, three Nodes | A clone of the snapshot syncs, converges, passes readiness, runs a bounded app-dev action, and verifies |
+| `snapshot-isolation` | snapshot | Registered, three Nodes | A fresh clone does not contain a marker that an earlier attempt wrote |
+| `snapshot-extension` | snapshot | Registered plus `app-prod-2` | The [extension](#the-app-prod-2-extension) Node has its recorded identity, capacity, and image fingerprint |
 
 The checkout must be clean. An optional SHA must be the full lowercase `HEAD`. Before it changes Incus, the command validates the catalog, every selected scenario, and the worker count. It refuses an unknown or repeated ID, a scenario from the other lane, an invalid recipe, a missing action deadline, and an invalid declared input.
 
-Each worker gets its own attempt, network, VMs, state path, and Pest process. One Pest test is one independent flow, and a flow stops at its first failed step. Admission holds the `topology-create` lock while it counts the recipe's VMs against the shared budget and picks a network slot. After that, workers run in parallel. A failure in one worker does not cancel another.
+Each worker gets its own attempt, network, VMs, state path, and Pest process. One Pest test is one independent flow, and a flow stops at its first failed step. Admission holds the `topology-create` lock while it counts the recipe's VMs against the shared budget and picks a network slot. After that, `run` workers go on in parallel. A failure in one worker does not cancel another.
 
 The cold flow starts from the unchanged base image and installs no PCOV before construction. A snapshot flow checks the promoted generation first. A missing, stale, or changed generation gives `infrastructure-error` and skips the exercise. A snapshot flow never changes the generation, its VMs, or its manifest.
+
+A snapshot flow mounts no worktree. It clones the three Nodes, and builds `app-prod-2` for the extension. It synchronizes the exact candidate commit from Git into the checkout Nodes and checks the guest commit. It converges the whole topology, checks the commit again, and runs the readiness probes. Then it runs the exercise and a final verification.
+
+Scenario resources carry the issue `SCN-1` and the extra metadata `user.orbit.e2e.run`, `user.orbit.e2e.scenario`, and `user.orbit.e2e.recipe`. VM names are `orbit-e2e-scn-<run>-<scenario>-<attempt>-<node>`, with 8 characters of the run ID, 6 hex characters of the SHA-256 of the scenario ID, and 8 characters of the attempt ID. The network is `oe-` plus 12 hex characters of the SHA-256 of `<run>:<scenario>:<attempt>`. These VMs count against the same budget as issue topologies.
 
 The cold acceptance recipe separates the physical Node from its roles.
 
@@ -206,7 +253,7 @@ Each issue gets fresh VMs on an isolated network, cloned from one prepared snaps
 
 ### Exact ownership
 
-Every resource records its owner, issue, attempt, and operation when the harness creates it. Setup and cleanup change only recorded resources, after they check the live metadata again. They never select by prefix, glob, age, broad query, or unset variable. A resource without the expected metadata is outside the topology, even when its name looks right. So a mistake cannot delete another person's machine or a production resource.
+Every resource records its owner, issue, attempt, and operation when the harness creates it. Setup and cleanup change only recorded resources, after they check the live metadata again. They never select by prefix, glob, age, broad query, or unset variable. A resource without the expected metadata is outside the topology, even when its name looks right. So a mistake cannot delete another person's machine or a production resource. The one exception is the orphan network sweep. It selects by the harness name prefixes, and deletes only networks that no VM uses.
 
 ### Topologies are never production
 
@@ -219,6 +266,8 @@ Discovery mounts the worktree, so an edit reaches the guests at once. Copying so
 ### Three Nodes
 
 The profile gives the Gateway, app-dev, and app-prod roles the room they need, with Router, database, WebSocket, and Ingress on those same three VMs. A fourth VM in every topology is a rejected alternative, because it raises the cost of every session for tests that need only one development host. Router on app-prod would work, but it keeps production routing on one VM and tests fewer network hops. The `gateway` role conflicts with `app-dev`, so those two roles need separate VMs.
+
+A test that needs two production Nodes uses the `app-prod-2` extension instead. The extension is a separate recipe, so the snapshot and every other topology keep three VMs. Putting `app-prod` on the Gateway or app-dev Node is not possible, because those roles conflict.
 
 ### Long-lived processes as systemd units
 
