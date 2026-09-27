@@ -22,7 +22,7 @@ beforeEach(function (): void {
     $this->fakeRepositoryBranches();
 });
 
-it('serves the same Project on /projects and /apps', function (): void {
+it('serves Projects only on the Project API', function (): void {
     $created = $this->postJson('/api/v1/projects', [
         'slug' => 'acme',
         'type' => 'laravel-package',
@@ -38,21 +38,19 @@ it('serves the same Project on /projects and /apps', function (): void {
         ->assertJsonPath('data.slug', 'acme')
         ->assertJsonPath('data.type', 'laravel-package');
 
-    $this->getJson('/api/v1/apps/'.$created->json('data.id'))
-        ->assertOk()
-        ->assertJsonPath('data.slug', 'acme')
-        ->assertJsonPath('data.type', 'laravel-package');
+    $this->getJson('/api/v1/apps/'.$created->json('data.id'))->assertNotFound();
+    $this->getJson('/api/v1/apps')->assertNotFound();
 });
 
-it('defaults omitted type to laravel-app on the compatibility surface', function (): void {
-    $this->postJson('/api/v1/apps', [
+it('requires an explicit Project type', function (): void {
+    $this->postJson('/api/v1/projects', [
         'slug' => 'shop',
         'repository_url' => 'https://github.com/acme/shop.git',
         'default_branch' => 'main',
         'root' => 'public',
     ])
-        ->assertCreated()
-        ->assertJsonPath('data.type', 'laravel-app');
+        ->assertUnprocessable()
+        ->assertJsonPath('error.details.type.0', 'The type field is required.');
 });
 
 it('activates a laravel-package Instance without a Route', function (): void {

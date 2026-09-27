@@ -405,7 +405,7 @@ it('refuses JSON process definition destruction without --yes', function (): voi
 
     [$exit, $output] = process_cli_display('process:destroy', [
         'process' => 'queue',
-        '--app' => '7',
+        '--project' => '7',
         '--json' => true,
     ]);
     expect($exit)->toBe(1);
@@ -1000,7 +1000,7 @@ it('rejects invalid local process input before making a gateway request', functi
             'name' => 'queue',
             '--command' => ['/usr/bin/php'],
         ],
-        'The --project, --app, --instance, or --node option is required.',
+        'The --project, --instance, or --node option is required.',
     ],
     'combined selectors' => [
         'process:create',
@@ -1010,18 +1010,18 @@ it('rejects invalid local process input before making a gateway request', functi
             '--node' => '4',
             '--command' => ['/usr/bin/php'],
         ],
-        'Use only one of --project, --app, --instance, or --node.',
+        'Use only one of --project, --instance, or --node.',
     ],
     'app with instance' => [
         'process:create',
         [
             'name' => 'queue',
-            '--app' => '7',
+            '--project' => '7',
             '--instance' => '7',
             '--for' => 'development',
             '--command' => ['/usr/bin/php'],
         ],
-        'Use only one of --project, --app, --instance, or --node.',
+        'Use only one of --project, --instance, or --node.',
     ],
     'for without app' => [
         'process:create',
@@ -1031,22 +1031,22 @@ it('rejects invalid local process input before making a gateway request', functi
             '--for' => 'development',
             '--command' => ['/usr/bin/php'],
         ],
-        'The --for option requires --project or --app.',
+        'The --for option requires --project.',
     ],
     'app without for' => [
         'process:create',
         [
             'name' => 'queue',
-            '--app' => '7',
+            '--project' => '7',
             '--command' => ['/usr/bin/php'],
         ],
-        'The --for option is required with --project or --app.',
+        'The --for option is required with --project.',
     ],
     'start with app' => [
         'process:create',
         [
             'name' => 'queue',
-            '--app' => '7',
+            '--project' => '7',
             '--for' => 'development',
             '--command' => ['/usr/bin/php'],
             '--start' => true,
@@ -1094,31 +1094,31 @@ it('renders one exact json envelope for App-target process refusals', function (
         'process:update',
         ['name' => 'worker'],
         'process.target_invalid',
-        'The --project or --app option is required.',
+        'The --project option is required.',
     ],
     'create app with instance' => [
         'process:create',
         [
             'name' => 'queue',
-            '--app' => '7',
+            '--project' => '7',
             '--instance' => '7',
             '--for' => 'development',
             '--command' => ['/usr/bin/php'],
         ],
         'process.target_invalid',
-        'Use only one of --project, --app, --instance, or --node.',
+        'Use only one of --project, --instance, or --node.',
     ],
     'create app with node' => [
         'process:create',
         [
             'name' => 'queue',
-            '--app' => '7',
+            '--project' => '7',
             '--node' => '4',
             '--for' => 'development',
             '--command' => ['/usr/bin/php'],
         ],
         'process.target_invalid',
-        'Use only one of --project, --app, --instance, or --node.',
+        'Use only one of --project, --instance, or --node.',
     ],
     'create for without app' => [
         'process:create',
@@ -1129,33 +1129,33 @@ it('renders one exact json envelope for App-target process refusals', function (
             '--command' => ['/usr/bin/php'],
         ],
         'process.option_invalid',
-        'The --for option requires --project or --app.',
+        'The --for option requires --project.',
     ],
     'create app without for' => [
         'process:create',
         [
             'name' => 'queue',
-            '--app' => '7',
+            '--project' => '7',
             '--command' => ['/usr/bin/php'],
         ],
         'process.option_invalid',
-        'The --for option is required with --project or --app.',
+        'The --for option is required with --project.',
     ],
     'create invalid app without for' => [
         'process:create',
         [
             'name' => 'queue',
-            '--app' => 'abc',
+            '--project' => 'abc',
             '--command' => ['/usr/bin/php'],
         ],
-        'app.id_invalid',
+        'project.id_invalid',
         'Project ID must be a positive integer.',
     ],
     'update app without for' => [
         'process:update',
-        ['name' => 'worker', '--app' => '7'],
+        ['name' => 'worker', '--project' => '7'],
         'process.option_invalid',
-        'The --for option is required with --project or --app.',
+        'The --for option is required with --project.',
     ],
 ]);
 
@@ -1164,11 +1164,11 @@ it('exposes AppInstance and Node selectors on targeted process commands', functi
 
     expect($commands['process:create']->getDefinition()->hasOption('instance'))->toBeTrue()
         ->and($commands['process:create']->getDefinition()->hasOption('node'))->toBeTrue()
-        ->and($commands['process:create']->getDefinition()->hasOption('app'))->toBeTrue()
+        ->and($commands['process:create']->getDefinition()->hasOption('project'))->toBeTrue()
         ->and($commands['process:create']->getDefinition()->hasOption('workspace'))->toBeFalse()
         ->and($commands['process:list']->getDefinition()->hasOption('instance'))->toBeTrue()
         ->and($commands['process:list']->getDefinition()->hasOption('node'))->toBeTrue()
-        ->and($commands['process:list']->getDefinition()->hasOption('app'))->toBeTrue()
+        ->and($commands['process:list']->getDefinition()->hasOption('project'))->toBeTrue()
         ->and($commands['process:list']->getDefinition()->hasOption('workspace'))->toBeFalse();
 });
 
@@ -1205,7 +1205,7 @@ it('records one App process definition through structured flags', function (): v
     $this
         ->artisan('process:create', [
             'name' => 'queue',
-            '--app' => '7',
+            '--project' => '7',
             '--for' => 'development,production',
             '--runtime' => 'systemd',
             '--command' => ['/usr/bin/php', 'artisan', 'queue:work'],
@@ -1230,7 +1230,7 @@ it('records keep-alive on an App process definition', function (): void {
 
     [$exit, $output] = process_cli_display('process:create', [
         'name' => 'queue',
-        '--app' => '7',
+        '--project' => '7',
         '--for' => 'development',
         '--runtime' => 'systemd',
         '--command' => ['/usr/bin/php', 'artisan', 'queue:work'],
@@ -1268,13 +1268,13 @@ it('lists shows updates and destroys App process definitions by name', function 
 })->with([
     'list' => [
         'process:list',
-        ['--app' => '7'],
+        ['--project' => '7'],
         ListProcessDefinitionsRequest::class,
         '/api/v1/projects/7/process-definitions',
     ],
     'show' => [
         'process:show',
-        ['name' => 'queue', '--app' => '7'],
+        ['name' => 'queue', '--project' => '7'],
         ShowProcessDefinitionRequest::class,
         '/api/v1/projects/7/process-definitions/queue',
     ],
@@ -1282,7 +1282,7 @@ it('lists shows updates and destroys App process definitions by name', function 
         'process:update',
         [
             'name' => 'queue',
-            '--app' => '7',
+            '--project' => '7',
             '--for' => 'production',
             '--command' => ['/usr/bin/php'],
         ],
@@ -1291,7 +1291,7 @@ it('lists shows updates and destroys App process definitions by name', function 
     ],
     'destroy' => [
         'process:destroy',
-        ['process' => 'queue', '--app' => '7', '--yes' => true],
+        ['process' => 'queue', '--project' => '7', '--yes' => true],
         DestroyProcessDefinitionRequest::class,
         '/api/v1/projects/7/process-definitions/queue',
     ],

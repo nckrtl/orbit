@@ -11,7 +11,7 @@ These terms describe the parts of Orbit. Follow the links for commands and detai
 - **Node** — A machine connected to Orbit. It runs one or more roles and reaches the Gateway over WireGuard. A Node outside a Cluster is standalone.
 - **Cluster** — An optional group of Nodes that share routing. It has a name and may have a development top-level domain (TLD), such as `test`. See [Routes](/reference/routes).
 - **Project** — One Git repository plus shared source defaults and a `type` that decides routing and PHP-FPM capability. Use Project update to change those defaults. See [Projects](/reference/apps#update-a-project).
-- **Package root** — Package Projects may use `.` to mean the repository root. `/api/v1/apps` remains a compatibility path for the same Project records.
+- **Package root** — Package Projects may use `.` to mean the repository root. The Project API is the only public repository-record surface.
 - **Project type** — Closed enum `monorepo`, `laravel-app`, `laravel-package`, or `node-package`. `laravel-app` is the web-serving type. See [ADR 0106](/decisions/0106-derive-instance-capabilities-from-project-type).
 - **Repository identity** — The Git host and path, without a trailing `.git`. Equivalent SSH and HTTPS URLs identify the same repository and belong to one Project. See [Projects](/reference/apps#keep-one-repository-owner).
 - **Instance** — One managed copy of a Project on a Node. Placement on app-dev uses a checkout or worktree. Placement on app-prod requires a candidate. See [ADR 0047](/decisions/0047-create-production-appinstances-from-candidates) and [Applications](/domains/applications).

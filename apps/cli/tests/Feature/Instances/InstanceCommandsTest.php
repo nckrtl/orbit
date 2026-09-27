@@ -143,8 +143,8 @@ describe('instance:register', function (): void {
         $this
             ->artisan('instance:register', [
                 '--yes' => true,
-                '--app-name' => 'Confirmed',
-                '--app-slug' => 'confirmed',
+                '--project-name' => 'Confirmed',
+                '--project-slug' => 'confirmed',
                 '--default-branch' => 'trunk',
                 '--root' => 'web',
                 '--no-interaction' => true,
@@ -188,7 +188,7 @@ describe('instance:register', function (): void {
         expect(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))->toBe([
             'error' => [
                 'code' => 'instance.registration_values_unresolved',
-                'message' => 'Non-interactive registration requires unresolved App values as options.',
+                'message' => 'Non-interactive registration requires unresolved Project values as options.',
                 'request_id' => null,
             ],
         ]);
@@ -206,7 +206,7 @@ describe('instance:register', function (): void {
         $this
             ->artisan('instance:register', [
                 '--yes' => true,
-                '--app' => '3',
+                '--project' => '3',
                 '--include-worktrees' => true,
                 '--name' => 'feature',
                 '--domain' => 'feature.test',

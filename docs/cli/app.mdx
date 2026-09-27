@@ -1,10 +1,10 @@
 ---
 title: "app"
-description: "Compatibility page. The previous App CLI family is now project."
+description: "The old App CLI command family is removed; use project commands instead."
 ---
 
-The previous App CLI family is now [`project`](/cli/project). Use `project:create`, `project:list`, `project:show`, `project:update`, and `project:destroy`.
+The App CLI command family has been removed. Use [`project`](/cli/project) for Project records, including `project:create`, `project:list`, `project:show`, `project:update`, and `project:destroy`.
 
-`/api/v1/apps` remains a dual-read and dual-write path for the same Project records so older CLI binaries and `app-*` MCP tools keep working during the fleet upgrade. This repository's command surface ships `project:*` and drops `app:*`.
+The Gateway serves repository records at `/api/v1/projects` and publishes Project MCP tools. Update older CLI binaries and clients to use that Project surface.
 
-See [Projects](/reference/apps) and [ADR 0105](/decisions/0105-name-applications-as-project-and-instance).
+See [Projects](/reference/apps) and [ADR 0177](/decisions/0177-remove-the-app-compatibility-surface).

@@ -26,7 +26,7 @@ final class StoreAppRequest extends FormRequest
             'code' => ['sometimes', 'filled', 'string', 'regex:/\A[A-Z]{3}\z/D'],
             'slug' => ['required', 'string', 'alpha_dash:ascii', 'max:63'],
             'type' => [
-                str_starts_with((string) $this->route()?->getName(), 'project:') ? 'required' : 'sometimes',
+                'required',
                 'string',
                 Rule::enum(ProjectType::class),
             ],
@@ -83,7 +83,7 @@ final class StoreAppRequest extends FormRequest
             code: is_string($validated['code'] ?? null) ? $validated['code'] : null,
             name: is_string($validated['name'] ?? null) ? $validated['name'] : $slug,
             slug: $slug,
-            type: ProjectType::tryFrom(is_string($validated['type'] ?? null) ? $validated['type'] : '') ?? ProjectType::LaravelApp,
+            type: ProjectType::from(is_string($validated['type'] ?? null) ? $validated['type'] : ''),
             repositoryUrl: is_string($validated['repository_url'] ?? null) ? $validated['repository_url'] : '',
             defaultBranch: is_string($validated['default_branch'] ?? null) ? $validated['default_branch'] : null,
             root: is_string($validated['root'] ?? null) ? $validated['root'] : '',

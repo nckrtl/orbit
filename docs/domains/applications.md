@@ -155,7 +155,7 @@ A confirmed setup command failure triggers teardown and removal of the new Insta
 
 ## Reconcile a Project update
 
-`app:update` keeps one Project identity while it reconciles source defaults that Instances already inherit. Creation stays a separate idempotent operation. [Projects](/reference/apps#update-an-app) owns the command fields, failure codes, and retry contract.
+`project:update` keeps one Project identity while it reconciles source defaults that Instances already inherit. Creation stays a separate idempotent operation. [Projects](/reference/apps#update-an-app) owns the command fields, failure codes, and retry contract.
 
 ### Inherited source and Route effects
 

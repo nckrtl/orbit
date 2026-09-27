@@ -318,17 +318,6 @@
             ]
           },
           {
-            "group": "Apps",
-            "openapi": "/openapi.json",
-            "pages": [
-              "GET /api/v1/apps",
-              "POST /api/v1/apps",
-              "DELETE /api/v1/apps/{app}",
-              "GET /api/v1/apps/{app}",
-              "PATCH /api/v1/apps/{app}"
-            ]
-          },
-          {
             "group": "Projects",
             "openapi": "/openapi.json",
             "pages": [
@@ -443,11 +432,6 @@
             "group": "Processes",
             "openapi": "/openapi.json",
             "pages": [
-              "GET /api/v1/apps/{app}/process-definitions",
-              "POST /api/v1/apps/{app}/process-definitions",
-              "DELETE /api/v1/apps/{app}/process-definitions/{process_definition}",
-              "GET /api/v1/apps/{app}/process-definitions/{process_definition}",
-              "PUT /api/v1/apps/{app}/process-definitions/{process_definition}",
               "GET /api/v1/processes",
               "POST /api/v1/processes",
               "DELETE /api/v1/processes/{process}",
@@ -464,11 +448,6 @@
             "group": "Schedules",
             "openapi": "/openapi.json",
             "pages": [
-              "GET /api/v1/apps/{app}/schedule-definitions",
-              "POST /api/v1/apps/{app}/schedule-definitions",
-              "DELETE /api/v1/apps/{app}/schedule-definitions/{schedule_definition}",
-              "GET /api/v1/apps/{app}/schedule-definitions/{schedule_definition}",
-              "PUT /api/v1/apps/{app}/schedule-definitions/{schedule_definition}",
               "GET /api/v1/schedules",
               "POST /api/v1/schedules",
               "DELETE /api/v1/schedules/{schedule}",

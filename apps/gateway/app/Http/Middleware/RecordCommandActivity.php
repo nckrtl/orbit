@@ -572,7 +572,7 @@ final readonly class RecordCommandActivity
             return $this->appInstanceCloneInput($request);
         }
 
-        if ($command === 'app:update') {
+        if ($command === 'project:update') {
             return $this->appUpdateInput($request);
         }
 

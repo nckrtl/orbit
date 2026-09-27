@@ -143,11 +143,11 @@
             "kind": "product",
             "components": [],
             "concepts": [
-                "Instance",
+                "Gateway",
                 "Project"
             ],
             "governing_adrs": [
-                "0105"
+                "0177"
             ]
         },
         {

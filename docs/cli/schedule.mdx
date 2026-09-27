@@ -9,15 +9,15 @@ The [Schedules reference](/reference/schedules) owns the stored fields, executio
 
 ## Choose the owner
 
-`schedule:create` needs exactly one selector. The CLI refuses two selectors together, a missing selector, `--for` without `--app`, and `--no-start` with `--node` before it sends a request, and it never prompts for a target.
+`schedule:create` needs exactly one selector. The CLI refuses two selectors together, a missing selector, `--for` without `--project`, and `--no-start` with `--node` before it sends a request, and it never prompts for a target.
 
 | Selector | Owner | Result |
 | --- | --- | --- |
 | `--node=ID` | Node | The command runs as the Node's managed `orbit` user. The timer installs enabled. |
 | `--instance=ID` | Instance | The command runs as the Instance runtime user in its checkout or `current` release. The timer can install disabled. |
-| `--app=APP --for=ENV[,ENV]` | Project definition | The Gateway records a reusable definition. Production preparation copies it into a stopped Instance Schedule. |
+| `--project=APP --for=ENV[,ENV]` | Project definition | The Gateway records a reusable definition. Production preparation copies it into a stopped Instance Schedule. |
 
-`schedule:show`, `schedule:update`, and `schedule:destroy` with `--app` select a definition by name. `schedule:run`, `schedule:logs`, and `schedule:enable` take the UUID of an installed Schedule and do not accept `--app`.
+`schedule:show`, `schedule:update`, and `schedule:destroy` with `--project` select a definition by name. `schedule:run`, `schedule:logs`, and `schedule:enable` take the UUID of an installed Schedule and do not accept `--project`.
 
 ## Commands
 
@@ -39,7 +39,7 @@ Every command accepts `--json`. Output shows `desired_timer_state` separately fr
 Create one Schedule for a Node or an Instance, or record a Project Schedule definition.
 
 ```bash
-orbit schedule:create <name> (--node=ID | --instance=ID | --app=APP --for=ENV[,ENV]) --calendar=CALENDAR --command=COMMAND [options]
+orbit schedule:create <name> (--node=ID | --instance=ID | --project=APP --for=ENV[,ENV]) --calendar=CALENDAR --command=COMMAND [options]
 ```
 
 | Argument | Required | Meaning |
@@ -50,8 +50,8 @@ orbit schedule:create <name> (--node=ID | --instance=ID | --app=APP --for=ENV[,E
 | --- | --- | --- |
 | `--node=ID` | none | Positive Node ID. |
 | `--instance=ID` | none | Positive Instance ID. |
-| `--app=APP` | none | Numeric Project ID for a definition. |
-| `--for=ENV[,ENV]` | none | Definition environments, `development` or `production`. Required with `--app`. |
+| `--project=APP` | none | Numeric Project ID for a definition. |
+| `--for=ENV[,ENV]` | none | Definition environments, `development` or `production`. Required with `--project`. |
 | `--calendar=CALENDAR` | none | Native systemd calendar expression of at most 255 printable ASCII bytes, such as `daily`, `hourly`, or `Mon..Fri 02:00`. |
 | `--command=COMMAND` | none | One non-empty line of at most 4,096 bytes. |
 | `--timeout=SECONDS` | `3600` | Execution timeout from 1 through 86,400 seconds. |
@@ -60,7 +60,7 @@ orbit schedule:create <name> (--node=ID | --instance=ID | --app=APP --for=ENV[,E
 ```bash
 orbit schedule:create daily-report --node=7 --calendar=daily --command='php report.php'
 orbit schedule:create hourly-report --instance=12 --calendar=hourly --command='php artisan report:send' --no-start
-orbit schedule:create hourly-report --app=1 --for=production --calendar=hourly --command='php artisan report:send' --timeout=600
+orbit schedule:create hourly-report --project=1 --for=production --calendar=hourly --command='php artisan report:send' --timeout=600
 ```
 
 The target Node's `systemd-analyze calendar` accepts or rejects the calendar for a Node or Instance Schedule. A definition stores the calendar without that check, because it has no host Node yet; the check runs when Orbit copies the definition into an Instance.
@@ -78,12 +78,12 @@ A production Instance without a selected release accepts a Schedule installed wi
 List authorized Schedule summaries without command text, or the definitions of one Project.
 
 ```bash
-orbit schedule:list [--app=APP] [--json]
+orbit schedule:list [--project=APP] [--json]
 ```
 
 | Option | Meaning |
 | --- | --- |
-| `--app=APP` | List the Project's Schedule definitions instead of installed Schedules. |
+| `--project=APP` | List the Project's Schedule definitions instead of installed Schedules. |
 
 The list contains only Schedules whose target Node you may address.
 
@@ -92,16 +92,16 @@ The list contains only Schedules whose target Node you may address.
 Show one authorized Schedule, including its command text, or one definition by name.
 
 ```bash
-orbit schedule:show <schedule> [--app=APP] [--json]
+orbit schedule:show <schedule> [--project=APP] [--json]
 ```
 
 | Argument | Required | Meaning |
 | --- | --- | --- |
-| `schedule` | yes | Schedule UUID, or the definition name with `--app`. |
+| `schedule` | yes | Schedule UUID, or the definition name with `--project`. |
 
 | Option | Meaning |
 | --- | --- |
-| `--app=APP` | Numeric Project ID. Selects a definition. |
+| `--project=APP` | Numeric Project ID. Selects a definition. |
 
 The result includes `desired_timer_state`, `last_run_at`, and `last_run_status` for an installed Schedule.
 
@@ -110,7 +110,7 @@ The result includes `desired_timer_state`, `last_run_at`, and `last_run_status` 
 Replace one Project Schedule definition with a complete specification.
 
 ```bash
-orbit schedule:update <name> --app=APP --for=ENV[,ENV] --calendar=CALENDAR --command=COMMAND [--timeout=SECONDS] [--json]
+orbit schedule:update <name> --project=APP --for=ENV[,ENV] --calendar=CALENDAR --command=COMMAND [--timeout=SECONDS] [--json]
 ```
 
 | Argument | Required | Meaning |
@@ -170,16 +170,16 @@ Use it after `schedule:create --no-start` or for a production copy that preparat
 Remove one Schedule through the Gateway, or one definition by name.
 
 ```bash
-orbit schedule:destroy <schedule> [--app=APP] [--yes] [--json]
+orbit schedule:destroy <schedule> [--project=APP] [--yes] [--json]
 ```
 
 | Argument | Required | Meaning |
 | --- | --- | --- |
-| `schedule` | yes | Schedule UUID, or the definition name with `--app`. |
+| `schedule` | yes | Schedule UUID, or the definition name with `--project`. |
 
 | Option | Meaning |
 | --- | --- |
-| `--app=APP` | Numeric Project ID. Selects a definition. |
+| `--project=APP` | Numeric Project ID. Selects a definition. |
 | `--yes` | Confirm destruction without prompting. Interactive confirmation defaults to No. A JSON or non-interactive call without `--yes` returns `input.confirmation_required`. Interactive decline, Ctrl-C, and EOF cancel with `input.cancelled`. |
 
 <Warning>

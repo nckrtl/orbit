@@ -52,7 +52,7 @@ describe('app updates', function (): void {
     });
 
     it('records the task check in activity on the compatibility path', function (): void {
-        $this->patchJson('/api/v1/apps/'.$this->fixture->app->id, [
+        $this->patchJson('/api/v1/projects/'.$this->fixture->app->id, [
             'task_check' => 'composer test',
         ])
             ->assertOk()
@@ -61,7 +61,7 @@ describe('app updates', function (): void {
         expect(Activity::query()->latest('id')->first()?->properties['input'] ?? null)
             ->toBe(['task_check' => 'composer test']);
 
-        $this->patchJson('/api/v1/apps/'.$this->fixture->app->id, [
+        $this->patchJson('/api/v1/projects/'.$this->fixture->app->id, [
             'task_check' => null,
         ])->assertOk();
 
@@ -173,7 +173,7 @@ describe('app updates', function (): void {
 
         $this
             ->withHeader('X-Orbit-Request-Id', (string) Str::uuid())
-            ->patchJson('/api/v1/apps/'.$this->fixture->app->id, [
+            ->patchJson('/api/v1/projects/'.$this->fixture->app->id, [
                 'default_branch' => 'stable',
             ])
             ->assertOk()
@@ -201,7 +201,7 @@ describe('app updates', function (): void {
         $https = 'https://github.com/acme/site.git';
 
         $this
-            ->patchJson('/api/v1/apps/'.$this->fixture->app->id, [
+            ->patchJson('/api/v1/projects/'.$this->fixture->app->id, [
                 'repository_url' => $https,
             ])
             ->assertOk()
@@ -224,7 +224,7 @@ describe('app updates', function (): void {
         ]);
 
         $this
-            ->patchJson('/api/v1/apps/'.$this->fixture->app->id, [
+            ->patchJson('/api/v1/projects/'.$this->fixture->app->id, [
                 'repository_url' => 'https://github.com/acme/other.git',
             ])
             ->assertConflict()
@@ -253,7 +253,7 @@ describe('app updates', function (): void {
         ]);
 
         $this
-            ->patchJson('/api/v1/apps/'.$this->fixture->app->id, [
+            ->patchJson('/api/v1/projects/'.$this->fixture->app->id, [
                 'slug' => 'shop',
                 'default_branch' => 'stable',
                 'root' => 'web/public',
@@ -282,7 +282,7 @@ describe('app updates', function (): void {
 
     it('exposes default_branch and rejects main_branch on App updates', function (): void {
         $this
-            ->patchJson('/api/v1/apps/'.$this->fixture->app->id, [
+            ->patchJson('/api/v1/projects/'.$this->fixture->app->id, [
                 'main_branch' => 'stable',
             ])
             ->assertUnprocessable()
@@ -291,12 +291,12 @@ describe('app updates', function (): void {
         expect($this->fixture->app->refresh()->default_branch)->toBe('main');
     });
 
-    it('records app:update activity without main_branch', function (): void {
+    it('records project:update activity without main_branch', function (): void {
         $requestId = (string) Str::uuid();
 
         $this
             ->withHeader('X-Orbit-Request-Id', $requestId)
-            ->patchJson('/api/v1/apps/'.$this->fixture->app->id, [
+            ->patchJson('/api/v1/projects/'.$this->fixture->app->id, [
                 'default_branch' => 'stable',
             ])
             ->assertOk();
@@ -304,7 +304,7 @@ describe('app updates', function (): void {
         $activity = Activity::query()->where('request_id', $requestId)->sole();
 
         expect($activity->command)
-            ->toBe('app:update')
+            ->toBe('project:update')
             ->and($activity->properties->toArray())
             ->not
             ->toHaveKey('main_branch')
@@ -317,7 +317,7 @@ describe('app updates', function (): void {
         $oldRouteId = $this->fixture->defaultRoute->id;
 
         $this
-            ->patchJson('/api/v1/apps/'.$this->fixture->app->id, [
+            ->patchJson('/api/v1/projects/'.$this->fixture->app->id, [
                 'slug' => 'shop',
             ])
             ->assertOk()
