@@ -186,10 +186,30 @@ The server reports one of the Orbit thread states from its own evidence. The Gat
 | A turn was accepted and has not settled | `working` |
 | The last assistant message stopped normally | `done` |
 | The turn ended with a provider error, an interruption, or the output limit | `failed`, with the error |
-| The server restarted while the turn was active | `failed`, with a restart error |
+| The server restarted while the turn was active | `failed`, with error `The Pi server restarted during the turn.` |
 
 Pi has no approvals, so a Pi thread never asks for input. A new turn replaces a `done` or `failed` state with `working`.
 
 ## Restarts
 
-Transcripts persist as Pi session files. After a restart, the server reloads a session when it is first used. Accepted send keys persist, so a repeated send after a restart still starts no turn. The server records a turn as active before it starts and clears the record when the turn settles. A record still marked active after a restart reports `failed`.
+Transcripts persist as Pi session files. After a restart, the server reloads a session when it is first used. Accepted send keys persist, so a repeated send after a restart still starts no turn. The server records a turn as active before it starts and clears the record when the turn settles. A record still marked active after a restart reports `failed` with the error `The Pi server restarted during the turn.` The Gateway resumes that turn. [Recover a Pi server restart](/reference/tasks#recover-a-pi-server-restart) states how.
+
+## Roll out a new binary
+
+Stop the Gateway scheduler before you replace `pi-server` on a Node. A restart kills every turn that is `working` on that server. Pausing first keeps those turns alive. [Recover a Pi server restart](/reference/tasks#recover-a-pi-server-restart) still heals a turn the wait missed. [ADR 0167](/decisions/0167-resume-a-pi-turn-interrupted-by-a-server-restart) records the pause and the resume.
+
+1. Stop the Process that runs `php artisan schedule:work` in the Gateway checkout. Find its numeric id with [`process:list`](/cli/process#orbit-processlist). [`process:stop`](/cli/process#orbit-processstop) stops that unit.
+2. On the host that runs the Gateway checkout, confirm that no process is running `artisan tasks:tick`.
+3. Wait until no Pi session you will restart has live state `working`. Read that state from the Pi server, not from [`tasks:agents`](/cli/tasks#orbit-tasksagents).
+4. On the Node, replace the binary the `pi-server` Process runs. Restart that Process with [`process:restart`](/cli/process#orbit-processrestart).
+5. Start the scheduler Process again with [`process:start`](/cli/process#orbit-processstart).
+
+[`process:stop`](/cli/process#orbit-processstop) returns when that unit is inactive. The cache lock is a different signal. `tasks:tick` holds `orbit:tasks:tick` for 300 seconds and releases the lock when the command returns. The lock can expire while that command is still running, so an expired lock is not proof the command has exited. Step 2 is that proof.
+
+[`tasks:agents`](/cli/tasks#orbit-tasksagents) and `GET /api/v1/task-groups/{group}/agents` return the stored row. The tick writes that row. While the tick is paused, a finished turn can stay `working` there. Use the list only for the thread id, the driver, and `external_id`. [`tasks:list`](/cli/tasks#orbit-taskslist) with status `running`, then `reviewing`, names the groups.
+
+For a `pi` thread, `GET /sessions/{external_id}` on that Node is the live snapshot. Wait until `state` is not `working`. The first `snapshot` event on `GET /api/v1/task-groups/{group}/agents/{thread}/stream` is that same snapshot. The stream reads Pi and does not write the stored row. The [agent viewer](/reference/tasks#agent-viewer) shows it.
+
+The [install steps](#install-on-a-node) copy the binary to `~/.local/bin/pi-server`. Replace the file that Process actually runs.
+
+A turn still `working` at the restart fails with the restart error. The next tick resumes it, at most twice for that subtask. Do not post a resolution comment for that failure.

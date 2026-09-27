@@ -108,13 +108,13 @@ final readonly class T3ThreadCreator
     /**
      * @param  array{instanceId: string, model: string, options: list<array{id: string, value: string}>}  $selection
      */
-    public function startTurn(Node $node, string $threadId, string $message, array $selection): void
+    public function startTurn(Node $node, string $threadId, string $message, array $selection, ?string $key = null): void
     {
-        $messageId = (string) Str::uuid();
+        $messageId = $key ?? (string) Str::uuid();
 
         $this->dispatcher->dispatch($node, [
             'type' => 'thread.turn.start',
-            'commandId' => (string) Str::uuid(),
+            'commandId' => $key ?? (string) Str::uuid(),
             'threadId' => $threadId,
             'message' => [
                 'messageId' => $messageId,

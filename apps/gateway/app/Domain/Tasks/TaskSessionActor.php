@@ -71,6 +71,16 @@ final readonly class TaskSessionActor
         $this->drivers->get($thread->driver)->send($thread, $message);
     }
 
+    /**
+     * Continues one thread after a server restart. The key was reserved before this call. Pi posts it
+     * as the send key. T3 posts it as the command id and the message id (ADR 0167).
+     */
+    public function resumeInterruptedTurn(TaskGroup $group, TaskThreadObservation $observed, string $message, string $key): void
+    {
+        $thread = $this->thread($group, $observed);
+        $this->drivers->get($thread->driver)->send($thread, $message, $key);
+    }
+
     private function thread(TaskGroup $group, TaskThreadObservation $observed): AgentThread
     {
         if (! $observed->available) {

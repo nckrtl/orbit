@@ -43,9 +43,11 @@ final readonly class T3Driver implements AgentDriver
         return $this->creator->create($intent);
     }
 
-    public function send(AgentThread $thread, string $message): void
+    public function send(AgentThread $thread, string $message, ?string $key = null): void
     {
-        $this->creator->startTurn($this->node($thread), $thread->external_id, $message, T3ModelSelection::forModel($thread->model ?? '', $thread->effort ?? ($thread->role === 'reviewer' ? TaskAgentDefaults::ReviewerEffort : TaskAgentDefaults::ImplementerEffort)));
+        // A reserved resume key is the command id and the message id. T3 0.0.42 returns the
+        // existing receipt for that command id, so a retry does not start a second turn (ADR 0167).
+        $this->creator->startTurn($this->node($thread), $thread->external_id, $message, T3ModelSelection::forModel($thread->model ?? '', $thread->effort ?? ($thread->role === 'reviewer' ? TaskAgentDefaults::ReviewerEffort : TaskAgentDefaults::ImplementerEffort)), $key);
     }
 
     public function respond(AgentThread $thread, AgentInputRequest $request, array $answers): void
