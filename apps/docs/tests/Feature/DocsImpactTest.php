@@ -50,6 +50,8 @@ function docsImpactFixture(): string
     mkdir($root.'/apps/gateway/app/Http/Mcp', 0777, true);
     mkdir($root.'/apps/gateway/app/Http/Controllers/Api', 0777, true);
     mkdir($root.'/apps/gateway/app/Http/Requests/Widgets', 0777, true);
+    mkdir($root.'/apps/gateway/app/Console/Commands', 0777, true);
+    mkdir($root.'/apps/cli/app/Commands/Routes', 0777, true);
     mkdir($root.'/apps/gateway/resources/mcp', 0777, true);
     mkdir($root.'/config', 0777, true);
     mkdir($root.'/apps/docs/config', 0777, true);
@@ -165,7 +167,6 @@ it('docs impact reports removed Doctor codes from a retained enum file', functio
 
 it('docs impact reports a registered command removed from a retained file', function (): void {
     $root = docsImpactFixture();
-    mkdir($root.'/apps/gateway/app/Console', 0777, true);
     $path = 'apps/gateway/app/Console/Kernel.php';
     file_put_contents($root.'/'.$path, "<?php Schedule::command('tasks:tick')->everyMinute();\n");
     exec('git -C '.escapeshellarg($root).' add '.escapeshellarg($path));
@@ -319,7 +320,6 @@ it('docs impact uses a model coverage glob for the matching migration table', fu
 it('docs impact maps scheduled commands and schedule timing', function (): void {
     $root = docsImpactFixture();
     file_put_contents($root.'/docs/reference/schedules.md', "---\ntitle: Schedules\n---\nSchedules\n");
-    mkdir($root.'/apps/gateway/app/Console', 0777, true);
     $path = 'apps/gateway/app/Console/Kernel.php';
     file_put_contents($root.'/'.$path, "<?php Schedule::command('tasks:tick')->everyMinute();\n");
     $report = new DocsImpact($root)->report(null, [$path]);
@@ -597,4 +597,226 @@ it('docs impact exposes surfaces handled by generators', function (): void {
 
     expect($report['surfaces_handled_by_generator'])->not->toBeEmpty()
         ->and($report['surfaces_handled_by_generator'][0])->toHaveKeys(['generator', 'paths', 'current']);
+});
+
+it('docs impact maps Gateway class command signatures to their owner page', function (): void {
+    $root = docsImpactFixture();
+    file_put_contents($root.'/docs/reference/node-agent.md', "---\ntitle: Node agent\n---\nNode agent\n");
+    $path = 'apps/gateway/app/Console/Commands/AgentViewCommand.php';
+    file_put_contents($root.'/'.$path, "<?php class AgentViewCommand { protected \$signature = 'orbit:agent-view'; }\n");
+    exec('git -C '.escapeshellarg($root).' add .');
+    exec('git -C '.escapeshellarg($root).' -c user.name=Docs -c user.email=docs@example.test commit -qm command');
+    file_put_contents($root.'/'.$path, "<?php class AgentViewCommand { protected \$signature = 'orbit:agent-display'; }\n");
+
+    $report = new DocsImpact($root)->report('HEAD', [$path]);
+
+    expect(collect($report['impacted_pages'])->pluck('page'))->toContain('docs/reference/node-agent.md')
+        ->and($report['errors'])->toContain("Unowned Gateway console command [orbit:agent-display] in {$path}.");
+});
+
+it('docs impact recognizes the explicitly internal CLI family', function (): void {
+    $root = docsImpactFixture();
+    $path = 'apps/cli/app/Commands/InternalDatabaseLocalCommand.php';
+    file_put_contents($root.'/'.$path, "<?php class InternalDatabaseLocalCommand { protected \$signature = 'internal:database-local'; }\n");
+
+    $report = new DocsImpact($root)->report(null, [$path]);
+
+    expect($report['errors'])->toBe([])
+        ->and(collect($report['impacted_pages'])->pluck('page'))->toContain('docs/reference/tasks.md');
+});
+
+it('docs impact ignores comment-only CLI command edits and unchanged source errors', function (): void {
+    $root = docsImpactFixture();
+    $path = 'apps/cli/app/Commands/NodeList.php';
+    file_put_contents($root.'/'.$path, "<?php class NodeList { protected \$signature = 'node:list'; }\n");
+    file_put_contents($root.'/apps/gateway/database/migrations/2026_01_01_create_orphans.php', "<?php Schema::create('orphans', function (Blueprint \$table): void {});\n");
+    exec('git -C '.escapeshellarg($root).' add .');
+    exec('git -C '.escapeshellarg($root).' -c user.name=Docs -c user.email=docs@example.test commit -qm baseline');
+    file_put_contents($root.'/'.$path, "<?php // comment only\nclass NodeList { protected \$signature = 'node:list'; }\n");
+    file_put_contents($root.'/apps/gateway/database/migrations/2026_01_01_create_orphans.php', "<?php // comment only\nSchema::create('orphans', function (Blueprint \$table): void {});\n");
+
+    $report = new DocsImpact($root)->report('HEAD', [$path, 'apps/gateway/database/migrations/2026_01_01_create_orphans.php']);
+
+    expect($report['errors'])->toBe([])
+        ->and(collect($report['impacted_pages'])->pluck('page'))->not->toContain('docs/cli/node.mdx');
+});
+
+it('docs impact reports deleted and signature-removed CLI command owners', function (): void {
+    $root = docsImpactFixture();
+    $path = 'apps/cli/app/Commands/NodeList.php';
+    exec('git -C '.escapeshellarg($root).' rm -q '.escapeshellarg($path));
+    $report = new DocsImpact($root)->report('HEAD', [$path]);
+
+    expect(collect($report['impacted_pages'])->pluck('page'))->toContain('docs/cli/node.mdx');
+
+    file_put_contents($root.'/'.$path, "<?php class NodeList { protected \$signature = 'node:list'; }\n");
+    exec('git -C '.escapeshellarg($root).' add '.escapeshellarg($path));
+    exec('git -C '.escapeshellarg($root).' -c user.name=Docs -c user.email=docs@example.test commit -qm restored');
+    file_put_contents($root.'/'.$path, "<?php class NodeList {}\n");
+    $removedSignature = new DocsImpact($root)->report('HEAD', [$path]);
+
+    expect(collect($removedSignature['impacted_pages'])->pluck('page'))->toContain('docs/cli/node.mdx');
+});
+
+it('docs impact marks both CLI owners when a command changes families', function (): void {
+    $root = docsImpactFixture();
+    file_put_contents($root.'/docs/cli/route.mdx', "---\ntitle: Route\n---\nRoute\n");
+    $path = 'apps/cli/app/Commands/NodeList.php';
+    file_put_contents($root.'/'.$path, "<?php class NodeList { protected \$signature = 'node:list'; }\n");
+    exec('git -C '.escapeshellarg($root).' add .');
+    exec('git -C '.escapeshellarg($root).' -c user.name=Docs -c user.email=docs@example.test commit -qm baseline');
+    file_put_contents($root.'/'.$path, "<?php class NodeList { protected \$signature = 'route:list'; }\n");
+
+    $report = new DocsImpact($root)->report('HEAD', [$path]);
+
+    expect(collect($report['impacted_pages'])->pluck('page'))->toContain('docs/cli/node.mdx', 'docs/cli/route.mdx');
+});
+
+it('docs impact ignores comment-only changes to actual CLI commands with error identifiers', function (): void {
+    $root = docsImpactFixture();
+    mkdir($root.'/bin', 0777, true);
+    foreach (['bin/cli-contract', 'bin/docs-openapi'] as $generator) {
+        file_put_contents($root.'/'.$generator, "#!/bin/sh\nexit 0\n");
+        chmod($root.'/'.$generator, 0755);
+    }
+    $path = 'apps/cli/app/Commands/Routes/CreateRouteCommand.php';
+    $actual = file_get_contents(base_path('../../apps/cli/app/Commands/Routes/CreateRouteCommand.php'));
+    expect($actual)->toBeString();
+    file_put_contents($root.'/'.$path, $actual);
+    exec('git -C '.escapeshellarg($root).' add .');
+    exec('git -C '.escapeshellarg($root).' -c user.name=Docs -c user.email=docs@example.test commit -qm baseline');
+    file_put_contents($root.'/'.$path, "<?php // unrelated comment\n".$actual);
+
+    $report = new DocsImpact($root)->report('HEAD', [$path]);
+
+    expect($report['verdict'])->toBe('no_docs_change')
+        ->and($report['impacted_pages'])->toBe([])
+        ->and($report['errors'])->toBe([]);
+});
+
+it('docs impact ignores comment-only changes to the actual Gateway task command', function (): void {
+    $root = docsImpactFixture();
+    $path = 'apps/gateway/app/Console/Commands/RenderTaskPromptCommand.php';
+    $source = file_get_contents(dirname(__DIR__, 4).'/'.$path);
+    expect($source)->toBeString();
+    file_put_contents($root.'/'.$path, $source);
+    exec('git -C '.escapeshellarg($root).' add .');
+    exec('git -C '.escapeshellarg($root).' -c user.name=Docs -c user.email=docs@example.test commit -qm baseline');
+    file_put_contents($root.'/'.$path, "<?php // unrelated comment\n".$source);
+
+    $report = new DocsImpact($root)->report('HEAD', [$path]);
+
+    expect($report['verdict'])->toBe('no_docs_change')
+        ->and($report['impacted_pages'])->toBe([]);
+});
+
+it('docs impact ignores unchanged unowned error identifiers moved by a comment', function (): void {
+    $root = docsImpactFixture();
+    $path = 'apps/gateway/app/Domain/Unmapped/UnownedIdentifier.php';
+    mkdir(dirname($root.'/'.$path), 0777, true);
+    $source = "<?php return ['errorCode' => 'example.failed'];\n";
+    file_put_contents($root.'/'.$path, $source);
+    exec('git -C '.escapeshellarg($root).' add .');
+    exec('git -C '.escapeshellarg($root).' -c user.name=Docs -c user.email=docs@example.test commit -qm baseline');
+    file_put_contents($root.'/'.$path, "<?php // comment shifts the diagnostic line\n".$source);
+
+    $report = new DocsImpact($root)->report('HEAD', [$path]);
+
+    expect($report['errors'])->toBe([]);
+});
+
+it('docs impact reports unowned error identifiers genuinely added and removed', function (): void {
+    $root = docsImpactFixture();
+    $path = 'apps/gateway/app/Domain/Unmapped/UnownedIdentifier.php';
+    mkdir(dirname($root.'/'.$path), 0777, true);
+    file_put_contents($root.'/'.$path, "<?php return ['errorCode' => 'example.old_failure'];\n");
+    exec('git -C '.escapeshellarg($root).' add .');
+    exec('git -C '.escapeshellarg($root).' -c user.name=Docs -c user.email=docs@example.test commit -qm baseline');
+    file_put_contents($root.'/'.$path, "<?php return ['errorCode' => 'example.new_failure'];\n");
+
+    $report = new DocsImpact($root)->report('HEAD', [$path]);
+
+    expect($report['errors'])->toContain('Unowned error identifier [example.new_failure] in '.$path.':1.')
+        ->and($report['errors'])->toContain('Removed from current source: Unowned error identifier [example.old_failure] in '.$path.':1.');
+});
+
+it('docs impact reports Laravel console route schedule changes', function (): void {
+    $root = docsImpactFixture();
+    file_put_contents($root.'/docs/reference/schedules.md', "---\ntitle: Schedules\n---\nSchedules\n");
+    $path = 'apps/gateway/routes/console.php';
+    file_put_contents($root.'/'.$path, "<?php Schedule::command('tasks:tick')->dailyAt('02:30');\n");
+    exec('git -C '.escapeshellarg($root).' add .');
+    exec('git -C '.escapeshellarg($root).' -c user.name=Docs -c user.email=docs@example.test commit -qm baseline');
+    file_put_contents($root.'/'.$path, "<?php Schedule::command('tasks:tick')->dailyAt('02:45');\n");
+
+    $report = new DocsImpact($root)->report('HEAD', [$path]);
+
+    expect(collect($report['impacted_pages'])->pluck('page'))->toContain('docs/reference/tasks.md', 'docs/reference/schedules.md');
+});
+
+it('docs impact reports Gateway TaskSchedule registration changes only from registration sources', function (): void {
+    $root = docsImpactFixture();
+    file_put_contents($root.'/docs/reference/schedules.md', "---\ntitle: Schedules\n---\nSchedules\n");
+    $path = 'apps/gateway/app/Domain/Tasks/TaskSchedule.php';
+    $source = file_get_contents(dirname(__DIR__, 4).'/'.$path);
+    expect($source)->toBeString();
+    file_put_contents($root.'/'.$path, $source);
+    exec('git -C '.escapeshellarg($root).' add .');
+    exec('git -C '.escapeshellarg($root).' -c user.name=Docs -c user.email=docs@example.test commit -qm baseline');
+    file_put_contents($root.'/'.$path, preg_replace('/->everyTenSeconds\(\)/', '->everyMinute()', $source, 1) ?? $source);
+    $scheduleReport = new DocsImpact($root)->report('HEAD', [$path]);
+
+    $unrelated = 'apps/gateway/app/Domain/Tasks/TaskScheduleComment.php';
+    file_put_contents($root.'/'.$unrelated, "<?php // Schedule::command('tasks:tick')->everyMinute() is discussed here.\n");
+    $unrelatedReport = new DocsImpact($root)->report(null, [$unrelated]);
+
+    expect(collect($scheduleReport['impacted_pages'])->pluck('page'))->toContain('docs/reference/schedules.md')
+        ->and(collect($unrelatedReport['impacted_pages'])->pluck('page'))->not->toContain('docs/reference/schedules.md');
+});
+
+it('docs impact treats API sources as generator-handled when all API generators pass', function (): void {
+    $root = docsImpactFixture();
+    mkdir($root.'/bin', 0777, true);
+    foreach (['bin/docs-openapi', 'bin/api-fixtures', 'bin/mcp-tools'] as $generator) {
+        file_put_contents($root.'/'.$generator, "#!/bin/sh\nexit 0\n");
+        chmod($root.'/'.$generator, 0755);
+    }
+    $path = 'apps/gateway/app/Data/Analytics/AnalyticsCredentialsData.php';
+    mkdir(dirname($root.'/'.$path), 0777, true);
+    $source = file_get_contents(dirname(__DIR__, 4).'/'.$path);
+    expect($source)->toBeString();
+    file_put_contents($root.'/'.$path, $source);
+
+    $report = new DocsImpact($root)->report(null, [$path]);
+
+    expect($report['verdict'])->toBe('no_docs_change')
+        ->and($report['errors'])->toBe([])
+        ->and(collect($report['surfaces'])->pluck('owner'))->not->toContain('unowned')
+        ->and(collect($report['surfaces_handled_by_generator'])->pluck('generator')->all())->toBe(['bin/api-fixtures', 'bin/docs-openapi', 'bin/mcp-tools'])
+        ->and(collect($report['surfaces_handled_by_generator'])->pluck('status')->unique()->all())->toBe(['passed']);
+});
+
+it('docs impact clears removed API diagnostics when generators pass but retains them when a generator fails', function (): void {
+    $root = docsImpactFixture();
+    mkdir($root.'/bin', 0777, true);
+    foreach (['bin/docs-openapi', 'bin/api-fixtures', 'bin/mcp-tools'] as $generator) {
+        file_put_contents($root.'/'.$generator, "#!/bin/sh\nexit 0\n");
+        chmod($root.'/'.$generator, 0755);
+    }
+    $path = 'apps/gateway/app/Data/Analytics/AnalyticsCredentialsData.php';
+    mkdir(dirname($root.'/'.$path), 0777, true);
+    file_put_contents($root.'/'.$path, "<?php return ['errorCode' => 'example.api_failure'];\n");
+    exec('git -C '.escapeshellarg($root).' add .');
+    exec('git -C '.escapeshellarg($root).' -c user.name=Docs -c user.email=docs@example.test commit -qm baseline');
+    exec('git -C '.escapeshellarg($root).' rm -q '.escapeshellarg($path));
+
+    $handled = new DocsImpact($root)->report('HEAD', [$path]);
+    file_put_contents($root.'/bin/api-fixtures', "#!/bin/sh\nexit 1\n");
+    $failed = new DocsImpact($root)->report('HEAD', [$path]);
+
+    expect($handled['verdict'])->toBe('no_docs_change')
+        ->and($handled['errors'])->toBe([])
+        ->and($failed['verdict'])->toBe('docs_required')
+        ->and($failed['errors'])->toContain('Removed from current source: Unable to map API source ['.$path.'] to an OpenAPI operation or schema owner.')
+        ->and($failed['errors'])->toContain('Removed from current source: Unowned error identifier [example.api_failure] in '.$path.':1.');
 });

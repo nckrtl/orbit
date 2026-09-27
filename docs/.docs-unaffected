@@ -1,3 +1,0 @@
-docs/reference/schedules.md: This change adjusts the docs-impact extractor's schedule parsing; it does not change the application's scheduled behavior.
-docs/cli/design.mdx: This change updates a development-only fixture reader to accept the current Gateway fixture shape; it does not change a published CLI command or behavior.
-docs/reference/cli-ux.md: The design-flow change only teaches an internal fixture reader to accept Gateway's current project field; it does not alter command input, output, or the shared CLI design standard.

@@ -1624,7 +1624,8 @@
             "kind": "decision",
             "components": [
                 "apps/cli",
-                "apps/docs"
+                "apps/docs",
+                "apps/gateway"
             ],
             "concepts": [
                 "Activity",

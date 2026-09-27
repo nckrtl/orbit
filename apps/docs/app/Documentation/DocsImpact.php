@@ -11,14 +11,33 @@ final readonly class DocsImpact
 {
     private const array CLI_FAMILIES = [
         'activity', 'analytics', 'app', 'cluster', 'database', 'dns', 'doctor', 'env', 'extension', 'firewall',
-        'gateway', 'github', 'instance', 'metrics', 'node', 'process', 'profile', 'project', 'proxycli',
+        'gateway', 'github', 'instance', 'internal', 'metrics', 'node', 'process', 'profile', 'project', 'proxycli',
         'realtime', 'route', 'schedule', 'tasks', 'tool', 'workspace',
+    ];
+
+    private const array CLI_FAMILY_OWNERS = [
+        'internal' => 'docs/reference/tasks.md',
     ];
 
     private const array NON_CLI_COMMAND_OWNERS = [
         'tasks:tick' => 'docs/reference/tasks.md',
         'annotations:dispatch' => 'docs/reference/agent-annotation.md',
         'orbit:activity-finalize-interrupted' => 'docs/cli/activity.mdx',
+        'orbit:agent-view' => 'docs/reference/node-agent.md',
+        'orbit:caddy-build' => 'docs/reference/gateway-trust.md',
+        'orbit:tasks:jev-report' => 'docs/reference/tasks.md',
+        'orbit:runtime-hibernator' => 'docs/reference/gateway-recovery.md',
+        'tasks:render-prompt' => 'docs/reference/tasks.md',
+        'orbit:private-dns-serve' => 'docs/reference/gateway-trust.md',
+        'orbit:gateway-web' => 'docs/reference/gateway-trust.md',
+        'orbit:agent-view-publish' => 'docs/reference/node-agent.md',
+        'orbit:activity-redact' => 'docs/cli/activity.mdx',
+        'orbit:bootstrap' => 'docs/reference/gateway-trust.md',
+        'orbit:node-dns-repair' => 'docs/reference/node-agent.md',
+        'orbit:node-provision' => 'docs/reference/node-agent.md',
+        'tasks:collect-t3-metrics' => 'docs/reference/tasks.md',
+        'tasks:archive-threads' => 'docs/reference/tasks.md',
+        'orbit:node-retarget' => 'docs/reference/node-agent.md',
     ];
 
     /** @param list<string>|null $ratchetPages */
@@ -77,28 +96,37 @@ final readonly class DocsImpact
                 continue;
             }
 
-            $source = $this->sourceForPath($path, $base);
-            if ($source === null) {
+            $source = is_file($this->root.'/'.$path) ? $this->read($path) : null;
+            $baseSource = $base === null ? null : $this->gitAllowMissing(['show', $base.':'.$path]);
+            if ($source === null && $baseSource === null) {
                 $this->extractPlannedPath($path, $pages, $surfaces, $impacts, $errors);
 
                 continue;
             }
-            $this->extractEnvironmentKeys($path, $source, $surfaces, $impacts);
+
             $this->extractCliRegistration($path, $surfaces, $impacts, $generators, $errors);
-            $this->extractCliSurface($path, $source, $surfaces, $impacts, $generators, $errors);
-            $this->extractApiSurface($path, $source, $operations, $base, $surfaces, $impacts, $generators, $errors);
-            $this->extractDoctorCodes($path, $source, $surfaces, $impacts);
-            $this->extractErrorCodes($path, $source, $operations, $pages, $base, $surfaces, $impacts, $errors);
-            $this->extractMigration($path, $source, $pages, $surfaces, $impacts, $errors);
-            $this->extractRegisteredCommands($path, $source, $pages, $surfaces, $impacts, $errors);
-            $this->extractScheduleDomain($path, $source, $surfaces, $impacts);
-            $this->extractMcpSurface($path, $source, $surfaces, $impacts, $generators);
-            if ($base !== null) {
-                $baseSource = $this->gitAllowMissing(['show', $base.':'.$path]);
-                if ($baseSource !== null && $baseSource !== $source) {
-                    $this->addRemovedSourceSurfaces($path, $baseSource, $operations, $pages, $base, $surfaces, $impacts, $errors);
+            $currentSurfaces = [];
+            $currentImpacts = [];
+            $currentGenerators = [];
+            $currentErrors = [];
+            if ($source !== null) {
+                $this->extractSourceSurfaces($path, $source, $operations, $pages, $base, $currentSurfaces, $currentImpacts, $currentGenerators, $currentErrors);
+            }
+            $baseSurfaces = [];
+            $baseImpacts = [];
+            $baseGenerators = [];
+            $baseErrors = [];
+            if ($baseSource !== null) {
+                $this->extractSourceSurfaces($path, $baseSource, $operations, $pages, $base, $baseSurfaces, $baseImpacts, $baseGenerators, $baseErrors);
+            }
+
+            foreach ([...$currentGenerators, ...$baseGenerators] as $generator => $entry) {
+                foreach ($entry['paths'] as $generatorPath) {
+                    $this->generator($generators, $generator, $generatorPath);
                 }
             }
+            $unchangedSnapshot = $source !== null && $baseSource !== null && rtrim($source, "\r\n") === rtrim($baseSource, "\r\n");
+            $this->mergeChangedSourceSnapshots($path, $currentSurfaces, $baseSurfaces, $currentErrors, $baseErrors, $surfaces, $impacts, $errors, $unchangedSnapshot);
         }
 
         $handled = [];
@@ -131,6 +159,30 @@ final readonly class DocsImpact
                     $this->addSurface($surfaces, $impacts, $generatorPath, 'generated_surface', $this->generatedOwner($name), $reason, $status);
                 }
             }
+        }
+        $generatorStatuses = array_column($handled, 'status', 'generator');
+        if (($generatorStatuses['bin/docs-openapi'] ?? null) === 'passed' && ($generatorStatuses['bin/api-fixtures'] ?? null) === 'passed' && ($generatorStatuses['bin/mcp-tools'] ?? null) === 'passed') {
+            $handledApiPaths = array_fill_keys(array_intersect(
+                $generators['bin/docs-openapi']['paths'] ?? [],
+                $generators['bin/api-fixtures']['paths'] ?? [],
+                $generators['bin/mcp-tools']['paths'] ?? [],
+            ), true);
+            foreach ($surfaces as $surface) {
+                if (isset($handledApiPaths[$surface['path']]) && in_array($surface['kind'], ['api_operation', 'error_code'], true) && $surface['owner'] === 'unowned') {
+                    $this->removeReason($impacts, $surface['owner'], $surface['reason']);
+                }
+            }
+            $surfaces = array_values(array_filter($surfaces, static fn (array $surface): bool => ! (isset($handledApiPaths[$surface['path']]) && in_array($surface['kind'], ['api_operation', 'error_code'], true) && $surface['owner'] === 'unowned')));
+            $errors = array_values(array_filter($errors, static function (string $error) use ($handledApiPaths): bool {
+                $diagnostic = str_starts_with($error, 'Removed from current source: ')
+                    ? substr($error, strlen('Removed from current source: '))
+                    : $error;
+
+                return array_all(array_keys($handledApiPaths), static fn (string $path): bool => ! (
+                    str_starts_with($diagnostic, "Unable to map API source [{$path}]")
+                    || (str_starts_with($diagnostic, 'Unowned error identifier [') && str_contains($diagnostic, " in {$path}:"))
+                ));
+            }));
         }
         usort($surfaces, static fn (array $left, array $right): int => [$left['path'], $left['kind'], $left['owner'], $left['reason']] <=> [$right['path'], $right['kind'], $right['owner'], $right['reason']]);
         ksort($impacts);
@@ -272,34 +324,52 @@ final readonly class DocsImpact
     }
 
     /**
-     * @param  list<array{key: string, path: string, operations: array<string, mixed>}>  $operations
-     * @param  array<string, list<string>>  $pages
+     * @param  list<array{path: string, kind: string, owner: string, reason: string, generator_status: ?string}>  $currentSurfaces
+     * @param  list<array{path: string, kind: string, owner: string, reason: string, generator_status: ?string}>  $baseSurfaces
+     * @param  list<string>  $currentErrors
+     * @param  list<string>  $baseErrors
      * @param  list<array{path: string, kind: string, owner: string, reason: string, generator_status: ?string}>  $surfaces
      * @param  array<string, array{reasons: list<string>}>  $impacts
      * @param  list<string>  $errors
      */
-    private function addRemovedSourceSurfaces(string $path, string $baseSource, array $operations, array $pages, string $base, array &$surfaces, array &$impacts, array &$errors): void
+    private function mergeChangedSourceSnapshots(string $path, array $currentSurfaces, array $baseSurfaces, array $currentErrors, array $baseErrors, array &$surfaces, array &$impacts, array &$errors, bool $unchangedSnapshot = false): void
     {
-        $baseSurfaces = [];
-        $baseImpacts = [];
-        $baseGenerators = [];
-        $baseErrors = [];
-        $this->extractSourceSurfaces($path, $baseSource, $operations, $pages, $base, $baseSurfaces, $baseImpacts, $baseGenerators, $baseErrors);
-
-        $currentSurfaces = array_values(array_filter($surfaces, static fn (array $surface): bool => $surface['path'] === $path));
-        $currentKeys = array_fill_keys(array_map($this->surfaceKey(...), $currentSurfaces), true);
+        $currentByKey = [];
+        foreach ($currentSurfaces as $surface) {
+            $currentByKey[$this->surfaceKey($surface)] = $surface;
+        }
+        $baseByKey = [];
         foreach ($baseSurfaces as $surface) {
-            if (isset($currentKeys[$this->surfaceKey($surface)])) {
-                continue;
+            $baseByKey[$this->surfaceKey($surface)] = $surface;
+        }
+        foreach ($unchangedSnapshot ? $currentByKey : array_diff_key($currentByKey, $baseByKey) as $surface) {
+            $this->addSurface($surfaces, $impacts, $path, $surface['kind'], $surface['owner'], $surface['reason']);
+        }
+        if (! $unchangedSnapshot) {
+            foreach (array_diff_key($baseByKey, $currentByKey) as $surface) {
+                $this->addSurface($surfaces, $impacts, $path, $surface['kind'], $surface['owner'], 'Removed from current source: '.$surface['reason']);
             }
-            $this->addSurface($surfaces, $impacts, $surface['path'], $surface['kind'], $surface['owner'], 'Removed from current source: '.$surface['reason']);
         }
 
+        $currentErrorKeys = array_fill_keys(array_map($this->errorIdentity(...), $currentErrors), true);
+        $baseErrorKeys = array_fill_keys(array_map($this->errorIdentity(...), $baseErrors), true);
+        $migrationKeysChanged = array_keys(array_filter($currentByKey, static fn (array $surface): bool => $surface['kind'] === 'migration' && $surface['owner'] === 'unowned'))
+            !== array_keys(array_filter($baseByKey, static fn (array $surface): bool => $surface['kind'] === 'migration' && $surface['owner'] === 'unowned'));
+        foreach ($currentErrors as $error) {
+            if (! isset($baseErrorKeys[$this->errorIdentity($error)]) || (str_starts_with($error, 'Unowned migration surface') && $migrationKeysChanged)) {
+                $errors[] = $error;
+            }
+        }
         foreach ($baseErrors as $error) {
-            if (! in_array($error, $errors, true)) {
+            if (! isset($currentErrorKeys[$this->errorIdentity($error)])) {
                 $errors[] = 'Removed from current source: '.$error;
             }
         }
+    }
+
+    private function errorIdentity(string $error): string
+    {
+        return preg_replace('/:\\d+(?=\\.?$)/', '', $error) ?? $error;
     }
 
     /**
@@ -326,9 +396,15 @@ final readonly class DocsImpact
     /** @param array{path: string, kind: string, owner: string, reason: string, generator_status: ?string} $surface */
     private function surfaceKey(array $surface): string
     {
-        $reason = preg_replace('/:\\d+\\b/', '', $surface['reason']) ?? $surface['reason'];
+        $location = '/'.preg_quote($surface['path'], '/').':\\d+\\b/';
+        $reason = preg_replace($location, $surface['path'], $surface['reason']) ?? $surface['reason'];
 
         return implode('|', [$surface['path'], $surface['kind'], $surface['owner'], $reason]);
+    }
+
+    private function commandName(string $signature): string
+    {
+        return preg_match('/^\\s*([a-z][a-z0-9-]*(?::[a-z0-9-]+)*)/i', $signature, $match) === 1 ? strtolower($match[1]) : '';
     }
 
     private function commandFamily(string $signature): string
@@ -448,10 +524,6 @@ final readonly class DocsImpact
     }
 
     /**
-     * @param  array<string, array{reasons: list<string>}>  $impacts
-     * @param  list<array{path: string, kind: string, owner: string, reason: string, generator_status: ?string}>  $surfaces
-     */
-    /**
      * @param  list<array{path: string, kind: string, owner: string, reason: string, generator_status: ?string}>  $surfaces
      * @param  array<string, array{reasons: list<string>}>  $impacts
      * @param  array<string, array{paths: list<string>, names: list<string>}>  $generators
@@ -541,7 +613,7 @@ final readonly class DocsImpact
             $families[$family] = true;
         }
         foreach (array_keys($families) as $family) {
-            $page = 'docs/cli/'.$family.'.mdx';
+            $page = self::CLI_FAMILY_OWNERS[$family] ?? 'docs/cli/'.$family.'.mdx';
             $this->addSurface($surfaces, $impacts, $path, 'cli_registration', $page, "CLI family {$family} is registered through {$path}");
         }
     }
@@ -570,14 +642,15 @@ final readonly class DocsImpact
 
             return;
         }
-        $page = 'docs/cli/'.$family.'.mdx';
+        $page = self::CLI_FAMILY_OWNERS[$family] ?? 'docs/cli/'.$family.'.mdx';
         if (! is_file($this->root.'/'.$page)) {
             $errors[] = "CLI family [{$family}] has no documentation owner at {$page}.";
             $this->addSurface($surfaces, $impacts, $path, 'cli_signature', 'unowned', "missing CLI owner {$page} for {$command}");
 
             return;
         }
-        $this->addSurface($surfaces, $impacts, $path, 'cli_signature', $page, "CLI command {$command} in {$path}");
+        preg_match('/protected\s+\$description\s*=\s*[\'"]([^\'"]*)/', $source, $description);
+        $this->addSurface($surfaces, $impacts, $path, 'cli_signature', $page, "CLI command {$command} in {$path}; description ".trim($description[1] ?? ''));
         if ($family === 'env' || str_contains(strtolower($source), 'instance .env') || str_contains($source, "'.env'") || preg_match('/(?:Update|Import|Synchronize)AppInstanceEnvironmentRequest/', $source) === 1) {
             $this->addSurface($surfaces, $impacts, $path, 'instance_environment_command', 'docs/cli/env.mdx', "CLI command reads or changes Instance .env in {$path}");
         }
@@ -663,9 +736,11 @@ final readonly class DocsImpact
             $owners = [];
             if (str_starts_with($path, 'apps/cli/')) {
                 if (preg_match('/protected\s+\$signature\s*=\s*[\'"]([^\'"]+)/', $source, $signature) === 1) {
-                    $owners[] = 'docs/cli/'.$this->commandFamily($signature[1]).'.mdx';
+                    $family = $this->commandFamily($signature[1]);
+                    $owners[] = self::CLI_FAMILY_OWNERS[$family] ?? 'docs/cli/'.$family.'.mdx';
                 } elseif (preg_match('/^([a-z][a-z0-9]*)\./', $identifier, $familyMatch) === 1 && in_array($familyMatch[1], self::CLI_FAMILIES, true)) {
-                    $owners[] = 'docs/cli/'.$familyMatch[1].'.mdx';
+                    $family = $familyMatch[1];
+                    $owners[] = self::CLI_FAMILY_OWNERS[$family] ?? 'docs/cli/'.$family.'.mdx';
                 }
             } elseif ($this->isApiPath($path)) {
                 $owners = [];
@@ -856,7 +931,25 @@ final readonly class DocsImpact
      */
     private function extractRegisteredCommands(string $path, string $source, array $pages, array &$surfaces, array &$impacts, array &$errors): void
     {
-        if (preg_match_all('/(?:Schedule::command|Artisan::command)\s*\(\s*[\'"]([^\'"]+)[\'"]/', $source, $matches, PREG_OFFSET_CAPTURE) === 0) {
+        if (str_starts_with($path, 'apps/gateway/app/Console/Commands/') && preg_match('/protected\\s+\\$signature\\s*=\\s*[\'\"]([^\'\"]+)/', $source, $signature) === 1) {
+            $command = trim(preg_replace('/\\s+/', ' ', $signature[1]) ?? $signature[1]);
+            $page = self::NON_CLI_COMMAND_OWNERS[$this->commandName($command)] ?? null;
+            if ($page === null) {
+                foreach ($pages as $candidate => $patterns) {
+                    if (array_filter($patterns, fn (string $pattern): bool => $this->matches($path, $pattern)) !== []) {
+                        $page = $candidate;
+                        break;
+                    }
+                }
+            }
+            if ($page === null || ! is_file($this->root.'/'.$page)) {
+                $errors[] = "Unowned Gateway console command [{$this->commandName($command)}] in {$path}.";
+                $this->addSurface($surfaces, $impacts, $path, 'registered_command', 'unowned', "unowned Gateway command {$command}");
+            } else {
+                $this->addSurface($surfaces, $impacts, $path, 'registered_command', $page, "Gateway console command {$command} in {$path}");
+            }
+        }
+        if (preg_match_all('/(?:Schedule::command|Artisan::command|\$schedule->command)\s*\(\s*[\'"]([^\'"]+)[\'"]/', $source, $matches, PREG_OFFSET_CAPTURE) === 0) {
             return;
         }
         foreach ($matches[1] as [$command, $offset]) {
@@ -868,7 +961,7 @@ final readonly class DocsImpact
             if ($page === null && str_contains($command, ':')) {
                 $family = explode(':', $command, 2)[0];
                 if (in_array($family, self::CLI_FAMILIES, true)) {
-                    $page = 'docs/cli/'.$family.'.mdx';
+                    $page = self::CLI_FAMILY_OWNERS[$family] ?? 'docs/cli/'.$family.'.mdx';
                 }
             }
             if ($page === null) {
@@ -884,7 +977,7 @@ final readonly class DocsImpact
                 continue;
             }
             $this->addSurface($surfaces, $impacts, $path, 'registered_command', $page, "registered command {$command} at {$path}:{$line}".($expression === '' ? '' : " expression {$expression}"));
-            if (str_contains($path, 'Schedule') || str_contains($source, 'Schedule::')) {
+            if ($this->isScheduleRegistrationPath($path)) {
                 $this->addSurface($surfaces, $impacts, $path, 'schedule', 'docs/reference/schedules.md', "schedule timing or registration changed at {$path}:{$line}".($expression === '' ? '' : " expression {$expression}"));
             }
         }
@@ -896,9 +989,23 @@ final readonly class DocsImpact
      */
     private function extractScheduleDomain(string $path, string $source, array &$surfaces, array &$impacts): void
     {
-        if (preg_match('#(?:^|/)(?:Schedules?|Schedule)\.php$#', $path) === 1 || str_contains($source, 'Schedule::')) {
-            $this->addSurface($surfaces, $impacts, $path, 'schedule', 'docs/reference/schedules.md', "Schedule-domain behavior changed in {$path}");
+        if (! $this->isScheduleRegistrationPath($path)) {
+            return;
         }
+        if (preg_match_all('/(?:Schedule::(?:command|call|job)|\$schedule->(?:command|call|job)|->withSchedule)\s*\([^;]*/', $source, $matches) === 0) {
+            return;
+        }
+        foreach (array_unique(array_map(static fn (string $registration): string => trim(preg_replace('/\s+/', ' ', $registration) ?? $registration), $matches[0])) as $registration) {
+            $this->addSurface($surfaces, $impacts, $path, 'schedule', 'docs/reference/schedules.md', "Schedule registration {$registration} in {$path}");
+        }
+    }
+
+    private function isScheduleRegistrationPath(string $path): bool
+    {
+        return preg_match('#(?:^|/)routes/console\.php$#', $path) === 1
+            || preg_match('#(?:^|/)bootstrap/app\.php$#', $path) === 1
+            || preg_match('#(?:^|/)app/Console/Kernel\.php$#', $path) === 1
+            || preg_match('#(?:^|/)app/Domain/Tasks/TaskSchedule\.php$#', $path) === 1;
     }
 
     /**
@@ -1074,7 +1181,6 @@ final readonly class DocsImpact
         return array_values($operations);
     }
 
-    /** @return list<string> */
     /** @return list<string> */
     private function apiNavigationKeysFrom(string $contents): array
     {
@@ -1524,10 +1630,9 @@ final readonly class DocsImpact
     }
 
     /** @return list<string> */
-    /** @return list<string> */
     private function committedRatchetPages(): array
     {
-        $pages = ['docs/reference/tasks.md'];
+        $pages = [];
         $baseline = $this->gitAllowMissing(['merge-base', 'HEAD', 'origin/main']);
         $baseline = $baseline === null || trim($baseline) === '' ? 'HEAD' : trim($baseline);
         $contents = $this->gitAllowMissing(['show', $baseline.':apps/docs/config/docs-covers-ratchet.php']);
