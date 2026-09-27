@@ -39,7 +39,10 @@ final readonly class LaravelAiTaskBriefCoverage implements TaskBriefCoverage
                 ['true' => 'A listed change delivers this subtask.', 'false' => 'No listed change delivers this subtask.'],
             ));
         }
-        $answers = Jev::classify($classification);
+        $answers = Jev::classify($classification, 'brief_coverage', [
+            'task_group_id' => $group->id,
+            'task_ids' => $subtasks->modelKeys(),
+        ]);
 
         $missing = [];
         foreach ($subtasks as $task) {

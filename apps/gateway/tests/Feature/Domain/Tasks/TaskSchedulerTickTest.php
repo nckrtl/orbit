@@ -22,8 +22,6 @@ use App\Domain\Tasks\TaskCheckStatus;
 use App\Domain\Tasks\TaskCommentType;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
-use App\Domain\Tasks\TaskJevDecision;
-use App\Domain\Tasks\TaskJevOutcome;
 use App\Domain\Tasks\TaskPlannerMcp;
 use App\Domain\Tasks\TaskPullRequestDescription;
 use App\Domain\Tasks\TaskPullRequestException;
@@ -35,9 +33,7 @@ use App\Domain\Tasks\TaskRunReceiptException;
 use App\Domain\Tasks\TaskRunReceipts;
 use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskSessionClassificationException;
-use App\Domain\Tasks\TaskSessionClassifier;
 use App\Domain\Tasks\TaskSessionDecision;
-use App\Domain\Tasks\TaskSessionNextAction;
 use App\Domain\Tasks\TaskSessionObservation;
 use App\Domain\Tasks\TaskSettleMetrics;
 use App\Domain\Tasks\TaskSettleMetricsCollector;
@@ -2767,19 +2763,6 @@ it('does not classify or advance a task while its T3 thread is active', function
             ]];
         }
     });
-    app()->instance(TaskSessionClassifier::class, new class implements TaskSessionClassifier
-    {
-        public function classify(TaskSessionObservation $observation): TaskSessionDecision
-        {
-            throw new LogicException('Active tasks must not call Jev.');
-        }
-
-        public function classifyOutcome(TaskSessionObservation $observation, TaskThreadRole $role): TaskJevDecision
-        {
-            throw new LogicException('Active tasks must not call Jev.');
-        }
-    });
-
     $decisions = app(TaskScheduler::class)->tick();
 
     expect($decisions)->toBe([])
@@ -2820,7 +2803,7 @@ it('does not classify an in-progress task without an attached session', function
     Classification::assertNothingClassified();
 });
 
-it('targets the idle in-progress task while another task is working', function (TaskSessionNextAction $action): void {
+it('targets the idle in-progress task while another task is working', function (): void {
     $group = tick_group();
     $workingTask = $group->tasks->first();
     $workingTask->update(['status' => TaskStatus::Reviewing]);
@@ -2852,27 +2835,6 @@ it('targets the idle in-progress task while another task is working', function (
         }
     };
     app()->instance(T3ThreadReader::class, $reader);
-    $classifier = new class($action) implements TaskSessionClassifier
-    {
-        /** @var list<TaskSessionObservation> */
-        public array $observations = [];
-
-        public function __construct(private TaskSessionNextAction $action) {}
-
-        public function classify(TaskSessionObservation $observation): TaskSessionDecision
-        {
-            $this->observations[] = $observation;
-
-            return new TaskSessionDecision($this->action, 0.95, 'Route the observed task.');
-        }
-
-        public function classifyOutcome(TaskSessionObservation $observation, TaskThreadRole $role): TaskJevDecision
-        {
-            return new TaskJevDecision(TaskJevOutcome::AssistanceRequired, 1.0, 'Legacy test classifier.');
-        }
-    };
-    app()->instance(TaskSessionClassifier::class, $classifier);
-
     $decisions = app(TaskScheduler::class)->tick();
 
     expect($decisions)->toBe([])
@@ -2881,7 +2843,7 @@ it('targets the idle in-progress task while another task is working', function (
         ->and(TaskCheck::query()->where('task_id', $workingTask->id)->count())->toBe(0)
         ->and($workingTask->fresh()->status)->toBe(TaskStatus::Reviewing)
         ->and($idleTask->fresh()->status)->toBe(TaskStatus::Running);
-})->with([TaskSessionNextAction::ContinueImplementer, TaskSessionNextAction::MarkSubtaskDone]);
+});
 
 it('reminds the implementer with the failing check output once, then asks for assistance', function (): void {
     $group = tick_group();
@@ -3208,18 +3170,6 @@ it('unavailable implementer uses observation grace instead of rubric', function 
         public function snapshot(Node $node, string $threadId): ?array
         {
             return null;
-        }
-    });
-    app()->instance(TaskSessionClassifier::class, new class implements TaskSessionClassifier
-    {
-        public function classify(TaskSessionObservation $observation): TaskSessionDecision
-        {
-            throw new LogicException('unused');
-        }
-
-        public function classifyOutcome(TaskSessionObservation $observation, TaskThreadRole $role): TaskJevDecision
-        {
-            throw new LogicException('unused');
         }
     });
     app(TaskScheduler::class)->tick();
