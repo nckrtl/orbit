@@ -106,6 +106,15 @@ final class TaskGroupGuard
         );
     }
 
+    public static function groupClosed(): ResourceOperationException
+    {
+        return new ResourceOperationException(
+            errorCode: 'tasks.group_closed',
+            message: __('A completed or cancelled task group cannot accept new subtasks.'),
+            status: 409,
+        );
+    }
+
     public static function alreadyClaimed(): ResourceOperationException
     {
         return new ResourceOperationException(

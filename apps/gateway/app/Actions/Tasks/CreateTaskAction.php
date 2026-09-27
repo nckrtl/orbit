@@ -20,7 +20,12 @@ final readonly class CreateTaskAction
         $group->requireManagedExecution();
         $this->requireExtension->execute();
 
-        if ($data->deliverables === [] && $group->refresh()->status !== TaskGroupStatus::Backlog) {
+        $status = $group->refresh()->status;
+        if (in_array($status, [TaskGroupStatus::Completed, TaskGroupStatus::Cancelled], true)) {
+            throw TaskGroupGuard::groupClosed();
+        }
+
+        if ($data->deliverables === [] && $status !== TaskGroupStatus::Backlog) {
             throw TaskGroupGuard::deliverablesRequired();
         }
 

@@ -112,6 +112,7 @@ Moving a group to `todo`, by create or update, needs at least one deliverable on
 | --- | --- | --- |
 | `tasks.no_subtasks` | 422 | Create with `status: todo`, or update to `todo`, on a group without subtasks |
 | `tasks.subtask_deliverables_missing` | 422 | Create with `status: todo`, or update to `todo`, while a subtask has no deliverables; or subtask create without deliverables outside `backlog`. `details` names each subtask |
+| `tasks.group_closed` | 409 | Subtask create in a `completed` or `cancelled` group |
 | `tasks.not_in_backlog` | 409 | Group title or brief update outside `backlog`, or subtask update or destroy where the current group status and subtask status do not permit it |
 | `tasks.deliverables_locked` | 409 | Subtask deliverables update for a subtask that has started |
 | `tasks.already_claimed` | 409 | Status update on a group the scheduler has already claimed |

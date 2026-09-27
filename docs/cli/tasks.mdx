@@ -208,6 +208,7 @@ A `--json` or `-n` call fails with `tasks.title_required` or `tasks.brief_requir
 | Error code | Meaning |
 | --- | --- |
 | `tasks.deliverables_invalid` | The CLI cannot read the deliverables file, or its content is not an array of at most five objects. |
+| `tasks.group_closed` | The group is completed or cancelled and cannot accept a new subtask. |
 | `validation.failed` | The Gateway refuses a deliverable. The error details name each field, such as `deliverables.0.path`. |
 | `tasks.subtask_deliverables_missing` | A subtask without deliverables for a group outside `backlog`. |
 

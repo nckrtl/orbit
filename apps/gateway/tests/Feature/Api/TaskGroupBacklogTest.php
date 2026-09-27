@@ -3,15 +3,19 @@
 declare(strict_types=1);
 
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Tasks\CoderSettleNotifier;
 use App\Domain\Tasks\InstanceProvisioning;
 use App\Domain\Tasks\InstanceProvisionIntent;
+use App\Domain\Tasks\TaskCommentType;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskPullRequestWatcher;
 use App\Domain\Tasks\TaskStatus;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Task;
+use App\Models\TaskComment;
 use App\Models\TaskGroup;
 
 beforeEach(function (): void {
@@ -220,6 +224,7 @@ it('refuses subtask update and destroy outside backlog but still appends subtask
     $group = backlog_group($this);
     $this->patchJson("/api/v1/task-groups/{$group['id']}", ['status' => 'todo'])->assertOk();
     $first = $group['tasks'][0]['id'];
+    Task::query()->whereKey($first)->update(['status' => TaskStatus::Running->value]);
 
     $this->patchJson("/api/v1/task-groups/{$group['id']}/tasks/{$first}", ['title' => 'Changed'])
         ->assertConflict()
@@ -234,6 +239,158 @@ it('refuses subtask update and destroy outside backlog but still appends subtask
 
     expect(backlog_order($group['id']))->toBe(['One', 'Two', 'Three', 'Four']);
 });
+
+it('allows a todo subtask of a running group to change its title, brief, and position among todo subtasks', function (): void {
+    $group = backlog_group($this, ['Started', 'Second', 'Third']);
+    TaskGroup::query()->whereKey($group['id'])->update(['status' => TaskGroupStatus::Running->value]);
+    Task::query()->whereKey($group['tasks'][0]['id'])->update(['status' => TaskStatus::Running->value]);
+
+    $this->patchJson("/api/v1/task-groups/{$group['id']}/tasks/{$group['tasks'][1]['id']}", [
+        'title' => 'Renamed second',
+        'brief' => 'The corrected second brief.',
+        'position' => 3,
+    ])
+        ->assertOk()
+        ->assertJsonPath('data.title', 'Renamed second')
+        ->assertJsonPath('data.brief', 'The corrected second brief.')
+        ->assertJsonPath('data.position', 3);
+
+    expect(backlog_order($group['id']))->toBe(['Started', 'Third', 'Renamed second'])
+        ->and(Task::query()->where('task_group_id', $group['id'])->orderBy('position')->pluck('position')->all())->toBe([1, 2, 3]);
+});
+
+it('refuses to move a todo subtask of a running group across a cancelled middle subtask', function (): void {
+    $group = backlog_group($this, ['Started', 'Second', 'Cancelled', 'Fourth']);
+    TaskGroup::query()->whereKey($group['id'])->update(['status' => TaskGroupStatus::Running->value]);
+    Task::query()->whereKey($group['tasks'][0]['id'])->update(['status' => TaskStatus::Running->value]);
+    Task::query()->whereKey($group['tasks'][2]['id'])->update(['status' => TaskStatus::Cancelled->value, 'settled_at' => now()]);
+
+    $this->patchJson("/api/v1/task-groups/{$group['id']}/tasks/{$group['tasks'][3]['id']}", ['position' => 2])
+        ->assertUnprocessable()
+        ->assertJsonPath('error.code', 'validation.failed');
+
+    expect(backlog_order($group['id']))->toBe(['Started', 'Second', 'Cancelled', 'Fourth'])
+        ->and(Task::query()->findOrFail($group['tasks'][2]['id'])->position)->toBe(3)
+        ->and(Task::query()->findOrFail($group['tasks'][3]['id'])->position)->toBe(4);
+});
+
+it('refuses to move a todo subtask of a running group before a started subtask', function (): void {
+    $group = backlog_group($this, ['Started', 'Second', 'Third']);
+    TaskGroup::query()->whereKey($group['id'])->update(['status' => TaskGroupStatus::Running->value]);
+    Task::query()->whereKey($group['tasks'][0]['id'])->update(['status' => TaskStatus::Running->value]);
+
+    $this->patchJson("/api/v1/task-groups/{$group['id']}/tasks/{$group['tasks'][1]['id']}", ['position' => 1])
+        ->assertUnprocessable()
+        ->assertJsonPath('error.code', 'validation.failed');
+
+    expect(backlog_order($group['id']))->toBe(['Started', 'Second', 'Third']);
+});
+
+it('cancels a todo subtask of a running group without starting anything', function (): void {
+    $group = backlog_group($this, ['Started', 'Todo']);
+    TaskGroup::query()->whereKey($group['id'])->update(['status' => TaskGroupStatus::Running->value]);
+    Task::query()->whereKey($group['tasks'][0]['id'])->update(['status' => TaskStatus::Running->value]);
+
+    $this->postJson("/api/v1/task-groups/{$group['id']}/tasks/{$group['tasks'][1]['id']}/cancel")
+        ->assertOk()
+        ->assertJsonPath('data.status', 'cancelled');
+
+    $cancelled = Task::query()->findOrFail($group['tasks'][1]['id']);
+    expect($cancelled->status)->toBe(TaskStatus::Cancelled)
+        ->and($cancelled->settled_at)->not->toBeNull()
+        ->and($cancelled->started_at)->toBeNull()
+        ->and(Task::query()->findOrFail($group['tasks'][0]['id'])->status)->toBe(TaskStatus::Running)
+        ->and(TaskGroup::query()->findOrFail($group['id'])->status)->toBe(TaskGroupStatus::Running);
+});
+
+it('settles after cancelling the only todo subtask of a running group without assistance', function (): void {
+    $notifier = Mockery::mock(CoderSettleNotifier::class);
+    $notifier->shouldNotReceive('assistance');
+    app()->instance(CoderSettleNotifier::class, $notifier);
+
+    $group = backlog_group($this, ['Todo']);
+    TaskGroup::query()->whereKey($group['id'])->update(['status' => TaskGroupStatus::Running->value]);
+
+    $this->postJson("/api/v1/task-groups/{$group['id']}/tasks/{$group['tasks'][0]['id']}/cancel")
+        ->assertOk()
+        ->assertJsonPath('data.status', 'cancelled');
+
+    $cancelled = Task::query()->findOrFail($group['tasks'][0]['id']);
+    $settled = TaskGroup::query()->findOrFail($group['id']);
+    expect($cancelled->status)->toBe(TaskStatus::Cancelled)
+        ->and($cancelled->started_at)->toBeNull()
+        ->and($cancelled->assistance_requested)->toBeFalse()
+        ->and($cancelled->assistance_reason)->toBeNull()
+        ->and($settled->status)->toBe(TaskGroupStatus::Settling)
+        ->and($settled->assistance_requested)->toBeFalse()
+        ->and($settled->assistance_reason)->toBeNull();
+});
+
+it('does not check merged pull request assistance when cancelling todo in a returned settled group', function (): void {
+    $watcher = Mockery::mock(TaskPullRequestWatcher::class);
+    $watcher->shouldNotReceive('health');
+    $watcher->shouldNotReceive('status');
+    app()->instance(TaskPullRequestWatcher::class, $watcher);
+    $notifier = Mockery::mock(CoderSettleNotifier::class);
+    $notifier->shouldNotReceive('assistance');
+    app()->instance(CoderSettleNotifier::class, $notifier);
+
+    $group = backlog_group($this, ['Todo']);
+    $task = Task::query()->findOrFail($group['tasks'][0]['id']);
+    TaskGroup::query()->whereKey($group['id'])->update([
+        'status' => TaskGroupStatus::Settling->value,
+        'settled_at' => now()->subMinute(),
+        'pr_url' => 'https://github.com/acme/orbit/pull/42',
+    ]);
+    TaskComment::query()->create([
+        'task_group_id' => $group['id'],
+        'task_id' => $task->id,
+        'type' => TaskCommentType::Approved,
+        'body' => 'Approved the latest subtask.',
+        'author' => 'reviewer',
+        'commit_sha' => str_repeat('a', 40),
+        'posted_at' => now()->subMinutes(2),
+    ]);
+
+    $this->postJson("/api/v1/task-groups/{$group['id']}/tasks/{$task->id}/cancel")
+        ->assertOk()
+        ->assertJsonPath('data.status', 'cancelled');
+
+    $cancelled = $task->fresh();
+    $settled = TaskGroup::query()->findOrFail($group['id']);
+    expect($cancelled?->assistance_requested)->toBeFalse()
+        ->and($cancelled?->assistance_reason)->toBeNull()
+        ->and($settled->status)->toBe(TaskGroupStatus::Settling)
+        ->and($settled->assistance_requested)->toBeFalse()
+        ->and($settled->assistance_reason)->toBeNull();
+});
+
+it('keeps refusing a brief change on a started todo subtask of a running group', function (): void {
+    $group = backlog_group($this, ['Started']);
+    TaskGroup::query()->whereKey($group['id'])->update(['status' => TaskGroupStatus::Running->value]);
+    Task::query()->whereKey($group['tasks'][0]['id'])->update(['status' => TaskStatus::Running->value]);
+
+    $this->patchJson("/api/v1/task-groups/{$group['id']}/tasks/{$group['tasks'][0]['id']}", ['brief' => 'Changed after start.'])
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'tasks.not_in_backlog');
+
+    expect(Task::query()->findOrFail($group['tasks'][0]['id'])->brief)->toBe('Started brief.');
+});
+
+it('refuses subtask creation in completed and cancelled groups', function (TaskGroupStatus $status): void {
+    $group = backlog_group($this, ['One']);
+    TaskGroup::query()->whereKey($group['id'])->update(['status' => $status->value]);
+
+    $this->postJson("/api/v1/task-groups/{$group['id']}/tasks", [
+        'title' => 'Closed work',
+        'brief' => 'Cannot be added.',
+        'deliverables' => [['id' => 'done', 'type' => 'review', 'description' => 'Done.']],
+    ])
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'tasks.group_closed');
+
+    expect(Task::query()->where('task_group_id', $group['id'])->count())->toBe(1);
+})->with([TaskGroupStatus::Completed, TaskGroupStatus::Cancelled]);
 
 it('returns 404 for a subtask of another group', function (): void {
     $group = backlog_group($this);
@@ -430,10 +587,10 @@ describe('subtask deliverables', function (): void {
             ->assertUnprocessable()
             ->assertJsonPath('error.code', 'tasks.subtask_deliverables_missing');
         $this->patchJson("/api/v1/task-groups/{$group['id']}/tasks/{$todo}", ['deliverables' => $docs, 'title' => 'Renamed'])
-            ->assertConflict()
-            ->assertJsonPath('error.code', 'tasks.not_in_backlog');
+            ->assertOk()
+            ->assertJsonPath('data.title', 'Renamed');
 
-        expect(Task::query()->findOrFail($todo)->title)->toBe('Two')
+        expect(Task::query()->findOrFail($todo)->title)->toBe('Renamed')
             ->and(Task::query()->findOrFail($running)->deliverables)->toBe([
                 ['id' => 'done', 'type' => 'review', 'description' => 'One is done.'],
             ])
