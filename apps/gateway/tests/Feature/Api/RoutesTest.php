@@ -100,6 +100,31 @@ it('refuses to attach a package Instance with repository root . to an existing R
     $this->assertDatabaseCount('route_targets', 0);
 });
 
+it('reconciles service metrics when a public Route is created, targeted, cleared, and published', function (): void {
+    $metrics = Mockery::mock(MetricsFleetReconciler::class);
+    $metrics->shouldReceive('reconcile')->times(5);
+    app()->instance(MetricsFleetReconciler::class, $metrics);
+
+    $route = $this->postJson('/api/v1/routes', [
+        'app_id' => $this->orbitApp->id,
+        'domain' => 'metrics-public.example.test',
+        'publication' => 'public',
+        'node_id' => $this->node->id,
+    ])->assertCreated()->json('data.id');
+
+    $this->putJson("/api/v1/routes/{$route}/target", [
+        'app_instance_id' => $this->target->id,
+    ])->assertOk();
+
+    $this->target->update(['status' => AppInstanceState::Reserved]);
+    $this->deleteJson("/api/v1/routes/{$route}/target")->assertOk();
+
+    app()->instance(DevelopmentProjectionOperationLock::class, new RouteApiProjectionOwner);
+    $routeModel = Route::query()->findOrFail($route);
+    app(PublishPublicRouteAction::class)->execute($routeModel, RoutePublication::Private);
+    app(PublishPublicRouteAction::class)->execute($routeModel, RoutePublication::Public);
+});
+
 it('creates, retries, lists, shows, updates, clears, and removes an explicit Route', function (): void {
     $requestId = (string) Str::uuid();
     $payload = [
@@ -859,10 +884,10 @@ it('rolls a failed public activation back to the verified edge so the Ingress No
 })->with(['rollback builds' => [false], 'rollback also fails' => [true]]);
 
 it('publishes an eligible public Route on the same ID and names only the Ingress domain and Router upstream', function (): void {
+    [$cluster, $router, $ingress, $workload, $instance, $route] = route_public_topology($this->orbitApp);
     $metrics = Mockery::mock(MetricsFleetReconciler::class);
     $metrics->shouldReceive('reconcile')->once();
     app()->instance(MetricsFleetReconciler::class, $metrics);
-    [$cluster, $router, $ingress, $workload, $instance, $route] = route_public_topology($this->orbitApp);
     $edge = new FakePublicRouteEdgeProjector;
     app()->instance(PublicRouteEdgeProjector::class, $edge);
     app()->instance(DevelopmentProjectionOperationLock::class, new RouteApiProjectionOwner);
