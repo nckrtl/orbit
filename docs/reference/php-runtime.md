@@ -25,7 +25,7 @@ The Gateway reads the source's `composer.json` once, before it publishes the run
 | An invalid constraint, or one that neither version meets | `app-dev.php_version_unsupported` or `app-prod.php_version_unsupported`. |
 | The version is missing from the Sury source | `app-dev.php_package_source_unavailable` or `app-prod.php_package_source_unavailable`. |
 
-The Instance records the selected version in its [source profile](/domains/applications#provision-the-endpoint). There is no input or output field to choose a version. The Node role installs, configures, and removes every selected version.
+The Instance records the selected version in its [source profile](/domains/applications#provision-the-application-endpoint). There is no input or output field to choose a version. The Node role installs, configures, and removes every selected version.
 
 ## Development runtime
 

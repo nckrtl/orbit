@@ -36,7 +36,7 @@ orbit process:create queue --instance=12 --runtime=systemd \
 
 A wake still starts every desired-running Process, including a keep-alive Process that is down. `process:stop` records `desired_state=stopped`, and a wake leaves that Process stopped. Keep-alive has no effect outside hibernation.
 
-## Idle sweep
+## Idle window and sweep
 
 `orbit-runtime-hibernator.timer` runs on the Gateway host every 10 minutes. It reads the last HTTP activity of each Instance: the newer of the Instance's Caddy access log and its awake marker.
 
@@ -103,7 +103,7 @@ Orbit sets each parent directory to `0755` so the `caddy` user can reach them. T
 
 A Docker Process of a development Instance maps restart policy `always` to Docker `unless-stopped`. An idle stop then survives a Docker daemon restart.
 
-## Doctor
+## Inspect
 
 While the awake marker is missing, [Doctor](/cli/doctor) does not report a desired-running, stopped Process as drift, unless it is keep-alive. `process:list --instance=ID` shows desired and observed states and `keep_alive`.
 

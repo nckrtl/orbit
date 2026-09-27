@@ -89,7 +89,7 @@ By default, registration adopts only the requested source. When Orbit moves a ch
 
 Interactive registration asks for default-No consent that names the source. JSON and noninteractive calls need `--yes`. `--setup` runs the Project setup steps after adoption. Plain registration runs no setup.
 
-## Provision the endpoint
+## Provision the application endpoint
 
 Before it prepares the source, the Gateway assigns the Instance a [Vite port](/reference/assigned-vite-ports) and reserves its Route domain. `--domain` sets an explicit domain. Otherwise the domain is generated from the Cluster or Node TLD, as [Routes](/reference/routes#select-a-domain-and-scope) describes. A `laravel-app` Instance gets one Route. Other Project types get no Route.
 
