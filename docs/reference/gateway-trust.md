@@ -31,8 +31,10 @@ The pinned certificate lives in `$ORBIT_HOME/gateways/<slug>-<hash>/ca/`, where 
 1. **Bootstrap fetch.** The CLI calls `GET /api/v1/ca/root` without certificate verification and without following redirects. The Gateway answers this endpoint for any caller. The CLI checks that the certificate matches the SHA-256 fingerprint in the response.
 2. **Pin check.** `gateway:add --ca` compares the certificate with the given file. `gateway:trust` compares it with the profile's pin. A different certificate fails with `gateway.ca_changed`. `gateway:trust --accept-ca-change` skips this check.
 3. **Pinned verification.** The CLI stores the certificate privately. It repeats the request with that certificate as the only trust root. A different certificate fails with `gateway.ca_verification_failed`.
-4. **Operating-system trust.** The CLI checks the trust store and installs the certificate when it is missing. On macOS it runs `sudo security add-trusted-cert` into the System keychain. On Linux it runs `sudo install` and `sudo update-ca-certificates`. Then it checks the trust store again.
+4. **Operating-system trust.** The CLI checks the trust store. It installs a missing certificate and checks the trust store again.
 5. **Profile save.** `gateway:add` saves the profile. `gateway:trust` saves the pin under the [profile guard](#profile-guard).
+
+On macOS, the install runs `sudo security add-trusted-cert` into the System keychain. On Linux, it runs `sudo install` and `sudo update-ca-certificates`.
 
 JSON output returns the certificate fingerprint, the trust status (`trusted` or `already_trusted`), and the Gateway request ID. `gateway:trust` also returns the certificate path. No output holds certificate material.
 
