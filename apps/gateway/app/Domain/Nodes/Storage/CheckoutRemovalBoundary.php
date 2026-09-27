@@ -27,7 +27,7 @@ final readonly class CheckoutRemovalBoundary
 
         $root = $checkout->stripSuffix($appInstance->app->slug, $appInstance->name);
 
-        if ($this->catalog->isProtected($root, $account, 'apps') || ! $checkout->isInside($root)) {
+        if ($this->catalog->isProtected($root, $account) || ! $checkout->isInside($root)) {
             $this->unsafeAppInstance($appInstance);
         }
 

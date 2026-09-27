@@ -341,7 +341,6 @@ describe(RemoveNodeRoleAction::class, function (): void {
             $node->tools()->create([
                 'tool_manager_id' => $manager->id,
                 'package' => sprintf('package-%02d', $number),
-                'protected' => false,
                 'status' => ToolStatus::Installed,
                 'installed_version' => '2.4.1',
             ]);
@@ -371,7 +370,7 @@ describe(RemoveNodeRoleAction::class, function (): void {
         'app-prod' => RoleName::AppProd,
     ]);
 
-    it('allows removal of the last active app role when app-scoped Tool intent is protected', function (): void {
+    it('allows removal of the last active app role while retaining installed Tool intent', function (): void {
         [$node, $assignment, $dependencies] = removal_role_fixture(withDependents: true);
         $manager = $node->toolManagers()->create([
             'name' => ToolManagerName::Vp,
@@ -379,8 +378,7 @@ describe(RemoveNodeRoleAction::class, function (): void {
         ]);
         $tool = $node->tools()->create([
             'tool_manager_id' => $manager->id,
-            'package' => '@orbit/protected-runtime',
-            'protected' => true,
+            'package' => '@orbit/runtime',
             'status' => ToolStatus::Installed,
             'installed_version' => '2.4.1',
         ]);
@@ -440,7 +438,6 @@ describe(RemoveNodeRoleAction::class, function (): void {
         $tool = $node->tools()->create([
             'tool_manager_id' => $manager->id,
             'package' => 'laravel/installer',
-            'protected' => false,
             'status' => ToolStatus::Installed,
             'installed_version' => '2.4.1',
         ]);
@@ -528,14 +525,12 @@ describe(RemoveNodeRoleAction::class, function (): void {
             node: $node,
             managerName: ToolManagerName::Vp,
             package: '@openai/codex',
-            protected: true,
             managerVersion: '1.2.3',
         );
         [$composerManager, $composerTool] = removal_tool(
             node: $node,
             managerName: ToolManagerName::Composer,
             package: 'laravel/installer',
-            protected: true,
             managerVersion: '2.8.1',
         );
 
@@ -583,7 +578,6 @@ describe(RemoveNodeRoleAction::class, function (): void {
             node: $node,
             managerName: ToolManagerName::Vp,
             package: '@openai/codex',
-            protected: true,
         );
 
         removal_action(
@@ -607,7 +601,6 @@ describe(RemoveNodeRoleAction::class, function (): void {
             node: $node,
             managerName: ToolManagerName::Vp,
             package: '@openai/codex',
-            protected: true,
         );
         $inspector = new RemovalInspectorFake($dependencies);
         $cleaner = new RemovalCleanerFake;
@@ -990,7 +983,6 @@ function removal_tool(
     Node $node,
     ToolManagerName $managerName,
     string $package,
-    bool $protected = false,
     ToolStatus $toolStatus = ToolStatus::Installed,
     string $managerVersion = '1.0.0',
 ): array {
@@ -1002,7 +994,6 @@ function removal_tool(
     $tool = $node->tools()->create([
         'tool_manager_id' => $manager->id,
         'package' => $package,
-        'protected' => $protected,
         'status' => $toolStatus,
         'installed_version' => '2.4.1',
     ]);

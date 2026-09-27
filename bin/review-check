@@ -12,6 +12,24 @@ import time
 PROJECTS = ('apps/cli', 'apps/docs', 'apps/gateway', 'apps/e2e', 'packages/php-sdk')
 COMMANDS = (('composer', 'validate', '--strict'), ('composer', 'check'), ('composer', 'test:affected'))
 AFFECTED = ('composer', 'test:affected')
+ARCHITECTURE_TESTS = {
+    'apps/cli': ('tests/Feature/CommandSurfaceTest.php',),
+    'apps/gateway': (
+        'tests/Unit/Architecture',
+        'tests/Feature/Infrastructure/AppInstances/ConfiguredOriginReadTest.php',
+        'tests/Feature/Infrastructure/Caddy/CaddyPublicationLockTest.php',
+    ),
+    'apps/e2e': (
+        'tests/Unit/E2E/ProofFixtureContractTest.php',
+        'tests/Unit/E2E/ProofFixtureShellContractTest.php',
+    ),
+    'packages/php-sdk': (
+        'tests/Unit/SuccessRequestIdBoundaryTest.php',
+        'tests/Unit/RepositoryGuidanceTest.php',
+        'tests/Unit/Requests/Workspaces/WorkspaceRequestsTest.php',
+        'tests/Unit/Requests/Deployments/DeploymentRequestsTest.php',
+    ),
+}
 BASES = ('origin/main', 'main')
 NO_SELECTION = 'No affected tests found'
 
@@ -95,8 +113,13 @@ def main():
         if (root / seed[0]).is_file():
             subprocess.run([str(root / seed[0]), *seed[1:]], check=False)
     for project in PROJECTS:
-        for command in COMMANDS:
-            log = directory / (project.replace('/', '-') + '-' + command[1] + '.log')
+        project_changed = any(path.startswith(project + '/') for path in paths)
+        commands = [*COMMANDS]
+        architecture_paths = ARCHITECTURE_TESTS.get(project, ())
+        if project_changed:
+            commands.extend(('vendor/bin/pest', architecture_path) for architecture_path in architecture_paths)
+        for command in commands:
+            log = directory / (project.replace('/', '-') + '-' + command[1].replace('/', '-') + '.log')
             started = time.monotonic()
             with log.open('w') as output:
                 result = subprocess.run(command, cwd=root / project, stdout=output, stderr=subprocess.STDOUT,

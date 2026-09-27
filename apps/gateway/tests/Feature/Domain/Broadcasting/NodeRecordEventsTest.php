@@ -11,7 +11,6 @@ use App\Domain\Nodes\NodeConverger;
 use App\Domain\Nodes\NodeObservation;
 use App\Domain\Nodes\NodeProvisioningIdentity;
 use App\Domain\Nodes\RoleBaselineConverger;
-use App\Domain\Nodes\Storage\EffectiveStorageRoots;
 use App\Domain\Nodes\Storage\NodeStorageRootPreparer;
 use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Shared\LifecycleStatus;
@@ -84,7 +83,7 @@ describe('Node record events', function (): void {
         {
             public function inspect(Node $node, ManagedUserAccount $account, StoragePath $path): void {}
 
-            public function prepare(Node $node, ManagedUserAccount $account, EffectiveStorageRoots $roots): void {}
+            public function prepare(Node $node, ManagedUserAccount $account, StoragePath $root): void {}
         });
         app()->instance(ManagedUserAccountResolver::class, new class implements ManagedUserAccountResolver
         {

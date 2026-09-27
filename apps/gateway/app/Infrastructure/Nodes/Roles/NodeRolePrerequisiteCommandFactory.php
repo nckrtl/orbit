@@ -78,7 +78,7 @@ final readonly class NodeRolePrerequisiteCommandFactory
             __APP_HOST_RUNTIME__
             BASH;
         $appDevSetup = <<<'BASH'
-                install -d -m 0755 -o "$managed_user" -g "$managed_group" "$managed_home/apps" "$managed_home/.orbit/worktrees"
+                install -d -m 0755 -o "$managed_user" -g "$managed_group" "$managed_home/apps"
             BASH;
         $runtime = <<<'BASH'
                 if { [ -e /opt/orbit ] || [ -L /opt/orbit ]; } \

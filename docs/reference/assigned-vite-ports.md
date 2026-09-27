@@ -1,98 +1,94 @@
 ---
 title: "Assigned Vite ports"
-description: "Preferred Vite ports and the VitePlus Process preset."
+description: "How Orbit gives each development Instance its own Vite port, and how the vp-dev Process preset connects that port to systemd, Caddy, and wake."
+covers:
+  - apps/gateway/app/Domain/AppDev/{VitePortAllocator,VitePortRuntime,ViteProcessLifecycle,DevelopmentServerEndpoint}.php
+  - apps/gateway/app/Infrastructure/AppDev/RemoteVitePortRuntime.php
+  - apps/gateway/app/Domain/Processes/VpDevPreset.php
+  - apps/gateway/database/migrations/2026_09_16_000000_add_vite_port_assignments.php
 ---
 
 # Assigned Vite ports
 
-Orbit assigns each development Instance its own preferred Vite port. Use the `vp-dev` Process preset to connect that port to systemd, Caddy, and wake readiness. [ADR 0078](/decisions/0078-assign-vite-ports-to-development-appinstances) records the design.
+Several development Instances can run Vite on one Node. Orbit gives each development Instance its own Vite port on its Node. The `vp-dev` Process preset runs Vite on that port and connects it to Caddy and to [wake](/reference/app-dev-runtime-hibernation). Browsers never see the port: they load assets through the Route's HTTPS origin.
 
-## Assignment and startup
+## Assignment
 
-Each development Instance has a stored preferred `vite_port`. Orbit assigns it automatically during creation or registration. Production instances have no Vite port assignment. Assigning a port does not create or start a Process.
+Orbit assigns `vite_port` when it creates or registers a development Instance. Production Instances get none. An assignment creates or starts no Process.
 
-Before starting Vite, the Gateway checks the preferred port on the owning Node. An already running owned Vite Process keeps its port. An unrelated listener triggers selection of the next candidate before startup. Initial allocation starts at `5173`; there is no fixed-size product range. Search uses valid unprivileged TCP ports and terminates at the TCP port limit with an exhaustion error.
+The search starts at `5173`, or at the recorded port, and moves up to `65535`. It never tries a port below its start. It skips:
 
-Allocation excludes other instance assignments, service ports on an exclusion list, and current TCP bindings on the destination Node, including IPv4 and IPv6. Separate Nodes may use the same port. Concurrent allocation and startup preparation share the Node operation owner, and the database enforces uniqueness for `(node_id, vite_port)`. The exclusion list does not replace actual bind checks.
+- ports that other Instances on the Node hold,
+- ports that any TCP socket on the Node uses, over IPv4 or IPv6, except in `TIME_WAIT`,
+- common service ports: `3306`, `5432`, `5672`, `6379`, `8000`, `8080`, `8443`, `9000`, `9090`, `9200`, `11211`, `15672`, and `27017`.
 
-Instance list and show output, the API, and the PHP SDK expose `vite_port`. Hibernation keeps the preferred assignment as stored configuration, not an open socket. Start, restart, and wake use the same preparation operation. A bind conflict after the check may trigger bounded recovery; an unrelated startup error must not cause repeated port changes.
+Two Nodes can use the same port. The database keeps each port unique per Node. The search runs under the Node's operation lock and fails when no port is left.
 
-## Process preset
+`instance:list`, `instance:show`, the API, and the SDK return `vite_port`. The assignment is a stored preference, not an open socket. It survives hibernation, dependency pruning, Process replacement, and reboots. Removal releases it after runtime cleanup. A [transfer](/reference/appinstance-transfer) assigns a port on the destination and releases the source port after cleanup.
 
-The positional argument to `process:create` is a name. Generic processes use repeated `--command` values for their executable and arguments. The `--project` option selects a reusable Project definition.
+## The vp-dev preset
 
-This command selects a preset explicitly:
+Create the preset Process on a development Instance. `--instance` accepts an Instance ID or its exact Route domain.
 
 ```bash
 orbit process:create vite --instance=commander.test --preset=vp-dev --start
 ```
 
-`process:create --instance` accepts a positive ID or an exact Route domain that resolves to one authorized development Instance. It preserves the meaning of `--project`. The supported preset is `vp-dev` for an instance-owned systemd Process. Naming an ordinary Process `vp-dev` has no special effect.
+The preset needs `/usr/local/bin/vp`, a readable `package.json`, and an installed `node_modules`. It installs no dependencies and edits no application code. It sets the command, the working directory, and restart on failure. A custom command, runtime, or Docker option conflicts with the preset and is refused. An Instance has at most one preset Process. Naming a plain Process `vp-dev` has no effect. The [Processes](/reference/app-processes-and-schedules#presets) page lists every preset.
 
-Preset creation checks the VitePlus executable, project manifest, and installed dependencies, prepares the assigned port, writes service configuration, and installs the Process. `--start` records the running desired state and starts it; omission keeps the current stopped-by-default contract. An identical create reuses the Process and preserves its desired state. One instance has at most one Vite preset Process. A same-name generic Process or unrelated listener is not adopted automatically.
-
-The preset supplies the runtime, executable arguments, instance working directory, and restart-on-failure default. Conflicting custom command, runtime, or Docker options are refused. Generic Process creation remains available. Stored preset identity connects start, restart, wake, and transfer to port preparation without guessing from names or command strings.
-
-## Apply the assignment
-
-Orbit projects one selected port into each consumer before startup.
-
-| Consumer | Configuration |
-| --- | --- |
-| Development Process | Write `ORBIT_DEV_SERVER_PORT` to an Orbit-owned environment file. |
-| VitePlus preset | Run `vp dev` on loopback with that explicit port and strict binding. |
-| Workload Caddy | Proxy the Route's reserved development path to that loopback port. |
-| Wake readiness | Check the owned Vite Process and selected endpoint before writing the awake marker. |
-
-Systemd can substitute the environment value into a stable command. The preset reads an Orbit-owned file at each start.
+The preset runs Vite on loopback with strict binding:
 
 ```ini
-EnvironmentFile=/etc/orbit/vite/app-instance-64.env
+EnvironmentFile=/etc/orbit/vite/app-instance-<id>.env
+UnsetEnvironment=VITE_DEV_SERVER_CERT VITE_DEV_SERVER_KEY
 ExecStart=/usr/local/bin/vp dev --host=127.0.0.1 --port=${ORBIT_DEV_SERVER_PORT} --strictPort --base=/__orbit/vite/
 ```
 
-Systemd reads the environment file at service startup. Updating its contents does not require rewriting the command or reloading the unit definition. The generated port takes precedence over application environment inputs. The preset removes `VITE_DEV_SERVER_CERT` and `VITE_DEV_SERVER_KEY` from its service environment to prevent implicit internal HTTPS. Generic processes retain their certificate environment. Generic Process arguments must retain their existing literal treatment; preset expansion must not enable arbitrary shell interpolation.
+Orbit writes `ORBIT_DEV_SERVER_PORT` to the environment file before each start. Systemd reads it at start, so a new port needs no unit change. The removed certificate variables keep Vite on plain HTTP; Caddy terminates TLS.
 
-The preset sets the Vite base to `/__orbit/vite/`; Caddy preserves that prefix for assigned endpoints. Applications set `server.origin` to the URL origin of `ORBIT_DEV_SERVER_ORIGIN` and `server.hmr.path` to `hmr` (Vite prepends its base). Applications also configure assets and HMR for `ORBIT_DEV_SERVER_ORIGIN`, `ORBIT_DEV_SERVER_PATH`, and `ORBIT_DEV_SERVER_HOST`. Caddy terminates TLS on port 443. Laravel's plugin writes the public URL into `public/hot`; Orbit does not use that file for discovery. Plain Vite applications use the same proxy contract. Process registration alone does not establish that the application's asset and HMR configuration is correct.
+## Start, restart, and wake
 
-Agent setup guidance:
+Every start of the preset runs one preparation step:
 
-> To configure VitePlus for an Instance, use the `vp-dev` Process preset. Let Orbit assign the port, apply strict binding, and prepare the service, proxy, and readiness check. Do not select a port manually or implement a separate allocator. Configure and verify the project's assets and HMR for the Orbit Route origin. Use `--start` when the Process should run on wake; do not add keep-alive merely to enable wake.
+1. A start does nothing when the preset's own Vite already answers on the port.
+2. Orbit removes the Instance's awake marker, so requests go to the [wake page](/reference/app-dev-runtime-hibernation#wake) until a wake writes it again.
+3. Orbit checks the port again. Another listener on the port makes Orbit pick a new port. The other listener keeps running.
+4. It writes the environment file and points the workload Caddy's `/__orbit/vite` path at the port.
+5. It starts Vite and waits until Vite answers the client request on that port.
 
-## Lifecycle and failure
+When a port is taken between the check and the bind, Orbit retries with a new port. It makes at most three attempts within the deadline. Another startup error does not change the port. After `process:start` or `process:restart` of the preset, the next HTTP request goes through the wake page. When Vite does not become ready, the start fails with `vite.not_ready` and wake stays incomplete.
 
-Orbit keeps or replaces the preferred assignment at these boundaries.
+## Application setup
 
-| Event | Result |
+The workload Caddy proxies `https://<domain>/__orbit/vite/` to the port and keeps the `/__orbit/vite/` prefix. Every Process of a development Instance with a Route gets these variables. Instances without a Route get none:
+
+| Variable | Value |
 | --- | --- |
-| Create or register an instance | Assign an initial preferred port without automatically installing a Vite Process. |
-| Create the preset | Register the Process and connect it to port preparation. |
-| Start an already healthy owned Process | Keep its current port and runtime. |
-| Start, restart, or wake | Recheck the preferred port, replace it if needed, project configuration, and start with strict binding. |
-| Hibernate or reboot | Keep the preferred assignment for the next startup check. |
-| Replace a Process | Keep the preferred assignment and prepare it for the replacement. |
-| Remove an instance | Release its assignment after owned runtime cleanup. |
-| Transfer | Prepare a destination assignment and consumers before cutover; release the source assignment after source cleanup. |
-| Transfer fails before cutover | Preserve source recovery and release destination allocation with destination cleanup. |
-| Candidate is claimed before Vite binds | Retry confirmed bind conflicts within the startup deadline, without stopping the unrelated listener. |
-| Projection or another startup step fails | Leave wake incomplete and report the failed boundary. |
+| `ORBIT_DEV_SERVER_ORIGIN` | `https://<domain>/__orbit/vite` |
+| `ORBIT_DEV_SERVER_HOST` | The Route domain. |
+| `ORBIT_DEV_SERVER_PATH` | `/__orbit/vite` |
+| `ORBIT_DEV_SERVER_PORT` | The assigned port. |
 
-Database, environment-file, and Caddy updates are separate writes. Their operation records must support retry without admitting traffic through a partially updated endpoint. A retry resumes recorded work and rechecks ownership and availability. It must not report rollback unless that rollback completed.
+Set Vite's `server.origin` to the origin of `ORBIT_DEV_SERVER_ORIGIN` and `server.hmr.path` to `hmr`. Configure assets and HMR for the Route origin. Laravel's plugin writes the public URL into `public/hot`, but Orbit does not read that file. Plain Vite applications use the same setup.
 
-Existing development instances need coordinated migration of Process identity, port assignment, proxying, and readiness. Preserve desired Process states and unrelated listeners. Do not silently convert a manually configured Process into a preset based on its name.
+Let Orbit pick the port. Do not select one by hand, and do not add `keep_alive` only to make the Process start on wake: `--start` already does that.
 
-## Initial preset limits
+## Why it works this way
 
-The initial exclusion list covers common database, cache, messaging, HTTP administration, and development service ports: `3306`, `5432`, `5672`, `6379`, `8000`, `8080`, `8443`, `9000`, `9090`, `9200`, `11211`, `15672`, and `27017`. Actual socket checks remain authoritative. Startup permits at most three attempts within the wake deadline, and retries only when a fresh socket check confirms that another process claimed the selected port.
+These reasons explain the design. Check them before you propose a change.
 
-The preset requires executable `/usr/local/bin/vp`, a readable project `package.json`, and installed project dependencies. It does not install dependencies or edit application code. Project definition inheritance is deferred; this version accepts an explicit preset request for an existing development instance. Port assignment alone never installs a process.
+### A stored port, not discovery
 
-Existing instances retain their legacy endpoint until explicitly configured with the preset or reprovisioned. Orbit does not infer preset identity from existing commands. Allocation records retain both placements during transfer, and release the source only after confirmed source cleanup.
+Vite can pick another port by itself, but Orbit would then have to find out which one. `public/hot` exists only for Laravel, and behind the proxy it holds the public URL, not the local port. A discovery plugin would add a dependency to every application. So Orbit stores the port and runs Vite with `--strictPort`.
 
-## Verification
+### Unique per Node
 
-Verify initial selection, preferred-port reuse, IPv4 and IPv6 conflicts, Node-scoped uniqueness, concurrent creation and wake, exclusions, exhaustion, and idempotent retry. Verify release on removal and recovery after failed transfer. An already running owned listener must not trigger reassignment, and an unrelated listener must not establish readiness after Vite fails to bind.
+Ports only collide on one Node. A Cluster-wide rule would waste ports.
 
-Verify preset selector resolution, stored preset identity, generic-command compatibility, conflicting options, literal argument handling, retries, and truthful human and JSON results. Confirm that effective Vite arguments, service environment, proxy upstream, and readiness target agree after reassignment and transfer.
+### No socket held while asleep
 
-Run two Vite instances concurrently on one Incus Node and verify their assets and HMR through their Route origins. Hibernate them, occupy one preferred port with an unrelated service, and wake both. Verify reassignment, preserved unrelated service state, and unchanged browser URLs. Transfer one instance between Nodes. Include Laravel and plain Vite fixtures so the checks do not depend on Laravel's hot file.
+The stored assignment already keeps other Instances off the port. A process outside Orbit can still take it, and strict binding plus a new check at start handle that case.
+
+### An explicit preset
+
+Orbit does not guess from a Process name or command that it runs Vite. The stored preset connects start, restart, wake, and transfer to port preparation.
