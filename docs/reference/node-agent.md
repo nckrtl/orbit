@@ -338,11 +338,10 @@ Doctor checks the agent in the `node` family on every managed Node.
 | --- | --- |
 | `node.agent_missing` | The binary or the unit is absent. |
 | `node.agent_inactive` | The unit exists but is not active. |
-| `node.agent_outdated` | The binary's checksum differs from the pin for the Node's architecture. |
 | `node.agent_secret_mismatch` | The secret file is `missing`, or its hash does not match the stored one: `mismatch`. Doctor reads only the hash, and the report shows neither the secret nor a hash. |
 | `node.agent_view_stale` | The agent unit is active and a `websocket` role is active, but the Gateway has no fresh view of the Node. |
 
-Run `orbit node:add <node>` to repair the first four. `node:add` refuses a Node that owns Instances. Repair such a Node by converging one of its roles with `orbit node:role:add <node> <role> --converge`.
+Run `orbit node:add <node>` to repair the first three. `node:add` refuses a Node that owns Instances. Repair such a Node by converging one of its roles with `orbit node:role:add <node> <role> --converge`.
 
 `node.agent_view_stale` reports what it observed.
 
