@@ -561,7 +561,6 @@
               "decisions/0009-clustered-app-instance-routing",
               "decisions/0010-record-decisions-before-implementation-issues",
               "decisions/0011-clustered-production-ingress-and-app-prod-placement",
-              "decisions/0013-native-systemd-schedule-management",
               "decisions/0014-maintain-verified-documentation-context",
               "decisions/0015-retain-incus-proof-by-recorded-input-equivalence",
               "decisions/0016-reconcile-app-identity-and-source-default-updates",
@@ -589,11 +588,8 @@
               "decisions/0039-use-round-robin-for-production-route-pools",
               "decisions/0040-extend-issue-proof-with-one-app-prod-node",
               "decisions/0041-delete-an-empty-route-during-appinstance-removal",
-              "decisions/0044-own-appinstance-environment-configuration-in-orbit",
               "decisions/0045-isolate-production-php-fpm-by-unix-user",
-              "decisions/0046-own-production-release-deployment-in-orbit",
               "decisions/0047-create-production-appinstances-from-candidates",
-              "decisions/0048-copy-app-process-and-schedule-definitions-into-appinstances",
               "decisions/0049-keep-delivery-artifacts-off-the-merge-head",
               "decisions/0050-release-successful-proof-resources-before-landing",
               "decisions/0051-select-discovery-only-feature-delivery",
@@ -603,7 +599,6 @@
               "decisions/0056-retain-proof-topologies-for-interactive-review",
               "decisions/0058-separate-incus-requirements-from-delivery-flow",
               "decisions/0059-make-the-builder-own-the-candidate-quality-gate",
-              "decisions/0060-record-latest-schedule-run-status",
               "decisions/0061-use-vpn-dns-by-default-on-managed-peers",
               "decisions/0062-select-cluster-router-dns-addresses-from-lan-intent",
               "decisions/0063-prefer-active-cluster-tlds-for-generated-routes",
@@ -611,15 +606,12 @@
               "decisions/0065-replace-routes-when-domains-change",
               "decisions/0066-transfer-development-appinstances-between-nodes",
               "decisions/0067-serve-development-servers-on-the-route-origin",
-              "decisions/0069-allow-node-process-targets",
               "decisions/0071-use-one-verb-vocabulary-across-cli-routes-and-sdk",
-              "decisions/0073-store-deploy-steps-as-named-appinstance-records",
               "decisions/0074-hibernate-idle-app-dev-appinstance-processes",
               "decisions/0075-prune-idle-app-dev-checkout-dependencies",
               "decisions/0076-deliver-features-through-complete-pull-requests",
               "decisions/0078-assign-vite-ports-to-development-appinstances",
               "decisions/0080-add-node-owned-custom-proxy-routes",
-              "decisions/0081-query-registered-databases-through-pdo",
               "decisions/0082-wire-agentation-watch-mode-through-appinstance-processes",
               "decisions/0083-default-sqlite-journal-mode-to-wal",
               "decisions/0084-broadcast-record-changes-through-reverb",
@@ -638,8 +630,6 @@
               "decisions/0104-own-cliproxyapi-quota-through-the-proxycli-extension",
               "decisions/0105-name-applications-as-project-and-instance",
               "decisions/0106-derive-instance-capabilities-from-project-type",
-              "decisions/0107-key-isolation-and-releases-to-node-role",
-              "decisions/0108-persist-managed-environment-on-systemd-processes",
               "decisions/0109-publish-the-proxycli-collector-on-a-subdomain",
               "decisions/0110-route-task-sessions-with-laravel-ai-jev",
               "decisions/0112-isolate-agent-threads-behind-drivers",
@@ -675,7 +665,6 @@
               "decisions/0150-keep-extension-commands-local-and-confirm-the-proxycli-fleet-stop",
               "decisions/0151-push-task-and-process-usage-changes-over-realtime",
               "decisions/0152-sample-successful-read-activity",
-              "decisions/0153-tail-instance-and-process-logs-live-through-the-node-agent",
               "decisions/0156-route-the-private-domain-on-the-gateway-machine-to-vpn-dns",
               "decisions/0157-keep-private-caddy-sites-off-the-public-listener",
               "decisions/0158-end-interrupted-activity",
@@ -850,6 +839,50 @@
     {
       "source": "/decisions/0155-authenticate-the-node-agent-with-a-per-node-secret",
       "destination": "/reference/node-agent#agent-secret"
+    },
+    {
+      "source": "/decisions/0013-native-systemd-schedule-management",
+      "destination": "/reference/schedules"
+    },
+    {
+      "source": "/decisions/0044-own-appinstance-environment-configuration-in-orbit",
+      "destination": "/reference/environment-variables"
+    },
+    {
+      "source": "/decisions/0046-own-production-release-deployment-in-orbit",
+      "destination": "/reference/deployments"
+    },
+    {
+      "source": "/decisions/0048-copy-app-process-and-schedule-definitions-into-appinstances",
+      "destination": "/reference/app-processes-and-schedules#production-copies"
+    },
+    {
+      "source": "/decisions/0060-record-latest-schedule-run-status",
+      "destination": "/reference/schedules#latest-run"
+    },
+    {
+      "source": "/decisions/0069-allow-node-process-targets",
+      "destination": "/reference/app-processes-and-schedules#owners"
+    },
+    {
+      "source": "/decisions/0073-store-deploy-steps-as-named-appinstance-records",
+      "destination": "/reference/deployments#deploy-steps"
+    },
+    {
+      "source": "/decisions/0081-query-registered-databases-through-pdo",
+      "destination": "/reference/database-connections#inspect-a-registered-connection"
+    },
+    {
+      "source": "/decisions/0107-key-isolation-and-releases-to-node-role",
+      "destination": "/reference/environment-variables#laravel-mode"
+    },
+    {
+      "source": "/decisions/0108-persist-managed-environment-on-systemd-processes",
+      "destination": "/reference/app-processes-and-schedules#environment-of-a-systemd-process"
+    },
+    {
+      "source": "/decisions/0153-tail-instance-and-process-logs-live-through-the-node-agent",
+      "destination": "/reference/live-logs"
     }
   ]
 }
