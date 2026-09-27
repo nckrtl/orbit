@@ -59,7 +59,7 @@ final readonly class ScanInstanceDependenciesAction
     {
         $identity = $this->identity($instance);
         $current = AppInstance::query()->with('node')->find($instance->id);
-        if (! $this->available($current)) {
+        if (! $current instanceof AppInstance || ! $this->available($current)) {
             return $this->failure($instance->id, $attemptedAt, 'dependencies.instance_unavailable');
         }
         if ($identity !== $this->identity($current)) {
@@ -108,7 +108,7 @@ final readonly class ScanInstanceDependenciesAction
     {
         return DB::transaction(function () use ($instanceId, $identity, $result): DependencyScanResult {
             $current = AppInstance::query()->with('node')->lockForUpdate()->find($instanceId);
-            if (! $this->available($current)) {
+            if (! $current instanceof AppInstance || ! $this->available($current)) {
                 $result = DependencyScanResult::failed($result->ecosystem, $result->attemptedAt, 'dependencies.instance_unavailable');
             } elseif ($identity !== $this->identity($current)) {
                 $result = DependencyScanResult::failed($result->ecosystem, $result->attemptedAt, 'dependencies.source_changed');
@@ -118,9 +118,9 @@ final readonly class ScanInstanceDependenciesAction
         });
     }
 
-    private function available(?AppInstance $instance): bool
+    private function available(AppInstance $instance): bool
     {
-        return $instance !== null && $instance->status === AppInstanceState::Active
+        return $instance->status === AppInstanceState::Active
             && ! $instance->migration_required && ! $instance->removalMember()->exists();
     }
 

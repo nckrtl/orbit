@@ -140,6 +140,26 @@ it('settles a verified commit with a pull request', function (): void {
     expect($decision->action)->toBe(TaskSessionNextAction::SettleGroup);
 });
 
+it('treats a Choice without confidence as a missing answer', function (): void {
+    Classification::fake([[
+        'next_action' => new ChoiceAnswer(TaskSessionNextAction::DrainApproval->value, []),
+    ]]);
+
+    expect(fn () => app(LaravelAiTaskSessionClassifier::class)->classify(classifier_observation()))
+        ->toThrow(TaskSessionClassificationException::class, 'TypeSafe Jev did not return a confidence for the next_action Choice.');
+});
+
+it('treats an outcome Choice without confidence as a missing answer', function (): void {
+    Classification::fake([[
+        'outcome' => new ChoiceAnswer(TaskJevOutcome::AssistanceRequired->value, []),
+    ]]);
+
+    expect(fn () => app(LaravelAiTaskSessionClassifier::class)->classifyOutcome(
+        classifier_observation(),
+        TaskThreadRole::Implementer,
+    ))->toThrow(TaskSessionClassificationException::class, 'TypeSafe Jev did not return a confidence for the outcome Choice.');
+});
+
 it('escalates when Choice confidence is below the gate', function (): void {
     config()->set('orbit.tasks.jev_confidence_threshold', 0.75);
     Classification::fake([[

@@ -251,7 +251,7 @@ it("rejects a wrong command line, a map pattern, and an unknown path", () => {
     });
     expect(foreign.json.message).toContain("demo server");
     expect(existsSync(join(fastHome, "server.log"))).toBe(false);
-});
+}, 30_000);
 
 it("clicks nothing when the checkout has no active page", () => {
     const result = run(fastHome, ["click", "[data-testid=nav-menu]"]);

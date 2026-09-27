@@ -18,7 +18,9 @@ final readonly class PiModel
 {
     public static function forModel(string $model, ?string $provider = null): string
     {
-        [$named, $name] = str_contains($model, '/') ? explode('/', $model, 2) : [null, $model];
+        $slash = strpos($model, '/');
+        $named = $slash === false ? null : substr($model, 0, $slash);
+        $name = $slash === false ? $model : substr($model, $slash + 1);
         if ($named === 'anthropic' || str_starts_with($name, 'claude')) {
             throw new AgentDriverException('Claude models run on the T3 driver, not on Pi.');
         }

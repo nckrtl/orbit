@@ -15,6 +15,7 @@ use Orbit\Sdk\Requests\AppInstances\CloneAppInstanceRequest;
 use Orbit\Sdk\Requests\Deployments\ListAppInstanceReleasesRequest;
 use Orbit\Sdk\Responses\AppInstances\AppInstanceResponse;
 use Orbit\Sdk\Responses\Deployments\DeploymentReleasesResponse;
+use Orbit\Sdk\Responses\Routes\RouteResponse;
 
 final class CloneInstanceCommand extends GatewayCommand
 {
@@ -80,7 +81,9 @@ HELP;
         $progress->admit('releases', 'Read selected release', 'Loading selected release', 'Loaded selected release');
         $instance = null;
         try {
-            $instance = $progress->during('clone', function () use ($connector, $candidateId, $nodeId, $name, $previewName): AppInstanceResponse {
+            [$instance, $route] = $progress->during('clone', /**
+             * @return array{AppInstanceResponse, RouteResponse}
+             */ function () use ($connector, $candidateId, $nodeId, $name, $previewName): array {
                 $response = $this->sendOrThrow($connector, new CloneAppInstanceRequest(
                     candidateId: $candidateId,
                     nodeId: $nodeId,
@@ -89,11 +92,8 @@ HELP;
                     branch: $this->stringOption('branch'),
                     sqliteSourcePath: $this->stringOption('sqlite-source-path'),
                 ), AppInstanceResponse::class);
-                if ($response->route === null || $response->route->domain === '') {
-                    throw new GatewayApiException('Gateway response is invalid.', 'gateway.invalid_response', requestId: $response->requestId);
-                }
 
-                return $response;
+                return [$response, $this->previewRoute($response)];
             });
             $progress->complete('clone', ProgressState::Success);
             $releases = $progress->during('releases', fn (): object => $this->sendOrThrow(
@@ -116,7 +116,7 @@ HELP;
             $this->writeJson([
                 'target_id' => $instance->id,
                 'configured_branch' => $instance->selectedBranch,
-                'preview_domain' => $instance->route->domain,
+                'preview_domain' => $route->domain,
                 'selected_release' => $releases->selectedRelease,
                 'request_ids' => [
                     'clone' => $instance->requestId,
@@ -130,12 +130,23 @@ HELP;
         ConsoleWriter::write($this->output, $this->humanRenderer()->detail("Instance: {$instance->name}", [
             'Target ID' => $instance->id,
             'Configured branch' => $instance->selectedBranch,
-            'Preview domain' => $instance->route->domain,
+            'Preview domain' => $route->domain,
             'Selected release' => $releases->selectedRelease,
             'Clone request ID' => $instance->requestId,
             'Release request ID' => $releases->requestId,
         ]));
 
         return self::SUCCESS;
+    }
+
+    private function previewRoute(AppInstanceResponse $response): RouteResponse
+    {
+        $route = $response->route;
+
+        if ($route === null || $route->domain === '') {
+            throw new GatewayApiException('Gateway response is invalid.', 'gateway.invalid_response', requestId: $response->requestId);
+        }
+
+        return $route;
     }
 }

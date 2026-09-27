@@ -43,7 +43,7 @@ final class PrivateDnsTransportServer
                 STREAM_SERVER_BIND,
             );
             if (! is_resource($udp)) {
-                throw new RuntimeException($udpMessage !== '' ? $udpMessage : 'Could not bind the private DNS UDP socket.');
+                throw new RuntimeException(is_string($udpMessage) && $udpMessage !== '' ? $udpMessage : 'Could not bind the private DNS UDP socket.');
             }
 
             $name = stream_socket_get_name($udp, false);
@@ -66,7 +66,7 @@ final class PrivateDnsTransportServer
             fclose($udp);
             $this->port = $requested;
             if ($requested !== 0 || $attempt >= self::EphemeralBindAttempts) {
-                throw new RuntimeException($tcpMessage !== '' ? $tcpMessage : 'Could not bind the private DNS TCP socket.');
+                throw new RuntimeException(is_string($tcpMessage) && $tcpMessage !== '' ? $tcpMessage : 'Could not bind the private DNS TCP socket.');
             }
         }
 

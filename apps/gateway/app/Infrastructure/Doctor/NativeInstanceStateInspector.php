@@ -68,10 +68,10 @@ final readonly class NativeInstanceStateInspector implements InstanceStateInspec
         $values = $this->parse($result, 4, allowUnavailable: false);
 
         return new InstanceInspectionData(
-            checkoutExists: $values[0],
-            repositoryLayoutMatches: $values[1],
-            originMatches: $values[2],
-            sourceIdentityMatches: $values[3],
+            checkoutExists: $this->observed($values, 0),
+            repositoryLayoutMatches: $this->observed($values, 1),
+            originMatches: $this->observed($values, 2),
+            sourceIdentityMatches: $this->observed($values, 3),
         );
     }
 
@@ -110,6 +110,19 @@ final readonly class NativeInstanceStateInspector implements InstanceStateInspec
             phpFpmProjectionMatches: $values[4],
             caddyProjectionMatches: $values[5],
         );
+    }
+
+    /**
+     * @param  list<?bool>  $values
+     */
+    private function observed(array $values, int $index): bool
+    {
+        $value = $values[$index] ?? null;
+        if (! is_bool($value)) {
+            throw new DoctorInspectionException;
+        }
+
+        return $value;
     }
 
     /** @return list<?bool> */

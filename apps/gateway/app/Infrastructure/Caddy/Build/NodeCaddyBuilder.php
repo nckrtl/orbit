@@ -73,9 +73,12 @@ final readonly class NodeCaddyBuilder implements NodeCaddyBuilds
 
     private static function stage(string $stderr): string
     {
-        return preg_match_all('/^orbit-caddy-build-stage=([a-z-]+)$/m', $stderr, $matches) > 0
-            ? array_last($matches[1])
-            : 'connect';
+        $found = preg_match_all('/^orbit-caddy-build-stage=([a-z-]+)$/m', $stderr, $matches);
+        if ($found === false || $found < 1) {
+            return 'connect';
+        }
+
+        return $matches[1][$found - 1];
     }
 
     /** The last lines Caddy or the script wrote, without the stage marker. */
