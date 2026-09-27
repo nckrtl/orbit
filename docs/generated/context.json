@@ -3960,7 +3960,9 @@
                 "Node",
                 "Role",
                 "Route",
-                "Schedule"
+                "Schedule",
+                "Task",
+                "Task workspace"
             ],
             "governing_adrs": []
         },
