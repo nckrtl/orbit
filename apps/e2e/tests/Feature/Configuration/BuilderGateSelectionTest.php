@@ -84,6 +84,7 @@ SH);
 
     copy(base_path('../../bin/review-check'), $root.'/bin/review-check');
     copy(base_path('../../bin/check-classification-fakes'), $root.'/bin/check-classification-fakes');
+    file_put_contents($root.'/bin/docs-impact', "#!/usr/bin/env sh\nexit 0\n");
     copy(base_path('tests/Fixtures/BuilderGate/composer'), $root.'/tooling/composer');
     file_put_contents($root.'/bin/tia-cache', "#!/usr/bin/env sh\n\nexit 0\n");
     foreach (['bun', 'vp'] as $tool) {
@@ -112,6 +113,7 @@ SH);
     chmod($root.'/apps/web/node_modules/.bin/openapi-typescript', 0o700);
     chmod($root.'/bin/review-check', 0o700);
     chmod($root.'/bin/check-classification-fakes', 0o700);
+    chmod($root.'/bin/docs-impact', 0o700);
     chmod($root.'/bin/tia-cache', 0o700);
     chmod($root.'/tooling/composer', 0o700);
 

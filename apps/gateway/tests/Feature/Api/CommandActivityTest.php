@@ -542,13 +542,20 @@ it('records renamed App Cluster and Route lifecycle command names', function ():
         'wireguard_ip' => '10.44.0.12',
         'tld' => 'test',
     ]);
-    expect($recorded('POST', '/api/v1/routes', [
+    $this->postJson('/api/v1/routes', [
         'app_id' => $app->id,
         'domain' => 'lifecycle.example.test',
         'publication' => 'private',
         'node_id' => $node->id,
-    ]))->toBe('route:create');
-    $route = Route::query()->where('domain', 'lifecycle.example.test')->sole();
+    ])->assertConflict()->assertJsonPath('error.code', 'route.target_required');
+    $route = Route::query()->create([
+        'app_id' => $app->id,
+        'node_id' => $node->id,
+        'domain' => 'lifecycle.example.test',
+        'provenance' => 'explicit',
+        'publication' => 'private',
+        'status' => 'pending',
+    ]);
     expect($recorded('DELETE', "/api/v1/routes/{$route->id}/target"))->toBe('route:target:unset');
     expect($recorded('DELETE', "/api/v1/routes/{$route->id}"))->toBe('route:destroy');
 });

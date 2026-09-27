@@ -550,7 +550,6 @@
           {
             "group": "Records",
             "pages": [
-              "decisions/0017-optional-cluster-placement-and-tld-precedence",
               "decisions/0051-select-discovery-only-feature-delivery",
               "decisions/0052-seed-worktrees-from-successful-main-test-baselines",
               "decisions/0053-use-local-review-checks-for-feature-landing",
@@ -558,7 +557,6 @@
               "decisions/0058-separate-incus-requirements-from-delivery-flow",
               "decisions/0059-make-the-builder-own-the-candidate-quality-gate",
               "decisions/0076-deliver-features-through-complete-pull-requests",
-              "decisions/0082-wire-agentation-watch-mode-through-appinstance-processes",
               "decisions/0097-publish-analytics-tracking-hosts-for-app-instances",
               "decisions/0103-absorb-commander-tasks-as-a-gateway-extension",
               "decisions/0104-own-cliproxyapi-quota-through-the-proxycli-extension",
@@ -569,19 +567,16 @@
               "decisions/0114-judge-task-completion-as-separate-checks",
               "decisions/0116-run-task-implementers-on-pi",
               "decisions/0117-judge-the-blocked-question-on-role-evidence",
-              "decisions/0120-extract-agent-annotation-package",
               "decisions/0121-end-agent-turns-with-a-run-receipt",
               "decisions/0122-hold-task-groups-in-backlog-until-ready",
               "decisions/0124-plan-backlog-groups-with-a-t3-planner",
               "decisions/0125-run-the-project-check-when-the-implementer-hands-off",
-              "decisions/0127-share-one-ssh-connection-per-node",
               "decisions/0131-seed-task-workspace-clones-from-the-registered-main-cache-store",
               "decisions/0132-pause-only-for-the-acting-thread-and-a-real-question",
               "decisions/0133-verify-typed-subtask-deliverables-at-handoff",
               "decisions/0134-resume-pi-agent-streams-from-a-cursor",
               "decisions/0140-watch-settling-pull-requests-for-conflicts-and-failed-checks",
               "decisions/0145-publish-the-proxycli-collector-on-collector-cli-proxy-api-orbit",
-              "decisions/0147-retire-orbit-top",
               "decisions/0150-keep-extension-commands-local-and-confirm-the-proxycli-fleet-stop",
               "decisions/0160-push-each-approved-subtask-and-remove-the-finished-workspace-clone",
               "decisions/0163-prove-a-failing-test-on-the-start-commit",
@@ -595,6 +590,7 @@
               "decisions/0171-reset-fixup-caps-after-operator-work",
               "decisions/0173-record-and-label-jev-decisions",
               "decisions/0174-match-the-task-gate-to-ci-and-repeated-findings",
+              "decisions/0175-docs-impact-check-in-orbit-repo",
               "decisions/0178-run-project-agnostic-tasks-without-a-planner"
             ]
           }
@@ -1012,7 +1008,7 @@
     },
     {
       "source": "/decisions/0085-build-orbit-top-as-a-thin-tui-client",
-      "destination": "/reference/web-app"
+      "destination": "/reference/web-app#one-live-fleet-view"
     },
     {
       "source": "/decisions/0086-offer-the-api-as-mcp-tools",
@@ -1161,6 +1157,26 @@
     {
       "source": "/cli/workspace",
       "destination": "/cli/instance#orbit-instanceregister"
+    },
+    {
+      "source": "/decisions/0017-optional-cluster-placement-and-tld-precedence",
+      "destination": "/cli/cluster#placement-and-tlds"
+    },
+    {
+      "source": "/decisions/0082-wire-agentation-watch-mode-through-appinstance-processes",
+      "destination": "/reference/agentation"
+    },
+    {
+      "source": "/decisions/0120-extract-agent-annotation-package",
+      "destination": "/reference/agent-annotation"
+    },
+    {
+      "source": "/decisions/0127-share-one-ssh-connection-per-node",
+      "destination": "/reference/node-provisioning#ssh-connections"
+    },
+    {
+      "source": "/decisions/0147-retire-orbit-top",
+      "destination": "/reference/web-app#one-live-fleet-view"
     }
   ]
 }

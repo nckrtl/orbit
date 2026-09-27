@@ -78,7 +78,7 @@ final class AgentRealtimeController extends Controller
         $id = $node->id;
         $channel = $request->channelName();
 
-        // The Node's own presence channel, and from agent 0.3.0 its own log channel (ADR 0153).
+        // The Node's own presence channel or its own log channel (ADR 0153).
         if (! in_array($channel, ["presence-node.{$id}", "presence-node-logs.{$id}"], strict: true)) {
             throw new ResourceOperationException('agent.channel_forbidden', 'Agent may only join its own presence channels.', 403);
         }

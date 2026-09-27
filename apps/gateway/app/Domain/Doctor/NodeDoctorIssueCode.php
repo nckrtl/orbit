@@ -12,8 +12,8 @@ enum NodeDoctorIssueCode: string implements DoctorIssueCode
     case ArchitectureMismatch = 'node.architecture_mismatch';
     case WireGuardAddressMismatch = 'node.wireguard_ip_mismatch';
     case AgentMissing = 'node.agent_missing';
+    case AgentBinaryMismatch = 'node.agent_binary_mismatch';
     case AgentInactive = 'node.agent_inactive';
-    case AgentOutdated = 'node.agent_outdated';
     case AgentViewStale = 'node.agent_view_stale';
     case AgentSecretMismatch = 'node.agent_secret_mismatch';
     case InspectionFailed = 'node.inspection_failed';

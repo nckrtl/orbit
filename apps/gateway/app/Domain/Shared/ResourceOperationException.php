@@ -7,7 +7,7 @@ namespace App\Domain\Shared;
 use RuntimeException;
 use Throwable;
 
-final class ResourceOperationException extends RuntimeException
+class ResourceOperationException extends RuntimeException
 {
     /**
      * @param  array<string, string>  $details

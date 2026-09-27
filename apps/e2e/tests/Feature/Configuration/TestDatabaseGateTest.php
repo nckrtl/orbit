@@ -170,6 +170,8 @@ it('checks a candidate with uncommitted changes as it is and records its working
         ->and($receipts[0]['committed'] ?? null)->toBeFalse()
         ->and($receipts[0]['tree'] ?? null)->toBe($expected)
         ->and($receipts[0]['changed_paths'] ?? null)->toBe(['apps/cli/.gitkeep', 'apps/cli/new-file.php'])
+        ->and(collect($receipts[0]['checks'] ?? [])->pluck('command')->all())
+        ->toContain(['vendor/bin/pest', 'tests/Feature/CommandSurfaceTest.php'])
         ->and($receipts[0]['passed'] ?? null)->toBeTrue()
         ->and((new Process(['git', 'status', '--porcelain'], $fixture['root']))->mustRun()->getOutput())->toBe($status);
 });
