@@ -8,6 +8,7 @@ covers:
   - apps/gateway/app/Infrastructure/AppDev/{AppDevCaddyConfigRenderer,AppDevSiteRepository,NativeDevelopmentProjectionOperationLock}.php
   - apps/gateway/app/Domain/AppDev/{DevelopmentServerEndpoint,AgentationEndpoint,PrivateDnsAnswerExpiry}.php
   - apps/gateway/app/Infrastructure/Clusters/NativeClusterRouterOperationLock.php
+  - apps/gateway/app/Infrastructure/AppInstances/NativeProductionRouteProjector.php
 ---
 
 # Routes
