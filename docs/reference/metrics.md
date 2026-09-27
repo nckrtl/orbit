@@ -40,7 +40,7 @@ Convergence runs four steps in this order. Each failure records its step as `fai
 | `converge:metrics-exporters` | Installs and starts the node exporter on each selected Node. |
 | `converge:metrics-cadvisor` | Installs and starts cAdvisor on each selected Node. |
 | `converge:metrics-runtime` | Writes `/etc/orbit/metrics` and runs the two containers. |
-| `converge:metrics-publication` | Publishes the certificate, the Gateway Caddy site, the Grafana firewall rules, and the private DNS record. |
+| `converge:metrics-publication` | Publishes the certificate, the Grafana firewall rules, the Gateway Caddy site, and the private DNS record, in that order. |
 
 `error_code` holds the code that stopped the step. This is usually a `metrics.*` code. It can be another component's code, such as a certificate error. A failure without a code records `metrics.convergence_failed`. A step that names itself, such as `converge:private-dns`, keeps its own name and code. The error response carries the code as `details.error_code` next to `details.step`. A publication failure leaves the runtime in place.
 
@@ -77,7 +77,7 @@ A Node can host an exporter only when the Gateway manages it. The Node must be a
 | `enabled` | Any eligible Node | Selected |
 | `disabled` | Any eligible Node except the Metrics Node | Not selected |
 | any | Not eligible | Not selected |
-| any | The Metrics Node | Selected |
+| any | The Metrics Node, when eligible | Selected |
 
 `orbit metrics:exporter:enable` and `orbit metrics:exporter:disable` store the preference. Preferences survive role changes and a disabled Metrics role. The Gateway checks eligibility before it stores an enabled preference or starts remote work.
 
@@ -107,9 +107,9 @@ Open Grafana at `https://metrics.orbit` from the active Gateway Node, or from an
 
 Private DNS answers `metrics.orbit` with the Gateway's WireGuard address. The Gateway's Caddy presents an Orbit CA certificate. Before each request, Caddy calls `GET /api/v1/metrics/grafana/authorize` with the connection address. It ignores forwarding and identity headers from the caller. It proxies admitted traffic over WireGuard to Grafana on the Metrics Node.
 
-The Gateway refuses an unknown, inactive, ungranted, or public caller. It also refuses when it cannot establish the caller's identity or authority. When a peer loses WireGuard membership or its Gateway grant, the Gateway reloads its Caddy. Later requests fail, and open streaming connections close.
+The Gateway refuses an unknown, inactive, ungranted, or public caller. It also refuses when it cannot establish the caller's identity or authority. When an access grant or a Node is removed, the Gateway reloads its Caddy. Later requests fail, and open streaming connections close.
 
-Only `metrics.orbit` serves Grafana. The Gateway refuses another host name or a direct request to its address. On the Metrics Node, the rules `orbit:metrics-grafana-upstream` and `orbit:metrics-grafana-isolation` admit only the Gateway to port 3000. This applies also when the Gateway and Metrics roles share a Node.
+The Gateway's own origin also serves Grafana under `/grafana/`, behind the same check. The web app reads Node metrics there. On the Metrics Node, the rules `orbit:metrics-grafana-upstream` and `orbit:metrics-grafana-isolation` admit only the Gateway to port 3000. This applies also when the Gateway and Metrics roles share a Node.
 
 ## Authorization
 
@@ -145,13 +145,13 @@ The result reports `publication`:
 | `cleaned` | The Gateway removed the `metrics.orbit` site, certificate, and DNS record. |
 | `uncleaned` | No single active Gateway existed when the step ran. The site, certificate, and DNS record stay on the Gateway host for an operator to remove. |
 
-An `uncleaned` removal still removes the exporters, both containers, and `/etc/orbit/metrics`. It removes the Grafana upstream rule when the Node's firewall answers. `orbit node:remove <node> --offline --force` needs no Gateway, so it can remove the role from an unreachable Metrics Node. It leaves the Gateway publication in the same way.
+An `uncleaned` removal still removes the exporters, both containers, and `/etc/orbit/metrics`. It removes both Grafana firewall rules when the Node's firewall answers. `orbit node:remove <node> --offline --force` needs no Gateway, so it can remove the role from an unreachable Metrics Node. It leaves the Gateway publication in the same way.
 
 ## Read Node metrics
 
 [`orbit node:metrics`](/cli/node#orbit-node-metrics) and the [web app](/reference/web-app) read CPU, memory, swap, load, uptime, pressure, and disk from the role's Prometheus. The Gateway reads through Grafana's datasource proxy with the stored Grafana credential. It runs four instant PromQL queries for the Node's exporter. Each rate uses a 40-second window. This window survives a dropped scrape and still shows a spike.
 
-A reading is at most 10 seconds old. The web app refreshes node metrics every 10 seconds. A Node without an active exporter or without samples answers `node.metrics_unreachable`.
+A reading is at most 10 seconds old. The web app refreshes node metrics every 10 seconds through the Gateway's `/grafana/` path. A Node without an active exporter or without samples answers `node.metrics_unreachable` (HTTP 502). Without a Metrics assignment, the read fails with `metrics.assignment_missing` (HTTP 409).
 
 ## Why it works this way
 
