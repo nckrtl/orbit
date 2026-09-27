@@ -13,10 +13,6 @@ use App\Actions\Routes\SetRouteTargetAction;
 use App\Actions\Routes\ShowRouteAction;
 use App\Actions\Routes\UpdateRouteAction;
 use App\Data\Routes\RouteData;
-use App\Domain\AppInstances\AppInstanceState;
-use App\Domain\Routes\RouteStatus;
-use App\Domain\Routes\RouteTargetWebRoot;
-use App\Domain\Shared\ResourceOperationException;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
@@ -24,10 +20,8 @@ use App\Http\Requests\Routes\EmptyRouteRequest;
 use App\Http\Requests\Routes\SetRouteTargetRequest;
 use App\Http\Requests\Routes\StoreRouteRequest;
 use App\Http\Requests\Routes\UpdateRouteRequest;
-use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Route;
-use App\Models\RouteTarget;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -52,60 +46,7 @@ final class RoutesController extends Controller
     #[RequiresNodeAccess(ServingNode::RouteOwning)]
     public function store(StoreRouteRequest $request, CreateRouteAction $action): JsonResponse
     {
-        $data = $request->payload();
-
-        if (! $data->isCustomProxy() && ! Route::query()->where('domain', $data->domain)->exists()) {
-            $targetIsAlreadyAssociated = $data->appInstanceId !== null
-                && RouteTarget::query()->where('app_instance_id', $data->appInstanceId)->exists();
-
-            if ($data->appInstanceId !== null) {
-                $target = AppInstance::query()->with('app')->findOrFail($data->appInstanceId);
-
-                if ($target->app_id !== $data->appId) {
-                    throw new ResourceOperationException(
-                        errorCode: 'route.target_app_conflict',
-                        message: 'The Route target must belong to the Route Project.',
-                        status: 409,
-                    );
-                }
-
-                if ($target->status !== AppInstanceState::Active) {
-                    throw new ResourceOperationException(
-                        errorCode: 'route.target_inactive',
-                        message: 'The Route target must be active.',
-                        status: 409,
-                    );
-                }
-
-                RouteTargetWebRoot::assertSupported($target);
-            }
-
-            if (! $targetIsAlreadyAssociated) {
-                if ($data->appInstanceId === null) {
-                    throw new ResourceOperationException(
-                        errorCode: 'route.target_required',
-                        message: 'A targetless Project Route has no serving path. Create it through Instance provisioning instead.',
-                        status: 409,
-                    );
-                }
-
-                throw new ResourceOperationException(
-                    errorCode: 'route.activation_unsupported',
-                    message: 'route:create cannot activate an explicit Project Route for this Instance. Use Instance provisioning or a supported Route replacement operation.',
-                    status: 409,
-                );
-            }
-        }
-
-        $result = $action->executeForRouteCreate($data);
-
-        if (! $result['created'] && $result['route']->isApp() && $result['route']->status === RouteStatus::Pending) {
-            throw new ResourceOperationException(
-                errorCode: 'route.activation_unsupported',
-                message: 'The existing Project Route is pending; route:create cannot activate it.',
-                status: 409,
-            );
-        }
+        $result = $action->executeForRouteCreate($request->payload());
 
         return response()->json(
             [

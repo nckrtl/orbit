@@ -37,6 +37,7 @@ use App\Domain\Nodes\Storage\ManagedCheckoutOverlap;
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Nodes\Storage\StorageRootResolver;
+use App\Domain\Processes\ProcessAdmissionLock;
 use App\Domain\Projects\DevelopmentNodeExclusion;
 use App\Domain\Routes\RoutePlacement;
 use App\Domain\Routes\RouteProvenance;
@@ -80,7 +81,8 @@ final readonly class TransferAppInstanceAction
         private AppInstanceTransferRouteProjector $transferProjection,
         private DevelopmentProjectionOperationLock $projectionOwner,
         private ClusterRouterOperationLock $routerOwner,
-        private ?ScheduleTargetUseGuard $schedules = null,
+        private ScheduleTargetUseGuard $schedules,
+        private ProcessAdmissionLock $processAdmissions,
     ) {}
 
     /** @return array{appInstance: AppInstance, transfer: AppInstanceTransfer, created: bool} */
@@ -127,7 +129,7 @@ final readonly class TransferAppInstanceAction
             $created = false;
 
             if ($transfer->cutover_at === null) {
-                ($this->schedules ?? app(ScheduleTargetUseGuard::class))->assertAppInstanceStable($instance);
+                $this->schedules->assertAppInstanceStable($instance);
             }
         } else {
             $transfer = $this->environmentOperations->run(
@@ -209,7 +211,7 @@ final readonly class TransferAppInstanceAction
 
     private function reserve(AppInstance $instance, TransferAppInstanceData $data): AppInstanceTransfer
     {
-        ($this->schedules ?? app(ScheduleTargetUseGuard::class))->assertAppInstanceStable($instance);
+        $this->schedules->assertAppInstanceStable($instance);
         [$destination, $path, $domain, $route] = $this->preflight($instance, $data);
 
         return AppInstanceTransfer::query()->create([
@@ -476,7 +478,13 @@ final readonly class TransferAppInstanceAction
         }
 
         if ($transfer->current_step === AppInstanceTransferStep::RoutePrepared) {
-            $this->cutover($instance, $destination, $transfer, $sourceClusterId);
+            $this->processAdmissions->run(
+                [$instance->id],
+                function () use ($instance, $destination, $transfer, $sourceClusterId): void {
+                    $this->schedules->assertAppInstanceStable($instance->refresh());
+                    $this->cutover($instance, $destination, $transfer, $sourceClusterId);
+                },
+            );
         }
 
         $instance = AppInstance::query()->with(['app', 'node', 'routes.targets'])->findOrFail($instanceId);

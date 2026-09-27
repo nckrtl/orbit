@@ -65,6 +65,10 @@ final readonly class CreateRouteAction
         $domain = RouteDomain::validate($data->domain);
         ReservedPrivateHostname::assertAvailable($domain);
 
+        if ($refuseNewExplicitProjectRoute && ! $data->isCustomProxy()) {
+            Route::query()->where('domain', $domain)->exists();
+        }
+
         $result = $data->isCustomProxy()
             ? $this->persistCustomProxy($data, $domain)
             : $this->persistExplicit($data, $domain, $refuseNewExplicitProjectRoute);
@@ -312,6 +316,7 @@ final readonly class CreateRouteAction
 
         if ($target instanceof AppInstance) {
             $this->assertTarget($target, $data->appId);
+            RouteTargetWebRoot::assertSupported($target);
             $placement = $this->state->forNode($target->node);
             $nodeId = $placement->nodeId;
             $clusterId = $placement->clusterId;
@@ -329,6 +334,14 @@ final readonly class CreateRouteAction
 
         if ($existing instanceof Route) {
             $this->assertIdenticalRetry($existing, $data, $nodeId, $clusterId, $target);
+
+            if ($refuseNewProjectRoute && $existing->isApp() && $existing->status === RouteStatus::Pending) {
+                throw new ResourceOperationException(
+                    errorCode: 'route.activation_unsupported',
+                    message: 'The existing Project Route is pending; route:create cannot activate it.',
+                    status: 409,
+                );
+            }
 
             return ['route' => $existing->load(['targets', 'customProxy']), 'created' => false];
         }

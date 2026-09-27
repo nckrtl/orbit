@@ -77,31 +77,9 @@ A Project slug update recomputes every generated development Route domain from t
 
 ## Create and change targets
 
-`route:create` refuses a new explicit Project Route that would remain pending. Custom proxy Routes use a separate flow that converges their Node-local serving path. The Gateway refuses reserved platform names: `gateway.orbit`, `metrics.orbit`, `reverb.orbit`, `analytics.orbit`, and `collector.cli-proxy-api.orbit`.
+`route:create` refuses a new explicit Project Route that would remain pending. A targetless Project Route in either Node or Cluster scope returns `route.target_required`; an explicit Project Route for an unassociated Instance returns `route.activation_unsupported`. These refusals leave Routes and target associations unchanged. An identical retry for an existing pending Project Route also returns `route.activation_unsupported`; `route:create` does not resume or activate it. Custom proxy Route creation remains separate and converges its Node-local serving path. The Gateway refuses reserved platform names: `gateway.orbit`, `metrics.orbit`, `reverb.orbit`, `analytics.orbit`, and `collector.cli-proxy-api.orbit`.
 
-## Route operations
-
-The API, PHP software development kit (SDK), and command-line interface (CLI) expose seven operations and return the Route's relationships.
-
-| Operation | Result |
-| --- | --- |
-| Create | Refuse a new explicit Project Route when `route:create` cannot converge and activate its serving path; persist a custom proxy Route and converge its private projection. |
-| List | Return the Routes visible to the caller in stable order, including both kinds. |
-| Show | Return one Route with its kind, stored scope, provenance, generation basis, intent, lifecycle, failure metadata, Instance targets or custom proxy upstream, and ordered target set. |
-| Update | Reserve a replacement Route for an explicit domain change, or change publication intent on the same Route ID. |
-| Target set | Add or replace one Instance target, or replace the complete ordered production target set with explicit dispositions for every detached active Instance. |
-| Target unset | Remove the target only when that does not leave an active Instance without a Route, unless the same operation removes that Instance. |
-| Destroy | The Gateway deletes an eligible Route after untargeted private projection cleanup. It refuses a targeted Route before cleanup. |
-
-The CLI names these operations `route:create`, `route:list`, `route:show`, `route:update`, `route:target:set`, `route:target:unset`, and `route:destroy`.
-
-`route:create` does not create a new Project Route that would remain `pending`. A targetless Project Route in either Node or Cluster scope is refused with `route.target_required`; an explicit Project Route for an unassociated Instance is refused with `route.activation_unsupported` because creation does not project or activate that serving path. These refusals leave both Routes and target associations unchanged. Create a serving Project Route through Instance provisioning, or use a supported Route replacement operation. Custom proxy Route creation is separate: it projects its Node-local serving path and returns an active Route on success.
-
-An identical retry for an already active Route returns that Route. An identical retry for a stored pending Project Route returns `route.activation_unsupported` and does not change it; `route:create` does not resume or activate a pending Project Route. A retry with changed intent returns `route.retry_conflict`. A target already associated with another Route retains the `route.target_conflict` response rather than being masked by the activation refusal. A refused new Project Route creates neither a Route nor a target row.
-
-## Change or clear a target
-
-The Gateway validates the complete proposed Route before it commits a target change. A Route target must have a supported relative web root. A package Instance rooted at `.` is not a supported target and returns `route.target_web_root_unsupported` until an operator sets a web-root override.
+A Route target must have a supported relative web root. An Instance rooted at `.`, such as a package, returns `route.target_web_root_unsupported` until an operator sets a web-root override.
 
 | Change | Result |
 | --- | --- |

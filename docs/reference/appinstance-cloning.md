@@ -15,7 +15,7 @@ covers:
 
 Every production Instance starts as a clone. The Gateway copies a candidate Instance's committed source, stored environment, and optionally one SQLite database to a new Instance on an `app-prod` Node. The candidate keeps running. The clone ends with a prepared production home and no release. Its first [deployment](/reference/deployments) selects code.
 
-A clone onto app-prod copies the candidate environment, writes `APP_ENV=production` and `APP_DEBUG=false`, then synchronizes the resulting configuration to the new Instance's owning Node. The Instance's placement owns its environment; a Route is not required for synchronization. Those keys stay editable afterward. `laravel-app` clones still receive one preview Route. `monorepo`, `laravel-package`, and `node-package` clones receive no Route unless an operator attaches an explicit serving target, and their environment is still synchronized during cloning.
+`instance:create` on an `app-prod` Node returns `instance.candidate_required`. The `app-prod` role decides this, not `APP_ENV`.
 
 ## Prepare the Node
 

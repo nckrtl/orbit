@@ -141,16 +141,14 @@ describe(ProvisionNodeAction::class, function (): void {
         ]);
         $failedNode->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
         $errorCode = 'metrics.exporter_fleet_rollback_failed';
-        $failure = class_exists(MetricsFleetReconcileException::class)
-            ? new MetricsFleetReconcileException(
-                MetricsReconcileComponent::Exporter,
-                $failedNode->id,
-                $errorCode,
-                'Rollback failed.',
-                502,
-                new ResourceOperationException($errorCode, 'Rollback failed.', 502),
-            )
-            : new ResourceOperationException($errorCode, 'Rollback failed.', 502);
+        $failure = new MetricsFleetReconcileException(
+            MetricsReconcileComponent::Exporter,
+            $failedNode->id,
+            $errorCode,
+            'Rollback failed.',
+            502,
+            new ResourceOperationException($errorCode, 'Rollback failed.', 502),
+        );
         $metrics = Mockery::mock(MetricsFleetReconciler::class);
         $metrics->shouldReceive('reconcile')->once()->andThrow($failure);
         app()->instance(MetricsFleetReconciler::class, $metrics);
@@ -249,7 +247,7 @@ describe(ProvisionNodeAction::class, function (): void {
             ->toBe('metrics.exporter_fleet_rollback_failed');
     });
 
-    it('keeps runtime Metrics failures inside the Node provisioning failure boundary', function (): void {
+    it('keeps an active Gateway Node active when runtime Metrics failure occurs', function (): void {
         app()->instance(NodeConverger::class, provision_node_observing_converger('x86_64'));
         $node = Node::query()->create([
             'name' => 'runtime-metrics-failure',
@@ -261,6 +259,7 @@ describe(ProvisionNodeAction::class, function (): void {
             'user' => 'orbit',
             'ssh_host_fingerprint' => 'SHA256:pinned',
         ]);
+        $node->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
         $metrics = Mockery::mock(MetricsFleetReconciler::class);
         $metrics->shouldReceive('reconcile')->once()->andThrow(new MetricsFleetReconcileException(
             MetricsReconcileComponent::Runtime,
@@ -272,13 +271,15 @@ describe(ProvisionNodeAction::class, function (): void {
         ));
         app()->instance(MetricsFleetReconciler::class, $metrics);
 
-        expect(fn () => app(ProvisionNodeAction::class)->execute(new ProvisionNodeData(
+        app(ProvisionNodeAction::class)->execute(new ProvisionNodeData(
             name: $node->name,
             publicSshHost: $node->public_ssh_host,
-        )))->toThrow(NodeProvisioningException::class, 'Metrics fleet reconciliation failed.');
+        ));
 
-        expect($node->refresh()->status)->toBe(LifecycleStatus::Failed)
-            ->and($node->error_code)->toBe('node.metrics_reconcile_failed');
+        expect($node->refresh()->status)->toBe(LifecycleStatus::Active)
+            ->and($node->error_code)->toBeNull()
+            ->and(app(MetricsReconcileDegradationRepository::class)->errorCode($node->id))
+            ->toBe('metrics.docker_unavailable');
     });
 
     it('rejects an invalid stored managed user before mutating an existing node', function (): void {

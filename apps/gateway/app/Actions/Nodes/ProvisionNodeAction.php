@@ -480,25 +480,17 @@ final readonly class ProvisionNodeAction
         try {
             $this->metrics->reconcile();
         } catch (Throwable $exception) {
-            if (
-                $exception instanceof MetricsFleetReconcileException
-                && $exception->component !== MetricsReconcileComponent::Runtime
-            ) {
-                $this->exporterDegradations->put(
-                    $exception->nodeId,
-                    ExporterDegradationReason::ReconcileFailed,
-                );
+            if ($exception instanceof MetricsFleetReconcileException) {
+                if ($exception->component !== MetricsReconcileComponent::Runtime) {
+                    $this->exporterDegradations->put(
+                        $exception->nodeId,
+                        ExporterDegradationReason::ReconcileFailed,
+                    );
+                }
+
                 $this->metricsDegradation->put($exception->nodeId, $exception->errorCode);
             } else {
-                $failure = new NodeProvisioningException(
-                    step: 'metrics-exporters',
-                    errorCode: 'node.metrics_reconcile_failed',
-                    message: 'Metrics fleet reconciliation failed.',
-                    previous: $exception,
-                );
-                $this->markFailed($node, $failure);
-
-                throw $failure;
+                $this->metricsDegradation->put($node->id, 'metrics.reconcile_failed');
             }
         }
 

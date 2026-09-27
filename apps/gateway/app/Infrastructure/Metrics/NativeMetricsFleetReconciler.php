@@ -12,13 +12,13 @@ use App\Domain\Metrics\MetricsFleetReconcileException;
 use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Metrics\MetricsReconcileComponent;
 use App\Domain\Metrics\MetricsReconcileDegradationRepository;
+use App\Domain\Metrics\MetricsResourceFailure;
 use App\Domain\Metrics\MetricsRuntimeLifecycle;
 use App\Domain\Metrics\ServiceMetricsLifecycle;
 use App\Domain\Nodes\RoleAssignmentException;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Settings\SettingRepository;
 use App\Domain\Shared\LifecycleStatus;
-use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
 use App\Models\NodeRole;
 use Throwable;
@@ -120,13 +120,7 @@ final readonly class NativeMetricsFleetReconciler implements MetricsFleetReconci
         $failure = $exception instanceof MetricsFleetReconcileException
             ? $exception
             : null;
-        $structured = null;
-        for ($cause = $exception; $cause !== null; $cause = $cause->getPrevious()) {
-            if ($cause instanceof ResourceOperationException) {
-                $structured = $cause;
-                break;
-            }
-        }
+        $structured = MetricsResourceFailure::find($exception);
 
         $failure ??= new MetricsFleetReconcileException(
             $component,

@@ -20,12 +20,14 @@ use App\Domain\Nodes\Storage\ManagedCheckoutOverlap;
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Nodes\Storage\StorageRootResolver;
 use App\Domain\Processes\DesiredProcessState;
+use App\Domain\Processes\ProcessAdmissionLock;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStateResolver;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Schedules\DesiredTimerState;
+use App\Domain\Schedules\ScheduleTargetUseGuard;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\App as OrbitApp;
@@ -123,6 +125,8 @@ beforeEach(function (): void {
         $this->projection,
         app(DevelopmentProjectionOperationLock::class),
         $this->routerLock,
+        app(ScheduleTargetUseGuard::class),
+        app(ProcessAdmissionLock::class),
     );
     $this->data = new TransferAppInstanceData(
         nodeId: $this->destinationNode->id,
@@ -152,6 +156,28 @@ it('refuses transfer when schedules target the AppInstance', function (): void {
     expect($this->instance->refresh()->node_id)->toBe($this->sourceNode->id)
         ->and(AppInstanceTransfer::query()->exists())->toBeFalse()
         ->and($this->sources->calls)->toBeEmpty();
+});
+
+it('rechecks Schedules created after reserve before transfer cutover', function (): void {
+    $this->runtime->onPause = function (AppInstance $instance): void {
+        Schedule::query()->create([
+            'target_type' => AppInstance::class,
+            'target_id' => $instance->id,
+            'host_node_id' => $this->sourceNode->id,
+            'name' => 'late-nightly',
+            'calendar' => '*-*-* 02:00:00',
+            'command' => 'php artisan schedule:run',
+            'timeout_seconds' => 60,
+            'desired_timer_state' => DesiredTimerState::Enabled,
+            'status' => LifecycleStatus::Active,
+        ]);
+    };
+
+    expect(fn () => $this->action->execute($this->instance, $this->data))
+        ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('schedule.target_in_use'));
+
+    expect($this->instance->refresh()->node_id)->toBe($this->sourceNode->id)
+        ->and(AppInstanceTransfer::query()->whereNull('cutover_at')->exists())->toBeTrue();
 });
 
 it('transfers a development AppInstance to another app-dev Node in the same Cluster', function (): void {

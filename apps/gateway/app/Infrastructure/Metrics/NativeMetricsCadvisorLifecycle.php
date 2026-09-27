@@ -11,6 +11,7 @@ use App\Domain\Metrics\MetricsExporterProjection;
 use App\Domain\Metrics\MetricsExporterProjectionItem;
 use App\Domain\Metrics\MetricsFleetReconcileException;
 use App\Domain\Metrics\MetricsReconcileComponent;
+use App\Domain\Metrics\MetricsResourceFailure;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
 use App\Models\NodeRole;
@@ -130,13 +131,7 @@ final readonly class NativeMetricsCadvisorLifecycle implements MetricsCadvisorLi
 
     private function failure(Node $node, Throwable $exception): MetricsFleetReconcileException
     {
-        $structured = null;
-        for ($cause = $exception; $cause !== null; $cause = $cause->getPrevious()) {
-            if ($cause instanceof ResourceOperationException) {
-                $structured = $cause;
-                break;
-            }
-        }
+        $structured = MetricsResourceFailure::find($exception);
 
         return new MetricsFleetReconcileException(
             MetricsReconcileComponent::Cadvisor,

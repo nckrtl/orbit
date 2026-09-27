@@ -110,12 +110,12 @@ What a failure leaves depends on the step.
 | Steps 1 to 6 | `failed` at that step | `active` again, with its earlier record and network state restored |
 | 8, storage settings | `active`, with no settings stored | `active`, with the earlier settings kept |
 | 9, Node exporter or cAdvisor reconcile failure | `active`, with Metrics degraded | `active`, with Metrics degraded |
-| 9, Metrics runtime on the Metrics Node fails | `failed` at `metrics-exporters` | `failed` at `metrics-exporters` |
+| 9, Metrics runtime on the Metrics Node fails | `active`, with Metrics degraded | `active`, with Metrics degraded |
 | 10, Node agent | `failed` at `agent` | `active` again |
 
 A storage-settings failure returns its `node.settings_*` code, and the request skips steps 9 and 10. Only an unexpected error in step 8 marks the Node `failed` at `node-storage-root`.
 
-Step 9 runs whenever a Metrics role exists. An exporter reconcile failure does not fail provisioning or demote an active Node, including the `gateway` Node. The Node stays `active`; Metrics reports that Node as degraded with the reconcile error code. This applies when `node:add` provisions a Node as well as when it converges an existing Node. See [Metrics role](/reference/metrics#exporter-selection) for how exporter state and degradation are reported. A failure to converge the Metrics runtime itself remains a provisioning failure.
+Step 9 runs whenever a Metrics role exists. A Metrics reconcile failure does not fail provisioning or demote an active Node, including the `gateway` Node. The Node stays `active`; Metrics reports the failure as degraded. This applies to exporter, cAdvisor, runtime, and unexpected failures, both when `node:add` provisions a Node and when it converges an existing Node. See [Metrics role](/reference/metrics#exporter-selection) for how exporter state and degradation are reported.
 
 ## Role compatibility
 

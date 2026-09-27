@@ -81,30 +81,22 @@ The Gateway flushes output while a command runs. Before each phase event, it wri
 
 ## Deploy
 
-A deployment captures the Instance's current branch and recorded steps when it starts. The Gateway fetches the latest configured remote branch into a fresh release; a deployment accepts no commit selector, and a failed fetch leaves the selected release unchanged. A branch that moves later does not change the release being prepared.
+A deployment reads the branch and the steps once, when it starts. Then it runs these phases in order.
 
-The Gateway runs these phases in order:
+1. **Source preparation.** The Gateway clones the repository into a new release as the production user and checks out the latest commit of the branch. A branch that moves later does not change this release.
+2. **Environment sync.** The Gateway writes the stored configuration into `<home>/.env`, as [synchronization](/reference/environment-variables#synchronize) does. This needs exactly one Route on the Instance. An Instance without a Route fails here with `env.owner_unavailable`.
+3. **Before activation.** The Gateway runs each `before_activation` step in order, from the new release, as the production user, with a non-interactive shell.
+4. **Activation.** The Gateway replaces `current` atomically with a link to the new release.
+5. **PHP refresh.** For a PHP Instance, the Gateway refreshes the Instance's PHP-FPM pool and waits until it finishes.
+6. **After activation.** The Gateway runs each `after_activation` step in order.
 
-1. **Source preparation.** The Gateway creates a fresh release as the production user and checks out the fetched branch.
-2. **Environment sync.** The Gateway writes the stored environment to `<home>/.env` on the Instance's owning Node.
-3. **Before activation.** The Gateway runs each `before_activation` step in phase and placement order from the fresh release, as the Instance's Unix user through a fixed non-interactive shell. It transports each command as protected script content.
-4. **Activation.** After every pre-activation step succeeds, the Gateway atomically replaces `current` with a link to the fresh release.
-5. **PHP refresh.** For a PHP Instance, the Gateway refreshes its dedicated runtime cache and waits for confirmed completion. An Instance without PHP skips this operation.
-6. **After activation.** The Gateway runs each `after_activation` step in phase and placement order.
+Orbit adds no command of its own: no migration, cache clear, dependency install, asset build, health check, or restart. With no steps, a deployment runs no application command. A request during the switch gets either the old release or the new one.
 
-The Instance's placement owns its environment, so synchronization does not require a Route. When a stored value contains `{{app_instance.domain}}`, the Gateway needs an authoritative Route domain; otherwise synchronization fails with `env.reference_unavailable`. A route-less Instance without that domain reference can deploy normally. See [environment synchronization](/reference/environment-variables#synchronize).
-
-Provisioning and cloning never start a deployment. Orbit adds no command of its own: no migration, cache clear, dependency install, asset build, health check, or restart. An empty step list runs no application command. A request during the switch resolves to a complete old or new release. The switch and PHP cache refresh do not make a compatible application unavailable, but an application command can change its availability, and Orbit retains that command's effect.
-
-Each application command emits standard output and standard error as events while it runs. An event carries bytes from one stream and at most 16 KiB; the Gateway splits larger process reads into ordered events without changing their bytes. The final command result retains the latest 64 KiB from each stream and marks a stream `truncated: true` when older bytes were discarded.
-
-The Gateway records one history row for each deployment and rollback, including the branch, commit, status, failed boundary, selected release, caller, and phase/output events. It retains the most recent 50 rows per Instance, with at most 128 KiB of events per row. It does not snapshot the earlier step configuration.
-
-Each step uses its recorded timeout. Timeout or cancellation terminates that step's process group and stops later steps; Orbit never resumes or automatically replays an interrupted command. The operation deadline is the accepted sum of step timeouts plus up to 900 seconds for release, environment, activation, and runtime work, and never exceeds the request's 570-second deadline. A stopped run reports `deployment.deadline_exceeded` when a deadline expires.
+Each step has its own timeout. A timeout stops the step's process group and every later step. The whole deployment has a deadline of the step timeouts plus 900 seconds. It never exceeds the request's 570-second command deadline. When a deadline stops the run, the error code is `deployment.deadline_exceeded`.
 
 ## Failures
 
-The failed boundary decides which release stays selected. The deployment result identifies that boundary and the release selected when the invocation ends.
+The failed boundary decides which release stays selected.
 
 | Failed boundary | Selected release |
 | --- | --- |
@@ -112,11 +104,11 @@ The failed boundary decides which release stays selected. The deployment result 
 | Activation | The release that `current` selects when the Gateway reads it back from the Node. When that read fails, the release selected before the deployment. |
 | PHP refresh or an `after_activation` step | The new release. |
 
-Orbit does not undo the effects of a step, environment sync, or data changes. You decide how to recover.
+Orbit never undoes the effects of a step, of the environment sync, or of data changes. You decide how to recover.
 
 ## Roll back
 
-A code rollback selects one retained release beneath the Instance's `releases/` directory through `current`. The Gateway verifies release ownership and that the web root stays inside the release, then switches `current` atomically and refreshes PHP-FPM. An Instance without PHP skips the cache refresh. A rollback fetches no Git data, synchronizes no environment, runs no deployment step, changes no database file, and infers no application recovery command. You own any data or application recovery needed after the switch.
+A rollback selects one retained release through `current`. The Gateway checks that the release is inside `releases/` and that the web root stays inside it. It then switches `current` and refreshes PHP-FPM, as a deployment does. A rollback fetches nothing, writes no environment, runs no step, and changes no database file.
 
 ## History
 
@@ -131,46 +123,7 @@ Each row holds `release`, `branch`, `commit`, `started_at`, `finished_at`, `dura
 
 ## One operation at a time
 
-The command exit status identifies whether the streamed operation completed successfully.
-
-| Stream outcome | Exit status |
-| --- | --- |
-| The final event is a succeeded result. | Zero. |
-| The final event is a failed result. | Nonzero. The command identifies the failed boundary and the selected release when the result includes one. |
-| The stream is malformed, truncated, or ends without a result. | Nonzero. The command never infers success from earlier events. |
-| The operator presses Ctrl-C. | Nonzero. The CLI closes its HTTP connection at once and does not submit another deployment or rollback request. |
-
-A connected invocation ends with exactly one `result` event. An execution failure after admission produces a failed result in the stream; the Gateway does not try to send a second HTTP error response. An unavailable deployment configuration, including a development Instance, is such a failed result. Application output is flushed while its command is still running, and Caddy uses a 1 millisecond flush interval so it can still cancel the FastCGI request after a client disconnects. Gateway request and proxy limits cover the accepted deployment deadline.
-
-Ctrl-C closes the connection at once, including during a silent step with no output yet: the CLI does not wait for that step to finish first. Human output marks the current step failed and shows a red "Operation interrupted." footer; JSON mode ends the stream with no result line.
-
-Before each phase event, the Gateway uses a bounded 250 millisecond probe that flushes one JSON-safe whitespace byte every 10 milliseconds. The whitespace and event form one valid NDJSON line, and every byte counts toward the 32 KiB line limit.
-
-The Gateway detects a client disconnect when it writes an output event or performs a phase probe. A silent active command can therefore continue until it produces output, exits, or times out and the Gateway attempts the next stream write. The bounded probe gives HTTP/1.1 and HTTP/2 disconnects time to propagate through Caddy and PHP FastCGI Process Manager (PHP-FPM), but one write does not guarantee immediate detection of every downstream close.
-
-Once the disconnect is detected, cancellation stops the next protected boundary from starting, and the Gateway waits for bounded process cleanup. It sends no success result, replays no event, and does not roll code back automatically. The client can use the releases request to inspect the current selection before deciding whether to retry or request a rollback.
-
-Deployment and rollback require access to the Instance's Node. Their Activity records contain only the request and target identifiers and the terminal status, selected release, failed step, and error code. They never contain application output or configured command text. Generic errors follow the same redaction boundary.
-
-## Exclude competing mutations
-
-Deployment and code rollback share one operation owner for the same production Instance. That owner also covers deploy-step create, update, and destroy, and the branch update. It further covers Instance removal, environment import, stored environment updates, environment synchronization, and Route domain changes. A competing request waits within the bounded operation deadline or receives a busy refusal before it can mutate that instance. An interrupted deployment releases the owner only after it has stopped its active application command.
-
-## Produce the release layout
-
-Cloning is the only way the Gateway creates a production Instance. The clone result is a prepared home with no selected `current` release. The first explicit deployment fetches the configured branch, synchronizes stored environment values, runs recorded deploy steps, and selects that release. See [Instance cloning](/reference/appinstance-cloning).
-
-## Project updates
-
-A Project update does not deploy, change `deployment_branch`, replace production source, or select a different release. Production Instances keep their recorded initial branch, starting commit, checkout path, production home, and deployment ownership. When the Project web root changes, production continues to resolve that root inside the already selected `current` release.
-
-## Resolve the serving path
-
-The web root is the Instance root override or its Project root beneath `current`, and `current` must resolve to a release beneath the same production home. A root such as `public` therefore serves `<production-home>/current/public` while code is selected.
-
-The Gateway refuses parent traversal, an escaped symbolic link, a selected target outside `releases/`, or an existing owned path with the wrong type or ownership before it publishes the serving projection. A missing `current` link remains a valid prepared layout without silently selecting staged source.
-
-Caddy resolves the root symbolic link to the selected release before it passes a script path to PHP FastCGI Process Manager (PHP-FPM). When `current` selects different code, a request resolves its included PHP files from the newly selected release instead of retaining the previous release's path.
+Deployment, rollback, deploy-step changes, and branch changes share the Instance's operation lock with environment operations, Instance removal, and Route changes. A competing request waits or receives a busy error. An interrupted deployment releases the lock after its running command stops.
 
 ## Inspect release placement with Doctor
 
