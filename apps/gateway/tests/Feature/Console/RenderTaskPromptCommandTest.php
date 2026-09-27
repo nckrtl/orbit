@@ -234,26 +234,101 @@ function production_review_prompt(bool $continued): array
 
 it('renders the same prompt for the implementer', function (): void {
     $production = production_spawner_prompt('implementerPrompt');
-
-    expect(render_task_prompt('implementer', [
+    $payload = [
         'group' => $production['group'],
         'subtask' => $production['subtask'],
         'thread_id' => 31,
-    ])['prompt'])->toBe($production['prompt']);
+    ];
+    $prompt = render_task_prompt('implementer', $payload)['prompt'];
+
+    expect($prompt)->toBe($production['prompt'])
+        ->toContain('Follow this repository\'s task instructions.')
+        ->not->toContain('feature\'s contract')
+        ->not->toContain('Build to them.');
+});
+
+it('renders only the configured or absent Project check in implementer prompts', function (): void {
+    foreach ([['vp run check', 'When the brief is complete and vp run check passes'], [null, 'When the brief is complete, end your turn']] as [$check, $expected]) {
+        $group = render_task_prompt_group();
+        $group['task_check'] = $check;
+        $prompt = render_task_prompt('implementer', [
+            'group' => $group,
+            'subtask' => render_task_prompt_subtask(),
+            'thread_id' => 31,
+        ])['prompt'];
+
+        expect($prompt)->toContain($expected)
+            ->toContain('Follow this repository\'s task instructions.')
+            ->not->toContain('composer check')
+            ->not->toContain('vendor/bin/pest')
+            ->not->toContain('Routes and publications')
+            ->not->toContain('required CLI confirmation flags')
+            ->not->toContain('lease and cleanup rules')
+            ->not->toContain('feature\'s contract');
+    }
 });
 
 it('renders the same prompt for the opening reviewer', function (): void {
     $production = production_review_prompt(continued: false);
     $payload = $production['payload'];
+    $prompt = render_task_prompt('reviewer', $payload)['prompt'];
 
-    expect(render_task_prompt('reviewer', $payload)['prompt'])->toBe($production['prompt']);
+    expect($prompt)->toBe($production['prompt'])
+        ->toContain('The Project task check is `composer check`.')
+        ->not->toContain('feature\'s contract');
+});
+
+it('renders only the configured or absent Project check in opening reviewer prompts', function (): void {
+    foreach ([['vp run check', 'The Project task check is `vp run check`.'], [null, 'Do not re-run the Project task check']] as [$check, $expected]) {
+        $group = render_task_prompt_group();
+        $group['task_check'] = $check;
+        $prompt = render_task_prompt('reviewer', [
+            'group' => $group,
+            'subtask' => render_task_prompt_subtask(),
+            'thread_id' => 32,
+            'review_packet' => render_task_prompt_review_packet(),
+        ])['prompt'];
+
+        expect($prompt)->toContain($expected)
+            ->not->toContain('composer check')
+            ->not->toContain('vendor/bin/pest')
+            ->not->toContain('Routes and publications')
+            ->not->toContain('required CLI confirmation flags')
+            ->not->toContain('lease and cleanup rules')
+            ->not->toContain('feature\'s contract');
+    }
 });
 
 it('renders the same prompt for a continued reviewer', function (): void {
     $production = production_review_prompt(continued: true);
     $payload = $production['payload'];
+    $prompt = render_task_prompt('reviewer-continue', $payload)['prompt'];
 
-    expect(render_task_prompt('reviewer-continue', $payload)['prompt'])->toBe($production['prompt']);
+    expect($prompt)->toBe($production['prompt'])
+        ->toContain('The Project task check is `composer check`.')
+        ->not->toContain('feature\'s contract');
+});
+
+it('renders only the configured or absent Project check in continued reviewer prompts', function (): void {
+    foreach ([['vp run check', 'The Project task check is `vp run check`.'], [null, 'Do not re-run the Project task check']] as [$check, $expected]) {
+        $group = render_task_prompt_group();
+        $group['task_check'] = $check;
+        $review = render_task_prompt_review_packet(continued: true);
+        $prompt = render_task_prompt('reviewer-continue', [
+            'group' => $group,
+            'subtask' => render_task_prompt_subtask(),
+            'thread_id' => 32,
+            'review_packet' => $review,
+        ])['prompt'];
+
+        expect($prompt)->toContain($expected)
+            ->not->toContain('composer check')
+            ->not->toContain('vendor/bin/pest')
+            ->not->toContain('Routes and publications')
+            ->not->toContain('required CLI confirmation flags')
+            ->not->toContain('lease and cleanup rules')
+            ->not->toContain('feature\'s contract');
+    }
 });
 
 it('preserves literal formatter tags in prompt JSON', function (): void {

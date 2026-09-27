@@ -7,15 +7,6 @@ use App\Domain\Tasks\TaskDeliverableEvidence;
 use App\Domain\Tasks\TaskReviewPacket;
 use App\Domain\Tasks\TaskRunInstructions;
 
-it('names the feature contract on the opening packet and leaves it off a continued turn', function (): void {
-    $contract = 'The ADRs and documentation that this branch changes against `origin/develop` are the feature\'s contract.';
-    $opening = review_packet(['contract' => $contract]);
-    $continued = review_packet(['contract' => $contract, 'continued' => true]);
-
-    expect($opening)->toContain($contract)
-        ->and($continued)->not->toContain('feature\'s contract');
-});
-
 it('keeps the full diff counts when the path list was cut and does not show a partial diff as complete', function (): void {
     $packet = review_packet([
         'diffFiles' => [['path' => 'only-the-tail.php', 'insertions' => 1, 'deletions' => 0]],
@@ -54,8 +45,8 @@ it('renders a review packet with the group brief, subtask brief, deliverables, a
         ->and(packet_section($packet, 'Handoff'))->toBe(implode("\n", [
             'Status: passed',
             '`composer check` in . exited 0',
-            '`vendor/bin/pest tests/Feature/HomeScreenTest.php` in apps/gateway exited 2 on the start commit with an error and a failure: Class "HomeScreen" not found; Failed asserting that 1 is 2.',
-            '`vendor/bin/pest tests/Feature/HomeScreenTest.php` in apps/gateway exited 0',
+            '`test tests/Feature/HomeScreenTest.php` in apps/gateway exited 2 on the start commit with an error and a failure: Class "HomeScreen" not found; Failed asserting that 1 is 2.',
+            '`test tests/Feature/HomeScreenTest.php` in apps/gateway exited 0',
             '`bun test` in apps/web exited 0',
         ]))
         ->and(packet_section($packet, 'Diff'))->toBe("diff --git a/packet.php b/packet.php\n+packet")
@@ -152,7 +143,7 @@ it('lists packet handoff commands with their directory and exit code and keeps a
     $handoff = packet_section(review_packet(), 'Handoff');
 
     expect($handoff)->toContain('`composer check` in . exited 0')
-        ->and($handoff)->toContain('`vendor/bin/pest tests/Feature/HomeScreenTest.php` in apps/gateway exited 2 on the start commit with an error and a failure: Class "HomeScreen" not found')
+        ->and($handoff)->toContain('`test tests/Feature/HomeScreenTest.php` in apps/gateway exited 2 on the start commit with an error and a failure: Class "HomeScreen" not found')
         ->and($handoff)->toContain('`bun test` in apps/web exited 0')
         ->and($handoff)->not->toContain('reference-page')
         ->and($handoff)->not->toContain('.git/orbit/check.log');
@@ -327,14 +318,14 @@ it('tells the packet reviewer not to re-run passed checks and that the turn is r
     $other = review_packet(['taskCheck' => 'vp run check']);
     $none = review_packet(['taskCheck' => null, 'handoffExitCode' => null]);
 
-    expect($composer)->toContain('Do not re-run the Project task check or the deliverable tests and commands the handoff already passed. That includes `composer check`.')
+    expect($composer)->toContain('Do not re-run the Project task check or the deliverable tests and commands the handoff already passed. The Project task check is `composer check`.')
         ->and($composer)->toContain('The implementer works with a minimal toolset and has no web access.')
         ->and($composer)->toContain('current documentation for the versions this Project uses.')
         ->and($composer)->toContain('This review is read-only. Do not create, edit, reset, or delete workspace files')
         ->and($composer)->toContain('--outcome=approved')
         ->and($composer)->toContain('--outcome=changes_requested')
         ->and($other)->toContain('The Project task check is `vp run check`.')
-        ->and($other)->not->toContain('That includes `composer check`.')
+        ->and($other)->not->toContain('The Project task check is `composer check`.')
         ->and($none)->not->toContain('`composer check`')
         ->and($none)->toContain('Do not re-run the Project task check');
 });
@@ -476,7 +467,6 @@ function review_packet(array $overrides = []): string
         'startCommit' => str_repeat('a', 40),
         'continued' => false,
         'opensPullRequest' => false,
-        'contract' => '',
         'diffFilesComplete' => true,
         'diffAvailable' => true,
         'diffCounts' => null,
@@ -501,7 +491,6 @@ function review_packet(array $overrides = []): string
         startCommit: $values['startCommit'],
         continued: $values['continued'],
         opensPullRequest: $values['opensPullRequest'],
-        contract: $values['contract'],
         diffFilesComplete: $values['diffFilesComplete'],
         diffAvailable: $values['diffAvailable'],
         diffCounts: $values['diffCounts'],

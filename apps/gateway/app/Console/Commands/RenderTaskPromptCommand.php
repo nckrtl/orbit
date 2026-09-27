@@ -10,7 +10,6 @@ use App\Domain\Tasks\TaskPromptGroup;
 use App\Domain\Tasks\TaskPromptRenderer;
 use App\Domain\Tasks\TaskPromptSubtask;
 use App\Domain\Tasks\TaskReviewPacket;
-use App\Domain\Tasks\TaskRunInstructions;
 use Illuminate\Console\Command;
 use InvalidArgumentException;
 use JsonException;
@@ -225,7 +224,6 @@ final class RenderTaskPromptCommand extends Command
             startCommit: $this->string($packet, 'start_commit', 'review_packet'),
             continued: $continued,
             opensPullRequest: $this->boolean($packet, 'opens_pull_request', 'review_packet'),
-            contract: TaskRunInstructions::contract($group->defaultBranch),
             diffFilesComplete: $this->boolean($packet, 'files_complete', 'review_packet'),
             diffAvailable: $this->boolean($packet, 'diff_available', 'review_packet'),
             diffCounts: $diffSummary,

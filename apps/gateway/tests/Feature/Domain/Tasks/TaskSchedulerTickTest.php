@@ -2930,7 +2930,7 @@ it('reminds an implementer that ends a turn without a receipt once, then asks fo
 
     $reminder = $dispatcher->commands[0]['message']['text'];
     expect($dispatcher->commands)->toHaveCount(1)
-        ->and($reminder)->toBe('Orbit could not confirm the brief is complete. No run receipt was found. '.TaskRunInstructions::implementer(threadId: $task->implementer_agent_thread_id))
+        ->and($reminder)->toBe('Orbit could not confirm the brief is complete. No run receipt was found. '.TaskRunInstructions::implementer(check: $group->app->taskCheckCommand(), threadId: $task->implementer_agent_thread_id))
         ->and($receipts->prepared)->toBe(['implementer'])
         ->and($group->fresh()?->assistance_requested)->toBeFalse();
 
@@ -3396,7 +3396,7 @@ it('retries review findings until the implementer receives them', function (): v
     expect($task->fresh()?->status)->toBe(TaskStatus::Running)
         ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Running)
         ->and($dispatcher->commands[1]['message']['text'])->toContain('Add the missing test.')
-        ->and($dispatcher->commands[1]['message']['text'])->toContain(TaskRunInstructions::implementer(threadId: $task->implementer_agent_thread_id))
+        ->and($dispatcher->commands[1]['message']['text'])->toContain(TaskRunInstructions::implementer(check: $group->app->taskCheckCommand(), threadId: $task->implementer_agent_thread_id))
         ->and(app(TaskRunReceipts::class)->prepared)->toBe(['implementer', 'implementer']);
 });
 

@@ -13,7 +13,7 @@ final readonly class TaskRunInstructions
      * @param  list<TaskDeliverable>  $deliverables
      * @param  string|null  $check  the Project task check command, or null when the Project has none (ADR 0125)
      */
-    public static function implementer(array $deliverables = [], ?string $check = 'composer check', ?int $threadId = null): string
+    public static function implementer(array $deliverables = [], ?string $check = null, ?int $threadId = null): string
     {
         $passes = $check === null ? '' : ' and '.$check.' passes';
         $confirm = $deliverables === [] ? '' : ' Add --deliverable=ID=evidence for each deliverable of this subtask ('.self::ids($deliverables).'), where the evidence says where or how it is met. Orbit refuses the handoff without them, then checks file, test, and command deliverables against your diff and its own run.';
@@ -40,16 +40,6 @@ final readonly class TaskRunInstructions
     }
 
     /**
-     * ADR 0122: the ADRs and documentation prepared on the branch while the group was in Backlog.
-     */
-    public static function contract(?string $defaultBranch): string
-    {
-        $base = is_string($defaultBranch) && $defaultBranch !== '' ? '`origin/'.$defaultBranch.'`' : 'the Project default branch';
-
-        return 'The ADRs and documentation that this branch changes against '.$base.' are the feature\'s contract.';
-    }
-
-    /**
      * The deliverables as a list for an agent prompt, or an empty string without any.
      *
      * @param  list<TaskDeliverable>  $deliverables
@@ -65,7 +55,7 @@ final readonly class TaskRunInstructions
 
     private static function autonomy(): string
     {
-        return 'Complete your assigned work autonomously. You may create, modify, reset, and delete disposable fixtures within your task\'s allocated environment, including Routes and publications, without asking for permission. Verify task ownership and the target environment before deletion, use the required CLI confirmation flags, and follow the environment\'s lease and cleanup rules. This authority does not extend to live or shared resources or another task\'s fixtures. Resolve routine test prerequisites yourself.';
+        return 'Complete your assigned work autonomously. You may create, modify, reset, and delete disposable fixtures within your task\'s allocated environment without asking for permission. This authority does not extend to live or shared resources or another task\'s fixtures. Resolve routine test prerequisites yourself.';
     }
 
     private static function command(?int $threadId, string $arguments): string

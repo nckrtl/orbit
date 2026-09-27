@@ -63,7 +63,6 @@ final readonly class TaskReviewPacket
         private string $startCommit,
         private bool $continued = false,
         private bool $opensPullRequest = false,
-        private string $contract = '',
         private bool $diffFilesComplete = true,
         private bool $diffAvailable = true,
         private ?array $diffCounts = null,
@@ -126,9 +125,7 @@ final readonly class TaskReviewPacket
     private function preamble(): string
     {
         $rule = 'Do not re-run the Project task check or the deliverable tests and commands the handoff already passed.';
-        if ($this->taskCheck === 'composer check') {
-            $rule .= ' That includes `composer check`.';
-        } elseif (is_string($this->taskCheck) && $this->taskCheck !== '') {
+        if ($this->taskCheck !== null) {
             $shown = mb_substr($this->taskCheck, 0, self::CommandLimit);
             $rule .= ' The Project task check is `'.$shown.'`.';
             if (mb_strlen($this->taskCheck) > self::CommandLimit) {
@@ -137,12 +134,11 @@ final readonly class TaskReviewPacket
         }
         $rule .= ' Run another command only when you need evidence the handoff result does not give, and say why in the approved or changes_requested summary.';
 
-        return implode("\n\n", array_filter([
+        return implode("\n\n", [
             'Review subtask #'.$this->subtaskId.': '.$this->subtaskTitle,
             'The implementer works with a minimal toolset and has no web access. You do: use your web and documentation tools to confirm that framework and library usage matches current documentation for the versions this Project uses.',
             $rule,
-            $this->continued ? '' : $this->contract,
-        ], static fn (string $part): bool => $part !== ''));
+        ]);
     }
 
     private function section(string $heading, string $body): string
@@ -370,7 +366,7 @@ final readonly class TaskReviewPacket
                 }
                 if (is_array($run)) {
                     $records[] = $this->commandRecord(
-                        'vendor/bin/pest '.$deliverable->file,
+                        'test '.$deliverable->file,
                         $this->directory($deliverable->project),
                         $run['exit_code'],
                         null,
@@ -423,7 +419,7 @@ final readonly class TaskReviewPacket
         }
 
         return $this->commandRecord(
-            'vendor/bin/pest '.$deliverable->file,
+            'test '.$deliverable->file,
             $this->directory($deliverable->project),
             $exitCode,
             $messages === [] ? null : implode('; ', $messages),

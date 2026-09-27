@@ -177,14 +177,13 @@ it('spawns the group reviewer with its first review and a fresh implementer on t
         ->and($dispatcher->commands[2]['message']['text'])->toContain('Do not re-run the Project task check or the deliverable tests and commands the handoff already passed.')
         ->and($dispatcher->commands[2]['message']['text'])->toContain('use your web and documentation tools to confirm that framework and library usage matches current documentation')
         ->and($dispatcher->commands[2]['message']['text'])->toContain('Review subtask #'.$task->id.': '.$task->title)
-        ->and($dispatcher->commands[2]['message']['text'])->toContain('The ADRs and documentation that this branch changes against `origin/main` are the feature\'s contract.')
         ->and($dispatcher->commands[2]['message']['text'])->toContain('Group brief')
         ->and($dispatcher->commands[2]['message']['text'])->toContain($group->brief)
         ->and($dispatcher->commands[2]['modelSelection'])->toBe($reviewerSelection)
         ->and($dispatcher->commands[2]['runtimeMode'])->toBe('full-access')
         ->and($dispatcher->commands[2]['interactionMode'])->toBe('default')
         ->and($dispatcher->commands[5]['message']['text'])->toContain('Implement this subtask')
-        ->and($dispatcher->commands[5]['message']['text'])->toContain('The ADRs and documentation that this branch changes against `origin/main` are the feature\'s contract. Build to them.')
+        ->and($dispatcher->commands[5]['message']['text'])->toContain('Follow this repository\'s task instructions.')
         ->and($dispatcher->commands[5]['modelSelection'])->toBe($implementerSelection)
         ->and($dispatcher->commands[5]['runtimeMode'])->toBe('full-access')
         ->and($dispatcher->commands[5]['interactionMode'])->toBe('default')
@@ -281,7 +280,7 @@ it('shows the base failure kind and message to the reviewer', function (): void 
 
     $spawner->requestReview($task->fresh());
 
-    expect($dispatcher->commands[0]['message']['text'])->toContain('`vendor/bin/pest tests/Feature/HomeScreenTest.php` in apps/gateway exited 2 on the start commit with an error: Class "HomeScreen" not found')
+    expect($dispatcher->commands[0]['message']['text'])->toContain('`test tests/Feature/HomeScreenTest.php` in apps/gateway exited 2 on the start commit with an error: Class "HomeScreen" not found')
         ->and($dispatcher->commands[0]['message']['text'])->toContain('Do not re-run the Project task check or the deliverable tests and commands the handoff already passed.')
         ->and($dispatcher->commands[0]['message']['text'])->not->toContain('Group brief');
 });
@@ -336,7 +335,7 @@ it('names a non-main project default branch in the opening review packet', funct
 
     $spawner->spawnReviewer($group->tasks->first());
 
-    expect($dispatcher->commands[2]['message']['text'])->toContain('The ADRs and documentation that this branch changes against `origin/develop` are the feature\'s contract.');
+    expect($dispatcher->commands[2]['message']['text'])->not->toContain('feature\'s contract');
 });
 
 it('resolves the reviewer spawner through the container with the production diff reader', function (): void {

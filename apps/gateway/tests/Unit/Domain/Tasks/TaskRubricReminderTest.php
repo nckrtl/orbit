@@ -24,6 +24,13 @@ it('tells a reviewer how to end its turn with the run script', function (): void
     expect($reminder)->toBe('Orbit could not confirm the review is complete. No run receipt was found. '.TaskRunInstructions::reviewer());
 });
 
+it('does not assume a Project task check when none was supplied', function (): void {
+    expect(TaskRunInstructions::implementer())
+        ->not->toContain('composer check')
+        ->and(TaskRubricReminder::compose(TaskThreadRole::Implementer, []))
+        ->not->toContain('composer check');
+});
+
 it('tells the reviewer that the turn is read-only', function (): void {
     expect(TaskRunInstructions::reviewer())
         ->toContain('This review is read-only. Do not create, edit, reset, or delete workspace files, including disposable fixtures.')

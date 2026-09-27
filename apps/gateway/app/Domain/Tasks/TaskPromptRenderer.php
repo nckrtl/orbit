@@ -21,7 +21,7 @@ final readonly class TaskPromptRenderer
             'Subtask: '.$task->title,
             $task->brief,
             TaskRunInstructions::deliverables($deliverables),
-            TaskRunInstructions::contract($group->defaultBranch).' Build to them.',
+            'Follow this repository\'s task instructions.',
         ], static fn (string $part): bool => $part !== ''));
     }
 }
