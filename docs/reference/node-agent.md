@@ -192,6 +192,10 @@ The converge writes the secret file first, then installs the other files, restar
 
 One converge runs per Node at a time, under a lock in a file cache store under `ORBIT_HOME`. A second converge waits up to 2 minutes and then fails with `agent.converge_busy`. The lock expires after 4 minutes. A running converge renews it before each step and stops with `agent.converge_lock_lost` when the lock has expired. The binary download is limited to 20 seconds to connect and 120 seconds in total, so one step fits in the lock's term.
 
+### Exempt Nodes
+
+A Node with `agent_secret_exempt` set and no stored secret hash authenticates its agent without a secret. Converging an agent that sends no secret, older than 0.3.0, sets the flag. Converging an agent that sends a secret stores the hash and clears the flag. While the pinned agent sends a secret, Doctor reports an exempt Node as `exempt`. While the pinned agent sends no secret, Doctor reports a Node that is not exempt and has no hash as `not_exempt`.
+
 ## Gateway view
 
 The Gateway keeps the latest state that each agent reports, so it can skip repeated SSH reads. A long-running Gateway process, the agent view subscriber, receives the reports. The view is only an input to reads.
