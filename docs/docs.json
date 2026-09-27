@@ -128,7 +128,6 @@
               "contributor-guide",
               "reference/implementation-loop",
               "reference/incus-topologies",
-              "reference/proof-plans",
               "reference/gateway-response-fixtures",
               "reference/topology-snapshot",
               "reference/cli-command-vocabulary",
@@ -552,18 +551,10 @@
           {
             "group": "Records",
             "pages": [
-              "decisions/0002-candidate-deployment-proof-boundary",
-              "decisions/0005-rolling-incus-development-topology",
-              "decisions/0006-topology-led-feature-development",
-              "decisions/0010-record-decisions-before-implementation-issues",
-              "decisions/0014-maintain-verified-documentation-context",
-              "decisions/0015-retain-incus-proof-by-recorded-input-equivalence",
               "decisions/0016-reconcile-app-identity-and-source-default-updates",
               "decisions/0017-optional-cluster-placement-and-tld-precedence",
               "decisions/0018-register-caller-local-development-worktrees",
-              "decisions/0019-run-disposable-incus-scenario-lanes",
               "decisions/0021-pin-sury-php-fpm-with-opcache-profiles-per-role",
-              "decisions/0022-track-the-issue-workspace-and-delete-it-before-merge",
               "decisions/0025-stabilize-the-default-appinstance-identity",
               "decisions/0026-identify-each-app-by-one-repository",
               "decisions/0027-adopt-local-git-sources-into-appinstance-ownership",
@@ -572,24 +563,17 @@
               "decisions/0031-clone-initial-production-source-during-provisioning",
               "decisions/0032-preserve-explicit-appinstance-branch-selection",
               "decisions/0034-select-appinstance-php-from-composer-constraints",
-              "decisions/0035-close-out-mutating-proofs-by-refreshing-the-topology-snapshot",
               "decisions/0036-support-only-appinstances",
-              "decisions/0037-promote-fresh-three-node-topology-snapshots",
               "decisions/0038-cascade-appinstance-removal-through-processes-and-schedules",
-              "decisions/0040-extend-issue-proof-with-one-app-prod-node",
               "decisions/0045-isolate-production-php-fpm-by-unix-user",
               "decisions/0047-create-production-appinstances-from-candidates",
-              "decisions/0049-keep-delivery-artifacts-off-the-merge-head",
-              "decisions/0050-release-successful-proof-resources-before-landing",
               "decisions/0051-select-discovery-only-feature-delivery",
               "decisions/0052-seed-worktrees-from-successful-main-test-baselines",
               "decisions/0053-use-local-review-checks-for-feature-landing",
               "decisions/0054-maintain-main-caches-asynchronously",
-              "decisions/0056-retain-proof-topologies-for-interactive-review",
               "decisions/0058-separate-incus-requirements-from-delivery-flow",
               "decisions/0059-make-the-builder-own-the-candidate-quality-gate",
               "decisions/0066-transfer-development-appinstances-between-nodes",
-              "decisions/0071-use-one-verb-vocabulary-across-cli-routes-and-sdk",
               "decisions/0074-hibernate-idle-app-dev-appinstance-processes",
               "decisions/0075-prune-idle-app-dev-checkout-dependencies",
               "decisions/0076-deliver-features-through-complete-pull-requests",
@@ -630,10 +614,7 @@
               "decisions/0132-pause-only-for-the-acting-thread-and-a-real-question",
               "decisions/0133-verify-typed-subtask-deliverables-at-handoff",
               "decisions/0134-resume-pi-agent-streams-from-a-cursor",
-              "decisions/0135-run-incus-topologies-for-task-workspace-clones-through-a-bridge-worktree",
-              "decisions/0136-run-long-lived-topology-processes-as-transient-units",
               "decisions/0140-watch-settling-pull-requests-for-conflicts-and-failed-checks",
-              "decisions/0143-record-topology-evidence-and-sync-without-verification",
               "decisions/0145-publish-the-proxycli-collector-on-collector-cli-proxy-api-orbit",
               "decisions/0147-retire-orbit-top",
               "decisions/0150-keep-extension-commands-local-and-confirm-the-proxycli-fleet-stop",
@@ -642,7 +623,6 @@
               "decisions/0158-end-interrupted-activity",
               "decisions/0159-push-activity-changes-to-the-web-app",
               "decisions/0160-push-each-approved-subtask-and-remove-the-finished-workspace-clone",
-              "decisions/0162-verify-web-ui-changes-with-bin-web-verify",
               "decisions/0163-prove-a-failing-test-on-the-start-commit",
               "decisions/0164-heal-a-settling-pull-request-with-a-fixup-subtask",
               "decisions/0165-record-per-thread-token-metrics",
@@ -975,6 +955,90 @@
     {
       "source": "/decisions/0161-set-a-stale-caddyfile-aside-when-caddy-is-absent",
       "destination": "/reference/caddy-configuration#when-caddy-is-absent"
+    },
+    {
+      "source": "/decisions/0002-candidate-deployment-proof-boundary",
+      "destination": "/reference/incus-topologies#exact-ownership"
+    },
+    {
+      "source": "/decisions/0005-rolling-incus-development-topology",
+      "destination": "/reference/topology-snapshot#why-it-works-this-way"
+    },
+    {
+      "source": "/decisions/0006-topology-led-feature-development",
+      "destination": "/reference/incus-topologies#a-live-mount"
+    },
+    {
+      "source": "/decisions/0010-record-decisions-before-implementation-issues",
+      "destination": "/contributor-guide#decisions-ship-with-their-feature"
+    },
+    {
+      "source": "/decisions/0014-maintain-verified-documentation-context",
+      "destination": "/contributor-guide#one-documentation-corpus"
+    },
+    {
+      "source": "/decisions/0015-retain-incus-proof-by-recorded-input-equivalence",
+      "destination": "/contributor-guide#review-reproduces-on-a-discovery-topology"
+    },
+    {
+      "source": "/decisions/0019-run-disposable-incus-scenario-lanes",
+      "destination": "/reference/incus-topologies#on-demand-scenarios"
+    },
+    {
+      "source": "/decisions/0022-track-the-issue-workspace-and-delete-it-before-merge",
+      "destination": "/contributor-guide#review-reproduces-on-a-discovery-topology"
+    },
+    {
+      "source": "/decisions/0035-close-out-mutating-proofs-by-refreshing-the-topology-snapshot",
+      "destination": "/reference/topology-snapshot#refresh"
+    },
+    {
+      "source": "/decisions/0037-promote-fresh-three-node-topology-snapshots",
+      "destination": "/reference/topology-snapshot#rebuild-and-recover"
+    },
+    {
+      "source": "/decisions/0040-extend-issue-proof-with-one-app-prod-node",
+      "destination": "/reference/incus-topologies#the-app-prod-2-extension"
+    },
+    {
+      "source": "/decisions/0049-keep-delivery-artifacts-off-the-merge-head",
+      "destination": "/contributor-guide#review-reproduces-on-a-discovery-topology"
+    },
+    {
+      "source": "/decisions/0050-release-successful-proof-resources-before-landing",
+      "destination": "/contributor-guide#review-reproduces-on-a-discovery-topology"
+    },
+    {
+      "source": "/decisions/0056-retain-proof-topologies-for-interactive-review",
+      "destination": "/contributor-guide#review-reproduces-on-a-discovery-topology"
+    },
+    {
+      "source": "/decisions/0071-use-one-verb-vocabulary-across-cli-routes-and-sdk",
+      "destination": "/reference/cli-command-vocabulary#why-it-works-this-way"
+    },
+    {
+      "source": "/decisions/0114-expand-the-three-node-incus-cluster",
+      "destination": "/reference/incus-topologies#three-nodes"
+    },
+    {
+      "source": "/decisions/0135-run-incus-topologies-for-task-workspace-clones-through-a-bridge-worktree",
+      "destination": "/reference/incus-topologies#task-workspace-clones"
+    },
+    {
+      "source": "/decisions/0136-run-long-lived-topology-processes-as-transient-units",
+      "destination": "/reference/incus-topologies#long-lived-processes-as-systemd-units"
+    },
+    {
+      "source": "/decisions/0143-record-topology-evidence-and-sync-without-verification",
+      "destination": "/reference/incus-topologies#evidence-log"
+    },
+    {
+      "source": "/decisions/0162-verify-web-ui-changes-with-bin-web-verify",
+      "destination": "/reference/web-verification#why-it-works-this-way"
+    },
+    {
+      "source": "/reference/proof-plans",
+      "destination": "/reference/incus-topologies"
     }
   ]
 }
