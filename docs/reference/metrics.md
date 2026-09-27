@@ -27,7 +27,9 @@ The role runs two containers on the Metrics Node and two units on each selected 
 | `prometheus-node-exporter` unit | Every selected Node | The Node's WireGuard address, port 9100 |
 | `orbit-cadvisor` unit | Every selected Node | The Node's WireGuard address, port 9102 |
 
-Both containers use pinned official images and host networking. Their logs use `json-file`, with three files of 10 MB each. Prometheus scrapes every target every 10 seconds and keeps samples for 7 days. Grafana gets one Prometheus datasource and the `Orbit Node Resources` dashboard.
+Both containers use pinned official images and host networking. Their logs use `json-file`, with three files of 10 MB each. Prometheus scrapes every target every 10 seconds and keeps samples for 7 days. It labels each target with the Orbit Node name in `node`, and the dashboards filter on that label. Grafana gets one Prometheus datasource and three dashboards: `Orbit Node Resources`, `Orbit Caddy Traffic`, and `Orbit PHP Capacity`. The last two stay empty until [service metrics](/reference/service-metrics) select a Node.
+
+The role runs its containers and units itself. They create no `Process` records, and their packages create no `Tool` records.
 
 ## Enable and recover
 
@@ -44,7 +46,7 @@ Convergence runs four steps in this order. Each failure records its step as `fai
 
 `error_code` holds the code that stopped the step. This is usually a `metrics.*` code. It can be another component's code, such as a certificate error. A failure without a code records `metrics.convergence_failed`. A step that names itself, such as `converge:private-dns`, keeps its own name and code. The error response carries the code as `details.error_code` next to `details.step`. A publication failure leaves the runtime in place.
 
-Retry a failed convergence with `orbit node:role:add <node> metrics --converge`. This retries an assignment that is active or whose failed step starts with `converge:`. A failed removal leaves a failed step that starts with `remove:`. Retry it with `orbit metrics:disable`. `--converge` answers `node.role_conflict` for that assignment.
+Retry a failed convergence with `orbit node:role:add <node> metrics --converge`. This retries an assignment that is active or whose failed step starts with `converge:`. It also takes over a `provisioning` claim that is stale. A failed removal leaves a failed step that starts with `remove:`. Retry it with `orbit metrics:disable`. `--converge` answers `node.role_conflict` for that assignment.
 
 Convergence has fixed time limits.
 
@@ -52,6 +54,8 @@ Convergence has fixed time limits.
 | --- | --- | --- |
 | Pull a missing image | 300 seconds | `metrics.image_pull_failed` or `metrics.image_pull_timed_out` |
 | Check the Prometheus configuration with `promtool` | 60 seconds | `metrics.prometheus_configuration_check_timed_out` |
+| Install the node exporter package | 300 seconds | `metrics.exporter_install_failed` |
+| Download cAdvisor | 120 seconds, in a 150-second command | `metrics.cadvisor_binary_download_failed` |
 | Any other remote command | 120 seconds | `metrics.remote_command_timed_out` |
 
 Convergence pulls an image only when the Metrics Node lacks it. When an image is missing and Docker does not answer, convergence fails with `metrics.docker_unavailable` and names the Node. Start Docker and converge again.
@@ -79,19 +83,21 @@ A Node can host an exporter only when the Gateway manages it. The Node must be a
 | any | Not eligible | Not selected |
 | any | The Metrics Node, when eligible | Selected |
 
-`orbit metrics:exporter:enable` and `orbit metrics:exporter:disable` store the preference. Preferences survive role changes and a disabled Metrics role. The Gateway checks eligibility before it stores an enabled preference or starts remote work.
+`orbit metrics:exporter:enable` and `orbit metrics:exporter:disable` store the preference. Nothing else writes one: adding or adopting a Node stores no preference. Preferences survive role changes and a disabled Metrics role. The Gateway checks eligibility before it stores an enabled preference or starts remote work.
 
-A selected Node runs the packaged `prometheus-node-exporter` unit with the Orbit drop-in `/etc/systemd/system/prometheus-node-exporter.service.d/orbit.conf`. The drop-in binds the exporter to the WireGuard address. It sets `Restart=always` and `RestartSec=2`, because the exporter can start before WireGuard adds that address at boot. The UFW rule `orbit:metrics-node-exporter` admits the port only from the Metrics Node.
+A selected Node runs the packaged `prometheus-node-exporter` unit with the Orbit drop-in `/etc/systemd/system/prometheus-node-exporter.service.d/orbit.conf`. The drop-in binds the exporter to the WireGuard address. It sets `Restart=always` and `RestartSec=2`, because the exporter can start before WireGuard adds that address at boot. The UFW rule `orbit:metrics-node-exporter` allows the Metrics Node to reach the port.
 
-The first convergence of a Node installs the exporter package and cAdvisor. This normally happens during `node:add`. Later reconciles only verify them. Role, Route, and Instance changes reconcile Metrics inside their own request.
+The first convergence of a Node installs the exporter package and cAdvisor. This normally happens during `node:add`. Later reconciles only verify them. These requests reconcile Metrics before they finish: `node:add`, `node:remove`, role changes, exporter preference changes, and the Instance and Route events that [service metrics](/reference/service-metrics#lifecycle) lists.
+
+The node exporter and cAdvisor ports are open to every WireGuard peer, not only to the Metrics Node. Each Node keeps the rule `orbit:wireguard-members`, which admits every member on its WireGuard address, and no deny rule guards ports 9100 and 9102. WireGuard membership is the security boundary, so this is intended.
 
 ## cAdvisor
 
 The node exporter reports systemd unit state, but not the CPU and memory of each unit. So each selected Node also runs cAdvisor `v0.60.5`. Orbit verifies its SHA-256 checksum before install. cAdvisor reads cgroups, so it covers systemd and Docker Processes. `GET /api/v1/processes` reads CPU and memory from it.
 
-cAdvisor runs as the static binary `/usr/local/bin/orbit-cadvisor` under `orbit-cadvisor.service`, with `Restart=always`. The UFW rule `orbit:metrics-cadvisor` admits port 9102 only from the Metrics Node. Enabling or disabling the exporter on a Node does the same to cAdvisor. Disabling removes the unit, the rule, and the binary.
+cAdvisor runs as the static binary `/usr/local/bin/orbit-cadvisor` under `orbit-cadvisor.service`, with `Restart=always`. The UFW rule `orbit:metrics-cadvisor` allows the Metrics Node to reach port 9102. Enabling or disabling the exporter on a Node does the same to cAdvisor. Disabling removes the unit, the rule, and the binary.
 
-cAdvisor collects only CPU and memory. Its flags disable every other metric kind and drop Docker container labels, because an unfiltered cAdvisor adds thousands of series per Node. A Process's series uses its unit or container name, `orbit-process-{id}-{name}`. A Process without a series reports null CPU and memory, never zero.
+cAdvisor collects only CPU and memory. Its flags disable every other metric kind and drop Docker container labels, because an unfiltered cAdvisor adds thousands of series per Node. A Docker Process's series uses its container name, `orbit-process-{id}-{name}`. A systemd Process's series uses its unit name, `orbit-process-{id}-{name}.service`. A Process without a series reports null CPU and memory, never zero.
 
 ## Process runtime status
 
@@ -107,7 +113,7 @@ Open Grafana at `https://metrics.orbit` from the active Gateway Node, or from an
 
 Private DNS answers `metrics.orbit` with the Gateway's WireGuard address. The Gateway's Caddy presents an Orbit CA certificate. Before each request, Caddy calls `GET /api/v1/metrics/grafana/authorize` with the connection address. It ignores forwarding and identity headers from the caller. It proxies admitted traffic over WireGuard to Grafana on the Metrics Node.
 
-The Gateway refuses an unknown, inactive, ungranted, or public caller. It also refuses when it cannot establish the caller's identity or authority. When an access grant or a Node is removed, the Gateway reloads its Caddy. Later requests fail, and open streaming connections close.
+The Gateway refuses an unknown, inactive, ungranted, or public caller. It also refuses when it cannot establish the caller's identity or authority. The Gateway reloads its Caddy when a Node is removed, or when an access grant to the Gateway Node is removed, while a Metrics role exists. Later requests fail, and open streaming connections close.
 
 The Gateway's own origin also serves Grafana under `/grafana/`, behind the same check. The web app reads Node metrics there. On the Metrics Node, the rules `orbit:metrics-grafana-upstream` and `orbit:metrics-grafana-isolation` admit only the Gateway to port 3000. This applies also when the Gateway and Metrics roles share a Node.
 
@@ -136,7 +142,7 @@ One lock per Metrics Node covers password creation, verified reads, resets, and 
 
 `--purge-data` also deletes both volumes and the active and pending passwords, and nothing else. The Gateway deletes a volume only when it has the Orbit ownership labels. When a volume lacks them, the Gateway deletes neither volume nor password. It leaves the assignment failed at `remove:baseline` and answers `node_role.remove_failed` (HTTP 502).
 
-Metrics convergence and removal [build the Gateway's Caddyfile](/reference/caddy-configuration#node-caddy-build). The build renders `metrics.orbit` while the role converges or is active, and keeps every other site. Convergence publishes the certificate before the build. Removal builds first, and removes the certificate only when no Metrics site renders.
+Metrics convergence and removal [build the Gateway's Caddyfile](/reference/caddy-configuration#node-caddy-build). The build renders `metrics.orbit` while the role converges, is active, or failed at a `converge:` step. It keeps every other site. Convergence publishes the certificate before the build. Removal converges private DNS, builds, removes the Grafana firewall rules, and then removes the certificate when no Metrics site renders.
 
 The result reports `publication`:
 
@@ -145,11 +151,13 @@ The result reports `publication`:
 | `cleaned` | The Gateway removed the `metrics.orbit` site, certificate, and DNS record. |
 | `uncleaned` | No single active Gateway existed when the step ran. The site, certificate, and DNS record stay on the Gateway host for an operator to remove. |
 
-An `uncleaned` removal still removes the exporters, both containers, and `/etc/orbit/metrics`. It removes both Grafana firewall rules when the Node's firewall answers. `orbit node:remove <node> --offline --force` needs no Gateway, so it can remove the role from an unreachable Metrics Node. It leaves the Gateway publication in the same way.
+An `uncleaned` removal still removes the exporters, both containers, and `/etc/orbit/metrics`. It removes both Grafana firewall rules when the Node's firewall answers.
+
+`orbit node:remove <node> --offline --force` removes the role from an unreachable Metrics Node without SSH. With a single active Gateway, it removes the Gateway publication and reports `cleaned`. Without one, it reports `uncleaned`. The containers, volumes, `/etc/orbit/metrics`, and the Grafana firewall rules stay on the unreachable machine.
 
 ## Read Node metrics
 
-[`orbit node:metrics`](/cli/node#orbit-node-metrics) and the [web app](/reference/web-app) read CPU, memory, swap, load, uptime, pressure, and disk from the role's Prometheus. The Gateway reads through Grafana's datasource proxy with the stored Grafana credential. It runs four instant PromQL queries for the Node's exporter. Each rate uses a 40-second window. This window survives a dropped scrape and still shows a spike.
+[`orbit node:metrics`](/cli/node#orbit-nodemetrics) and the [web app](/reference/web-app) read CPU, memory, swap, load, uptime, pressure, and disk from the role's Prometheus. The Gateway reads through Grafana's datasource proxy with the stored Grafana credential. It runs four instant PromQL queries for the Node's exporter. Each rate uses a 40-second window. This window survives a dropped scrape and still shows a spike.
 
 A reading is at most 10 seconds old. The web app refreshes node metrics every 10 seconds through the Gateway's `/grafana/` path. A Node without an active exporter or without samples answers `node.metrics_unreachable` (HTTP 502). Without a Metrics assignment, the read fails with `metrics.assignment_missing` (HTTP 409).
 
@@ -163,7 +171,7 @@ One Node keeps placement and private publication simple. Standalone containers k
 
 ### cAdvisor as a binary
 
-The Gateway Node is an exporter Node, and it has no Docker. So cAdvisor runs as a static binary, not as a container.
+Exporter Nodes, such as the Gateway Node, often have no Docker. So cAdvisor runs as a static binary, not as a container.
 
 ### The Gateway Node as the authority
 
