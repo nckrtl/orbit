@@ -1,6 +1,10 @@
 ---
 title: "analytics"
 description: "Pin the Plausible Community Edition version that the analytics role runs, and store the Stats API key the Gateway uses to read visits."
+covers:
+  - apps/cli/app/Commands/Analytics/**
+  - packages/php-sdk/src/Requests/Analytics/**
+  - packages/php-sdk/src/Responses/Analytics/**
 ---
 
 The `analytics` role runs Plausible Community Edition for the fleet as one Docker Process named `plausible`. The `analytics` family changes the version that Process runs and stores the Stats API key the Gateway uses to read visits. [`node:role:add`](/cli/node#orbit-noderoleadd) assigns the role and [`node:role:remove`](/cli/node#orbit-noderoleremove) removes it.
@@ -14,7 +18,7 @@ The [Analytics role](/reference/analytics) reference owns the storage Processes,
 | [`analytics:update`](#orbit-analyticsupdate) | Pin another Plausible version and replace the `plausible` Process. |
 | [`analytics:credentials`](#orbit-analyticscredentials) | Show whether a Stats API key is stored, store one, or clear it. |
 
-The command accepts `--json`. It requires exactly one active Gateway, and the Gateway authorizes the caller against that Gateway Node.
+Every command accepts `--json`. The caller must be the Gateway Node or hold an access grant to it.
 
 ## orbit analytics:update
 
@@ -35,7 +39,7 @@ orbit analytics:update 3.2.1 --json
 
 In a terminal the command asks for the version you left out. With `--json` or `--no-interaction` it refuses a missing version.
 
-The Gateway stores the version and converges the role again, which replaces the `plausible` Process. Plausible keeps no data in its container, and it migrates its PostgreSQL database each time it starts, so the replaced Process continues with the same data. When the new version does not converge, the Gateway stores the earlier version again and returns the error. Naming the version that already runs changes nothing.
+The Gateway stores the version and converges the role again, which replaces the `plausible` Process. Plausible keeps no data in its container, and it migrates its PostgreSQL database each time it starts, so the replaced Process continues with the same data. When the new version does not converge, the Gateway stores the earlier version again and returns the error. It does not converge the earlier version again, so the `plausible` Process can stay failed. Run the command again with the earlier version to restore it. Naming the version that already runs changes nothing.
 
 Human output names the Node, the version, and the previous version. JSON returns `node_id`, `node_name`, `version`, `previous_version`, and the request ID.
 
@@ -73,7 +77,7 @@ Create the key in Plausible at `https://analytics.orbit`, then store it here. Th
 | Error code | Meaning |
 | --- | --- |
 | `analytics.credentials_conflict` | `--set` and `--unset` were both given. |
-| `analytics.api_key_invalid` | The key is missing or empty. The CLI refuses it before any request. |
+| `analytics.api_key_invalid` | The key is missing, shorter than 8 or longer than 512 characters, or holds control characters. The CLI refuses it before any request. |
 
 The Gateway stores the key even while no analytics role is assigned. The next stats read uses it.
 
