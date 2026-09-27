@@ -167,17 +167,20 @@ function FilterButton({
     value,
     active,
     stacked,
+    testId,
     onClick,
 }: {
     name: string;
     value: string;
     active: boolean;
     stacked: boolean;
+    testId: string;
     onClick: () => void;
 }) {
     return (
         <button
             type="button"
+            data-testid={testId}
             className={`m-0 cursor-pointer border-0 bg-transparent p-0 text-left font-[inherit] ${
                 stacked ? "flex min-h-[44px] w-full items-center" : ""
             } ${active ? "text-cyan" : "text-dim hover:text-fg"}`}
@@ -228,6 +231,7 @@ function CommandFilter({
             <span className={value === "" ? "text-dim" : "text-cyan"}>command</span>
             <input
                 aria-label="Command"
+                data-testid="activity-filter-command"
                 value={draft}
                 maxLength={255}
                 placeholder="all"
@@ -267,6 +271,7 @@ function ActivityFilters({
         >
             <FilterButton
                 name="status"
+                testId="activity-filter-status"
                 value={search.status ?? "all"}
                 active={search.status !== undefined}
                 stacked={stacked}
@@ -280,6 +285,7 @@ function ActivityFilters({
             />
             <FilterButton
                 name="caller"
+                testId="activity-filter-caller"
                 value={filterNodeLabel(nodes, search.caller_node_id)}
                 active={search.caller_node_id !== undefined}
                 stacked={stacked}
@@ -289,6 +295,7 @@ function ActivityFilters({
             />
             <FilterButton
                 name="target"
+                testId="activity-filter-target"
                 value={filterNodeLabel(nodes, search.target_node_id)}
                 active={search.target_node_id !== undefined}
                 stacked={stacked}
@@ -463,6 +470,7 @@ function ActivityFilterSheet({
                     <div className="mt-[12px] flex min-h-[44px] items-center justify-between gap-[2ch]">
                         <button
                             type="button"
+                            data-testid="activity-filters-clear"
                             className="inline-flex min-h-[44px] cursor-pointer items-center border-0 bg-transparent px-[1ch] font-[inherit] text-dim hover:text-fg"
                             onMouseDown={(event) => event.preventDefault()}
                             onClick={clear}
@@ -471,6 +479,7 @@ function ActivityFilterSheet({
                         </button>
                         <button
                             type="button"
+                            data-testid="activity-filters-done"
                             className="inline-flex min-h-[44px] cursor-pointer items-center border border-line bg-transparent px-[2ch] font-[inherit] text-fg hover:border-fg"
                             onClick={close}
                         >
@@ -1120,6 +1129,7 @@ function ActivityLog({
                 <button
                     key={row.id}
                     type="button"
+                    data-testid="activity-row"
                     data-index={item.index}
                     data-activity-id={row.id}
                     ref={virtualizer.measureElement}
@@ -1146,6 +1156,7 @@ function ActivityLog({
         return (
             <div
                 key={row.id}
+                data-testid="activity-row"
                 data-index={item.index}
                 data-activity-id={row.id}
                 ref={virtualizer.measureElement}
@@ -1223,6 +1234,7 @@ function ActivityLog({
             {fresh > 0 && (
                 <button
                     type="button"
+                    data-testid="activity-new"
                     data-activity-new=""
                     className="absolute top-[12px] left-1/2 z-10 -translate-x-1/2 cursor-pointer border border-cyan bg-bg px-[1ch] text-cyan shadow-[0_2px_12px_rgba(0,0,0,0.6)]"
                     onClick={showNewest}
@@ -1328,6 +1340,7 @@ export function ActivityPage() {
                     <button
                         ref={filtersButtonRef}
                         type="button"
+                        data-testid="activity-filters"
                         aria-expanded={filtersOpen}
                         aria-haspopup="dialog"
                         aria-label={filterCount > 0 ? `Filters, ${filterCount} active` : "Filters"}
@@ -1508,10 +1521,10 @@ export function ActivityDetail() {
                 <p role="status">Loading activity…</p>
             ) : (
                 <div className="grid grid-cols-1 gap-[var(--panel-gap)] md:grid-cols-2">
-                    <Frame title="Activity" className="w-full">
+                    <Frame title="Activity" testId="activity-detail" className="w-full">
                         <DetailList rows={activityProperties(row, fleet.nodes, go)} />
                     </Frame>
-                    <Frame title="Properties" className="w-full">
+                    <Frame title="Properties" testId="activity-properties" className="w-full">
                         {properties.length === 0 ? (
                             <Note>None.</Note>
                         ) : (

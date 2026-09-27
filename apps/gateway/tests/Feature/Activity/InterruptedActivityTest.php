@@ -42,6 +42,7 @@ function interrupted_activity_state(int $id): array
 
 describe('the interrupted Activity sweep', function (): void {
     it('ends every running row older than the bound as failed with activity.interrupted', function (): void {
+        $this->freezeTime();
         $stale = interrupted_activity_row('running', 11 * 86_400);
         $justStale = interrupted_activity_row('running', 901, 'node:role:relocate');
 
@@ -53,6 +54,7 @@ describe('the interrupted Activity sweep', function (): void {
     });
 
     it('leaves a request that may still be in flight and every finished row untouched', function (): void {
+        $this->freezeTime();
         // A streamed deployment or relocation can run until the 600-second PHP-FPM limit.
         $atRequestLimit = interrupted_activity_row('running', 600, 'instance:deploy');
         $withinMargin = interrupted_activity_row('running', 899, 'node:role:relocate');

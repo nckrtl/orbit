@@ -56,6 +56,8 @@ type PaneProps<T> = {
     divide?: { label: string; below: (row: T) => boolean };
     topRight?: React.ReactNode;
     className?: string;
+    /** Stable id for web verification. Omitted when unset. */
+    testId?: string;
 };
 
 /**
@@ -81,6 +83,7 @@ export function Pane<T extends Record<string, any>>({
     divide,
     topRight,
     className,
+    testId,
 }: PaneProps<T>) {
     const go = useGo();
     const key = selectionKey(useLocation().pathname, name);
@@ -181,6 +184,7 @@ export function Pane<T extends Record<string, any>>({
             state={focused ? "focused" : hovered ? "hovered" : undefined}
             className={className}
             pane={name}
+            testId={testId}
             onMouseDown={() => ui.set({ hover: name, focus: name })}
         >
             {sorted.length === 0 ? (

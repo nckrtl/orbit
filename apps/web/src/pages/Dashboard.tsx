@@ -92,6 +92,7 @@ export function Dashboard() {
         <div className="flex flex-col gap-y-[var(--panel-gap)] md:grid md:h-full md:grid-cols-6 md:grid-rows-[auto_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] md:gap-x-[1ch]">
             <Pane
                 name="nodes"
+                testId="dashboard-workers"
                 order={0}
                 title="Worker nodes"
                 className="w-full min-h-[160px] max-h-[40vh] md:col-span-4 md:max-h-[34vh]"
@@ -104,6 +105,7 @@ export function Dashboard() {
             />
             <Pane
                 name="clients"
+                testId="dashboard-clients"
                 order={1}
                 title="Client nodes"
                 className="w-full min-h-[140px] max-h-[35vh] md:col-span-2 md:max-h-[34vh]"
@@ -116,6 +118,7 @@ export function Dashboard() {
             />
             <Pane
                 name="projects"
+                testId="dashboard-projects"
                 className="w-full min-h-[140px] max-h-[35vh] md:col-span-3 md:max-h-none"
                 order={2}
                 title="Projects"
@@ -127,6 +130,7 @@ export function Dashboard() {
             />
             <Pane
                 name="instances"
+                testId="dashboard-instances"
                 className="w-full min-h-[140px] max-h-[35vh] md:col-span-3 md:max-h-none"
                 order={3}
                 title="Instances"
@@ -139,6 +143,7 @@ export function Dashboard() {
             />
             <Pane
                 name="processes"
+                testId="dashboard-processes"
                 className="w-full min-h-[140px] max-h-[35vh] md:col-span-3 md:max-h-none"
                 order={4}
                 title="Processes"
@@ -151,6 +156,7 @@ export function Dashboard() {
             />
             <Pane
                 name="schedules"
+                testId="dashboard-schedules"
                 className="w-full min-h-[140px] max-h-[35vh] md:col-span-3 md:max-h-none"
                 order={5}
                 title="Schedules"
@@ -163,6 +169,7 @@ export function Dashboard() {
             />
             <Pane
                 name="attention"
+                testId="dashboard-attention"
                 order={6}
                 title="Needs attention"
                 className="w-full min-h-[140px] max-h-[35vh] md:col-span-6 md:max-h-none"

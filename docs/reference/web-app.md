@@ -15,6 +15,8 @@ Open `https://gateway.orbit` from a machine on the Orbit WireGuard network. The 
 
 Add the web app to the home screen on an iPhone or iPad and it opens full screen. The installed app uses an opaque black status bar. The clock sits in that bar, not on the page. The web view starts below the bar and reaches the bottom edge of the screen. The top inset is 0. The shell is as tall as the web view, so the page fills that area. Padding from `env(safe-area-inset-bottom)` keeps the footer above the home indicator. A browser tab is unchanged.
 
+Agents check a changed page with [Web verification](/reference/web-verification). That check uses a phone-sized WebKit viewport and the shell's safe-area padding. It does not replace a home-screen install.
+
 The app shell keeps the page header, the main navigation, and the footer hint clear of the screen edges. On a narrow screen the header holds the menu button, and the navigation is the menu that button opens. The header, the navigation, and the footer hint stay tappable.
 
 While the app is installed, the shell pads the top, the bottom, the left, and the right by the inset for that edge. A home screen launch uses standalone display mode. Turning the device updates the four insets, and the shell follows them. A normal browser tab receives no extra safe-area padding. Safari can report a non-zero inset in a tab, especially in landscape, so the shell does not add padding for a tab inset.

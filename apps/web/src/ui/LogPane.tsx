@@ -12,6 +12,7 @@ export function LogPane({
     className = "",
     error = null,
     live = false,
+    testId,
 }: {
     title: string;
     lines: string[] | undefined;
@@ -21,6 +22,8 @@ export function LogPane({
     error?: string | null;
     /** True while a live stream appends the lines. */
     live?: boolean;
+    /** Stable id for web verification. Omitted when unset. */
+    testId?: string;
 }) {
     const scroller = useRef<HTMLDivElement>(null);
     const count = lines?.length ?? 0;
@@ -63,7 +66,7 @@ export function LogPane({
     }, [count]);
 
     return (
-        <section className={`frame ${className}`} aria-label={title}>
+        <section className={`frame ${className}`} aria-label={title} data-testid={testId}>
             <div className="frame-edge" data-edge="top">
                 <span className="frame-label" data-role="title">
                     {title}

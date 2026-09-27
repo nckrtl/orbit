@@ -27,6 +27,7 @@ use Tests\Support\FakeAppInstanceRuntimeReadiness;
 use Tests\Support\ProcessesApiFakeRuntimeManager;
 
 beforeEach(function (): void {
+    $this->freezeTime();
     $this->runtime = new ProcessesApiFakeRuntimeManager;
     $this->markers = new HibernationFakeMarkerStore;
     $this->readiness = new FakeAppInstanceRuntimeReadiness;

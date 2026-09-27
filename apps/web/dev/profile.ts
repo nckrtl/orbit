@@ -41,6 +41,13 @@ export function orbitProfile(): Plugin {
                     return;
                 }
 
+                // Demo mode, including bin/web-verify, must not run the CLI. That command reads the configured Gateway.
+                if (process.env.VITE_ORBIT_DEMO) {
+                    send(200, { ok: false, output: "Demo mode does not run orbit profile." });
+
+                    return;
+                }
+
                 const [command, prefix] = existsSync(REPO_CLI)
                     ? ["php", [REPO_CLI]]
                     : ["orbit", []];
