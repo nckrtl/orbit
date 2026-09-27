@@ -19,6 +19,12 @@ final class OrbitSearchServer extends OrbitServer
     #[\Override]
     protected function catalogue(): array
     {
-        return [ToolSearch::class => parent::catalogue()];
+        $search = new ToolSearch(parent::catalogue());
+        [$searchTools] = $search->tools();
+        $configuredLimit = config('mcp.tool_search.max_tool_calls', 25);
+        $maxToolCalls = is_int($configuredLimit) ? max(1, $configuredLimit) : 25;
+        $executeTools = new ExtensionAwareExecuteTools($search, $maxToolCalls);
+
+        return [$searchTools, $executeTools];
     }
 }

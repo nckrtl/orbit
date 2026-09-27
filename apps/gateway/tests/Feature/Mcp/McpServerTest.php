@@ -60,6 +60,8 @@ describe('POST /mcp', function (): void {
     });
 
     it('lists one tool for every manifest entry', function (): void {
+        $this->postJson('/api/v1/extensions/tasks/enable')->assertOk();
+        $this->postJson('/api/v1/extensions/proxycli/enable')->assertOk();
         $names = [];
         $cursor = null;
 

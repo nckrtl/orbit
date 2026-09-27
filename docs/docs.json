@@ -508,9 +508,16 @@
               "POST /api/v1/task-groups/{group}/tasks/{task}/check/cancel",
               "GET /api/v1/task-groups/{group}/tasks/{task}/comments",
               "POST /api/v1/task-groups/{group}/tasks/{task}/comments",
-              "POST /api/v1/tasks/disable",
-              "POST /api/v1/tasks/enable",
               "GET /api/v1/tasks/status"
+            ]
+          },
+          {
+            "group": "Extensions",
+            "openapi": "/openapi.json",
+            "pages": [
+              "GET /api/v1/extensions",
+              "POST /api/v1/extensions/{extension}/disable",
+              "POST /api/v1/extensions/{extension}/enable"
             ]
           },
           {

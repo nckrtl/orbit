@@ -27,6 +27,7 @@ use App\Http\Controllers\Api\DatabaseConnectionAttachmentsController;
 use App\Http\Controllers\Api\DatabaseConnectionsController;
 use App\Http\Controllers\Api\DatabaseUsersController;
 use App\Http\Controllers\Api\DoctorRunsController;
+use App\Http\Controllers\Api\ExtensionsController;
 use App\Http\Controllers\Api\FirewallRulesController;
 use App\Http\Controllers\Api\FleetFirewallRulesController;
 use App\Http\Controllers\Api\GatewayStatusesController;
@@ -73,6 +74,12 @@ Route::prefix('v1')->group(function (): void {
             Route::post('{annotation}/status', [AnnotationsController::class, 'update'])->name('annotation:update');
             Route::post('{annotation}/retry', [AnnotationsController::class, 'retry'])->name('annotation:retry');
         });
+
+    Route::middleware([RequireActiveWireGuardPeer::class, RequireNodeAccess::class])->group(function (): void {
+        Route::get('extensions', [ExtensionsController::class, 'index'])->name('extension:list');
+        Route::post('extensions/{extension}/enable', [ExtensionsController::class, 'enable'])->name('extension:enable');
+        Route::post('extensions/{extension}/disable', [ExtensionsController::class, 'disable'])->name('extension:disable');
+    });
 
     Route::get('gateway/status', [GatewayStatusesController::class, 'show'])
         ->name('gateway:status');
@@ -538,8 +545,8 @@ Route::prefix('v1')->group(function (): void {
         Route::delete('tools/{tool}', [ToolsController::class, 'destroy'])
             ->whereNumber('tool')
             ->name('tool:remove');
-        Route::post('proxycli', [ProxyCliController::class, 'store'])->name('proxycli:enable');
-        Route::delete('proxycli', [ProxyCliController::class, 'destroy'])->name('proxycli:disable');
+        Route::post('proxycli', [ProxyCliController::class, 'store'])->name('proxycli:setup');
+        Route::delete('proxycli', [ProxyCliController::class, 'destroy'])->name('proxycli:teardown');
         Route::get('proxycli', [ProxyCliController::class, 'status'])->name('proxycli:status');
         Route::get('proxycli/providers', [ProxyCliController::class, 'index'])->name('proxycli:list');
         Route::get('proxycli/providers/{provider}', [ProxyCliController::class, 'show'])
@@ -568,8 +575,6 @@ Route::prefix('v1')->group(function (): void {
             ->whereNumber('group')->withoutMiddleware(RecordCommandActivity::class)->name('tasks:agents');
         Route::get('task-groups/{group}/agents/{session}/stream', [AgentThreadsController::class, 'stream'])
             ->whereNumber('group')->whereNumber('session')->withoutMiddleware(RecordCommandActivity::class)->name('tasks:agent-stream');
-        Route::post('tasks/enable', [TasksController::class, 'enable'])->name('tasks:enable');
-        Route::post('tasks/disable', [TasksController::class, 'disable'])->name('tasks:disable');
         Route::get('tasks/status', [TasksController::class, 'status'])->name('tasks:status');
         Route::get('task-groups', [TaskGroupsController::class, 'index'])->name('tasks:list');
         Route::post('task-groups', [TaskGroupsController::class, 'store'])->name('tasks:create');

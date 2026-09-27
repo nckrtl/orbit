@@ -58,7 +58,7 @@ function tasks_app(string $slug = 'commander-demo'): OrbitApp
 
 function enable_tasks(): void
 {
-    test()->postJson('/api/v1/tasks/enable')->assertOk()->assertJsonPath('data.enabled', true);
+    test()->postJson('/api/v1/extensions/tasks/enable')->assertOk()->assertJsonPath('data.enabled', true);
 }
 
 it('exposes the tasks routes with stable methods', function (): void {
@@ -72,8 +72,6 @@ it('exposes the tasks routes with stable methods', function (): void {
     expect($routes)->toBe([
         'tasks:agents' => ['api/v1/task-groups/{group}/agents', ['GET', 'HEAD']],
         'tasks:agent-stream' => ['api/v1/task-groups/{group}/agents/{session}/stream', ['GET', 'HEAD']],
-        'tasks:enable' => ['api/v1/tasks/enable', ['POST']],
-        'tasks:disable' => ['api/v1/tasks/disable', ['POST']],
         'tasks:status' => ['api/v1/tasks/status', ['GET', 'HEAD']],
         'tasks:list' => ['api/v1/task-groups', ['GET', 'HEAD']],
         'tasks:create' => ['api/v1/task-groups', ['POST']],
@@ -172,14 +170,14 @@ it('enables and disables the extension through empty JSON objects', function ():
         ->assertOk()
         ->assertJsonPath('data.enabled', false);
 
-    $this->postJson('/api/v1/tasks/enable')
+    $this->postJson('/api/v1/extensions/tasks/enable')
         ->assertOk()
         ->assertJsonPath('data.enabled', true)
         ->assertJsonStructure(['meta' => ['request_id']]);
 
     expect(app(TaskExtensionState::class)->enabled())->toBeTrue();
 
-    $this->postJson('/api/v1/tasks/disable')
+    $this->postJson('/api/v1/extensions/tasks/disable')
         ->assertOk()
         ->assertJsonPath('data.enabled', false);
 
@@ -201,7 +199,7 @@ it('accepts notify_on_settle as the Commander alias for notify_coder', function 
         ->assertJsonPath('data.notify_coder', true);
 });
 
-it('returns 409 tasks.disabled for create list and show while the extension is off', function (): void {
+it('returns 409 extension.disabled for create and list while the extension is off', function (): void {
     tasks_gateway();
     $app = tasks_app();
 
@@ -211,12 +209,12 @@ it('returns 409 tasks.disabled for create list and show while the extension is o
         'brief' => 'Deliver the first slice. Accept when MCP create works.',
     ])
         ->assertStatus(409)
-        ->assertJsonPath('error.code', 'tasks.disabled')
+        ->assertJsonPath('error.code', 'extension.disabled')
         ->assertJsonPath('error.message', 'The tasks extension is disabled.');
 
     $this->getJson('/api/v1/task-groups')
         ->assertStatus(409)
-        ->assertJsonPath('error.code', 'tasks.disabled');
+        ->assertJsonPath('error.code', 'extension.disabled');
 
     expect(TaskGroup::query()->count())->toBe(0);
 });
@@ -748,7 +746,7 @@ it('summarises groups asking for assistance on tasks status', function (): void 
         ->assertJsonPath('data.enabled', true)
         ->assertJsonPath('data.assistance', $assistance);
 
-    $this->postJson('/api/v1/tasks/disable')
+    $this->postJson('/api/v1/extensions/tasks/disable')
         ->assertOk()
         ->assertJsonMissingPath('data.assistance')
         ->assertJsonPath('data.enabled', false);

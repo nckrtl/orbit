@@ -2,6 +2,7 @@
   "tools": [
     {
       "name": "activity-list",
+      "extension": null,
       "title": "List Activities",
       "description": "List recent gateway command activity.",
       "method": "GET",
@@ -60,6 +61,7 @@
     },
     {
       "name": "activity-show",
+      "extension": null,
       "title": "Show an Activity",
       "description": "Show one gateway command activity attempt.",
       "method": "GET",
@@ -86,6 +88,7 @@
     },
     {
       "name": "analytics-credentials",
+      "extension": null,
       "title": "Show analytics Stats API credentials",
       "description": "Returns whether a Plausible Stats API key is stored. The key itself is never returned.",
       "method": "GET",
@@ -101,6 +104,7 @@
     },
     {
       "name": "analytics-credentials-set",
+      "extension": null,
       "title": "Store the analytics Stats API key",
       "description": "Stores a Plausible Stats API key as a protected Gateway setting. The key is never returned.",
       "method": "PUT",
@@ -125,6 +129,7 @@
     },
     {
       "name": "analytics-credentials-unset",
+      "extension": null,
       "title": "Clear the analytics Stats API key",
       "description": "Clears the stored Plausible Stats API key.",
       "method": "DELETE",
@@ -140,6 +145,7 @@
     },
     {
       "name": "analytics-update",
+      "extension": null,
       "title": "Pin the Plausible version",
       "description": "Pin another Plausible version for the analytics role.",
       "method": "POST",
@@ -164,6 +170,7 @@
     },
     {
       "name": "annotation-create",
+      "extension": null,
       "title": "annotation:create",
       "description": "annotation:create",
       "method": "POST",
@@ -323,6 +330,7 @@
     },
     {
       "name": "annotation-list",
+      "extension": null,
       "title": "annotation:list",
       "description": "annotation:list",
       "method": "GET",
@@ -349,6 +357,7 @@
     },
     {
       "name": "annotation-retry",
+      "extension": null,
       "title": "annotation:retry",
       "description": "annotation:retry",
       "method": "POST",
@@ -387,6 +396,7 @@
     },
     {
       "name": "annotation-update",
+      "extension": null,
       "title": "annotation:update",
       "description": "annotation:update",
       "method": "POST",
@@ -434,6 +444,7 @@
     },
     {
       "name": "app-create",
+      "extension": null,
       "title": "Create an App (Project)",
       "description": "Create an App (Project)",
       "method": "POST",
@@ -502,6 +513,7 @@
     },
     {
       "name": "app-destroy",
+      "extension": null,
       "title": "Remove an App (Project)",
       "description": "Remove an App (Project)",
       "method": "DELETE",
@@ -528,6 +540,7 @@
     },
     {
       "name": "app-list",
+      "extension": null,
       "title": "List Apps (Projects)",
       "description": "List Apps (Projects)",
       "method": "GET",
@@ -543,6 +556,7 @@
     },
     {
       "name": "app-process-create-definition",
+      "extension": null,
       "title": "Create a process definition",
       "description": "Project-owned definitions carry the runtime specification that production preparation copies into a new Instance. Changing a definition changes Project configuration only.",
       "method": "POST",
@@ -683,6 +697,7 @@
     },
     {
       "name": "app-process-destroy-definition",
+      "extension": null,
       "title": "Remove a process definition",
       "description": "Project-owned definitions carry the runtime specification that production preparation copies into a new Instance. Changing a definition changes Project configuration only.",
       "method": "DELETE",
@@ -715,6 +730,7 @@
     },
     {
       "name": "app-process-list-definition",
+      "extension": null,
       "title": "List process definitions",
       "description": "Project-owned definitions carry the runtime specification that production preparation copies into a new Instance. Changing a definition changes Project configuration only.",
       "method": "GET",
@@ -741,6 +757,7 @@
     },
     {
       "name": "app-process-show-definition",
+      "extension": null,
       "title": "Show a process definition",
       "description": "Project-owned definitions carry the runtime specification that production preparation copies into a new Instance. Changing a definition changes Project configuration only.",
       "method": "GET",
@@ -773,6 +790,7 @@
     },
     {
       "name": "app-process-update-definition",
+      "extension": null,
       "title": "Replace a process definition",
       "description": "Project-owned definitions carry the runtime specification that production preparation copies into a new Instance. Changing a definition changes Project configuration only.",
       "method": "PUT",
@@ -919,6 +937,7 @@
     },
     {
       "name": "app-schedule-create-definition",
+      "extension": null,
       "title": "Create a Schedule definition",
       "description": "Project-owned definitions carry the runtime specification that production preparation copies into a new Instance. Changing a definition changes Project configuration only.",
       "method": "POST",
@@ -990,6 +1009,7 @@
     },
     {
       "name": "app-schedule-destroy-definition",
+      "extension": null,
       "title": "Remove a Schedule definition",
       "description": "Project-owned definitions carry the runtime specification that production preparation copies into a new Instance. Changing a definition changes Project configuration only.",
       "method": "DELETE",
@@ -1022,6 +1042,7 @@
     },
     {
       "name": "app-schedule-list-definition",
+      "extension": null,
       "title": "List Schedule definitions",
       "description": "Project-owned definitions carry the runtime specification that production preparation copies into a new Instance. Changing a definition changes Project configuration only.",
       "method": "GET",
@@ -1048,6 +1069,7 @@
     },
     {
       "name": "app-schedule-show-definition",
+      "extension": null,
       "title": "Show a Schedule definition",
       "description": "Project-owned definitions carry the runtime specification that production preparation copies into a new Instance. Changing a definition changes Project configuration only.",
       "method": "GET",
@@ -1080,6 +1102,7 @@
     },
     {
       "name": "app-schedule-update-definition",
+      "extension": null,
       "title": "Replace a Schedule definition",
       "description": "Project-owned definitions carry the runtime specification that production preparation copies into a new Instance. Changing a definition changes Project configuration only.",
       "method": "PUT",
@@ -1157,6 +1180,7 @@
     },
     {
       "name": "app-show",
+      "extension": null,
       "title": "Show an App (Project)",
       "description": "Show an App (Project)",
       "method": "GET",
@@ -1183,6 +1207,7 @@
     },
     {
       "name": "app-update",
+      "extension": null,
       "title": "Update an App (Project)",
       "description": "Update an App (Project)",
       "method": "PATCH",
@@ -1246,6 +1271,7 @@
     },
     {
       "name": "cluster-create",
+      "extension": null,
       "title": "Create a Cluster",
       "description": "Create a Cluster.",
       "method": "POST",
@@ -1279,6 +1305,7 @@
     },
     {
       "name": "cluster-destroy",
+      "extension": null,
       "title": "Remove a Cluster",
       "description": "Remove an empty Cluster.",
       "method": "DELETE",
@@ -1305,6 +1332,7 @@
     },
     {
       "name": "cluster-list",
+      "extension": null,
       "title": "List Clusters",
       "description": "List Clusters.",
       "method": "GET",
@@ -1320,6 +1348,7 @@
     },
     {
       "name": "cluster-node-add",
+      "extension": null,
       "title": "Attach a Node to a Cluster",
       "description": "Attach a Node to a Cluster.",
       "method": "PUT",
@@ -1353,6 +1382,7 @@
     },
     {
       "name": "cluster-node-remove",
+      "extension": null,
       "title": "Detach a Node from a Cluster",
       "description": "Detach a Node from a Cluster.",
       "method": "DELETE",
@@ -1391,6 +1421,7 @@
     },
     {
       "name": "cluster-router-set",
+      "extension": null,
       "title": "Set the Cluster Router",
       "description": "Set or replace a Cluster Router.",
       "method": "PUT",
@@ -1424,6 +1455,7 @@
     },
     {
       "name": "cluster-router-unset",
+      "extension": null,
       "title": "Clear the Cluster Router",
       "description": "Clear the Router from an inactive Cluster.",
       "method": "DELETE",
@@ -1455,6 +1487,7 @@
     },
     {
       "name": "cluster-show",
+      "extension": null,
       "title": "Show a Cluster",
       "description": "Show a Cluster.",
       "method": "GET",
@@ -1481,6 +1514,7 @@
     },
     {
       "name": "cluster-update",
+      "extension": null,
       "title": "Update a Cluster",
       "description": "Update a Cluster.",
       "method": "PATCH",
@@ -1529,6 +1563,7 @@
     },
     {
       "name": "database-create",
+      "extension": null,
       "title": "Create a Database connection",
       "description": "Create a Database connection through the Gateway.",
       "method": "POST",
@@ -1544,6 +1579,7 @@
     },
     {
       "name": "database-describe",
+      "extension": null,
       "title": "Describe a Database table",
       "description": "Shows columns for one table on a registered Database connection. An unknown table returns database.table_missing.",
       "method": "GET",
@@ -1578,6 +1614,7 @@
     },
     {
       "name": "database-destroy",
+      "extension": null,
       "title": "Remove a Database connection",
       "description": "Destroy a Database connection.",
       "method": "DELETE",
@@ -1604,6 +1641,7 @@
     },
     {
       "name": "database-list",
+      "extension": null,
       "title": "List Database connections",
       "description": "List registered Database connections.",
       "method": "GET",
@@ -1619,6 +1657,7 @@
     },
     {
       "name": "database-query",
+      "extension": null,
       "title": "Query a Database connection",
       "description": "Runs one SQL statement against a registered Database connection. Query is read-only unless the body sets write to true. SQLite runs on the associated Node. Responses omit passwords and replace a password-shaped value with [REDACTED].",
       "method": "POST",
@@ -1655,6 +1694,7 @@
     },
     {
       "name": "database-schema",
+      "extension": null,
       "title": "Show a Database connection schema",
       "description": "Shows columns for every table on a registered Database connection. SQLite inspection runs on the associated Node.",
       "method": "GET",
@@ -1681,6 +1721,7 @@
     },
     {
       "name": "database-show",
+      "extension": null,
       "title": "Show a Database connection",
       "description": "Show one Database connection.",
       "method": "GET",
@@ -1707,6 +1748,7 @@
     },
     {
       "name": "database-tables",
+      "extension": null,
       "title": "List Database connection tables",
       "description": "Lists tables on a registered Database connection. SQLite inspection runs on the associated Node.",
       "method": "GET",
@@ -1733,6 +1775,7 @@
     },
     {
       "name": "database-update",
+      "extension": null,
       "title": "Update a Database connection",
       "description": "Update a Database connection.",
       "method": "PATCH",
@@ -1759,6 +1802,7 @@
     },
     {
       "name": "database-user-create",
+      "extension": null,
       "title": "Create a managed MySQL user",
       "description": "Creates a MySQL user and database through a Node-targeted Docker MySQL Process, then registers or refreshes the connection. The host is the Node WireGuard address and the port is the published host port for container port 3306. A slug that already names a mysql connection is refreshed. A pgsql or sqlite slug returns `database.slug_conflict`.",
       "method": "POST",
@@ -1812,6 +1856,7 @@
     },
     {
       "name": "database-user-list",
+      "extension": null,
       "title": "database:user:list",
       "description": "List the recorded users for a registered Database connection.",
       "method": "GET",
@@ -1838,6 +1883,7 @@
     },
     {
       "name": "doctor",
+      "extension": null,
       "title": "Run Doctor",
       "description": "Verify registered node state without making repairs.",
       "method": "POST",
@@ -1877,6 +1923,7 @@
     },
     {
       "name": "env-import",
+      "extension": null,
       "title": "Import the environment file",
       "description": "Import the workload environment file into stored Instance configuration.",
       "method": "POST",
@@ -1906,6 +1953,7 @@
     },
     {
       "name": "env-sync",
+      "extension": null,
       "title": "Synchronize the environment file",
       "description": "Synchronize stored Instance configuration to the workload environment file.",
       "method": "POST",
@@ -1931,6 +1979,7 @@
     },
     {
       "name": "env-update",
+      "extension": null,
       "title": "Update an environment value",
       "description": "Update one stored Instance environment value without changing the workload file.",
       "method": "PUT",
@@ -1966,7 +2015,84 @@
       }
     },
     {
+      "name": "extension-disable",
+      "extension": null,
+      "title": "Disable an extension",
+      "description": "Disables one Gateway-wide extension without removing its setup data. Use `tasks` or `proxycli`; an unknown slug returns `validation.failed` (422). Returns the extension name and `enabled: false`.",
+      "method": "POST",
+      "path": "/api/v1/extensions/{extension}/disable",
+      "path_inputs": [
+        "extension"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "extension": {
+            "type": "string",
+            "enum": [
+              "tasks",
+              "proxycli"
+            ],
+            "description": "Extension slug: `tasks` or `proxycli`."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "extension"
+        ]
+      }
+    },
+    {
+      "name": "extension-enable",
+      "extension": null,
+      "title": "Enable an extension",
+      "description": "Enables one Gateway-wide extension. Use `tasks` or `proxycli`; an unknown slug returns `validation.failed` (422). Returns the extension name and `enabled: true`.",
+      "method": "POST",
+      "path": "/api/v1/extensions/{extension}/enable",
+      "path_inputs": [
+        "extension"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "extension": {
+            "type": "string",
+            "enum": [
+              "tasks",
+              "proxycli"
+            ],
+            "description": "Extension slug: `tasks` or `proxycli`."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "extension"
+        ]
+      }
+    },
+    {
+      "name": "extension-list",
+      "extension": null,
+      "title": "List extensions",
+      "description": "Returns the Gateway-wide extension switch state as an object keyed by extension slug. The initial slugs are `tasks` and `proxycli`.",
+      "method": "GET",
+      "path": "/api/v1/extensions",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
       "name": "firewall-allow",
+      "extension": null,
       "title": "Allow a firewall rule",
       "description": "Allow one named UFW rule through the gateway.",
       "method": "POST",
@@ -2018,6 +2144,7 @@
     },
     {
       "name": "firewall-deny",
+      "extension": null,
       "title": "Deny a firewall rule",
       "description": "Deny one named UFW rule through the gateway.",
       "method": "POST",
@@ -2069,6 +2196,7 @@
     },
     {
       "name": "firewall-fleet-list",
+      "extension": null,
       "title": "List firewall rules on every Node",
       "description": "Returns the operator firewall rules of every Node the caller can reach, in one response, ordered by Node and name. The web app uses it for the fleet list instead of one request per Node. The per-Node list stays for the CLI. The list does not SSH.",
       "method": "GET",
@@ -2084,6 +2212,7 @@
     },
     {
       "name": "firewall-list",
+      "extension": null,
       "title": "List firewall rules",
       "description": "List named firewall rules for one node.",
       "method": "GET",
@@ -2110,6 +2239,7 @@
     },
     {
       "name": "firewall-live-list",
+      "extension": null,
       "title": "List live UFW rules",
       "description": "Reads `ufw status numbered` over WireGuard and classifies each IPv4 rule against the desired managed set and operator firewall records. Live rules that do not match are drift. Desired or operator rules absent from live are missing. An inactive, absent, or unreachable backend returns empty live and missing lists.",
       "method": "GET",
@@ -2136,6 +2266,7 @@
     },
     {
       "name": "firewall-managed-list",
+      "extension": null,
       "title": "List Orbit's own firewall rules",
       "description": "Returns the `orbit:` rules Orbit intends on the Node: WireGuard member trust, public SSH recovery only while no active role has closed it, then each active role and Metrics. The list does not SSH. No request adds, changes, or removes one of these rules.",
       "method": "GET",
@@ -2162,6 +2293,7 @@
     },
     {
       "name": "firewall-remove",
+      "extension": null,
       "title": "Remove a firewall rule",
       "description": "Remove one named UFW rule through the gateway.",
       "method": "DELETE",
@@ -2194,6 +2326,7 @@
     },
     {
       "name": "gateway-status",
+      "extension": null,
       "title": "Show Gateway status",
       "description": "Returns the Gateway name, version, and status. This endpoint needs no WireGuard identity.",
       "method": "GET",
@@ -2209,6 +2342,7 @@
     },
     {
       "name": "gateway-trust",
+      "extension": null,
       "title": "Fetch the root CA certificate",
       "description": "Returns the PEM-encoded Orbit root certificate and its SHA-256 fingerprint so a client can pin it before it trusts the Gateway. This endpoint needs no WireGuard identity.",
       "method": "GET",
@@ -2224,6 +2358,7 @@
     },
     {
       "name": "github-app-destroy",
+      "extension": null,
       "title": "Remove the stored GitHub App",
       "description": "Delete the GitHub App credentials the Gateway stores.",
       "method": "DELETE",
@@ -2239,6 +2374,7 @@
     },
     {
       "name": "github-app-install",
+      "extension": null,
       "title": "Start a GitHub App registration or installation",
       "description": "Register the GitHub App when the Gateway has none, then install it on a GitHub account.",
       "method": "POST",
@@ -2268,6 +2404,7 @@
     },
     {
       "name": "github-app-show",
+      "extension": null,
       "title": "Show the GitHub App",
       "description": "Show the Gateway's GitHub App and the accounts that installed it.",
       "method": "GET",
@@ -2283,6 +2420,7 @@
     },
     {
       "name": "instance-analytics-disable",
+      "extension": null,
       "title": "Remove Instance tracking hosts",
       "description": "Remove the analytics tracking hosts of an Instance.",
       "method": "DELETE",
@@ -2309,6 +2447,7 @@
     },
     {
       "name": "instance-analytics-enable",
+      "extension": null,
       "title": "Publish Instance tracking hosts",
       "description": "Publish the analytics tracking hosts of an Instance.",
       "method": "POST",
@@ -2342,6 +2481,7 @@
     },
     {
       "name": "instance-analytics-show",
+      "extension": null,
       "title": "Show Instance analytics",
       "description": "Show the analytics tracking hosts of an Instance.",
       "method": "GET",
@@ -2368,6 +2508,7 @@
     },
     {
       "name": "instance-analytics-stats",
+      "extension": null,
       "title": "Read Instance analytics stats",
       "description": "Returns live visitors, visitors for Plausible's day, 7-day, and 30-day periods, and the top ten pages for the Instance's tracked site. `available` is false when the analytics role is not active or the Instance has no tracking host. A failed Stats API read is `readable: false` with no visitor numbers.",
       "method": "GET",
@@ -2394,6 +2535,7 @@
     },
     {
       "name": "instance-clone",
+      "extension": null,
       "title": "Clone an Instance",
       "description": "Clone a candidate into a prepared production Instance.\n\nThe candidate supplies source, stored environment values, and an optional SQLite snapshot. The App supplies production Process and Schedule definitions; candidate-specific overrides are not copied.\n\nProvision the production Node with node:add --tld before cloning. Clean application state on the target only. Use env:update and env:sync for target configuration, then configure deploy steps with instance:deploy-step:create and deploy with instance:deploy.",
       "method": "POST",
@@ -2449,6 +2591,7 @@
     },
     {
       "name": "instance-create",
+      "extension": null,
       "title": "Create an Instance",
       "description": "Create a development Instance on an app-dev Node.\n\nCreates a development Instance. New production Instances require a candidate. Use instance:clone.",
       "method": "POST",
@@ -2503,6 +2646,7 @@
     },
     {
       "name": "instance-database-add",
+      "extension": null,
       "title": "Attach a Database connection",
       "description": "Add a Database connection on an Instance and write stored environment keys.",
       "method": "PUT",
@@ -2540,6 +2684,7 @@
     },
     {
       "name": "instance-database-remove",
+      "extension": null,
       "title": "Detach a Database connection",
       "description": "Remove a Database connection from an Instance and clear stored environment keys.",
       "method": "DELETE",
@@ -2577,6 +2722,7 @@
     },
     {
       "name": "instance-dependencies-scan",
+      "extension": null,
       "title": "instance:dependencies:scan",
       "description": "Scan root dependency manifests and lockfiles for one instance or every authorized instance.",
       "method": "POST",
@@ -2603,6 +2749,7 @@
     },
     {
       "name": "instance-dependencies-show",
+      "extension": null,
       "title": "instance:dependencies:show",
       "description": "instance:dependencies:show",
       "method": "GET",
@@ -2629,6 +2776,7 @@
     },
     {
       "name": "instance-dependencies-update",
+      "extension": null,
       "title": "instance:dependencies:update",
       "description": "Update development root packages within declared constraints and refresh inventory.",
       "method": "POST",
@@ -2655,6 +2803,7 @@
     },
     {
       "name": "instance-deploy",
+      "extension": null,
       "title": "Deploy an Instance",
       "description": "Deploy the configured branch of a production Instance.",
       "method": "POST",
@@ -2681,6 +2830,7 @@
     },
     {
       "name": "instance-deploy-step-create",
+      "extension": null,
       "title": "Create a deploy step",
       "description": "Create a named deploy step on a production Instance.",
       "method": "POST",
@@ -2707,6 +2857,7 @@
     },
     {
       "name": "instance-deploy-step-destroy",
+      "extension": null,
       "title": "Remove a deploy step",
       "description": "Destroy a named deploy step on a production Instance.",
       "method": "DELETE",
@@ -2740,6 +2891,7 @@
     },
     {
       "name": "instance-deploy-step-list",
+      "extension": null,
       "title": "List deploy steps",
       "description": "List deploy steps on a production Instance.",
       "method": "GET",
@@ -2766,6 +2918,7 @@
     },
     {
       "name": "instance-deploy-step-update",
+      "extension": null,
       "title": "Update a deploy step",
       "description": "Update a named deploy step on a production Instance.",
       "method": "PATCH",
@@ -2799,6 +2952,7 @@
     },
     {
       "name": "instance-deployment-list",
+      "extension": null,
       "title": "instance:deployment:list",
       "description": "List recorded deployment history for a production Instance, newest first.",
       "method": "GET",
@@ -2825,6 +2979,7 @@
     },
     {
       "name": "instance-deployment-show",
+      "extension": null,
       "title": "instance:deployment:show",
       "description": "Show one recorded deployment, its phases and steps, and its log.",
       "method": "GET",
@@ -2849,6 +3004,7 @@
     },
     {
       "name": "instance-destroy",
+      "extension": null,
       "title": "Remove an Instance",
       "description": "Destroy an Instance.",
       "method": "DELETE",
@@ -2879,6 +3035,7 @@
     },
     {
       "name": "instance-list",
+      "extension": null,
       "title": "List Instances",
       "description": "List instances.",
       "method": "GET",
@@ -2894,6 +3051,7 @@
     },
     {
       "name": "instance-logs",
+      "extension": null,
       "title": "Read Instance logs",
       "description": "Returns one redacted tail of the Instance's application log, `storage/logs/laravel.log` or the newest `laravel-*.log`, read over SSH. `lines` is 1 to 1,000, default 100. Open a live log stream to follow new lines.",
       "method": "GET",
@@ -2932,6 +3090,7 @@
     },
     {
       "name": "instance-queue",
+      "extension": null,
       "title": "Read the Instance queue",
       "description": "Read the Instance queue",
       "method": "GET",
@@ -2974,6 +3133,7 @@
     },
     {
       "name": "instance-register",
+      "extension": null,
       "title": "Register an Instance",
       "description": "Adopt the current Git source as a managed Instance.",
       "method": "POST",
@@ -3042,6 +3202,7 @@
     },
     {
       "name": "instance-release-list",
+      "extension": null,
       "title": "List retained releases",
       "description": "List retained production Instance releases.",
       "method": "GET",
@@ -3068,6 +3229,7 @@
     },
     {
       "name": "instance-resolve",
+      "extension": null,
       "title": "instance:resolve",
       "description": "instance:resolve",
       "method": "GET",
@@ -3093,6 +3255,7 @@
     },
     {
       "name": "instance-resolve-directory",
+      "extension": null,
       "title": "instance:resolve-directory",
       "description": "instance:resolve-directory",
       "method": "GET",
@@ -3118,6 +3281,7 @@
     },
     {
       "name": "instance-rollback",
+      "extension": null,
       "title": "Roll back an Instance",
       "description": "Select one retained production Instance release.",
       "method": "POST",
@@ -3149,6 +3313,7 @@
     },
     {
       "name": "instance-setup",
+      "extension": null,
       "title": "instance:setup",
       "description": "Run the Project setup steps for one development Instance.",
       "method": "POST",
@@ -3175,6 +3340,7 @@
     },
     {
       "name": "instance-setup-step-create",
+      "extension": null,
       "title": "instance:setup-step:create",
       "description": "Record one named setup step on a Project.",
       "method": "POST",
@@ -3222,6 +3388,7 @@
     },
     {
       "name": "instance-setup-step-destroy",
+      "extension": null,
       "title": "instance:setup-step:destroy",
       "description": "Remove one named setup step.",
       "method": "DELETE",
@@ -3255,6 +3422,7 @@
     },
     {
       "name": "instance-setup-step-list",
+      "extension": null,
       "title": "instance:setup-step:list",
       "description": "List a Project's setup steps.",
       "method": "GET",
@@ -3281,6 +3449,7 @@
     },
     {
       "name": "instance-setup-step-update",
+      "extension": null,
       "title": "instance:setup-step:update",
       "description": "Change one named setup step.",
       "method": "PATCH",
@@ -3329,6 +3498,7 @@
     },
     {
       "name": "instance-show",
+      "extension": null,
       "title": "Show an Instance",
       "description": "Show an instance.",
       "method": "GET",
@@ -3355,6 +3525,7 @@
     },
     {
       "name": "instance-teardown-step-create",
+      "extension": null,
       "title": "instance:teardown-step:create",
       "description": "Record one named teardown step on a Project.",
       "method": "POST",
@@ -3402,6 +3573,7 @@
     },
     {
       "name": "instance-teardown-step-destroy",
+      "extension": null,
       "title": "instance:teardown-step:destroy",
       "description": "Remove one named teardown step.",
       "method": "DELETE",
@@ -3435,6 +3607,7 @@
     },
     {
       "name": "instance-teardown-step-list",
+      "extension": null,
       "title": "instance:teardown-step:list",
       "description": "List a Project's teardown steps.",
       "method": "GET",
@@ -3461,6 +3634,7 @@
     },
     {
       "name": "instance-teardown-step-update",
+      "extension": null,
       "title": "instance:teardown-step:update",
       "description": "Change one named teardown step.",
       "method": "PATCH",
@@ -3509,6 +3683,7 @@
     },
     {
       "name": "instance-transfer",
+      "extension": null,
       "title": "Transfer an Instance",
       "description": "Transfer a development Instance to another app-dev Node.\n\nTransfer moves one active development Instance to a distinct active app-dev Node in an active Cluster. The destination may be in the same Cluster or another Cluster.\n\nOrbit stops source processes for the downtime window, copies the source checkout or worktree into an independent destination checkout, optionally copies one selected SQLite snapshot, rebuilds destination environment values, moves or replaces the Route, and deletes the old managed placement. Production, standalone, and same-Node transfers are refused.\n\nUse --name when the destination path or generated domain must change. --json disables prompts and requires --force for transfer consent.",
       "method": "POST",
@@ -3552,6 +3727,7 @@
     },
     {
       "name": "instance-update",
+      "extension": null,
       "title": "Update the deployment branch",
       "description": "Update a production Instance deployment branch.",
       "method": "PATCH",
@@ -3578,6 +3754,7 @@
     },
     {
       "name": "metrics-credentials",
+      "extension": null,
       "title": "Show Metrics credentials",
       "description": "Show Metrics credentials.",
       "method": "GET",
@@ -3593,6 +3770,7 @@
     },
     {
       "name": "metrics-credentials-reset",
+      "extension": null,
       "title": "Reset Metrics credentials",
       "description": "Reset Metrics credentials",
       "method": "POST",
@@ -3608,6 +3786,7 @@
     },
     {
       "name": "metrics-disable",
+      "extension": null,
       "title": "Disable Metrics",
       "description": "Disable Metrics.",
       "method": "DELETE",
@@ -3632,6 +3811,7 @@
     },
     {
       "name": "metrics-enable",
+      "extension": null,
       "title": "Enable Metrics",
       "description": "Enable Metrics on one node.",
       "method": "POST",
@@ -3655,6 +3835,7 @@
     },
     {
       "name": "metrics-exporter-disable",
+      "extension": null,
       "title": "Disable an exporter",
       "description": "Disable the Metrics exporter on a node.",
       "method": "DELETE",
@@ -3681,6 +3862,7 @@
     },
     {
       "name": "metrics-exporter-enable",
+      "extension": null,
       "title": "Enable an exporter",
       "description": "Enable the Metrics exporter on a node.",
       "method": "PUT",
@@ -3707,6 +3889,7 @@
     },
     {
       "name": "metrics-status",
+      "extension": null,
       "title": "Show Metrics status",
       "description": "Show Metrics status.",
       "method": "GET",
@@ -3722,6 +3905,7 @@
     },
     {
       "name": "node-access-add",
+      "extension": null,
       "title": "Grant Node access",
       "description": "Allow one node to run commands on another node.",
       "method": "PUT",
@@ -3755,6 +3939,7 @@
     },
     {
       "name": "node-access-remove",
+      "extension": null,
       "title": "Revoke Node access",
       "description": "Remove one node access edge from the active gateway.",
       "method": "DELETE",
@@ -3788,6 +3973,7 @@
     },
     {
       "name": "node-add",
+      "extension": null,
       "title": "Add a Node",
       "description": "Add a node to the fleet: provision a new machine or converge an existing one.",
       "method": "POST",
@@ -3915,6 +4101,7 @@
     },
     {
       "name": "node-excluded-project-add",
+      "extension": null,
       "title": "node:excluded-project:add",
       "description": "Exclude a Project from development placement on an app-dev Node.",
       "method": "POST",
@@ -3948,6 +4135,7 @@
     },
     {
       "name": "node-excluded-project-list",
+      "extension": null,
       "title": "node:excluded-project:list",
       "description": "List the Projects that cannot use an app-dev Node for development.",
       "method": "GET",
@@ -3974,6 +4162,7 @@
     },
     {
       "name": "node-excluded-project-remove",
+      "extension": null,
       "title": "node:excluded-project:remove",
       "description": "Remove a Project from the development exclusions of an app-dev Node.",
       "method": "DELETE",
@@ -4007,6 +4196,7 @@
     },
     {
       "name": "node-list",
+      "extension": null,
       "title": "List Nodes",
       "description": "List nodes registered with the active gateway.",
       "method": "GET",
@@ -4022,6 +4212,7 @@
     },
     {
       "name": "node-metrics",
+      "extension": null,
       "title": "node:metrics",
       "description": "Show one synchronous metrics snapshot for a node: cores, memory, swap, load, uptime, pressure, and disks.",
       "method": "GET",
@@ -4048,6 +4239,7 @@
     },
     {
       "name": "node-remove",
+      "extension": null,
       "title": "Remove a Node",
       "description": "Remove a node registered with the active gateway.",
       "method": "DELETE",
@@ -4082,6 +4274,7 @@
     },
     {
       "name": "node-rename",
+      "extension": null,
       "title": "node:rename",
       "description": "Change the unique registry name of a node.",
       "method": "PATCH",
@@ -4115,6 +4308,7 @@
     },
     {
       "name": "node-role-add",
+      "extension": null,
       "title": "Add a role to a Node",
       "description": "Add one role assignment to a node.",
       "method": "POST",
@@ -4171,6 +4365,7 @@
     },
     {
       "name": "node-role-list",
+      "extension": null,
       "title": "List the roles of a Node",
       "description": "List role assignments for one node.",
       "method": "GET",
@@ -4197,6 +4392,7 @@
     },
     {
       "name": "node-role-relocate",
+      "extension": null,
       "title": "node:role:relocate",
       "description": "Move a relocatable singleton role to another node.",
       "method": "POST",
@@ -4250,6 +4446,7 @@
     },
     {
       "name": "node-role-remove",
+      "extension": null,
       "title": "Remove a role from a Node",
       "description": "Remove one role assignment from a node.",
       "method": "DELETE",
@@ -4306,6 +4503,7 @@
     },
     {
       "name": "node-settings",
+      "extension": null,
       "title": "Update Node settings",
       "description": "Update typed storage settings on a node.",
       "method": "PATCH",
@@ -4332,6 +4530,7 @@
     },
     {
       "name": "node-show",
+      "extension": null,
       "title": "Show a Node",
       "description": "Show a node registered with the active gateway.",
       "method": "GET",
@@ -4358,6 +4557,7 @@
     },
     {
       "name": "process-create",
+      "extension": null,
       "title": "Create a Process",
       "description": "Create one systemd service, Docker container process, or Project process definition.",
       "method": "POST",
@@ -4495,6 +4695,7 @@
     },
     {
       "name": "process-destroy",
+      "extension": null,
       "title": "Remove a Process",
       "description": "Destroy one process or Project process definition.",
       "method": "DELETE",
@@ -4521,6 +4722,7 @@
     },
     {
       "name": "process-list",
+      "extension": null,
       "title": "List Processes",
       "description": "List processes for one Instance or Node, or process definitions for one Project.",
       "method": "GET",
@@ -4557,6 +4759,7 @@
     },
     {
       "name": "process-logs",
+      "extension": null,
       "title": "Read Process logs",
       "description": "Returns one redacted tail of the Process's journal or container output, read over SSH. `lines` is 1 to 1,000, default 100. Open a live log stream to follow new lines.",
       "method": "GET",
@@ -4595,6 +4798,7 @@
     },
     {
       "name": "process-restart",
+      "extension": null,
       "title": "Restart a Process",
       "description": "Restart one process.",
       "method": "POST",
@@ -4621,6 +4825,7 @@
     },
     {
       "name": "process-start",
+      "extension": null,
       "title": "Start a Process",
       "description": "Start one process.",
       "method": "POST",
@@ -4647,6 +4852,7 @@
     },
     {
       "name": "process-stop",
+      "extension": null,
       "title": "Stop a Process",
       "description": "Stop one process.",
       "method": "POST",
@@ -4673,6 +4879,7 @@
     },
     {
       "name": "project-create",
+      "extension": null,
       "title": "Create a Project",
       "description": "Create a project.",
       "method": "POST",
@@ -4748,6 +4955,7 @@
     },
     {
       "name": "project-destroy",
+      "extension": null,
       "title": "Remove a Project",
       "description": "Remove a project.",
       "method": "DELETE",
@@ -4774,6 +4982,7 @@
     },
     {
       "name": "project-excluded-node-add",
+      "extension": null,
       "title": "project:excluded-node:add",
       "description": "Exclude an app-dev Node from development placement for a Project.",
       "method": "POST",
@@ -4807,6 +5016,7 @@
     },
     {
       "name": "project-excluded-node-list",
+      "extension": null,
       "title": "project:excluded-node:list",
       "description": "List the app-dev Nodes a Project cannot use for development.",
       "method": "GET",
@@ -4833,6 +5043,7 @@
     },
     {
       "name": "project-excluded-node-remove",
+      "extension": null,
       "title": "project:excluded-node:remove",
       "description": "Remove a development Node exclusion from a Project.",
       "method": "DELETE",
@@ -4866,6 +5077,7 @@
     },
     {
       "name": "project-list",
+      "extension": null,
       "title": "List Projects",
       "description": "List projects.",
       "method": "GET",
@@ -4881,6 +5093,7 @@
     },
     {
       "name": "project-process-definition-create",
+      "extension": null,
       "title": "Create a process definition",
       "description": "Project-owned definitions carry the runtime specification that production preparation copies into a new Instance. Changing a definition changes Project configuration only.",
       "method": "POST",
@@ -5020,6 +5233,7 @@
     },
     {
       "name": "project-process-definition-destroy",
+      "extension": null,
       "title": "Remove a process definition",
       "description": "Project-owned definitions carry the runtime specification that production preparation copies into a new Instance. Changing a definition changes Project configuration only.",
       "method": "DELETE",
@@ -5052,6 +5266,7 @@
     },
     {
       "name": "project-process-definition-list",
+      "extension": null,
       "title": "List process definitions",
       "description": "Project-owned definitions carry the runtime specification that production preparation copies into a new Instance. Changing a definition changes Project configuration only.",
       "method": "GET",
@@ -5078,6 +5293,7 @@
     },
     {
       "name": "project-process-definition-show",
+      "extension": null,
       "title": "Show a process definition",
       "description": "Project-owned definitions carry the runtime specification that production preparation copies into a new Instance. Changing a definition changes Project configuration only.",
       "method": "GET",
@@ -5110,6 +5326,7 @@
     },
     {
       "name": "project-process-definition-update",
+      "extension": null,
       "title": "Replace a process definition",
       "description": "Project-owned definitions carry the runtime specification that production preparation copies into a new Instance. Changing a definition changes Project configuration only.",
       "method": "PUT",
@@ -5255,6 +5472,7 @@
     },
     {
       "name": "project-schedule-definition-create",
+      "extension": null,
       "title": "Create a Schedule definition",
       "description": "Project-owned definitions carry the runtime specification that production preparation copies into a new Instance. Changing a definition changes Project configuration only.",
       "method": "POST",
@@ -5325,6 +5543,7 @@
     },
     {
       "name": "project-schedule-definition-destroy",
+      "extension": null,
       "title": "Remove a Schedule definition",
       "description": "Project-owned definitions carry the runtime specification that production preparation copies into a new Instance. Changing a definition changes Project configuration only.",
       "method": "DELETE",
@@ -5357,6 +5576,7 @@
     },
     {
       "name": "project-schedule-definition-list",
+      "extension": null,
       "title": "List Schedule definitions",
       "description": "Project-owned definitions carry the runtime specification that production preparation copies into a new Instance. Changing a definition changes Project configuration only.",
       "method": "GET",
@@ -5383,6 +5603,7 @@
     },
     {
       "name": "project-schedule-definition-show",
+      "extension": null,
       "title": "Show a Schedule definition",
       "description": "Project-owned definitions carry the runtime specification that production preparation copies into a new Instance. Changing a definition changes Project configuration only.",
       "method": "GET",
@@ -5415,6 +5636,7 @@
     },
     {
       "name": "project-schedule-definition-update",
+      "extension": null,
       "title": "Replace a Schedule definition",
       "description": "Project-owned definitions carry the runtime specification that production preparation copies into a new Instance. Changing a definition changes Project configuration only.",
       "method": "PUT",
@@ -5491,6 +5713,7 @@
     },
     {
       "name": "project-show",
+      "extension": null,
       "title": "Show a Project",
       "description": "Show a project.",
       "method": "GET",
@@ -5517,6 +5740,7 @@
     },
     {
       "name": "project-update",
+      "extension": null,
       "title": "Update a Project",
       "description": "Update a project.",
       "method": "PATCH",
@@ -5584,11 +5808,12 @@
       }
     },
     {
-      "name": "proxycli-disable",
-      "title": "Disable proxycli",
-      "description": "Stops the collector Process for the whole fleet, withdraws collector.cli-proxy-api.orbit and its certificate, deletes the stored CLIProxyAPI management key and the read and control tokens, and hides provider reads. Enabling again needs the management key. The Redis connection and Valkey data stay.",
-      "method": "DELETE",
-      "path": "/api/v1/proxycli",
+      "name": "proxycli-list",
+      "extension": "proxycli",
+      "title": "List proxycli providers",
+      "description": "Returns provider pools from the Valkey snapshot. The request never calls CLIProxyAPI.",
+      "method": "GET",
+      "path": "/api/v1/proxycli/providers",
       "path_inputs": [],
       "query_inputs": [],
       "streams": false,
@@ -5599,8 +5824,9 @@
       }
     },
     {
-      "name": "proxycli-enable",
-      "title": "Enable proxycli",
+      "name": "proxycli-setup",
+      "extension": "proxycli",
+      "title": "Set up proxycli",
       "description": "Deploys one collector Process and publishes https://collector.cli-proxy-api.orbit after a Redis Database connection for shared Valkey is in place. Fails closed when that connection is missing, is not Redis, or names a Node without the database role. A custom proxy Route that already serves the collector hostname on that Node is withdrawn in the same Caddy reload and removed; any other Route on that name fails with proxycli.hostname_taken. The response never includes tokens or the management key.",
       "method": "POST",
       "path": "/api/v1/proxycli",
@@ -5616,14 +5842,12 @@
           },
           "cache_connection": {
             "type": "string",
-            "maxLength": 64,
-            "description": "Redis Database connection slug for shared Valkey"
+            "maxLength": 64
           },
           "cliproxy_url": {
             "type": "string",
             "format": "uri",
-            "maxLength": 512,
-            "description": "CLIProxyAPI Management API origin"
+            "maxLength": 512
           },
           "cliproxy_management_key": {
             "type": "string",
@@ -5641,22 +5865,8 @@
       }
     },
     {
-      "name": "proxycli-list",
-      "title": "List proxycli providers",
-      "description": "Returns provider pools from the Valkey snapshot. The request never calls CLIProxyAPI.",
-      "method": "GET",
-      "path": "/api/v1/proxycli/providers",
-      "path_inputs": [],
-      "query_inputs": [],
-      "streams": false,
-      "input_schema": {
-        "type": "object",
-        "properties": {},
-        "additionalProperties": false
-      }
-    },
-    {
       "name": "proxycli-show",
+      "extension": "proxycli",
       "title": "Show a proxycli provider",
       "description": "Returns one provider pool and its accounts from the Valkey snapshot. Window titles are duration labels. A missing window is omitted.",
       "method": "GET",
@@ -5681,6 +5891,7 @@
     },
     {
       "name": "proxycli-status",
+      "extension": "proxycli",
       "title": "Show proxycli status",
       "description": "Returns whether the fleet feature is enabled, which Node and cache connection it uses, and when the snapshot was last written.",
       "method": "GET",
@@ -5695,7 +5906,24 @@
       }
     },
     {
+      "name": "proxycli-teardown",
+      "extension": "proxycli",
+      "title": "Tear down proxycli",
+      "description": "Stops the collector Process for the whole fleet, withdraws collector.cli-proxy-api.orbit and its certificate, deletes the stored CLIProxyAPI management key and the read and control tokens, and hides provider reads. Setting up again needs the management key. The Redis connection and Valkey data stay.",
+      "method": "DELETE",
+      "path": "/api/v1/proxycli",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
       "name": "proxycli-update",
+      "extension": "proxycli",
       "title": "Update a proxycli account",
       "description": "Patches CLIProxyAPI account status, then recompiles pools from the cached snapshot without fetching quota.",
       "method": "PATCH",
@@ -5725,6 +5953,7 @@
     },
     {
       "name": "realtime-show",
+      "extension": null,
       "title": "Show the Reverb connection",
       "description": "Returns the Reverb WebSocket URL, app key, and channel name a client needs to subscribe to record-change events, or null values when broadcasting is not configured.",
       "method": "GET",
@@ -5740,6 +5969,7 @@
     },
     {
       "name": "route-create",
+      "extension": null,
       "title": "Create a Route",
       "description": "Create an explicit Route.",
       "method": "POST",
@@ -5784,6 +6014,7 @@
     },
     {
       "name": "route-destroy",
+      "extension": null,
       "title": "Remove a Route",
       "description": "Remove a Route.",
       "method": "DELETE",
@@ -5810,6 +6041,7 @@
     },
     {
       "name": "route-list",
+      "extension": null,
       "title": "List Routes",
       "description": "List Routes.",
       "method": "GET",
@@ -5825,6 +6057,7 @@
     },
     {
       "name": "route-show",
+      "extension": null,
       "title": "Show a Route",
       "description": "Show a Route.",
       "method": "GET",
@@ -5851,6 +6084,7 @@
     },
     {
       "name": "route-target-set",
+      "extension": null,
       "title": "Set the Route target",
       "description": "Set the configured Route target or a complete production target set.",
       "method": "PUT",
@@ -5908,6 +6142,7 @@
     },
     {
       "name": "route-target-unset",
+      "extension": null,
       "title": "Clear the Route target",
       "description": "Clear the configured Route target.",
       "method": "DELETE",
@@ -5934,6 +6169,7 @@
     },
     {
       "name": "route-update",
+      "extension": null,
       "title": "Update a Route",
       "description": "Update a Route.",
       "method": "PATCH",
@@ -5973,6 +6209,7 @@
     },
     {
       "name": "schedule-create",
+      "extension": null,
       "title": "Create a Schedule",
       "description": "Create one Node or Instance Schedule, or a Project Schedule definition.",
       "method": "POST",
@@ -6032,6 +6269,7 @@
     },
     {
       "name": "schedule-destroy",
+      "extension": null,
       "title": "Remove a Schedule",
       "description": "Destroy one Schedule or Project Schedule definition through the Gateway.",
       "method": "DELETE",
@@ -6058,6 +6296,7 @@
     },
     {
       "name": "schedule-enable",
+      "extension": null,
       "title": "Enable a Schedule",
       "description": "Enable and start one installed Instance Schedule timer.",
       "method": "POST",
@@ -6084,6 +6323,7 @@
     },
     {
       "name": "schedule-list",
+      "extension": null,
       "title": "List Schedules",
       "description": "List authorized Schedules or Project Schedule definitions.",
       "method": "GET",
@@ -6099,6 +6339,7 @@
     },
     {
       "name": "schedule-logs",
+      "extension": null,
       "title": "Read Schedule logs",
       "description": "Return one bounded Schedule log tail.",
       "method": "GET",
@@ -6132,6 +6373,7 @@
     },
     {
       "name": "schedule-run",
+      "extension": null,
       "title": "Run a Schedule",
       "description": "Run one Schedule without changing its timer state.",
       "method": "POST",
@@ -6158,6 +6400,7 @@
     },
     {
       "name": "schedule-show",
+      "extension": null,
       "title": "Show a Schedule",
       "description": "Show one authorized Schedule or Project Schedule definition.",
       "method": "GET",
@@ -6184,6 +6427,7 @@
     },
     {
       "name": "tasks-agents",
+      "extension": "tasks",
       "title": "List task agent sessions",
       "description": "List a task group's agent threads.",
       "method": "GET",
@@ -6210,8 +6454,9 @@
     },
     {
       "name": "tasks-cancel",
+      "extension": "tasks",
       "title": "Cancel a Task group",
-      "description": "Cancels a backlog, todo, reserved, running, reviewing, or failed Task group, or a settling group without a pull request, and clears its shared Instance. For a settling group with an approved subtask, the Gateway first pushes the workspace HEAD to `task-{group}` on origin; a failed push returns `tasks.push_failed` (502) and keeps the group and Instance. Idempotent for cancelled groups. Route-free source_resolved Instances use database-only cleanup and retain their checkout; other Instances use the forced Instance remover. Requires Gateway access. Returns tasks.disabled while the extension is off and tasks.not_cancellable for completed groups and settling groups with a pull request.",
+      "description": "Cancels a backlog, todo, reserved, running, reviewing, or failed Task group, or a settling group without a pull request, and clears its shared Instance. For a settling group with an approved subtask, the Gateway first pushes the workspace HEAD to `task-{group}` on origin; a failed push returns `tasks.push_failed` (502) and keeps the group and Instance. Idempotent for cancelled groups. Route-free source_resolved Instances use database-only cleanup and retain their checkout; other Instances use the forced Instance remover. Requires Gateway access. Returns extension.disabled while the extension is off and tasks.not_cancellable for completed groups and settling groups with a pull request.",
       "method": "POST",
       "path": "/api/v1/task-groups/{group}/cancel",
       "path_inputs": [
@@ -6236,6 +6481,7 @@
     },
     {
       "name": "tasks-check-cancel",
+      "extension": "tasks",
       "title": "tasks:check:cancel",
       "description": "tasks:check:cancel",
       "method": "POST",
@@ -6267,6 +6513,7 @@
     },
     {
       "name": "tasks-comment-create",
+      "extension": "tasks",
       "title": "tasks:comment:create",
       "description": "Ask for assistance on a subtask or resolve a request.",
       "method": "POST",
@@ -6325,6 +6572,7 @@
     },
     {
       "name": "tasks-comment-list",
+      "extension": "tasks",
       "title": "tasks:comment:list",
       "description": "List a subtask's comments, newest first.",
       "method": "GET",
@@ -6356,8 +6604,9 @@
     },
     {
       "name": "tasks-complete",
+      "extension": "tasks",
       "title": "Complete a Task group",
-      "description": "Marks a settling Task group completed and removes its shared Instance and any visitable Routes. Idempotent. Requires Gateway access. Returns `tasks.disabled` while the extension is off and `tasks.not_settling` when the group is not settling.",
+      "description": "Marks a settling Task group completed and removes its shared Instance and any visitable Routes. Idempotent. Requires Gateway access. Returns `extension.disabled` while the extension is off and `tasks.not_settling` when the group is not settling.",
       "method": "POST",
       "path": "/api/v1/task-groups/{group}/complete",
       "path_inputs": [
@@ -6382,8 +6631,9 @@
     },
     {
       "name": "tasks-create",
+      "extension": "tasks",
       "title": "Create a Task group",
-      "description": "Creates a Task group for an App with an optional ordered list of Task subtasks. Requires Gateway access. `status` is `backlog` (the default) or `todo`; the scheduler never claims a `backlog` group. A `todo` group needs at least one subtask (`tasks.no_subtasks`), each with at least one deliverable (`tasks.subtask_deliverables_missing`), and create then asks the scheduler to claim the oldest `todo` group that still fits the concurrency ceilings. `plan: true` on a `backlog` group provisions its Instance on an app-dev Node with access to itself and starts a T3 planner thread that becomes the reviewer (`tasks.plan_requires_backlog`, `tasks.planner_driver_unavailable`, `tasks.planner_node_unavailable`, `tasks.planner_unavailable`). Optional `notify_coder` or Commander `notify_on_settle` opts the group into the Coder settle webhook. Returns `tasks.disabled` while the extension is off.",
+      "description": "Creates a Task group for an App with an optional ordered list of Task subtasks. Requires Gateway access. `status` is `backlog` (the default) or `todo`; the scheduler never claims a `backlog` group. A `todo` group needs at least one subtask (`tasks.no_subtasks`), each with at least one deliverable (`tasks.subtask_deliverables_missing`), and create then asks the scheduler to claim the oldest `todo` group that still fits the concurrency ceilings. `plan: true` on a `backlog` group provisions its Instance on an app-dev Node with access to itself and starts a T3 planner thread that becomes the reviewer (`tasks.plan_requires_backlog`, `tasks.planner_driver_unavailable`, `tasks.planner_node_unavailable`, `tasks.planner_unavailable`). Optional `notify_coder` or Commander `notify_on_settle` opts the group into the Coder settle webhook. Returns `extension.disabled` while the extension is off.",
       "method": "POST",
       "path": "/api/v1/task-groups",
       "path_inputs": [],
@@ -6526,39 +6776,10 @@
       }
     },
     {
-      "name": "tasks-disable",
-      "title": "Disable Tasks",
-      "description": "Turns the Gateway tasks extension off. Existing Task groups stay. Further group and subtask operations return `tasks.disabled`.",
-      "method": "POST",
-      "path": "/api/v1/tasks/disable",
-      "path_inputs": [],
-      "query_inputs": [],
-      "streams": false,
-      "input_schema": {
-        "type": "object",
-        "properties": {},
-        "additionalProperties": false
-      }
-    },
-    {
-      "name": "tasks-enable",
-      "title": "Enable Tasks",
-      "description": "Turns the Gateway tasks extension on. Idempotent. Requires Gateway access.",
-      "method": "POST",
-      "path": "/api/v1/tasks/enable",
-      "path_inputs": [],
-      "query_inputs": [],
-      "streams": false,
-      "input_schema": {
-        "type": "object",
-        "properties": {},
-        "additionalProperties": false
-      }
-    },
-    {
       "name": "tasks-list",
+      "extension": "tasks",
       "title": "List Task groups",
-      "description": "Lists Task groups, newest first. Optional `app_id` and `status` filters. The group and each subtask include `assistance_requested` and `assistance_reason`. Returns `tasks.disabled` while the extension is off.",
+      "description": "Lists Task groups, newest first. Optional `app_id` and `status` filters. The group and each subtask include `assistance_requested` and `assistance_reason`. Returns `extension.disabled` while the extension is off.",
       "method": "GET",
       "path": "/api/v1/task-groups",
       "path_inputs": [],
@@ -6594,8 +6815,9 @@
     },
     {
       "name": "tasks-show",
+      "extension": "tasks",
       "title": "Show a Task group",
-      "description": "Shows one Task group and its Tasks in position order. The group and each subtask include `assistance_requested` and `assistance_reason`. Returns `tasks.disabled` while the extension is off.",
+      "description": "Shows one Task group and its Tasks in position order. The group and each subtask include `assistance_requested` and `assistance_reason`. Returns `extension.disabled` while the extension is off.",
       "method": "GET",
       "path": "/api/v1/task-groups/{group}",
       "path_inputs": [
@@ -6620,6 +6842,7 @@
     },
     {
       "name": "tasks-status",
+      "extension": null,
       "title": "Show Tasks status",
       "description": "Returns whether the Gateway tasks extension is enabled, and every group currently asking for assistance. `assistance` lists those groups in ascending id order, each with its id, Project, title, status, and reason. The list is present while the extension is off. Enable and disable return only `enabled`.",
       "method": "GET",
@@ -6635,8 +6858,9 @@
     },
     {
       "name": "tasks-subtask-cancel",
+      "extension": "tasks",
       "title": "Cancel a todo or running subtask",
-      "description": "Cancels a `todo` or `running` subtask. A `todo` subtask may be cancelled when its group is `todo`, `running`, `reviewing`, or `settling`; this marks it cancelled with `settled_at`, starts nothing, and requests no assistance. If no open subtask remains, including reserved, running, or reviewing siblings, the group moves to `settling`. Cancelling a `running` subtask stops its implementer and its running baseline or handoff check, keeps the group and its Instance, and starts the lowest-position `todo` subtask. That subtask runs the baseline check first when no implementer has started in the group. The group settles only when no open subtask remains. Requires Gateway access. Returns `tasks.disabled` while the extension is off, `tasks.subtask_not_running` (409) when the subtask is neither cancellable `todo` nor `running`, and `tasks.subtask_interrupt_failed` (502) when a running subtask implementer or check could not be stopped; the subtask then stays `running`.",
+      "description": "Cancels a `todo` or `running` subtask. A `todo` subtask may be cancelled when its group is `todo`, `running`, `reviewing`, or `settling`; this marks it cancelled with `settled_at`, starts nothing, and requests no assistance. If no open subtask remains, including reserved, running, or reviewing siblings, the group moves to `settling`. Cancelling a `running` subtask stops its implementer and its running baseline or handoff check, keeps the group and its Instance, and starts the lowest-position `todo` subtask. That subtask runs the baseline check first when no implementer has started in the group. The group settles only when no open subtask remains. Requires Gateway access. Returns `extension.disabled` while the extension is off, `tasks.subtask_not_running` (409) when the subtask is neither cancellable `todo` nor `running`, and `tasks.subtask_interrupt_failed` (502) when a running subtask implementer or check could not be stopped; the subtask then stays `running`.",
       "method": "POST",
       "path": "/api/v1/task-groups/{group}/tasks/{task}/cancel",
       "path_inputs": [
@@ -6666,8 +6890,9 @@
     },
     {
       "name": "tasks-subtask-create",
+      "extension": "tasks",
       "title": "Create a subtask",
-      "description": "Appends one subtask to a Task group at the next position with status `todo`. Works in any group status except `completed` and `cancelled` (`tasks.group_closed`). `deliverables` is a list of at most 20 typed items the subtask must deliver, each with a unique slug `id`, a `type`, and a `description`: `file` adds `path` (a path or glob) and `change` (`created`, `modified`, or `any`); `test` adds `project`, `file` (a Pest test file in that project), `name` (a substring of the test name), and an optional boolean `fails_on_base` (true means the named test must fail on the start commit before it passes; omitted is stored as false, and any other type refuses the field); `command` adds `command` and an optional `directory`; `review` adds nothing. Orbit verifies file, test, and command deliverables at handoff, and the reviewer confirms review deliverables. Outside `backlog`, a subtask needs at least one deliverable (`tasks.subtask_deliverables_missing`). Served by the Node that holds the group's Instance, or by the Gateway for a group without one. Returns `tasks.disabled` while the extension is off.",
+      "description": "Appends one subtask to a Task group at the next position with status `todo`. Works in any group status except `completed` and `cancelled` (`tasks.group_closed`). `deliverables` is a list of at most 20 typed items the subtask must deliver, each with a unique slug `id`, a `type`, and a `description`: `file` adds `path` (a path or glob) and `change` (`created`, `modified`, or `any`); `test` adds `project`, `file` (a Pest test file in that project), `name` (a substring of the test name), and an optional boolean `fails_on_base` (true means the named test must fail on the start commit before it passes; omitted is stored as false, and any other type refuses the field); `command` adds `command` and an optional `directory`; `review` adds nothing. Orbit verifies file, test, and command deliverables at handoff, and the reviewer confirms review deliverables. Outside `backlog`, a subtask needs at least one deliverable (`tasks.subtask_deliverables_missing`). Served by the Node that holds the group's Instance, or by the Gateway for a group without one. Returns `extension.disabled` while the extension is off.",
       "method": "POST",
       "path": "/api/v1/task-groups/{group}/tasks",
       "path_inputs": [
@@ -6778,8 +7003,9 @@
     },
     {
       "name": "tasks-subtask-destroy",
+      "extension": "tasks",
       "title": "Destroy a subtask",
-      "description": "Deletes a subtask while its group is in `backlog` (`tasks.not_in_backlog`) and closes the position gap. Returns the deleted subtask. Served by the Node that holds the group's Instance, or by the Gateway for a group without one. Returns `tasks.disabled` while the extension is off.",
+      "description": "Deletes a subtask while its group is in `backlog` (`tasks.not_in_backlog`) and closes the position gap. Returns the deleted subtask. Served by the Node that holds the group's Instance, or by the Gateway for a group without one. Returns `extension.disabled` while the extension is off.",
       "method": "DELETE",
       "path": "/api/v1/task-groups/{group}/tasks/{task}",
       "path_inputs": [
@@ -6809,8 +7035,9 @@
     },
     {
       "name": "tasks-subtask-update",
+      "extension": "tasks",
       "title": "Update a subtask",
-      "description": "Updates a subtask `title`, `brief`, or `position` while its group is in `backlog` (`tasks.not_in_backlog`). In `todo`, `running`, `reviewing`, or `settling`, those fields change only while the subtask is `todo`; positions stay in the todo tail and cannot cross a started or finished subtask. `deliverables` replaces the whole list, in the form that subtask create takes. It changes in `backlog`, or in those four group statuses while the subtask is `todo` (`tasks.deliverables_locked`); outside `backlog` the list cannot become empty (`tasks.subtask_deliverables_missing`). Completed and cancelled groups are read-only. Served by the Node that holds the group's Instance, or by the Gateway for a group without one. Returns `tasks.disabled` while the extension is off.",
+      "description": "Updates a subtask `title`, `brief`, or `position` while its group is in `backlog` (`tasks.not_in_backlog`). In `todo`, `running`, `reviewing`, or `settling`, those fields change only while the subtask is `todo`; positions stay in the todo tail and cannot cross a started or finished subtask. `deliverables` replaces the whole list, in the form that subtask create takes. It changes in `backlog`, or in those four group statuses while the subtask is `todo` (`tasks.deliverables_locked`); outside `backlog` the list cannot become empty (`tasks.subtask_deliverables_missing`). Completed and cancelled groups are read-only. Served by the Node that holds the group's Instance, or by the Gateway for a group without one. Returns `extension.disabled` while the extension is off.",
       "method": "PATCH",
       "path": "/api/v1/task-groups/{group}/tasks/{task}",
       "path_inputs": [
@@ -6929,8 +7156,9 @@
     },
     {
       "name": "tasks-update",
+      "extension": "tasks",
       "title": "Update a Task group",
-      "description": "Updates a Task group. `title` and `brief` change only in `backlog` (`tasks.not_in_backlog`). `status` moves the group between `backlog` and `todo`; a claimed group cannot move (`tasks.already_claimed`), and `todo` needs at least one subtask (`tasks.no_subtasks`) and a deliverable on every subtask (`tasks.subtask_deliverables_missing`, whose details name the subtasks). Moving to `todo` asks the scheduler to claim; for a planning group Orbit first commits the workspace as `Plan: {title}` (`tasks.commit_failed`). Served by the Node that holds the group's Instance, or by the Gateway for a group without one. Returns `tasks.disabled` while the extension is off.",
+      "description": "Updates a Task group. `title` and `brief` change only in `backlog` (`tasks.not_in_backlog`). `status` moves the group between `backlog` and `todo`; a claimed group cannot move (`tasks.already_claimed`), and `todo` needs at least one subtask (`tasks.no_subtasks`) and a deliverable on every subtask (`tasks.subtask_deliverables_missing`, whose details name the subtasks). Moving to `todo` asks the scheduler to claim; for a planning group Orbit first commits the workspace as `Plan: {title}` (`tasks.commit_failed`). Served by the Node that holds the group's Instance, or by the Gateway for a group without one. Returns `extension.disabled` while the extension is off.",
       "method": "PATCH",
       "path": "/api/v1/task-groups/{group}",
       "path_inputs": [
@@ -6970,6 +7198,7 @@
     },
     {
       "name": "tool-install",
+      "extension": null,
       "title": "Install a Tool",
       "description": "Install a tool through the gateway.",
       "method": "POST",
@@ -7012,6 +7241,7 @@
     },
     {
       "name": "tool-list",
+      "extension": null,
       "title": "List Tools",
       "description": "List tools for a node.",
       "method": "GET",
@@ -7037,6 +7267,7 @@
     },
     {
       "name": "tool-manager-list",
+      "extension": null,
       "title": "List Tool Managers",
       "description": "List tool managers for a node.",
       "method": "GET",
@@ -7062,6 +7293,7 @@
     },
     {
       "name": "tool-remove",
+      "extension": null,
       "title": "Remove a Tool",
       "description": "Remove one tool.",
       "method": "DELETE",
@@ -7088,6 +7320,7 @@
     },
     {
       "name": "tool-show",
+      "extension": null,
       "title": "Show a Tool",
       "description": "Show a tool.",
       "method": "GET",
@@ -7114,6 +7347,7 @@
     },
     {
       "name": "tool-update",
+      "extension": null,
       "title": "Update a Tool",
       "description": "Update one tool.",
       "method": "POST",

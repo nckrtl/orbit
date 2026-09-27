@@ -15,7 +15,7 @@ function agent_viewer_fixture(): array
     $node = Node::query()->create(['name' => 'agent-gateway', 'status' => 'active', 'platform' => 'linux', 'public_ssh_host' => '10.44.0.80', 'wireguard_ip' => '10.44.0.80']);
     test()->markAsGateway($node);
     test()->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip]);
-    test()->postJson('/api/v1/tasks/enable')->assertOk();
+    test()->postJson('/api/v1/extensions/tasks/enable')->assertOk();
     $app = OrbitApp::query()->create(['name' => 'viewer', 'slug' => 'viewer', 'repository_url' => 'git@example.test:viewer.git', 'default_branch' => 'main']);
     $group = TaskGroup::query()->create(['app_id' => $app->id, 'title' => 'Viewer', 'brief' => 'Read sessions']);
     $session = AgentThread::query()->create(['task_group_id' => $group->id, 'node_id' => $node->id, 'role' => 'reviewer', 'model' => 'claude-opus', 'effort' => 'high', 'external_id' => 'thread-one', 'driver' => 't3', 'runtime_key' => 'node:'.$node->id]);
@@ -36,8 +36,8 @@ describe('task agent viewer', function (): void {
             ->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.external_id', 'thread-one')
             ->assertJsonPath('data.0.task_group_id', $group->id)->assertJsonPath('data.0.node_id', $session->node_id)
             ->assertJsonPath('data.0.model', 'claude-opus')->assertJsonPath('data.0.effort', 'high');
-        $this->postJson('/api/v1/tasks/disable')->assertOk();
-        $this->getJson("/api/v1/task-groups/{$group->id}/agents")->assertStatus(409)->assertJsonPath('error.code', 'tasks.disabled');
+        $this->postJson('/api/v1/extensions/tasks/disable')->assertOk()->assertJsonPath('data.enabled', false);
+        $this->getJson("/api/v1/task-groups/{$group->id}/agents")->assertStatus(409)->assertJsonPath('error.code', 'extension.disabled');
     });
 
     it('denies a peer without Gateway access and an unknown peer', function (): void {

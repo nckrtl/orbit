@@ -100,6 +100,7 @@ def tool(method, path, operation, components):
 
     return {
         'name': name,
+        'extension': operation.get('x-orbit-extension'),
         'title': summary,
         'description': description or summary,
         'method': method.upper(),

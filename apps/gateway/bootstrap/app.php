@@ -22,6 +22,7 @@ use App\Http\Middleware\GuardBrowserOrigins;
 use App\Http\Middleware\NormalizeErrorDetails;
 use App\Http\Middleware\RecordCommandActivity;
 use App\Http\Middleware\RequireActiveWireGuardPeer;
+use App\Http\Middleware\RequireEnabledExtension;
 use App\Http\Middleware\RequireNodeAccess;
 use App\Infrastructure\Activity\ActivityShutdownFinalizer;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuildException;
@@ -62,9 +63,10 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withCommands()
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->prepend(GuardBrowserOrigins::class);
-        $middleware->api(prepend: [NormalizeErrorDetails::class, EnsureRequestId::class, RecordCommandActivity::class]);
+        $middleware->api(prepend: [NormalizeErrorDetails::class, EnsureRequestId::class, RecordCommandActivity::class, RequireEnabledExtension::class]);
         $middleware->prependToPriorityList(SubstituteBindings::class, RequireActiveWireGuardPeer::class);
         $middleware->appendToPriorityList(SubstituteBindings::class, RequireNodeAccess::class);
+        $middleware->appendToPriorityList(RequireNodeAccess::class, RequireEnabledExtension::class);
     })
     ->withExceptions(
         function (Exceptions $exceptions): void {
