@@ -46,12 +46,11 @@ final readonly class NativeDevelopmentAppInstanceProvisioner implements Developm
     public function complete(
         AppInstance $appInstance,
         ?string $domain,
-        bool $recoverSourceProfile = false,
         bool $setupPending = false,
     ): AppInstance {
         if (! $appInstance->requiresRoute()) {
             return $this->owner()->run(
-                fn (): AppInstance => $this->completeWithoutRoute($appInstance->id, $recoverSourceProfile, $setupPending),
+                fn (): AppInstance => $this->completeWithoutRoute($appInstance->id, $setupPending),
             );
         }
 
@@ -61,13 +60,12 @@ final readonly class NativeDevelopmentAppInstanceProvisioner implements Developm
             fn (): AppInstance => $this->completeOwned(
                 $appInstance->id,
                 $route->id,
-                $recoverSourceProfile,
                 $setupPending,
             ),
         );
     }
 
-    private function completeWithoutRoute(int $appInstanceId, bool $recoverSourceProfile, bool $setupPending): AppInstance
+    private function completeWithoutRoute(int $appInstanceId, bool $setupPending): AppInstance
     {
         $appInstance = AppInstance::query()->with(['app', 'node'])->findOrFail($appInstanceId);
 
@@ -94,7 +92,6 @@ final readonly class NativeDevelopmentAppInstanceProvisioner implements Developm
     private function completeOwned(
         int $appInstanceId,
         int $routeId,
-        bool $recoverSourceProfile,
         bool $setupPending,
     ): AppInstance {
         $appInstance = AppInstance::query()->with('node')->findOrFail($appInstanceId);

@@ -67,10 +67,17 @@ final readonly class ProductionPhpRuntimeIdentity
 
     public static function isAbsent(AppInstance $appInstance): bool
     {
-        return $appInstance->selected_php_version === null
-            && $appInstance->production_php_service === null
+        $appInstance->loadMissing('app');
+
+        $associationIsAbsent = $appInstance->production_php_service === null
             && $appInstance->production_php_pool === null
             && $appInstance->production_php_socket === null;
+
+        if (! $appInstance->servesPhp()) {
+            return $associationIsAbsent;
+        }
+
+        return $appInstance->selected_php_version === null && $associationIsAbsent;
     }
 
     public static function from(AppInstance $appInstance): self

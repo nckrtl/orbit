@@ -1682,7 +1682,6 @@ it('keeps a failed attempt from overwriting a successful retry after lease relea
         public function complete(
             AppInstance $appInstance,
             ?string $domain,
-            bool $recoverSourceProfile = false,
             bool $setupPending = false,
         ): AppInstance {
             $this->completions++;
@@ -1691,7 +1690,7 @@ it('keeps a failed attempt from overwriting a successful retry after lease relea
                 throw new ResourceOperationException('instance.first_attempt_failed', 'The first attempt failed.');
             }
 
-            return $this->native->complete($appInstance, $domain, $recoverSourceProfile, $setupPending);
+            return $this->native->complete($appInstance, $domain, setupPending: $setupPending);
         }
     };
     app()->instance(DevelopmentAppInstanceProvisioner::class, $provisioner);
@@ -1766,7 +1765,6 @@ it('persists unexpected provisioning failures before releasing the lease', funct
         public function complete(
             AppInstance $appInstance,
             ?string $domain,
-            bool $recoverSourceProfile = false,
             bool $setupPending = false,
         ): AppInstance {
             throw new LogicException('Unexpected provisioning failure.');
@@ -1810,7 +1808,6 @@ it('does not reserve or persist failure evidence when lease acquisition fails', 
         public function complete(
             AppInstance $appInstance,
             ?string $domain,
-            bool $recoverSourceProfile = false,
             bool $setupPending = false,
         ): AppInstance {
             return $appInstance;
@@ -1889,7 +1886,6 @@ it('persists reservation conflicts before releasing the lease', function (): voi
         public function complete(
             AppInstance $appInstance,
             ?string $domain,
-            bool $recoverSourceProfile = false,
             bool $setupPending = false,
         ): AppInstance {
             return $appInstance;
@@ -2918,10 +2914,9 @@ it('keeps setup pending when create is interrupted after activation before the b
         public function complete(
             AppInstance $appInstance,
             ?string $domain,
-            bool $recoverSourceProfile = false,
             bool $setupPending = false,
         ): AppInstance {
-            $this->native->complete($appInstance, $domain, $recoverSourceProfile, $setupPending);
+            $this->native->complete($appInstance, $domain, setupPending: $setupPending);
 
             throw new RuntimeException('Simulated interruption before setup result persistence.');
         }
