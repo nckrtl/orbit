@@ -72,7 +72,7 @@ The Gateway checks the complete result before it stores any part of an import or
 
 ## Synchronize
 
-Synchronization takes one snapshot of the Instance, its authoritative Route, and the stored configuration. It resolves `{{app_instance.domain}}` to the Route's domain and `{{app_instance.environment}}` to `development` on `app-dev` or `production` on `app-prod`. A leftover `{{` or `}}` after that returns `env.reference_unavailable` (409) before the file changes.
+Synchronization takes one snapshot of the Instance, any authoritative Route, and the stored configuration. It resolves `{{app_instance.domain}}` to the Route's domain when one is present and resolves `{{app_instance.environment}}` to `development` on `app-dev` or `production` on `app-prod`. Only a stored domain placeholder requires a Route. A leftover `{{` or `}}` after rendering returns `env.reference_unavailable` (409) before the file changes.
 
 Before it decrypts a value, the Gateway checks SSH access, the user, the path, the directory's write permission, the file type and owner, read-only storage, and free space. A failed check returns an error and leaves `.env` as it is.
 
@@ -82,7 +82,7 @@ When the Gateway cannot confirm the write, it returns `env.sync_unconfirmed` (th
 
 Synchronization changes only `.env`. It does not run application code, clear a framework cache, or restart a service or Process. Run those steps yourself when running code must see the new values.
 
-The Gateway takes one consistent snapshot of the Instance owner, authoritative Route, and complete stored configuration. It resolves `{{app_instance.domain}}` from that Route and `{{app_instance.environment}}` to the default Laravel mode for the Instance's Node role (`development` on app-dev or `production` on app-prod). A missing Route, a Route transition, or an unavailable reference stops synchronization before replacement. The generated dotenv file has stable key order and preserves literal whitespace, newlines, quotes, dollar signs, backslashes, empty strings, and stored application keys.
+The Gateway takes one consistent snapshot of the Instance owner, any authoritative Route, and complete stored configuration. It resolves `{{app_instance.domain}}` from the Route when available and `{{app_instance.environment}}` to the default Laravel mode for the Instance's Node role (`development` on app-dev or `production` on app-prod). A Route is required only when a stored value uses the domain placeholder; a missing Route or unavailable reference then stops synchronization before replacement. An incomplete Route transition also stops synchronization. The generated dotenv file has stable key order and preserves literal whitespace, newlines, quotes, dollar signs, backslashes, empty strings, and stored application keys.
 
 Import, update, synchronize, deploy, removal, and Route changes on one Instance share one operation lock. A competing request waits or returns `env.operation_busy`.
 

@@ -53,6 +53,26 @@ Create takes `target_type`, `target_id`, `name`, `calendar`, and `command`, and 
 
 Each operation except Complete records one Activity entry. The entry names the Schedule and its target. It never holds the command, calendar, journal lines, paths, users, or unit text.
 
+## CLI commands
+
+Use these commands to create and manage Node, Instance, and Project Schedule definitions.
+
+| Command | Result |
+| --- | --- |
+| `orbit schedule:create NAME --node=ID --calendar=CALENDAR --command=COMMAND` | Create a Schedule for one positive Node ID. Add `--timeout=SECONDS` to change the 3600-second execution timeout. |
+| `orbit schedule:create NAME --instance=ID --calendar=CALENDAR --command=COMMAND` | Create a Schedule for one positive Instance ID. Add `--no-start` to install its timer disabled and stopped. |
+| `orbit schedule:create NAME --project=APP --for=production --calendar=CALENDAR --command=COMMAND` | Record a production Schedule definition on the Project. Add `--timeout=SECONDS` to change the 3600-second execution timeout. |
+| `orbit schedule:list` | List authorized Schedule summaries without command text. |
+| `orbit schedule:list --project=APP` | List the Project's Schedule definitions. |
+| `orbit schedule:show UUID` | Show one authorized Schedule. |
+| `orbit schedule:show NAME --project=APP` | Show one Schedule definition by name. |
+| `orbit schedule:update NAME --project=APP --for=production --calendar=CALENDAR --command=COMMAND` | Replace one Schedule definition with a complete specification. |
+| `orbit schedule:run UUID` | Start one manual invocation without changing the desired timer state. |
+| `orbit schedule:logs UUID` | Show only the bounded lines returned by the Gateway. |
+| `orbit schedule:destroy UUID [--yes]` | Destroy one Schedule through the Gateway. Interactive confirmation defaults to No. |
+| `orbit schedule:destroy NAME --project=APP [--yes]` | Destroy one Schedule definition by name. Interactive confirmation defaults to No. |
+| `orbit schedule:enable UUID` | Enable and start an installed Instance timer without replacing the Schedule. |
+
 ## Execution context
 
 The caller picks only the target. The Gateway derives the host Node, the user, the working directory, and the shell from the target's placement.
@@ -71,21 +91,11 @@ A Schedule does not follow its target. While a Schedule exists, the Gateway refu
 
 Each Schedule owns three files on the host Node. Only the UUID names them.
 
-| Command | Result |
-| --- | --- |
-| `orbit schedule:create NAME --node=ID --calendar=CALENDAR --command=COMMAND` | Create a Schedule for one positive Node ID. Add `--timeout=SECONDS` to change the 3600-second execution timeout. |
-| `orbit schedule:create NAME --instance=ID --calendar=CALENDAR --command=COMMAND` | Create a Schedule for one positive Instance ID. Add `--no-start` to install its timer disabled and stopped. |
-| `orbit schedule:create NAME --project=APP --for=production --calendar=CALENDAR --command=COMMAND` | Record a production Schedule definition on the Project. Add `--timeout=SECONDS` to change the 3600-second execution timeout. |
-| `orbit schedule:list` | List authorized Schedule summaries without command text. |
-| `orbit schedule:list --project=APP` | List the Project's Schedule definitions. |
-| `orbit schedule:show UUID` | Show one authorized Schedule. |
-| `orbit schedule:show NAME --project=APP` | Show one Schedule definition by name. |
-| `orbit schedule:update NAME --project=APP --for=production --calendar=CALENDAR --command=COMMAND` | Replace one Schedule definition with a complete specification. |
-| `orbit schedule:run UUID` | Start one manual invocation without changing the desired timer state. |
-| `orbit schedule:logs UUID` | Show only the bounded lines returned by the Gateway. |
-| `orbit schedule:destroy UUID [--yes]` | Destroy one Schedule through the Gateway. Interactive confirmation defaults to No. |
-| `orbit schedule:destroy NAME --project=APP [--yes]` | Destroy one Schedule definition by name. Interactive confirmation defaults to No. |
-| `orbit schedule:enable UUID` | Enable and start an installed Instance timer without replacing the Schedule. |
+| Artifact | Path | Owner and mode |
+| --- | --- | --- |
+| Script | `/etc/orbit/schedules/{uuid}.sh` | `root:<runtime group>`, `0750` |
+| Service | `/etc/systemd/system/orbit-schedule-{uuid}.service` | `root:root`, `0644` |
+| Timer | `/etc/systemd/system/orbit-schedule-{uuid}.timer` | `root:root`, `0644` |
 
 The script holds the command. The oneshot service sets the user, group, working directory, `HOME`, and the timeout as `TimeoutStartSec`. Its `ExecStart` runs the script, and its `ExecStopPost` sends the completion report. The timer uses the calendar with `Persistent=true`, so systemd runs one missed occurrence after the Node was down. systemd never starts the service while it still runs. The command text appears only in the script, never in an SSH, `sudo`, `systemctl`, `journalctl`, or `systemd-analyze` argument.
 
@@ -101,6 +111,8 @@ An existing file at an owned path must be a regular file with the expected owner
 
 Production Schedules require a selected release. Each execution resolves `current` when it starts. Selecting another release changes later executions without rewriting the Schedule or restarting a command that is already active.
 
+A Node Schedule installs with its timer enabled and active and rejects a disabled initial state. An Instance Schedule can install enabled or disabled. Production Instance installation requires a selected `current` release even when the timer is disabled. A disabled installation still becomes `active`, with the timer disabled and stopped. Explicit activation enables and starts the Instance timer, verifies both states, and is idempotent. A failed activation restores the prior desired and actual timer states or returns `schedule.rollback_failed` without claiming success.
+
 Enable turns on and starts the timer of an active Instance Schedule, checks both states, and stores `enabled`. It is idempotent. When it fails, it restores the earlier timer state and returns `schedule.activation_failed`, or `schedule.rollback_failed` when the restore fails too. A Node Schedule refuses enable with `schedule.target_invalid`, because its timer is always on.
 
 Run starts the service with `systemctl start --no-block` and returns at once. It uses the same service, user, timeout, and completion report as a timer run.
@@ -113,7 +125,7 @@ Logs read only the Schedule's service, with fixed `journalctl --output cat` argu
 
 When the service stops, the script sends one report to `https://gateway.orbit/api/v1/schedules/{uuid}/complete` with `success` or `error`. It uses `curl` with the Orbit root CA embedded in the script, so the Node needs no Orbit CLI. The Gateway accepts it only from the Schedule's host Node, which it identifies by the WireGuard address. It sets `last_run_at` to the time of receipt and `last_run_status` to the reported status, and changes nothing else. A report for a Schedule that is `removing` changes nothing.
 
-A Node Schedule installs with its timer enabled and active and rejects a disabled initial state. An Instance Schedule can install enabled or disabled. Production Instance installation requires a selected `current` release even when the timer is disabled. A disabled installation still becomes `active`, with the timer disabled and stopped. Explicit activation enables and starts the Instance timer, verifies both states, and is idempotent. A failed activation restores the prior desired and actual timer states or returns `schedule.rollback_failed` without claiming success.
+The Node does not retry a failed report. A lost report leaves the earlier values in place and does not affect the command or later runs.
 
 ## Remove
 
