@@ -12,7 +12,6 @@ use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Nodes\NodeRoleValidationException;
 use App\Domain\Nodes\RoleAssignmentException;
 use App\Domain\Processes\ProcessOperationException;
-use App\Domain\Schedules\ScheduleErrorCode;
 use App\Domain\Schedules\ScheduleOperationException;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskSchedule;
@@ -25,16 +24,28 @@ use App\Http\Middleware\RequireActiveWireGuardPeer;
 use App\Http\Middleware\RequireNodeAccess;
 use App\Infrastructure\Activity\ActivityShutdownFinalizer;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuildException;
+use App\Infrastructure\Logging\GatewayExceptionStatus;
+use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Auth\AuthenticationException;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Database\RecordNotFoundException;
+use Illuminate\Database\RecordsNotFoundException;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
+use Illuminate\Http\Exceptions\HttpResponseException;
+use Illuminate\Http\Exceptions\OriginMismatchException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Routing\Exceptions\BackedEnumCaseNotFoundException;
 use Illuminate\Routing\Middleware\SubstituteBindings;
+use Illuminate\Session\TokenMismatchException;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\ErrorHandler\Error\FatalError;
+use Symfony\Component\HttpFoundation\Exception\RequestExceptionInterface;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 if (
@@ -62,7 +73,8 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withCommands()
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->prepend(GuardBrowserOrigins::class);
-        $middleware->api(prepend: [NormalizeErrorDetails::class, EnsureRequestId::class, RecordCommandActivity::class]);
+        $middleware->prepend(EnsureRequestId::class);
+        $middleware->api(prepend: [NormalizeErrorDetails::class, RecordCommandActivity::class]);
         $middleware->prependToPriorityList(SubstituteBindings::class, RequireActiveWireGuardPeer::class);
         $middleware->appendToPriorityList(SubstituteBindings::class, RequireNodeAccess::class);
     })
@@ -71,6 +83,29 @@ return Application::configure(basePath: dirname(__DIR__))
             // Runs before log context is built, which can exhaust memory again and stop later shutdown code.
             $exceptions->report(function (FatalError $exception): void {
                 ActivityShutdownFinalizer::finalizeArmed();
+            });
+            $exceptions->stopIgnoring([
+                AuthenticationException::class,
+                AuthorizationException::class,
+                ModelNotFoundException::class,
+                RecordNotFoundException::class,
+                RecordsNotFoundException::class,
+                HttpResponseException::class,
+                OriginMismatchException::class,
+                BackedEnumCaseNotFoundException::class,
+                TokenMismatchException::class,
+                ValidationException::class,
+                RequestExceptionInterface::class,
+                HttpException::class,
+            ]);
+            $exceptions->report(function (Throwable $exception): bool {
+                if (GatewayExceptionStatus::for($exception, request()->is('api/*')) < 500) {
+                    Log::info($exception->getMessage(), ['exception' => $exception]);
+
+                    return false;
+                }
+
+                return true;
             });
 
             $exceptions->render(function (AppInstanceRemovalException $exception, Request $request): JsonResponse {
@@ -251,19 +286,7 @@ return Application::configure(basePath: dirname(__DIR__))
                     $requestId = $request->header('X-Orbit-Request-Id', '');
                 }
 
-                $status = match ($exception->error) {
-                    ScheduleErrorCode::ArtifactConflict,
-                    ScheduleErrorCode::RetryConflict,
-                    ScheduleErrorCode::StateInvalid,
-                    ScheduleErrorCode::TargetUnavailable,
-                    ScheduleErrorCode::TargetInUse => 409,
-                    ScheduleErrorCode::CalendarInvalid,
-                    ScheduleErrorCode::NameInvalid,
-                    ScheduleErrorCode::TargetInvalid,
-                    ScheduleErrorCode::CommandInvalid,
-                    ScheduleErrorCode::TimeoutInvalid => 422,
-                    default => 502,
-                };
+                $status = GatewayExceptionStatus::for($exception);
 
                 return response()
                     ->json([
