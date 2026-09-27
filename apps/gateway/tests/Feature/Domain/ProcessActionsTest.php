@@ -355,7 +355,7 @@ it('refuses an idempotent desired-running production add without changing its re
         'production_home' => '/home/orbit-docs',
     ]);
     $process = Process::query()->create([
-        'owner_type' => AppInstance::class,
+        'owner_type' => AppInstance::MorphAlias,
         'owner_id' => $this->instance->id,
         'name' => 'worker',
         'runtime' => ProcessRuntime::Docker,
@@ -514,7 +514,7 @@ it('uses the node managed user and AppInstance certificate scope for app-dev tar
         ->toBe("app-instance-{$this->instance->id}");
 
     $removalTarget = $this->targets->forRemoval(Process::query()->create([
-        'owner_type' => AppInstance::class,
+        'owner_type' => AppInstance::MorphAlias,
         'owner_id' => $this->instance->id,
         'name' => 'removal-target',
         'runtime' => 'systemd',
@@ -1006,7 +1006,7 @@ it('retains the process definition when runtime removal fails', function (): voi
 
 function process_actions_runtime_lock_key(Process $process): string
 {
-    $nodeId = $process->owner_type === AppInstance::class
+    $nodeId = $process->owner_type === AppInstance::MorphAlias
         ? (int) AppInstance::query()->whereKey($process->owner_id)->value('node_id')
         : 0;
 
@@ -1016,7 +1016,7 @@ function process_actions_runtime_lock_key(Process $process): string
 function process_actions_record(AppInstance $instance): Process
 {
     return Process::query()->create([
-        'owner_type' => AppInstance::class,
+        'owner_type' => AppInstance::MorphAlias,
         'owner_id' => $instance->id,
         'name' => 'queue',
         'runtime' => ProcessRuntime::Systemd,

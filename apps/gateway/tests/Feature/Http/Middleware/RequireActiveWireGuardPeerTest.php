@@ -375,7 +375,7 @@ function peer_boundary_process(Node $node): Process
     ]);
 
     return Process::query()->create([
-        'owner_type' => AppInstance::class,
+        'owner_type' => AppInstance::MorphAlias,
         'owner_id' => $instance->id,
         'name' => 'private-worker',
         'runtime' => 'systemd',

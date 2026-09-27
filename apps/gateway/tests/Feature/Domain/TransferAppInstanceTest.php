@@ -70,7 +70,7 @@ beforeEach(function (): void {
     $this->instance = orb245_instance($this->orbitApp, $this->sourceNode, 'web', 'checkout');
     $this->route = orb245_route($this->instance, 'web.shop.dev.orbit', RouteProvenance::Generated);
     $this->process = Process::query()->create([
-        'owner_type' => AppInstance::class,
+        'owner_type' => AppInstance::MorphAlias,
         'owner_id' => $this->instance->id,
         'name' => 'queue',
         'runtime' => 'systemd',
@@ -81,7 +81,7 @@ beforeEach(function (): void {
         'status' => LifecycleStatus::Active,
     ]);
     $this->schedule = Schedule::query()->create([
-        'target_type' => AppInstance::class,
+        'target_type' => AppInstance::MorphAlias,
         'target_id' => $this->instance->id,
         'host_node_id' => $this->sourceNode->id,
         'name' => 'nightly',

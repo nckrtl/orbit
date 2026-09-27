@@ -81,7 +81,7 @@ describe('Schedule record events', function (): void {
             'status' => LifecycleStatus::Active,
         ]);
         // Activation is only supported for AppInstance-targeted schedules.
-        $schedule->update(['target_type' => AppInstance::class, 'target_id' => 1]);
+        $schedule->update(['target_type' => AppInstance::MorphAlias, 'target_id' => 1]);
 
         Event::fake([RecordBroadcast::class]);
 

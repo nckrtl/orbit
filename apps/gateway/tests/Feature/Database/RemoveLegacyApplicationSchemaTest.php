@@ -106,7 +106,7 @@ function operator_prepared_supported_graph(): array
     $route->update(['status' => RouteStatus::Active]);
     $route = $route->refresh();
     $process = Process::query()->create([
-        'owner_type' => AppInstance::class,
+        'owner_type' => AppInstance::MorphAlias,
         'owner_id' => $appInstance->id,
         'name' => 'queue',
         'runtime' => ProcessRuntime::Systemd,

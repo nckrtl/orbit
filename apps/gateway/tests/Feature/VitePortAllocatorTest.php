@@ -77,7 +77,7 @@ it('relocates the preset environment with its working directory', function (): v
     $node = Node::query()->create(['name' => 'relocate', 'platform' => 'linux', 'user' => 'orbit', 'public_ssh_host' => '192.0.2.10']);
     $app = OrbitApp::query()->create(['name' => 'Relocate', 'slug' => 'relocate', 'repository_url' => 'git@example.test:relocate.git']);
     $instance = AppInstance::query()->create(['app_id' => $app->id, 'node_id' => $node->id, 'name' => 'main', 'checkout_path' => '/apps/old']);
-    $process = Process::query()->create(['owner_type' => AppInstance::class, 'owner_id' => $instance->id, 'name' => 'assets', 'runtime' => 'systemd', 'runtime_config' => ['preset' => 'vp-dev', 'command' => VpDevPreset::command(), 'environment_file' => '/apps/old/.env'], 'working_directory' => '/apps/old', 'restart_policy' => 'on-failure', 'desired_state' => 'running', 'status' => 'active']);
+    $process = Process::query()->create(['owner_type' => AppInstance::MorphAlias, 'owner_id' => $instance->id, 'name' => 'assets', 'runtime' => 'systemd', 'runtime_config' => ['preset' => 'vp-dev', 'command' => VpDevPreset::command(), 'environment_file' => '/apps/old/.env'], 'working_directory' => '/apps/old', 'restart_policy' => 'on-failure', 'desired_state' => 'running', 'status' => 'active']);
     app(NativeAppInstanceTransferRuntime::class)->relocate($instance, $node, '/apps/old', '/apps/new');
     expect($process->refresh()->working_directory)->toBe('/apps/new')->and($process->runtime_config['environment_file'])->toBe('/apps/new/.env')->and($process->desired_state->value)->toBe('running');
 });

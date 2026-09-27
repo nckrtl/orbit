@@ -230,7 +230,7 @@ it('refuses a missing Process, a wrong Process, and a slug owned by another driv
         'status' => 'active',
     ]);
     $instanceProcess = Process::query()->create([
-        'owner_type' => AppInstance::class,
+        'owner_type' => AppInstance::MorphAlias,
         'owner_id' => $instance->id,
         'name' => 'mysql',
         'runtime' => ProcessRuntime::Docker,

@@ -245,7 +245,7 @@ function native_process_inspector(
         'status' => 'active',
     ]);
     $process = Process::query()->create([
-        'owner_type' => AppInstance::class,
+        'owner_type' => AppInstance::MorphAlias,
         'owner_id' => $instance->id,
         'name' => fake()->unique()->slug(2),
         'runtime' => $runtime,

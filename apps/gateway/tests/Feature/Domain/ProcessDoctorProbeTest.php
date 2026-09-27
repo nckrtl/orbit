@@ -88,7 +88,7 @@ it('compares selected process runtimes in process id order', function (): void {
         'status' => 'active',
     ]);
     $first = Process::query()->create([
-        'owner_type' => AppInstance::class,
+        'owner_type' => AppInstance::MorphAlias,
         'owner_id' => $instance->id,
         'name' => 'first',
         'runtime' => ProcessRuntime::Systemd,
@@ -162,7 +162,7 @@ it('drops removing Instance Process issues after inspection and retains Node-own
 
         public function inspect(Process $process): ProcessInspectionData
         {
-            if ($process->owner_type === AppInstance::class) {
+            if ($process->owner_type === AppInstance::MorphAlias) {
                 doctor_process_mark_removing($this->instance);
 
                 throw new DoctorInspectionException;
@@ -455,7 +455,7 @@ function doctor_process(
     ]);
 
     return Process::query()->create([
-        'owner_type' => AppInstance::class,
+        'owner_type' => AppInstance::MorphAlias,
         'owner_id' => $instance->id,
         'name' => $name,
         'runtime' => $runtime,
@@ -494,7 +494,7 @@ function doctor_app_dev_instance(): array
 function doctor_owned_process(AppInstance $instance, string $name, bool $keepAlive = false): Process
 {
     return Process::query()->create([
-        'owner_type' => AppInstance::class,
+        'owner_type' => AppInstance::MorphAlias,
         'owner_id' => $instance->id,
         'name' => $name,
         'runtime' => ProcessRuntime::Systemd,

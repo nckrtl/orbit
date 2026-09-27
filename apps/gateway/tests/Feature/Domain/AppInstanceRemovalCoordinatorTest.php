@@ -129,7 +129,7 @@ it('keeps the route and checkout after a teardown command fails', function (): v
 it('accepts exactly one independent checkout and completes every durable step', function (bool $force): void {
     $instance = orb181_coordinator_instance();
     $process = Process::query()->create([
-        'owner_type' => AppInstance::class,
+        'owner_type' => AppInstance::MorphAlias,
         'owner_id' => $instance->id,
         'name' => 'queue',
         'runtime' => 'systemd',
@@ -211,7 +211,7 @@ it('cascades owned Schedules before successful AppInstance row deletion', functi
     app()->instance(ScheduleRuntimeManager::class, $runtime);
     $instance = orb181_coordinator_instance();
     $schedule = Schedule::query()->create([
-        'target_type' => AppInstance::class,
+        'target_type' => AppInstance::MorphAlias,
         'target_id' => $instance->id,
         'host_node_id' => $instance->node_id,
         'name' => 'daily',
@@ -429,7 +429,7 @@ it('returns force guidance before inspecting unsafe checkout content', function 
 it('leaves an owned running Process unchanged when source preflight refuses removal', function (): void {
     $instance = orb181_coordinator_instance();
     $process = Process::query()->create([
-        'owner_type' => AppInstance::class,
+        'owner_type' => AppInstance::MorphAlias,
         'owner_id' => $instance->id,
         'name' => 'queue',
         'runtime' => 'systemd',
@@ -1056,7 +1056,7 @@ function orb72_coordinator_schedule_data(AppInstance $instance): AddScheduleData
 function orb72_coordinator_schedule(AppInstance $instance, string $name): Schedule
 {
     return Schedule::query()->create([
-        'target_type' => AppInstance::class,
+        'target_type' => AppInstance::MorphAlias,
         'target_id' => $instance->id,
         'host_node_id' => $instance->node_id,
         'name' => $name,

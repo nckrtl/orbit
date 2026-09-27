@@ -63,7 +63,7 @@ it('retains failed cleanup for retry and repeats only unfinished Process removal
 
     expect($runtime->removed)->toBe([$first->id, $second->id, $second->id, $third->id]);
     $this->assertDatabaseMissing('processes', [
-        'owner_type' => AppInstance::class,
+        'owner_type' => AppInstance::MorphAlias,
         'owner_id' => $target->id,
     ]);
 });
@@ -110,7 +110,7 @@ function orb131_cascade_process(
     int $ownerId,
     string $name,
     LifecycleStatus $status,
-    string $ownerType = AppInstance::class,
+    string $ownerType = AppInstance::MorphAlias,
 ): Process {
     return Process::query()->create([
         'owner_type' => $ownerType,

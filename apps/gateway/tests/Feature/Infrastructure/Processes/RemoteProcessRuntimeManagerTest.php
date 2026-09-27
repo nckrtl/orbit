@@ -1877,7 +1877,7 @@ function runtime_manager_place_on_app_prod(AppInstance $instance): void
 function runtime_manager_systemd_process(AppInstance $instance): Process
 {
     return Process::query()->create([
-        'owner_type' => AppInstance::class,
+        'owner_type' => AppInstance::MorphAlias,
         'owner_id' => $instance->id,
         'name' => 'queue',
         'runtime' => ProcessRuntime::Systemd,
@@ -1914,7 +1914,7 @@ function runtime_manager_leftover_workspace_process(): Process
 function runtime_manager_docker_process(AppInstance $instance, array $environment = []): Process
 {
     return Process::query()->create([
-        'owner_type' => AppInstance::class,
+        'owner_type' => AppInstance::MorphAlias,
         'owner_id' => $instance->id,
         'name' => 'redis',
         'runtime' => ProcessRuntime::Docker,

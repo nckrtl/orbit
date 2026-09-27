@@ -356,7 +356,7 @@ function orb225_instance(OrbitApp $app, Node $node, string $name, string $enviro
 function orb225_process(AppInstance $instance, string $name, array $command): Process
 {
     return Process::query()->create([
-        'owner_type' => AppInstance::class,
+        'owner_type' => AppInstance::MorphAlias,
         'owner_id' => $instance->id,
         'name' => $name,
         'runtime' => ProcessRuntime::Systemd,
@@ -401,7 +401,7 @@ function orb225_schedule_definition(OrbitApp $app, string $name): ScheduleDefini
 function orb225_schedule(AppInstance $instance, string $name): Schedule
 {
     return Schedule::query()->create([
-        'target_type' => AppInstance::class,
+        'target_type' => AppInstance::MorphAlias,
         'target_id' => $instance->id,
         'host_node_id' => $instance->node_id,
         'name' => $name,

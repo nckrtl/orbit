@@ -129,7 +129,7 @@ it('halts idle desired-running Processes without changing desired state or Sched
     $running = hibernation_action_process($this->instance, 'vite', DesiredProcessState::Running, 'always');
     hibernation_action_process($this->instance, 'queue', DesiredProcessState::Stopped);
     $schedule = Schedule::query()->create([
-        'target_type' => AppInstance::class,
+        'target_type' => AppInstance::MorphAlias,
         'target_id' => $this->instance->id,
         'host_node_id' => $this->node->id,
         'name' => 'hourly',
@@ -471,7 +471,7 @@ function hibernation_action_process(
     bool $keepAlive = false,
 ): Process {
     return Process::query()->create([
-        'owner_type' => AppInstance::class,
+        'owner_type' => AppInstance::MorphAlias,
         'owner_id' => $instance->id,
         'name' => $name,
         'runtime' => 'systemd',

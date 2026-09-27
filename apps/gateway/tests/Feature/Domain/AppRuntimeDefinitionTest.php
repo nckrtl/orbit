@@ -210,7 +210,7 @@ it('keeps definition mutations database-only and preserves existing runtime stat
     $instance = domain_runtime_definition_instance($this->orbitApp, $this->gateway, 'primary');
     $other = domain_runtime_definition_instance($this->orbitApp, $this->gateway, 'other');
     $process = Process::query()->create([
-        'owner_type' => AppInstance::class,
+        'owner_type' => AppInstance::MorphAlias,
         'owner_id' => $instance->id,
         'name' => 'existing-worker',
         'runtime' => 'systemd',
@@ -221,7 +221,7 @@ it('keeps definition mutations database-only and preserves existing runtime stat
         'status' => 'active',
     ]);
     $schedule = Schedule::query()->create([
-        'target_type' => AppInstance::class,
+        'target_type' => AppInstance::MorphAlias,
         'target_id' => $instance->id,
         'host_node_id' => $this->gateway->id,
         'name' => 'existing-report',

@@ -37,7 +37,7 @@ final class RecordingAppInstanceQueueReader implements AppInstanceQueueReader
 function queue_api_process(AppInstance $instance, string $name, string $command): Process
 {
     return Process::query()->create([
-        'owner_type' => AppInstance::class,
+        'owner_type' => AppInstance::MorphAlias,
         'owner_id' => $instance->id,
         'name' => $name,
         'runtime' => 'systemd',

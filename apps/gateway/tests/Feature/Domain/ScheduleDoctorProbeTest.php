@@ -45,7 +45,7 @@ beforeEach(function (): void {
         'status' => AppInstanceState::Active,
     ]);
     $this->schedule = Schedule::query()->create([
-        'target_type' => AppInstance::class,
+        'target_type' => AppInstance::MorphAlias,
         'target_id' => $instance->id,
         'host_node_id' => $this->node->id,
         'name' => 'daily',

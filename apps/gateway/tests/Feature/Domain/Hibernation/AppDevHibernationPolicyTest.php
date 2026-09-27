@@ -113,7 +113,7 @@ function hibernation_policy_process(
     bool $keepAlive = false,
 ): Process {
     return Process::query()->create([
-        'owner_type' => AppInstance::class,
+        'owner_type' => AppInstance::MorphAlias,
         'owner_id' => $instance->id,
         'name' => 'vite-'.$restartPolicy,
         'runtime' => 'systemd',

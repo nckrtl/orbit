@@ -76,7 +76,7 @@ it('reports how many idle AppInstance groups the hibernator halted', function ()
         'status' => 'active',
     ]);
     Process::query()->create([
-        'owner_type' => AppInstance::class,
+        'owner_type' => AppInstance::MorphAlias,
         'owner_id' => $instance->id,
         'name' => 'vite',
         'runtime' => 'systemd',

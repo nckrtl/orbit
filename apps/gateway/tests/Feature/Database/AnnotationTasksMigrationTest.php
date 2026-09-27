@@ -38,6 +38,7 @@ it('moves legacy annotation state into tasks without changing annotation identit
         (require database_path('migrations/2026_09_22_160124_back_annotations_with_tasks.php'))->up();
         expect(DB::table('tasks')->orderBy('id')->pluck('status')->all())->toBe(['pending', 'running', 'completed']);
         expect(DB::table('task_groups')->pluck('execution_mode')->unique()->all())->toBe(['existing_thread']);
+        expect(DB::table('task_groups')->pluck('taskable_type')->unique()->all())->toBe(['instance']);
         expect(DB::table('tasks')->where('status', 'completed')->value('completion_summary'))->toBe('Verified result');
         expect(DB::table('tasks')->pluck('target_thread_id')->unique()->all())->toBe(['selected-thread']);
         expect(DB::table('annotations')->where('id', 'legacy-2')->value('command'))->toBe('{"commandId":"keep-this-command"}');

@@ -168,12 +168,12 @@ final class AppInstance extends Model
     /** @return list<string> */
     public static function morphTypes(): array
     {
-        return [self::MorphAlias, self::class];
+        return [self::MorphAlias];
     }
 
     public static function isMorphType(mixed $type): bool
     {
-        return is_string($type) && in_array($type, self::morphTypes(), true);
+        return $type === self::MorphAlias;
     }
 
     /** @return BelongsTo<App, $this> */

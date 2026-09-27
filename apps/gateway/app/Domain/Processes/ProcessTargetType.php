@@ -33,7 +33,7 @@ enum ProcessTargetType: string
     public function storedTypes(): array
     {
         return match ($this) {
-            self::AppInstance => AppInstance::morphTypes(),
+            self::AppInstance => [AppInstance::MorphAlias],
             self::Node => [Node::class],
         };
     }

@@ -35,7 +35,7 @@ return new class extends Migration
             $title = mb_substr($comment !== '' ? $comment : 'Annotation', 0, 200);
             $groupId = DB::table('task_groups')->insertGetId([
                 'app_id' => DB::table('app_instances')->where('id', $annotation->app_instance_id)->value('app_id'),
-                'taskable_type' => 'App\\Models\\AppInstance', 'taskable_id' => $annotation->app_instance_id,
+                'taskable_type' => 'instance', 'taskable_id' => $annotation->app_instance_id,
                 'title' => $title, 'brief' => $comment,
                 'execution_mode' => 'existing_thread', 'agent_driver' => 't3',
                 'status' => $status === 'pending' ? 'queued' : $status,

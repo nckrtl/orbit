@@ -102,7 +102,7 @@ it('refuses an AppInstance Process, a systemd Process, and a non-MySQL image', f
     ]);
 
     $instanceProcess = managed_mysql_process_record($node, [
-        'owner_type' => AppInstance::class,
+        'owner_type' => AppInstance::MorphAlias,
         'owner_id' => $instance->id,
     ]);
 
