@@ -10,7 +10,7 @@ In the context of feature delivery on a shared Incus host, facing repeated proof
 
 ## Status
 
-Accepted on 2026-09-10. Extends [ADR 0049](/contributor-guide#review-and-merge). Supersedes [ADR 0006](/reference/incus-topologies#a-live-mount), [ADR 0015](/contributor-guide#review-and-merge), and [ADR 0050](/reference/incus-topologies#release) for proof, base freshness, and snapshot closeout requirements when discovery-only delivery is selected.
+Accepted on 2026-09-10. Extends [ADR 0049](/contributor-guide#review-reproduces-on-a-discovery-topology). Supersedes [ADR 0006](/reference/incus-topologies#a-live-mount), [ADR 0015](/contributor-guide#review-reproduces-on-a-discovery-topology), and [ADR 0050](/contributor-guide#review-reproduces-on-a-discovery-topology) for proof, base freshness, and snapshot closeout requirements when discovery-only delivery is selected.
 
 ## Context
 
@@ -45,6 +45,6 @@ Captured proof releases successful virtual machines before landing but still req
 ## Affects
 
 - Components: apps/e2e
-- ADRs: extends [ADR 0049](/contributor-guide#review-and-merge); supersedes [ADR 0006](/reference/incus-topologies#a-live-mount), [ADR 0015](/contributor-guide#review-and-merge), and [ADR 0050](/reference/incus-topologies#release) for discovery-only delivery
+- ADRs: extends [ADR 0049](/contributor-guide#review-reproduces-on-a-discovery-topology); supersedes [ADR 0006](/reference/incus-topologies#a-live-mount), [ADR 0015](/contributor-guide#review-reproduces-on-a-discovery-topology), and [ADR 0050](/contributor-guide#review-reproduces-on-a-discovery-topology) for discovery-only delivery
 - Detail: [docs/reference/implementation-loop.md](/reference/implementation-loop)
 - Verify: flow selection and merge lineage tests; `composer docs-lint`
