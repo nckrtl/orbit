@@ -447,3 +447,60 @@ describe('a workspace the group never attached', function (): void {
             ->and(AppInstance::query()->find($workspace->id))->not->toBeNull();
     });
 });
+
+it('cancels open subtasks left in a cancelled group', function (): void {
+    $group = cancellable_task_group(TaskGroupStatus::Cancelled);
+    $keptAt = now()->subHour()->startOfSecond();
+    $todo = cancel_subtask($group, TaskStatus::Todo, 1);
+    $todo->forceFill(['assistance_requested' => true, 'settled_at' => null])->save();
+    $running = cancel_subtask($group, TaskStatus::Running, 2);
+    $running->forceFill([
+        'assistance_requested' => true,
+        'assistance_reason' => 'Still waiting.',
+        'settled_at' => $keptAt,
+    ])->save();
+    $reviewing = cancel_subtask($group, TaskStatus::Reviewing, 3);
+    $completedAt = now()->subDay()->startOfSecond();
+    $completed = cancel_subtask($group, TaskStatus::Completed, 4);
+    $completed->forceFill(['assistance_requested' => true, 'settled_at' => $completedAt])->save();
+    $failed = cancel_subtask($group, TaskStatus::Failed, 5);
+    $already = cancel_subtask($group, TaskStatus::Cancelled, 6);
+    $active = TaskGroup::query()->create([
+        'app_id' => $group->app_id,
+        'title' => 'Still running',
+        'brief' => 'Its open subtask stays open.',
+        'status' => TaskGroupStatus::Running,
+    ]);
+    $untouched = cancel_subtask($active, TaskStatus::Todo, 1);
+    $untouched->forceFill(['assistance_requested' => true])->save();
+
+    (require database_path('migrations/2026_09_27_190000_cancel_open_subtasks_of_cancelled_groups.php'))->up();
+
+    $todo->refresh();
+    $running->refresh();
+    $reviewing->refresh();
+    $completed->refresh();
+    $failed->refresh();
+    $already->refresh();
+    $untouched->refresh();
+
+    expect($todo->status)->toBe(TaskStatus::Cancelled)
+        ->and($todo->assistance_requested)->toBeFalse()
+        ->and($todo->settled_at)->not->toBeNull()
+        ->and($running->status)->toBe(TaskStatus::Cancelled)
+        ->and($running->assistance_requested)->toBeFalse()
+        ->and($running->assistance_reason)->toBe('Still waiting.')
+        ->and($running->settled_at?->equalTo($keptAt))->toBeTrue()
+        ->and($reviewing->status)->toBe(TaskStatus::Cancelled)
+        ->and($reviewing->settled_at)->not->toBeNull()
+        ->and($completed->status)->toBe(TaskStatus::Completed)
+        ->and($completed->assistance_requested)->toBeTrue()
+        ->and($completed->settled_at?->equalTo($completedAt))->toBeTrue()
+        ->and($failed->status)->toBe(TaskStatus::Failed)
+        ->and($failed->settled_at)->toBeNull()
+        ->and($already->status)->toBe(TaskStatus::Cancelled)
+        ->and($already->settled_at)->toBeNull()
+        ->and($untouched->status)->toBe(TaskStatus::Todo)
+        ->and($untouched->assistance_requested)->toBeTrue()
+        ->and($untouched->settled_at)->toBeNull();
+});
