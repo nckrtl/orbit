@@ -161,4 +161,4 @@ Laravel uses `APP_URL` to build links outside a request. When Orbit changes a do
 
 ### One application model
 
-The Instance is the only runnable application model. Orbit provides no conversion tooling for older records. The operator prepares a fleet for an incompatible upgrade.
+The Instance is the only runnable application model. Orbit keeps no conversion tooling and no compatibility path for other models. Two models would double every lifecycle rule and every check.
