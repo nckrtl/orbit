@@ -77,7 +77,9 @@ A Project slug update recomputes every generated development Route domain from t
 
 ## Create and change targets
 
-Create an explicit app Route for an Instance with `route:create <instance> <domain> [--publication=private|public]`. The Instance ID determines the owning Project and the Node or active Cluster scope. Publication defaults to `private`. The Route targets that Instance and becomes active; an identical retry for an existing active Route returns that Route. This form does not accept a Project argument, `--target`, `--node`, or `--cluster`. The custom proxy form is `route:create <domain> --node=NODE --upstream=URL` or `route:create <domain> --node=NODE --process=PROCESS`; it is private only.
+Create an explicit app Route for an Instance with `route:create <instance> <domain> [--publication=private|public]`. The Instance ID determines the owning Project and the Node or active Cluster scope. Publication defaults to `private`. The Route targets that Instance and becomes active; an identical retry for an existing active Route returns that Route.
+
+Creation keeps the Route `activating` until workload projection and any public edge activation finish. If either step fails, an identical retry resumes convergence, including rebuilding the public Ingress when its handler-build checkpoint may have been written before a crash. It does not adopt an older pending Route created by Instance provisioning. This form does not accept a Project argument, `--target`, `--node`, or `--cluster`. The custom proxy form is `route:create <domain> --node=NODE --upstream=URL` or `route:create <domain> --node=NODE --process=PROCESS`; it is private only.
 
 ```bash
 orbit route:create 12 shop.example.test

@@ -904,9 +904,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
             ['app', 'domain'],
             [
                 'publication' => 'private',
-                'target' => null,
                 'node' => null,
-                'cluster' => null,
                 'upstream' => null,
                 'process' => null,
                 'json' => false,
@@ -1260,7 +1258,7 @@ it('renders one exact json failure envelope for every Orbit product command', fu
         'realtime:show' => [[], ...$profileMissing],
         'realtime:tail' => [[], ...$profileMissing],
         'route:list' => [[], ...$profileMissing],
-        'route:create' => [['app' => '1', 'domain' => 'app.test', '--node' => '1'], ...$profileMissing],
+        'route:create' => [['app' => '1', 'domain' => 'app.test'], ...$profileMissing],
         'route:destroy' => [['route' => '1'], ...$profileMissing],
         'route:show' => [['route' => '1'], ...$profileMissing],
         'route:target:unset' => [['route' => '1'], ...$profileMissing],

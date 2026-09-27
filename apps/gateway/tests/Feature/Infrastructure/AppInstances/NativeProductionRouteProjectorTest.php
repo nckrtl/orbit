@@ -2,10 +2,14 @@
 
 declare(strict_types=1);
 
+use App\Actions\Routes\CreateRouteAction;
+use App\Data\Routes\CreateRouteData;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\AppInstances\AppInstanceState;
+use App\Domain\AppInstances\ProductionCloneRouteProjector;
 use App\Domain\AppInstances\ProductionPhpRuntimeManager;
 use App\Domain\AppInstances\ProductionReleaseLayout;
+use App\Domain\AppInstances\ProductionRouteProjector;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Nodes\ManagedUserAccount;
@@ -44,6 +48,50 @@ use App\Models\Node;
 use App\Models\Route;
 use Illuminate\Support\Str;
 use Tests\Support\SshNodeCaddyBuilds;
+
+it('creates an Instance Route with the native production projector on a separate Router', function (): void {
+    [$source, $oldRoute] = orb199_production_route_models(workloadLan: '10.10.0.10', routerLan: '10.10.0.20');
+    $oldRoute->targets()->delete();
+    $oldRoute->delete();
+    $source->delete();
+    $instance = AppInstance::query()->create([
+        'app_id' => $source->app_id,
+        'node_id' => $source->node_id,
+        'name' => 'created',
+        'environment' => 'production',
+        'checkout_path' => $source->checkout_path,
+        'root' => 'public',
+        'branch' => 'main',
+        'starting_commit' => str_repeat('a', 40),
+        'selected_php_version' => '8.5',
+        'production_user' => $source->production_user,
+        'production_home' => $source->production_home,
+        'production_php_service' => $source->production_php_service,
+        'production_php_pool' => $source->production_php_pool,
+        'production_php_socket' => $source->production_php_socket,
+        'status' => AppInstanceState::Active,
+    ]);
+    [$projector, $ssh] = orb199_production_route_projector();
+    app()->instance(ProductionRouteProjector::class, $projector);
+    app()->instance(ProductionCloneRouteProjector::class, $projector);
+
+    $route = app(CreateRouteAction::class)->executeForRouteCreate(new CreateRouteData(
+        domain: 'created.prod.orbit',
+        publication: RoutePublication::Private,
+        appInstanceId: $instance->id,
+    ))['route'];
+
+    $commands = collect($ssh->commands)->pluck('command');
+    $routerCertificateIndex = $commands->search(static fn (RemoteCommand $command): bool => in_array("route-{$route->id}-router", $command->arguments, true));
+    $routerSiteIndex = $commands->search(static fn (RemoteCommand $command): bool => str_contains(SshNodeCaddyBuilds::pushed($command) ?? '', "route-{$route->id}-router/current/cert.pem"));
+    expect($route->status)->toBe(RouteStatus::Active)
+        ->and($route->targets->sole()->app_instance_id)->toBe($instance->id)
+        ->and($routerCertificateIndex)->not->toBeFalse()
+        ->and($routerSiteIndex)->not->toBeFalse()
+        ->and($routerCertificateIndex)->toBeLessThan($routerSiteIndex)
+        ->and($commands->contains(static fn (RemoteCommand $command): bool => ($command->arguments[1] ?? null) === 'ufw'))->toBeTrue()
+        ->and($commands->contains(static fn (RemoteCommand $command): bool => in_array('s_client', $command->arguments, true)))->toBeTrue();
+});
 
 it('projects a production workload through a remote Router over LAN without public infrastructure', function (): void {
     [$appInstance, $route, $workload, $router] = orb199_production_route_models(

@@ -38,31 +38,26 @@ afterEach(function (): void {
     new Filesystem()->deleteDirectory($this->orbitHome);
 });
 
-it('creates target and targetless Routes while transporting policy values', function (): void {
+it('creates an app Route for an Instance while transporting publication intent', function (): void {
     $mock = MockClient::global([CreateRouteRequest::class => route_mock_response(201)]);
 
     $this->artisan('route:create', [
-        'app' => '3',
+        'app' => '7',
         'domain' => 'Odd_Value',
         '--publication' => 'future-policy',
-        '--target' => '7',
         '--json' => true,
     ])->assertExitCode(0);
 
     expect($mock->getLastRequest()?->body()->all())->toBe([
-        'app_id' => 3,
         'domain' => 'Odd_Value',
         'publication' => 'future-policy',
         'app_instance_id' => 7,
     ]);
 
-    $this->artisan('route:create', [
-        'app' => '3',
-        'domain' => 'node.test',
-        '--node' => '4',
-    ])->assertExitCode(0);
+    $this->artisan('route:create', ['app' => '8', 'domain' => 'node.test'])->assertExitCode(0);
 
-    expect($mock->getLastRequest()?->body()->all())->toHaveKey('node_id', 4);
+    expect($mock->getLastRequest()?->body()->all())->toHaveKey('app_instance_id', 8)
+        ->not->toHaveKey('node_id');
 });
 
 it('creates a custom proxy Route from a node name and upstream', function (): void {
@@ -172,26 +167,6 @@ it('rejects custom proxy create shapes before transport', function (array $argum
         ],
         'route.scope_required',
     ],
-    'target mix' => [
-        [
-            'app' => 'executor.orbit',
-            '--node' => '4',
-            '--upstream' => 'http://127.0.0.1:4788',
-            '--target' => '7',
-            '--json' => true,
-        ],
-        'route.scope_required',
-    ],
-    'cluster mix' => [
-        [
-            'app' => 'executor.orbit',
-            '--node' => '4',
-            '--upstream' => 'http://127.0.0.1:4788',
-            '--cluster' => '5',
-            '--json' => true,
-        ],
-        'route.scope_required',
-    ],
     'public publication' => [
         [
             'app' => 'executor.orbit',
@@ -254,15 +229,13 @@ it('transports explicit private and public publication intents unchanged', funct
         'app' => '3',
         'domain' => 'app.test',
         '--publication' => $publication,
-        '--cluster' => '5',
         '--json' => true,
     ])->assertExitCode(0);
 
     expect($mock->getLastRequest()?->body()->all())->toBe([
-        'app_id' => 3,
         'domain' => 'app.test',
         'publication' => $publication,
-        'cluster_id' => 5,
+        'app_instance_id' => 3,
     ]);
 
     $this->artisan('route:update', ['route' => '11', '--publication' => $publication])->assertExitCode(0);
@@ -296,8 +269,8 @@ it('refuses a missing publication value before transport', function (
         ->assertExitCode(1);
     expect($mock->getLastPendingRequest())->toBeNull();
 })->with([
-    'create without value' => ['route:create', ['app' => '1', 'domain' => 'pubtest.orbit', '--publication' => null, '--cluster' => '1']],
-    'create with empty value' => ['route:create', ['app' => '1', 'domain' => 'pubtest.orbit', '--publication' => '', '--cluster' => '1']],
+    'create without value' => ['route:create', ['app' => '1', 'domain' => 'pubtest.orbit', '--publication' => null]],
+    'create with empty value' => ['route:create', ['app' => '1', 'domain' => 'pubtest.orbit', '--publication' => '']],
     'update without value' => ['route:update', ['route' => '11', '--publication' => null]],
     'update with empty value' => ['route:update', ['route' => '11', '--publication' => '']],
     'update with domain and no publication value' => ['route:update', ['route' => '11', '--domain' => 'next.test', '--publication' => null]],
@@ -314,7 +287,7 @@ it('refuses the reported shell shape of a bare --publication flag', function (st
         ->toBe('route.publication_invalid');
     expect($mock->getLastPendingRequest())->toBeNull();
 })->with([
-    'route:create' => 'route:create 1 pubtest.orbit --publication --cluster=1 --json',
+    'route:create' => 'route:create 1 pubtest.orbit --publication --json',
     'route:update' => 'route:update 11 --publication --json',
 ]);
 
@@ -328,48 +301,27 @@ it('rejects impossible create shapes before transport', function (array $argumen
 
     expect($mock->getLastPendingRequest())->toBeNull();
 })->with([
-    'missing scope' => [
+    'instance with node scope' => [
         [
             'app' => '3',
             'domain' => 'app.test',
-            '--json' => true,
-        ],
-        'route.scope_required',
-    ],
-    'both scopes' => [
-        [
-            'app' => '3',
-            'domain' => 'app.test',
-            '--node' => '4',
-            '--cluster' => '5',
-            '--json' => true,
-        ],
-        'route.scope_required',
-    ],
-    'target and scope' => [
-        [
-            'app' => '3',
-            'domain' => 'app.test',
-            '--target' => '7',
             '--node' => '4',
             '--json' => true,
         ],
         'route.scope_conflict',
     ],
-    'invalid target' => [
+    'invalid Instance' => [
         [
-            'app' => '3',
+            'app' => 'many',
             'domain' => 'app.test',
-            '--target' => 'many',
             '--json' => true,
         ],
-        'route.id_invalid',
+        'instance.id_invalid',
     ],
     'publication without value' => [
         [
             'app' => '3',
             'domain' => 'app.test',
-            '--node' => '4',
             '--publication' => null,
             '--json' => true,
         ],
@@ -379,7 +331,6 @@ it('rejects impossible create shapes before transport', function (array $argumen
         [
             'app' => '3',
             'domain' => '',
-            '--node' => '4',
             '--json' => true,
         ],
         'route.domain_required',
@@ -413,12 +364,10 @@ it('renders only the first invalid input as one JSON document', function (
             'app' => 'invalid',
             'domain' => '',
             '--publication' => null,
-            '--target' => 'invalid',
             '--node' => 'invalid',
-            '--cluster' => 'invalid',
         ],
-        'app.id_invalid',
-        'Project ID must be a positive integer.',
+        'instance.id_invalid',
+        'Instance ID must be a positive integer.',
     ],
     'set Route target' => [
         'route:target:set',

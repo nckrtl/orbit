@@ -12,7 +12,7 @@ covers:
 
 # Web app
 
-The web app is Orbit's live view of the fleet. It is a static single-page app that reads the Gateway API and follows [realtime events](/reference/events). The Gateway serves it from its own origin.
+The web app is Orbit's live view of the fleet. It is a static single-page app that reads the Gateway API and follows [realtime events](/reference/events). The Gateway serves it from its own origin. Its API types are generated from `docs/openapi.json` with `bun run types` in `apps/web`. The Route create request type distinguishes an app Route with `app_instance_id` from a custom proxy Route with `node_id` and an upstream or Process; it has no app Route creation form with `app_id` or a targetless scope.
 
 ## Open the app
 

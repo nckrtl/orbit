@@ -17,7 +17,7 @@ use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 
 it('transports explicit Route creation values without applying Gateway policy', function (): void {
-    $request = new CreateRouteRequest(3, domain: 'Odd_Value', publication: 'future-policy', appInstanceId: 7);
+    $request = new CreateRouteRequest(domain: 'Odd_Value', publication: 'future-policy', appInstanceId: 7);
 
     expect($request->getMethod())
         ->toBe(Method::POST)
@@ -25,25 +25,19 @@ it('transports explicit Route creation values without applying Gateway policy', 
         ->toBe('/api/v1/routes')
         ->and($request->body()->all())
         ->toBe([
-            'app_id' => 3,
             'domain' => 'Odd_Value',
             'publication' => 'future-policy',
             'app_instance_id' => 7,
         ]);
 });
 
-it('preserves targetless Node and Cluster scope transport', function (): void {
-    expect(new CreateRouteRequest(3, 'node.test', 'private', nodeId: 4)->body()->all())
-        ->toHaveKey('node_id', 4)
-        ->not->toHaveKey('cluster_id')->and(
-            new CreateRouteRequest(3, 'cluster.test', 'public', clusterId: 5)->body()->all(),
-        )->toHaveKey('cluster_id', 5)
-        ->not->toHaveKey('node_id');
+it('defaults Route publication to private', function (): void {
+    expect(new CreateRouteRequest(domain: 'shop.test', appInstanceId: 7)->body()->all())
+        ->toBe(['domain' => 'shop.test', 'publication' => 'private', 'app_instance_id' => 7]);
 });
 
-it('omits null App and optional custom proxy fields from create transport', function (): void {
+it('omits optional custom proxy fields from create transport', function (): void {
     expect(new CreateRouteRequest(
-        appId: null,
         domain: 'executor.orbit',
         publication: 'private',
         nodeId: 4,
@@ -56,7 +50,6 @@ it('omits null App and optional custom proxy fields from create transport', func
             'upstream' => 'http://127.0.0.1:4788',
         ])
         ->and(new CreateRouteRequest(
-            appId: null,
             domain: 'executor.orbit',
             publication: 'private',
             nodeId: 4,

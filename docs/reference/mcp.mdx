@@ -65,7 +65,7 @@ A Node.js client reads extra CAs from `NODE_EXTRA_CA_CERTS`. Point it at the Orb
 
 ## Keep the catalogue current
 
-`bin/mcp-tools` generates `apps/gateway/resources/mcp/tools.json` from `docs/openapi.json`. After a change to a route, form request, or data class, regenerate both:
+`bin/mcp-tools` generates `apps/gateway/resources/mcp/tools.json` from `docs/openapi.json`. The `route-create` tool accepts either `app_instance_id` and `domain` for an app Route or `node_id`, `domain`, and one of `upstream` or `process_id` for a custom proxy. It does not accept `app_id` or `cluster_id` on creation. After a change to a route, form request, or data class, regenerate both:
 
 ```bash
 bin/docs-openapi
