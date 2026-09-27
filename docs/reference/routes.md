@@ -285,6 +285,8 @@ A valid serving configuration stays healthy when the application returns HTTP 50
 
 Related-node checks use only caller-authorized selected nodes. An unavailable Router observation reports `instance.related_node_unverifiable` without contacting an unselected Node.
 
+Doctor skips Instances in `removing` for every probe. After an inspection reports an issue, it rereads the Instance and drops the issue if removal has started or the row was deleted; only a removal lasting more than 10 minutes reports `instance.removal_stuck`. See the [Doctor removal rule](/cli/doctor#what-each-family-checks).
+
 | Doctor issue code | Difference |
 | --- | --- |
 | `instance.private_routing_scope_mismatch` | The Route Node or Cluster scope differs from the target's expected placement. |
@@ -353,6 +355,8 @@ Doctor instance checks report public Ingress, private forwarding, TLS, and firew
 | `instance.public_firewall_mismatch` | The Ingress firewall is inactive, or it lacks an exact managed rule for public HTTP on port 80 or HTTPS on port 443. |
 
 Doctor builds the expected public site the same way the publisher does. An Ingress that runs a target of the Route expects the composed site that serves the Instance directly. Any other Ingress expects a reverse proxy to the Router. The forwarding check dials the Router, or the workload Nodes when the Ingress also holds the Router role. A composed site forwards nowhere, so it always passes that check. Related-node checks use only caller-authorized selected nodes. An unavailable observation reports `instance.related_node_unverifiable` without contacting an unselected Node.
+
+Doctor skips Instances in `removing` for every probe. After an inspection reports an issue, it rereads the Instance and drops the issue if removal has started or the row was deleted; only a removal lasting more than 10 minutes reports `instance.removal_stuck`. See the [Doctor removal rule](/cli/doctor#what-each-family-checks).
 
 ### Ingress removal
 
