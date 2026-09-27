@@ -205,3 +205,72 @@ PHP);
         rmdir($directory);
     }
 });
+
+it('reports method-body var overrides while allowing declaration docblocks', function (): void {
+    $directory = sys_get_temp_dir().'/orbit-method-body-var-'.bin2hex(random_bytes(8));
+    mkdir($directory, 0777, true);
+    $fixture = $directory.'/MethodBodyVar.php';
+
+    file_put_contents($fixture, <<<'PHP'
+<?php
+final class MethodBodyVarFixture
+{
+    /** @var string */
+    private string $property = 'value';
+
+    /**
+     * @param string $parameter
+     * @return string
+     */
+    public function allowedDeclarationDocs(string $parameter): string
+    {
+        return $parameter.$this->property;
+    }
+
+    public function forbiddenMethodBodyOverride(): void
+    {
+        /** @var string $value */
+        $value = 'value';
+    }
+}
+PHP);
+
+    try {
+        exec(
+            './vendor/bin/phpstan analyse --configuration=phpstan.neon --no-progress --error-format=json '
+                .escapeshellarg($fixture).' 2>&1',
+            $output,
+            $status,
+        );
+
+        $result = json_decode(implode("\n", $output), true);
+        $messages = array_values(array_filter(
+            $result['files'][$fixture]['messages'] ?? [],
+            static fn (array $message): bool => ($message['identifier'] ?? null) === 'orbit.inlineVarOverride',
+        ));
+
+        expect($status)->toBe(1, implode("\n", $output))
+            ->and($result['files'][$fixture]['messages'] ?? [])->toHaveCount(1)
+            ->and($messages)->toHaveCount(1)
+            ->and($messages[0]['message'])->toBe('Inline @var overrides an inferred type inside a method body.');
+
+        $existingSource = realpath(__DIR__.'/../../Support/LifecycleSshExecutor.php');
+        exec(
+            './vendor/bin/phpstan analyse --configuration=phpstan.neon --no-progress --error-format=json '
+                .escapeshellarg($existingSource).' 2>&1',
+            $sourceOutput,
+        );
+
+        $sourceResult = json_decode(implode("\n", $sourceOutput), true);
+        $sourceMessages = $sourceResult['files'][$existingSource]['messages'] ?? [];
+        $sourceOverrides = array_values(array_filter(
+            $sourceMessages,
+            static fn (array $message): bool => ($message['identifier'] ?? null) === 'orbit.inlineVarOverride',
+        ));
+
+        expect($sourceOverrides)->toBe([]);
+    } finally {
+        unlink($fixture);
+        rmdir($directory);
+    }
+});
