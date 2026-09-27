@@ -86,10 +86,13 @@ export function RecordLayout({
     kind,
     row,
     children,
+    titleTestId = "record-title",
 }: {
     kind: Kind;
     row: AnyRecord;
     children: ReactNode;
+    /** Stable id for the current record crumb. */
+    titleTestId?: string;
 }) {
     const go = useGo();
     const fleet = useFleet();
@@ -105,10 +108,12 @@ export function RecordLayout({
         <div className="flex min-w-0 max-w-full flex-col gap-y-[var(--panel-gap)] md:grid md:h-full md:grid-rows-[minmax(0,1fr)]">
             <PageHeader
                 trail={trail}
+                titleTestId={titleTestId}
                 actions={
                     kind !== "deployments" && (
                         <button
                             type="button"
+                            data-testid="record-actions"
                             aria-label="Actions"
                             title="Actions"
                             className="flex cursor-pointer items-center justify-center text-dim hover:text-fg"

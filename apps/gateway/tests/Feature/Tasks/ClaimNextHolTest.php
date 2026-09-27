@@ -407,6 +407,7 @@ describe('the stale reservation sweep', function (): void {
     });
 
     it('leaves a group reserved within the bound', function (): void {
+        $this->freezeTime();
         claim_hol_enable();
         $fresh = claim_hol_group(claim_hol_app(), 'Provisioning');
         $fresh->forceFill(['status' => TaskGroupStatus::Reserved, 'reserved_at' => now()->subSeconds(3599)])->save();

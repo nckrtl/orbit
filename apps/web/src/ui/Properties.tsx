@@ -29,17 +29,21 @@ export function Properties({
     children,
     className,
     title = "Properties",
+    testId,
 }: {
     properties: Property[];
     children?: ReactNode;
     className?: string;
     title?: string;
+    /** Stable id for web verification. Omitted when unset. */
+    testId?: string;
 }) {
     return (
         <Frame
             title={title}
             className={`w-full ${className ?? ""}`.trim()}
             bodyClassName="properties"
+            testId={testId}
         >
             {properties.map((property) => {
                 const value = text(property.value);

@@ -278,7 +278,10 @@ export function TasksBoard({ instanceId }: { instanceId?: number } = {}) {
             {groups.isPending && <p role="status">Loading tasks…</p>}
             {groups.error && <TaskError error={groups.error} retry={() => void groups.refetch()} />}
             {groups.data && !groups.error && (
-                <div className="kanban-board grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-4">
+                <div
+                    data-testid="tasks-board"
+                    className="kanban-board grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-4"
+                >
                     {columns.map((column) => {
                         const tasks = (visibleGroups ?? []).filter(
                             (group) => taskColumn(group.status) === column,
@@ -308,6 +311,7 @@ export function TasksBoard({ instanceId }: { instanceId?: number } = {}) {
                                         to="/tasks/$id"
                                         params={{ id: String(group.id) }}
                                         className={kanbanCardClassName}
+                                        data-testid="task-group-card"
                                         aria-label={`Open task: ${group.title}`}
                                     >
                                         <KanbanCardBody
@@ -358,6 +362,7 @@ function TaskDetailView({ id, subtaskId }: { id: string; subtaskId?: string }) {
     return (
         <div className="flex min-w-0 flex-col gap-[var(--panel-gap)] md:h-full">
             <PageHeader
+                titleTestId={subtaskId === undefined ? "task-group-title" : "subtask-title"}
                 trail={[
                     { label: "Tasks", open: () => go.section("tasks") },
                     {
@@ -446,6 +451,7 @@ function TaskDetailView({ id, subtaskId }: { id: string; subtaskId?: string }) {
                                                     to="/tasks/$id/subtasks/$subtaskId"
                                                     params={{ id, subtaskId: String(subtask.id) }}
                                                     key={subtask.id}
+                                                    data-testid="subtask-card"
                                                     aria-label={`Open subtask: ${subtask.title}`}
                                                     className={kanbanCardClassName}
                                                 >
