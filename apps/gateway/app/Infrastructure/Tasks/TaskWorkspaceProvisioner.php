@@ -13,7 +13,6 @@ use App\Domain\AppInstances\DevelopmentAppInstanceProvisioner;
 use App\Domain\AppInstances\DevelopmentAppInstanceSourceLifecycle;
 use App\Domain\AppInstances\DevelopmentSourceResolution;
 use App\Domain\Nodes\ManagedUserAccountResolver;
-use App\Domain\Nodes\NodeAccessAuthorizer;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\ManagedCheckoutOverlap;
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
@@ -49,7 +48,6 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
         private DevelopmentAppInstanceProvisioner $development,
         private TaskConcurrencyGuard $ceilings,
         private AgentDriverRegistry $drivers,
-        private NodeAccessAuthorizer $access,
     ) {}
 
     public function provision(InstanceProvisionIntent $intent): ?AppInstance
@@ -65,7 +63,7 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
             return null;
         }
 
-        $node = $this->selectNode($group->app, [$intent->group->implementer_agent_driver, $intent->group->reviewer_agent_driver], $intent->selfAccess, $this->existingWorkspaceNodeId($group));
+        $node = $this->selectNode($group->app, [$intent->group->implementer_agent_driver, $intent->group->reviewer_agent_driver], $this->existingWorkspaceNodeId($group));
 
         if (! $node instanceof Node) {
             return null;
@@ -111,7 +109,7 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
                 $this->nodeSettings->fromStored($node->settings),
                 $account,
             );
-            $checkout = $roots->instance->append($group->app->slug, $name);
+            $checkout = $roots->append($group->app->slug, $name);
             $this->checkoutOverlap->assertAvailable($node->id, $checkout, 'instance.path_taken');
             $this->destinationGuard->assertUnoccupied($node, $checkout);
 
@@ -285,7 +283,7 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
      * @param  list<string>  $drivers  Every driver the group uses must allow the Node.
      * @param  int|null  $pinnedNodeId  The Node of the group's existing workspace. Only that Node can then fit.
      */
-    private function selectNode(OrbitApp $app, array $drivers, bool $selfAccess, ?int $pinnedNodeId = null): ?Node
+    private function selectNode(OrbitApp $app, array $drivers, ?int $pinnedNodeId = null): ?Node
     {
         $nodes = Node::query()
             ->where('status', LifecycleStatus::Active)
@@ -305,8 +303,7 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
 
         $fitting = $nodes
             ->filter(static fn (Node $node): bool => $pinnedNodeId === null || $node->id === $pinnedNodeId)
-            ->filter(fn (Node $node): bool => array_all($drivers, fn (string $driver): bool => $this->drivers->get($driver)->allows($node)))
-            ->filter(fn (Node $node): bool => ! $selfAccess || $this->access->allows($node, $node));
+            ->filter(fn (Node $node): bool => array_all($drivers, fn (string $driver): bool => $this->drivers->get($driver)->allows($node)));
 
         $selected = $fitting
             ->filter(fn (Node $node): bool => $this->hasCapacity($node))

@@ -37,7 +37,7 @@ Choose a page based on what you want to learn:
 These pages explain commands and managed services.
 
 - [Private DNS](/reference/private-dns) describes managed resolver selection, repair, and recovery.
-- [Local resolver overrides](/reference/local-resolver-overrides) describes caller-local macOS TLD and exact private Route DNS overrides.
+- [`dns`](/cli/dns) describes caller-local macOS TLD and Route name DNS overrides.
 - Application pages describe [Projects](/reference/apps), [cloning](/reference/appinstance-cloning), [transfer](/reference/appinstance-transfer), [environment variables](/reference/environment-variables), [process and Schedule definitions](/reference/app-processes-and-schedules), and [removal](/reference/appinstance-removal).
 - Runtime reference pages describe the [production release layout](/reference/deployments), [PHP runtime defaults](/reference/php-runtime), [Routes](/reference/routes), [Schedules](/reference/schedules), and [App-dev runtime hibernation](/reference/app-dev-runtime-hibernation).
 - Infrastructure reference pages describe [Gateway trust](/reference/gateway-trust), [Tasks](/reference/tasks), [proxycli](/reference/proxycli), the [Database role](/reference/database-role), the [Metrics role](/reference/metrics), and [Realtime events](/reference/events).
@@ -49,7 +49,7 @@ These pages explain commands and managed services.
 These pages help contributors design, verify, and maintain Orbit.
 
 - [CLI design standard](/reference/cli-ux) guides command authors and reviewers through input, output, consent, terminal behavior, and verification.
-- Development reference pages describe the [Incus topology registry](/reference/incus-topologies), [Proof plans](/reference/proof-plans), and the [Topology snapshot](/reference/topology-snapshot).
+- Development reference pages describe the [Incus topology registry](/reference/incus-topologies) and the [Topology snapshot](/reference/topology-snapshot).
 - [Solutions](/solutions/README) collects useful fixes and lessons from past
   work.
 

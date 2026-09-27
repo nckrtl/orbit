@@ -12,13 +12,13 @@ Every new subtask carries a typed list of deliverables next to its prose brief. 
 
 Proposed.
 
-This extends [ADR 0121](/decisions/0121-end-agent-turns-with-a-run-receipt) (run receipts), [ADR 0114](/decisions/0114-judge-task-completion-as-separate-checks) (completion rubric), [ADR 0124](/decisions/0124-plan-backlog-groups-with-a-t3-planner) (planner), and [ADR 0125](/decisions/0125-run-the-project-check-when-the-implementer-hands-off) (handoff check). The rest of those records stays. [ADR 0163](/decisions/0163-prove-a-failing-test-on-the-start-commit) extends a `test` deliverable with `fails_on_base`, so a bug repro fails on the start commit before it passes on the working tree.
+This extends [ADR 0121](/decisions/0121-end-agent-turns-with-a-run-receipt) (run receipts), [ADR 0114](/decisions/0114-judge-task-completion-as-separate-checks) (completion rubric), [ADR 0124](/decisions/0124-plan-backlog-groups-with-a-t3-planner) (the historical Backlog planning decision), and [ADR 0125](/decisions/0125-run-the-project-check-when-the-implementer-hands-off) (handoff check). [ADR 0178](/decisions/0178-run-project-agnostic-tasks-without-a-planner) supersedes the planner and amends this deliverable contract. [ADR 0163](/decisions/0163-prove-a-failing-test-on-the-start-commit) extends a `test` deliverable with `fails_on_base`, so a bug repro fails on the start commit before it passes on the working tree.
 
 ## Context
 
 Task implementers hand off work that misses explicit items in their brief. In task group 58, the implementer of subtask 87 skipped documents that its brief named, missed an explicit gate, and wrote a test that passes whether or not the feature works. The handoff check passed, because `composer check` passed. The reviewer then had to find each gap by reading the brief again.
 
-The run receipt carries only an outcome and a summary. Nothing mechanical ties a handoff to what the subtask asked for. A brief is prose, so Orbit cannot check it. A planner can name each required item as a structured record when it writes the subtask.
+The run receipt carries only an outcome and a summary. Nothing mechanical ties a handoff to what the subtask asked for. A brief is prose, so Orbit cannot check it. The feature's external ADE or an authorized task author can name each required item as a structured record when preparing the subtask.
 
 On 2026-09-26, task group 115 stored a `test` deliverable whose `file` was `tests/Feature/**/*.php`. Create accepted the glob. The handoff check treated that string as a path. The workspace passed the check with a symlink named `**/*.php`. Pull request #755 merged that result.
 
@@ -103,9 +103,9 @@ For a reviewer change, the review sends one reminder and records that stopped tu
 
 A failed publication retries without committing again only while HEAD is still the commit Orbit stored and the recorded hash still matches. A reset back to the HEAD from before the approval is refused and is not published.
 
-### Planner and agent instructions
+### Project policy and agent instructions
 
-The planner prompt and the `implementing-in-orbit` skill tell the planner to give every subtask at least one deliverable and to turn each explicit item of the brief into one. The planner prompt says that a `test` `file` is one exact Pest path with no glob. The implementer prompt and the review request list the deliverables. The reviewer prompt says that the turn is read-only. The run script instructions explain `--deliverable`.
+The external ADE or an authorized task author prepares deliverables according to the Project's own task policy. In Orbit's repository, that policy lives in the [`orbit-tasks` skill](https://github.com/nckrtl/orbit/blob/main/.agents/skills/orbit-tasks/SKILL.md). The Gateway does not plan subtasks or impose repository-specific deliverable rules. The implementer prompt and review request list the deliverables. The reviewer prompt says that the turn is read-only. The run script instructions explain `--deliverable`.
 
 ## Rejected alternatives
 
@@ -129,7 +129,7 @@ The planner prompt and the `implementing-in-orbit` skill tell the planner to giv
 - A handoff is tied to the items the subtask asked for. A missing file, a missing or failing test, or a failing command returns to the implementer before a reviewer spends a turn.
 - The handoff check takes longer by the time of each test file and command.
 - A `test` deliverable proves that a named test exists in the diff and passes. It does not prove the test can fail. [ADR 0163](/decisions/0163-prove-a-failing-test-on-the-start-commit) adds that proof when the deliverable sets `fails_on_base`. A reviewer still judges the test.
-- A planner must write deliverables before the group moves to Todo.
+- The external ADE or an authorized task author prepares deliverables before the group moves to Todo.
 - Groups that were past Backlog before this change run without verification until an operator adds deliverables to their `todo` subtasks.
 - A `test` deliverable runs one Pest file. A subtask that needs more than one file uses more than one deliverable, at most five, or a `command` deliverable.
 - A reviewer that changes the workspace does not finish that review on the changed tree. The first change is a reminder. Another poll of that same stopped turn neither applies the outcome nor asks for assistance. A second change on a newer stopped reviewer turn asks for assistance.
@@ -141,6 +141,6 @@ The planner prompt and the `implementing-in-orbit` skill tell the planner to giv
 ## Affects
 
 - Components: apps/gateway, apps/cli, packages/php-sdk, apps/docs
-- ADRs: [ADR 0114](/decisions/0114-judge-task-completion-as-separate-checks), [ADR 0121](/decisions/0121-end-agent-turns-with-a-run-receipt), [ADR 0124](/decisions/0124-plan-backlog-groups-with-a-t3-planner), [ADR 0125](/decisions/0125-run-the-project-check-when-the-implementer-hands-off)
+- ADRs: [ADR 0114](/decisions/0114-judge-task-completion-as-separate-checks), [ADR 0121](/decisions/0121-end-agent-turns-with-a-run-receipt), [ADR 0124](/decisions/0124-plan-backlog-groups-with-a-t3-planner), [ADR 0125](/decisions/0125-run-the-project-check-when-the-implementer-hands-off), amended by [ADR 0178](/decisions/0178-run-project-agnostic-tasks-without-a-planner)
 - Detail: [Tasks](/reference/tasks)
 - Verify: API validation tests for each type and the Todo refusal, including a `test` `file` with a glob, `..`, or a suffix other than `.php` refused as `validation.failed` naming the deliverable id; a `running` subtask whose `tasks:subtask:update` includes `deliverables` refused as `tasks.deliverables_locked` with the stored list unchanged; run script tests for missing, unknown, and complete confirmations; scheduler tests for each deliverable type, a passing handoff, an empty list, a reviewer workspace change reminded once, a second change asking for assistance, a newer implementer turn treated as a new handoff, and a lost commit response accepted when HEAD's parent and tree match the recorded pair; a test that runs the real check script against a local Git checkout with a Pest test and a command

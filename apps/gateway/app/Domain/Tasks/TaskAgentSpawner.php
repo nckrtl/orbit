@@ -13,14 +13,14 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Throwable;
 
-final readonly class TaskAgentSpawner implements AgentSpawner, TaskPlannerSpawner
+final readonly class TaskAgentSpawner implements AgentSpawner
 {
     public const string PendingPrefix = 'pending:';
 
     public function __construct(
         private AgentDriverRegistry $drivers,
         private TaskReviewPacketBuilder $packets,
-        private TaskPlannerMcp $mcp,
+        private TaskWorkspaceMcp $mcp,
     ) {}
 
     public function spawnReviewer(Task $task): ?int
@@ -70,15 +70,6 @@ final readonly class TaskAgentSpawner implements AgentSpawner, TaskPlannerSpawne
         return $this->insertPending($task->taskGroup, $task->id, TaskThreadRole::Implementer)?->id;
     }
 
-    public function spawnPlanner(TaskGroup $group): ?int
-    {
-        if ($group->reviewer_agent_thread_id !== null) {
-            return $group->reviewer_agent_thread_id;
-        }
-
-        return $this->spawn($group, null, TaskThreadRole::Reviewer, 'Orbit task #'.$group->id.' · Planner: '.$group->title, $this->plannerPrompt($group));
-    }
-
     public function spawnImplementer(Task $task): ?int
     {
         if ($task->implementer_agent_thread_id !== null) {
@@ -96,19 +87,6 @@ final readonly class TaskAgentSpawner implements AgentSpawner, TaskPlannerSpawne
         }
 
         return $this->startPending($pending, $title, $this->implementerPrompt($group, $task, $pending->id));
-    }
-
-    private function spawn(TaskGroup $group, ?int $taskId, TaskThreadRole $role, string $title, string $prompt): ?int
-    {
-        $thread = $this->insertPending($group, $taskId, $role);
-        if ($thread === null) {
-            return null;
-        }
-        if ($taskId !== null) {
-            $this->installReceipt($thread);
-        }
-
-        return $this->startPending($thread, $title, $prompt);
     }
 
     public function requestReview(Task $task): void
@@ -332,19 +310,6 @@ final readonly class TaskAgentSpawner implements AgentSpawner, TaskPlannerSpawne
     private function reviewPacket(Task $task, bool $continued, ?int $threadId = null): string
     {
         return $this->packets->build($task, $continued, $threadId);
-    }
-
-    private function plannerPrompt(TaskGroup $group): string
-    {
-        return TaskPromptRenderer::planner(new TaskPromptGroup(
-            id: $group->id,
-            title: $group->title,
-            brief: $group->brief,
-            projectSlug: $group->app->slug,
-            projectId: $group->app_id,
-            defaultBranch: is_string($group->app->default_branch) ? $group->app->default_branch : null,
-            taskCheck: $group->app->taskCheckCommand(),
-        ));
     }
 
     private function implementerPrompt(TaskGroup $group, Task $task, ?int $threadId = null): string

@@ -6,6 +6,7 @@ namespace App\Actions\Doctor;
 
 use App\Data\Doctor\DoctorFamilyReportData;
 use App\Data\Doctor\DoctorIssueData;
+use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Doctor\DoctorFamily;
 use App\Domain\Doctor\DoctorFamilyProbe;
 use App\Domain\Doctor\DoctorInspectionException;
@@ -48,7 +49,8 @@ final readonly class ProcessDoctorProbe implements DoctorFamilyProbe
                                 'owner_id',
                                 AppInstance::query()
                                     ->select('id')
-                                    ->where('node_id', $context->node->id),
+                                    ->where('node_id', $context->node->id)
+                                    ->where('status', '!=', AppInstanceState::Removing),
                             );
                     })
                     ->orWhere(function ($query) use ($context): void {
@@ -82,46 +84,67 @@ final readonly class ProcessDoctorProbe implements DoctorFamilyProbe
         }
 
         $issues = [];
+        $instanceIssues = [];
         $asleep = [];
         foreach ($processes as $process) {
+            $issue = null;
             try {
                 $inspection = $this->inspector->inspect($process);
             } catch (DoctorInspectionException) {
-                $issues[] = $this->failure($process);
-
-                continue;
+                $issue = $this->failure($process);
             }
 
-            if (! $inspection->present) {
-                $issues[] = $this->issue(
+            if (! $issue instanceof DoctorIssueData && ! $inspection->present) {
+                $issue = $this->issue(
                     $process,
                     ProcessDoctorIssueCode::RuntimeMissing,
                     DoctorIssueKind::Drift,
                     'present',
                     'absent',
                 );
+            }
 
+            if (! $issue instanceof DoctorIssueData) {
+                $observed = $inspection->status;
+                if ($observed === null) {
+                    $issue = $this->failure($process);
+                } elseif (! $this->isHealthy($process, $observed, $asleep)) {
+                    $issue = $this->issue(
+                        $process,
+                        ProcessDoctorIssueCode::StateMismatch,
+                        DoctorIssueKind::Drift,
+                        $process->desired_state->value,
+                        $observed->value,
+                    );
+                }
+            }
+
+            if (! $issue instanceof DoctorIssueData) {
                 continue;
             }
 
-            $observed = $inspection->status;
-            if ($observed === null) {
-                $issues[] = $this->failure($process);
-
-                continue;
+            if (in_array($process->owner_type, AppInstance::morphTypes(), strict: true)) {
+                $instanceIssues[(int) $process->owner_id][] = $issue;
+            } else {
+                $issues[] = $issue;
             }
 
-            if ($this->isHealthy($process, $observed, $asleep)) {
-                continue;
-            }
+        }
 
-            $issues[] = $this->issue(
-                $process,
-                ProcessDoctorIssueCode::StateMismatch,
-                DoctorIssueKind::Drift,
-                $process->desired_state->value,
-                $observed->value,
-            );
+        if ($instanceIssues !== []) {
+            $instances = AppInstance::query()
+                ->whereKey(array_keys($instanceIssues))
+                ->get()
+                ->keyBy('id');
+
+            foreach ($instanceIssues as $instanceId => $ownedIssues) {
+                $instance = $instances->get($instanceId);
+                if (! $instance instanceof AppInstance || $instance->status === AppInstanceState::Removing) {
+                    continue;
+                }
+
+                $issues = [...$issues, ...$ownedIssues];
+            }
         }
 
         return DoctorFamilyReportData::fromIssues(DoctorFamily::Process, $processes->count(), $issues);

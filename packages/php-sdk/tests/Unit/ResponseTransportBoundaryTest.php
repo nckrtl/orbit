@@ -49,7 +49,6 @@ it('rejects unsafe success error codes across every response surface', function 
             'node_id' => 1,
             'manager' => 'composer',
             'package' => 'vendor/package',
-            'protected' => false,
             'status' => 'installed',
             'error_code' => $unsafeCode,
         ], $requestId),

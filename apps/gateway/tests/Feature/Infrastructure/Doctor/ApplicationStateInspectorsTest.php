@@ -37,6 +37,7 @@ use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Route;
 use Illuminate\Filesystem\Filesystem;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\Exception\ProcessTimedOutException;
 use Symfony\Component\Process\Process;
@@ -84,6 +85,62 @@ it('checks only selected-node app projections through the fixed SSH boundary', f
         ->toBe(30.0);
 });
 
+it('excludes removing Instances from App checkout inspection', function (): void {
+    $app = application_inspector_app();
+    $node = application_inspector_node();
+    application_app_instance($app, $node, 'active');
+    $removing = application_app_instance($app, $node, 'removing');
+    application_mark_removing($removing);
+    $ssh = new AppDevFakeSshExecutor([app_inspector_result("1\n")]);
+
+    $inspection = application_app_inspector($ssh)->inspect($app, $node);
+
+    expect($inspection)
+        ->toEqual(new AppInspectionData(1, true))
+        ->and($ssh->commands)
+        ->toHaveCount(1);
+});
+
+it('excludes in-flight App checkouts while preserving settled checkout failures', function (): void {
+    $app = application_inspector_app();
+    $node = application_inspector_node();
+    $settled = application_app_instance($app, $node, 'settled');
+    $provisioning = application_app_instance($app, $node, 'provisioning');
+    $provisioning->update([
+        'status' => AppInstanceState::CheckoutPrepared,
+        'provisioning_step' => 'checkout',
+        'environment' => 'production',
+    ]);
+    $ssh = new AppDevFakeSshExecutor([app_inspector_result('', exitCode: 1)]);
+
+    $inspection = application_app_inspector($ssh)->inspect($app, $node);
+
+    expect($inspection)
+        ->toEqual(new AppInspectionData(1, true, [], [(int) $settled->id]))
+        ->and($ssh->commands)
+        ->toHaveCount(1)
+        ->and($ssh->commands[0]->arguments[4])
+        ->toBe($settled->checkout_path);
+});
+
+it('keeps per-checkout app failures bounded and continues inspecting other Instances', function (): void {
+    $app = application_inspector_app();
+    $node = application_inspector_node();
+    $failed = application_app_instance($app, $node, 'failed');
+    application_app_instance($app, $node, 'healthy');
+    $ssh = new AppDevFakeSshExecutor([
+        app_inspector_result('', exitCode: 1),
+        app_inspector_result("1\n"),
+    ]);
+
+    $inspection = application_app_inspector($ssh)->inspect($app, $node);
+
+    expect($inspection)
+        ->toEqual(new AppInspectionData(2, true, [], [(int) $failed->id]))
+        ->and($ssh->commands)
+        ->toHaveCount(2);
+});
+
 it('checks app-production origins as the app owner within its production root', function (): void {
     $app = application_inspector_app();
     $node = application_inspector_node();
@@ -117,13 +174,13 @@ it('checks app-production origins as the app owner within its production root', 
 it('returns a bounded mismatch for an app-production origin', function (): void {
     $app = application_inspector_app();
     $node = application_inspector_node();
-    application_production_app_instance($app, $node, 'base64:'.str_repeat('B', 44));
+    $instance = application_production_app_instance($app, $node, 'base64:'.str_repeat('B', 44));
     $ssh = new AppDevFakeSshExecutor([app_inspector_result("0\n")]);
 
     $inspection = application_app_inspector($ssh)->inspect($app, $node);
 
     expect($inspection)
-        ->toEqual(new AppInspectionData(1, false))
+        ->toEqual(new AppInspectionData(1, false, [(int) $instance->id]))
         ->and($ssh->commands[0]->input)
         ->toContain('test "$(sudo -u "$user" -H -- stat -c %U "$checkout")" = "$user"');
 });
@@ -131,7 +188,7 @@ it('returns a bounded mismatch for an app-production origin', function (): void 
 it('returns a bounded app mismatch and a healthy empty selection', function (): void {
     $app = application_inspector_app();
     $node = application_inspector_node();
-    application_app_instance($app, $node);
+    $instance = application_app_instance($app, $node);
     $mismatch = application_app_inspector(new AppDevFakeSshExecutor([
         app_inspector_result("0\n"),
     ]))
@@ -139,7 +196,7 @@ it('returns a bounded app mismatch and a healthy empty selection', function (): 
     $empty = application_app_inspector(new AppDevFakeSshExecutor)->inspect($app, application_inspector_node());
 
     expect($mismatch)
-        ->toEqual(new AppInspectionData(1, false))
+        ->toEqual(new AppInspectionData(1, false, [(int) $instance->id]))
         ->and($empty)
         ->toEqual(new AppInspectionData(0, true));
 });
@@ -150,16 +207,21 @@ it('fails app inspection closed for invalid intent and failed observations', fun
 ): void {
     $app = application_inspector_app();
     $node = application_inspector_node();
-    application_app_instance($app, $node);
+    $instance = application_app_instance($app, $node);
     $app->repository_url = $repository;
 
-    expect(
-        fn (): AppInspectionData => application_app_inspector(
-            new AppDevFakeSshExecutor([$result]),
-        )
-            ->inspect($app, $node),
-    )
-        ->toThrow(DoctorInspectionException::class, '');
+    $inspection = fn (): AppInspectionData => application_app_inspector(
+        new AppDevFakeSshExecutor([$result]),
+    )->inspect($app, $node);
+
+    if ($repository === 'not a repository') {
+        expect($inspection)->toThrow(DoctorInspectionException::class, '');
+
+        return;
+    }
+
+    expect($inspection())
+        ->toEqual(new AppInspectionData(1, true, [], [(int) $instance->id]));
 })->with([
     'invalid origin' => ['not a repository', app_inspector_result("1\n")],
     'command failure' => ['https://github.com/acme/project.git', app_inspector_result('', exitCode: 1)],
@@ -1257,6 +1319,22 @@ function application_app_instance(App $app, Node $node, string $name = 'developm
         'starting_commit' => str_repeat('a', 40),
         'status' => AppInstanceState::Active,
     ]);
+}
+
+function application_mark_removing(AppInstance $instance): void
+{
+    $trigger = DB::table('sqlite_master')
+        ->where('type', 'trigger')
+        ->where('name', 'app_instances_removal_status_update')
+        ->value('sql');
+    expect($trigger)->toBeString();
+    DB::statement('DROP TRIGGER app_instances_removal_status_update');
+
+    try {
+        $instance->update(['status' => AppInstanceState::Removing]);
+    } finally {
+        DB::statement($trigger);
+    }
 }
 
 function application_app_inspector(AppDevFakeSshExecutor $ssh): NativeAppStateInspector

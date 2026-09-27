@@ -66,7 +66,7 @@ Over the counted calls, `input_tokens` is the sum of `inputTokens - cachedInputT
 
 ### Where the fields appear
 
-`GET /api/v1/task-groups/{group}/agents` returns the five fields on every thread, including the planner, the reviewer, and each implementer. Each value is present and null when unknown. `tasks:agents` prints them in that order after tokens: Input, Cached, Output, Calls, and Peak. An unknown value is a blank cell. JSON output includes the same fields. The web task board keeps showing `tokens` for the group and the subtask. It does not show the split. A change to these fields does not by itself broadcast `task_group.updated`, which is the same rule [ADR 0151](/decisions/0151-push-task-and-process-usage-changes-over-realtime) uses for `tokens`.
+`GET /api/v1/task-groups/{group}/agents` returns the five fields on every thread, including the planner, the reviewer, and each implementer. Each value is present and null when unknown. `tasks:agents` prints them in that order after tokens: Input, Cached, Output, Calls, and Peak. An unknown value is a blank cell. JSON output includes the same fields. The web task board keeps showing `tokens` for the group and the subtask. It does not show the split. A change to these fields does not by itself broadcast `task_group.updated`, which is the same rule [ADR 0151](/reference/events#tasks) uses for `tokens`.
 
 ## Rejected alternatives
 

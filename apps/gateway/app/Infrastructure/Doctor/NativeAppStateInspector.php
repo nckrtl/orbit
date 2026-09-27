@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Doctor;
 
+use App\Domain\AppInstances\AppInstanceProvisioning;
+use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Doctor\AppInspectionData;
 use App\Domain\Doctor\AppStateInspector;
 use App\Domain\Doctor\DoctorInspectionException;
@@ -13,6 +15,7 @@ use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Nodes\Storage\StorageRootResolver;
 use App\Domain\SourceControl\GitRepositoryOrigin;
+use App\Domain\Tasks\TaskWorkspaceLifecycle;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\RemoteCommand;
@@ -20,6 +23,7 @@ use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\Node;
 
 final readonly class NativeAppStateInspector implements AppStateInspector
@@ -48,13 +52,19 @@ final readonly class NativeAppStateInspector implements AppStateInspector
             throw new DoctorInspectionException;
         }
 
-        /** @var list<array{path: string, root: string, user: string, slug: string, instance: string, mode: string, expected_root: string}> $checkouts */
+        /** @var list<array{instance_id: int, path: string, root: string, user: string, slug: string, instance: string, mode: string, expected_root: string}> $checkouts */
         $checkouts = [];
         $appInstances = $app
             ->appInstances()
             ->where('node_id', $node->id)
+            ->where('status', '!=', AppInstanceState::Removing)
+            ->with(['app', 'taskGroups'])
             ->orderBy('id')
-            ->get();
+            ->get()
+            ->filter(static fn (AppInstance $instance): bool => ! AppInstanceProvisioning::isInFlight(
+                $instance,
+                TaskWorkspaceLifecycle::settledState($instance),
+            ));
         foreach ($appInstances as $appInstance) {
             if ($appInstance->placedOnAppProd()) {
                 $home = $appInstance->production_home;
@@ -64,6 +74,7 @@ final readonly class NativeAppStateInspector implements AppStateInspector
                 }
 
                 $checkouts[] = [
+                    'instance_id' => (int) $appInstance->id,
                     'path' => $appInstance->checkout_path,
                     'root' => $home,
                     'user' => $user,
@@ -79,6 +90,7 @@ final readonly class NativeAppStateInspector implements AppStateInspector
             $account ??= $this->accounts->resolve($node);
             $root = $this->developmentRoot($node, $account, $appInstance->checkout_path);
             $checkouts[] = [
+                'instance_id' => (int) $appInstance->id,
                 'path' => $appInstance->checkout_path,
                 'root' => $root,
                 'user' => $account->user,
@@ -89,6 +101,8 @@ final readonly class NativeAppStateInspector implements AppStateInspector
             ];
         }
         $match = true;
+        $mismatchingInstanceIds = [];
+        $failedInstanceIds = [];
         foreach ($checkouts as $checkout) {
             try {
                 $result = $this->ssh->execute(
@@ -157,20 +171,29 @@ final readonly class NativeAppStateInspector implements AppStateInspector
                         ."\n",
                     ),
                 );
-                if (
-                    ! $result->succeeded()
-                    || $result->truncated
-                    || ! in_array(needle: $result->stdout, haystack: ["1\n", "0\n"], strict: true)
-                ) {
-                    throw new DoctorInspectionException;
-                }
-                $match = $match && $result->stdout === "1\n";
             } catch (\Throwable) {
-                throw new DoctorInspectionException;
+                $failedInstanceIds[] = (int) $checkout['instance_id'];
+
+                continue;
+            }
+
+            if (
+                ! $result->succeeded()
+                || $result->truncated
+                || ! in_array(needle: $result->stdout, haystack: ["1\n", "0\n"], strict: true)
+            ) {
+                $failedInstanceIds[] = (int) $checkout['instance_id'];
+
+                continue;
+            }
+
+            if ($result->stdout !== "1\n") {
+                $mismatchingInstanceIds[] = (int) $checkout['instance_id'];
+                $match = false;
             }
         }
 
-        return new AppInspectionData(count($checkouts), $match);
+        return new AppInspectionData(count($checkouts), $match, $mismatchingInstanceIds, $failedInstanceIds);
     }
 
     /**
@@ -181,8 +204,7 @@ final readonly class NativeAppStateInspector implements AppStateInspector
     {
         try {
             $appsRoot = $this->storageRoots
-                ->resolveApps($this->nodeSettings->fromStored($node->settings), $account)
-                ->instance;
+                ->resolveApps($this->nodeSettings->fromStored($node->settings), $account);
         } catch (\Throwable) {
             throw new DoctorInspectionException;
         }

@@ -15,7 +15,6 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property int $tool_manager_id
  * @property string $package
  * @property string|null $version_constraint
- * @property bool $protected
  * @property ToolStatus $status
  * @property string|null $installed_version
  * @property ToolOperation|null $failed_operation
@@ -25,12 +24,6 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  */
 final class Tool extends Model
 {
-    /** @var array<string, mixed> */
-    #[\Override]
-    protected $attributes = [
-        'protected' => false,
-    ];
-
     /** @var list<string> */
     #[\Override]
     protected $fillable = [
@@ -38,7 +31,6 @@ final class Tool extends Model
         'tool_manager_id',
         'package',
         'version_constraint',
-        'protected',
         'status',
         'installed_version',
         'failed_operation',
@@ -61,7 +53,6 @@ final class Tool extends Model
     protected function casts(): array
     {
         return [
-            'protected' => 'boolean',
             'status' => ToolStatus::class,
             'failed_operation' => ToolOperation::class,
         ];

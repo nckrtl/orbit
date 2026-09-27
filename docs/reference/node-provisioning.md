@@ -4,7 +4,7 @@ description: "How node:add bootstraps or converges a Node, which roles share a N
 covers:
   - apps/gateway/app/Actions/Nodes/{ProvisionNodeAction,RemoveNodeAction,AddNodeRoleAction,RemoveNodeRoleAction,AssignRoleAction}.php
   - apps/gateway/app/Domain/Nodes/RoleRegistry.php
-  - apps/gateway/app/Infrastructure/Nodes/{NativeNodeConverger,NodeBootstrapCommandFactory,NodeBootstrapPackageCatalog,CaddyPackageSourceProgram,RemotePhpPackageManager,NodeLocks,NodeLock}.php
+  - apps/gateway/app/Infrastructure/Nodes/{NativeNodeConverger,NodeBootstrapCommandFactory,NodeBootstrapDnsProgram,NodeBootstrapPackageCatalog,CaddyPackageSourceProgram,RemotePhpPackageManager,NodeLocks,NodeLock}.php
   - apps/gateway/app/Infrastructure/Firewall/NodeFirewallRuleCatalog.php
   - apps/gateway/app/Infrastructure/WireGuard/NativeGatewayPeerProjectionManager.php
   - apps/gateway/app/Console/Commands/ProvisionNodeCommand.php
@@ -69,6 +69,35 @@ Each failure names the check or step that stopped the request.
 | `node.architecture_mismatch` | The requested architecture differs from the observed one. |
 | `node.role_convergence_failed` | A role failed to converge. The step is `role:<step>`. |
 | `node.agent_install_failed` | The Node agent failed to install. |
+
+## Nodes without roles
+
+`node:add` without `--role` adds a Node that hosts no Orbit service. Use it for an operator machine that runs the Orbit CLI over WireGuard.
+
+The Gateway uses this setup when the request names no role and the Node has no role assignment. It runs the same steps as for any Node, with these differences.
+
+| Area | Node without roles |
+| --- | --- |
+| Bootstrap | Base packages, managed user, and passwordless sudo, as on any Node. The bootstrap keeps the machine's DNS as it is. |
+| WireGuard DNS | A `DNS =` line with the WireGuard address of the `vpn` Node. No `PostUp` hook and no `orbit.dns-link`. |
+| `--dns-server` | The Gateway stores the override, but the `DNS =` line does not use it. |
+| Firewall | UFW is on, with `orbit:public-ssh-recovery` and `orbit:wireguard-members`. Public SSH stays open. See [Public SSH](#public-ssh). |
+| Node agent | The Gateway installs the [Node agent](/reference/node-agent), because the Node has a pinned SSH host key. |
+| Metrics | The Node runs no exporter until you run `metrics:exporter:enable`. See [Exporter selection](/reference/metrics#exporter-selection). |
+
+When the package sources do not resolve, the bootstrap fails. Unlike a Node with roles, it does not clear Orbit DNS on the `orbit` link first. See [Add the machine again](#add-the-machine-again).
+
+The `DNS =` line is in `/etc/wireguard/orbit.conf`, and `wg-quick` applies it when the tunnel starts. The Gateway deletes an existing `/etc/wireguard/orbit.dns-link`.
+
+A later `node:add` without `--role` keeps this setup. To call the Gateway API from the Node, grant it access with [`node:access:add`](/cli/node#orbit-nodeaccessadd). The Gateway identifies the caller by its WireGuard address.
+
+`node:role:add` accepts the same roles as on any other Node. The first active role closes public SSH. The `DNS =` line stays, because role changes and a later `node:add` of the active Node do not publish the WireGuard peer again.
+
+[`orbit:node-dns-repair`](/reference/private-dns#repair-one-peer) refuses a Node without roles with `node.dns_repair_operator_owned`. After the Node gets a role, the repair fails with `vpn.peer_dns_state_unsupported`, because the Node has no `orbit.dns-link`.
+
+[Node retarget](/reference/node-retarget) of a Node without roles publishes the peer again with the resolver policy of [Private DNS](/reference/private-dns#resolver-selection). The `DNS =` line goes, and the Node gets an `orbit.dns-link`.
+
+Doctor checks a Node without roles like any other Node when the Gateway has a pinned SSH host key for it. The `role` family reports nothing. The `schedule` family skips its orphan scan unless the Node hosts a Schedule. A Node without roles and without a pinned SSH host key gets only the lifecycle check.
 
 ## Converge an existing Node
 

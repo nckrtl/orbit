@@ -10,13 +10,13 @@ description: "Accepted on 2026-09-03."
 
 Accepted on 2026-09-03.
 
-This decision supersedes [ADR 0009](/decisions/0009-clustered-app-instance-routing)
+This decision supersedes [ADR 0009](/reference/routes#set-up-private-traffic)
 where it requires every completed-model Node, AppInstance, and Route to belong
 to a Cluster, requires every application request to traverse a Cluster Router,
 and uses only a Cluster TLD for generated AppInstance hostnames. It extends
-[ADR 0011](/decisions/0011-clustered-production-ingress-and-app-prod-placement) with a
+[ADR 0011](/reference/routes#publish-a-public-route) with a
 standalone app-prod path and extends
-[ADR 0016](/decisions/0016-reconcile-app-identity-and-source-default-updates) with
+[ADR 0016](/reference/apps#update-a-project) with
 Node-to-Cluster routing-scope reconciliation. Their remaining source,
 placement, routing, ingress, and safety boundaries stay in force.
 
@@ -32,8 +32,7 @@ Orbit already stores a nullable Node Cluster membership and a Node-level
 development TLD. Existing Instances and Workspaces use the Node TLD and serve
 traffic directly from their Node. Requiring their replacements to join an
 active Cluster before creation would turn an optional expansion boundary into
-a mandatory bootstrap boundary and would force role-less operator clients and
-otherwise independent Nodes into a grouping they may not need.
+a mandatory bootstrap boundary and would force otherwise independent Nodes into a grouping they may not need.
 
 Orbit needs standalone Nodes and Clusters to be two valid operating modes.
 Joining a Cluster must preserve the Node's independent identity and fallback
@@ -62,10 +61,7 @@ Cluster's applicable active routing roles. An inactive Cluster membership or
 an active Cluster without a TLD does not make the AppInstance unavailable or
 replace its direct Node routing scope.
 
-Role-less operator clients and Nodes without application workloads may remain
-standalone indefinitely. Cluster membership does not grant a role, and leaving
-a Cluster does not remove one. Existing role eligibility, operating-system,
-access, and convergence rules continue independently.
+Nodes without application workloads may remain standalone indefinitely. Cluster membership does not grant a role, and leaving a Cluster does not remove one. Existing role eligibility, operating-system, access, and convergence rules continue independently.
 
 ### Retain the Node TLD and give the active Cluster precedence
 

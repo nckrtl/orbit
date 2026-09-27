@@ -1,0 +1,78 @@
+---
+name: orbit-tasks
+description: Use when preparing or implementing an Orbit task group.
+---
+
+# Orbit Tasks
+
+The Gateway Tasks engine is generic; this file defines Orbit's repository policy. Orbit's Project task check enforces repository-specific requirements deterministically.
+
+## Prepare the feature contract
+
+Start after [grill-with-docs](../grill-with-docs/SKILL.md), once the behavior is agreed and the ADRs and documentation are written on the group's branch. They are the contract that every subtask implements. Read the group's brief, ADRs, maintained documentation, and relevant code before splitting work. Look for prefactoring that makes the feature easier to build; put it first as its own subtask.
+
+Before implementation, add a documentation subtask that writes or updates the relevant maintained documentation. Record any architectural decision in an ADR, using the next available number and preserving the ADR process in `docs/decisions/README.md`. The ADRs and documentation changed against the group's base commit are the feature contract for later subtasks.
+
+Keep the branch's documentation, ADRs, implementation, tests, and task briefs consistent. Focus the group on one feature and order subtasks by dependency.
+
+## Split the work
+
+Give each subtask one concise goal that an implementer can finish and a reviewer can verify in one turn. Keep each subtask independently verifiable and limit it to at most five deliverables. Split work that needs more than five.
+
+Name contract documents and paths in a brief when the contract requires them. Leave implementation paths to the implementer otherwise. A subtask's brief should state its goal, contract, dependencies, deliverables, and acceptance checks.
+
+Prefer a narrow vertical slice that a reviewer can verify from start to finish over a horizontal slice of one layer. When behavior spans several projects, split by project only when each project's tests prove its side of the contract. For a wide refactor that mechanically breaks many call sites, sequence separate expand, migrate, and contract subtasks: add the new form beside the old, move callers in batches, then remove the old form after no callers remain.
+
+Keep CI, release, and deployment work separate from product code. Subtasks run in dependency order on one shared branch; a later subtask may build on an earlier one but never finishes its work.
+
+A subtask that changes the web UI must include a screenshot `review` deliverable for the phone and desktop PNGs produced by `bin/web-verify`. The reviewer judges the phone layout as described in [Verifying web UI](../verifying-web-ui/SKILL.md): content starts near the top, controls are reachable, filters are not an awkward stack, and long lists and filters use native patterns such as infinite scroll and sheets. Reading the diff is not a substitute for this review. Count the screenshot deliverable toward the five-deliverable limit.
+
+## Bugs
+
+The first code-changing subtask in a bug group reproduces the failure before the fix. Add a `test` deliverable with `fails_on_base` set to the JSON boolean `true`. At least one test whose name contains the specified `name` must fail on the subtask's start commit, and every such test must pass on the working tree. A docs-only subtask does not count as the first code-changing subtask. [ADR 0163](../../../docs/decisions/0163-prove-a-failing-test-on-the-start-commit.md) and the [tasks reference](../../../docs/reference/tasks.md#reproduce-a-bug-on-the-start-commit) define the two runs.
+
+Use a deliverable like this in that subtask's `deliverables` array. Only a `test` deliverable may set `fails_on_base`:
+
+```json
+[
+  {"id": "layout-repro", "type": "test", "description": "The home-screen test fails before the fix", "project": "apps/gateway", "file": "tests/Feature/HomeScreenTest.php", "name": "home screen layout", "fails_on_base": true}
+]
+```
+
+When the bug cannot be reproduced automatically, for example an iOS behavior that shows up only on a device, say so in the brief. Add a `review` deliverable for the manual check, and do not set `fails_on_base`.
+
+## Review the breakdown
+
+Before moving the group to Todo, present the breakdown to the operator as a numbered list. For each subtask show its title, what it builds on, its goal from the user's point of view, and its deliverables. Ask whether the granularity is right, whether each dependency is real, and whether any subtask should be merged or split. Iterate until the operator approves.
+
+## Write the briefs
+
+Use this template for every subtask brief:
+
+```markdown
+**Goal:** the behavior this subtask makes work.
+
+**Contract:** the ADR sections and documentation pages it implements, with anchors.
+
+**Builds on:** the earlier subtasks it depends on, or "None".
+
+**Deliverables:**
+- One observable result per line, such as a behavior, an endpoint, a test that proves it, or a check that passes.
+- For a web UI change, a screenshot `review` deliverable. The reviewer opens the phone and desktop PNGs and judges the phone.
+
+**Acceptance:** the checks to run and what they must show.
+```
+
+Every subtask that changes the web UI gets the screenshot `review` deliverable, even when UI work is only part of the subtask. Its description names the phone and desktop PNGs from `bin/web-verify` and the phone judgment described above.
+
+Name file paths only where the contract fixes them, such as an install path or documentation page. Leave other paths and code to the implementer, because they go stale.
+
+## Deliverables and handoff
+
+Use typed deliverables to describe observable results. The current engine supports `file`, `test`, `command`, and `review`; follow the [Tasks reference](../../../docs/reference/tasks.md#deliverables) for fields and verification. Prefer one deliverable for each explicit result promised in the brief. Measurement and investigation claims must be `command` deliverables, so Orbit's handoff check records the command output. Evidence at handoff says where or how each deliverable is met.
+
+Do not assume that every Project uses Composer, Pest, PHP, or any particular test runner. Use the task check configured for the Orbit Project and the deliverable type supported by the current engine.
+
+## Create the work in Orbit
+
+Find the Orbit Project and its id, then call `tasks-create` with that Project id to create the group. Create ordered subtasks with `tasks-subtask-create`, including their deliverables. Use the task APIs or MCP tools to keep the branch's task group consistent with the agreed contract. Move the group to Todo only after the operator approves the breakdown.

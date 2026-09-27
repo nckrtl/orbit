@@ -32,15 +32,29 @@ final readonly class RemoteProductionPhpRuntimeManager implements ProductionPhpR
         $this->convergeWithTuning($appInstance, null);
     }
 
-    private function convergeWithTuning(AppInstance $appInstance, ?string $initialLocalTuning): void
+    public function convergeMonitoring(AppInstance $appInstance, bool $enabled): void
     {
+        $this->convergeWithTuning($appInstance, null, $enabled, 'monitor');
+    }
+
+    private function convergeWithTuning(
+        AppInstance $appInstance,
+        ?string $initialLocalTuning,
+        ?bool $metricsEnabled = null,
+        string $operation = 'converge',
+    ): void {
         $identity = ProductionPhpRuntimeIdentity::from($appInstance);
-        $configuration = $this->renderer->render($identity, $this->serviceMetrics?->enabled($appInstance->node) ?? false);
+        $configuration = $this->renderer->render(
+            $identity,
+            $metricsEnabled ?? $this->serviceMetrics?->enabled($appInstance->node) ?? false,
+        );
         /** @var Collection<int, string> $versions */
         $versions = collect([$identity->version]);
-        $this->packages->installPackagesOnlyForAppProd(
-            $appInstance->node->loadMissing('roles'), $versions, $this->ssh,
-        );
+        if ($operation !== 'monitor') {
+            $this->packages->installPackagesOnlyForAppProd(
+                $appInstance->node->loadMissing('roles'), $versions, $this->ssh,
+            );
+        }
 
         $this->ssh->execute(
             $appInstance->node,
@@ -50,7 +64,7 @@ final readonly class RemoteProductionPhpRuntimeManager implements ProductionPhpR
                     'bash',
                     '-seu',
                     '--',
-                    'converge',
+                    $operation,
                     $identity->user,
                     $identity->home,
                     $identity->version,
@@ -611,7 +625,7 @@ final readonly class RemoteProductionPhpRuntimeManager implements ProductionPhpR
 
     private function convergeScript(): string
     {
-        return $this->sharedOrbitDirectory->convergenceFunction()."\n".<<<'BASH'
+        return $this->sharedOrbitDirectory->convergenceFunction()."\n".self::monitoringPoolConvergenceFunction()."\n".self::cleanupInterruptedMonitoringCandidateFunction()."\n".<<<'BASH'
             operation=$1
             user=$2
             home=$3
@@ -633,7 +647,10 @@ final readonly class RemoteProductionPhpRuntimeManager implements ProductionPhpR
             marker_configuration=${19}
             initial_local_tuning=${20}
             has_initial_local_tuning=${21}
-            test "$operation" = converge
+            case "$operation" in converge|monitor) ;; *) exit 1 ;; esac
+            if [ "$operation" = monitor ] && { ! test -f "$marker_path" || test -L "$marker_path" || ! test -d "$generated_directory" || test -L "$generated_directory"; }; then
+                exit 0
+            fi
 
             test "$home" = "/home/$user"
             expected_service="orbit-$user-php${version}-fpm.service"
@@ -786,6 +803,7 @@ final readonly class RemoteProductionPhpRuntimeManager implements ProductionPhpR
                 test -d "$generated_directory"
                 test ! -L "$generated_directory"
                 test "$(stat -c '%U:%G:%a' -- "$generated_directory")" = root:root:755
+                cleanup_interrupted_monitoring_candidate "$generated_directory" "$runtime_directory"
                 unexpected_generated=$(find -P "$generated_directory" -mindepth 1 -maxdepth 1 \
                     ! -name php-fpm.conf ! -name pool.conf ! -name master.ini ! -name local.sha256 -print -quit)
                 test -z "$unexpected_generated"
@@ -812,6 +830,10 @@ final readonly class RemoteProductionPhpRuntimeManager implements ProductionPhpR
             fi
             systemctl is-active --quiet "$service" && was_active=1 || true
             systemctl is-enabled --quiet "$service" && was_enabled=1 || true
+            if [ "$operation" = converge ] && { [ -e "$runtime_directory/.metrics-pool.pending" ] || [ -L "$runtime_directory/.metrics-pool.pending" ]; }; then
+                converge_monitoring_pool \
+                    "$generated_directory/pool.conf" "$work_directory/pool.conf" "$runtime_directory" "$service" "$was_active" resolve
+            fi
             if [ -e "$socket" ] || [ -L "$socket" ]; then
                 test -S "$socket"
                 test "$(stat -c '%U:%G:%a' -- "$socket")" = "$user:caddy:660"
@@ -826,6 +848,14 @@ final readonly class RemoteProductionPhpRuntimeManager implements ProductionPhpR
             done
             if [ ! -f "$unit_path" ] || ! cmp -s -- "$work_directory/unit" "$unit_path"; then
                 runtime_changed=1
+            fi
+
+            if [ "$operation" = monitor ]; then
+                converge_monitoring_pool \
+                    "$generated_directory/pool.conf" "$work_directory/pool.conf" "$runtime_directory" "$service" "$was_active" apply
+                rm -f -- "$expected_marker"
+                rm -rf -- "$work_directory"
+                exit 0
             fi
 
             published=0
@@ -902,6 +932,140 @@ final readonly class RemoteProductionPhpRuntimeManager implements ProductionPhpR
             BASH;
     }
 
+    private static function cleanupInterruptedMonitoringCandidateFunction(): string
+    {
+        return <<<'BASH'
+            cleanup_interrupted_monitoring_candidate() {
+                generated_directory=$1
+                runtime_directory=$2
+                pending="$runtime_directory/.metrics-pool.pending"
+                backup="$runtime_directory/.metrics-pool.backup"
+                if [ ! -e "$pending" ] && [ ! -L "$pending" ]; then
+                    return 0
+                fi
+                test -f "$pending"
+                test ! -L "$pending"
+                test "$(stat -c '%U:%G:%a' -- "$pending")" = root:root:600
+                test -f "$backup"
+                test ! -L "$backup"
+                test "$(stat -c '%U:%G:%a' -- "$backup")" = root:root:600
+                IFS=' ' read -r pending_state pending_hash < "$pending"
+                case "$pending_state" in active|stopped) ;; *) exit 1 ;; esac
+                [[ "$pending_hash" =~ ^[a-f0-9]{64}$ ]]
+                for candidate in "$generated_directory"/.pool.conf.*.candidate; do
+                    if [ ! -e "$candidate" ] && [ ! -L "$candidate" ]; then
+                        continue
+                    fi
+                    test -f "$candidate"
+                    test ! -L "$candidate"
+                    test "$(stat -c '%U:%G:%a' -- "$candidate")" = root:root:644
+                    candidate_hash=$(sha256sum -- "$candidate" | awk '{print $1}')
+                    backup_hash=$(sha256sum -- "$backup" | awk '{print $1}')
+                    test "$candidate_hash" = "$pending_hash" || test "$candidate_hash" = "$backup_hash"
+                    rm -f -- "$candidate"
+                done
+                sync -f "$generated_directory"
+            }
+            BASH;
+    }
+
+    private static function monitoringPoolConvergenceFunction(): string
+    {
+        return <<<'BASH'
+            converge_monitoring_pool() {
+                pool_file=$1
+                desired_pool=$2
+                runtime_directory=$3
+                service=$4
+                was_active=$5
+                mode=$6
+                case "$mode" in apply|resolve) ;; *) return 1 ;; esac
+                pending="$runtime_directory/.metrics-pool.pending"
+                backup="$runtime_directory/.metrics-pool.backup"
+                rm -f -- "$runtime_directory"/.metrics-pool.*.candidate "$(dirname -- "$pool_file")"/.pool.conf.*.candidate
+                test -f "$pool_file"
+                test ! -L "$pool_file"
+
+                if [ -e "$backup" ] || [ -L "$backup" ]; then
+                    test -f "$backup"
+                    test ! -L "$backup"
+                    test "$(stat -c '%U:%G:%a' -- "$backup")" = root:root:600
+                fi
+                if [ -e "$pending" ] || [ -L "$pending" ]; then
+                    test -f "$pending"
+                    test ! -L "$pending"
+                    test "$(stat -c '%U:%G:%a' -- "$pending")" = root:root:600
+                    test -f "$backup"
+                    IFS=' ' read -r pending_state pending_hash < "$pending"
+                    case "$pending_state" in active|stopped) ;; *) exit 1 ;; esac
+                    [[ "$pending_hash" =~ ^[a-f0-9]{64}$ ]]
+                    pending_candidate_hash=$(sha256sum -- "$pool_file" | awk '{print $1}')
+                    pending_backup_hash=$(sha256sum -- "$backup" | awk '{print $1}')
+                    if [ "$pending_candidate_hash" != "$pending_hash" ] && [ "$pending_candidate_hash" != "$pending_backup_hash" ]; then
+                        printf 'PHP-FPM pool changed during interrupted monitoring update.\n' >&2
+                        return 1
+                    fi
+                    desired_hash=$(sha256sum -- "$desired_pool" | awk '{print $1}')
+                    if [ "$mode" = apply ] && [ "$desired_hash" = "$pending_backup_hash" ] && [ "$pending_candidate_hash" != "$pending_backup_hash" ]; then
+                        pool_candidate="$(dirname -- "$pool_file")/.pool.conf.$$.candidate"
+                        install -o root -g root -m 0644 -- "$backup" "$pool_candidate"
+                        mv -fT -- "$pool_candidate" "$pool_file"
+                        sync -f "$(dirname -- "$pool_file")"
+                        pending_candidate_hash=$pending_backup_hash
+                    fi
+                    if systemctl is-active --quiet "$service"; then
+                        systemctl reload "$service" || return 1
+                        systemctl is-active --quiet "$service" || return 1
+                    elif [ "$pending_state" = active ]; then
+                        printf 'PHP-FPM master %s stopped during monitoring recovery.\n' "$service" >&2
+                        return 1
+                    fi
+                    rm -f -- "$pending"
+                    sync -f "$runtime_directory"
+                    rm -f -- "$backup"
+                elif [ -e "$backup" ]; then
+                    rm -f -- "$backup"
+                fi
+
+                if [ "$mode" = resolve ]; then
+                    return 0
+                fi
+                test -f "$pool_file"
+                test ! -L "$pool_file"
+                if cmp -s -- "$desired_pool" "$pool_file"; then
+                    return 0
+                fi
+
+                backup_candidate="$runtime_directory/.metrics-pool.backup.$$.candidate"
+                pending_candidate="$runtime_directory/.metrics-pool.pending.$$.candidate"
+                pool_candidate="$(dirname -- "$pool_file")/.pool.conf.$$.candidate"
+                rm -f -- "$backup_candidate" "$pending_candidate" "$pool_candidate"
+                install -o root -g root -m 0600 -- "$pool_file" "$backup_candidate"
+                sync -f "$backup_candidate"
+                mv -fT -- "$backup_candidate" "$backup"
+                if [ "$was_active" = 1 ]; then pending_state=active; else pending_state=stopped; fi
+                pending_hash=$(sha256sum -- "$desired_pool" | awk '{print $1}')
+                printf '%s %s\n' "$pending_state" "$pending_hash" > "$pending_candidate"
+                chown root:root -- "$pending_candidate"
+                chmod 0600 -- "$pending_candidate"
+                sync -f "$pending_candidate"
+                mv -fT -- "$pending_candidate" "$pending"
+                sync -f "$runtime_directory"
+
+                install -o root -g root -m 0644 -- "$desired_pool" "$pool_candidate"
+                mv -fT -- "$pool_candidate" "$pool_file"
+                sync -f "$(dirname -- "$pool_file")"
+                if [ "$was_active" = 1 ]; then
+                    systemctl reload "$service" || return 1
+                    systemctl is-active --quiet "$service" || return 1
+                fi
+                rm -f -- "$pending"
+                sync -f "$runtime_directory"
+                rm -f -- "$backup"
+            }
+            BASH;
+    }
+
     private function removeScript(): string
     {
         return <<<'BASH'
@@ -968,6 +1132,7 @@ final readonly class RemoteProductionPhpRuntimeManager implements ProductionPhpR
             if [ -z "$main_pid" ]; then main_pid=0; fi
             case "$main_pid" in *[!0-9]*) exit 1 ;; esac
             test "$main_pid" -eq 0
+            rm -f -- "$runtime_directory/.metrics-pool.pending" "$runtime_directory/.metrics-pool.backup"
             rm -rf -- "$generated_directory"
             rm -f -- "$unit_path"
             systemctl daemon-reload

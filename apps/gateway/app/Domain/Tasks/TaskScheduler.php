@@ -475,8 +475,8 @@ final readonly class TaskScheduler
     private function handleReviewerOutcome(TaskGroup $group, Task $task, TaskSessionObservation $observation): bool
     {
         $reviewer = $observation->thread(TaskThreadRole::Reviewer);
-        // Before this subtask's review is requested, the observed reviewer can be the planner or an
-        // earlier subtask's thread. A Pi restart of that turn is not this review. Request the review
+        // Before this subtask's review is requested, the observed reviewer can be an earlier
+        // subtask's thread. A Pi restart of that turn is not this review. Request the review
         // first, and recover only a review that was already requested (ADR 0167, ADR 0169).
         if ($reviewer === null || $task->review_notified_attempt !== $task->review_attempt) {
             $this->nudgeReviewer($task, $reviewer);
@@ -1960,7 +1960,7 @@ final readonly class TaskScheduler
 
     /**
      * Starts a fresh reviewer for this subtask's first review, or continues that subtask's reviewer.
-     * A working continued reviewer gets no request. The planner and an earlier subtask's reviewer do not
+     * A working continued reviewer gets no request. An earlier subtask's reviewer does not
      * delay a fresh review. The task stays unnotified until the request is sent.
      */
     private function nudgeReviewer(Task $task, ?TaskThreadObservation $reviewer): void

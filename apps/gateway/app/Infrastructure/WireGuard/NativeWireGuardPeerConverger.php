@@ -305,7 +305,6 @@ final readonly class NativeWireGuardPeerConverger implements RecoverableWireGuar
                     rm -f -- "$restore_candidate" || return 1
                     if [ "$live_present" = 1 ]; then
                         cp -a --no-dereference -- "$backup" "$restore_candidate" || return 1
-                        sed -i "/^PreDown = resolvectl revert %i\\r\\{0,1\\}$/d" "$restore_candidate" || return 1
                         mv -fT -- "$restore_candidate" "$live" || return 1
                     else
                         rm -f -- "$live" || return 1
@@ -601,7 +600,6 @@ final readonly class NativeWireGuardPeerConverger implements RecoverableWireGuar
                         rm -f -- "$restore_candidate" || return 1
                         if [ "$live_present" -eq 1 ]; then
                             cp -a --no-dereference -- "$backup" "$restore_candidate" || return 1
-                            sed -i "/^PreDown = resolvectl revert %i\\r\\{0,1\\}$/d" "$restore_candidate" || return 1
                             mv -fT -- "$restore_candidate" "$live" || return 1
                         else
                             rm -f -- "$live" || return 1

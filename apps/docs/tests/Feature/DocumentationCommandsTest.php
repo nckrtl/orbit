@@ -37,7 +37,7 @@ it('returns ordered context for a repository component', function (): void {
         ->and($output['schema_version'])
         ->toBe(1)
         ->and(collect($output['documents'])->pluck('path')->all())
-        ->toContain('docs/decisions/0014-maintain-verified-documentation-context.md');
+        ->toContain('docs/README.md');
 });
 
 it('keeps the application console-only', function (): void {

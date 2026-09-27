@@ -9,6 +9,7 @@ use App\Data\Routes\RouteData;
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
+use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Routes\CustomProxyProcessListener;
 use App\Domain\Routes\CustomProxyRouteProjector;
 use App\Domain\Routes\CustomProxyUpstream;
@@ -43,6 +44,7 @@ final readonly class CreateRouteAction
         private CustomProxyRouteProjector $customProxies,
         private CustomProxyProcessListener $listeners = new CustomProxyProcessListener,
         private ?RecordEventBroadcaster $broadcaster = null,
+        private ?MetricsFleetReconciler $metrics = null,
     ) {}
 
     /** @return array{route: Route, created: bool} */
@@ -73,6 +75,10 @@ final readonly class CreateRouteAction
                 $result['route']->id,
                 RouteData::fromModel($result['route'])->toArray(),
             );
+
+            if ($result['route']->publication === RoutePublication::Public) {
+                $this->metrics?->reconcile();
+            }
         }
 
         return $result;

@@ -896,7 +896,7 @@ it('rolls a failed public activation back to the verified edge so the Ingress No
 
 it('publishes an eligible public Route on the same ID and names only the Ingress domain and Router upstream', function (): void {
     $metrics = Mockery::mock(MetricsFleetReconciler::class);
-    $metrics->shouldReceive('reconcile')->once();
+    $metrics->shouldReceive('reconcile')->twice();
     app()->instance(MetricsFleetReconciler::class, $metrics);
     [$cluster, $router, $ingress, $workload, $instance, $route] = route_public_topology($this->orbitApp);
     $edge = new FakePublicRouteEdgeProjector;

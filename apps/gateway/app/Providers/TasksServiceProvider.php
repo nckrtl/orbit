@@ -16,8 +16,6 @@ use App\Domain\Tasks\TaskBridgeWorktreeRemover;
 use App\Domain\Tasks\TaskBriefCoverage;
 use App\Domain\Tasks\TaskBroadcasts;
 use App\Domain\Tasks\TaskCheckRunner;
-use App\Domain\Tasks\TaskPlannerMcp;
-use App\Domain\Tasks\TaskPlannerSpawner;
 use App\Domain\Tasks\TaskPullRequestPublisher;
 use App\Domain\Tasks\TaskPullRequestWatcher;
 use App\Domain\Tasks\TaskReviewDiff;
@@ -25,6 +23,7 @@ use App\Domain\Tasks\TaskReviewPacketBuilder;
 use App\Domain\Tasks\TaskRunReceipts;
 use App\Domain\Tasks\TaskSettleMetricsCollector;
 use App\Domain\Tasks\TaskWorkspaceDiffReader;
+use App\Domain\Tasks\TaskWorkspaceMcp;
 use App\Domain\Tasks\TaskWorkspaceSigner;
 use App\Domain\Tasks\TaskWorkspaceStateReader;
 use App\Infrastructure\Tasks\AgentViewTaskWorkspaceDiffReader;
@@ -37,9 +36,9 @@ use App\Infrastructure\Tasks\LaravelAiTaskBriefCoverage;
 use App\Infrastructure\Tasks\Pi\PiDriver;
 use App\Infrastructure\Tasks\RemoteTaskBridgeWorktreeRemover;
 use App\Infrastructure\Tasks\RemoteTaskCheckRunner;
-use App\Infrastructure\Tasks\RemoteTaskPlannerMcp;
 use App\Infrastructure\Tasks\RemoteTaskReviewDiff;
 use App\Infrastructure\Tasks\RemoteTaskRunReceipts;
+use App\Infrastructure\Tasks\RemoteTaskWorkspaceMcp;
 use App\Infrastructure\Tasks\RemoteTaskWorkspaceSigner;
 use App\Infrastructure\Tasks\RemoteTaskWorkspaceStateReader;
 use App\Infrastructure\Tasks\T3\HttpT3Dispatcher;
@@ -60,8 +59,7 @@ final class TasksServiceProvider extends ServiceProvider
         T3Stream::class => T3TaskAgentStream::class,
         InstanceProvisioning::class => TaskWorkspaceProvisioner::class,
         AgentSpawner::class => TaskAgentSpawner::class,
-        TaskPlannerSpawner::class => TaskAgentSpawner::class,
-        TaskPlannerMcp::class => RemoteTaskPlannerMcp::class,
+        TaskWorkspaceMcp::class => RemoteTaskWorkspaceMcp::class,
         T3Dispatcher::class => HttpT3Dispatcher::class,
         T3ThreadReader::class => HttpT3ThreadReader::class,
         TaskWorkspaceSigner::class => RemoteTaskWorkspaceSigner::class,

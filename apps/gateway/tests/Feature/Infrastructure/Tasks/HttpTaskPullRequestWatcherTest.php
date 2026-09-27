@@ -184,7 +184,7 @@ it('names each failed check run on the head commit with its URL, through a separ
     Http::assertSent(static fn (Request $request): bool => str_ends_with($request->url(), '/access_tokens')
         && $request->data() === ['repositories' => ['orbit'], 'permissions' => ['checks' => 'read']]);
     Http::assertSent(static fn (Request $request): bool => str_ends_with($request->url(), '/access_tokens')
-        && $request->data() === ['repositories' => ['orbit'], 'permissions' => ['contents' => 'write', 'pull_requests' => 'write']]);
+        && $request->data() === ['repositories' => ['orbit'], 'permissions' => ['contents' => 'write', 'pull_requests' => 'write', 'workflows' => 'write']]);
     Http::assertNotSent(static fn (Request $request): bool => str_ends_with($request->url(), '/access_tokens')
         && array_key_exists('checks', $request->data()['permissions']) && count($request->data()['permissions']) > 1);
 });

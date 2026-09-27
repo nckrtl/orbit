@@ -120,7 +120,6 @@ describe('gateway object-state boundary', function (): void {
             'manager' => "token={$credential}",
             'package' => "https://operator:{$credential}@packages.test/tool",
             'version_constraint' => "api_token={$credential}",
-            'protected' => false,
             'status' => 'installed',
             'installed_version' => "Bearer {$credential}",
             'failed_operation' => null,
