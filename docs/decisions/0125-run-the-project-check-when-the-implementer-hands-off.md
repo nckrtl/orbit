@@ -110,6 +110,6 @@ The Gateway keeps one record per check run, linked to the `ready_for_review` rec
 ## Affects
 
 - Components: apps/gateway, apps/cli, packages/php-sdk, apps/docs
-- ADRs: [ADR 0106](/decisions/0106-derive-instance-capabilities-from-project-type), [ADR 0114](/decisions/0114-judge-task-completion-as-separate-checks), [ADR 0121](/decisions/0121-end-agent-turns-with-a-run-receipt)
+- ADRs: [ADR 0106](/reference/apps#project-types), [ADR 0114](/decisions/0114-judge-task-completion-as-separate-checks), [ADR 0121](/decisions/0121-end-agent-turns-with-a-run-receipt)
 - Detail: [Tasks](/reference/tasks), [Projects](/reference/apps), and `bin/review-check` for uncommitted work
 - Verify: tests for the task check defaults by type, the upgrade that sets `composer check` on every existing Project, and a null task check at baseline and handoff; scheduler tests for each check state, the lost-check restart and assistance, cancellation, and the changed-tree rerun; a test that runs the real check script against a local Git checkout; a `bin/review-check` test on an uncommitted tree; and an Incus run where Orbit's check gates the handoff

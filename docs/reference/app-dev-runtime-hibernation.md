@@ -1,52 +1,44 @@
 ---
 title: "App-dev runtime hibernation"
-description: "How Orbit stops idle development Instance Processes and wakes them on the next HTTP request."
+description: "How Orbit stops the Processes of idle development Instances, prunes their dependencies after a long idle period, and wakes them on the next HTTP request."
+covers:
+  - apps/gateway/app/{Actions,Domain,Infrastructure}/Hibernation/**
+  - apps/gateway/app/Http/Responses/RuntimeActivationPage.php
+  - apps/gateway/config/orbit.php
 ---
 
 # App-dev runtime hibernation
 
-This page tells an operator how Orbit stops idle development Instance Processes and starts them again on the next HTTP request. After a longer idle window it also deletes reconstructable checkout dependencies and restores them before those Processes start. [ADR 0074](/decisions/0074-hibernate-idle-app-dev-appinstance-processes) owns the idle-halt boundary. [ADR 0075](/decisions/0075-prune-idle-app-dev-checkout-dependencies) owns the cold dependency tier. [Project processes and schedules](/reference/app-processes-and-schedules) owns Process add, start, stop, and removal. [Schedules](/reference/schedules) owns timer execution.
+A development Instance often runs Processes, such as Vite, long after anyone uses the site. Orbit stops those Processes after an idle hour. After an idle week, it also deletes the dependency directories that lockfiles can rebuild. The next HTTP request shows a progress page, and Orbit restores and starts everything before it lets the request through.
 
-## Who hibernates
+## What hibernates
 
-The Gateway applies idle halt to Processes that meet every condition below.
+Hibernation applies to a Process that meets every condition:
 
-| Condition | Result |
+| Condition | Value |
 | --- | --- |
 | Owner | An Instance. |
-| Environment | `development`. |
-| Node role | The Instance Node has an active `app-dev` role. |
-| Desired state | `running`. The Gateway leaves desired-stopped Processes stopped. |
-| Restart policy | Any value. Restart policy does not exempt a Process. |
-| Keep-alive | `false`. A Process with `keep_alive=true` stays running through idle halt. |
+| Instance | A development Instance on a Node with an active `app-dev` role. |
+| Desired state | `running`. Orbit leaves a stopped Process stopped. |
+| `keep_alive` | `false`. |
 
-The Gateway does not halt Node Processes, production Instance Processes, or Schedules. Hibernation never stops, disables, or rewrites a systemd timer. It does not stop the shared per-version PHP FastCGI Process Manager (PHP-FPM) service or its on-demand pools, and it does not rewrite pool files or Caddy FastCGI socket paths. Caddy keeps the published per-site socket after a wake.
+Restart policy does not matter. Hibernation never touches Node Processes, production Instances, Schedules, PHP-FPM services or pools, or Caddy socket paths.
 
-## Keep-alive
+## Keep a Process running
 
-An operator opts a Process out of idle halt with the boolean `keep_alive` field on that Process or process definition. Restart policy remains crash recovery only and never implies keep-alive.
-
-A keep-alive Process stays running when the Gateway hibernates the Instance. The Gateway still starts every desired-running Process on wake, including a keep-alive Process that is down. An already running keep-alive Process stays up. An operator `process:stop` records `desired_state=stopped`, and wake leaves that Process stopped.
-
-Keep-alive has no effect on Node Processes or production Instance Processes because those targets sit outside hibernation.
-
-A queue worker that must drain jobs while Vite sleeps is recorded like this:
+Set `keep_alive` on a Process or process definition to keep it running while the Instance sleeps. Use it for a worker that must keep draining jobs:
 
 ```bash
-orbit process:create queue \
-  --instance=12 \
-  --runtime=systemd \
-  --command=/usr/bin/php \
-  --command=artisan \
-  --command=queue:work \
-  --restart=on-failure \
-  --keep-alive \
-  --start
+orbit process:create queue --instance=12 --runtime=systemd \
+  --command=/usr/bin/php --command=artisan --command=queue:work \
+  --restart=on-failure --keep-alive --start
 ```
+
+A wake still starts every desired-running Process, including a keep-alive Process that is down. `process:stop` records `desired_state=stopped`, and a wake leaves that Process stopped. Keep-alive has no effect outside hibernation.
 
 ## Idle window and sweep
 
-The Gateway reads last HTTP activity from the more recent of the Instance Caddy access log and the awake marker on the workload Node. A probe request is absent from that log by design, so measuring an Instance never extends its idle window. The default idle window is 3,600 seconds. The Gateway hibernator runs every 10 minutes on the Gateway host as `orbit-runtime-hibernator.timer`. The same sweep also evaluates the cold dependency window.
+`orbit-runtime-hibernator.timer` runs on the Gateway host every 10 minutes. It reads the last HTTP activity of each Instance: the newer of the Instance's Caddy access log and its awake marker.
 
 | Setting | Default | Config key |
 | --- | --- | --- |
@@ -56,72 +48,93 @@ The Gateway reads last HTTP activity from the more recent of the Instance Caddy 
 | Wake timeout | 60 seconds | `orbit.hibernation.wake_timeout_seconds` |
 | Cold wake timeout | 1,800 seconds | `orbit.hibernation.cold_wake_timeout_seconds` |
 
-A sweep that finds no recent HTTP activity stops each desired-running Instance Process that is not keep-alive without changing `desired_state`, then removes the awake marker. When the Gateway's [view of the Node agent](/reference/node-agent#gateway-view) is fresh and shows a Process already stopped, the sweep skips that Process's stop and its SSH commands. Keep-alive Processes stay running. When every desired-running Process is keep-alive, the Gateway does not mark the Instance asleep. Schedules on that Instance keep their timer state.
+After the idle window, the sweep stops each desired-running Process that is not keep-alive. It keeps `desired_state` as it is and removes the awake marker. When the [Node agent view](/reference/node-agent#gateway-view) is fresh and shows a Process already stopped, the sweep skips it. When an Instance has no desired-running Process without keep-alive, the sweep skips it: it never sleeps and is never pruned. An Instance with no recorded HTTP activity counts as idle, so it sleeps at the first sweep.
 
-A later pass in that sweep deletes reconstructable `vendor` and `node_modules` directories when every condition below is true.
+### Dependency prune
 
-| Condition | Result |
-| --- | --- |
-| Already hibernated | The awake marker is absent. |
-| Not already cold | The durable cold marker is absent. |
-| HTTP idle | Last HTTP activity is older than the dependency idle window. |
-| Process lifecycle idle | No Instance Process row changed inside that window. |
-| Source tree quiet | The newest checkout file outside `vendor`, `node_modules`, and `.git` is older than that window. |
-| Reconstructable trees present | `vendor` has `composer.json` and `composer.lock` and is not a symlink, or `node_modules` has `package.json` and exactly one JavaScript lock family and is not a symlink. |
-| No keep-alive workers | No desired-running Process has `keep_alive=true`. |
+The same sweep deletes `vendor` and `node_modules` when all of these are true:
 
-The Gateway leaves lockfiles in the checkout. A keep-alive desired-running Process blocks prune for the whole Instance because that Process can still need those trees.
+- The Instance is asleep.
+- It is not already marked cold.
+- It had no HTTP activity for the dependency idle window.
+- No Process row of the Instance changed in that window.
+- No checkout file outside `vendor`, `node_modules`, and `.git` changed in that window.
+- No desired-running Process has `keep_alive`.
 
-## Host directories
-
-App-dev Caddy publish and each awake-marker write create the hibernation directories on the Instance Node before Caddy reloads or reads a marker. The `caddy` user must traverse every ancestor, write the access log, and read the awake marker.
-
-| Path | Owner | Mode | Use |
-| --- | --- | --- | --- |
-| `/dev/shm/orbit` | unchanged | `0755` | Lets `caddy` reach the marker directory. |
-| `/dev/shm/orbit/hibernation` | `root:caddy` | `0755` | Holds `app-instance-{id}.awake` markers. |
-| `/data/caddy` | unchanged | `0755` | Lets `caddy` reach the log directory. |
-| `/data/caddy/orbit` | unchanged | `0755` | Lets `caddy` reach the log directory. |
-| `/data/caddy/orbit/hibernation` | `root:caddy` | `2775` | Lets `caddy` write `app-instance-{id}.log` and holds durable `app-instance-{id}.cold` markers. |
-| `app-instance-{id}.awake` | `root` | `0644` | Lets `caddy` skip wake when the marker exists. |
-| `app-instance-{id}.cold` | `root` | `0644` | Tells the Gateway to restore checkout dependencies before Process start. Caddy does not read this file. |
-
-The publish lock uses `umask 0077`. The Gateway sets each ancestor to `0755` so the `caddy` user can reach the leaf.
+Orbit deletes `vendor` only next to `composer.json` and `composer.lock`. It deletes `node_modules` only next to `package.json` and exactly one JavaScript lockfile. It never follows a symlink and keeps every lockfile. Then it writes the cold marker. The [dependency inventory](/reference/instance-dependencies) stays, because it reads lockfiles.
 
 ## Wake
 
-Caddy on the Instance Node looks for `app-instance-{id}.awake` under `/dev/shm/orbit/hibernation` with a file matcher that names that directory as its root. A matching request enters a `handle` that runs before the Vite and application handles. When the marker is absent, that handle calls `GET /api/v1/runtime-activations/app-instance/{id}` on `https://gateway.orbit` over WireGuard. The transport trusts the Orbit root CA already published as `/usr/local/share/ca-certificates/orbit-managed-root-ca.crt` with `tls_trusted_ca_certs`.
+Caddy on the Instance's Node checks for the awake marker on every request. When the marker is missing, Caddy calls `GET /api/v1/runtime-activations/app-instance/{id}` on the Gateway over WireGuard, trusting the Orbit root certificate. The caller must be the Instance's Node, or a Node with an [access grant](/cli/node) to it.
 
-A request carrying `X-Orbit-Probe: 1` is exempt from both halves of that mechanism: it never enters the wake handle, so it starts nothing, and `log_skip` keeps it out of the access log, so it never becomes the activity the sweep reads. `log_skip` needs Caddy 2.8 or newer, which is why Orbit installs Caddy from [its own pinned package source](/reference/node-provisioning#package-sources) rather than the Ubuntu archive. [`profile --instance`](/cli/profile) sends that header, which is what lets an operator measure a sleeping Instance without changing whether it sleeps. A request without the header behaves exactly as described above.
+The Gateway answers with a progress page, status 401, headers `X-Orbit-Runtime-Activation-State: pending` and `Retry-After: 1`, and then starts the wake. Caddy shows the page and does not pass the request on. The page polls the original path once a second and loads it when the state header is gone. That load is the first application request.
 
-The Gateway accepts that call only from the Instance's Node. It returns an HTML progress page with status 401, then starts the desired-running Instance Processes after that response. Caddy returns that non-2xx page to the client and does not proxy the site. The page is a black screen with the animated Orbit mark. It sets `X-Orbit-Runtime-Activation-State: pending` and `Retry-After: 1`.
+The wake runs in this order:
 
-Caddy's `forward_auth` sends the browser's original path and query as `X-Forwarded-Uri`. A script on the page requests that same-origin path once a second. The script keeps waiting while the response header is `pending`. It loads that path once the header is missing or the response is a redirect. That load is the first application request. An unsafe forwarded value, including an absolute URL, falls back to `/`.
+1. When the cold marker exists, restore dependencies with `composer install --no-interaction --prefer-dist` and `vp install --frozen-lockfile`. This uses the cold wake timeout.
+2. Start every desired-running Process.
+3. Wait until each one runs. A `vp-dev` Process must answer on its [assigned Vite port](/reference/assigned-vite-ports). An `agentation-mcp` Process must answer `/health` on its port.
+4. Clear the cold marker and write the awake marker.
 
-When the durable cold marker is set, the Gateway restores missing reconstructable dependencies before it starts Processes. Composer runs `composer install --no-interaction --prefer-dist`. JavaScript restore runs `vp install --frozen-lockfile` so Vite+ selects the project's package manager. Soft wake without a cold marker starts Processes only. The Gateway uses the cold wake timeout for restore and the ordinary wake timeout for Process readiness.
+Orbit checks each Process every 0.5 seconds. A fresh Node agent view answers without SSH. Orbit confirms a `failed` answer, or a timeout, over SSH before the wake fails.
 
-For a `vp-dev` preset Process, the Gateway prepares the assigned Vite port and waits for its owned service to answer the Vite client request. An unrelated listener cannot satisfy readiness. Legacy instances without an assignment retain their previous port `5173` check.
+Every intercepted request starts a wake. A request during a running wake gets the same progress page. Its own wake attempt ends quietly when the running wake holds the Process lock. A failed wake keeps the cold marker and stores the error for up to 120 seconds. The next request gets a failure page, status 503, with state `failed`, the error, and a Try again link, and it also starts a new wake. The error shows once. Try again adds `orbit-wake-retry=1` to the path, and its request shows the progress page of the new wake.
 
-For an `agentation-mcp` preset Process, the Gateway waits for `/health` on the assigned Agentation loopback port. The `antigravity-watch` preset has no keep-alive, so idle halt stops it and wake starts it with the rest of the desired-running group.
+### Probe requests
 
-The Gateway checks every 0.5 seconds whether each started Process runs. When its [view of the Node agent](/reference/node-agent#gateway-view) is fresh, the view answers without SSH. It confirms a `failed` answer, or a wake timeout, once over SSH before the wake fails. Without a fresh view, each check runs over SSH.
+A request with `X-Orbit-Probe: 1` skips the wake and is not logged. [`profile --instance`](/cli/profile) sends it, so you can measure a sleeping Instance without waking it or resetting its idle time. `log_skip` needs Caddy 2.8 or newer, which Orbit installs from its [pinned package source](/reference/node-provisioning#package-sources).
 
-After restore, when needed, and after every desired-running Process is running, the Gateway clears the cold marker and then writes the awake marker. A keep-alive Process that is already running is already ready. The next browser refresh finds the marker and Caddy proxies that request, so the first application request already has Vite and its peers.
+### After a reboot
 
-A concurrent wake receives the same progress page. A failed restore or start keeps the cold marker and stores the error. The next intercept returns an HTML failure page with status 503, the same animated mark, the stored error, and a Try again link. That page sets `X-Orbit-Runtime-Activation-State: failed` and does not poll. Try again requests the original path with `orbit-wake-retry=1`, and the Gateway starts another wake. Soft and cold wakes share those pages.
+The awake markers live in `/dev/shm`, so a reboot clears them. Development Process units start with `systemctl start` and are never enabled for boot. The first request after a reboot wakes the Instance.
 
-After host reboot the tmpfs awake markers are gone. App-dev Instance Process units are not enabled for boot, so the first HTTP request wakes the desired-running group.
+## Host directories
 
-## On-demand Process start
+The `app-dev` role and each marker write create these directories before Caddy reloads or reads a marker.
 
-A systemd Process for an Instance on an app-dev Node uses `systemctl start`, never `systemctl enable`. The `process:start` command records `desired_state=running`; `process:stop` records `desired_state=stopped`. Idle halt stops the runtime without changing the desired state.
+| Path | Owner | Mode | Use |
+| --- | --- | --- | --- |
+| `/dev/shm/orbit/hibernation` | `root:caddy` | `0755` | `app-instance-{id}.awake` markers. |
+| `/data/caddy/orbit/hibernation` | `root:caddy` | `2775` | `app-instance-{id}.log` access logs and `app-instance-{id}.cold` markers. |
 
-A Docker Instance Process on app-dev maps restart policy `always` to Docker `unless-stopped` so an explicit idle stop survives a Docker daemon restart.
+Orbit sets each parent directory to `0755` so the `caddy` user can reach them. The Gateway validates each Caddy build as the Caddy user, so new log files stay writable by the service.
+
+## Docker Processes
+
+A Docker Process of a development Instance maps restart policy `always` to Docker `unless-stopped`. An idle stop then survives a Docker daemon restart.
 
 ## Inspect
 
-Doctor compares desired Process state with the observed systemd or Docker status. When the awake marker is absent, Doctor does not report a state mismatch for a non-keep-alive Process that is desired running and observed stopped. A keep-alive Process that is desired running and down remains a state mismatch. Doctor does not start or stop the Processes.
+While the awake marker is missing, [Doctor](/cli/doctor) does not report a desired-running, stopped Process as drift, unless it is keep-alive. `process:list --instance=ID` shows desired and observed states and `keep_alive`.
 
-`orbit process:list --instance=ID` shows the same desired and observed states, including `keep_alive`.
+## Why it works this way
 
-`app-dev` role convergence creates the hibernation marker and log directories before it requests a [Node Caddy build](/reference/caddy-configuration#node-caddy-build). The build validates its candidate as the Caddy service user. Validation can create access logs; running it as root would leave new log files unwritable by the service.
+These reasons explain the design. Check them before you propose a change.
+
+### Restart policy is not keep-alive
+
+A restart policy covers crashes while a unit runs. Treating it as a reason to stay awake was rejected. `keep_alive` is a separate field.
+
+### Schedules keep running
+
+Schedules are independent systemd timers, and they must fire on time. So hibernation never pauses them.
+
+### PHP-FPM stays up
+
+All development sites of one PHP version share one master, and each pool already ends idle workers. Stopping the service or removing a pool would affect every site.
+
+### No start at boot
+
+Enabling development units for boot would start every Instance without a request. So units start only on demand.
+
+### The first response is a page
+
+When the intercept returned 200, Caddy would pass the request to an application whose Processes are not ready. So the intercept returns the progress page, and the reload after the wake is the first application request.
+
+### One page for both tiers
+
+A soft wake and a cold wake show the same progress and failure pages. Separate pages were rejected, because Caddy owns one intercept contract.
+
+### Keep-alive blocks the prune
+
+A keep-alive Process can still need `vendor` or `node_modules`. So Orbit never prunes an Instance with one.
