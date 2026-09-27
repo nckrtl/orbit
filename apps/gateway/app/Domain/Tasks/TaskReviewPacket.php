@@ -68,6 +68,7 @@ final readonly class TaskReviewPacket
         private bool $diffAvailable = true,
         private ?array $diffCounts = null,
         private string $resolution = '',
+        private ?int $threadId = null,
     ) {}
 
     public function render(): string
@@ -95,7 +96,7 @@ final readonly class TaskReviewPacket
             $this->section('Handoff', $this->handoff()),
         ], static fn (string $part): bool => $part !== ''));
         $retrieval = $this->retrieval();
-        $closing = TaskRunInstructions::reviewer($this->opensPullRequest, $this->deliverables);
+        $closing = TaskRunInstructions::reviewer($this->opensPullRequest, $this->deliverables, $this->threadId);
 
         return $this->withinLimit(
             implode("\n\n", [...$before, $this->diffSection($before, [$retrieval, $closing]), $retrieval, $closing]),

@@ -58,10 +58,7 @@ export function AgentSessions({
     const query = useQuery({ ...taskAgentsQuery(groupId), refetchInterval: useTaskPoll() });
     const [selectedId, setSelectedId] = useState<number | null>(null);
     const sessions = (query.data ?? []).filter(
-        (session) =>
-            subtaskId === undefined ||
-            session.role === "reviewer" ||
-            String(session.task_id) === subtaskId,
+        (session) => subtaskId === undefined || String(session.task_id) === subtaskId,
     );
     const selected =
         sessions.find((session) => session.id === selectedId) ??

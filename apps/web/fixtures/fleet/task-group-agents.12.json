@@ -7,7 +7,7 @@
             {
                 "id": 21,
                 "task_group_id": 12,
-                "task_id": null,
+                "task_id": 31,
                 "node_id": 2,
                 "role": "reviewer",
                 "model": "claude-opus-5-5",

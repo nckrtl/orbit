@@ -22,6 +22,7 @@ final readonly class TaskRunReceipt
         public ?TaskRunPullRequest $pullRequest = null,
         public ?string $question = null,
         public array $deliverables = [],
+        public ?int $threadId = null,
     ) {}
 
     public static function parse(string $contents): self
@@ -44,7 +45,25 @@ final readonly class TaskRunReceipt
             }
         }
 
-        return new self($hash, $outcome, trim($data['summary']), TaskRunPullRequest::fromArray($data['pull_request'] ?? null), $question, self::confirmations($data['deliverables'] ?? null));
+        return new self($hash, $outcome, trim($data['summary']), TaskRunPullRequest::fromArray($data['pull_request'] ?? null), $question, self::confirmations($data['deliverables'] ?? null), self::threadId($data['thread'] ?? null));
+    }
+
+    /** The same receipt, named as written by this Orbit thread. The content hash stays the hash of the file. */
+    public function withThread(int $threadId): self
+    {
+        return new self($this->hash, $this->outcome, $this->summary, $this->pullRequest, $this->question, $this->deliverables, $threadId);
+    }
+
+    private static function threadId(mixed $value): ?int
+    {
+        if (is_int($value) && $value > 0) {
+            return $value;
+        }
+        if (is_string($value) && preg_match('/\A[1-9][0-9]*\z/', $value) === 1) {
+            return (int) $value;
+        }
+
+        return null;
     }
 
     /** @return array<string, string> */

@@ -29,6 +29,9 @@ final readonly class TaskSessionObserver
         $actingRole = $task->status === TaskStatus::Reviewing ? TaskThreadRole::Reviewer : TaskThreadRole::Implementer;
         $actingThreadWorks = false;
         foreach ($records as $thread) {
+            if (str_starts_with($thread->external_id, TaskAgentSpawner::PendingPrefix)) {
+                continue;
+            }
             $role = TaskThreadRole::tryFrom($thread->role);
             if ($role === null || ! $this->includeThread($thread, $role, $task, $group, $reviewerId)) {
                 continue;
@@ -81,7 +84,7 @@ final readonly class TaskSessionObserver
     {
         $fallback = null;
         foreach ($records as $thread) {
-            if ($thread->role !== TaskThreadRole::Reviewer->value || $thread->task_id !== $task->id) {
+            if ($thread->role !== TaskThreadRole::Reviewer->value || $thread->task_id !== $task->id || str_starts_with($thread->external_id, TaskAgentSpawner::PendingPrefix)) {
                 continue;
             }
             $fallback = $thread->id;

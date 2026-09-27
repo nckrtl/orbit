@@ -374,7 +374,7 @@ Doctor expects the same final state. A non-visitable task workspace is healthy i
 
 ## Agent viewer
 
-The task group page shows an Agents section below Subtasks. Vertical tabs select a reviewer thread or an implementer. A subtask page shows its implementer conversations and the reviewer thread for that subtask. Finished conversations remain available. Activity and connection health have separate labels; a disconnected viewer retains the last known activity state.
+The task group page shows an Agents section below Subtasks. Vertical tabs list every thread: the planner, each subtask reviewer, and each implementer. A subtask page shows only that subtask's implementer and that subtask's reviewer. The planner and every other reviewer stay on the group page. Finished conversations remain available. Activity and connection health have separate labels; a disconnected viewer retains the last known activity state.
 
 `GET /api/v1/task-groups/{group}/agents` lists persisted threads, including driver, external ID, state, observation time, errors, and metrics. Metrics include `tokens` and the [thread token metrics](#thread-token-metrics). Each split field is present and null when the driver did not report it. `GET /api/v1/task-groups/{group}/agents/{session}/stream` streams normalized conversation data for an Orbit thread ID. Both routes require Gateway access and an enabled tasks extension. Runtime credentials stay server-side. A missing original Node leaves the link visible but unavailable for streaming.
 
@@ -414,7 +414,13 @@ The T3 provider instance is selected from the model: Claude model names use `cla
 
 When an implementer is idle, done, or asking for input, the Gateway reads the implementer's run receipt and `composer.json` at the workspace root, which must define a `check` script. A pending input fails on its own. When these items pass, Orbit runs the Project check itself.
 
-Before each agent turn, the Gateway installs the run script at `.git/orbit/run`, writes `.git/orbit/turn.json` with the role of the turn and the subtask's deliverables, and removes any earlier receipt. Git never tracks `.git/orbit/`. The agent ends its turn with `.git/orbit/run --outcome=OUTCOME --summary="…"`. An implementer uses `ready_for_review` or `blocked`. A reviewer uses `approved`, `changes_requested`, or `blocked`. The script refuses an outcome for the other role, an empty summary, a repeated flag, and unknown arguments. It also needs a `--deliverable` confirmation for each [deliverable](#confirm-deliverables) the outcome requires. It writes `.git/orbit/run.json` atomically. [ADR 0121](/decisions/0121-end-agent-turns-with-a-run-receipt) records the decision.
+Before each agent turn, the Gateway installs the run script at `.git/orbit/run`, writes `.git/orbit/turn.json` with the role of the turn, the subtask's deliverables, and the acting thread's Orbit id, and removes any earlier receipt. Git never tracks `.git/orbit/`. The agent ends its turn with `.git/orbit/run --thread=ID --outcome=OUTCOME --summary="…"`. `ID` is the Orbit thread id from that turn's instructions. An implementer uses `ready_for_review` or `blocked`. A reviewer uses `approved`, `changes_requested`, or `blocked`.
+
+The script refuses an outcome for the other role, an empty summary, a repeated flag, and unknown arguments. It also needs a `--deliverable` confirmation for each [deliverable](#confirm-deliverables) the outcome requires. It writes `.git/orbit/run.json` atomically, including the `thread` it was given. [ADR 0121](/decisions/0121-end-agent-turns-with-a-run-receipt) records the receipt.
+
+The tick applies that receipt only when `thread` is the acting thread. The acting thread is the subtask's reviewer, or its implementer. A turn file that still names the previous reviewer does not apply that reviewer's receipt, and it does not drop a receipt from the acting thread.
+
+A receipt from another reviewer, or a receipt with no thread id, is not applied when the acting thread is known. An implementer turn is bound the same way. A legacy turn file with no thread id is rewritten for that thread, and Orbit sends the bound run command instead of applying the unidentified receipt. If the turn file cannot be written for a replacement reviewer, that replacement does not start and the group pointer stays. [ADR 0169](/decisions/0169-start-each-subtask-review-in-a-fresh-thread) records the thread binding.
 
 Implementers receive standing instructions to complete their work autonomously. They may create, modify, reset, and delete disposable fixtures within their task's allocated environment, including Routes and publications. They verify task ownership and the target environment before deletion, use the required CLI confirmation flags, and follow the environment's lease and cleanup rules. They resolve routine test prerequisites themselves. This authority does not extend to live or shared resources or another task's fixtures.
 
@@ -468,11 +474,11 @@ When one Pi event becomes several entries, only the last carries the cursor, so 
 
 Each subtask review starts a fresh reviewer thread on the group's reviewer driver, model, and effort. The thread title is `Orbit task #{group id} · Review: {subtask title}`. Its role is `reviewer`, and its `task_id` is that subtask. The group's `reviewer_agent_thread_id` then points at this thread. A `changes_requested` re-review of the same subtask continues this thread. A `blocked` resolution continues it too, when that thread exists. The next subtask starts another thread. [ADR 0169](/decisions/0169-start-each-subtask-review-in-a-fresh-thread) records the decision.
 
-When that reviewer thread does not exist yet, the resolution is not sent to the planner or to an earlier subtask's reviewer. Assistance clears, the review stays unrequested, and the next tick starts the fresh reviewer with the resolution in its opening packet.
+When that reviewer thread does not exist yet, the resolution is not sent to the planner, to an earlier subtask's reviewer, or to a reserved reviewer row that has not started. Assistance clears, the review stays unrequested, and the next tick starts the fresh reviewer with the resolution in its opening packet.
 
 The planner thread is not a reviewer. A planning group keeps it for planning. Its `task_id` stays null, and its title stays `Orbit task #{group id} · Planner: {title}`. Before the first review, `reviewer_agent_thread_id` points at that planner thread, which is how the group remembers it. The first review replaces the pointer with the new reviewer. The scheduler sends a review only to the thread it started for that subtask, or continues that thread. It never sends a review to the planner.
 
-The opening turn is a review packet of at most 16,000 characters, about 4 thousand tokens at four characters per token. No part is exempt. A part under its cap leaves the spare characters for the diff body. The diff body also stops at 16,384 bytes. The two retrieval commands are reserved first, at most 1,000 characters, and are never cut.
+The opening turn is a review packet of at most 16,000 characters, about 4 thousand tokens at four characters per token. No part is exempt. A part under its cap leaves the spare characters for the diff body. The diff body also stops at 16,384 bytes. The two retrieval commands are reserved first, at most 1,000 characters, and are never cut. The thread id is written into the generated closing instructions before that cap. Diff text and brief text are not rewritten to add it.
 
 | Part | Cap | When it does not fit |
 | --- | --- | --- |
@@ -529,7 +535,7 @@ When the Project's task check runs the `composer check` command, not a longer co
 
 A pending input fails `waiting_for_input` in code. A thread state the rubric does not recognize waits. The rubric makes no model call. When every item, the Project check, and the [deliverables](#verify-deliverables) pass, the Gateway sets the task to `reviewing`. [ADR 0114](/decisions/0114-judge-task-completion-as-separate-checks) owns this rubric.
 
-`assistance_requested` and `resolution` comments update the assistance flag and keep their history. Status stays the current phase for those two comments. The Gateway sends a non-empty resolution to the blocked thread: the reviewer thread whose `task_id` is this subtask when the task is `reviewing`, otherwise the task's implementer. When that reviewer thread exists, the resolution counts as its next review request, so the tick does not send another.
+`assistance_requested` and `resolution` comments update the assistance flag and keep their history. Status stays the current phase for those two comments. The Gateway sends a non-empty resolution to the blocked thread: the reviewer thread whose `task_id` is this subtask when the task is `reviewing`, otherwise the task's implementer. A reserved reviewer row that has not started is not that thread. When that reviewer thread exists, the resolution counts as its next review request, so the tick does not send another.
 
 When that reviewer thread does not exist, the Gateway does not use the group's reviewer pointer. It clears assistance without marking the review as requested, and the next tick starts a fresh reviewer whose opening packet includes the resolution.
 
@@ -592,7 +598,7 @@ Typed comments are the workflow record. They preserve the full body, author, tim
 
 Only `assistance_requested` and `resolution` comments come through the API. They do not create a separate validation-evidence record or API. `assistance_requested` flags the task and group, retains the active slot, and is notified once. A non-empty `resolution` is sent only when that subtask is already asking for assistance. The Gateway then clears the flag and the communication failures.
 
-While the subtask is `running`, the resolution continues the implementer and starts the next completion attempt. While it is `reviewing`, the resolution continues the reviewer thread whose `task_id` is this subtask, and that message counts as the next review request. When no such reviewer thread exists, the Gateway does not send the resolution to the group's reviewer pointer. That pointer may still name the planner or an earlier subtask's reviewer.
+While the subtask is `running`, the resolution continues the implementer and starts the next completion attempt. While it is `reviewing`, the resolution continues the reviewer thread whose `task_id` is this subtask, and that message counts as the next review request. A reserved reviewer row that has not started is not that thread. When no such reviewer thread exists, the Gateway does not send the resolution to the group's reviewer pointer. That pointer may still name the planner or an earlier subtask's reviewer.
 
 In that case, assistance clears and the review stays unrequested. The next tick starts a fresh reviewer whose opening packet includes the resolution. A failed send to an existing thread leaves the task asking. A resolution posted before the flag is set is stored and not sent.
 

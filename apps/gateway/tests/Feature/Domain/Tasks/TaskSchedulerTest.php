@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\Tasks\ShowAgentThreadsAction;
+use App\Actions\Tasks\StoreTaskCommentAction;
 use App\Domain\AppInstances\AppInstanceDestinationGuard;
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\AppInstances\DevelopmentAppInstanceSourceLifecycle;
@@ -15,6 +16,7 @@ use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\AgentDriverRegistry;
+use App\Domain\Tasks\AgentObservation;
 use App\Domain\Tasks\AgentSpawner;
 use App\Domain\Tasks\AgentThreadState;
 use App\Domain\Tasks\CoderSettleNotifier;
@@ -57,6 +59,7 @@ use App\Domain\Tasks\TaskSettleMetricsCollector;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskThreadObservation;
 use App\Domain\Tasks\TaskThreadRole;
+use App\Domain\Tasks\TaskWorkspaceDiffReader;
 use App\Domain\Tasks\TaskWorkspaceSigner;
 use App\Domain\Tasks\TaskWorkspaceStateReader;
 use App\Infrastructure\Tasks\T3\NullT3ThreadReader;
@@ -839,6 +842,94 @@ it('retries a review when the diff cannot be read instead of sending an empty ch
         ->and($task->fresh()?->review_notified_attempt)->toBeNull()
         ->and($task->fresh()?->communication_failures)->toBe(1)
         ->and($driver->calls)->toBe([]);
+});
+
+it('holds a review resolution when diff reads fail on a reserved reviewer and retries it', function (): void {
+    $app = scheduler_app('reserved-review');
+    $node = scheduler_node('reserved-review-node', '10.44.0.79');
+    $instance = scheduler_instance($app, $node, 'reserved');
+    $group = TaskGroup::query()->create([
+        'app_id' => $app->id,
+        'title' => 'Reserved review',
+        'brief' => 'The diff read fails until the operator answers.',
+        'status' => TaskGroupStatus::Running,
+    ]);
+    $group->taskable()->associate($instance);
+    $group->save();
+    $task = Task::query()->create([
+        'task_group_id' => $group->id,
+        'position' => 1,
+        'title' => 'Review',
+        'brief' => 'Review it.',
+        'status' => TaskStatus::Running,
+        'subtask_start_commit' => str_repeat('a', 40),
+    ]);
+    test_agent_thread($group, 'implementer-reserved', $task);
+    $diff = new class implements TaskReviewDiff
+    {
+        public bool $fail = true;
+
+        public function read(AppInstance $instance, string $startCommit): array
+        {
+            if ($this->fail) {
+                throw new TaskReviewDiffException('The review diff could not be read.');
+            }
+
+            return [
+                'files' => [],
+                'diff' => '',
+                'files_complete' => true,
+                'diff_available' => true,
+                'summary' => ['files' => 0, 'insertions' => 0, 'deletions' => 0],
+            ];
+        }
+    };
+    $driver = new FakeAgentDriver('t3');
+    $driver->observation = new AgentObservation(AgentThreadState::Idle);
+    app()->instance(TaskReviewDiff::class, $diff);
+    app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
+    app()->instance(TaskWorkspaceDiffReader::class, new NullTaskWorkspaceDiffReader);
+    app()->instance(CoderSettleNotifier::class, new NullCoderSettleNotifier);
+    app()->forgetInstance(AgentSpawner::class);
+    app()->forgetInstance(TaskReviewPacketBuilder::class);
+    app(TaskExtensionState::class)->enable();
+
+    app(TaskScheduler::class)->settleImplementer($task);
+    for ($attempt = 0; $attempt < 6 && $task->fresh()?->assistance_requested !== true; $attempt++) {
+        app(TaskScheduler::class)->tick();
+    }
+    $task->refresh();
+    $reserved = AgentThread::query()->where('task_id', $task->id)->where('role', 'reviewer')->sole();
+
+    expect($task->assistance_requested)->toBeTrue()
+        ->and($task->communication_failures)->toBeGreaterThanOrEqual(5)
+        ->and($task->review_notified_attempt)->toBeNull()
+        ->and($reserved->external_id)->toStartWith(TaskAgentSpawner::PendingPrefix)
+        ->and($driver->calls)->toBe([]);
+
+    $comment = app(StoreTaskCommentAction::class)->execute($task, [
+        'type' => 'resolution', 'body' => 'Ship the names as they are.', 'author' => 'operator',
+    ]);
+    $task->refresh();
+
+    expect($driver->calls)->toBe([])
+        ->and($task->assistance_requested)->toBeFalse()
+        ->and($task->review_notified_attempt)->toBeNull()
+        ->and($task->resolution_delivered_comment_id)->toBeNull()
+        ->and($comment->review_attempt)->toBe($task->review_attempt);
+
+    $diff->fail = false;
+    app(TaskScheduler::class)->tick();
+    $task->refresh();
+    $reviewer = AgentThread::query()->where('task_id', $task->id)->where('role', 'reviewer')->sole();
+
+    expect($reviewer->external_id)->not->toStartWith(TaskAgentSpawner::PendingPrefix)
+        ->and($task->review_notified_attempt)->toBe($task->review_attempt)
+        ->and($task->resolution_delivered_comment_id)->toBe($comment->id)
+        ->and($task->taskGroup->reviewer_agent_thread_id)->toBe($reviewer->id)
+        ->and($driver->calls[0]['operation'] ?? null)->toBe('create')
+        ->and($driver->calls[0]['prompt'] ?? '')->toContain('Ship the names as they are.')
+        ->and(array_column($driver->calls, 'operation'))->not->toContain('send');
 });
 
 it('reviews a subtask with a missing start commit from the previous approved commit', function (): void {
@@ -2063,7 +2154,7 @@ it('refuses a review when the reviewer changed the workspace and asks for assist
         FakeTaskRunReceipts::contents('approved', 'Checked the models.'),
     ]);
     $checks->tree = str_repeat('c', 40);
-    $reminder = 'Orbit could not confirm the review is complete. '.TaskScheduler::WorkspaceChangedReminder.' '.TaskRunInstructions::reviewer();
+    $reminder = 'Orbit could not confirm the review is complete. '.TaskScheduler::WorkspaceChangedReminder.' '.TaskRunInstructions::reviewer(threadId: $group->reviewer_agent_thread_id);
 
     app(TaskScheduler::class)->tick();
 

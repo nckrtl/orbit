@@ -7,6 +7,7 @@ namespace App\Actions\Tasks;
 use App\Domain\Tasks\AgentDriverException;
 use App\Domain\Tasks\AgentDriverRegistry;
 use App\Domain\Tasks\CoderSettleNotifier;
+use App\Domain\Tasks\TaskAgentSpawner;
 use App\Domain\Tasks\TaskCommentType;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskThreadRole;
@@ -83,7 +84,8 @@ final readonly class StoreTaskCommentAction
         $reviewers = AgentThread::query()
             ->where('task_group_id', $task->task_group_id)
             ->where('task_id', $task->id)
-            ->where('role', TaskThreadRole::Reviewer->value);
+            ->where('role', TaskThreadRole::Reviewer->value)
+            ->where('external_id', 'not like', TaskAgentSpawner::PendingPrefix.'%');
         $pointed = $task->taskGroup()->value('reviewer_agent_thread_id');
         if (is_numeric($pointed)) {
             $match = (clone $reviewers)->whereKey((int) $pointed)->first();

@@ -17,7 +17,7 @@ final readonly class TaskReviewPacketBuilder
 {
     public function __construct(private TaskReviewDiff $diffs) {}
 
-    public function build(Task $task, bool $continued): string
+    public function build(Task $task, bool $continued, ?int $threadId = null): string
     {
         $task->loadMissing(['taskGroup.app', 'taskGroup.taskable']);
         $group = $task->taskGroup;
@@ -53,6 +53,7 @@ final readonly class TaskReviewPacketBuilder
             diffAvailable: $diffAvailable,
             diffCounts: $diff['summary'],
             resolution: $continued ? '' : $this->pendingResolution($task),
+            threadId: $threadId,
         )->render();
     }
 

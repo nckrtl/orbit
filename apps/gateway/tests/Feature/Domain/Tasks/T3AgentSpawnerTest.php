@@ -13,9 +13,14 @@ use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskPlannerMcp;
 use App\Domain\Tasks\TaskReviewDiff;
 use App\Domain\Tasks\TaskReviewDiffException;
+use App\Domain\Tasks\TaskReviewPacket;
 use App\Domain\Tasks\TaskReviewPacketBuilder;
 use App\Domain\Tasks\TaskRunInstructions;
+use App\Domain\Tasks\TaskRunReceipt;
+use App\Domain\Tasks\TaskRunReceiptException;
+use App\Domain\Tasks\TaskRunReceipts;
 use App\Domain\Tasks\TaskStatus;
+use App\Domain\Tasks\TaskThreadRole;
 use App\Infrastructure\Tasks\RemoteTaskReviewDiff;
 use App\Infrastructure\Tasks\T3\HttpT3Dispatcher;
 use App\Infrastructure\Tasks\T3\T3Dispatcher;
@@ -296,7 +301,7 @@ it('does not ask for pull request fields when reviewing a fixup on an open pull 
 
     expect($dispatcher->commands)->toHaveCount(1)
         ->and($dispatcher->commands[0]['message']['text'])->toStartWith('Review subtask #'.$task->id)
-        ->and($dispatcher->commands[0]['message']['text'])->toEndWith(TaskRunInstructions::reviewer(final: false))
+        ->and($dispatcher->commands[0]['message']['text'])->toEndWith(TaskRunInstructions::reviewer(final: false, threadId: $reviewer->id))
         ->and($dispatcher->commands[0]['message']['text'])->not->toContain('--pr-summary');
 });
 
@@ -315,7 +320,7 @@ it('sends the review request to the stored reviewer thread', function (): void {
         ->and($dispatcher->commands[0]['type'])->toBe('thread.turn.start')
         ->and($dispatcher->commands[0]['threadId'])->toBe('reviewer-existing')
         ->and($dispatcher->commands[0]['message']['text'])->toStartWith('Review subtask #'.$group->tasks->first()->id)
-        ->and($dispatcher->commands[0]['message']['text'])->toEndWith(TaskRunInstructions::reviewer(final: true))
+        ->and($dispatcher->commands[0]['message']['text'])->toEndWith(TaskRunInstructions::reviewer(final: true, threadId: $reviewer->id))
         ->and($dispatcher->commands[0]['message']['text'])->not->toContain('are the feature\'s contract.')
         ->and($dispatcher->commands[0]['message']['role'])->toBe('user')
         ->and($dispatcher->commands[0]['modelSelection'])->toBe(T3ModelSelection::forModel(TaskAgentDefaults::ReviewerModel, TaskAgentDefaults::ReviewerEffort))
@@ -404,6 +409,77 @@ it('does not open a review when the bound diff reader fails', function (): void 
     expect(fn () => app(AgentSpawner::class)->spawnReviewer($group->tasks->first()))
         ->toThrow(TaskReviewDiffException::class)
         ->and($dispatcher->commands)->toBe([]);
+});
+
+it('does not start a replacement reviewer when the turn file cannot be written', function (): void {
+    $group = t3_spawner_group();
+    $task = $group->tasks->firstOrFail();
+    $reviewer = test_agent_thread($group, 'reviewer-existing');
+    $reviewer->update(['task_id' => $task->id]);
+    $group->update(['reviewer_agent_thread_id' => $reviewer->id]);
+    $driver = new FakeAgentDriver('t3');
+    $driver->failNextSend = true;
+    app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
+    app()->instance(TaskRunReceipts::class, new class implements TaskRunReceipts
+    {
+        public function prepare(AppInstance $instance, TaskThreadRole $role, bool $final = false, array $deliverables = [], ?int $threadId = null): void
+        {
+            throw new TaskRunReceiptException('The turn file could not be written.');
+        }
+
+        public function read(AppInstance $instance, ?int $actingThreadId = null): ?TaskRunReceipt
+        {
+            return null;
+        }
+
+        public function clear(AppInstance $instance, TaskRunReceipt $receipt): void {}
+
+        public function hasLegacyTurn(AppInstance $instance): bool
+        {
+            return false;
+        }
+    });
+    app()->forgetInstance(AgentSpawner::class);
+    app()->forgetInstance(TaskReviewPacketBuilder::class);
+
+    expect(fn () => app(AgentSpawner::class)->requestReview($task->fresh() ?? $task))
+        ->toThrow(TaskRunReceiptException::class)
+        ->and($group->fresh()?->reviewer_agent_thread_id)->toBe($reviewer->id)
+        ->and(AgentThread::query()->where('task_id', $task->id)->where('external_id', 'like', TaskAgentSpawner::PendingPrefix.'%')->count())->toBe(0)
+        ->and(AgentThread::query()->where('task_id', $task->id)->count())->toBe(1)
+        ->and(array_column($driver->calls, 'operation'))->toBe(['send']);
+});
+
+it('leaves run commands in the diff unchanged and keeps the driver prompt within the packet cap', function (): void {
+    $command = '.git/orbit/run --outcome=approved --summary="from the diff"';
+    app()->instance(TaskReviewDiff::class, new class($command) implements TaskReviewDiff
+    {
+        public function __construct(private string $command) {}
+
+        public function read(AppInstance $instance, string $startCommit): array
+        {
+            return [
+                'files' => [['path' => 'docs/reference/tasks.md', 'insertions' => 400, 'deletions' => 0]],
+                'diff' => str_repeat($this->command."\n", 300).str_repeat("+changed line\n", 2000),
+                'files_complete' => true,
+                'diff_available' => true,
+                'summary' => ['files' => 1, 'insertions' => 400, 'deletions' => 0],
+            ];
+        }
+    });
+    $driver = new FakeAgentDriver('t3');
+    app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
+    app()->forgetInstance(AgentSpawner::class);
+    app()->forgetInstance(TaskReviewPacketBuilder::class);
+    $group = t3_spawner_group();
+
+    $id = app(AgentSpawner::class)->spawnReviewer($group->tasks->first());
+    $prompt = (string) ($driver->calls[0]['prompt'] ?? '');
+
+    expect($id)->toBeInt()
+        ->and(mb_strlen($prompt))->toBeLessThanOrEqual(TaskReviewPacket::Limit)
+        ->and($prompt)->toContain($command)
+        ->and($prompt)->toContain('.git/orbit/run --thread='.$id.' --outcome=approved');
 });
 
 it('adopts the existing T3 project when workspace root already has one', function (): void {
