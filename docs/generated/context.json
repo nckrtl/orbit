@@ -2493,7 +2493,9 @@
             "path": "docs/reference/app-dev-runtime-hibernation.md",
             "title": "App-dev runtime hibernation",
             "kind": "reference",
-            "components": [],
+            "components": [
+                "apps/gateway"
+            ],
             "concepts": [
                 "Activity",
                 "Doctor",
@@ -2502,13 +2504,9 @@
                 "Node",
                 "Node agent",
                 "Process",
-                "Project",
                 "Role"
             ],
-            "governing_adrs": [
-                "0074",
-                "0075"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/reference/app-processes-and-schedules.md",
@@ -2635,18 +2633,18 @@
             "path": "docs/reference/assigned-vite-ports.md",
             "title": "Assigned Vite ports",
             "kind": "reference",
-            "components": [],
+            "components": [
+                "apps/gateway"
+            ],
             "concepts": [
+                "Cluster",
                 "Gateway",
                 "Instance",
                 "Node",
                 "Process",
-                "Project",
                 "Route"
             ],
-            "governing_adrs": [
-                "0078"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/reference/browser-access.md",
@@ -3023,28 +3021,12 @@
             "path": "docs/reference/instance-dependencies.md",
             "title": "Instance dependencies",
             "kind": "reference",
-            "components": [],
-            "concepts": [
-                "Deployment",
-                "Gateway",
-                "Instance",
-                "Node",
-                "Process",
-                "Project",
-                "Route",
-                "Schedule",
-                "Task"
+            "components": [
+                "apps/cli",
+                "apps/gateway"
             ],
-            "governing_adrs": [
-                "0089"
-            ]
-        },
-        {
-            "path": "docs/reference/instance-dependency-contracts.md",
-            "title": "Gateway dependency contracts",
-            "kind": "reference",
-            "components": [],
             "concepts": [
+                "Access grant",
                 "Deployment",
                 "Gateway",
                 "Instance",
@@ -3054,9 +3036,24 @@
                 "Route",
                 "Schedule"
             ],
-            "governing_adrs": [
-                "0089"
-            ]
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/instance-dependency-contracts.md",
+            "title": "Dependency contracts",
+            "kind": "reference",
+            "components": [
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Gateway",
+                "Instance",
+                "Node",
+                "Project",
+                "Route"
+            ],
+            "governing_adrs": []
         },
         {
             "path": "docs/reference/instance-logs.md",
@@ -3252,13 +3249,13 @@
             "path": "docs/reference/php-runtime.md",
             "title": "PHP runtimes",
             "kind": "reference",
-            "components": [],
+            "components": [
+                "apps/gateway"
+            ],
             "concepts": [
                 "Activity",
-                "Cluster",
                 "Deployment",
                 "Doctor",
-                "Extension",
                 "Gateway",
                 "Instance",
                 "Node",
@@ -3266,14 +3263,9 @@
                 "Project",
                 "Role",
                 "Route",
-                "Schedule",
-                "Task"
+                "Schedule"
             ],
-            "governing_adrs": [
-                "0021",
-                "0034",
-                "0045"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/reference/pi-server.md",

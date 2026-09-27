@@ -1,225 +1,147 @@
 ---
 title: "Instance dependencies"
-description: "Index resolved dependencies and update development instances within their declared version constraints."
+description: "Record the resolved Composer and JavaScript dependencies of each Instance, and update a development Instance within its declared constraints."
+covers:
+  - apps/gateway/app/Actions/AppInstances/Dependencies/{ScanInstanceDependenciesAction,UpdateInstanceDependenciesAction,AccessInstanceDependenciesAction}.php
+  - apps/gateway/app/Http/Controllers/Api/{AppInstanceDependenciesController,ResolveDependencyInstanceController,ResolveDirectoryInstanceController}.php
+  - apps/cli/app/Commands/Dependencies/**
 ---
 
 # Instance dependencies
 
-Scan an Instance to record its resolved Composer and JavaScript dependencies in the Gateway. Update a development instance to resolve newer versions within its declared constraints, then refresh its inventory. [ADR 0089](/decisions/0089-index-appinstance-dependencies) owns the inventory and update boundaries.
+The Gateway keeps an inventory of the resolved dependencies of each Instance. It reads the root manifests and lockfiles, so the inventory works while dependencies are [pruned](/reference/app-dev-runtime-hibernation#dependency-prune). On a development Instance, Orbit can also update dependencies within their declared version constraints. [Dependency contracts](/reference/instance-dependency-contracts) holds the reader rules, stored tables, and response shapes.
 
-## What the inventory describes
+## What the inventory holds
 
-The inventory belongs to an Instance. Two instances of the same Project can use different versions. A Project summary combines its instances without assigning one version to the whole Project.
+The inventory belongs to one Instance. Two Instances of a Project can resolve different versions.
 
-Orbit reads the root manifests and lockfiles. A development scan reads the recorded checkout; a production scan reads the selected release. The root is the project directory, not its public web directory. Nested projects and monorepo workspaces are unsupported.
+A development scan reads the recorded checkout. A production scan reads the selected release. Both read the project root, not the web root. Orbit reads only these files:
 
-| Source | Meaning |
-| --- | --- |
-| `composer.json` and `package.json` | Direct requirements, version constraints, and development scope. |
-| Composer and JavaScript lockfiles | Exact resolved versions and package relationships. |
-| Selected checkout or release | The source represented by the observation. |
-
-An inventory records locked versions. It does not prove that packages are installed or that an instance is vulnerable. An idle development instance retains its dependency inventory when Orbit removes reconstructable directories. See [App-dev runtime hibernation](/reference/app-dev-runtime-hibernation).
-
-## Package identity and relationships
-
-The Gateway keeps one dependency identity per ecosystem and canonical package name. The ecosystems are `composer` and `npm`; npm, pnpm, and Bun are supported JavaScript package managers, not separate package identities. Used versions belong to instance observations.
-
-An instance can resolve several versions of one package. Orbit preserves distinct resolutions and the relationships that introduce them. Version strings and source references retain their meaning; a branch reference is not converted into a release version.
-
-| Relationship or scope | Meaning |
-| --- | --- |
-| Direct | The root manifest declares the dependency. |
-| Transitive | Another package requires the dependency. |
-| Peer | A package expects a compatible dependency supplied by its consumer. |
-| Development | The dependency is required for development, testing, or building. |
-| Regular | The dependency is reachable from a regular root requirement. |
-
-These properties can overlap. A package can have direct and transitive paths, or both regular and development paths. A peer requirement alone does not prove a resolved package exists. Optional requirements and unresolved peers retain their relationship without inventing an installed version.
-
-The inventory includes development dependencies and preserves requirement paths. Those paths explain which direct requirement introduces a transitive package. Scan results retain source provenance when available, without credentials or authenticated source URLs.
-
-## Supported root lockfiles
-
-Each parser reads data only. It does not load project code, run a package manager, or query a registry. The supported formats are:
-
-| Ecosystem | Root files | Supported format |
+| Ecosystem | Files | Supported format |
 | --- | --- | --- |
-| Composer | `composer.json`, `composer.lock` | Composer 1 and 2 JSON lock structure with `packages` and `packages-dev`; Composer has no lockfile format version field. Preserve aliases, source references, and platform or virtual requirements without inventing package resolutions. |
-| npm | `package.json`, `package-lock.json` or `npm-shrinkwrap.json` | `lockfileVersion` 2 and 3 using the `packages` map. Shrinkwrap takes precedence. Version 1 is unsupported. |
-| pnpm | `package.json`, `pnpm-lock.yaml` | `lockfileVersion` 9.0, one root importer (`.`), package records and snapshots, including peer context. Earlier versions are unsupported. |
-| Bun | `package.json`, `bun.lock` | Text JSONC lock with `lockfileVersion` 1 or 2 and only its root workspace. Bun 1.4 writes version 2. Binary `bun.lockb` and version 3 are unsupported. |
+| Composer | `composer.json`, `composer.lock` | Composer 1 and 2 locks. |
+| npm | `package.json`, `package-lock.json` or `npm-shrinkwrap.json` | `lockfileVersion` 2 and 3. Shrinkwrap wins. |
+| pnpm | `package.json`, `pnpm-lock.yaml` | `lockfileVersion` 9.0 with one root importer. |
+| Bun | `package.json`, `bun.lock` | Text lock, `lockfileVersion` 1 or 2. |
 
-npm bundled dependency names (`bundleDependencies` / `bundledDependencies`) may lack separate lock entries. Those edges stay optional with a null target. The reader ignores `workspaces` metadata on transitive package records. Only the project root or lock root rejects workspace layouts.
+npm, pnpm, and Bun all record packages in the `npm` ecosystem. Yarn, binary `bun.lockb`, workspaces, monorepos, and local `file:` or `link:` packages are unsupported and fail the scan.
 
-JavaScript file selection follows the project's Vite+ package-manager selection signals, limited to npm, pnpm, and Bun. Yarn Classic and modern Yarn are unsupported for both scans and updates. Yarn manager or lockfile selection produces an explicit failure; it never becomes an empty successful inventory or a fallback to another manager.
+For each package, the inventory records every resolved version and how the root reaches it: direct or transitive, regular or development, and peer requirements. It records what the lockfile says. It does not prove that packages are installed or safe.
 
-Conflicting signals or an ambiguous selection fail explicitly. A selected manager must have a supported root lockfile; another manager's lockfile cannot silently substitute for it. Workspace declarations, non-root importers or workspace entries, and local package links that require scanning another project produce an unsupported-layout error. The root records used by npm, pnpm, and Bun do not by themselves make a project a monorepo.
+A scan reads files only. It runs no package manager, project script, or registry request.
 
-Parsers reject malformed or unrecognized records that prevent a complete graph. They preserve opaque versions, aliases, optional requirements, and unresolved peer or virtual requirements. They do not guess a resolution from a version constraint. Unsupported data produces a failed scan with retained stale or unknown inventory, never a successful empty graph.
+## Scan
 
-## Select and scan an instance
+Select one Instance by the current directory or by its full Route domain, or scan every Instance you can reach.
 
-Use the current directory or an explicit instance domain. The domain selects an instance, not every instance of a Project.
+```bash
+orbit instance:dependencies:scan
+orbit instance:dependencies:scan --app=commander.test
+orbit instance:dependencies:scan --all
+```
 
-| Command | Result |
+| Selector | Target |
 | --- | --- |
-| `orbit instance:dependencies:scan` | Detect the managed instance containing the current directory and scan it. |
-| `orbit instance:dependencies:scan --app=commander.test` | Scan the instance uniquely selected by its full Route domain. |
-| `orbit instance:dependencies:scan --all` | Scan registered instances visible through the selected Gateway, one by one. |
+| none | The registered Instance whose checkout or production home holds the current directory, on the caller's Node. |
+| `--app=DOMAIN` | The one Instance behind that Route domain. It takes precedence over the directory. |
+| `--all` | Every Instance that `instance:list` returns, scanned one by one in list order. |
 
-An explicit domain takes precedence over directory detection. No match or more than one matching instance produces an error before work starts. A domain serving multiple instances does not select one arbitrarily. `--all` and `--app` are mutually exclusive. `--all` does not require an instance working directory.
+No match or more than one match fails before any work, with `dependencies.target_not_found` or `dependencies.target_ambiguous`. `--all` with `--app` returns `dependencies.target_conflict`. An `--all` scan continues after a failed Instance, and Ctrl-C marks the rest as skipped.
 
-The Gateway authorizes each target and reads source on its owning Node. A scan does not install packages, run package scripts, contact package registries, or change application files. It records observation data in the Gateway.
+Human output shows each ecosystem's state, counts, and times. An unknown count shows as an em dash, and verified absence shows zero. `--json` returns the typed inventory, or for `--all`, a document with `succeeded`, `summary`, `instances`, and `request_id`. The exit status is zero only when every scanned ecosystem succeeds.
 
-Human output identifies each instance, its scan result, and counts by ecosystem. `--json` returns machine-readable results without prompts or terminal decoration. The all-instance result includes every attempted target and a final summary.
+## Refresh rules
 
-### Single-instance CLI output
-
-Directory detection and `--app=FULL_DOMAIN` scan one instance. The command shows target resolution and one scan step while the Gateway works. It never prompts.
-
-Human results identify the instance, Project, Node, and environment. Each ecosystem shows its freshness state, resolution and requirement counts, observation time, latest attempt time, and stable failure code. Counts for stale data describe the retained observation. Unknown counts appear as an em dash; verified absence has zero counts. Resolution counts include separate versions and contexts of the same package.
-
-`--json` emits one SDK inventory object with `instance_id`, `succeeded`, `composer`, `javascript`, and `request_id`. The ecosystem objects retain full graphs, source provenance, timestamps, and failure codes as described in the [dependency contracts](/reference/instance-dependency-contracts). Selection and transport failures use the ordinary `error` envelope with nullable `error.request_id`. Exit status is zero only when both ecosystems succeed; partial, stale, unknown, invalid-target, and transport failures return one. No package installation or application file change occurs.
-
-### All-instance CLI output
-
-`orbit instance:dependencies:scan --all` captures the authorized instance list from the selected Gateway once, then scans those instances in list order. It does not inspect the current directory. `--all` with `--app` fails with `dependencies.target_conflict` before HTTP.
-
-The listing envelope must be a JSON object whose `data` field is a JSON array. A valid empty array succeeds and reports zero attempted scans. A JSON object in `data`, including `{}` or numeric-key objects, is not an array and fails before any scan.
-
-Each array member must be a JSON object with a positive instance ID, Project ID, Node ID, non-empty name, and supported environment. Missing fields, empty objects, array members, and a malformed row after a valid row fail the entire listing. The command never treats those cases as an empty fleet or as a smaller authorized set.
-
-Each instance uses the existing single-instance scan contract. A failed, incomplete, unreachable, or unavailable target is recorded and does not stop later captured targets. A listing transport or structured failure stops before any scan. Cancellation or an interrupt leaves unattempted targets unscanned and does not report them as complete.
-
-Human output shows instance listing, then one scan step per target, each instance's identity and ecosystem counts or error, and a final summary of attempted, complete, failed, and skipped counts. `--json` emits one document with `succeeded`, `summary`, `instances`, and the listing `request_id`. Each attempted instance includes identity fields and either the typed inventory or a per-instance `error` object. Exit status is zero only when every captured target is scanned and both ecosystems succeed; empty fleets return zero. Partial, failed, cancelled, and listing failures return one.
-
-## Refresh and failures
-
-Each ecosystem has a last successful observation and a latest scan outcome. A successful scan replaces that ecosystem's observation atomically, including removal of dependencies absent from the new result. Repeated scans do not accumulate duplicate usage records.
+Each ecosystem keeps its last successful observation and its latest attempt, separately.
 
 | Condition | Result |
 | --- | --- |
-| Manifest and lockfile are valid | Replace the ecosystem observation and record its source and scan time. |
-| Both manifest and lockfile are absent | Record that the ecosystem is absent and clear its previous usage. |
-| Manifest exists but its lockfile is missing | Report an incomplete scan; preserve the last successful observation. |
-| Lockfile exists without its manifest | Report an incomplete scan; preserve the last successful observation. |
-| Lockfile root differs from the manifest | Report `dependencies.stale_npm_lockfile`, `dependencies.stale_pnpm_lockfile`, or `dependencies.stale_bun_lockfile`; preserve the last successful observation. Human output adds a short `Fix` line, such as `Run bun install in the project root and commit bun.lock.` |
-| Format is unsupported, files are invalid, or source is unreadable | Report failure and preserve the last successful observation. |
-| No production release is selected | Report unavailable source, not an empty inventory. |
-| Source changes during collection | Refuse to publish the mixed observation and report a retryable conflict. |
+| Manifest and lockfile are valid | Replace the observation. |
+| Both files are missing | Record that the ecosystem is absent. |
+| One of the two files is missing | Fail with `dependencies.incomplete_source`. |
+| The lockfile root differs from `package.json` | Fail with `dependencies.stale_npm_lockfile`, `dependencies.stale_pnpm_lockfile`, or `dependencies.stale_bun_lockfile`. Human output adds a fix, such as `Run bun install in the project root and commit bun.lock.` |
+| The format or layout is unsupported, or a file is invalid | Fail with the matching code. |
+| A production Instance has no selected release | Fail with `dependencies.source_unavailable`. |
+| The source changes during the scan | Fail both ecosystems with `dependencies.source_changed`. Retry. |
 
-A failed attempt marks retained data as stale and exposes the failure time. An instance never scanned has unknown inventory. A scan time describes an observation, not a guarantee that the checkout remains unchanged.
+A failure keeps the last observation and marks it stale. An Instance that was never scanned has unknown inventory. One ecosystem can succeed while the other fails.
 
-An all-instance scan captures its target list when it starts and continues after individual failures. It returns a nonzero status if any instance scan fails or is incomplete. A successful ecosystem result remains recorded when the other ecosystem fails; the instance result still reports partial failure.
+Scans share the Instance's operation lock with updates, deployments, rollbacks, environment changes, and removal. A busy Instance returns `dependencies.operation_busy`. Removing an Instance removes its inventory.
 
-Scans coordinate with Orbit-owned updates, deployment, rollback, and removal. An operation cannot publish inventory for a removed instance or a release that changed during collection. Removing an instance removes its usage and observation records without deleting another instance's package identities.
+## Update a development Instance
 
-## Update development dependencies
-
-The update command uses the same directory detection and domain selector as scan. It accepts one development instance and rejects production targets before running package commands.
+Update one development Instance with the same selectors, except `--all`:
 
 ```bash
 orbit instance:dependencies:update
 orbit instance:dependencies:update --app=commander.test
 ```
 
-`--all` and `--latest` are rejected before HTTP. Production targets return a typed refusal with no package mutation. Partial package or inventory failure exits nonzero and reports retained step and inventory outcomes without claiming rollback.
+The Gateway runs these steps as the Node's user in the project root:
 
-Orbit runs `composer update` for a root Composer project, then `vp update` for a root JavaScript project, as the instance's runtime user. Vite+ selects the project's supported package manager: npm, pnpm, or Bun. Both regular and development dependencies are included. An absent ecosystem is skipped.
+1. It inspects both ecosystems. A refusal stops the whole update before any package command. See the refusals below.
+2. It runs `composer update --no-interaction` for a Composer project. Regular and development packages move within their constraints.
+3. It runs `vp update --no-save` for a JavaScript project. Vite+ picks npm, pnpm, or Bun. For Bun, Orbit adds `-- --lockfile-only --save-text-lockfile`.
+4. It scans the result, also after a failed or cancelled step.
 
-The Composer step uses a fixed argv in the recorded project root, including roots that contain spaces. It includes `require-dev` and leaves declared constraints unchanged. It owns the remote Composer process group, enforces a remote deadline, terminates and waits for that owned work on cancellation or timeout, discards process text, and reports cancellation or failure without claiming rollback. Local cancellation still SIGKILLs the complete process group after a bounded grace period, even if the original process has already exited.
+The inspection refuses a Yarn project, an unsupported layout, two package managers, and an unverified Vite+.
 
-The npm step delegates through a verified Vite+ installation rather than raw npm. It accepts the Orbit-managed layouts used by Node prerequisites: `/opt/orbit/vite-plus`, `~/.vite-plus`, and `~/.local/share/vite-plus`. The `/opt/orbit/vite-plus` layout sets `VP_HOME=/opt/orbit/vite-plus`. The action also accepts the published launcher `/usr/local/bin/vp`. Vite+ 0.3.0 is verified for npm delegation; a missing, unreadable, or unverified Vite+ version fails with `dependencies.unsupported_delegation` before package mutation. The fixed argv runs `vp update --no-save` in the recorded root with no package names, pass-through arguments, or `--latest` flag.
+Each package step has a 600-second deadline and owns its process group. A failed step stops the steps after it. Orbit claims no rollback. The update succeeds only when every package step and the final scan succeed.
 
-`--no-save` is a verified Vite+ 0.3.0 option, not a raw npm substitution. It updates the lockfile and installed regular and development packages within the declared constraints. It keeps those constraints unchanged even when npm project, user, or environment configuration sets `save=true`.
+Orbit uses the Vite+ at `/opt/orbit/vite-plus/bin/vp`, `~/.vite-plus/bin/vp`, `~/.local/share/vite-plus/bin/vp`, or `/usr/local/bin/vp`. Only Vite+ 0.3.0 is verified. Another version fails with `dependencies.unsupported_delegation`.
 
-Vite+ 0.3.0 selects npm from `packageManager`, `devEngines.packageManager`, or `package-lock.json`. `npm-shrinkwrap.json` is not a Vite+ 0.3.0 manager signal; npm still prefers it over `package-lock.json` once Vite+ has selected npm. A shrinkwrap-only root without an npm manager declaration is incomplete for this adapter, because Vite+ 0.3.0 would not select npm.
+A production Instance returns `dependencies.production_update_forbidden` before any command. `--all` and `--latest` are refused before any request. Declared constraints never change: an update that needs a new constraint is an upgrade, which Orbit does not do.
 
-Vite+ can add `devEngines.packageManager` manager-selection metadata to the manifest; dependency constraints stay unchanged. Yarn signals, workspace files, and conflicting manager lockfiles fail the npm step before mutation. Duplicate `package.json` object keys, including escaped-equivalent keys, fail as an invalid manifest before manager selection, so a later npm declaration cannot conceal Yarn or a workspace. Its process ownership, deadline, termination, and result semantics match the Composer step.
+To bring an update to production, test it, commit the manifests and lockfiles, and push them to the production deployment branch. Then [deploy](/reference/deployments) with a step that installs from the lockfiles.
 
-The pnpm step reuses that same verified Vite+ supervisor and `vp update --no-save` argv. It accepts only a root pnpm project. Vite+ 0.3.0 selects pnpm from `packageManager`, `devEngines.packageManager`, or `pnpm-lock.yaml`. Vite+ defaults a project with no manager signal to pnpm, so a `package.json` without `pnpm-lock.yaml` is incomplete for this adapter rather than a successful skip. `.pnpmfile.cjs` and `pnpmfile.cjs` are pnpm family signals; they do not replace the supported lockfile.
+## API
 
-`--no-save` is also a pnpm option: it updates the lockfile and installed regular and development packages within declared constraints, and it does not rewrite ranges in `package.json`. The action never substitutes raw pnpm for Vite+, never passes `--latest` or `-D`/`-P`, and refuses Yarn, workspaces, `pnpm-workspace.yaml`, and conflicting managers before mutation. Roots that contain only npm or only Bun remain absent for this adapter.
+The CLI uses these Gateway routes. Each needs an [access grant](/cli/node) to the Instance's Node.
 
-The bun step reuses that supervisor with a verified Bun pass-through. It accepts only a root Bun project that already has a text `bun.lock`. Vite+ 0.3.0 selects bun from `packageManager`, `devEngines.packageManager`, `bun.lock`, `bun.lockb`, or `bunfig.toml`. Binary-only `bun.lockb` fails with `dependencies.unsupported_format` before mutation. A bun declaration or `bunfig.toml` without `bun.lock` is incomplete. When both Bun locks exist, the text lock is required.
+| Route | Result |
+| --- | --- |
+| `GET /api/v1/instances/{instance}/dependencies` | The stored inventory, without SSH. |
+| `POST /api/v1/instances/{instance}/dependencies/scan` | Scan both ecosystems. |
+| `POST /api/v1/instances/{instance}/dependencies/update` | Update a development Instance. |
+| `GET /api/v1/instances/resolve?domain=DOMAIN` | Find the Instance behind a Route domain. |
+| `GET /api/v1/instances/resolve-directory?directory=PATH` | Find the Instance that holds a directory on the caller's Node. |
 
-Bun's `--no-save` does not write a lockfile. The verified argv is `vp update --no-save -- --lockfile-only --save-text-lockfile`. That keeps declared ranges unchanged, writes an updated text `bun.lock`, and includes regular and development dependencies within those ranges. It does not pass `--latest` and never substitutes `/usr/bin/bun`. Yarn, workspaces, and conflicting managers fail before mutation. Roots that contain only npm or only pnpm remain absent for this adapter.
+`POST` takes an empty JSON object. HTTP 200 means the operation ran, not that it succeeded. Check `succeeded`, each step's `status`, and each ecosystem's state.
 
-The Yarn step is a refusal adapter, not a Vite+ or Yarn updater. It inspects Classic `yarn.lock` files, modern metadata locks, `.yarnrc.yml`, `yarn.config.cjs`, and Yarn `packageManager` or `devEngines` declarations. Classic and modern roots fail with `dependencies.unsupported_format` before any `vp` or `yarn` command. The probe never maps those families onto `vp update`, raw Yarn, or `--latest`. Constraint-rewriting Yarn delegation is rejected rather than applied. Roots without Yarn signals remain absent for this adapter.
+## Nightly scan
 
-An update respects the existing declared version constraints. Changing those constraints is an upgrade and is outside this feature. The command has no `--latest` or `--all` update mode. A successful update can retain a package version when its constraints prevent movement.
-
-Orbit validates target, source layout, and package-manager support before package mutation. The Gateway update endpoint holds the same instance and development source locks as a scan. It inspects Composer and the JavaScript family before any package command. Yarn selection rejects the entire update before either Composer or JavaScript package work starts. Production targets return a typed refusal with no SSH and no inventory refresh. It serializes managed updates for the same instance, bounds command execution, and reports verified progress. It does not discard existing source changes, commit, push, test, or deploy automatically.
-
-Composer and JavaScript updates are separate steps. The Gateway runs Composer first, then Vite+ for npm, pnpm, or Bun. If a step fails, Orbit stops later package mutation and reports any completed work. It does not claim an automatic rollback. After completed or failed package work, including cancellation, Orbit scans the resulting readable files and reports the inventory outcome separately. A successful mutation with a failed scan is not a successful update. If collection fails, the last successful inventory remains visible as stale. `--json` reports the same step outcomes without human output.
-
-`POST /api/v1/instances/{instance}/dependencies/update` is the authorized typed operation. It accepts an empty JSON object. HTTP 200 is a completed typed result; callers must inspect `succeeded`, step statuses, and `error_code`.
-
-Test the development changes, commit the updated manifests and lockfiles, and make that commit available on the production instance's deployment branch. Then trigger an explicit [deployment](/reference/deployments). Configure dependency installation to use those lockfiles, rather than resolve new versions in production.
-
-## Schedule one nightly scan
-
-Create **one** Node [Schedule](/reference/schedules) on the Gateway host. The Schedule runs as that Node's Orbit-managed user with the Gateway CLI profile already configured on the host.
-
-Verified recipe on the disposable Gateway. Set the calendar, timezone, timeout, and name for the operator's Gateway Node:
+Create one Node [Schedule](/reference/schedules) on the Gateway host. Each run finds the current set of Instances, so you need no Schedule per Instance.
 
 ```bash
 orbit schedule:create dependency-nightly-scan \
   --node=GATEWAY_NODE_ID \
   --calendar='*-*-* 03:15:00 Europe/Amsterdam' \
   --command='orbit instance:dependencies:scan --all --json --no-interaction' \
-  --timeout=7200 \
-  --json
+  --timeout=7200
 ```
 
-- `--calendar` is a native systemd calendar expression.
-- Include the timezone in the expression when the host timezone must stay fixed.
-- `--timeout` bounds the whole fleet scan (1–86400 seconds).
-- Size the timeout for the fleet.
-- A timeout must not appear as a completed fleet scan.
-- The command must be noninteractive (`--json --no-interaction`) so timer runs do not block on prompts.
-- Do not create per-instance Schedules. One Node Schedule rediscovers the authorized instance set on every run.
+Put the timezone in the calendar expression. Size the timeout for the fleet. A failed Instance makes the run fail, and the Schedule logs keep the JSON result. A nightly scan checks no advisories and updates no packages.
 
-Invoke and inspect without waiting for the calendar:
+## Why it works this way
 
-```bash
-orbit schedule:run SCHEDULE_UUID --json
-orbit schedule:show SCHEDULE_UUID --json
-orbit schedule:logs SCHEDULE_UUID --json
-```
+These reasons explain the design. Check them before you propose a change.
 
-`schedule:run` starts the installed unit once. Readable logs retain the CLI JSON, including per-instance outcomes. A failed instance scan makes the Schedule command exit nonzero, and the host records that as a failed unit result.
+### Inventory per Instance
 
-The installed wrapper's `complete` handler POSTs run status to the Gateway. On the CMD-1 discovery Gateway that callback used curl with the Orbit CA only and no Node client certificate, so `last_run_at` / `last_run_status` stayed null even after successful unit invocation. The schedule, timer, command, and logs still verified.
+Instances of one Project can run different source. One version per Project or per package identity was rejected. Shared package identities still allow fleet-wide queries.
 
-Operators and DevOps should confirm Node-authenticated completion before treating those fields as authoritative. Repeated runs reuse the same Schedule record and do not create additional Schedules.
+### Lockfiles, not installed files
 
-Nightly scanning refreshes inventory only. It does not check advisories, query registries for newer versions, or update packages. The update command refreshes inventory after its own package work. Changes made outside that command appear after an explicit scan or the next nightly run. Do not create this Schedule against live production outside the owned disposable Gateway.
+Hibernation deletes `vendor` and `node_modules` on idle Instances. Lockfiles stay, so the inventory reads them.
 
-## Verified integrated recipe (CMD-1 discovery)
+### No updates in production
 
-On discovery attempt `b9cdb4c91b23cc25c4e89f8a8fd270e9` (gateway / app-dev / app-prod), after the npm reader fixes above:
+Resolving versions in production skips the tested source and the release flow. So updates run only in development, and production installs the committed lockfiles through a deployment.
 
-| Check | Result |
-| --- | --- |
-| Development scan (`orbit instance:dependencies:scan --app=e2e-dev.orbit`) | Composer and JavaScript inventories present (109 / 137 resolutions) with transitive and development scopes. |
-| Development update (`orbit instance:dependencies:update --app=e2e-dev.orbit`) | Composer and JavaScript steps succeeded within constraints; post-update inventory succeeded (`may_have_mutated: true`). |
-| Production update refusal (`--app=e2e-prod.orbit.test`) | `dependencies.production_update_forbidden` before mutation (`may_have_mutated: false`). |
-| Fleet `orbit instance:dependencies:scan --all` | Continues after individual failures; after the production fixture deploy, both instances succeeded (`attempted: 2`, `succeeded: 2`). |
-| Production fixture | Committed `composer.lock` + `package-lock.json` on the development sample, deployed selected release `20260918191015-79ad05e2f6d43639`, then scanned with that release `reference` and without production resolution. |
-| Nightly Schedule | Schedule `201c4a0b-5725-4cb1-b2f8-75793dbbcb5a` runs `orbit instance:dependencies:scan --all --json --no-interaction` on calendar `*-*-* 03:15:00 Europe/Amsterdam`. See `.loop/cmd-1-evidence/`. |
+### No Yarn
 
-Durable regression coverage for scan/update, stale retention, fleet continuation, and production refusal remains in Gateway Feature and CLI Pest suites. Evidence JSON under `.loop/cmd-1-evidence/` is gitignored and retained on the worktree for the reviewer.
+The maintainer narrowed JavaScript support to npm, pnpm, and Bun. A Yarn project fails clearly, and never becomes an empty inventory or another manager's result.
 
-## Limits
+### Nightly scans as well as updates
 
-The index covers root package projects and their locked dependency graphs. Monorepos, installed-file verification, security advisory checks, outdated counts, constraint-changing upgrades, and bulk package updates are outside this feature. Unsupported lockfile formats produce a visible failure instead of a complete-looking inventory.
-
-## Yarn scope amendment
-
-On 2026-09-15, the owner instructed: “Lets exclude yarn, only support npm, pnpm and bun”. Composer remains supported. This amendment supersedes earlier Yarn requirements throughout this feature, including parser, collection, update, scheduling, and integrated verification plans. Yarn scan failures preserve earlier inventory as stale; a first failed scan remains unknown. Yarn updates must fail before package mutation.
-
-Commander child 9 retains the original title “08. Parse modern Yarn lockfiles”, but its replacement outcome removes the partial modern reader and the accepted Classic reader, with their dedicated tests and fixtures. The shared supported parsers and contracts remain. Earlier commits and frozen task records remain intact; handoffs and reviews assess this replacement outcome rather than claiming the original Yarn criteria passed.
-
-Commander child 22 retains the original title “21. Enforce constrained Vite+ updates for Yarn”, but now verifies Yarn refusal. It checks manager and lockfile rejection before mutation, human and machine failure output, and stale inventory after unsupported scans. Actual refusal checks use fixtures on the app-dev machine in the feature’s discovery clone. It does not implement Yarn updates. Other children retain their outcomes within the narrowed scope, and integrated verification still gates feature completion.
+Dependencies also change outside Orbit. A scan after each Orbit update would miss those changes, so one Schedule scans the fleet every night.
