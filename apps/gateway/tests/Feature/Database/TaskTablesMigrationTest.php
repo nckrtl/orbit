@@ -48,6 +48,16 @@ it('creates task_groups and tasks with morph, metrics, and ordering columns', fu
             'output_tokens',
             'model_calls',
             'peak_context_tokens',
+            't3_input_tokens',
+            't3_cached_input_tokens',
+            't3_output_tokens',
+            't3_model_calls',
+            't3_peak_context_tokens',
+            't3_counted_total_processed_tokens',
+            't3_observed_total_processed_tokens',
+            't3_event_sequence',
+            't3_metrics_partial',
+            't3_metrics_initialized',
         ]))->toBeTrue();
 });
 

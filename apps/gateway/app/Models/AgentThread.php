@@ -35,6 +35,16 @@ use Illuminate\Support\Carbon;
  * @property int|null $peak_context_tokens
  * @property int|null $lines_added
  * @property int|null $lines_deleted
+ * @property int|null $t3_input_tokens
+ * @property int|null $t3_cached_input_tokens
+ * @property int|null $t3_output_tokens
+ * @property int|null $t3_model_calls
+ * @property int|null $t3_peak_context_tokens
+ * @property int|null $t3_counted_total_processed_tokens
+ * @property int|null $t3_observed_total_processed_tokens
+ * @property int|null $t3_event_sequence
+ * @property bool $t3_metrics_partial
+ * @property bool $t3_metrics_initialized
  * @property-read Node|null $node
  */
 #[ObservedBy([TaskBroadcastObserver::class])]
@@ -42,7 +52,7 @@ final class AgentThread extends Model
 {
     /** @var list<string> */
     #[\Override]
-    protected $fillable = ['task_group_id', 'task_id', 'node_id', 'driver', 'runtime_key', 'external_id', 'role', 'model', 'effort', 'state', 'observation_version', 'observed_at', 'observation_error', 'error', 'tokens', 'input_tokens', 'cached_input_tokens', 'output_tokens', 'model_calls', 'peak_context_tokens', 'lines_added', 'lines_deleted'];
+    protected $fillable = ['task_group_id', 'task_id', 'node_id', 'driver', 'runtime_key', 'external_id', 'role', 'model', 'effort', 'state', 'observation_version', 'observed_at', 'observation_error', 'error', 'tokens', 'input_tokens', 'cached_input_tokens', 'output_tokens', 'model_calls', 'peak_context_tokens', 'lines_added', 'lines_deleted', 't3_input_tokens', 't3_cached_input_tokens', 't3_output_tokens', 't3_model_calls', 't3_peak_context_tokens', 't3_counted_total_processed_tokens', 't3_observed_total_processed_tokens', 't3_event_sequence', 't3_metrics_partial', 't3_metrics_initialized'];
 
     /** @return BelongsTo<Node, $this> */
     public function node(): BelongsTo
@@ -53,6 +63,6 @@ final class AgentThread extends Model
     /** @return array<string, string> */
     protected function casts(): array
     {
-        return ['state' => AgentThreadState::class, 'observation_version' => 'integer', 'observed_at' => 'datetime', 'tokens' => 'integer', 'input_tokens' => 'integer', 'cached_input_tokens' => 'integer', 'output_tokens' => 'integer', 'model_calls' => 'integer', 'peak_context_tokens' => 'integer', 'lines_added' => 'integer', 'lines_deleted' => 'integer'];
+        return ['state' => AgentThreadState::class, 'observation_version' => 'integer', 'observed_at' => 'datetime', 'tokens' => 'integer', 'input_tokens' => 'integer', 'cached_input_tokens' => 'integer', 'output_tokens' => 'integer', 'model_calls' => 'integer', 'peak_context_tokens' => 'integer', 'lines_added' => 'integer', 'lines_deleted' => 'integer', 't3_input_tokens' => 'integer', 't3_cached_input_tokens' => 'integer', 't3_output_tokens' => 'integer', 't3_model_calls' => 'integer', 't3_peak_context_tokens' => 'integer', 't3_counted_total_processed_tokens' => 'integer', 't3_observed_total_processed_tokens' => 'integer', 't3_event_sequence' => 'integer', 't3_metrics_partial' => 'boolean', 't3_metrics_initialized' => 'boolean'];
     }
 }

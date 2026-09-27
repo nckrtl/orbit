@@ -92,7 +92,7 @@ final readonly class PiDriver implements AgentDriver
      * current run resumes after it, so a reconnect gets only what it missed. Any other cursor,
      * including one from before a server restart, gets a fresh snapshot.
      */
-    public function events(AgentThread $thread, ?string $cursor): iterable
+    public function events(AgentThread $thread, ?string $cursor, ?float $timeoutSeconds = null): iterable
     {
         $node = $this->node($thread);
         $transcript = new PiTranscript;

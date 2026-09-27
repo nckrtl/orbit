@@ -10,8 +10,11 @@ use App\Domain\Tasks\AgentThreadState;
 
 final readonly class T3Projection
 {
-    /** @param array<string, mixed> $snapshot */
-    public function observe(array $snapshot, ?AgentThreadState $previous = null, ?string $previousError = null, bool $includeEntries = true): AgentObservation
+    /**
+     * @param  array<string, mixed>  $snapshot
+     * @param  array<string, mixed>|null  $checkpoint
+     */
+    public function observe(array $snapshot, ?AgentThreadState $previous = null, ?string $previousError = null, bool $includeEntries = true, ?array $checkpoint = null, bool $accumulateMetrics = true): AgentObservation
     {
         $thread = $this->map($snapshot['thread'] ?? $snapshot);
         $session = $this->map($thread['session'] ?? $thread['sess'] ?? []);
@@ -49,7 +52,9 @@ final readonly class T3Projection
             }
         }
         usort($entries, static fn (array $a, array $b): int => strcmp($a['at'], $b['at']));
-        $metrics = T3ThreadMetrics::fromSnapshot($snapshot);
+        $metrics = $accumulateMetrics
+            ? T3ThreadMetrics::fromSnapshot($snapshot, $checkpoint)
+            : T3ThreadMetrics::fromPersisted($snapshot, $checkpoint);
         $error = $thread['error'] ?? $turn['error'] ?? $session['lastError'] ?? $session['error'] ?? null;
         $error = is_array($error) ? ($error['message'] ?? null) : $error;
         $cursor = $snapshot['snapshotSequence'] ?? $snapshot['sequence'] ?? null;
@@ -62,6 +67,7 @@ final readonly class T3Projection
             cursor: is_int($cursor) ? (string) $cursor : null,
             turnId: $turnId === '' ? null : $turnId,
             sessionUpdatedAt: $this->text($session['updatedAt'] ?? '') ?: null,
+            metricsCheckpoint: $metrics->checkpoint,
         );
     }
 

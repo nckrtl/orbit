@@ -21,20 +21,22 @@ function task_schedule(bool $enabled): Schedule
 it('registers the task tick on the schedule when tasks are enabled', function (): void {
     $schedule = task_schedule(enabled: true);
 
-    expect($schedule->events())
-        ->toHaveCount(1)
-        ->and($schedule->events()[0]->command)
-        ->toContain('tasks:tick')
-        ->and($schedule->events()[0]->filtersPass(app()))
-        ->toBeTrue();
+    $commands = array_map(static fn ($event): string => $event->command, $schedule->events());
+    expect($schedule->events())->toHaveCount(2)
+        ->and(array_any($commands, static fn (string $command): bool => str_contains($command, 'tasks:tick')))->toBeTrue()
+        ->and(array_any($commands, static fn (string $command): bool => str_contains($command, 'tasks:collect-t3-metrics')))->toBeTrue()
+        ->and($schedule->events()[0]->filtersPass(app()))->toBeTrue()
+        ->and($schedule->events()[1]->filtersPass(app()))->toBeTrue();
 });
 
 it('skips the task tick schedule when tasks are disabled', function (): void {
     $schedule = task_schedule(enabled: false);
 
     expect($schedule->events())
-        ->toHaveCount(1)
+        ->toHaveCount(2)
         ->and($schedule->events()[0]->filtersPass(app()))
+        ->toBeFalse()
+        ->and($schedule->events()[1]->filtersPass(app()))
         ->toBeFalse();
 });
 
