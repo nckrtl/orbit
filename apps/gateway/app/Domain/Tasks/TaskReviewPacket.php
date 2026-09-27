@@ -366,7 +366,7 @@ final readonly class TaskReviewPacket
                 }
                 if (is_array($run)) {
                     $records[] = $this->commandRecord(
-                        'test '.$deliverable->file,
+                        'vendor/bin/pest '.$deliverable->file,
                         $this->directory($deliverable->project),
                         $run['exit_code'],
                         null,
@@ -419,7 +419,7 @@ final readonly class TaskReviewPacket
         }
 
         return $this->commandRecord(
-            'test '.$deliverable->file,
+            'vendor/bin/pest '.$deliverable->file,
             $this->directory($deliverable->project),
             $exitCode,
             $messages === [] ? null : implode('; ', $messages),

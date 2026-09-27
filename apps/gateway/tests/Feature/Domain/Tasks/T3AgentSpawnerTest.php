@@ -280,7 +280,7 @@ it('shows the base failure kind and message to the reviewer', function (): void 
 
     $spawner->requestReview($task->fresh());
 
-    expect($dispatcher->commands[0]['message']['text'])->toContain('`test tests/Feature/HomeScreenTest.php` in apps/gateway exited 2 on the start commit with an error: Class "HomeScreen" not found')
+    expect($dispatcher->commands[0]['message']['text'])->toContain('`vendor/bin/pest tests/Feature/HomeScreenTest.php` in apps/gateway exited 2 on the start commit with an error: Class "HomeScreen" not found')
         ->and($dispatcher->commands[0]['message']['text'])->toContain('Do not re-run the Project task check or the deliverable tests and commands the handoff already passed.')
         ->and($dispatcher->commands[0]['message']['text'])->not->toContain('Group brief');
 });

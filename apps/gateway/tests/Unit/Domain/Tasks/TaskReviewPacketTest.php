@@ -45,8 +45,8 @@ it('renders a review packet with the group brief, subtask brief, deliverables, a
         ->and(packet_section($packet, 'Handoff'))->toBe(implode("\n", [
             'Status: passed',
             '`composer check` in . exited 0',
-            '`test tests/Feature/HomeScreenTest.php` in apps/gateway exited 2 on the start commit with an error and a failure: Class "HomeScreen" not found; Failed asserting that 1 is 2.',
-            '`test tests/Feature/HomeScreenTest.php` in apps/gateway exited 0',
+            '`vendor/bin/pest tests/Feature/HomeScreenTest.php` in apps/gateway exited 2 on the start commit with an error and a failure: Class "HomeScreen" not found; Failed asserting that 1 is 2.',
+            '`vendor/bin/pest tests/Feature/HomeScreenTest.php` in apps/gateway exited 0',
             '`bun test` in apps/web exited 0',
         ]))
         ->and(packet_section($packet, 'Diff'))->toBe("diff --git a/packet.php b/packet.php\n+packet")
@@ -143,7 +143,7 @@ it('lists packet handoff commands with their directory and exit code and keeps a
     $handoff = packet_section(review_packet(), 'Handoff');
 
     expect($handoff)->toContain('`composer check` in . exited 0')
-        ->and($handoff)->toContain('`test tests/Feature/HomeScreenTest.php` in apps/gateway exited 2 on the start commit with an error and a failure: Class "HomeScreen" not found')
+        ->and($handoff)->toContain('`vendor/bin/pest tests/Feature/HomeScreenTest.php` in apps/gateway exited 2 on the start commit with an error and a failure: Class "HomeScreen" not found')
         ->and($handoff)->toContain('`bun test` in apps/web exited 0')
         ->and($handoff)->not->toContain('reference-page')
         ->and($handoff)->not->toContain('.git/orbit/check.log');
