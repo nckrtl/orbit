@@ -44,6 +44,8 @@ The app subscribes to `presence-node.{id}` for every active Node, next to the `o
 | Lost: the agent left, or sent nothing for 15 seconds | offline | The value from the Process list |
 | Not seen since the page subscribed | Prometheus `up` | The value from the Process list |
 
+A Node without an [agent](/reference/node-agent#where-it-runs) always uses the last row. An example is a [Node without roles](/reference/node-provisioning#nodes-without-roles) that has no pinned SSH host key.
+
 CPU and memory come from [`process.usage`](/reference/events#process-usage) events. The app writes each sample into its cached Process list. While realtime is live, it reloads the Process list only when no sample arrived for 60 seconds.
 
 ## Live tasks
