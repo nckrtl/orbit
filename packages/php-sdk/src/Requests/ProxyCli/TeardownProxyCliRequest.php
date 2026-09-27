@@ -10,7 +10,7 @@ use Saloon\Enums\Method;
 use Saloon\Http\Response;
 use SensitiveParameter;
 
-final class DisableProxyCliRequest extends GatewayRequest
+final class TeardownProxyCliRequest extends GatewayRequest
 {
     #[\Override]
     protected Method $method = Method::DELETE;

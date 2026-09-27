@@ -7,7 +7,6 @@ namespace App\Providers;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\Dns\LocalResolver;
 use App\Services\Dns\ResolvesLocalDns;
-use App\Services\Extensions\LocalExtensionState;
 use App\Services\Git\GitRegistrationDiscovery;
 use App\Services\Git\NativeGitRegistrationDiscovery;
 use App\Services\Profile\CurlProfileRequestProfiler;
@@ -53,13 +52,6 @@ final class AppServiceProvider extends ServiceProvider
         $this->app->bind(LogFollowClock::class, SystemLogFollowClock::class);
         $this->app->singleton(ResolvesLocalDns::class, LocalResolver::class);
         $this->app->singleton(GitRegistrationDiscovery::class, NativeGitRegistrationDiscovery::class);
-        $this->app->singleton(
-            LocalExtensionState::class,
-            static fn (): LocalExtensionState => new LocalExtensionState(
-                OrbitHome::path().'/extensions.json',
-            ),
-        );
-
         $this->app->singleton(
             GatewayConfigRepository::class,
             static fn (): GatewayConfigRepository => new GatewayConfigRepository(

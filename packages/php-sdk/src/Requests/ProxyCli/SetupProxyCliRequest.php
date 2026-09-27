@@ -12,7 +12,7 @@ use Saloon\Http\Response;
 use Saloon\Traits\Body\HasJsonBody;
 use SensitiveParameter;
 
-final class EnableProxyCliRequest extends GatewayRequest implements HasBody
+final class SetupProxyCliRequest extends GatewayRequest implements HasBody
 {
     use HasJsonBody;
 

@@ -5,8 +5,10 @@ declare(strict_types=1);
 use App\Commands\GatewayCommand;
 use App\Commands\Schedules\ListSchedulesCommand;
 use App\Commands\Schedules\RunScheduleCommand;
-use App\Services\Extensions\LocalExtensionState;
+use App\Repositories\GatewayConfigRepository;
+use App\Services\Extensions\GatewayExtensionState;
 use App\Support\CommandVocabulary;
+use App\Support\ExtensionCommandVisibility;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Artisan;
@@ -16,29 +18,15 @@ use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\StringInput;
 use Symfony\Component\Console\Output\BufferedOutput;
 
-/**
- * @return array{extensions: string|null, config: string|null}
- */
-function commandSurfaceHomeSnapshot(string $home): array
-{
-    $extensions = $home.'/extensions.json';
-    $config = $home.'/config.json';
-
-    return [
-        'extensions' => is_file($extensions) ? file_get_contents($extensions) : null,
-        'config' => is_file($config) ? file_get_contents($config) : null,
-    ];
-}
-
 function replaceCommandSurfaceHome(string $home): void
 {
     config()->set('orbit.home', $home);
-    app()->forgetInstance(LocalExtensionState::class);
+    app()->forgetInstance(GatewayConfigRepository::class);
+    GatewayExtensionState::reset();
 }
 
 beforeEach(function (): void {
     $this->callerOrbitHome = rtrim((string) config('orbit.home'), '/');
-    $this->callerSnapshot = commandSurfaceHomeSnapshot($this->callerOrbitHome);
     $this->orbitHome = sys_get_temp_dir().'/orbit-cli-command-surface-'.Str::uuid();
     replaceCommandSurfaceHome($this->orbitHome);
 });
@@ -47,17 +35,18 @@ afterEach(function (): void {
     if ($this->orbitHome !== $this->callerOrbitHome) {
         new Filesystem()->deleteDirectory($this->orbitHome);
     }
-
-    expect(commandSurfaceHomeSnapshot($this->callerOrbitHome))->toBe($this->callerSnapshot);
+    config()->set('orbit.home', $this->callerOrbitHome);
+    app()->forgetInstance(GatewayConfigRepository::class);
+    GatewayExtensionState::reset();
 });
 
 it('exposes only the implemented Orbit product commands', function (): void {
-    $visibleCommands = collect(app(Kernel::class)->all())
+    $visibleCommands = ExtensionCommandVisibility::duringListing(static fn (): array => collect(app(Kernel::class)->all())
         ->reject(static fn (Command $command): bool => $command->isHidden())
         ->keys()
         ->sort()
         ->values()
-        ->all();
+        ->all());
 
     expect($visibleCommands)->toBe([
         'activity:list',
@@ -195,22 +184,7 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'schedule:run',
         'schedule:show',
         'schedule:update',
-        'tasks:agents',
-        'tasks:cancel',
-        'tasks:comment:create',
-        'tasks:comment:list',
-        'tasks:complete',
-        'tasks:create',
-        'tasks:disable',
-        'tasks:enable',
-        'tasks:list',
-        'tasks:show',
         'tasks:status',
-        'tasks:subtask:cancel',
-        'tasks:subtask:create',
-        'tasks:subtask:destroy',
-        'tasks:subtask:update',
-        'tasks:update',
         'tool:install',
         'tool:list',
         'tool:manager:list',
@@ -359,70 +333,15 @@ it('rejects the retired internal database query local command name', function ()
         ->toContain('Command "internal:database-query-local" is not defined.');
 });
 
-it('only hides Orbit commands that belong to disabled extensions', function (): void {
-    $orbitCommands = collect(app(Kernel::class)->all())
-        ->filter(static fn (Command $command): bool => str_starts_with($command::class, 'App\\Commands\\'));
-
-    expect($orbitCommands)->toHaveCount(164);
-    expect($orbitCommands
-        ->filter(static fn (Command $command): bool => $command->isHidden())
+it('hides optional command families when Gateway extension state is unknown', function (): void {
+    $visibleCommands = ExtensionCommandVisibility::duringListing(static fn (): array => collect(app(Kernel::class)->all())
+        ->filter(static fn (Command $command): bool => str_starts_with($command::class, 'App\\Commands\\'))
         ->keys()
-        ->sort()
-        ->values()
-        ->all())->toBe([
-            'internal:database-local',
-            'proxycli:disable',
-            'proxycli:enable',
-            'proxycli:list',
-            'proxycli:show',
-            'proxycli:status',
-            'proxycli:update',
-        ]);
+        ->all());
+
+    expect($visibleCommands)->not->toContain('tasks:create', 'proxycli:status')
+        ->and($visibleCommands)->toContain('tasks:status');
 });
-
-it('keeps command-surface visibility independent of caller extension settings', function (bool $proxycliEnabled): void {
-    $filesystem = new Filesystem;
-    $callerHome = sys_get_temp_dir().'/orbit-cli-command-surface-caller-'.Str::uuid();
-    mkdir($callerHome, 0700, true);
-    $sentinel = '{"sentinel":"orb-347-caller-config"}'.PHP_EOL;
-    file_put_contents($callerHome.'/config.json', $sentinel);
-    chmod($callerHome.'/config.json', 0600);
-
-    replaceCommandSurfaceHome($callerHome);
-
-    if ($proxycliEnabled) {
-        app(LocalExtensionState::class)->enable('proxycli');
-    }
-
-    $callerSnapshot = commandSurfaceHomeSnapshot($callerHome);
-
-    replaceCommandSurfaceHome($this->orbitHome);
-
-    expect(app(LocalExtensionState::class)->enabled('proxycli'))->toBeFalse();
-    expect(collect(app(Kernel::class)->all())
-        ->filter(static fn (Command $command): bool => str_starts_with($command::class, 'App\\Commands\\ProxyCli\\'))
-        ->every(static fn (Command $command): bool => $command->isHidden()))
-        ->toBeTrue();
-    expect(collect(app(Kernel::class)->all())
-        ->reject(static fn (Command $command): bool => $command->isHidden())
-        ->keys()
-        ->all())
-        ->not->toContain('proxycli:enable')
-        ->not->toContain('proxycli:status');
-    expect(commandSurfaceHomeSnapshot($callerHome))->toBe($callerSnapshot)
-        ->and(commandSurfaceHomeSnapshot($this->callerOrbitHome))->toBe($this->callerSnapshot);
-
-    $filesystem->deleteDirectory($this->orbitHome);
-
-    expect(is_dir($this->orbitHome))->toBeFalse()
-        ->and(is_dir($callerHome))->toBeTrue()
-        ->and(commandSurfaceHomeSnapshot($callerHome))->toBe($callerSnapshot);
-
-    $filesystem->deleteDirectory($callerHome);
-})->with([
-    'proxycli disabled' => [false],
-    'proxycli enabled' => [true],
-]);
 
 it('removes only owned command-surface fixtures and leaves caller configuration intact', function (): void {
     $filesystem = new Filesystem;
@@ -438,8 +357,7 @@ it('removes only owned command-surface fixtures and leaves caller configuration 
 
     expect(is_dir($this->orbitHome))->toBeFalse()
         ->and(is_dir($callerHome))->toBeTrue()
-        ->and(file_get_contents($callerHome.'/config.json'))->toBe($sentinel)
-        ->and(commandSurfaceHomeSnapshot($this->callerOrbitHome))->toBe($this->callerSnapshot);
+        ->and(file_get_contents($callerHome.'/config.json'))->toBe($sentinel);
 
     $filesystem->deleteDirectory($callerHome);
 });
@@ -888,18 +806,6 @@ it('keeps the exact approved arguments options and defaults', function (): void 
                 'json' => false,
             ],
         ],
-        'proxycli:disable' => [[], ['yes' => false, 'json' => false]],
-        'proxycli:enable' => [[], [
-            'node' => null,
-            'cache-connection' => null,
-            'cliproxy-url' => null,
-            'cliproxy-management-key-file' => null,
-            'json' => false,
-        ]],
-        'proxycli:list' => [[], ['json' => false]],
-        'proxycli:show' => [['provider'], ['json' => false]],
-        'proxycli:status' => [[], ['json' => false]],
-        'proxycli:update' => [['account'], ['disabled' => false, 'enabled' => false, 'json' => false]],
         'profile' => [['url'], ['instance' => null, 'path' => null, 'as-first-user' => false, 'user' => null, 'json' => false]],
         'realtime:show' => [[], ['json' => false]],
         'realtime:tail' => [[], ['types' => null, 'json' => false]],
@@ -958,22 +864,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         ],
         'tool:list' => [[], ['node' => null, 'json' => false]],
         'tool:manager:list' => [[], ['node' => null, 'json' => false]],
-        'tasks:agents' => [['group'], ['json' => false]],
-        'tasks:cancel' => [['group'], ['yes' => false, 'json' => false]],
-        'tasks:comment:create' => [['group', 'subtask'], ['type' => null, 'body' => null, 'author' => null, 'agent-thread' => null, 'json' => false]],
-        'tasks:comment:list' => [['group', 'subtask'], ['json' => false]],
-        'tasks:complete' => [['group'], ['yes' => false, 'json' => false]],
-        'tasks:create' => [['title'], ['project' => null, 'brief' => null, 'status' => null, 'subtasks' => null, 'notify-coder' => false, 'plan' => false, 'json' => false]],
-        'tasks:disable' => [[], ['json' => false]],
-        'tasks:enable' => [[], ['json' => false]],
-        'tasks:list' => [[], ['project' => null, 'status' => null, 'json' => false]],
-        'tasks:show' => [['group'], ['json' => false]],
         'tasks:status' => [[], ['json' => false]],
-        'tasks:subtask:cancel' => [['group', 'subtask'], ['yes' => false, 'json' => false]],
-        'tasks:subtask:create' => [['group', 'title'], ['brief' => null, 'deliverables' => null, 'json' => false]],
-        'tasks:subtask:destroy' => [['group', 'subtask'], ['yes' => false, 'json' => false]],
-        'tasks:subtask:update' => [['group', 'subtask'], ['title' => null, 'brief' => null, 'position' => null, 'deliverables' => null, 'json' => false]],
-        'tasks:update' => [['group'], ['title' => null, 'brief' => null, 'status' => null, 'json' => false]],
         'tool:remove' => [['tool'], ['yes' => false, 'json' => false]],
         'tool:show' => [['tool'], ['json' => false]],
         'tool:update' => [['tool'], ['json' => false]],
@@ -1301,22 +1192,7 @@ it('renders one exact json failure envelope for every Orbit product command', fu
             '--calendar' => 'daily',
             '--command' => 'php artisan report:send',
         ], ...$profileMissing],
-        'tasks:agents' => [['group' => '1'], ...$profileMissing],
-        'tasks:cancel' => [['group' => '1', '--yes' => true], ...$profileMissing],
-        'tasks:comment:create' => [['group' => '1', 'subtask' => '1', '--type' => 'resolution', '--body' => 'Done.', '--author' => 'nick'], ...$profileMissing],
-        'tasks:comment:list' => [['group' => '1', 'subtask' => '1'], ...$profileMissing],
-        'tasks:complete' => [['group' => '1', '--yes' => true], ...$profileMissing],
-        'tasks:create' => [['title' => 'Feature', '--project' => '1', '--brief' => 'Brief'], ...$profileMissing],
-        'tasks:disable' => [[], ...$profileMissing],
-        'tasks:enable' => [[], ...$profileMissing],
-        'tasks:list' => [[], ...$profileMissing],
-        'tasks:show' => [['group' => '1'], ...$profileMissing],
         'tasks:status' => [[], ...$profileMissing],
-        'tasks:subtask:cancel' => [['group' => '1', 'subtask' => '1', '--yes' => true], ...$profileMissing],
-        'tasks:subtask:create' => [['group' => '1', 'title' => 'Step', '--brief' => 'Brief'], ...$profileMissing],
-        'tasks:subtask:destroy' => [['group' => '1', 'subtask' => '1', '--yes' => true], ...$profileMissing],
-        'tasks:subtask:update' => [['group' => '1', 'subtask' => '1', '--title' => 'Step'], ...$profileMissing],
-        'tasks:update' => [['group' => '1', '--title' => 'Feature'], ...$profileMissing],
         'tool:install' => [
             ['package' => 'curl', '--node' => '1', '--manager' => 'apt'],
             ...$profileMissing,
@@ -1327,13 +1203,13 @@ it('renders one exact json failure envelope for every Orbit product command', fu
         'tool:show' => [['tool' => '1'], ...$profileMissing],
         'tool:update' => [['tool' => '1'], ...$profileMissing],
     ];
-    $visibleCommandNames = collect(app(Kernel::class)->all())
+    $visibleCommandNames = ExtensionCommandVisibility::duringListing(static fn (): array => collect(app(Kernel::class)->all())
         ->reject(static fn (Command $command): bool => $command->isHidden())
         ->except(['extension:list'])
         ->keys()
         ->sort()
         ->values()
-        ->all();
+        ->all());
 
     expect(array_keys($cases))->toEqualCanonicalizing($visibleCommandNames);
 

@@ -15,10 +15,12 @@ use Saloon\Http\Faking\MockClient;
  */
 beforeEach(function (): void {
     $this->originalColumns = getenv('COLUMNS');
+    $this->callerOrbitHome = config('orbit.home');
     putenv('COLUMNS=120');
     MockClient::destroyGlobal();
     $this->orbitHome = sys_get_temp_dir().'/orbit-cli-'.Str::uuid();
     config()->set('orbit.home', $this->orbitHome);
+    app()->forgetInstance(GatewayConfigRepository::class);
     app(GatewayConfigRepository::class)->add(new GatewayProfile(
         name: 'test',
         url: 'https://10.44.0.1',
@@ -30,6 +32,8 @@ afterEach(function (): void {
     putenv($this->originalColumns === false ? 'COLUMNS' : 'COLUMNS='.$this->originalColumns);
     MockClient::destroyGlobal();
     new Filesystem()->deleteDirectory($this->orbitHome);
+    config()->set('orbit.home', $this->callerOrbitHome);
+    app()->forgetInstance(GatewayConfigRepository::class);
 });
 
 /** @param array<string, mixed> $arguments */
@@ -48,9 +52,7 @@ function run_task_contract(string $fixture, string $command, array $arguments, i
 }
 
 describe('tasks contract', function (): void {
-    it('renders the extension toggles and status', function (): void {
-        run_task_contract('tasks-enable/enabled', 'tasks:enable', [], 0);
-        run_task_contract('tasks-disable/disabled', 'tasks:disable', [], 0);
+    it('renders tasks status', function (): void {
         run_task_contract('tasks-status/enabled', 'tasks:status', [], 0);
         run_task_contract('tasks-status/assistance', 'tasks:status', [], 0);
     });
@@ -77,6 +79,9 @@ describe('tasks contract', function (): void {
     });
 
     it('renders subtask create, update, and destroy', function (): void {
+        if (! is_dir($this->orbitHome)) {
+            mkdir($this->orbitHome, 0700, true);
+        }
         $deliverables = $this->orbitHome.'/deliverables.json';
         file_put_contents($deliverables, json_encode([
             ['id' => 'cli-page', 'type' => 'file', 'description' => 'Document every tasks command', 'path' => 'docs/cli/tasks.mdx', 'change' => 'modified'],
@@ -96,6 +101,9 @@ describe('tasks contract', function (): void {
     });
 
     it('refuses a deliverables file that is not a list of objects with string fields', function (string $contents): void {
+        if (! is_dir($this->orbitHome)) {
+            mkdir($this->orbitHome, 0700, true);
+        }
         $deliverables = $this->orbitHome.'/deliverables.json';
         file_put_contents($deliverables, $contents);
 

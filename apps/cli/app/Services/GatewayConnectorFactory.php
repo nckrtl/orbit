@@ -14,11 +14,12 @@ use Saloon\Http\Senders\GuzzleSender;
 
 final readonly class GatewayConnectorFactory
 {
-    public function make(GatewayProfile $profile): GatewayConnector
+    public function make(GatewayProfile $profile, int $timeout = 900): GatewayConnector
     {
         $connector = new GatewayConnector(
             baseUrl: $profile->url,
             caPemPath: $profile->caPath,
+            timeout: $timeout,
             requestIdResolver: static fn (): string => (string) Str::uuid(),
         );
 

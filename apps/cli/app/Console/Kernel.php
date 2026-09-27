@@ -8,12 +8,15 @@ use App\Support\Console\ConsoleWriter;
 use App\Support\Console\OutputContext;
 use App\Support\Console\PromptContext;
 use App\Support\Console\TerminalText;
+use App\Support\ExtensionCommandVisibility;
+use Illuminate\Console\Application as Artisan;
 use LaravelZero\Framework\Kernel as BaseKernel;
 use Symfony\Component\Console\Exception\CommandNotFoundException;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\ConsoleOutput;
 use Symfony\Component\Console\Output\ConsoleOutputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
+use Symfony\Component\EventDispatcher\EventDispatcher;
 
 final class Kernel extends BaseKernel
 {
@@ -31,19 +34,47 @@ final class Kernel extends BaseKernel
     {
         $commandName = $input->getFirstArgument();
         $output ??= new ConsoleOutput;
+        $handle = function () use ($commandName, $input, $output): int {
+            if ($commandName !== null && ! $this->commandExists($commandName)) {
+                $errorOutput = $output instanceof ConsoleOutputInterface ? $output->getErrorOutput() : $output;
+                ConsoleWriter::write($errorOutput, sprintf(
+                    'Command "%s" is not defined. Run "orbit list" to see available commands.',
+                    TerminalText::safe($commandName),
+                )."\n");
 
-        if ($commandName !== null && ! $this->commandExists($commandName)) {
-            $errorOutput = $output instanceof ConsoleOutputInterface ? $output->getErrorOutput() : $output;
-            ConsoleWriter::write($errorOutput, sprintf(
-                'Command "%s" is not defined. Run "orbit list" to see available commands.',
-                TerminalText::safe($commandName),
-            )."\n");
+                return 1;
+            }
 
-            return 1;
+            return OutputContext::run($input, $output,
+                fn (): int => PromptContext::preserve(fn (): int => parent::handle($input, $output)));
+        };
+
+        return $this->isDiscoveryInvocation($input, $commandName)
+            ? ExtensionCommandVisibility::duringListing($handle)
+            : $handle();
+    }
+
+    protected function getArtisan(): Artisan
+    {
+        if ($this->artisan === null) {
+            $this->artisan = new OrbitConsoleApplication($this->app, $this->events, $this->app->version())
+                ->resolveCommands($this->commands)
+                ->setContainerCommandLoader();
+
+            if ($this->symfonyDispatcher instanceof EventDispatcher) {
+                $this->artisan->setDispatcher($this->symfonyDispatcher);
+                $this->artisan->setSignalsToDispatchEvent();
+            }
         }
 
-        return OutputContext::run($input, $output,
-            fn (): int => PromptContext::preserve(fn (): int => parent::handle($input, $output)));
+        return $this->artisan;
+    }
+
+    private function isDiscoveryInvocation(InputInterface $input, ?string $commandName): bool
+    {
+        return $commandName === null
+            || in_array($commandName, ['list', 'help', 'complete', 'completion'], true)
+            || $input->hasParameterOption(['--help', '-h'], true);
     }
 
     private function commandExists(string $commandName): bool

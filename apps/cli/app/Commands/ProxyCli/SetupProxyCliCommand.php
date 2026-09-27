@@ -6,13 +6,13 @@ namespace App\Commands\ProxyCli;
 
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
-use Orbit\Sdk\Requests\ProxyCli\EnableProxyCliRequest;
+use Orbit\Sdk\Requests\ProxyCli\SetupProxyCliRequest;
 use Orbit\Sdk\Responses\ProxyCli\ProxyCliStatusResponse;
 
-final class EnableProxyCliCommand extends ProxyCliCommand
+final class SetupProxyCliCommand extends ProxyCliCommand
 {
     #[\Override]
-    protected $signature = 'proxycli:enable
+    protected $signature = 'proxycli:setup
         {--node= : Node ID or name that already hosts CLIProxyAPI}
         {--cache-connection= : Redis Database connection slug for shared Valkey}
         {--cliproxy-url= : CLIProxyAPI Management API origin}
@@ -24,10 +24,6 @@ final class EnableProxyCliCommand extends ProxyCliCommand
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $factory): int
     {
-        if (($blocked = $this->guardExtension()) !== null) {
-            return $blocked;
-        }
-
         $connector = $this->gatewayConnector($repository, $factory);
 
         if ($connector === null) {
@@ -69,9 +65,9 @@ final class EnableProxyCliCommand extends ProxyCliCommand
 
         $response = $this->sendWithProgress(
             $connector,
-            new EnableProxyCliRequest($nodeId, $cacheConnection, $cliproxyUrl, $key),
+            new SetupProxyCliRequest($nodeId, $cacheConnection, $cliproxyUrl, $key),
             ProxyCliStatusResponse::class,
-            ['Enable proxycli', 'Deploying the collector', 'Enabled proxycli'],
+            ['Setup proxycli', 'Deploying the collector', 'Set up proxycli'],
         );
 
         return $response instanceof ProxyCliStatusResponse

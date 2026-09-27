@@ -5,9 +5,13 @@ declare(strict_types=1);
 namespace App\Commands\Extension;
 
 use App\Commands\GatewayCommand;
-use App\Exceptions\GatewayConfigException;
-use App\Services\Extensions\LocalExtensionState;
-use App\Support\Console\ProgressState;
+use App\Repositories\GatewayConfigRepository;
+use App\Services\Extensions\GatewayExtensionState;
+use App\Services\GatewayConnectorFactory;
+use App\Support\Console\ConsoleWriter;
+use Orbit\Sdk\Requests\Extensions\DisableExtensionRequest;
+use Orbit\Sdk\Responses\Extensions\ExtensionResponse;
+use Throwable;
 
 final class DisableExtensionCommand extends GatewayCommand
 {
@@ -15,33 +19,29 @@ final class DisableExtensionCommand extends GatewayCommand
     protected $signature = 'extension:disable {extension : Extension slug} {--json : Return machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'Disable an optional Orbit CLI extension.';
+    protected $description = 'Disable a Gateway extension for every client.';
 
-    public function handle(LocalExtensionState $extensions): int
+    public function handle(GatewayConfigRepository $profiles, GatewayConnectorFactory $connectors): int
     {
-        $extension = $this->argument('extension');
-
-        if (! $extensions->known($extension)) {
+        $extension = (string) $this->argument('extension');
+        if (! in_array($extension, ['tasks', 'proxycli'], true)) {
             return $this->renderGatewayFailure('extension.unknown', 'Unknown Orbit extension.');
         }
 
-        $progress = $this->progressDisplay("Extension: {$extension}");
-        $progress->admit('disable', 'Disable extension', 'Disabling extension', 'Disabled extension');
-
         try {
-            $progress->during('disable', fn () => $extensions->disable($extension));
-        } catch (GatewayConfigException) {
-            return $this->renderGatewayFailure(
-                'extension.config_invalid',
-                'Orbit extension configuration is invalid or not private.',
-            );
+            $profile = $this->activeGatewayProfile($profiles);
+            if ($profile === null) {
+                return self::FAILURE;
+            }
+            $response = $this->sendOrThrow($connectors->make($profile), new DisableExtensionRequest($extension), ExtensionResponse::class);
+        } catch (Throwable $exception) {
+            return $this->renderRequestFailure($exception, 'Could not disable the extension.');
         }
-
-        $progress->complete('disable', ProgressState::Success);
-        $progress->finish("Orbit extension [{$extension}] is disabled.");
-
+        GatewayExtensionState::reset();
         if ($this->option('json') === true) {
-            $this->writeJson(['extension' => $extension, 'enabled' => false]);
+            $this->writeJson(['extension' => $extension, 'enabled' => $response->enabled]);
+        } else {
+            ConsoleWriter::write($this->output, "Orbit extension [{$extension}] is disabled.\n");
         }
 
         return self::SUCCESS;

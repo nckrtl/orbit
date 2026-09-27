@@ -12,8 +12,6 @@ use Orbit\Sdk\Requests\Tasks\CreateSubtaskRequest;
 use Orbit\Sdk\Requests\Tasks\CreateTaskCommentRequest;
 use Orbit\Sdk\Requests\Tasks\CreateTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\DestroySubtaskRequest;
-use Orbit\Sdk\Requests\Tasks\DisableTasksRequest;
-use Orbit\Sdk\Requests\Tasks\EnableTasksRequest;
 use Orbit\Sdk\Requests\Tasks\ListTaskAgentsRequest;
 use Orbit\Sdk\Requests\Tasks\ListTaskCommentsRequest;
 use Orbit\Sdk\Requests\Tasks\ListTaskGroupsRequest;
@@ -40,8 +38,6 @@ describe('task transport', function (): void {
         expect($request->getMethod())->toBe($method)
             ->and($request->resolveEndpoint())->toBe($endpoint);
     })->with([
-        'enable' => [new EnableTasksRequest, Method::POST, '/api/v1/tasks/enable'],
-        'disable' => [new DisableTasksRequest, Method::POST, '/api/v1/tasks/disable'],
         'status' => [new ShowTasksStatusRequest, Method::GET, '/api/v1/tasks/status'],
         'list' => [new ListTaskGroupsRequest, Method::GET, '/api/v1/task-groups'],
         'create' => [new CreateTaskGroupRequest(1, 'Title', 'Brief'), Method::POST, '/api/v1/task-groups'],
@@ -106,7 +102,7 @@ describe('task transport', function (): void {
             ->and(new ListTaskGroupsRequest(4, 'backlog')->query()->all())->toBe(['app_id' => 4, 'status' => 'backlog']);
     });
 
-    it('keeps toggle, status, cancel, complete, and read requests bodyless', function (GatewayRequest $request): void {
+    it('keeps status, task, and read requests bodyless', function (GatewayRequest $request): void {
         $mockClient = new MockClient([MockResponse::make(['data' => ['enabled' => true, 'id' => 1], 'meta' => ['request_id' => task_request_id()]])]);
         $connector = new GatewayConnector('https://10.44.0.1');
         $connector->withMockClient($mockClient);
@@ -120,8 +116,6 @@ describe('task transport', function (): void {
         expect($request)->not->toBeInstanceOf(HasBody::class)
             ->and((string) $mockClient->getLastPendingRequest()?->createPsrRequest()->getBody())->toBeEmpty();
     })->with([
-        'enable' => [new EnableTasksRequest],
-        'disable' => [new DisableTasksRequest],
         'status' => [new ShowTasksStatusRequest],
         'cancel' => [new CancelTaskGroupRequest(13)],
         'complete' => [new CompleteTaskGroupRequest(13)],
@@ -137,8 +131,6 @@ describe('task responses from recorded Gateway fixtures', function (): void {
         expect($response)->toBeInstanceOf($class)
             ->and($response->requestId)->toBe(task_request_id());
     })->with([
-        'enable' => ['tasks-enable/enabled', new EnableTasksRequest, TasksStatusResponse::class],
-        'disable' => ['tasks-disable/disabled', new DisableTasksRequest, TasksStatusResponse::class],
         'status' => ['tasks-status/enabled', new ShowTasksStatusRequest, TasksStatusResponse::class],
         'assisted status' => ['tasks-status/assistance', new ShowTasksStatusRequest, TasksStatusResponse::class],
         'list' => ['tasks-list/default', new ListTaskGroupsRequest, TaskGroupsResponse::class],
@@ -177,15 +169,14 @@ describe('task responses from recorded Gateway fixtures', function (): void {
             ->and($group->toArray()['request_id'])->toBe(task_request_id());
     });
 
-    it('lists assisted groups on tasks status and omits the list from enable', function (): void {
-        $enabled = task_fixture_send('tasks-enable/enabled', new EnableTasksRequest);
+    it('lists assisted groups on tasks status', function (): void {
+        $enabled = task_fixture_send('tasks-status/enabled', new ShowTasksStatusRequest);
         $clear = task_fixture_send('tasks-status/enabled', new ShowTasksStatusRequest);
         $assisted = task_fixture_send('tasks-status/assistance', new ShowTasksStatusRequest);
 
         assert($enabled instanceof TasksStatusResponse && $clear instanceof TasksStatusResponse && $assisted instanceof TasksStatusResponse);
 
-        expect($enabled->assistance)->toBeNull()
-            ->and($enabled->toArray())->not->toHaveKey('assistance')
+        expect($enabled->enabled)->toBeTrue()
             ->and($clear->assistance)->toBe([])
             ->and($clear->toArray()['assistance'])->toBe([])
             ->and(array_map(static fn (TaskAssistanceResponse $group): string => $group->reference(), $assisted->assistance ?? []))->toBe(['ORB-1', 'ORB-2'])

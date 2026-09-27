@@ -369,3 +369,85 @@ it("shows Instance overview and an Instance-scoped Tasks board with keyboard tab
     queryClient.setQueryData(["task-groups"], [owned, other, unassigned]);
     await expect.element(page.getByRole("tab", { name: /^Tasks/ })).toHaveTextContent(/Tasks\s*1/);
 });
+
+it("hides the Instance Tasks tab and skips task queries when the extension starts disabled", async () => {
+    const app = await openApp("/instances/1", { tasks: false });
+    await expect
+        .poll(() => queryClient.getQueryData(["extensions"]))
+        .toEqual({
+            tasks: false,
+            proxycli: false,
+        });
+
+    await expect
+        .element(page.getByRole("tab", { name: "Overview", exact: true }))
+        .toHaveAttribute("aria-selected", "true");
+    await expect.element(page.getByRole("tab", { name: /^Tasks/ })).not.toBeInTheDocument();
+    expect(queryClient.getQueryData(["task-groups"])).toBeUndefined();
+    expect(app.gateway.requests.some((request) => request.path === "/api/v1/task-groups")).toBe(
+        false,
+    );
+});
+
+it("returns an Instance to Overview when tasks are disabled with task data cached", async () => {
+    const owned = {
+        ...group(90, "running"),
+        title: "Cached Instance task",
+        taskable_type: "instance",
+        taskable_id: 1,
+    };
+    let taskRequests = 0;
+    const app = await openApp("/instances/1", {
+        wrapTransport: (inner) => (method, path, body) => {
+            if (path === "/api/v1/task-groups") {
+                taskRequests++;
+
+                return Promise.resolve({ status: 200, payload: { data: [owned] } });
+            }
+
+            return inner(method, path, body);
+        },
+    });
+
+    await expect.poll(() => queryClient.getQueryData(["task-groups"])).toEqual([owned]);
+    await page.getByRole("tab", { name: /^Tasks/ }).click();
+    await expect
+        .element(page.getByRole("link", { name: "Open task: Cached Instance task" }))
+        .toBeVisible();
+
+    app.gateway.disableTasks();
+    await queryClient.invalidateQueries({ queryKey: ["extensions"] });
+    await expect
+        .poll(() => queryClient.getQueryData(["extensions"]))
+        .toEqual({
+            tasks: false,
+            proxycli: false,
+        });
+
+    await expect.element(page.getByRole("tab", { name: /^Tasks/ })).not.toBeInTheDocument();
+    await expect
+        .element(page.getByRole("tab", { name: "Overview", exact: true }))
+        .toHaveAttribute("aria-selected", "true");
+    await expect.element(pane("Application log")).toBeVisible();
+    expect(queryClient.getQueryData(["task-groups"])).toEqual([owned]);
+    expect(document.body.textContent).not.toContain("Cached Instance task");
+    expect(taskRequests).toBe(1);
+});
+
+it("does not load cached Tasks data on a direct route when the extension is disabled", async () => {
+    const app = await openApp("/tasks", { tasks: false });
+    await expect
+        .poll(() => queryClient.getQueryData(["extensions"]))
+        .toEqual({
+            tasks: false,
+            proxycli: false,
+        });
+
+    await expect
+        .element(page.getByText("The tasks extension is disabled on this Gateway."))
+        .toBeVisible();
+    expect(queryClient.getQueryData(["task-groups"])).toBeUndefined();
+    expect(app.gateway.requests.some((request) => request.path === "/api/v1/task-groups")).toBe(
+        false,
+    );
+});
