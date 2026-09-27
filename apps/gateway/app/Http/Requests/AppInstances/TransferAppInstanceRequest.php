@@ -50,11 +50,11 @@ final class TransferAppInstanceRequest extends FormRequest
 
     public function payload(): TransferAppInstanceData
     {
-        /** @var array<string, mixed> $validated */
+        /** @var array{node_id: int, name?: string, sqlite_source_path?: string} $validated */
         $validated = $this->validated();
 
         return new TransferAppInstanceData(
-            nodeId: (int) $validated['node_id'],
+            nodeId: $validated['node_id'],
             name: is_string($validated['name'] ?? null) ? $validated['name'] : null,
             sqliteSourcePath: is_string($validated['sqlite_source_path'] ?? null)
                 ? $validated['sqlite_source_path']

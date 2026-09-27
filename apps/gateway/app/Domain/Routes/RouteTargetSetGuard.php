@@ -10,6 +10,7 @@ use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Shared\StoredInteger;
 use App\Models\AppInstance;
 use App\Models\Route;
 use App\Models\RouteTarget;
@@ -128,7 +129,7 @@ final readonly class RouteTargetSetGuard
             ->targets()
             ->orderBy('position')
             ->pluck('app_instance_id')
-            ->map(static fn (mixed $id): int => (int) $id)
+            ->map(static fn (mixed $id): int => StoredInteger::from($id))
             ->all();
         $detached = array_values(array_diff($current, $proposal->targetIds));
         $accounted = array_map(
@@ -261,7 +262,7 @@ final readonly class RouteTargetSetGuard
         $existing = $destination
             ->targets()
             ->pluck('app_instance_id')
-            ->map(static fn (mixed $id): int => (int) $id)
+            ->map(static fn (mixed $id): int => StoredInteger::from($id))
             ->all();
 
         if (in_array($instance->id, $existing, true)) {

@@ -9,6 +9,7 @@ use App\Domain\Settings\SettingScope;
 use App\Domain\Settings\SettingScopeType;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\Caddy\Build\CaddySiteCertificates;
+use App\Infrastructure\Shared\StoredValue;
 use App\Models\Node;
 use App\Models\Setting;
 use Carbon\CarbonImmutable;
@@ -88,7 +89,7 @@ final readonly class WebSocketDnsTarget
             ->where('key', self::SettingKey)
             ->whereNotNull('value')
             ->pluck('scope_id')
-            ->map(static fn (mixed $id): int => (int) $id)
+            ->map(static fn (mixed $id): int => StoredValue::integer($id))
             ->all();
         $candidates = array_values(array_filter(
             array_unique([...$marked, ...$this->certificates->nodeIds(CaddySiteCertificates::Websocket)]),

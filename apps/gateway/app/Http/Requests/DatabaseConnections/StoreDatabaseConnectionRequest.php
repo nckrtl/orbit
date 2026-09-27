@@ -38,8 +38,8 @@ final class StoreDatabaseConnectionRequest extends FormRequest
         $validated = $this->validated();
 
         return new AddDatabaseConnectionData(
-            slug: (string) $validated['slug'],
-            driver: DatabaseDriver::from((string) $validated['driver']),
+            slug: is_string($validated['slug'] ?? null) ? $validated['slug'] : '',
+            driver: DatabaseDriver::from(is_string($validated['driver'] ?? null) ? $validated['driver'] : ''),
             nodeId: self::nullableInt($validated, 'node_id'),
             host: self::nullableString($validated, 'host'),
             port: self::nullableInt($validated, 'port'),

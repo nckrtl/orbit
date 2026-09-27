@@ -24,6 +24,6 @@ final class TaskAgentStreamRequest extends FormRequest
     {
         $sequence = $this->validated('after_sequence');
 
-        return $sequence === null ? null : (string) $sequence;
+        return is_string($sequence) ? $sequence : null;
     }
 }

@@ -28,6 +28,8 @@ use Illuminate\Database\Eloquent\Collection;
 
 final readonly class InstanceDoctorProbe implements DoctorFamilyProbe
 {
+    public const int StuckRemovalMinutes = 10;
+
     public function __construct(
         private InstanceStateInspector $inspector,
         private ?PublicRouteEdgeInspector $publicEdge = null,
@@ -60,6 +62,25 @@ final readonly class InstanceDoctorProbe implements DoctorFamilyProbe
         }
         $issues = [];
         foreach ($rows as $instance) {
+            $instanceIssueOffset = count($issues);
+
+            if ($instance->status === AppInstanceState::Removing) {
+                if ($instance->updated_at?->lessThanOrEqualTo(now()->subMinutes(self::StuckRemovalMinutes))) {
+                    $issues[] = new DoctorIssueData(
+                        InstanceDoctorIssueCode::RemovalStuck,
+                        DoctorIssueKind::Drift,
+                        'instance',
+                        $instance->id,
+                        $instance->name,
+                        'Instance removal has not completed.',
+                        'removed',
+                        'removing',
+                    );
+                }
+
+                continue;
+            }
+
             $settled = TaskWorkspaceLifecycle::settledState($instance);
             if ($instance->status !== $settled) {
                 $issues[] = new DoctorIssueData(
@@ -150,6 +171,30 @@ final readonly class InstanceDoctorProbe implements DoctorFamilyProbe
             }
 
             $issues = [...$issues, ...$this->privateRouteIssues($instance, $context), ...$this->publicRouteIssues($instance, $context)];
+
+            if (count($issues) > $instanceIssueOffset) {
+                $current = AppInstance::query()->find($instance->id);
+
+                if (! $current instanceof AppInstance || $current->status === AppInstanceState::Removing) {
+                    $issues = array_slice($issues, 0, $instanceIssueOffset);
+
+                    if (
+                        $current instanceof AppInstance
+                        && $current->updated_at?->lessThanOrEqualTo(now()->subMinutes(self::StuckRemovalMinutes))
+                    ) {
+                        $issues[] = new DoctorIssueData(
+                            InstanceDoctorIssueCode::RemovalStuck,
+                            DoctorIssueKind::Drift,
+                            'instance',
+                            $current->id,
+                            $current->name,
+                            'Instance removal has not completed.',
+                            'removed',
+                            'removing',
+                        );
+                    }
+                }
+            }
         }
 
         return DoctorFamilyReportData::fromIssues(DoctorFamily::Instance, $rows->count(), $issues);

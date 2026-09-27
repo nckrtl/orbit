@@ -17,6 +17,7 @@ use App\Domain\Routes\RouteReconciliationGuard;
 use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Shared\StoredInteger;
 use App\Models\Route;
 use Illuminate\Support\Facades\DB;
 
@@ -46,7 +47,7 @@ final readonly class UpdateRouteAction
             ->targets()
             ->orderBy('app_instance_id')
             ->pluck('app_instance_id')
-            ->map(static fn (mixed $id): int => (int) $id)
+            ->map(static fn (mixed $id): int => StoredInteger::from($id))
             ->values()
             ->all();
 
@@ -73,7 +74,7 @@ final readonly class UpdateRouteAction
         $currentTargetIds = $route
             ->targets
             ->pluck('app_instance_id')
-            ->map(static fn (mixed $id): int => (int) $id)
+            ->map(static fn (mixed $id): int => StoredInteger::from($id))
             ->sort()
             ->values()
             ->all();

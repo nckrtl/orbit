@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Trust;
 
+use App\Support\OrbitHome;
 use RuntimeException;
 use Throwable;
 
@@ -11,7 +12,7 @@ final readonly class GatewayRootCaStore
 {
     public function store(string $gatewayName, RootCertificate $certificate): string
     {
-        $home = rtrim(string: (string) config('orbit.home'), characters: '/');
+        $home = OrbitHome::path();
         $slug = preg_replace(pattern: '/[^a-z0-9]+/', replacement: '-', subject: strtolower($gatewayName));
         $slug = is_string($slug) ? trim(string: $slug, characters: '-') : '';
         $slug = $slug !== '' ? substr(string: $slug, offset: 0, length: 48) : 'gateway';

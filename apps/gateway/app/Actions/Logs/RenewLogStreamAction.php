@@ -48,7 +48,7 @@ final readonly class RenewLogStreamAction
         return $stream !== null
             && $stream->recordType === $recordType
             && $stream->recordId === $recordId
-            && $stream->viewerNodeId === (int) $viewer->getKey();
+            && $stream->viewerNodeId === $viewer->id;
     }
 
     /** One answer for a stream that is gone, belongs to another record, or was opened by another Node. */

@@ -12,6 +12,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\WebSocket\WebSocketCredentialManager;
 use App\Domain\WebSocket\WebSocketCredentials;
 use App\Domain\WebSocket\WebSocketHostname;
+use App\Infrastructure\Shared\StoredValue;
 use App\Models\Node;
 use Closure;
 use Psr\Log\LoggerInterface;
@@ -436,7 +437,7 @@ final class AgentViewSubscriber
                 ->with('roles')
                 ->get()
                 ->filter(fn (Node $node): bool => $this->eligibility->allows($node))
-                ->map(static fn (Node $node): int => (int) $node->getKey())
+                ->map(static fn (Node $node): int => StoredValue::integer($node->getKey()))
                 ->all());
         } catch (Throwable $exception) {
             $this->log->warning('The agent view subscriber could not read the Node list.', ['error' => $exception->getMessage()]);

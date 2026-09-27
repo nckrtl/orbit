@@ -22,7 +22,7 @@ return new class extends Migration
             ->whereNotNull('registration_migration_recovery')
             ->orderBy('id')
             ->pluck('id')
-            ->map(static fn (mixed $id): string => (string) $id)
+            ->map(static fn (mixed $id): string => is_string($id) ? $id : (is_int($id) ? (string) $id : throw new RuntimeException('Expected an integer database identifier.')))
             ->all();
 
         if ($recovering !== []) {

@@ -10,6 +10,7 @@ use App\Domain\Tasks\TaskStatus;
 use App\Infrastructure\Tasks\T3\T3Dispatcher;
 use App\Infrastructure\Tasks\T3\T3ThreadReader;
 use App\Models\Annotation;
+use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 
@@ -58,7 +59,11 @@ final readonly class DispatchAnnotationsAction
                 if (! in_array($thread['worktreePath'] ?? null, $paths, true)) {
                     throw new \RuntimeException('Thread worktree mismatch');
                 }
-                if ($annotation->command === null && (($thread['latestTurn']['state'] ?? null) === 'running' || in_array($thread['session']['status'] ?? null, ['running', 'starting'], true))) {
+                $latestTurn = $thread['latestTurn'] ?? null;
+                $session = $thread['session'] ?? null;
+                $latestState = is_array($latestTurn) ? ($latestTurn['state'] ?? null) : null;
+                $sessionStatus = is_array($session) ? ($session['status'] ?? null) : null;
+                if ($annotation->command === null && ($latestState === 'running' || in_array($sessionStatus, ['running', 'starting'], true))) {
                     $annotation->update(['delivery' => 'queued', 'lease_until' => now()->addSeconds(5)]);
 
                     continue;
@@ -99,7 +104,7 @@ final readonly class DispatchAnnotationsAction
     private function prompt(Annotation $annotation): string
     {
         $path = '/api/v1/instances/'.$annotation->app_instance_id.'/annotations/'.$annotation->id.'/status';
-        $url = rtrim((string) config('app.url'), '/').$path;
+        $url = rtrim(Config::string('app.url'), '/').$path;
         $quote = static fn (string $value): string => "'".str_replace("'", "'\\''", $value)."'";
         $curl = static fn (array $body): string => 'curl --fail-with-body -sS -X POST '.$quote($url)." -H 'Content-Type: application/json' --data ".$quote(json_encode($body, JSON_THROW_ON_ERROR));
         $context = AnnotationData::fromModel($annotation)->annotation;

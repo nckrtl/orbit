@@ -6,6 +6,7 @@ use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppProd\AppProdSshExecutor;
 use App\Infrastructure\Metrics\NativeServiceMetricsRuntime;
 use App\Infrastructure\Metrics\ServiceMetricsNode;
@@ -16,6 +17,8 @@ use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Models\App as OrbitApp;
+use App\Models\AppInstance;
 use App\Models\Cluster;
 use App\Models\Node;
 use Tests\Support\FakeNodeCaddyBuilds;
@@ -26,11 +29,14 @@ beforeEach(function (): void {
         /** @var list<RemoteCommand> */
         public array $commands = [];
 
+        /** @var list<string> */
+        public array $outputs = [];
+
         public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
         {
             $this->commands[] = $command;
 
-            return new CommandResult(0, '{}', '', 1, false);
+            return new CommandResult(0, array_shift($this->outputs) ?? '{}', '', 1, false);
         }
     };
     $this->builds = new FakeNodeCaddyBuilds;
@@ -96,6 +102,50 @@ it('snapshots only exporter and pool state and restores by building the Node', f
         ->and($this->builds->built)->toBe(['app-prod']);
 });
 
+it('rejects scalar snapshots and snapshots without valid pool or exporter state', function (): void {
+    $ingress = service_metrics_runtime_node('app-prod', '10.44.0.4', [RoleName::Ingress]);
+    $instance = service_metrics_runtime_instance($ingress);
+    $target = new ServiceMetricsNode($ingress, true, true, [$instance]);
+
+    expect(fn () => $this->runtime->restore(new ServiceMetricsNode($ingress, true, false), '42'))
+        ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('metrics.service_inspection_failed'))
+        ->and(fn () => $this->runtime->restore($target, json_encode(['exporter' => [], 'pools' => []], JSON_THROW_ON_ERROR)))
+        ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('metrics.service_inspection_failed'))
+        ->and(fn () => $this->runtime->restore($target, json_encode(['exporter' => [], 'pools' => 'invalid'], JSON_THROW_ON_ERROR)))
+        ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('metrics.service_inspection_failed'))
+        ->and(fn () => $this->runtime->restore(new ServiceMetricsNode($ingress, true, false), json_encode(['pools' => []], JSON_THROW_ON_ERROR)))
+        ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('metrics.service_inspection_failed'))
+        ->and(fn () => $this->runtime->restore(new ServiceMetricsNode($ingress, true, false), json_encode(['pools' => [], 'exporter' => null], JSON_THROW_ON_ERROR)))
+        ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('metrics.service_inspection_failed'));
+});
+
+it('rejects scalar FPM pool snapshots and restores valid exporter and instance pool state', function (): void {
+    $ingress = service_metrics_runtime_node('app-prod', '10.44.0.4', [RoleName::Ingress]);
+    $instance = service_metrics_runtime_instance($ingress);
+    $target = new ServiceMetricsNode($ingress, true, true, [$instance]);
+
+    $this->ssh->outputs = ['{}', '42'];
+    expect(fn () => $this->runtime->snapshot($target))
+        ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('metrics.service_inspection_failed'));
+
+    $this->ssh->outputs = ['{"enabled":true}', '{"fingerprint":"pool-123"}'];
+    $snapshot = $this->runtime->snapshot($target);
+    $state = json_decode($snapshot, true, flags: JSON_THROW_ON_ERROR);
+    $commandsBeforeRestore = count($this->ssh->commands);
+
+    $this->ssh->outputs = ['{}', '{}'];
+    $this->runtime->restore($target, $snapshot);
+
+    expect($state['exporter'])->toBe(['enabled' => true])
+        ->and($state['pools'][(string) $instance->id])->toBe(['fingerprint' => 'pool-123'])
+        ->and(count($this->ssh->commands))->toBe($commandsBeforeRestore + 2)
+        ->and(service_metrics_runtime_request($this->ssh->commands[$commandsBeforeRestore]))
+        ->toMatchArray(['operation' => 'restore', 'state' => ['fingerprint' => 'pool-123']])
+        ->and(service_metrics_runtime_request($this->ssh->commands[$commandsBeforeRestore + 1]))
+        ->toMatchArray(['operation' => 'apply', 'state' => ['enabled' => true]])
+        ->and($this->builds->built)->toBe(['app-prod']);
+});
+
 it('keeps its error code and names the build stage when the build fails', function (): void {
     $ingress = service_metrics_runtime_node('app-prod', '10.44.0.4', [RoleName::Ingress]);
     $this->builds->failNext('app-prod', 'addresses', 'The build binds 192.168.6.30, which is not an address on this Node.');
@@ -133,6 +183,44 @@ function service_metrics_runtime_node(string $name, string $address, array $role
     }
 
     return $node;
+}
+
+function service_metrics_runtime_instance(Node $node): AppInstance
+{
+    $app = OrbitApp::query()->create([
+        'name' => 'Metrics fixture',
+        'slug' => 'metrics-fixture',
+        'repository_url' => 'https://example.test/metrics-fixture.git',
+    ]);
+
+    return AppInstance::query()->create([
+        'app_id' => $app->id,
+        'node_id' => $node->id,
+        'name' => 'production',
+        'environment' => 'production',
+        'checkout_path' => '/home/metricapp/current',
+        'root' => 'public',
+        'production_user' => 'metricapp',
+        'production_home' => '/home/metricapp',
+        'selected_php_version' => '8.5',
+        'production_php_service' => 'orbit-metricapp-php8.5-fpm.service',
+        'production_php_pool' => 'orbit-metricapp',
+        'production_php_socket' => '/run/php/metricapp.sock',
+        'status' => 'active',
+    ]);
+}
+
+/** @return array<string, mixed> */
+function service_metrics_runtime_request(RemoteCommand $command): array
+{
+    $encoded = $command->arguments[3] ?? null;
+    if (! is_string($encoded)) {
+        return [];
+    }
+
+    $request = json_decode(base64_decode($encoded, true) ?: '', true);
+
+    return is_array($request) ? array_filter($request, is_string(...), ARRAY_FILTER_USE_KEY) : [];
 }
 
 /** @param list<RemoteCommand> $commands */

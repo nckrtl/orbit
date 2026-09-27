@@ -41,7 +41,7 @@ final class StoreClusterRequest extends FormRequest
         $validated = $this->validated();
 
         return new CreateClusterData(
-            name: (string) $validated['name'],
+            name: $this->string('name')->toString(),
             tld: is_string($validated['tld'] ?? null) ? $validated['tld'] : null,
         );
     }

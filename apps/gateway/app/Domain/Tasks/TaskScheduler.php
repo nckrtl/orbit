@@ -8,6 +8,7 @@ use App\Actions\Tasks\CompleteTaskGroupAction;
 use App\Actions\Tasks\RemoveTaskWorkspaceAction;
 use App\Domain\Projects\LifecyclePhase;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Shared\StoredInteger;
 use App\Infrastructure\Tasks\Jev;
 use App\Models\AgentThread;
 use App\Models\AppInstance;
@@ -20,6 +21,7 @@ use Closure;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -1004,7 +1006,9 @@ final readonly class TaskScheduler
 
     private function receiptOutcome(TaskComment $receipt): ?TaskRunOutcome
     {
-        return TaskRunOutcome::tryFrom((string) $receipt->getRawOriginal('type'));
+        $type = $receipt->getRawOriginal('type');
+
+        return TaskRunOutcome::tryFrom(is_string($type) ? $type : '');
     }
 
     /** @throws TaskRunReceiptException */
@@ -1240,7 +1244,7 @@ final readonly class TaskScheduler
     {
         TaskGroup::query()->whereKey($group->id)->whereNull('agent_unavailable_since')->update(['agent_unavailable_since' => now()]);
         $group->refresh();
-        $grace = max(0, (int) config('orbit.tasks.observation_grace_seconds', 120));
+        $grace = max(0, Config::integer('orbit.tasks.observation_grace_seconds', 120));
         if ($group->agent_unavailable_since !== null && $group->agent_unavailable_since->lte(now()->subSeconds($grace))) {
             $claimed = TaskGroup::query()->whereKey($group->id)
                 ->where('agent_unavailable_since', $group->agent_unavailable_since)
@@ -2451,7 +2455,7 @@ final readonly class TaskScheduler
 
             return Task::query()->create([
                 'task_group_id' => $locked->id,
-                'position' => ((int) $tasks->max('position')) + 1,
+                'position' => StoredInteger::fromOrZero($tasks->max('position')) + 1,
                 'title' => $plan->title,
                 'brief' => $plan->brief,
                 'deliverables' => $plan->deliverables,

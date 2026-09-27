@@ -73,13 +73,13 @@ final class CloneAppInstanceRequest extends FormRequest
 
     public function payload(): CloneAppInstanceData
     {
-        /** @var array<string, mixed> $validated */
+        /** @var array{node_id: int, name: string, preview_name: string, branch?: string, sqlite_source_path?: string} $validated */
         $validated = $this->validated();
 
         return new CloneAppInstanceData(
-            nodeId: (int) $validated['node_id'],
-            name: (string) $validated['name'],
-            previewName: RouteDomain::normalize((string) $validated['preview_name']),
+            nodeId: $validated['node_id'],
+            name: $validated['name'],
+            previewName: RouteDomain::normalize($validated['preview_name']),
             branch: is_string($validated['branch'] ?? null) ? $validated['branch'] : null,
             sqliteSourcePath: is_string($validated['sqlite_source_path'] ?? null)
                 ? $validated['sqlite_source_path']

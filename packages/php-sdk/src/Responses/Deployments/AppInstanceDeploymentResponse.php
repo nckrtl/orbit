@@ -35,7 +35,7 @@ final readonly class AppInstanceDeploymentResponse
 
             foreach ($data['events'] as $event) {
                 if (is_array($event)) {
-                    $events[] = AppInstanceDeploymentEvent::fromArray($event);
+                    $events[] = AppInstanceDeploymentEvent::fromArray(self::stringKeyed($event));
                 }
             }
         }
@@ -57,6 +57,23 @@ final readonly class AppInstanceDeploymentResponse
             events: $events,
             requestId: $requestId,
         );
+    }
+
+    /**
+     * @param  array<mixed, mixed>  $event
+     * @return array<string, mixed>
+     */
+    private static function stringKeyed(array $event): array
+    {
+        $data = [];
+
+        foreach ($event as $key => $value) {
+            if (is_string($key)) {
+                $data[$key] = $value;
+            }
+        }
+
+        return $data;
     }
 
     /** @return array<string, mixed> */

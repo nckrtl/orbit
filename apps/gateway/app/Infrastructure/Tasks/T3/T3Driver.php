@@ -110,7 +110,11 @@ final readonly class T3Driver implements AgentDriver
                 if (! is_array($snapshot) || data_get($snapshot, 'thread.id') !== $thread->external_id) {
                     continue;
                 }
-                $raw = $snapshot['thread'];
+                $threadData = $snapshot['thread'] ?? null;
+                if (! is_array($threadData)) {
+                    continue;
+                }
+                $raw = array_filter($threadData, is_string(...), ARRAY_FILTER_USE_KEY);
                 $sequence = is_int($snapshot['snapshotSequence'] ?? null) ? $snapshot['snapshotSequence'] : -1;
                 $observed = $this->projection->observe($this->redact($snapshot, $node), $previous, $previousError);
                 $previous = $observed->state;
@@ -118,9 +122,15 @@ final readonly class T3Driver implements AgentDriver
                 $metadata = $observed->toArray();
                 unset($metadata['entries']);
                 $messages = [];
-                foreach ($raw['messages'] ?? [] as $message) {
-                    if (is_array($message) && is_string($message['id'] ?? $message['messageId'] ?? null)) {
-                        $messages[$message['id'] ?? $message['messageId']] = $message;
+                $rawMessages = $raw['messages'] ?? null;
+                foreach (is_array($rawMessages) ? $rawMessages : [] as $message) {
+                    if (! is_array($message)) {
+                        continue;
+                    }
+                    $message = array_filter($message, is_string(...), ARRAY_FILTER_USE_KEY);
+                    $messageId = $message['id'] ?? $message['messageId'] ?? null;
+                    if (is_string($messageId)) {
+                        $messages[$messageId] = $message;
                     }
                 }
                 $raw = $this->streamMetadata($raw, $observed);
@@ -140,7 +150,12 @@ final readonly class T3Driver implements AgentDriver
                     continue;
                 }
                 $single = $this->projection->apply(['messages' => isset($messages[$id]) ? [$messages[$id]] : []], $event);
-                $messages[$id] = $single['messages'][0];
+                $singleMessages = $single['messages'] ?? null;
+                $singleMessage = is_array($singleMessages) ? ($singleMessages[0] ?? null) : null;
+                if (! is_array($singleMessage)) {
+                    continue;
+                }
+                $messages[$id] = array_filter($singleMessage, is_string(...), ARRAY_FILTER_USE_KEY);
                 $entry = $this->projection->observe($this->redact($single, $node))->entries[0] ?? null;
                 if ($entry !== null) {
                     yield new AgentThreadEvent($thread->id, 'entry', ['entry' => $entry], (string) $sequence);

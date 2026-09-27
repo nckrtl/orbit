@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use LogicException;
 use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\Requests\AppInstances\ResolveAppInstanceRequest;
@@ -37,11 +38,21 @@ final readonly class DependencyInstanceSelector
             throw new GatewayApiException('The current directory is unavailable.', errorCode: 'dependencies.directory_unavailable');
         }
 
-        return $connector->send(new ResolveDirectoryInstanceRequest($directory))->dtoOrFail();
+        $resolved = $connector->send(new ResolveDirectoryInstanceRequest($directory))->dtoOrFail();
+        if (! $resolved instanceof ResolvedDirectoryInstanceResponse) {
+            throw new LogicException('Directory resolution returned an unexpected response.');
+        }
+
+        return $resolved;
     }
 
     public function resolveDomain(GatewayConnector $connector, #[SensitiveParameter] string $domain): ResolvedAppInstanceResponse
     {
-        return $connector->send(new ResolveAppInstanceRequest($domain))->dtoOrFail();
+        $resolved = $connector->send(new ResolveAppInstanceRequest($domain))->dtoOrFail();
+        if (! $resolved instanceof ResolvedAppInstanceResponse) {
+            throw new LogicException('Domain resolution returned an unexpected response.');
+        }
+
+        return $resolved;
     }
 }

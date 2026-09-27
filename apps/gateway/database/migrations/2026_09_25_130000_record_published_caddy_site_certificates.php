@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Carbon\CarbonInterface;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\DB;
 
@@ -60,7 +61,15 @@ return new class extends Migration
                     ->where('failed_step', 'like', 'converge:%')))
             ->orderBy('node_id')
             ->pluck('node_id')
-            ->map(static fn (mixed $id): int => (int) $id)
+            ->map(static function (mixed $id): int {
+                $integer = filter_var($id, FILTER_VALIDATE_INT, FILTER_NULL_ON_FAILURE);
+
+                if (! is_int($integer)) {
+                    throw new RuntimeException('Expected an integer database identifier.');
+                }
+
+                return $integer;
+            })
             ->unique()
             ->all());
     }
@@ -77,7 +86,7 @@ return new class extends Migration
         return is_string($value) ? $value : null;
     }
 
-    private function record(int $nodeId, string $site, mixed $now): void
+    private function record(int $nodeId, string $site, CarbonInterface $now): void
     {
         DB::table('settings')->updateOrInsert(
             ['scope_type' => 'node', 'scope_id' => $nodeId, 'key' => "caddy.certificate.{$site}"],

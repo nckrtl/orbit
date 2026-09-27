@@ -14,6 +14,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProtectedInput;
+use App\Infrastructure\Shared\StoredValue;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
@@ -195,7 +196,7 @@ final readonly class NodeAgentSshExecutor implements NodeAgentRuntime
 
         // Only one converge per Node runs at a time, so two converges cannot write different secrets
         // and store the other one's hash.
-        $lock = ($this->locks ?? app(NodeLocks::class))->lock('node-agent:'.($node->exists ? 'id:'.$node->getKey() : 'name:'.$node->name), self::LockSeconds);
+        $lock = ($this->locks ?? app(NodeLocks::class))->lock('node-agent:'.($node->exists ? 'id:'.StoredValue::integer($node->getKey()) : 'name:'.$node->name), self::LockSeconds);
 
         try {
             $lock->block($this->lockWaitSeconds);

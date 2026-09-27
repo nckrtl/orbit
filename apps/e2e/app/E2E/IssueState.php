@@ -389,7 +389,9 @@ final readonly class IssueState
     public function captureProof(CapturedProof|array $evidence): void
     {
         if (is_array($evidence)) {
-            $attempt = new AttemptId((string) ($evidence['proof']['attempt_id'] ?? ''));
+            $proof = $evidence['proof'] ?? null;
+            $attemptId = is_array($proof) ? ($proof['attempt_id'] ?? null) : null;
+            $attempt = new AttemptId(is_string($attemptId) ? $attemptId : '');
             $this->writeImmutable($this->attemptEvidencePath('captured-proof', $attempt), $evidence);
 
             return;

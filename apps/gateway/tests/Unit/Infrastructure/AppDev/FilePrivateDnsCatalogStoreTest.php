@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\AppDev\DnsQuestion;
 use App\Domain\AppDev\DnsRecordType;
 use App\Domain\AppDev\DnsRequester;
+use App\Domain\AppDev\PrivateDnsAnswer;
 use App\Infrastructure\AppDev\FilePrivateDnsCatalogStore;
 use App\Infrastructure\AppDev\InMemoryPrivateDnsAnswerCache;
 use Illuminate\Filesystem\Filesystem;
@@ -57,6 +58,71 @@ it('loads published requesters and overrides then keeps the last valid catalog a
     }
 });
 
+it('normalizes leading zero requester IDs before selecting node overrides', function (): void {
+    $path = tempnam(sys_get_temp_dir(), 'orbit-dns-requester-');
+    $contents = json_encode([
+        'requesters' => ['10.44.0.12' => '0012'],
+        'records' => ['service.test' => '10.44.0.1'],
+        'overrides' => ['node:12' => ['service.test' => '192.0.2.12']],
+    ], JSON_THROW_ON_ERROR);
+
+    try {
+        file_put_contents($path, $contents);
+        $store = new FilePrivateDnsCatalogStore($path);
+        $requester = $store->requesters()->resolve('10.44.0.12');
+
+        expect($requester->nodeId)->toBe(12)
+            ->and($store->catalog()->addressFor(
+                new DnsQuestion('service.test', DnsRecordType::A),
+                $requester,
+            ))->toBe('192.0.2.12');
+    } finally {
+        unlink($path);
+    }
+});
+
+it('filters malformed published fields while flushing cache and confirming the loaded catalog', function (): void {
+    $root = sys_get_temp_dir().'/orbit-catalog-malformed-'.bin2hex(random_bytes(8));
+    $files = new Filesystem;
+    $files->makeDirectory($root, 0755, true);
+    $path = $root.'/catalog.json';
+    $loaded = FilePrivateDnsCatalogStore::loadedPath($path);
+    $cache = new InMemoryPrivateDnsAnswerCache;
+    $question = new DnsQuestion('service.test', DnsRecordType::A);
+    $requester = DnsRequester::registered(12, '10.44.0.12');
+    $valid = json_encode([
+        'requesters' => ['10.44.0.12' => 12],
+        'records' => ['service.test' => '10.44.0.1'],
+        'overrides' => ['node:12' => ['service.test' => '192.0.2.12']],
+    ], JSON_THROW_ON_ERROR);
+
+    try {
+        $files->put($path, $valid);
+        $store = new FilePrivateDnsCatalogStore($path, $cache, $loaded);
+        $cache->remember($requester, $question, static fn (): PrivateDnsAnswer => PrivateDnsAnswer::a('192.0.2.12'));
+
+        $malformed = json_encode([
+            'requesters' => ['10.44.0.12' => 'not-a-node-id'],
+            'records' => ['service.test' => '10.44.0.2', 'bad.test' => 12],
+            'suffixes' => ['test' => false],
+            'overrides' => ['node:12' => ['service.test' => 99], 12 => ['bad.test' => '192.0.2.99']],
+        ], JSON_THROW_ON_ERROR);
+        $files->put($path, $malformed);
+
+        expect($store->refresh())->toBeTrue()
+            ->and($store->requesters()->resolve('10.44.0.12')->nodeId)->toBeNull()
+            ->and($store->catalog()->addressFor($question, DnsRequester::unidentified('10.44.0.12')))->toBe('10.44.0.2')
+            ->and($store->catalog()->exact)->toBe(['service.test' => '10.44.0.2'])
+            ->and($store->catalog()->suffixes)->toBe([])
+            ->and($store->catalog()->overrides)->toBe(['node:12' => []])
+            ->and($cache->remember($requester, $question, static fn (): PrivateDnsAnswer => PrivateDnsAnswer::a('10.44.0.2'))->addresses)
+            ->toBe(['10.44.0.2'])
+            ->and(file_get_contents($loaded))->toBe(hash('sha256', $malformed).PHP_EOL);
+    } finally {
+        $files->deleteDirectory($root);
+    }
+});
+
 it('reloads an atomic replacement with the same timestamp and byte count without caller cache clearing', function (): void {
     $path = tempnam(sys_get_temp_dir(), 'orbit-dns-catalog-');
     $question = new DnsQuestion('sample.orbit', DnsRecordType::A);
@@ -73,7 +139,9 @@ it('reloads an atomic replacement with the same timestamp and byte count without
             ->and($store->catalog()->addressFor($question, $requester))->toBe('10.44.0.1')
             ->and($store->refresh())->toBeFalse();
     } finally {
-        @unlink($path.'.next');
+        if (is_file($path.'.next')) {
+            unlink($path.'.next');
+        }
         unlink($path);
     }
 });

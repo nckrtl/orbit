@@ -163,12 +163,18 @@ final readonly class CapturedProof
             throw new InvalidArgumentException('The legacy captured proof time is missing.');
         }
 
+        $issue = $proof['issue'] ?? null;
+        $attemptId = $proof['attempt_id'] ?? null;
+        $candidateSha = $proof['candidate_sha'] ?? null;
+        $planSha256 = $proof['plan_sha256'] ?? null;
+        $manifestSha256 = $proof['manifest_sha256'] ?? null;
+
         return new self(
-            (string) ($proof['issue'] ?? ''),
-            new AttemptId((string) ($proof['attempt_id'] ?? '')),
-            (string) ($proof['candidate_sha'] ?? ''),
-            (string) ($proof['plan_sha256'] ?? ''),
-            (string) ($proof['manifest_sha256'] ?? ''),
+            is_string($issue) ? $issue : '',
+            new AttemptId(is_string($attemptId) ? $attemptId : ''),
+            is_string($candidateSha) ? $candidateSha : '',
+            is_string($planSha256) ? $planSha256 : '',
+            is_string($manifestSha256) ? $manifestSha256 : '',
             $proof,
             FeatureTopology::fromArray($topology),
             $manifest,

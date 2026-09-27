@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Annotations;
 
 use App\Data\Annotations\AnnotationData;
+use App\Domain\Shared\StoredInteger;
 use App\Models\Annotation;
 use App\Models\AppInstance;
 use Illuminate\Support\Facades\DB;
@@ -20,7 +21,7 @@ final readonly class StreamAnnotationsAction
                 yield 'id: '.$event->id."\nevent: annotation.updated\ndata: ".$event->payload."\n\n";
             }
             // Snapshot and cursor are read together: no change can fall between the two.
-            [$cursor, $annotations] = DB::transaction(fn (): array => [(int) DB::table('annotation_events')->max('id'), Annotation::query()->with('task')->where('app_instance_id', $instance->id)->get()->map(static fn (Annotation $a): array => AnnotationData::fromModel($a)->annotation)->all()]);
+            [$cursor, $annotations] = DB::transaction(fn (): array => [StoredInteger::fromOrZero(DB::table('annotation_events')->max('id')), Annotation::query()->with('task')->where('app_instance_id', $instance->id)->get()->map(static fn (Annotation $a): array => AnnotationData::fromModel($a)->annotation)->all()]);
             yield 'id: '.$cursor."\nevent: snapshot\ndata: ".json_encode(['annotations' => $annotations], JSON_THROW_ON_ERROR)."\n\n";
             // Finish promptly so PHP workers remain available to normal API requests.
             // EventSource reconnects using the saved cursor and the retry interval above.

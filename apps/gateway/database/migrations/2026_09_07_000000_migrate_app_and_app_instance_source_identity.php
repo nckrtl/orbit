@@ -16,7 +16,7 @@ return new class extends Migration
             ->where('source_kind', '<>', 'managed_clone')
             ->orderBy('id')
             ->pluck('id')
-            ->map(static fn (mixed $id): string => (string) $id)
+            ->map(static fn (mixed $id): string => is_string($id) ? $id : (is_int($id) ? (string) $id : throw new RuntimeException('Expected an integer database identifier.')))
             ->all();
 
         if ($unsupported !== []) {
@@ -60,7 +60,7 @@ return new class extends Migration
             ->where('source_layout', '<>', 'checkout')
             ->orderBy('id')
             ->pluck('id')
-            ->map(static fn (mixed $id): string => (string) $id)
+            ->map(static fn (mixed $id): string => is_string($id) ? $id : (is_int($id) ? (string) $id : throw new RuntimeException('Expected an integer database identifier.')))
             ->all();
 
         if ($unsupported !== []) {

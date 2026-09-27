@@ -34,6 +34,9 @@ final class JsonObjectKeys
                 array_pop($stack);
             } elseif (($validJson[$offset + strspn($validJson, " \t\r\n", $offset)] ?? null) === ':') {
                 $key = json_decode($token, flags: JSON_THROW_ON_ERROR);
+                if (! is_string($key)) {
+                    return false;
+                }
                 $level = count($stack) - 1;
                 if (isset($stack[$level][$key])) {
                     return false;

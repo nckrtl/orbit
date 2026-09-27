@@ -78,6 +78,9 @@ final readonly class ReadNpmDependencyGraphAction
                 array_pop($objects);
             } elseif (preg_match('/\G\s*:/', $contents, offset: $offset + strlen($token)) === 1) {
                 $key = json_decode($token, flags: JSON_THROW_ON_ERROR);
+                if (! is_string($key)) {
+                    $this->invalid();
+                }
                 $index = count($objects) - 1;
 
                 if (isset($objects[$index][$key])) {
@@ -134,6 +137,7 @@ final readonly class ReadNpmDependencyGraphAction
 
         unset($packages['']);
         ksort($packages, SORT_STRING);
+        $packageRecords = [];
 
         foreach ($packages as $location => $record) {
             if (! is_string($location) || ! $record instanceof stdClass) {
@@ -149,7 +153,10 @@ final readonly class ReadNpmDependencyGraphAction
 
             $this->validateRecord($record);
             array_push($requirements, ...$this->requirements($record, $location, $packages));
+            $packageRecords[$location] = $record;
         }
+
+        $packages = $packageRecords;
 
         $regular = $this->reachable($requirements, DependencyScope::Regular);
         $development = $this->reachable($requirements, DependencyScope::Development);

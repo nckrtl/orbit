@@ -16,6 +16,7 @@ use App\Support\Console\StandardInput;
 use App\Support\Console\StandardInputReader;
 use App\Support\Logs\LogFollowClock;
 use App\Support\Logs\SystemLogFollowClock;
+use App\Support\OrbitHome;
 use App\Support\Realtime\StreamWebSocketTransport;
 use App\Support\Realtime\WebSocketTransport;
 use Design\Support\FixtureReplay;
@@ -33,7 +34,7 @@ final class AppServiceProvider extends ServiceProvider
         // Dev-only: replay recorded Gateway responses under a real command; see design/README.md.
         $fixtures = getenv('ORBIT_GATEWAY_FIXTURES');
         if (getenv('ORBIT_DESIGN') === '1' && is_string($fixtures) && $fixtures !== '' && class_exists(FixtureReplay::class)) {
-            FixtureReplay::install($fixtures, (string) config('orbit.home'));
+            FixtureReplay::install($fixtures, OrbitHome::path());
         }
     }
 
@@ -55,14 +56,14 @@ final class AppServiceProvider extends ServiceProvider
         $this->app->singleton(
             LocalExtensionState::class,
             static fn (): LocalExtensionState => new LocalExtensionState(
-                rtrim((string) config('orbit.home'), '/').'/extensions.json',
+                OrbitHome::path().'/extensions.json',
             ),
         );
 
         $this->app->singleton(
             GatewayConfigRepository::class,
             static fn (): GatewayConfigRepository => new GatewayConfigRepository(
-                rtrim(string: (string) config('orbit.home'), characters: '/').'/config.json',
+                OrbitHome::path().'/config.json',
             ),
         );
     }

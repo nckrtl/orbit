@@ -21,10 +21,17 @@ final readonly class HttpCliProxyApiClient implements ProxyCliManagementClient
     {
         $response = $this->request($baseUrl, $managementKey)->get($this->url($baseUrl, '/auth-files'));
         $this->guard($response);
-        $payload = $response->json();
-        $files = is_array($payload['files'] ?? null) ? $payload['files'] : (is_array($payload) ? $payload : []);
+        $responsePayload = $response->json();
+        $payload = is_array($responsePayload) ? $responsePayload : [];
+        $files = is_array($payload['files'] ?? null) ? $payload['files'] : $payload;
+        $normalized = [];
+        foreach ($files as $file) {
+            if (is_array($file)) {
+                $normalized[] = array_filter($file, is_string(...), ARRAY_FILTER_USE_KEY);
+            }
+        }
 
-        return array_values(array_filter($files, is_array(...)));
+        return $normalized;
     }
 
     /**
@@ -48,7 +55,8 @@ final readonly class HttpCliProxyApiClient implements ProxyCliManagementClient
             ],
         ]);
         $this->guard($response);
-        $payload = $response->json();
+        $responsePayload = $response->json();
+        $payload = is_array($responsePayload) ? $responsePayload : [];
         $status = is_int($payload['status_code'] ?? null) ? $payload['status_code'] : $response->status();
         $body = $payload['body'] ?? null;
 

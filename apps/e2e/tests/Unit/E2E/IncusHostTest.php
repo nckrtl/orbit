@@ -7,6 +7,7 @@ use App\E2E\State\SecretRedactor;
 use App\E2E\Value\GuestCommand;
 use App\E2E\Value\IncusInstance;
 use App\E2E\Value\TopologyTarget;
+use Illuminate\Config\Repository;
 use Illuminate\Container\Container;
 use Illuminate\Contracts\Process\ProcessResult;
 use Illuminate\Process\Factory as ProcessFactory;
@@ -806,6 +807,44 @@ describe('IncusHost reads', function () {
         });
 
         incusHost()->initVm('images:ubuntu/26.04', 'orbit-e2e-tst-123-aaaaaaaa-gateway', 'orbit-e2e-tst-123');
+    });
+
+    it('creates a VM when the CPU limit is configured as an integer', function () {
+        app()->instance('config', new Repository([
+            'e2e' => [
+                'incus' => [
+                    'cpu' => 2,
+                    'memory' => '2GiB',
+                    'root_size' => '16GiB',
+                ],
+            ],
+        ]));
+        try {
+            Process::fake(function (PendingProcess $process) {
+                expect($process->command)->toContain('--config', 'limits.cpu=2');
+
+                return Process::result();
+            });
+
+            incusHost()->initVm('images:ubuntu/26.04', 'orbit-e2e-tst-123-aaaaaaaa-gateway', 'orbit-e2e-tst-123');
+        } finally {
+            app()->forgetInstance('config');
+        }
+    });
+
+    it('rejects a CPU limit that is not a number', function () {
+        app()->instance('config', new Repository([
+            'e2e' => ['incus' => ['cpu' => ['1']]],
+        ]));
+        try {
+            expect(fn () => incusHost()->initVm(
+                'images:ubuntu/26.04',
+                'orbit-e2e-tst-123-aaaaaaaa-gateway',
+                'orbit-e2e-tst-123',
+            ))->toThrow(InvalidArgumentException::class, 'Incus CPU limit must be a positive integer.');
+        } finally {
+            app()->forgetInstance('config');
+        }
     });
 
     it('accepts validated creation metadata without allowing ownership override', function () {

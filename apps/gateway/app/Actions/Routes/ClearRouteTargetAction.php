@@ -11,6 +11,7 @@ use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Routes\RouteAssociationGuard;
 use App\Domain\Routes\RouteReconciliationGuard;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Shared\StoredInteger;
 use App\Models\Route;
 use Illuminate\Support\Facades\DB;
 
@@ -37,7 +38,7 @@ final readonly class ClearRouteTargetAction
             ->targets()
             ->orderBy('app_instance_id')
             ->pluck('app_instance_id')
-            ->map(static fn (mixed $id): int => (int) $id)
+            ->map(static fn (mixed $id): int => StoredInteger::from($id))
             ->values()
             ->all();
 
@@ -65,7 +66,7 @@ final readonly class ClearRouteTargetAction
                 ->targets()
                 ->orderBy('app_instance_id')
                 ->pluck('app_instance_id')
-                ->map(static fn (mixed $id): int => (int) $id)
+                ->map(static fn (mixed $id): int => StoredInteger::from($id))
                 ->values()
                 ->all();
 
