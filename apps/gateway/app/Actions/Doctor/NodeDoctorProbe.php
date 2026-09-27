@@ -138,6 +138,18 @@ final readonly class NodeDoctorProbe implements DoctorFamilyProbe
             );
         }
         if ($this->eligibility->allows($node)) {
+            if ($inspection->agentBinaryExists === true && $inspection->agentChecksumMatches === false) {
+                $issues[] = new DoctorIssueData(
+                    NodeDoctorIssueCode::AgentBinaryMismatch,
+                    DoctorIssueKind::Drift,
+                    'node',
+                    $node->id,
+                    $node->name,
+                    'Node agent binary does not match the pinned checksum.',
+                    expected: true,
+                    observed: false,
+                );
+            }
             if ($inspection->agentBinaryExists === false || $inspection->agentUnitExists === false) {
                 $issues[] = new DoctorIssueData(
                     NodeDoctorIssueCode::AgentMissing,

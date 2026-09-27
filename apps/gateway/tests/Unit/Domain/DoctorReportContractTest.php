@@ -199,6 +199,7 @@ it('defines the exact stable issue-code catalog for every Doctor family', functi
             'node.architecture_mismatch',
             'node.wireguard_ip_mismatch',
             'node.agent_missing',
+            'node.agent_binary_mismatch',
             'node.agent_inactive',
             'node.agent_view_stale',
             'node.agent_secret_mismatch',
