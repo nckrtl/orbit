@@ -97,10 +97,12 @@ final readonly class QuarantineManifest
      */
     private function validate(array $freezeEvidence, array $targets): void
     {
+        $contentSha256 = $freezeEvidence['content_sha256'] ?? '';
         if (
             preg_match('/\A[a-f0-9]{64}\z/', $this->inventorySha256) !== 1
             || array_keys($freezeEvidence) !== ['path', 'content_sha256', 'mode', 'filesystem_type']
-            || preg_match('/\A[a-f0-9]{64}\z/', $freezeEvidence['content_sha256'] ?? '') !== 1
+            || ! is_string($contentSha256)
+            || preg_match('/\A[a-f0-9]{64}\z/', $contentSha256) !== 1
             || ($freezeEvidence['mode'] ?? null) !== 0600
             || ($freezeEvidence['filesystem_type'] ?? null) !== 'file'
             || ! is_string($freezeEvidence['path'] ?? null)

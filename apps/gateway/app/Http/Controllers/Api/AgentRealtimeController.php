@@ -25,7 +25,7 @@ final class AgentRealtimeController extends Controller
         $node = $this->peer($request);
         $this->ensureEligible($node, $eligibility);
         $connection = $realtime->resolve();
-        $id = (int) $node->getKey();
+        $id = $node->id;
 
         return response()->json([
             'data' => [
@@ -66,7 +66,7 @@ final class AgentRealtimeController extends Controller
                 'id' => $stream->id,
                 'lines' => $stream->lines,
                 'source' => $stream->source->toArray(),
-            ], $streams->forNode((int) $node->getKey())),
+            ], $streams->forNode($node->id)),
             'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')],
         ]);
     }
@@ -75,7 +75,7 @@ final class AgentRealtimeController extends Controller
     {
         $node = $this->peer($request);
         $this->ensureEligible($node, $eligibility);
-        $id = (int) $node->getKey();
+        $id = $node->id;
         $channel = $request->channelName();
 
         // The Node's own presence channel, and from agent 0.3.0 its own log channel (ADR 0153).
@@ -89,9 +89,9 @@ final class AgentRealtimeController extends Controller
             throw new ResourceOperationException('realtime.not_configured', 'Realtime is not configured.', 404);
         }
 
-        return response()->json($signer->sign($request->socketId(), $channel, $connection, 'agent.'.(int) $node->getKey(), [
+        return response()->json($signer->sign($request->socketId(), $channel, $connection, 'agent.'.$node->id, [
             'kind' => 'agent',
-            'node_id' => (int) $node->getKey(),
+            'node_id' => $node->id,
             'version' => $request->version(),
         ]));
     }

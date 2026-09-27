@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Tasks\T3;
 
+use App\Infrastructure\Shared\StoredValue;
 use App\Models\Node;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
@@ -175,7 +176,7 @@ final readonly class HttpT3Dispatcher implements T3Dispatcher
             return rtrim($baseUrl, '/').$path;
         }
 
-        $port = (int) config('orbit.t3.port', 3773);
+        $port = StoredValue::integer(config('orbit.t3.port', 3773), 3773);
 
         if ($port < 1 || $port > 65535) {
             $port = 3773;

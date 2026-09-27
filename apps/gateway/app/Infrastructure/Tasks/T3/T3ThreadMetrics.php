@@ -74,7 +74,7 @@ final readonly class T3ThreadMetrics
         if (! is_array($thread)) {
             return new self(null, null, checkpoint: $checkpoint);
         }
-
+        /** @var array<string, mixed> $thread */
         $fresh = $checkpoint === null;
         $checkpoint ??= [];
         $observed = self::checkpointInt($checkpoint, 't3_observed_total_processed_tokens');
@@ -154,7 +154,7 @@ final readonly class T3ThreadMetrics
         if (! is_array($thread)) {
             return new self(null, null, checkpoint: $checkpoint);
         }
-
+        /** @var array<string, mixed> $thread */
         $calls = self::checkpointInt($checkpoint ?? [], 't3_model_calls') ?? 0;
         $partial = ($checkpoint['t3_metrics_partial'] ?? false) === true;
         $tokens = self::tokens($thread);

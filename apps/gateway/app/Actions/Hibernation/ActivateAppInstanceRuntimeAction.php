@@ -42,7 +42,7 @@ final readonly class ActivateAppInstanceRuntimeAction
             );
         }
 
-        $instanceId = (int) $instance->getKey();
+        $instanceId = $instance->id;
 
         try {
             $this->admissions->run([$instanceId], function () use ($instance, $instanceId): void {

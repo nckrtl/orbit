@@ -19,8 +19,8 @@ final readonly class DependencyErrorHint
     }
 
     /**
-     * @param  array<string, mixed>  $fields
-     * @return array<string, mixed>
+     * @param  array<string, scalar|null|list<scalar|null>>  $fields
+     * @return array<string, scalar|null|list<scalar|null>>
      */
     public static function withHint(array $fields, ?string $errorCode): array
     {

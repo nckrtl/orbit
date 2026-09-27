@@ -58,12 +58,12 @@ final class StoreScheduleRequest extends FormRequest
         $validated = $this->validated();
 
         return new AddScheduleData(
-            targetType: ScheduleTargetType::from((string) $validated['target_type']),
-            targetId: (int) $validated['target_id'],
-            name: (string) $validated['name'],
-            calendar: (string) $validated['calendar'],
-            command: (string) $validated['command'],
-            timeoutSeconds: (int) ($validated['timeout_seconds'] ?? 3600),
+            targetType: ScheduleTargetType::from($this->string('target_type')->toString()),
+            targetId: $this->integer('target_id'),
+            name: $this->string('name')->toString(),
+            calendar: $this->string('calendar')->toString(),
+            command: $this->string('command')->toString(),
+            timeoutSeconds: $this->integer('timeout_seconds', 3600),
             start: ($validated['start'] ?? true) === true,
         );
     }

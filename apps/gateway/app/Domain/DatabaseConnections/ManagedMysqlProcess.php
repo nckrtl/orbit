@@ -91,7 +91,8 @@ final readonly class ManagedMysqlProcess
             );
         }
 
-        $rootPassword = $process->runtime_config['environment']['MYSQL_ROOT_PASSWORD'] ?? null;
+        $environment = $process->runtime_config['environment'] ?? null;
+        $rootPassword = is_array($environment) ? ($environment['MYSQL_ROOT_PASSWORD'] ?? null) : null;
 
         if (! is_string($rootPassword) || $rootPassword === '') {
             throw new ResourceOperationException(

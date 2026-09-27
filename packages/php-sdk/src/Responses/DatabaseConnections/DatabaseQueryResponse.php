@@ -36,8 +36,18 @@ final readonly class DatabaseQueryResponse
         $redactor = new CredentialRedactor;
         $columns = [];
         $rows = [];
+        $columnData = $data['columns'] ?? [];
+        $rowData = $data['rows'] ?? [];
 
-        foreach ($data['columns'] ?? [] as $column) {
+        if (! is_array($columnData)) {
+            throw new InvalidArgumentException('Invalid Database query response field [columns].');
+        }
+
+        if (! is_array($rowData)) {
+            throw new InvalidArgumentException('Invalid Database query response field [rows].');
+        }
+
+        foreach ($columnData as $column) {
             if (! is_string($column) || $column === '') {
                 throw new InvalidArgumentException('Invalid Database query response field [columns].');
             }
@@ -45,7 +55,7 @@ final readonly class DatabaseQueryResponse
             $columns[] = $redactor->redactText($column);
         }
 
-        foreach ($data['rows'] ?? [] as $row) {
+        foreach ($rowData as $row) {
             if (! is_array($row)) {
                 throw new InvalidArgumentException('Invalid Database query response field [rows].');
             }

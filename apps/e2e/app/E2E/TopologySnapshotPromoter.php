@@ -477,12 +477,9 @@ final readonly class TopologySnapshotPromoter
         $id = substr($candidate, 0, 12).'-'.substr($desired->value, 0, 12);
         // A refresh of the same commit already promoted this identity; re-promoting keeps its lineage.
         $previous = $id === $promoted->id ? $promoted->previousGenerationId : $promoted->id;
-        /** @var list<string> $roles */
-        $roles = array_values(array_map(strval(...), $manifest['topology']['roles']));
-        /** @var list<string> $checkoutRoles */
-        $checkoutRoles = array_values(array_map(strval(...), $manifest['topology']['checkout_roles']));
-        /** @var array<string, list<string>> $assignments */
-        $assignments = $manifest['topology']['assignments'];
+        $roles = $this->stringList($manifest['topology']['roles']);
+        $checkoutRoles = $this->stringList($manifest['topology']['checkout_roles']);
+        $assignments = $this->assignmentMap($manifest['topology']['assignments']);
 
         return new TopologySnapshotGeneration(
             $id,
@@ -662,5 +659,39 @@ final readonly class TopologySnapshotPromoter
         } finally {
             $lock->release();
         }
+    }
+
+    /** @return list<string> */
+    private function stringList(mixed $value): array
+    {
+        if (! is_array($value)) {
+            throw new RuntimeException('The prepared fingerprint manifest has an invalid topology shape.');
+        }
+        $items = [];
+        foreach ($value as $item) {
+            if (! is_string($item)) {
+                throw new RuntimeException('The prepared fingerprint manifest has an invalid topology shape.');
+            }
+            $items[] = $item;
+        }
+
+        return $items;
+    }
+
+    /** @return array<string, list<string>> */
+    private function assignmentMap(mixed $value): array
+    {
+        if (! is_array($value)) {
+            throw new RuntimeException('The prepared fingerprint manifest has an invalid topology shape.');
+        }
+        $assignments = [];
+        foreach ($value as $node => $roles) {
+            if (! is_string($node)) {
+                throw new RuntimeException('The prepared fingerprint manifest has an invalid topology shape.');
+            }
+            $assignments[$node] = $this->stringList($roles);
+        }
+
+        return $assignments;
     }
 }

@@ -30,7 +30,15 @@ trait ResolvesDevelopmentNodeExclusions
     protected function resolveExclusionProjectId(GatewayConnector $connector, mixed $value): ?int
     {
         if ($value !== null) {
-            return (int) $value;
+            $projectId = filter_var($value, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+
+            if (! is_int($projectId)) {
+                $this->renderGatewayFailure('app.id_invalid', 'Project ID must be a positive integer.');
+
+                return null;
+            }
+
+            return $projectId;
         }
 
         $projects = $this->sendWithProgress(

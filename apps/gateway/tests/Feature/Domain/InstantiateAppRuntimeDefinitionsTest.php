@@ -108,7 +108,7 @@ it('creates independent stopped copies for both Process backends and a disabled 
         'command' => ['redis-server'],
         'environment' => ['ZEBRA' => 'last', 'ALPHA' => 'first'],
         'ports' => ['127.0.0.1:6380:6379/tcp'],
-        'volumes' => [['source' => 'redis-data', 'target' => '/data', 'read_only' => false]],
+        'volumes' => [['source' => 'redis-data', 'target' => '/data']],
         'restart_policy' => 'unless-stopped',
     ]);
     $definition = orb225_schedule_definition($this->orbitApp, 'report');
@@ -144,6 +144,28 @@ it('creates independent stopped copies for both Process backends and a disabled 
         ->and($schedule->desired_timer_state)->toBe(DesiredTimerState::Disabled)
         ->and($this->processRuntime->converged)->toBe(['queue', 'redis'])
         ->and($this->scheduleRuntime->installed)->toBe(['report']);
+});
+
+it('normalizes integer read_only values when instantiating stored process definitions', function (): void {
+    orb225_process_definition($this->orbitApp, 'readonly', ['production'], [
+        'runtime' => 'docker',
+        'image' => 'redis:8-alpine',
+        'command' => ['redis-server'],
+        'volumes' => [['source' => 'readonly-data', 'target' => '/data', 'read_only' => 1]],
+    ]);
+    orb225_process_definition($this->orbitApp, 'writable', ['production'], [
+        'runtime' => 'docker',
+        'image' => 'redis:8-alpine',
+        'command' => ['redis-server'],
+        'volumes' => [['source' => 'writable-data', 'target' => '/data', 'read_only' => 0]],
+    ]);
+
+    $this->action->execute($this->target);
+
+    $copies = Process::query()->where('owner_id', $this->target->id)->get()->keyBy('name');
+
+    expect($copies['readonly']->runtime_config['volumes'][0]['read_only'])->toBeTrue()
+        ->and($copies['writable']->runtime_config['volumes'][0]['read_only'])->toBeFalse();
 });
 
 it('permits only captured copies to install before the production target becomes active', function (): void {

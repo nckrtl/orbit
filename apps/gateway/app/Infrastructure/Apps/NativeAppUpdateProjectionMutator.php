@@ -16,6 +16,7 @@ use App\Domain\Routes\RouteStateResolver;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Routes\RouteTargetWebRoot;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Shared\StoredValue;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\AppInstanceEnvironmentValue;
@@ -69,12 +70,8 @@ final readonly class NativeAppUpdateProjectionMutator implements AppUpdateProjec
     {
         $prepared = [];
 
-        foreach ($inventory['routes'] ?? [] as $proposal) {
-            if (! is_array($proposal)) {
-                continue;
-            }
-
-            $current = Route::query()->with('targets')->find((int) $proposal['route_id']);
+        foreach ($this->rows($inventory['routes'] ?? null) as $proposal) {
+            $current = Route::query()->with('targets')->find(StoredValue::integer($proposal['route_id'] ?? null));
 
             if (! $current instanceof Route) {
                 continue;
@@ -105,7 +102,7 @@ final readonly class NativeAppUpdateProjectionMutator implements AppUpdateProjec
             $prepared[] = [
                 ...$proposal,
                 'replacement_id' => $replacement->id,
-                'previous_env' => $this->storedUrl((int) ($proposal['instance_id'] ?? 0)),
+                'previous_env' => $this->storedUrl(StoredValue::integer($proposal['instance_id'] ?? null)),
             ];
         }
 
@@ -114,13 +111,9 @@ final readonly class NativeAppUpdateProjectionMutator implements AppUpdateProjec
 
     public function publishSlug(OrbitApp $app, string $newSlug, array $prepared): void
     {
-        foreach ($prepared['routes'] ?? [] as $row) {
-            if (! is_array($row)) {
-                continue;
-            }
-
-            $replacement = Route::query()->with('targets.appInstance')->find((int) $row['replacement_id']);
-            $current = Route::query()->find((int) $row['route_id']);
+        foreach ($this->rows($prepared['routes'] ?? null) as $row) {
+            $replacement = Route::query()->with('targets.appInstance')->find(StoredValue::integer($row['replacement_id'] ?? null));
+            $current = Route::query()->find(StoredValue::integer($row['route_id'] ?? null));
 
             if ($current instanceof Route) {
                 $current->update(['status' => RouteStatus::Retiring]);
@@ -146,7 +139,7 @@ final readonly class NativeAppUpdateProjectionMutator implements AppUpdateProjec
                 ]);
             }
 
-            $instance = AppInstance::query()->find((int) ($row['instance_id'] ?? 0));
+            $instance = AppInstance::query()->find(StoredValue::integer($row['instance_id'] ?? null));
 
             if (! $instance instanceof AppInstance || ! $replacement instanceof Route) {
                 continue;
@@ -164,13 +157,9 @@ final readonly class NativeAppUpdateProjectionMutator implements AppUpdateProjec
 
     public function rollbackSlug(OrbitApp $app, array $prepared): void
     {
-        foreach ($prepared['routes'] ?? [] as $row) {
-            if (! is_array($row)) {
-                continue;
-            }
-
-            $replacement = Route::query()->find((int) ($row['replacement_id'] ?? 0));
-            $current = Route::query()->find((int) ($row['route_id'] ?? 0));
+        foreach ($this->rows($prepared['routes'] ?? null) as $row) {
+            $replacement = Route::query()->find(StoredValue::integer($row['replacement_id'] ?? null));
+            $current = Route::query()->find(StoredValue::integer($row['route_id'] ?? null));
 
             if ($current instanceof Route) {
                 $current->update(['replaced_by_route_id' => null]);
@@ -181,7 +170,7 @@ final readonly class NativeAppUpdateProjectionMutator implements AppUpdateProjec
                 $replacement->delete();
             }
 
-            $instance = AppInstance::query()->find((int) ($row['instance_id'] ?? 0));
+            $instance = AppInstance::query()->find(StoredValue::integer($row['instance_id'] ?? null));
             $previous = $row['previous_env'] ?? null;
 
             if ($instance instanceof AppInstance && is_string($previous)) {
@@ -220,12 +209,8 @@ final readonly class NativeAppUpdateProjectionMutator implements AppUpdateProjec
 
     public function publishRoot(OrbitApp $app, string $newRoot, array $prepared): void
     {
-        foreach ($prepared['instances'] ?? [] as $row) {
-            if (! is_array($row)) {
-                continue;
-            }
-
-            $instance = AppInstance::query()->find((int) $row['instance_id']);
+        foreach ($this->rows($prepared['instances'] ?? null) as $row) {
+            $instance = AppInstance::query()->find(StoredValue::integer($row['instance_id'] ?? null));
 
             if (! $instance instanceof AppInstance) {
                 continue;
@@ -242,6 +227,23 @@ final readonly class NativeAppUpdateProjectionMutator implements AppUpdateProjec
     public function rollbackRoot(OrbitApp $app, array $prepared): void
     {
         $this->publishRoot($app, (string) $app->root, $prepared);
+    }
+
+    /** @return list<array<string, mixed>> */
+    private function rows(mixed $value): array
+    {
+        if (! is_array($value)) {
+            return [];
+        }
+
+        $rows = [];
+        foreach ($value as $row) {
+            if (is_array($row)) {
+                $rows[] = array_filter($row, is_string(...), ARRAY_FILTER_USE_KEY);
+            }
+        }
+
+        return $rows;
     }
 
     private function proposedDomain(OrbitApp $app, Route $route, ?AppInstance $instance, string $newSlug): string

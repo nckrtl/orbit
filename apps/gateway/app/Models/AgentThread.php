@@ -26,6 +26,10 @@ use Illuminate\Support\Carbon;
  * @property AgentThreadState|null $state
  * @property int $observation_version
  * @property Carbon|null $observed_at
+ * @property Carbon|null $archived_at
+ * @property string|null $archive_command_id
+ * @property int $archive_attempts
+ * @property Carbon|null $archive_retry_at
  * @property string|null $observation_error
  * @property string|null $error
  * @property int|null $tokens
@@ -59,7 +63,7 @@ final class AgentThread extends Model
 {
     /** @var list<string> */
     #[\Override]
-    protected $fillable = ['task_group_id', 'task_id', 'node_id', 'driver', 'runtime_key', 'external_id', 'role', 'model', 'effort', 'state', 'observation_version', 'observed_at', 'observation_error', 'error', 'tokens', 'input_tokens', 'cached_input_tokens', 'output_tokens', 'model_calls', 'peak_context_tokens', 'lines_added', 'lines_deleted', 't3_input_tokens', 't3_cached_input_tokens', 't3_output_tokens', 't3_model_calls', 't3_peak_context_tokens', 't3_counted_total_processed_tokens', 't3_observed_total_processed_tokens', 't3_event_sequence', 't3_metrics_partial', 't3_metrics_initialized', 't3_metrics_collected_at', 't3_metrics_final_at', 't3_metrics_retry_at', 't3_metrics_attempts', 't3_metrics_activity_version', 't3_metrics_observed_activity_version'];
+    protected $fillable = ['task_group_id', 'task_id', 'node_id', 'driver', 'runtime_key', 'external_id', 'role', 'model', 'effort', 'state', 'observation_version', 'observed_at', 'archived_at', 'archive_command_id', 'archive_attempts', 'archive_retry_at', 'observation_error', 'error', 'tokens', 'input_tokens', 'cached_input_tokens', 'output_tokens', 'model_calls', 'peak_context_tokens', 'lines_added', 'lines_deleted', 't3_input_tokens', 't3_cached_input_tokens', 't3_output_tokens', 't3_model_calls', 't3_peak_context_tokens', 't3_counted_total_processed_tokens', 't3_observed_total_processed_tokens', 't3_event_sequence', 't3_metrics_partial', 't3_metrics_initialized', 't3_metrics_collected_at', 't3_metrics_final_at', 't3_metrics_retry_at', 't3_metrics_attempts', 't3_metrics_activity_version', 't3_metrics_observed_activity_version'];
 
     /** @return BelongsTo<Node, $this> */
     public function node(): BelongsTo
@@ -88,6 +92,6 @@ final class AgentThread extends Model
     /** @return array<string, string> */
     protected function casts(): array
     {
-        return ['state' => AgentThreadState::class, 'observation_version' => 'integer', 'observed_at' => 'datetime', 'tokens' => 'integer', 'input_tokens' => 'integer', 'cached_input_tokens' => 'integer', 'output_tokens' => 'integer', 'model_calls' => 'integer', 'peak_context_tokens' => 'integer', 'lines_added' => 'integer', 'lines_deleted' => 'integer', 't3_input_tokens' => 'integer', 't3_cached_input_tokens' => 'integer', 't3_output_tokens' => 'integer', 't3_model_calls' => 'integer', 't3_peak_context_tokens' => 'integer', 't3_counted_total_processed_tokens' => 'integer', 't3_observed_total_processed_tokens' => 'integer', 't3_event_sequence' => 'integer', 't3_metrics_partial' => 'boolean', 't3_metrics_initialized' => 'boolean', 't3_metrics_collected_at' => 'datetime', 't3_metrics_final_at' => 'datetime', 't3_metrics_retry_at' => 'datetime', 't3_metrics_attempts' => 'integer', 't3_metrics_activity_version' => 'integer', 't3_metrics_observed_activity_version' => 'integer'];
+        return ['state' => AgentThreadState::class, 'observation_version' => 'integer', 'observed_at' => 'datetime', 'archived_at' => 'datetime', 'archive_retry_at' => 'datetime', 'archive_attempts' => 'integer', 'tokens' => 'integer', 'input_tokens' => 'integer', 'cached_input_tokens' => 'integer', 'output_tokens' => 'integer', 'model_calls' => 'integer', 'peak_context_tokens' => 'integer', 'lines_added' => 'integer', 'lines_deleted' => 'integer', 't3_input_tokens' => 'integer', 't3_cached_input_tokens' => 'integer', 't3_output_tokens' => 'integer', 't3_model_calls' => 'integer', 't3_peak_context_tokens' => 'integer', 't3_counted_total_processed_tokens' => 'integer', 't3_observed_total_processed_tokens' => 'integer', 't3_event_sequence' => 'integer', 't3_metrics_partial' => 'boolean', 't3_metrics_initialized' => 'boolean', 't3_metrics_collected_at' => 'datetime', 't3_metrics_final_at' => 'datetime', 't3_metrics_retry_at' => 'datetime', 't3_metrics_attempts' => 'integer', 't3_metrics_activity_version' => 'integer', 't3_metrics_observed_activity_version' => 'integer'];
     }
 }

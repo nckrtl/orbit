@@ -26,15 +26,17 @@ return new class extends Migration
             $table->foreignId('task_id')->nullable()->unique()->constrained('tasks')->restrictOnDelete();
         });
         foreach (DB::table('annotations')->orderBy('id')->get() as $annotation) {
-            $context = json_decode($annotation->context, true, flags: JSON_THROW_ON_ERROR);
+            $decodedContext = json_decode($annotation->context, true, flags: JSON_THROW_ON_ERROR);
+            $context = is_array($decodedContext) ? $decodedContext : [];
             $status = match ($annotation->status) {
                 'resolved' => 'completed', 'in_progress' => 'running', default => 'pending',
             };
-            $title = mb_substr((string) ($context['comment'] ?? 'Annotation'), 0, 200);
+            $comment = is_string($context['comment'] ?? null) ? $context['comment'] : '';
+            $title = mb_substr($comment !== '' ? $comment : 'Annotation', 0, 200);
             $groupId = DB::table('task_groups')->insertGetId([
                 'app_id' => DB::table('app_instances')->where('id', $annotation->app_instance_id)->value('app_id'),
                 'taskable_type' => 'App\\Models\\AppInstance', 'taskable_id' => $annotation->app_instance_id,
-                'title' => $title, 'brief' => (string) ($context['comment'] ?? ''),
+                'title' => $title, 'brief' => $comment,
                 'execution_mode' => 'existing_thread', 'agent_driver' => 't3',
                 'status' => $status === 'pending' ? 'queued' : $status,
                 'created_at' => $annotation->created_at, 'updated_at' => $annotation->updated_at,
@@ -42,7 +44,7 @@ return new class extends Migration
             ]);
             $taskId = DB::table('tasks')->insertGetId([
                 'task_group_id' => $groupId, 'position' => 1, 'type' => 'annotation', 'title' => $title,
-                'brief' => (string) ($context['comment'] ?? ''), 'status' => $status,
+                'brief' => $comment, 'status' => $status,
                 'target_thread_id' => $annotation->thread_id, 'completion_summary' => $annotation->summary,
                 'created_at' => $annotation->created_at, 'updated_at' => $annotation->updated_at,
                 'settled_at' => $status === 'completed' ? $annotation->updated_at : null,

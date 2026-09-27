@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace App\Domain\Broadcasting;
 
 use Closure;
+use Illuminate\Contracts\Broadcasting\Broadcaster;
 use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\Log;
+use RuntimeException;
 use Throwable;
 
 /**
@@ -69,7 +71,13 @@ final readonly class RecordEventBroadcaster
                 $this->realtime->configureBroadcasting($connection, oldServer: true);
                 // The old Node's server gets the same payload directly, so listeners run once.
                 Broadcast::purge('reverb');
-                Broadcast::connection('reverb')->broadcast($event->broadcastOn(), $event->broadcastAs(), $event->broadcastWith());
+                $broadcaster = Broadcast::connection('reverb');
+
+                if (! $broadcaster instanceof Broadcaster) {
+                    throw new RuntimeException('The reverb broadcaster is unavailable.');
+                }
+
+                $broadcaster->broadcast($event->broadcastOn(), $event->broadcastAs(), $event->broadcastWith());
             }, $type, $id);
             $this->realtime->recordOldServer($connection, $reached);
         }

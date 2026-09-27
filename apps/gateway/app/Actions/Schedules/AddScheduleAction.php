@@ -67,7 +67,7 @@ final readonly class AddScheduleAction
                 ScheduleTargetType::AppInstance => AppInstance::query()->lockForUpdate()->findOrFail($data->targetId),
             };
 
-            return $this->targets->resolve($data->targetType, (int) $model->getKey());
+            return $this->targets->resolve($data->targetType, $model->id);
         });
 
         /** @var array{schedule: Schedule, created: bool} $admission */

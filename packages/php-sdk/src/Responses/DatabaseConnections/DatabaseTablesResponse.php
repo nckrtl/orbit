@@ -28,8 +28,13 @@ final readonly class DatabaseTablesResponse
     ): self {
         $redactor = new CredentialRedactor;
         $tables = [];
+        $tableData = $data['tables'] ?? [];
 
-        foreach ($data['tables'] ?? [] as $table) {
+        if (! is_array($tableData)) {
+            throw new InvalidArgumentException('Invalid Database tables response field [tables].');
+        }
+
+        foreach ($tableData as $table) {
             if (! is_string($table) || $table === '') {
                 throw new InvalidArgumentException('Invalid Database tables response field [tables].');
             }

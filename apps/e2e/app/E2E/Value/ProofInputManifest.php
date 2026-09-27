@@ -220,24 +220,32 @@ final readonly class ProofInputManifest
         }
         $paths = [];
         foreach ($staticInputs as $input) {
+            $path = $input['path'] ?? null;
+            $classification = $input['classification'] ?? null;
+            $mode = $input['mode'] ?? null;
+            $blob = $input['blob'] ?? null;
             if (
                 array_keys($input) !== ['path', 'classification', 'mode', 'blob']
-                || ! $this->safePath($input['path'])
+                || ! is_string($path)
+                || ! $this->safePath($path)
+                || ! is_string($classification)
                 || ! in_array(
-                    $input['classification'],
+                    $classification,
                     [
                         ProofInputClassification::Runtime->value,
                         ProofInputClassification::ProofContract->value,
                     ],
                     true,
                 )
-                || preg_match('/\A[0-7]{6}\z/D', $input['mode']) !== 1
-                || preg_match('/\A[0-9a-f]{40}\z/D', $input['blob']) !== 1
-                || isset($paths[$input['path']])
+                || ! is_string($mode)
+                || preg_match('/\A[0-7]{6}\z/D', $mode) !== 1
+                || ! is_string($blob)
+                || preg_match('/\A[0-9a-f]{40}\z/D', $blob) !== 1
+                || isset($paths[$path])
             ) {
                 throw new InvalidArgumentException('A proof-input manifest entry is invalid.');
             }
-            $paths[$input['path']] = true;
+            $paths[$path] = true;
         }
         $ordered = array_keys($paths);
         $sorted = $ordered;

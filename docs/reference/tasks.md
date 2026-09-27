@@ -7,7 +7,9 @@ description: "How the Gateway tasks extension holds TaskGroup features in Backlo
 
 This page tells an operator how the optional Gateway `tasks` extension runs a Commander-style feature group. A group waits in Backlog while its branch, ADRs, documentation, and subtasks are prepared. Once the group is in Todo, the Gateway provisions its shared Instance, starts agents, and moves each task from turn to turn with run receipts and mechanical checks. It commits approved work and pushes that commit to `origin`, opens and watches the pull request, retains capacity through assistance and merge wait, and removes the workspace clone when the group is cancelled or completed.
 
-[ADR 0103](/decisions/0103-absorb-commander-tasks-as-a-gateway-extension) owns the extension boundary. [ADR 0110](/decisions/0110-route-task-sessions-with-laravel-ai-jev) owns session routing. [ADR 0113](/decisions/0113-gate-task-completion-on-validation-and-review) owns completion gates. [ADR 0122](/decisions/0122-hold-task-groups-in-backlog-until-ready) owns Backlog and Todo. [ADR 0124](/decisions/0124-plan-backlog-groups-with-a-t3-planner) owns planning. [ADR 0160](/decisions/0160-push-each-approved-subtask-and-remove-the-finished-workspace-clone) owns the push after each approval and deletion of the workspace clone. [ADR 0164](/decisions/0164-heal-a-settling-pull-request-with-a-fixup-subtask) owns the fixup that returns a settling group to running. [ADR 0165](/decisions/0165-record-per-thread-token-metrics) owns the per-thread token split. [ADR 0172](/decisions/0172-count-every-t3-model-call-in-thread-metrics) owns complete T3 per-call collection and gap handling. [ADR 0167](/decisions/0167-resume-a-pi-turn-interrupted-by-a-server-restart) owns recovery of a Pi turn that a server restart interrupted. [ADR 0169](/decisions/0169-start-each-subtask-review-in-a-fresh-thread) owns the fresh reviewer thread for each subtask, the review packet, and the MCP search endpoint for the planner and the reviewer.
+[ADR 0103](/decisions/0103-absorb-commander-tasks-as-a-gateway-extension) owns the extension boundary. [ADR 0110](/decisions/0110-route-task-sessions-with-laravel-ai-jev) owns session routing. [ADR 0113](/decisions/0113-gate-task-completion-on-validation-and-review) owns completion gates. [ADR 0122](/decisions/0122-hold-task-groups-in-backlog-until-ready) owns Backlog and Todo. [ADR 0124](/decisions/0124-plan-backlog-groups-with-a-t3-planner) owns planning.
+
+[ADR 0160](/decisions/0160-push-each-approved-subtask-and-remove-the-finished-workspace-clone) owns the push after each approval and deletion of the workspace clone. [ADR 0164](/decisions/0164-heal-a-settling-pull-request-with-a-fixup-subtask) owns the fixup that returns a settling group to running. [ADR 0171](/decisions/0171-reset-fixup-caps-after-operator-work) owns when its fixup caps reset. [ADR 0165](/decisions/0165-record-per-thread-token-metrics) owns the per-thread token split. [ADR 0172](/decisions/0172-count-every-t3-model-call-in-thread-metrics) owns complete T3 per-call collection and gap handling. [ADR 0167](/decisions/0167-resume-a-pi-turn-interrupted-by-a-server-restart) owns recovery of a Pi turn that a server restart interrupted. [ADR 0169](/decisions/0169-start-each-subtask-review-in-a-fresh-thread) owns the fresh reviewer thread for each subtask, the review packet, and the MCP search endpoint for the planner and the reviewer.
 
 The extension is off until an authorized Gateway caller enables it. There is no web UI for create. Agents create groups through the [MCP server](/reference/mcp). The [`tasks` CLI family](/cli/tasks) runs every operation on this page from a terminal when MCP is unavailable.
 
@@ -402,9 +404,11 @@ The browser supplies an opaque `Last-Event-ID` on reconnect. A tab that returns 
 
 An `AgentThread` is one persistent conversation. It records the driver, external conversation ID, original Node, task links, role, model, and effort. Task and TaskGroup thread pointers refer to Orbit thread IDs. Existing T3 session links migrate with their IDs and ownership preserved. The external runtime retains the transcript. The integer `reviewer_agent_thread_id` and `implementer_agent_thread_id` fields replace external string pointers. The migration preserves old record IDs and imports missing legacy links.
 
-Orbit reserves a row before it starts a conversation, so the opening prompt can name the Orbit thread id. That row's external id starts with `pending:` until the conversation starts. It is not a conversation yet. The agents list, the Agents section, token totals, and `agent_thread.updated` leave it out, and Orbit does not read it from the driver. If starting the conversation throws, Orbit deletes the row. The next attempt does not reuse it.
-
 It is forward-only; reverting to an older Gateway requires restoring a database backup or a reviewed forward migration. Ownership conflicts are checked before schema changes. Take a backup before migrating. If a database without transactional DDL stops partway through a schema change, restore that backup before retrying; do not rerun against the partial schema.
+
+Orbit reserves a row before it starts a conversation, so the opening prompt can name the Orbit thread id. That row's external id starts with `pending:` until the conversation starts. It is not a conversation yet. The agents list, the Agents section, token totals, and `agent_thread.updated` leave it out, and Orbit does not read it from the driver. When a spawn reports a failure, Orbit deletes the reservation, and a later attempt creates a new one.
+
+If the process stops before it can clean up a failed spawn, the `pending:` row may remain. A tick deletes it only after its task or group is completed or cancelled. While the owner remains active, Orbit keeps the row and a later spawn reuses it; pending reservations do not expire based on age. See [Archive finished threads](#archive-finished-threads).
 
 | State | Meaning |
 | --- | --- |
@@ -419,6 +423,18 @@ Completion and failure remain visible until a new turn starts. Task completion s
 A group records an implementer driver and a reviewer driver. `ORBIT_TASKS_IMPLEMENTER_AGENT_DRIVER` and `ORBIT_TASKS_REVIEWER_AGENT_DRIVER` select them for new groups. Each defaults to `ORBIT_TASKS_AGENT_DRIVER`, which defaults to `t3`. Placement requires a Node that allows both drivers. Existing groups and threads keep their recorded drivers. The Gateway registers drivers; callers cannot supply arbitrary runtime URLs. Unsupported driver operations fail explicitly. An unknown configured driver rejects group creation with `tasks.agent_driver_unavailable` before any group is stored.
 
 The Gateway sends normalized conversation snapshots, entries, states, input requests, and metrics to the web app. Reconnect cursors belong to the selected driver. The browser renders Orbit data without parsing runtime-specific events. Laravel AI continues to select scheduler actions through Jev.
+
+### Archive finished threads
+
+Orbit archives T3 threads after their work ends. When a subtask reaches `completed` or `cancelled`, Orbit archives that subtask's reviewer thread, if it has one. It never archives the planner thread while the group is open. When a group reaches `completed` or `cancelled`, Orbit archives its planner thread and any remaining T3 threads for the group.
+
+Each archive run, including a scheduler tick or `tasks:archive-threads`, archives at most 10 eligible T3 threads, oldest Orbit thread id first. Later runs continue with the remaining threads. If an archive command fails, the failure does not block the subtask or group from reaching its terminal status. Orbit keeps the same command id and schedules retries after 1, 5, 30, then 120 minutes (and every 120 minutes thereafter). A successful retry clears that backoff. Orbit reports an archive failure at most once per thread per hour.
+
+Ticks delete leftover `pending:` reservations only when their task or group is completed or cancelled. While the owner remains active, Orbit keeps the reservation so `TaskAgentSpawner` can retry the spawn using that row; pending rows do not expire based on age.
+
+When the T3 metrics collector lands, the final metrics reading must happen before the thread is archived so it can still be observed. Until that collector is available, archive scheduling does not coordinate with a final T3 metrics reading.
+
+To process finished threads without waiting for a tick, run `php artisan tasks:archive-threads`; each invocation uses the same idempotent path and archives up to 10 eligible threads for completed and cancelled subtasks and groups. Archiving does not delete the Orbit `agent_threads` row or its metrics. Pi sessions are files on the Node and are outside this cleanup.
 
 ### T3 driver
 
@@ -497,6 +513,45 @@ When that reviewer thread does not exist yet, the resolution is not sent to the 
 The planner thread is not a reviewer. A planning group keeps it for planning. Its `task_id` stays null, and its title stays `Orbit task #{group id} · Planner: {title}`. Before the first review, `reviewer_agent_thread_id` points at that planner thread, which is how the group remembers it. The first review replaces the pointer with the new reviewer. The scheduler sends a review only to the thread it started for that subtask, or continues that thread. It never sends a review to the planner.
 
 The opening turn is a review packet of at most 16,000 characters, about 4 thousand tokens at four characters per token. No part is exempt. A part under its cap leaves the spare characters for the diff body. The diff body also stops at 16,384 bytes. The two retrieval commands are reserved first, at most 1,000 characters, and are never cut. The thread id is written into the generated closing instructions before that cap. Diff text and brief text are not rewritten to add it.
+
+### Render prompts for offline evaluation
+
+`php artisan tasks:render-prompt {role}` renders an agent prompt from one JSON object read from standard input, without starting an agent. The role is `implementer`, `reviewer` (the opening review packet), `reviewer-continue` (the continued review turn), or `planner`. The command writes one JSON object to standard output: `{"role":"…","prompt":"…","source_commit":"…"}`. `prompt` is the exact prompt text. `source_commit` is the Gateway version reported by its status endpoint: the configured `APP_VERSION`, which defaults to `dev` when unset. It does not fall back to a Git read, so a deployment without a configured commit version reports `dev`.
+
+The input is a single JSON object with only the following fields. Field names and types are part of the command contract; unknown fields are rejected.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `group.id` | integer | Task group id. |
+| `group.title` | string | Group title. |
+| `group.brief` | string | Group brief. |
+| `group.project_slug` | string | Project slug. |
+| `group.project_id` | integer | Project id. |
+| `group.default_branch` | string or null | Project default branch. |
+| `group.task_check` | string or null | Project task check command. |
+| `subtask.id` | integer | Subtask id. |
+| `subtask.title` | string | Subtask title. |
+| `subtask.brief` | string | Subtask brief. |
+| `subtask.position` | integer | Subtask position in the group. |
+| `subtask.deliverables` | array of deliverable objects | The subtask deliverables, in order. |
+| `thread_id` | integer or null | Agent thread id used to render thread-specific instructions. |
+| `review_packet` | object | Present only for `reviewer` and `reviewer-continue`; the opening or continued review inputs described below. |
+
+Each deliverable object has string fields `id`, `type`, and `description`. Its type-specific fields match the task deliverable: `file` has string `path` and `change`; `test` has string `project`, `file`, and `name`, plus boolean `fails_on_base`; `command` has string `command` and `directory`; `review` has no type-specific fields.
+
+`review_packet` contains `opens_pull_request` (boolean), `earlier_approved_subtasks` (an array of objects with string `title` and `summary`), `diff_files` (an ordered array of objects with string `path` and integer `insertions` and `deletions`), `files_complete` and `diff_available` (booleans), `diff_summary` (an object with integer `files`, `insertions`, and `deletions`), `diff_body` (string), `untracked_content` (an ordered array of objects with string `path` and `patch`), `handoff_check`, `start_commit` (string), and `held_resolution` (string or null).
+
+`diff_summary` always contains full capture totals, even when the path list or diff body was cut. When `files_complete` is false, `diff_files` is empty and the full totals in `diff_summary` provide the stat. `diff_available` says whether a diff body was captured; a false value means `diff_body` is empty. Do not infer stat totals or capture flags from `diff_body`.
+
+`diff_body` is the exact output of the tracked `git diff <start_commit>` command, including its original trailing newline. Each `untracked_content` entry contains the exact patch string produced for that path by `git diff --no-index -- /dev/null <path>`, including headers, mode, and trailing newline. Supply these patch strings instead of raw file contents; they preserve executable-file and symlink metadata without workspace access. The paths and order match untracked records in `diff_files` and the order returned by `git ls-files --others --exclude-standard`.
+
+To form the production diff, concatenate `diff_body` and the untracked `patch` strings in order with no added separators, then retain the first 20,000 bytes. The remote script adds one newline after that captured prefix before the summary marker; that separator newline is part of the parsed diff body, even when the prefix already ends in a newline. If the remote command output itself is truncated, production returns an empty file list and body with `files_complete` and `diff_available` both false, while `diff_summary` retains full totals. The flags and full summary must be supplied independently; do not infer them from the captured patch strings.
+
+`handoff_check` has string `status`, integer-or-null `exit_code`, and `evidence` (an object or null). Evidence has `diff` (an array of objects with string `status` and `path`, or null), `tests` (an object keyed by deliverable id; each value has integer `exit_code`, array `cases`, and optional base-run fields), and `commands` (an object keyed by deliverable id; each value has integer `exit_code` and string `output`).
+
+Each test case in `cases` or `base_cases` has string `name` and `status`, and optional string `kind` and `message`. Optional base-run fields are boolean `base_placed`, integer `base_exit_code`, boolean `base_timed_out`, integer `base_timeout_seconds`, and array `base_cases` of the same test-case objects. `opens_pull_request` supplies the value passed to the reviewer instructions: when true, the reviewer must provide pull request summary and change fields; when false, those fields are not requested. The value cannot be derived from the subtask position alone. A continued review uses the same input shape, but its rendered packet omits opening-only material such as earlier approvals and the held resolution.
+
+The renderer uses the same prompt construction as `TaskAgentSpawner` and `TaskReviewPacket`. Tests assert that a prompt rendered from these inputs is byte-identical to the prompt sent in production for the same inputs. The command never reads the database, the workspace, or the network; provide all prompt inputs in the JSON instead. This lets an offline evaluation harness render frozen cases without copying the production prompt template.
 
 | Part | Cap | When it does not fit |
 | --- | --- | --- |
@@ -728,7 +783,9 @@ A genuine failure beside that run still gets a fixup. When the run completes, th
 
 A conflict's identity is `conflict:` plus the base branch name. A failed check's identity is `check:` plus the check run name. The check URL is not part of the identity. The Gateway stores the identity on the fixup as `fixup_problem`. Show returns it. An operator subtask leaves it null, and the cap ignores that subtask.
 
-The Gateway appends at most two fixups for one identity, and at most three Gateway fixups for one group. Every status counts, including `cancelled` and `failed`. It does not append a third fixup for that identity. When the group already has three fixups and a problem remains, it asks for assistance and adds `Orbit already appended 3 fixups to this group.` to the reason.
+Each cap counts only fixups created after the most recent completed subtask whose `fixup_problem` is null. With no such completed subtask since the group started, the counts include every fixup in the group, as before. Every fixup status counts, including `cancelled` and `failed`.
+
+The non-fixup subtask is appended by a person—the operator or planner—so each reset requires a human step between fixup loops. Show and the assistance reason name the counts that applied; an assistance reason identifies the reached per-problem or group cap. For example, an identity cap adds `Orbit reached the cap of 2 fixups for conflict:main in the current window (2 counted).`; the group cap remains `Orbit already appended 3 fixups to this group.` A non-fixup subtask that is not completed does not reset either cap.
 
 Each fixup records the pull request head it was created for. The Gateway appends no new fixup while the head is still that commit. After the head changes, it appends no check fixup until every check on the new head has completed or has been pending for more than 60 minutes. A conflict does not wait for checks.
 

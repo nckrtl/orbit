@@ -16,6 +16,7 @@ use App\Domain\Routes\RouteStatus;
 use App\Domain\Routes\RouteTargetSetGuard;
 use App\Domain\Routes\RouteTargetSetStep;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Shared\StoredInteger;
 use App\Models\AppInstance;
 use App\Models\Route;
 use App\Models\RouteTarget;
@@ -147,7 +148,7 @@ final readonly class ConvergeRouteTargetSetAction
             ->targets()
             ->orderBy('position')
             ->pluck('app_instance_id')
-            ->map(static fn (mixed $id): int => (int) $id)
+            ->map(static fn (mixed $id): int => StoredInteger::from($id))
             ->values()
             ->all();
 
@@ -339,7 +340,8 @@ final readonly class ConvergeRouteTargetSetAction
 
     private function publishVacated(Route $route, SetRouteTargetsData $proposal): void
     {
-        $ids = $route->target_set_intent['vacated_route_ids'] ?? $this->vacatedRouteIds($route, $proposal);
+        $storedIds = is_array($route->target_set_intent) ? ($route->target_set_intent['vacated_route_ids'] ?? null) : null;
+        $ids = $storedIds === null ? $this->vacatedRouteIds($route, $proposal) : StoredInteger::listFrom($storedIds);
 
         foreach ($proposal->dispositions as $disposition) {
             if (! $disposition->remove && $disposition->routeId !== null) {
@@ -512,7 +514,7 @@ final readonly class ConvergeRouteTargetSetAction
     private function ownerIds(Route $route, SetRouteTargetsData $proposal): array
     {
         $ids = [
-            ...$route->targets->pluck('app_instance_id')->map(static fn (mixed $id): int => (int) $id)->all(),
+            ...$route->targets->pluck('app_instance_id')->map(static fn (mixed $id): int => StoredInteger::from($id))->all(),
             ...$proposal->targetIds,
             ...array_map(
                 static fn (RouteTargetDispositionData $disposition): int => $disposition->appInstanceId,

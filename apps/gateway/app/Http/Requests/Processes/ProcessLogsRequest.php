@@ -19,6 +19,6 @@ final class ProcessLogsRequest extends FormRequest
 
     public function lines(): int
     {
-        return (int) ($this->validated('lines') ?? 100);
+        return $this->integer('lines', 100);
     }
 }

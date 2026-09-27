@@ -38,8 +38,8 @@ final readonly class T3Projection
                 $id = $this->text($row['id'] ?? $row['messageId'] ?? '');
                 $text = $this->text($row['text'] ?? $row['summary'] ?? $payload['text'] ?? $row['output'] ?? $payload['output'] ?? '');
                 $exitCode = $row['exitCode'] ?? $row['exit_code'] ?? $payload['exitCode'] ?? $payload['exit_code'] ?? null;
-                if ($exitCode !== null) {
-                    $text .= ' exit code '.(string) $exitCode;
+                if (is_int($exitCode) || is_string($exitCode)) {
+                    $text .= ' exit code '.$exitCode;
                 }
                 if ($id === '') {
                     $id = hash('sha256', json_encode($row, JSON_THROW_ON_ERROR));
@@ -253,7 +253,18 @@ final readonly class T3Projection
     /** @return list<array<string, mixed>> */
     private function rows(mixed $value): array
     {
-        return is_array($value) ? array_values(array_filter($value, is_array(...))) : [];
+        if (! is_array($value)) {
+            return [];
+        }
+
+        $rows = [];
+        foreach ($value as $row) {
+            if (is_array($row)) {
+                $rows[] = array_filter($row, is_string(...), ARRAY_FILTER_USE_KEY);
+            }
+        }
+
+        return $rows;
     }
 
     private function text(mixed $value): string

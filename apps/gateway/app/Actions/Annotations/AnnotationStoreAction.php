@@ -32,7 +32,11 @@ final readonly class AnnotationStoreAction
                 throw new ResourceOperationException('annotation.instance_removing', 'Cannot annotate an Instance that is being removed.', 409);
             }
             $context = app(CommandActivityInputSanitizer::class)->sanitizeProperties($input->context);
-            $id = (string) $context['id'];
+            $id = $context['id'] ?? null;
+            $comment = $context['comment'] ?? null;
+            if (! is_string($id) || ! is_string($comment)) {
+                throw new ResourceOperationException('annotation.invalid', 'Annotation id and comment must be strings.', 422);
+            }
             $existing = Annotation::query()->find($id);
             if ($existing !== null) {
                 if ($existing->app_instance_id !== $instance->id || $existing->context !== $context) {
@@ -45,7 +49,7 @@ final readonly class AnnotationStoreAction
             $group = TaskGroup::query()->create([
                 'app_id' => $instance->app_id, 'taskable_type' => $instance->getMorphClass(), 'taskable_id' => $instance->id,
                 'execution_mode' => TaskExecutionMode::ExistingThread, 'implementer_agent_driver' => 't3', 'reviewer_agent_driver' => 't3',
-                'title' => mb_substr((string) $context['comment'], 0, 200), 'brief' => $context['comment'],
+                'title' => mb_substr($comment, 0, 200), 'brief' => $comment,
                 'status' => TaskGroupStatus::Todo,
             ]);
             $task = Task::query()->create([
@@ -79,7 +83,11 @@ final readonly class AnnotationStoreAction
             $task->status = $next;
             $task->started_at ??= now();
             if ($next === TaskStatus::Completed) {
-                $task->completion_summary = app(CommandActivityInputSanitizer::class)->sanitizeProperties(['summary' => $summary])['summary'];
+                $sanitizedSummary = app(CommandActivityInputSanitizer::class)->sanitizeProperties(['summary' => $summary])['summary'] ?? null;
+                if (! is_string($sanitizedSummary) && $sanitizedSummary !== null) {
+                    throw new ResourceOperationException('annotation.invalid_summary', 'Annotation summary must be a string.', 422);
+                }
+                $task->completion_summary = $sanitizedSummary;
                 $task->settled_at = now();
                 $task->duration_ms = max(0, (int) $task->started_at->diffInMilliseconds(now()));
             }

@@ -45,6 +45,7 @@ use App\Domain\Routes\RouteStateResolver;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Shared\StoredInteger;
 use App\Models\AppInstance;
 use App\Models\AppInstanceEnvironmentValue;
 use App\Models\AppInstanceTransfer;
@@ -665,7 +666,7 @@ final readonly class TransferAppInstanceAction
 
             $lockedInstance->update([
                 'node_id' => $destination->id,
-                'vite_port' => (int) DB::table('vite_port_assignments')->where('app_instance_id', $instance->id)->where('node_id', $destination->id)->value('port'),
+                'vite_port' => StoredInteger::fromOrZero(DB::table('vite_port_assignments')->where('app_instance_id', $instance->id)->where('node_id', $destination->id)->value('port')),
                 ...($lockedInstance->agentation_port === null ? [] : [
                     'agentation_port' => app(AgentationPortAllocator::class)->nextAvailable($destination->id, $lockedInstance->id),
                 ]),

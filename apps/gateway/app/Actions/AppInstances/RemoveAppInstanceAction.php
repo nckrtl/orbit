@@ -38,6 +38,7 @@ use App\Domain\Routes\RouteStateResolver;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Shared\StoredInteger;
 use App\Models\AppInstance;
 use App\Models\AppInstanceRemoval;
 use App\Models\AppInstanceRemovalMember;
@@ -158,7 +159,7 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
         $ids = $query
             ->orderBy('id')
             ->pluck('id')
-            ->map(static fn (mixed $id): int => (int) $id)
+            ->map(static fn (mixed $id): int => StoredInteger::from($id))
             ->values()
             ->all();
 
@@ -257,7 +258,7 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
 
         /** @var AppInstanceRemoval $operation */
         $operation = $this->processAdmissions->run(
-            array_values($members->pluck('id')->map(static fn (mixed $id): int => (int) $id)->all()),
+            array_values($members->pluck('id')->map(static fn (mixed $id): int => StoredInteger::from($id))->all()),
             fn (): AppInstanceRemoval => DB::transaction(function () use (
                 $snapshot,
                 $force,
@@ -968,6 +969,7 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
         $developmentNodeIds = $members
             ->where('environment', 'development')
             ->pluck('node_id')
+            ->map(static fn (mixed $id): int => StoredInteger::from($id))
             ->unique()
             ->values();
 
@@ -980,7 +982,7 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
         }
 
         return $this->sourceLock->synchronized(
-            (int) $developmentNodeIds->sole(),
+            $developmentNodeIds->sole(),
             fn (): AppInstanceSourceRevalidationExpectation => $this->revalidateUnfinishedSourcesLocked(
                 $members,
                 $current,

@@ -14,6 +14,7 @@ use App\Models\Route;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
+use UnexpectedValueException;
 
 final readonly class RouteMutationReconciler
 {
@@ -271,8 +272,12 @@ final readonly class RouteMutationReconciler
             );
             $owner = $domains[$proposal['domain']] ?? null;
 
+            if ($owner !== null && ! is_int($owner)) {
+                throw new UnexpectedValueException('Route id must be an integer.');
+            }
+
             if (
-                $owner !== null
+                is_int($owner)
                 && $owner !== $route->id
                 && ! $this->isReplacementPair($route, $owner, $routes)
             ) {

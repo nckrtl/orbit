@@ -106,7 +106,20 @@ describe('the instance analytics requests', function (): void {
             ->toThrow(GatewayApiException::class, 'invalid instance analytics data');
     })->with([
         'route id as text' => [['route_id' => '91']],
+        'failed step as a number' => [['failed_step' => 1]],
+        'error code as a number' => [['error_code' => 1]],
         'DNS record that is not an object' => [['dns' => 'CNAME analytics.example.com']],
         'DNS without a value' => [['dns' => ['type' => 'CNAME', 'name' => 'analytics.shop.example.com']]],
     ]);
+
+    it('refuses an answer whose optional text is not text', function (string $field): void {
+        $data = instance_analytics_gateway_data();
+        $data[$field] = 12;
+        $mockClient = new MockClient([
+            ShowInstanceAnalyticsRequest::class => MockResponse::make(['data' => $data, 'meta' => ['request_id' => node_role_request_id()]]),
+        ]);
+
+        expect(fn () => node_role_gateway_connector($mockClient)->send(new ShowInstanceAnalyticsRequest(12))->dto())
+            ->toThrow(GatewayApiException::class, 'invalid instance analytics data');
+    })->with(['domain', 'dashboard_url', 'snippet']);
 });

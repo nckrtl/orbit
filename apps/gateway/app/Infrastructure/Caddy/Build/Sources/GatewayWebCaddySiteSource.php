@@ -12,6 +12,7 @@ use App\Infrastructure\Caddy\Build\CaddySiteRoles;
 use App\Infrastructure\Caddy\Build\NodeCaddySiteSource;
 use App\Infrastructure\Caddy\Build\NodeCaddySiteUnavailable;
 use App\Infrastructure\Gateway\GatewayCaddyConfigRenderer;
+use App\Infrastructure\Shared\StoredValue;
 use App\Models\Node;
 
 /**
@@ -39,8 +40,8 @@ final readonly class GatewayWebCaddySiteSource implements NodeCaddySiteSource
         }
 
         $hostname = "{$node->name}.{$this->vpn->domain()}";
-        $checkout = $this->checkoutPath ?? rtrim((string) config('orbit.gateway_checkout'), '/');
-        $webRoot = $this->webRoot ?? (string) config('orbit.gateway_web');
+        $checkout = $this->checkoutPath ?? rtrim(StoredValue::string(config('orbit.gateway_checkout')), '/');
+        $webRoot = $this->webRoot ?? StoredValue::string(config('orbit.gateway_web'));
 
         return [new CaddySite(
             source: 'gateway',

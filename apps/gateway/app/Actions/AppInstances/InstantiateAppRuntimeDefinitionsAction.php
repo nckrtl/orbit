@@ -223,30 +223,101 @@ final readonly class InstantiateAppRuntimeDefinitionsAction
         ProcessDefinition $definition,
     ): AddProcessData {
         $specification = $definition->spec;
-        /** @var list<string> $command */
-        $command = $specification['command'];
-        /** @var array<string, string> $environment */
-        $environment = $specification['environment'] ?? [];
-        /** @var list<string> $ports */
-        $ports = $specification['ports'] ?? [];
-        /** @var list<array{source: string, target: string, read_only: bool}> $volumes */
-        $volumes = $specification['volumes'] ?? [];
+        $runtime = $specification['runtime'] ?? null;
+        $command = $this->stringList($specification['command'] ?? null);
+        $image = $specification['image'] ?? null;
+        $workingDirectory = $specification['working_directory'] ?? null;
+        $restartPolicy = $specification['restart_policy'] ?? 'never';
+
+        if (
+            ! is_string($runtime)
+            || ($image !== null && ! is_string($image))
+            || ($workingDirectory !== null && ! is_string($workingDirectory))
+            || ! is_string($restartPolicy)
+        ) {
+            throw new \RuntimeException('Process definition contains invalid runtime data.');
+        }
+
+        $environment = $this->stringMap($specification['environment'] ?? []);
+        $ports = $this->stringList($specification['ports'] ?? []);
+        $volumes = $this->volumes($specification['volumes'] ?? []);
 
         return new AddProcessData(
             targetType: ProcessTargetType::AppInstance,
             targetId: $appInstance->id,
             name: $definition->name,
-            runtime: ProcessRuntime::from($specification['runtime']),
+            runtime: ProcessRuntime::from($runtime),
             command: $command,
-            image: $specification['image'] ?? null,
-            workingDirectory: $specification['working_directory'] ?? null,
+            image: $image,
+            workingDirectory: $workingDirectory,
             environment: $environment,
             ports: $ports,
             volumes: $volumes,
-            restartPolicy: $specification['restart_policy'] ?? 'never',
+            restartPolicy: $restartPolicy,
             start: false,
             keepAlive: ($specification['keep_alive'] ?? false) === true,
         );
+    }
+
+    /** @return list<string> */
+    private function stringList(mixed $value): array
+    {
+        if (! is_array($value) || ! array_is_list($value)) {
+            throw new \RuntimeException('Process definition contains invalid list data.');
+        }
+
+        foreach ($value as $item) {
+            if (! is_string($item)) {
+                throw new \RuntimeException('Process definition contains invalid list data.');
+            }
+        }
+
+        return $value;
+    }
+
+    /** @return array<string, string> */
+    private function stringMap(mixed $value): array
+    {
+        if (! is_array($value)) {
+            throw new \RuntimeException('Process definition contains invalid map data.');
+        }
+
+        foreach ($value as $key => $item) {
+            if (! is_string($key) || ! is_string($item)) {
+                throw new \RuntimeException('Process definition contains invalid map data.');
+            }
+        }
+
+        return $value;
+    }
+
+    /** @return list<array{source: string, target: string, read_only: bool}> */
+    private function volumes(mixed $value): array
+    {
+        if (! is_array($value) || ! array_is_list($value)) {
+            throw new \RuntimeException('Process definition contains invalid volume data.');
+        }
+
+        $volumes = [];
+        foreach ($value as $volume) {
+            $readOnly = is_array($volume) ? ($volume['read_only'] ?? false) : null;
+            if (
+                ! is_array($volume)
+                || ! is_string($volume['source'] ?? null)
+                || ! is_string($volume['target'] ?? null)
+                || ! in_array($readOnly, [true, false, 1, 0, '1', '0'], strict: true)
+            ) {
+                throw new \RuntimeException('Process definition contains invalid volume data.');
+            }
+
+            $volumes[] = [
+                'source' => $volume['source'],
+                'target' => $volume['target'],
+                'read_only' => in_array($readOnly, [true, 1, '1'], strict: true),
+            ];
+        }
+
+        return $volumes;
     }
 
     private function installProcess(#[SensitiveParameter] Process $process): void

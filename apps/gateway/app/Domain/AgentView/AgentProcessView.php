@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\AgentView;
 
+use App\Domain\Shared\StoredInteger;
 use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Process;
@@ -140,7 +141,7 @@ final readonly class AgentProcessView
         $nodes = AppInstance::query()
             ->whereKey($instanceIds)
             ->pluck('node_id', 'id')
-            ->map(static fn (mixed $nodeId): int => (int) $nodeId)
+            ->map(static fn (mixed $nodeId): int => StoredInteger::from($nodeId))
             ->all();
 
         return $nodes;

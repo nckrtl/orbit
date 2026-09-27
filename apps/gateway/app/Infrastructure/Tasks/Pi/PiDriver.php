@@ -76,6 +76,11 @@ final readonly class PiDriver implements AgentDriver
         $this->client->interrupt($this->node($thread), $thread->external_id);
     }
 
+    public function archive(AgentThread $thread, string $commandId): void
+    {
+        // Pi sessions are files on the Node and are outside thread archive cleanup.
+    }
+
     public function observe(AgentThread $thread): AgentObservation
     {
         $node = $this->node($thread);

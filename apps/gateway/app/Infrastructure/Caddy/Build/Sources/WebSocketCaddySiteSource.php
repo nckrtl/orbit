@@ -10,6 +10,7 @@ use App\Infrastructure\Caddy\Build\CaddySite;
 use App\Infrastructure\Caddy\Build\CaddySiteCertificates;
 use App\Infrastructure\Caddy\Build\CaddySiteRoles;
 use App\Infrastructure\Caddy\Build\NodeCaddySiteSource;
+use App\Infrastructure\Shared\StoredValue;
 use App\Infrastructure\WebSocket\WebSocketCaddySiteRenderer;
 use App\Infrastructure\WebSocket\WebSocketFootprint;
 use App\Models\Node;
@@ -39,7 +40,7 @@ final readonly class WebSocketCaddySiteSource implements NodeCaddySiteSource
             listener: CaddyListenerRule::Shared,
             hosts: [WebSocketFootprint::Hostname],
             port: 443,
-            body: $this->renderer->render($this->port > 0 ? $this->port : (int) config('orbit.websocket.port')),
+            body: $this->renderer->render($this->port > 0 ? $this->port : StoredValue::integer(config('orbit.websocket.port'))),
             bindPlaceholder: WebSocketFootprint::CaddyBindPlaceholder,
         )];
     }

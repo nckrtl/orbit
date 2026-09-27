@@ -11,6 +11,7 @@ use App\Domain\Tasks\TaskWorkspaceName;
 use App\Models\AppInstance;
 use App\Models\TaskGroup;
 use Carbon\CarbonInterface;
+use Illuminate\Support\Facades\Config;
 use Throwable;
 
 /**
@@ -68,7 +69,7 @@ final readonly class RemoveTaskWorkspaceAction
 
     public static function reservationCutoff(): CarbonInterface
     {
-        return now()->subSeconds((int) config('orbit.tasks.reserved_timeout_seconds'));
+        return now()->subSeconds(Config::integer('orbit.tasks.reserved_timeout_seconds'));
     }
 
     /** Removes the group's workspace when it has one. It returns the removed Instance. */

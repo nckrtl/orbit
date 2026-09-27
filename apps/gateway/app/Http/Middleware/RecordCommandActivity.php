@@ -303,8 +303,12 @@ final readonly class RecordCommandActivity
 
         // The message the API returned, such as a Caddy publisher naming a listen address the Node lacks.
         if ($statusCode >= 400 && is_string($errorMessage) && $errorMessage !== '') {
+            $properties = $updates['properties'] ?? null;
+            $existingProperties = is_array($properties)
+                ? $properties
+                : ($activity->properties?->toArray() ?? []);
             $updates['properties'] = [
-                ...($updates['properties'] ?? $activity->properties?->toArray() ?? []),
+                ...$existingProperties,
                 'error_message' => $this->redact($request, $errorMessage),
             ];
         }

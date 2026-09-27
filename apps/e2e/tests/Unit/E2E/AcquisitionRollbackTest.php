@@ -160,3 +160,18 @@ it('retains the network and every VM result when a VM batch mutation fails', fun
         ->and($networkDeletes)
         ->toBe(0);
 })->with(['stop', 'delete']);
+
+it('records an invalid inventory read instead of treating it as a resource', function (): void {
+    $target = featureTarget('TST-123');
+    $network = $target->network();
+    $rollback = new AcquisitionRollback(
+        fn (): array => [$network => ['name' => $network]],
+        fn () => null,
+        fn () => null,
+        fn () => null,
+    );
+
+    expect($rollback->observe([$network]))->toBe([
+        $network => ['observation_error' => 'Rollback resource read returned an invalid resource.'],
+    ]);
+});
