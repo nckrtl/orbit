@@ -136,7 +136,11 @@
             "path": "docs/cli/cluster.mdx",
             "title": "cluster",
             "kind": "product",
-            "components": [],
+            "components": [
+                "apps/cli",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
             "concepts": [
                 "Cluster",
                 "Gateway",
@@ -4825,14 +4829,11 @@
                 "packages/php-sdk"
             ],
             "concepts": [
-                "Extension",
                 "Gateway",
                 "Node",
                 "Project"
             ],
-            "governing_adrs": [
-                "0079"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/reference/cli-command-vocabulary.md",
@@ -5836,7 +5837,10 @@
             "path": "docs/solutions/migrate-unmanaged-executor-hostname.md",
             "title": "Migrate an unmanaged Executor hostname",
             "kind": "solution",
-            "components": [],
+            "components": [
+                "apps/cli",
+                "apps/gateway"
+            ],
             "concepts": [
                 "Cluster",
                 "Doctor",
@@ -5846,9 +5850,7 @@
                 "Project",
                 "Route"
             ],
-            "governing_adrs": [
-                "0080"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/solutions/node-add-private-dns-on-an-existing-node.md",
@@ -5917,11 +5919,11 @@
                 "apps/gateway"
             ],
             "concepts": [
-                "Gateway"
+                "Gateway",
+                "Node",
+                "Role"
             ],
-            "governing_adrs": [
-                "0022"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/solutions/sqlite-wal-default.md",
