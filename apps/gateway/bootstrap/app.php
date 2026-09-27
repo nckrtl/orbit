@@ -12,7 +12,6 @@ use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Nodes\NodeRoleValidationException;
 use App\Domain\Nodes\RoleAssignmentException;
 use App\Domain\Processes\ProcessOperationException;
-use App\Domain\Schedules\ScheduleErrorCode;
 use App\Domain\Schedules\ScheduleOperationException;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskSchedule;
@@ -25,6 +24,7 @@ use App\Http\Middleware\RequireActiveWireGuardPeer;
 use App\Http\Middleware\RequireNodeAccess;
 use App\Infrastructure\Activity\ActivityShutdownFinalizer;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuildException;
+use App\Infrastructure\Logging\GatewayExceptionStatus;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Application;
@@ -35,6 +35,7 @@ use Illuminate\Http\Request;
 use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\ErrorHandler\Error\FatalError;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 if (
@@ -62,7 +63,8 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withCommands()
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->prepend(GuardBrowserOrigins::class);
-        $middleware->api(prepend: [NormalizeErrorDetails::class, EnsureRequestId::class, RecordCommandActivity::class]);
+        $middleware->prepend(EnsureRequestId::class);
+        $middleware->api(prepend: [NormalizeErrorDetails::class, RecordCommandActivity::class]);
         $middleware->prependToPriorityList(SubstituteBindings::class, RequireActiveWireGuardPeer::class);
         $middleware->appendToPriorityList(SubstituteBindings::class, RequireNodeAccess::class);
     })
@@ -71,6 +73,11 @@ return Application::configure(basePath: dirname(__DIR__))
             // Runs before log context is built, which can exhaust memory again and stop later shutdown code.
             $exceptions->report(function (FatalError $exception): void {
                 ActivityShutdownFinalizer::finalizeArmed();
+            });
+            // Laravel ignores HttpException before report callbacks; status filtering keeps 4xx refusals silent.
+            $exceptions->stopIgnoring(HttpException::class);
+            $exceptions->report(function (Throwable $exception): bool {
+                return GatewayExceptionStatus::for($exception, request()->is('api/*')) >= 500;
             });
 
             $exceptions->render(function (AppInstanceRemovalException $exception, Request $request): JsonResponse {
@@ -90,7 +97,7 @@ return Application::configure(basePath: dirname(__DIR__))
                             'message' => $exception->getMessage(),
                             'details' => ['removal' => $removal],
                         ],
-                    ], $exception->status)
+                    ], GatewayExceptionStatus::for($exception))
                     ->header('X-Orbit-Request-Id', is_string($requestId) ? $requestId : '');
             });
 
@@ -126,7 +133,7 @@ return Application::configure(basePath: dirname(__DIR__))
                             'message' => 'The request data is invalid.',
                             'details' => $exception->errors(),
                         ],
-                    ], 422)
+                    ], GatewayExceptionStatus::for($exception))
                     ->header('X-Orbit-Request-Id', is_string($requestId) ? $requestId : '');
             });
             $exceptions->render(function (NodeRoleValidationException $exception, Request $request): JsonResponse {
@@ -144,7 +151,7 @@ return Application::configure(basePath: dirname(__DIR__))
                             'message' => $exception->getMessage(),
                             'details' => $exception->details,
                         ],
-                    ], 422)
+                    ], GatewayExceptionStatus::for($exception))
                     ->header('X-Orbit-Request-Id', is_string($requestId) ? $requestId : '');
             });
             $exceptions->render(function (NodeRoleOperationException $exception, Request $request): JsonResponse {
@@ -164,7 +171,7 @@ return Application::configure(basePath: dirname(__DIR__))
                             'message' => $exception->getMessage(),
                             'details' => ['step' => $exception->step, ...NodeRoleOperationException::detailsIn($exception), ...NodeCaddyBuildException::detailsIn($exception)],
                         ],
-                    ], 502)
+                    ], GatewayExceptionStatus::for($exception))
                     ->header('X-Orbit-Request-Id', is_string($requestId) ? $requestId : '');
             });
             $exceptions->render(function (NodeProvisioningException $exception, Request $request): JsonResponse {
@@ -183,7 +190,7 @@ return Application::configure(basePath: dirname(__DIR__))
                             'message' => $exception->getMessage(),
                             'details' => ['step' => $exception->step, ...NodeRoleOperationException::detailsIn($exception), ...NodeCaddyBuildException::detailsIn($exception)],
                         ],
-                    ], 502)
+                    ], GatewayExceptionStatus::for($exception))
                     ->header('X-Orbit-Request-Id', is_string($requestId) ? $requestId : '');
             });
             $exceptions->render(function (NodeRemovalException $exception, Request $request): JsonResponse {
@@ -202,7 +209,7 @@ return Application::configure(basePath: dirname(__DIR__))
                             'message' => $exception->getMessage(),
                             'details' => ['step' => $exception->step, ...NodeRoleOperationException::detailsIn($exception)],
                         ],
-                    ], 502)
+                    ], GatewayExceptionStatus::for($exception))
                     ->header('X-Orbit-Request-Id', is_string($requestId) ? $requestId : '');
             });
             $exceptions->render(function (RuntimeConvergenceException $exception, Request $request): JsonResponse {
@@ -221,7 +228,7 @@ return Application::configure(basePath: dirname(__DIR__))
                             'message' => $exception->getMessage(),
                             'details' => ['step' => $exception->step, ...NodeCaddyBuildException::detailsIn($exception)],
                         ],
-                    ], 502)
+                    ], GatewayExceptionStatus::for($exception))
                     ->header('X-Orbit-Request-Id', is_string($requestId) ? $requestId : '');
             });
             $exceptions->render(function (ProcessOperationException $exception, Request $request): JsonResponse {
@@ -240,7 +247,7 @@ return Application::configure(basePath: dirname(__DIR__))
                             'message' => $exception->getMessage(),
                             'details' => ['step' => $exception->step],
                         ],
-                    ], 502)
+                    ], GatewayExceptionStatus::for($exception))
                     ->header('X-Orbit-Request-Id', is_string($requestId) ? $requestId : '');
             });
             $exceptions->render(function (ScheduleOperationException $exception, Request $request): JsonResponse {
@@ -251,19 +258,7 @@ return Application::configure(basePath: dirname(__DIR__))
                     $requestId = $request->header('X-Orbit-Request-Id', '');
                 }
 
-                $status = match ($exception->error) {
-                    ScheduleErrorCode::ArtifactConflict,
-                    ScheduleErrorCode::RetryConflict,
-                    ScheduleErrorCode::StateInvalid,
-                    ScheduleErrorCode::TargetUnavailable,
-                    ScheduleErrorCode::TargetInUse => 409,
-                    ScheduleErrorCode::CalendarInvalid,
-                    ScheduleErrorCode::NameInvalid,
-                    ScheduleErrorCode::TargetInvalid,
-                    ScheduleErrorCode::CommandInvalid,
-                    ScheduleErrorCode::TimeoutInvalid => 422,
-                    default => 502,
-                };
+                $status = GatewayExceptionStatus::for($exception);
 
                 return response()
                     ->json([
@@ -291,7 +286,7 @@ return Application::configure(basePath: dirname(__DIR__))
                             'message' => $exception->getMessage(),
                             'details' => ['step' => $exception->step],
                         ],
-                    ], $exception->status)
+                    ], GatewayExceptionStatus::for($exception))
                     ->header('X-Orbit-Request-Id', is_string($requestId) ? $requestId : '');
             });
             $exceptions->render(function (ToolOperationException $exception, Request $request): JsonResponse {
@@ -319,7 +314,7 @@ return Application::configure(basePath: dirname(__DIR__))
                             'message' => $exception->getMessage(),
                             'details' => $details,
                         ],
-                    ], $exception->status)
+                    ], GatewayExceptionStatus::for($exception))
                     ->header('X-Orbit-Request-Id', is_string($requestId) ? $requestId : '');
             });
             $exceptions->render(function (ResourceOperationException $exception, Request $request): JsonResponse {
@@ -338,7 +333,7 @@ return Application::configure(basePath: dirname(__DIR__))
                             'message' => $exception->getMessage(),
                             'details' => [...NodeCaddyBuildException::detailsIn($exception), ...$exception->details],
                         ],
-                    ], $exception->status)
+                    ], GatewayExceptionStatus::for($exception))
                     ->header('X-Orbit-Request-Id', is_string($requestId) ? $requestId : '');
             });
             $exceptions->render(function (RoleAssignmentException $exception, Request $request): JsonResponse {
@@ -355,7 +350,7 @@ return Application::configure(basePath: dirname(__DIR__))
                             'message' => $exception->getMessage(),
                             'details' => [],
                         ],
-                    ], 422)
+                    ], GatewayExceptionStatus::for($exception))
                     ->header('X-Orbit-Request-Id', is_string($requestId) ? $requestId : '');
             });
             $exceptions->render(
@@ -383,7 +378,7 @@ return Application::configure(basePath: dirname(__DIR__))
                             'message' => 'The gateway could not complete the request.',
                             'details' => [],
                         ],
-                    ], 500)
+                    ], GatewayExceptionStatus::for($exception, $request->is('api/*')))
                     ->header('X-Orbit-Request-Id', is_string($requestId) ? $requestId : '');
             });
             $exceptions->shouldRenderJsonWhen(

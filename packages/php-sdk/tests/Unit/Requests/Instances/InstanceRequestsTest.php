@@ -23,7 +23,7 @@ describe('AppInstance requests', function (): void {
             CreateAppInstanceRequest::class => MockResponse::make(instance_envelope(), 201),
         ]);
         $connector = instance_gateway_connector($mockClient);
-        $request = new CreateAppInstanceRequest(appId: 3, nodeId: 4, name: 'main');
+        $request = new CreateAppInstanceRequest(projectId: 3, nodeId: 4, name: 'main');
 
         $response = $connector->send($request)->dto();
 
@@ -33,7 +33,7 @@ describe('AppInstance requests', function (): void {
             ->toBe('/api/v1/instances')
             ->and($request->body()->all())
             ->toBe([
-                'app_id' => 3,
+                'project_id' => 3,
                 'node_id' => 4,
                 'name' => 'main',
             ])
@@ -65,7 +65,7 @@ describe('AppInstance requests', function (): void {
             ], 201),
         ]);
         $response = instance_gateway_connector($mockClient)
-            ->send(new CreateAppInstanceRequest(appId: 3, nodeId: 4, name: 'main'))
+            ->send(new CreateAppInstanceRequest(projectId: 3, nodeId: 4, name: 'main'))
             ->dto();
 
         expect($response->productionUser)
@@ -78,14 +78,14 @@ describe('AppInstance requests', function (): void {
 
     it('transports only the optional root override', function (): void {
         $request = new CreateAppInstanceRequest(
-            appId: 3,
+            projectId: 3,
             nodeId: 4,
             name: 'main',
             root: 'site/public',
         );
 
         expect($request->body()->all())->toBe([
-            'app_id' => 3,
+            'project_id' => 3,
             'node_id' => 4,
             'name' => 'main',
             'root' => 'site/public',
@@ -94,16 +94,16 @@ describe('AppInstance requests', function (): void {
 
     it('transports an optional Route domain and preserves omission', function (): void {
         $explicit = new CreateAppInstanceRequest(
-            appId: 3,
+            projectId: 3,
             nodeId: 4,
             name: 'main',
             domain: 'Preview.Example.Test',
         );
-        $generated = new CreateAppInstanceRequest(appId: 3, nodeId: 4, name: 'main');
+        $generated = new CreateAppInstanceRequest(projectId: 3, nodeId: 4, name: 'main');
 
         expect($explicit->body()->all())
             ->toBe([
-                'app_id' => 3,
+                'project_id' => 3,
                 'node_id' => 4,
                 'name' => 'main',
                 'domain' => 'Preview.Example.Test',
@@ -161,16 +161,16 @@ describe('AppInstance requests', function (): void {
 
     it('transports an optional explicit branch and preserves omission', function (): void {
         $explicit = new CreateAppInstanceRequest(
-            appId: 3,
+            projectId: 3,
             nodeId: 4,
             name: 'default',
             branch: 'release',
         );
-        $inherited = new CreateAppInstanceRequest(appId: 3, nodeId: 4, name: 'default');
+        $inherited = new CreateAppInstanceRequest(projectId: 3, nodeId: 4, name: 'default');
 
         expect($explicit->body()->all())
             ->toBe([
-                'app_id' => 3,
+                'project_id' => 3,
                 'node_id' => 4,
                 'name' => 'default',
                 'branch' => 'release',
@@ -206,7 +206,7 @@ describe('AppInstance requests', function (): void {
         $request = new RegisterAppInstanceRequest(
             sourcePath: '/work/orbit-docs',
             includeWorktrees: true,
-            appId: 3,
+            projectId: 3,
             instanceName: 'preview',
             root: 'web',
         );
@@ -220,7 +220,7 @@ describe('AppInstance requests', function (): void {
             ->toBe([
                 'source_path' => '/work/orbit-docs',
                 'include_worktrees' => true,
-                'app_id' => 3,
+                'project_id' => 3,
                 'instance_name' => 'preview',
                 'root' => 'web',
             ])
@@ -241,29 +241,29 @@ describe('AppInstance requests', function (): void {
 
     it('transports explicit source profile recovery intent and preserves ordinary omission', function (): void {
         $recover = new CreateAppInstanceRequest(
-            appId: 3,
+            projectId: 3,
             nodeId: 4,
             name: 'default',
             recoverSourceProfile: true,
         );
         $explicitFalse = new CreateAppInstanceRequest(
-            appId: 3,
+            projectId: 3,
             nodeId: 4,
             name: 'default',
             recoverSourceProfile: false,
         );
-        $ordinary = new CreateAppInstanceRequest(appId: 3, nodeId: 4, name: 'default');
+        $ordinary = new CreateAppInstanceRequest(projectId: 3, nodeId: 4, name: 'default');
 
         expect($recover->body()->all())
             ->toBe([
-                'app_id' => 3,
+                'project_id' => 3,
                 'node_id' => 4,
                 'name' => 'default',
                 'recover_source_profile' => true,
             ])
             ->and($explicitFalse->body()->all())
             ->toBe([
-                'app_id' => 3,
+                'project_id' => 3,
                 'node_id' => 4,
                 'name' => 'default',
                 'recover_source_profile' => false,
@@ -405,7 +405,7 @@ function instance_gateway_data(): array
 {
     return [
         'id' => 7,
-        'app_id' => 3,
+        'project_id' => 3,
         'node_id' => 4,
         'vite_port' => null,
         'name' => 'main',
@@ -466,8 +466,8 @@ function instance_sdk_data(): array
     foreach ($data as $key => $value) {
         $withIdentities[$key] = $value;
         if ($key === 'node_id') {
-            // The SDK carries the App and Node identities the Gateway names beside an instance.
-            $withIdentities['app'] = null;
+            // The SDK carries the Project and Node identities the Gateway names beside an instance.
+            $withIdentities['project'] = null;
             $withIdentities['node'] = null;
         }
     }

@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Commands\Schedules;
 
 use App\Commands\Concerns\RendersAppRuntimeDefinitions;
-use App\Commands\Concerns\SelectsAppDefinitionTarget;
+use App\Commands\Concerns\SelectsProjectDefinitionTarget;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use App\Support\Console\ConsoleWriter;
@@ -17,12 +17,11 @@ use Orbit\Sdk\Responses\Schedules\SchedulesResponse;
 final class ListSchedulesCommand extends ScheduleCommand
 {
     use RendersAppRuntimeDefinitions;
-    use SelectsAppDefinitionTarget;
+    use SelectsProjectDefinitionTarget;
 
     #[\Override]
     protected $signature = 'schedule:list
         {--project= : Numeric Project ID}
-        {--app= : Numeric Project ID (compatibility)}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -38,7 +37,7 @@ final class ListSchedulesCommand extends ScheduleCommand
             return self::FAILURE;
         }
 
-        $appId = $this->appIdOption();
+        $appId = $this->projectIdOption();
 
         if ($appId === false) {
             return self::FAILURE;

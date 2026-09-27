@@ -53,7 +53,7 @@ function columnsFor(section: ListKind, fleet: Fleet): Column<AnyRecord>[] {
             },
         ],
         instances: (): Column<Instance>[] => [
-            { header: "Project", width: 18, value: (i) => (i.project ?? i.app).slug },
+            { header: "Project", width: 18, value: (i) => i.project.slug },
             { header: "Name", width: 14, value: (i) => i.name },
             { header: "Environment", width: 14, value: (i) => i.environment },
             { header: "Node", width: 12, value: (i) => i.node.name },

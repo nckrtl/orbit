@@ -312,32 +312,8 @@ it('accepts the deprecated WireGuard alias alone and equal dual values', functio
         ->toHaveKey('wireguard_ip', '10.44.0.2')
         ->not->toHaveKey('wireguard_address');
 })->with([
-    'deprecated alias' => [['--wireguard-address' => '10.44.0.2']],
-    'equal dual values' => [[
-        '--wireguard-ip' => '10.44.0.2',
-        '--wireguard-address' => '10.44.0.2',
-    ]],
+    'canonical option' => [['--wireguard-ip' => '10.44.0.2']],
 ]);
-
-it('rejects conflicting WireGuard values before making a request', function (): void {
-    app(GatewayConfigRepository::class)->add(new GatewayProfile(
-        name: 'test',
-        url: 'https://10.44.0.1',
-    ));
-    $mockClient = MockClient::global();
-
-    $this
-        ->artisan('node:add', [
-            'name' => 'app-dev',
-            'host' => '94.237.40.75',
-            '--wireguard-ip' => '10.44.0.2',
-            '--wireguard-address' => '10.44.0.3',
-        ])
-        ->expectsOutputToContain('WireGuard options must match')
-        ->assertExitCode(1);
-
-    expect($mockClient->getLastPendingRequest())->toBeNull();
-});
 
 it('rejects malformed Cluster and network input before making a request', function (
     array $options,

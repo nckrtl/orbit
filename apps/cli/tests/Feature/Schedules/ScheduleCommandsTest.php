@@ -133,7 +133,7 @@ it('records one App Schedule definition through structured flags', function (): 
     $this
         ->artisan('schedule:create', [
             'name' => 'hourly-report',
-            '--app' => '7',
+            '--project' => '7',
             '--for' => 'production',
             '--calendar' => 'hourly',
             '--command' => 'php artisan report:send',
@@ -175,13 +175,13 @@ it('lists shows updates and destroys App Schedule definitions by name', function
 })->with([
     'list' => [
         'schedule:list',
-        ['--app' => '7'],
+        ['--project' => '7'],
         ListScheduleDefinitionsRequest::class,
         '/api/v1/projects/7/schedule-definitions',
     ],
     'show' => [
         'schedule:show',
-        ['schedule' => 'hourly-report', '--app' => '7'],
+        ['schedule' => 'hourly-report', '--project' => '7'],
         ShowScheduleDefinitionRequest::class,
         '/api/v1/projects/7/schedule-definitions/hourly-report',
     ],
@@ -189,7 +189,7 @@ it('lists shows updates and destroys App Schedule definitions by name', function
         'schedule:update',
         [
             'name' => 'hourly-report',
-            '--app' => '7',
+            '--project' => '7',
             '--for' => 'production',
             '--calendar' => 'hourly',
             '--command' => 'php artisan report:send',
@@ -199,7 +199,7 @@ it('lists shows updates and destroys App Schedule definitions by name', function
     ],
     'destroy' => [
         'schedule:destroy',
-        ['schedule' => 'hourly-report', '--app' => '7', '--yes' => true],
+        ['schedule' => 'hourly-report', '--project' => '7', '--yes' => true],
         DestroyScheduleDefinitionRequest::class,
         '/api/v1/projects/7/schedule-definitions/hourly-report',
     ],
@@ -281,7 +281,7 @@ it('refuses JSON schedule definition destruction without --yes', function (): vo
 
     [$exit, $output] = schedule_cli_display('schedule:destroy', [
         'schedule' => 'hourly-report',
-        '--app' => '7',
+        '--project' => '7',
         '--json' => true,
     ]);
     expect($exit)->toBe(Command::FAILURE);
@@ -408,23 +408,23 @@ it('applies explicit selector validation before HTTP in every output and interac
     expect($mock->getLastPendingRequest())->toBeNull();
 })->with(function (): array {
     $cases = [
-        'neither selector' => [[], 'schedule.target_required', 'Exactly one of --project, --app, --node, or --instance is required.'],
+        'neither selector' => [[], 'schedule.target_required', 'Exactly one of --project, --node, or --instance is required.'],
         'both selectors' => [[
             '--node' => '3',
             '--instance' => '7',
-        ], 'schedule.target_conflict', 'Use only one of --project, --app, --node, or --instance.'],
+        ], 'schedule.target_conflict', 'Use only one of --project, --node, or --instance.'],
         'app with instance' => [[
-            '--app' => '7',
+            '--project' => '7',
             '--instance' => '7',
             '--for' => 'production',
-        ], 'schedule.target_conflict', 'Use only one of --project, --app, --node, or --instance.'],
+        ], 'schedule.target_conflict', 'Use only one of --project, --node, or --instance.'],
         'for without app' => [[
             '--node' => '3',
             '--for' => 'production',
-        ], 'schedule.option_invalid', 'The --for option requires --project or --app.'],
+        ], 'schedule.option_invalid', 'The --for option requires --project.'],
         'app without for' => [[
-            '--app' => '7',
-        ], 'schedule.option_invalid', 'The --for option is required with --project or --app.'],
+            '--project' => '7',
+        ], 'schedule.option_invalid', 'The --for option is required with --project.'],
         'malformed Node ID' => [[
             '--node' => 'edge',
         ], 'schedule.node_id_invalid', 'Node ID must be a positive integer.'],
@@ -487,27 +487,27 @@ it('renders one exact json envelope for App-target schedule refusals', function 
             '--command' => 'x',
         ],
         'schedule.target_required',
-        'The --project or --app option is required.',
+        'The --project option is required.',
     ],
     'create app with instance' => [
         'schedule:create',
         schedule_cli_add_arguments([
-            '--app' => '7',
+            '--project' => '7',
             '--instance' => '7',
             '--for' => 'production',
         ]),
         'schedule.target_conflict',
-        'Use only one of --project, --app, --node, or --instance.',
+        'Use only one of --project, --node, or --instance.',
     ],
     'create app with node' => [
         'schedule:create',
         schedule_cli_add_arguments([
-            '--app' => '7',
+            '--project' => '7',
             '--node' => '3',
             '--for' => 'production',
         ]),
         'schedule.target_conflict',
-        'Use only one of --project, --app, --node, or --instance.',
+        'Use only one of --project, --node, or --instance.',
     ],
     'create for without app' => [
         'schedule:create',
@@ -516,20 +516,20 @@ it('renders one exact json envelope for App-target schedule refusals', function 
             '--for' => 'production',
         ]),
         'schedule.option_invalid',
-        'The --for option requires --project or --app.',
+        'The --for option requires --project.',
     ],
     'create app without for' => [
         'schedule:create',
         schedule_cli_add_arguments([
-            '--app' => '7',
+            '--project' => '7',
         ]),
         'schedule.option_invalid',
-        'The --for option is required with --project or --app.',
+        'The --for option is required with --project.',
     ],
     'create invalid app without for' => [
         'schedule:create',
         schedule_cli_add_arguments([
-            '--app' => 'abc',
+            '--project' => 'abc',
         ]),
         'app.id_invalid',
         'Project ID must be a positive integer.',
@@ -538,12 +538,12 @@ it('renders one exact json envelope for App-target schedule refusals', function 
         'schedule:update',
         [
             'name' => 'daily',
-            '--app' => '7',
+            '--project' => '7',
             '--calendar' => 'daily',
             '--command' => 'x',
         ],
         'schedule.option_invalid',
-        'The --for option is required with --project or --app.',
+        'The --for option is required with --project.',
     ],
 ]);
 

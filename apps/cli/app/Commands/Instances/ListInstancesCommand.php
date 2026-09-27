@@ -48,7 +48,7 @@ final class ListInstancesCommand extends GatewayCommand
         foreach ($response->appInstances as $instance) {
             $rows[] = [
                 $instance->id,
-                $instance->appId,
+                $instance->projectId,
                 $instance->nodeId,
                 $instance->vitePort ?? null,
                 $instance->name,

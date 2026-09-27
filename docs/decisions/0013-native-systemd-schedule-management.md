@@ -11,7 +11,7 @@ description: "Accepted on 2026-08-31."
 Accepted on 2026-08-31.
 
 If accepted, this ADR extends
-[ADR 0004](/decisions/0004-verify-only-doctor-boundary) with the Schedule model and
+[ADR 0004](/cli/doctor#why-it-works-this-way) with the Schedule model and
 Doctor family. It uses the AppInstance, Node, placement, and runtime ownership
 defined by [ADR 0009](/decisions/0009-clustered-app-instance-routing) and
 [ADR 0011](/decisions/0011-clustered-production-ingress-and-app-prod-placement).

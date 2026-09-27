@@ -726,7 +726,7 @@ it('bounds AppInstance response relationship queries for one and several visible
         ->getJson('/api/v1/instances')
         ->assertOk()
         ->assertJsonPath('data.*.id', [$first->id, $unrouted->id, $second->id])
-        ->assertJsonPath('data.*.app_id', [$this->orbitApp->id, $unroutedApp->id, $this->orbitApp->id])
+        ->assertJsonPath('data.*.project_id', [$this->orbitApp->id, $unroutedApp->id, $this->orbitApp->id])
         ->assertJsonPath('data.1.effective_root', 'web')
         ->assertJsonPath('data.1.route', null)
         ->assertJsonPath('data.0.route.target.app_instance_id', $first->id)
@@ -786,7 +786,7 @@ it('creates an active checkout AppInstance on a standalone Node with inherited r
     $response = $this->postJson(
         '/api/v1/instances',
         [
-            'app_id' => $this->orbitApp->id,
+            'project_id' => $this->orbitApp->id,
             'node_id' => $this->node->id,
             'name' => 'dev',
         ],
@@ -907,10 +907,10 @@ it('records the instances of one App among several', function (): void {
     foreach (['dev', 'staging', 'feature-checkout'] as $name) {
         // The fake source resolves to the branch the placement name selects.
         $this->source->resolution = new DevelopmentSourceResolution($name, str_repeat('a', 40));
-        $this->postJson('/api/v1/instances', ['app_id' => $shop->id, 'node_id' => $this->node->id, 'name' => $name])->assertCreated();
+        $this->postJson('/api/v1/instances', ['project_id' => $shop->id, 'node_id' => $this->node->id, 'name' => $name])->assertCreated();
     }
     $this->source->resolution = new DevelopmentSourceResolution('dev', str_repeat('a', 40));
-    $this->postJson('/api/v1/instances', ['app_id' => $this->orbitApp->id, 'node_id' => $this->node->id, 'name' => 'dev'])->assertCreated();
+    $this->postJson('/api/v1/instances', ['project_id' => $this->orbitApp->id, 'node_id' => $this->node->id, 'name' => 'dev'])->assertCreated();
 
     record_fixture($this->getJson('/api/v1/instances')->assertOk()->assertJsonCount(4, 'data'), 'instances/instance-list/charlie-shop', ListAppInstancesRequest::class, 'GET /api/v1/instances');
     record_fixture($this->getJson('/api/v1/instances/1')->assertOk()->assertJsonPath('data.name', 'dev'), 'instances/instance-show/charlie-shop-dev', ShowAppInstanceRequest::class, 'GET /api/v1/instances/{instance}');
@@ -918,7 +918,7 @@ it('records the instances of one App among several', function (): void {
 
 it('records the list and show responses of an active checkout AppInstance', function (): void {
     $this->postJson('/api/v1/instances', [
-        'app_id' => $this->orbitApp->id,
+        'project_id' => $this->orbitApp->id,
         'node_id' => $this->node->id,
         'name' => 'dev',
     ])->assertCreated();
@@ -933,7 +933,7 @@ it('refuses new production placement with a candidate-required error before muta
 
     $refusal = $this
         ->postJson('/api/v1/instances', [
-            'app_id' => $this->orbitApp->id,
+            'project_id' => $this->orbitApp->id,
             'node_id' => $node->id,
             'name' => 'release-name',
             'root' => 'public',
@@ -959,7 +959,7 @@ it('refuses new production placement with a candidate-required error before muta
 it('returns a completed historical production AppInstance without fetching or overwriting it', function (): void {
     $node = create_app_prod_node('app-prod');
     $payload = [
-        'app_id' => $this->orbitApp->id,
+        'project_id' => $this->orbitApp->id,
         'node_id' => $node->id,
         'name' => 'stable',
         'branch' => 'release',
@@ -1019,7 +1019,7 @@ it('refuses new production placement when the standalone Node has no TLD', funct
 
     $this
         ->postJson('/api/v1/instances', [
-            'app_id' => $this->orbitApp->id,
+            'project_id' => $this->orbitApp->id,
             'node_id' => $node->id,
             'name' => 'explicit-host',
             'domain' => 'www.example.test',
@@ -1042,7 +1042,7 @@ it('refuses new production placement before records or remote work', function ()
 
     $this
         ->postJson('/api/v1/instances', [
-            'app_id' => $this->orbitApp->id,
+            'project_id' => $this->orbitApp->id,
             'node_id' => $clustered->id,
             'name' => 'clustered',
         ])
@@ -1052,7 +1052,7 @@ it('refuses new production placement before records or remote work', function ()
     $withoutTld = create_app_prod_node('no-tld-prod', null);
     $this
         ->postJson('/api/v1/instances', [
-            'app_id' => $this->orbitApp->id,
+            'project_id' => $this->orbitApp->id,
             'node_id' => $withoutTld->id,
             'name' => 'no-hostname',
         ])
@@ -1075,7 +1075,7 @@ it('refuses Laravel production creation before reserving an inactive AppInstance
 
     $this
         ->postJson('/api/v1/instances', [
-            'app_id' => $this->orbitApp->id,
+            'project_id' => $this->orbitApp->id,
             'node_id' => $node->id,
             'name' => 'laravel',
         ])
@@ -1106,7 +1106,7 @@ it('keeps production identity stable across slug changes and refuses another dir
         ->assertJsonPath('data.production_home', $identity['production_home']);
     $this
         ->postJson('/api/v1/instances', [
-            'app_id' => $this->orbitApp->id,
+            'project_id' => $this->orbitApp->id,
             'node_id' => $firstNode->id,
             'name' => 'second',
         ])
@@ -1114,7 +1114,7 @@ it('keeps production identity stable across slug changes and refuses another dir
         ->assertJsonPath('error.code', 'instance.candidate_required');
     $this
         ->postJson('/api/v1/instances', [
-            'app_id' => $this->orbitApp->id,
+            'project_id' => $this->orbitApp->id,
             'node_id' => $secondNode->id,
             'name' => 'second',
         ])
@@ -1202,7 +1202,7 @@ it('retries existing production removal without recreating its deleted Route', f
 it('validates source profile recovery as an optional boolean before persistence', function (): void {
     $this
         ->postJson('/api/v1/instances', [
-            'app_id' => $this->orbitApp->id,
+            'project_id' => $this->orbitApp->id,
             'node_id' => $this->node->id,
             'name' => 'dev',
             'recover_source_profile' => 'yes',
@@ -1224,7 +1224,7 @@ it('fails closed for legacy incomplete profile evidence on an ordinary API retry
     string $checkpoint,
 ): void {
     $payload = [
-        'app_id' => $this->orbitApp->id,
+        'project_id' => $this->orbitApp->id,
         'node_id' => $this->node->id,
         'name' => 'dev',
     ];
@@ -1262,7 +1262,7 @@ it('fails closed for legacy incomplete profile evidence on an ordinary API retry
 
 it('recovers a legacy incomplete profile without replacing source or Route identity', function (): void {
     $payload = [
-        'app_id' => $this->orbitApp->id,
+        'project_id' => $this->orbitApp->id,
         'node_id' => $this->node->id,
         'name' => 'dev',
     ];
@@ -1312,7 +1312,7 @@ it('recovers a legacy incomplete profile without replacing source or Route ident
 
 it('reuses stored Git revalidation before explicit profile recovery', function (): void {
     $payload = [
-        'app_id' => $this->orbitApp->id,
+        'project_id' => $this->orbitApp->id,
         'node_id' => $this->node->id,
         'name' => 'dev',
     ];
@@ -1347,7 +1347,7 @@ it('reuses stored Git revalidation before explicit profile recovery', function (
 
 it('does not let source profile recovery bypass known complete drift', function (): void {
     $payload = [
-        'app_id' => $this->orbitApp->id,
+        'project_id' => $this->orbitApp->id,
         'node_id' => $this->node->id,
         'name' => 'dev',
     ];
@@ -1376,7 +1376,7 @@ it('recovers a missing source profile on an active AppInstance without reprovisi
     ?string $expectedPhpVersion,
 ): void {
     $payload = [
-        'app_id' => $this->orbitApp->id,
+        'project_id' => $this->orbitApp->id,
         'node_id' => $this->node->id,
         'name' => 'dev',
         'domain' => 'dev.example.test',
@@ -1429,7 +1429,7 @@ it('recovers a missing source profile on an active AppInstance without reprovisi
 
 it('leaves an active AppInstance unchanged when source profile recovery finds a recorded profile', function (): void {
     $payload = [
-        'app_id' => $this->orbitApp->id,
+        'project_id' => $this->orbitApp->id,
         'node_id' => $this->node->id,
         'name' => 'dev',
     ];
@@ -1462,7 +1462,7 @@ it('recovers a missing source profile on an active production AppInstance withou
 ): void {
     $node = create_app_prod_node('app-prod');
     $payload = [
-        'app_id' => $this->orbitApp->id,
+        'project_id' => $this->orbitApp->id,
         'node_id' => $node->id,
         'name' => 'stable',
         'domain' => 'www.example.test',
@@ -1549,7 +1549,7 @@ it('recovers a missing source profile on an active production AppInstance withou
 it('refuses production source profile recovery before writing when the runtime identity cannot be derived', function (): void {
     $node = create_app_prod_node('app-prod');
     $payload = [
-        'app_id' => $this->orbitApp->id,
+        'project_id' => $this->orbitApp->id,
         'node_id' => $node->id,
         'name' => 'stable',
         'domain' => 'www.example.test',
@@ -1591,7 +1591,7 @@ it('refuses production source profile recovery before writing when the runtime i
 it('leaves an active production AppInstance unchanged when source profile recovery finds a recorded profile', function (): void {
     $node = create_app_prod_node('app-prod');
     $payload = [
-        'app_id' => $this->orbitApp->id,
+        'project_id' => $this->orbitApp->id,
         'node_id' => $node->id,
         'name' => 'stable',
         'domain' => 'www.example.test',
@@ -1627,7 +1627,7 @@ it('leaves an active production AppInstance unchanged when source profile recove
 
 it('accepts environment and domain operations after recovering an active source profile', function (): void {
     $payload = [
-        'app_id' => $this->orbitApp->id,
+        'project_id' => $this->orbitApp->id,
         'node_id' => $this->node->id,
         'name' => 'dev',
         'domain' => 'dev.example.test',
@@ -1742,7 +1742,7 @@ it('keeps explicit branch selection separate from default identity and Route ide
     $this->source->resolution = new DevelopmentSourceResolution('release', str_repeat('b', 40));
 
     $response = $this->postJson('/api/v1/instances', [
-        'app_id' => $this->orbitApp->id,
+        'project_id' => $this->orbitApp->id,
         'node_id' => $this->node->id,
         'name' => 'default',
         'branch' => 'release',
@@ -1762,7 +1762,7 @@ it('retains explicit override intent when it equals the App default branch', fun
 
     $this
         ->postJson('/api/v1/instances', [
-            'app_id' => $this->orbitApp->id,
+            'project_id' => $this->orbitApp->id,
             'node_id' => $this->node->id,
             'name' => 'default',
             'branch' => 'main',
@@ -1775,7 +1775,7 @@ it('retains explicit override intent when it equals the App default branch', fun
 it('rejects invalid branch input before persistence or source work', function (): void {
     $this
         ->postJson('/api/v1/instances', [
-            'app_id' => $this->orbitApp->id,
+            'project_id' => $this->orbitApp->id,
             'node_id' => $this->node->id,
             'name' => 'default',
             'branch' => '../release',
@@ -1798,7 +1798,7 @@ it('reports an absent explicit remote branch without fallback or publication', f
 
     $this
         ->postJson('/api/v1/instances', [
-            'app_id' => $this->orbitApp->id,
+            'project_id' => $this->orbitApp->id,
             'node_id' => $this->node->id,
             'name' => 'default',
             'branch' => 'missing',
@@ -1820,7 +1820,7 @@ it('rejects added removed or changed branch override on creation retry before mu
 ): void {
     $this->source->resolution = new DevelopmentSourceResolution($original ?? 'dev', str_repeat('b', 40));
     $payload = [
-        'app_id' => $this->orbitApp->id,
+        'project_id' => $this->orbitApp->id,
         'node_id' => $this->node->id,
         'name' => 'dev',
     ];
@@ -1857,7 +1857,7 @@ it('rejects added removed or changed branch override on creation retry before mu
 it('creates explicit Routes during provisioning and preserves exact retry identity', function (): void {
     $this->source->resolution = new DevelopmentSourceResolution('main', str_repeat('a', 40));
     $payload = [
-        'app_id' => $this->orbitApp->id,
+        'project_id' => $this->orbitApp->id,
         'node_id' => $this->node->id,
         'name' => 'default',
         'domain' => 'Preview.Example.Test',
@@ -1887,7 +1887,7 @@ it('creates explicit Routes during provisioning and preserves exact retry identi
 it('refuses unavailable generated naming before source mutation and completes on retry', function (): void {
     $this->node->update(['tld' => null]);
     $payload = [
-        'app_id' => $this->orbitApp->id,
+        'project_id' => $this->orbitApp->id,
         'node_id' => $this->node->id,
         'name' => 'dev',
     ];
@@ -1930,7 +1930,7 @@ it('uses the active Cluster TLD before the Node TLD while Cluster membership sel
         ]);
 
     $this->postJson('/api/v1/instances', [
-        'app_id' => $this->orbitApp->id,
+        'project_id' => $this->orbitApp->id,
         'node_id' => $this->node->id,
         'name' => 'default',
     ])->assertCreated();
@@ -1948,7 +1948,7 @@ it('uses the active Cluster TLD before the Node TLD while Cluster membership sel
     $this->source->resolution = new DevelopmentSourceResolution('feature', str_repeat('b', 40));
 
     $this->postJson('/api/v1/instances', [
-        'app_id' => $this->orbitApp->id,
+        'project_id' => $this->orbitApp->id,
         'node_id' => $this->node->id,
         'name' => 'feature',
     ])->assertCreated();
@@ -1981,7 +1981,7 @@ it('creates equivalent source on Nodes in every optional Cluster state', functio
 
     $this
         ->postJson('/api/v1/instances', [
-            'app_id' => $this->orbitApp->id,
+            'project_id' => $this->orbitApp->id,
             'node_id' => $this->node->id,
             'name' => 'dev',
         ])
@@ -1995,7 +1995,7 @@ it('creates equivalent source on Nodes in every optional Cluster state', functio
 
 it('reconciles Cluster activation for an active AppInstance Route without moving placement', function (): void {
     $created = $this->postJson('/api/v1/instances', [
-        'app_id' => $this->orbitApp->id,
+        'project_id' => $this->orbitApp->id,
         'node_id' => $this->node->id,
         'name' => 'dev',
     ])->assertCreated();
@@ -2059,7 +2059,7 @@ it('renames a Cluster and accepts unchanged placement input despite an unrelated
     $this->source->fail = 'resolve';
     $this
         ->postJson('/api/v1/instances', [
-            'app_id' => $this->orbitApp->id,
+            'project_id' => $this->orbitApp->id,
             'node_id' => $this->node->id,
             'name' => 'failed',
         ])
@@ -2096,7 +2096,7 @@ it('renames a Cluster and accepts unchanged placement input despite an unrelated
 it('transports a root override and returns it as the effective root', function (): void {
     $this
         ->postJson('/api/v1/instances', [
-            'app_id' => $this->orbitApp->id,
+            'project_id' => $this->orbitApp->id,
             'node_id' => $this->node->id,
             'name' => 'dev',
             'root' => 'site/public',
@@ -2111,7 +2111,7 @@ it('fails before mutation when a legacy App has incomplete source defaults', fun
 
     $this
         ->postJson('/api/v1/instances', [
-            'app_id' => $this->orbitApp->id,
+            'project_id' => $this->orbitApp->id,
             'node_id' => $this->node->id,
             'name' => 'dev',
         ])
@@ -2129,7 +2129,7 @@ it('persists each durable state and resumes the next transition', function (
     AppInstanceState $durableState,
 ): void {
     $payload = [
-        'app_id' => $this->orbitApp->id,
+        'project_id' => $this->orbitApp->id,
         'node_id' => $this->node->id,
         'name' => 'dev',
     ];
@@ -2418,7 +2418,7 @@ it('persists reservation conflicts before releasing the lease', function (): voi
 
 it('rejects a retry on another Node before source work or state mutation', function (): void {
     $this->postJson('/api/v1/instances', [
-        'app_id' => $this->orbitApp->id,
+        'project_id' => $this->orbitApp->id,
         'node_id' => $this->node->id,
         'name' => 'dev',
     ])->assertCreated();
@@ -2436,7 +2436,7 @@ it('rejects a retry on another Node before source work or state mutation', funct
 
     $this
         ->postJson('/api/v1/instances', [
-            'app_id' => $this->orbitApp->id,
+            'project_id' => $this->orbitApp->id,
             'node_id' => $otherNode->id,
             'name' => 'dev',
         ])
@@ -2460,7 +2460,7 @@ it('rejects inactive Node role and unsupported platform placement before mutatio
 
     $this
         ->postJson('/api/v1/instances', [
-            'app_id' => $this->orbitApp->id,
+            'project_id' => $this->orbitApp->id,
             'node_id' => $this->node->id,
             'name' => 'dev',
         ])
@@ -2474,7 +2474,7 @@ it('rejects inactive Node role and unsupported platform placement before mutatio
 
 it('keeps the first checkout immutable when a later AppInstance uses a changed apps root', function (): void {
     $first = $this->postJson('/api/v1/instances', [
-        'app_id' => $this->orbitApp->id,
+        'project_id' => $this->orbitApp->id,
         'node_id' => $this->node->id,
         'name' => 'dev',
     ])->assertCreated();
@@ -2482,7 +2482,7 @@ it('keeps the first checkout immutable when a later AppInstance uses a changed a
     $this->source->resolution = new DevelopmentSourceResolution('feature', str_repeat('b', 40));
 
     $second = $this->postJson('/api/v1/instances', [
-        'app_id' => $this->orbitApp->id,
+        'project_id' => $this->orbitApp->id,
         'node_id' => $this->node->id,
         'name' => 'feature',
     ])->assertCreated();
@@ -2497,7 +2497,7 @@ it('keeps the first checkout immutable when a later AppInstance uses a changed a
 
 it('rejects immutable root and source-layout conflicts on retry', function (string $conflict): void {
     $payload = [
-        'app_id' => $this->orbitApp->id,
+        'project_id' => $this->orbitApp->id,
         'node_id' => $this->node->id,
         'name' => 'dev',
     ];
@@ -2524,7 +2524,7 @@ it('returns migration required before retry or removal mutates a legacy default'
     string $operation,
 ): void {
     $payload = [
-        'app_id' => $this->orbitApp->id,
+        'project_id' => $this->orbitApp->id,
         'node_id' => $this->node->id,
         'name' => 'dev',
     ];
@@ -2550,7 +2550,7 @@ it('returns migration required before retry or removal mutates a legacy default'
 it('returns migration conflict for an occupied reserved default identity before mutation', function (): void {
     $this->source->resolution = new DevelopmentSourceResolution('main', str_repeat('b', 40));
     $payload = [
-        'app_id' => $this->orbitApp->id,
+        'project_id' => $this->orbitApp->id,
         'node_id' => $this->node->id,
         'name' => 'default',
     ];
@@ -2583,7 +2583,7 @@ it('returns migration conflict for a managed default destination overlap before 
 
     $this
         ->postJson('/api/v1/instances', [
-            'app_id' => $this->orbitApp->id,
+            'project_id' => $this->orbitApp->id,
             'node_id' => $this->node->id,
             'name' => 'default',
         ])
@@ -2603,7 +2603,7 @@ it('returns migration conflict for an unmanaged occupied default destination bef
 
     $this
         ->postJson('/api/v1/instances', [
-            'app_id' => $this->orbitApp->id,
+            'project_id' => $this->orbitApp->id,
             'node_id' => $this->node->id,
             'name' => 'default',
         ])
@@ -2619,7 +2619,7 @@ it('returns migration conflict for an unmanaged occupied default destination bef
 
 it('treats active creation evidence as terminal when development HEAD advances', function (): void {
     $payload = [
-        'app_id' => $this->orbitApp->id,
+        'project_id' => $this->orbitApp->id,
         'node_id' => $this->node->id,
         'name' => 'dev',
     ];
@@ -2642,7 +2642,7 @@ it('treats active creation evidence as terminal when development HEAD advances',
 
 it('leaves an active AppInstance row unchanged when a creation retry is refused with route.retry_conflict', function (): void {
     $payload = [
-        'app_id' => $this->orbitApp->id,
+        'project_id' => $this->orbitApp->id,
         'node_id' => $this->node->id,
         'name' => 'dev',
     ];
@@ -2669,7 +2669,7 @@ it('leaves an active AppInstance row unchanged when a creation retry is refused 
 it('rejects repository execution and unsupported transport keys', function (): void {
     $this
         ->postJson('/api/v1/instances', [
-            'app_id' => $this->orbitApp->id,
+            'project_id' => $this->orbitApp->id,
             'node_id' => $this->node->id,
             'name' => 'dev',
             'repository_url' => 'https://github.com/acme/other.git',
@@ -2689,7 +2689,7 @@ it('rejects repository execution and unsupported transport keys', function (): v
 
 it('removes an active AppInstance through every durable checkpoint', function (bool $force): void {
     $created = $this->postJson('/api/v1/instances', [
-        'app_id' => $this->orbitApp->id,
+        'project_id' => $this->orbitApp->id,
         'node_id' => $this->node->id,
         'name' => 'dev',
     ])->assertCreated();
@@ -2754,7 +2754,7 @@ it('removes an active AppInstance through every durable checkpoint', function (b
 
 it('answers the refused source identity check with 409 in normal and forced removal', function (bool $force): void {
     $created = $this->postJson('/api/v1/instances', [
-        'app_id' => $this->orbitApp->id,
+        'project_id' => $this->orbitApp->id,
         'node_id' => $this->node->id,
         'name' => 'dev',
     ])->assertCreated();
@@ -2941,7 +2941,7 @@ it('removes one target from a public clustered production Route and reports reta
 
 it('keeps preflight refusals free of Route source and lifecycle mutation', function (): void {
     $created = $this->postJson('/api/v1/instances', [
-        'app_id' => $this->orbitApp->id,
+        'project_id' => $this->orbitApp->id,
         'node_id' => $this->node->id,
         'name' => 'dev',
     ])->assertCreated();
@@ -2967,7 +2967,7 @@ it('keeps preflight refusals free of Route source and lifecycle mutation', funct
 
 it('retains completed transfer history without leaving an instance reference', function (): void {
     $created = $this->postJson('/api/v1/instances', [
-        'app_id' => $this->orbitApp->id,
+        'project_id' => $this->orbitApp->id,
         'node_id' => $this->node->id,
         'name' => 'dev',
     ])->assertCreated();
@@ -2996,7 +2996,7 @@ it('retains completed transfer history without leaving an instance reference', f
 
 it('refuses removal while transfer history is incomplete', function (): void {
     $created = $this->postJson('/api/v1/instances', [
-        'app_id' => $this->orbitApp->id,
+        'project_id' => $this->orbitApp->id,
         'node_id' => $this->node->id,
         'name' => 'dev',
     ])->assertCreated();
@@ -3028,7 +3028,7 @@ it('refuses removal while transfer history is incomplete', function (): void {
 
 it('retains bounded failed progress and resumes without recreating a deleted Route', function (): void {
     $created = $this->postJson('/api/v1/instances', [
-        'app_id' => $this->orbitApp->id,
+        'project_id' => $this->orbitApp->id,
         'node_id' => $this->node->id,
         'name' => 'dev',
     ])->assertCreated();
@@ -3088,7 +3088,7 @@ it('retains bounded failed progress and resumes without recreating a deleted Rou
 
     $this
         ->postJson('/api/v1/instances', [
-            'app_id' => $this->orbitApp->id,
+            'project_id' => $this->orbitApp->id,
             'node_id' => $this->node->id,
             'name' => 'dev',
         ])
@@ -3107,7 +3107,7 @@ it('retains bounded failed progress and resumes without recreating a deleted Rou
 
 it('atomically completes final row deletion or preserves the public retry target', function (): void {
     $created = $this->postJson('/api/v1/instances', [
-        'app_id' => $this->orbitApp->id,
+        'project_id' => $this->orbitApp->id,
         'node_id' => $this->node->id,
         'name' => 'dev',
     ])->assertCreated();
@@ -3170,7 +3170,7 @@ it('atomically completes final row deletion or preserves the public retry target
 
 it('returns current bounded progress when retry source revalidation is refused', function (): void {
     $created = $this->postJson('/api/v1/instances', [
-        'app_id' => $this->orbitApp->id,
+        'project_id' => $this->orbitApp->id,
         'node_id' => $this->node->id,
         'name' => 'dev',
     ])->assertCreated();
@@ -3224,7 +3224,7 @@ it('returns current bounded progress when retry source revalidation is refused',
 
 it('rejects a non-empty JSON array from the removal transport', function (): void {
     $created = $this->postJson('/api/v1/instances', [
-        'app_id' => $this->orbitApp->id,
+        'project_id' => $this->orbitApp->id,
         'node_id' => $this->node->id,
         'name' => 'dev',
     ])->assertCreated();
@@ -3251,7 +3251,7 @@ it('rejects a non-empty JSON array from the removal transport', function (): voi
 
 it('rejects the removed compatibility key', function (): void {
     $created = $this->postJson('/api/v1/instances', [
-        'app_id' => $this->orbitApp->id,
+        'project_id' => $this->orbitApp->id,
         'node_id' => $this->node->id,
         'name' => 'dev',
     ])->assertCreated();
@@ -3367,14 +3367,14 @@ it('runs setup once on create and skips it for an already active instance', func
     ProjectLifecycleStep::query()->create(['app_id' => $this->orbitApp->id, 'phase' => 'setup', 'name' => 'install', 'command' => 'install', 'timeout_seconds' => 30, 'position' => 0]);
     $transport = new LifecycleSshExecutor;
     app()->instance(ProjectLifecycleRunner::class, $transport->runner());
-    $input = ['app_id' => $this->orbitApp->id, 'node_id' => $this->node->id, 'name' => 'setup', 'branch' => 'dev'];
+    $input = ['project_id' => $this->orbitApp->id, 'node_id' => $this->node->id, 'name' => 'setup', 'branch' => 'dev'];
     $this->postJson('/api/v1/instances', $input)->assertCreated();
     $this->postJson('/api/v1/instances', $input)->assertOk();
     expect($transport->inputs)->toHaveCount(1);
 });
 
 it('tears down and removes a newly created instance after confirmed setup failure', function (int $teardownExit): void {
-    $this->postJson('/api/v1/instances', ['app_id' => $this->orbitApp->id, 'node_id' => $this->node->id, 'name' => 'preserve', 'branch' => 'dev'])->assertCreated();
+    $this->postJson('/api/v1/instances', ['project_id' => $this->orbitApp->id, 'node_id' => $this->node->id, 'name' => 'preserve', 'branch' => 'dev'])->assertCreated();
     $preservedId = AppInstance::query()->sole()->id;
 
     foreach (['setup', 'teardown'] as $phase) {
@@ -3382,7 +3382,7 @@ it('tears down and removes a newly created instance after confirmed setup failur
     }
     $transport = new LifecycleSshExecutor(result: static fn (array $input): int => $input['command'] === 'setup' ? 1 : $teardownExit);
     app()->instance(ProjectLifecycleRunner::class, $transport->runner());
-    $this->postJson('/api/v1/instances', ['app_id' => $this->orbitApp->id, 'node_id' => $this->node->id, 'name' => 'failed-setup', 'branch' => 'dev'])
+    $this->postJson('/api/v1/instances', ['project_id' => $this->orbitApp->id, 'node_id' => $this->node->id, 'name' => 'failed-setup', 'branch' => 'dev'])
         ->assertUnprocessable()->assertJsonPath('error.code', 'instance.setup_step_failed');
     expect(array_column($transport->inputs, 'command'))->toBe(['setup', 'teardown'])
         ->and(AppInstance::query()->sole()->id)->toBe($preservedId)
@@ -3408,7 +3408,7 @@ it('stops setup early enough in a create that the rollback still fits the reques
     });
     app()->instance(ProjectLifecycleRunner::class, $transport->runner($deadline));
 
-    $this->postJson('/api/v1/instances', ['app_id' => $this->orbitApp->id, 'node_id' => $this->node->id, 'name' => 'deadline-setup', 'branch' => 'dev'])
+    $this->postJson('/api/v1/instances', ['project_id' => $this->orbitApp->id, 'node_id' => $this->node->id, 'name' => 'deadline-setup', 'branch' => 'dev'])
         ->assertStatus(504)
         ->assertJsonPath('error.code', 'command.deadline_exceeded')
         ->assertJsonPath('error.details.step', 'setup')
@@ -3432,7 +3432,7 @@ it('names the forced destroy that finishes a create rollback whose removal did n
     // The Instance this create makes is the next id; its source removal is interrupted.
     $this->removalSource->failPrepareFor = (int) AppInstance::query()->max('id') + 1;
 
-    $response = $this->postJson('/api/v1/instances', ['app_id' => $this->orbitApp->id, 'node_id' => $this->node->id, 'name' => 'stuck-rollback', 'branch' => 'dev'])
+    $response = $this->postJson('/api/v1/instances', ['project_id' => $this->orbitApp->id, 'node_id' => $this->node->id, 'name' => 'stuck-rollback', 'branch' => 'dev'])
         ->assertUnprocessable()
         ->assertJsonPath('error.code', 'instance.setup_step_failed')
         ->assertJsonPath('error.details.cleanup', 'incomplete');
@@ -3455,12 +3455,12 @@ it('retains the checkout when setup execution cannot be confirmed', function ():
     ProjectLifecycleStep::query()->create(['app_id' => $this->orbitApp->id, 'phase' => 'setup', 'name' => 'install', 'command' => 'install', 'timeout_seconds' => 30, 'position' => 0]);
     $transport = new LifecycleSshExecutor(result: static fn (): int => 255);
     app()->instance(ProjectLifecycleRunner::class, $transport->runner());
-    $this->postJson('/api/v1/instances', ['app_id' => $this->orbitApp->id, 'node_id' => $this->node->id, 'name' => 'unconfirmed', 'branch' => 'dev'])
+    $this->postJson('/api/v1/instances', ['project_id' => $this->orbitApp->id, 'node_id' => $this->node->id, 'name' => 'unconfirmed', 'branch' => 'dev'])
         ->assertUnprocessable()->assertJsonPath('error.code', 'instance.setup_step_failed');
     expect(AppInstance::query()->count())->toBe(1)
         ->and(Route::query()->count())->toBe(1)
         ->and($transport->inputs)->toHaveCount(1);
-    $this->postJson('/api/v1/instances', ['app_id' => $this->orbitApp->id, 'node_id' => $this->node->id, 'name' => 'unconfirmed', 'branch' => 'dev'])
+    $this->postJson('/api/v1/instances', ['project_id' => $this->orbitApp->id, 'node_id' => $this->node->id, 'name' => 'unconfirmed', 'branch' => 'dev'])
         ->assertConflict()->assertJsonPath('error.code', 'instance.setup_step_failed');
     $transport->result = static fn (): int => 0;
     $instance = AppInstance::query()->sole();

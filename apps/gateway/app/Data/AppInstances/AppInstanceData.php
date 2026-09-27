@@ -21,10 +21,8 @@ final class AppInstanceData extends Data
 {
     public function __construct(
         public int $id,
-        public int $appId,
         public int $projectId,
         public int $nodeId,
-        public AppIdentityData $app,
         public AppIdentityData $project,
         public NodeIdentityData $node,
         public string $name,
@@ -65,10 +63,8 @@ final class AppInstanceData extends Data
 
         return new self(
             id: $appInstance->id,
-            appId: $appInstance->app_id,
             projectId: $appInstance->app_id,
             nodeId: $appInstance->node_id,
-            app: AppIdentityData::fromModel($appInstance->app),
             project: AppIdentityData::fromModel($appInstance->app),
             node: NodeIdentityData::fromModel($appInstance->node),
             vitePort: $appInstance->vite_port,

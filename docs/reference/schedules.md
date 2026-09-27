@@ -65,19 +65,19 @@ An operator uses Schedule commands from a machine with an active Gateway profile
 | --- | --- |
 | `orbit schedule:create NAME --node=ID --calendar=CALENDAR --command=COMMAND` | Create a Schedule for one positive Node ID. Add `--timeout=SECONDS` to change the 3600-second execution timeout. |
 | `orbit schedule:create NAME --instance=ID --calendar=CALENDAR --command=COMMAND` | Create a Schedule for one positive Instance ID. Add `--no-start` to install its timer disabled and stopped. |
-| `orbit schedule:create NAME --app=APP --for=ENV[,ENV] --calendar=CALENDAR --command=COMMAND` | Record a Schedule definition on the Project. Add `--timeout=SECONDS` to change the 3600-second execution timeout. |
+| `orbit schedule:create NAME --project=APP --for=ENV[,ENV] --calendar=CALENDAR --command=COMMAND` | Record a Schedule definition on the Project. Add `--timeout=SECONDS` to change the 3600-second execution timeout. |
 | `orbit schedule:list` | List authorized Schedule summaries without command text. |
-| `orbit schedule:list --app=APP` | List the Project's Schedule definitions. |
+| `orbit schedule:list --project=APP` | List the Project's Schedule definitions. |
 | `orbit schedule:show UUID` | Show one authorized Schedule. |
-| `orbit schedule:show NAME --app=APP` | Show one Schedule definition by name. |
-| `orbit schedule:update NAME --app=APP --for=ENV[,ENV] --calendar=CALENDAR --command=COMMAND` | Replace one Schedule definition with a complete specification. |
+| `orbit schedule:show NAME --project=APP` | Show one Schedule definition by name. |
+| `orbit schedule:update NAME --project=APP --for=ENV[,ENV] --calendar=CALENDAR --command=COMMAND` | Replace one Schedule definition with a complete specification. |
 | `orbit schedule:run UUID` | Start one manual invocation without changing the desired timer state. |
 | `orbit schedule:logs UUID` | Show only the bounded lines returned by the Gateway. |
 | `orbit schedule:destroy UUID [--yes]` | Destroy one Schedule through the Gateway. Interactive confirmation defaults to No. |
-| `orbit schedule:destroy NAME --app=APP [--yes]` | Destroy one Schedule definition by name. Interactive confirmation defaults to No. |
+| `orbit schedule:destroy NAME --project=APP [--yes]` | Destroy one Schedule definition by name. Interactive confirmation defaults to No. |
 | `orbit schedule:enable UUID` | Enable and start an installed Instance timer without replacing the Schedule. |
 
-`schedule:create` requires exactly one of `--node`, `--instance`, or `--app`. Combined selectors, no selector, a malformed or non-positive ID, `--node` with the Instance-only `--no-start` option, and `--for` without `--app` fail before the CLI sends an HTTP request. `--for` is required with `--app` on create and update. Interactive, non-interactive, and `--json` calls use the same rule and never prompt for a target. The [Project process and Schedule definitions](/reference/app-processes-and-schedules) page owns the Project target.
+`schedule:create` requires exactly one of `--node`, `--instance`, or `--project`. Combined selectors, no selector, a malformed or non-positive ID, `--node` with the Instance-only `--no-start` option, and `--for` without `--project` fail before the CLI sends an HTTP request. `--for` is required with `--project` on create and update. Interactive, non-interactive, and `--json` calls use the same rule and never prompt for a target. The [Project process and Schedule definitions](/reference/app-processes-and-schedules) page owns the Project target.
 
 Human output and `--json` output preserve the Gateway request ID. They show `desired_timer_state` separately from lifecycle `status`, and shared safe errors expose no command, log, credential, or remote execution detail.
 
