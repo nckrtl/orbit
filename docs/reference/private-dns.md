@@ -4,7 +4,7 @@ description: "How a managed Node selects its resolver, how the Gateway answers C
 covers:
   - apps/gateway/app/Infrastructure/AppDev/{DnsmasqPrivateDnsManager,AppDevDnsConfigRenderer,PrivateDns*,*PrivateDns*,*DnsRequester*,DnsAddress,DecodedDnsQuery,VpnDnsmasqBackendListen,NativeClusterRouterDnsSelectionReconciler}.php
   - apps/gateway/app/Domain/AppDev/{ClusterRouterDnsSelection*,Dns*,PrivateDns*}.php
-  - apps/gateway/app/Infrastructure/WireGuard/{NativeWireGuardPeerConverger,NativeWireGuardPeerDnsRepairer,UplinkDnsResolvers,RetiredDnsmasqSnippets}.php
+  - apps/gateway/app/Infrastructure/WireGuard/{NativeWireGuardPeerConverger,NativeWireGuardPeerDnsRepairer,UplinkDnsResolvers}.php
   - apps/gateway/app/Infrastructure/Gateway/GatewayPrivateDnsResolver.php
   - apps/gateway/app/Domain/Nodes/GatewayPrivateDnsRoute.php
   - apps/gateway/app/{Actions/Nodes/RepairNodeDnsAction,Console/Commands/RepairNodeDnsCommand}.php
@@ -12,7 +12,7 @@ covers:
 
 # Private DNS
 
-Orbit VPN DNS answers private names, such as Route domains and `gateway.orbit`, and forwards every other query to ordinary resolvers. It runs on the Node with the `vpn` role. Managed Linux Nodes use it as their resolver by default. This page explains resolver selection, the Gateway machine's resolver, the listener, Cluster Router addresses, and how to inspect or repair one peer.
+Orbit VPN DNS answers private names, such as Route domains and `gateway.orbit`, and forwards every other query to ordinary resolvers. It runs on the Node with the `vpn` role. Managed Linux Nodes use it as their resolver by default. This page explains resolver selection, the Gateway machine's resolver, the listener, Cluster Router addresses, and how to inspect or repair one peer. The active WireGuard manager projects VPN DNS behavior without creating local dnsmasq snippet files.
 
 ## Resolver selection
 
