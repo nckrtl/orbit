@@ -28,13 +28,13 @@ Create it with the preset on a development Instance. `--instance` accepts an Ins
 orbit process:create agentation --instance=commander.test --preset=agentation-mcp --start
 ```
 
-The preset sets the runtime to systemd and the command to `/usr/local/bin/agentation-mcp server --port=${ORBIT_AGENTATION_PORT}`. Its restart policy defaults to `on-failure`. The preset owns the runtime, command, working directory, and environment, so the Gateway refuses those fields. The CLI also refuses `--node`. A Process name alone never selects a preset.
+The preset sets the runtime to systemd and the command to `/usr/local/bin/agentation-mcp server --port=${ORBIT_AGENTATION_PORT}`. Its restart policy defaults to `on-failure`. The preset owns the runtime, command, working directory, and environment, so the Gateway refuses those fields with `validation.failed`. A preset also needs an Instance target: the Gateway refuses a Node target with `validation.failed` on `target_type`, and the CLI refuses `--node`. A Process name alone never selects a preset.
 
 An Instance has at most one Process of each preset. A second `agentation-mcp` Process with another name fails with `process.preset_exists`. The same request again returns the existing Process and keeps its desired state.
 
 ## Port and path
 
-Creation assigns the Instance an `agentation_port` on its Node. The first port is `4747`. The Gateway gives the next Instance on the same Node the next free port. Ports stay unique per Node. When no port is free, creation fails with `process.agentation_ports_exhausted`.
+Creation assigns the Instance an `agentation_port` on its Node. The first port is `4747`. The Gateway gives the next Instance on the same Node the lowest port from `4747` up that no other Instance on that Node holds in the Gateway database. It does not probe the Node, and it does not skip ports that Vite uses. Ports stay unique per Node. When no port is free, creation fails with `process.agentation_ports_exhausted`.
 
 The port stays through hibernation. A [transfer](/reference/appinstance-transfer) picks a free port on the destination Node. Removing the HTTP Process releases the port.
 
@@ -60,16 +60,15 @@ Without an `agentation-mcp` Process on the Instance, creation fails with `proces
 
 ## Hibernation
 
-Both presets refuse keep-alive. Idle halt stops both Processes. The next HTTP request starts every Process whose desired state is `running`. Wake waits until the HTTP Process answers `/health` on its port, or fails with `hibernation.agentation_not_ready`. [Hibernation](/reference/app-dev-runtime-hibernation) describes idle halt and wake.
+Both presets refuse keep-alive: the Gateway answers `validation.failed` on `keep_alive`, and the CLI answers `process.preset_keep_alive_invalid`. Idle halt stops both Processes. The next HTTP request starts every Process whose desired state is `running`. Wake waits until the HTTP Process answers `/health` on its port, or fails with `hibernation.agentation_not_ready`. [Hibernation](/reference/app-dev-runtime-hibernation) describes idle halt and wake.
 
 ## Errors
 
-The Gateway refuses these cases with the listed code.
+The Gateway refuses these cases with the listed code. It refuses preset-owned fields, a Node target, and keep-alive earlier, with `validation.failed`.
 
 | Code | Condition |
 | --- | --- |
-| `process.preset_target_invalid` | The target is not a development Instance. |
-| `process.preset_keep_alive_invalid` | The request asks for keep-alive. |
+| `process.preset_target_invalid` | The Instance is not a development Instance. |
 | `process.preset_exists` | The Instance already has a Process with this preset. |
 | `process.preset_dependency_missing` | The watcher has no `agentation-mcp` Process on its Instance. |
 | `process.agentation_ports_exhausted` | The Node has no free port from `4747` up. |
@@ -94,7 +93,7 @@ The toolbar talks to the application's own Route. A path on that origin needs no
 
 ### A separate path and port from Vite
 
-Vite keeps its path prefix, and Agentation needs the prefix stripped. So each has its own reserved path and its own port range.
+Vite keeps its path prefix, and Agentation needs the prefix stripped. So each has its own reserved path and its own port assignment.
 
 ### Explicit presets
 
