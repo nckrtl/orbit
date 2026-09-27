@@ -15,7 +15,7 @@ The [Schedules reference](/reference/schedules) owns the stored fields, executio
 | --- | --- | --- |
 | `--node=ID` | Node | The command runs as the Node's managed `orbit` user. The timer installs enabled. |
 | `--instance=ID` | Instance | The command runs as the Instance runtime user in its checkout or `current` release. The timer can install disabled. |
-| `--project=APP --for=ENV[,ENV]` | Project definition | The Gateway records a reusable definition. Production preparation copies it into a stopped Instance Schedule. |
+| `--project=APP --for=production` | Project definition | The Gateway records a reusable production definition. Production preparation copies it into a stopped Instance Schedule. |
 
 `schedule:show`, `schedule:update`, and `schedule:destroy` with `--project` select a definition by name. `schedule:run`, `schedule:logs`, and `schedule:enable` take the UUID of an installed Schedule and do not accept `--project`.
 
@@ -39,7 +39,7 @@ Every command accepts `--json`. Output shows `desired_timer_state` separately fr
 Create one Schedule for a Node or an Instance, or record a Project Schedule definition.
 
 ```bash
-orbit schedule:create <name> (--node=ID | --instance=ID | --project=APP --for=ENV[,ENV]) --calendar=CALENDAR --command=COMMAND [options]
+orbit schedule:create <name> (--node=ID | --instance=ID | --project=APP --for=production) --calendar=CALENDAR --command=COMMAND [options]
 ```
 
 | Argument | Required | Meaning |
@@ -51,7 +51,7 @@ orbit schedule:create <name> (--node=ID | --instance=ID | --project=APP --for=EN
 | `--node=ID` | none | Positive Node ID. |
 | `--instance=ID` | none | Positive Instance ID. |
 | `--project=APP` | none | Numeric Project ID for a definition. |
-| `--for=ENV[,ENV]` | none | Definition environments, `development` or `production`. Required with `--project`. |
+| `--for=production` | none | Required with `--project`; definitions apply to production. |
 | `--calendar=CALENDAR` | none | Native systemd calendar expression of at most 255 printable ASCII bytes, such as `daily`, `hourly`, or `Mon..Fri 02:00`. |
 | `--command=COMMAND` | none | One non-empty line of at most 4,096 bytes. |
 | `--timeout=SECONDS` | `3600` | Execution timeout from 1 through 86,400 seconds. |
@@ -71,7 +71,7 @@ An identical create returns the same Schedule without changing its desired timer
 The caller command appears only in the protected script that root owns. It never appears in an SSH, `sudo`, `systemctl`, or `journalctl` argument, and it is absent from Activity, Doctor findings, and errors.
 </Note>
 
-A production Instance without a selected release accepts a Schedule installed with `--no-start`, but a run or activation returns `schedule.target_unavailable` until `instance:deploy` selects a release.
+Production Schedule creation requires `current` to select a release, whether the timer starts or remains stopped with `--no-start`.
 
 ## orbit schedule:list
 
@@ -110,7 +110,7 @@ The result includes `desired_timer_state`, `last_run_at`, and `last_run_status` 
 Replace one Project Schedule definition with a complete specification.
 
 ```bash
-orbit schedule:update <name> --project=APP --for=ENV[,ENV] --calendar=CALENDAR --command=COMMAND [--timeout=SECONDS] [--json]
+orbit schedule:update <name> --project=APP --for=production --calendar=CALENDAR --command=COMMAND [--timeout=SECONDS] [--json]
 ```
 
 | Argument | Required | Meaning |

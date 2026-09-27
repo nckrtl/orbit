@@ -24,7 +24,7 @@ GitHub App, `app-dev`, `app-prod`, `APP_ENV`, `APP_DEBUG`, and the monorepo dire
 
 - The Gateway model for one Git repository and its shared source defaults is `Project`. The persisted table remains `apps` so this upgrade copies no rows.
 - The Gateway model for one managed placement is `Instance`. The persisted table remains `app_instances`. Foreign keys stay `app_id` and `app_instance_id`.
-- Morph writers store the alias `instance` for Process owners, Schedule targets, and TaskGroup `taskable` values. The upgrade rewrites stored `App\Models\AppInstance` class names to `instance` and leaves every id in place.
+- Morph writers store the alias `instance` for Process owners, Schedule targets, and TaskGroup `taskable` values. The `instance` alias is the supported morph identity; AppInstance class names are not accepted as alternate identities.
 - Canonical HTTP for the repository record is `/api/v1/projects` with route names `project:*`. `/api/v1/apps` and route names `app:*` remain a dual-read and dual-write compatibility surface for the same controllers and records.
 - Canonical CLI for the repository record is `project:*`. This repository's command surface drops `app:*`. Older CLI binaries keep working because they still call `/api/v1/apps`.
 - MCP keeps generated `app-*` tools from the compatibility routes and adds `project-*` tools from the canonical routes ([ADR 0086](/decisions/0086-offer-the-api-as-mcp-tools)).

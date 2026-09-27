@@ -65,12 +65,12 @@ An operator uses Schedule commands from a machine with an active Gateway profile
 | --- | --- |
 | `orbit schedule:create NAME --node=ID --calendar=CALENDAR --command=COMMAND` | Create a Schedule for one positive Node ID. Add `--timeout=SECONDS` to change the 3600-second execution timeout. |
 | `orbit schedule:create NAME --instance=ID --calendar=CALENDAR --command=COMMAND` | Create a Schedule for one positive Instance ID. Add `--no-start` to install its timer disabled and stopped. |
-| `orbit schedule:create NAME --project=APP --for=ENV[,ENV] --calendar=CALENDAR --command=COMMAND` | Record a Schedule definition on the Project. Add `--timeout=SECONDS` to change the 3600-second execution timeout. |
+| `orbit schedule:create NAME --project=APP --for=production --calendar=CALENDAR --command=COMMAND` | Record a production Schedule definition on the Project. Add `--timeout=SECONDS` to change the 3600-second execution timeout. |
 | `orbit schedule:list` | List authorized Schedule summaries without command text. |
 | `orbit schedule:list --project=APP` | List the Project's Schedule definitions. |
 | `orbit schedule:show UUID` | Show one authorized Schedule. |
 | `orbit schedule:show NAME --project=APP` | Show one Schedule definition by name. |
-| `orbit schedule:update NAME --project=APP --for=ENV[,ENV] --calendar=CALENDAR --command=COMMAND` | Replace one Schedule definition with a complete specification. |
+| `orbit schedule:update NAME --project=APP --for=production --calendar=CALENDAR --command=COMMAND` | Replace one Schedule definition with a complete specification. |
 | `orbit schedule:run UUID` | Start one manual invocation without changing the desired timer state. |
 | `orbit schedule:logs UUID` | Show only the bounded lines returned by the Gateway. |
 | `orbit schedule:destroy UUID [--yes]` | Destroy one Schedule through the Gateway. Interactive confirmation defaults to No. |
@@ -93,7 +93,7 @@ The Gateway derives the host Node, runtime user, home, working directory, and sh
 | Development Instance | The host Node, managed application-development runtime user and home, recorded checkout working directory, and derived non-interactive login-shell context. |
 | Production Instance | The host Node, dedicated production user and home, fixed `/bin/bash` without login, and the production home's `current` working directory. |
 
-Each production execution resolves `current` when it starts. Selecting another release changes later executions without rewriting the Schedule or restarting a command that is already active. A production Instance without `current` can accept a Schedule whose timer starts disabled, but a manual run or activation returns `schedule.target_unavailable` until a release is selected.
+Production Schedules require a selected release. Each execution resolves `current` when it starts. Selecting another release changes later executions without rewriting the Schedule or restarting a command that is already active.
 
 Removing a target Node or host Node, or changing a target's Node, user, home, or stable working-directory path, returns `schedule.target_in_use` while the Schedule exists. Instance removal uses the owned cascade instead of this guard.
 

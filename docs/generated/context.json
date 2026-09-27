@@ -1393,6 +1393,7 @@
                 "Gateway",
                 "Instance",
                 "Process",
+                "Project",
                 "Schedule"
             ],
             "governing_adrs": [
@@ -2427,7 +2428,6 @@
                 "0046",
                 "0047",
                 "0066",
-                "0105",
                 "0106",
                 "0107"
             ]

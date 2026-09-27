@@ -18,8 +18,8 @@ A candidate can run a worker with testing options or a development-only server s
 
 ## Decision
 
-- An App owns reusable process and schedule definitions with development and production applicability.
-- Orbit must select the App's production-applicable definitions when cloning a production AppInstance.
+- A Project owns reusable process and Schedule definitions, and definitions apply to production.
+- Orbit must select the Project's definitions when preparing a production Instance.
 - Orbit must not use candidate-specific process or schedule overrides as target definitions during cloning.
 - Orbit must create independent AppInstance-owned Process and Schedule records from the selected definitions.
 - Orbit must derive each copy's execution placement and identity from its target AppInstance.
@@ -45,9 +45,9 @@ A candidate can run a worker with testing options or a development-only server s
 - Cloning takes configuration values and optional SQLite data from the candidate, while it takes process and schedule definitions from the App.
 - A customization intended for new production instances must be put in the App definition before cloning or applied explicitly to each target afterward.
 - Existing copies can differ from App definitions; that difference is intentional and does not authorize automatic reconciliation.
-- Development-only definitions are omitted from production clones, including when the candidate is itself a production instance.
+- Definitions have no development-only applicability; each Project definition is eligible for production preparation.
 - Process and Schedule records keep their own identifiers, runtime artifacts, desired state, and AppInstance-removal lifecycle.
-- A clone with no production-applicable definitions creates no managed application processes or schedules.
+- A clone with no process or Schedule definitions creates no managed application processes or schedules.
 - The Schedule runtime, API, SDK, CLI, and Doctor contracts must distinguish successful stopped installation from an enabled timer and support explicit activation.
 - Schedules owned by Nodes retain ADR 0013's behavior. Application deployment steps retain AppInstance ownership under ADR 0046.
 

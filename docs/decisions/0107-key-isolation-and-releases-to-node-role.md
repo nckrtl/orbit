@@ -14,9 +14,9 @@ Proposed. Amends [ADR 0045](/decisions/0045-isolate-production-php-fpm-by-unix-u
 
 ## Context
 
-The Gateway stores `app_instances.environment` as `development` or `production` and uses that column for isolation, release layout, candidate-only creation, hibernation, and transfer. Operators also store Laravel `APP_ENV` in the Instance environment. Those two facts drift. Changing `APP_ENV` must not move an Instance between checkout and release layouts or change its Unix user.
+The previous Gateway model stored `app_instances.environment` as `development` or `production` and used that column for placement behavior. Operators also store Laravel `APP_ENV` in the Instance environment, so those values can disagree. Changing `APP_ENV` must not move an Instance between checkout and release layouts or change its Unix user.
 
-The create path already keys candidate-only creation to the destination Node's `app-prod` role. Clone still writes `environment = production`. Transfer still refuses a "production instance". The public Instance payload still exposes `environment` as if it were Laravel mode.
+The public placement contract is the Node role. Laravel mode remains the stored `APP_ENV` value.
 
 Nick confirmed that existing app-prod placements must also receive `APP_ENV=production` and `APP_DEBUG=false` during this upgrade.
 
@@ -33,7 +33,7 @@ Nick confirmed that existing app-prod placements must also receive `APP_ENV=prod
 - Cloning onto app-prod copies the candidate configuration and then writes `APP_ENV=production` and `APP_DEBUG=false`. An operator may edit those keys afterward.
 - Changing `APP_ENV` or `APP_DEBUG` does not change isolation, Unix user, FPM, or release layout.
 - The upgrade writes `APP_ENV=production` and `APP_DEBUG=false` on every Instance whose Node has an active `app-prod` role. Other keys stay. Missing rows are created. Existing values are replaced for those two keys only.
-- The Gateway may keep an internal placement column aligned with node role for query and removal evidence. That column is not Laravel mode and is not part of the public Instance contract after this change, except as a compatibility `environment` field derived from node role during the [ADR 0105](/decisions/0105-name-applications-as-project-and-instance) window.
+- Node role is the placement source of truth. There is no Instance `environment` field or fallback derived from an `app_instances.environment` column.
 
 ## Rejected alternatives
 
