@@ -7,7 +7,7 @@ A Project is Orbit's stable record for one repository. It owns one repository id
 
 The [Projects reference](/reference/apps) owns repository identity, type, default-branch resolution, and idempotent creation. The [Applications guide](/domains/applications) shows how a Project becomes a running Instance.
 
-Canonical HTTP is `/api/v1/projects`. `/api/v1/apps` remains a dual-read and dual-write compatibility path for the same records. This CLI family is `project:*`. Older binaries that still call `app:*` keep working against `/apps`.
+The HTTP surface is `/api/v1/projects`. This CLI family is `project:*`.
 
 ## Commands
 
@@ -55,7 +55,7 @@ Creation is idempotent. Repeating the command with the same values returns the e
 
 A repository access failure or an unavailable remote default returns `app.default_branch_unavailable` without repository diagnostics or credentials.
 
-Compatibility `POST /api/v1/apps` callers that omit `type` receive `laravel-app`.
+`type` is required when creating a Project.
 
 ## orbit project:list
 
@@ -114,5 +114,5 @@ Removal asks for confirmation with No selected. Supply `--yes` for automation, i
 ## Related
 
 - [`instance`](/cli/instance) creates a checkout or production release of a Project on a Node.
-- [`process`](/cli/process) and [`schedule`](/cli/schedule) record Project-owned definitions with `--project`. `--app` remains accepted as the same identifier.
+- [`process`](/cli/process) and [`schedule`](/cli/schedule) record Project-owned definitions with `--project`.
 - [`route`](/cli/route) creates explicit domains owned by a Project.

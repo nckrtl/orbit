@@ -43,8 +43,9 @@ describe('app creation', function (): void {
         $requestId = (string) Str::uuid();
         $first = $this
             ->withHeader('X-Orbit-Request-Id', $requestId)
-            ->postJson('/api/v1/apps', [
+            ->postJson('/api/v1/projects', [
                 'slug' => 'acme',
+                'type' => 'laravel-app',
                 'repository_url' => 'git@github.com:acme/site.git',
                 'default_branch' => 'main',
                 'root' => 'public',
@@ -56,12 +57,13 @@ describe('app creation', function (): void {
             ->assertJsonPath('data.slug', 'acme')
             ->assertJsonPath('data.repository_url', 'git@github.com:acme/site.git')
             ->assertJsonStructure(['meta' => ['request_id']]);
-        record_fixture($first, 'apps/app-create/created', CreateAppRequest::class, 'POST /api/v1/apps');
+        record_fixture($first, 'apps/app-create/created', CreateAppRequest::class, 'POST /api/v1/projects');
 
         $second = $this
             ->withHeader('X-Orbit-Request-Id', (string) Str::uuid())
-            ->postJson('/api/v1/apps', [
+            ->postJson('/api/v1/projects', [
                 'slug' => 'acme',
+                'type' => 'laravel-app',
                 'repository_url' => 'git@github.com:acme/site.git',
                 'default_branch' => 'main',
                 'root' => 'public',
@@ -76,7 +78,7 @@ describe('app creation', function (): void {
         expect(OrbitApp::query()->count())
             ->toBe(1)
             ->and(Activity::query()->where('request_id', $requestId)->sole()->command)
-            ->toBe('app:create');
+            ->toBe('project:create');
 
         $activity = Activity::query()->where('request_id', $requestId)->sole();
 
@@ -96,8 +98,9 @@ describe('app creation', function (): void {
         ]);
 
         $this
-            ->postJson('/api/v1/apps', [
+            ->postJson('/api/v1/projects', [
                 'slug' => 'acme',
+                'type' => 'laravel-app',
                 'repository_url' => 'https://github.com/acme/other.git',
                 'default_branch' => 'main',
                 'root' => 'public',
@@ -113,9 +116,10 @@ describe('app creation', function (): void {
     ): void {
         $requestId = (string) Str::uuid();
         $original = $this
-            ->postJson('/api/v1/apps', [
+            ->postJson('/api/v1/projects', [
                 'name' => 'Acme',
                 'slug' => 'acme',
+                'type' => 'laravel-app',
                 'repository_url' => 'git@github.com:acme/site.git',
                 'default_branch' => 'main',
                 'root' => 'public',
@@ -142,9 +146,10 @@ describe('app creation', function (): void {
 
         $response = $this
             ->withHeader('X-Orbit-Request-Id', $requestId)
-            ->postJson('/api/v1/apps', [
+            ->postJson('/api/v1/projects', [
                 'name' => 'Other',
                 'slug' => 'other',
+                'type' => 'laravel-app',
                 'repository_url' => $repository,
                 'default_branch' => 'main',
                 'root' => 'web/public',
@@ -211,9 +216,10 @@ describe('app creation', function (): void {
 
         $response = $this
             ->withHeader('X-Orbit-Request-Id', $requestId)
-            ->postJson('/api/v1/apps', [
+            ->postJson('/api/v1/projects', [
                 'name' => 'Candidate',
                 'slug' => 'candidate',
+                'type' => 'laravel-app',
                 'repository_url' => $repository,
                 'default_branch' => 'main',
                 'root' => 'public',
@@ -242,9 +248,10 @@ describe('app defaults projection', function (): void {
 
         $response = $this
             ->withHeader('X-Orbit-Request-Id', (string) Str::uuid())
-            ->postJson('/api/v1/apps', [
+            ->postJson('/api/v1/projects', [
                 'name' => 'Acme',
                 'slug' => 'acme',
+                'type' => 'laravel-app',
                 'repository_url' => 'https://github.com/acme/site.git',
                 'default_branch' => 'main',
                 'root' => 'public',
@@ -276,12 +283,12 @@ describe('app defaults projection', function (): void {
 
         $listed = $this
             ->withHeader('X-Orbit-Request-Id', (string) Str::uuid())
-            ->getJson('/api/v1/apps')
+            ->getJson('/api/v1/projects')
             ->assertOk()
             ->assertJsonPath('data.0.defaults', $publicDefaults);
         $shown = $this
             ->withHeader('X-Orbit-Request-Id', (string) Str::uuid())
-            ->getJson("/api/v1/apps/{$app->id}")
+            ->getJson("/api/v1/projects/{$app->id}")
             ->assertOk()
             ->assertJsonPath('data.defaults', $publicDefaults);
 
@@ -304,8 +311,9 @@ describe('app defaults diagnostics', function (): void {
 
         $this
             ->withHeader('X-Orbit-Request-Id', $requestId)
-            ->postJson('/api/v1/apps', [
+            ->postJson('/api/v1/projects', [
                 'slug' => 'acme',
+                'type' => 'laravel-app',
                 'repository_url' => 'https://github.com/acme/site.git',
                 'default_branch' => 'main',
                 'root' => 'public',
@@ -340,8 +348,9 @@ describe('app defaults diagnostics', function (): void {
 
         $response = $this
             ->withHeader('X-Orbit-Request-Id', $requestId)
-            ->postJson('/api/v1/apps', [
+            ->postJson('/api/v1/projects', [
                 'slug' => 'acme',
+                'type' => 'laravel-app',
                 'repository_url' => 'https://github.com/acme/other.git',
                 'default_branch' => 'main',
                 'root' => 'public',
@@ -381,26 +390,26 @@ describe('app lifecycle', function (): void {
         ]);
 
         record_fixture($this
-            ->getJson('/api/v1/apps')
+            ->getJson('/api/v1/projects')
             ->assertOk()
-            ->assertJsonPath('data.0.id', $app->id), 'apps/app-list/default', ListAppsRequest::class, 'GET /api/v1/apps');
+            ->assertJsonPath('data.0.id', $app->id), 'apps/app-list/default', ListAppsRequest::class, 'GET /api/v1/projects');
 
         record_fixture($this
-            ->getJson("/api/v1/apps/{$app->id}")
+            ->getJson("/api/v1/projects/{$app->id}")
             ->assertOk()
-            ->assertJsonPath('data.slug', 'acme'), 'apps/app-show/default', ShowAppRequest::class, 'GET /api/v1/apps/{app}');
+            ->assertJsonPath('data.slug', 'acme'), 'apps/app-show/default', ShowAppRequest::class, 'GET /api/v1/projects/{app}');
 
         $requestId = (string) Str::uuid();
         record_fixture($this
             ->withHeader('X-Orbit-Request-Id', $requestId)
-            ->deleteJson("/api/v1/apps/{$app->id}")
+            ->deleteJson("/api/v1/projects/{$app->id}")
             ->assertOk()
-            ->assertJsonPath('data.id', $app->id), 'apps/app-destroy/removed', DestroyAppRequest::class, 'DELETE /api/v1/apps/{app}');
+            ->assertJsonPath('data.id', $app->id), 'apps/app-destroy/removed', DestroyAppRequest::class, 'DELETE /api/v1/projects/{app}');
 
         expect(OrbitApp::query()->count())
             ->toBe(0)
             ->and(Activity::query()->where('request_id', $requestId)->sole()->command)
-            ->toBe('app:destroy');
+            ->toBe('project:destroy');
     });
 
     it('records a list of several apps and one of them', function (): void {
@@ -413,8 +422,8 @@ describe('app lifecycle', function (): void {
             OrbitApp::query()->create(['name' => $name, 'slug' => $slug, 'repository_url' => $repository, 'default_branch' => $branch, 'root' => $root]);
         }
 
-        record_fixture($this->getJson('/api/v1/apps')->assertOk()->assertJsonCount(4, 'data'), 'apps/app-list/several', ListAppsRequest::class, 'GET /api/v1/apps');
-        record_fixture($this->getJson('/api/v1/apps/3')->assertOk()->assertJsonPath('data.slug', 'charlie-shop'), 'apps/app-show/charlie-shop', ShowAppRequest::class, 'GET /api/v1/apps/{app}');
+        record_fixture($this->getJson('/api/v1/projects')->assertOk()->assertJsonCount(4, 'data'), 'apps/app-list/several', ListAppsRequest::class, 'GET /api/v1/projects');
+        record_fixture($this->getJson('/api/v1/projects/3')->assertOk()->assertJsonPath('data.slug', 'charlie-shop'), 'apps/app-show/charlie-shop', ShowAppRequest::class, 'GET /api/v1/projects/{app}');
     });
 
     it('records a long list of apps for scrolling', function (): void {
@@ -432,7 +441,7 @@ describe('app lifecycle', function (): void {
             ]);
         }
 
-        record_fixture($this->getJson('/api/v1/apps')->assertOk()->assertJsonCount(24, 'data'), 'apps/app-list/many', ListAppsRequest::class, 'GET /api/v1/apps');
+        record_fixture($this->getJson('/api/v1/projects')->assertOk()->assertJsonCount(24, 'data'), 'apps/app-list/many', ListAppsRequest::class, 'GET /api/v1/projects');
     });
 
     it('does not remove an App that still owns AppInstances', function (): void {
@@ -461,7 +470,7 @@ describe('app lifecycle', function (): void {
         ]);
 
         $this
-            ->deleteJson("/api/v1/apps/{$app->id}")
+            ->deleteJson("/api/v1/projects/{$app->id}")
             ->assertConflict()
             ->assertJsonPath('error.code', 'app.has_app_instances');
 
@@ -507,7 +516,7 @@ describe('app lifecycle', function (): void {
         $route->update(['status' => RouteStatus::Active]);
 
         $this
-            ->deleteJson("/api/v1/apps/{$app->id}")
+            ->deleteJson("/api/v1/projects/{$app->id}")
             ->assertConflict()
             ->assertJsonPath('error.code', 'app.has_app_instances');
 
@@ -527,7 +536,7 @@ describe('app lifecycle', function (): void {
         ]);
 
         $this
-            ->deleteJson("/api/v1/apps/{$routed->id}")
+            ->deleteJson("/api/v1/projects/{$routed->id}")
             ->assertConflict()
             ->assertJsonPath('error.code', 'app.has_routes');
 
@@ -547,7 +556,7 @@ describe('app lifecycle', function (): void {
 describe('app validation', function (): void {
     it('validates repository and slug input', function (array $payload, string $field): void {
         $this
-            ->postJson('/api/v1/apps', $payload)
+            ->postJson('/api/v1/projects', $payload)
             ->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation.failed')
             ->assertJsonPath("error.details.{$field}.0", fn (string $message): bool => $message !== '');
@@ -582,8 +591,9 @@ describe('app validation', function (): void {
 
         $response = $this
             ->withHeader('X-Orbit-Request-Id', $requestId)
-            ->postJson('/api/v1/apps', [
+            ->postJson('/api/v1/projects', [
                 'slug' => 'acme',
+                'type' => 'laravel-app',
                 'repository_url' => $repository,
                 'root' => 'public',
             ])
@@ -623,8 +633,9 @@ describe('app validation', function (): void {
 
         $response = $this
             ->withHeader('X-Orbit-Request-Id', $requestId)
-            ->postJson('/api/v1/apps', [
+            ->postJson('/api/v1/projects', [
                 'slug' => 'acme',
+                'type' => 'laravel-app',
                 'repository_url' => 'https://example.test/acme/site.git',
                 'root' => 'public',
             ])
@@ -724,25 +735,25 @@ describe('app list access', function (): void {
 
         $this
             ->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
-            ->getJson('/api/v1/apps')
+            ->getJson('/api/v1/projects')
             ->assertOk()
             ->assertJsonPath('data.*.id', [$accessible->id, $inaccessible->id, $multiplyPlaced->id, $unplaced->id]);
 
         $this
             ->withServerVariables(['REMOTE_ADDR' => $gatewayAccessConsumer->wireguard_ip])
-            ->getJson('/api/v1/apps')
+            ->getJson('/api/v1/projects')
             ->assertOk()
             ->assertJsonPath('data.*.id', [$accessible->id, $inaccessible->id, $multiplyPlaced->id, $unplaced->id]);
 
         $this
             ->withServerVariables(['REMOTE_ADDR' => $directConsumer->wireguard_ip])
-            ->getJson('/api/v1/apps')
+            ->getJson('/api/v1/projects')
             ->assertOk()
             ->assertJsonPath('data.*.id', [$accessible->id, $multiplyPlaced->id]);
 
         $this
             ->withServerVariables(['REMOTE_ADDR' => $noEdgeConsumer->wireguard_ip])
-            ->getJson('/api/v1/apps')
+            ->getJson('/api/v1/projects')
             ->assertForbidden()
             ->assertJsonPath('error.code', 'node_access.required');
     });
@@ -799,7 +810,7 @@ describe('app list access', function (): void {
 
         $this
             ->withServerVariables(['REMOTE_ADDR' => $consumer->wireguard_ip])
-            ->getJson('/api/v1/apps')
+            ->getJson('/api/v1/projects')
             ->assertOk()
             ->assertJsonPath('data.*.id', [$mixedVisible->id]);
     });

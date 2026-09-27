@@ -12,7 +12,7 @@ Operators inspect a registered connection with one public surface: `database:que
 
 Proposed.
 
-This proposal amends the binary-client consequence in [ADR 0079](/decisions/0079-publish-orbit-cli-binaries-from-github-actions) that said a published CLI binary does not restore a local SQLite or PDO query path on a Node. It preserves ADR 0079's artifact, builder, and Ops-owned fleet-distribution boundaries. It keeps the public verb surface in [ADR 0071](/decisions/0071-use-one-verb-vocabulary-across-cli-routes-and-sdk).
+This proposal amends the binary-client consequence in [ADR 0079](/reference/cli-binaries) that said a published CLI binary does not restore a local SQLite or PDO query path on a Node. It preserves ADR 0079's artifact, builder, and Ops-owned fleet-distribution boundaries. It keeps the public verb surface in [ADR 0071](/decisions/0071-use-one-verb-vocabulary-across-cli-routes-and-sdk).
 
 ## Context
 
@@ -20,7 +20,7 @@ The Gateway already inspects mysql and pgsql with `PdoDatabaseInspector`. SQLite
 
 `sqlite3` is a second execution engine. Its JSON shape, readonly flag, and host package are not the Laravel PDO path operators already use for the other drivers. Nick required one PDO tool for postgres, mysql, and sqlite.
 
-[ADR 0079](/decisions/0079-publish-orbit-cli-binaries-from-github-actions) ships an `orbit` binary onto Nodes. The CLI can now execute PDO on that Node. The public CLI remains an HTTP client. A hidden internal command is the Node-side PDO process, not a new operator verb.
+[ADR 0079](/reference/cli-binaries) ships an `orbit` binary onto Nodes. The CLI can now execute PDO on that Node. The public CLI remains an HTTP client. A hidden internal command is the Node-side PDO process, not a new operator verb.
 
 The CLI project does not add Eloquent, migrations, or a persisted database connection. The on-node lane builds a Laravel-shaped connection config and opens PHP PDO. That matches the Gateway inspector without adding CLI database state.
 
@@ -55,6 +55,6 @@ The CLI project does not add Eloquent, migrations, or a persisted database conne
 ## Affects
 
 - Components: apps/cli, apps/gateway, apps/docs
-- ADRs: amends [ADR 0079](/decisions/0079-publish-orbit-cli-binaries-from-github-actions); preserves [ADR 0071](/decisions/0071-use-one-verb-vocabulary-across-cli-routes-and-sdk)
+- ADRs: amends [ADR 0079](/reference/cli-binaries); preserves [ADR 0071](/decisions/0071-use-one-verb-vocabulary-across-cli-routes-and-sdk)
 - Detail: [Database connections](/reference/database-connections)
 - Verify: Gateway inspection tests that SQLite remote argv is `orbit internal:database-local` and never `sqlite3`; PDO inspector tests for mysql, pgsql, and local sqlite; CLI tests for the hidden token-gated PDO lane

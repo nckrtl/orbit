@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Commands\Processes;
 
 use App\Commands\Concerns\RendersAppRuntimeDefinitions;
-use App\Commands\Concerns\SelectsAppDefinitionTarget;
+use App\Commands\Concerns\SelectsProjectDefinitionTarget;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use Orbit\Sdk\Requests\Apps\ShowProcessDefinitionRequest;
@@ -14,13 +14,12 @@ use Orbit\Sdk\Responses\Apps\AppRuntimeDefinitionResponse;
 final class ShowProcessCommand extends ProcessCommand
 {
     use RendersAppRuntimeDefinitions;
-    use SelectsAppDefinitionTarget;
+    use SelectsProjectDefinitionTarget;
 
     #[\Override]
     protected $signature = 'process:show
         {name : Process definition name}
         {--project= : Numeric Project ID}
-        {--app= : Numeric Project ID (compatibility)}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -30,7 +29,7 @@ final class ShowProcessCommand extends ProcessCommand
         GatewayConfigRepository $repository,
         GatewayConnectorFactory $connectors,
     ): int {
-        $appId = $this->appIdOption();
+        $appId = $this->projectIdOption();
         $name = $this->stringArgument('name', 'Process definition name', 'process.name_required');
 
         if ($appId === false) {
@@ -40,7 +39,7 @@ final class ShowProcessCommand extends ProcessCommand
         if ($appId === null) {
             return $this->renderGatewayFailure(
                 'process.target_invalid',
-                'The --project or --app option is required.',
+                'The --project option is required.',
             );
         }
 

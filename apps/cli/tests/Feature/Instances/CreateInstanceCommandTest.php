@@ -49,7 +49,7 @@ describe('instance:create development contract', function (): void {
         expect($mock->getLastRequest())
             ->toBeInstanceOf(CreateAppInstanceRequest::class)
             ->and($mock->getLastRequest()?->body()->all())
-            ->toBe(['app_id' => 3, 'node_id' => 2, 'name' => 'dev'])
+            ->toBe(['project_id' => 3, 'node_id' => 2, 'name' => 'dev'])
             ->and($mock->getLastRequest()?->body()->all())
             ->not->toHaveKey('environment');
     });

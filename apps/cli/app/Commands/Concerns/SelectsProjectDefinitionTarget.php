@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Commands\Concerns;
 
-trait SelectsAppDefinitionTarget
+trait SelectsProjectDefinitionTarget
 {
     protected function providedOption(string $name): bool
     {
@@ -15,29 +15,16 @@ trait SelectsAppDefinitionTarget
 
     protected function providedProjectOption(): bool
     {
-        return $this->providedOption('project') || $this->providedOption('app');
+        return $this->providedOption('project');
     }
 
-    protected function appIdOption(string $errorCode = 'app.id_invalid'): int|false|null
+    protected function projectIdOption(string $errorCode = 'app.id_invalid'): int|false|null
     {
-        $hasProject = $this->providedOption('project');
-        $hasApp = $this->providedOption('app');
-
-        if ($hasProject && $hasApp) {
-            $this->renderGatewayFailure($errorCode, 'Use only one of --project or --app.');
-
-            return false;
-        }
-
-        if (! $hasProject && ! $hasApp) {
+        if (! $this->providedProjectOption()) {
             return null;
         }
 
-        $id = filter_var(
-            $hasProject ? $this->option('project') : $this->option('app'),
-            FILTER_VALIDATE_INT,
-            ['options' => ['min_range' => 1]],
-        );
+        $id = filter_var($this->option('project'), FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
 
         if (! is_int($id)) {
             $this->renderGatewayFailure($errorCode, 'Project ID must be a positive integer.');
@@ -54,7 +41,7 @@ trait SelectsAppDefinitionTarget
         $value = $this->stringOption('for');
 
         if ($value === null) {
-            $this->renderGatewayFailure($errorCode, 'The --for option is required with --project or --app.');
+            $this->renderGatewayFailure($errorCode, 'The --for option is required with --project.');
 
             return false;
         }

@@ -12,7 +12,7 @@ Each Gateway owns one GitHub App with read-only repository access. The Gateway c
 
 Proposed.
 
-This extends [ADR 0026](/decisions/0026-identify-each-app-by-one-repository) and [ADR 0031](/decisions/0031-clone-initial-production-source-during-provisioning). It follows the domain-owned encrypted settings of [ADR 0003](/decisions/0003-singleton-metrics-role) and the output limits of [ADR 0004](/decisions/0004-verify-only-doctor-boundary).
+This extends [ADR 0026](/decisions/0026-identify-each-app-by-one-repository) and [ADR 0031](/decisions/0031-clone-initial-production-source-during-provisioning). It follows the domain-owned encrypted settings of [ADR 0003](/reference/metrics#the-credential-in-metrics-settings) and the output limits of [ADR 0004](/cli/doctor#why-it-works-this-way).
 
 ## Context
 
@@ -56,6 +56,6 @@ Writes to GitHub, such as pull requests from agents, belong to the tools that ma
 ## Affects
 
 - Components: apps/gateway, apps/cli, packages/php-sdk, apps/docs, apps/e2e
-- ADRs: extends [ADR 0026](/decisions/0026-identify-each-app-by-one-repository) and [ADR 0031](/decisions/0031-clone-initial-production-source-during-provisioning); follows [ADR 0003](/decisions/0003-singleton-metrics-role) and [ADR 0004](/decisions/0004-verify-only-doctor-boundary)
+- ADRs: extends [ADR 0026](/decisions/0026-identify-each-app-by-one-repository) and [ADR 0031](/decisions/0031-clone-initial-production-source-during-provisioning); follows [ADR 0003](/reference/metrics#the-credential-in-metrics-settings) and [ADR 0004](/cli/doctor#why-it-works-this-way)
 - Detail: [GitHub App](/reference/github-app), [`github`](/cli/github), [Apps](/reference/apps)
 - Verify: Gateway tests for manifest exchange, installation lookup, and token scope; tests that the clone, fetch, and ls-remote commands carry the token only in the environment; an Incus proof that clones a private repository on a fresh Node

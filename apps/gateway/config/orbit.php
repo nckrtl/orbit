@@ -56,8 +56,8 @@ return [
         'provider' => env('ORBIT_PI_PROVIDER'),
     ],
     'tasks' => [
-        'implementer_agent_driver' => env('ORBIT_TASKS_IMPLEMENTER_AGENT_DRIVER', env('ORBIT_TASKS_AGENT_DRIVER', 't3')),
-        'reviewer_agent_driver' => env('ORBIT_TASKS_REVIEWER_AGENT_DRIVER', env('ORBIT_TASKS_AGENT_DRIVER', 't3')),
+        'implementer_agent_driver' => env('ORBIT_TASKS_IMPLEMENTER_AGENT_DRIVER', 't3'),
+        'reviewer_agent_driver' => env('ORBIT_TASKS_REVIEWER_AGENT_DRIVER', 't3'),
         // Models for new groups. Unset keeps TaskAgentDefaults.
         'implementer_model' => env('ORBIT_TASKS_IMPLEMENTER_MODEL'),
         'reviewer_model' => env('ORBIT_TASKS_REVIEWER_MODEL'),
@@ -66,7 +66,6 @@ return [
         'reserved_timeout_seconds' => max(60, (int) env('ORBIT_TASKS_RESERVED_TIMEOUT_SECONDS', 3600)),
         'coder_webhook_url' => env('ORBIT_CODER_WEBHOOK_URL'),
         'coder_webhook_secret' => env('ORBIT_CODER_WEBHOOK_SECRET'),
-        'jev_confidence_threshold' => (float) env('ORBIT_TASKS_JEV_CONFIDENCE_THRESHOLD', 0.75),
     ],
     'hibernation' => [
         'idle_seconds' => max(1, (int) env('ORBIT_HIBERNATION_IDLE_SECONDS', 3600)),

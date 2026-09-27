@@ -20,7 +20,7 @@ The Gateway already has a "no queues" rule: every action executes fully inside i
 
 Reverb needs a WebSocket server (the Pusher protocol) that a CLI client and the Gateway's own `reverb` broadcaster can both reach. Nothing in Orbit's architecture makes the Gateway itself capable of holding open WebSocket connections while also serving ordinary HTTP API requests, and folding a socket server into the Gateway process would make Reverb Orbit-specific infrastructure that every deployment carries whether or not it uses realtime.
 
-Orbit already has a way to run an arbitrary Laravel app on a managed Node ([ADR 0072](/decisions/0072-add-and-remove-nodes-without-changing-the-machine) for Node management, and the App/AppInstance/Process/Route primitives it operates through today) and a way to expose a Node-local service that needs a WebSocket upgrade, which an ordinary App Route cannot admit ([ADR 0080](/decisions/0080-add-node-owned-custom-proxy-routes)).
+Orbit already has a way to run an arbitrary Laravel app on a managed Node ([ADR 0072](/reference/node-provisioning#removal-does-not-clean-the-machine) for Node management, and the App/AppInstance/Process/Route primitives it operates through today) and a way to expose a Node-local service that needs a WebSocket upgrade, which an ordinary App Route cannot admit ([ADR 0080](/decisions/0080-add-node-owned-custom-proxy-routes)).
 
 ## Decision
 

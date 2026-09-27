@@ -7,15 +7,8 @@
         "data": [
             {
                 "id": 1,
-                "app_id": 3,
                 "project_id": 3,
                 "node_id": 1,
-                "app": {
-                    "id": 3,
-                    "name": "Charlie shop",
-                    "slug": "charlie-shop",
-                    "type": "laravel-app"
-                },
                 "project": {
                     "id": 3,
                     "name": "Charlie shop",
@@ -82,15 +75,8 @@
             },
             {
                 "id": 4,
-                "app_id": 1,
                 "project_id": 1,
                 "node_id": 1,
-                "app": {
-                    "id": 1,
-                    "name": "Acme",
-                    "slug": "acme",
-                    "type": "laravel-app"
-                },
                 "project": {
                     "id": 1,
                     "name": "Acme",
@@ -157,15 +143,8 @@
             },
             {
                 "id": 3,
-                "app_id": 3,
                 "project_id": 3,
                 "node_id": 1,
-                "app": {
-                    "id": 3,
-                    "name": "Charlie shop",
-                    "slug": "charlie-shop",
-                    "type": "laravel-app"
-                },
                 "project": {
                     "id": 3,
                     "name": "Charlie shop",
@@ -232,15 +211,8 @@
             },
             {
                 "id": 2,
-                "app_id": 3,
                 "project_id": 3,
                 "node_id": 1,
-                "app": {
-                    "id": 3,
-                    "name": "Charlie shop",
-                    "slug": "charlie-shop",
-                    "type": "laravel-app"
-                },
                 "project": {
                     "id": 3,
                     "name": "Charlie shop",

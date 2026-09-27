@@ -14,7 +14,7 @@ Proposed.
 
 ## Context
 
-[ADR 0099](/decisions/0099-collect-role-specific-service-metrics) collects Caddy metrics on a selected Ingress Node with a published public Route. Its fragment, `00-metrics-service.caddy`, started with a global block, `{ metrics { per_host } }`, because Caddy collects HTTP metrics only when the `metrics` global option is set.
+[ADR 0099](/reference/service-metrics) collects Caddy metrics on a selected Ingress Node with a published public Route. Its fragment, `00-metrics-service.caddy`, started with a global block, `{ metrics { per_host } }`, because Caddy collects HTTP metrics only when the `metrics` global option is set.
 
 [ADR 0137](/decisions/0137-refuse-carried-caddy-global-options) makes Orbit's block the only global block on a Node, and every publisher refuses a candidate that carries another one. The service metrics fragment is such a block. On an Ingress Node with service metrics, every Caddy publication therefore fails: App instance deploys, Route changes, and public-edge converges. Before ADR 0137, `caddy validate` rejected the same candidate with a generic error.
 
@@ -44,6 +44,6 @@ Collected metrics also help debugging on Nodes that Prometheus does not scrape. 
 ## Affects
 
 - Components: apps/gateway, apps/docs
-- ADRs: amends [ADR 0099](/decisions/0099-collect-role-specific-service-metrics) for where Caddy collects metrics; extends [ADR 0137](/decisions/0137-refuse-carried-caddy-global-options) with the metrics option in Orbit's global block
+- ADRs: amends [ADR 0099](/reference/service-metrics) for where Caddy collects metrics; extends [ADR 0137](/decisions/0137-refuse-carried-caddy-global-options) with the metrics option in Orbit's global block
 - Detail: [Caddy configuration](/reference/caddy-configuration#published-layout), [Service metrics](/reference/service-metrics#caddy-traffic)
 - Verify: `apps/gateway` Pest tests for `CaddyGlobalOptions`, the carried global options guard with the service metrics fragment, and `ServiceMetricsConfigRenderer` with a real `caddy adapt`

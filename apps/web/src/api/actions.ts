@@ -184,7 +184,7 @@ export function actionsFor(kind: Kind, row: AnyRecord): Action[] {
         }
         case "instances": {
             const instance = row as Instance;
-            const target = `${(instance.project ?? instance.app).slug}/${instance.name}`;
+            const target = `${instance.project.slug}/${instance.name}`;
 
             return [
                 ...analyticsActions(instance, target),

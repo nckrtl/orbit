@@ -229,7 +229,7 @@ There is no environment variable to set. The Gateway resolves the active connect
 
 ## Node agent channels
 
-Each Node has a presence channel, `presence-node.{id}`, where its [Node agent](/reference/node-agent) publishes presence and Process runtime state. The Gateway does not broadcast on these channels. Its agent view subscriber joins every channel and keeps the latest state as the [Gateway view](/reference/node-agent#gateway-view). [ADR 0129](/decisions/0129-publish-node-presence-and-process-state-on-per-node-presence-channels) records the channel design, and [ADR 0148](/decisions/0148-keep-a-gateway-view-of-node-agent-state) records the Gateway view.
+Each Node has a presence channel, `presence-node.{id}`, where its [Node agent](/reference/node-agent) publishes presence and Process runtime state. The Gateway does not broadcast on these channels. Its agent view subscriber joins every channel and keeps the latest state as the [Gateway view](/reference/node-agent#gateway-view). [ADR 0129](/decisions/0129-publish-node-presence-and-process-state-on-per-node-presence-channels) records the channel design.
 
 ### Membership
 

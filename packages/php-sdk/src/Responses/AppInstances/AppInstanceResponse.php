@@ -13,9 +13,9 @@ use SensitiveParameter;
 /**
  * @phpstan-type InstanceRecordFields array{
  *     id: int,
- *     app_id: int,
+ *     project_id: int,
  *     node_id: int,
- *     app: array{id: int, name: string, slug: string}|null,
+ *     project: array{id: int, name: string, slug: string}|null,
  *     node: array{id: int, name: string}|null,
  *     vite_port: int|null,
  *     name: string,
@@ -41,9 +41,9 @@ use SensitiveParameter;
  * }
  * @phpstan-type InstanceRecord array{
  *     id: int,
- *     app_id: int,
+ *     project_id: int,
  *     node_id: int,
- *     app: array{id: int, name: string, slug: string}|null,
+ *     project: array{id: int, name: string, slug: string}|null,
  *     node: array{id: int, name: string}|null,
  *     vite_port: int|null,
  *     name: string,
@@ -73,9 +73,9 @@ final readonly class AppInstanceResponse
 {
     public function __construct(
         public int $id,
-        public int $appId,
+        public int $projectId,
         public int $nodeId,
-        public ?AppIdentityResponse $app,
+        public ?AppIdentityResponse $project,
         public ?NodeIdentityResponse $node,
         public string $name,
         public string $environment,
@@ -111,9 +111,9 @@ final readonly class AppInstanceResponse
     ): self {
         return new self(
             id: is_int($data['id'] ?? null) ? $data['id'] : 0,
-            appId: is_int($data['app_id'] ?? null) ? $data['app_id'] : 0,
+            projectId: is_int($data['project_id'] ?? null) ? $data['project_id'] : 0,
             nodeId: is_int($data['node_id'] ?? null) ? $data['node_id'] : 0,
-            app: AppIdentityResponse::tryFromGatewayData($data['app'] ?? null),
+            project: AppIdentityResponse::tryFromGatewayData($data['project'] ?? null),
             node: NodeIdentityResponse::tryFromGatewayData($data['node'] ?? null),
             vitePort: is_int($data['vite_port'] ?? null) && $data['vite_port'] >= 1024 && $data['vite_port'] <= 65535 ? $data['vite_port'] : null,
             name: is_string($data['name'] ?? null) ? $data['name'] : '',
@@ -145,9 +145,9 @@ final readonly class AppInstanceResponse
     {
         return [
             'id' => $this->id,
-            'app_id' => $this->appId,
+            'project_id' => $this->projectId,
             'node_id' => $this->nodeId,
-            'app' => $this->app?->toArray(),
+            'project' => $this->project?->toArray(),
             'node' => $this->node?->toArray(),
             'vite_port' => $this->vitePort,
             'name' => $this->name,

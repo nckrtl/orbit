@@ -33,7 +33,7 @@ beforeEach(function (): void {
 
 it('accepts complete systemd, Docker, and Schedule definition specifications', function (): void {
     $this
-        ->postJson("/api/v1/apps/{$this->orbitApp->id}/process-definitions", [
+        ->postJson("/api/v1/projects/{$this->orbitApp->id}/process-definitions", [
             'name' => 'systemd-worker',
             'environments' => ['development', 'production'],
             'spec' => [
@@ -45,7 +45,7 @@ it('accepts complete systemd, Docker, and Schedule definition specifications', f
         ])
         ->assertCreated();
     $this
-        ->postJson("/api/v1/apps/{$this->orbitApp->id}/process-definitions", [
+        ->postJson("/api/v1/projects/{$this->orbitApp->id}/process-definitions", [
             'name' => 'docker-worker',
             'environments' => ['production'],
             'spec' => [
@@ -61,7 +61,7 @@ it('accepts complete systemd, Docker, and Schedule definition specifications', f
         ])
         ->assertCreated();
     $this
-        ->postJson("/api/v1/apps/{$this->orbitApp->id}/schedule-definitions", [
+        ->postJson("/api/v1/projects/{$this->orbitApp->id}/schedule-definitions", [
             'name' => 'report',
             'environments' => ['development'],
             'spec' => [
@@ -81,7 +81,7 @@ it('accepts complete systemd, Docker, and Schedule definition specifications', f
 it('stores printable Schedule definition calendars without host systemd-analyze', function (string $calendar): void {
     $this
         ->postJson(
-            "/api/v1/apps/{$this->orbitApp->id}/schedule-definitions",
+            "/api/v1/projects/{$this->orbitApp->id}/schedule-definitions",
             domain_schedule_definition_payload(spec: [
                 'command' => 'php artisan report',
                 'calendar' => $calendar,
@@ -99,7 +99,7 @@ it('stores printable Schedule definition calendars without host systemd-analyze'
     $replacement['name'] = 'replaced';
 
     $this
-        ->putJson("/api/v1/apps/{$this->orbitApp->id}/schedule-definitions/report", $replacement)
+        ->putJson("/api/v1/projects/{$this->orbitApp->id}/schedule-definitions/report", $replacement)
         ->assertOk()
         ->assertJsonPath('data.spec.calendar', $calendar);
 
@@ -114,7 +114,7 @@ it('rejects invalid applicability and runtime specification boundaries', functio
     array $payload,
 ): void {
     $this
-        ->postJson("/api/v1/apps/{$this->orbitApp->id}/{$kind}-definitions", $payload)
+        ->postJson("/api/v1/projects/{$this->orbitApp->id}/{$kind}-definitions", $payload)
         ->assertUnprocessable()
         ->assertJsonPath('error.code', 'validation.failed');
 })->with([

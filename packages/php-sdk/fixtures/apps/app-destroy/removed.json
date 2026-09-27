@@ -1,7 +1,7 @@
 {
     "schema": 1,
     "request": "Orbit\\Sdk\\Requests\\Apps\\DestroyAppRequest",
-    "route": "DELETE /api/v1/apps/{app}",
+    "route": "DELETE /api/v1/projects/{app}",
     "status": 200,
     "body": {
         "data": {

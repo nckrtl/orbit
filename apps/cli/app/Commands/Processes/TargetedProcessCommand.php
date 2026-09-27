@@ -4,14 +4,14 @@ declare(strict_types=1);
 
 namespace App\Commands\Processes;
 
-use App\Commands\Concerns\SelectsAppDefinitionTarget;
+use App\Commands\Concerns\SelectsProjectDefinitionTarget;
 use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\Requests\Processes\AppInstanceProcessTarget;
 use Orbit\Sdk\Requests\Processes\NodeProcessTarget;
 
 abstract class TargetedProcessCommand extends ProcessCommand
 {
-    use SelectsAppDefinitionTarget;
+    use SelectsProjectDefinitionTarget;
 
     /** @return 'app'|'instance'|'node'|null */
     protected function exclusiveProcessTarget(): ?string
@@ -21,19 +21,10 @@ abstract class TargetedProcessCommand extends ProcessCommand
         $hasNode = $this->providedOption('node');
         $count = (int) $hasProject + (int) $hasInstance + (int) $hasNode;
 
-        if ($this->providedOption('project') && $this->providedOption('app')) {
-            $this->renderGatewayFailure(
-                'process.target_invalid',
-                'Use only one of --project or --app.',
-            );
-
-            return null;
-        }
-
         if ($count > 1) {
             $this->renderGatewayFailure(
                 'process.target_invalid',
-                'Use only one of --project, --app, --instance, or --node.',
+                'Use only one of --project, --instance, or --node.',
             );
 
             return null;
@@ -42,7 +33,7 @@ abstract class TargetedProcessCommand extends ProcessCommand
         if ($count === 0) {
             $this->renderGatewayFailure(
                 'process.target_invalid',
-                'The --project, --app, --instance, or --node option is required.',
+                'The --project, --instance, or --node option is required.',
             );
 
             return null;

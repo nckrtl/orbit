@@ -32,14 +32,12 @@ function crumbs(kind: Kind, row: AnyRecord, fleet: Fleet, go: ReturnType<typeof 
             return [];
         }
 
-        const project = fleet.projects.find(
-            (candidate) => candidate.id === (instance.project ?? instance.app).id,
-        );
+        const project = fleet.projects.find((candidate) => candidate.id === instance.project.id);
 
         return [
             section("projects"),
             {
-                label: (instance.project ?? instance.app).slug,
+                label: instance.project.slug,
                 open: project === undefined ? undefined : () => go.record("projects", project),
             },
             { label: instance.name, open: () => go.record("instances", instance) },
