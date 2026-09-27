@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Analytics;
 
+use App\Domain\DatabaseConnections\DockerPublishedPort;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Shared\LifecycleStatus;
@@ -44,6 +45,9 @@ final readonly class AnalyticsStorageProcessGuard
             'analytics.clickhouse_unsupported',
             'a ClickHouse Process',
         );
+
+        $this->assertWireguardPort($postgres, 5432);
+        $this->assertWireguardPort($clickhouse, 8123);
 
         return ['postgres' => $postgres, 'clickhouse' => $clickhouse];
     }
@@ -93,6 +97,32 @@ final readonly class AnalyticsStorageProcessGuard
             throw new ResourceOperationException(
                 errorCode: 'analytics.process_not_database_node',
                 message: "Process [{$process->name}] is not on an active Node with the database role.",
+                status: 422,
+            );
+        }
+    }
+
+    private function assertWireguardPort(Process $process, int $containerPort): void
+    {
+        $ports = $process->runtime_config['ports'] ?? [];
+
+        foreach (is_array($ports) ? $ports : [] as $spec) {
+            $mapping = is_string($spec) ? DockerPublishedPort::parse($spec) : null;
+
+            if (! $mapping instanceof DockerPublishedPort || $mapping->containerPort !== $containerPort) {
+                continue;
+            }
+
+            $process->loadMissing('owner');
+            $node = $process->owner;
+
+            if ($node instanceof Node && is_string($node->wireguard_ip) && $mapping->bindAddress === $node->wireguard_ip) {
+                continue;
+            }
+
+            throw new ResourceOperationException(
+                errorCode: 'analytics.storage_port_not_wireguard_bound',
+                message: "Process [{$process->name}] must bind port {$containerPort} to its Node's WireGuard address.",
                 status: 422,
             );
         }
