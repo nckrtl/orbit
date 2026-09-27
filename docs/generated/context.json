@@ -235,9 +235,15 @@
             "components": [],
             "concepts": [
                 "Extension",
-                "Gateway"
+                "Gateway",
+                "Process",
+                "Task",
+                "Task group",
+                "Tool"
             ],
-            "governing_adrs": []
+            "governing_adrs": [
+                "0179"
+            ]
         },
         {
             "path": "docs/cli/firewall.mdx",
@@ -549,7 +555,9 @@
                 "Task workspace",
                 "Tool"
             ],
-            "governing_adrs": []
+            "governing_adrs": [
+                "0179"
+            ]
         },
         {
             "path": "docs/contributor-guide.md",
@@ -2768,7 +2776,8 @@
                 "0113",
                 "0122",
                 "0160",
-                "0165"
+                "0165",
+                "0179"
             ]
         },
         {
@@ -2796,7 +2805,8 @@
                 "0104",
                 "0108",
                 "0109",
-                "0150"
+                "0150",
+                "0179"
             ]
         },
         {
@@ -3903,7 +3913,8 @@
             ],
             "governing_adrs": [
                 "0104",
-                "0150"
+                "0150",
+                "0179"
             ]
         },
         {
@@ -4413,6 +4424,33 @@
             "governing_adrs": [
                 "0164",
                 "0171"
+            ]
+        },
+        {
+            "path": "docs/decisions/0179-gate-all-extension-surfaces-with-one-gateway-switch.md",
+            "title": "ADR 0179: Gate every extension surface with one Gateway switch",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/gateway",
+                "apps/web",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Activity",
+                "Extension",
+                "Gateway",
+                "Node",
+                "Process",
+                "Route",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0103",
+                "0104",
+                "0150",
+                "0179"
             ]
         },
         {
@@ -5730,7 +5768,7 @@
                 "0108",
                 "0109",
                 "0145",
-                "0150"
+                "0179"
             ]
         },
         {
@@ -5873,7 +5911,8 @@
                 "0167",
                 "0169",
                 "0170",
-                "0171"
+                "0171",
+                "0179"
             ]
         },
         {

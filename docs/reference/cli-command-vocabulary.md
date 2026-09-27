@@ -48,7 +48,7 @@ An operator selects `create` and `destroy` when the Gateway owns the resource li
 | `tasks:subtask` | `create` and `destroy` | A subtask of a task group |
 | `tool` | `install` and `remove` | A Tool on a Node |
 
-`cluster:router` and `route:target` use `set` and `unset` because each holds one slot. `extension`, `metrics`, `metrics:exporter`, `proxycli`, and `tasks` use `enable` and `disable`. `schedule:enable` turns a Schedule on. [Gateway trust](/reference/gateway-trust) owns profile registration and removal.
+`cluster:router` and `route:target` use `set` and `unset` because each holds one slot. `extension` uses `enable` and `disable` for the Gateway-owned switch. `metrics` and `metrics:exporter` use `enable` and `disable`; `proxycli` uses `setup` and `teardown` for its fleet resources, while `proxycli:status` remains a family-specific read. `tasks` uses `create` for task groups and `status` for assistance; its extension switch is `extension:enable tasks` or `extension:disable tasks`. `schedule:enable` turns a Schedule on. [Gateway trust](/reference/gateway-trust) owns profile registration and removal.
 
 ## Family-specific actions
 
@@ -64,13 +64,13 @@ Some families expose actions that are not the pairs above. Those last segments b
 | `gateway` | `status`, `trust`, `use` | The CLI reports Gateway status, pins the root certificate, or selects a profile. |
 | `instance` | `clone`, `deploy`, `logs`, `register`, `rollback`, `scan`, `setup`, `transfer` | The CLI clones, deploys, registers, rolls back, or transfers an Instance, reads its application log, scans its dependencies, or runs its Project setup steps. |
 | `metrics` | `status` | The CLI reports Metrics role status. |
-| `proxycli` | `status` | The CLI reports the fleet CLIProxyAPI quota collector. |
+| `proxycli` | `setup`, `teardown`, `status` | The CLI deploys or removes the fleet CLIProxyAPI quota collector, or reports its state. |
 | `node` | `relocate`, `rename` | The CLI moves a relocatable singleton role (`gateway`, `websocket`, or `metrics`) to another Node, or changes a Node's unique registry name. |
 | `process` | `logs`, `restart`, `start`, `stop` | The CLI reads Process logs or changes Process runtime state. |
 | `profile` | `profile` | The CLI profiles one HTTP request from the operator machine. |
 | `realtime` | `tail` | The CLI streams decoded realtime Gateway events as they arrive. |
 | `schedule` | `logs`, `run` | The CLI reads Schedule logs or runs a Schedule once. |
-| `tasks` | `cancel`, `complete`, `status` | The CLI cancels or completes a task group, cancels a running subtask with `tasks:subtask:cancel`, or reports whether the tasks extension is on. |
+| `tasks` | `cancel`, `complete`, `status` | The CLI cancels or completes a task group, cancels a running subtask with `tasks:subtask:cancel`, or reports task assistance and state. |
 
 `doctor` and `profile` are one-segment commands. Each family name is the command.
 

@@ -10,9 +10,9 @@ description: "Proposed. extension:enable and extension:disable change only the l
 
 ## Status
 
-Proposed.
+Proposed. Superseded by [ADR 0179](/decisions/0179-gate-all-extension-surfaces-with-one-gateway-switch).
 
-This amends the disable path in [ADR 0104](/decisions/0104-own-cliproxyapi-quota-through-the-proxycli-extension). The Gateway ownership of the fleet feature, the collector, the publication, and the token model stay.
+This record describes the former local-only extension model. Its historical rationale and behavior remain here; the current switch and proxycli setup contract are in ADR 0179. It amended the disable path in [ADR 0104](/decisions/0104-own-cliproxyapi-quota-through-the-proxycli-extension). The Gateway ownership of the fleet feature, the collector, the publication, and the token model stay.
 
 ## Context
 

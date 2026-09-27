@@ -30,7 +30,7 @@ Secrets must not enter local or remote argv. Projecting the map through `/usr/bi
 - `SystemdProcessRenderer` writes each stored pair as an `Environment=` directive after the optional `EnvironmentFile` and before derived Instance projection.
 - Derived keys still win: `PATH`, `NODE_USE_SYSTEM_CA`, `VITE_DEV_SERVER_*`, `ORBIT_DEV_SERVER_*`, `AGENTATION_URL`, and `ORBIT_AGENTATION_PORT`. Stored values for those names are omitted.
 - Stored values never appear on `ExecStart`.
-- HTTP Process create still rejects `environment` unless `runtime` is `docker`. Gateway-owned enable paths such as `proxycli:enable` persist the map through `AddProcessData`.
+- HTTP Process create still rejects `environment` unless `runtime` is `docker`. Gateway-owned setup paths such as `proxycli:setup` persist the map through `AddProcessData`.
 - The `proxycli` collector command is `/usr/bin/python3` plus the installed `server.py`.
 
 ## Rejected alternatives
