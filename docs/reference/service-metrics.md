@@ -18,7 +18,7 @@ The existing node exporter preference controls service monitoring too. No extra 
 | Both roles | Both collectors |
 | Neither, or no eligible workloads yet | Existing node exporter and cAdvisor only |
 
-An empty ingress node needs no metrics listener until its first public Route is published. An app-prod node without eligible PHP instances has no FPM scrape target. Legacy shared pools are excluded; enabling metrics does not convert them. Their absence from the PHP dashboard does not establish their health.
+An empty ingress node needs no metrics listener until its first public Route is published. An app-prod node without eligible dedicated PHP Instances has no FPM scrape target.
 
 ## Caddy traffic
 

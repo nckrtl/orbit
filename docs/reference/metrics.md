@@ -7,7 +7,7 @@ description: "What the metrics role runs, how to enable, inspect, and disable it
 
 The `metrics` role runs Prometheus and Grafana on one Node and collects metrics from selected managed Nodes. Use it to view machine health at `https://metrics.orbit`. [ADR 0003](/decisions/0003-singleton-metrics-role) defines placement, [ADR 0055](/decisions/0055-restrict-grafana-access-to-authorized-gateway-peers) defines access, and [ADR 0057](/decisions/0057-limit-metrics-exporters-to-managed-nodes) defines eligible exporters.
 
-[Service metrics](/reference/service-metrics) proposes native Caddy monitoring on selected ingress nodes and Cbox FPM Exporter on selected app-prod nodes. That extension is not implemented yet; the current exporters are described below.
+[Service metrics](/reference/service-metrics) describes native Caddy monitoring on selected ingress nodes and Cbox FPM Exporter on selected app-prod nodes.
 
 The containers are `orbit-metrics-prometheus` and `orbit-metrics-grafana`. Each selected Node runs `prometheus-node-exporter` and `orbit-cadvisor`. Both containers use host networking. Prometheus listens locally at `127.0.0.1:9090`, without a firewall rule. Grafana listens on WireGuard port 3000. Two Orbit UFW rules allow the Gateway and block other peers before general member rules apply. Container logs use `json-file`, limited to three files of 10 MB each.
 
@@ -53,7 +53,7 @@ Orbit updates each container when its configuration changes: `prometheus.yml` fo
 
 ## Exporter selection
 
-The Gateway selects exporters only on active Nodes that use the supported managed-node platform, have a managed WireGuard address, and have Gateway-owned Secure Shell (SSH) management. A non-empty stored SSH fingerprint proves that management for a roleless Node. An active or provisioning managed role also preserves it for a Node whose fingerprint is not stored. Within that eligible managed fleet, the Gateway evaluates the stored exporter preference and role assignments that are active or still provisioning:
+The Gateway selects exporters only on active Nodes that use the supported managed-node platform, have a managed WireGuard address, and have Gateway-owned Secure Shell (SSH) management backed by a stored SSH fingerprint. Within that eligible managed fleet, the Gateway evaluates the stored exporter preference and role assignments that are active or still provisioning. ADR 0177 records the removal of fingerprint-free legacy eligibility.
 
 | Preference | Node state | Result |
 | --- | --- | --- |
@@ -75,7 +75,7 @@ Both commands answer `metrics.exporter_node_inactive` for a Node that is not act
 
 A selected node runs the packaged `prometheus-node-exporter` unit with the Orbit drop-in at `/etc/systemd/system/prometheus-node-exporter.service.d/orbit.conf`. The drop-in binds the exporter to the node's WireGuard address on port 9100. At boot the exporter can start before WireGuard adds that address, so the drop-in sets `Restart=always` and `RestartSec=2`, like cAdvisor, and the exporter retries until the address exists. A UFW rule that the Metrics role owns admits that port only from the Metrics node's WireGuard address.
 
-Doctor does not expect an exporter service, exporter firewall rule, or exporter SSH reachability on an exporter-ineligible record. The Node family separately keeps lifecycle, reachability, and identity findings for a Node that the Gateway manages over SSH, even when that Node is not active. A stored fingerprint proves this observation contract in every lifecycle state. For a legacy Node without a stored fingerprint, any remaining managed role preserves the contract until the Gateway deletes that role. Doctor suppresses these Node-family findings only for records that the Gateway does not manage over SSH.
+Doctor does not expect an exporter service, exporter firewall rule, or exporter SSH reachability on an exporter-ineligible record. The Node family separately keeps lifecycle, reachability, and identity findings for a Node that the Gateway manages over SSH, even when that Node is not active. A stored fingerprint proves this observation contract in every lifecycle state. Doctor suppresses these Node-family findings only for records that the Gateway does not manage over SSH.
 
 ## Per-Process CPU and memory (cAdvisor)
 

@@ -125,13 +125,7 @@ After creating or adopting source, the Gateway identifies its type and selects a
 
 At the first retained provisioning checkpoint, the Gateway records the complete development source profile in one database update: the selected PHP version, including no PHP runtime, and whether the source is Laravel. A retry at the `php-selected` or `url-configured` checkpoint inspects the source again and requires the exact same pair before it changes Laravel URL configuration or Route projection. A changed PHP version, a change between PHP and non-PHP, or a change between Laravel and plain PHP returns `app-dev.source_evidence_changed`.
 
-An Instance created before complete profiles were recorded can have a non-active `php-selected` or `url-configured` checkpoint with missing Laravel evidence. An ordinary retry returns `app-dev.source_evidence_changed` before URL, runtime, or Route projection changes. Orbit does not infer or backfill the missing classification during migration.
-
-To recover that legacy checkpoint, repeat the same creation request with `--recover-source-profile`. The Gateway API and PHP SDK accept the optional boolean field `recover_source_profile`; the CLI omits that field unless the option is present. Recovery still verifies the recorded request identity, source ownership, selected Git branch, and starting commit. It then adopts the currently inspected complete profile, restarts only the incomplete provisioning checkpoint, and continues normal provisioning without replacing the source, Instance, placement, or Route.
-
-The same option recovers an active development or production Instance whose recorded source profile is missing. The Gateway inspects the recorded source once, stores the complete profile, and returns the unchanged active Instance and Route without reprovisioning. An identical retry against an active Instance that already has a profile returns that Instance without inspecting the source again or changing records.
-
-For a recovered Laravel profile, the option permits Orbit to reconcile the canonical URL through its existing idempotent operation. If a request stops after the remote URL write and before checkpoint persistence, another identical retry safely performs the reconciliation and continues. A complete profile that later drifts remains a refusal even when the recovery option is present.
+Orbit does not recover missing source profiles on older Instances. ADR 0177 records the no-legacy-support rule.
 
 Orbit records each completed provisioning checkpoint so retries do not duplicate source or Routes. Database rollback preserves complete profiles at non-active `php-selected` or `url-configured` checkpoints. Once every provisioning checkpoint succeeds, Orbit runs the Project's setup steps. [Instance setup and teardown](/reference/instance-setup) owns those commands. The response returns the active Instance, Route, domain, and HTTPS URL only after that list succeeds or the list is empty.
 

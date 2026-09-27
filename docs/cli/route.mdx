@@ -123,7 +123,7 @@ During a domain change, inspection shows both Route records, `replacement_step`,
 | `route.domain_conflict` | Another Route owns the new domain. |
 | `route.reconciliation_required` | The requested change falls outside the supported Route lifecycle. |
 | `route.domain_change_conflict` | A different domain change is already in progress. |
-| `instance.source_profile_missing` | The target has no recorded source profile; recover it through the same creation request with `--recover-source-profile`. |
+| `instance.source_profile_missing` | The target has no recorded source profile. Orbit does not recover missing profiles on older Instances; see ADR 0177. |
 
 ## orbit route:target:set
 

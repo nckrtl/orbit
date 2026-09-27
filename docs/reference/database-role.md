@@ -19,7 +19,7 @@ orbit node:role:add <node> database
 
 The node is a numeric ID or a registered node name. Retry a failed or active assignment with `--converge`.
 
-The Gateway installs the Ubuntu `docker.io` package when Docker CE is not already healthy on the Node. It does not create a Tool row for Docker.
+The Gateway installs the Ubuntu `docker.io` package when Docker is not already healthy on the Node. It does not create a Tool row for Docker.
 
 The role may share a Node with `app-dev`, `metrics`, `router`, or `websocket`. Either assignment order is accepted. Add, converge, and remove still only ensure Docker; they do not rewrite Router configuration, change existing Docker services, or take Node Process ownership.
 

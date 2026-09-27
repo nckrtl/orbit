@@ -23,9 +23,7 @@ Orbit tries PHP 8.5, then PHP 8.4, against the source's Composer constraint. It 
 
 Both failures happen before runtime or DNS publication. At its first provisioning checkpoint, the Gateway stores the selected version together with the Laravel classification as one complete source profile. A development retry at a retained checkpoint requires both values to match before Laravel URL configuration or runtime and Route projection. A changed development profile returns `app-dev.source_evidence_changed`. Production source changes after successful provisioning are operator-owned and an identical creation retry does not inspect them.
 
-A creation retry with `recover_source_profile` inspects the recorded source once, and only when the active Instance has no recorded profile. It stores the Laravel classification and keeps a recorded PHP version. When no PHP version is recorded, it stores the inspected version together with the dedicated production runtime identity derived from it, or refuses with `app-prod.php_runtime_identity_invalid` before it writes.
-
-The Gateway does not infer missing Laravel evidence for a legacy retained checkpoint. An ordinary retry fails closed. The explicit recovery contract, including URL-reconciliation consent, rollback refusal, active-state behavior, and unchanged removal boundaries, is described in [Applications](/domains/applications#provision-the-application-endpoint).
+Orbit does not recover missing source profiles on older Instances. ADR 0177 records the no-legacy-support rule.
 
 Instance input, persisted Instance state, API responses, the PHP SDK, and the CLI do not expose a PHP-version field. The Node application role owns installation, configuration, and removal of every selected PHP runtime.
 
@@ -50,9 +48,7 @@ The generated configuration establishes runtime identity and includes the separa
 
 An interrupted publication resumes from the recorded production identity. A failed candidate activation restores the exact generated files and service state captured before publication. It never replaces the local tuning file during recovery.
 
-Existing production placements without a dedicated service association remain on their recorded shared runtime until an operator explicitly converts the placement. Conversion copies supported local pool tuning into the dedicated runtime's `local.conf`, verifies the complete effective identity, and changes only that Instance's Caddy upstream. It does not reload, restart, or reset another production user's shared or dedicated service. The [production release-layout reference](/reference/deployments#convert-an-existing-production-home) describes the complete conversion and refusal boundary.
-
-New dedicated runtime preparation, retry, removal, and explicit conversion do not rewrite or adopt an unrelated placement. A Node can also run the Gateway or development PHP service; production runtime operations leave those service masters and caches unchanged.
+Preparation, retry, and removal of a dedicated runtime affect only that Instance. They do not rewrite or adopt another placement. A Node can also run the Gateway or development PHP service; production runtime operations leave those service masters and caches unchanged.
 
 ## Project updates
 
@@ -60,9 +56,9 @@ A slug or web-root update may reproject the owning production PHP-FPM service so
 
 ## Shared runtime module
 
-Development and existing shared placements use a normal Debian PHP module at `/etc/php/<version>/mods-available/orbit-runtime.ini`, enabled for the FPM Server Application Programming Interface (SAPI) as `/etc/php/<version>/fpm/conf.d/99-orbit-runtime.ini` through `phpenmod`. On every shared-runtime convergence the Gateway compares the rendered module with the installed file, repairs a missing or wrong `conf.d` link, and verifies the effective managed directives through `php-fpm<version> -i`.
+Development sites use a normal Debian PHP module at `/etc/php/<version>/mods-available/orbit-runtime.ini`, enabled for the FPM Server Application Programming Interface (SAPI) as `/etc/php/<version>/fpm/conf.d/99-orbit-runtime.ini` through `phpenmod`. On every development-runtime convergence the Gateway compares the rendered module with the installed file, repairs a missing or wrong `conf.d` link, and verifies the effective managed directives through `php-fpm<version> -i`.
 
-The Gateway reloads the shared service only when its managed shared module, enablement, or FPM PCOV enablement changes. A dedicated production operation does not use this publication path. The command-line interface (CLI) SAPI keeps stock defaults (`opcache.enable_cli=0`).
+The Gateway reloads the development PHP-FPM service only when its managed module, enablement, or FPM PCOV enablement changes. A dedicated production operation does not use this publication path. The command-line interface (CLI) SAPI keeps stock defaults (`opcache.enable_cli=0`).
 
 ## Runtime defaults
 
@@ -76,7 +72,7 @@ The shared development module and each generated dedicated production master pro
 | `opcache.max_accelerated_files` | 65407 | 65407 |
 | `opcache.jit` / `opcache.jit_buffer_size` | disable / 0 | disable / 0 |
 
-A shared service on a Node that carries both roles receives the app-dev profile for every PHP version. Each dedicated production master keeps its own app-prod allocation regardless of other Node roles. `opcache.preload`, `file_cache`, and `huge_code_pages` stay off in Orbit defaults.
+The shared development service on a Node that carries both roles receives the app-dev profile for every PHP version. Each dedicated production master keeps its own app-prod allocation regardless of other Node roles. `opcache.preload`, `file_cache`, and `huge_code_pages` stay off in Orbit defaults.
 
 ## Pool policy
 

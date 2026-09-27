@@ -5528,7 +5528,6 @@
             "concepts": [
                 "Access grant",
                 "Doctor",
-                "Extension",
                 "Gateway",
                 "Instance",
                 "Node",
@@ -5586,7 +5585,6 @@
                 "Cluster",
                 "Doctor",
                 "Gateway",
-                "Instance",
                 "Node",
                 "Node agent",
                 "Process",
@@ -5926,7 +5924,6 @@
             ],
             "concepts": [
                 "Cluster",
-                "Deployment",
                 "Doctor",
                 "Extension",
                 "Gateway",

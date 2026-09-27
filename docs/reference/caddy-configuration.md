@@ -183,7 +183,7 @@ When two Caddy roles both failed to converge before Caddy was installed, removin
 
 ### When a build fails
 
-A failed build does not publish a new file. The [absent-Caddy skip](#when-caddy-is-absent) is the success that moves a stale live path and still reports `unchanged`. A build fails when a site cannot be rendered from stored state, when two sites collide, when Caddy is below the floor, or when the Node lacks an address the file binds. It also fails when `caddy validate` rejects the file, or when Caddy fails to reload.
+A failed build does not publish a new file. The [absent-Caddy skip](#when-caddy-is-absent) is the success that moves a stale live path and still reports `unchanged`. A build fails when a site cannot be rendered from stored state, when two sites collide, when the Node lacks an address the file binds, when `caddy validate` rejects the file, or when Caddy fails to reload.
 
 A failed reload leaves Caddy on the configuration it already runs. The script then points `/etc/caddy/Caddyfile` back at the previous version and asks Caddy to load it again. It never restarts a running Caddy; it starts Caddy only when Caddy is not running. The live configuration keeps serving unless Caddy itself had stopped.
 
@@ -280,7 +280,7 @@ The `role` family renders the Node's build from stored state and compares it byt
 | `expected` | `observed` | Meaning |
 | --- | --- | --- |
 | The version of a fresh build | The version of the live file | Someone edited the live file, or stored state changed without a build |
-| The version of a fresh build | `not_built` | No build wrote the live file: a foreign file, the package default, or the fragment layout of an earlier release |
+| The version of a fresh build | `not_built` | No build wrote the live file: a foreign file or the package default |
 | `buildable` | `refused` | Stored state renders no buildable file, as `Build refused:` in `orbit:caddy-build NODE --dry-run` shows |
 
 Doctor checks every Linux Node that renders a Caddy site or holds a `gateway`, `router`, `ingress`, `app-dev`, `app-prod`, `websocket`, or `analytics` role. To repair drift, build the Node again with `php artisan orbit:caddy-build NODE` on the Gateway machine, or converge a role that publishes one of the listed sites, such as `orbit node:role:add NODE app-prod --converge`. The build backs up a hand-edited or foreign file before it replaces it. When Doctor cannot read the live file, it reports `role.inspection_failed`.
