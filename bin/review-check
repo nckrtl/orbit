@@ -9,8 +9,14 @@ import sys
 import tempfile
 import time
 
-PROJECTS = ('apps/cli', 'apps/docs', 'apps/gateway', 'apps/e2e', 'packages/php-sdk')
-COMMANDS = (('composer', 'validate', '--strict'), ('composer', 'check'), ('composer', 'test:affected'))
+PHP_PROJECTS = ('apps/cli', 'apps/docs', 'apps/gateway', 'apps/e2e', 'packages/php-sdk')
+PHP_COMMANDS = (('composer', 'validate', '--strict'), ('composer', 'check'), ('composer', 'test:affected'))
+WEB_INSTALL = ('bun', 'install', '--frozen-lockfile')
+ANNOTATION_INSTALL = ('bun', 'install', '--frozen-lockfile')
+WEB_TYPES = ('bash', '-lc', 'generated=$(mktemp) && trap \'rm -f "$generated"\' EXIT && ./node_modules/.bin/openapi-typescript ../../docs/openapi.json -o "$generated" && cmp -- "$generated" src/api/schema.d.ts')
+WEB_CHECK_COMMANDS = (('vp', 'check'), ('bun', 'run', 'test:unit'), WEB_TYPES)
+PI_SERVER_COMMANDS = (('bun', 'install', '--frozen-lockfile'), ('bun', 'run', 'check'),
+                      ('bun', 'run', 'test'), ('bun', 'run', 'build'))
 AFFECTED = ('composer', 'test:affected')
 BASES = ('origin/main', 'main')
 NO_SELECTION = 'No affected tests found'
@@ -46,6 +52,28 @@ def candidate_paths(root, head, committed):
     return None, []
 
 
+def selected_projects(paths):
+    """Return project profiles selected by changed paths and the OpenAPI schema dependency."""
+    selected = [(project, PHP_COMMANDS) for project in PHP_PROJECTS
+                if any(path.startswith(project + '/') for path in paths)]
+    if any(path.startswith('apps/web/') for path in paths):
+        selected.extend((('apps/web', (WEB_INSTALL,)),
+                         ('packages/agent-annotation', (ANNOTATION_INSTALL,)),
+                         ('apps/web', WEB_CHECK_COMMANDS)))
+    elif 'docs/openapi.json' in paths:
+        selected.append(('apps/web', (WEB_INSTALL, WEB_TYPES)))
+    if any(path.startswith('apps/pi-server/') for path in paths):
+        selected.append(('apps/pi-server', PI_SERVER_COMMANDS))
+    return selected
+
+
+def command_log_name(command):
+    """Return a concise, unique log label for a gate command."""
+    if command == WEB_TYPES:
+        return 'generated-types'
+    return '-'.join(command).replace('/', '-').replace(':', '-')
+
+
 def selection_warning(project, command, exit_code, log, paths):
     """Describe an affected-test step that selected nothing for a project the candidate changes."""
     touched = [path for path in paths if path.startswith(project + '/')]
@@ -74,13 +102,19 @@ def main():
     for seed in (['bin/worktree-cache', '--worktree', str(root)], ['bin/tia-cache', 'seed', '--repository', str(root)]):
         if (root / seed[0]).is_file():
             subprocess.run([str(root / seed[0]), *seed[1:]], check=False)
-    for project in PROJECTS:
-        for command in COMMANDS:
-            log = directory / (project.replace('/', '-') + '-' + command[1] + '.log')
+    for project, commands in selected_projects(paths):
+        for command in commands:
+            command_name = command_log_name(command)
+            log = directory / (project.replace('/', '-') + '-' + command_name + '.log')
             started = time.monotonic()
             with log.open('w') as output:
-                result = subprocess.run(command, cwd=root / project, stdout=output, stderr=subprocess.STDOUT,
-                                        env={**os.environ, 'COMPOSER_PROCESS_TIMEOUT': '0'})
+                try:
+                    result = subprocess.run(command, cwd=root / project, stdout=output, stderr=subprocess.STDOUT,
+                                            env={**os.environ, 'COMPOSER_PROCESS_TIMEOUT': '0'})
+                except FileNotFoundError as error:
+                    missing = error.filename or command[0]
+                    output.write(f'{missing}: required tool not found\n')
+                    result = subprocess.CompletedProcess(command, 127)
             check = {'project': project, 'command': list(command), 'exit_code': result.returncode,
                      'seconds': round(time.monotonic() - started, 3), 'log': str(log)}
             warning = selection_warning(project, command, result.returncode, log, paths)
