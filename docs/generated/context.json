@@ -456,7 +456,10 @@
             "path": "docs/cli/route.mdx",
             "title": "route",
             "kind": "product",
-            "components": [],
+            "components": [
+                "apps/cli",
+                "packages/php-sdk"
+            ],
             "concepts": [
                 "Cluster",
                 "Gateway",
