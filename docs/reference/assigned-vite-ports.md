@@ -16,10 +16,10 @@ Several development Instances can run Vite on one Node. Orbit gives each develop
 
 Orbit assigns `vite_port` when it creates or registers a development Instance. Production Instances get none. An assignment creates or starts no Process.
 
-The search starts at `5173`, or at the recorded port, and moves up through unprivileged TCP ports. It skips:
+The search starts at `5173`, or at the recorded port, and moves up to `65535`. It never tries a port below its start. It skips:
 
 - ports that other Instances on the Node hold,
-- ports that are bound on the Node, over IPv4 or IPv6,
+- ports that any TCP socket on the Node uses, over IPv4 or IPv6, except in `TIME_WAIT`,
 - common service ports: `3306`, `5432`, `5672`, `6379`, `8000`, `8080`, `8443`, `9000`, `9090`, `9200`, `11211`, `15672`, and `27017`.
 
 Two Nodes can use the same port. The database keeps each port unique per Node. The search runs under the Node's operation lock and fails when no port is left.
@@ -51,15 +51,16 @@ Orbit writes `ORBIT_DEV_SERVER_PORT` to the environment file before each start. 
 Every start of the preset runs one preparation step:
 
 1. A start does nothing when the preset's own Vite already answers on the port.
-2. Orbit checks the port again. Another listener on the port makes Orbit pick a new port. The other listener keeps running.
-3. It writes the environment file and points the workload Caddy's `/__orbit/vite` path at the port.
-4. It starts Vite and waits until Vite answers the client request on that port.
+2. Orbit removes the Instance's awake marker, so requests go to the [wake page](/reference/app-dev-runtime-hibernation#wake) until a wake writes it again.
+3. Orbit checks the port again. Another listener on the port makes Orbit pick a new port. The other listener keeps running.
+4. It writes the environment file and points the workload Caddy's `/__orbit/vite` path at the port.
+5. It starts Vite and waits until Vite answers the client request on that port.
 
-When a port is taken between the check and the bind, Orbit retries with a new port. It makes at most three attempts within the deadline. Another startup error does not change the port. When Vite does not become ready, the start fails with `vite.not_ready` and wake stays incomplete.
+When a port is taken between the check and the bind, Orbit retries with a new port. It makes at most three attempts within the deadline. Another startup error does not change the port. After `process:start` or `process:restart` of the preset, the next HTTP request goes through the wake page. When Vite does not become ready, the start fails with `vite.not_ready` and wake stays incomplete.
 
 ## Application setup
 
-The workload Caddy proxies `https://<domain>/__orbit/vite/` to the port and keeps the `/__orbit/vite/` prefix. Every development Process gets these variables:
+The workload Caddy proxies `https://<domain>/__orbit/vite/` to the port and keeps the `/__orbit/vite/` prefix. Every Process of a development Instance with a Route gets these variables. Instances without a Route get none:
 
 | Variable | Value |
 | --- | --- |

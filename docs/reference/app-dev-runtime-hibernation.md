@@ -48,7 +48,7 @@ A wake still starts every desired-running Process, including a keep-alive Proces
 | Wake timeout | 60 seconds | `orbit.hibernation.wake_timeout_seconds` |
 | Cold wake timeout | 1,800 seconds | `orbit.hibernation.cold_wake_timeout_seconds` |
 
-After the idle window, the sweep stops each desired-running Process that is not keep-alive. It keeps `desired_state` as it is and removes the awake marker. When the [Node agent view](/reference/node-agent#gateway-view) is fresh and shows a Process already stopped, the sweep skips it. When every desired-running Process is keep-alive, the Instance stays awake.
+After the idle window, the sweep stops each desired-running Process that is not keep-alive. It keeps `desired_state` as it is and removes the awake marker. When the [Node agent view](/reference/node-agent#gateway-view) is fresh and shows a Process already stopped, the sweep skips it. When an Instance has no desired-running Process without keep-alive, the sweep skips it: it never sleeps and is never pruned. An Instance with no recorded HTTP activity counts as idle, so it sleeps at the first sweep.
 
 ### Dependency prune
 
@@ -65,7 +65,7 @@ Orbit deletes `vendor` only next to `composer.json` and `composer.lock`. It dele
 
 ## Wake
 
-Caddy on the Instance's Node checks for the awake marker on every request. When the marker is missing, Caddy calls `GET /api/v1/runtime-activations/app-instance/{id}` on the Gateway over WireGuard, trusting the Orbit root certificate. The Gateway accepts that call only from the Instance's Node.
+Caddy on the Instance's Node checks for the awake marker on every request. When the marker is missing, Caddy calls `GET /api/v1/runtime-activations/app-instance/{id}` on the Gateway over WireGuard, trusting the Orbit root certificate. The caller must be the Instance's Node, or a Node with an [access grant](/cli/node) to it.
 
 The Gateway answers with a progress page, status 401, headers `X-Orbit-Runtime-Activation-State: pending` and `Retry-After: 1`, and then starts the wake. Caddy shows the page and does not pass the request on. The page polls the original path once a second and loads it when the state header is gone. That load is the first application request.
 
@@ -78,7 +78,7 @@ The wake runs in this order:
 
 Orbit checks each Process every 0.5 seconds. A fresh Node agent view answers without SSH. Orbit confirms a `failed` answer, or a timeout, over SSH before the wake fails.
 
-A second request during a wake gets the same progress page. A failed wake keeps the cold marker and stores the error. The next request gets a failure page, status 503, with state `failed`, the error, and a Try again link. Try again adds `orbit-wake-retry=1` to the path and starts a new wake.
+Every intercepted request starts a wake. A request during a running wake gets the same progress page. Its own wake attempt ends quietly when the running wake holds the Process lock. A failed wake keeps the cold marker and stores the error for up to 120 seconds. The next request gets a failure page, status 503, with state `failed`, the error, and a Try again link, and it also starts a new wake. The error shows once. Try again adds `orbit-wake-retry=1` to the path, and its request shows the progress page of the new wake.
 
 ### Probe requests
 

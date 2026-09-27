@@ -49,7 +49,9 @@ A missing branch in any other case returns `instance.branch_resolution_failed`. 
 
 The response returns `selected_branch` and `branch_override`. `branch_override` holds the `--branch` value, also when it equals the default branch. It is null when the Instance inherits its branch. The Instance also records the starting commit.
 
-Creation moves through recorded states: `reserved`, `checkout_prepared`, `source_resolved`, and `active`. An identical retry resumes at the first unfinished state. The retry must name the same Project, Node, root, and branch override. A retry that changes one of them returns `instance.placement_conflict`. After activation, you can commit, move `HEAD`, or switch branches. The recorded branch and starting commit do not change.
+Creation moves through recorded states: `reserved`, `checkout_prepared`, `source_resolved`, and `active`. An identical retry resumes at the first unfinished state. The retry must name the same Project, Node, root, and branch override. A retry that changes one of them returns `instance.placement_conflict`.
+
+After activation, you can commit and move `HEAD`. The recorded branch and starting commit stay as they are. One exception: when the Project default branch changes, Orbit switches a `default` Instance without `branch_override` and records the new branch. Keep the recorded branch checked out. [Removal](/reference/appinstance-removal#checks-before-removal) refuses a checkout on another branch with `instance.source_branch_mismatch`, also with `--force`. [Cloning](/reference/appinstance-cloning#candidate-rules) refuses such a candidate with `instance.clone_candidate_branch_invalid`.
 
 The Gateway refuses these requests before it changes anything:
 
@@ -60,6 +62,7 @@ The Gateway refuses these requests before it changes anything:
 | `instance.node_not_app_dev` | The Node has no active `app-dev` role. |
 | `instance.node_excluded` | The Project [excludes](/reference/development-node-exclusions) the Node. |
 | `instance.path_taken` | Another managed Instance uses the path. |
+| `instance.migration_conflict` | The name is `default`, and its path is used by a managed Instance or holds an unmanaged directory. |
 | `instance.candidate_required` | The Node has the `app-prod` role. Use [`instance:clone`](/reference/appinstance-cloning). |
 
 ## Register an existing checkout
@@ -74,7 +77,7 @@ orbit instance:register --path=/srv/src/acme --include-worktrees --yes --json
 
 Registration transfers ownership of the source to Orbit. Orbit moves the source into its managed path, and `instance:destroy` later deletes it. There is no unregister command.
 
-The CLI reads the stored `remote.origin.url` of the checkout. It refuses a directory outside Git and an origin with credentials, and sends no request. The Gateway finds the Project by [repository identity](/reference/apps#repository-identity). When no Project owns the repository, the CLI shows the inferred values and asks the Gateway to create one. The [Projects page](/reference/apps#create-a-project-during-registration) lists those values.
+The CLI reads the stored `remote.origin.url` of the checkout. It sends no request for a directory outside Git or for an unsafe origin. A safe origin is `https://` without a user or password, `ssh://` without a password, or `git@host:path`. Any other scheme, a query, a fragment, whitespace, or a control character is unsafe. The Gateway finds the Project by [repository identity](/reference/apps#repository-identity). When no Project owns the repository, the CLI shows the inferred values and asks the Gateway to create one. The [Projects page](/reference/apps#create-a-project-during-registration) lists those values.
 
 The Gateway then inspects the source on the caller's Node. It trusts none of the facts the CLI sends.
 
@@ -82,6 +85,8 @@ The Gateway then inspects the source on the caller's Node. It trusts none of the
 | --- | --- |
 | An independent checkout whose directory name is the Project slug and whose branch is the `default_branch` | `default` |
 | Any other checkout or linked worktree | `--name`, or the directory name |
+
+For a source that qualifies as `default`, a `--name` other than `default` returns `instance.identity_conflict`. A name must be a lowercase DNS label of at most 63 characters, or registration returns `instance.name_invalid`.
 
 Orbit records the source layout as `checkout` or `worktree`. It moves the complete source to `<apps-root>/<project-slug>/<name>`. `HEAD`, the branch or detached state, the index, dirty and untracked files, and all refs stay as they are. A source that is already at that path stays there.
 
@@ -103,13 +108,21 @@ After the source is ready, the Gateway continues in this order:
 
 An Instance without a Route skips steps 2 and 3.
 
-A retry after step 1 inspects the source again. If the PHP version or the Laravel flag changed, the retry returns `app-dev.source_evidence_changed`.
+For an Instance with a Route, a retry after step 1 inspects the source again. If the PHP version or the Laravel flag changed, the retry returns `app-dev.source_evidence_changed`. For an Instance without a Route, a retry records the new profile.
 
-An identical `instance:create` for an active Instance returns it unchanged and runs no setup. When setup failed earlier, `instance:create` returns `instance.setup_step_failed` until `instance:setup` succeeds.
+A failed setup step during `instance:create` runs the teardown steps and removes the new Instance. See [Run setup](/reference/instance-setup#run-setup).
+
+An identical `instance:create` for an active Instance returns it unchanged and runs no setup. An Instance can stay active with a failed setup: after `instance:setup` or `instance:register --setup` fails, or when Orbit could not confirm the failed step or finish the rollback. Then `instance:create` returns `instance.setup_step_failed` until `instance:setup` succeeds.
 
 ## Laravel application URL
 
-Orbit treats a source as Laravel when it has a regular `artisan` file and a `composer.json` that declares `laravel/framework`. A source with a `composer.json` and neither marker is plain PHP. A source without `composer.json` has no PHP. One marker without the other, a symlinked `artisan`, or an `artisan` without `composer.json` stops provisioning with `app-dev.laravel_source_invalid` or `app-dev.source_metadata_unsafe`.
+Orbit treats a source as Laravel when it has a regular `artisan` file and a `composer.json` that declares `laravel/framework` exactly once, in `require` or `require-dev`. A source with a `composer.json` and neither marker is plain PHP. A source without `composer.json` has no PHP. Every Project type runs this check, including packages.
+
+| Source | Code |
+| --- | --- |
+| `artisan` without the declaration, the declaration without `artisan`, the declaration in both sections, or a symlinked `artisan` | `app-dev.laravel_source_invalid` |
+| `composer.json` is a symlink, is not a regular file, or is not owned by the Node's managed user; or `artisan` exists without `composer.json` | `app-dev.source_metadata_unsafe` |
+| `composer.json` is invalid JSON, or no supported PHP version meets its constraint | `app-dev.php_version_unsupported` |
 
 Detection reads files only. It runs no Composer, Artisan, or application code, and it installs no dependencies.
 
@@ -129,7 +142,7 @@ A Project can have one production Instance per `app-prod` Node. Each production 
 
 ## Set the web root
 
-An Instance inherits the Project root. `--root` stores a relative override for one Instance. Orbit refuses an empty or absolute path and a path with `..`. On a production Instance, the root resolves inside the selected release, through `<home>/current`.
+An Instance inherits the Project root. `--root` stores a relative override for one Instance. The root is a relative path of at most 255 bytes. Each segment uses only `A-Z`, `a-z`, `0-9`, `.`, `_`, and `-`, and is not `.` or `..`. A leading or trailing `/` or an empty segment is refused. A package Project also accepts `.`, the repository root. On a production Instance, the root resolves inside the selected release, through `<home>/current`.
 
 ## Input boundary
 
@@ -149,7 +162,7 @@ The default development source keeps the name `default`, its path, and its Route
 
 ### An explicit branch stays explicit
 
-Orbit records `--branch` even when it equals the default branch. Comparing values later cannot tell a deliberate choice from an inherited one. So when the Project default branch changes, Orbit switches only the Instances without an override. Using the Instance name as the only way to pick a branch was rejected, because a release branch would then need a new identity.
+Orbit records `--branch` even when it equals the default branch. Comparing values later cannot tell a deliberate choice from an inherited one. So when the Project default branch changes, Orbit switches only the development Instance named `default`, and only when it has no override. Using the Instance name as the only way to pick a branch was rejected, because a release branch would then need a new identity.
 
 ### Active does not mean healthy
 

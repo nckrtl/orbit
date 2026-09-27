@@ -49,7 +49,7 @@ The result names the new Instance, its branch, its preview domain, and its selec
 
 ## Candidate rules
 
-The candidate is an active development Instance with its checkout, or an active production Instance with a selected release. Its source must have no staged, unstaged, untracked, or submodule change. Its current commit must be in the Project repository. The Gateway checks this on the candidate's Node, as the candidate's user.
+The candidate is an active development Instance with its checkout, or an active production Instance with a selected release. A development candidate must have its recorded branch checked out, not another branch or a detached `HEAD`. Its source must have no staged, unstaged, untracked, or submodule change. Its current commit must be in the Project repository. The Gateway checks this on the candidate's Node, as the candidate's user.
 
 The destination must be an active Linux Node with an active `app-prod` role. The Project can have one production Instance per Node. In an active Cluster, the Cluster needs an active Router.
 
@@ -65,7 +65,7 @@ The new Instance gets its own copy of each part below.
 | PHP | A [dedicated PHP-FPM service](/reference/php-runtime#production-runtime) with Orbit defaults, when the source uses PHP. |
 | Route | For `laravel-app`, one private preview Route. Other types get no Route. |
 
-The clone copies no `.env` file, cached configuration, dependencies, logs, caches, or PHP-FPM tuning. Stored values such as `APP_KEY` copy as they are. References such as `{{app_instance.domain}}` resolve against the new Instance.
+Before the clone completes, Orbit renders the new Instance's stored values and writes its `.env` in the production home. It copies no `.env` file from the candidate, and no cached configuration, dependencies, logs, caches, or PHP-FPM tuning. Stored values such as `APP_KEY` copy as they are. References such as `{{app_instance.domain}}` resolve against the new Instance.
 
 ## Preview domain
 
@@ -91,9 +91,33 @@ The Gateway records the clone request and each finished step. An identical reque
 
 While a clone is incomplete, removal of its candidate returns `instance.clone_in_progress`.
 
+## Errors
+
+The Gateway returns these codes for a clone. A failure after reservation records its code on the new Instance, and the identical request resumes it.
+
+| Code | Cause |
+| --- | --- |
+| `instance.node_inactive`, `instance.node_not_app_prod` | The destination is not an active Linux Node with an active `app-prod` role. |
+| `instance.production_placement_conflict` | The Project already has a production Instance on the Node. |
+| `instance.placement_conflict` | Another Instance of the Project has the name. |
+| `instance.clone_reservation_conflict` | Another request took the name or preview domain at the same moment. |
+| `route.tld_required`, `route.domain_conflict` | The preview domain cannot be built or is taken. |
+| `instance.clone_retry_conflict` | A different request tries to resume the clone. |
+| `instance.clone_candidate_inactive`, `instance.clone_candidate_unavailable` | The candidate is not active, or Orbit cannot inspect it. |
+| `instance.clone_candidate_branch_invalid` | The candidate has no branch, or a development candidate is on another branch. |
+| `instance.clone_candidate_dirty` | The candidate source has changes. |
+| `instance.clone_candidate_commit_unavailable`, `instance.clone_candidate_repository_unavailable` | The repository does not have the candidate's commit, or Orbit cannot read it. |
+| `instance.clone_candidate_release_missing`, `instance.clone_candidate_release_changed` | A production candidate has no selected release, or it changed. |
+| `instance.clone_candidate_source_invalid`, `instance.clone_candidate_environment_invalid` | The candidate's source or environment does not match its record. |
+| `instance.clone_target_branch_missing` | The branch is not in the repository. |
+| `instance.clone_candidate_changed` | The candidate's commit, branch, or placement changed during the request. |
+| `sqlite.seed_preflight_failed`, `sqlite.seed_transfer_failed`, `sqlite.seed_failed` | The SQLite seed failed its checks, its copy, or its install. |
+| `instance.clone_sqlite_unconfirmed` | Orbit cannot confirm the SQLite result. Retry. |
+| `instance.clone_failed` | Another step failed. |
+
 ## Next steps
 
-1. Update environment values that must differ from the candidate, then [synchronize](/cli/env).
+1. Update environment values that must differ from the candidate, then [synchronize](/cli/env) to rewrite `.env`.
 2. Clean copied application data, such as queue rows.
 3. Record [deploy steps](/reference/deployments#deploy-steps).
 4. Run `instance:deploy` to create and select the first release.

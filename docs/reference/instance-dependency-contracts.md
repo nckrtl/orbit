@@ -42,7 +42,7 @@ This table sums up each reader.
 | pnpm | `lockfileVersion` 9.0, importer `.` | Snapshot key | `dependencies.stale_pnpm_lockfile` | `dependencies.invalid_pnpm_input` |
 | Bun | Text `bun.lock`, `lockfileVersion` 1 or 2, workspace `""` | Package path | `dependencies.stale_bun_lockfile` | `dependencies.invalid_bun_input` |
 
-Workspaces, several importers, path repositories, and local links return `dependencies.unsupported_layout`. An unsupported lockfile version, Bun version 3, and binary `bun.lockb` return `dependencies.unsupported_format`.
+A root `workspaces` layout, several importers, path repositories, and local links return `dependencies.unsupported_layout`. The npm reader ignores `workspaces` metadata on transitive package records. An unsupported lockfile version, Bun version 3, and binary `bun.lockb` return `dependencies.unsupported_format`.
 
 ### Composer
 

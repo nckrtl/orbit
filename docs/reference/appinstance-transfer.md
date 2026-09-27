@@ -41,9 +41,15 @@ The Gateway reserves `<destination-apps-root>/<project-slug>/<name>`. It refuses
 
 The destination gets an independent checkout, even when the source is a worktree. It holds the branch, commits, detached state, tracked changes, untracked files, and file modes of the source. Orbit does not fetch, reset, clean, or push the source. The common repository, sibling worktrees, and local branches of a source worktree stay unchanged.
 
-When you select a SQLite file, Orbit stops the source, takes one consistent snapshot, and installs it at the destination. It copies no other database or data path.
+Every transfer runs in this order:
 
-Orbit imports the source `.env` into the [stored environment](/reference/environment-variables). A key that is already stored keeps its stored value. Then Orbit writes the destination `.env`.
+1. Orbit copies the source checkout to the destination.
+2. It stops the source Processes and timers, with or without SQLite.
+3. When you select a SQLite file, it takes one consistent snapshot and installs it at the destination.
+
+The checkout is copied before the stop. A file that a running Process writes between steps 1 and 2 does not reach the destination. Orbit copies no other database or data path.
+
+Orbit imports the source `.env` into the [stored environment](/reference/environment-variables). A key that is already stored keeps its stored value. When Orbit cannot read the source `.env`, it imports nothing and continues. Then Orbit writes the destination `.env` from the stored environment.
 
 Process and Schedule records keep their IDs, definitions, and desired states. Orbit stops their source units, creates them on the destination, and leaves no duplicate. The destination gets its own [Vite port](/reference/assigned-vite-ports), and Orbit releases the source port after cleanup.
 
@@ -57,10 +63,12 @@ A generated domain uses the destination Cluster TLD: `<project-slug>.<tld>` for 
 
 Cutover is the moment the destination becomes authoritative.
 
-- A failure before cutover restores the source Route, environment, Processes, and Schedules. Orbit removes the destination state it can reverse.
+- A failure before cutover restarts the source Processes and Schedules and keeps the source Route.
+- It also deletes the destination checkout, the destination Vite port, and a replacement Route that is not active yet.
+- Keys imported into the stored environment stay.
 - After cutover, recovery only goes forward. Orbit never restarts the source. It finishes the Route, runtime, and cleanup without copying the source again.
 
-Only the identical request resumes a transfer. A different request returns `instance.transfer_retry_conflict`. For a pending transfer, the CLI offers the retry and names the original source Node.
+A failed or unfinished transfer stays open. Only the identical request resumes it, and it is the only way to close it: a different transfer returns `instance.transfer_retry_conflict`, and removal returns `instance.transfer_incomplete`. For a pending transfer, the CLI offers the retry and names the original source Node.
 
 Cleanup deletes the old checkout or worktree and its runtime files, certificates, and firewall rules on the old workload and Router. The result reports the destination Node, path, domain, and whether cleanup finished. It does not depend on an HTTP response from the application.
 
@@ -87,6 +95,8 @@ The Gateway returns these codes before or during a transfer.
 | `instance.transfer_cleanup_incomplete` | The destination is authoritative, and cleanup needs the identical retry. |
 | `instance.transfer_source_router_unknown` | The source Router is unknown, so Orbit cannot clean up the source projection. |
 | `instance.transfer_cleanup_conflict` | The recorded placement or Route changed, so cleanup stops. |
+| `instance.clone_sqlite_unconfirmed` | Orbit cannot confirm the SQLite copy. Retry. |
+| `sqlite.seed_preflight_failed`, `sqlite.seed_transfer_failed`, `sqlite.seed_failed` | The SQLite snapshot failed its checks, its copy, or its install. |
 
 ## Why it works this way
 

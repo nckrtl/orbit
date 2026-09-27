@@ -70,14 +70,28 @@ When [`instance:register`](/domains/applications#register-an-existing-checkout) 
 | Slug | The repository name. |
 | `default_branch` | The checkout's `origin/HEAD`. |
 | Root | `public` when the checkout has `composer.json`, `artisan`, and a `public` directory. |
+| Name | The slug, unless you pass `--app-name`. |
+| Type | `monorepo` for the Orbit repository, or for slug `orbit` with a repository path that ends in `/orbit`. `laravel-app` when the root is `public` or ends in `/public`. `laravel-package` otherwise. |
 
-A value you pass fills an unresolved value. It cannot override the repository identity. When the Project is created but registration then fails, the Project stays for an identical retry.
+Registration never picks `node-package` and has no type option. Change the type afterwards with `project:update --type`.
+
+A value you pass fills an unresolved value only. It must match what the Gateway verifies:
+
+| Input | Code when it differs |
+| --- | --- |
+| `--app-slug` for a new Project | `app.slug_conflict`. The slug is always the repository name. |
+| `--default-branch` for a new Project | `app.default_branch_conflict`, when the checkout has an `origin/HEAD`. |
+| `--root` for a new Project | `app.root_conflict`, when the root was inferred. |
+| `--app-slug`, `--app-name`, or `--default-branch` for an existing Project | `app.identity_conflict`. |
+| A root that the type does not allow | `app.root_invalid`. |
+
+When the Project is created but registration then fails, the Project stays for an identical retry.
 
 ## Project codes
 
-Each Project has a unique code of three uppercase letters. The Gateway derives it from the slug unless `POST /api/v1/projects` sends `code`. The code stays the same when the name or slug changes. Task cards use it as a label.
+Each Project has a unique code of three uppercase letters. The Gateway derives it from the slug unless `POST /api/v1/projects` sends `code`. The code stays the same when the slug changes. Task cards use it as a label.
 
-Change the code in the web app, or send `PATCH /api/v1/projects/{project}` with only `code`. A code sent with other fields returns `app.code_update_separate`. A code in use returns `app.code_conflict`.
+Change the code in the web app, or send `PATCH /api/v1/projects/{project}` with only `code`. A code sent with other fields returns `app.code_update_separate`. A code that is not three uppercase letters returns `app.invalid_code`. A code in use returns `app.code_conflict`. When every three-letter code is taken, creation returns `app.codes_exhausted`.
 
 ## Update a Project
 
@@ -93,9 +107,9 @@ orbit project:update 3 --repository=https://github.com/acme/site.git --default-b
 | --- | --- |
 | `type` | Applies at once. A change to `laravel-app` is refused with `project.type_requires_route` while an active Instance has no Route. A change away from `laravel-app` keeps existing Routes. |
 | `slug` | Replaces each generated Route with one for the new slug. Explicit domains do not change. Checkout paths, production users, and homes keep their recorded values. |
-| `repository_url` | Changes `origin` in each development checkout. Linked worktrees share that repository and need no change. |
+| `repository_url` | Runs `git remote set-url origin` in each development checkout. See [Repository changes](#repository-changes). |
 | `default_branch` | Must exist on the remote. Switches every development `default` Instance without a `branch_override`. Its name, path, and Route stay the same. |
-| `root` | Changes the effective root of every Instance without its own root, and reprojects its runtime. |
+| `root` | Changes the effective root of every Instance without its own root. Orbit reprojects the runtime of each such Instance that has a Route. |
 | `task_check` | Applies at once. Send null or `--clear-task-check` to run no check. |
 
 A type change must keep a valid root. When the stored root is `.` and the new type does not allow it, validation fails on `root`. Send a web root with the type change. A type or root change that leaves a Route target with root `.` returns `route.target_web_root_unsupported`.
@@ -109,7 +123,7 @@ The Gateway applies `slug`, `repository_url`, `default_branch`, and `root` as on
 | `reserved` | Records the request and the previous values. |
 | `preflighted` | Checks every affected checkout, worktree, and generated domain. |
 | `prepared` | Switches branches, changes origins, and creates replacement Routes. The old values stay in effect. |
-| `publishing` | Stores the new Project values. Replaces each generated Route, then updates each Instance's Laravel URL, stored environment, and runtime. |
+| `publishing` | Stores the new Project values. Replaces generated Routes and updates each Instance's Laravel URL, environment, and runtime. Reprojects routed Instances that inherit a changed root. |
 | `cleaning_up` | Checks that no production Instance changed. |
 | `complete` | Done. |
 
@@ -117,15 +131,21 @@ A failure before `publishing` rolls back: Orbit restores origins, branches, and 
 
 In the `publishing` step, a failure to update one Instance's Laravel URL, environment, or runtime does not fail the update. Run [Doctor](/cli/doctor) after a slug change to find an Instance that needs attention.
 
+### Repository changes
+
+A repository change touches only `origin`. Local branches, the checked-out commit, and the recorded starting commit stay the same. Orbit never pushes. Linked worktrees share the checkout's repository and need no change.
+
 Every origin check reads the `remote.origin.url` stored in the checkout. It ignores `insteadOf` rewrites on the Node. The update never changes production source, the deployment branch, or releases, and it never starts a deployment.
 
 ## Remove a Project
 
-`project:destroy` removes a Project that has no Instances and no Routes. It deletes the Project's process and Schedule definitions, setup and teardown steps, and Node exclusions.
+`project:destroy` removes a Project that has no Instances and no Routes. It deletes the Project's process and Schedule definitions, setup and teardown steps, Node exclusions, and update records.
+
+A Project with task groups cannot be removed. The database refuses the delete, and the Gateway returns the generic `gateway.unhandled` error with HTTP 500, not an Orbit code.
 
 ## Errors
 
-The Gateway returns these codes for Project requests.
+The Gateway returns these codes for Project requests. [Create a Project during registration](#create-a-project-during-registration) lists the registration codes.
 
 | Code | Cause |
 | --- | --- |
@@ -136,9 +156,12 @@ The Gateway returns these codes for Project requests.
 | `app.update_required` | The update sends no field. |
 | `app.update_in_progress` | Another update of this Project is incomplete. |
 | `app.repository_preflight_failed` | A checkout is missing, has another origin, or cannot reach the new URL. |
+| `app.repository_origin_failed` | Orbit could not change or restore `origin` in a checkout. |
+| `route.domain_conflict` | A new generated domain for the slug belongs to another Route. |
 | `app.repository_unowned_common` | A worktree uses a repository that no Orbit checkout owns. |
 | `app.source_switch_failed` | A `default` checkout cannot switch to the new default branch. |
 | `app.production_ownership_changed` | A production Instance changed during the update. |
+| `app.update_failed` | The update failed for a reason without its own code, and Orbit rolled back. |
 | `app.has_app_instances` | Removal found Instances. |
 | `app.has_routes` | Removal found Routes. |
 

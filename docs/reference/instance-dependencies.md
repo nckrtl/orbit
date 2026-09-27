@@ -80,7 +80,7 @@ orbit instance:dependencies:update --app=commander.test
 The Gateway runs these steps as the Node's user in the project root:
 
 1. It inspects both ecosystems. A refusal stops the whole update before any package command. See the refusals below.
-2. It runs `composer update --no-interaction` for a Composer project. Regular and development packages move within their constraints.
+2. It runs `composer update --no-interaction --no-ansi --no-progress --no-audit` for a Composer project. Regular and development packages move within their constraints.
 3. It runs `vp update --no-save` for a JavaScript project. Vite+ picks npm, pnpm, or Bun. For Bun, Orbit adds `-- --lockfile-only --save-text-lockfile`.
 4. It scans the result, also after a failed or cancelled step.
 
@@ -88,7 +88,7 @@ The inspection refuses a Yarn project, an unsupported layout, two package manage
 
 Each package step has a 600-second deadline and owns its process group. A failed step stops the steps after it. Orbit claims no rollback. The update succeeds only when every package step and the final scan succeed.
 
-Orbit uses the Vite+ at `/opt/orbit/vite-plus/bin/vp`, `~/.vite-plus/bin/vp`, `~/.local/share/vite-plus/bin/vp`, or `/usr/local/bin/vp`. Only Vite+ 0.3.0 is verified. Another version fails with `dependencies.unsupported_delegation`.
+Orbit uses the first Vite+ it finds at `/opt/orbit/vite-plus/bin/vp`, `~/.vite-plus/bin/vp`, `~/.vite-plus/current/bin/vp`, `~/.local/share/vite-plus/bin/vp`, or `~/.local/share/vite-plus/current/bin/vp`. It also accepts the launcher `/usr/local/bin/vp`. Only Vite+ 0.3.0 is verified. Another version fails with `dependencies.unsupported_delegation`.
 
 A production Instance returns `dependencies.production_update_forbidden` before any command. `--all` and `--latest` are refused before any request. Declared constraints never change: an update that needs a new constraint is an upgrade, which Orbit does not do.
 
@@ -140,7 +140,7 @@ Resolving versions in production skips the tested source and the release flow. S
 
 ### No Yarn
 
-The maintainer narrowed JavaScript support to npm, pnpm, and Bun. A Yarn project fails clearly, and never becomes an empty inventory or another manager's result.
+Orbit supports npm, pnpm, and Bun, the managers that Vite+ drives with a verified constrained update. Yarn has no such update, so a Yarn project fails clearly. It never becomes an empty inventory or another manager's result.
 
 ### Nightly scans as well as updates
 

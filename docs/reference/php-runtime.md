@@ -125,7 +125,7 @@ These reasons explain the design. Check them before you propose a change.
 
 ### Sury packages, not a custom PHP build
 
-A static-php build crashed on one CPU, ran 10 to 15 percent slower, and lacked `pdo_sqlite` and `pdo_pgsql`. A custom build would also make Orbit own PHP security updates. So Orbit uses the pinned Sury packages.
+A static-php build is 10 to 15 percent slower on Orbit's Nodes, lacks `pdo_sqlite` and `pdo_pgsql`, and its glibc variant crashes on some CPUs. A custom build would also make Orbit own PHP security updates. So Orbit uses the pinned Sury packages.
 
 ### OPcache sizing per role
 
@@ -137,7 +137,7 @@ Checking every file costs about 1.5 ms per request. Turning OPcache off costs ab
 
 ### No JIT
 
-The tracing JIT gave a Laravel request no measurable gain and has known crash classes.
+The tracing JIT gives a Laravel request no measurable gain and has known crash classes.
 
 ### One master per production user
 

@@ -47,9 +47,11 @@ The Gateway checks each change against these limits and stores nothing when one 
 
 A list holds at most 32 steps. The timeouts of one list add up to at most 540 seconds, so a whole list fits in one API request.
 
+Authorized reads return the commands. [Activity](/cli/activity) records no input for the step commands and `instance:setup`, so it never holds command text or command output.
+
 ## Run setup
 
-`instance:create` runs the setup list after the Instance and its Route are active. Each command runs with `bash -eu` in the checkout, on the Instance's Node, as the Node's managed user. Commands read no input, and Orbit discards their output. A timeout stops the command's process group. A command must not leave background processes behind.
+`instance:create` runs the setup list after the Instance and its Route are active. Each command runs with `bash -eu` in the checkout, on the Instance's Node, as the Node's managed user. Commands read no input, and Orbit discards their output. When a step ends, for any reason, Orbit kills its process group, so background processes do not survive the step. Each run holds a lock on the checkout. A second run on the same checkout at the same time fails at once and counts as a failed step.
 
 The first command that exits non-zero or times out stops the list. Then Orbit rolls back the new Instance:
 
@@ -57,7 +59,17 @@ The first command that exits non-zero or times out stops the list. Then Orbit ro
 2. It removes the Instance with forced removal, which also deletes a dirty checkout.
 3. It returns `instance.setup_step_failed` with the failed setup step. A failed teardown step is named too.
 
-A teardown failure during this rollback does not keep the Instance. Rollback never removes another Instance. When Orbit cannot confirm the outcome, for example after a lost SSH connection, it keeps the Instance and returns `cleanup: unconfirmed`. When the removal starts but does not finish, the error returns `cleanup: incomplete` and names `orbit instance:destroy <id> --force`. Inspect the Instance before you retry.
+A teardown failure during this rollback does not keep the Instance. Rollback never removes another Instance.
+
+Orbit keeps the Instance, with its setup marked failed, in three cases:
+
+| Case | Result |
+| --- | --- |
+| Orbit cannot confirm the setup step's outcome, for example after a lost SSH connection. | No rollback runs. The error is the step's own `instance.setup_step_failed` with `outcome: unconfirmed`. |
+| Orbit cannot confirm a teardown step's outcome. | The error adds `cleanup: unconfirmed`. |
+| The removal starts but does not finish. | The error adds `cleanup: incomplete` and names `orbit instance:destroy <id> --force`. |
+
+Inspect the Instance before you retry.
 
 `instance:register` runs no setup. `instance:register --setup` runs the setup list after adoption. `instance:setup` runs the list again on an active development Instance. Both keep the Instance when a command fails and return `instance.setup_step_failed`. Every run starts at the first step.
 
@@ -91,7 +103,7 @@ The Orbit Project records `bin/bootstrap` as a setup step. It installs the locke
 orbit instance:setup-step:create bootstrap --project=PROJECT_ID --command='bin/bootstrap' --timeout=540
 ```
 
-Task workspaces skip these setup steps. See [Implementation loop](/reference/implementation-loop) for their cache rules.
+Task workspaces are not created with `instance:create`, so this create-time run does not happen for them. The task baseline check runs the Project setup steps before the task check instead. See [Project check](/reference/tasks#project-check) and [Implementation loop](/reference/implementation-loop).
 
 ## Failure codes
 

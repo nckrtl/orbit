@@ -58,7 +58,7 @@ orbit project:list [--json]
 
 ## orbit project:show
 
-Show one Project with its source defaults, task check, and excluded Nodes. A null task check means tasks run no check command.
+Show one Project with its source defaults, task check, and excluded Nodes. A null task check means tasks run no check command. Human output also lists the Project's Instances with ID, name, environment, Node, domain, and status. In a terminal, selecting an Instance opens `instance:show`.
 
 ```bash
 orbit project:show <project> [--json]
@@ -84,7 +84,7 @@ orbit project:update <project> [--type=TYPE] [--slug=SLUG] [--repository=URL] [-
 
 ## orbit project:destroy
 
-Remove a Project that has no Instances and no Routes. Its definitions, setup steps, and Node exclusions go with it.
+Remove a Project that has no Instances and no Routes. Its definitions, setup steps, Node exclusions, and update records go with it. A Project with task groups cannot be removed: the request fails with `gateway.unhandled`. See [Remove a Project](/reference/apps#remove-a-project).
 
 ```bash
 orbit project:destroy <project> [--yes] [--json]

@@ -2497,6 +2497,7 @@
                 "apps/gateway"
             ],
             "concepts": [
+                "Access grant",
                 "Activity",
                 "Doctor",
                 "Gateway",
@@ -3099,7 +3100,8 @@
                 "Process",
                 "Project",
                 "Route",
-                "Task"
+                "Task",
+                "Task check"
             ],
             "governing_adrs": [
                 "0115"
