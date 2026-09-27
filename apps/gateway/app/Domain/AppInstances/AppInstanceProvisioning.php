@@ -13,6 +13,10 @@ final readonly class AppInstanceProvisioning
 
     public static function isInFlight(AppInstance $instance, AppInstanceState $settled): bool
     {
+        if ($instance->status === AppInstanceState::Active || $instance->failed_step !== null) {
+            return false;
+        }
+
         return self::isBeforeSettled($instance->status, $settled)
             || ($instance->provisioning_step !== null && ! self::isCompletedStep($instance->provisioning_step));
     }

@@ -285,7 +285,7 @@ A valid serving configuration stays healthy when the application returns HTTP 50
 
 Related-node checks use only caller-authorized selected nodes. An unavailable Router observation reports `instance.related_node_unverifiable` without contacting an unselected Node.
 
-Doctor skips Instances in `removing` for every probe. After an inspection reports an issue, it rereads the Instance and drops the issue if removal has started or the row was deleted; only a removal lasting more than 10 minutes reports `instance.removal_stuck`. See the [Doctor removal rule](/cli/doctor#what-each-family-checks).
+The `instance` Doctor probe skips an Instance already in `removing`, except that removal lasting 10 minutes or more reports `instance.removal_stuck`; it drops findings if removal starts or the row is deleted during inspection. The `app` probe excludes removing Instances when selecting eligible checkouts. The `process` probe skips Processes owned by a removing Instance and drops findings if removal starts or the Instance is deleted during inspection. The `database_connection` probe skips attachments whose Instance is removing, including on its post-inspection reread. Other Doctor probes do not generally skip removing Instances; see the [Doctor family rules](/cli/doctor#what-each-family-checks).
 
 | Doctor issue code | Difference |
 | --- | --- |
@@ -356,7 +356,7 @@ Doctor instance checks report public Ingress, private forwarding, TLS, and firew
 
 Doctor builds the expected public site the same way the publisher does. An Ingress that runs a target of the Route expects the composed site that serves the Instance directly. Any other Ingress expects a reverse proxy to the Router. The forwarding check dials the Router, or the workload Nodes when the Ingress also holds the Router role. A composed site forwards nowhere, so it always passes that check. Related-node checks use only caller-authorized selected nodes. An unavailable observation reports `instance.related_node_unverifiable` without contacting an unselected Node.
 
-Doctor skips Instances in `removing` for every probe. After an inspection reports an issue, it rereads the Instance and drops the issue if removal has started or the row was deleted; only a removal lasting more than 10 minutes reports `instance.removal_stuck`. See the [Doctor removal rule](/cli/doctor#what-each-family-checks).
+The `instance` Doctor probe skips an Instance already in `removing`, except that removal lasting 10 minutes or more reports `instance.removal_stuck`; it drops findings if removal starts or the row is deleted during inspection. The `app` probe excludes removing Instances when selecting eligible checkouts. The `process` probe skips Processes owned by a removing Instance and drops findings if removal starts or the Instance is deleted during inspection. The `database_connection` probe skips attachments whose Instance is removing, including on its post-inspection reread. Other Doctor probes do not generally skip removing Instances; see the [Doctor family rules](/cli/doctor#what-each-family-checks).
 
 ### Ingress removal
 

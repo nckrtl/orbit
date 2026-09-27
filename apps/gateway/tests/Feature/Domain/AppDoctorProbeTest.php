@@ -110,6 +110,36 @@ it('ignores removal in flight when the only checkout mismatch belongs to a remov
         ->toBe(0);
 });
 
+it('reports App drift for an active Instance but skips a mismatching removing Instance', function (): void {
+    $node = app_probe_node();
+    $app = app_probe_app();
+    $active = app_probe_projection($app, $node);
+    $removing = app_probe_projection($app, $node);
+    app_probe_mark_removing($removing);
+
+    $report = new AppDoctorProbe(new class($active, $removing) implements AppStateInspector
+    {
+        public function __construct(
+            private AppInstance $active,
+            private AppInstance $removing,
+        ) {}
+
+        public function inspect(App $app, Node $node): AppInspectionData
+        {
+            return new AppInspectionData(2, false, [(int) $this->active->id, (int) $this->removing->id]);
+        }
+    })->inspect(app_probe_context($node));
+
+    expect($report->checked)
+        ->toBe(1)
+        ->and($report->issues)
+        ->toHaveCount(1)
+        ->and($report->issues[0]->code)
+        ->toBe('app.repository_origin_mismatch')
+        ->and($report->issues[0]->resourceId)
+        ->toBe($app->id);
+});
+
 it('ignores App drift for an Instance with provisioning in flight', function (): void {
     $node = app_probe_node();
     $app = app_probe_app();

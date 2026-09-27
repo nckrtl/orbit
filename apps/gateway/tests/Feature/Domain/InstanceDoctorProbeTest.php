@@ -84,6 +84,36 @@ it('checks healthy AppInstances in id order', function (): void {
         ->toBeEmpty();
 });
 
+it('reports lifecycle and every false instance field in stable order', function (): void {
+    $node = instance_probe_node();
+    $instance = instance_probe_instance(instance_probe_app(), $node, AppInstanceState::Active);
+    $instance->update(['provisioning_step' => null]);
+
+    $report = new InstanceDoctorProbe(new class implements InstanceStateInspector
+    {
+        public function inspect(AppInstance $appInstance): InstanceInspectionData
+        {
+            return new InstanceInspectionData(false, false, false, false);
+        }
+    })->inspect(instance_probe_context($node));
+
+    expect($report->checked)
+        ->toBe(1)
+        ->and(array_map(static fn ($issue): string => $issue->code, $report->issues))
+        ->toBe([
+            'instance.checkout_missing',
+            'instance.repository_layout_mismatch',
+            'instance.origin_mismatch',
+            'instance.source_identity_mismatch',
+        ])
+        ->and(collect($report->issues)->pluck('resourceId')->unique()->all())
+        ->toBe([$instance->id])
+        ->and(collect($report->issues)->pluck('expected')->all())
+        ->toBe(['matching', 'matching', 'matching', 'matching'])
+        ->and(json_encode($report))
+        ->not->toContain($instance->checkout_path);
+});
+
 it('does not report drift for an Instance with provisioning in flight', function (): void {
     $node = instance_probe_node();
     $instance = instance_probe_instance(instance_probe_app(), $node, AppInstanceState::CheckoutPrepared);
@@ -105,6 +135,23 @@ it('does not report drift for an Instance with provisioning in flight', function
     expect($report->checked)->toBe(1)
         ->and($report->issues)->toBeEmpty()
         ->and($calls)->toBe(0);
+});
+
+it('reports failed provisioning reports immediately', function (): void {
+    $node = instance_probe_node();
+    $instance = instance_probe_instance(instance_probe_app(), $node, AppInstanceState::CheckoutPrepared);
+    $instance->update([
+        'provisioning_step' => 'checkout',
+        'failed_step' => 'checkout',
+        'error_code' => 'checkout_failed',
+    ]);
+
+    $report = new InstanceDoctorProbe(instance_probe_healthy_inspector())->inspect(instance_probe_context($node));
+
+    expect($report->issues)
+        ->not->toBeEmpty()
+        ->and(array_map(static fn ($issue): string => $issue->code, $report->issues))
+        ->not->toContain('instance.provisioning_stuck');
 });
 
 it('reports one stuck issue for an Instance with provisioning in flight beyond the bound', function (): void {
