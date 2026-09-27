@@ -193,6 +193,8 @@ it('gives pool.conf one pool owner when service metrics toggle', function (): vo
     $monitorBranch = substr($enabledCommand->input, $monitorBranchStart, $monitorBranchEnd - $monitorBranchStart);
     $candidateCleanup = strpos($enabledCommand->input, 'cleanup_interrupted_monitoring_candidate "$generated_directory" "$runtime_directory"');
     $generatedAllowlist = strpos($enabledCommand->input, 'unexpected_generated=$(find');
+    $monitorIdentityGuard = strpos($enabledCommand->input, 'if [ "$operation" = monitor ]');
+    $sharedDirectoryConvergence = strpos($enabledCommand->input, 'converge_shared_orbit_directory /etc/orbit 1');
     $syntax = new Process(['bash', '-n']);
     $syntax->setInput($enabledCommand->input);
     $syntax->run();
@@ -207,6 +209,8 @@ it('gives pool.conf one pool owner when service metrics toggle', function (): vo
         ->and($disabledPool)->not->toContain('pm.status_listen')
         ->and($enabledCommand->input)->toContain('converge_monitoring_pool')
         ->and($candidateCleanup)->toBeInt()->toBeLessThan($generatedAllowlist)
+        ->and($monitorIdentityGuard)->toBeInt()->toBeLessThan($sharedDirectoryConvergence)
+        ->and($enabledCommand->input)->toContain('! test -f "$marker_path"', '! test -d "$generated_directory"')
         ->and($monitorBranch)->toContain('systemctl reload "$service"')
         ->and($monitorBranch)->not->toContain('systemctl restart')
         ->and($monitorBranch)->not->toContain('systemctl start')

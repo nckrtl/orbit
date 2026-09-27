@@ -648,6 +648,9 @@ final readonly class RemoteProductionPhpRuntimeManager implements ProductionPhpR
             initial_local_tuning=${20}
             has_initial_local_tuning=${21}
             case "$operation" in converge|monitor) ;; *) exit 1 ;; esac
+            if [ "$operation" = monitor ] && { ! test -f "$marker_path" || test -L "$marker_path" || ! test -d "$generated_directory" || test -L "$generated_directory"; }; then
+                exit 0
+            fi
 
             test "$home" = "/home/$user"
             expected_service="orbit-$user-php${version}-fpm.service"

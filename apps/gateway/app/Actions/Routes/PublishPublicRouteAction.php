@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Actions\Routes;
 
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
-use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Routes\PublicRouteEdgeProjector;
 use App\Domain\Routes\PublicRouteEligibility;
 use App\Domain\Routes\RoutePublication;
@@ -21,18 +20,11 @@ final readonly class PublishPublicRouteAction
         private PublicRouteEdgeProjector $edge,
         private PublicRouteEligibility $eligibility,
         private DevelopmentProjectionOperationLock $owner,
-        private ?MetricsFleetReconciler $metrics = null,
     ) {}
 
-    public function execute(Route $route, RoutePublication $publication, bool $reconcileMetrics = true): Route
+    public function execute(Route $route, RoutePublication $publication): Route
     {
-        $result = $this->owner->run(fn (): Route => $this->publishOwned($route->id, $publication));
-
-        if ($reconcileMetrics) {
-            $this->metrics?->reconcile();
-        }
-
-        return $result;
+        return $this->owner->run(fn (): Route => $this->publishOwned($route->id, $publication));
     }
 
     /**

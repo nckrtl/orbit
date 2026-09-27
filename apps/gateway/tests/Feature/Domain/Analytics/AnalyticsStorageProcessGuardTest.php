@@ -111,7 +111,7 @@ describe(AnalyticsStorageProcessGuard::class, function (): void {
         ],
     ]);
 
-    it('enforces wireguard bind only for the required storage ports', function (string $engine, string $port, ?string $bindAddress): void {
+    it('enforces wireguard bind for every published storage port', function (string $engine, string $port, ?string $bindAddress): void {
         $storage = analytics_storage_processes();
         $process = $storage[$engine];
         $process->update(['runtime_config' => [
@@ -132,7 +132,24 @@ describe(AnalyticsStorageProcessGuard::class, function (): void {
         'PostgreSQL another address' => ['postgres', '5432', '192.0.2.10'],
     ]);
 
-    it('accepts wireguard bind only for both storage ports', function (): void {
+    it('rejects an extra storage port published on a wildcard address', function (): void {
+        $storage = analytics_storage_processes();
+        $postgres = $storage['postgres'];
+        $postgres->update(['runtime_config' => [
+            ...$postgres->runtime_config,
+            'ports' => [...$postgres->runtime_config['ports'], '0.0.0.0:9000:9000/tcp'],
+        ]]);
+
+        expect(fn () => new AnalyticsStorageProcessGuard()->assert($postgres->id, $storage['clickhouse']->id))
+            ->toThrow(
+                fn (ResourceOperationException $exception) => expect($exception->errorCode)
+                    ->toBe('analytics.storage_port_not_wireguard_bound')
+                    ->and($exception->status)
+                    ->toBe(422),
+            );
+    });
+
+    it('accepts wireguard bind for both storage ports', function (): void {
         $storage = analytics_storage_processes();
 
         expect(new AnalyticsStorageProcessGuard()->assert($storage['postgres']->id, $storage['clickhouse']->id))

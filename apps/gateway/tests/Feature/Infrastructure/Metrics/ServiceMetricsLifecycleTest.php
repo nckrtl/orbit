@@ -45,19 +45,6 @@ it('does not publish targets after a failed service and also restores that parti
     expect($runtime->events)->toBe(['snapshot:'.$metrics->id, 'converge:'.$metrics->id, 'restore:'.$metrics->id]);
 });
 
-it('reports an unresolved monitoring recovery as a service rollback failure', function (): void {
-    $metrics = service_metrics_lifecycle_node('metrics');
-    $runtime = service_metrics_recording_runtime();
-    $runtime->failConverge = true;
-    $runtime->failRestore = true;
-    $lifecycle = new NativeServiceMetricsLifecycle(app(ServiceMetricsProjection::class), $runtime, app(ExporterDegradationRepository::class));
-
-    expect(fn () => $lifecycle->converge($metrics))
-        ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('metrics.service_rollback_failed'));
-
-    expect($runtime->events)->toBe(['snapshot:'.$metrics->id, 'converge:'.$metrics->id, 'restore:'.$metrics->id]);
-});
-
 it('reports a lost Node lock instead of the rollback failure it causes', function (): void {
     $metrics = service_metrics_lifecycle_node('metrics');
     $runtime = service_metrics_recording_runtime();

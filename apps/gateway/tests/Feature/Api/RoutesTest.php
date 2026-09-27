@@ -100,9 +100,9 @@ it('refuses to attach a package Instance with repository root . to an existing R
     $this->assertDatabaseCount('route_targets', 0);
 });
 
-it('reconciles service metrics when a public Route is created, targeted, cleared, and published', function (): void {
+it('reconciles service metrics when a public Route is created, targeted, and cleared', function (): void {
     $metrics = Mockery::mock(MetricsFleetReconciler::class);
-    $metrics->shouldReceive('reconcile')->times(5);
+    $metrics->shouldReceive('reconcile')->times(3);
     app()->instance(MetricsFleetReconciler::class, $metrics);
 
     $route = $this->postJson('/api/v1/routes', [

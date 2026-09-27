@@ -46,8 +46,8 @@ final readonly class AnalyticsStorageProcessGuard
             'a ClickHouse Process',
         );
 
-        $this->assertWireguardPort($postgres, 5432);
-        $this->assertWireguardPort($clickhouse, 8123);
+        $this->assertWireguardPorts($postgres);
+        $this->assertWireguardPorts($clickhouse);
 
         return ['postgres' => $postgres, 'clickhouse' => $clickhouse];
     }
@@ -102,19 +102,18 @@ final readonly class AnalyticsStorageProcessGuard
         }
     }
 
-    private function assertWireguardPort(Process $process, int $containerPort): void
+    private function assertWireguardPorts(Process $process): void
     {
         $ports = $process->runtime_config['ports'] ?? [];
+        $process->loadMissing('owner');
+        $node = $process->owner;
 
         foreach (is_array($ports) ? $ports : [] as $spec) {
             $mapping = is_string($spec) ? DockerPublishedPort::parse($spec) : null;
 
-            if (! $mapping instanceof DockerPublishedPort || $mapping->containerPort !== $containerPort) {
+            if (! $mapping instanceof DockerPublishedPort) {
                 continue;
             }
-
-            $process->loadMissing('owner');
-            $node = $process->owner;
 
             if ($node instanceof Node && is_string($node->wireguard_ip) && $mapping->bindAddress === $node->wireguard_ip) {
                 continue;
@@ -122,7 +121,7 @@ final readonly class AnalyticsStorageProcessGuard
 
             throw new ResourceOperationException(
                 errorCode: 'analytics.storage_port_not_wireguard_bound',
-                message: "Process [{$process->name}] must bind port {$containerPort} to its Node's WireGuard address.",
+                message: "Process [{$process->name}] must bind every published port, including port {$mapping->containerPort}, to its Node's WireGuard address.",
                 status: 422,
             );
         }

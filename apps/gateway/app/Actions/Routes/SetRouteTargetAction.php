@@ -58,13 +58,13 @@ final readonly class SetRouteTargetAction
             fn (): Route => $this->executeOwned($route, $appInstanceId, $expectedTargetIds),
         );
 
-        $this->metrics?->reconcile();
-
         ($this->broadcaster ?? app(RecordEventBroadcaster::class))->broadcast(
             RecordEventType::RouteUpdated,
             $result->id,
             RouteData::fromModel($result)->toArray(),
         );
+
+        $this->metrics?->reconcile();
 
         return $result;
     }

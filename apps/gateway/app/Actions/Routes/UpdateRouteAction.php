@@ -112,7 +112,7 @@ final readonly class UpdateRouteAction
             && $requestedPublication instanceof RoutePublication
             && in_array($route->status, [RouteStatus::Active, RouteStatus::Activating], true)
         ) {
-            return $this->publishPublic->execute($route, $requestedPublication, reconcileMetrics: false);
+            return $this->publishPublic->execute($route, $requestedPublication);
         }
 
         if ($route->status === RouteStatus::Pending && $domain !== null && $domain !== $route->domain) {
