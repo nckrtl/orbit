@@ -7,6 +7,7 @@ namespace App\Domain\Tasks;
 use App\Models\AgentThread;
 use App\Models\AppInstance;
 use App\Models\Task;
+use App\Models\TaskComment;
 use App\Models\TaskGroup;
 use Illuminate\Support\Facades\Log;
 
@@ -131,7 +132,27 @@ final readonly class TaskAgentSpawner implements AgentSpawner, TaskPlannerSpawne
             return null;
         }
 
-        return $this->spawn($group, $task->id, TaskThreadRole::Reviewer, 'Orbit task #'.$group->id.' · Review: '.$task->title, $this->reviewPacket($task, false));
+        $threadId = $this->spawn($group, $task->id, TaskThreadRole::Reviewer, 'Orbit task #'.$group->id.' · Review: '.$task->title, $this->reviewPacket($task, false));
+        if ($threadId !== null) {
+            $this->markHeldResolutionDelivered($task);
+        }
+
+        return $threadId;
+    }
+
+    /** The opening packet carried this attempt's held resolution, so record that delivery. */
+    private function markHeldResolutionDelivered(Task $task): void
+    {
+        $commentId = TaskComment::query()
+            ->where('task_id', $task->id)
+            ->where('type', TaskCommentType::Resolution->value)
+            ->where('review_attempt', $task->review_attempt)
+            ->latest('id')
+            ->value('id');
+        if (! is_numeric($commentId)) {
+            return;
+        }
+        Task::query()->whereKey($task->id)->update(['resolution_delivered_comment_id' => (int) $commentId]);
     }
 
     private function reviewPacket(Task $task, bool $continued): string

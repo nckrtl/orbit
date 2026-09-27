@@ -37,13 +37,13 @@ The planner's untracked `.mcp.json` points at `{gateway origin}/mcp`. That endpo
 
 ## Decision
 
-Each subtask review uses a fresh reviewer thread. The thread uses the group's reviewer driver, model, and effort. It does not use the planner thread or an earlier subtask's reviewer. A `changes_requested` re-review of the same subtask continues that subtask's reviewer thread. A `blocked` resolution continues it too. The next subtask starts a fresh thread.
+Each subtask review uses a fresh reviewer thread. The thread uses the group's reviewer driver, model, and effort. It does not use the planner thread or an earlier subtask's reviewer. A `changes_requested` re-review of the same subtask continues that subtask's reviewer thread. A `blocked` resolution continues that thread when it exists. When it does not, the resolution is not sent to the planner or an earlier subtask's reviewer. The Gateway clears assistance without marking the review requested, and the next tick starts the fresh reviewer with that resolution in the opening packet. The next subtask starts a fresh thread.
 
 ### Fresh reviewer thread
 
 The thread title is `Orbit task #{group id} · Review: {subtask title}`. Its role is `reviewer`. Its `task_id` is that subtask. `reviewer_agent_thread_id` on the group points at this thread once the review has started.
 
-On a planning group, before the first review, `reviewer_agent_thread_id` points at the planner thread. That is how the group remembers the planner. The planner keeps `task_id` null and the title `Orbit task #{group id} · Planner: {title}`. The first review replaces `reviewer_agent_thread_id` with the new reviewer thread. The planner row stays in `agent_threads`. The scheduler sends a review only to the thread it started for that subtask, or continues that thread. It never sends a review to the planner.
+On a planning group, before the first review, `reviewer_agent_thread_id` points at the planner thread. That is how the group remembers the planner. The planner keeps `task_id` null and the title `Orbit task #{group id} · Planner: {title}`. The first review replaces `reviewer_agent_thread_id` with the new reviewer thread. The planner row stays in `agent_threads`. The scheduler sends a review only to the thread it started for that subtask, or continues that thread. It never sends a review to the planner. A resolution during review follows the same rule. When the subtask has no reviewer thread yet, the resolution waits in that fresh thread's opening packet.
 
 The opening turn of a fresh thread is the review packet. Creation stores the Orbit thread id only after that turn has started, as it does for every thread. A spawn that returns no thread id is a communication failure, and the next tick tries again. When a continued thread cannot take a turn, Orbit starts a fresh thread and sends a full packet.
 
@@ -84,7 +84,7 @@ Orbit does not send a review when it cannot read the diff. That attempt is a com
 
 The opening packet names the feature contract: the ADRs and documentation this branch changes against the Project default branch. A continued turn does not repeat that sentence.
 
-A continued turn does not repeat the group brief, the deliverables, or the earlier approved lines. The thread already has them. Those caps are spare for the diff body. The turn carries the new diff stat, the capped diff, both retrieval commands, the new handoff result, and the check rule below. When that thread cannot take a turn, Orbit starts a fresh thread and sends a full packet.
+A continued turn does not repeat the group brief, the deliverables, the earlier approved lines, or a resolution carried on the opening packet. The thread already has them. Those caps are spare for the diff body. The turn carries the new diff stat, the capped diff, both retrieval commands, the new handoff result, and the check rule below. When that thread cannot take a turn, Orbit starts a fresh thread and sends a full packet.
 
 ### Checks the reviewer does not repeat
 
@@ -116,7 +116,8 @@ Orbit writes the file before the planner starts, and before a reviewer starts wh
 - The planner and the reviewer search the catalogue before an unfamiliar Orbit action. The full catalogue at `/mcp` stays for other clients.
 - A tracked `.mcp.json` stays unchanged. Those agents reach `/mcp/search` only when that file or the Node provides it.
 - The group token total adds every thread whose role is reviewer, including the planner and each subtask reviewer.
-- The acting reviewer is the subtask's reviewer thread. The planner does not defer a subtask.
+- The acting reviewer is the subtask's reviewer thread. The planner does not defer a subtask. A review resolution is not sent to the planner or to an earlier subtask's reviewer.
+- When a reviewing subtask has no reviewer thread, a resolution clears assistance without marking the review requested. The next tick starts the fresh reviewer, and the opening packet includes the resolution.
 - Every packet part has a character cap, so a long diff stat, deliverable list, or command list is cut instead of pushing the packet past 16,000 characters. The packet names `tasks-show`, `tasks-comment-list`, `.git/orbit/check.log`, or the retrieval command that holds the rest.
 - A message tail from the base run that does not fit the handoff cap stays in `.git/orbit/check.log`. The packet still carries that command, cut to 160 characters, its exit code, and its failure kind.
 
@@ -125,4 +126,4 @@ Orbit writes the file before the planner starts, and before a reviewer starts wh
 - Components: apps/gateway, apps/cli, apps/web, apps/docs
 - ADRs: amends [ADR 0103](/decisions/0103-absorb-commander-tasks-as-a-gateway-extension), [ADR 0112](/decisions/0112-isolate-agent-threads-behind-drivers), [ADR 0121](/decisions/0121-end-agent-turns-with-a-run-receipt), [ADR 0124](/decisions/0124-plan-backlog-groups-with-a-t3-planner), [ADR 0132](/decisions/0132-pause-only-for-the-acting-thread-and-a-real-question), [ADR 0163](/decisions/0163-prove-a-failing-test-on-the-start-commit), and [ADR 0164](/decisions/0164-heal-a-settling-pull-request-with-a-fixup-subtask); uses [ADR 0086](/decisions/0086-offer-the-api-as-mcp-tools), [ADR 0125](/decisions/0125-run-the-project-check-when-the-implementer-hands-off), and [ADR 0133](/decisions/0133-verify-typed-subtask-deliverables-at-handoff)
 - Detail: [Tasks](/reference/tasks#review-a-subtask), [MCP server](/reference/mcp), [tasks:agents](/cli/tasks#orbit-tasksagents), [Task events](/reference/events#tasks)
-- Verify: `composer docs-lint`; Gateway tests that a subtask review starts a new reviewer thread and does not reuse the planner or an earlier subtask's reviewer, that a `changes_requested` re-review continues that subtask's thread, that the packet stays within 16,000 characters and the diff body within 16,384 bytes even when the diff stat, the deliverables, or the command list pass their caps, that the packet names `tasks-show`, `.git/orbit/check.log`, and a diff command that prints untracked file content without updating the index, that the reviewer prompt forbids re-running the passed task check and deliverable commands, that `.mcp.json` points at `/mcp/search`, and that a planning group's review is not sent to the planner thread
+- Verify: `composer docs-lint`; Gateway tests that a subtask review starts a new reviewer thread and does not reuse the planner or an earlier subtask's reviewer, that a `changes_requested` re-review continues that subtask's thread, that the packet stays within 16,000 characters and the diff body within 16,384 bytes even when the diff stat, the deliverables, or the command list pass their caps, that the packet names `tasks-show`, `.git/orbit/check.log`, and a diff command that prints untracked file content without updating the index, that the reviewer prompt forbids re-running the passed task check and deliverable commands, that `.mcp.json` points at `/mcp/search`, and that a planning group's review is not sent to the planner thread, and that a review resolution for a subtask with no reviewer thread is not sent to an earlier thread and is included in the fresh reviewer's opening packet

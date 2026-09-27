@@ -20,6 +20,8 @@ final readonly class TaskReviewPacket
 
     public const int BriefLimit = 2_000;
 
+    public const int ResolutionLimit = 2_000;
+
     public const int DeliverablesLimit = 2_000;
 
     public const int DeliverableLineLimit = 240;
@@ -65,12 +67,18 @@ final readonly class TaskReviewPacket
         private bool $diffFilesComplete = true,
         private bool $diffAvailable = true,
         private ?array $diffCounts = null,
+        private string $resolution = '',
     ) {}
 
     public function render(): string
     {
         $before = array_values(array_filter([
             $this->preamble(),
+            $this->resolution === '' ? '' : $this->section('Resolution', $this->cutEnd(
+                $this->resolution,
+                self::ResolutionLimit,
+                'The end is cut. tasks-comment-list returns the comment.',
+            )),
             $this->continued ? '' : $this->section('Group brief', $this->cutEnd(
                 $this->groupBrief,
                 self::BriefLimit,

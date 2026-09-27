@@ -466,7 +466,9 @@ When one Pi event becomes several entries, only the last carries the cursor, so 
 
 ## Review a subtask
 
-Each subtask review starts a fresh reviewer thread on the group's reviewer driver, model, and effort. The thread title is `Orbit task #{group id} · Review: {subtask title}`. Its role is `reviewer`, and its `task_id` is that subtask. The group's `reviewer_agent_thread_id` then points at this thread. A `changes_requested` re-review of the same subtask continues this thread. A `blocked` resolution continues it too. The next subtask starts another thread. [ADR 0169](/decisions/0169-start-each-subtask-review-in-a-fresh-thread) records the decision.
+Each subtask review starts a fresh reviewer thread on the group's reviewer driver, model, and effort. The thread title is `Orbit task #{group id} · Review: {subtask title}`. Its role is `reviewer`, and its `task_id` is that subtask. The group's `reviewer_agent_thread_id` then points at this thread. A `changes_requested` re-review of the same subtask continues this thread. A `blocked` resolution continues it too, when that thread exists. The next subtask starts another thread. [ADR 0169](/decisions/0169-start-each-subtask-review-in-a-fresh-thread) records the decision.
+
+When that reviewer thread does not exist yet, the resolution is not sent to the planner or to an earlier subtask's reviewer. Assistance clears, the review stays unrequested, and the next tick starts the fresh reviewer with the resolution in its opening packet.
 
 The planner thread is not a reviewer. A planning group keeps it for planning. Its `task_id` stays null, and its title stays `Orbit task #{group id} · Planner: {title}`. Before the first review, `reviewer_agent_thread_id` points at that planner thread, which is how the group remembers it. The first review replaces the pointer with the new reviewer. The scheduler sends a review only to the thread it started for that subtask, or continues that thread. It never sends a review to the planner.
 
@@ -474,6 +476,7 @@ The opening turn is a review packet of at most 16,000 characters, about 4 thousa
 
 | Part | Cap | When it does not fit |
 | --- | --- | --- |
+| Resolution | 2,000 | The end is cut. `tasks-comment-list` returns the comment |
 | Group brief | 2,000 | The end is cut. `tasks-show` returns the brief |
 | Subtask brief | 2,000 | The end is cut. `tasks-show` returns the brief |
 | Deliverables | 2,000 | One line each, at most 240 characters. The description is cut to 160. `tasks-show` returns every field |
@@ -496,7 +499,7 @@ git diff --stat START; git ls-files --others --exclude-standard -z | while IFS= 
 git diff START; git ls-files --others --exclude-standard -z | while IFS= read -r -d '' path; do git diff --no-index -- /dev/null "$path" || true; done
 ```
 
-A continued re-review does not repeat the group brief, the deliverables, or the earlier approval lines. That turn carries the new diff stat, the capped diff, both retrieval commands, and the new handoff result. The spared caps go to the diff body. When that thread cannot take a turn, Orbit starts a fresh thread and sends the full packet.
+A continued re-review does not repeat the group brief, the deliverables, the earlier approval lines, or a resolution carried on the opening packet. That turn carries the new diff stat, the capped diff, both retrieval commands, and the new handoff result. The spared caps go to the diff body. When that thread cannot take a turn, Orbit starts a fresh thread and sends the full packet.
 
 The reviewer does not re-run the Project task check or the deliverable tests and commands the handoff already passed. That includes `composer check` when it is the task check. The reviewer runs another command only to get evidence the handoff result does not give, and the review summary says why.
 
@@ -522,7 +525,9 @@ When the Project's task check runs the `composer check` command, not a longer co
 
 A pending input fails `waiting_for_input` in code. A thread state the rubric does not recognize waits. The rubric makes no model call. When every item, the Project check, and the [deliverables](#verify-deliverables) pass, the Gateway sets the task to `reviewing`. [ADR 0114](/decisions/0114-judge-task-completion-as-separate-checks) owns this rubric.
 
-`assistance_requested` and `resolution` comments update the assistance flag and keep their history. Status stays the current phase for those two comments. The Gateway sends a non-empty resolution to the blocked thread: that subtask's reviewer when the task is `reviewing`, otherwise the task's implementer. For the reviewer, the resolution counts as its next review request, so the tick does not send another.
+`assistance_requested` and `resolution` comments update the assistance flag and keep their history. Status stays the current phase for those two comments. The Gateway sends a non-empty resolution to the blocked thread: the reviewer thread whose `task_id` is this subtask when the task is `reviewing`, otherwise the task's implementer. When that reviewer thread exists, the resolution counts as its next review request, so the tick does not send another.
+
+When that reviewer thread does not exist, the Gateway does not use the group's reviewer pointer. It clears assistance without marking the review as requested, and the next tick starts a fresh reviewer whose opening packet includes the resolution.
 
 The Gateway sends one reminder that names every failed code item. It starts and ends with fixed sentences:
 
@@ -581,7 +586,11 @@ A failed receipt read, script install, send, commit, or push counts as a communi
 
 Typed comments are the workflow record. They preserve the full body, author, timestamp, task and thread context, and reviewer attempt metadata. A stored receipt uses its outcome as the type and the role as the author. The final approval's comment also carries `pull_request`: the summary, changes, and breaking changes it proposed for the pull request. An approval that Orbit committed carries `commit_sha`. Other comments return `null` for both.
 
-Only `assistance_requested` and `resolution` comments come through the API. They do not create a separate validation-evidence record or API. `assistance_requested` flags the task and group, retains the active slot, and is notified once. A non-empty `resolution` is sent only when that subtask is already asking for assistance. The Gateway then clears the flag, resets the completion and communication attempts, and continues the blocked thread. A failed send leaves the task asking. A resolution posted before the flag is set is stored and not sent.
+Only `assistance_requested` and `resolution` comments come through the API. They do not create a separate validation-evidence record or API. `assistance_requested` flags the task and group, retains the active slot, and is notified once. A non-empty `resolution` is sent only when that subtask is already asking for assistance. The Gateway then clears the flag and the communication failures.
+
+While the subtask is `running`, the resolution continues the implementer and starts the next completion attempt. While it is `reviewing`, the resolution continues the reviewer thread whose `task_id` is this subtask, and that message counts as the next review request. When no such reviewer thread exists, the Gateway does not send the resolution to the group's reviewer pointer. That pointer may still name the planner or an earlier subtask's reviewer.
+
+In that case, assistance clears and the review stays unrequested. The next tick starts a fresh reviewer whose opening packet includes the resolution. A failed send to an existing thread leaves the task asking. A resolution posted before the flag is set is stored and not sent.
 
 Each observation includes normalized activity state, availability, errors, pending request IDs, and recent assistant and user text. It also reports new workspace commits, the pull request URL, and any available CI summary. The driver resolves pending requests from its runtime data. Missing or unavailable current conversations skip classification. The scheduler waits `ORBIT_TASKS_OBSERVATION_GRACE_SECONDS` (default `120`), then escalates once per continuous outage. Recovery resets the grace period and alert marker.
 
@@ -785,7 +794,7 @@ The JSON body contains `event` (`task_group.settled`), `task_group_id`, `title`,
 
 An `escalate_coder` Choice posts the same HMAC headers with `event` `task_group.escalated`. That body adds `reason`, `confidence`, `thread_id`, and the structured observation. The scheduler does not post Coder webhooks for drains, continues, relays, or noops.
 
-An `assistance_requested` comment or unresolved workflow omission posts `event` `task_group.assistance_requested` with the task-group id, title, and reason. The task and group remain flagged until a non-empty resolution is delivered.
+An `assistance_requested` comment or unresolved workflow omission posts `event` `task_group.assistance_requested` with the task-group id, title, and reason. The task and group remain flagged until the Gateway accepts a non-empty resolution.
 
 ## Complete and cleanup
 

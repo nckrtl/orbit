@@ -52,7 +52,21 @@ final readonly class TaskReviewPacketBuilder
             diffFilesComplete: $filesComplete,
             diffAvailable: $diffAvailable,
             diffCounts: $diff['summary'],
+            resolution: $continued ? '' : $this->pendingResolution($task),
         )->render();
+    }
+
+    /** A resolution held for this attempt because the subtask had no reviewer thread yet. */
+    private function pendingResolution(Task $task): string
+    {
+        $body = TaskComment::query()
+            ->where('task_id', $task->id)
+            ->where('type', TaskCommentType::Resolution->value)
+            ->where('review_attempt', $task->review_attempt)
+            ->latest('id')
+            ->value('body');
+
+        return is_string($body) ? trim($body) : '';
     }
 
     /** @return list<array{title: string, summary: string}> */
