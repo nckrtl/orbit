@@ -61,15 +61,33 @@ final class FilePrivateDnsCatalogStore
             return false;
         }
 
-        /** @var array<string, int> $requesters */
         $requesters = [];
-        foreach ($published['requesters'] ?? [] as $address => $nodeId) {
-            if (is_int($nodeId) || (is_string($nodeId) && ctype_digit($nodeId))) {
-                $requesters[(string) $address] = (int) $nodeId;
+        $publishedRequesters = $published['requesters'] ?? null;
+        if (is_array($publishedRequesters)) {
+            foreach ($publishedRequesters as $address => $nodeId) {
+                $normalizedNodeId = $this->requesterNodeId($nodeId);
+
+                if ($normalizedNodeId !== null) {
+                    $requesters[(string) $address] = $normalizedNodeId;
+                }
             }
         }
 
-        $this->catalog = PrivateDnsAnswerCatalog::fromPublished($published);
+        $overrides = [];
+        $publishedOverrides = $published['overrides'] ?? null;
+        if (is_array($publishedOverrides)) {
+            foreach ($publishedOverrides as $cacheKey => $records) {
+                if (is_string($cacheKey) && is_array($records)) {
+                    $overrides[$cacheKey] = $this->stringMap($records);
+                }
+            }
+        }
+
+        $this->catalog = PrivateDnsAnswerCatalog::fromPublished([
+            'records' => $this->stringMap($published['records'] ?? null),
+            'suffixes' => $this->stringMap($published['suffixes'] ?? null),
+            'overrides' => $overrides,
+        ]);
         $this->requesters = WireGuardDnsRequesterResolver::fromPublished($requesters);
         $this->signature = $signature;
         $this->cache?->flush();
@@ -99,6 +117,39 @@ final class FilePrivateDnsCatalogStore
         if (@file_put_contents($candidate, $signature.PHP_EOL) === false || ! @rename($candidate, $this->loadedPath)) {
             @unlink($candidate);
         }
+    }
+
+    private function requesterNodeId(mixed $value): ?int
+    {
+        if (is_int($value)) {
+            return $value;
+        }
+
+        if (! is_string($value) || ! ctype_digit($value)) {
+            return null;
+        }
+
+        $normalized = ltrim($value, '0');
+        $parsed = filter_var($normalized === '' ? '0' : $normalized, FILTER_VALIDATE_INT);
+
+        return is_int($parsed) ? $parsed : null;
+    }
+
+    /** @return array<string, string> */
+    private function stringMap(mixed $value): array
+    {
+        if (! is_array($value)) {
+            return [];
+        }
+
+        $map = [];
+        foreach ($value as $key => $item) {
+            if (is_string($key) && is_string($item)) {
+                $map[$key] = $item;
+            }
+        }
+
+        return $map;
     }
 
     public function catalog(): PrivateDnsAnswerCatalog

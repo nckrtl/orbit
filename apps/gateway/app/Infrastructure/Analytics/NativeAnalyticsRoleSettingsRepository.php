@@ -10,6 +10,7 @@ use App\Domain\Settings\SettingRepository;
 use App\Domain\Settings\SettingScope;
 use App\Domain\Settings\SettingScopeType;
 use App\Domain\Settings\SettingValueProtection;
+use App\Infrastructure\Shared\StoredValue;
 use App\Models\Node;
 
 final readonly class NativeAnalyticsRoleSettingsRepository implements AnalyticsRoleSettingsRepository
@@ -58,7 +59,7 @@ final readonly class NativeAnalyticsRoleSettingsRepository implements AnalyticsR
     public function version(Node $node): string
     {
         return $this->settings->get($this->scope($node), self::VersionKey)
-            ?? (string) config('orbit.analytics.plausible_version');
+            ?? StoredValue::string(config('orbit.analytics.plausible_version'));
     }
 
     public function storeVersion(Node $node, string $version): void

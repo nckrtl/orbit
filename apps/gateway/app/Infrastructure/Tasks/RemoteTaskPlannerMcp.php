@@ -7,6 +7,7 @@ namespace App\Infrastructure\Tasks;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Tasks\TaskPlannerMcp;
 use App\Infrastructure\AppDev\AppDevSshExecutor;
+use App\Infrastructure\Shared\StoredValue;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\AppInstance;
 use Illuminate\Support\Facades\Log;
@@ -28,7 +29,7 @@ final readonly class RemoteTaskPlannerMcp implements TaskPlannerMcp
         }
 
         $config = json_encode(
-            ['mcpServers' => ['orbit' => ['type' => 'http', 'url' => rtrim((string) config('app.url'), '/').'/mcp']]],
+            ['mcpServers' => ['orbit' => ['type' => 'http', 'url' => rtrim(StoredValue::string(config('app.url')), '/').'/mcp']]],
             JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT,
         );
 

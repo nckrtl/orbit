@@ -115,7 +115,9 @@ final readonly class PrometheusProcessRuntimeStatusIndex implements ProcessRunti
         }
 
         try {
-            $series = $this->prometheus->query(self::RUNTIME_QUERY)['data']['result'] ?? null;
+            $response = $this->prometheus->query(self::RUNTIME_QUERY);
+            $data = $response['data'] ?? null;
+            $series = is_array($data) ? ($data['result'] ?? null) : null;
         } catch (Throwable) {
             return null;
         }

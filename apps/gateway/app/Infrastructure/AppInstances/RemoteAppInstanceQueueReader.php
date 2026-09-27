@@ -32,7 +32,9 @@ final readonly class RemoteAppInstanceQueueReader implements AppInstanceQueueRea
     {
         $target = $this->targets->forInspection($horizon);
         $directory = StoragePath::tryParse($horizon->working_directory ?? $target->defaultWorkingDirectory);
-        $php = StoragePath::tryParse((string) ($horizon->runtime_config['command'][0] ?? ''));
+        $command = $horizon->runtime_config['command'] ?? null;
+        $phpBinary = is_array($command) && is_string($command[0] ?? null) ? $command[0] : '';
+        $php = StoragePath::tryParse($phpBinary);
 
         if ($directory === null || $php === null) {
             throw $this->failed($horizon);

@@ -9,6 +9,7 @@ use App\Domain\Nodes\NodeProvisioningException;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\Processes\ProtectedInput;
+use App\Infrastructure\Shared\StoredValue;
 use RuntimeException;
 use Throwable;
 
@@ -36,7 +37,7 @@ final readonly class NativeAgentViewConverger implements AgentViewConverger
         $unit = $this->units->render(
             $this->phpBinary,
             $this->artisan !== '' ? $this->artisan : base_path('artisan'),
-            $this->orbitHome !== '' ? $this->orbitHome : (string) config('orbit.home'),
+            $this->orbitHome !== '' ? $this->orbitHome : StoredValue::string(config('orbit.home')),
             $this->workingDirectory !== '' ? $this->workingDirectory : base_path(),
             $this->user !== '' ? $this->user : 'orbit',
         );

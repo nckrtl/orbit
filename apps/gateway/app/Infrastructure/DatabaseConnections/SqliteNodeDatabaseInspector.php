@@ -51,13 +51,15 @@ final readonly class SqliteNodeDatabaseInspector
         $rows = [];
         $truncated = $decoded['truncated'] === true;
 
-        foreach ($decoded['columns'] ?? [] as $column) {
+        $decodedColumns = $decoded['columns'] ?? null;
+        foreach (is_array($decodedColumns) ? $decodedColumns : [] as $column) {
             if (is_string($column)) {
                 $columns[] = $column;
             }
         }
 
-        foreach ($decoded['rows'] ?? [] as $row) {
+        $decodedRows = $decoded['rows'] ?? null;
+        foreach (is_array($decodedRows) ? $decodedRows : [] as $row) {
             if (! is_array($row)) {
                 continue;
             }
