@@ -489,7 +489,11 @@ The handoff lines name the Project task check, each deliverable `test` and `comm
 
 The diff stat's summary line is the file count and the insertion and deletion counts, including untracked files. Dropped deliverable lines, dropped approval lines, and dropped handoff lines each leave one line that names how many were omitted. Orbit does not send a review when it cannot read the diff. That attempt is a communication failure, and the next tick tries again. It does not describe that failure as zero files changed. When the captured stat output is cut, the summary counts stay complete, the path list is left out, and the packet says the stat command prints the rest.
 
+Any other failure while requesting that review is also a communication failure for that subtask. The tick still reviews the other groups. The diff and the stat in the packet are valid UTF-8. Orbit replaces bytes that are not before it keeps the text or cuts it.
+
 The stat command prints the tracked stat and a stat for each untracked file. The diff command prints tracked changes and the content of each untracked file. Neither command updates the index. `git diff START` prints no untracked file, so the loop prints that content. `git status` is not used, because it prints paths only. Replace `START` with the subtask's start commit. `git diff --no-index` exits 1 when a file differs from empty, and `|| true` keeps the loop going.
+
+Orbit records that commit when the subtask starts. When the read fails, Orbit does not store an empty commit. While the subtask is running, the next tick tries the read again. When the review has no start commit, the diff base is the previous subtask's approved commit. The first subtask uses the workspace starting commit, recorded when Orbit created the group workspace.
 
 ```bash
 git diff --stat START; git ls-files --others --exclude-standard -z | while IFS= read -r -d '' path; do git diff --no-index --stat -- /dev/null "$path" || true; done

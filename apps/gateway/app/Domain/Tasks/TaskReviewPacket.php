@@ -236,7 +236,7 @@ final readonly class TaskReviewPacket
         if (mb_strlen($summary) > self::DiffStatLimit) {
             return mb_substr($summary, 0, self::DiffStatLimit);
         }
-        $paths = array_map(static fn (array $file): string => $file['path'], $this->diffFiles);
+        $paths = array_map(fn (array $file): string => $this->utf8($file['path']), $this->diffFiles);
         if ($paths === []) {
             return $summary;
         }
@@ -477,17 +477,25 @@ final readonly class TaskReviewPacket
         if (! $this->diffAvailable) {
             return $heading.'The diff could not be read. The diff command prints it.';
         }
+        // git diff emits file bytes unchanged. Scrub before both the whole diff and the cut prefix.
+        $diff = $this->utf8($this->diff);
         $note = "\nThe end of the diff is cut. The diff command prints the rest, including the content of untracked files.";
         $used = mb_strlen(implode("\n\n", [...$before, ...$after])) + mb_strlen("\n\n");
         $remaining = max(0, self::Limit - $used - mb_strlen($heading));
-        if ($this->fits($this->diff, $remaining)) {
-            return $heading.$this->diff;
+        if ($this->fits($diff, $remaining)) {
+            return $heading.$diff;
         }
         if ($remaining >= mb_strlen($note)) {
-            return $heading.$this->prefixWithin($this->diff, $remaining - mb_strlen($note), self::DiffBytes).$note;
+            return $heading.$this->prefixWithin($diff, $remaining - mb_strlen($note), self::DiffBytes).$note;
         }
 
-        return $heading.$this->prefixWithin($this->diff, $remaining, self::DiffBytes);
+        return $heading.$this->prefixWithin($diff, $remaining, self::DiffBytes);
+    }
+
+    /** Replaces bytes that are not valid UTF-8 so the packet can be JSON-encoded. */
+    private function utf8(string $text): string
+    {
+        return mb_scrub($text, 'UTF-8');
     }
 
     private function fits(string $text, int $characters): bool

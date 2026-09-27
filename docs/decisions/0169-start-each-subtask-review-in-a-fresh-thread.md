@@ -80,7 +80,9 @@ git diff --stat START; git ls-files --others --exclude-standard -z | while IFS= 
 
 `git status` is not a retrieval command. It prints paths, not the content that was cut.
 
-Orbit does not send a review when it cannot read the diff. That attempt is a communication failure, and the next tick tries again. It does not describe that failure as zero files changed. When the captured stat output is cut, the summary counts stay complete, the path list is omitted, and the packet says the stat command prints the rest. The retained tail of a cut capture is not shown as the whole diff.
+Orbit does not send a review when it cannot read the diff. That attempt is a communication failure, and the next tick tries again. Any other failure while requesting that review is also a communication failure for that subtask. The tick still reviews the other groups. It does not describe that failure as zero files changed. When the captured stat output is cut, the summary counts stay complete, the path list is omitted, and the packet says the stat command prints the rest. The retained tail of a cut capture is not shown as the whole diff. The diff and the stat replace bytes that are not valid UTF-8 before the caps are applied, both when the diff fits and when it is cut.
+
+Orbit records the subtask's start commit when the subtask starts. When that read fails, Orbit leaves the commit empty. While the subtask is running, the next tick tries the read again. When the review has no start commit, the packet uses the previous subtask's approved commit. The first subtask uses the workspace starting commit.
 
 The opening packet names the feature contract: the ADRs and documentation this branch changes against the Project default branch. A continued turn does not repeat that sentence.
 

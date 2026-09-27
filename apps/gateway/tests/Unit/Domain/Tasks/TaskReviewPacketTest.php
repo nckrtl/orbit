@@ -413,6 +413,37 @@ it('keeps the packet retrieval commands and closing instructions when earlier te
         ->and($packet)->toContain('git diff '.$start.'; git ls-files --others --exclude-standard -z | while IFS= read -r -d \'\' path; do git diff --no-index -- /dev/null "$path" || true; done');
 });
 
+it('turns invalid UTF-8 in a diff and its stat into a packet the driver can encode', function (): void {
+    $packet = review_packet([
+        'diff' => "diff --git a/caf\xE9.php b/caf\xE9.php\n+caf\xE9\n",
+        'diffFiles' => [
+            ['path' => "caf\xE9.php", 'insertions' => 1, 'deletions' => 0],
+        ],
+    ]);
+    $cut = review_packet([
+        'diff' => str_repeat("line \xFF\n", 20_000),
+        'diffFiles' => [
+            ['path' => "bad\xFF.txt", 'insertions' => 1, 'deletions' => 0],
+        ],
+    ]);
+    $note = 'The end of the diff is cut. The diff command prints the rest, including the content of untracked files.';
+    $cutDiff = packet_section($cut, 'Diff');
+
+    expect(fn () => json_encode($packet, JSON_THROW_ON_ERROR))->not->toThrow(JsonException::class)
+        ->and(fn () => json_encode($cut, JSON_THROW_ON_ERROR))->not->toThrow(JsonException::class)
+        ->and(mb_strlen($packet))->toBeLessThanOrEqual(TaskReviewPacket::Limit)
+        ->and(mb_strlen($cut))->toBeLessThanOrEqual(TaskReviewPacket::Limit)
+        ->and(mb_strlen(packet_section($packet, 'Diff stat')))->toBeLessThanOrEqual(TaskReviewPacket::DiffStatLimit)
+        ->and(mb_strlen(packet_section($cut, 'Diff stat')))->toBeLessThanOrEqual(TaskReviewPacket::DiffStatLimit)
+        ->and(strlen(packet_section($packet, 'Diff')))->toBeLessThanOrEqual(TaskReviewPacket::DiffBytes)
+        ->and($packet)->toContain('caf?.php')
+        ->and($packet)->not->toContain("\xE9")
+        ->and($cutDiff)->toEndWith($note)
+        ->and(strlen(substr($cutDiff, 0, -strlen("\n".$note))))->toBeLessThanOrEqual(TaskReviewPacket::DiffBytes)
+        ->and($cut)->toContain('bad?.txt')
+        ->and($cut)->not->toContain("\xFF");
+});
+
 /**
  * @param  array<string, mixed>  $overrides
  */

@@ -841,6 +841,191 @@ it('retries a review when the diff cannot be read instead of sending an empty ch
         ->and($driver->calls)->toBe([]);
 });
 
+it('reviews a subtask with a missing start commit from the previous approved commit', function (): void {
+    $approved = str_repeat('e', 40);
+    $starting = str_repeat('f', 40);
+    [$task, $driver] = scheduler_missing_start_review($approved, $starting);
+
+    app(TaskScheduler::class)->settleImplementer($task);
+    $fresh = $task->fresh();
+    $opening = $driver->calls[0]['prompt'] ?? '';
+
+    expect($fresh?->review_notified_attempt)->toBe($fresh?->review_attempt)
+        ->and($fresh?->review_notified_attempt)->not->toBeNull()
+        ->and($fresh?->communication_failures)->toBe(0)
+        ->and($opening)->toContain('git diff '.$approved)
+        ->and($opening)->not->toContain('git diff '.$starting)
+        ->and($opening)->toContain('+reviewed');
+});
+
+it('reviews the first subtask with a missing start commit from the workspace starting commit', function (): void {
+    $starting = str_repeat('f', 40);
+    [$task, $driver] = scheduler_missing_start_review(null, $starting);
+
+    app(TaskScheduler::class)->settleImplementer($task);
+    $fresh = $task->fresh();
+    $opening = $driver->calls[0]['prompt'] ?? '';
+
+    expect($fresh?->review_notified_attempt)->toBe($fresh?->review_attempt)
+        ->and($fresh?->review_notified_attempt)->not->toBeNull()
+        ->and($fresh?->communication_failures)->toBe(0)
+        ->and($opening)->toContain('git diff '.$starting)
+        ->and($opening)->toContain('+reviewed');
+});
+
+it('records a missing start commit on a later tick', function (): void {
+    $app = scheduler_app('retry-start');
+    $instance = scheduler_instance($app, scheduler_node('retry-start-node', '10.44.0.71'), 'retry');
+    $group = TaskGroup::query()->create([
+        'app_id' => $app->id,
+        'title' => 'Retry start',
+        'brief' => 'The start read failed.',
+        'status' => TaskGroupStatus::Running,
+        'assistance_requested' => true,
+        'assistance_reason' => 'Waiting.',
+    ]);
+    $group->taskable()->associate($instance);
+    $group->save();
+    $task = Task::query()->create([
+        'task_group_id' => $group->id,
+        'position' => 1,
+        'title' => 'Work',
+        'brief' => 'Work.',
+        'status' => TaskStatus::Running,
+        'assistance_requested' => true,
+    ]);
+    $head = str_repeat('a', 40);
+    app()->instance(TaskWorkspaceStateReader::class, new class($head) implements TaskWorkspaceStateReader
+    {
+        public function __construct(private string $head) {}
+
+        public function headCommit(AppInstance $instance): ?string
+        {
+            return $this->head;
+        }
+
+        public function currentBranch(AppInstance $instance): ?string
+        {
+            return 'task-retry';
+        }
+
+        public function definesComposerCheckScript(AppInstance $instance): bool
+        {
+            return true;
+        }
+    });
+    app(TaskExtensionState::class)->enable();
+
+    app(TaskScheduler::class)->tick();
+
+    expect($task->fresh()?->subtask_start_commit)->toBe($head);
+});
+
+it('records a review-request failure and still reviews the other group', function (): void {
+    [, $first] = scheduler_review([], notified: false);
+    [, $second] = scheduler_review([], notified: false);
+    app()->instance(AgentSpawner::class, new class($first->id) implements AgentSpawner
+    {
+        public function __construct(private int $taskId) {}
+
+        public function spawnReviewer(Task $task): ?int
+        {
+            if ($task->id === $this->taskId) {
+                throw new RuntimeException('Malformed UTF-8 characters, possibly incorrectly encoded');
+            }
+
+            return test_agent_thread($task->taskGroup, 'spawned-reviewer-'.$task->id)->id;
+        }
+
+        public function spawnImplementer(Task $task): ?int
+        {
+            return null;
+        }
+
+        public function requestReview(Task $task): void {}
+    });
+
+    app(TaskScheduler::class)->tick();
+
+    expect($first->fresh()?->communication_failures)->toBe(1)
+        ->and($first->fresh()?->review_notified_attempt)->toBeNull()
+        ->and($second->fresh()?->review_notified_attempt)->toBe($second->review_attempt)
+        ->and($second->fresh()?->communication_failures)->toBe(0);
+});
+
+/**
+ * A running subtask with no recorded start commit, ready for its first review.
+ *
+ * @return array{Task, FakeAgentDriver}
+ */
+function scheduler_missing_start_review(?string $approvedCommit, string $startingCommit): array
+{
+    static $octet = 80;
+    $octet++;
+    $app = scheduler_app('missing-start-'.$octet);
+    $instance = scheduler_instance($app, scheduler_node($app->slug.'-node', '10.44.3.'.$octet), 'missing');
+    $instance->update(['starting_commit' => $startingCommit]);
+    $group = TaskGroup::query()->create([
+        'app_id' => $app->id,
+        'title' => 'Missing start',
+        'brief' => 'Review without a recorded start.',
+        'status' => TaskGroupStatus::Running,
+    ]);
+    $group->taskable()->associate($instance);
+    $group->save();
+    if ($approvedCommit !== null) {
+        $earlier = Task::query()->create([
+            'task_group_id' => $group->id,
+            'position' => 1,
+            'title' => 'Earlier',
+            'brief' => 'Already approved.',
+            'status' => TaskStatus::Completed,
+        ]);
+        TaskComment::query()->create([
+            'task_group_id' => $group->id,
+            'task_id' => $earlier->id,
+            'type' => TaskCommentType::Approved,
+            'body' => 'Approved.',
+            'author' => 'reviewer',
+            'commit_sha' => $approvedCommit,
+            'posted_at' => now(),
+        ]);
+    }
+    $task = Task::query()->create([
+        'task_group_id' => $group->id,
+        'position' => $approvedCommit === null ? 1 : 2,
+        'title' => 'Review',
+        'brief' => 'Review it.',
+        'status' => TaskStatus::Running,
+    ]);
+    $driver = new FakeAgentDriver('t3');
+    app()->instance(TaskReviewDiff::class, new class implements TaskReviewDiff
+    {
+        public function read(AppInstance $instance, string $startCommit): array
+        {
+            if (preg_match('/\A[0-9a-f]{7,64}\z/i', $startCommit) !== 1) {
+                throw new TaskReviewDiffException('The review diff could not be read.');
+            }
+
+            return [
+                'files' => [['path' => 'notes.txt', 'insertions' => 1, 'deletions' => 0]],
+                'diff' => "+reviewed\n",
+                'files_complete' => true,
+                'diff_available' => true,
+                'summary' => ['files' => 1, 'insertions' => 1, 'deletions' => 0],
+            ];
+        }
+    });
+    app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
+    app()->instance(AgentSpawner::class, new TaskAgentSpawner(
+        app(AgentDriverRegistry::class),
+        new TaskReviewPacketBuilder(app(TaskReviewDiff::class)),
+        app(TaskPlannerMcp::class),
+    ));
+
+    return [$task, $driver];
+}
+
 it('starts a fresh reviewer per subtask with the packet, and continues that thread on re-review', function (): void {
     $app = scheduler_app('fresh-reviewer');
     $app->update(['task_check' => 'composer check']);

@@ -163,6 +163,9 @@ final readonly class TaskScheduler
                 if (! $task instanceof Task || ! in_array($task->status, [TaskStatus::Running, TaskStatus::Reviewing], true)) {
                     continue;
                 }
+                if ($task->status === TaskStatus::Running) {
+                    $this->recordSubtaskStart($task);
+                }
                 if ($task->assistance_requested || $group->assistance_requested) {
                     if ($task->status === TaskStatus::Reviewing) {
                         $group = $group->fresh(['app', 'tasks', 'taskable']) ?? $group;
@@ -1891,7 +1894,7 @@ final readonly class TaskScheduler
                 $threadId = $continued instanceof AgentThread ? $continued->id : $existing->id;
             }
             $group->update(['reviewer_agent_thread_id' => $threadId]);
-        } catch (AgentDriverException|TaskRunReceiptException|TaskCheckException|TaskReviewDiffException $exception) {
+        } catch (Throwable $exception) {
             $this->recordCommunicationFailure($task, $group, $exception->getMessage());
 
             return;
@@ -2827,12 +2830,24 @@ final readonly class TaskScheduler
         $task->save();
     }
 
+    /**
+     * Records the workspace HEAD as this subtask's start. A failed read is left empty so a later
+     * tick can try again. A start that is already recorded is not replaced.
+     */
     private function recordSubtaskStart(Task $task): void
     {
-        $instance = $task->taskGroup()->with('taskable')->first()?->taskable;
-        if ($instance instanceof AppInstance) {
-            $task->update(['subtask_start_commit' => $this->workspace->headCommit($instance)]);
+        if (is_string($task->subtask_start_commit) && $task->subtask_start_commit !== '') {
+            return;
         }
+        $instance = $task->taskGroup()->with('taskable')->first()?->taskable;
+        if (! $instance instanceof AppInstance) {
+            return;
+        }
+        $head = $this->workspace->headCommit($instance);
+        if (! is_string($head) || $head === '') {
+            return;
+        }
+        $task->update(['subtask_start_commit' => $head]);
     }
 
     /** @return Collection<int, Task> */
