@@ -13,8 +13,7 @@ use Symfony\Component\HttpFoundation\Response;
 /**
  * Requires the Node agent's secret on every agent endpoint, after RequireActiveWireGuardPeer has named
  * the Node (ADR 0155). Every Unix user on a Node shares its WireGuard address; only the agent can read
- * the secret. A Node that the Gateway last converged with an agent release that sends no secret stays
- * exempt until a converge installs one that does.
+ * the secret.
  */
 final class RequireNodeAgentSecret
 {
@@ -35,17 +34,12 @@ final class RequireNodeAgentSecret
     private function authenticate(Node $node, ?string $secret): void
     {
         $stored = $node->agent_secret_hash;
-        $hasStoredSecret = is_string($stored) && $stored !== '';
-
-        if (! $hasStoredSecret && $node->agent_secret_exempt) {
-            return;
-        }
 
         if (! is_string($secret) || $secret === '') {
             throw new ResourceOperationException('agent.secret_required', 'The Node agent secret is required.', 401);
         }
 
-        if (! is_string($stored) || $stored === '' || ! hash_equals($stored, hash('sha256', $secret))) {
+        if (! is_string($stored) || preg_match('/\\A[0-9a-f]{64}\\z/D', $stored) !== 1 || ! hash_equals($stored, hash('sha256', $secret))) {
             throw new ResourceOperationException('agent.secret_invalid', 'The Node agent secret is not valid.', 403);
         }
     }

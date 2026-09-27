@@ -181,6 +181,8 @@ final class Orb245TransferRuntime implements AppInstanceTransferRuntime
 
     public ?Closure $onCall = null;
 
+    public ?Closure $onPause = null;
+
     public bool $processArtifactsRemoved = false;
 
     /** @var list<string> */
@@ -190,6 +192,7 @@ final class Orb245TransferRuntime implements AppInstanceTransferRuntime
     {
         $this->calls[] = 'pause';
         ($this->onCall ?? static fn () => null)('pause');
+        ($this->onPause)?->__invoke($instance);
 
         if ($this->processArtifactsRemoved) {
             $this->pauseOutcomes[] = 'already-removed';

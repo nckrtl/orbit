@@ -9,7 +9,7 @@ use App\Models\AppInstance;
 final readonly class AppInstanceProvisioning
 {
     /** @var list<string> */
-    private const array CompletedSteps = ['active', 'clone-completed'];
+    private const array CompletedSteps = ['active'];
 
     public static function isInFlight(AppInstance $instance, AppInstanceState $settled): bool
     {

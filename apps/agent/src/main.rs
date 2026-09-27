@@ -47,9 +47,7 @@ struct Discovery {
     address: Option<String>,
     key: Option<String>,
     channel: String,
-    /// Absent from Gateways before agent 0.3.0; the agent then runs without log tails.
-    #[serde(default)]
-    log_channel: Option<String>,
+    log_channel: String,
     member: String,
 }
 #[derive(Deserialize)]
@@ -220,15 +218,12 @@ async fn wait_for_os_shutdown() {
 /// The log channel only when it is `presence-node-logs.{id}` for the same Node as the member ID.
 fn accepted_log_channel(discovery: &Discovery) -> Option<String> {
     let id = discovery.member.strip_prefix("agent.")?;
-    match &discovery.log_channel {
-        Some(channel) if *channel == format!("presence-node-logs.{id}") => Some(channel.clone()),
-        Some(_) => {
-            eprintln!(
-                "orbit-agent: Gateway returned an invalid log channel; live log tails are off"
-            );
-            None
-        }
-        None => None,
+
+    if discovery.log_channel == format!("presence-node-logs.{id}") {
+        Some(discovery.log_channel.clone())
+    } else {
+        eprintln!("orbit-agent: Gateway returned an invalid log channel");
+        None
     }
 }
 
@@ -1029,13 +1024,16 @@ mod protocol_tests {
             accepted_log_channel(&discovery(json!("presence-node.12"))),
             None
         );
-        assert_eq!(accepted_log_channel(&discovery(json!(null))), None);
-        let old: Discovery = serde_json::from_value(json!({
+        assert!(serde_json::from_value::<Discovery>(json!({
+            "url": null, "address": null, "key": null,
+            "channel": "presence-node.12", "member": "agent.12", "log_channel": null
+        }))
+        .is_err());
+        assert!(serde_json::from_value::<Discovery>(json!({
             "url": null, "address": null, "key": null,
             "channel": "presence-node.12", "member": "agent.12"
         }))
-        .unwrap();
-        assert_eq!(accepted_log_channel(&old), None);
+        .is_err());
     }
 
     #[tokio::test]

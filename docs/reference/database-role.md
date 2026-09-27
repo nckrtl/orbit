@@ -3,7 +3,6 @@ title: "Database role"
 description: "What the database role converges on a Node, which roles it shares a Node with, and how add, converge, and remove behave."
 covers:
   - apps/gateway/app/Infrastructure/Nodes/Roles/DatabaseRoleBaseline.php
-  - apps/gateway/app/Domain/Nodes/DatabaseRoleSettings.php
 ---
 
 # Database role

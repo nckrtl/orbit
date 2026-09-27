@@ -171,7 +171,7 @@ describe('opening a live log stream', function (): void {
         'subscriber disconnected' => [fn ($test) => app(CacheAgentStateView::class)->putSubscriber(true, false, 0), 'subscriber_down'],
         'agent stopped' => [fn ($test) => app(CacheAgentStateView::class)->forgetNode($test->serving->id), 'agent_unavailable'],
         'agent stale' => [fn ($test) => Carbon::setTestNow(Carbon::createFromTimestamp(1_016)), 'agent_unavailable'],
-        'agent before 0.3.0' => [fn ($test) => log_stream_agent($test->serving, logs: false, version: '0.2.0'), 'agent_outdated'],
+        'agent has not joined yet' => [fn ($test) => log_stream_agent($test->serving, logs: false), 'agent_not_joined'],
         'agent 0.3.0 not joined yet' => [fn ($test) => log_stream_agent($test->serving, logs: false), 'agent_not_joined'],
         'agent of unknown version not joined yet' => [fn ($test) => log_stream_agent($test->serving, logs: false, version: null), 'agent_not_joined'],
     ]);

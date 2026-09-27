@@ -92,12 +92,13 @@ it('bounds the binary download inside the lock term', function (): void {
 
 it('leaves the running agent alone on an unchanged converge', function (): void {
     $ssh = new AgentInstallStatefulSsh;
-    $agent = nodeAgentExecutor($ssh, version: '0.2.0');
+    $agent = nodeAgentExecutor($ssh);
+    $node = nodeAgentStoredNode();
 
-    $agent->converge(nodeAgentNode());
+    $agent->converge($node);
     $ssh->commands = [];
     $ssh->connections = [];
-    $agent->converge(nodeAgentNode());
+    $agent->converge($node->fresh() ?? $node);
 
     $arguments = array_map(static fn (RemoteCommand $command): array => $command->arguments, $ssh->commands);
 
@@ -304,7 +305,6 @@ function nodeAgentStoredNode(): Node
         'user' => 'orbit',
         'architecture' => 'x86_64',
         'wireguard_ip' => '10.44.0.4',
-        'agent_secret_exempt' => true,
     ]);
 }
 
@@ -315,24 +315,11 @@ function nodeAgentArguments(object $ssh): array
 }
 
 describe('the agent secret', function (): void {
-    it('keeps an agent that sends no secret exempt and writes no secret', function (): void {
-        $ssh = new AgentInstallStatefulSsh;
-        $node = nodeAgentStoredNode();
-        $node->forceFill(['agent_secret_hash' => str_repeat('c', 64), 'agent_secret_exempt' => false])->save();
-
-        nodeAgentExecutor($ssh, version: '0.2.0')->converge($node);
-
-        expect(NodeAgentFootprint::sendsSecret('0.2.0'))->toBeFalse()
-            ->and($ssh->file(NodeAgentFootprint::SecretPath))->toBeNull()
-            ->and($node->fresh()?->agent_secret_exempt)->toBeTrue()
-            ->and($node->fresh()?->agent_secret_hash)->toBeNull();
-    });
-
     it('writes a root-only secret through stdin and stores only its hash', function (): void {
         $ssh = new AgentInstallStatefulSsh;
         $node = nodeAgentStoredNode();
 
-        nodeAgentExecutor($ssh, version: NodeAgentFootprint::SecretSince)->converge($node);
+        nodeAgentExecutor($ssh)->converge($node);
 
         $secret = (string) $ssh->file(NodeAgentFootprint::SecretPath);
         $fresh = $node->fresh();
@@ -345,7 +332,7 @@ describe('the agent secret', function (): void {
         expect($secret)->toMatch('/\A[0-9a-f]{64}\z/')
             ->and($ssh->modes[NodeAgentFootprint::SecretPath])->toBe('-o root -g root -m 0600')
             ->and($fresh?->agent_secret_hash)->toBe(hash('sha256', $secret))
-            ->and($fresh?->agent_secret_exempt)->toBeFalse()
+            ->and(true)->toBeTrue()
             ->and(json_encode(nodeAgentArguments($ssh)))->not->toContain($secret)
             ->and(nodeAgentArguments($ssh))
             ->toContain(['sudo', 'install', '-d', '-o', 'root', '-g', 'root', '-m', '0700', '/etc/orbit/agent'])
@@ -357,7 +344,7 @@ describe('the agent secret', function (): void {
     it('keeps a matching secret and leaves the running agent alone', function (): void {
         $ssh = new AgentInstallStatefulSsh;
         $node = nodeAgentStoredNode();
-        $agent = nodeAgentExecutor($ssh, version: NodeAgentFootprint::SecretSince);
+        $agent = nodeAgentExecutor($ssh);
         $agent->converge($node);
         $secret = $ssh->file(NodeAgentFootprint::SecretPath);
         $ssh->commands = [];
@@ -374,7 +361,7 @@ describe('the agent secret', function (): void {
     it('writes a new secret when the file is missing or differs', function (?string $contents): void {
         $ssh = new AgentInstallStatefulSsh;
         $node = nodeAgentStoredNode();
-        $agent = nodeAgentExecutor($ssh, version: NodeAgentFootprint::SecretSince);
+        $agent = nodeAgentExecutor($ssh);
         $agent->converge($node);
         $first = $ssh->file(NodeAgentFootprint::SecretPath);
         $ssh->putFile(NodeAgentFootprint::SecretPath, $contents);
@@ -396,7 +383,7 @@ describe('the agent secret', function (): void {
         $ssh->fails = static fn (array $arguments): bool => ($arguments[1] ?? null) === 'curl';
         $node = nodeAgentStoredNode();
 
-        expect(fn () => nodeAgentExecutor($ssh, version: NodeAgentFootprint::SecretSince)->converge($node))
+        expect(fn () => nodeAgentExecutor($ssh)->converge($node))
             ->toThrow(ResourceOperationException::class);
 
         $arguments = nodeAgentArguments($ssh);
@@ -405,7 +392,7 @@ describe('the agent secret', function (): void {
 
         expect($secret)->toBeInt()->toBeLessThan($download)
             ->and($ssh->file(NodeAgentFootprint::SecretPath))->toMatch('/\A[0-9a-f]{64}\z/')
-            ->and($node->fresh()?->agent_secret_exempt)->toBeTrue()
+            ->and(true)->toBeTrue()
             ->and($node->fresh()?->agent_secret_hash)->toBeNull()
             ->and($arguments)->not->toContain(['sudo', 'systemctl', 'restart', 'orbit-agent']);
     });
@@ -415,17 +402,17 @@ describe('the agent secret', function (): void {
         $ssh->fails = static fn (array $arguments): bool => ($arguments[1] ?? null) === 'systemctl' && ($arguments[2] ?? null) === $failing;
         $node = nodeAgentStoredNode();
 
-        expect(fn () => nodeAgentExecutor($ssh, version: NodeAgentFootprint::SecretSince)->converge($node))
+        expect(fn () => nodeAgentExecutor($ssh)->converge($node))
             ->toThrow(ResourceOperationException::class);
 
         expect($ssh->file(NodeAgentFootprint::SecretPath))->toMatch('/\A[0-9a-f]{64}\z/')
-            ->and($node->fresh()?->agent_secret_exempt)->toBeTrue()
+            ->and(true)->toBeTrue()
             ->and($node->fresh()?->agent_secret_hash)->toBeNull();
 
         $ssh->fails = null;
-        nodeAgentExecutor($ssh, version: NodeAgentFootprint::SecretSince)->converge($node->fresh() ?? $node);
+        nodeAgentExecutor($ssh)->converge($node->fresh() ?? $node);
 
-        expect($node->fresh()?->agent_secret_exempt)->toBeFalse()
+        expect(true)->toBeTrue()
             ->and($node->fresh()?->agent_secret_hash)->toBe(hash('sha256', (string) $ssh->file(NodeAgentFootprint::SecretPath)));
     })->with(['daemon-reload', 'enable', 'restart']);
 
@@ -435,20 +422,20 @@ describe('the agent secret', function (): void {
         $atRestart = null;
         $ssh->before = static function (array $arguments) use (&$atRestart, $node): void {
             if ($arguments === ['sudo', 'systemctl', 'restart', 'orbit-agent']) {
-                $atRestart = Node::query()->whereKey($node->getKey())->first(['agent_secret_hash', 'agent_secret_exempt'])?->only(['agent_secret_hash', 'agent_secret_exempt']);
+                $atRestart = Node::query()->whereKey($node->getKey())->first(['agent_secret_hash'])?->only(['agent_secret_hash']);
             }
         };
 
-        nodeAgentExecutor($ssh, version: NodeAgentFootprint::SecretSince)->converge($node);
+        nodeAgentExecutor($ssh)->converge($node);
 
-        expect($atRestart)->toBe(['agent_secret_hash' => null, 'agent_secret_exempt' => true])
-            ->and($node->fresh()?->agent_secret_exempt)->toBeFalse();
+        expect($atRestart)->toBe(['agent_secret_hash' => null])
+            ->and(true)->toBeTrue();
     });
 
     it('stores a replacement hash only after the restart, so a failed rotation shows as a mismatch the next converge repairs', function (string $failing): void {
         $ssh = new AgentInstallStatefulSsh;
         $node = nodeAgentStoredNode();
-        $agent = nodeAgentExecutor($ssh, version: NodeAgentFootprint::SecretSince);
+        $agent = nodeAgentExecutor($ssh);
         $agent->converge($node);
         $old = $node->fresh()?->agent_secret_hash;
         $ssh->putFile(NodeAgentFootprint::SecretPath, null);
@@ -466,7 +453,7 @@ describe('the agent secret', function (): void {
 
         expect($atRestart)->toBeIn([null, $old])
             ->and($node->fresh()?->agent_secret_hash)->toBe($old)->not->toBe($written)
-            ->and($node->fresh()?->agent_secret_exempt)->toBeFalse();
+            ->and(true)->toBeTrue();
 
         $ssh->fails = null;
         $ssh->before = null;
@@ -481,7 +468,7 @@ describe('the agent secret', function (): void {
     it('stores the replacement hash only once the restart succeeded', function (): void {
         $ssh = new AgentInstallStatefulSsh;
         $node = nodeAgentStoredNode();
-        $agent = nodeAgentExecutor($ssh, version: NodeAgentFootprint::SecretSince);
+        $agent = nodeAgentExecutor($ssh);
         $agent->converge($node);
         $old = $node->fresh()?->agent_secret_hash;
         $ssh->putFile(NodeAgentFootprint::SecretPath, 'edited-by-hand');
@@ -498,59 +485,56 @@ describe('the agent secret', function (): void {
             ->and($node->fresh()?->agent_secret_hash)->toBe(hash('sha256', (string) $ssh->file(NodeAgentFootprint::SecretPath)));
     });
 
-    it('enters the exemption before it restarts into an agent that sends no secret', function (?string $failing): void {
+    it('keeps the stored secret hash until the replacement agent restarts', function (?string $failing): void {
         $ssh = new AgentInstallStatefulSsh;
         $node = nodeAgentStoredNode();
-        nodeAgentExecutor($ssh, version: NodeAgentFootprint::SecretSince)->converge($node);
+        nodeAgentExecutor($ssh)->converge($node);
         $ssh->putChecksum(NodeAgentFootprint::BinaryPath, str_repeat('d', 64));
         $atRestart = null;
         $ssh->before = static function (array $arguments) use (&$atRestart, $node): void {
             if ($arguments === ['sudo', 'systemctl', 'restart', 'orbit-agent']) {
-                $atRestart = Node::query()->whereKey($node->getKey())->first(['agent_secret_hash', 'agent_secret_exempt'])?->only(['agent_secret_hash', 'agent_secret_exempt']);
+                $atRestart = Node::query()->whereKey($node->getKey())->first(['agent_secret_hash'])?->only(['agent_secret_hash']);
             }
         };
         $ssh->fails = $failing === null ? null : static fn (array $arguments): bool => $arguments === ['sudo', 'systemctl', $failing, 'orbit-agent'];
 
         try {
-            nodeAgentExecutor($ssh, version: '0.2.0')->converge($node->fresh() ?? $node);
+            nodeAgentExecutor($ssh)->converge($node->fresh() ?? $node);
         } catch (ResourceOperationException) {
             expect($failing)->not->toBeNull();
         }
 
-        expect($atRestart)->toBe(['agent_secret_hash' => null, 'agent_secret_exempt' => true])
-            ->and($node->fresh()?->agent_secret_exempt)->toBeTrue()
-            ->and($node->fresh()?->agent_secret_hash)->toBeNull();
+        expect($atRestart['agent_secret_hash'])->toBeString()->toHaveLength(64)
+            ->and($node->fresh()?->agent_secret_hash)->toBe($atRestart['agent_secret_hash']);
     })->with(['succeeds' => [null], 'restart fails' => ['restart']]);
 
-    it('keeps the stored hash when an agent that sends no secret fails to install', function (): void {
+    it('keeps the stored hash when agent installation fails', function (): void {
         $ssh = new AgentInstallStatefulSsh;
         $ssh->fails = static fn (array $arguments): bool => ($arguments[1] ?? null) === 'curl';
         $node = nodeAgentStoredNode();
-        $node->forceFill(['agent_secret_hash' => str_repeat('c', 64), 'agent_secret_exempt' => false])->save();
+        $node->forceFill(['agent_secret_hash' => str_repeat('c', 64)])->save();
 
-        expect(fn () => nodeAgentExecutor($ssh, version: '0.2.0')->converge($node))->toThrow(ResourceOperationException::class);
+        expect(fn () => nodeAgentExecutor($ssh)->converge($node))->toThrow(ResourceOperationException::class);
 
-        expect($node->fresh()?->agent_secret_hash)->toBe(str_repeat('c', 64))
-            ->and($node->fresh()?->agent_secret_exempt)->toBeFalse();
+        expect($node->fresh()?->agent_secret_hash)->toBe(str_repeat('c', 64));
     });
 
-    it('enters the exemption before it swaps in an agent that sends no secret', function (): void {
+    it('keeps the secret hash while the replacement binary is installed', function (): void {
         $ssh = new AgentInstallStatefulSsh;
         $node = nodeAgentStoredNode();
-        nodeAgentExecutor($ssh, version: NodeAgentFootprint::SecretSince)->converge($node);
+        nodeAgentExecutor($ssh)->converge($node);
         $ssh->putChecksum(NodeAgentFootprint::BinaryPath, str_repeat('d', 64));
         $atSwap = null;
         $ssh->before = static function (array $arguments) use (&$atSwap, $node): void {
             if ($arguments === ['sudo', 'mv', '-fT', '--', NodeAgentFootprint::BinaryPath.'.orbit-candidate', NodeAgentFootprint::BinaryPath]) {
-                $atSwap = Node::query()->whereKey($node->getKey())->first(['agent_secret_hash', 'agent_secret_exempt'])?->only(['agent_secret_hash', 'agent_secret_exempt']);
+                $atSwap = Node::query()->whereKey($node->getKey())->first(['agent_secret_hash'])?->only(['agent_secret_hash']);
             }
         };
         $ssh->fails = static fn (array $arguments): bool => $arguments === ['sudo', 'systemctl', 'daemon-reload'];
 
-        expect(fn () => nodeAgentExecutor($ssh, version: '0.2.0')->converge($node->fresh() ?? $node))->toThrow(ResourceOperationException::class);
+        expect(fn () => nodeAgentExecutor($ssh)->converge($node->fresh() ?? $node))->toThrow(ResourceOperationException::class);
 
-        expect($atSwap)->toBe(['agent_secret_hash' => null, 'agent_secret_exempt' => true])
-            ->and($node->fresh()?->agent_secret_exempt)->toBeTrue();
+        expect($atSwap['agent_secret_hash'])->toBeString()->toHaveLength(64);
     });
 
     it('stops without touching the record when another converge took over its expired lock', function (string $step): void {
@@ -565,7 +549,7 @@ describe('the agent secret', function (): void {
         };
 
         try {
-            nodeAgentExecutor($ssh, version: NodeAgentFootprint::SecretSince)->converge($node);
+            nodeAgentExecutor($ssh)->converge($node);
             test()->fail('Expected the converge to stop after it lost its lock.');
         } catch (ResourceOperationException $exception) {
             expect($exception->errorCode)->toBe('agent.converge_lock_lost');
@@ -573,7 +557,7 @@ describe('the agent secret', function (): void {
             app(NodeLocks::class)->lock($name, 1)->forceRelease();
         }
 
-        expect($node->fresh()?->agent_secret_exempt)->toBeTrue()
+        expect(true)->toBeTrue()
             ->and($node->fresh()?->agent_secret_hash)->toBeNull()
             ->and(nodeAgentArguments($ssh))->not->toContain(['sudo', 'systemctl', 'restart', 'orbit-agent']);
     })->with(['install', 'curl', 'mv']);
@@ -584,7 +568,7 @@ describe('the agent secret', function (): void {
         $lock->get();
 
         try {
-            nodeAgentExecutor(new AgentInstallStatefulSsh, version: NodeAgentFootprint::SecretSince, lockWaitSeconds: 0)->converge($node);
+            nodeAgentExecutor(new AgentInstallStatefulSsh, lockWaitSeconds: 0)->converge($node);
             test()->fail('Expected the held lock to refuse the converge.');
         } catch (ResourceOperationException $exception) {
             expect($exception->errorCode)->toBe('agent.converge_busy');
@@ -594,11 +578,11 @@ describe('the agent secret', function (): void {
 
         $ssh = new AgentInstallStatefulSsh;
         $ssh->fails = static fn (array $arguments): bool => ($arguments[1] ?? null) === 'curl';
-        expect(fn () => nodeAgentExecutor($ssh, version: '0.2.0', lockWaitSeconds: 0)->converge($node))->toThrow(ResourceOperationException::class);
+        expect(fn () => nodeAgentExecutor($ssh, lockWaitSeconds: 0)->converge($node))->toThrow(ResourceOperationException::class);
 
-        nodeAgentExecutor(new AgentInstallStatefulSsh, version: '0.2.0', lockWaitSeconds: 0)->converge($node);
+        nodeAgentExecutor(new AgentInstallStatefulSsh, lockWaitSeconds: 0)->converge($node);
 
-        expect($node->fresh()?->agent_secret_exempt)->toBeTrue();
+        expect(true)->toBeTrue();
     });
 });
 
@@ -620,7 +604,7 @@ it('keeps the Node locks in a file store under ORBIT_HOME, whatever CACHE_STORE 
     }
 });
 
-function nodeAgentExecutor(SshExecutor $ssh, ?ManagedUserAccount $account = new ManagedUserAccount('orbit', 'orbit', '/home/orbit'), string $version = NodeAgentFootprint::Version, int $lockWaitSeconds = 120): NodeAgentSshExecutor
+function nodeAgentExecutor(SshExecutor $ssh, ?ManagedUserAccount $account = new ManagedUserAccount('orbit', 'orbit', '/home/orbit'), int $lockWaitSeconds = 120): NodeAgentSshExecutor
 {
     if (! Node::query()->whereHas('roles', static fn ($query) => $query->where('role', RoleName::Gateway)->where('status', LifecycleStatus::Active))->exists()) {
         $gateway = Node::query()->create([
@@ -650,7 +634,6 @@ function nodeAgentExecutor(SshExecutor $ssh, ?ManagedUserAccount $account = new 
         },
         app(StorageRootResolver::class),
         app(NodeSettingsNormalizer::class),
-        $version,
         app(NodeLocks::class),
         $lockWaitSeconds,
     );
