@@ -52,6 +52,6 @@ A spike on the Gateway against beast and `services` measured OpenSSH 10.2 connec
 ## Affects
 
 - Components: apps/gateway
-- ADRs: [ADR 0033](/decisions/0033-trust-wireguard-members-for-private-node-traffic)
+- ADRs: [ADR 0033](/reference/routes#private-network-trust)
 - Detail: [Architecture](/architecture)
 - Verify: `NativeSshExecutorTest`, `SshNodeStateInspectorTest`, and after deployment `ssh -O check` against a Node's socket in `ORBIT_HOME/ssh/mux`.

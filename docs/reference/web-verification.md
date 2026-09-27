@@ -1,11 +1,17 @@
 ---
 title: "Web verification"
 description: "How bin/web-verify runs the web app in demo mode so an agent can open a route, click a control, and save phone and desktop screenshots."
+covers:
+  - bin/web-verify
+  - apps/web/dev/web-verify.ts
+  - apps/web/dev/web-verify/**
+  - apps/web/feature-map.json
+  - apps/web/src/feature-map.test.ts
 ---
 
 # Web verification
 
-This page is for an agent that changes the Orbit web app, and for the reviewer who judges that change. `bin/web-verify` runs `apps/web` in demo mode and drives it with Playwright. [ADR 0162](/decisions/0162-verify-web-ui-changes-with-bin-web-verify) records why this tool exists. The installed iPhone layout stays on the [web app](/reference/web-app) page.
+This page is for an agent that changes the Orbit web app, and for the reviewer who judges that change. `bin/web-verify` runs `apps/web` in demo mode and drives it with Playwright. It needs no Gateway. The installed iPhone layout is on the [web app](/reference/web-app) page.
 
 Run every command from the repository root. Stdout is one JSON object and nothing else. Logs stay on stderr, and the demo server log is `.orbit-artifacts/web/server.log`.
 
@@ -169,3 +175,23 @@ WebKit device emulation catches layout, viewport, and safe-area padding mistakes
 | Console errors from `console-errors` | A physical phone |
 
 The status-bar failure is [WebKit bug 301108](https://bugs.webkit.org/show_bug.cgi?id=301108). The tool also does not apply `apple-mobile-web-app-status-bar-style`, and it does not rotate the phone. Those checks stay on a real install, as [Web app](/reference/web-app) describes.
+
+## Why it works this way
+
+These reasons explain the design. Check them before you propose a change.
+
+### A tool the agent runs
+
+An agent that changes the web app cannot see the page. Asking an operator to open the app on a phone is a rejected alternative, because the operator then becomes the bottleneck for every UI change. The Vitest browser tests check behavior in Chromium at 1280 by 800, but they show no phone layout and keep no picture. So they are not the only UI check.
+
+### Demo mode, not the live Gateway
+
+Demo mode is local, and its fixture fleet is the same on every run. Driving the live Gateway origin is a rejected alternative, because it needs WireGuard trust and live fleet data.
+
+### A person judges the pictures
+
+A pixel diff of the PNGs is a rejected check, because font and animation noise would reject a correct layout. A physical iPhone for every change costs too much. So the reviewer opens the screenshots, and this page states the emulation limit.
+
+### The daemon stops itself
+
+A daemon that runs until someone stops it keeps the Vite server and both browsers alive, and a running server blocks deleting its checkout. A missed `stop` would leave the same processes. So the daemon exits after 5 minutes without a command, and `stop` ends it at once.

@@ -1,6 +1,6 @@
 # Instance transfer
 
-This page tells an operating agent how the Gateway moves one active development Instance from its current Node to another app-dev Node while keeping the same Instance ID. [ADR 0066](/decisions/0066-transfer-development-appinstances-between-nodes) owns the transfer decision. [ADR 0065](/decisions/0065-replace-routes-when-domains-change) owns generated domain replacement. [Instance environment variables](/reference/environment-variables) owns stored environment configuration.
+This page tells an operating agent how the Gateway moves one active development Instance from its current Node to another app-dev Node while keeping the same Instance ID. [ADR 0066](/decisions/0066-transfer-development-appinstances-between-nodes) owns the transfer decision. [ADR 0065](/reference/routes#change-an-explicit-domain) owns generated domain replacement. [Instance environment variables](/reference/environment-variables) owns stored environment configuration.
 
 ## Request a transfer
 
@@ -54,7 +54,7 @@ Existing Process and Schedule records keep their IDs, definitions, and desired s
 
 An explicit Route domain and a generated Route whose destination domain stays the same keep their Route ID. Transfer moves the Route target and Cluster or Node scope.
 
-A generated Route whose destination domain changes uses the destination Cluster TLD and the replacement Route lifecycle from [ADR 0065](/decisions/0065-replace-routes-when-domains-change). The new generated domain is `{app-slug}.{tld}` when the destination name is `default`, and `{name}.{app-slug}.{tld}` otherwise.
+A generated Route whose destination domain changes uses the destination Cluster TLD and the replacement Route lifecycle from [ADR 0065](/reference/routes#change-an-explicit-domain). The new generated domain is `{app-slug}.{tld}` when the destination name is `default`, and `{name}.{app-slug}.{tld}` otherwise.
 
 ## Recover from failure
 

@@ -12,7 +12,7 @@ description: "Proposed. node:role:relocate moves relocatable singleton roles, st
 
 Proposed.
 
-This amends [ADR 0090](/cli/node#a-dedicated-relocate-for-gateway)'s "only gateway is accepted" rule and [ADR 0087](/decisions/0087-run-reverb-through-a-websocket-role)'s add-then-remove move. It keeps the verb `relocate` from [ADR 0071](/decisions/0071-use-one-verb-vocabulary-across-cli-routes-and-sdk). It does not change [ADR 0061](/decisions/0061-use-vpn-dns-by-default-on-managed-peers) or make `vpn` relocatable.
+This amends [ADR 0090](/cli/node#a-dedicated-relocate-for-gateway)'s "only gateway is accepted" rule and [ADR 0087](/decisions/0087-run-reverb-through-a-websocket-role)'s add-then-remove move. It keeps the verb `relocate` from [ADR 0071](/reference/cli-command-vocabulary#why-it-works-this-way). It does not change [ADR 0061](/reference/private-dns#resolver-selection) or make `vpn` relocatable.
 
 ## Context
 
@@ -56,6 +56,6 @@ Ops also hits leftover state: the destination already holds the assignment after
 ## Affects
 
 - Components: apps/gateway, apps/cli, packages/php-sdk, apps/docs
-- ADRs: amends [ADR 0090](/cli/node#a-dedicated-relocate-for-gateway) and [ADR 0087](/decisions/0087-run-reverb-through-a-websocket-role); keeps the [ADR 0071](/decisions/0071-use-one-verb-vocabulary-across-cli-routes-and-sdk) verb
+- ADRs: amends [ADR 0090](/cli/node#a-dedicated-relocate-for-gateway) and [ADR 0087](/decisions/0087-run-reverb-through-a-websocket-role); keeps the [ADR 0071](/reference/cli-command-vocabulary#why-it-works-this-way) verb
 - Detail: [`node`](/cli/node), [Realtime events with Reverb](/solutions/realtime-reverb), [Metrics](/reference/metrics), [CLI command vocabulary](/reference/cli-command-vocabulary), [Relocate the gateway role](/solutions/relocate-gateway-role)
 - Verify: Gateway RoleRegistry, RelocateNodeRoleAction, node-role API, MCP catalogue, CLI `node:role:relocate`, and PHP SDK transport tests
