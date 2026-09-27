@@ -21,12 +21,16 @@ it('maps bounded metrics status and exporter rows', function (): void {
         ],
         'prometheus' => ['status' => 'healthy'],
         'grafana' => 'healthy',
+        'reconcile_status' => 'degraded',
+        'reconcile_error_code' => 'metrics.cadvisor_fleet_rollback_failed',
         'exporters' => [[
             'id' => 7,
             'name' => 'metrics',
             'desired' => true,
             'actual' => 'active',
             'reason' => 'metrics_node',
+            'degraded_reason' => 'reconcile_failed',
+            'degraded_error_code' => 'metrics.cadvisor_fleet_rollback_failed',
         ]],
     ], 'req');
     expect($response->enabled)
@@ -36,7 +40,15 @@ it('maps bounded metrics status and exporter rows', function (): void {
         ->and($response->exporters[0]['reason'])
         ->toBe('metrics_node')
         ->and($response->assignment['node_name'])
-        ->toBe('metrics-node');
+        ->toBe('metrics-node')
+        ->and($response->reconcileStatus)
+        ->toBe('degraded')
+        ->and($response->reconcileErrorCode)
+        ->toBe('metrics.cadvisor_fleet_rollback_failed')
+        ->and($response->toArray()['reconcile_error_code'])
+        ->toBe('metrics.cadvisor_fleet_rollback_failed')
+        ->and($response->exporters[0]['degraded_error_code'])
+        ->toBe('metrics.cadvisor_fleet_rollback_failed');
 });
 
 it('preserves failed metrics assignments for recovery', function (): void {

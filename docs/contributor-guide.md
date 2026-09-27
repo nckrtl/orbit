@@ -42,6 +42,16 @@ Update the documentation when the feature changes behavior, terms, architecture,
 
 When an ADR, a page, the code, or a test disagree, stop and report the conflict. Do not resolve it by quietly changing one of them.
 
+Run the deterministic impact check from [ADR 0175](/decisions/0175-docs-impact-check-in-orbit-repo) for the group's start commit and every planned path, including paths that do not exist yet:
+
+```bash
+bin/docs-impact --base <start-commit> --paths <planned-path>
+```
+
+The start commit is the merge base with `origin/main`; repeat `--paths` for every planned path in the brief, including paths that do not exist yet. Every Orbit group starts with this docs subtask, as required by the [Orbit Tasks policy](https://github.com/nckrtl/orbit/blob/main/.agents/skills/orbit-tasks/SKILL.md). A `docs_required` report means the subtask updates each impacted page or runs its named generator. A `no_docs_change` report is the fast path: hand off the complete JSON report as evidence. The reviewer confirms the planned paths and report are complete before implementation starts. The report, not an agent's opinion, is the evidence.
+
+At every subtask handoff, Orbit's own task check runs the impact check against the candidate diff from the group's start commit. An impacted page missing from that diff fails with the list of pages unless the candidate adds a matching `page: reason` line to `docs/.docs-unaffected` and the reviewer confirms it. Required generator checks still apply. This policy runs through Orbit's `composer check` and `bin/review-check`; the generic Gateway task engine does not know about docs-first or documentation conventions. Jev is out of scope for this version.
+
 Run from the repository root:
 
 ```bash

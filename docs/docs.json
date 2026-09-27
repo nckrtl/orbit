@@ -594,6 +594,7 @@
               "decisions/0170-edit-todo-subtasks-after-a-group-starts",
               "decisions/0171-reset-fixup-caps-after-operator-work",
               "decisions/0173-record-and-label-jev-decisions",
+              "decisions/0175-docs-impact-check-in-orbit-repo",
               "decisions/0178-run-project-agnostic-tasks-without-a-planner"
             ]
           }

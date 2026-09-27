@@ -17,7 +17,7 @@ The Gateway owns the environment configuration of every Instance. It stores each
 
 ## Operations
 
-Each operation takes an Instance selector in `{instance}`: a positive Instance ID or the exact domain of one of its Routes. An unknown selector returns 404. A domain that reaches more than one Instance returns `env.target_ambiguous` (409).
+The import and update endpoints accept either a positive numeric Instance ID or an exact Route domain in `{instance}`. A selector that matches no Instance returns HTTP 404. A Route domain that has multiple Instance targets returns HTTP 409 with `env.target_ambiguous`. The Instance's recorded placement owns its environment: the owning Node is the Instance's `node_id`, not a Route. An Instance without a Route can still have its environment synchronized.
 
 | Operation | Request | Body | Effect |
 | --- | --- | --- | --- |
@@ -29,7 +29,7 @@ Import and update change stored configuration only. The `.env` file on the Node 
 
 A success returns `app_instance_id`, `operation`, `changed`, and `key_count`, the total number of stored keys. `changed` is `false` when the stored value or the file already matched.
 
-The Instance must be active, with complete placement and no pending source migration. It must be the target of exactly one Route, and that Route must be authoritative, without a failure or a pending change. Otherwise the Gateway returns `env.owner_unavailable` (409). So an Instance without a Route cannot import, update, or synchronize. A public Route that is live can finish its last cleanup steps without blocking these operations. The caller needs an access grant to the Instance's Node. Import and synchronize also need an active Node. Update does not contact the Node, so it works while the Node is unreachable.
+The Instance must be active, with complete placement and no pending source migration. Import, update, and synchronization use the Instance's recorded owning Node. A Route is not required for synchronization unless a stored value refers to `{{app_instance.domain}}`; then the Gateway needs an authoritative Route and returns `env.reference_unavailable` (409) if it cannot resolve one. A Route in an incomplete transition also blocks synchronization. The caller needs an access grant to the Instance's Node. Import and synchronize also need an active Node. Update does not contact the Node, so it works while the Node is unreachable.
 
 ## Where the file lives
 
@@ -79,6 +79,8 @@ The Gateway renders every stored key in sorted order, as a quoted value. It writ
 When the Gateway cannot confirm the write, it returns `env.sync_unconfirmed` (the file may have changed). Repeat the request: it checks the file again and either accepts the matching file or writes it.
 
 Synchronization changes only `.env`. It does not run application code, clear a framework cache, or restart a service or Process. Run those steps yourself when running code must see the new values.
+
+The Gateway takes one consistent snapshot of the Instance's recorded owning Node, optional authoritative Route, and complete stored configuration. It resolves `{{app_instance.domain}}` only when an authoritative Route supplies a domain, and resolves `{{app_instance.environment}}` to the recorded `development` or `production` value. A Route is not required to synchronize an Instance without domain references; an unresolved reference or an incomplete Route transition stops synchronization before replacement. The generated dotenv file has stable key order and preserves literal whitespace, newlines, quotes, dollar signs, backslashes, empty strings, and stored application keys.
 
 Import, update, synchronize, deploy, removal, and Route changes on one Instance share one operation lock. A competing request waits or returns `env.operation_busy`.
 

@@ -13,7 +13,7 @@ covers:
 
 # Instance transfer
 
-A transfer moves one active development Instance to another `app-dev` Node. The Instance keeps its ID, Project, Processes, and Schedules. The source gets a short downtime, and Orbit deletes the old placement at the end.
+A transfer moves one active development Instance to another `app-dev` Node. The Instance keeps its ID, Project, and Processes. A Schedule cannot target the Instance during transfer. The source gets a short downtime, and Orbit deletes the old placement at the end.
 
 ```bash
 orbit instance:transfer <instance> <node> [--name=NAME] [--sqlite-source-path=PATH] [--force] [--json]
@@ -33,7 +33,7 @@ The request accepts no path, Cluster, Route, or Process input. The caller needs 
 
 ## Eligibility
 
-Both Nodes must be active Linux Nodes with an active `app-dev` role, and each must belong to an active Cluster. The two Clusters may differ. The Instance must be an active development Instance with one authoritative Route, and not in removal. The destination must be another Node that the Project does not [exclude](/reference/development-node-exclusions).
+Both Nodes must be active Linux Nodes with an active `app-dev` role, and each must belong to an active Cluster. The two Clusters may differ. The Instance must be an active development Instance with one authoritative Route, and not in removal. The destination must be another Node that the Project does not [exclude](/reference/development-node-exclusions). No Schedule may target the Instance. Orbit checks before reserving and again under the Process admission lock immediately before cutover, so a Schedule created during a transfer also prevents cutover.
 
 The Gateway reserves `<destination-apps-root>/<project-slug>/<name>`. It refuses an occupied or unsafe path with `instance.destination_exists`. Retry with another `--name`. A name that another Instance of the Project uses returns `instance.identity_conflict`.
 
@@ -44,14 +44,14 @@ The destination gets an independent checkout, even when the source is a worktree
 Every transfer runs in this order:
 
 1. Orbit copies the source checkout to the destination.
-2. It stops the source Processes and timers, with or without SQLite.
+2. It stops the source Processes, with or without SQLite.
 3. When you select a SQLite file, it takes one consistent snapshot and installs it at the destination.
 
 The checkout is copied before the stop. A file that a running Process writes between steps 1 and 2 does not reach the destination. Orbit copies no other database or data path.
 
 Orbit imports the source `.env` into the [stored environment](/reference/environment-variables). A key that is already stored keeps its stored value. When Orbit cannot read the source `.env`, it imports nothing and continues. Then Orbit writes the destination `.env` from the stored environment.
 
-Process and Schedule records keep their IDs, definitions, and desired states. Orbit stops their source units, creates them on the destination, and leaves no duplicate. The destination gets its own [Vite port](/reference/assigned-vite-ports), and Orbit releases the source port after cleanup.
+Process records keep their IDs, definitions, and desired states. Orbit stops their source units, creates them on the destination, and leaves no duplicate. The destination gets its own [Vite port](/reference/assigned-vite-ports), and Orbit releases the source port after cleanup.
 
 ## Route
 
@@ -63,12 +63,12 @@ A generated domain uses the destination Cluster TLD: `<project-slug>.<tld>` for 
 
 Cutover is the moment the destination becomes authoritative.
 
-- A failure before cutover restarts the source Processes and Schedules and keeps the source Route.
+- A failure before cutover restarts the source Processes and keeps the source Route.
 - It also deletes the destination checkout, the destination Vite port, and a replacement Route that is not active yet.
 - Keys imported into the stored environment stay.
 - After cutover, recovery only goes forward. Orbit never restarts the source. It finishes the Route, runtime, and cleanup without copying the source again.
 
-A failed or unfinished transfer stays open. Only the identical request resumes it, and it is the only way to close it: a different transfer returns `instance.transfer_retry_conflict`, and removal returns `instance.transfer_incomplete`. For a pending transfer, the CLI offers the retry and names the original source Node.
+A failed or unfinished transfer stays open. Only the identical request resumes it, and it is the only way to close it: a different transfer returns `instance.transfer_retry_conflict`, and removal returns `instance.transfer_incomplete`. For a pending transfer, the CLI offers the retry and names the original source Node. If a Schedule targets the Instance before reservation or is added before cutover, transfer returns `schedule.target_in_use`. Remove the Schedule or retarget it away from the Instance, then retry the identical transfer request.
 
 Cleanup deletes the old checkout or worktree and its runtime files, certificates, and firewall rules on the old workload and Router. The result reports the destination Node, path, domain, and whether cleanup finished. It does not depend on an HTTP response from the application.
 
@@ -80,6 +80,7 @@ The Gateway returns these codes before or during a transfer.
 | --- | --- |
 | `instance.confirmation_required` | The call has no consent. |
 | `instance.lifecycle_conflict` | The Instance is not active, or its Route is not ready. |
+| `schedule.target_in_use` | A Schedule targets the Instance. Remove it or retarget it away from the Instance before retrying the identical transfer request. |
 | `instance.production_refused` | The Instance is a production Instance. |
 | `instance.removal_conflict` | The Instance is being removed. |
 | `instance.same_node` | The destination is the current Node. |
@@ -104,7 +105,7 @@ These reasons explain the design. Check them before you propose a change.
 
 ### Keep the Instance, not the layout
 
-Removing the Instance and registering a new one would lose its ID and rebuild its Route, environment, Processes, and Schedules. So transfer keeps the record. A worktree cannot keep its link to a common repository on another Node, so the destination is always an independent checkout.
+Removing the Instance and registering a new one would lose its ID and rebuild its Route, environment, and Processes. So transfer keeps the record. A worktree cannot keep its link to a common repository on another Node, so the destination is always an independent checkout.
 
 ### Downtime, not live migration
 

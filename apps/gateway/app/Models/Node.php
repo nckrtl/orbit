@@ -31,7 +31,6 @@ use Illuminate\Database\Eloquent\Relations\MorphMany;
  * @property string|null $ssh_host_fingerprint
  * @property array<string, mixed>|null $settings
  * @property string|null $agent_secret_hash
- * @property bool $agent_secret_exempt
  * @property-read Collection<int, NodeRole> $roles
  * @property-read Collection<int, ProjectNodeExclusion> $projectNodeExclusions
  * @property-read Collection<int, ToolManagerRecord> $toolManagers
@@ -50,7 +49,6 @@ final class Node extends Model
     #[\Override]
     protected $attributes = [
         'public_ssh_port' => 22,
-        'agent_secret_exempt' => false,
     ];
 
     /** @var list<string> */
@@ -191,7 +189,6 @@ final class Node extends Model
             'status' => LifecycleStatus::class,
             'public_ssh_port' => 'integer',
             'settings' => 'array',
-            'agent_secret_exempt' => 'boolean',
         ];
     }
 }
