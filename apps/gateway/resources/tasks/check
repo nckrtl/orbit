@@ -11,7 +11,8 @@ check start CHECKOUT [SETUP|-] [DELIVERABLES|-] [COMMAND]
                                 COMMAND is a file with the Project's task check command; an empty file runs no command.
                                 Without COMMAND, the check runs `composer check`.
 check run CHECKOUT HEAD TREE [SETUP|-] [DELIVERABLES|-] [COMMAND]
-                                run the setup steps and the command, then write check.json (started by `start`)
+                                run the setup steps and the command, then write check.json (started by `start`).
+                                Invalid test deliverables fail before that command. An unexpected error still writes check.json.
 check status PID STARTED        print running, finished (with the result), or lost
 check cancel PID STARTED        stop the check's process group
 check snapshot CHECKOUT         print HEAD, its parent, its tree, and the working-tree hash, without touching the index
@@ -25,6 +26,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import traceback
 import xml.etree.ElementTree as ElementTree
 
 DIRECTORY = os.path.dirname(os.path.abspath(__file__))
@@ -33,6 +35,9 @@ LOG = os.path.join(DIRECTORY, 'check.log')
 OUTPUT_TAIL = 16384
 COMMAND_OUTPUT_TAIL = 4096
 TEST_RESULTS = os.path.join(DIRECTORY, 'tests')
+# The Gateway reads these failed_step values. invalid_deliverable asks for assistance with the log's messages.
+INVALID_DELIVERABLE = 'invalid_deliverable'
+CHECK_ERROR = 'check_error'
 
 
 def git(checkout, *arguments, environment=None):
@@ -396,6 +401,55 @@ def diff(checkout, start_commit, tree):
     return entries
 
 
+def invalid_test_deliverables(checkout, deliverables):
+    """Messages for test deliverables whose project or file is not in the checkout, in list order.
+
+    A bad project is reported on its own. The file is checked only when that project is a directory.
+    """
+    if not deliverables:
+        return []
+    with open(deliverables) as source:
+        spec = json.load(source)
+    if not isinstance(spec, dict):
+        raise ValueError('Deliverables must be a JSON object.')
+    tests = spec.get('tests', [])
+    if not isinstance(tests, list):
+        raise ValueError('Deliverables tests must be a list.')
+    messages = []
+    for test in tests:
+        if not isinstance(test, dict):
+            raise ValueError('A test deliverable must be a JSON object.')
+        message = invalid_test_deliverable(checkout, test)
+        if message is not None:
+            messages.append(message)
+    return messages
+
+
+def invalid_test_deliverable(checkout, test):
+    """One message when this test deliverable is not in the checkout, else None."""
+    identifier = test.get('id')
+    if not isinstance(identifier, str) or identifier == '':
+        identifier = '?'
+    project = test.get('project')
+    if not isinstance(project, str) or project in ('', '.'):
+        label = '.'
+        directory = inside(checkout, '.')
+    elif project.startswith('/') or '\x00' in project:
+        label = project
+        directory = None
+    else:
+        label = project
+        directory = inside(checkout, project)
+    if directory is None or not os.path.isdir(directory):
+        return f'Deliverable {identifier} names project {label}, which is not a directory in the checkout.'
+    relative = test.get('file')
+    file_label = relative if isinstance(relative, str) else ''
+    path = deliverable_path(checkout, '' if label == '.' else label, relative)
+    if path is None or not os.path.isfile(path):
+        return f'Deliverable {identifier} names file {file_label}, which does not exist in {label}.'
+    return None
+
+
 def verify_deliverables(checkout, tree, deliverables, log):
     """Record the evidence for a subtask's deliverables (ADR 0133). Test files run by path, so Pest never replays them."""
     with open(deliverables) as source:
@@ -437,15 +491,18 @@ def verify_deliverables(checkout, tree, deliverables, log):
     return evidence
 
 
-def run(checkout, head, tree, setup=None, deliverables=None, command='composer check'):
-    signal.signal(signal.SIGTERM, cancelled)
-    setup, deliverables = optional(setup), optional(deliverables)
-    started_at = time.time()
+def perform(checkout, head, tree, setup, deliverables, command, started_at):
+    """Run setup and the project check, then verify deliverables. Invalid test deliverables fail first."""
     evidence = None
     failed_step = None
     exit_code = 0
     with open(LOG, 'wb') as log:
-        if setup:
+        messages = invalid_test_deliverables(checkout, deliverables)
+        if messages:
+            failed_step = INVALID_DELIVERABLE
+            exit_code = 1
+            log.write(('\n'.join(messages) + '\n').encode())
+        if failed_step is None and setup:
             failed_step, exit_code = run_setup(checkout, setup, log)
             # Setup steps install dependencies, so the tree after setup is the tree the check sees.
             tree = working_tree(checkout)
@@ -458,18 +515,63 @@ def run(checkout, head, tree, setup=None, deliverables=None, command='composer c
             evidence = verify_deliverables(checkout, tree, deliverables, log)
     head_after = git(checkout, 'rev-parse', 'HEAD')
     tree_after = working_tree(checkout)
-    result = {
+    write_check_result(check_result(
+        head, tree, head_after, tree_after, changed_paths(checkout, tree, tree_after),
+        exit_code, failed_step, evidence, started_at,
+    ))
+
+
+def run(checkout, head, tree, setup=None, deliverables=None, command='composer check'):
+    signal.signal(signal.SIGTERM, cancelled)
+    setup, deliverables = optional(setup), optional(deliverables)
+    started_at = time.time()
+    try:
+        perform(checkout, head, tree, setup, deliverables, command, started_at)
+    except Exception:
+        fail_check(checkout, head, tree, started_at)
+
+
+def fail_check(checkout, head, tree, started_at):
+    """Append the traceback and write a failed result. The check must not exit without check.json."""
+    error = traceback.format_exc().encode()
+    try:
+        with open(LOG, 'ab') as log:
+            if log.tell() > 0:
+                log.write(b'\n')
+            log.write(error)
+    except OSError:
+        pass
+    head_after = head
+    tree_after = tree
+    paths = []
+    try:
+        head_after = git(checkout, 'rev-parse', 'HEAD')
+        tree_after = working_tree(checkout)
+        paths = changed_paths(checkout, tree, tree_after)
+    except Exception:
+        pass
+    try:
+        write_check_result(check_result(head, tree, head_after, tree_after, paths, 1, CHECK_ERROR, None, started_at))
+    except OSError:
+        pass
+
+
+def check_result(head, tree, head_after, tree_after, paths, exit_code, failed_step, evidence, started_at):
+    return {
         'exit_code': exit_code,
         'failed_step': failed_step,
         'head_before': head,
         'tree_before': tree,
         'head_after': head_after,
         'tree_after': tree_after,
-        'changed_paths': changed_paths(checkout, tree, tree_after),
+        'changed_paths': paths,
         'deliverables': evidence,
         'started_at': started_at,
         'finished_at': time.time(),
     }
+
+
+def write_check_result(result):
     temporary = RESULT + '.' + str(os.getpid())
     with open(temporary, 'w') as output:
         json.dump(result, output)

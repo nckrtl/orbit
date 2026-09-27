@@ -78,6 +78,12 @@ final readonly class TaskScheduler
 
     private const string BASELINE_JAVASCRIPT_INSTALL_STEP = '[Orbit internal] Install JavaScript dependencies';
 
+    /** The check script sets this when a test deliverable names a project or file that is not in the checkout. */
+    private const string INVALID_DELIVERABLE_STEP = 'invalid_deliverable';
+
+    /** The check script sets this when an unexpected error still leaves a result. */
+    private const string CHECK_ERROR_STEP = 'check_error';
+
     public function __construct(
         private TaskConcurrencyGuard $ceilings,
         private InstanceProvisioning $provisioning,
@@ -349,6 +355,19 @@ final readonly class TaskScheduler
 
             return;
         }
+        // The implementer cannot change deliverables, so an invalid project or file asks for assistance with no reminder.
+        if ($check instanceof TaskCheck && $status === TaskCheckStatus::Failed && $check->failed_step === self::INVALID_DELIVERABLE_STEP) {
+            $task->update(['completion_handoff_comment_id' => $receipt->id]);
+            $reason = trim((string) $check->output);
+            $this->requestAssistance(
+                $task,
+                $group,
+                $reason !== '' ? $reason : 'A test deliverable names a project or file that is not in the checkout.',
+                $observation,
+            );
+
+            return;
+        }
         $repeats = $check instanceof TaskCheck
             ? TaskCheck::query()->where('task_comment_id', $receipt->id)->where('status', $check->status->value)->count()
             : 0;
@@ -406,6 +425,8 @@ final readonly class TaskScheduler
             ? ['status' => TaskCheckStatus::Lost->value, 'output' => $reading->output]
             : [
                 'status' => match (true) {
+                    // A changed tree must not hide these. The task would retry as changed and drop the cause.
+                    $reading->failedStep === self::CHECK_ERROR_STEP || $reading->failedStep === self::INVALID_DELIVERABLE_STEP => TaskCheckStatus::Failed->value,
                     $changed => TaskCheckStatus::Changed->value,
                     $reading->exitCode === 0 => TaskCheckStatus::Passed->value,
                     default => TaskCheckStatus::Failed->value,
@@ -2693,7 +2714,7 @@ final readonly class TaskScheduler
             $check instanceof TaskCheck && $status === TaskCheckStatus::Failed && $check->failed_step === self::BASELINE_COMPOSER_INSTALL_STEP => "Composer dependency installation failed with exit code {$check->exit_code} on a fresh checkout of {$branch}, before any agent started. Restore the required dependencies, then cancel and create the group again. The task's check shows the install output.",
             $check instanceof TaskCheck && $status === TaskCheckStatus::Failed && $check->failed_step === self::BASELINE_JAVASCRIPT_INSTALL_STEP => "JavaScript dependency installation failed with exit code {$check->exit_code} on a fresh checkout of {$branch}, before any agent started. Restore the required dependencies, then cancel and create the group again. The task's check shows the install output.",
             $check instanceof TaskCheck && $status === TaskCheckStatus::Failed && $check->failed_step === null && $this->checkOutputShowsMissingDependencies($check) => "Project dependencies appear to be missing on a fresh checkout of {$branch}, before any agent started. Install the required dependencies, then cancel and create the group again. The task's check shows the missing-dependency output.",
-            $check instanceof TaskCheck && $status === TaskCheckStatus::Failed && $check->failed_step !== null => "The Project setup step \"{$check->failed_step}\" failed with exit code {$check->exit_code} on a fresh checkout of {$branch}, before any agent started. Fix the setup or the branch, then cancel and create the group again. The task's check shows the output.",
+            $check instanceof TaskCheck && $status === TaskCheckStatus::Failed && $check->failed_step !== null && $check->failed_step !== self::CHECK_ERROR_STEP => "The Project setup step \"{$check->failed_step}\" failed with exit code {$check->exit_code} on a fresh checkout of {$branch}, before any agent started. Fix the setup or the branch, then cancel and create the group again. The task's check shows the output.",
             $check instanceof TaskCheck && $status === TaskCheckStatus::Failed => "The Project baseline check failed with exit code {$check->exit_code} on a fresh checkout of {$branch}, before any agent started. Fix the configured check or the branch, then cancel and create the group again. The task's check shows the output.",
             $status === TaskCheckStatus::Cancelled => 'An operator cancelled the baseline check before any agent started.',
             $check instanceof TaskCheck && $status === TaskCheckStatus::Changed && $repeats >= 2 => 'The workspace changed while the baseline check ran, twice. Changed paths: '.implode(', ', $check->changed_paths ?? []).'.',
