@@ -1,5 +1,6 @@
 {
     "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\Extensions\\EnableExtensionRequest",
     "route": "POST /api/v1/extensions/{extension}/enable",
     "status": 200,
     "body": {

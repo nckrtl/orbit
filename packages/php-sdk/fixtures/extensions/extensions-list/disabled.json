@@ -1,5 +1,6 @@
 {
     "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\Extensions\\ListExtensionsRequest",
     "route": "GET /api/v1/extensions",
     "status": 200,
     "body": {

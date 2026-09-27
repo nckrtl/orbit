@@ -1,5 +1,6 @@
 {
     "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\Extensions\\DisableExtensionRequest",
     "route": "POST /api/v1/extensions/{extension}/disable",
     "status": 200,
     "body": {

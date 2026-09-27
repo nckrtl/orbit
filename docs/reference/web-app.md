@@ -12,7 +12,7 @@ covers:
 
 # Web app
 
-The web app is Orbit's live view of the fleet. It is a static single-page app that reads the Gateway API and follows [realtime events](/reference/events). The Gateway serves it from its own origin.
+The web app is Orbit's live view of the fleet. It is a static single-page app that reads the Gateway API and follows [realtime events](/reference/events). The Gateway serves it from its own origin. Extension navigation follows the Gateway's enabled set: Tasks and ProxyCLI links and routes are absent while their extension is disabled. The Gateway API remains authoritative, so a stale direct request still receives `extension.disabled` rather than granting access.
 
 ## Open the app
 
@@ -50,7 +50,7 @@ CPU and memory come from [`process.usage`](/reference/events#process-usage) even
 
 ## Live tasks
 
-The app keeps the task board, each task group, its agent threads, its comments, and the extension status current from [task events](/reference/events#tasks).
+When the Gateway reports Tasks enabled, the app keeps the task board, each task group, its agent threads, its comments, and the extension status current from [task events](/reference/events#tasks). When disabled, it hides task navigation and task routes; enabling the extension makes those views available again without removing stored task records.
 
 | Event | The app refetches |
 | --- | --- |

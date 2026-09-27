@@ -86,7 +86,7 @@ orbit gateway:status [--json]
 
 Human output is a detail tree with the profile URL, the Gateway name, status, Orbit version, PHP version, Laravel version, and request ID. JSON returns the same values with the profile name and URL.
 
-The command fails with `gateway.profile_missing` when no profile is active and with `gateway.unreachable` when the Gateway does not answer.
+The command fails with `gateway.profile_missing` when no profile is active and with `gateway.unreachable` when the Gateway does not answer. A Gateway response without an error code uses `gateway.request_failed`; transport failures use `gateway.unreachable`.
 
 ## orbit gateway:trust
 
@@ -143,5 +143,6 @@ A refusal changes nothing. JSON returns `profile` with the removed name.
 
 ## Related
 
+- [`extension`](/cli/extension) describes the Gateway-owned switches and how unavailable state differs from a disabled extension.
 - [`node`](/cli/node) registers the machines that the active Gateway manages.
 - [`activity`](/cli/activity) lists the requests that the active Gateway recorded.

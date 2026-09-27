@@ -275,6 +275,7 @@
             ],
             "concepts": [
                 "Activity",
+                "Extension",
                 "Gateway",
                 "Node"
             ],
@@ -2386,6 +2387,7 @@
                 "packages/php-sdk"
             ],
             "concepts": [
+                "Extension",
                 "Gateway",
                 "Node",
                 "Route"

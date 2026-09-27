@@ -169,3 +169,23 @@ it('returns the Gateway refusal when a disabled extension command is invoked dir
 
     $mock->assertSentCount(1, ListTaskGroupsRequest::class);
 });
+
+it('replays the recorded extension API responses as CLI contracts', function (): void {
+    run_extension_contract('extensions/extensions-list/disabled', 'extension:list', [], 'extensions/extensions-list/disabled');
+    run_extension_contract('extensions/extensions-enable/enabled', 'extension:enable', ['extension' => 'tasks'], 'extensions/extensions-enable/enabled');
+    run_extension_contract('extensions/extensions-enable/unknown-slug', 'extension:enable', ['extension' => 'unknown'], 'extensions/extensions-enable/unknown-slug', 1);
+    run_extension_contract('extensions/extensions-disable/disabled', 'extension:disable', ['extension' => 'proxycli'], 'extensions/extensions-disable/disabled');
+});
+
+/** @param array<string, mixed> $arguments */
+function run_extension_contract(string $fixture, string $command, array $arguments, string $expected, int $exitCode = 0): void
+{
+    foreach (['human.txt' => [], 'json' => ['--json' => true]] as $extension => $mode) {
+        MockClient::destroyGlobal();
+        extension_commands_reset_discovery();
+        MockClient::global(gateway_fixture_mock($fixture));
+
+        expect(Artisan::call($command, [...$arguments, ...$mode]))->toBe($exitCode);
+        expect_output(Artisan::output(), "{$expected}.{$extension}");
+    }
+}
