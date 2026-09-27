@@ -20,7 +20,7 @@ These rows have little audit value. They repeat the same command from the same c
 
 The audit questions the log answers are: what changed, who changed it, and did it succeed. A read that succeeded does not change anything. A failed read can show a broken Node, a missing access edge, or an attack, so it is worth keeping. A read of a credential shows who holds a secret, so it is worth keeping every time. A read of one target's logs or database schema says who saw that target's data, so a read of another target must keep its own record.
 
-[ADR 0013](/decisions/0013-native-systemd-schedule-management) says each public Schedule operation creates one Activity, including `schedule:list`, `schedule:show`, and `schedule:logs`. [ADR 0004](/decisions/0004-verify-only-doctor-boundary) says each Doctor run creates exactly one Activity. No other ADR promises a record for a read.
+[ADR 0013](/decisions/0013-native-systemd-schedule-management) says each public Schedule operation creates one Activity, including `schedule:list`, `schedule:show`, and `schedule:logs`. [ADR 0004](/cli/doctor#why-it-works-this-way) says each Doctor run creates exactly one Activity. No other ADR promises a record for a read.
 
 ## Decision
 
@@ -51,6 +51,6 @@ The audit questions the log answers are: what changed, who changed it, and did i
 ## Affects
 
 - Components: apps/gateway, apps/docs
-- ADRs: keeps the Activity promises of [ADR 0013](/decisions/0013-native-systemd-schedule-management) and [ADR 0004](/decisions/0004-verify-only-doctor-boundary); MCP tool calls follow the same rule, because [ADR 0086](/decisions/0086-offer-the-api-as-mcp-tools) runs each one as an internal API request.
+- ADRs: keeps the Activity promises of [ADR 0013](/decisions/0013-native-systemd-schedule-management) and [ADR 0004](/cli/doctor#why-it-works-this-way); MCP tool calls follow the same rule, because [ADR 0086](/decisions/0086-offer-the-api-as-mcp-tools) runs each one as an internal API request.
 - Detail: [activity](/cli/activity), [Using the API](/api/overview)
 - Verify: `apps/gateway` tests `ReadActivitySamplingTest` and `CommandActivityTest`
