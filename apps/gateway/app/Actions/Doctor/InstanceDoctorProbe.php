@@ -6,6 +6,7 @@ namespace App\Actions\Doctor;
 
 use App\Data\Doctor\DoctorFamilyReportData;
 use App\Data\Doctor\DoctorIssueData;
+use App\Domain\AppInstances\AppInstanceProvisioning;
 use App\Domain\AppInstances\AppInstanceSourceLayout;
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Doctor\DoctorFamily;
@@ -29,6 +30,8 @@ use Illuminate\Database\Eloquent\Collection;
 final readonly class InstanceDoctorProbe implements DoctorFamilyProbe
 {
     public const int StuckRemovalMinutes = 10;
+
+    public const int StuckProvisioningMinutes = 20;
 
     public function __construct(
         private InstanceStateInspector $inspector,
@@ -82,6 +85,25 @@ final readonly class InstanceDoctorProbe implements DoctorFamilyProbe
             }
 
             $settled = TaskWorkspaceLifecycle::settledState($instance);
+            if ($this->isProvisioning($instance, $settled)) {
+                if ($instance->updated_at?->greaterThanOrEqualTo(now()->subMinutes(self::StuckProvisioningMinutes))) {
+                    continue;
+                }
+
+                $issues[] = new DoctorIssueData(
+                    InstanceDoctorIssueCode::ProvisioningStuck,
+                    DoctorIssueKind::Drift,
+                    'instance',
+                    $instance->id,
+                    $instance->name,
+                    'Instance provisioning has not completed.',
+                    $settled->value,
+                    $instance->status->value,
+                );
+
+                continue;
+            }
+
             if ($instance->status !== $settled) {
                 $issues[] = new DoctorIssueData(
                     InstanceDoctorIssueCode::LifecycleNotActive,
@@ -198,6 +220,11 @@ final readonly class InstanceDoctorProbe implements DoctorFamilyProbe
         }
 
         return DoctorFamilyReportData::fromIssues(DoctorFamily::Instance, $rows->count(), $issues);
+    }
+
+    private function isProvisioning(AppInstance $instance, AppInstanceState $settled): bool
+    {
+        return AppInstanceProvisioning::isInFlight($instance, $settled);
     }
 
     private function productionAssociationMissing(AppInstance $instance): bool

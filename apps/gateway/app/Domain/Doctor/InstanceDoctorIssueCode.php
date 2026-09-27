@@ -8,6 +8,7 @@ enum InstanceDoctorIssueCode: string implements DoctorIssueCode
 {
     case LifecycleNotActive = 'instance.lifecycle_not_active';
     case RemovalStuck = 'instance.removal_stuck';
+    case ProvisioningStuck = 'instance.provisioning_stuck';
     case SourceLayoutMismatch = 'instance.source_layout_mismatch';
     case CheckoutMissing = 'instance.checkout_missing';
     case RepositoryLayoutMismatch = 'instance.repository_layout_mismatch';

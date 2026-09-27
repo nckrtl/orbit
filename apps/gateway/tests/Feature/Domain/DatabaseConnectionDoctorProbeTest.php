@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Actions\DatabaseConnections\AttachDatabaseConnectionAction;
 use App\Actions\Doctor\DatabaseConnectionDoctorProbe;
+use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\DatabaseConnections\DatabaseConnectionEnvProjection;
 use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\Doctor\DatabaseConnectionDoctorInspection;
@@ -27,6 +28,8 @@ use App\Models\DatabaseConnectionTarget;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\Route;
+use Illuminate\Database\Events\QueryExecuted;
+use Illuminate\Support\Facades\DB;
 
 const DATABASE_CONNECTION_DOCTOR_SECRET = 'db-doctor-secret-3f91';
 
@@ -99,6 +102,79 @@ it('reports distinct unhealthy and env-mismatch codes without exposing the passw
         ->not->toContain(DATABASE_CONNECTION_DOCTOR_SECRET)
         ->and(print_r($instance->environmentValues, true))
         ->not->toContain(DATABASE_CONNECTION_DOCTOR_SECRET);
+});
+
+it('skips attachments for Instances already removing', function (): void {
+    $node = database_connection_doctor_node();
+    $instance = database_connection_doctor_instance($node);
+    $connection = database_connection_doctor_mysql($node, 'removing');
+    $connection->update(['node_id' => null]);
+    DatabaseConnectionTarget::query()->create([
+        'database_connection_id' => $connection->id,
+        'app_instance_id' => $instance->id,
+        'prefix' => 'DB',
+    ]);
+    database_connection_doctor_mark_removing($instance);
+
+    $report = database_connection_doctor_probe()->inspect(database_connection_doctor_context($node));
+
+    expect($report->checked)->toBe(0)->and($report->issues)->toBeEmpty();
+});
+
+it('drops attachment issues when removal starts during inspection but keeps standalone checks', function (): void {
+    $node = database_connection_doctor_node();
+    $instance = database_connection_doctor_instance($node);
+    $connection = database_connection_doctor_mysql($node, 'removing');
+    $connection->update(['node_id' => null]);
+    DatabaseConnectionTarget::query()->create([
+        'database_connection_id' => $connection->id,
+        'app_instance_id' => $instance->id,
+        'prefix' => 'DB',
+    ]);
+    $standalone = DatabaseConnection::query()->create([
+        'slug' => 'broken-standalone',
+        'driver' => DatabaseDriver::Mysql,
+        'node_id' => $node->id,
+    ]);
+    $changed = false;
+    DB::listen(static function (QueryExecuted $query) use ($instance, &$changed): void {
+        if (! $changed && str_contains($query->sql, 'app_instance_environment_values')) {
+            $changed = true;
+            database_connection_doctor_mark_removing($instance);
+        }
+    });
+
+    $report = database_connection_doctor_probe()->inspect(database_connection_doctor_context($node));
+
+    expect($report->issues)
+        ->toHaveCount(1)
+        ->and($report->issues[0]->resourceId)
+        ->toBe($standalone->id)
+        ->and($report->issues[0]->code)
+        ->toBe(DatabaseConnectionDoctorIssueCode::Unhealthy->value);
+});
+
+it('drops attachment issues when its Instance row is deleted during inspection', function (): void {
+    $node = database_connection_doctor_node();
+    $instance = database_connection_doctor_instance($node);
+    $connection = database_connection_doctor_mysql($node, 'deleted');
+    $connection->update(['node_id' => null]);
+    DatabaseConnectionTarget::query()->create([
+        'database_connection_id' => $connection->id,
+        'app_instance_id' => $instance->id,
+        'prefix' => 'DB',
+    ]);
+    $deleted = false;
+    DB::listen(static function (QueryExecuted $query) use ($instance, &$deleted): void {
+        if (! $deleted && str_contains($query->sql, 'app_instance_environment_values')) {
+            $deleted = true;
+            DB::table('app_instances')->where('id', $instance->id)->delete();
+        }
+    });
+
+    $report = database_connection_doctor_probe()->inspect(database_connection_doctor_context($node));
+
+    expect($report->issues)->toBeEmpty();
 });
 
 it('restores drifted stored env from the registry with the same attach projection rules', function (): void {
@@ -231,6 +307,22 @@ it('keeps a healthy attachment silent and omits the password from doctor activit
         ->and($activity->command)
         ->toBe('doctor');
 });
+
+function database_connection_doctor_mark_removing(AppInstance $instance): void
+{
+    $trigger = DB::table('sqlite_master')
+        ->where('type', 'trigger')
+        ->where('name', 'app_instances_removal_status_update')
+        ->value('sql');
+    expect($trigger)->toBeString();
+    DB::statement('DROP TRIGGER app_instances_removal_status_update');
+
+    try {
+        $instance->update(['status' => AppInstanceState::Removing]);
+    } finally {
+        DB::statement($trigger);
+    }
+}
 
 function database_connection_doctor_inspection(): DatabaseConnectionDoctorInspection
 {
