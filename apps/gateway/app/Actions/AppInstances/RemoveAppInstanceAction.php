@@ -12,7 +12,6 @@ use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\AppInstances\AppInstanceRemovalStatus;
 use App\Domain\AppInstances\AppInstanceRemovalStep;
-use App\Domain\AppInstances\AppInstanceRemover;
 use App\Domain\AppInstances\AppInstanceSourceLayout;
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentOperationLock;
@@ -24,6 +23,7 @@ use App\Domain\AppInstances\Removal\AppInstanceSourceRevalidationState;
 use App\Domain\AppInstances\Removal\DevelopmentAppInstanceSourceFinalizer;
 use App\Domain\AppInstances\Removal\DevelopmentAppInstanceSourceRemoval;
 use App\Domain\AppInstances\Removal\ProductionAppInstanceContentRetention;
+use App\Domain\AppInstances\StagedAppInstanceRemover;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Nodes\RoleName;
@@ -51,7 +51,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Throwable;
 
-final readonly class RemoveAppInstanceAction implements AppInstanceRemover
+final readonly class RemoveAppInstanceAction implements StagedAppInstanceRemover
 {
     public function __construct(
         private DevelopmentAppInstanceSourceRemoval $sourceInspector,
@@ -91,6 +91,50 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
         }
 
         return $removal;
+    }
+
+    public function prepare(AppInstance $appInstance, bool $force): AppInstanceRemoval
+    {
+        if ($appInstance->status === AppInstanceState::Removing) {
+            $member = AppInstanceRemovalMember::query()
+                ->where('app_instance_id', $appInstance->id)
+                ->whereNull('row_deleted_at')
+                ->with('removal')
+                ->first();
+
+            if ($member instanceof AppInstanceRemovalMember) {
+                $operation = $member->removal;
+
+                if ($operation->requested_app_instance_id !== $appInstance->id || $operation->force !== $force) {
+                    $this->conflict($appInstance);
+                }
+
+                $this->runPreparedTeardown($operation, $force);
+
+                return $operation;
+            }
+
+            $this->conflict($appInstance);
+        }
+
+        if ($appInstance->placedOnAppProd()) {
+            return $this->acceptProduction($appInstance, $force);
+        }
+
+        $ownerIds = $this->removalEnvironmentOwnerIds($appInstance->refresh(), $force);
+
+        return $this->environmentOperations->run(
+            $ownerIds,
+            fn (): AppInstanceRemoval => $this->sourceLock->synchronized(
+                $appInstance->node_id,
+                function () use ($appInstance, $force): AppInstanceRemoval {
+                    $operation = $this->accept($appInstance, $force, false, true);
+                    $this->runPreparedTeardown($operation, $force);
+
+                    return $operation;
+                },
+            ),
+        );
     }
 
     private function performRemoval(AppInstance $appInstance, bool $force, bool $runTeardown, bool $allowCascade): AppInstanceRemoval
@@ -800,6 +844,54 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
         }
 
         return true;
+    }
+
+    private function runPreparedTeardown(AppInstanceRemoval $operation, bool $force): void
+    {
+        $operation->load('members');
+
+        try {
+            foreach ($operation->members as $member) {
+                if ($member->source_prepared_at !== null) {
+                    continue;
+                }
+
+                $instance = AppInstance::query()->find($member->app_instance_id);
+
+                if (! $instance instanceof AppInstance) {
+                    $this->conflict(AppInstance::query()->findOrFail($operation->requested_app_instance_id));
+                }
+
+                $before = $this->inspect($instance, $force);
+                $ranTeardown = ($this->lifecycle ?? app(ProjectLifecycleRunner::class))
+                    ->run($instance, LifecyclePhase::Teardown);
+
+                if (! $ranTeardown) {
+                    continue;
+                }
+
+                $after = $this->inspect($instance->refresh(), $force);
+                $unchanged = $after->layout === $before->layout
+                    && $after->repositoryIdentity === $before->repositoryIdentity
+                    && $after->checkoutPath === $before->checkoutPath
+                    && $after->root === $before->root
+                    && $after->branch === $before->branch
+                    && $after->startingCommit === $before->startingCommit
+                    && $after->commonRepositoryPath === $before->commonRepositoryPath
+                    && $after->sourceIdentity === $before->sourceIdentity
+                    && $after->linkedWorktreePaths === $before->linkedWorktreePaths;
+
+                if (! $unchanged) {
+                    throw new ResourceOperationException(
+                        errorCode: 'instance.remove_refused',
+                        message: 'Teardown changed the source ownership. The Instance remains.',
+                        status: 409,
+                    );
+                }
+            }
+        } catch (Throwable $exception) {
+            $this->fail($operation, AppInstanceRemovalStep::SourcePreparation, $exception, revalidation: true);
+        }
     }
 
     private function inspect(

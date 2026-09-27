@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Tasks;
 
 use App\Domain\AppInstances\AppInstanceRemover;
+use App\Domain\AppInstances\StagedAppInstanceRemover;
 use App\Domain\Tasks\TaskBridgeWorktreeRemover;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskWorkspaceName;
@@ -87,6 +88,10 @@ final readonly class RemoveTaskWorkspaceAction
     /** Removes the group's bridge worktree, then the checkout. The Instance row stays when removal refuses. */
     public function remove(AppInstance $instance): void
     {
+        if ($this->remover instanceof StagedAppInstanceRemover) {
+            $this->remover->prepare($instance, true);
+        }
+
         $this->bridges->remove($instance);
         $this->remover->execute($instance, true);
     }

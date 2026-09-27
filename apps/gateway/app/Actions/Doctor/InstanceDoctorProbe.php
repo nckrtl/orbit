@@ -28,6 +28,8 @@ use Illuminate\Database\Eloquent\Collection;
 
 final readonly class InstanceDoctorProbe implements DoctorFamilyProbe
 {
+    public const int StuckRemovalMinutes = 10;
+
     public function __construct(
         private InstanceStateInspector $inspector,
         private ?PublicRouteEdgeInspector $publicEdge = null,
@@ -60,6 +62,23 @@ final readonly class InstanceDoctorProbe implements DoctorFamilyProbe
         }
         $issues = [];
         foreach ($rows as $instance) {
+            if ($instance->status === AppInstanceState::Removing) {
+                if ($instance->updated_at?->lessThanOrEqualTo(now()->subMinutes(self::StuckRemovalMinutes))) {
+                    $issues[] = new DoctorIssueData(
+                        InstanceDoctorIssueCode::RemovalStuck,
+                        DoctorIssueKind::Drift,
+                        'instance',
+                        $instance->id,
+                        $instance->name,
+                        'Instance removal has not completed.',
+                        'removed',
+                        'removing',
+                    );
+                }
+
+                continue;
+            }
+
             $settled = TaskWorkspaceLifecycle::settledState($instance);
             if ($instance->status !== $settled) {
                 $issues[] = new DoctorIssueData(
