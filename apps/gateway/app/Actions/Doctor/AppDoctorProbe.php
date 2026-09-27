@@ -6,6 +6,7 @@ namespace App\Actions\Doctor;
 
 use App\Data\Doctor\DoctorFamilyReportData;
 use App\Data\Doctor\DoctorIssueData;
+use App\Domain\AppInstances\AppInstanceProvisioning;
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Doctor\AppDoctorIssueCode;
 use App\Domain\Doctor\AppStateInspector;
@@ -14,9 +15,9 @@ use App\Domain\Doctor\DoctorFamilyProbe;
 use App\Domain\Doctor\DoctorInspectionException;
 use App\Domain\Doctor\DoctorIssueKind;
 use App\Domain\Doctor\DoctorNodeContext;
+use App\Domain\Tasks\TaskWorkspaceLifecycle;
 use App\Models\App;
 use App\Models\AppInstance;
-use Illuminate\Database\Eloquent\Builder;
 
 final readonly class AppDoctorProbe implements DoctorFamilyProbe
 {
@@ -31,10 +32,9 @@ final readonly class AppDoctorProbe implements DoctorFamilyProbe
 
     public function inspect(DoctorNodeContext $context): DoctorFamilyReportData
     {
+        $eligibleInstanceIds = $this->eligibleInstanceIds($context->node->id);
         $rows = App::query()
-            ->whereHas('appInstances', static fn (Builder $query): Builder => $query
-                ->where('node_id', $context->node->id)
-                ->where('status', '!=', AppInstanceState::Removing))
+            ->whereIn('id', AppInstance::query()->whereIn('id', $eligibleInstanceIds)->select('app_id'))
             ->orderBy('id')
             ->get();
         if ($rows->isEmpty()) {
@@ -113,18 +113,35 @@ final readonly class AppDoctorProbe implements DoctorFamilyProbe
     /** @return list<int> */
     private function currentInstanceIds(App $app, int $nodeId): array
     {
-        $instances = AppInstance::query()
-            ->where('app_id', $app->id)
-            ->where('node_id', $nodeId)
-            ->where('status', '!=', AppInstanceState::Removing)
-            ->get(['id']);
-        $ids = [];
+        return $this->eligibleInstanceIds($nodeId, $app->id);
+    }
 
-        foreach ($instances as $instance) {
-            $ids[] = $instance->id;
+    /** @return list<int> */
+    private function eligibleInstanceIds(int $nodeId, ?int $appId = null): array
+    {
+        $query = AppInstance::query()
+            ->with(['app', 'taskGroups'])
+            ->where('node_id', $nodeId)
+            ->where('status', '!=', AppInstanceState::Removing);
+        if ($appId !== null) {
+            $query->where('app_id', $appId);
+        }
+
+        $ids = [];
+        foreach ($query->get() as $instance) {
+            if ($this->isEligible($instance)) {
+                $ids[] = $instance->id;
+            }
         }
 
         return $ids;
+    }
+
+    private function isEligible(AppInstance $instance): bool
+    {
+        $settled = TaskWorkspaceLifecycle::settledState($instance);
+
+        return ! AppInstanceProvisioning::isInFlight($instance, $settled);
     }
 
     private function hasCheckoutsOutsideRemoval(App $app, int $nodeId): bool

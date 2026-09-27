@@ -101,6 +101,28 @@ it('excludes removing Instances from App checkout inspection', function (): void
         ->toHaveCount(1);
 });
 
+it('excludes in-flight App checkouts while preserving settled checkout failures', function (): void {
+    $app = application_inspector_app();
+    $node = application_inspector_node();
+    $settled = application_app_instance($app, $node, 'settled');
+    $provisioning = application_app_instance($app, $node, 'provisioning');
+    $provisioning->update([
+        'status' => AppInstanceState::CheckoutPrepared,
+        'provisioning_step' => 'checkout',
+        'environment' => 'production',
+    ]);
+    $ssh = new AppDevFakeSshExecutor([app_inspector_result('', exitCode: 1)]);
+
+    $inspection = application_app_inspector($ssh)->inspect($app, $node);
+
+    expect($inspection)
+        ->toEqual(new AppInspectionData(1, true, [], [(int) $settled->id]))
+        ->and($ssh->commands)
+        ->toHaveCount(1)
+        ->and($ssh->commands[0]->arguments[4])
+        ->toBe($settled->checkout_path);
+});
+
 it('keeps per-checkout app failures bounded and continues inspecting other Instances', function (): void {
     $app = application_inspector_app();
     $node = application_inspector_node();

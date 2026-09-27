@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Doctor;
 
+use App\Domain\AppInstances\AppInstanceProvisioning;
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Doctor\AppInspectionData;
 use App\Domain\Doctor\AppStateInspector;
@@ -14,6 +15,7 @@ use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Nodes\Storage\StorageRootResolver;
 use App\Domain\SourceControl\GitRepositoryOrigin;
+use App\Domain\Tasks\TaskWorkspaceLifecycle;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\RemoteCommand;
@@ -21,6 +23,7 @@ use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\Node;
 
 final readonly class NativeAppStateInspector implements AppStateInspector
@@ -55,8 +58,13 @@ final readonly class NativeAppStateInspector implements AppStateInspector
             ->appInstances()
             ->where('node_id', $node->id)
             ->where('status', '!=', AppInstanceState::Removing)
+            ->with(['app', 'taskGroups'])
             ->orderBy('id')
-            ->get();
+            ->get()
+            ->filter(static fn (AppInstance $instance): bool => ! AppInstanceProvisioning::isInFlight(
+                $instance,
+                TaskWorkspaceLifecycle::settledState($instance),
+            ));
         foreach ($appInstances as $appInstance) {
             if ($appInstance->placedOnAppProd()) {
                 $home = $appInstance->production_home;

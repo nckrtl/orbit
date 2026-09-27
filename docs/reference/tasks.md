@@ -395,7 +395,9 @@ One fresh Instance belongs to the group. Every subtask reuses it. The instance n
 
 The provisioner honors `visitable`. It does not invent a Route for a non-visitable workspace because an active Instance still requires exactly one Route.
 
-Doctor expects the same final state. A non-visitable task workspace is healthy in `source_resolved`, and a visitable one is healthy in `active`. Doctor reports `instance.lifecycle_not_active` for any other state, such as a workspace stuck in `reserved` or `checkout_prepared`, or a visitable workspace stuck in `source_resolved`. Instances in `removing` are skipped by every Doctor probe; after an inspection reports an issue, Doctor rereads the Instance and drops that issue if removal has started or the row was deleted. Only a removal lasting more than 10 minutes reports `instance.removal_stuck`. See the [Doctor removal rule](/cli/doctor#what-each-family-checks).
+Doctor expects the same final state. A non-visitable task workspace is healthy in `source_resolved`, and a visitable one is healthy in `active`. A non-null provisioning step is unfinished unless it is the terminal `active` or `clone-completed` step. Doctor also treats a lifecycle state before the settled state as provisioning. It skips unfinished provisioning for up to 20 minutes after the last update; older provisioning reports only `instance.provisioning_stuck`. A state later than the settled state reports `instance.lifecycle_not_active`.
+
+Instances in `removing` are skipped by every Doctor probe; after an inspection reports an issue, Doctor rereads the Instance and drops that issue if removal has started or the row was deleted. Only a removal lasting more than 10 minutes reports `instance.removal_stuck`. See the [Doctor removal rule](/cli/doctor#what-each-family-checks).
 
 ## Agent viewer
 

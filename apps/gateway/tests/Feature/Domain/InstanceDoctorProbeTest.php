@@ -84,6 +84,101 @@ it('checks healthy AppInstances in id order', function (): void {
         ->toBeEmpty();
 });
 
+it('does not report drift for an Instance with provisioning in flight', function (): void {
+    $node = instance_probe_node();
+    $instance = instance_probe_instance(instance_probe_app(), $node, AppInstanceState::CheckoutPrepared);
+    $instance->update(['provisioning_step' => null]);
+    $calls = 0;
+
+    $report = new InstanceDoctorProbe(new class($calls) implements InstanceStateInspector
+    {
+        public function __construct(private int &$calls) {}
+
+        public function inspect(AppInstance $appInstance): InstanceInspectionData
+        {
+            $this->calls++;
+
+            return new InstanceInspectionData(false, false, false, false);
+        }
+    })->inspect(instance_probe_context($node));
+
+    expect($report->checked)->toBe(1)
+        ->and($report->issues)->toBeEmpty()
+        ->and($calls)->toBe(0);
+});
+
+it('reports one stuck issue for an Instance with provisioning in flight beyond the bound', function (): void {
+    $node = instance_probe_node();
+    $instance = instance_probe_instance(instance_probe_app(), $node, AppInstanceState::CheckoutPrepared);
+    $instance->update(['provisioning_step' => 'checkout']);
+    DB::table('app_instances')->where('id', $instance->id)
+        ->update(['updated_at' => now()->subMinutes(InstanceDoctorProbe::StuckProvisioningMinutes + 1)]);
+    $calls = 0;
+
+    $report = new InstanceDoctorProbe(new class($calls) implements InstanceStateInspector
+    {
+        public function __construct(private int &$calls) {}
+
+        public function inspect(AppInstance $appInstance): InstanceInspectionData
+        {
+            $this->calls++;
+
+            return new InstanceInspectionData(false, false, false, false);
+        }
+    })->inspect(instance_probe_context($node));
+
+    expect($report->issues)->toHaveCount(1)
+        ->and($report->issues[0]->code)->toBe('instance.provisioning_stuck')
+        ->and($report->issues[0]->resourceId)->toBe($instance->id)
+        ->and($report->issues[0]->kind->value)->toBe('drift')
+        ->and($calls)->toBe(0);
+});
+
+it('checks Instances with completed provisioning steps inside and beyond the stuck bound', function (): void {
+    $node = instance_probe_node();
+
+    foreach (['active', 'clone-completed'] as $step) {
+        foreach ([false, true] as $olderThanBound) {
+            $instance = instance_probe_instance(instance_probe_app(), $node);
+            $instance->update(['provisioning_step' => $step]);
+            if ($olderThanBound) {
+                DB::table('app_instances')->where('id', $instance->id)
+                    ->update(['updated_at' => now()->subMinutes(InstanceDoctorProbe::StuckProvisioningMinutes + 1)]);
+            }
+        }
+    }
+    $calls = 0;
+
+    $report = new InstanceDoctorProbe(new class($calls) implements InstanceStateInspector
+    {
+        public function __construct(private int &$calls) {}
+
+        public function inspect(AppInstance $appInstance): InstanceInspectionData
+        {
+            $this->calls++;
+
+            return new InstanceInspectionData(true, true, true, true);
+        }
+    })->inspect(instance_probe_context($node));
+
+    expect($report->checked)->toBe(4)
+        ->and($report->issues)->toBeEmpty()
+        ->and($calls)->toBe(4);
+});
+
+it('reports a settled task workspace in a later lifecycle state as lifecycle drift', function (): void {
+    $node = instance_probe_node();
+    $instance = instance_probe_task_workspace(instance_probe_orbit_app(), $node, AppInstanceState::Active);
+    $instance->update(['provisioning_step' => null]);
+
+    $report = new InstanceDoctorProbe(instance_probe_healthy_inspector())->inspect(instance_probe_context($node));
+
+    expect($report->issues)->toHaveCount(1)
+        ->and($report->issues[0]->code)->toBe('instance.lifecycle_not_active')
+        ->and($report->issues[0]->expected)->toBe(AppInstanceState::SourceResolved->value)
+        ->and($report->issues[0]->observed)->toBe(AppInstanceState::Active->value);
+});
+
 it('does not report drift for a task workspace being removed', function (): void {
     $instance = instance_probe_task_workspace_for_removal();
     $node = $instance->node;
@@ -113,14 +208,14 @@ it('does not report drift for a task workspace being removed', function (): void
 
 it('drops projection issues when removal started during inspection', function (): void {
     $instance = instance_probe_task_workspace_for_removal();
-    $instance->update(['status' => AppInstanceState::SourceResolved]);
+    $instance->update(['status' => AppInstanceState::Active, 'provisioning_step' => null]);
     $node = $instance->node;
 
     $report = new InstanceDoctorProbe(new class implements InstanceStateInspector
     {
         public function inspect(AppInstance $appInstance): InstanceInspectionData
         {
-            expect($appInstance->status)->toBe(AppInstanceState::SourceResolved);
+            expect($appInstance->status)->toBe(AppInstanceState::Active);
             $appInstance->update(['status' => AppInstanceState::Active]);
             instance_probe_mark_removing($appInstance);
 
@@ -195,7 +290,7 @@ it('short-circuits instance inspection when the node is unreachable', function (
         ->toBe(0);
 });
 
-it('reports lifecycle and every false instance field in stable order', function (): void {
+it('reports only stuck provisioning instead of inspecting an unsettled Instance', function (): void {
     $node = instance_probe_node();
     $instance = instance_probe_instance(
         instance_probe_app(),
@@ -203,30 +298,21 @@ it('reports lifecycle and every false instance field in stable order', function 
         AppInstanceState::Reserved,
     );
 
+    DB::table('app_instances')->where('id', $instance->id)
+        ->update(['updated_at' => now()->subMinutes(InstanceDoctorProbe::StuckProvisioningMinutes + 1)]);
+
     $report = new InstanceDoctorProbe(new class implements InstanceStateInspector
     {
         public function inspect(AppInstance $appInstance): InstanceInspectionData
         {
-            return new InstanceInspectionData(false, false, false, false);
+            throw new RuntimeException('Unsettled Instances are not inspected.');
         }
     })->inspect(instance_probe_context($node));
 
-    expect($report->checked)
-        ->toBe(1)
-        ->and(array_map(static fn ($issue): string => $issue->code, $report->issues))
-        ->toBe([
-            'instance.lifecycle_not_active',
-            'instance.checkout_missing',
-            'instance.repository_layout_mismatch',
-            'instance.origin_mismatch',
-            'instance.source_identity_mismatch',
-        ])
-        ->and(collect($report->issues)->pluck('resourceId')->unique()->all())
-        ->toBe([$instance->id])
-        ->and(collect($report->issues)->pluck('expected')->all())
-        ->toBe(['active', 'matching', 'matching', 'matching', 'matching'])
-        ->and(json_encode($report))
-        ->not->toContain($instance->checkout_path);
+    expect($report->checked)->toBe(1)
+        ->and($report->issues)->toHaveCount(1)
+        ->and($report->issues[0]->code)->toBe('instance.provisioning_stuck')
+        ->and($report->issues[0]->resourceId)->toBe($instance->id);
 });
 
 it('accepts source_resolved for a task workspace that is not visitable', function (): void {
@@ -241,11 +327,13 @@ it('accepts source_resolved for a task workspace that is not visitable', functio
 it('reports a task workspace that is not visitable and stuck before source resolution', function (AppInstanceState $status): void {
     $node = instance_probe_node();
     $instance = instance_probe_task_workspace(instance_probe_orbit_app(), $node, $status);
+    DB::table('app_instances')->where('id', $instance->id)
+        ->update(['updated_at' => now()->subMinutes(InstanceDoctorProbe::StuckProvisioningMinutes + 1)]);
 
     $report = new InstanceDoctorProbe(instance_probe_healthy_inspector())->inspect(instance_probe_context($node));
 
     expect($report->issues)->toHaveCount(1)
-        ->and($report->issues[0]->code)->toBe('instance.lifecycle_not_active')
+        ->and($report->issues[0]->code)->toBe('instance.provisioning_stuck')
         ->and($report->issues[0]->resourceId)->toBe($instance->id)
         ->and($report->issues[0]->expected)->toBe('source_resolved')
         ->and($report->issues[0]->observed)->toBe($status->value);
@@ -259,11 +347,13 @@ it('expects active for a visitable task workspace and for an Instance outside a 
     $instance = $taskWorkspace
         ? instance_probe_task_workspace($app, $node, AppInstanceState::SourceResolved)
         : instance_probe_instance($app, $node, AppInstanceState::SourceResolved);
+    DB::table('app_instances')->where('id', $instance->id)
+        ->update(['updated_at' => now()->subMinutes(InstanceDoctorProbe::StuckProvisioningMinutes + 1)]);
 
     $report = new InstanceDoctorProbe(instance_probe_healthy_inspector())->inspect(instance_probe_context($node));
 
     expect($report->issues)->toHaveCount(1)
-        ->and($report->issues[0]->code)->toBe('instance.lifecycle_not_active')
+        ->and($report->issues[0]->code)->toBe('instance.provisioning_stuck')
         ->and($report->issues[0]->resourceId)->toBe($instance->id)
         ->and($report->issues[0]->expected)->toBe('active')
         ->and($report->issues[0]->observed)->toBe('source_resolved');

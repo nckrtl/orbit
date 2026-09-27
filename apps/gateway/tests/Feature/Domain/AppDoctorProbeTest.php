@@ -110,6 +110,59 @@ it('ignores removal in flight when the only checkout mismatch belongs to a remov
         ->toBe(0);
 });
 
+it('ignores App drift for an Instance with provisioning in flight', function (): void {
+    $node = app_probe_node();
+    $app = app_probe_app();
+    $instance = app_probe_projection($app, $node);
+    $instance->update(['status' => AppInstanceState::CheckoutPrepared, 'provisioning_step' => 'checkout']);
+    $calls = 0;
+
+    $report = new AppDoctorProbe(new class($calls) implements AppStateInspector
+    {
+        public function __construct(private int &$calls) {}
+
+        public function inspect(App $app, Node $node): AppInspectionData
+        {
+            $this->calls++;
+
+            return new AppInspectionData(1, false);
+        }
+    })->inspect(app_probe_context($node));
+
+    expect($report->checked)->toBe(0)
+        ->and($report->issues)->toBeEmpty()
+        ->and($calls)->toBe(0);
+});
+
+it('keeps settled checkout failures visible beside a provisioning Instance', function (): void {
+    $node = app_probe_node();
+    $app = app_probe_app();
+    $settled = app_probe_projection($app, $node);
+    $provisioning = app_probe_projection($app, $node);
+    $provisioning->update([
+        'status' => AppInstanceState::CheckoutPrepared,
+        'provisioning_step' => 'checkout',
+    ]);
+
+    $report = new AppDoctorProbe(new class($settled, $provisioning) implements AppStateInspector
+    {
+        public function __construct(
+            private AppInstance $settled,
+            private AppInstance $provisioning,
+        ) {}
+
+        public function inspect(App $app, Node $node): AppInspectionData
+        {
+            return new AppInspectionData(2, true, [], [(int) $this->settled->id, (int) $this->provisioning->id]);
+        }
+    })->inspect(app_probe_context($node));
+
+    expect($report->checked)->toBe(1)
+        ->and($report->issues)->toHaveCount(1)
+        ->and($report->issues[0]->code)->toBe('app.inspection_failed')
+        ->and($report->issues[0]->resourceId)->toBe($app->id);
+});
+
 it('drops removal in flight mismatch when the Instance starts removing during inspection', function (): void {
     $node = app_probe_node();
     $app = app_probe_app();
