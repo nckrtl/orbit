@@ -9,12 +9,20 @@ use App\Infrastructure\Tasks\LaravelAiTaskBriefCoverage;
 use App\Models\App as OrbitApp;
 use App\Models\Task;
 use App\Models\TaskGroup;
+use Illuminate\Contracts\Debug\ExceptionHandler;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Exceptions;
+use Illuminate\Support\Facades\RateLimiter;
 use Laravel\Ai\Classification;
+use Laravel\Ai\Classification\Boolean;
 use Laravel\Ai\Classification\Choice;
 use Laravel\Ai\Prompts\ClassificationPrompt;
 use Laravel\Ai\Responses\Data\BooleanAnswer;
 use Laravel\Ai\Responses\Data\ChoiceAnswer;
+
+use function Pest\Laravel\mock;
 
 /** @return array{TaskGroup, Task, Task} */
 function coverage_group(): array
@@ -131,11 +139,76 @@ it('records the Jev call failure without provider body or input secrets', functi
     }
 });
 
+it('continues a successful classification when bookkeeping JSON encoding fails', function (): void {
+    Classification::fake([['decision' => new BooleanAnswer(NAN)]])->preventStrayClassifications();
+    Exceptions::fake();
+    $question = new Boolean('Choose one.', ['true' => null, 'false' => null]);
+    $state = ['input' => 'value'];
+    $classification = Classification::of($state)->question('decision', $question);
+
+    $response = app(Jev::class)->classify($classification, 'json_failure', [], ['decision' => $question], $state);
+
+    expect(is_nan($response->answers['decision']->probability))->toBeTrue();
+    Exceptions::assertReported(JsonException::class);
+});
+
+it('keeps the classification exception when recording a failed classification also fails', function (): void {
+    Classification::fake(fn (): never => throw new ConnectionException('provider failed'))->preventStrayClassifications();
+    Exceptions::fake();
+    DB::statement("CREATE TRIGGER fail_jev_decision_insert_before_failed_call BEFORE INSERT ON jev_decisions BEGIN SELECT RAISE(ABORT, 'jev bookkeeping insert failed'); END");
+    config()->set('ai.providers.typesafe.key', 'typesafe-test-key');
+    $group = coverage_group()[0];
+
+    expect(fn () => app(LaravelAiTaskBriefCoverage::class)->missing($group, coverage_pull_request()))
+        ->toThrow(TaskSessionClassificationException::class, 'TypeSafe Jev request failed (ConnectionException).');
+    Exceptions::assertReported(QueryException::class);
+});
+
+it('preserves a failed classification when the bookkeeping limiter fails', function (): void {
+    config()->set('ai.providers.typesafe.key', 'typesafe-test-key');
+    Classification::fake(fn (): never => throw new ConnectionException('provider failed'))->preventStrayClassifications();
+    RateLimiter::shouldReceive('attempt')->once()->andThrow(new RuntimeException('limiter failed'));
+    DB::statement("CREATE TRIGGER fail_jev_decision_insert_before_failed_limiter BEFORE INSERT ON jev_decisions BEGIN SELECT RAISE(ABORT, 'jev bookkeeping insert failed'); END");
+    $group = coverage_group()[0];
+
+    expect(fn () => app(LaravelAiTaskBriefCoverage::class)->missing($group, coverage_pull_request()))
+        ->toThrow(TaskSessionClassificationException::class, 'TypeSafe Jev request failed (ConnectionException).');
+});
+
+it('continues a successful classification when the bookkeeping limiter fails', function (): void {
+    Classification::fake([['decision' => new BooleanAnswer(0.8)]])->preventStrayClassifications();
+    RateLimiter::shouldReceive('attempt')->once()->andThrow(new RuntimeException('limiter failed'));
+    DB::statement("CREATE TRIGGER fail_jev_decision_insert_before_limiter_failure BEFORE INSERT ON jev_decisions BEGIN SELECT RAISE(ABORT, 'jev bookkeeping insert failed'); END");
+    $question = new Boolean('Choose one.', ['true' => null, 'false' => null]);
+    $state = ['input' => 'value'];
+    $classification = Classification::of($state)->question('decision', $question);
+
+    $response = app(Jev::class)->classify($classification, 'limiter_failure', [], ['decision' => $question], $state);
+
+    expect($response->answers)->toHaveKey('decision');
+});
+
+it('continues a successful classification when the bookkeeping reporter fails', function (): void {
+    Classification::fake([['decision' => new BooleanAnswer(0.8)]])->preventStrayClassifications();
+    mock(ExceptionHandler::class)->shouldReceive('report')->once()->andThrow(new RuntimeException('reporter failed'));
+    RateLimiter::shouldReceive('attempt')->once()->andReturnUsing(static fn (mixed $key, mixed $maxAttempts, mixed $callback, mixed $decaySeconds): mixed => $callback());
+    DB::statement("CREATE TRIGGER fail_jev_decision_insert_before_report_failure BEFORE INSERT ON jev_decisions BEGIN SELECT RAISE(ABORT, 'jev bookkeeping insert failed'); END");
+    $question = new Boolean('Choose one.', ['true' => null, 'false' => null]);
+    $state = ['input' => 'value'];
+    $classification = Classification::of($state)->question('decision', $question);
+
+    $response = app(Jev::class)->classify($classification, 'reporter_failure', [], ['decision' => $question], $state);
+
+    expect($response->answers)->toHaveKey('decision');
+});
+
 it('leaves selected Choice probability null when the selected option has no distribution entry', function (): void {
     Classification::fake([['decision' => new ChoiceAnswer('selected', ['other' => 0.7], 0.8)]]);
-    $classification = Classification::of(['input' => 'value'])->question('decision', new Choice('Choose one.', ['selected' => null, 'other' => null]));
+    $question = new Choice('Choose one.', ['selected' => null, 'other' => null]);
+    $state = ['input' => 'value'];
+    $classification = Classification::of($state)->question('decision', $question);
 
-    Jev::classify($classification, 'choice_test');
+    app(Jev::class)->classify($classification, 'choice_test', [], ['decision' => $question], $state);
 
     $answer = json_decode(DB::table('jev_decisions')->sole()->answers, true)['decision'];
     expect($answer)->toMatchArray([
@@ -148,9 +221,11 @@ it('leaves selected Choice probability null when the selected option has no dist
 
 it('preserves an explicit zero selected Choice probability', function (): void {
     Classification::fake([['decision' => new ChoiceAnswer('selected', ['selected' => 0.0, 'other' => 1.0], 0.8)]]);
-    $classification = Classification::of(['input' => 'value'])->question('decision', new Choice('Choose one.', ['selected' => null, 'other' => null]));
+    $question = new Choice('Choose one.', ['selected' => null, 'other' => null]);
+    $state = ['input' => 'value'];
+    $classification = Classification::of($state)->question('decision', $question);
 
-    Jev::classify($classification, 'choice_test');
+    app(Jev::class)->classify($classification, 'choice_test', [], ['decision' => $question], $state);
 
     $answer = json_decode(DB::table('jev_decisions')->sole()->answers, true)['decision'];
     expect($answer['probabilities'])->toBe(['selected' => 0, 'other' => 1])

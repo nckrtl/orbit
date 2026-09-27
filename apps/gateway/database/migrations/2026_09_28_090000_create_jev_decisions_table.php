@@ -13,7 +13,7 @@ return new class extends Migration
         Schema::create('jev_decisions', function (Blueprint $table): void {
             $table->id();
             $table->string('purpose');
-            $table->timestamp('call_started_at')->nullable();
+            $table->timestamp('call_started_at');
             $table->foreignId('task_group_id')->nullable()->constrained('task_groups')->nullOnDelete();
             $table->foreignId('task_id')->nullable()->constrained('tasks')->nullOnDelete();
             $table->json('task_ids')->nullable();

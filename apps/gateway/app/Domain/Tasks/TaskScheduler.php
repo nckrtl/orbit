@@ -9,7 +9,6 @@ use App\Actions\Tasks\RemoveTaskWorkspaceAction;
 use App\Domain\Projects\LifecyclePhase;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Shared\StoredInteger;
-use App\Infrastructure\Tasks\Jev;
 use App\Models\AgentThread;
 use App\Models\AppInstance;
 use App\Models\ProjectLifecycleStep;
@@ -105,6 +104,7 @@ final readonly class TaskScheduler
         private TaskRunReceipts $receipts,
         private TaskWorkspaceSigner $signer,
         private TaskBriefCoverage $coverage,
+        private BriefCoverageLabeler $coverageLabeler,
         private TaskPullRequestPublisher $publisher,
         private TaskCheckRunner $checks,
         private TaskBroadcasts $broadcasts,
@@ -149,7 +149,14 @@ final readonly class TaskScheduler
             $health = $this->pullRequestWatcher->health($group);
             $status = $health?->state;
             if ($status === 'merged') {
-                Jev::labelMergedCoverage($group, $health);
+                try {
+                    $this->coverageLabeler->label($group, $health);
+                } catch (Throwable $exception) {
+                    try {
+                        report($exception);
+                    } catch (Throwable) {
+                    }
+                }
                 if (! $this->orphanedCommit($group)) {
                     $this->completeMergedGroup($group);
                 }

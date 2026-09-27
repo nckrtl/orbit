@@ -25,6 +25,7 @@ use App\Models\DatabaseConnectionTarget;
 use App\Models\DatabaseUser;
 use App\Models\DependencyPackage;
 use App\Models\FirewallRule;
+use App\Models\JevDecision;
 use App\Models\Node;
 use App\Models\NodeAccess;
 use App\Models\NodeRole;
@@ -87,6 +88,7 @@ it('partitions every persisted model across doctor dispositions', function (): v
         AppInstanceRemoval::class,
         AppInstanceRemovalMember::class,
         AppInstanceTransfer::class,
+        JevDecision::class,
         AppUpdate::class,
         DatabaseUser::class,
         Task::class,

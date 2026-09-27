@@ -55,11 +55,15 @@ use App\Models\Task;
 use App\Models\TaskCheck;
 use App\Models\TaskComment;
 use App\Models\TaskGroup;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Exceptions;
 use Illuminate\Support\Facades\Http;
 use Laravel\Ai\Classification;
+use Laravel\Ai\Responses\Data\BooleanAnswer;
 use Tests\Feature\GitHub\GitHubTestSupport;
 use Tests\Support\AcceptingTaskPlannerMcp;
 use Tests\Support\FakeTaskCheckRunner;
@@ -3803,6 +3807,21 @@ function tick_publishing(array $missing = [[]], int $failures = 0): object
 
     return (object) ['coverage' => $coverage, 'publisher' => $publisher];
 }
+
+it('continues an approval tick after Jev recording fails and reaches later work', function (): void {
+    [$group, $task, , $signer, $publisher] = tick_review([tick_final_approval()], last: true);
+    Classification::fake([['subtask_'.$task->id => new BooleanAnswer(0.97)]])->preventStrayClassifications();
+    Exceptions::fake();
+    DB::statement("CREATE TRIGGER fail_jev_decision_insert_during_tick BEFORE INSERT ON jev_decisions BEGIN SELECT RAISE(ABORT, 'jev bookkeeping insert failed'); END");
+
+    app(TaskScheduler::class)->tick();
+
+    expect($signer->messages)->toBe(["Models\n\nChecked the feature."])
+        ->and($publisher->pushes)->toBe([$group->id])
+        ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Settling)
+        ->and($task->fresh()?->status)->toBe(TaskStatus::Completed);
+    Exceptions::assertReported(QueryException::class);
+});
 
 it('commits the last approved subtask, opens the pull request with the reviewer fields, and settles the group', function (): void {
     [$group, $task, , $signer] = tick_review([tick_final_approval()], last: true);

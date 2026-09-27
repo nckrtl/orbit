@@ -6,6 +6,7 @@ namespace App\Providers;
 
 use App\Domain\Tasks\AgentDriverRegistry;
 use App\Domain\Tasks\AgentSpawner;
+use App\Domain\Tasks\BriefCoverageLabeler;
 use App\Domain\Tasks\CoderSettleNotifier;
 use App\Domain\Tasks\InstanceProvisioning;
 use App\Domain\Tasks\LocalTaskSettleMetricsCollector;
@@ -31,6 +32,7 @@ use App\Infrastructure\Tasks\GitHubTaskBaseBranchFetcher;
 use App\Infrastructure\Tasks\GitHubTaskPullRequestPublisher;
 use App\Infrastructure\Tasks\HttpCoderSettleNotifier;
 use App\Infrastructure\Tasks\HttpTaskPullRequestWatcher;
+use App\Infrastructure\Tasks\JevBriefCoverageLabeler;
 use App\Infrastructure\Tasks\LaravelAiTaskBriefCoverage;
 use App\Infrastructure\Tasks\Pi\PiDriver;
 use App\Infrastructure\Tasks\RemoteTaskBridgeWorktreeRemover;
@@ -70,6 +72,7 @@ final class TasksServiceProvider extends ServiceProvider
         TaskRunReceipts::class => RemoteTaskRunReceipts::class,
         TaskCheckRunner::class => RemoteTaskCheckRunner::class,
         TaskBriefCoverage::class => LaravelAiTaskBriefCoverage::class,
+        BriefCoverageLabeler::class => JevBriefCoverageLabeler::class,
         TaskPullRequestPublisher::class => GitHubTaskPullRequestPublisher::class,
         TaskBaseBranchFetcher::class => GitHubTaskBaseBranchFetcher::class,
         TaskSettleMetricsCollector::class => LocalTaskSettleMetricsCollector::class,

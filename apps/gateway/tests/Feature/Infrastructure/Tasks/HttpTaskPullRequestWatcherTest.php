@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
+use App\Domain\Tasks\BriefCoverageLabeler;
 use App\Domain\Tasks\TaskPullRequestCheck;
 use App\Infrastructure\Tasks\HttpTaskPullRequestWatcher;
-use App\Infrastructure\Tasks\Jev;
 use App\Models\App as OrbitApp;
 use App\Models\JevDecision;
 use App\Models\Task;
@@ -203,7 +203,7 @@ it('leaves labels unknown when GitHub truncates a PR history at 250 commits', fu
         ->and($health?->state)->toBe('merged')
         ->and($health?->mergeCommits)->toBeNull();
 
-    Jev::labelMergedCoverage($group, $health);
+    app(BriefCoverageLabeler::class)->label($group, $health);
     expect($decision->fresh()->merge_history_complete)->toBeFalse()
         ->and($decision->fresh()->merge_changes)->toBe(['Deliver orders'])
         ->and($decision->fresh()->merge_commit_history)->toBeNull()

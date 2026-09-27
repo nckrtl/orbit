@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\Artisan;
 it('reports Jev accuracy, calibration, failures, and latency as JSON', function (): void {
     JevDecision::query()->create([
         'purpose' => 'brief_coverage',
+        'call_started_at' => now()->toIso8601String(),
         'questions' => ['subtask_1' => []],
         'input_state' => [],
         'answers' => ['subtask_1' => ['value' => true, 'selected_answer_probability' => 0.97]],
@@ -16,6 +17,7 @@ it('reports Jev accuracy, calibration, failures, and latency as JSON', function 
     ]);
     JevDecision::query()->create([
         'purpose' => 'brief_coverage',
+        'call_started_at' => now()->toIso8601String(),
         'questions' => ['subtask_2' => []],
         'input_state' => [],
         'answers' => ['subtask_2' => ['value' => false, 'selected_answer_probability' => 0.8]],
@@ -24,6 +26,7 @@ it('reports Jev accuracy, calibration, failures, and latency as JSON', function 
     ]);
     JevDecision::query()->create([
         'purpose' => 'brief_coverage',
+        'call_started_at' => now()->toIso8601String(),
         'questions' => ['subtask_3' => []],
         'input_state' => [],
         'answers' => ['subtask_3' => ['value' => true, 'selected_answer_probability' => 0.8]],
@@ -32,6 +35,7 @@ it('reports Jev accuracy, calibration, failures, and latency as JSON', function 
     ]);
     JevDecision::query()->create([
         'purpose' => 'brief_coverage',
+        'call_started_at' => now()->toIso8601String(),
         'questions' => [],
         'input_state' => [],
         'answers' => null,
@@ -40,6 +44,7 @@ it('reports Jev accuracy, calibration, failures, and latency as JSON', function 
     ]);
     JevDecision::query()->create([
         'purpose' => 'brief_coverage',
+        'call_started_at' => now()->toIso8601String(),
         'questions' => [],
         'input_state' => [],
         'answers' => null,
@@ -48,6 +53,7 @@ it('reports Jev accuracy, calibration, failures, and latency as JSON', function 
     ]);
     JevDecision::query()->create([
         'purpose' => 'unknown_purpose',
+        'call_started_at' => now()->toIso8601String(),
         'questions' => [],
         'input_state' => [],
         'answers' => null,
