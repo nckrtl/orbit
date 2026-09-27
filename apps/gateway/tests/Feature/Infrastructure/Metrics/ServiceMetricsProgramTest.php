@@ -84,63 +84,8 @@ function service_metrics_python(string $body, array $arguments = []): Process
     return $process;
 }
 
-it('restores only the changed pool after a reload failure and leaves stopped masters stopped', function (): void {
-    $script = <<<'PY'
-        import importlib.util, pathlib, tempfile, sys, json, base64, types
-        source = pathlib.Path(sys.argv[1]).read_text()
-        with tempfile.TemporaryDirectory() as directory:
-            root = pathlib.Path(directory)
-            user = 'orbit-test'
-            runtime = root / user
-            (runtime / 'generated').mkdir(parents=True)
-            (root / 'locks').mkdir()
-            source = source.replace("Path('/etc/orbit/php-fpm')", "Path(" + repr(str(root)) + ")")
-            source = source.replace("Path('/run/lock/orbit')", "Path(" + repr(str(root / 'locks')) + ")")
-            module = types.ModuleType('fpm')
-            exec(compile(source, 'service-metrics-fpm.py', 'exec'), module.__dict__)
-            module.read = lambda path: path.read_text()
-            pool = runtime / 'generated/pool.conf'
-            original = '[orbit-test]\nuser = orbit-test\n'
-            pool.write_text(original)
-            (runtime / 'orbit.identity').write_text('owned')
-            (runtime / 'local.conf').write_text('[orbit-test]\npm = ondemand\npm.max_children = 3\n')
-            (runtime / 'generated/php-fpm.conf').write_text('include = ' + str(pool) + '\ninclude = ' + str(runtime / 'local.conf') + '\n')
-            calls = []
-            def run(args, check=True):
-                calls.append(args)
-                if args[:2] == ['systemctl', 'reload'] and len([c for c in calls if c[:2] == ['systemctl', 'reload']]) == 1:
-                    raise RuntimeError('reload failed')
-                return types.SimpleNamespace(returncode=0)
-            module.run = run
-            request = {'operation': 'apply', 'enabled': True, 'user': user, 'version': '8.5', 'marker': 'owned'}
-            sys.argv = ['fpm', base64.b64encode(json.dumps(request).encode()).decode()]
-            try:
-                module.main()
-                raise AssertionError('must fail')
-            except RuntimeError:
-                pass
-            assert pool.read_text() == original
-            assert len([c for c in calls if c[:2] == ['systemctl', 'reload']]) == 2
-            calls.clear()
-            def stopped(args, check=True):
-                calls.append(args)
-                return types.SimpleNamespace(returncode=1 if args[:2] == ['systemctl', 'is-active'] else 0)
-            module.run = stopped
-            module.main()
-            assert 'pm.status_listen' in pool.read_text()
-            assert not any(c[:2] in [['systemctl', 'reload'], ['systemctl', 'start'], ['systemctl', 'restart']] for c in calls)
-            calls.clear()
-            module.main()
-            assert calls == []
-            journal = runtime / '.metrics-pool-recovery.json'
-            journal.write_text(json.dumps({'before': original, 'candidate': pool.read_text()}))
-            request['operation'] = 'snapshot'
-            sys.argv = ['fpm', base64.b64encode(json.dumps(request).encode()).decode()]
-            module.main()
-            assert pool.read_text() == original
-            assert not journal.exists()
-        PY;
-    $process = new Process(['python3', '-c', $script, resource_path('scripts/service-metrics-fpm.py')]);
-    $process->run();
-    expect($process->getExitCode())->toBe(0, $process->getErrorOutput());
+it('does not write production pool configuration from the Node script', function (): void {
+    $program = file_get_contents(resource_path('scripts/service-metrics-fpm.py'));
+
+    expect($program)->toBeString()->not->toContain('pool.conf', 'os.replace', 'write(');
 });

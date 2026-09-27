@@ -574,6 +574,8 @@ final readonly class Orb219PhpRuntime implements ProductionPhpRuntimeManager
 
     public function converge(AppInstance $appInstance): void {}
 
+    public function convergeMonitoring(AppInstance $appInstance, bool $enabled): void {}
+
     public function refreshCache(AppInstance $appInstance): void
     {
         $entry = 'cache:'.basename($appInstance->checkout_path);
