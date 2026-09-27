@@ -314,7 +314,7 @@ function clone_cli_payload(): array
 {
     return [
         'id' => 29,
-        'app_id' => 3,
+        'project_id' => 3,
         'node_id' => 7,
         'name' => 'production',
         'environment' => 'production',
@@ -333,7 +333,7 @@ function clone_cli_payload(): array
         'route' => [
             'id' => 41,
             'kind' => 'app',
-            'app_id' => 3,
+            'project_id' => 3,
             'node_id' => 7,
             'cluster_id' => null,
             'generation_basis_node_id' => null,

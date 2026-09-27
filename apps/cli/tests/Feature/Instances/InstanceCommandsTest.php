@@ -188,7 +188,7 @@ describe('instance:register', function (): void {
         expect(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))->toBe([
             'error' => [
                 'code' => 'instance.registration_values_unresolved',
-                'message' => 'Non-interactive registration requires unresolved App values as options.',
+                'message' => 'Non-interactive registration requires unresolved Project values as options.',
                 'request_id' => null,
             ],
         ]);
@@ -206,7 +206,7 @@ describe('instance:register', function (): void {
         $this
             ->artisan('instance:register', [
                 '--yes' => true,
-                '--app' => '3',
+                '--project' => '3',
                 '--include-worktrees' => true,
                 '--name' => 'feature',
                 '--domain' => 'feature.test',
@@ -219,7 +219,7 @@ describe('instance:register', function (): void {
         expect($mockClient->getLastRequest()?->body()->all())->toBe([
             'source_path' => '/work/acme',
             'include_worktrees' => true,
-            'app_id' => 3,
+            'project_id' => 3,
             'instance_name' => 'feature',
             'domain' => 'feature.test',
         ]);
@@ -347,7 +347,7 @@ describe('instance:create', function (): void {
             ->and($request)
             ->toBeInstanceOf(CreateAppInstanceRequest::class)
             ->and($request?->body()->all())
-            ->toBe(['app_id' => 3, 'node_id' => 2, 'name' => 'dev']);
+            ->toBe(['project_id' => 3, 'node_id' => 2, 'name' => 'dev']);
     });
 
     it('transports an optional root override without execution controls', function (): void {
@@ -365,7 +365,7 @@ describe('instance:create', function (): void {
             ->assertExitCode(0);
 
         expect($mockClient->getLastRequest()?->body()->all())->toBe([
-            'app_id' => 3,
+            'project_id' => 3,
             'node_id' => 2,
             'name' => 'dev',
             'root' => 'site/public',
@@ -387,7 +387,7 @@ describe('instance:create', function (): void {
             ->assertExitCode(0);
 
         expect($mockClient->getLastRequest()?->body()->all())->toBe([
-            'app_id' => 3,
+            'project_id' => 3,
             'node_id' => 2,
             'name' => 'dev',
             'domain' => 'Odd_Value',
@@ -430,7 +430,7 @@ describe('instance:create', function (): void {
             ->assertExitCode(0);
 
         expect($mockClient->getLastRequest()?->body()->all())->toBe([
-            'app_id' => 3,
+            'project_id' => 3,
             'node_id' => 2,
             'name' => 'default',
             'branch' => 'release',

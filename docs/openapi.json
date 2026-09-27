@@ -46,10 +46,6 @@
       "description": "The analytics role, its Plausible version, and the Stats API key the Gateway uses to read visits."
     },
     {
-      "name": "Apps",
-      "description": "Compatibility surface for Project records at /api/v1/apps."
-    },
-    {
       "name": "Projects",
       "description": "Repository records with one type, default branch, and web root each."
     },
@@ -1102,1821 +1098,6 @@
             "lang": "php",
             "label": "PHP SDK",
             "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Analytics\\UpdateAnalyticsRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new UpdateAnalyticsRequest(version: 'value'))->dto();\n"
-          }
-        ]
-      }
-    },
-    "/api/v1/apps": {
-      "get": {
-        "operationId": "app-list",
-        "summary": "List Apps (Projects)",
-        "tags": [
-          "Apps"
-        ],
-        "responses": {
-          "200": {
-            "description": "The request succeeded.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "data": {
-                      "type": "array",
-                      "items": {
-                        "$ref": "#/components/schemas/App"
-                      }
-                    },
-                    "meta": {
-                      "$ref": "#/components/schemas/Meta"
-                    }
-                  },
-                  "required": [
-                    "data",
-                    "meta"
-                  ]
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        },
-        "x-codeSamples": [
-          {
-            "lang": "bash",
-            "label": "curl",
-            "source": "curl -sS \"https://gateway.orbit/api/v1/apps\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
-          }
-        ]
-      },
-      "post": {
-        "operationId": "app-create",
-        "summary": "Create an App (Project)",
-        "tags": [
-          "Apps"
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "name": {
-                    "type": "string",
-                    "maxLength": 255
-                  },
-                  "code": {
-                    "type": "string",
-                    "pattern": "^[A-Z]{3}$"
-                  },
-                  "slug": {
-                    "type": "string",
-                    "pattern": "^[A-Za-z0-9_-]+$",
-                    "maxLength": 63
-                  },
-                  "type": {
-                    "type": "string",
-                    "enum": [
-                      "monorepo",
-                      "laravel-app",
-                      "laravel-package",
-                      "node-package"
-                    ]
-                  },
-                  "repository_url": {
-                    "type": "string",
-                    "maxLength": 2048
-                  },
-                  "default_branch": {
-                    "type": "string",
-                    "maxLength": 255
-                  },
-                  "root": {
-                    "type": "string",
-                    "maxLength": 255
-                  },
-                  "defaults": {
-                    "type": [
-                      "array",
-                      "null"
-                    ]
-                  },
-                  "task_check": {
-                    "type": [
-                      "string",
-                      "null"
-                    ],
-                    "maxLength": 4096
-                  }
-                },
-                "required": [
-                  "slug",
-                  "repository_url",
-                  "root"
-                ],
-                "additionalProperties": false
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Created.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "data": {
-                      "$ref": "#/components/schemas/App"
-                    },
-                    "meta": {
-                      "$ref": "#/components/schemas/Meta"
-                    }
-                  },
-                  "required": [
-                    "data",
-                    "meta"
-                  ]
-                }
-              }
-            }
-          },
-          "200": {
-            "description": "The request succeeded; an exact retry returned the existing record.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "data": {
-                      "$ref": "#/components/schemas/App"
-                    },
-                    "meta": {
-                      "$ref": "#/components/schemas/Meta"
-                    }
-                  },
-                  "required": [
-                    "data",
-                    "meta"
-                  ]
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`).",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        },
-        "x-codeSamples": [
-          {
-            "lang": "bash",
-            "label": "curl",
-            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/apps\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"slug\": \"acme\", \"repository_url\": \"https://github.com/acme/site.git\", \"root\": \"public\"}'\n"
-          }
-        ]
-      }
-    },
-    "/api/v1/apps/{app}": {
-      "delete": {
-        "operationId": "app-destroy",
-        "summary": "Remove an App (Project)",
-        "tags": [
-          "Apps"
-        ],
-        "parameters": [
-          {
-            "name": "app",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "minimum": 1
-            },
-            "description": "Numeric Project ID."
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "The request succeeded.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "data": {
-                      "$ref": "#/components/schemas/App"
-                    },
-                    "meta": {
-                      "$ref": "#/components/schemas/Meta"
-                    }
-                  },
-                  "required": [
-                    "data",
-                    "meta"
-                  ]
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "No record matches the path parameters.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        },
-        "x-codeSamples": [
-          {
-            "lang": "bash",
-            "label": "curl",
-            "source": "curl -sS -X DELETE \"https://gateway.orbit/api/v1/apps/4\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
-          }
-        ]
-      },
-      "get": {
-        "operationId": "app-show",
-        "summary": "Show an App (Project)",
-        "tags": [
-          "Apps"
-        ],
-        "parameters": [
-          {
-            "name": "app",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "minimum": 1
-            },
-            "description": "Numeric Project ID."
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "The request succeeded.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "data": {
-                      "allOf": [
-                        {
-                          "$ref": "#/components/schemas/App"
-                        },
-                        {
-                          "type": "object",
-                          "properties": {
-                            "excluded_nodes": {
-                              "type": "array",
-                              "items": {
-                                "$ref": "#/components/schemas/DevelopmentNodeExclusion"
-                              }
-                            }
-                          }
-                        }
-                      ]
-                    },
-                    "meta": {
-                      "$ref": "#/components/schemas/Meta"
-                    }
-                  },
-                  "required": [
-                    "data",
-                    "meta"
-                  ]
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "No record matches the path parameters.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        },
-        "x-codeSamples": [
-          {
-            "lang": "bash",
-            "label": "curl",
-            "source": "curl -sS \"https://gateway.orbit/api/v1/apps/4\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
-          }
-        ]
-      },
-      "patch": {
-        "operationId": "app-update",
-        "summary": "Update an App (Project)",
-        "tags": [
-          "Apps"
-        ],
-        "parameters": [
-          {
-            "name": "app",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "minimum": 1
-            },
-            "description": "Numeric Project ID."
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "code": {
-                    "type": "string",
-                    "pattern": "^[A-Z]{3}$"
-                  },
-                  "type": {
-                    "type": "string",
-                    "enum": [
-                      "monorepo",
-                      "laravel-app",
-                      "laravel-package",
-                      "node-package"
-                    ]
-                  },
-                  "slug": {
-                    "type": "string",
-                    "pattern": "^[A-Za-z0-9_-]+$",
-                    "maxLength": 63
-                  },
-                  "repository_url": {
-                    "type": "string",
-                    "maxLength": 2048
-                  },
-                  "default_branch": {
-                    "type": "string",
-                    "maxLength": 255
-                  },
-                  "root": {
-                    "type": "string",
-                    "maxLength": 255
-                  },
-                  "task_check": {
-                    "type": [
-                      "string",
-                      "null"
-                    ],
-                    "maxLength": 4096
-                  }
-                },
-                "additionalProperties": false
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "The request succeeded.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "data": {
-                      "$ref": "#/components/schemas/App"
-                    },
-                    "meta": {
-                      "$ref": "#/components/schemas/Meta"
-                    }
-                  },
-                  "required": [
-                    "data",
-                    "meta"
-                  ]
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "No record matches the path parameters.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`).",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        },
-        "x-codeSamples": [
-          {
-            "lang": "bash",
-            "label": "curl",
-            "source": "curl -sS -X PATCH \"https://gateway.orbit/api/v1/apps/4\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"code\": \"ACM\"}'\n"
-          }
-        ]
-      }
-    },
-    "/api/v1/apps/{app}/process-definitions": {
-      "get": {
-        "operationId": "app-process-list-definition",
-        "summary": "List process definitions",
-        "tags": [
-          "Processes"
-        ],
-        "parameters": [
-          {
-            "name": "app",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "minimum": 1
-            },
-            "description": "Numeric Project ID."
-          }
-        ],
-        "description": "Project-owned definitions carry the runtime specification that production preparation copies into a new Instance. Changing a definition changes Project configuration only.",
-        "responses": {
-          "200": {
-            "description": "The request succeeded.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "data": {
-                      "type": "array",
-                      "items": {
-                        "$ref": "#/components/schemas/AppRuntimeDefinition"
-                      }
-                    },
-                    "meta": {
-                      "$ref": "#/components/schemas/Meta"
-                    }
-                  },
-                  "required": [
-                    "data",
-                    "meta"
-                  ]
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "No record matches the path parameters.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        },
-        "x-codeSamples": [
-          {
-            "lang": "bash",
-            "label": "curl",
-            "source": "curl -sS \"https://gateway.orbit/api/v1/apps/4/process-definitions\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
-          }
-        ]
-      },
-      "post": {
-        "operationId": "app-process-create-definition",
-        "summary": "Create a process definition",
-        "tags": [
-          "Processes"
-        ],
-        "parameters": [
-          {
-            "name": "app",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "minimum": 1
-            },
-            "description": "Numeric Project ID."
-          }
-        ],
-        "description": "Project-owned definitions carry the runtime specification that production preparation copies into a new Instance. Changing a definition changes Project configuration only.",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "name": {
-                    "type": "string",
-                    "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$",
-                    "maxLength": 63,
-                    "description": "Process name"
-                  },
-                  "environments": {
-                    "type": "array",
-                    "maxItems": 2,
-                    "minItems": 1,
-                    "items": {
-                      "type": "string",
-                      "enum": [
-                        "development",
-                        "production"
-                      ]
-                    }
-                  },
-                  "spec": {
-                    "type": "object",
-                    "properties": {
-                      "runtime": {
-                        "type": "string",
-                        "enum": [
-                          "systemd",
-                          "docker"
-                        ]
-                      },
-                      "command": {
-                        "type": "array",
-                        "maxItems": 64,
-                        "minItems": 1,
-                        "items": {
-                          "type": "string",
-                          "maxLength": 4096
-                        }
-                      },
-                      "image": {
-                        "type": [
-                          "string",
-                          "null"
-                        ],
-                        "pattern": "^[A-Za-z0-9][A-Za-z0-9._\\/:@-]*$",
-                        "maxLength": 255,
-                        "description": "Conditionally required."
-                      },
-                      "working_directory": {
-                        "type": "string",
-                        "pattern": "^\\/(?!.*(?:^|\\/)\\.\\.(?:\\/|$))[^\\x00\\r\\n]*$",
-                        "maxLength": 4096
-                      },
-                      "environment": {
-                        "type": "array",
-                        "maxItems": 100,
-                        "items": {
-                          "type": "string",
-                          "maxLength": 4096
-                        }
-                      },
-                      "ports": {
-                        "type": "array",
-                        "maxItems": 100,
-                        "items": {
-                          "type": "string",
-                          "pattern": "^(?:(?:\\d{1,3}\\.){3}\\d{1,3}:)?\\d{1,5}:\\d{1,5}(?:\\/(?:tcp|udp))?$"
-                        }
-                      },
-                      "volumes": {
-                        "type": "array",
-                        "maxItems": 100,
-                        "items": {
-                          "type": "object",
-                          "properties": {
-                            "source": {
-                              "type": "string",
-                              "pattern": "^(?:\\/[A-Za-z0-9._\\/ -]+|[A-Za-z0-9][A-Za-z0-9_.-]*)$",
-                              "maxLength": 4096
-                            },
-                            "target": {
-                              "type": "string",
-                              "pattern": "^\\/[A-Za-z0-9._\\/ -]*$",
-                              "maxLength": 4096
-                            },
-                            "read_only": {
-                              "type": "boolean"
-                            }
-                          },
-                          "required": [
-                            "source",
-                            "target"
-                          ]
-                        }
-                      },
-                      "restart_policy": {
-                        "type": "string",
-                        "enum": [
-                          "never",
-                          "on-failure",
-                          "always",
-                          "unless-stopped"
-                        ]
-                      },
-                      "keep_alive": {
-                        "type": "boolean"
-                      }
-                    },
-                    "required": [
-                      "runtime",
-                      "command"
-                    ]
-                  }
-                },
-                "required": [
-                  "name",
-                  "environments",
-                  "spec"
-                ],
-                "additionalProperties": false
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Created.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "data": {
-                      "$ref": "#/components/schemas/AppRuntimeDefinition"
-                    },
-                    "meta": {
-                      "$ref": "#/components/schemas/Meta"
-                    }
-                  },
-                  "required": [
-                    "data",
-                    "meta"
-                  ]
-                }
-              }
-            }
-          },
-          "200": {
-            "description": "The request succeeded; an exact retry returned the existing record.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "data": {
-                      "$ref": "#/components/schemas/AppRuntimeDefinition"
-                    },
-                    "meta": {
-                      "$ref": "#/components/schemas/Meta"
-                    }
-                  },
-                  "required": [
-                    "data",
-                    "meta"
-                  ]
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "No record matches the path parameters.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`).",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        },
-        "x-codeSamples": [
-          {
-            "lang": "bash",
-            "label": "curl",
-            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/apps/4/process-definitions\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"name\": \"vite\", \"environments\": [\"production\"], \"spec\": {\"runtime\": \"systemd\", \"command\": [\"/usr/bin/php\", \"artisan\", \"queue:work\"]}}'\n"
-          }
-        ]
-      }
-    },
-    "/api/v1/apps/{app}/process-definitions/{process_definition}": {
-      "delete": {
-        "operationId": "app-process-destroy-definition",
-        "summary": "Remove a process definition",
-        "tags": [
-          "Processes"
-        ],
-        "parameters": [
-          {
-            "name": "app",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "minimum": 1
-            },
-            "description": "Numeric Project ID."
-          },
-          {
-            "name": "process_definition",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "description": "Process definition name, unique within the Project."
-          }
-        ],
-        "description": "Project-owned definitions carry the runtime specification that production preparation copies into a new Instance. Changing a definition changes Project configuration only.",
-        "responses": {
-          "200": {
-            "description": "The request succeeded.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "data": {
-                      "$ref": "#/components/schemas/AppRuntimeDefinition"
-                    },
-                    "meta": {
-                      "$ref": "#/components/schemas/Meta"
-                    }
-                  },
-                  "required": [
-                    "data",
-                    "meta"
-                  ]
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "No record matches the path parameters.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        },
-        "x-codeSamples": [
-          {
-            "lang": "bash",
-            "label": "curl",
-            "source": "curl -sS -X DELETE \"https://gateway.orbit/api/v1/apps/4/process-definitions/queue\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
-          }
-        ]
-      },
-      "get": {
-        "operationId": "app-process-show-definition",
-        "summary": "Show a process definition",
-        "tags": [
-          "Processes"
-        ],
-        "parameters": [
-          {
-            "name": "app",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "minimum": 1
-            },
-            "description": "Numeric Project ID."
-          },
-          {
-            "name": "process_definition",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "description": "Process definition name, unique within the Project."
-          }
-        ],
-        "description": "Project-owned definitions carry the runtime specification that production preparation copies into a new Instance. Changing a definition changes Project configuration only.",
-        "responses": {
-          "200": {
-            "description": "The request succeeded.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "data": {
-                      "$ref": "#/components/schemas/AppRuntimeDefinition"
-                    },
-                    "meta": {
-                      "$ref": "#/components/schemas/Meta"
-                    }
-                  },
-                  "required": [
-                    "data",
-                    "meta"
-                  ]
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "No record matches the path parameters.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        },
-        "x-codeSamples": [
-          {
-            "lang": "bash",
-            "label": "curl",
-            "source": "curl -sS \"https://gateway.orbit/api/v1/apps/4/process-definitions/queue\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
-          }
-        ]
-      },
-      "put": {
-        "operationId": "app-process-update-definition",
-        "summary": "Replace a process definition",
-        "tags": [
-          "Processes"
-        ],
-        "parameters": [
-          {
-            "name": "app",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "minimum": 1
-            },
-            "description": "Numeric Project ID."
-          },
-          {
-            "name": "process_definition",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "description": "Process definition name, unique within the Project."
-          }
-        ],
-        "description": "Project-owned definitions carry the runtime specification that production preparation copies into a new Instance. Changing a definition changes Project configuration only.",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "name": {
-                    "type": "string",
-                    "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$",
-                    "maxLength": 63,
-                    "description": "Process definition name"
-                  },
-                  "environments": {
-                    "type": "array",
-                    "maxItems": 2,
-                    "minItems": 1,
-                    "items": {
-                      "type": "string",
-                      "enum": [
-                        "development",
-                        "production"
-                      ]
-                    }
-                  },
-                  "spec": {
-                    "type": "object",
-                    "properties": {
-                      "runtime": {
-                        "type": "string",
-                        "enum": [
-                          "systemd",
-                          "docker"
-                        ]
-                      },
-                      "command": {
-                        "type": "array",
-                        "maxItems": 64,
-                        "minItems": 1,
-                        "items": {
-                          "type": "string",
-                          "maxLength": 4096
-                        }
-                      },
-                      "image": {
-                        "type": [
-                          "string",
-                          "null"
-                        ],
-                        "pattern": "^[A-Za-z0-9][A-Za-z0-9._\\/:@-]*$",
-                        "maxLength": 255,
-                        "description": "Conditionally required."
-                      },
-                      "working_directory": {
-                        "type": "string",
-                        "pattern": "^\\/(?!.*(?:^|\\/)\\.\\.(?:\\/|$))[^\\x00\\r\\n]*$",
-                        "maxLength": 4096
-                      },
-                      "environment": {
-                        "type": "array",
-                        "maxItems": 100,
-                        "items": {
-                          "type": "string",
-                          "maxLength": 4096
-                        }
-                      },
-                      "ports": {
-                        "type": "array",
-                        "maxItems": 100,
-                        "items": {
-                          "type": "string",
-                          "pattern": "^(?:(?:\\d{1,3}\\.){3}\\d{1,3}:)?\\d{1,5}:\\d{1,5}(?:\\/(?:tcp|udp))?$"
-                        }
-                      },
-                      "volumes": {
-                        "type": "array",
-                        "maxItems": 100,
-                        "items": {
-                          "type": "object",
-                          "properties": {
-                            "source": {
-                              "type": "string",
-                              "pattern": "^(?:\\/[A-Za-z0-9._\\/ -]+|[A-Za-z0-9][A-Za-z0-9_.-]*)$",
-                              "maxLength": 4096
-                            },
-                            "target": {
-                              "type": "string",
-                              "pattern": "^\\/[A-Za-z0-9._\\/ -]*$",
-                              "maxLength": 4096
-                            },
-                            "read_only": {
-                              "type": "boolean"
-                            }
-                          },
-                          "required": [
-                            "source",
-                            "target"
-                          ]
-                        }
-                      },
-                      "restart_policy": {
-                        "type": "string",
-                        "enum": [
-                          "never",
-                          "on-failure",
-                          "always",
-                          "unless-stopped"
-                        ]
-                      },
-                      "keep_alive": {
-                        "type": "boolean"
-                      }
-                    },
-                    "required": [
-                      "runtime",
-                      "command"
-                    ]
-                  }
-                },
-                "required": [
-                  "name",
-                  "environments",
-                  "spec"
-                ],
-                "additionalProperties": false
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "The request succeeded.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "data": {
-                      "$ref": "#/components/schemas/AppRuntimeDefinition"
-                    },
-                    "meta": {
-                      "$ref": "#/components/schemas/Meta"
-                    }
-                  },
-                  "required": [
-                    "data",
-                    "meta"
-                  ]
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "No record matches the path parameters.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`).",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        },
-        "x-codeSamples": [
-          {
-            "lang": "bash",
-            "label": "curl",
-            "source": "curl -sS -X PUT \"https://gateway.orbit/api/v1/apps/4/process-definitions/queue\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"name\": \"vite\", \"environments\": [\"production\"], \"spec\": {\"runtime\": \"systemd\", \"command\": [\"/usr/bin/php\", \"artisan\", \"queue:work\"]}}'\n"
-          }
-        ]
-      }
-    },
-    "/api/v1/apps/{app}/schedule-definitions": {
-      "get": {
-        "operationId": "app-schedule-list-definition",
-        "summary": "List Schedule definitions",
-        "tags": [
-          "Schedules"
-        ],
-        "parameters": [
-          {
-            "name": "app",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "minimum": 1
-            },
-            "description": "Numeric Project ID."
-          }
-        ],
-        "description": "Project-owned definitions carry the runtime specification that production preparation copies into a new Instance. Changing a definition changes Project configuration only.",
-        "responses": {
-          "200": {
-            "description": "The request succeeded.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "data": {
-                      "type": "array",
-                      "items": {
-                        "$ref": "#/components/schemas/AppRuntimeDefinition"
-                      }
-                    },
-                    "meta": {
-                      "$ref": "#/components/schemas/Meta"
-                    }
-                  },
-                  "required": [
-                    "data",
-                    "meta"
-                  ]
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "No record matches the path parameters.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        },
-        "x-codeSamples": [
-          {
-            "lang": "bash",
-            "label": "curl",
-            "source": "curl -sS \"https://gateway.orbit/api/v1/apps/4/schedule-definitions\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
-          }
-        ]
-      },
-      "post": {
-        "operationId": "app-schedule-create-definition",
-        "summary": "Create a Schedule definition",
-        "tags": [
-          "Schedules"
-        ],
-        "parameters": [
-          {
-            "name": "app",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "minimum": 1
-            },
-            "description": "Numeric Project ID."
-          }
-        ],
-        "description": "Project-owned definitions carry the runtime specification that production preparation copies into a new Instance. Changing a definition changes Project configuration only.",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "name": {
-                    "type": "string",
-                    "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$",
-                    "maxLength": 63,
-                    "description": "Schedule name"
-                  },
-                  "environments": {
-                    "type": "array",
-                    "maxItems": 2,
-                    "minItems": 1,
-                    "items": {
-                      "type": "string",
-                      "enum": [
-                        "development",
-                        "production"
-                      ]
-                    }
-                  },
-                  "spec": {
-                    "type": "object",
-                    "properties": {
-                      "command": {
-                        "type": "string",
-                        "maxLength": 4096
-                      },
-                      "calendar": {
-                        "type": "string",
-                        "pattern": "^[\\x20-\\x7E]+$",
-                        "maxLength": 255
-                      },
-                      "timeout_seconds": {
-                        "type": "integer",
-                        "maximum": 86400,
-                        "minimum": 1
-                      }
-                    },
-                    "required": [
-                      "command",
-                      "calendar",
-                      "timeout_seconds"
-                    ]
-                  }
-                },
-                "required": [
-                  "name",
-                  "environments",
-                  "spec"
-                ],
-                "additionalProperties": false
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Created.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "data": {
-                      "$ref": "#/components/schemas/AppRuntimeDefinition"
-                    },
-                    "meta": {
-                      "$ref": "#/components/schemas/Meta"
-                    }
-                  },
-                  "required": [
-                    "data",
-                    "meta"
-                  ]
-                }
-              }
-            }
-          },
-          "200": {
-            "description": "The request succeeded; an exact retry returned the existing record.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "data": {
-                      "$ref": "#/components/schemas/AppRuntimeDefinition"
-                    },
-                    "meta": {
-                      "$ref": "#/components/schemas/Meta"
-                    }
-                  },
-                  "required": [
-                    "data",
-                    "meta"
-                  ]
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "No record matches the path parameters.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`).",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        },
-        "x-codeSamples": [
-          {
-            "lang": "bash",
-            "label": "curl",
-            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/apps/4/schedule-definitions\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"name\": \"daily-report\", \"environments\": [\"production\"], \"spec\": {\"command\": [\"/usr/bin/php\", \"artisan\", \"queue:work\"], \"calendar\": \"daily\", \"timeout_seconds\": 3600}}'\n"
-          }
-        ]
-      }
-    },
-    "/api/v1/apps/{app}/schedule-definitions/{schedule_definition}": {
-      "delete": {
-        "operationId": "app-schedule-destroy-definition",
-        "summary": "Remove a Schedule definition",
-        "tags": [
-          "Schedules"
-        ],
-        "parameters": [
-          {
-            "name": "app",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "minimum": 1
-            },
-            "description": "Numeric Project ID."
-          },
-          {
-            "name": "schedule_definition",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "description": "Schedule definition name, unique within the Project."
-          }
-        ],
-        "description": "Project-owned definitions carry the runtime specification that production preparation copies into a new Instance. Changing a definition changes Project configuration only.",
-        "responses": {
-          "200": {
-            "description": "The request succeeded.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "data": {
-                      "$ref": "#/components/schemas/AppRuntimeDefinition"
-                    },
-                    "meta": {
-                      "$ref": "#/components/schemas/Meta"
-                    }
-                  },
-                  "required": [
-                    "data",
-                    "meta"
-                  ]
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "No record matches the path parameters.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        },
-        "x-codeSamples": [
-          {
-            "lang": "bash",
-            "label": "curl",
-            "source": "curl -sS -X DELETE \"https://gateway.orbit/api/v1/apps/4/schedule-definitions/hourly-report\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
-          }
-        ]
-      },
-      "get": {
-        "operationId": "app-schedule-show-definition",
-        "summary": "Show a Schedule definition",
-        "tags": [
-          "Schedules"
-        ],
-        "parameters": [
-          {
-            "name": "app",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "minimum": 1
-            },
-            "description": "Numeric Project ID."
-          },
-          {
-            "name": "schedule_definition",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "description": "Schedule definition name, unique within the Project."
-          }
-        ],
-        "description": "Project-owned definitions carry the runtime specification that production preparation copies into a new Instance. Changing a definition changes Project configuration only.",
-        "responses": {
-          "200": {
-            "description": "The request succeeded.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "data": {
-                      "$ref": "#/components/schemas/AppRuntimeDefinition"
-                    },
-                    "meta": {
-                      "$ref": "#/components/schemas/Meta"
-                    }
-                  },
-                  "required": [
-                    "data",
-                    "meta"
-                  ]
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "No record matches the path parameters.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        },
-        "x-codeSamples": [
-          {
-            "lang": "bash",
-            "label": "curl",
-            "source": "curl -sS \"https://gateway.orbit/api/v1/apps/4/schedule-definitions/hourly-report\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
-          }
-        ]
-      },
-      "put": {
-        "operationId": "app-schedule-update-definition",
-        "summary": "Replace a Schedule definition",
-        "tags": [
-          "Schedules"
-        ],
-        "parameters": [
-          {
-            "name": "app",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "minimum": 1
-            },
-            "description": "Numeric Project ID."
-          },
-          {
-            "name": "schedule_definition",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "description": "Schedule definition name, unique within the Project."
-          }
-        ],
-        "description": "Project-owned definitions carry the runtime specification that production preparation copies into a new Instance. Changing a definition changes Project configuration only.",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "name": {
-                    "type": "string",
-                    "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$",
-                    "maxLength": 63,
-                    "description": "Schedule definition name"
-                  },
-                  "environments": {
-                    "type": "array",
-                    "maxItems": 2,
-                    "minItems": 1,
-                    "items": {
-                      "type": "string",
-                      "enum": [
-                        "development",
-                        "production"
-                      ]
-                    }
-                  },
-                  "spec": {
-                    "type": "object",
-                    "properties": {
-                      "command": {
-                        "type": "string",
-                        "maxLength": 4096
-                      },
-                      "calendar": {
-                        "type": "string",
-                        "pattern": "^[\\x20-\\x7E]+$",
-                        "maxLength": 255
-                      },
-                      "timeout_seconds": {
-                        "type": "integer",
-                        "maximum": 86400,
-                        "minimum": 1
-                      }
-                    },
-                    "required": [
-                      "command",
-                      "calendar",
-                      "timeout_seconds"
-                    ]
-                  }
-                },
-                "required": [
-                  "name",
-                  "environments",
-                  "spec"
-                ],
-                "additionalProperties": false
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "The request succeeded.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "data": {
-                      "$ref": "#/components/schemas/AppRuntimeDefinition"
-                    },
-                    "meta": {
-                      "$ref": "#/components/schemas/Meta"
-                    }
-                  },
-                  "required": [
-                    "data",
-                    "meta"
-                  ]
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "No record matches the path parameters.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`).",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        },
-        "x-codeSamples": [
-          {
-            "lang": "bash",
-            "label": "curl",
-            "source": "curl -sS -X PUT \"https://gateway.orbit/api/v1/apps/4/schedule-definitions/hourly-report\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"name\": \"daily-report\", \"environments\": [\"production\"], \"spec\": {\"command\": [\"/usr/bin/php\", \"artisan\", \"queue:work\"], \"calendar\": \"daily\", \"timeout_seconds\": 3600}}'\n"
           }
         ]
       }
@@ -5652,9 +3833,6 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "app_id": {
-                    "type": "integer"
-                  },
                   "project_id": {
                     "type": "integer"
                   },
@@ -5684,6 +3862,7 @@
                   }
                 },
                 "required": [
+                  "project_id",
                   "node_id",
                   "name"
                 ],
@@ -5772,12 +3951,12 @@
           {
             "lang": "bash",
             "label": "curl",
-            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/instances\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"node_id\": 7, \"name\": \"default\"}'\n"
+            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/instances\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"project_id\": 1, \"node_id\": 7, \"name\": \"default\"}'\n"
           },
           {
             "lang": "php",
             "label": "PHP SDK",
-            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\AppInstances\\CreateAppInstanceRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new CreateAppInstanceRequest(appId: 4, nodeId: 7, name: 'default'))->dto();\n"
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\AppInstances\\CreateAppInstanceRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new CreateAppInstanceRequest(projectId: 1, nodeId: 7, name: 'default'))->dto();\n"
           }
         ]
       }
@@ -5805,9 +3984,6 @@
                   "include_worktrees": {
                     "type": "boolean",
                     "description": "Adopt the checkout and every linked worktree"
-                  },
-                  "app_id": {
-                    "type": "integer"
                   },
                   "project_id": {
                     "type": "integer"
@@ -20814,7 +18990,7 @@
         "tags": [
           "Tasks"
         ],
-        "description": "Creates a Task group for an App with an optional ordered list of Task subtasks. Requires Gateway access. `status` is `backlog` (the default) or `todo`; the scheduler never claims a `backlog` group. A `todo` group needs at least one subtask (`tasks.no_subtasks`), each with at least one deliverable (`tasks.subtask_deliverables_missing`), and create then asks the scheduler to claim the oldest `todo` group that still fits the concurrency ceilings. `plan: true` on a `backlog` group provisions its Instance on an app-dev Node with access to itself and starts a T3 planner thread that becomes the reviewer (`tasks.plan_requires_backlog`, `tasks.planner_driver_unavailable`, `tasks.planner_node_unavailable`, `tasks.planner_unavailable`). Optional `notify_coder` or Commander `notify_on_settle` opts the group into the Coder settle webhook. Returns `tasks.disabled` while the extension is off.",
+        "description": "Creates a Task group for an App with an optional ordered list of Task subtasks. Requires Gateway access. `status` is `backlog` (the default) or `todo`; the scheduler never claims a `backlog` group. A `todo` group needs at least one subtask (`tasks.no_subtasks`), each with at least one deliverable (`tasks.subtask_deliverables_missing`), and create then asks the scheduler to claim the oldest `todo` group that still fits the concurrency ceilings. Optional `notify_coder` or Commander `notify_on_settle` opts the group into the Coder settle webhook. Returns `tasks.disabled` while the extension is off.",
         "requestBody": {
           "required": true,
           "content": {
@@ -20844,10 +19020,6 @@
                   "notify_coder": {
                     "type": "boolean",
                     "description": "Post the Coder settle webhook when the group settles"
-                  },
-                  "plan": {
-                    "type": "boolean",
-                    "description": "Start a T3 planner that shapes the group in Backlog"
                   },
                   "notify_on_settle": {
                     "type": "boolean"
@@ -21152,7 +19324,7 @@
             "description": "Numeric Task group ID."
           }
         ],
-        "description": "Updates a Task group. `title` and `brief` change only in `backlog` (`tasks.not_in_backlog`). `status` moves the group between `backlog` and `todo`; a claimed group cannot move (`tasks.already_claimed`), and `todo` needs at least one subtask (`tasks.no_subtasks`) and a deliverable on every subtask (`tasks.subtask_deliverables_missing`, whose details name the subtasks). Moving to `todo` asks the scheduler to claim; for a planning group Orbit first commits the workspace as `Plan: {title}` (`tasks.commit_failed`). Served by the Node that holds the group's Instance, or by the Gateway for a group without one. Returns `tasks.disabled` while the extension is off.",
+        "description": "Updates a Task group. `title` and `brief` change only in `backlog` (`tasks.not_in_backlog`). `status` moves the group between `backlog` and `todo`; a claimed group cannot move (`tasks.already_claimed`), and `todo` needs at least one subtask (`tasks.no_subtasks`) and a deliverable on every subtask (`tasks.subtask_deliverables_missing`, whose details name the subtasks). Moving to `todo` asks the scheduler to claim. Served by the Node that holds the group's Instance, or by the Gateway for a group without one. Returns `tasks.disabled` while the extension is off.",
         "requestBody": {
           "required": false,
           "content": {
@@ -23575,104 +21747,6 @@
           }
         }
       },
-      "App": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "integer"
-          },
-          "name": {
-            "type": "string"
-          },
-          "slug": {
-            "type": "string"
-          },
-          "code": {
-            "type": "string"
-          },
-          "type": {
-            "type": "string",
-            "enum": [
-              "monorepo",
-              "laravel-app",
-              "laravel-package",
-              "node-package"
-            ]
-          },
-          "repository_url": {
-            "type": "string"
-          },
-          "default_branch": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "root": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "defaults": {
-            "type": [
-              "object",
-              "null"
-            ],
-            "additionalProperties": true
-          },
-          "task_check": {
-            "type": [
-              "string",
-              "null"
-            ]
-          }
-        }
-      },
-      "DevelopmentNodeExclusion": {
-        "type": "object",
-        "properties": {
-          "project_id": {
-            "type": "integer"
-          },
-          "project_slug": {
-            "type": "string"
-          },
-          "node_id": {
-            "type": "integer"
-          },
-          "node_name": {
-            "type": "string"
-          },
-          "development_instance_count": {
-            "type": "integer"
-          }
-        }
-      },
-      "AppRuntimeDefinition": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "app_id": {
-            "type": "integer"
-          },
-          "name": {
-            "type": "string"
-          },
-          "environments": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "spec": {
-            "type": "object",
-            "additionalProperties": true
-          }
-        }
-      },
       "Cluster": {
         "type": "object",
         "properties": {
@@ -24078,17 +22152,11 @@
           "id": {
             "type": "integer"
           },
-          "app_id": {
-            "type": "integer"
-          },
           "project_id": {
             "type": "integer"
           },
           "node_id": {
             "type": "integer"
-          },
-          "app": {
-            "$ref": "#/components/schemas/AppIdentity"
           },
           "project": {
             "$ref": "#/components/schemas/AppIdentity"
@@ -24527,6 +22595,60 @@
           },
           "completed_count": {
             "type": "integer"
+          }
+        }
+      },
+      "App": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "monorepo",
+              "laravel-app",
+              "laravel-package",
+              "node-package"
+            ]
+          },
+          "repository_url": {
+            "type": "string"
+          },
+          "default_branch": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "root": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "defaults": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "additionalProperties": true
+          },
+          "task_check": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },
@@ -25063,6 +23185,26 @@
           }
         }
       },
+      "DevelopmentNodeExclusion": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "integer"
+          },
+          "project_slug": {
+            "type": "string"
+          },
+          "node_id": {
+            "type": "integer"
+          },
+          "node_name": {
+            "type": "string"
+          },
+          "development_instance_count": {
+            "type": "integer"
+          }
+        }
+      },
       "DevelopmentNodeExclusionResult": {
         "type": "object",
         "properties": {
@@ -25245,6 +23387,30 @@
           }
         }
       },
+      "AppRuntimeDefinition": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "app_id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "environments": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "spec": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        }
+      },
       "Schedule": {
         "type": "object",
         "properties": {
@@ -25372,9 +23538,6 @@
             ]
           },
           "notify_coder": {
-            "type": "boolean"
-          },
-          "plan": {
             "type": "boolean"
           },
           "assistance_requested": {

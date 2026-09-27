@@ -28,7 +28,6 @@ final class RegisterInstanceCommand extends GatewayCommand
         {--path= : Existing Git checkout or worktree; defaults to the current directory}
         {--include-worktrees : Adopt the checkout and every linked worktree}
         {--project= : Existing numeric Project ID}
-        {--app= : Existing numeric Project ID (compatibility)}
         {--app-name= : Confirmed Project display name}
         {--app-slug= : Confirmed Project slug}
         {--default-branch= : Confirmed Project default branch}
@@ -95,7 +94,7 @@ final class RegisterInstanceCommand extends GatewayCommand
             new RegisterAppInstanceRequest(
                 sourcePath: $facts->path,
                 includeWorktrees: $this->option('include-worktrees') === true,
-                appId: $values['appId'],
+                projectId: $values['appId'],
                 appName: $values['appName'],
                 appSlug: $values['appSlug'],
                 defaultBranch: $values['defaultBranch'],
@@ -141,16 +140,7 @@ final class RegisterInstanceCommand extends GatewayCommand
      */
     private function confirmedValues(GitRegistrationFacts $facts): ?array
     {
-        $project = $this->stringOption('project');
-        $app = $this->stringOption('app');
-
-        if ($project !== null && $app !== null) {
-            $this->renderGatewayFailure('app.id_invalid', 'Use only one of --project or --app.');
-
-            return null;
-        }
-
-        $appId = $project ?? $app;
+        $appId = $this->stringOption('project');
         $appIdValue = $appId === null ? null : filter_var($appId, FILTER_VALIDATE_INT, ['options' => [
             'min_range' => 1,
         ]]);
@@ -186,7 +176,7 @@ final class RegisterInstanceCommand extends GatewayCommand
             ) {
                 $this->renderGatewayFailure(
                     'instance.registration_values_unresolved',
-                    'Non-interactive registration requires unresolved App values as options.',
+                    'Non-interactive registration requires unresolved Project values as options.',
                 );
 
                 return null;

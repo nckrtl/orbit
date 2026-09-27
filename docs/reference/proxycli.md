@@ -58,7 +58,7 @@ Enable places these four pieces on the chosen Node and in Gateway settings. The 
 
 `collector.cli-proxy-api.orbit` is a reserved platform name. [Collector hostname](#collector-hostname) describes the Routes enable refuses or takes over.
 
-The Process command is `/usr/bin/python3 /var/lib/orbit/proxycli/server.py`. systemd does not search an operator `PATH`, so a bare `python3` does not start. Enable persists `PROXYCLI_*` on the Process specification and the unit receives those values as `Environment=` directives. The map includes the CLIProxyAPI URL and management key, the CodexBar read and control tokens, the loopback port, and the Valkey host, port, username, and password. [ADR 0108](/decisions/0108-persist-managed-environment-on-systemd-processes) owns that projection. HTTP `process:create` still accepts environment only for Docker.
+The Process command is `/usr/bin/python3 /var/lib/orbit/proxycli/server.py`. systemd does not search an operator `PATH`, so a bare `python3` does not start. Enable persists `PROXYCLI_*` on the Process specification and the unit receives those values as `Environment=` directives. The map includes the CLIProxyAPI URL and management key, the CodexBar read and control tokens, the loopback port, and the Valkey host, port, username, and password. [Processes and schedules](/reference/app-processes-and-schedules#environment-of-a-systemd-process) owns that projection. HTTP `process:create` still accepts environment only for Docker.
 
 The management server is a separate Node Process named `cli-proxy-api`, listening on port 8317. Its dashboard is `/management.html` on `cli-proxy-api.orbit`. The extension slug, API paths, and cache keys are `proxycli`.
 

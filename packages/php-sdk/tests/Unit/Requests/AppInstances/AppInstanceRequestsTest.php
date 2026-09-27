@@ -10,7 +10,7 @@ use Saloon\Enums\Method;
 
 describe('AppInstance lifecycle requests', function (): void {
     it('uses create, destroy, and list verbs on the existing methods and paths', function (): void {
-        $create = new CreateAppInstanceRequest(appId: 3, nodeId: 4, name: 'main');
+        $create = new CreateAppInstanceRequest(projectId: 3, nodeId: 4, name: 'main');
         $destroy = new DestroyAppInstanceRequest(7, force: true);
         $list = new ListAppInstanceReleasesRequest(17);
 
@@ -31,11 +31,11 @@ describe('AppInstance lifecycle requests', function (): void {
     });
 
     it('does not promise direct production creation on the ordinary create request', function (): void {
-        $create = new CreateAppInstanceRequest(appId: 3, nodeId: 4, name: 'main');
+        $create = new CreateAppInstanceRequest(projectId: 3, nodeId: 4, name: 'main');
         $clone = new CloneAppInstanceRequest(11, 7, 'production', 'shop.com');
 
         expect($create->body()->all())
-            ->toBe(['app_id' => 3, 'node_id' => 4, 'name' => 'main'])
+            ->toBe(['project_id' => 3, 'node_id' => 4, 'name' => 'main'])
             ->and($create->body()->all())
             ->not->toHaveKey('environment')
             ->and($create->resolveEndpoint())

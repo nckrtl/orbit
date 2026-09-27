@@ -245,7 +245,7 @@ function typed_sample_resource_fixture(): array
     );
     file_put_contents(
         $legacyRecords['instance'],
-        '{"id":8,"app_id":7,"node_id":2,"name":"legacy-dev","environment":"development","hostname":"laravel.beast"}',
+        '{"id":8,"project_id":7,"node_id":2,"name":"legacy-dev","environment":"development","hostname":"laravel.beast"}',
     );
     file_put_contents($legacyRecords['workspace'], '{"id":9,"instance_id":8,"name":"legacy","branch":"legacy"}');
     $state = "{$root}/sample-app-state.json";
@@ -360,7 +360,7 @@ function typed_sample_resource_fixture(): array
               if [[ -n "${TYPED_RESPONSE:-}" ]]; then
                 printf '%s' "$TYPED_RESPONSE"
               else
-                printf '{%s"instances":[{"id":4,"app_id":1,"node_id":2,"name":"e2e-dev","status":"active","checkout_path":"%s/laravel-typed/e2e-dev","selected_branch":"e2e-dev","starting_commit":"%s","effective_root":"public"}' "$prefix" "$state" "$(printf a%.0s {1..40})"
+                printf '{%s"instances":[{"id":4,"project_id":1,"node_id":2,"name":"e2e-dev","status":"active","checkout_path":"%s/laravel-typed/e2e-dev","selected_branch":"e2e-dev","starting_commit":"%s","effective_root":"public"}' "$prefix" "$state" "$(printf a%.0s {1..40})"
                 if [[ -e "$state/production" ]]; then
                   production_endpoint='"domain":"e2e-prod.orbit.test"'
                   case "${PRODUCTION_ENDPOINT_SHAPE:-domain}" in
@@ -369,7 +369,7 @@ function typed_sample_resource_fixture(): array
                     invalid-domain-with-hostname) production_endpoint='"domain":"","hostname":"e2e-prod.orbit.test"' ;;
                     *) exit 70 ;;
                   esac
-                  printf ',{"id":5,"app_id":1,"node_id":3,"name":"e2e-prod","environment":"production","source_layout":"release","status":"active","checkout_path":"%s/production/current","production_user":"orbit-laravel","production_home":"%s/production","selected_branch":"main","starting_commit":"%s","effective_root":"%s/production/current/public","current_target":"%s/production/releases/one",%s,"php_version":"8.5"}' "$state" "$state" "$(printf a%.0s {1..40})" "$state" "$state" "$production_endpoint"
+                  printf ',{"id":5,"project_id":1,"node_id":3,"name":"e2e-prod","environment":"production","source_layout":"release","status":"active","checkout_path":"%s/production/current","production_user":"orbit-laravel","production_home":"%s/production","selected_branch":"main","starting_commit":"%s","effective_root":"%s/production/current/public","current_target":"%s/production/releases/one",%s,"php_version":"8.5"}' "$state" "$state" "$(printf a%.0s {1..40})" "$state" "$state" "$production_endpoint"
                 fi
                 printf ']}'
               fi
@@ -3017,7 +3017,7 @@ describe('convergence guest scripts', function () {
                 [[ "$*" == 'instance:list --json' ]]
                 state=$(dirname "$0")
                 printf '%s\n' "$*" >>"$state/orbit-commands"
-                printf '{"instances":[{"id":4,"app_id":1,"node_id":2,"name":"e2e-dev","status":"active","checkout_path":"%s/checkout","selected_branch":"e2e-dev","starting_commit":"%s","effective_root":"public"}]}' "$state" "$SAMPLE_STARTING_SHA"
+                printf '{"instances":[{"id":4,"project_id":1,"node_id":2,"name":"e2e-dev","status":"active","checkout_path":"%s/checkout","selected_branch":"e2e-dev","starting_commit":"%s","effective_root":"public"}]}' "$state" "$SAMPLE_STARTING_SHA"
                 BASH);
             chmod("{$fixture['root']}/orbit", 0o700);
             file_put_contents("{$fixture['checkout']}/vendor/autoload.php", "autoloaded\n");
@@ -3082,8 +3082,8 @@ describe('convergence guest scripts', function () {
               instance:list)
                 printf '{"instances":['
                 sep=
-                if [[ -e "$state/dev" ]]; then printf '%s{"id":4,"app_id":1,"node_id":2,"name":"e2e-dev","environment":"development","hostname":"laravel.beast"}' "$sep"; sep=,; fi
-                if [[ -e "$state/prod" ]]; then printf '%s{"id":5,"app_id":1,"node_id":3,"name":"e2e-prod","environment":"production","hostname":"laravel.internal"}' "$sep"; fi
+                if [[ -e "$state/dev" ]]; then printf '%s{"id":4,"project_id":1,"node_id":2,"name":"e2e-dev","environment":"development","hostname":"laravel.beast"}' "$sep"; sep=,; fi
+                if [[ -e "$state/prod" ]]; then printf '%s{"id":5,"project_id":1,"node_id":3,"name":"e2e-prod","environment":"production","hostname":"laravel.internal"}' "$sep"; fi
                 printf ']}'
                 ;;
               instance:create) [[ "$4" == e2e-dev ]] && touch "$state/dev" || touch "$state/prod"; printf '{"id":4}' ;;
@@ -3517,9 +3517,9 @@ describe('convergence guest scripts', function () {
             $second = typed_sample_create_resources_process($fixture, [
                 'COMMAND_SURFACE' => $surface,
                 'TYPED_RESPONSE' => json_encode(['instances' => [
-                    [...$state, 'id' => 4, 'status' => 'active', 'selected_branch' => 'e2e-dev', 'starting_commit' => str_repeat('a', 40)],
+                    [...array_diff_key($state, ['app_id' => true]), 'project_id' => $state['app_id'], 'id' => 4, 'status' => 'active', 'selected_branch' => 'e2e-dev', 'starting_commit' => str_repeat('a', 40)],
                     [
-                        'id' => 5, 'app_id' => 1, 'node_id' => 3, 'name' => 'e2e-prod',
+                        'id' => 5, 'project_id' => 1, 'node_id' => 3, 'name' => 'e2e-prod',
                         'status' => 'active', 'environment' => 'production', 'source_layout' => 'checkout',
                         'checkout_path' => $production['current_target'],
                         'production_user' => $production['user'], 'production_home' => $production['home'],
@@ -4300,25 +4300,25 @@ describe('convergence guest scripts', function () {
         'ambiguous later shape' => ['{"app_instances":[],"instances":[]}'],
         'duplicate target' => ['{"instances":[{"name":"e2e-dev"},{"name":"e2e-dev"}]}'],
         'wrong App' => [
-            '{"instances":[{"app_id":9,"node_id":2,"name":"e2e-dev","status":"active","checkout_path":"{checkout}","selected_branch":"e2e-dev","starting_commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","effective_root":"public"}]}',
+            '{"instances":[{"project_id":9,"node_id":2,"name":"e2e-dev","status":"active","checkout_path":"{checkout}","selected_branch":"e2e-dev","starting_commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","effective_root":"public"}]}',
         ],
         'wrong Node' => [
-            '{"instances":[{"app_id":1,"node_id":3,"name":"e2e-dev","status":"active","checkout_path":"{checkout}","selected_branch":"e2e-dev","starting_commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","effective_root":"public"}]}',
+            '{"instances":[{"project_id":1,"node_id":3,"name":"e2e-dev","status":"active","checkout_path":"{checkout}","selected_branch":"e2e-dev","starting_commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","effective_root":"public"}]}',
         ],
         'inactive lifecycle' => [
-            '{"instances":[{"app_id":1,"node_id":2,"name":"e2e-dev","status":"source_resolved","checkout_path":"{checkout}","selected_branch":"e2e-dev","starting_commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","effective_root":"public"}]}',
+            '{"instances":[{"project_id":1,"node_id":2,"name":"e2e-dev","status":"source_resolved","checkout_path":"{checkout}","selected_branch":"e2e-dev","starting_commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","effective_root":"public"}]}',
         ],
         'missing branch evidence' => [
-            '{"instances":[{"app_id":1,"node_id":2,"name":"e2e-dev","status":"active","checkout_path":"{checkout}","starting_commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","effective_root":"public"}]}',
+            '{"instances":[{"project_id":1,"node_id":2,"name":"e2e-dev","status":"active","checkout_path":"{checkout}","starting_commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","effective_root":"public"}]}',
         ],
         'invalid commit evidence' => [
-            '{"instances":[{"app_id":1,"node_id":2,"name":"e2e-dev","status":"active","checkout_path":"{checkout}","selected_branch":"e2e-dev","starting_commit":"invalid","effective_root":"public"}]}',
+            '{"instances":[{"project_id":1,"node_id":2,"name":"e2e-dev","status":"active","checkout_path":"{checkout}","selected_branch":"e2e-dev","starting_commit":"invalid","effective_root":"public"}]}',
         ],
         'relative checkout identity' => [
-            '{"instances":[{"app_id":1,"node_id":2,"name":"e2e-dev","status":"active","checkout_path":"relative/path","selected_branch":"e2e-dev","starting_commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","effective_root":"public"}]}',
+            '{"instances":[{"project_id":1,"node_id":2,"name":"e2e-dev","status":"active","checkout_path":"relative/path","selected_branch":"e2e-dev","starting_commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","effective_root":"public"}]}',
         ],
         'wrong effective root' => [
-            '{"instances":[{"app_id":1,"node_id":2,"name":"e2e-dev","status":"active","checkout_path":"{checkout}","selected_branch":"e2e-dev","starting_commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","effective_root":"web"}]}',
+            '{"instances":[{"project_id":1,"node_id":2,"name":"e2e-dev","status":"active","checkout_path":"{checkout}","selected_branch":"e2e-dev","starting_commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","effective_root":"web"}]}',
         ],
     ]);
 
@@ -4395,7 +4395,7 @@ describe('convergence guest scripts', function () {
             case "$1" in
               node:list) printf '{"nodes":[{"id":2,"name":"app-dev","roles":["app-dev"]},{"id":3,"name":"app-prod","roles":["app-prod"]}]}' ;;
               node:role:add) printf '{"node_id":%s,"role":"%s","assignment":{"status":"active"}}' "$2" "$3" ;;
-              instance:list) printf '{"instances":[{"id":4,"app_id":1,"node_id":2,"name":"e2e-dev","status":"active","checkout_path":"%s/laravel-typed/e2e-dev","selected_branch":"e2e-dev","starting_commit":"%s","effective_root":"public"}]}' "$state" "$(printf a%.0s {1..40})" ;;
+              instance:list) printf '{"instances":[{"id":4,"project_id":1,"node_id":2,"name":"e2e-dev","status":"active","checkout_path":"%s/laravel-typed/e2e-dev","selected_branch":"e2e-dev","starting_commit":"%s","effective_root":"public"}]}' "$state" "$(printf a%.0s {1..40})" ;;
               list) printf 'instance:create\n' ;;
               instance:php) exit 99 ;;
               *) exit 70 ;;

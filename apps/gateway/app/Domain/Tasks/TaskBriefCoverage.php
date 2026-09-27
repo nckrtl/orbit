@@ -12,9 +12,10 @@ use App\Models\TaskGroup;
 interface TaskBriefCoverage
 {
     /**
+     * @param  list<string>|null  $approvalChanges
      * @return list<string> the titles of subtasks that no change covers
      *
      * @throws TaskSessionClassificationException
      */
-    public function missing(TaskGroup $group, TaskRunPullRequest $pullRequest): array;
+    public function missing(TaskGroup $group, TaskRunPullRequest $pullRequest, ?int $approvalCommentId = null, ?array $approvalChanges = null): array;
 }

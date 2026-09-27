@@ -228,6 +228,7 @@ it('defines the exact stable issue-code catalog for every Doctor family', functi
         'instance' => [
             'instance.lifecycle_not_active',
             'instance.removal_stuck',
+            'instance.provisioning_stuck',
             'instance.source_layout_mismatch',
             'instance.checkout_missing',
             'instance.repository_layout_mismatch',

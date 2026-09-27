@@ -24,7 +24,6 @@ final class ProvisionNodeCommand extends Command
         {--role=* : Initial role assignment}
         {--cluster= : Cluster ID}
         {--wireguard-ip= : Stable WireGuard IP}
-        {--wireguard-address= : Deprecated alias for --wireguard-ip}
         {--lan-ip= : Cluster-local LAN IP}
         {--wireguard-endpoint= : Per-node WireGuard endpoint override}
         {--dns-server= : Per-node DNS server override}
@@ -110,16 +109,10 @@ final class ProvisionNodeCommand extends Command
     /** @return array{valid: bool, value: ?string} */
     private function wireguardIp(): array
     {
-        $canonical = $this->stringOption('wireguard-ip');
-        $deprecated = $this->stringOption('wireguard-address');
-
-        if ($canonical !== null && $deprecated !== null && $canonical !== $deprecated) {
-            $this->error('The WireGuard IP options conflict.');
-
-            return ['valid' => false, 'value' => null];
-        }
-
-        return ['valid' => true, 'value' => $canonical ?? $deprecated];
+        return [
+            'value' => $this->stringOption('wireguard-ip'),
+            'valid' => true,
+        ];
     }
 
     private function positiveIntegerOption(string $name): ?int

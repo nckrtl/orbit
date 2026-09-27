@@ -12,7 +12,7 @@ Orbit runs Agentation watch mode as two development App instance Processes. The 
 
 Proposed.
 
-This proposal extends [ADR 0067](/decisions/0067-serve-development-servers-on-the-route-origin), [ADR 0069](/decisions/0069-allow-node-process-targets), [ADR 0074](/decisions/0074-hibernate-idle-app-dev-appinstance-processes), and [ADR 0078](/decisions/0078-assign-vite-ports-to-development-appinstances). It does not change Vite's reserved path, port allocator, or keep-alive contract.
+This proposal extends [ADR 0067](/decisions/0067-serve-development-servers-on-the-route-origin), [ADR 0069](/reference/app-processes-and-schedules#owners), [ADR 0074](/decisions/0074-hibernate-idle-app-dev-appinstance-processes), and [ADR 0078](/decisions/0078-assign-vite-ports-to-development-appinstances). It does not change Vite's reserved path, port allocator, or keep-alive contract.
 
 ## Context
 
@@ -36,7 +36,7 @@ Several development App instances can share one Node. Agentation's default port 
 
 ## Rejected alternatives
 
-- A Gateway-owned sidecar outside Process: rejected because start, stop, Doctor, and hibernation would invent a second runtime model. [ADR 0069](/decisions/0069-allow-node-process-targets) already uses Process as the runtime owner.
+- A Gateway-owned sidecar outside Process: rejected because start, stop, Doctor, and hibernation would invent a second runtime model. [ADR 0069](/reference/app-processes-and-schedules#owners) already uses Process as the runtime owner.
 - Keep-alive for the watcher: rejected because a sleeping App instance has no toolbar traffic, and keep-alive would leave a token-consuming agent running after idle halt.
 - Publishing Agentation on a custom proxy hostname: rejected because the toolbar talks to the App's public Route. [ADR 0080](/decisions/0080-add-node-owned-custom-proxy-routes) is for Node-local services without an App instance.
 - Reusing the Vite port and `/__orbit/vite` path: rejected because Vite and Agentation are different upstream contracts. Vite preserves its base path; Agentation strips the reserved prefix.
@@ -53,6 +53,6 @@ Several development App instances can share one Node. Agentation's default port 
 ## Affects
 
 - Components: apps/cli, apps/gateway, packages/php-sdk, apps/docs
-- ADRs: extends [ADR 0067](/decisions/0067-serve-development-servers-on-the-route-origin), [ADR 0069](/decisions/0069-allow-node-process-targets), [ADR 0074](/decisions/0074-hibernate-idle-app-dev-appinstance-processes), and [ADR 0078](/decisions/0078-assign-vite-ports-to-development-appinstances)
+- ADRs: extends [ADR 0067](/decisions/0067-serve-development-servers-on-the-route-origin), [ADR 0069](/reference/app-processes-and-schedules#owners), [ADR 0074](/decisions/0074-hibernate-idle-app-dev-appinstance-processes), and [ADR 0078](/decisions/0078-assign-vite-ports-to-development-appinstances)
 - Detail: [Agentation](/reference/agentation)
 - Verify: Gateway Process preset, `AGENTATION_URL` projection, Caddy reserved-path, and hibernation start/stop tests; CLI preset contract tests; `composer docs-lint`

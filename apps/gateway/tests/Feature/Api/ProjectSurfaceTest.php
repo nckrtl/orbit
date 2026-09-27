@@ -22,7 +22,7 @@ beforeEach(function (): void {
     $this->fakeRepositoryBranches();
 });
 
-it('serves the same Project on /projects and /apps', function (): void {
+it('serves Projects only on the Project API', function (): void {
     $created = $this->postJson('/api/v1/projects', [
         'slug' => 'acme',
         'type' => 'laravel-package',
@@ -38,21 +38,19 @@ it('serves the same Project on /projects and /apps', function (): void {
         ->assertJsonPath('data.slug', 'acme')
         ->assertJsonPath('data.type', 'laravel-package');
 
-    $this->getJson('/api/v1/apps/'.$created->json('data.id'))
-        ->assertOk()
-        ->assertJsonPath('data.slug', 'acme')
-        ->assertJsonPath('data.type', 'laravel-package');
+    $this->getJson('/api/v1/apps/'.$created->json('data.id'))->assertNotFound();
+    $this->getJson('/api/v1/apps')->assertNotFound();
 });
 
-it('defaults omitted type to laravel-app on the compatibility surface', function (): void {
-    $this->postJson('/api/v1/apps', [
+it('requires an explicit Project type', function (): void {
+    $this->postJson('/api/v1/projects', [
         'slug' => 'shop',
         'repository_url' => 'https://github.com/acme/shop.git',
         'default_branch' => 'main',
         'root' => 'public',
     ])
-        ->assertCreated()
-        ->assertJsonPath('data.type', 'laravel-app');
+        ->assertUnprocessable()
+        ->assertJsonPath('error.details.type.0', 'The type field is required.');
 });
 
 it('activates a laravel-package Instance without a Route', function (): void {
@@ -199,7 +197,7 @@ it('classifies the Orbit repository as a monorepo during upgrade', function (): 
     expect($orbit->refresh()->type)->toBe(ProjectType::Monorepo);
 });
 
-it('exposes project_id beside app_id on Instance payloads', function (): void {
+it('exposes the Project identity on Instance payloads', function (): void {
     $project = OrbitApp::query()->create([
         'name' => 'shop',
         'slug' => 'shop',
@@ -225,30 +223,12 @@ it('exposes project_id beside app_id on Instance payloads', function (): void {
 
     $this->getJson('/api/v1/instances/'.$instance->id)
         ->assertOk()
-        ->assertJsonPath('data.app_id', $project->id)
         ->assertJsonPath('data.project_id', $project->id)
-        ->assertJsonPath('data.app.slug', 'shop')
         ->assertJsonPath('data.project.slug', 'shop')
         ->assertJsonPath('data.project.type', 'laravel-app');
 });
 
-it('accepts project_id as the Instance owner and refuses a mismatched app_id', function (): void {
-    $project = OrbitApp::query()->create([
-        'name' => 'shop',
-        'slug' => 'shop',
-        'type' => ProjectType::LaravelApp,
-        'repository_url' => 'https://github.com/acme/shop.git',
-        'default_branch' => 'main',
-        'root' => 'public',
-    ]);
-    $other = OrbitApp::query()->create([
-        'name' => 'other',
-        'slug' => 'other',
-        'type' => ProjectType::LaravelPackage,
-        'repository_url' => 'https://github.com/acme/other.git',
-        'default_branch' => 'main',
-        'root' => 'src',
-    ]);
+it('requires project_id as the Instance owner', function (): void {
     $node = Node::query()->create([
         'name' => 'dev',
         'status' => LifecycleStatus::Active,
@@ -263,15 +243,5 @@ it('accepts project_id as the Instance owner and refuses a mismatched app_id', f
     ])
         ->assertUnprocessable()
         ->assertJsonPath('error.code', 'validation.failed')
-        ->assertJsonPath('error.details.project_id.0', 'Supply project_id or app_id.');
-
-    $this->postJson('/api/v1/instances', [
-        'project_id' => $project->id,
-        'app_id' => $other->id,
-        'node_id' => $node->id,
-        'name' => 'preview',
-    ])
-        ->assertUnprocessable()
-        ->assertJsonPath('error.code', 'validation.failed')
-        ->assertJsonPath('error.details.project_id.0', 'project_id and app_id must name the same Project.');
+        ->assertJsonPath('error.details.project_id.0', 'The project id field is required.');
 });

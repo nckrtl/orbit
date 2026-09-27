@@ -23,7 +23,7 @@ final class CreateAppInstanceRequest extends GatewayRequest implements HasBody
     protected Method $method = Method::POST;
 
     public function __construct(
-        private readonly int $appId,
+        private readonly int $projectId,
         private readonly int $nodeId,
         private readonly string $name,
         private readonly ?string $root = null,
@@ -48,7 +48,7 @@ final class CreateAppInstanceRequest extends GatewayRequest implements HasBody
     protected function defaultBody(): array
     {
         $body = [
-            'app_id' => $this->appId,
+            'project_id' => $this->projectId,
             'node_id' => $this->nodeId,
             'name' => $this->name,
         ];

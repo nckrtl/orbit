@@ -22,7 +22,7 @@ use Symfony\Component\Console\Output\OutputInterface;
 final class RenderTaskPromptCommand extends Command
 {
     #[\Override]
-    protected $signature = 'tasks:render-prompt {role : The prompt role (planner, implementer, reviewer, or reviewer-continue)}';
+    protected $signature = 'tasks:render-prompt {role : The prompt role (implementer, reviewer, or reviewer-continue)}';
 
     #[\Override]
     protected $description = 'Render a task agent prompt from JSON on standard input';
@@ -32,14 +32,13 @@ final class RenderTaskPromptCommand extends Command
         try {
             $input = $this->decode((string) file_get_contents('php://stdin'));
             $role = $this->argument('role');
-            if (! in_array($role, ['planner', 'implementer', 'reviewer', 'reviewer-continue'], true)) {
-                throw new InvalidArgumentException('role must be planner, implementer, reviewer, or reviewer-continue.');
+            if (! in_array($role, ['implementer', 'reviewer', 'reviewer-continue'], true)) {
+                throw new InvalidArgumentException('role must be implementer, reviewer, or reviewer-continue.');
             }
 
             $this->knownFields($input, ['group', 'subtask', 'thread_id', 'review_packet'], 'input');
             $this->validateRoleFields($input, $role);
             $prompt = match ($role) {
-                'planner' => TaskPromptRenderer::planner($this->group($input)),
                 'implementer' => TaskPromptRenderer::implementer($this->group($input), $this->subtask($input), $this->threadId($input)),
                 'reviewer', 'reviewer-continue' => $this->reviewPacket($input, $role === 'reviewer-continue'),
             };
@@ -85,13 +84,6 @@ final class RenderTaskPromptCommand extends Command
     /** @param array<string, mixed> $data */
     private function validateRoleFields(array $data, string $role): void
     {
-        if ($role === 'planner') {
-            foreach (['subtask', 'thread_id', 'review_packet'] as $field) {
-                if (array_key_exists($field, $data)) {
-                    throw new InvalidArgumentException('input.'.$field.' is not used for the planner role.');
-                }
-            }
-        }
         if ($role === 'implementer' && array_key_exists('review_packet', $data)) {
             throw new InvalidArgumentException('input.review_packet is only valid for reviewer roles.');
         }

@@ -181,7 +181,6 @@
             "group": "Applications",
             "pages": [
               "cli/project",
-              "cli/app",
               "cli/instance",
               "cli/route",
               "cli/env",
@@ -318,17 +317,6 @@
             ]
           },
           {
-            "group": "Apps",
-            "openapi": "/openapi.json",
-            "pages": [
-              "GET /api/v1/apps",
-              "POST /api/v1/apps",
-              "DELETE /api/v1/apps/{app}",
-              "GET /api/v1/apps/{app}",
-              "PATCH /api/v1/apps/{app}"
-            ]
-          },
-          {
             "group": "Projects",
             "openapi": "/openapi.json",
             "pages": [
@@ -443,11 +431,6 @@
             "group": "Processes",
             "openapi": "/openapi.json",
             "pages": [
-              "GET /api/v1/apps/{app}/process-definitions",
-              "POST /api/v1/apps/{app}/process-definitions",
-              "DELETE /api/v1/apps/{app}/process-definitions/{process_definition}",
-              "GET /api/v1/apps/{app}/process-definitions/{process_definition}",
-              "PUT /api/v1/apps/{app}/process-definitions/{process_definition}",
               "GET /api/v1/processes",
               "POST /api/v1/processes",
               "DELETE /api/v1/processes/{process}",
@@ -464,11 +447,6 @@
             "group": "Schedules",
             "openapi": "/openapi.json",
             "pages": [
-              "GET /api/v1/apps/{app}/schedule-definitions",
-              "POST /api/v1/apps/{app}/schedule-definitions",
-              "DELETE /api/v1/apps/{app}/schedule-definitions/{schedule_definition}",
-              "GET /api/v1/apps/{app}/schedule-definitions/{schedule_definition}",
-              "PUT /api/v1/apps/{app}/schedule-definitions/{schedule_definition}",
               "GET /api/v1/schedules",
               "POST /api/v1/schedules",
               "DELETE /api/v1/schedules/{schedule}",
@@ -577,18 +555,12 @@
           {
             "group": "Records",
             "pages": [
-              "decisions/0001-tool-management",
               "decisions/0002-candidate-deployment-proof-boundary",
-              "decisions/0003-singleton-metrics-role",
-              "decisions/0004-verify-only-doctor-boundary",
               "decisions/0005-rolling-incus-development-topology",
               "decisions/0006-topology-led-feature-development",
-              "decisions/0008-typed-app-dev-node-storage-settings",
               "decisions/0009-clustered-app-instance-routing",
               "decisions/0010-record-decisions-before-implementation-issues",
               "decisions/0011-clustered-production-ingress-and-app-prod-placement",
-              "decisions/0012-ubuntu-24-04-roleless-operator-clients",
-              "decisions/0013-native-systemd-schedule-management",
               "decisions/0014-maintain-verified-documentation-context",
               "decisions/0015-retain-incus-proof-by-recorded-input-equivalence",
               "decisions/0016-reconcile-app-identity-and-source-default-updates",
@@ -616,25 +588,17 @@
               "decisions/0039-use-round-robin-for-production-route-pools",
               "decisions/0040-extend-issue-proof-with-one-app-prod-node",
               "decisions/0041-delete-an-empty-route-during-appinstance-removal",
-              "decisions/0042-provision-tool-managers-on-demand",
-              "decisions/0043-manage-homebrew-core-formulae",
-              "decisions/0044-own-appinstance-environment-configuration-in-orbit",
               "decisions/0045-isolate-production-php-fpm-by-unix-user",
-              "decisions/0046-own-production-release-deployment-in-orbit",
               "decisions/0047-create-production-appinstances-from-candidates",
-              "decisions/0048-copy-app-process-and-schedule-definitions-into-appinstances",
               "decisions/0049-keep-delivery-artifacts-off-the-merge-head",
               "decisions/0050-release-successful-proof-resources-before-landing",
               "decisions/0051-select-discovery-only-feature-delivery",
               "decisions/0052-seed-worktrees-from-successful-main-test-baselines",
               "decisions/0053-use-local-review-checks-for-feature-landing",
               "decisions/0054-maintain-main-caches-asynchronously",
-              "decisions/0055-restrict-grafana-access-to-authorized-gateway-peers",
               "decisions/0056-retain-proof-topologies-for-interactive-review",
-              "decisions/0057-limit-metrics-exporters-to-managed-nodes",
               "decisions/0058-separate-incus-requirements-from-delivery-flow",
               "decisions/0059-make-the-builder-own-the-candidate-quality-gate",
-              "decisions/0060-record-latest-schedule-run-status",
               "decisions/0061-use-vpn-dns-by-default-on-managed-peers",
               "decisions/0062-select-cluster-router-dns-addresses-from-lan-intent",
               "decisions/0063-prefer-active-cluster-tlds-for-generated-routes",
@@ -642,47 +606,30 @@
               "decisions/0065-replace-routes-when-domains-change",
               "decisions/0066-transfer-development-appinstances-between-nodes",
               "decisions/0067-serve-development-servers-on-the-route-origin",
-              "decisions/0068-accept-only-apps-path-node-storage-setting",
-              "decisions/0069-allow-node-process-targets",
-              "decisions/0070-keep-the-database-role-as-a-docker-baseline",
               "decisions/0071-use-one-verb-vocabulary-across-cli-routes-and-sdk",
-              "decisions/0072-add-and-remove-nodes-without-changing-the-machine",
-              "decisions/0073-store-deploy-steps-as-named-appinstance-records",
               "decisions/0074-hibernate-idle-app-dev-appinstance-processes",
               "decisions/0075-prune-idle-app-dev-checkout-dependencies",
               "decisions/0076-deliver-features-through-complete-pull-requests",
-              "decisions/0077-allow-database-beside-router",
               "decisions/0078-assign-vite-ports-to-development-appinstances",
-              "decisions/0079-publish-orbit-cli-binaries-from-github-actions",
               "decisions/0080-add-node-owned-custom-proxy-routes",
-              "decisions/0081-query-registered-databases-through-pdo",
               "decisions/0082-wire-agentation-watch-mode-through-appinstance-processes",
               "decisions/0083-default-sqlite-journal-mode-to-wal",
               "decisions/0084-broadcast-record-changes-through-reverb",
               "decisions/0085-build-orbit-top-as-a-thin-tui-client",
               "decisions/0086-offer-the-api-as-mcp-tools",
               "decisions/0087-run-reverb-through-a-websocket-role",
-              "decisions/0088-cli-reads-display-metrics-from-grafana",
               "decisions/0089-index-appinstance-dependencies",
-              "decisions/0090-relocate-the-gateway-role-independently-of-vpn",
-              "decisions/0091-rename-a-node-without-changing-wireguard-identity",
               "decisions/0092-publish-private-dns-on-the-vpn-node-after-gateway-relocate",
               "decisions/0093-show-live-ufw-and-desired-rules-that-match-converge",
-              "decisions/0094-project-wireguard-hub-config-onto-the-vpn-node",
               "decisions/0095-relocate-relocatable-singleton-roles",
-              "decisions/0096-run-plausible-through-an-analytics-role",
               "decisions/0097-publish-analytics-tracking-hosts-for-app-instances",
               "decisions/0098-read-github-repositories-through-a-gateway-owned-github-app",
-              "decisions/0099-collect-role-specific-service-metrics",
               "decisions/0100-install-caddy-from-the-pinned-caddy-apt-source",
               "decisions/0101-simplify-route-publication-and-use-lets-encrypt-on-public-ingress",
-              "decisions/0102-read-app-instance-analytics-through-a-fleet-driver",
               "decisions/0103-absorb-commander-tasks-as-a-gateway-extension",
               "decisions/0104-own-cliproxyapi-quota-through-the-proxycli-extension",
               "decisions/0105-name-applications-as-project-and-instance",
               "decisions/0106-derive-instance-capabilities-from-project-type",
-              "decisions/0107-key-isolation-and-releases-to-node-role",
-              "decisions/0108-persist-managed-environment-on-systemd-processes",
               "decisions/0109-publish-the-proxycli-collector-on-a-subdomain",
               "decisions/0110-route-task-sessions-with-laravel-ai-jev",
               "decisions/0112-isolate-agent-threads-behind-drivers",
@@ -700,9 +647,7 @@
               "decisions/0125-run-the-project-check-when-the-implementer-hands-off",
               "decisions/0126-limit-browser-api-calls-to-orbit-origins",
               "decisions/0127-share-one-ssh-connection-per-node",
-              "decisions/0128-run-a-visibility-only-agent-on-managed-nodes",
               "decisions/0129-publish-node-presence-and-process-state-on-per-node-presence-channels",
-              "decisions/0130-publish-agent-binaries-as-github-releases",
               "decisions/0131-seed-task-workspace-clones-from-the-registered-main-cache-store",
               "decisions/0132-pause-only-for-the-acting-thread-and-a-real-question",
               "decisions/0133-verify-typed-subtask-deliverables-at-handoff",
@@ -714,19 +659,12 @@
               "decisions/0139-collect-caddy-http-metrics-on-every-node",
               "decisions/0140-watch-settling-pull-requests-for-conflicts-and-failed-checks",
               "decisions/0141-build-each-node-caddyfile-on-the-gateway",
-              "decisions/0142-apply-plausibles-clickhouse-configuration-from-the-analytics-role",
               "decisions/0143-record-topology-evidence-and-sync-without-verification",
-              "decisions/0144-migrate-waiting-connections-when-caddy-reloads",
               "decisions/0145-publish-the-proxycli-collector-on-collector-cli-proxy-api-orbit",
-              "decisions/0146-retire-the-herdr-integration",
               "decisions/0147-retire-orbit-top",
-              "decisions/0148-keep-a-gateway-view-of-node-agent-state",
               "decisions/0150-keep-extension-commands-local-and-confirm-the-proxycli-fleet-stop",
               "decisions/0151-push-task-and-process-usage-changes-over-realtime",
               "decisions/0152-sample-successful-read-activity",
-              "decisions/0153-tail-instance-and-process-logs-live-through-the-node-agent",
-              "decisions/0154-recover-the-gateway-agent-view-without-a-membership-change",
-              "decisions/0155-authenticate-the-node-agent-with-a-per-node-secret",
               "decisions/0156-route-the-private-domain-on-the-gateway-machine-to-vpn-dns",
               "decisions/0157-keep-private-caddy-sites-off-the-public-listener",
               "decisions/0158-end-interrupted-activity",
@@ -742,7 +680,9 @@
               "decisions/0168-offload-large-pi-tool-output",
               "decisions/0169-start-each-subtask-review-in-a-fresh-thread",
               "decisions/0170-edit-todo-subtasks-after-a-group-starts",
-              "decisions/0171-reset-fixup-caps-after-operator-work"
+              "decisions/0171-reset-fixup-caps-after-operator-work",
+              "decisions/0173-record-and-label-jev-decisions",
+              "decisions/0178-run-project-agnostic-tasks-without-a-planner"
             ]
           }
         ]
@@ -784,6 +724,166 @@
     {
       "source": "/reference/first-app",
       "destination": "/quickstart"
+    },
+    {
+      "source": "/decisions/0003-singleton-metrics-role",
+      "destination": "/reference/metrics"
+    },
+    {
+      "source": "/decisions/0004-verify-only-doctor-boundary",
+      "destination": "/cli/doctor#why-it-works-this-way"
+    },
+    {
+      "source": "/decisions/0055-restrict-grafana-access-to-authorized-gateway-peers",
+      "destination": "/reference/metrics#grafana-access"
+    },
+    {
+      "source": "/decisions/0057-limit-metrics-exporters-to-managed-nodes",
+      "destination": "/reference/metrics#exporter-selection"
+    },
+    {
+      "source": "/decisions/0096-run-plausible-through-an-analytics-role",
+      "destination": "/reference/analytics"
+    },
+    {
+      "source": "/decisions/0099-collect-role-specific-service-metrics",
+      "destination": "/reference/service-metrics"
+    },
+    {
+      "source": "/decisions/0102-read-app-instance-analytics-through-a-fleet-driver",
+      "destination": "/reference/instance-analytics-stats"
+    },
+    {
+      "source": "/decisions/0142-apply-plausibles-clickhouse-configuration-from-the-analytics-role",
+      "destination": "/reference/analytics#clickhouse-configuration"
+    },
+    {
+      "source": "/decisions/0146-retire-the-herdr-integration",
+      "destination": "/cli/extension"
+    },
+    {
+      "source": "/decisions/0001-tool-management",
+      "destination": "/reference/tools#why-it-works-this-way"
+    },
+    {
+      "source": "/decisions/0008-typed-app-dev-node-storage-settings",
+      "destination": "/reference/node-settings"
+    },
+    {
+      "source": "/decisions/0012-ubuntu-24-04-roleless-operator-clients",
+      "destination": "/reference/node-provisioning#add-a-node"
+    },
+    {
+      "source": "/decisions/0042-provision-tool-managers-on-demand",
+      "destination": "/reference/tools#managers-on-demand-independent-of-roles"
+    },
+    {
+      "source": "/decisions/0043-manage-homebrew-core-formulae",
+      "destination": "/reference/tools#homebrew-formulae"
+    },
+    {
+      "source": "/decisions/0068-accept-only-apps-path-node-storage-setting",
+      "destination": "/reference/node-settings#one-typed-setting"
+    },
+    {
+      "source": "/decisions/0070-keep-the-database-role-as-a-docker-baseline",
+      "destination": "/reference/database-role"
+    },
+    {
+      "source": "/decisions/0072-add-and-remove-nodes-without-changing-the-machine",
+      "destination": "/reference/node-provisioning#removal-does-not-clean-the-machine"
+    },
+    {
+      "source": "/decisions/0077-allow-database-beside-router",
+      "destination": "/reference/database-role#the-remaining-conflicts"
+    },
+    {
+      "source": "/decisions/0079-publish-orbit-cli-binaries-from-github-actions",
+      "destination": "/reference/cli-binaries"
+    },
+    {
+      "source": "/decisions/0088-cli-reads-display-metrics-from-grafana",
+      "destination": "/reference/metrics#read-node-metrics"
+    },
+    {
+      "source": "/decisions/0090-relocate-the-gateway-role-independently-of-vpn",
+      "destination": "/cli/node#a-dedicated-relocate-for-gateway"
+    },
+    {
+      "source": "/decisions/0091-rename-a-node-without-changing-wireguard-identity",
+      "destination": "/cli/node#orbit-noderename"
+    },
+    {
+      "source": "/decisions/0094-project-wireguard-hub-config-onto-the-vpn-node",
+      "destination": "/reference/node-provisioning#the-hub-stays-on-the-vpn-node"
+    },
+    {
+      "source": "/decisions/0128-run-a-visibility-only-agent-on-managed-nodes",
+      "destination": "/reference/node-agent#the-agent-only-observes"
+    },
+    {
+      "source": "/decisions/0130-publish-agent-binaries-as-github-releases",
+      "destination": "/reference/node-agent#releases"
+    },
+    {
+      "source": "/decisions/0144-migrate-waiting-connections-when-caddy-reloads",
+      "destination": "/reference/node-provisioning#caddy-reloads"
+    },
+    {
+      "source": "/decisions/0148-keep-a-gateway-view-of-node-agent-state",
+      "destination": "/reference/node-agent#gateway-view"
+    },
+    {
+      "source": "/decisions/0154-recover-the-gateway-agent-view-without-a-membership-change",
+      "destination": "/reference/node-agent#rejoin-to-ask-for-a-snapshot"
+    },
+    {
+      "source": "/decisions/0155-authenticate-the-node-agent-with-a-per-node-secret",
+      "destination": "/reference/node-agent#agent-secret"
+    },
+    {
+      "source": "/decisions/0013-native-systemd-schedule-management",
+      "destination": "/reference/schedules"
+    },
+    {
+      "source": "/decisions/0044-own-appinstance-environment-configuration-in-orbit",
+      "destination": "/reference/environment-variables"
+    },
+    {
+      "source": "/decisions/0046-own-production-release-deployment-in-orbit",
+      "destination": "/reference/deployments"
+    },
+    {
+      "source": "/decisions/0048-copy-app-process-and-schedule-definitions-into-appinstances",
+      "destination": "/reference/app-processes-and-schedules#production-copies"
+    },
+    {
+      "source": "/decisions/0060-record-latest-schedule-run-status",
+      "destination": "/reference/schedules#latest-run"
+    },
+    {
+      "source": "/decisions/0069-allow-node-process-targets",
+      "destination": "/reference/app-processes-and-schedules#owners"
+    },
+    {
+      "source": "/decisions/0073-store-deploy-steps-as-named-appinstance-records",
+      "destination": "/reference/deployments#deploy-steps"
+    },
+    {
+      "source": "/decisions/0081-query-registered-databases-through-pdo",
+      "destination": "/reference/database-connections#inspect-a-registered-connection"
+    },
+    {
+      "source": "/decisions/0107-key-isolation-and-releases-to-node-role",
+      "destination": "/reference/environment-variables#laravel-mode"
+    },
+    {
+      "source": "/decisions/0108-persist-managed-environment-on-systemd-processes",
+      "destination": "/reference/app-processes-and-schedules#environment-of-a-systemd-process"
+    },
+    {
+      "source": "/decisions/0153-tail-instance-and-process-logs-live-through-the-node-agent",
+      "destination": "/reference/live-logs"
     }
   ]
 }

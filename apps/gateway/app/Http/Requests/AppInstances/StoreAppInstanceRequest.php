@@ -24,8 +24,7 @@ final class StoreAppInstanceRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'app_id' => ['sometimes', 'integer', Rule::exists(new OrbitApp()->getTable(), 'id')],
-            'project_id' => ['sometimes', 'integer', Rule::exists(new OrbitApp()->getTable(), 'id')],
+            'project_id' => ['required', 'integer', Rule::exists(new OrbitApp()->getTable(), 'id')],
             'node_id' => ['required', 'integer', Rule::exists(new Node()->getTable(), 'id')],
             'name' => [
                 'required',
@@ -36,6 +35,7 @@ final class StoreAppInstanceRequest extends FormRequest
             'root' => ['sometimes', 'string', 'max:255'],
             'domain' => ['sometimes', 'string', 'max:253'],
             'branch' => ['sometimes', 'string', 'max:255'],
+            'recover_source_profile' => ['sometimes', 'boolean'],
         ];
     }
 
@@ -45,7 +45,7 @@ final class StoreAppInstanceRequest extends FormRequest
         try {
             return app(TopLevelJsonObjectInspector::class)->inspect(
                 $this->getContent(),
-                ['app_id', 'project_id', 'node_id', 'name', 'root', 'domain', 'branch'],
+                ['project_id', 'node_id', 'name', 'root', 'domain', 'branch'],
             );
         } catch (UnexpectedValueException $exception) {
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
@@ -59,7 +59,7 @@ final class StoreAppInstanceRequest extends FormRequest
             $data = $validator->getData();
             $root = $data['root'] ?? null;
 
-            $projectId = self::integerId($data['project_id'] ?? $data['app_id'] ?? null);
+            $projectId = self::integerId($data['project_id'] ?? null);
             $project = $projectId === null ? null : OrbitApp::query()->find($projectId);
 
             if (is_string($root) && ! ProjectRoot::isValid($root, $project instanceof OrbitApp ? $project->type : ProjectType::LaravelApp)) {
@@ -78,13 +78,12 @@ final class StoreAppInstanceRequest extends FormRequest
                 $validator->errors()->add('branch', 'The branch is not a valid Git branch name.');
             }
 
-            $this->validateProjectOwner($validator, $data);
         }];
     }
 
     public function payload(): CreateAppInstanceData
     {
-        /** @var array{node_id: int|string, name: string, app_id?: int|string, project_id?: int|string, root?: string, domain?: string, branch?: string} $validated */
+        /** @var array{node_id: int|string, name: string, project_id: int|string, root?: string, domain?: string, branch?: string, recover_source_profile?: bool} $validated */
         $validated = $this->validated();
 
         return new CreateAppInstanceData(
@@ -99,25 +98,10 @@ final class StoreAppInstanceRequest extends FormRequest
         );
     }
 
-    /** @param array<string, mixed> $data */
-    private function validateProjectOwner(Validator $validator, array $data): void
-    {
-        $appId = self::integerId($data['app_id'] ?? null);
-        $projectId = self::integerId($data['project_id'] ?? null);
-
-        if ($appId === null && $projectId === null) {
-            $validator->errors()->add('project_id', 'Supply project_id or app_id.');
-        }
-
-        if ($appId !== null && $projectId !== null && $appId !== $projectId) {
-            $validator->errors()->add('project_id', 'project_id and app_id must name the same Project.');
-        }
-    }
-
     /** @param array<string, mixed> $validated */
     private function resolvedProjectId(array $validated): int
     {
-        $projectId = self::integerId($validated['project_id'] ?? $validated['app_id'] ?? null);
+        $projectId = self::integerId($validated['project_id'] ?? null);
 
         if ($projectId === null) {
             throw new UnexpectedValueException('A validated Project identifier must be an integer.');

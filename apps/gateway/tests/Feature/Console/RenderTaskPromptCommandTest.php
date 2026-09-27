@@ -9,9 +9,9 @@ use App\Domain\Tasks\TaskCheckKind;
 use App\Domain\Tasks\TaskCheckStatus;
 use App\Domain\Tasks\TaskDeliverable;
 use App\Domain\Tasks\TaskDeliverableType;
-use App\Domain\Tasks\TaskPlannerMcp;
 use App\Domain\Tasks\TaskReviewDiff;
 use App\Domain\Tasks\TaskReviewPacketBuilder;
+use App\Domain\Tasks\TaskWorkspaceMcp;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\Task;
@@ -77,13 +77,11 @@ function production_spawner_prompt(string $method): array
     $spawner = new TaskAgentSpawner(
         new AgentDriverRegistry([]),
         new TaskReviewPacketBuilder(new NullTaskReviewDiff),
-        Mockery::mock(TaskPlannerMcp::class),
+        Mockery::mock(TaskWorkspaceMcp::class),
     );
     $reflection = new ReflectionMethod(TaskAgentSpawner::class, $method);
     $reflection->setAccessible(true);
-    $prompt = $method === 'plannerPrompt'
-        ? $reflection->invoke($spawner, $group)
-        : $reflection->invoke($spawner, $group, $task, 31);
+    $prompt = $reflection->invoke($spawner, $group, $task, 31);
 
     return [
         'prompt' => $prompt,
@@ -234,12 +232,6 @@ function production_review_prompt(bool $continued): array
     ];
 }
 
-it('renders the same prompt for the planner', function (): void {
-    $production = production_spawner_prompt('plannerPrompt');
-
-    expect(render_task_prompt('planner', ['group' => $production['group']])['prompt'])->toBe($production['prompt']);
-});
-
 it('renders the same prompt for the implementer', function (): void {
     $production = production_spawner_prompt('implementerPrompt');
 
@@ -265,7 +257,6 @@ it('renders the same prompt for a continued reviewer', function (): void {
 });
 
 it('preserves literal formatter tags in prompt JSON', function (): void {
-    $planner = render_task_prompt('planner', ['group' => render_task_prompt_group()]);
     $review = render_task_prompt_review_packet();
     $review['diff_body'] = "diff --git a/app/Prompt.php b/app/Prompt.php\n+<info>literal</info>\n";
     $reviewOutput = render_task_prompt('reviewer', [
@@ -275,14 +266,10 @@ it('preserves literal formatter tags in prompt JSON', function (): void {
         'review_packet' => $review,
     ]);
 
-    expect($planner['prompt'])->toContain('<info>prompts</info>')
-        ->and($reviewOutput['prompt'])->toContain('<info>literal</info>');
+    expect($reviewOutput['prompt'])->toContain('<info>literal</info>');
 });
 
 it('rejects role-inapplicable and missing nested fields', function (): void {
-    $planner = new Process([PHP_BINARY, base_path('artisan'), 'tasks:render-prompt', 'planner'], base_path());
-    $planner->setInput(json_encode(['group' => render_task_prompt_group(), 'subtask' => ['unexpected' => true]], JSON_THROW_ON_ERROR));
-    $planner->run();
     $review = new Process([PHP_BINARY, base_path('artisan'), 'tasks:render-prompt', 'reviewer'], base_path());
     $review->setInput(json_encode(['group' => render_task_prompt_group(), 'subtask' => render_task_prompt_subtask(), 'review_packet' => array_diff_key(render_task_prompt_review_packet(), ['handoff_check' => true])], JSON_THROW_ON_ERROR));
     $review->run();
@@ -295,14 +282,13 @@ it('rejects role-inapplicable and missing nested fields', function (): void {
     $implementer->setInput(json_encode(['group' => render_task_prompt_group(), 'subtask' => render_task_prompt_subtask(), 'review_packet' => render_task_prompt_review_packet()], JSON_THROW_ON_ERROR));
     $implementer->run();
 
-    expect($planner->getOutput())->toContain('input.subtask is not used')
-        ->and($review->getOutput())->toContain('review_packet.handoff_check is required.')
+    expect($review->getOutput())->toContain('review_packet.handoff_check is required.')
         ->and($missingEvidence->getOutput())->toContain('review_packet.handoff_check.evidence is required.')
         ->and($implementer->getOutput())->toContain('input.review_packet is only valid for reviewer roles.');
 });
 
 it('refuses an unknown prompt field', function (): void {
-    $process = new Process([PHP_BINARY, base_path('artisan'), 'tasks:render-prompt', 'planner'], base_path());
+    $process = new Process([PHP_BINARY, base_path('artisan'), 'tasks:render-prompt', 'implementer'], base_path());
     $process->setInput(json_encode(['group' => render_task_prompt_group(), 'unexpected' => true], JSON_THROW_ON_ERROR));
     $process->run();
 
