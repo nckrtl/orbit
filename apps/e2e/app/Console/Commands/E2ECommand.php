@@ -42,7 +42,9 @@ abstract class E2ECommand extends Command
     protected function request(): TopologyRequest
     {
         $worktree = $this->hasOption('worktree') ? $this->option('worktree') : null;
-        $issue = $this->argument('issue');
+        // argument() is typed from each subclass signature, and that type depends on
+        // command discovery order. The input value is what a caller actually passed.
+        $issue = $this->input->getArgument('issue');
         if (! is_string($issue)) {
             throw new InvalidArgumentException('The issue argument must be a string.');
         }
