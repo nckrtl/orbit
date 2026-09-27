@@ -107,9 +107,14 @@ A `deleted` event carries a short snapshot, because the record is already gone. 
 | `process.created` | A Process is added. | `ProcessData` |
 | `process.status` | A Process is started, stopped, or restarted. | `ProcessData` |
 | `process.deleted` | A Process is removed. | `{ id, name }` |
-| `process.usage` | Every 15 seconds while a browser watches. | `{ part, parts, processes }` |
 
 `process.status` carries the Process's stored status and desired state. The live runtime state comes from the [Node agent channels](#node-agent-channels).
+
+### Process usage
+
+| Type | Fires when | Data |
+| --- | --- | --- |
+| `process.usage` | Every 15 seconds while a browser watches. | `{ part, parts, processes }` |
 
 The agent view subscriber sends `process.usage` while at least one `viewer.*` member is on a Node agent channel. [Process usage](/reference/node-agent#process-usage) describes when. `id` is the sample time in Unix seconds. `processes` lists `[id, cpu, memory_bytes]` for at most 200 Processes per part, with the units of the Process list. A Process without a sample has null values.
 
@@ -222,7 +227,7 @@ Each Node has a presence channel, `presence-node.{id}`. Its [Node agent](/refere
 
 Reverb announces a member when its first connection joins (`pusher:member_added`) and when its last connection leaves (`pusher:member_removed`). A stopped or crashed agent closes its connection, so it leaves at once.
 
-### Agent events
+### Events
 
 The agent publishes Pusher client events. Reverb adds the sender's `user_id` to each one. A subscriber ignores an event on `presence-node.{id}` unless its `user_id` is `agent.{id}`.
 
