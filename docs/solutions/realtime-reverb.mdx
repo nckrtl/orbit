@@ -1,66 +1,71 @@
 ---
 title: "Realtime events with Reverb"
-description: "Turn on realtime events with one node role, what its converge installs on the node, how to verify it, and how to move it to another node."
+description: "Turn on realtime events with the websocket role, what its converge installs, how to move it, and how to verify it."
+covers:
+  - apps/gateway/app/Domain/WebSocket/**
+  - apps/gateway/app/Infrastructure/WebSocket/**
+  - apps/gateway/app/Infrastructure/Nodes/Roles/WebSocketRoleBaseline.php
+  - apps/gateway/app/Infrastructure/Caddy/Build/Sources/WebSocketCaddySiteSource.php
 ---
 
 # Realtime events with Reverb
 
 ## Problem
 
-The web app and `realtime:tail` need the Gateway to push events instead of polling for them. The Gateway broadcasts with Laravel's `reverb` driver over one Reverb app, and clients subscribe to one private channel named `orbit`. That needs a WebSocket server (the Pusher protocol) reachable at `wss://reverb.orbit`.
+The web app and `realtime:tail` need the Gateway to push events. The Gateway publishes through Laravel Reverb, and clients subscribe at `wss://reverb.orbit`. [Realtime events](/reference/events) defines the channels and the events.
 
 ## Cause
 
-Reverb itself must not become another Orbit-specific service baked into the monorepo. It is a plain Laravel app with no knowledge of Projects, Instances, Routes, or the CLI. Orbit installs and runs it itself, as the `websocket` node role, the same way the `metrics` role installs and runs Prometheus and Grafana.
+Reverb holds long-lived WebSocket connections, so it runs outside the Gateway process. It is a plain Laravel app with no Orbit code. The Gateway installs and runs it as the `websocket` role, the same way the `metrics` role runs Prometheus and Grafana.
 
 ## Solution
 
-### The one command
+### Add the role
 
 ```bash
-orbit node:role:add gateway websocket --converge
+orbit node:role:add gateway websocket
 ```
 
-Today the `websocket` role has to go on the same node as the `gateway` role, because that is the only node reaching `reverb.orbit` needs to be pointed at; the role has no conflict with `gateway` or `vpn`. Nothing else is required: no Project, no Instance, no deploy step, no custom proxy Route, and no `.env` edit on the Gateway.
+The `websocket` role is a singleton. It conflicts with no other role, so it can share a Node with `gateway` and `vpn`. No Project, Instance, Route, or `.env` edit is involved.
 
-### What converge installs on the node
+### What the converge does
 
-Role prerequisites install `caddy`, `composer`, `git`, `openssl`, `php-curl`, and `php-xml` first. `php-curl` and `php-xml` provide `ext-curl` and `ext-dom`, so `composer install` succeeds on a fresh Ubuntu 26.04 Node that does not already run the Gateway PHP stack. The same two packages are role prerequisites on `app-dev` and `app-prod` hosts.
+1. It installs the role packages: `caddy`, `composer`, `git`, `openssl`, `php-curl`, and `php-xml`. `php-curl` and `php-xml` let `composer install` pass its platform check on a fresh Ubuntu 26.04 Node.
+2. It generates a Reverb app ID, app key, app secret, and a Laravel `APP_KEY` the first time, and reuses them later. It stores them as settings of that Node. The secret and `APP_KEY` are encrypted.
+3. It checks out `https://github.com/nckrtl/orbit-reverb.git` at `main` into `/opt/orbit/websocket` as the managed user and runs `composer install --no-dev`.
+4. It writes the app's `.env` with mode `0600`.
+5. It installs and starts `orbit-websocket.service`, which runs `php artisan reverb:start --host=127.0.0.1 --port=8790` with `Restart=always`.
+6. It issues an Orbit CA certificate for `reverb.orbit` and adds a Caddy site on the Node that proxies to Reverb. Caddy admits the WebSocket upgrade.
+7. It publishes `reverb.orbit` in private DNS with the Node's WireGuard address.
 
-Converge then checks out a plain, unmodified Laravel app (`https://github.com/nckrtl/orbit-reverb.git` by default) at `/opt/orbit/websocket`, runs `composer install --no-dev`, and writes that app's own `.env` with a generated `APP_KEY` and the Reverb application credentials the Gateway generated for this role assignment. It installs and enables `orbit-websocket.service`, a systemd unit that runs `php artisan reverb:start --host=127.0.0.1 --port=8790` with `Restart=always`.
+Before any change, the converge refuses a Node that lacks an address its Caddy sites bind, so a refused converge leaves a running Reverb alone. When a step after the runtime fails, the converge stops the runtime again. A failed rollback reports `websocket.rollback_failed`.
 
-Alongside the app itself, converge reserves `reverb.orbit` as a private hostname, issues it an Orbit CA leaf certificate, and renders a Caddy site on the role's node that terminates that certificate and reverse-proxies to the local Reverb process; `reverse_proxy` admits a WebSocket upgrade by default. Gateway private DNS answers `reverb.orbit` with the role's node WireGuard address, the same way it answers `gateway.orbit` and `metrics.orbit`.
+`ORBIT_WEBSOCKET_REPOSITORY`, `ORBIT_WEBSOCKET_REF`, `ORBIT_WEBSOCKET_INSTALL_PATH`, and `ORBIT_WEBSOCKET_PORT` in the Gateway `.env` change the defaults. Another Reverb app must accept client events from channel members (`accept_client_events_from` set to `members`), as `orbit-reverb` does. Without it, the [Node agent channels](/reference/events#node-agent-channels) carry no agent events.
 
-The repository, ref, install path, and port all have config defaults (`ORBIT_WEBSOCKET_REPOSITORY`, `ORBIT_WEBSOCKET_REF`, `ORBIT_WEBSOCKET_INSTALL_PATH`, `ORBIT_WEBSOCKET_PORT`) and rarely need to change.
+The Gateway reads the connection from the active role assignment. It needs no broadcast setting in its `.env`.
 
-### Moving the role to another node
-
-Relocate the singleton assignment in one request:
+### Move the role
 
 ```bash
-orbit node:role:relocate <new-node> websocket --force
+orbit node:role:relocate <node> websocket --force
 ```
 
-Relocate copies the generated Reverb identity onto the target when that Node does not already have one, converges the checkout, the systemd unit, the certificate, and the Caddy site, and repoints `reverb.orbit` to the new Node. It retracts the source publication and runtime. It does not overwrite credentials the target already has.
+Relocate copies the Reverb identity to the target when the target has none, and never overwrites one. It converges the target and points `reverb.orbit` at it. It then waits 31 seconds, the private DNS answer TTL plus one second, so clients that resolved the old address resolve again. Then it removes the runtime and publication from the source. The Reverb checkout stays on the source. Clients keep the same key. Removing the role and adding it again would generate a new identity, and every client would need the new key. [`node:role:relocate`](/cli/node#orbit-noderolerelocate) describes `--from` for a target that already holds the role.
 
-When the target already holds `websocket` and leftovers remain on another Node, name that source:
+### Remove the role
 
-```bash
-orbit node:role:relocate <new-node> websocket --from <old-node> --force
-```
-
-Remove-then-add is not the supported path. The role is a singleton, so add refuses while the old assignment exists, and remove-first drops the generated identity.
+`orbit node:role:remove <node> websocket --force` withdraws the Caddy site, stops and disables the unit, removes the certificate and DNS record, and deletes the stored credentials. `--purge-data` also deletes the checkout. With `--offline`, the Gateway removes only the DNS record and the credentials.
 
 ## Limits
 
-This covers one Reverb instance behind one `websocket` role assignment. It does not cover scaling Reverb across multiple nodes, Redis-backed horizontal scaling, or rotating the generated Reverb secret without downtime.
+This covers one Reverb server behind one `websocket` assignment. It does not cover several Reverb Nodes, Redis-backed scaling, or rotating the Reverb secret without a reconnect.
 
 ## Verification
 
 ```bash
-orbit node:doctor <node>
 orbit realtime:show
+orbit doctor --node=<node-id> --family=role
 getent ahostsv4 reverb.orbit
 ```
 
-On the node itself, `systemctl status orbit-websocket` reports the unit active. `orbit realtime:show` reports a configured connection at `wss://reverb.orbit` once the role is active; `getent ahostsv4 reverb.orbit` resolves to the role's node address over WireGuard. `orbit realtime:tail` and the web app go live against real record changes once both report configured. From a node that trusts the Orbit CA, `curl -i https://reverb.orbit/apps/<app-id>/events -X POST` should answer `401 Unauthorized` with `Authentication signature invalid` rather than a connection or TLS error, confirming the Pusher-protocol server is live behind the role's Caddy site.
+`orbit realtime:show` reports `configured` and `wss://reverb.orbit`. `getent` resolves `reverb.orbit` to the role Node's WireGuard address. On the Node, `systemctl is-active orbit-websocket` prints `active`. From a Node that trusts the Orbit CA, `curl -i -X POST https://reverb.orbit/apps/<app-id>/events` answers `401` with `Authentication signature invalid`, which proves that Reverb answers behind the Caddy site.

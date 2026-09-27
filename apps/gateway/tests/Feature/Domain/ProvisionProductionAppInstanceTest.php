@@ -4,11 +4,7 @@ declare(strict_types=1);
 
 use App\Actions\Routes\CreateRouteAction;
 use App\Data\AppInstances\CreateAppInstanceData;
-use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\AppInstances\AppInstanceState;
-use App\Domain\AppInstances\DevelopmentSourceProfile;
-use App\Domain\AppInstances\DevelopmentSourceResolution;
-use App\Domain\AppInstances\ProductionAppInstanceSourceLifecycle;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
@@ -39,46 +35,7 @@ beforeEach(function (): void {
         'user' => 'orbit',
     ]);
     $this->node->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
-    $this->source = new class implements ProductionAppInstanceSourceLifecycle
-    {
-        /** @var list<string> */
-        public array $calls = [];
-
-        public function prepareUser(AppInstance $appInstance): void
-        {
-            $this->calls[] = 'user';
-        }
-
-        public function prepareSource(AppInstance $appInstance, bool $allowExisting): void
-        {
-            $this->calls[] = 'source';
-        }
-
-        public function resolve(AppInstance $appInstance): DevelopmentSourceResolution
-        {
-            $this->calls[] = 'resolve';
-
-            return new DevelopmentSourceResolution('main', str_repeat('c', 40));
-        }
-
-        public function inspectProfile(AppInstance $appInstance): DevelopmentSourceProfile
-        {
-            $this->calls[] = 'profile';
-
-            return new DevelopmentSourceProfile('8.5', false);
-        }
-
-        public function prepareCaddyAccess(AppInstance $appInstance): void
-        {
-            $this->calls[] = 'access';
-        }
-    };
-    $this->sourceLock = new ProvisionProductionSourceLock;
-    $this->provisioner = new NativeProductionAppInstanceProvisioner(
-        $this->sourceLock,
-        $this->source,
-        app(CreateRouteAction::class),
-    );
+    $this->provisioner = new NativeProductionAppInstanceProvisioner(app(CreateRouteAction::class));
     $this->data = new CreateAppInstanceData(
         appId: $this->orbitApp->id,
         nodeId: $this->node->id,
@@ -103,10 +60,6 @@ it('refuses new production placement before user home source environment or Rout
     expect(AppInstance::query()->exists())
         ->toBeFalse()
         ->and(Route::query()->exists())
-        ->toBeFalse()
-        ->and($this->source->calls)
-        ->toBeEmpty()
-        ->and($this->sourceLock->inside)
         ->toBeFalse();
 });
 
@@ -124,9 +77,7 @@ it('returns a completed historical production AppInstance without fetching or ov
         ->and($instance->refresh()->getAttributes())
         ->toBe($before)
         ->and(Route::query()->sole()->getAttributes())
-        ->toBe($routeBefore)
-        ->and($this->source->calls)
-        ->toBeEmpty();
+        ->toBe($routeBefore);
 });
 
 it('refuses an incomplete production record without resuming retired creation', function (): void {
@@ -149,43 +100,9 @@ it('refuses an incomplete production record without resuming retired creation', 
 
     expect($instance->refresh()->getAttributes())
         ->toBe($before)
-        ->and($this->source->calls)
-        ->toBeEmpty()
         ->and(Route::query()->exists())
         ->toBeFalse();
 });
-
-it('recovers a missing source profile on a completed production AppInstance without reprovisioning', function (string $release): void {
-    $instance = provision_production_active_instance($this->orbitApp, $this->node, 'live');
-    $instance->update([
-        'checkout_path' => $instance->production_home.'/releases/'.$release,
-        'source_is_laravel' => null,
-        'selected_php_version' => null,
-        'production_php_service' => null,
-        'production_php_pool' => null,
-        'production_php_socket' => null,
-    ]);
-    $data = new CreateAppInstanceData(
-        appId: $this->orbitApp->id,
-        nodeId: $this->node->id,
-        name: 'live',
-        root: null,
-        domain: null,
-        branch: null,
-        recoverSourceProfile: true,
-    );
-
-    $result = $this->provisioner->execute($data, $this->orbitApp, $this->node, null);
-
-    expect($result['created'])
-        ->toBeFalse()
-        ->and($result['appInstance']->source_is_laravel)
-        ->toBeFalse()
-        ->and($result['appInstance']->selected_php_version)
-        ->toBe('8.5')
-        ->and($this->source->calls)
-        ->toBe(['profile']);
-})->with(['initial', '20260914225127-ed9461ca37e47538']);
 
 it('refuses production recovery outside the recorded home release boundary', function (string $path): void {
     $instance = provision_production_active_instance($this->orbitApp, $this->node, 'live');
@@ -194,7 +111,6 @@ it('refuses production recovery outside the recorded home release boundary', fun
         ->toThrow(function (ResourceOperationException $exception): void {
             expect($exception->errorCode)->toBe('instance.placement_conflict');
         });
-    expect($this->source->calls)->toBeEmpty();
 })->with(['/releases/../foreign', '/releases/two/nested', '/releases/.hidden', '/other/release']);
 
 function provision_production_active_instance(OrbitApp $app, Node $node, string $name): AppInstance
@@ -235,20 +151,4 @@ function provision_production_active_instance(OrbitApp $app, Node $node, string 
     $route->update(['status' => RouteStatus::Active]);
 
     return $instance->refresh();
-}
-
-final class ProvisionProductionSourceLock implements AppDevSourceOperationLock
-{
-    public bool $inside = false;
-
-    public function synchronized(int $nodeId, Closure $operation): mixed
-    {
-        $this->inside = true;
-
-        try {
-            return $operation();
-        } finally {
-            $this->inside = false;
-        }
-    }
 }

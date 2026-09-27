@@ -1673,10 +1673,6 @@
             "type": "string",
             "maxLength": 255,
             "description": "Optional explicit source branch"
-          },
-          "recover_source_profile": {
-            "type": "boolean",
-            "description": "Adopt complete source evidence for a legacy incomplete checkpoint"
           }
         },
         "additionalProperties": false,
@@ -4931,33 +4927,97 @@
         "properties": {
           "domain": {
             "type": "string",
-            "maxLength": 253,
-            "description": "Route domain"
+            "maxLength": 253
           },
           "publication": {
             "type": "string",
             "enum": [
               "private",
               "public"
-            ],
-            "description": "Publication intent"
+            ]
+          },
+          "app_instance_id": {
+            "type": "integer"
           },
           "node_id": {
             "type": "integer"
           },
           "upstream": {
             "type": "string",
-            "maxLength": 253,
-            "description": "Loopback HTTP URL for a custom proxy Route"
+            "maxLength": 253
           },
           "process_id": {
             "type": "integer"
           }
         },
         "additionalProperties": false,
-        "required": [
-          "domain",
-          "node_id"
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "domain": {
+                "type": "string",
+                "maxLength": 253
+              },
+              "publication": {
+                "type": "string",
+                "enum": [
+                  "private",
+                  "public"
+                ]
+              },
+              "app_instance_id": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "domain",
+              "app_instance_id"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "domain": {
+                "type": "string",
+                "maxLength": 253
+              },
+              "publication": {
+                "type": "string",
+                "enum": [
+                  "private"
+                ]
+              },
+              "node_id": {
+                "type": "integer"
+              },
+              "upstream": {
+                "type": "string",
+                "maxLength": 253
+              },
+              "process_id": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "domain",
+              "node_id"
+            ],
+            "oneOf": [
+              {
+                "required": [
+                  "upstream"
+                ]
+              },
+              {
+                "required": [
+                  "process_id"
+                ]
+              }
+            ],
+            "additionalProperties": false
+          }
         ]
       }
     },
@@ -5562,7 +5622,7 @@
     {
       "name": "tasks-create",
       "title": "Create a Task group",
-      "description": "Creates a Task group for an App with an optional ordered list of Task subtasks. Requires Gateway access. `status` is `backlog` (the default) or `todo`; the scheduler never claims a `backlog` group. A `todo` group needs at least one subtask (`tasks.no_subtasks`), each with at least one deliverable (`tasks.subtask_deliverables_missing`), and create then asks the scheduler to claim the oldest `todo` group that still fits the concurrency ceilings. `plan: true` on a `backlog` group provisions its Instance on an app-dev Node with access to itself and starts a T3 planner thread that becomes the reviewer (`tasks.plan_requires_backlog`, `tasks.planner_driver_unavailable`, `tasks.planner_node_unavailable`, `tasks.planner_unavailable`). Optional `notify_coder` or Commander `notify_on_settle` opts the group into the Coder settle webhook. Returns `tasks.disabled` while the extension is off.",
+      "description": "Creates a Task group for an App with an optional ordered list of Task subtasks. Requires Gateway access. `status` is `backlog` (the default) or `todo`; the scheduler never claims a `backlog` group. A `todo` group needs at least one subtask (`tasks.no_subtasks`), each with at least one deliverable (`tasks.subtask_deliverables_missing`), and create then asks the scheduler to claim the oldest `todo` group that still fits the concurrency ceilings. Optional `notify_coder` or Commander `notify_on_settle` opts the group into the Coder settle webhook. Returns `tasks.disabled` while the extension is off.",
       "method": "POST",
       "path": "/api/v1/task-groups",
       "path_inputs": [],
@@ -5593,10 +5653,6 @@
           "notify_coder": {
             "type": "boolean",
             "description": "Post the Coder settle webhook when the group settles"
-          },
-          "plan": {
-            "type": "boolean",
-            "description": "Start a T3 planner that shapes the group in Backlog"
           },
           "notify_on_settle": {
             "type": "boolean"
@@ -6109,7 +6165,7 @@
     {
       "name": "tasks-update",
       "title": "Update a Task group",
-      "description": "Updates a Task group. `title` and `brief` change only in `backlog` (`tasks.not_in_backlog`). `status` moves the group between `backlog` and `todo`; a claimed group cannot move (`tasks.already_claimed`), and `todo` needs at least one subtask (`tasks.no_subtasks`) and a deliverable on every subtask (`tasks.subtask_deliverables_missing`, whose details name the subtasks). Moving to `todo` asks the scheduler to claim; for a planning group Orbit first commits the workspace as `Plan: {title}` (`tasks.commit_failed`). Served by the Node that holds the group's Instance, or by the Gateway for a group without one. Returns `tasks.disabled` while the extension is off.",
+      "description": "Updates a Task group. `title` and `brief` change only in `backlog` (`tasks.not_in_backlog`). `status` moves the group between `backlog` and `todo`; a claimed group cannot move (`tasks.already_claimed`), and `todo` needs at least one subtask (`tasks.no_subtasks`) and a deliverable on every subtask (`tasks.subtask_deliverables_missing`, whose details name the subtasks). Moving to `todo` asks the scheduler to claim. Served by the Node that holds the group's Instance, or by the Gateway for a group without one. Returns `tasks.disabled` while the extension is off.",
       "method": "PATCH",
       "path": "/api/v1/task-groups/{group}",
       "path_inputs": [

@@ -1,15 +1,18 @@
 ---
 title: "schedule"
 description: "Create, run, inspect, enable, and remove recurring commands that native systemd timers execute on a Node or an Instance, and record Project-owned Schedule definitions."
+covers:
+  - apps/cli/app/Commands/Schedules/**
+  - apps/cli/app/Commands/Concerns/RendersAppRuntimeDefinitions.php
 ---
 
-A Schedule is Gateway intent for one recurring command. The Gateway projects it to a protected script, a oneshot service, and a persistent timer on the host Node, named only by the Schedule UUID. The `schedule` family creates that intent, runs it by hand, reads its logs, activates a stopped timer, and removes it.
+A Schedule runs one command on a native systemd timer for a Node or an Instance. The `schedule` family creates Schedules, runs them by hand, reads their logs, enables a stopped timer, and removes them. It also records Project Schedule definitions.
 
-The [Schedules reference](/reference/schedules) owns the stored fields, execution context, systemd artifacts, latest-run reporting, and error codes. The [Project process and Schedule definitions](/reference/app-processes-and-schedules) reference owns Project-owned definitions and their production copies.
+[Schedules](/reference/schedules) describes the fields, the execution context, the host artifacts, and the error codes. [Processes and schedules](/reference/app-processes-and-schedules) describes Project definitions and their Instance copies.
 
 ## Choose the owner
 
-`schedule:create` needs exactly one selector. The CLI refuses two selectors together, a missing selector, `--for` without `--project`, and `--no-start` with `--node` before it sends a request, and it never prompts for a target.
+`schedule:create` needs exactly one selector. The CLI refuses two selectors, no selector, `--for` without `--project`, and `--no-start` with `--node` before it sends a request.
 
 | Selector | Owner | Result |
 | --- | --- | --- |
@@ -17,22 +20,22 @@ The [Schedules reference](/reference/schedules) owns the stored fields, executio
 | `--instance=ID` | Instance | The command runs as the Instance runtime user in its checkout or `current` release. The timer can install disabled. |
 | `--project=APP --for=production` | Project definition | The Gateway records a reusable production definition. Production preparation copies it into a stopped Instance Schedule. |
 
-`schedule:show`, `schedule:update`, and `schedule:destroy` with `--project` select a definition by name. `schedule:run`, `schedule:logs`, and `schedule:enable` take the UUID of an installed Schedule and do not accept `--project`.
+`schedule:list`, `schedule:show`, `schedule:update`, and `schedule:destroy` take `--project` to work on definitions. `schedule:run`, `schedule:logs`, and `schedule:enable` take the UUID of an installed Schedule.
 
 ## Commands
 
 | Command | Result |
 | --- | --- |
 | [`schedule:create`](#orbit-schedulecreate) | Create one Node or Instance Schedule, or record one Project definition. |
-| [`schedule:list`](#orbit-schedulelist) | List authorized Schedules or one Project's definitions. |
+| [`schedule:list`](#orbit-schedulelist) | List the Schedules you may address, or one Project's definitions. |
 | [`schedule:show`](#orbit-scheduleshow) | Show one Schedule or one definition. |
 | [`schedule:update`](#orbit-scheduleupdate) | Replace one Project Schedule definition. |
 | [`schedule:run`](#orbit-schedulerun) | Run one Schedule now without changing its timer. |
-| [`schedule:logs`](#orbit-schedulelogs) | Return a bounded log tail. |
-| [`schedule:enable`](#orbit-scheduleenable) | Enable and start an installed Instance timer. |
+| [`schedule:logs`](#orbit-schedulelogs) | Return the newest journal lines. |
+| [`schedule:enable`](#orbit-scheduleenable) | Enable and start an Instance Schedule timer. |
 | [`schedule:destroy`](#orbit-scheduledestroy) | Remove one Schedule or one definition. |
 
-Every command accepts `--json`. Output shows `desired_timer_state` separately from the lifecycle `status`, and every result includes the Gateway request ID. Human output uses the shared table, detail tree, and progress helpers. `schedule:destroy` requires default-No confirmation or `--yes`. `schedule:create` still requires exactly one explicit target in every mode.
+Every command accepts `--json`. Output shows `desired_timer_state` apart from the lifecycle `status`, and every result includes the request ID. `schedule:destroy` asks for confirmation, and the default is No.
 
 ## orbit schedule:create
 
@@ -54,8 +57,10 @@ orbit schedule:create <name> (--node=ID | --instance=ID | --project=APP --for=pr
 | `--for=production` | none | Required with `--project`; definitions apply to production. |
 | `--calendar=CALENDAR` | none | Native systemd calendar expression of at most 255 printable ASCII bytes, such as `daily`, `hourly`, or `Mon..Fri 02:00`. |
 | `--command=COMMAND` | none | One non-empty line of at most 4,096 bytes. |
-| `--timeout=SECONDS` | `3600` | Execution timeout from 1 through 86,400 seconds. |
-| `--no-start` | off | Install an Instance Schedule with its timer disabled and stopped. Not accepted with `--node`. |
+| `--timeout=SECONDS` | `3600` | Execution timeout, 1 through 86,400 seconds. |
+| `--no-start` | off | Install an Instance Schedule with its timer disabled and stopped. |
+
+The CLI checks the name, calendar, command, and timeout before it sends a request. The host Node's `systemd-analyze calendar` then accepts or refuses the calendar. A definition has no host yet, so that check runs when production preparation copies the definition.
 
 ```bash
 orbit schedule:create daily-report --node=7 --calendar=daily --command='php report.php'
@@ -75,134 +80,83 @@ Production Schedule creation requires `current` to select a release, whether the
 
 ## orbit schedule:list
 
-List authorized Schedule summaries without command text, or the definitions of one Project.
+List the Schedules whose target Node you may address, without command text, or the definitions of one Project.
 
 ```bash
-orbit schedule:list [--project=APP] [--json]
+orbit schedule:list [--project=ID] [--json]
 ```
-
-| Option | Meaning |
-| --- | --- |
-| `--project=APP` | List the Project's Schedule definitions instead of installed Schedules. |
-
-The list contains only Schedules whose target Node you may address.
 
 ## orbit schedule:show
 
-Show one authorized Schedule, including its command text, or one definition by name.
+Show one Schedule with its command, `desired_timer_state`, `last_run_at`, and `last_run_status`, or one definition by name.
 
 ```bash
-orbit schedule:show <schedule> [--project=APP] [--json]
+orbit schedule:show <schedule> [--project=ID] [--json]
 ```
 
 | Argument | Required | Meaning |
 | --- | --- | --- |
 | `schedule` | yes | Schedule UUID, or the definition name with `--project`. |
 
-| Option | Meaning |
-| --- | --- |
-| `--project=APP` | Numeric Project ID. Selects a definition. |
-
-The result includes `desired_timer_state`, `last_run_at`, and `last_run_status` for an installed Schedule.
-
 ## orbit schedule:update
 
-Replace one Project Schedule definition with a complete specification.
+Replace one Project Schedule definition with a complete specification. The change affects later copies only.
 
 ```bash
 orbit schedule:update <name> --project=APP --for=production --calendar=CALENDAR --command=COMMAND [--timeout=SECONDS] [--json]
 ```
 
-| Argument | Required | Meaning |
-| --- | --- | --- |
-| `name` | yes | Schedule definition name. |
-
-Changing a definition affects later copies only. To change an existing Instance Schedule, destroy it and create its replacement.
-
 ## orbit schedule:run
 
-Start the installed oneshot service once without waiting for completion and without changing the desired timer state.
+Start the Schedule's service once and return at once. The timer state does not change. A failed start returns `schedule.run_failed`.
 
 ```bash
-orbit schedule:run <schedule> [--json]
+orbit schedule:run <uuid> [--json]
 ```
-
-| Argument | Required | Meaning |
-| --- | --- | --- |
-| `schedule` | yes | Schedule UUID. |
-
-The timer never overlaps an active execution. A failed start returns `schedule.run_failed`.
 
 ## orbit schedule:logs
 
-Return the newest complete lines that the Gateway reads from the exact Schedule service journal.
+Return the newest complete lines of the Schedule's service journal.
 
 ```bash
-orbit schedule:logs <schedule> [--lines=COUNT] [--json]
+orbit schedule:logs <uuid> [--lines=COUNT] [--json]
 ```
-
-| Argument | Required | Meaning |
-| --- | --- | --- |
-| `schedule` | yes | Schedule UUID. |
 
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `--lines=COUNT` | `100` | Number of lines, from 1 through 1,000. |
+| `--lines=COUNT` | `100` | 1 through 1,000 lines. |
 
-The Gateway caps the response at 1 MiB with a 10-second deadline and sets `truncated` to `true` when the limit removed older or incomplete output. Orbit does not persist journal output.
+The Gateway returns at most 1 MiB and sets `truncated` when that limit removed older lines.
 
 ## orbit schedule:enable
 
-Enable and start one installed Instance Schedule timer without replacing the Schedule. The command is idempotent.
+Enable and start the timer of one Instance Schedule. The command is idempotent. Use it after `schedule:create --no-start`, or for a copy that production preparation installed stopped.
 
 ```bash
-orbit schedule:enable <schedule> [--json]
+orbit schedule:enable <uuid> [--json]
 ```
-
-| Argument | Required | Meaning |
-| --- | --- | --- |
-| `schedule` | yes | Schedule UUID. |
-
-Use it after `schedule:create --no-start` or for a production copy that preparation installed stopped. A failed activation restores the prior timer state or returns `schedule.rollback_failed` without claiming success.
 
 ## orbit schedule:destroy
 
-Remove one Schedule through the Gateway, or one definition by name.
+Remove one Schedule, or one definition by name.
 
 ```bash
-orbit schedule:destroy <schedule> [--project=APP] [--yes] [--json]
+orbit schedule:destroy <schedule> [--project=ID] [--yes] [--json]
 ```
-
-| Argument | Required | Meaning |
-| --- | --- | --- |
-| `schedule` | yes | Schedule UUID, or the definition name with `--project`. |
 
 | Option | Meaning |
 | --- | --- |
-| `--project=APP` | Numeric Project ID. Selects a definition. |
-| `--yes` | Confirm destruction without prompting. Interactive confirmation defaults to No. A JSON or non-interactive call without `--yes` returns `input.confirmation_required`. Interactive decline, Ctrl-C, and EOF cancel with `input.cancelled`. |
+| `--project=ID` | Select a definition by name. |
+| `--yes` | Confirm without a prompt. A JSON or non-interactive call without `--yes` returns `input.confirmation_required`. A declined prompt, Ctrl-C, or EOF returns `input.cancelled`. |
 
 <Warning>
-After confirmation the Gateway marks the Schedule `removing`, disables and stops its timer, lets an active command finish, and then removes the exact timer, service, script, and record. A failure leaves the Schedule `removing`, and repeating the command resumes cleanup.
+Destroy disables the timer first. When the command is still running, the Schedule stays `removing`. Run `schedule:destroy` again after the command ends to finish the removal.
 </Warning>
 
-## Error codes
-
-The Gateway returns these stable codes for Schedule operations.
-
-| Code | Meaning |
-| --- | --- |
-| `schedule.name_invalid`, `schedule.calendar_invalid`, `schedule.command_invalid`, `schedule.timeout_invalid` | An input is outside the accepted form or size. The CLI checks these before it sends a request. |
-| `schedule.target_invalid`, `schedule.target_unavailable` | The target is invalid, or its derived execution context cannot run the operation. |
-| `schedule.retry_conflict` | The owner and name already identify a different specification. |
-| `schedule.state_invalid` | The lifecycle state does not permit the operation. |
-| `schedule.target_in_use` | A Node or Instance change would invalidate an existing Schedule. |
-| `schedule.artifact_conflict` | A named host artifact is not the exact object the Schedule owns. |
-| `schedule.install_failed`, `schedule.rollback_failed`, `schedule.run_failed`, `schedule.activation_failed`, `schedule.logs_failed`, `schedule.remove_failed` | The named operation did not complete. |
-| `schedule.node_unreachable` | The host Node could not be reached. |
+Destroying a definition leaves every existing Instance copy in place.
 
 ## Related
 
-- [`process`](/cli/process) manages long-running services; Schedules are timers, not Processes.
-- [`doctor`](/cli/doctor) with `--family=schedule` reports artifact, timer, calendar, and placement drift.
-- [`instance`](/cli/instance) removal disables and removes every owned Schedule without waiting for an active command.
+- [`process`](/cli/process) manages long-running services. Process commands do not operate on Schedules.
+- [`doctor`](/cli/doctor) with `--family=schedule` reports Schedule drift.
+- [`instance:destroy`](/cli/instance#orbit-instancedestroy) removes every Schedule of the Instance.

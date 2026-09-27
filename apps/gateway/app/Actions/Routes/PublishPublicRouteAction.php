@@ -93,10 +93,12 @@ final readonly class PublishPublicRouteAction
             $failureStep = RouteReplacementStep::PublicActivated->value;
             $this->forward($route, RouteReplacementStep::PublicActivated, function () use ($route): void {
                 $this->assertReadyForPublicHandler($route);
+                // The renderer needs this intent before the Ingress build. A process can die
+                // after the write, so the checkpoint alone does not prove the build finished.
                 $route->update(['replacement_step' => RouteReplacementStep::PublicActivated]);
                 $route->refresh();
                 $this->edge->activatePublicHandler($route);
-            });
+            }, replayAtCheckpoint: true);
             $failureStep = RouteReplacementStep::IngressFirewall->value;
             $this->forward($route, RouteReplacementStep::IngressFirewall, fn () => $this->edge->prepareIngressFirewall($route));
         } catch (Throwable $exception) {
@@ -154,9 +156,11 @@ final readonly class PublishPublicRouteAction
         return $route->refresh()->load('targets');
     }
 
-    private function forward(Route $route, RouteReplacementStep $step, callable $operation): void
+    private function forward(Route $route, RouteReplacementStep $step, callable $operation, bool $replayAtCheckpoint = false): void
     {
-        if ($this->eligibility->publicActivationRank($route->replacement_step) >= $this->eligibility->publicActivationRank($step)) {
+        $storedRank = $this->eligibility->publicActivationRank($route->replacement_step);
+        $requestedRank = $this->eligibility->publicActivationRank($step);
+        if ($storedRank > $requestedRank || ($storedRank === $requestedRank && ! $replayAtCheckpoint)) {
             return;
         }
 
@@ -182,7 +186,8 @@ final readonly class PublishPublicRouteAction
 
     private function recordFailure(Route $route, string $step, string $errorCode, ?RouteReplacementStep $stored = null): void
     {
-        $attributes = ['replacement_step' => $stored ?? RouteReplacementStep::tryFrom($step) ?? $route->replacement_step];
+        // A failed step did not complete; preserve the last successful checkpoint for retry.
+        $attributes = ['replacement_step' => $stored ?? $route->replacement_step];
 
         if ($route->status !== RouteStatus::Active) {
             $attributes['failed_step'] = $step;

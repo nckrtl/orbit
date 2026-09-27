@@ -14,7 +14,7 @@ A Node runs a service, such as a self-hosted Executor, as a Node-owned Docker Pr
 
 ## Cause
 
-A Project Route targets only Instances. A hostname for a Node Process needs a custom proxy Route. Without one, operators copy a loopback proxy into Caddy by hand.
+An app Route is created from an Instance, not from a Project or an empty Node or Cluster scope. A hostname for a Node Process needs a custom proxy Route. Without one, operators copy a loopback proxy into Caddy by hand.
 
 ## Solution
 

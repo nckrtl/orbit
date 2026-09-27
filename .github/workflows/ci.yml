@@ -156,7 +156,32 @@ jobs:
             orbit-tia-php8.5-${{ matrix.directory }}-
 
       - name: Run affected tests
+        if: github.event_name == 'pull_request'
         run: vendor/bin/pest --parallel --processes=4 --tia --compact
+
+      - name: Run full test suite
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        run: vendor/bin/pest --parallel --processes=4 --no-tia --compact
+
+      - name: Refresh Pest TIA graph
+        if: github.event_name == 'push'
+        run: vendor/bin/pest --parallel --processes=4 --tia --fresh --compact
+
+      - name: Run architecture tests
+        if: always() && github.event_name == 'pull_request'
+        env:
+          PROJECT: ${{ matrix.directory }}
+        run: |
+          case "$PROJECT" in
+            apps/cli) architecture_tests='tests/Feature/CommandSurfaceTest.php' ;;
+            apps/gateway) architecture_tests='tests/Unit/Architecture tests/Feature/Infrastructure/AppInstances/ConfiguredOriginReadTest.php tests/Feature/Infrastructure/Caddy/CaddyPublicationLockTest.php' ;;
+            apps/e2e) architecture_tests='tests/Unit/E2E/ProofFixtureContractTest.php tests/Unit/E2E/ProofFixtureShellContractTest.php' ;;
+            packages/php-sdk) architecture_tests='tests/Unit/SuccessRequestIdBoundaryTest.php tests/Unit/RepositoryGuidanceTest.php tests/Unit/Requests/Workspaces/WorkspaceRequestsTest.php tests/Unit/Requests/Deployments/DeploymentRequestsTest.php' ;;
+            *) exit 0 ;;
+          esac
+          for architecture_test in $architecture_tests; do
+            vendor/bin/pest --parallel --processes=4 --compact "$architecture_test"
+          done
 
       - name: Save Pest TIA graph
         if: success()

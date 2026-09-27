@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use App\Domain\Nodes\ManagedUserAccount;
-use App\Domain\Nodes\Storage\EffectiveStorageRoots;
 use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AppDev\AppDevSshExecutor;
@@ -51,14 +50,11 @@ it('prepares configured roots through a narrow sudo bash command', function (): 
     $preparer->prepare(
         $node,
         new ManagedUserAccount('orbit', 'orbit', '/home/orbit'),
-        new EffectiveStorageRoots(
-            StoragePath::parse('/srv/orbit/instances'),
-            StoragePath::parse('/srv/orbit/worktrees'),
-        ),
+        StoragePath::parse('/srv/orbit/instances'),
     );
 
     expect($ssh->commands)
-        ->toHaveCount(2)
+        ->toHaveCount(1)
         ->and($ssh->commands[0]->arguments)
         ->toBe([
             'sudo',
@@ -73,16 +69,6 @@ it('prepares configured roots through a narrow sudo bash command', function (): 
         ])
         ->and($ssh->commands[0]->input)
         ->toContain('install -d -o "$managed_user" -g "$managed_group" -m 0755 -- "$current"')
-        ->and($ssh->commands[1]->arguments)
-        ->toBe([
-            'sudo',
-            'bash',
-            '-seu',
-            '--',
-            '/srv/orbit/worktrees',
-            'orbit',
-            'orbit',
-            '/home/orbit',
-            '1',
-        ]);
+        ->and($ssh->commands[0]->input)
+        ->toContain('test "$(realpath -e "$root")" = "$root"');
 });

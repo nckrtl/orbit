@@ -6,38 +6,64 @@ use App\Actions\Routes\CreateRouteAction;
 use App\Actions\Routes\PublishPublicRouteAction;
 use App\Data\Routes\CreateRouteData;
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
+use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\AppInstances\DevelopmentAppInstanceConfigurator;
+use App\Domain\AppInstances\DevelopmentRouteProjector;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentResult;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentRouteDomain;
 use App\Domain\AppInstances\Environment\AppInstanceRouteEnvironmentSynchronizer;
+use App\Domain\AppInstances\ProductionCloneRouteProjector;
+use App\Domain\AppInstances\ProductionRouteProjector;
 use App\Domain\Clusters\ClusterState;
+use App\Domain\Metrics\MetricsFleetReconcileException;
 use App\Domain\Metrics\MetricsFleetReconciler;
+use App\Domain\Metrics\MetricsReconcileComponent;
+use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Projects\ProjectType;
 use App\Domain\Routes\PublicRouteEdgeProjector;
 use App\Domain\Routes\PublicRouteEligibility;
 use App\Domain\Routes\RouteDomainProjector;
+use App\Domain\Routes\RouteKind;
+use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteRemovalProjector;
 use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppDev\AppDevCaddyConfigRenderer;
 use App\Infrastructure\AppDev\AppDevSiteRepository;
+use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
 use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
 use App\Infrastructure\Routes\IngressSiteRepository;
+use App\Infrastructure\Routes\NativePublicRouteEdgeProjector;
 use App\Models\Activity;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\Route;
+use App\Models\RouteAnalyticsTracking;
 use App\Models\RouteTarget;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Tests\Support\FakeNodeCaddyBuilds;
 use Tests\Support\FakePublicRouteEdgeProjector;
 use Tests\Support\FakeRouteRemovalProjector;
+
+function pendingNodeRouteFixture(int $appId, int $nodeId, string $domain): Route
+{
+    return Route::query()->create([
+        'app_id' => $appId,
+        'node_id' => $nodeId,
+        'domain' => $domain,
+        'provenance' => 'explicit',
+        'publication' => 'private',
+        'status' => 'pending',
+    ]);
+}
 
 beforeEach(function (): void {
     $this->gateway = Node::query()->create([
@@ -61,6 +87,170 @@ beforeEach(function (): void {
     app()->instance(RouteRemovalProjector::class, $this->removal);
 });
 
+it('creates an active instance route from an Instance and retries it', function (): void {
+    $projector = Mockery::mock(DevelopmentRouteProjector::class);
+    $projector->shouldReceive('converge')->once();
+    app()->instance(DevelopmentRouteProjector::class, $projector);
+    $payload = ['app_instance_id' => $this->target->id, 'domain' => 'shop.example.test', 'publication' => 'private'];
+
+    $created = $this->postJson('/api/v1/routes', $payload)
+        ->assertCreated()
+        ->assertJsonPath('data.app_id', $this->orbitApp->id)
+        ->assertJsonPath('data.status', 'active');
+
+    $route = Route::query()->with('targets')->findOrFail($created->json('data.id'));
+    expect($route->node_id)->toBe($this->node->id)
+        ->and($route->targets->sole()->app_instance_id)->toBe($this->target->id);
+
+    $this->postJson('/api/v1/routes', $payload)->assertOk()->assertJsonPath('data.id', $route->id);
+    $this->postJson('/api/v1/routes', [...$payload, 'publication' => 'public'])
+        ->assertConflict()->assertJsonPath('error.code', 'route.retry_conflict');
+});
+
+it('creates a public instance route with the requested publication', function (): void {
+    $projector = Mockery::mock(DevelopmentRouteProjector::class);
+    $projector->shouldReceive('converge')->once();
+    app()->instance(DevelopmentRouteProjector::class, $projector);
+    app()->instance(PublicRouteEdgeProjector::class, new FakePublicRouteEdgeProjector);
+
+    $this->postJson('/api/v1/routes', [
+        'app_instance_id' => $this->target->id,
+        'domain' => 'public.example.test',
+        'publication' => 'public',
+    ])->assertCreated()->assertJsonPath('data.publication', 'public')->assertJsonPath('data.status', 'active');
+});
+
+it('projects a production instance route before marking it active', function (): void {
+    $this->node->roles()->where('role', RoleName::AppDev)->delete();
+    orbit_test_set_app_placement_role($this->node, true);
+    $projection = Mockery::mock(ProductionRouteProjector::class);
+    $projection->shouldReceive('prepareCertificate', 'prepareRuntime', 'prepareFirewall')->once();
+    app()->instance(ProductionRouteProjector::class, $projection);
+    $steps = Mockery::mock(ProductionCloneRouteProjector::class);
+    $steps->shouldReceive('prepareWorkloadCaddy', 'prepareRouterCertificate', 'prepareRouteFirewall', 'verifyWorkload', 'prepareRouterCaddy', 'prepareDns')->once();
+    app()->instance(ProductionCloneRouteProjector::class, $steps);
+
+    $this->postJson('/api/v1/routes', [
+        'app_instance_id' => $this->target->id,
+        'domain' => 'production.example.test',
+    ])->assertCreated()->assertJsonPath('data.status', 'active');
+});
+
+it('does not adopt an older pending explicit app Route during create retry', function (): void {
+    $pending = app(CreateRouteAction::class)->execute(new CreateRouteData(
+        appId: $this->orbitApp->id,
+        domain: 'older.example.test',
+        publication: RoutePublication::Private,
+        appInstanceId: $this->target->id,
+    ))['route'];
+
+    $this->postJson('/api/v1/routes', [
+        'app_instance_id' => $this->target->id,
+        'domain' => 'older.example.test',
+    ])->assertConflict()->assertJsonPath('error.code', 'route.activation_unsupported');
+    expect($pending->refresh()->status)->toBe(RouteStatus::Pending);
+});
+
+it('resumes an instance route after workload projection fails', function (): void {
+    $projection = Mockery::mock(DevelopmentRouteProjector::class);
+    $projection->shouldReceive('converge')->twice()->andReturnUsing(static function () use (&$attempts): void {
+        $attempts = ($attempts ?? 0) + 1;
+        if ($attempts === 1) {
+            throw new RuntimeConvergenceException('projection', 'route.test_projection_failed', 'Injected projection failure.');
+        }
+    });
+    app()->instance(DevelopmentRouteProjector::class, $projection);
+    $payload = ['app_instance_id' => $this->target->id, 'domain' => 'resume.example.test'];
+
+    $this->postJson('/api/v1/routes', $payload)->assertStatus(502);
+    $route = Route::query()->where('domain', $payload['domain'])->sole();
+    expect($route->status)->toBe(RouteStatus::Activating);
+
+    $this->postJson('/api/v1/routes', $payload)->assertOk()
+        ->assertJsonPath('data.id', $route->id)
+        ->assertJsonPath('data.status', 'active');
+    $this->assertDatabaseCount('routes', 1);
+    $this->assertDatabaseCount('route_targets', 1);
+});
+
+it('rebuilds a separate Ingress from a persisted uncertain public-handler checkpoint', function (): void {
+    [, $router, $ingress, $workload, $target] = route_public_topology($this->orbitApp, name: 'crash-edge', createRoute: false);
+    $route = app(CreateRouteAction::class)->execute(new CreateRouteData(
+        appId: $this->orbitApp->id,
+        domain: 'crash-edge.example.test',
+        publication: RoutePublication::Public,
+        appInstanceId: $target->id,
+    ))['route'];
+    $route->update(['status' => RouteStatus::Activating, 'replacement_step' => RouteReplacementStep::PublicActivated]);
+    $projection = Mockery::mock(ProductionRouteProjector::class);
+    $projection->shouldReceive('prepareCertificate', 'prepareRuntime', 'prepareFirewall')->once();
+    app()->instance(ProductionRouteProjector::class, $projection);
+    $steps = Mockery::mock(ProductionCloneRouteProjector::class);
+    $steps->shouldReceive('prepareWorkloadCaddy', 'prepareRouterCertificate', 'prepareRouteFirewall', 'verifyWorkload', 'prepareRouterCaddy', 'prepareDns')->once();
+    app()->instance(ProductionCloneRouteProjector::class, $steps);
+    $builds = app(NodeCaddyBuilds::class);
+    assert($builds instanceof FakeNodeCaddyBuilds);
+    expect($builds->built)->toBe([])
+        ->and($ingress->id)->not->toBe($router->id)->not->toBe($workload->id);
+    $builds->onBuild = static function (Node $node) use ($route, $ingress): void {
+        if ($node->is($ingress)) {
+            expect($route->refresh()->status)->toBe(RouteStatus::Activating)
+                ->and($route->replacement_step)->toBe(RouteReplacementStep::PublicActivated);
+        }
+    };
+    $firewall = Mockery::mock(NodeRoleFirewallManager::class);
+    $firewall->shouldReceive('converge')->once()->withArgs(
+        static fn (Node $node): bool => $node->is($ingress) && $builds->built === [$ingress->name, $router->name],
+    );
+    app()->instance(NodeRoleFirewallManager::class, $firewall);
+    app()->instance(PublicRouteEdgeProjector::class, app(NativePublicRouteEdgeProjector::class));
+
+    $this->postJson('/api/v1/routes', [
+        'app_instance_id' => $target->id,
+        'domain' => $route->domain,
+        'publication' => 'public',
+    ])->assertOk()->assertJsonPath('data.status', 'active')->assertJsonPath('data.id', $route->id);
+    expect($builds->built)->toBe([$ingress->name, $router->name]);
+});
+
+it('resumes a public instance route after an ingress step fails', function (string $failedStep): void {
+    [, , , , $target] = route_public_topology($this->orbitApp, name: 'retry-edge', createRoute: false);
+    $projection = Mockery::mock(ProductionRouteProjector::class);
+    $projection->shouldReceive('prepareCertificate', 'prepareRuntime', 'prepareFirewall')->twice();
+    app()->instance(ProductionRouteProjector::class, $projection);
+    $steps = Mockery::mock(ProductionCloneRouteProjector::class);
+    $steps->shouldReceive('prepareWorkloadCaddy', 'prepareRouterCertificate', 'prepareRouteFirewall', 'verifyWorkload', 'prepareRouterCaddy', 'prepareDns')->twice();
+    app()->instance(ProductionCloneRouteProjector::class, $steps);
+    $edge = new FakePublicRouteEdgeProjector;
+    $edge->failures[$failedStep] = 1;
+    app()->instance(PublicRouteEdgeProjector::class, $edge);
+    $payload = ['app_instance_id' => $target->id, 'domain' => 'retry-public.example.test', 'publication' => 'public'];
+
+    $this->postJson('/api/v1/routes', $payload)->assertStatus(502);
+    $route = Route::query()->where('domain', $payload['domain'])->sole();
+    expect($route->status)->toBe(RouteStatus::Activating);
+    if ($failedStep === 'public-activated') {
+        expect($edge->calls)->toContain('rollback-public-edge');
+    }
+
+    $this->postJson('/api/v1/routes', $payload)->assertOk()
+        ->assertJsonPath('data.id', $route->id)
+        ->assertJsonPath('data.status', 'active');
+    expect(collect($edge->calls)->filter(static fn (string $call): bool => $call === $failedStep)->count())->toBe(2)
+        ->and($route->refresh()->replacement_step)->toBe(RouteReplacementStep::IngressFirewall);
+})->with(['public-activated', 'ingress-firewall']);
+
+it('defaults an instance route publication to private', function (): void {
+    $projector = Mockery::mock(DevelopmentRouteProjector::class);
+    $projector->shouldReceive('converge')->once();
+    app()->instance(DevelopmentRouteProjector::class, $projector);
+
+    $this->postJson('/api/v1/routes', [
+        'app_instance_id' => $this->target->id,
+        'domain' => 'default.example.test',
+    ])->assertCreated()->assertJsonPath('data.publication', 'private')->assertJsonPath('data.status', 'active');
+});
+
 it('refuses a package Instance whose repository root is not a supported Route web root', function (): void {
     $this->orbitApp->update([
         'type' => ProjectType::NodePackage,
@@ -68,7 +258,6 @@ it('refuses a package Instance whose repository root is not a supported Route we
     ]);
 
     $this->postJson('/api/v1/routes', [
-        'app_id' => $this->orbitApp->id,
         'domain' => 'node-package.example.test',
         'publication' => 'private',
         'app_instance_id' => $this->target->id,
@@ -85,12 +274,7 @@ it('refuses to attach a package Instance with repository root . to an existing R
         'root' => '.',
     ]);
 
-    $route = $this->postJson('/api/v1/routes', [
-        'app_id' => $this->orbitApp->id,
-        'domain' => 'targetless.example.test',
-        'publication' => 'private',
-        'node_id' => $this->node->id,
-    ])->assertCreated()->json('data.id');
+    $route = pendingNodeRouteFixture($this->orbitApp->id, $this->node->id, 'targetless.example.test')->id;
 
     $this->putJson("/api/v1/routes/{$route}/target", [
         'app_instance_id' => $this->target->id,
@@ -100,44 +284,16 @@ it('refuses to attach a package Instance with repository root . to an existing R
     $this->assertDatabaseCount('route_targets', 0);
 });
 
-it('creates, retries, lists, shows, updates, clears, and removes an explicit Route', function (): void {
-    $requestId = (string) Str::uuid();
-    $payload = [
-        'app_id' => $this->orbitApp->id,
-        'domain' => ' App.Example.Test ',
-        'publication' => 'private',
-        'app_instance_id' => $this->target->id,
-    ];
-
-    $created = $this
-        ->withHeader('X-Orbit-Request-Id', $requestId)
-        ->postJson('/api/v1/routes', $payload)
-        ->assertCreated()
-        ->assertJsonPath('data.app_id', $this->orbitApp->id)
-        ->assertJsonPath('data.node_id', $this->node->id)
-        ->assertJsonPath('data.cluster_id', null)
-        ->assertJsonPath('data.generation_basis_node_id', null)
-        ->assertJsonPath('data.domain', 'app.example.test')
-        ->assertJsonPath('data.provenance', 'explicit')
-        ->assertJsonPath('data.publication', 'private')
-        ->assertJsonPath('data.status', 'pending')
-        ->assertJsonPath('data.failed_step', null)
-        ->assertJsonPath('data.error_code', null)
-        ->assertJsonPath('data.target.app_instance_id', $this->target->id)
-        ->assertJsonPath('data.target.position', 0);
-    $routeId = $created->json('data.id');
-
-    $this
-        ->postJson('/api/v1/routes', $payload)
-        ->assertOk()
-        ->assertJsonPath('data.id', $routeId);
-    expect(Route::query()->count())
-        ->toBe(1)
-        ->and(Activity::query()->where('request_id', $requestId)->firstOrFail()->subject_type)
-        ->toBe(Route::class)
-        ->and(Activity::query()->where('request_id', $requestId)->firstOrFail()->command)
-        ->toBe('route:create');
-
+it('lists, shows, updates, clears, and removes a pre-existing explicit Route', function (): void {
+    $route = app(CreateRouteAction::class)->execute(new CreateRouteData(
+        appId: $this->orbitApp->id,
+        domain: 'app.example.test',
+        publication: RoutePublication::Private,
+        appInstanceId: $this->target->id,
+        nodeId: null,
+        clusterId: null,
+    ))['route'];
+    $routeId = $route->id;
     $this->getJson('/api/v1/routes')->assertOk()->assertJsonPath('data.0.id', $routeId);
     $this->getJson("/api/v1/routes/{$routeId}")->assertOk()->assertJsonPath('data.id', $routeId);
     $this
@@ -175,26 +331,57 @@ it('creates, retries, lists, shows, updates, clears, and removes an explicit Rou
         ->toBe('route:destroy');
 });
 
-it('creates targetless exclusive Node and active Cluster scopes', function (): void {
-    $nodeRoute = $this->postJson('/api/v1/routes', [
-        'app_id' => $this->orbitApp->id,
-        'domain' => 'node.example.test',
-        'publication' => 'private',
-        'node_id' => $this->node->id,
-    ])->assertCreated();
-    expect($nodeRoute->json('data.node_id'))->toBe($this->node->id)->and($nodeRoute->json('data.target'))->toBeNull();
+it('preserves a structured Metrics runtime failure through the Route update API', function (): void {
+    $route = app(CreateRouteAction::class)->execute(new CreateRouteData(
+        appId: $this->orbitApp->id,
+        domain: 'metrics-error.example.test',
+        publication: RoutePublication::Private,
+        appInstanceId: $this->target->id,
+        nodeId: null,
+        clusterId: null,
+    ))['route'];
+    $metrics = Mockery::mock(MetricsFleetReconciler::class);
+    $metrics->shouldReceive('reconcile')->once()->andThrow(new MetricsFleetReconcileException(
+        MetricsReconcileComponent::Runtime,
+        $this->gateway->id,
+        'metrics.docker_unavailable',
+        'Metrics Docker is unavailable.',
+        502,
+        new ResourceOperationException('metrics.docker_unavailable', 'Metrics Docker is unavailable.', 502),
+    ));
+    app()->instance(MetricsFleetReconciler::class, $metrics);
 
-    [$cluster] = route_cluster('active', 'cluster.test');
-    $this
-        ->postJson('/api/v1/routes', [
-            'app_id' => $this->orbitApp->id,
-            'domain' => 'cluster.example.test',
-            'publication' => 'public',
-            'cluster_id' => $cluster->id,
-        ])
-        ->assertCreated()
-        ->assertJsonPath('data.node_id', null)
-        ->assertJsonPath('data.cluster_id', $cluster->id);
+    $this->patchJson("/api/v1/routes/{$route->id}", ['publication' => 'public'])
+        ->assertStatus(502)
+        ->assertJsonPath('error.code', 'metrics.docker_unavailable')
+        ->assertJsonPath('error.message', 'Metrics Docker is unavailable.');
+});
+
+it('refuses targetless app Route creation in the action', function (): void {
+    expect(fn () => app(CreateRouteAction::class)->execute(new CreateRouteData(
+        appId: $this->orbitApp->id,
+        domain: 'unsupported.example.test',
+        publication: RoutePublication::Private,
+        nodeId: $this->node->id,
+    )))->toThrow(ResourceOperationException::class);
+    $this->assertDatabaseCount('routes', 0);
+});
+
+it('rejects Project and targetless app Route creation inputs', function (): void {
+    foreach ([
+        ['app_id' => $this->orbitApp->id, 'app_instance_id' => $this->target->id],
+        ['app_id' => $this->orbitApp->id, 'node_id' => $this->node->id],
+        ['cluster_id' => route_cluster('active', 'cluster.test')[0]->id],
+        ['app_instance_id' => $this->target->id, 'node_id' => $this->node->id],
+    ] as $scope) {
+        $this->postJson('/api/v1/routes', [
+            ...$scope,
+            'domain' => 'invalid.example.test',
+            'publication' => 'private',
+        ])->assertUnprocessable();
+    }
+
+    $this->assertDatabaseCount('routes', 0);
 });
 
 it('returns 409 before replacing or clearing an active target or removing its Route', function (): void {
@@ -235,23 +422,19 @@ it('returns 409 before replacing or clearing an active target or removing its Ro
 });
 
 it('removes Route-owned projections for an untargeted Route and preserves unrelated Routes and workloads', function (): void {
-    $route = $this->postJson('/api/v1/routes', [
-        'app_id' => $this->orbitApp->id,
-        'domain' => 'keep.example.test',
-        'publication' => 'private',
-        'app_instance_id' => $this->target->id,
-    ])->assertCreated();
-    $routeModel = Route::query()->findOrFail($route->json('data.id'));
+    $routeModel = app(CreateRouteAction::class)->execute(new CreateRouteData(
+        appId: $this->orbitApp->id,
+        domain: 'keep.example.test',
+        publication: RoutePublication::Private,
+        appInstanceId: $this->target->id,
+        nodeId: null,
+        clusterId: null,
+    ))['route'];
     $routeModel->update(['status' => RouteStatus::Active]);
     $this->target->update(['status' => AppInstanceState::Reserved]);
     $routeModel->targets()->delete();
 
-    $unrelated = $this->postJson('/api/v1/routes', [
-        'app_id' => $this->orbitApp->id,
-        'domain' => 'other.example.test',
-        'publication' => 'private',
-        'node_id' => $this->node->id,
-    ])->assertCreated();
+    $unrelated = pendingNodeRouteFixture($this->orbitApp->id, $this->node->id, 'other.example.test');
     $workload = route_instance($this->orbitApp, $this->node, 'sibling');
 
     $this->deleteJson("/api/v1/routes/{$routeModel->id}")->assertOk();
@@ -262,7 +445,7 @@ it('removes Route-owned projections for an untargeted Route and preserves unrela
         ->toBe(['dns', 'caddy', 'certificates', 'firewall'])
         ->and($this->removal->routeIds)
         ->toBe([$routeModel->id, $routeModel->id, $routeModel->id, $routeModel->id])
-        ->and(Route::query()->whereKey($unrelated->json('data.id'))->exists())
+        ->and(Route::query()->whereKey($unrelated->id)->exists())
         ->toBeTrue()
         ->and($workload->fresh())
         ->not->toBeNull()
@@ -272,14 +455,33 @@ it('removes Route-owned projections for an untargeted Route and preserves unrela
         ->not->toBeNull();
 });
 
-it('accepts the Route id in a DELETE body and still binds the path', function (): void {
-    $created = $this->postJson('/api/v1/routes', [
-        'app_id' => $this->orbitApp->id,
-        'domain' => 'mcp-delete.example.test',
-        'publication' => 'private',
+it('refuses a tracking route', function (): void {
+    $route = Route::query()->create([
+        'kind' => RouteKind::AnalyticsTracking,
+        'app_id' => null,
         'node_id' => $this->node->id,
-    ])->assertCreated();
-    $routeId = $created->json('data.id');
+        'cluster_id' => null,
+        'generation_basis_node_id' => null,
+        'domain' => 'tracking.example.test',
+        'provenance' => RouteProvenance::Explicit,
+        'publication' => RoutePublication::Private,
+        'status' => RouteStatus::Pending,
+    ]);
+    RouteAnalyticsTracking::query()->create([
+        'route_id' => $route->id,
+        'app_instance_id' => $this->target->id,
+    ]);
+
+    $this->deleteJson("/api/v1/routes/{$route->id}")
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'route.tracking_managed');
+
+    expect($route->fresh())->not->toBeNull()
+        ->and($this->removal->events)->toBe([]);
+});
+
+it('accepts the Route id in a DELETE body and still binds the path', function (): void {
+    $routeId = pendingNodeRouteFixture($this->orbitApp->id, $this->node->id, 'mcp-delete.example.test')->id;
 
     $this->deleteJson("/api/v1/routes/{$routeId}", ['route' => $routeId])->assertOk();
 
@@ -288,35 +490,18 @@ it('accepts the Route id in a DELETE body and still binds the path', function ()
         ->toBe(['dns', 'caddy', 'certificates', 'firewall']);
 });
 
-it('releases the hostname after untargeted removal and leaves the Route absent on identical retry', function (): void {
-    $created = $this->postJson('/api/v1/routes', [
-        'app_id' => $this->orbitApp->id,
-        'domain' => 'released.example.test',
-        'publication' => 'private',
-        'node_id' => $this->node->id,
-    ])->assertCreated();
-    $routeId = $created->json('data.id');
+it('releases the hostname after untargeted removal', function (): void {
+    $routeId = pendingNodeRouteFixture($this->orbitApp->id, $this->node->id, 'released.example.test')->id;
 
     $this->deleteJson("/api/v1/routes/{$routeId}")->assertOk();
     $this->deleteJson("/api/v1/routes/{$routeId}")->assertNotFound();
 
-    $this->postJson('/api/v1/routes', [
-        'app_id' => $this->orbitApp->id,
-        'domain' => 'released.example.test',
-        'publication' => 'private',
-        'node_id' => $this->node->id,
-    ])->assertCreated()->assertJsonPath('data.domain', 'released.example.test');
+    expect(Route::query()->where('domain', 'released.example.test')->exists())->toBeFalse();
 });
 
 it('returns 409 with both Routes when the requested target belongs to another Route', function (): void {
     $existing = app(CreateRouteAction::class)->ensureForAppInstance($this->target, null);
-    $requested = $this->postJson('/api/v1/routes', [
-        'app_id' => $this->orbitApp->id,
-        'domain' => 'fixed.example.test',
-        'publication' => 'private',
-        'node_id' => $this->node->id,
-    ])->assertCreated();
-    $requestedId = $requested->json('data.id');
+    $requestedId = pendingNodeRouteFixture($this->orbitApp->id, $this->node->id, 'fixed.example.test')->id;
     $routesBefore = route_api_routes();
     $targetRowsBefore = route_api_target_rows();
 
@@ -344,7 +529,6 @@ it('returns 409 with route.target_conflict when creating a Route for an AppInsta
 
     $this
         ->postJson('/api/v1/routes', [
-            'app_id' => $this->orbitApp->id,
             'domain' => 'unused-host.example.test',
             'publication' => 'private',
             'app_instance_id' => $this->target->id,
@@ -367,13 +551,7 @@ it('returns 409 with route.target_conflict when creating a Route for an AppInsta
 it('keeps every Route association unchanged for exact target no-ops', function (): void {
     $targeted = app(CreateRouteAction::class)->ensureForAppInstance($this->target, null);
     $targeted->update(['status' => 'active']);
-    $empty = $this->postJson('/api/v1/routes', [
-        'app_id' => $this->orbitApp->id,
-        'domain' => 'empty.example.test',
-        'publication' => 'private',
-        'node_id' => $this->node->id,
-    ])->assertCreated();
-    $emptyId = $empty->json('data.id');
+    $emptyId = pendingNodeRouteFixture($this->orbitApp->id, $this->node->id, 'empty.example.test')->id;
     $routesBefore = route_api_routes();
     $targetRowsBefore = route_api_target_rows();
 
@@ -484,19 +662,6 @@ it('rejects malformed input, caller-owned fields, arrays, and conflicting retrie
         ->assertUnprocessable();
     expect($generated->fresh())->not->toBeNull();
 
-    $payload = [
-        'app_id' => $this->orbitApp->id,
-        'domain' => 'retry.test',
-        'publication' => 'private',
-        'node_id' => $this->node->id,
-    ];
-    $this->postJson('/api/v1/routes', $payload)->assertCreated();
-    $before = Route::query()->where('domain', 'retry.test')->sole()->toArray();
-    $this
-        ->postJson('/api/v1/routes', [...$payload, 'publication' => 'public'])
-        ->assertConflict()
-        ->assertJsonPath('error.code', 'route.retry_conflict');
-    expect(Route::query()->where('domain', 'retry.test')->sole()->toArray())->toBe($before);
 });
 
 it('refuses invalid or occupied active explicit domains before Route or projection state changes', function (): void {
@@ -561,7 +726,7 @@ it('returns 409 instance.source_profile_missing for an explicit domain change wi
         ->assertJsonPath('error.code', 'instance.source_profile_missing')
         ->assertJsonPath(
             'error.message',
-            'The AppInstance has no recorded source profile. Repeat the same creation request with recover_source_profile to inspect the source and store the complete profile.',
+            'The AppInstance has no recorded source profile and cannot be used.',
         );
 
     expect($route->fresh(['targets'])->toArray())->toBe($before);
@@ -759,23 +924,21 @@ it('keeps publication=public without artifacts for a Node-scoped Route, inactive
     app()->instance(PublicRouteEdgeProjector::class, $edge);
     app()->instance(DevelopmentProjectionOperationLock::class, new RouteApiProjectionOwner);
 
-    $nodeScoped = $this->postJson('/api/v1/routes', [
-        'app_id' => $this->orbitApp->id,
-        'domain' => 'node-public.example.test',
-        'publication' => 'public',
-        'app_instance_id' => $this->target->id,
-    ])->assertCreated();
+    $active = app(CreateRouteAction::class)->execute(new CreateRouteData(
+        appId: $this->orbitApp->id,
+        domain: 'node-public.example.test',
+        publication: RoutePublication::Public,
+        appInstanceId: $this->target->id,
+        nodeId: null,
+        clusterId: null,
+    ))['route'];
+    $active->update(['status' => RouteStatus::Active]);
 
-    expect($nodeScoped->json('data.publication'))
-        ->toBe('public')
-        ->and($nodeScoped->json('data'))
-        ->not->toHaveKey('public_publication')
-        ->not->toHaveKey('public_ip')
+    expect($active->publication)
+        ->toBe(RoutePublication::Public)
         ->and($edge->calls)
         ->toBe([]);
 
-    $active = Route::query()->findOrFail($nodeScoped->json('data.id'));
-    $active->update(['status' => RouteStatus::Active]);
     $published = app(PublishPublicRouteAction::class)->execute($active, RoutePublication::Public);
 
     expect($published->id)
@@ -799,33 +962,29 @@ it('keeps publication=public without artifacts for a Node-scoped Route, inactive
         ->toBe([]);
 
     [$missingIngress] = route_cluster('missing-ingress', 'missing.test');
-    $missing = $this->postJson('/api/v1/routes', [
+    $missing = Route::query()->create([
         'app_id' => $this->orbitApp->id,
-        'domain' => 'missing-ingress.example.test',
-        'publication' => 'public',
         'cluster_id' => $missingIngress->id,
-    ])->assertCreated();
+        'domain' => 'missing-ingress.example.test',
+        'provenance' => 'explicit',
+        'publication' => RoutePublication::Public,
+        'status' => RouteStatus::Pending,
+    ]);
 
-    expect($missing->json('data.publication'))->toBe('public')->and($missing->json('data'))->not->toHaveKey('public_publication')->and($edge->calls)->toBe([]);
+    expect($missing->publication)->toBe(RoutePublication::Public)->and($edge->calls)->toBe([]);
 });
 
 it('creates and shows a public Route without a Node public-IP field', function (): void {
-    $created = $this->postJson('/api/v1/routes', [
+    $created = Route::query()->create([
         'app_id' => $this->orbitApp->id,
-        'domain' => 'shown-public.example.test',
-        'publication' => 'public',
         'cluster_id' => route_cluster('shown-public', 'shown.test')[0]->id,
-    ])->assertCreated();
+        'domain' => 'shown-public.example.test',
+        'provenance' => 'explicit',
+        'publication' => RoutePublication::Public,
+        'status' => RouteStatus::Pending,
+    ]);
 
-    expect($created->json('data'))
-        ->not->toHaveKey('public_ip')
-        ->not->toHaveKey('public_ssh_host')
-        ->and($created->json('data.publication'))
-        ->toBe('public')
-        ->and($created->json('data'))
-        ->not->toHaveKey('public_publication');
-
-    $shown = $this->getJson('/api/v1/routes/'.$created->json('data.id'))->assertOk();
+    $shown = $this->getJson('/api/v1/routes/'.$created->id)->assertOk();
 
     expect($shown->json('data'))
         ->not->toHaveKey('public_ip')
@@ -861,7 +1020,7 @@ it('rolls a failed public activation back to the verified edge so the Ingress No
 
 it('publishes an eligible public Route on the same ID and names only the Ingress domain and Router upstream', function (): void {
     $metrics = Mockery::mock(MetricsFleetReconciler::class);
-    $metrics->shouldReceive('reconcile')->once();
+    $metrics->shouldReceive('reconcile')->twice();
     app()->instance(MetricsFleetReconciler::class, $metrics);
     [$cluster, $router, $ingress, $workload, $instance, $route] = route_public_topology($this->orbitApp);
     $edge = new FakePublicRouteEdgeProjector;
@@ -1442,6 +1601,7 @@ function route_public_topology(
     RoutePublication $publication = RoutePublication::Public,
     string $domain = 'public.example.test',
     string $name = 'public',
+    bool $createRoute = true,
 ): array {
     [$cluster, $router] = route_cluster($name, "{$name}.test");
     $router->update(['lan_ip' => '10.10.0.20']);
@@ -1464,17 +1624,21 @@ function route_public_topology(
         'production_user' => 'orbit-acme',
         'selected_php_version' => '8.5',
     ]);
-    $route = app(CreateRouteAction::class)->execute(new CreateRouteData(
-        appId: $app->id,
-        domain: $domain,
-        publication: $publication,
-        appInstanceId: $instance->id,
-        nodeId: null,
-        clusterId: null,
-    ))['route'];
-    $route->update(['status' => RouteStatus::Active]);
+    $route = null;
 
-    return [$cluster, $router->refresh(), $ingress->refresh(), $workload->refresh(), $instance->refresh(), $route->refresh()];
+    if ($createRoute) {
+        $route = app(CreateRouteAction::class)->execute(new CreateRouteData(
+            appId: $app->id,
+            domain: $domain,
+            publication: $publication,
+            appInstanceId: $instance->id,
+            nodeId: null,
+            clusterId: null,
+        ))['route'];
+        $route->update(['status' => RouteStatus::Active]);
+    }
+
+    return [$cluster, $router->refresh(), $ingress->refresh(), $workload->refresh(), $instance->refresh(), $route?->refresh()];
 }
 
 /** @return array{Cluster, Node} */

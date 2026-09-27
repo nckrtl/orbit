@@ -167,6 +167,243 @@ it('renders generated identity separately from preserved local defaults', functi
         );
 });
 
+it('gives pool.conf one pool owner when service metrics toggle', function (): void {
+    [$instance] = orb214_runtime_instance();
+    $identity = ProductionPhpRuntimeIdentity::forProvisioning($instance, '8.5');
+    $instance->update($identity->attributes());
+    $ssh = new AppDevFakeSshExecutor;
+    $renderer = new ProductionPhpRuntimeConfigRenderer;
+    $manager = new RemoteProductionPhpRuntimeManager(
+        renderer: $renderer,
+        ssh: orb214_app_prod_ssh($ssh),
+    );
+
+    $manager->convergeMonitoring($instance->refresh(), true);
+    $manager->convergeMonitoring($instance->refresh(), false);
+
+    $monitorCommands = collect($ssh->commands)
+        ->filter(static fn ($command): bool => ($command->arguments[4] ?? null) === 'monitor')
+        ->values();
+    $enabledCommand = $monitorCommands[0];
+    $disabledCommand = $monitorCommands[1];
+    $enabledPool = base64_decode($enabledCommand->arguments[18], true);
+    $disabledPool = base64_decode($disabledCommand->arguments[18], true);
+    $metricsProgram = file_get_contents(resource_path('scripts/service-metrics-fpm.py'));
+    $monitorBranchStart = strpos($enabledCommand->input, 'converge_monitoring_pool() {');
+    $monitorBranchEnd = strpos($enabledCommand->input, 'operation=$1', $monitorBranchStart);
+    $monitorBranch = substr($enabledCommand->input, $monitorBranchStart, $monitorBranchEnd - $monitorBranchStart);
+    $candidateCleanup = strpos($enabledCommand->input, 'cleanup_interrupted_monitoring_candidate "$generated_directory" "$runtime_directory"');
+    $generatedAllowlist = strpos($enabledCommand->input, 'unexpected_generated=$(find');
+    $monitorIdentityGuard = strpos($enabledCommand->input, 'if [ "$operation" = monitor ]');
+    $sharedDirectoryConvergence = strpos($enabledCommand->input, 'converge_shared_orbit_directory /etc/orbit 1');
+    $syntax = new Process(['bash', '-n']);
+    $syntax->setInput($enabledCommand->input);
+    $syntax->run();
+
+    expect($syntax->getExitCode())->toBe(0, $syntax->getErrorOutput())
+        ->and($monitorCommands)->toHaveCount(2)
+        ->and($enabledPool)->toBe($renderer->render($identity, true)->pool)
+        ->and($disabledPool)->toBe($renderer->render($identity, false)->pool)
+        ->and($enabledPool)->toContain('pm.status_path = /orbit-fpm-status')
+        ->and($enabledPool)->toContain('pm.status_listen = '.$identity->socket.'.status')
+        ->and($disabledPool)->not->toContain('pm.status_path')
+        ->and($disabledPool)->not->toContain('pm.status_listen')
+        ->and($enabledCommand->input)->toContain('converge_monitoring_pool')
+        ->and($candidateCleanup)->toBeInt()->toBeLessThan($generatedAllowlist)
+        ->and($monitorIdentityGuard)->toBeInt()->toBeLessThan($sharedDirectoryConvergence)
+        ->and($enabledCommand->input)->toContain('! test -f "$marker_path"', '! test -d "$generated_directory"')
+        ->and($monitorBranch)->toContain('systemctl reload "$service"')
+        ->and($monitorBranch)->not->toContain('systemctl restart')
+        ->and($monitorBranch)->not->toContain('systemctl start')
+        ->and($monitorBranch)->not->toContain('systemctl enable')
+        ->and($metricsProgram)->toBeString()->not->toContain('os.replace')
+        ->and($metricsProgram)->not->toContain('pool.write_text')
+        ->and($metricsProgram)->not->toContain('write(pool');
+});
+
+it('restores the old pool when only candidate reloads fail', function (): void {
+    $root = sys_get_temp_dir().'/orbit-pool-candidate-reload-'.bin2hex(random_bytes(6));
+    $runtime = $root.'/runtime';
+    $generated = $runtime.'/generated';
+    $bin = $root.'/bin';
+    $pool = $generated.'/pool.conf';
+    $desired = $root.'/desired.conf';
+    $rollback = $root.'/rollback.conf';
+    $service = 'orbit-recovery-php8.5-fpm.service';
+    $original = "[recovery]\nuser = recovery\n";
+    $candidate = $original."pm.status_path = /orbit-fpm-status\npm.status_listen = /run/php/recovery.sock.status\n";
+
+    try {
+        mkdir($generated, 0700, true);
+        mkdir($bin, 0700, true);
+        file_put_contents($pool, $original);
+        file_put_contents($desired, $candidate);
+        file_put_contents($rollback, $original);
+        orb214_write_pool_recovery_systemctl($bin, 'fail-candidate', $pool);
+
+        $candidateAttempt = orb214_run_monitoring_pool_convergence($pool, $desired, $runtime, $service, 1, $bin);
+        $rollbackAttempt = orb214_run_monitoring_pool_convergence($pool, $rollback, $runtime, $service, 1, $bin);
+
+        expect($candidateAttempt->getExitCode())->toBe(1)
+            ->and($rollbackAttempt->getExitCode())->toBe(0, $rollbackAttempt->getErrorOutput())
+            ->and(file_get_contents($pool))->toBe($original)
+            ->and(file_exists($runtime.'/.metrics-pool.pending'))->toBeFalse()
+            ->and(file_exists($runtime.'/.metrics-pool.backup'))->toBeFalse()
+            ->and(substr_count((string) file_get_contents($root.'/systemctl.log'), 'reload '.$service))->toBe(2);
+    } finally {
+        (new Filesystem)->deleteDirectory($root);
+    }
+});
+
+it('recovers an interrupted monitoring pool publication before accepting equal files', function (): void {
+    $root = sys_get_temp_dir().'/orbit-pool-recovery-'.bin2hex(random_bytes(6));
+    $runtime = $root.'/runtime';
+    $generated = $runtime.'/generated';
+    $bin = $root.'/bin';
+    $pool = $generated.'/pool.conf';
+    $desired = $root.'/desired.conf';
+    $service = 'orbit-recovery-php8.5-fpm.service';
+    $original = "[recovery]\nuser = recovery\n";
+    $candidate = $original."pm.status_path = /orbit-fpm-status\npm.status_listen = /run/php/recovery.sock.status\n";
+
+    try {
+        mkdir($generated, 0700, true);
+        mkdir($bin, 0700, true);
+        file_put_contents($pool, $candidate);
+        file_put_contents($desired, $candidate);
+        file_put_contents($runtime.'/.metrics-pool.backup', $original);
+        file_put_contents($runtime.'/.metrics-pool.pending', 'active '.hash('sha256', $candidate)."\n");
+        chmod($runtime.'/.metrics-pool.backup', 0600);
+        chmod($runtime.'/.metrics-pool.pending', 0600);
+        orb214_write_pool_recovery_systemctl($bin, 'success');
+        $process = orb214_run_monitoring_pool_convergence($pool, $desired, $runtime, $service, 1, $bin);
+
+        expect($process->getExitCode())->toBe(0, $process->getErrorOutput())
+            ->and(file_exists($runtime.'/.metrics-pool.pending'))->toBeFalse()
+            ->and(file_exists($runtime.'/.metrics-pool.backup'))->toBeFalse()
+            ->and(file_get_contents($root.'/systemctl.log'))->toContain('reload '.$service);
+    } finally {
+        (new Filesystem)->deleteDirectory($root);
+    }
+});
+
+it('restores the prior pool before retrying a recovery reload that also fails', function (): void {
+    $root = sys_get_temp_dir().'/orbit-pool-recovery-failure-'.bin2hex(random_bytes(6));
+    $runtime = $root.'/runtime';
+    $generated = $runtime.'/generated';
+    $bin = $root.'/bin';
+    $pool = $generated.'/pool.conf';
+    $desired = $root.'/desired.conf';
+    $rollback = $root.'/rollback.conf';
+    $service = 'orbit-recovery-php8.5-fpm.service';
+    $original = "[recovery]\nuser = recovery\n";
+    $candidate = $original."pm.status_path = /orbit-fpm-status\npm.status_listen = /run/php/recovery.sock.status\n";
+
+    try {
+        mkdir($generated, 0700, true);
+        mkdir($bin, 0700, true);
+        file_put_contents($pool, $original);
+        file_put_contents($desired, $candidate);
+        file_put_contents($rollback, $original);
+        orb214_write_pool_recovery_systemctl($bin, 'fail-reload');
+
+        $candidateAttempt = orb214_run_monitoring_pool_convergence($pool, $desired, $runtime, $service, 1, $bin);
+        $rollbackAttempt = orb214_run_monitoring_pool_convergence($pool, $rollback, $runtime, $service, 1, $bin);
+
+        expect($candidateAttempt->getExitCode())->toBe(1)
+            ->and($rollbackAttempt->getExitCode())->toBe(1)
+            ->and(file_get_contents($pool))->toBe($original)
+            ->and(file_get_contents($runtime.'/.metrics-pool.backup'))->toBe($original)
+            ->and(file_get_contents($runtime.'/.metrics-pool.pending'))->toBe('active '.hash('sha256', $candidate)."\n")
+            ->and(file_get_contents($root.'/systemctl.log'))->toContain('reload '.$service)
+            ->not->toContain('start '.$service);
+    } finally {
+        (new Filesystem)->deleteDirectory($root);
+    }
+});
+
+it('resolves a stopped master monitoring journal without starting or reloading it', function (): void {
+    $root = sys_get_temp_dir().'/orbit-pool-recovery-stopped-'.bin2hex(random_bytes(6));
+    $runtime = $root.'/runtime';
+    $generated = $runtime.'/generated';
+    $bin = $root.'/bin';
+    $pool = $generated.'/pool.conf';
+    $desired = $root.'/desired.conf';
+    $service = 'orbit-recovery-php8.5-fpm.service';
+
+    try {
+        mkdir($generated, 0700, true);
+        mkdir($bin, 0700, true);
+        file_put_contents($pool, "[recovery]\nuser = recovery\n");
+        file_put_contents($desired, "[recovery]\nuser = recovery\n");
+        file_put_contents($runtime.'/.metrics-pool.backup', "[recovery]\nuser = recovery\n");
+        file_put_contents($runtime.'/.metrics-pool.pending', 'stopped '.hash_file('sha256', $pool)."\n");
+        chmod($runtime.'/.metrics-pool.backup', 0600);
+        chmod($runtime.'/.metrics-pool.pending', 0600);
+        orb214_write_pool_recovery_systemctl($bin, 'stopped');
+        $process = orb214_run_monitoring_pool_convergence($pool, $desired, $runtime, $service, 0, $bin);
+
+        expect($process->getExitCode())->toBe(0, $process->getErrorOutput())
+            ->and(file_exists($runtime.'/.metrics-pool.pending'))->toBeFalse()
+            ->and(file_get_contents($root.'/systemctl.log'))->not->toContain('reload '.$service)
+            ->and(file_get_contents($root.'/systemctl.log'))->not->toContain('start '.$service);
+    } finally {
+        (new Filesystem)->deleteDirectory($root);
+    }
+});
+
+it('cleans an interrupted rollback candidate before preflight and completes recovery', function (): void {
+    $root = sys_get_temp_dir().'/orbit-pool-preflight-'.bin2hex(random_bytes(6));
+    $runtime = $root.'/runtime';
+    $generated = $runtime.'/generated';
+    $pool = $generated.'/pool.conf';
+    $backup = $runtime.'/.metrics-pool.backup';
+    $pending = $runtime.'/.metrics-pool.pending';
+    $rollbackConfig = $root.'/rollback.conf';
+    $candidate = $generated.'/.pool.conf.123.candidate';
+    $original = "[recovery]\nuser = recovery\n";
+    $desired = $original."pm.status_path = /orbit-fpm-status\npm.status_listen = /run/php/recovery.sock.status\n";
+
+    try {
+        mkdir($generated, 0700, true);
+        mkdir($root.'/bin', 0700, true);
+        file_put_contents($pool, $desired);
+        file_put_contents($backup, $original);
+        file_put_contents($rollbackConfig, $original);
+        file_put_contents($pending, 'active '.hash('sha256', $desired)."\n");
+        file_put_contents($candidate, $original);
+        chmod($backup, 0600);
+        chmod($pending, 0600);
+        chmod($candidate, 0644);
+
+        $preflight = orb214_run_monitoring_pool_preflight($generated, $runtime);
+
+        expect($preflight->getExitCode())->toBe(0, $preflight->getErrorOutput())
+            ->and(file_exists($candidate))->toBeFalse()
+            ->and(file_get_contents($pool))->toBe($desired);
+
+        orb214_write_pool_recovery_systemctl($root.'/bin', 'success');
+        $rollback = orb214_run_monitoring_pool_convergence(
+            $pool,
+            $rollbackConfig,
+            $runtime,
+            'orbit-recovery-php8.5-fpm.service',
+            1,
+            $root.'/bin',
+        );
+        expect($rollback->getExitCode())->toBe(0, $rollback->getErrorOutput())
+            ->and(file_get_contents($pool))->toBe($original)
+            ->and(file_exists($pending))->toBeFalse()
+            ->and(file_exists($backup))->toBeFalse();
+
+        file_put_contents($generated.'/unrelated.conf', 'operator-owned');
+        $unrelated = orb214_run_monitoring_pool_preflight($generated, $runtime);
+        expect($unrelated->getExitCode())->toBe(1);
+    } finally {
+        (new Filesystem)->deleteDirectory($root);
+    }
+});
+
 it('publishes and removes only the recorded service while preserving local tuning', function (): void {
     [$instance, $node] = orb214_runtime_instance();
     $identity = ProductionPhpRuntimeIdentity::forProvisioning($instance, '8.5');
@@ -555,6 +792,102 @@ function orb304_write_root_identity_commands(string $bin): void
         exec {{host:stat}} "$@"
         BASH));
     chmod($bin.'/stat', 0700);
+}
+
+function orb214_run_monitoring_pool_convergence(
+    string $pool,
+    string $desired,
+    string $runtime,
+    string $service,
+    int $wasActive,
+    string $bin,
+): Process {
+    $method = new ReflectionMethod(RemoteProductionPhpRuntimeManager::class, 'monitoringPoolConvergenceFunction');
+    $method->setAccessible(true);
+    $function = (string) $method->invoke(null);
+    $process = new Process(
+        ['bash', '-seu', '--', $pool, $desired, $runtime, $service, (string) $wasActive],
+        env: ['PATH' => $bin.':'.getenv('PATH')],
+    );
+    $process->setInput(orb214_pool_recovery_test_shell()."\n".$function."\n".'converge_monitoring_pool "$1" "$2" "$3" "$4" "$5" apply');
+    $process->run();
+
+    return $process;
+}
+
+function orb214_run_monitoring_pool_preflight(string $generated, string $runtime): Process
+{
+    $method = new ReflectionMethod(RemoteProductionPhpRuntimeManager::class, 'cleanupInterruptedMonitoringCandidateFunction');
+    $method->setAccessible(true);
+    $function = (string) $method->invoke(null);
+    $process = new Process(['bash', '-seu', '--', $generated, $runtime]);
+    $process->setInput(orb214_pool_recovery_test_shell()."\n".$function."\n".<<<'BASH'
+        cleanup_interrupted_monitoring_candidate "$1" "$2"
+        unexpected_generated=$(find -P "$1" -mindepth 1 -maxdepth 1 \
+            ! -name php-fpm.conf ! -name pool.conf ! -name master.ini ! -name local.sha256 -print -quit)
+        test -z "$unexpected_generated"
+        BASH);
+    $process->run();
+
+    return $process;
+}
+
+function orb214_pool_recovery_test_shell(): string
+{
+    return <<<'BASH'
+        install() {
+            local -a arguments=()
+            while [ "$#" -gt 0 ]; do
+                case "$1" in
+                    -o|-g) shift 2 ;;
+                    *) arguments+=("$1"); shift ;;
+                esac
+            done
+            command install "${arguments[@]}"
+        }
+        chown() { return 0; }
+        stat() {
+            if [ "$1" = -c ] && [ "$2" = %U:%G:%a ]; then
+                shift 2
+                [ "$1" = -- ] && shift
+                printf 'root:root:%s\n' "$(command stat -c %a -- "$1")"
+            else
+                command stat "$@"
+            fi
+        }
+        BASH;
+}
+
+function orb214_write_pool_recovery_systemctl(string $bin, string $mode, ?string $pool = null): void
+{
+    $log = escapeshellarg(dirname($bin).'/systemctl.log');
+    $poolPath = escapeshellarg($pool ?? '');
+    $body = match ($mode) {
+        'stopped' => <<<'SH'
+            case "$1" in is-active) exit 1 ;; reload|start) exit 91 ;; *) exit 0 ;; esac
+            SH,
+        'fail-candidate' => str_replace('__POOL__', $poolPath, <<<'SH'
+            case "$1" in
+                is-active) exit 0 ;;
+                reload) if grep -qF 'pm.status_path = /orbit-fpm-status' __POOL__; then exit 1; fi ;;
+                start) exit 91 ;;
+            esac
+            exit 0
+            SH),
+        'fail-reload' => <<<'SH'
+            case "$1" in is-active) exit 0 ;; reload) exit 1 ;; start) exit 91 ;; *) exit 0 ;; esac
+            SH,
+        default => <<<'SH'
+            case "$1" in is-active|reload) exit 0 ;; start) exit 91 ;; *) exit 0 ;; esac
+            SH,
+    };
+    $program = sprintf(<<<'SH'
+        #!/bin/sh
+        printf '%%s\n' "$*" >> %s
+        %s
+        SH, $log, $body);
+    file_put_contents($bin.'/systemctl', $program);
+    chmod($bin.'/systemctl', 0700);
 }
 
 /** @return array{type: string, mode: string, value: string} */

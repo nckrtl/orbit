@@ -65,6 +65,14 @@ final readonly class ProductionPhpRuntimeIdentity
         );
     }
 
+    public static function isAbsent(AppInstance $appInstance): bool
+    {
+        return $appInstance->selected_php_version === null
+            && $appInstance->production_php_service === null
+            && $appInstance->production_php_pool === null
+            && $appInstance->production_php_socket === null;
+    }
+
     public static function from(AppInstance $appInstance): self
     {
         $version = $appInstance->selected_php_version;

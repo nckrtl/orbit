@@ -29,14 +29,14 @@ final readonly class TaskRunInstructions
     public static function reviewer(bool $final = false, array $deliverables = [], ?int $threadId = null): string
     {
         $approve = $final
-            ? 'This is the last subtask. When it meets its brief, end your turn with '.self::command($threadId, '--outcome=approved --summary="What you checked" --pr-summary="One or two sentences about the whole feature" --pr-change="A new feature or behavior change" --pr-breaking="A breaking change"').'. Repeat --pr-change for each change in the feature, and --pr-breaking for each breaking change, or pass --pr-breaking=none.'
+            ? 'This is the last subtask. When it meets its brief, end your turn with '.self::command($threadId, '--outcome=approved --summary="What you checked" --pr-summary="One or two sentences about the whole feature" --pr-change="A new feature or behavior change" --pr-breaking="A breaking change"').'. Repeat --pr-change for each change in the feature, and --pr-breaking for each breaking change, or pass --pr-breaking=none. The change list, summary and breaking list are yours to write: add a missing entry yourself instead of requesting changes.'
             : 'When the subtask meets its brief, end your turn with '.self::command($threadId, '--outcome=approved --summary="What you checked"').'.';
         $reviews = array_values(array_filter($deliverables, static fn (TaskDeliverable $deliverable): bool => $deliverable->type === TaskDeliverableType::Review));
         if ($reviews !== []) {
             $approve .= ' The approval must confirm each review deliverable ('.self::ids($reviews).') with --deliverable=ID=evidence, where the evidence says what you checked.';
         }
 
-        return 'This review is read-only. Do not create, edit, reset, or delete workspace files, including disposable fixtures. Request changes from the implementer instead. Do not commit; Orbit commits after you approve. '.$approve.' Otherwise end your turn with '.self::command($threadId, '--outcome=changes_requested --summary="The findings the implementer must address"').'. '.self::blocked($threadId);
+        return 'This review is read-only. Do not create, edit, reset, or delete workspace files, including disposable fixtures. Request changes from the implementer instead. Do not commit; Orbit commits after you approve. Report a missing guarantee against injected failures, such as a lost response or a crash between two writes, as a finding when this subtask adds or changes that state transition, or when the brief, an ADR, or a deliverable names it; otherwise list it as a follow-up in your summary. '.$approve.' Otherwise end your turn with '.self::command($threadId, '--outcome=changes_requested --summary="The findings the implementer must address"').'. '.self::blocked($threadId);
     }
 
     /**

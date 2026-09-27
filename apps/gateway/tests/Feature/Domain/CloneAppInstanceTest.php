@@ -121,6 +121,7 @@ beforeEach(function (): void {
         'env_value' => 'https://{{app_instance.domain}}/{{app_instance.environment}}',
     ]);
     $this->lock = new Orb198EnvironmentLock;
+    $this->sourceLock = new Orb198SourceLock;
     $this->inspector = new Orb198CandidateInspector;
     $this->source = new Orb198ProductionSource;
     $this->writer = new Orb198DomainCloneEnvironmentWriter;
@@ -142,7 +143,7 @@ beforeEach(function (): void {
     $this->action = new CloneAppInstanceAction(
         $this->inspector,
         $this->lock,
-        new Orb198SourceLock,
+        $this->sourceLock,
         $this->source,
         new RouteStateResolver,
         $this->environment,
@@ -160,6 +161,32 @@ beforeEach(function (): void {
         branch: null,
         sqliteSourcePath: '/srv/orbit/apps/clone-domain/database.sqlite',
     );
+});
+
+it('publishes a public clone and reconciles once after all clone locks release', function (): void {
+    app()->instance(MetricsFleetReconciler::class, $this->metrics);
+    $this->cloneProjection->onDns = static function (Route $route): void {
+        $route->update(['publication' => RoutePublication::Public]);
+    };
+    $this->metrics->shouldReceive('reconcile')->once()->andReturnUsing(function (): never {
+        expect($this->lock->depth)
+            ->toBe(0)
+            ->and($this->sourceLock->depth)
+            ->toBe(0)
+            ->and($this->projectionOwner->depth)
+            ->toBe(0);
+
+        throw new RuntimeException('metrics unavailable');
+    });
+
+    expect(fn () => $this->action->execute($this->candidate, $this->data))
+        ->toThrow(RuntimeException::class, 'metrics unavailable');
+
+    $target = AppInstance::query()->where('name', 'preview')->sole();
+    expect($target->status)->toBe(AppInstanceState::Active)
+        ->and($target->clone_completed_at)->not->toBeNull()
+        ->and($target->failed_step)->toBeNull()
+        ->and($target->error_code)->toBeNull();
 });
 
 it('prepares an independent production target and activates its explicit private preview', function (): void {
@@ -763,21 +790,36 @@ final class Orb198EnvironmentLock implements AppInstanceEnvironmentOperationLock
     /** @var list<list<int>> */
     public array $owners = [];
 
+    public int $depth = 0;
+
     public function run(array $appInstanceIds, Closure $operation): mixed
     {
         $owners = array_values(array_unique(array_map(intval(...), $appInstanceIds)));
         sort($owners, SORT_NUMERIC);
         $this->owners[] = $owners;
+        $this->depth++;
 
-        return $operation();
+        try {
+            return $operation();
+        } finally {
+            $this->depth--;
+        }
     }
 }
 
 final class Orb198SourceLock implements AppDevSourceOperationLock
 {
+    public int $depth = 0;
+
     public function synchronized(int $nodeId, Closure $operation): mixed
     {
-        return $operation();
+        $this->depth++;
+
+        try {
+            return $operation();
+        } finally {
+            $this->depth--;
+        }
     }
 }
 
@@ -861,6 +903,8 @@ final class Orb198CloneProjection implements ProductionCloneRouteProjector
     /** @var list<string> */
     public array $calls = [];
 
+    public ?Closure $onDns = null;
+
     public ?string $fail = null;
 
     /** @var array<string, positive-int> */
@@ -894,6 +938,10 @@ final class Orb198CloneProjection implements ProductionCloneRouteProjector
     public function prepareDns(Route $route): void
     {
         $this->record('dns');
+
+        if ($this->onDns instanceof Closure) {
+            ($this->onDns)($route);
+        }
     }
 
     private function record(string $operation): void
@@ -914,8 +962,16 @@ final class Orb198CloneProjection implements ProductionCloneRouteProjector
 
 final class Orb198ProjectionOwner implements DevelopmentProjectionOperationLock
 {
+    public int $depth = 0;
+
     public function run(Closure $operation): mixed
     {
-        return $operation();
+        $this->depth++;
+
+        try {
+            return $operation();
+        } finally {
+            $this->depth--;
+        }
     }
 }

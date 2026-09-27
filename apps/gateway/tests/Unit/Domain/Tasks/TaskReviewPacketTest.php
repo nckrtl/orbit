@@ -388,6 +388,7 @@ it('keeps a review packet within 16000 characters when the task check and every 
         ->and($packet)->not->toContain(mb_substr($taskCheck, 0, TaskReviewPacket::CommandLimit + 1))
         ->and($packet)->toContain($retrieval)
         ->and($packet)->toContain(TaskRunInstructions::reviewer(final: true))
+        ->and($packet)->toContain('The change list, summary and breaking list are yours to write: add a missing entry yourself instead of requesting changes.')
         ->and(mb_strlen(packet_section($packet, 'Group brief')))->toBeLessThanOrEqual(TaskReviewPacket::BriefLimit)
         ->and(mb_strlen(packet_section($packet, 'Subtask brief')))->toBeLessThanOrEqual(TaskReviewPacket::BriefLimit)
         ->and(mb_strlen(packet_section($packet, 'Deliverables')))->toBeLessThanOrEqual(TaskReviewPacket::DeliverablesLimit)

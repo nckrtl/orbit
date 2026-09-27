@@ -12,7 +12,7 @@ Orbit treats CLIProxyAPI quota collection as an optional extension named `proxyc
 
 Proposed.
 
-This decision extends [ADR 0069](/decisions/0069-allow-node-process-targets) for the collector Process, [ADR 0070](/reference/database-role) for Valkey placement, and [ADR 0080](/decisions/0080-add-node-owned-custom-proxy-routes) for the reserved private hostname shape. It does not add a Node role. [ADR 0109](/decisions/0109-publish-the-proxycli-collector-on-a-subdomain) amends the reserved hostname to `collector.proxycli.orbit` and leaves apex `proxycli.orbit` free for a management Route. [ADR 0150](/decisions/0150-keep-extension-commands-local-and-confirm-the-proxycli-fleet-stop) amends the disable path: `extension:disable proxycli` changes only the local gate, and `proxycli:disable` needs explicit consent.
+This decision extends [ADR 0069](/reference/app-processes-and-schedules#owners) for the collector Process, [ADR 0070](/reference/database-role) for Valkey placement, and [ADR 0080](/reference/routes#custom-proxy-routes) for the reserved private hostname shape. It does not add a Node role. [ADR 0109](/decisions/0109-publish-the-proxycli-collector-on-a-subdomain) amends the reserved hostname to `collector.proxycli.orbit` and leaves apex `proxycli.orbit` free for a management Route. [ADR 0150](/decisions/0150-keep-extension-commands-local-and-confirm-the-proxycli-fleet-stop) amends the disable path: `extension:disable proxycli` changes only the local gate, and `proxycli:disable` needs explicit consent.
 
 ## Context
 
@@ -28,7 +28,7 @@ Quota collection is optional fleet infrastructure, not a Node capability, and no
 
 - Add `proxycli` as a fleet extension that the Gateway owns. Local CLI `extension:enable proxycli` reveals the `proxycli:*` family. `proxycli:enable` deploys the fleet feature. `proxycli:disable` and `extension:disable proxycli` stop the collector, withdraw publication, and hide the web UI.
 - Enable requires an active Linux Node, a CLIProxyAPI Management API URL and key, and a registered Redis Database connection that points at the shared Valkey. If that connection names a fleet Node, the Node must hold an active `database` role. Enable fails closed when the connection is missing, is not Redis, or the named Node lacks `database`.
-- Enable creates one Node-targeted systemd Process named `proxycli` on the chosen Node. The Process binds loopback, runs `/usr/bin/python3` plus the Orbit-written collector, and is the only upstream poller. Enable persists `PROXYCLI_*` on the Process specification; [ADR 0108](/decisions/0108-persist-managed-environment-on-systemd-processes) projects that map into the unit. The collector writes raw account snapshots, compiled pools, per-target backoff, and a distributed lock into the shared Valkey. Disable stops and removes that Process.
+- Enable creates one Node-targeted systemd Process named `proxycli` on the chosen Node. The Process binds loopback, runs `/usr/bin/python3` plus the Orbit-written collector, and is the only upstream poller. Enable persists `PROXYCLI_*` on the Process specification; [ADR 0108](/reference/app-processes-and-schedules#environment-of-a-systemd-process) projects that map into the unit. The collector writes raw account snapshots, compiled pools, per-target backoff, and a distributed lock into the shared Valkey. Disable stops and removes that Process.
 - The collector reads Valkey through one RESP stream so a large snapshot bulk reply returns. CodexBar `GET /v1/quota-stats` uses that snapshot. The Gateway list and status actions use the PHP Valkey client and do not share that Python read path.
 - The Gateway reserves `proxycli.orbit`. It issues an Orbit CA leaf, renders a Caddy site on the Process Node that reverse-proxies HTTPS to the loopback collector, and publishes an exact private DNS `host-record` for the serving Node. A Route cannot own the name. CodexBar reads `https://proxycli.orbit/v1/quota-stats` with a Gateway-generated read token. Account control uses a separate control token. The CLIProxyAPI management key never leaves the Gateway or the collector Process.
 - The Orbit web app and the Gateway `proxycli:*` API read only the Valkey snapshot. A UI refresh does not call CLIProxyAPI. An account toggle updates CLIProxyAPI `PATCH /auth-files/status`, then recompiles pools from the cached snapshot without fetching quota.
@@ -53,6 +53,6 @@ Quota collection is optional fleet infrastructure, not a Node capability, and no
 ## Affects
 
 - Components: apps/cli, apps/gateway, packages/php-sdk, apps/docs
-- ADRs: extends [ADR 0069](/decisions/0069-allow-node-process-targets), [ADR 0070](/reference/database-role), and [ADR 0080](/decisions/0080-add-node-owned-custom-proxy-routes)
+- ADRs: extends [ADR 0069](/reference/app-processes-and-schedules#owners), [ADR 0070](/reference/database-role), and [ADR 0080](/reference/routes#custom-proxy-routes)
 - Detail: [proxycli](/reference/proxycli)
 - Verify: Gateway enable, fail-closed placement, pool compiler, toggle-from-cache, publication, and CLI extension tests; `composer docs-lint`

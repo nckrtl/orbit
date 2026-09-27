@@ -25,6 +25,7 @@ use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\AppInstances\DevelopmentAppInstanceConfigurator;
 use App\Domain\AppInstances\DevelopmentSourceProfile;
+use App\Domain\Broadcasting\RecordBroadcast;
 use App\Domain\Clusters\ClusterRouterOperationLock;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Metrics\MetricsFleetReconciler;
@@ -54,6 +55,7 @@ use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Route;
 use Illuminate\Filesystem\Filesystem;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Sleep;
 use Illuminate\Support\Str;
 use Tests\Support\FakeAnalyticsTrackingRouteProjector;
@@ -85,6 +87,37 @@ beforeEach(function (): void {
     ]);
     $this->node = reconciliation_node('dev', 'dev.test');
     $this->target = reconciliation_instance($this->orbitApp, $this->node, 'feature');
+});
+
+it('broadcasts a cleared Route target before a metrics reconcile failure', function (): void {
+    Event::fake();
+    $route = reconciliation_route($this->orbitApp, 'clear-before-reconcile.test', $this->node);
+    $this->target->update(['status' => AppInstanceState::Reserved]);
+    $route->targets()->create(['app_instance_id' => $this->target->id, 'position' => 0]);
+    $metrics = Mockery::mock(MetricsFleetReconciler::class);
+    $metrics->shouldReceive('reconcile')->once()->andThrow(new RuntimeException('metrics unavailable'));
+    app()->instance(MetricsFleetReconciler::class, $metrics);
+
+    expect(fn () => app(ClearRouteTargetAction::class)->execute($route))
+        ->toThrow(RuntimeException::class, 'metrics unavailable');
+
+    Event::assertDispatched(RecordBroadcast::class);
+    expect($route->refresh()->targets)->toBeEmpty();
+});
+
+it('broadcasts a changed Route target before a metrics reconcile failure', function (): void {
+    Event::fake();
+    $route = reconciliation_route($this->orbitApp, 'set-before-reconcile.test', $this->node);
+    $replacement = reconciliation_instance($this->orbitApp, $this->node, 'replacement');
+    $metrics = Mockery::mock(MetricsFleetReconciler::class);
+    $metrics->shouldReceive('reconcile')->once()->andThrow(new RuntimeException('metrics unavailable'));
+    app()->instance(MetricsFleetReconciler::class, $metrics);
+
+    expect(fn () => app(SetRouteTargetAction::class)->execute($route, $replacement->id))
+        ->toThrow(RuntimeException::class, 'metrics unavailable');
+
+    Event::assertDispatched(RecordBroadcast::class);
+    expect($route->refresh()->targets->sole()->app_instance_id)->toBe($replacement->id);
 });
 
 it('converges an eligible active explicit development Route domain', function (): void {
@@ -766,14 +799,14 @@ it('keeps an explicit app-prod Route valid when its Node has no TLD', function (
     $this->node->roles()->where('role', RoleName::AppDev->value)->delete();
     $this->node->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
     $this->target->delete();
-    $route = app(CreateRouteAction::class)->execute(new CreateRouteData(
-        appId: $this->orbitApp->id,
-        domain: 'production.example.test',
-        publication: RoutePublication::Public,
-        appInstanceId: null,
-        nodeId: $this->node->id,
-        clusterId: null,
-    ))['route'];
+    $route = Route::query()->create([
+        'app_id' => $this->orbitApp->id,
+        'node_id' => $this->node->id,
+        'domain' => 'production.example.test',
+        'provenance' => 'explicit',
+        'publication' => RoutePublication::Public,
+        'status' => RouteStatus::Pending,
+    ]);
     bind_route_reconciliation_provisioning();
 
     app(ProvisionNodeAction::class)->execute(new ProvisionNodeData(

@@ -13,7 +13,7 @@ final class UpdateAnalyticsRequest extends FormRequest
     {
         return [
             // Three numbers and nothing else: the value becomes part of the image tag.
-            'version' => ['required', 'string', 'regex:/\A\d+\.\d+\.\d+\z/'],
+            'version' => ['required', 'string', 'regex:/\A\d+\.\d+\.\d+\z/D'],
         ];
     }
 

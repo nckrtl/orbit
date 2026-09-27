@@ -6,23 +6,24 @@ namespace App\Commands\Routes;
 
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
+use Laravel\Prompts\TextPrompt;
 use Orbit\Sdk\GatewayConnector;
+use Orbit\Sdk\Requests\AppInstances\ListAppInstancesRequest;
 use Orbit\Sdk\Requests\Processes\ListProcessesRequest;
 use Orbit\Sdk\Requests\Processes\NodeProcessTarget;
 use Orbit\Sdk\Requests\Routes\CreateRouteRequest;
+use Orbit\Sdk\Responses\AppInstances\AppInstancesResponse;
 use Orbit\Sdk\Responses\Processes\ProcessesResponse;
 use Orbit\Sdk\Responses\Routes\RouteResponse;
 
-final class CreateRouteCommand extends RouteCommand
+class CreateRouteCommand extends RouteCommand
 {
     #[\Override]
     protected $signature = 'route:create
-        {app? : Numeric Project ID or custom proxy domain}
+        {instance? : Numeric Instance ID (custom proxy: domain)}
         {domain? : Route domain}
         {--publication=private : Publication intent}
-        {--target= : Numeric Instance target ID}
-        {--node= : Numeric Node scope ID or custom proxy serving Node}
-        {--cluster= : Numeric Cluster scope ID for a targetless Route}
+        {--node= : Custom proxy serving Node}
         {--upstream= : Loopback HTTP URL for a custom proxy Route}
         {--process= : Node Process name or ID for a custom proxy Route}
         {--json : Return machine-readable JSON}';
@@ -44,28 +45,40 @@ final class CreateRouteCommand extends RouteCommand
 
     private function createAppRoute(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
     {
-        $appId = $this->positiveId('app', 'Project', 'app.id_invalid');
-        if ($appId === null) {
-            return self::FAILURE;
+        $instance = $this->argument('instance');
+        $connector = null;
+        if ($instance === null && $this->consoleMode()->mayPrompt) {
+            $connector = $this->gatewayConnector($repository, $connectors);
+            if ($connector === null) {
+                return self::FAILURE;
+            }
+
+            $instances = $this->sendWithProgress($connector, new ListAppInstancesRequest, AppInstancesResponse::class, ['Instances', 'Fetching Instances', 'Fetched Instances'], dismiss: true);
+            if (! $instances instanceof AppInstancesResponse) {
+                return self::FAILURE;
+            }
+
+            $rows = [];
+            foreach ($instances->appInstances as $candidate) {
+                $rows[$candidate->id] = [
+                    (string) $candidate->id,
+                    $candidate->name,
+                    $candidate->project->name ?? (string) $candidate->projectId,
+                    $candidate->node->name ?? (string) $candidate->nodeId,
+                    $candidate->status,
+                ];
+            }
+
+            $instance = $this->commandPrompts()->selectEntity('Instance', ['ID', 'Name', 'Project', 'Node', 'Status'], $rows);
         }
 
-        $domain = $this->stringArgument('domain', 'Route domain', 'route.domain_required');
+        $instanceId = filter_var($instance, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+        if (! is_int($instanceId)) {
+            return $this->renderGatewayFailure('instance.id_invalid', 'Instance ID must be a positive integer.');
+        }
+
+        $domain = $this->routeDomain('domain');
         if ($domain === null) {
-            return self::FAILURE;
-        }
-
-        $targetId = $this->optionId('target', 'Instance');
-        if ($targetId === 0) {
-            return self::FAILURE;
-        }
-
-        $nodeId = $this->optionId('node', 'Node');
-        if ($nodeId === 0) {
-            return self::FAILURE;
-        }
-
-        $clusterId = $this->optionId('cluster', 'Cluster');
-        if ($clusterId === 0) {
             return self::FAILURE;
         }
 
@@ -74,18 +87,11 @@ final class CreateRouteCommand extends RouteCommand
             return self::FAILURE;
         }
 
-        if ($targetId !== null && ($nodeId !== null || $clusterId !== null)) {
-            return $this->renderGatewayFailure('route.scope_conflict', 'Do not combine a target with Route scope.');
+        if ($this->option('node') !== null) {
+            return $this->renderGatewayFailure('route.scope_conflict', 'An app Route derives its scope from the Instance.');
         }
 
-        if ($targetId === null && ($nodeId === null) === ($clusterId === null)) {
-            return $this->renderGatewayFailure(
-                'route.scope_required',
-                'A targetless Route requires exactly one Node or Cluster scope.',
-            );
-        }
-
-        $connector = $this->gatewayConnector($repository, $connectors);
+        $connector ??= $this->gatewayConnector($repository, $connectors);
 
         if ($connector === null) {
             return self::FAILURE;
@@ -94,12 +100,9 @@ final class CreateRouteCommand extends RouteCommand
         $route = $this->sendWithProgress(
             $connector,
             new CreateRouteRequest(
-                appId: $appId,
                 domain: $domain,
                 publication: $publication,
-                appInstanceId: $targetId,
-                nodeId: $nodeId,
-                clusterId: $clusterId,
+                appInstanceId: $instanceId,
             ),
             RouteResponse::class,
             ['Create Route', 'Creating Route', 'Created Route'],
@@ -120,16 +123,9 @@ final class CreateRouteCommand extends RouteCommand
             );
         }
 
-        $domain = $this->stringArgument('app', 'Route domain', 'route.domain_required');
+        $domain = $this->routeDomain('instance');
         if ($domain === null) {
             return self::FAILURE;
-        }
-
-        if ($this->option('target') !== null || $this->option('cluster') !== null) {
-            return $this->renderGatewayFailure(
-                'route.scope_required',
-                'A custom proxy Route cannot own an App, Instance, or Cluster scope.',
-            );
         }
 
         $publication = $this->option('publication');
@@ -177,7 +173,6 @@ final class CreateRouteCommand extends RouteCommand
         $route = $this->sendWithProgress(
             $connector,
             new CreateRouteRequest(
-                appId: null,
                 domain: $domain,
                 publication: 'private',
                 nodeId: $nodeId,
@@ -191,6 +186,22 @@ final class CreateRouteCommand extends RouteCommand
         return $route instanceof RouteResponse
             ? $this->renderRoute($route)
             : self::FAILURE;
+    }
+
+    private function routeDomain(string $argument): ?string
+    {
+        $domain = $this->argument($argument);
+        if ($domain === null && $this->consoleMode()->mayPrompt) {
+            $domain = $this->commandPrompts()->run(fn (): TextPrompt => new TextPrompt('Route domain', required: true));
+        }
+
+        if (! is_string($domain) || $domain === '') {
+            $this->renderGatewayFailure('route.domain_required', 'Route domain is required.');
+
+            return null;
+        }
+
+        return $domain;
     }
 
     private function resolveProcessId(GatewayConnector $connector, int $nodeId, string $reference): ?int

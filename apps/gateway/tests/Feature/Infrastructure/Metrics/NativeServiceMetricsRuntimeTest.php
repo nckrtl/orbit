@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\AppDev\RuntimeConvergenceException;
+use App\Domain\AppInstances\ProductionPhpRuntimeManager;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
@@ -40,6 +41,7 @@ beforeEach(function (): void {
         }
     };
     $this->builds = new FakeNodeCaddyBuilds;
+    $this->productionPhp = Mockery::mock(ProductionPhpRuntimeManager::class)->shouldIgnoreMissing();
     $this->runtime = new NativeServiceMetricsRuntime(
         new AppProdSshExecutor(
             $this->ssh,
@@ -66,6 +68,7 @@ beforeEach(function (): void {
             },
         ),
         $this->builds,
+        productionPhp: $this->productionPhp,
     );
     $this->metrics = service_metrics_runtime_node('metrics', '10.44.0.7', []);
 });
@@ -88,7 +91,7 @@ it('builds no Node that cannot render the scrape site', function (): void {
     expect($this->builds->built)->toBe([]);
 });
 
-it('snapshots only exporter and pool state and restores by building the Node', function (): void {
+it('snapshots exporter state only and restores by building the Node', function (): void {
     $ingress = service_metrics_runtime_node('app-prod', '10.44.0.4', [RoleName::Ingress]);
     $target = new ServiceMetricsNode($ingress, true, false);
 
@@ -102,46 +105,77 @@ it('snapshots only exporter and pool state and restores by building the Node', f
         ->and($this->builds->built)->toBe(['app-prod']);
 });
 
-it('rejects scalar snapshots and snapshots without valid pool or exporter state', function (): void {
+it('rejects snapshots without valid exporter state', function (): void {
     $ingress = service_metrics_runtime_node('app-prod', '10.44.0.4', [RoleName::Ingress]);
-    $instance = service_metrics_runtime_instance($ingress);
-    $target = new ServiceMetricsNode($ingress, true, true, [$instance]);
 
     expect(fn () => $this->runtime->restore(new ServiceMetricsNode($ingress, true, false), '42'))
         ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('metrics.service_inspection_failed'))
-        ->and(fn () => $this->runtime->restore($target, json_encode(['exporter' => [], 'pools' => []], JSON_THROW_ON_ERROR)))
+        ->and(fn () => $this->runtime->restore(new ServiceMetricsNode($ingress, true, false), json_encode([], JSON_THROW_ON_ERROR)))
         ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('metrics.service_inspection_failed'))
-        ->and(fn () => $this->runtime->restore($target, json_encode(['exporter' => [], 'pools' => 'invalid'], JSON_THROW_ON_ERROR)))
-        ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('metrics.service_inspection_failed'))
-        ->and(fn () => $this->runtime->restore(new ServiceMetricsNode($ingress, true, false), json_encode(['pools' => []], JSON_THROW_ON_ERROR)))
-        ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('metrics.service_inspection_failed'))
-        ->and(fn () => $this->runtime->restore(new ServiceMetricsNode($ingress, true, false), json_encode(['pools' => [], 'exporter' => null], JSON_THROW_ON_ERROR)))
+        ->and(fn () => $this->runtime->restore(new ServiceMetricsNode($ingress, true, false), json_encode(['exporter' => null], JSON_THROW_ON_ERROR)))
         ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('metrics.service_inspection_failed'));
 });
 
-it('rejects scalar FPM pool snapshots and restores valid exporter and instance pool state', function (): void {
-    $ingress = service_metrics_runtime_node('app-prod', '10.44.0.4', [RoleName::Ingress]);
-    $instance = service_metrics_runtime_instance($ingress);
-    $target = new ServiceMetricsNode($ingress, true, true, [$instance]);
-
-    $this->ssh->outputs = ['{}', '42'];
-    expect(fn () => $this->runtime->snapshot($target))
-        ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('metrics.service_inspection_failed'));
-
-    $this->ssh->outputs = ['{"enabled":true}', '{"fingerprint":"pool-123"}'];
+it('restores the previous pool monitoring state after publication fails', function (): void {
+    $node = service_metrics_runtime_node('app-prod', '10.44.0.4', [RoleName::AppProd]);
+    $instance = service_metrics_runtime_instance($node);
+    $target = new ServiceMetricsNode($node, false, false, [$instance]);
+    $enabledPool = "[orbit-metricapp]\nuser = metricapp\npm.status_path = /orbit-fpm-status\npm.status_listen = /run/php/metricapp.sock.status\n";
+    $disabledPool = "[orbit-metricapp]\nuser = metricapp\n";
+    $this->ssh->outputs = [
+        '{"config":"prior-exporter-config"}',
+        json_encode(['pool' => $enabledPool, 'fingerprint' => 'before'], JSON_THROW_ON_ERROR),
+    ];
     $snapshot = $this->runtime->snapshot($target);
+    $this->productionPhp->shouldReceive('convergeMonitoring')->once()->with($instance, false);
+    $this->productionPhp->shouldReceive('convergeMonitoring')->once()->with($instance, true);
+    $this->ssh->outputs = [
+        json_encode(['pool' => $disabledPool, 'fingerprint' => 'after'], JSON_THROW_ON_ERROR),
+        '{}',
+        '{}',
+    ];
+
+    try {
+        $this->runtime->converge($target, $this->metrics);
+        throw new RuntimeException('Prometheus publication failed.');
+    } catch (RuntimeException $failure) {
+        expect($failure->getMessage())->toBe('Prometheus publication failed.');
+        $this->runtime->restore($target, $snapshot);
+    }
+
+    expect(json_decode($snapshot, true, flags: JSON_THROW_ON_ERROR)['pools'][(string) $instance->id]['enabled'])->toBeTrue()
+        ->and(service_metrics_runtime_request($this->ssh->commands[array_key_last($this->ssh->commands)]))
+        ->toMatchArray(['operation' => 'apply', 'state' => ['config' => 'prior-exporter-config']]);
+});
+
+it('includes a read-only runtime fingerprint in exporter config after monitoring convergence', function (): void {
+    $node = service_metrics_runtime_node('app-prod', '10.44.0.4', [RoleName::AppProd]);
+    $instance = service_metrics_runtime_instance($node);
+    $this->productionPhp->shouldReceive('convergeMonitoring')->once()->with($instance, true);
+    $this->ssh->outputs = [
+        json_encode(['pool' => "[orbit-metricapp]\nuser = metricapp\npm.status_path = /orbit-fpm-status\npm.status_listen = /run/php/metricapp.sock.status\n", 'fingerprint' => 'local-tuning-hash'], JSON_THROW_ON_ERROR),
+        '{}',
+    ];
+
+    $this->runtime->converge(new ServiceMetricsNode($node, false, true, [$instance]), $this->metrics);
+    $request = service_metrics_runtime_request($this->ssh->commands[array_key_last($this->ssh->commands)]);
+
+    expect($request['state']['config'])->toContain('# runtime '.$instance->id.': local-tuning-hash');
+});
+
+it('restores exporter state without asking the Node script to restore pool state', function (): void {
+    $ingress = service_metrics_runtime_node('app-prod', '10.44.0.4', [RoleName::Ingress]);
+    $this->ssh->outputs = ['{"enabled":true}'];
+    $snapshot = $this->runtime->snapshot(new ServiceMetricsNode($ingress, true, false));
     $state = json_decode($snapshot, true, flags: JSON_THROW_ON_ERROR);
     $commandsBeforeRestore = count($this->ssh->commands);
 
-    $this->ssh->outputs = ['{}', '{}'];
-    $this->runtime->restore($target, $snapshot);
+    $this->ssh->outputs = ['{}'];
+    $this->runtime->restore(new ServiceMetricsNode($ingress, true, false), $snapshot);
 
-    expect($state['exporter'])->toBe(['enabled' => true])
-        ->and($state['pools'][(string) $instance->id])->toBe(['fingerprint' => 'pool-123'])
-        ->and(count($this->ssh->commands))->toBe($commandsBeforeRestore + 2)
+    expect($state)->toBe(['exporter' => ['enabled' => true], 'pools' => []])
+        ->and(count($this->ssh->commands))->toBe($commandsBeforeRestore + 1)
         ->and(service_metrics_runtime_request($this->ssh->commands[$commandsBeforeRestore]))
-        ->toMatchArray(['operation' => 'restore', 'state' => ['fingerprint' => 'pool-123']])
-        ->and(service_metrics_runtime_request($this->ssh->commands[$commandsBeforeRestore + 1]))
         ->toMatchArray(['operation' => 'apply', 'state' => ['enabled' => true]])
         ->and($this->builds->built)->toBe(['app-prod']);
 });

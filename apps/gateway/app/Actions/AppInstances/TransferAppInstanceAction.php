@@ -37,12 +37,14 @@ use App\Domain\Nodes\Storage\ManagedCheckoutOverlap;
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Nodes\Storage\StorageRootResolver;
+use App\Domain\Processes\ProcessAdmissionLock;
 use App\Domain\Projects\DevelopmentNodeExclusion;
 use App\Domain\Routes\RoutePlacement;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStateResolver;
 use App\Domain\Routes\RouteStatus;
+use App\Domain\Schedules\ScheduleTargetUseGuard;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Shared\StoredInteger;
@@ -79,6 +81,8 @@ final readonly class TransferAppInstanceAction
         private AppInstanceTransferRouteProjector $transferProjection,
         private DevelopmentProjectionOperationLock $projectionOwner,
         private ClusterRouterOperationLock $routerOwner,
+        private ScheduleTargetUseGuard $schedules,
+        private ProcessAdmissionLock $processAdmissions,
     ) {}
 
     /** @return array{appInstance: AppInstance, transfer: AppInstanceTransfer, created: bool} */
@@ -121,8 +125,12 @@ final readonly class TransferAppInstanceAction
         ?int $sourceClusterId,
     ): array {
         if ($existing instanceof AppInstanceTransfer) {
-            $transfer = $existing;
+            $transfer = $existing->refresh();
             $created = false;
+
+            if ($transfer->cutover_at === null) {
+                $this->schedules->assertAppInstanceStable($instance);
+            }
         } else {
             $transfer = $this->environmentOperations->run(
                 [$instance->id],
@@ -203,6 +211,7 @@ final readonly class TransferAppInstanceAction
 
     private function reserve(AppInstance $instance, TransferAppInstanceData $data): AppInstanceTransfer
     {
+        $this->schedules->assertAppInstanceStable($instance);
         [$destination, $path, $domain, $route] = $this->preflight($instance, $data);
 
         return AppInstanceTransfer::query()->create([
@@ -327,7 +336,7 @@ final readonly class TransferAppInstanceAction
             $account,
         );
 
-        return $roots->instance->append($appSlug, $name);
+        return $roots->append($appSlug, $name);
     }
 
     private function assertDestinationAvailable(Node $destination, StoragePath $path): void
@@ -469,7 +478,13 @@ final readonly class TransferAppInstanceAction
         }
 
         if ($transfer->current_step === AppInstanceTransferStep::RoutePrepared) {
-            $this->cutover($instance, $destination, $transfer, $sourceClusterId);
+            $this->processAdmissions->run(
+                [$instance->id],
+                function () use ($instance, $destination, $transfer, $sourceClusterId): void {
+                    $this->schedules->assertAppInstanceStable($instance->refresh());
+                    $this->cutover($instance, $destination, $transfer, $sourceClusterId);
+                },
+            );
         }
 
         $instance = AppInstance::query()->with(['app', 'node', 'routes.targets'])->findOrFail($instanceId);

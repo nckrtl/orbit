@@ -8,6 +8,7 @@ covers:
   - apps/gateway/app/Infrastructure/Nodes/{NodeAgentSshExecutor,NodeAgentFootprint}.php
   - apps/gateway/app/Http/Controllers/Api/AgentRealtimeController.php
   - apps/gateway/app/Http/Middleware/RequireNodeAgentSecret.php
+  - apps/gateway/database/migrations/2026_09_30_090000_drop_agent_secret_exempt_from_nodes.php
   - .github/workflows/orbit-agent-release.yml
 ---
 
@@ -19,7 +20,7 @@ The agent only observes. It runs no command, changes nothing on the Node, and li
 
 ## Where it runs
 
-The Gateway installs the agent on every Node that it manages: an active Linux Node with a WireGuard address and a pinned SSH host key. [Exporter selection](/reference/metrics#exporter-selection) uses the same boundary. The agent needs no role. A Node that the Gateway does not manage over SSH runs no agent.
+The Gateway installs the agent only on Nodes that it manages: active Linux Nodes with a WireGuard address and a pinned SSH host key. Only a Node inside this managed-Node boundary runs the agent and holds an agent secret. [Exporter selection](/reference/metrics#exporter-selection) uses the same boundary. The agent needs no role. A Node that the Gateway does not manage over SSH runs no agent.
 
 ## What it observes
 
@@ -149,7 +150,7 @@ The agent connects to the Gateway at `https://gateway.orbit` and to Reverb at `w
 
 When the `gateway` role moves, the Gateway's WireGuard address changes. Every agent then loses the Gateway until its configuration is rewritten. Run `orbit node:add <node>` or a role converge on each Node. The Reverb address needs no converge, because each realtime response carries it.
 
-The agent endpoints require an active WireGuard peer and the Node's [agent secret](#agent-secret), but no access grant. They record no Activity.
+Every agent endpoint call requires an active WireGuard peer and a valid [agent secret](#agent-secret); there is no exemption for older agents or Nodes without a stored secret. Agent endpoints need no access grant and record no Activity.
 
 | Code | HTTP | Meaning |
 | --- | --- | --- |
@@ -191,10 +192,6 @@ Each agent converge reads the file's hash with `sudo sha256sum` and keeps the se
 The converge writes the secret file first, then installs the other files, restarts the agent, and stores the new hash last. The running agent reads its secret only when it starts. So a converge that fails at any step leaves the running agent with a secret that the Gateway still accepts. Doctor then reports `mismatch`, and the next converge repairs it.
 
 One converge runs per Node at a time, under a lock in a file cache store under `ORBIT_HOME`. A second converge waits up to 2 minutes and then fails with `agent.converge_busy`. The lock expires after 4 minutes. A running converge renews it before each step and stops with `agent.converge_lock_lost` when the lock has expired. The binary download is limited to 20 seconds to connect and 120 seconds in total, so one step fits in the lock's term.
-
-### Exempt Nodes
-
-A Node with `agent_secret_exempt` set and no stored secret hash authenticates its agent without a secret. Converging an agent that sends no secret, older than 0.3.0, sets the flag. Converging an agent that sends a secret stores the hash and clears the flag. While the pinned agent sends a secret, Doctor reports an exempt Node as `exempt`. While the pinned agent sends no secret, Doctor reports a Node that is not exempt and has no hash as `not_exempt`.
 
 ## Gateway view
 
@@ -341,8 +338,8 @@ Doctor checks the agent in the `node` family on every managed Node.
 | Issue code | Meaning |
 | --- | --- |
 | `node.agent_missing` | The binary or the unit is absent. |
+| `node.agent_binary_mismatch` | The binary exists but does not match the pinned checksum. |
 | `node.agent_inactive` | The unit exists but is not active. |
-| `node.agent_outdated` | The binary's checksum differs from the pin for the Node's architecture. |
 | `node.agent_secret_mismatch` | The secret file is `missing`, or its hash does not match the stored one: `mismatch`. Doctor reads only the hash, and the report shows neither the secret nor a hash. |
 | `node.agent_view_stale` | The agent unit is active and a `websocket` role is active, but the Gateway has no fresh view of the Node. |
 

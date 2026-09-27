@@ -104,7 +104,7 @@ final readonly class CreateAppInstanceAction
                 $this->nodeSettings->fromStored($requestedNode->settings),
                 $account,
             );
-            $checkout = $roots->instance->append($app->slug, $data->name);
+            $checkout = $roots->append($app->slug, $data->name);
             $this->checkoutOverlap->assertAvailable(
                 $requestedNode->id,
                 $checkout,
@@ -142,11 +142,7 @@ final readonly class CreateAppInstanceAction
                         $this->provisioner->reserve($appInstance, $data->domain);
                         $resolved = $this->resumeSource($appInstance, ! $created);
 
-                        $result = $this->provisioner->complete(
-                            $resolved,
-                            $data->domain,
-                            $data->recoverSourceProfile,
-                        );
+                        $result = $this->provisioner->complete($resolved, $data->domain);
 
                     } catch (Throwable $exception) {
                         $this->recordFailure($appInstance, $exception);

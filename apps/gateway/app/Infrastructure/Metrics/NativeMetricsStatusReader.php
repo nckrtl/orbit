@@ -7,9 +7,11 @@ namespace App\Infrastructure\Metrics;
 use App\Data\Metrics\MetricsAssignmentData;
 use App\Data\Metrics\MetricsExporterData;
 use App\Data\Metrics\MetricsStatusData;
+use App\Domain\Metrics\ExporterDegradationReason;
 use App\Domain\Metrics\ExporterDegradationRepository;
 use App\Domain\Metrics\MetricsExporterLifecycle;
 use App\Domain\Metrics\MetricsExporterProjection;
+use App\Domain\Metrics\MetricsReconcileDegradationRepository;
 use App\Domain\Metrics\MetricsRuntimeLifecycle;
 use App\Domain\Metrics\MetricsStatusReader;
 use App\Domain\Nodes\RoleAssignmentException;
@@ -23,6 +25,7 @@ final readonly class NativeMetricsStatusReader implements MetricsStatusReader
         private MetricsRuntimeLifecycle $runtime,
         private MetricsExporterLifecycle $exporters,
         private ExporterDegradationRepository $degradations,
+        private MetricsReconcileDegradationRepository $reconcileDegradation = new MetricsReconcileDegradationRepository,
     ) {}
 
     public function status(): MetricsStatusData
@@ -39,13 +42,18 @@ final readonly class NativeMetricsStatusReader implements MetricsStatusReader
         $metrics = $assignment->node;
         $url = 'https://metrics.orbit';
         $items = [];
+        $reconcileErrorCode = null;
         foreach ($this->projection->for($metrics) as $item) {
             $node = $item->node;
             $selection = $item->selection;
             // A node the last convergence skipped has no exporter state
             // anyone could read, so status reports the recorded reason instead
             // of waiting on a probe that is expected to fail.
-            $degradation = $this->degradations->get($node->id);
+            $degradedErrorCode = $this->reconcileDegradation->errorCode($node->id);
+            $degradation = $degradedErrorCode === null
+                ? $this->degradations->get($node->id)
+                : ExporterDegradationReason::ReconcileFailed;
+            $reconcileErrorCode ??= $degradedErrorCode;
             $actual = 'unknown';
             if ($degradation === null) {
                 try {
@@ -60,6 +68,7 @@ final readonly class NativeMetricsStatusReader implements MetricsStatusReader
                 $actual,
                 $selection->reason,
                 $degradation,
+                $degradedErrorCode,
             );
         }
 
@@ -75,6 +84,8 @@ final readonly class NativeMetricsStatusReader implements MetricsStatusReader
             $this->runtime->health($metrics, 'prometheus') ? 'healthy' : 'unhealthy',
             $this->runtime->health($metrics, 'grafana') ? 'healthy' : 'unhealthy',
             $items,
+            $reconcileErrorCode,
+            $reconcileErrorCode === null ? 'healthy' : 'degraded',
         );
     }
 }

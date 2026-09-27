@@ -78,6 +78,18 @@ def tool(method, path, operation, components):
     body = operation.get('requestBody', {}).get('content', {}).get('application/json', {}).get('schema')
     if body is not None:
         body = resolve(body, components)
+        variants = body.get('oneOf')
+        if variants is not None:
+            if not all(variant.get('type') == 'object' for variant in variants):
+                sys.exit(f'{name}: request body variants are not objects')
+            variant_properties = {}
+            for variant in variants:
+                for key, value in variant.get('properties', {}).items():
+                    existing = variant_properties.get(key)
+                    if existing and 'enum' in existing and 'enum' in value:
+                        value = {**value, 'enum': list(dict.fromkeys(existing['enum'] + value['enum']))}
+                    variant_properties[key] = value
+            body = {'type': 'object', 'properties': variant_properties, 'oneOf': variants}
         if body.get('type') != 'object':
             sys.exit(f'{name}: request body is not an object')
         for key, schema in body.get('properties', {}).items():
@@ -97,6 +109,8 @@ def tool(method, path, operation, components):
     schema = {'type': 'object', 'properties': properties, 'additionalProperties': False}
     if required:
         schema['required'] = required
+    if body is not None and body.get('oneOf'):
+        schema['oneOf'] = body['oneOf']
 
     return {
         'name': name,

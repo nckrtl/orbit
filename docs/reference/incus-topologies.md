@@ -1,153 +1,132 @@
 ---
 title: "Incus topology registry"
-description: "How the harness registers, leases, retains, and releases disposable Incus topologies for discovery and proof."
+description: "How the harness leases, prepares, and releases disposable Incus topologies, and how it runs on-demand scenarios."
+covers:
+  - bin/{e2e-topology,e2e-clone-bridge,e2e-scenarios}
+  - apps/e2e/config/e2e.php
+  - apps/e2e/app/Console/Commands/{Topology,Scenario}/**
+  - apps/e2e/app/E2E/{TopologyAcquirer,TopologyReleaser,IssueTopologyConstructor,AcquisitionRollback,DiscoveryGuestPreparer,WorktreeSynchronizer,WorktreeLocator,HostCapacity,OrphanNetworkSweep,IncusNetworkLifecycle,EvidenceLog}.php
+  - apps/e2e/app/E2E/{Scenario,SnapshotScenario,ColdTopology}*.php
+  - apps/e2e/app/E2E/Value/{Topology,Guest,Evidence,Scenario}*.php
+  - apps/e2e/resources/guest/converge-sample-{app,fixtures}.sh
 ---
 
 # Incus topology registry
 
-This page is for contributors, agents, and operators who use disposable Incus topologies from the `apps/e2e` harness. It answers which topology an issue or on-demand scenario starts from, which state it owns, and which `bin/e2e-topology` or `bin/e2e-scenarios` command controls it. The plan a proof runs is on [Proof plans](/reference/proof-plans). The persistent snapshot supplies ordinary topology clones and snapshot-lane scenarios and is described on [Topology snapshot](/reference/topology-snapshot).
+This page is for the contributor, agent, or reviewer who runs Orbit on disposable Incus machines. The `apps/e2e` harness leases one topology per issue, and `bin/e2e-topology` controls it. `bin/e2e-scenarios` runs regression scenarios on demand. The guest convergence fixtures establish the sample application's current state and are fingerprinted in the prepared topology data. Every topology starts from the shared [topology snapshot](/reference/topology-snapshot). The [proving-on-incus](https://github.com/nckrtl/orbit/blob/main/.agents/skills/proving-on-incus/SKILL.md) skill covers the working habits.
 
-## Discovery and proof
+## Registered profile
 
-Orbit's [feature review](/reference/implementation-loop#orbit-review-on-incus) uses an authorized Incus environment to reproduce the submitted behavior. The commands below describe existing discovery and retained proof resources. [ADR 0005](/decisions/0005-rolling-incus-development-topology) governs the rolling snapshot. Retained proof mechanics remain available for explicit inspection and resource recovery.
-
-## Registered profile and issue extension
-
-Orbit registers the three-Node profile `gateway_app-dev_app-prod`. A discovery or proof attempt uses that profile unless its issue proof plan declares `"extension": "app-prod"`. The declaration adds the physical Node key `app-prod-2` to that attempt and accepts no other extension value. A proof plan can instead declare `"snapshot_replacement": true`; that declaration keeps the registered three-Node profile and selects cold construction for proof only. [ADR 0040](/decisions/0040-extend-issue-proof-with-one-app-prod-node) governs the extension, and [ADR 0037](/decisions/0037-promote-fresh-three-node-topology-snapshots) governs the replacement.
+An issue topology uses the three-Node profile `gateway_app-dev_app-prod`. The [extension](#the-app-prod-2-extension) adds a fourth Node.
 
 | Field | Value |
 | --- | --- |
-| Ordered roles | `gateway`, `app-dev`, `app-prod` |
-| Required assignments | `gateway`: `gateway`, `vpn`, `websocket`, `router`; `app-dev`: `app-dev`, `metrics`, `database`; `app-prod`: `app-prod`, `ingress` |
-| Checkout roles | `gateway` and `app-dev` at `/home/orbit/orbit`; `app-prod` has no checkout |
-| Network | `oe-<hash>` on `10.232.<slot>.0/24`; the hash is 12 hex characters of the SHA-256 of `<issue>:<attempt>` |
-| Instances | `orbit-e2e-<issue-lowercase>-<attempt-prefix>-<role>`, with 8 characters of the attempt ID |
-| Addresses | Incus `.10`, `.11`, `.12`; WireGuard `10.44.0.1`, `.2`, `.3`, fixed on every clone; acquisition aligns the Gateway's stored network identity and each peer's saved and running endpoint with the cloned network |
-| Issue ID | Matches `[A-Z][A-Z0-9]{1,9}-[1-9][0-9]{0,8}` and appears in the worktree branch name |
+| Physical Nodes | `gateway`, `app-dev`, `app-prod`, in this order |
+| Roles | `gateway`: `gateway`, `vpn`, `websocket`, `router`; `app-dev`: `app-dev`, `metrics`, `database`; `app-prod`: `app-prod`, `ingress` |
+| Checkouts | `gateway` and `app-dev` mount the worktree at `/home/orbit/orbit`. `app-prod` has no checkout. |
+| Network | `oe-<hash>` on `10.232.<slot>.0/24`. The hash is 12 hex characters of the SHA-256 of `<issue>:<attempt>`. |
+| Instances | `orbit-e2e-<issue-lowercase>-<attempt-prefix>-<node>`, with the first 8 characters of the attempt ID |
+| Addresses | Incus `.10`, `.11`, and `.12`. WireGuard `10.44.0.1`, `.2`, and `.3`. |
+| Issue ID | Matches `[A-Z][A-Z0-9]{1,9}-[1-9][0-9]{0,8}`. `acquire` and `sync` require it in the worktree's branch name, such as `TASK-58` on branch `task-58`. |
 
-The three registered Nodes share the active `e2e-development` Cluster, which keeps its existing name and has no Cluster TLD. Gateway is its Router; app-prod is its Ingress. The explicit private sample Route keeps `e2e-dev.orbit`. Development traffic crosses from Gateway Router to app-dev. Public production Routes, when added, enter app-prod and pass through Gateway Router to the workload. The `database` role ensures Docker only; database containers and additional sample applications are separate resources. [ADR 0114](/decisions/0114-expand-the-three-node-incus-cluster) explains the layout.
+The three Nodes share the active `e2e-development` Cluster. It has no Cluster TLD. Gateway is its Router, and app-prod is its Ingress. Development traffic goes from the Gateway Router to app-dev. Public production Routes enter app-prod and pass through the Gateway Router to the workload.
 
-Convergence expands the existing one-Node sample Cluster through Orbit commands. It refuses foreign members, another Cluster membership, an unexpected Router, or another Ingress. Repeated convergence reuses the same Cluster and roles. Router assignment retries at most five times on a lost Gateway response or a busy Router operation, because a Gateway Caddy upgrade can interrupt its own API connection. Other command failures stop convergence; retry reads the recorded membership. The optional app-prod-2 remains a workload-only extension outside this default Cluster until its scenario attaches it.
+A change to this recipe does not change the saved snapshot. Acquisition clones the saved generation and does not provision new roles. `acquire` verifies readiness against the assignments that the generation records, so it passes on a generation with other assignments. A full `sync` and `verify` check the current recipe, and they fail on that generation. Run a snapshot `refresh` to adopt a new recipe.
 
-Changing this recipe does not promote a snapshot. Ordinary acquisition still clones the saved generation and does not provision the new roles. A generation with the old assignments cannot pass the new profile's readiness checks. Prepare and inspect a disposable topology before explicitly updating the shared snapshot.
+## Sample resources
 
-An extended attempt keeps the three cloned Nodes and constructs one Node from the configured `orbit-base-ubuntu-26.04-runtime` image.
+Convergence builds the sample workloads through the Orbit CLI, never by editing the Gateway database.
 
-| Physical Node key | Source | Incus address | WireGuard address | Expected roles |
+| Resource | Content |
+| --- | --- |
+| Laravel Project | Instances `e2e-dev` on app-dev and `e2e-prod` on app-prod. `e2e-dev` has one explicit private Route, `e2e-dev.orbit`. |
+| Database Processes | `e2e-mysql` (`mysql:8.4`), `e2e-postgres` (`postgres:18-alpine`), and `e2e-valkey` (`valkey/valkey:8-alpine`) on app-dev. Each is a Node-owned Docker Process with a persistent volume, bound to `10.44.0.2`. |
+| Connections | `e2e-dev` uses MySQL and Valkey. `e2e-prod` uses PostgreSQL and Valkey. Valkey uses logical database `1` with driver `redis`. |
+| Background work | The Process `e2e-queue` and the Schedule `e2e-scheduler` on `e2e-dev` |
+| Non-web Projects | `e2e-monorepo` (`monorepo`) and `e2e-package` (`laravel-package`), each with one development Instance and no Route |
+
+Credentials stay in the guest's protected configuration and in the Gateway. Repeated convergence keeps credentials, volumes, environment keys, and database contents. It refuses a resource whose identity conflicts with the expected one.
+
+## Discovery topology
+
+An issue holds one discovery topology at a time. `acquire` creates it and `release` removes it. Its state lives under `<worktree>/.e2e/`, in `attempt.json` and `topology.json`, and it dies with the worktree.
+
+A lease names the issue, the attempt ID, the purpose, the operation ID, and the acquisition time. There is no reaper. A topology lives until someone releases it.
+
+### The app-prod-2 extension
+
+A topology can carry one extra production Node, `app-prod-2`. It is the recipe `gateway_app-dev_app-prod_app-prod`.
+
+| Physical Node key | Source | Incus address | WireGuard address | Roles |
 | --- | --- | --- | --- | --- |
-| `app-prod-2` | Generic base image | `.13` | `10.44.0.4` | `app-prod` |
+| `app-prod-2` | The `orbit-base-ubuntu-26.04-runtime` image | `.13` | `10.44.0.4` | `app-prod` |
 
-The attempt record stores the normalized construction declaration, the complete physical Node inventory, its snapshot generation or generic-base inputs, and every image alias and fingerprint used for cold construction. Discovery and proof construct separate `app-prod-2` VMs and never adopt one from another attempt. A replacement proof constructs all three registered Nodes from the generic base and never adopts records, source, or runtime from the promoted generation.
+The three standard Nodes still come from the snapshot. The harness builds `app-prod-2` from the base image inside the same attempt and network, and it records the image fingerprint. It refuses when the image changes between the check and the build. Convergence provisions `app-prod-2` as an `app-prod` Node. It stays outside the `e2e-development` Cluster and gets no Instance. An extended topology reserves four VMs.
 
-Convergence gives `app-prod-2` active app-prod services and a usable PHP runtime, with PHP-FPM and Caddy active. The `e2e-dev` Instance stays on `app-dev`, and `e2e-prod` stays on `app-prod`. The extra Node has no Instance. The extension creates no legacy Instance or Workspace and no Route target or other graph edge that creates multi-target routing.
+The committed scenario `snapshot-extension` uses the extension. A discovery topology gets it only when `<worktree>/.loop/proof/<ISSUE>.json` declares `"extension": "app-prod"` (see [what acquire reads](#what-acquire-reads)).
 
-## Prepared database resources
+### What acquire reads
 
-The disposable topology being prepared for the next snapshot runs three Node-owned Docker Processes on app-dev. Standard sample convergence creates or validates these resources through Orbit; ordinary acquisition obtains them only after that prepared generation is saved. The database role alone does not create them.
+`acquire` checks that the worktree belongs to this repository and to the current user, and that its branch names the issue. It refuses a worktree without the Gateway, CLI, and SDK `vendor/` autoloaders.
 
-| Process and connection | Image | Database | Private address | Data volume |
-| --- | --- | --- | --- | --- |
-| `e2e-mysql` | `mysql:8.4` | `orbit_e2e` | `10.44.0.2:3306` | `e2e-mysql-data` |
-| `e2e-postgres` | `postgres:18-alpine` | `orbit_e2e` | `10.44.0.2:5432` | `e2e-postgres-data` |
-| `e2e-valkey` | `valkey/valkey:8-alpine` | Logical database `1`, registered with driver `redis` | `10.44.0.2:6379` | `e2e-valkey-data` |
+It clones the promoted generation, even when that generation is behind `main`. It refuses when no generation is promoted, when the generation's identity does not match its manifest, or when a snapshot resource is missing. It also refuses when the worktree's `apps/e2e/resources/prepared-state.json` changes the cold epoch or the base image alias of the generation. The snapshot must then be [built again](/reference/topology-snapshot#rebuild-and-recover) from the new base.
 
-Each Process uses `unless-stopped`, a persistent Docker volume, and a listener bound to the Node's WireGuard address. Same-Node attachments use that explicit Docker bind address; wildcard listeners use loopback. SQL connections use a separate application user. Gateway prerequisites include the MySQL and PostgreSQL PDO drivers so database queries can use these connections. Credentials remain in the guest's protected configuration and the Gateway registry; they do not belong in Git. Convergence preserves credentials and persistent volumes on repeat runs, refuses conflicting resource identities, and verifies authenticated queries.
+`acquire` also reads two optional files in the worktree. A malformed file makes it fail.
 
-The development Instance uses MySQL and Valkey; production uses PostgreSQL and Valkey. An Instance-owned queue worker and a Schedule exercise managed background work. The worker follows development hibernation; readiness accepts a sleeping worker only when its desired state is running and Doctor confirms healthy Process state. Small monorepo and Laravel package Projects each have a development Instance without a web Route.
+| File | Effect |
+| --- | --- |
+| `.loop/flow.json` | `{"schema":1,"flow":"proof"}` makes `acquire` refuse a generation that does not match current `main`. Without the file, the flow is `discovery`. |
+| `.loop/proof/<ISSUE>.json` | `"extension": "app-prod"` adds `app-prod-2`. `acquire` and a full `sync` then converge the whole topology before readiness. |
 
-The sample repository is a Laravel Project with Instances `e2e-dev` and `e2e-prod` on their respective workload Nodes. Sample convergence uses `project:list` and `project:create` with the explicit `laravel-app` type. CLI collections use `projects` and `instances`; native sample state uses `shape: instances`. The harness reads previous `app_instances` envelopes and state during snapshot upgrades, but writes the current names. Snapshots with Workspace samples use the distinct `workspaces` state marker. Database table names remain unchanged.
+### Capacity
 
-Convergence discovers commands by name, reuses existing production Instances even when old saved metadata is incomplete, and refreshes placement metadata from the live Instance. It establishes the shared Cluster, Gateway Router, and private DNS before hydrating production. Production readiness must run for native samples.
-
-Gateway preparation updates the runtime checkout path in its preserved environment. Private DNS reloads atomically published catalogs, including replacements within the same second. Doctor reads protected Caddy projections through the managed sudo channel and treats WebSocket access as part of the shared WireGuard member rule. Development hydration preserves the registered source identity and fast-forwards an older checkout to its registered starting commit, preserving local changes and refusing divergent history. Route verification expects one Route for web-serving Projects and none for non-web Project types.
-
-## Topology states
-
-Each topology is one attempt with a purpose, a lease, and a record under `<worktree>/.e2e/`, which dies with the worktree.
-
-| Purpose | Created by | Files | Ends with |
-| --- | --- | --- | --- |
-| `discovery` | `acquire` | `attempt.json`, `topology.json` | `release`, `promote`, or `bin/worktree-remove` |
-| `proof` | `prove` | `proof-attempt.json`, `proof-topology.json`, `proof.json`, captured evidence, and review records | Exact release after replacement, abandonment, or successful closeout refresh |
-| `candidate-convergence` | `candidate` | `candidate-attempt.json`, `candidate-topology.json`, `candidate-convergence.json` | `release --candidate` or `promote` |
-
-A lease names the issue, attempt ID, purpose, operation ID, acquisition time, topology extension, and construction declaration. The extension is `null` or `app-prod`, the replacement flag is boolean, and both are stored before the harness creates a network or VM. A proof result is `proved` or `diagnosis`; a candidate result is `converged` or `diagnosis`. A `diagnosis` topology stays alive for inspection and can never become proved.
-
-A successful proof becomes reviewable only after the harness captures its complete evidence. Its proof topology then stays alive through review and closeout. The proof result, captured evidence, review records, `proof-inputs/`, `equivalence/`, and the `log` file survive release. [ADR 0056](/decisions/0056-retain-proof-topologies-for-interactive-review) governs this retained-proof review lifecycle.
-
-`status` reports each active purpose and the proof's capture and review-evaluation state. An issue holds at most one attempt per purpose: `acquire` refuses a second discovery, `prove` refuses while a proof attempt exists, and `candidate` refuses while a candidate-convergence attempt exists.
-
-## Capacity budget and leases
-
-Capacity comes from `incus list`, never from a ledger: the harness counts the VMs that carry `user.orbit.e2e.owner=orbit-e2e` and the `10.232.<slot>.0/24` subnets in use.
+The harness counts capacity from `incus list`, never from a ledger. It counts the VMs that carry `user.orbit.e2e.owner=orbit-e2e` and the `10.232.<slot>.0/24` subnets in use.
 
 | Setting | Value |
 | --- | --- |
 | VM size | 1 vCPU, 2 GiB memory, 16 GiB root disk (`e2e.incus.cpu`, `e2e.incus.memory`, `e2e.incus.root_size`) |
-| VM budget | `e2e.incus.max_vms`, default 24, minimum nine; `ORBIT_E2E_INCUS_MAX_VMS` overrides it for one run |
-| Network slots | Slot 1 belongs to the topology snapshot; disposable topologies take slots 2 through 200 |
-| Incus scope | `e2e.incus.remote`, `e2e.incus.project`, and `e2e.incus.storage_pool`, set from `ORBIT_E2E_INCUS_REMOTE`, `ORBIT_E2E_INCUS_PROJECT`, and `ORBIT_E2E_INCUS_STORAGE_POOL`; defaults `local`, `default`, and `orbit-e2e` |
+| VM budget | `e2e.incus.max_vms`, default 24, minimum 9. `ORBIT_E2E_INCUS_MAX_VMS` sets it for one run. |
+| Network slots | Slot 1 belongs to the topology snapshot. Disposable topologies take slots 2 to 200. |
+| Incus scope | `e2e.incus.remote`, `e2e.incus.project`, and `e2e.incus.storage_pool`, from `ORBIT_E2E_INCUS_REMOTE`, `ORBIT_E2E_INCUS_PROJECT`, and `ORBIT_E2E_INCUS_STORAGE_POOL`. The defaults are `local`, `default`, and `orbit-e2e`. The remote must be `local`, because network creation and deletion also change host firewall rules. |
 
-Every `incus` call carries `--project` from `e2e.incus.project` and lists resources on `e2e.incus.remote`, so the capacity count, the topologies, and the orphan sweep stay inside that project. The harness reserves three VMs for a standard attempt and four for an extended attempt before it creates a network or VM. It refuses `acquire`, `prove`, and `candidate` when the requested count would exceed the budget, naming the count and the limit. At the default, up to seven standard disposable topologies fit beside the topology snapshot; each extended attempt consumes one additional VM. A failed construction releases its reservation through exact resource cleanup.
+Every `incus` call carries the configured project. The harness reserves the recipe's VMs, three or four, before it creates a network or a VM. It refuses `acquire` when the budget cannot hold them, and it names the count and the limit. At the default budget, seven topologies fit beside the snapshot.
 
-There is no reaper: a topology lives until the operator releases it. Every command except `status` and `shell` holds the lock `topology-<ISSUE>` under `<primary>/.e2e/locks/`. Topology creation holds the host lock `topology-create` from network creation until the complete VM inventory exists.
+### Locks
+
+Every command except `status` and `shell` holds the lock `topology-<ISSUE>` under `<primary>/.e2e/locks/`. Topology creation holds the host lock `topology-create` from network creation until every VM exists.
 
 ## Commands
 
-`acquire` takes the worktree as a positional argument. Every other command finds the issue among registered Git worktrees by branch or directory name, requires exactly one match, or takes `--worktree=PATH`. Internal worktrees use the configurable external base; ordinary Git worktrees are also supported. Every command accepts `--json`, and a failure prints `{"state":"failed","error":"..."}` with a nonzero exit.
+`acquire` takes the worktree as an argument. Every other command finds the issue among the registered Git worktrees by branch or directory name. It needs exactly one match, or `--worktree=PATH`. Every command accepts `--json`. A failure prints `{"state":"failed","error":"..."}` and exits nonzero.
 
 | Command | What it does |
 | --- | --- |
-| `acquire ISSUE WORKTREE` | Creates discovery from the saved generation, applies pending Gateway migrations from mounted source, verifies readiness, and refuses duplicate discovery or a missing vendor tree |
-| `shell ISSUE NODE [--proof --review-action=ID --required]` | Opens a login shell as `orbit` on one physical Node key of discovery, a retained diagnosis, or a captured successful proof; successful-proof use starts a separate interactive review action |
-| `exec ISSUE NODE --argv=JSON [--timeout=SECONDS] [--proof --review-action=ID --required]` | Runs one argument vector as `orbit` on one physical Node key for up to `--timeout` seconds, default 60, at most 3600. `--argv-file=PATH` replaces `--argv`. Successful-proof use records a review action. |
-| `exec ISSUE NODE --argv=JSON --record=LABEL` | Runs like `exec` and appends the command, its times, exit code, and output to the [evidence log](#evidence-log). `exec` refuses `--record` with `--review-action`. |
-| `spawn ISSUE NODE NAME --argv=JSON` | Starts one argument vector as `orbit` on a discovery Node as the transient unit `orbit-e2e-NAME.service` and returns at once |
-| `logs ISSUE NODE NAME [--since=TIME] [--lines=N]` | Prints the spawned process's output with precise timestamps, also after it ended |
-| `logs ISSUE NODE NAME --record=LABEL` | Prints the output like `logs` and appends the fetched journal output to the [evidence log](#evidence-log) |
-| `kill ISSUE NODE NAME` | Stops the spawned process; its logs stay readable |
-| `sync ISSUE` | Proves the mount, applies pending Gateway migrations from mounted source, and verifies readiness; a file edit needs no `sync` |
-| `sync ISSUE --quick` | Proves the mount, installs the current guest helper scripts, and applies pending Gateway migrations without readiness verification; see [Discovery mount](#discovery-mount) |
-| `verify ISSUE` | Verifies discovery readiness and records the report |
-| `prove ISSUE [--plan=PATH]` | Proves the clean worktree HEAD on a fresh proof topology; a declared snapshot replacement starts from the generic base, and the plan defaults to `.loop/proof/ISSUE.json` |
-| `capture ISSUE [--plan=PATH]` | Captures and archives complete successful proof evidence without releasing the topology, then permits interactive review |
-| `review ISSUE [--complete=ACTION --result=passed\|failed --finding=TEXT]` | Completes an interactive action when supplied, then evaluates required and exploratory review records |
-| `equivalence ISSUE [--plan=PATH]` | Compares the clean HEAD with the retained proof using the plan that defaults to `.loop/proof/ISSUE.json`, then writes an immutable report; see [Equivalence outcomes](/reference/proof-plans#equivalence-outcomes) |
-| `candidate ISSUE` | Converges and verifies the accepted head on a candidate-convergence topology after an `equivalent` report that requires it |
-| `closeout ISSUE --candidate=SHA --artifact=SHA --merge=SHA --main-sha=SHA` | Verifies the accepted merge, refreshes the snapshot or installs its declared clean replacement, records closeout, and releases the exact retained proof topology only after the snapshot step succeeds |
-| `status ISSUE` | Reports the state files, capture identity, retained topology, and review evaluation without touching Incus |
-| `release ISSUE [--proof\|--candidate] [--replace\|--abandon] [--recover-extension=none\|app-prod --expected-attempt=ID]` | Releases the selected topology and verifies absence. A successful proof requires explicit replacement or abandonment; ordinary closeout owns post-refresh release. Recovery options identify one exact legacy lease. |
+| `acquire ISSUE WORKTREE` | Creates discovery from the saved generation, applies pending Gateway migrations, and verifies readiness |
+| `shell ISSUE NODE` | Opens a login shell as `orbit` on one Node |
+| `exec ISSUE NODE --argv=JSON [--timeout=SECONDS] [--record=LABEL]` | Runs one argument vector as `orbit` on one Node and waits for it. The timeout defaults to 60 seconds, with a maximum of 3600. |
+| `spawn ISSUE NODE NAME --argv=JSON` | Starts a long-lived process as the transient unit `orbit-e2e-NAME.service` and returns at once |
+| `logs ISSUE NODE NAME [--since=TIME] [--lines=N] [--record=LABEL]` | Prints the unit's output with precise timestamps, also after the process ends |
+| `kill ISSUE NODE NAME` | Stops the unit. Its output stays readable. |
+| `sync ISSUE [--quick]` | Proves the mount, applies pending Gateway migrations, and verifies readiness. `--quick` skips verification. |
+| `verify ISSUE` | Verifies readiness and records the report |
+| `status ISSUE` | Reports the state files without touching Incus |
+| `release ISSUE` | Removes the topology and verifies that it is gone |
 
-### Task workspace clones
-
-A task workspace is an independent clone, not a linked worktree, so it holds neither the topology snapshot nor its locks. When `bin/e2e-topology` runs in such a clone and a primary checkout is registered for the clone's origin, it runs the command through a bridge worktree. [ADR 0135](/decisions/0135-run-incus-topologies-for-task-workspace-clones-through-a-bridge-worktree) records the decision.
-
-| Step | What happens |
-| --- | --- |
-| Find the primary | Reads `$XDG_STATE_HOME/orbit/e2e-primary-checkouts/{origin key}`, which the snapshot primary writes. Without a live registration, the command runs in the clone as before. |
-| Update the bridge | Checks out the clone's HEAD in `<worktree root>/<clone directory>-e2e` on branch `<clone branch>-e2e`, a linked worktree of the primary. |
-| Mirror the work | Copies the clone's modified and untracked files, removes its deleted tracked files, and mirrors each `vendor/` directory. Other ignored files in the bridge stay. |
-| Run | Runs the bridge's `bin/e2e-topology` with each clone path replaced by the bridge path and `--worktree` set to the bridge. |
-
-The bridge keeps its other ignored files, such as `.e2e/`, `.env`, and Gateway storage, because the harness and the guests write them into the mount. In a task workspace on branch `task-58`, run `bin/e2e-topology acquire TASK-58 .`, then the other commands with `TASK-58`. The mounted source is the bridge, so a file that the harness or a guest writes into the mount appears in the bridge, not in the clone. Set `ORBIT_E2E_BRIDGE=0` to run in the clone itself.
-
-Completing or cancelling the task group removes that bridge when its path is `<worktree root>/task-{id}-e2e` and its branch is `task-{id}-e2e`. A user's worktree stays. A missing bridge is not an error. [Tasks](/reference/tasks#complete-and-cleanup) describes that cleanup.
-
-`bin/worktree-remove ISSUE` releases the proof topology only after its closeout guard permits cleanup, then releases discovery and removes the worktree. [ADR 0049](/decisions/0049-keep-delivery-artifacts-off-the-merge-head) describes the artifact refs used by retained proof. Captured proof evidence and review records remain in the primary archive after worktree removal.
+`NODE` is a physical Node key: `gateway`, `app-dev`, `app-prod`, or `app-prod-2` on an extended topology. `--argv-file=PATH` can replace `--argv` on `exec` and `spawn`. The file holds `{"argv":[...],"stdin":null}`, and only `exec` accepts stdin. The harness refuses both options together.
 
 ### Guest commands
 
-`exec` prints `{"state":"executed","exit_code":N,"stdout":"...","stderr":"..."}` with `--json` and the guest stdout without it, and exits `0` only when the guest command does. `--argv='["orbit","doctor","--json"]'` is an inline JSON array of strings; `--argv-file=PATH` names a file holding `{"argv":[...],"stdin":null}` when the vector needs stdin. The harness refuses both at once. Commands select physical Node keys, so `app-prod` selects the cloned Node and `app-prod-2` selects the constructed Node of an extended attempt. A shared role name never selects multiple Nodes.
+`exec` runs the vector through `runuser -u orbit -- env -C /home/orbit HOME=/home/orbit ORBIT_HOME=/home/orbit/.orbit DB_DATABASE=/home/orbit/.orbit/gateway.sqlite PROGRAM ARGS`. No shell profile loads. `argv[0]` must resolve on the guest `PATH` or be an absolute path. It cannot start with `-` or contain `=`.
 
-Incus waits for every process an `exec` session starts, so a command that leaves a background process holds `exec` open until its timeout. Start a long-lived process with `spawn` instead. [ADR 0136](/decisions/0136-run-long-lived-topology-processes-as-transient-units) records the decision.
+The harness links `apps/cli/orbit` to `/usr/local/bin/orbit` on each checkout Node, so `orbit` resolves by name. Wrap a pipeline in `["sh","-c","..."]` and root work in `["sudo","..."]`. `shell` opens the same environment with `bash -l`. It starts in `/home/orbit/orbit` on a checkout Node and in `/home/orbit` on app-prod.
 
-The vector runs through `runuser -u orbit -- env -C /home/orbit HOME=/home/orbit ORBIT_HOME=/home/orbit/.orbit DB_DATABASE=/home/orbit/.orbit/gateway.sqlite PROGRAM ARGS`. No shell profile loads: `argv[0]` must resolve on the guest `PATH` or be absolute, and it cannot start with `-` or carry `=`. The harness links the checkout's `apps/cli/orbit` to `/usr/local/bin/orbit` on every checkout Node, so `orbit` resolves by name. Wrap a pipeline in `["sh","-c","..."]` and root work in `["sudo","..."]`. `shell` opens the same environment with `bash -l`, in `/home/orbit/orbit` on a checkout Node and in `/home/orbit` on either app-prod Node; `exec` always runs in `/home/orbit`.
+With `--json`, `exec` prints `{"state":"executed","exit_code":N,"stdout":"...","stderr":"..."}`. Without it, `exec` prints the guest stdout. It exits `0` only when the guest command does.
 
-`exec --proof` and `shell --proof` accept a `diagnosis` proof under its existing debugging path. They accept a proved topology only after complete capture and bind each successful-proof action to its issue, candidate, and attempt in the separate review record. The harness records whether an action is required or exploratory and its result. An interactive shell action stays incomplete until `review` records its result and finding. Required failures and incomplete required records prevent approval; exploratory failures remain distinct.
+Incus waits for every process that an `exec` session starts. A command that leaves a background process holds `exec` open until the timeout. Start a long-lived process with `spawn` instead. `spawn` runs `systemd-run --collect` with the same user, directory, and environment as `exec`. A name has 1 to 40 lowercase letters, digits, or hyphens. Kill a unit before you spawn another one with the same name. `spawn` works on discovery only. The harness log `<worktree>/.e2e/log` records every `exec`, `spawn`, and `kill`, with the redacted argv and the exit code.
 
 ### Evidence log
 
-`exec --record=LABEL` and `logs --record=LABEL` append one entry to `<worktree>/.e2e/evidence.log`. [ADR 0143](/decisions/0143-record-topology-evidence-and-sync-without-verification) records the decision. A label has 1 to 80 letters, digits, spaces, dots, dashes, or underscores; the harness checks it before it touches Incus. The log is append-only, is created with mode `0600`, and is plain text:
+`exec --record=LABEL` and `logs --record=LABEL` append one entry to `<worktree>/.e2e/evidence.log`. A label has 1 to 80 letters, digits, spaces, dots, dashes, or underscores, and is not blank. The harness checks the label before it touches Incus.
 
 ```text
 === 2026-09-24T06:40:00.123Z viewer after crash node=app-dev exit=0 duration=1234ms end=2026-09-24T06:40:01.357Z
@@ -158,112 +137,154 @@ $ orbit node:list --json
 ...
 ```
 
-The header gives the start time, label, Node key, exit code, duration, and end time, in UTC with milliseconds. The `$` line is the argv as shell-quoted words. The harness redacts the argv and output as it does in `<worktree>/.e2e/log`. Recording never changes the command's output or exit code; a failed append prints a warning on stderr. In a task workspace clone, the log is in the bridge worktree. `bin/worktree-remove` removes it with the worktree.
+The header gives the start time, the label, the Node, the exit code, the duration, and the end time, in UTC with milliseconds. The `$` line is the argv as shell-quoted words. The harness redacts the argv and the output as it does in `<worktree>/.e2e/log`. The log is append-only. The harness creates it with mode `0600` in the `0700` `.e2e/` directory, and refuses a symbolic link in that directory path.
+
+Recording never changes the command's output or exit code. A failed append prints a warning on stderr. The log can hold output that the redactor does not recognize as a secret, so treat it like the rest of `.e2e/`. `bin/worktree-remove` deletes it with the worktree, so copy what you need first.
 
 ## Discovery mount
 
-`acquire` attaches the worktree to `gateway` and `app-dev` as the Incus disk device `orbit-source`, a virtiofs (virtual I/O filesystem) share mounted read-write at `/home/orbit/orbit`. Every host edit is live in both guests, so a changed file needs no `sync`; run `sync` after a migration or a guest helper change. `sync --quick` does only the mount proof, the guest helper install, and the Gateway migrations, then prints a note that readiness was not verified. It skips the readiness probes and the extension converge, and it leaves `topology.json` and the guest source marker at the last full `sync`, so `status` shows that binding and standalone `verify` refuses the changed mount until a full `sync`.
+`acquire` attaches the worktree to `gateway` and `app-dev` as the Incus disk device `orbit-source`. It is a read-write virtiofs share at `/home/orbit/orbit`. A host edit is live in both guests at once. Run `sync` only after a migration or a change to a guest helper script.
 
-Acquisition and `sync` also install the current guest helper scripts on every physical Node before readiness checks, including three-node topologies cloned from an older snapshot. Guests never run Composer: host `bin/bootstrap` owns `vendor/`, and `acquire` refuses a worktree without the Gateway, CLI, and SDK autoloaders. The harness places the preserved Gateway `.env` into the worktree when it is absent there. When the worktree already has a `.env`, such as the one `bin/bootstrap` creates from `.env.example`, the harness sets its `ORBIT_GATEWAY_CHECKOUT` to the mounted `/home/orbit/orbit/apps/gateway` and leaves every other line alone, so `orbit:gateway-web` validates the mounted checkout. The mount device is part of the attempt inventory, so exact release removes it.
+Guests never run Composer. Host `bin/bootstrap` owns `vendor/`, and `acquire` refuses a worktree without the Gateway, CLI, and SDK autoloaders. `acquire` places the preserved Gateway `.env` in the worktree when it is absent. When the worktree has a `.env`, the harness sets only its `ORBIT_GATEWAY_CHECKOUT` to `/home/orbit/orbit/apps/gateway`.
 
-Before reporting readiness, acquisition updates the three cloned Nodes' stored public SSH addresses and retargets stored VPN endpoints that name the snapshot Gateway. It keeps omitted endpoints omitted, preserves endpoint ports, and aligns each peer's saved and running endpoint with the Gateway's provisioning inputs. A later peer configuration therefore selects the acquired Gateway without a manual override. Acquisition uses the current harness preparation code, not a cached copy from the snapshot.
+Before it reports readiness, `acquire` aligns each cloned Node with the new network. It updates the stored public SSH addresses and points the stored VPN endpoints at the acquired Gateway. It keeps WireGuard keys, private addresses, DNS settings, SSH ports, roles, and workloads. A missing or conflicting identity fails acquisition before readiness.
 
-This preparation preserves WireGuard keys and private addresses, DNS settings, SSH ports, roles, workloads, and unrelated configuration. It does not reprovision roles or workloads. Missing, invalid, or conflicting clone identity fails acquisition before readiness; an endpoint that names an unrelated host is a conflict, not permission to replace custom configuration. Acquisition rolls back only that attempt's resources.
+### Gateway schema
 
-### Gateway schema readiness
+`acquire` and `sync` run `php artisan migrate --force --no-interaction` from the mounted Gateway as `orbit`. This applies only the migrations that the mounted source declares. It does not run Gateway bootstrap, install dependencies, or provision roles. The harness does not roll back a migration that fails halfway.
 
-Acquisition and `sync` run `php artisan migrate --force --no-interaction` from the mounted Gateway checkout before they publish readiness for that source. The harness runs the command as `orbit` with `HOME=/home/orbit`, `ORBIT_HOME=/home/orbit/.orbit`, `ORBIT_GATEWAY_CHECKOUT=/home/orbit/orbit/apps/gateway`, and `DB_DATABASE=/home/orbit/.orbit/gateway.sqlite`. This step applies only the migrations that mounted source declares. It does not run Gateway bootstrap, install dependencies, configure an application, provision roles or sample workloads, or change the promoted snapshot. Repeating `sync` leaves migrations that Laravel has already recorded unchanged. `sync --quick` runs the same migration command but publishes no readiness and no source binding.
+A migration error makes `acquire` or `sync` exit nonzero. A failed `acquire` removes its own resources. A failed `sync` keeps the topology and its last good source binding in `topology.json`. Fix the source and run `sync` again. Then check `php artisan migrate:status` on the Gateway and run `verify`.
 
-A migration error or timeout makes `acquire` or `sync` exit nonzero. Failed acquisition runs exact-attempt cleanup. An ownership refusal keeps the lease and exact recovery target for `release`; do not bypass that refusal. Failed `sync` keeps the same discovery resources and its last successful `topology.json` source binding. Guest source markers describe the current mount input and are not readiness receipts. `status` continues to show the last successful binding, and standalone `verify` refuses when the live worktree differs from that binding.
+`sync --quick` proves the mount, installs the current guest helper scripts, and applies the migrations. It skips the readiness probes and prints a note that readiness was not verified. It leaves `topology.json` and the guest source marker at the last full `sync`. So `status` shows that binding, and `verify` refuses a mount that differs from it until the next full `sync`.
 
-Inspect the failed command output, `bin/e2e-topology status ISSUE --worktree=WORKTREE --json`, the retained lease, and the guest migration ledger before retrying. A migration can complete some changes before a later migration fails, and the harness does not roll the Gateway database back. After successful acquisition cleanup, correct the mounted source or its environment and rerun `bin/e2e-topology acquire ISSUE WORKTREE --json`. If acquisition cleanup retains a lease, resolve its ownership refusal before another acquisition. For failed `sync`, correct the mounted source or its environment and run `bin/e2e-topology sync ISSUE --worktree=WORKTREE --json`. Confirm a zero exit, inspect `php artisan migrate:status --no-interaction` on the Gateway, and run `bin/e2e-topology verify ISSUE --worktree=WORKTREE --json` before using the new source binding.
+## Task workspace clones
 
-Gateway schema readiness means the mounted Gateway has no pending declared migrations and the topology readiness probes pass. It does not prove application health or feature acceptance. A missing application dependency, application key, or application database remains operator-owned setup and does not expand this schema step.
+A task workspace is an independent clone, not a linked worktree. It holds neither the topology snapshot nor its locks. So `bin/e2e-topology` in such a clone runs the command through a bridge worktree of the primary checkout.
 
-## Release and network ownership
+| Step | What happens |
+| --- | --- |
+| Find the primary | Reads `$XDG_STATE_HOME/orbit/e2e-primary-checkouts/{origin key}`, with `$XDG_STATE_HOME` defaulting to `~/.local/state`. Without a live registration, the command runs in the clone. |
+| Update the bridge | Checks out the clone's HEAD in `<worktree root>/<clone directory>-e2e`, on branch `<clone branch>-e2e`. The worktree root is the primary's `orbit.worktreeRoot`, default `/fast/worktrees/orbit`. |
+| Mirror the work | Copies the clone's modified and untracked files, removes its deleted tracked files, and mirrors each `vendor/` directory |
+| Run | Runs the bridge's `bin/e2e-topology`, with each clone path replaced by the bridge path and `--worktree` set to the bridge |
 
-`release` reads the target extension from the lease and uses a matching complete topology record when one exists. A complete record must match the lease's issue, purpose, attempt, and extension. A legacy lease without an extension remains compatible when it has a complete matching topology record. A legacy lease without that record is ambiguous, so ordinary release refuses before Incus access and does not infer a target from a current proof plan.
+The origin key is the SHA-256 of the origin URL's lowercase host and its path, so every clone of one repository finds the same primary.
 
-An operator recovers an ambiguous lease with both `--recover-extension=none|app-prod` and `--expected-attempt=ID`. Discovery is the default; `--proof` or `--candidate` selects that purpose. The harness requires the full 32-character attempt ID and matching issue, purpose, attempt, and existing target evidence. Before it accepts `none`, it also requires the exact attempt-derived `app-prod-2` VM to be absent. Matching recovery atomically adds only the extension to the lease, and the same input can retry after partial cleanup. Conflicting input cannot replace the stored target.
+The mirror leaves the bridge's other ignored files, such as `.e2e/`, `.env`, and Gateway storage, because the harness and the guests write them. So a file that a guest writes into the mount appears in the bridge, not in the clone. The evidence log is in the bridge too. Every command mirrors the clone first, so any command, such as `status`, pushes an edit. Set `ORBIT_E2E_BRIDGE=0` to run in the clone itself. `bin/e2e-topology-snapshot` never bridges, because snapshot operations belong to the primary checkout.
 
-After target selection, `release` checks each VM against the attempt's ownership metadata, force-stops the running ones, deletes them, and verifies they are gone. It then checks the network's ownership immediately before it deletes the network, drops the lease and record, and unpins a proved commit's Git ref only when no retained evidence refers to it.
+In a task workspace on branch `task-58`, run `bin/e2e-topology acquire TASK-58 .`, then the other commands with `TASK-58`. The topology snapshot [registers](/reference/topology-snapshot#commands) the primary checkout. When the Gateway ends a task group, it removes the group's bridge. [Tasks](/reference/tasks#complete-and-cleanup) describes that cleanup. Release the topology before the group ends, because bridge removal does not release it.
 
-A successful proved attempt also requires a lifecycle guard: explicit replacement, explicit abandonment, or release by `closeout` after successful snapshot refresh from the verified merge. A failed refresh keeps every proof Node and the complete attempt lease for retry. A retry continues from the same exact target after partial cleanup. An ownership conflict preserves every unrelated resource and keeps the attempt record for diagnosis. The output lists `released`, `already_absent`, and `networks_reaped`.
+## Release
 
-The retained proof topology can exercise lease files, identity validation, capture and review records, and refusal before transport from inside a guest. Actual Incus deletion is a host boundary: an issue that changes release selection uses a separately reviewed host rehearsal bound to the same candidate and leaves the captured proof and review evidence unchanged.
+`release` checks each VM against the attempt's ownership metadata. It force-stops the running VMs, deletes them, and verifies that they are gone. It checks the network's ownership just before it deletes the network. Then it drops the lease and the record. The output lists `released`, `already_absent`, and `networks_reaped`.
 
-Every Incus network named `oe-*` or `orbit-e2e-*` belongs to the harness and never outlives its topology. Every release ends with an orphan sweep that deletes each harness network in the configured Incus project with an empty `used_by`, except `oe-topo-snap` and `oe-standby`. The sweep holds the `topology-create` lock, so a network created moments before its first VM is never swept.
+An ownership mismatch stops the release and keeps every unrelated resource. The attempt record stays for diagnosis. A retry continues from the same exact target.
 
-## Declared cold snapshot replacement
+Every network named `oe-*` or `orbit-e2e-*` belongs to the harness and never outlives its topology. Every release ends with an orphan sweep. The sweep selects networks by those name prefixes, not by ownership metadata. It deletes each one in the configured project whose `used_by` list is empty, except the snapshot networks `oe-topo-snap` and `oe-standby`. It holds the `topology-create` lock, so it never deletes a network that a starting acquisition just created.
 
-### Construction and evidence
+`bin/worktree-remove ISSUE` cleans up after a merge. It works in this order:
 
-A proof plan with `"snapshot_replacement": true` grants replacement authority before proof construction. The proof attempt remains issue-owned and uses normal setup, acceptance, manifest, capture, review, and exact-release records. It constructs only the registered Gateway, app-dev, and app-prod Nodes from the recorded generic base and exact candidate. Convergence must produce native Instance samples and Project-owned Routes, and verification refuses legacy sample state or any inventory other than those three Nodes.
-
-The promoted generation stays stopped and unchanged during construction, proof, capture, and review. After the verified merge, closeout constructs a clean replacement from merged main and the recorded inputs. It verifies that clean topology before it starts the installation transaction, so reviewer changes to the retained proof topology cannot enter the shared snapshot.
-
-### Installation and cleanup
-
-Installation records the replacement, current generation, exact resources, and each swap step. It prepares the complete stopped candidate generation before it replaces any promoted resource. Failure before the swap removes only recorded candidate resources. Failure during the swap either restores the prior usable generation or leaves an explicit recovery record and no success result. Successful installation leaves one stopped three-Node promoted generation, and later ordinary discovery and proof acquire from it.
-
-Successful closeout removes only the recorded clean replacement resources and the replaced snapshot resources after it verifies the installed generation. Explicit abandonment removes only the recorded issue replacement. Both paths retain the original captured proof and interactive review records.
-
-### Other cold paths
-
-This declared cold replacement uses the issue-proof lifecycle, not the disposable cold-scenario lifecycle, ordinary refresh, or disaster recovery. Cold scenarios remain disposable and have no issue-proof or promotion authority. Refresh converges the current promoted generation in place from main. `rebuild` and `recover-legacy` restore availability when snapshot state is absent or inconsistent; they cannot reclassify their result as issue proof.
+1. It refuses a dirty worktree and a branch that `origin/main` does not contain.
+2. It refuses while `.e2e/` holds a successful proof.
+3. It queues a TIA cache refresh.
+4. It releases a failed proof topology, then the discovery topology, and removes the worktree.
+5. It deletes the merged branch and prunes the worktree list.
 
 ## On-demand scenarios
 
-`bin/e2e-scenarios`, governed by [ADR 0019](/decisions/0019-run-disposable-incus-scenario-lanes), runs committed cold-lane or snapshot-lane scenarios for one exact commit. It supports these invocations:
+`bin/e2e-scenarios` runs committed regression scenarios for one exact commit. Each scenario starts in one lane. The cold lane builds a fresh topology from the `orbit-base-ubuntu-26.04-runtime` image. The snapshot lane clones the current promoted generation.
 
 | Command | Result |
 | --- | --- |
-| `bin/e2e-scenarios cold [CANDIDATE_SHA]` | Runs every cold scenario for the current clean checkout. The optional full lowercase SHA must equal `HEAD`. |
-| `bin/e2e-scenarios cold [CANDIDATE_SHA] --scenario=ID` | Runs only the named scenario. Repeat `--scenario` to select more scenarios in the given order. |
-| `bin/e2e-scenarios snapshot [CANDIDATE_SHA]` | Runs every snapshot scenario for the current clean checkout. The optional full lowercase SHA must equal `HEAD`. |
-| `bin/e2e-scenarios snapshot [CANDIDATE_SHA] --scenario=ID` | Runs only the named snapshot scenario. Repeat `--scenario` to select more scenarios in the given order. |
-| `bin/e2e-scenarios run [CANDIDATE_SHA] --workers=COUNT` | Runs every cold and snapshot scenario with at most the positive worker count active at once. |
-| `bin/e2e-scenarios run [CANDIDATE_SHA] --workers=COUNT --scenario=ID` | Runs selected cold and snapshot scenarios together. Repeat `--scenario` to preserve the requested aggregate order. |
-| `bin/e2e-scenarios cleanup RUN_ID SCENARIO_ID ATTEMPT_ID` | Retries exact cleanup from the retained attempt record and verifies that its inventory is absent. |
+| `cold [CANDIDATE_SHA] [--scenario=ID ...]` | Runs the cold scenarios, or only the named ones in the given order |
+| `snapshot [CANDIDATE_SHA] [--scenario=ID ...]` | Runs the snapshot scenarios, or only the named ones |
+| `run [CANDIDATE_SHA] --workers=COUNT [--scenario=ID ...]` | Runs cold and snapshot scenarios with at most `COUNT` workers at once. `cold` and `snapshot` run their scenarios one after another. |
+| `cleanup RUN_ID SCENARIO_ID ATTEMPT_ID` | Retries exact cleanup from the retained attempt record |
 
-Before it creates run state or changes Incus, the command resolves the commit, the complete catalog, every selected scenario, and the worker count. It rejects an unknown or repeated scenario ID, a scenario from another lane on a lane-specific command, an invalid recipe, a missing action deadline, an invalid declared input, and a missing, malformed, or non-positive worker count on `run`. With no filter, a lane-specific command selects every committed scenario in that lane, while `run` selects the complete catalog in its stable order.
+The catalog holds five committed scenarios.
 
-The combined runner starts no more than the requested number of scenario workers. Each worker receives a separate attempt, operation, network, VM inventory, state path, guest filesystem, application data, and Pest process. Creation holds the host creation lock while it admits the recipe's actual VM count, selects one free network slot, and creates the recorded resources. Cold, snapshot, and variable-size recipes count against the same live Incus VM budget as every other harness topology. The lock makes admission atomic, while guest preparation, convergence, exercise, verification, reporting, and cleanup can overlap after creation.
+| ID | Lane | Recipe | What it proves |
+| --- | --- | --- | --- |
+| `cold-four-node` | cold | Cold acceptance, four Nodes | Orbit builds and verifies the whole topology from the base image, and cleanup removes it |
+| `cold-construction-cleanup` | cold | Cold acceptance, four Nodes | After an injected source failure during construction, cleanup removes exactly the recorded resources |
+| `snapshot-lifecycle` | snapshot | Registered, three Nodes | A clone of the snapshot syncs, converges, passes readiness, runs a bounded app-dev action, and verifies |
+| `snapshot-isolation` | snapshot | Registered, three Nodes | A fresh clone does not contain a marker that an earlier attempt wrote |
+| `snapshot-extension` | snapshot | Registered plus `app-prod-2` | The [extension](#the-app-prod-2-extension) Node has its recorded identity, capacity, and image fingerprint |
 
-A product failure, infrastructure error, or refused cleanup in one worker does not cancel another runnable flow. The runner fills free worker slots until every selected flow has a result, then writes one aggregate in selection order and returns its final exit code. On interruption, it stops launching work, asks every active worker to stop and clean its recorded resources, retries exact recovery where a worker cannot write a result, and records every unstarted flow explicitly as an `infrastructure-error`. It writes the complete non-passing aggregate before it returns. Recovery revalidates exact ownership and does not change an unrelated topology.
+The checkout must be clean. An optional SHA must be the full lowercase `HEAD`. Before it changes Incus, the command validates the catalog, every selected scenario, and the worker count. It refuses an unknown or repeated ID, a scenario from the other lane, an invalid recipe, a missing action deadline, and an invalid declared input.
 
-The faithful cold flow starts from the unchanged `orbit-base-ubuntu-26.04-runtime` image alias, synchronizes the exact candidate, converges the declared product roles, and verifies the complete inventory. It performs no pre-construction PCOV instrumentation and runs no PCOV collection. Normal product provisioning may install the packaged PCOV extension as part of the app-dev runtime.
+Each worker gets its own attempt, network, VMs, state path, and Pest process. One Pest test is one independent flow, and a flow stops at its first failed step. Admission holds the `topology-create` lock while it counts the recipe's VMs against the shared budget and picks a network slot. After that, `run` workers go on in parallel. A failure in one worker does not cancel another.
 
-A snapshot flow records the current promoted generation and verifies its three coordinated snapshots before construction. It creates a fresh attempt-scoped network, clones the three registered Nodes from that exact generation, synchronizes the exact candidate, converges the topology, and verifies readiness before its exercise action. A missing, stale, or changed generation produces an `infrastructure-error`, skips the exercise, and still runs exact cleanup. Every repeat clones a new attempt and cannot observe application or filesystem changes from an earlier run.
+The cold flow starts from the unchanged base image and installs no PCOV before construction. A snapshot flow checks the promoted generation first. A missing, stale, or changed generation gives `infrastructure-error` and skips the exercise. A snapshot flow never changes the generation, its VMs, or its manifest.
 
-A snapshot scenario can declare additional Nodes from the configured `orbit-base-ubuntu-26.04-runtime` image. The attempt records each physical Node, the reserved capacity and network slot, the base image alias and fingerprint, and the promoted source generation. Construction refuses a pre-existing network or VM instead of adopting it. Cleanup removes only the attempt's exact recorded resources and leaves foreign resources unchanged.
+A snapshot flow mounts no worktree. It clones the three Nodes, and builds `app-prod-2` for the extension. It synchronizes the exact candidate commit from Git into the checkout Nodes and checks the guest commit. It converges the whole topology, checks the commit again, and runs the readiness probes. Then it runs the exercise and a final verification.
 
-The command writes each result and the complete aggregate under `<primary>/.e2e/scenarios/runs/<run-id>/`. Each result records the candidate, run, scenario, attempt, lane, normalized recipe and definition fingerprints, declared-input fingerprints, phase timings, action outcomes, verification, diagnostics, cleanup, remaining exact resources, and recovery command. A definition or declared-input change produces a different fingerprint. The aggregate contains one result for every selected scenario and is written after every runnable flow finishes.
+Scenario resources carry the issue `SCN-1` and the extra metadata `user.orbit.e2e.run`, `user.orbit.e2e.scenario`, and `user.orbit.e2e.recipe`. VM names are `orbit-e2e-scn-<run>-<scenario>-<attempt>-<node>`, with 8 characters of the run ID, 6 hex characters of the SHA-256 of the scenario ID, and 8 characters of the attempt ID. The network is `oe-` plus 12 hex characters of the SHA-256 of `<run>:<scenario>:<attempt>`. These VMs count against the same budget as issue topologies.
 
-The JSON aggregate and the standard Pest report use these outcomes:
+The cold acceptance recipe separates the physical Node from its roles.
+
+| Node key | Address | Checkout | Roles |
+| --- | --- | --- | --- |
+| `gateway` | `.10` | yes | `gateway`, `vpn` |
+| `operator` | `.11` | yes | `app-dev`, `metrics` |
+| `app-prod` | `.12` | no | `app-prod` |
+| `extra` | `.13` | no | none |
+
+The harness writes each result and the aggregate under `<primary>/.e2e/scenarios/runs/<run-id>/`. A result records the commit, the run, scenario, and attempt IDs, the lane, the recipe and definition fingerprints, the phase timings, the action outcomes, the verification, the cleanup, and the recovery command.
 
 | Outcome | Meaning |
 | --- | --- |
-| `passed` | Every required action and verification passed, and exact cleanup completed. |
-| `failed` | A scenario action or product assertion failed. |
-| `blocked` | The result schema reserves this status for an unavailable required run-scoped checkpoint. The current catalog has no checkpoint-dependent flow and does not produce this status. |
-| `infrastructure-error` | Construction, reporting, verification infrastructure, or cleanup could not produce a valid scenario result. |
+| `passed` | Every action and the verification passed, and cleanup completed |
+| `failed` | An action or a product assertion failed |
+| `blocked` | A required run-scoped checkpoint was unavailable. No current scenario uses a checkpoint. |
+| `infrastructure-error` | Construction, reporting, verification, or cleanup could not give a valid result |
 
-The process exits nonzero when any selected scenario is not `passed`, but only after it writes the complete aggregate. Cleanup failure keeps the original outcome, reports `infrastructure-error`, and retains the remaining exact inventory and recovery command. Recovery revalidates the recorded owner, run, scenario, attempt, and operation before deleting anything. It never selects a resource by prefix, age, glob, or an unresolved value.
+The command exits nonzero when any scenario did not pass, but only after it writes the whole aggregate. On interruption, it starts no new work, asks each worker to clean up, and records each unstarted flow as `infrastructure-error`. A cleanup failure keeps the original outcome, reports `infrastructure-error`, and lists the remaining resources and the recovery command.
 
-This command is explicitly invoked by an operator. It is not part of `bin/test`, discovery acquisition, feature proof, review, merge, topology-snapshot promotion, or continuous integration. It writes no issue-proof or promotion receipt. A cold scenario does not read the persistent topology snapshot. A snapshot scenario reads and clones one verified promoted generation, but it never changes the generation, its VMs, its manifest, or another attempt. Nightly or pull-request triggers and affected-flow selection are separate work.
+An operator runs this command explicitly. It is not part of `bin/test`, CI, review, or merge, and it never changes the topology snapshot.
 
-The cold acceptance recipe separates physical Node identity from product role assignment:
+## Why it works this way
 
-| Node key | Initial purpose | Address | Checkout | Expected roles |
-| --- | --- | --- | --- | --- |
-| `gateway` | Gateway | `.10` | yes | `gateway`, `vpn` |
-| `operator` | Operator | `.11` | yes | `app-dev`, `metrics` |
-| `app-prod` | Workload | `.12` | no | `app-prod` |
-| `extra` | Extension | `.13` | no | none |
+These reasons explain the design. Check them before you propose a change.
 
-VM names, MAC addresses, and fixed IPv4 addresses derive from the attempt and physical Node key. Product operations resolve roles through the recipe, so `app-dev` targets the `operator` VM while `extra` remains present and roleless. The canonical feature recipe still uses the physical keys `gateway`, `app-dev`, and `app-prod`, preserving every persistent topology-snapshot identity.
+### Disposable topologies from one snapshot
 
-Persistent topology-snapshot construction and this disposable flow call the same typed cold constructor. The persistent caller keeps its fixed slot, permission checks, manifest, corrupt-state, recovery, and promotion rules. The disposable caller receives an attempt-scoped network and VM inventory, reserves capacity for the recipe's actual four VMs, and writes no promoted manifest or topology-snapshot state.
+Each issue gets fresh VMs on an isolated network, cloned from one prepared snapshot. Isolated networks let several topologies reuse the same addresses without conflict. Cloning takes about a minute, while a cold build takes much longer. Work on shared long-lived machines is a rejected alternative, because one change can leave state that breaks the next.
 
-Construction failure triggers exact cleanup. Cleanup first validates the owner and operation metadata of every present recipe resource, then stops and deletes VMs in reverse recipe order, deletes the network, and verifies absence. A resource owned by another operation refuses the entire deletion instead of being adopted or removed.
+### Exact ownership
+
+Every resource records its owner, issue, attempt, and operation when the harness creates it. Setup and cleanup change only recorded resources, after they check the live metadata again. They never select by prefix, glob, age, broad query, or unset variable. A resource without the expected metadata is outside the topology, even when its name looks right. So a mistake cannot delete another person's machine or a production resource. The one exception is the orphan network sweep. It selects by the harness name prefixes, and deletes only networks that no VM uses.
+
+### Topologies are never production
+
+Topologies never reuse production resources or credentials. Evidence from a topology never authorizes a production deployment.
+
+### A live mount
+
+Discovery mounts the worktree, so an edit reaches the guests at once. Copying source into the guests after every edit is a rejected alternative, because it is slow and hides which source the guests run.
+
+### Three Nodes
+
+The profile gives the Gateway, app-dev, and app-prod roles the room they need, with Router, database, WebSocket, and Ingress on those same three VMs. A fourth VM in every topology is a rejected alternative, because it raises the cost of every session for tests that need only one development host. Router on app-prod would work, but it keeps production routing on one VM and tests fewer network hops. The `gateway` role conflicts with `app-dev`, so those two roles need separate VMs.
+
+A test that needs two production Nodes uses the `app-prod-2` extension instead. The extension is a separate recipe, so the snapshot and every other topology keep three VMs. Putting `app-prod` on the Gateway or app-dev Node is not possible, because those roles conflict.
+
+### Long-lived processes as systemd units
+
+systemd already supervises, logs, and stops processes. Detaching inside `exec` with `nohup`, `setsid`, or a double fork is a rejected alternative, because it depends on shell skill and keeps no output. A separate process supervisor on the guests is also rejected.
+
+### Chosen evidence entries
+
+The harness records an `exec` only when you give it a label. Most commands are exploration, and a proof summary needs chosen, labelled entries. The log is plain text, not JSON, because people read and grep it, and JSON hides line breaks in output.
+
+### A quick sync keeps the verified binding
+
+`sync --quick` does not record the new source. Otherwise `status`, `verify`, and the guest source marker would describe a binding that no readiness check has seen. A full `sync` stays a complete readiness check.
+
+### A bridge for task workspace clones
+
+The harness expects every topology to belong to a linked worktree of the primary checkout. The bridge gives a clone that shape. Teaching the harness to accept clones is a rejected alternative, because it changes about ten identity checks and the guest mount evidence. Mirroring with `rsync --delete` is also rejected, because it deletes the files that the harness and the guests keep in the mount. Finding the primary through the main cache store is rejected, because topologies would then depend on published test caches.
+
+### Scenarios stay outside delivery
+
+Scenarios are regression evidence for one commit, and they run on demand. They never gate review or merge. A cold scenario proves that Orbit builds from the unchanged base image, so it installs nothing before construction.

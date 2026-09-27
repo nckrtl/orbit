@@ -172,10 +172,7 @@ exit($status);"""
             try:
                 orbit('env:import',selector)
             except RuntimeError as error:
-                if str(error).endswith(': instance.source_profile_missing'):
-                    orbit(*args)
-                    orbit('env:import',selector)
-                elif not str(error).endswith(': env.import_conflict'): raise
+                if not str(error).endswith(': env.import_conflict'): raise
                 # Preserve stored intent when a previous run already imported it.
             orbit('instance:database:add',sql_slug,selector)
             orbit('instance:database:add','e2e-valkey',selector,'--prefix=REDIS')

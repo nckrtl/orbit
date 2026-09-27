@@ -52,10 +52,12 @@ final class StatusMetricsCommand extends MetricsCommand
             'Error code' => $assignment['error_code'] ?? null,
             'Prometheus' => $response->prometheus,
             'Grafana' => $response->grafana,
+            'Reconcile status' => $response->reconcileStatus,
+            'Reconcile error code' => $response->reconcileErrorCode,
         ]));
 
         ConsoleWriter::write($this->output, $this->humanRenderer()->table(
-            ['ID', 'Node', 'Desired', 'Actual', 'Reason', 'Degraded'],
+            ['ID', 'Node', 'Desired', 'Actual', 'Reason', 'Degraded', 'Error code'],
             array_map(static fn (array $row): array => [
                 $row['id'],
                 $row['name'],
@@ -63,6 +65,7 @@ final class StatusMetricsCommand extends MetricsCommand
                 $row['actual'],
                 $row['reason'],
                 $row['degraded_reason'],
+                $row['degraded_error_code'],
             ], $response->exporters),
             'No Metrics exporters configured.',
         ));

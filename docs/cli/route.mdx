@@ -1,77 +1,83 @@
 ---
 title: "route"
-description: "Create explicit Project domains and Node-owned custom proxy hostnames, point Project Routes at Instances, change a domain or publication intent, and remove Routes."
+description: "Create Instance-targeted app Routes and Node-owned custom proxy Routes, change Route targets, domains, or publication intent, and remove Routes."
+covers:
+  - apps/cli/app/Commands/Routes/**
+  - packages/php-sdk/src/Requests/Routes/**
+  - packages/php-sdk/src/Responses/Routes/**
 ---
 
-A Route is a domain the Gateway publishes on the private network. A Project Route has one routing scope: a Node or an active Cluster. Development Project Routes have one target. Production Project Routes can have an ordered target pool. A custom proxy Route gives a Node-local service an exact hostname. Orbit generates a Project Route for every Instance it creates. Generated domains use an explicit hostname, an active Cluster TLD, then the Node TLD. The `route` family manages explicit Project Routes, custom proxy Routes, and Project Route targets and domains.
+A Route is a domain that reaches an Instance or a Node-local service. Orbit creates a Project Route for every Instance of a web-serving Project. The `route` family creates explicit Project Routes and custom proxy Routes, changes their targets, domains, and publication, and removes them.
 
-The [Routes reference](/reference/routes) owns the Route record, domain generation, private projection, and the guards that refuse a change while an active Instance depends on it.
+The [Routes reference](/reference/routes) describes the Route record, domain selection, traffic setup, and the rules that refuse a change while an active Instance depends on a Route.
 
 ## Commands
 
 | Command | Result |
 | --- | --- |
-| [`route:create`](#orbit-routecreate) | Create an explicit Route. |
+| [`route:create`](#orbit-routecreate) | Create an explicit app Route for an Instance or a Node-owned custom proxy Route. |
 | [`route:list`](#orbit-routelist) | List Routes. |
 | [`route:show`](#orbit-routeshow) | Show one Route. |
-| [`route:update`](#orbit-routeupdate) | Change the domain or publication intent of an explicit Route. |
-| [`route:target:set`](#orbit-routetargetset) | Set the configured target or a complete production target set. |
-| [`route:target:unset`](#orbit-routetargetunset) | Clear the configured target. |
+| [`route:update`](#orbit-routeupdate) | Change the domain or publication of an explicit Project Route. |
+| [`route:target:set`](#orbit-routetargetset) | Set the target, or a complete production target set. |
+| [`route:target:unset`](#orbit-routetargetunset) | Clear the target. |
 | [`route:destroy`](#orbit-routedestroy) | Remove a Route. |
 
-Every command accepts `--json`. Route, Project, Instance, Node, and Cluster arguments are numeric IDs. Human lists use uppercase table headers and include every target in an ordered pool. One Route uses a detail tree with identity, scope, targets, publication, lifecycle and replacement metadata. Requests show progress while waiting and retain the Gateway request ID.
+Every command accepts `--json`. Route, Project, Instance, and Cluster arguments are numeric IDs. Human lists show a table with every target of a pool. `route:show` shows a detail tree with identity, scope, targets, publication, lifecycle, and replacement fields. Requests show progress while they wait.
 
 ## orbit route:create
 
-Create an explicit Project Route or a Node-owned custom proxy Route.
+Create an explicit app Route targeting an Instance, or create a custom proxy Route for a Node-local service.
 
 ```bash
-orbit route:create <app> <domain> [--publication=INTENT] [--target=ID | --node=ID | --cluster=ID]
+orbit route:create <instance> <domain> [--publication=private|public]
 orbit route:create <domain> --node=NODE --upstream=URL
 orbit route:create <domain> --node=NODE --process=PROCESS
 ```
 
 | Argument | Required | Meaning |
 | --- | --- | --- |
-| `app` | Project form | Numeric Project ID that owns the Project Route. |
-| `domain` | yes | Route domain. The Gateway normalizes it and refuses one that another Route or a reserved platform name owns. |
+| `instance` | App form | Numeric Instance ID. Its Project owns the Route; its Node or active Cluster determines the scope. |
+| `domain` | yes | The Route domain. The Gateway normalizes it. |
 
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `--publication=INTENT` | `private` | `private` or `public` for a Project Route. Custom proxy Routes are private only. |
-| `--target=ID` | none | Numeric Instance target. The Project Route scope derives from that Instance's Node or active Cluster. |
-| `--node=NODE` | none | Numeric Node scope for a targetless Project Route, or the serving Node ID or name for a custom proxy Route. |
-| `--cluster=ID` | none | Numeric Cluster scope for a targetless Project Route. |
+| `--publication=INTENT` | `private` | `private` or `public` for the app form. Custom proxy Routes are private only. |
+| `--node=NODE` | none | Serving Node ID or name, required only for the custom proxy form. |
 | `--upstream=URL` | none | Loopback HTTP URL for a custom proxy Route, such as `http://127.0.0.1:4788`. |
-| `--process=PROCESS` | none | Node-owned Process name or ID on the serving Node for a custom proxy Route. |
+| `--process=PROCESS` | none | Name or ID of a Node Process on the serving Node, for a custom proxy Route. |
 
 ```bash
-orbit route:create 4 shop.example.test --target=12
-orbit route:create 4 preview.example.test --cluster=3
+orbit route:create 12 shop.example.test
+orbit route:create 12 shop.example.com --publication=public
 orbit route:create executor.orbit --node=beast --upstream=http://127.0.0.1:4788
 orbit route:create executor.orbit --node=beast --process=executor
 ```
 
-`--upstream` or `--process` selects the custom proxy form. That form requires `--node` and forbids `app`, `--target`, `--cluster`, and public publication. The first positional argument is the domain. The CLI resolves `--node` as an ID or registered Node name.
+In a terminal, Orbit lists available Instances for an omitted Instance ID and prompts for an omitted domain. If no Instances are available or selection is cancelled, it creates nothing. In noninteractive or JSON mode, provide both arguments for the app form.
 
-The Project form refuses `--target` together with a scope option (`route.scope_conflict`) and a targetless Route without exactly one scope (`route.scope_required`) before it sends a request. Creating the same Project Route again with identical Project, domain, intent, scope, and target returns the existing Route; a retry that changes one of those values fails with `route.retry_conflict`. Creating the same custom proxy Route again with identical domain, Node, and upstream or Process returns the existing Route.
+The app form creates and activates a Route for the Instance. The Instance implies the Project and scope. An inactive Instance returns `route.target_inactive`; an Instance already targeted by another Route returns `route.target_conflict`. An identical retry for an existing active Route returns that Route. See [Create and change targets](/reference/routes#create-and-change-targets).
+
+`--upstream` or `--process` selects the custom proxy form. Its first argument is the domain, and it needs `--node`. It cannot take an Instance or public publication. A successful custom proxy request converges its Node-local serving path.
 
 | Error code | Meaning |
 | --- | --- |
-| `route.domain_invalid` | The domain is not a valid normalized domain. |
-| `route.domain_conflict` | Another Route owns the domain, or the name is reserved (`gateway.orbit`, `metrics.orbit`, `reverb.orbit`). |
-| `route.target_app_conflict` | The target Instance belongs to another Project. |
-| `route.target_inactive` | The target Instance is not active. |
+| `route.domain_invalid` | The domain is not a valid domain. |
+| `route.domain_conflict` | Another Route owns the domain, or it is a reserved name: `gateway.orbit`, `metrics.orbit`, `reverb.orbit`, `analytics.orbit`, or `collector.cli-proxy-api.orbit`. |
+| `route.retry_conflict` | A Route with this domain exists with a different Instance, publication, or custom proxy configuration. |
+| `route.scope_required` | A custom proxy Route needs a serving Node and uses the domain as its only positional argument. |
+| `route.target_inactive` | The Instance is not active. |
 | `route.target_web_root_unsupported` | The target Instance has no supported relative web root, such as a package rooted at `.`. |
 | `route.target_conflict` | The target Instance already belongs to another Route. |
-| `route.router_required` | The Cluster scope has no active Router. |
-| `route.upstream_invalid` | The upstream is not a loopback HTTP URL on the serving Node. |
-| `route.upstream_unresolved` | The Process has no single Node-local listener the Gateway can use. |
-| `route.process_conflict` | The Process is missing, not Node-owned, or not on the serving Node. |
+| `route.router_required` | The Cluster has no active Router. |
+| `route.node_inactive`, `route.cluster_inactive` | The Instance's Node or Cluster, or the custom proxy's Node, is not active. |
+| `route.upstream_invalid` | The upstream is not a loopback HTTP URL. |
+| `route.upstream_unresolved` | The Process has no single Node-local listener. |
+| `route.process_conflict` | The Process is not a Node Process on the serving Node. |
 
 ## orbit route:list
 
-List every Route with its domain, kind (`app` or `custom_proxy`), provenance (`generated` or `explicit`), publication intent, scope, target or upstream, and status.
+List the Routes on the Nodes you may address, with domain, kind (`app`, `custom_proxy`, or `analytics_tracking`), provenance, publication, scope, target or upstream, and status.
 
 ```bash
 orbit route:list [--json]
@@ -79,55 +85,49 @@ orbit route:list [--json]
 
 ## orbit route:show
 
-Show one Route, including its kind, generation basis, custom proxy upstream or Process, lifecycle, and failure metadata when a change is unfinished.
+Show one Route with its kind, generation basis, upstream or Process, lifecycle, and the failure fields of an unfinished change.
 
 ```bash
 orbit route:show <route>
 ```
 
-| Argument | Required | Meaning |
-| --- | --- | --- |
-| `route` | yes | Numeric Route ID. |
-
 ## orbit route:update
 
-Change the domain or the publication intent of an explicit Route. At least one option is required.
+Change the domain or the publication of an explicit Project Route. Give at least one option.
 
 ```bash
 orbit route:update <route> [--domain=DOMAIN] [--publication=INTENT]
 ```
 
-| Argument | Required | Meaning |
-| --- | --- | --- |
-| `route` | yes | Numeric Route ID. |
-
 | Option | Meaning |
 | --- | --- |
-| `--domain=DOMAIN` | New explicit domain. |
-| `--publication=INTENT` | New publication intent, `private` or `public`. |
+| `--domain=DOMAIN` | The new domain. |
+| `--publication=INTENT` | The new publication, `private` or `public`. |
 
 ```bash
 orbit route:update 9 --domain=shop.example.com
+orbit route:update 9 --publication=public
 ```
 
-A domain change reserves a replacement Route while the current Route stays authoritative. The Gateway prepares certificates, Caddy sites, environment values, and private DNS before cutover. It then removes the old Route and its projections. The response returns the replacement Route ID. A publication-only update keeps the Route ID. See [Route changes](/reference/routes#change-an-existing-route) and [publishing the public edge](/reference/routes#publish-the-public-edge) for eligibility and recovery.
+A domain change creates a replacement Route and returns its ID. The current Route stays authoritative until cutover. A publication-only change keeps the Route ID. See [Change an explicit domain](/reference/routes#change-an-explicit-domain) and [Publish the public edge](/reference/routes#publish-the-public-edge).
 
 <Note>
-During a domain change, inspection shows both Route records, `replacement_step`, `failed_step`, and `error_code`. Repeat the same request to resume. A conflicting domain or publication request changes no recorded intent.
+During a domain change, `route:show` shows both Routes, `replacement_step`, `failed_step`, and `error_code`. Repeat the same request to resume. A different domain or publication request changes nothing.
 </Note>
 
 | Error code | Meaning |
 | --- | --- |
 | `route.update_required` | No option was given. |
-| `route.domain_immutable` | The Route is generated; only an explicit domain can change. |
+| `route.kind_unsupported` | The Route is a custom proxy or analytics tracking Route. |
+| `route.domain_immutable` | The Route is generated. Only an explicit domain can change. |
 | `route.domain_conflict` | Another Route owns the new domain. |
-| `route.reconciliation_required` | The requested change falls outside the supported Route lifecycle. |
-| `route.domain_change_conflict` | A different domain change is already in progress. |
-| `instance.source_profile_missing` | The target has no recorded source profile; recover it through the same creation request with `--recover-source-profile`. |
+| `route.domain_change_conflict` | Another domain change is in progress. |
+| `route.reconciliation_required` | The Route or its targets do not allow this change, for example a public domain for development Instances. |
+| `instance.source_profile_missing` | A target has no recorded source profile. Orbit does not recover missing profiles on older Instances; see ADR 0177. |
 
 ## orbit route:target:set
 
-Add or replace the configured Instance target, or send a complete production target set.
+Set the Instance target, or send a complete production target set.
 
 ```bash
 orbit route:target:set <route> <target> [--targets=ID]... [--reassign=ID:ROUTE]... [--remove=ID]...
@@ -136,53 +136,48 @@ orbit route:target:set <route> <target> [--targets=ID]... [--reassign=ID:ROUTE].
 | Argument | Required | Meaning |
 | --- | --- | --- |
 | `route` | yes | Numeric Route ID. |
-| `target` | yes | Numeric Instance ID, or the first ID in a production target set. |
+| `target` | yes | Numeric Instance ID, or the first ID of a production target set. |
 
 | Option | Meaning |
 | --- | --- |
-| `--targets=ID` | Additional ordered Instance IDs in the complete production target set. Repeat the option for each extra ID. |
-| `--reassign=ID:ROUTE` | Detached Instance ID and destination Route ID. Repeat the option for each reassignment. |
-| `--remove=ID` | Detached Instance ID authorized for removal. Repeat the option for each removal. |
+| `--targets=ID` | The next Instance ID of the ordered target set. Repeat it for each ID. |
+| `--reassign=ID:ROUTE` | A detached Instance ID and its destination Route ID. Repeat it for each Instance. |
+| `--remove=ID` | A detached Instance ID that you allow Orbit to remove. Repeat it for each Instance. |
 
 ```bash
 orbit route:target:set 9 12
 orbit route:target:set 9 12 --targets=15 --reassign=18:4 --remove=19
 ```
 
-A single target with no pool options sends `app_instance_id`. Pool options send `targets` plus `dispositions`. The [Routes reference](/reference/routes#change-a-production-target-set) owns refusal, retry, and pool serving rules. Setting the existing single target again returns the unchanged Route. The Gateway returns `route.target_conflict` and preserves both associations when a single-target request would take an Instance from another Route or detach an active Instance from its sole Route.
+Without pool options, the command sets one target. With them, it sends the complete target set and a disposition for each detached Instance. [Change a production target set](/reference/routes#change-a-production-target-set) lists the rules and error codes. A single-target request that would take an Instance from another Route, or detach an active Instance from its only Route, returns `route.target_conflict` and changes nothing. A production target set can take an Instance from another Route in the same Cluster.
 
 ## orbit route:target:unset
 
-Clear the configured target while keeping the Route, its domain, scope, and publication intent.
+Clear the target and keep the Route, its domain, scope, and publication.
 
 ```bash
 orbit route:target:unset <route> [--yes]
 ```
 
-Clearing an already empty Route returns it unchanged. The Gateway returns `route.target_conflict` when clearing would leave an active Instance without a Route.
+Clearing an empty Route returns it unchanged. The Gateway returns `route.target_conflict` when clearing would leave an active Instance without a Route.
 
 ## orbit route:destroy
 
-Remove an untargeted private Project Route or a custom proxy Route and its managed traffic configuration. The Gateway completes projection cleanup before deleting the record. See [Route removal](/reference/routes#remove-an-untargeted-private-route) for refusal and retry rules. A custom proxy Route has no Instance target, so destroy cleans that hostname without touching Project Routes.
+Remove a Route without targets, and its DNS records, Caddy sites, certificates, and firewall rules. See [Remove a Route](/reference/routes#remove-a-route).
 
 ```bash
 orbit route:destroy <route> [--yes]
 ```
 
-| Argument | Required | Meaning |
-| --- | --- | --- |
-| `route` | yes | Numeric Route ID. |
-
 <Warning>
-The Gateway refuses removal with `route.target_conflict` while an active Instance depends on the Route. Remove the Instance with `instance:destroy` instead; that removal clears the target and deletes a final-target Route as part of its own lifecycle.
+The Gateway refuses removal with `route.target_conflict` while an active Instance depends on the Route. Remove the Instance with `instance:destroy` instead. That removal deletes the Route when it removes the last target. The Gateway also refuses direct removal of analytics tracking Routes with `route.tracking_managed`; disable analytics on the Instance instead. A Route kind that cannot be destroyed returns `route.kind_invalid`.
 </Warning>
 
-Route removal and target clearing ask for confirmation with No selected. Supply `--yes` for automation, including `--json`. The CLI resolves the Route before asking; declining, Ctrl-C or EOF returns `input.cancelled` without sending the mutation. A valid noninteractive call without `--yes` returns `input.confirmation_required`. Existing targeting and removal restrictions still apply.
+`route:destroy` and `route:target:unset` resolve the Route and then ask for confirmation, with No selected. Pass `--yes` for automation, also with `--json`. Declining, Ctrl-C, or end of input returns `input.cancelled` and sends nothing. A call without a terminal and without `--yes` returns `input.confirmation_required`.
 
 ## Related
 
-- [`instance`](/cli/instance) creates the Instances that Project Routes target and accepts `--domain` for an explicit Route at creation.
-- [`process`](/cli/process) installs the Node-owned Process a custom proxy Route can target.
-- [`cluster`](/cli/cluster) owns the Router that serves Cluster-scoped Project Routes.
-- [`dns`](/cli/dns) points a development TLD at a Node from the operator machine.
-- [Custom proxy Routes](/reference/routes#custom-proxy-routes) owns uniqueness, DNS, Caddy, and the Executor example.
+- [`instance`](/cli/instance) creates the Instances that Project Routes target, and accepts `--domain` for an explicit Route.
+- [`process`](/cli/process) creates the Node Process that a custom proxy Route can target.
+- [`cluster`](/cli/cluster) sets the Router that serves Cluster-scoped Routes.
+- [`dns`](/cli/dns) points a TLD or a Route name at an address on a Mac.

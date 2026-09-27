@@ -2599,7 +2599,7 @@ export interface paths {
         put?: never;
         /**
          * Create a Task group
-         * @description Creates a Task group for an App with an optional ordered list of Task subtasks. Requires Gateway access. `status` is `backlog` (the default) or `todo`; the scheduler never claims a `backlog` group. A `todo` group needs at least one subtask (`tasks.no_subtasks`), each with at least one deliverable (`tasks.subtask_deliverables_missing`), and create then asks the scheduler to claim the oldest `todo` group that still fits the concurrency ceilings. `plan: true` on a `backlog` group provisions its Instance on an app-dev Node with access to itself and starts a T3 planner thread that becomes the reviewer (`tasks.plan_requires_backlog`, `tasks.planner_driver_unavailable`, `tasks.planner_node_unavailable`, `tasks.planner_unavailable`). Optional `notify_coder` or Commander `notify_on_settle` opts the group into the Coder settle webhook. Returns `tasks.disabled` while the extension is off.
+         * @description Creates a Task group for an App with an optional ordered list of Task subtasks. Requires Gateway access. `status` is `backlog` (the default) or `todo`; the scheduler never claims a `backlog` group. A `todo` group needs at least one subtask (`tasks.no_subtasks`), each with at least one deliverable (`tasks.subtask_deliverables_missing`), and create then asks the scheduler to claim the oldest `todo` group that still fits the concurrency ceilings. Optional `notify_coder` or Commander `notify_on_settle` opts the group into the Coder settle webhook. Returns `tasks.disabled` while the extension is off.
          */
         post: operations["tasks-create"];
         delete?: never;
@@ -2627,7 +2627,7 @@ export interface paths {
         head?: never;
         /**
          * Update a Task group
-         * @description Updates a Task group. `title` and `brief` change only in `backlog` (`tasks.not_in_backlog`). `status` moves the group between `backlog` and `todo`; a claimed group cannot move (`tasks.already_claimed`), and `todo` needs at least one subtask (`tasks.no_subtasks`) and a deliverable on every subtask (`tasks.subtask_deliverables_missing`, whose details name the subtasks). Moving to `todo` asks the scheduler to claim; for a planning group Orbit first commits the workspace as `Plan: {title}` (`tasks.commit_failed`). Served by the Node that holds the group's Instance, or by the Gateway for a group without one. Returns `tasks.disabled` while the extension is off.
+         * @description Updates a Task group. `title` and `brief` change only in `backlog` (`tasks.not_in_backlog`). `status` moves the group between `backlog` and `todo`; a claimed group cannot move (`tasks.already_claimed`), and `todo` needs at least one subtask (`tasks.no_subtasks`) and a deliverable on every subtask (`tasks.subtask_deliverables_missing`, whose details name the subtasks). Moving to `todo` asks the scheduler to claim. Served by the Node that holds the group's Instance, or by the Gateway for a group without one. Returns `tasks.disabled` while the extension is off.
          */
         patch: operations["tasks-update"];
         trace?: never;
@@ -3305,6 +3305,8 @@ export interface components {
             prometheus?: string;
             grafana?: string;
             exporters?: components["schemas"]["MetricsExporter"][];
+            reconcile_status?: string;
+            reconcile_error_code?: string | null;
         };
         MetricsAssignment: {
             id?: number;
@@ -3322,7 +3324,8 @@ export interface components {
             /** @enum {string} */
             reason?: "ineligible" | "metrics_node" | "explicit_enabled" | "role_default" | "explicit_disabled" | "roleless_default_excluded";
             /** @enum {string|null} */
-            degraded_reason?: "unreachable" | "firewall_inactive" | null;
+            degraded_reason?: "unreachable" | "firewall_inactive" | "reconcile_failed" | null;
+            degraded_error_code?: string | null;
         };
         Node: {
             id?: number;
@@ -3472,7 +3475,6 @@ export interface components {
             reviewer_agent_thread_id?: number | null;
             pr_url?: string | null;
             notify_coder?: boolean;
-            plan?: boolean;
             assistance_requested?: boolean;
             assistance_reason?: string | null;
             implementer_model?: string;
@@ -3596,7 +3598,6 @@ export interface components {
             manager?: string;
             package?: string;
             version_constraint?: string | null;
-            protected?: boolean;
             status?: string;
             installed_version?: string | null;
             failed_operation?: string | null;
@@ -5680,8 +5681,6 @@ export interface operations {
                     domain?: string;
                     /** @description Optional explicit source branch */
                     branch?: string;
-                    /** @description Adopt complete source evidence for a legacy incomplete checkpoint */
-                    recover_source_profile?: boolean;
                 };
             };
         };
@@ -7784,7 +7783,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description The live log path is not available (`logs.live_unavailable`); `details.reason` is `ssh_only` for a production Instance, or `realtime_not_configured`, `subscriber_down`, `agent_unavailable`, `agent_not_joined`, or `agent_outdated`. */
+            /** @description The live log path is not available (`logs.live_unavailable`); `details.reason` is `ssh_only` for a production Instance, or `realtime_not_configured`, `subscriber_down`, `agent_unavailable`, or `agent_not_joined`. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -10550,7 +10549,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description The live log path is not available (`logs.live_unavailable`); `details.reason` is `ssh_only` for a production Instance, or `realtime_not_configured`, `subscriber_down`, `agent_unavailable`, `agent_not_joined`, or `agent_outdated`. */
+            /** @description The live log path is not available (`logs.live_unavailable`); `details.reason` is `ssh_only` for a production Instance, or `realtime_not_configured`, `subscriber_down`, `agent_unavailable`, or `agent_not_joined`. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -12884,18 +12883,18 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
-                    /** @description Route domain */
                     domain: string;
-                    /**
-                     * @description Publication intent
-                     * @enum {string}
-                     */
+                    /** @enum {string} */
                     publication?: "private" | "public";
+                    app_instance_id: number;
+                } | ({
+                    domain: string;
+                    /** @enum {string} */
+                    publication?: "private";
                     node_id: number;
-                    /** @description Loopback HTTP URL for a custom proxy Route */
                     upstream?: string;
                     process_id?: number;
-                };
+                } & (unknown | unknown));
             };
         };
         responses: {
@@ -13836,8 +13835,6 @@ export interface operations {
                     status?: never;
                     /** @description Post the Coder settle webhook when the group settles */
                     notify_coder?: boolean;
-                    /** @description Start a T3 planner that shapes the group in Backlog */
-                    plan?: boolean;
                     notify_on_settle?: boolean;
                     tasks?: {
                         title: string;

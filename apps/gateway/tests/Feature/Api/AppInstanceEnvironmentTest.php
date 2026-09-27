@@ -306,7 +306,7 @@ it('returns 409 instance.source_profile_missing for env operations without a rec
         ->assertJsonPath('error.code', 'instance.source_profile_missing')
         ->assertJsonPath(
             'error.message',
-            'The AppInstance has no recorded source profile. Repeat the same creation request with recover_source_profile to inspect the source and store the complete profile.',
+            'The AppInstance has no recorded source profile and cannot be used.',
         );
 
     expect(AppInstanceEnvironmentValue::query()->count())

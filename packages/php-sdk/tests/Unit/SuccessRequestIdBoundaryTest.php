@@ -64,7 +64,6 @@ describe('success request ID boundary', function (): void {
                     'manager' => 'composer',
                     'package' => 'vendor/package',
                     'version_constraint' => null,
-                    'protected' => false,
                     'status' => 'installed',
                     'installed_version' => '1.0.0',
                     'failed_operation' => null,

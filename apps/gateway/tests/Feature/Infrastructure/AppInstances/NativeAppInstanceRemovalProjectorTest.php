@@ -19,6 +19,7 @@ use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppDev\AppDevDnsConfigRenderer;
 use App\Infrastructure\AppDev\AppDevPhpFpmConfigRenderer;
 use App\Infrastructure\AppDev\AppDevSiteRepository;
@@ -244,51 +245,6 @@ it('resumes final Route cleanup after certificate deletion and a late DNS failur
         ->toBe(1);
 });
 
-it('retains an ordered shared production Route and republishes only its survivor', function (): void {
-    [$member, $route, $departing, $survivor, $router] = orb183_projector_production_member(shared: true);
-    [$projector, $ssh] = orb181_removal_projector($this);
-
-    expect($projector->clearRouteTarget($member))
-        ->toBe('retained')
-        ->and($route->refresh()->status)
-        ->toBe(RouteStatus::Active)
-        ->and($route->targets()->pluck('app_instance_id')->all())
-        ->toBe([$survivor->id])
-        ->and($route->targets()->pluck('position')->all())
-        ->toBe([0]);
-
-    $routerConfiguration = collect(orb181_caddy_configurations($ssh->commands))
-        ->first(static fn (string $configuration): bool => str_contains($configuration, 'reverse_proxy'));
-    expect($routerConfiguration)
-        ->toContain("reverse_proxy https://{$survivor->node->lan_ip}")
-        ->not
-        ->toContain((string) $departing->node->lan_ip)
-        ->and(collect($ssh->commands)
-            ->contains(
-                static fn (RemoteCommand $command): bool => in_array(
-                    "app-instance-{$departing->id}",
-                    $command->arguments,
-                    true,
-                ),
-            ))
-        ->toBeTrue()
-        ->and(collect($ssh->connections)->pluck('host')->all())
-        ->toContain($router->wireguard_ip);
-
-    $ssh->phpDiscovery = "8.5\t".base64_encode(<<<FPM
-        [orbit-app-instance-{$departing->id}]
-        listen = /run/php/orbit-app-instance-{$departing->id}.sock
-        FPM)."\n";
-    $projector->cleanupRuntime($member);
-
-    $phpPublications = collect($ssh->commands)
-        ->filter(static fn (RemoteCommand $command): bool => str_contains($command->input ?? '', 'php-fpm.conf'));
-    expect($phpPublications)
-        ->toHaveCount(1)
-        ->and($phpPublications->sole()->input)
-        ->not->toContain(base64_encode("[orbit-app-instance-{$departing->id}]"));
-});
-
 it('deletes a final production Route after cleanup without publishing development unavailability', function (): void {
     [$member, $route] = orb183_projector_production_member(shared: false);
     [$projector, $ssh] = orb181_removal_projector($this);
@@ -302,6 +258,47 @@ it('deletes a final production Route after cleanup without publishing developmen
                 static fn (string $configuration): bool => orb181_unavailable_site($configuration),
             ))
         ->toBeFalse();
+});
+
+it('skips PHP cleanup but removes Caddy and certificate state for non-PHP production Instances', function (): void {
+    [$member, $route, $instance] = orb183_projector_production_member(shared: false);
+    $route->delete();
+    $instance->update([
+        'selected_php_version' => null,
+        'production_php_service' => null,
+        'production_php_pool' => null,
+        'production_php_socket' => null,
+    ]);
+    $phpRuntime = new Orb214RemovalPhpRuntimeManager;
+    [$projector, $ssh] = orb181_removal_projector($this, $phpRuntime);
+
+    $projector->cleanupRuntime($member);
+
+    expect($phpRuntime->removed)->toBeEmpty()
+        ->and(orb181_caddy_configurations($ssh->commands))->not->toBeEmpty()
+        ->and(collect($ssh->commands)->contains(
+            static fn (RemoteCommand $command): bool => str_contains(
+                $command->input ?? '',
+                'rm -rf -- "$managed_home/.orbit/certificates/$scope"',
+            ) && in_array("app-instance-{$instance->id}", $command->arguments, strict: true),
+        ))->toBeTrue();
+});
+
+it('refuses PHP production runtime cleanup without its dedicated PHP-FPM service', function (): void {
+    [$member, , $instance] = orb183_projector_production_member(shared: false);
+    $instance->update([
+        'production_php_service' => null,
+        'production_php_pool' => null,
+        'production_php_socket' => null,
+    ]);
+    [$projector] = orb181_removal_projector($this);
+
+    expect(fn () => $projector->cleanupRuntime($member))
+        ->toThrow(function (ResourceOperationException $exception): void {
+            expect($exception->errorCode)->toBe('app-prod.php_service_missing')
+                ->and($exception->getMessage())
+                ->toBe('The production PHP Instance has no recorded dedicated PHP-FPM service.');
+        });
 });
 
 it('removes a final public Route edge before deleting the Route and refreshes a surviving public Route', function (): void {
@@ -544,6 +541,8 @@ final class Orb214RemovalPhpRuntimeManager implements ProductionPhpRuntimeManage
     public array $removed = [];
 
     public function converge(AppInstance $appInstance): void {}
+
+    public function convergeMonitoring(AppInstance $appInstance, bool $enabled): void {}
 
     public function refreshCache(AppInstance $appInstance): void {}
 

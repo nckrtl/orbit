@@ -43,19 +43,31 @@ final readonly class ProductionInstanceInspectionExpectationFactory
             throw new \InvalidArgumentException('The production inspection identity is incomplete.');
         }
 
-        $runtime = $instance->selected_php_version === null
-            ? null
-            : ProductionPhpRuntimeIdentity::forProvisioning($instance, $instance->selected_php_version);
-        if ($runtime instanceof ProductionPhpRuntimeIdentity) {
+        $runtime = null;
+        $runtimeConfiguration = null;
+        $associationMatches = ProductionPhpRuntimeIdentity::isAbsent($instance);
+
+        if (! $associationMatches) {
+            if (
+                ! is_string($instance->production_php_service)
+                || $instance->production_php_service === ''
+                || ! is_string($instance->selected_php_version)
+                || $instance->selected_php_version === ''
+            ) {
+                throw new \InvalidArgumentException(
+                    'The production PHP Instance requires a dedicated PHP-FPM service and PHP version.',
+                );
+            }
+
+            $runtime = ProductionPhpRuntimeIdentity::forProvisioning($instance, $instance->selected_php_version);
             $associationMatches =
                 $instance->production_php_service === $runtime->service
                 && $instance->production_php_pool === $runtime->pool
                 && $instance->production_php_socket === $runtime->socket;
-        } else {
-            $associationMatches =
-                $instance->production_php_service === null
-                && $instance->production_php_pool === null
-                && $instance->production_php_socket === null;
+            $runtimeConfiguration = $this->runtimeRenderer->render(
+                $runtime,
+                $this->serviceMetrics?->enabled($instance->node) ?? false,
+            );
         }
 
         return new ProductionInstanceInspectionExpectation(
@@ -68,9 +80,7 @@ final readonly class ProductionInstanceInspectionExpectationFactory
                 ->blocksFor("app-instance-{$instance->id}"),
             associationMatches: $associationMatches,
             runtime: $runtime,
-            runtimeConfiguration: $runtime instanceof ProductionPhpRuntimeIdentity
-                ? $this->runtimeRenderer->render($runtime, $this->serviceMetrics?->enabled($instance->node) ?? false)
-                : null,
+            runtimeConfiguration: $runtimeConfiguration,
         );
     }
 }

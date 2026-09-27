@@ -12,11 +12,9 @@ use Illuminate\Support\Facades\DB;
 
 it('projects active nodes from prospective roles and explicit preferences once', function (): void {
     $metrics = metricsExporterProjectionNode('metrics');
-    $metrics->update(['ssh_host_fingerprint' => null]);
     $metrics->roles()->create(['role' => 'metrics', 'status' => 'provisioning']);
     $metrics->roles()->create(['role' => 'gateway', 'status' => 'active']);
     $gateway = metricsExporterProjectionNode('gateway');
-    $gateway->update(['ssh_host_fingerprint' => null]);
     $gateway->roles()->create(['role' => 'gateway', 'status' => 'active']);
     $gateway->roles()->create(['role' => 'vpn', 'status' => 'active']);
     $active = metricsExporterProjectionNode('active-role');

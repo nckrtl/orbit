@@ -45,7 +45,6 @@ final readonly class MetricsExporterSshExecutor implements MetricsExporterRuntim
         $expected = $this->expectedConfiguration($node);
 
         try {
-            $this->cleanupRetiredArtifacts($node);
             $this->installPackage($node);
             $this->publishConfiguration($node, $expected, 'metrics.exporter_configuration_failed');
             $this->setServiceActive($node, true, 'metrics.exporter_service_failed');
@@ -135,8 +134,6 @@ final readonly class MetricsExporterSshExecutor implements MetricsExporterRuntim
         $ownership = $state->firewallOwnership;
 
         try {
-            $this->cleanupRetiredArtifacts($node);
-
             if (is_string($configuration)) {
                 $this->setServiceActive($node, false, 'metrics.exporter_service_remove_failed');
                 $this->removeConfiguration($node, 'metrics.exporter_configuration_remove_failed');
@@ -403,23 +400,6 @@ final readonly class MetricsExporterSshExecutor implements MetricsExporterRuntim
             new RemoteCommand(['sudo', 'systemctl', 'daemon-reload']),
             $errorCode,
             'The Metrics exporter unit could not be reloaded.',
-        );
-    }
-
-    private function cleanupRetiredArtifacts(Node $node): void
-    {
-        $this->run(
-            $node,
-            new RemoteCommand([
-                'sudo',
-                'rm',
-                '-f',
-                '--',
-                '/usr/local/sbin/orbit-metrics-uninstall',
-                '/usr/local/sbin/orbit-metrics-uninstall.orbit-candidate',
-            ]),
-            'metrics.retired_artifact_cleanup_failed',
-            'The retired Metrics artifacts could not be removed.',
         );
     }
 

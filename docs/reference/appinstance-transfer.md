@@ -1,121 +1,120 @@
+---
+title: "Instance transfer"
+description: "How the Gateway moves one development Instance to another app-dev Node, keeps its ID, and recovers from a failed or interrupted move."
+covers:
+  - apps/gateway/app/Actions/AppInstances/TransferAppInstanceAction.php
+  - apps/gateway/app/Domain/AppInstances/Transfer/**
+  - apps/gateway/app/Infrastructure/AppInstances/{NativeAppInstanceTransferRuntime,RemoteAppInstanceTransferSource}.php
+  - apps/gateway/app/Http/Controllers/Api/AppInstanceTransfersController.php
+  - apps/gateway/app/Models/AppInstanceTransfer.php
+  - apps/cli/app/Commands/Instances/TransferInstanceCommand.php
+  - packages/php-sdk/src/Requests/AppInstances/TransferAppInstanceRequest.php
+---
+
 # Instance transfer
 
-This page tells an operating agent how the Gateway moves one active development Instance from its current Node to another app-dev Node while keeping the same Instance ID. [ADR 0066](/decisions/0066-transfer-development-appinstances-between-nodes) owns the transfer decision. [ADR 0065](/decisions/0065-replace-routes-when-domains-change) owns generated domain replacement. [ADR 0044](/decisions/0044-own-appinstance-environment-configuration-in-orbit) owns stored environment configuration.
+A transfer moves one active development Instance to another `app-dev` Node. The Instance keeps its ID, Project, and Processes. A Schedule cannot target the Instance during transfer. The source gets a short downtime, and Orbit deletes the old placement at the end.
 
-## Request a transfer
+```bash
+orbit instance:transfer <instance> <node> [--name=NAME] [--sqlite-source-path=PATH] [--force] [--json]
+```
 
-An authorized client sends one Instance selector and the destination Node to the Gateway.
+## Request
 
-| Input | Requirement |
+The CLI calls `POST /api/v1/instances/{instance}/transfer`.
+
+| Input | Meaning |
 | --- | --- |
-| Endpoint | `POST /api/v1/instances/{instance}/transfer` |
-| Command | `orbit instance:transfer INSTANCE NODE` |
-| `node_id` | Required positive ID of a distinct destination Node |
-| `name` | Optional normalized destination Instance name |
-| `sqlite_source_path` | Optional absolute path to one SQLite database on the source |
+| `node_id` | Destination Node. Required. |
+| `name` | Destination Instance name. It defaults to the current name. |
+| `sqlite_source_path` | Absolute path to one SQLite database on the source to copy. Optional. |
 
-The request accepts no destination path, Cluster, Route, Process, or extra persistent-data selector. The Gateway refuses malformed JSON, duplicate members, unknown members, and invalid values before it changes stored or remote state.
+The request accepts no path, Cluster, Route, or Process input. The caller needs an [access grant](/cli/node) to both Nodes. Interactive calls ask for default-No consent that names the source, the destination, the downtime, and the deletion. `--force` gives that consent. JSON and noninteractive calls without `--force` return `instance.confirmation_required`.
 
-The caller needs directed access to both the source Node and the destination Node. Interactive CLI calls require a default-No confirmation naming the source, destination, downtime and old-placement deletion, unless `--force` supplies explicit consent. JSON and noninteractive calls require `--force`; `--json` only selects machine output and disables prompts. Missing consent returns `instance.confirmation_required` before mutation.
+## Eligibility
 
-## Check eligibility
+Both Nodes must be active Linux Nodes with an active `app-dev` role, and each must belong to an active Cluster. The two Clusters may differ. The Instance must be an active development Instance with one authoritative Route, and not in removal. The destination must be another Node that the Project does not [exclude](/reference/development-node-exclusions). No Schedule may target the Instance. Orbit checks before reserving and again under the Process admission lock immediately before cutover, so a Schedule created during a transfer also prevents cutover.
 
-The Gateway accepts one active development Instance on an active Linux Node that has the active `app-dev` role and belongs to an active Cluster. The destination must be a distinct active Linux Node that also has the active `app-dev` role and belongs to an active Cluster. The destination may be in the same Cluster or another Cluster.
+The Gateway reserves `<destination-apps-root>/<project-slug>/<name>`. It refuses an occupied or unsafe path with `instance.destination_exists`. Retry with another `--name`. A name that another Instance of the Project uses returns `instance.identity_conflict`.
 
-The Gateway refuses the request before it mutates source state when the Instance is production, reserved, migrating, or being removed, when either Node is inactive, missing `app-dev`, or standalone, or when the destination is the current Node.
+## What moves
 
-## Reserve the destination
+The destination gets an independent checkout, even when the source is a worktree. It holds the branch, commits, detached state, tracked changes, untracked files, and file modes of the source. Orbit does not fetch, reset, clean, or push the source. The common repository, sibling worktrees, and local branches of a source worktree stay unchanged.
 
-The Gateway reserves exactly `<destination-apps-root>/<app-slug>/<instance-name>`. The destination name is the current Instance name unless the operator supplies `name`. An explicit name recalculates that path and, for a generated Route, the destination domain.
+Every transfer runs in this order:
 
-The Gateway refuses an occupied, overlapping, linked, or otherwise unsafe destination with `instance.destination_exists`. The error message contains `destination already exists` and tells the operator to retry with a different `name`. The original name stays unchanged until cutover.
+1. Orbit copies the source checkout to the destination.
+2. It stops the source Processes, with or without SQLite.
+3. When you select a SQLite file, it takes one consistent snapshot and installs it at the destination.
 
-The Gateway also refuses an existing Instance identity on the same Project and a Route domain that another Route already owns.
+The checkout is copied before the stop. A file that a running Process writes between steps 1 and 2 does not reach the destination. Orbit copies no other database or data path.
 
-## Preserve application state
+Orbit imports the source `.env` into the [stored environment](/reference/environment-variables). A key that is already stored keeps its stored value. When Orbit cannot read the source `.env`, it imports nothing and continues. Then Orbit writes the destination `.env` from the stored environment.
 
-Transfer keeps the Instance ID and Project ownership. The Gateway copies source content into an independent destination checkout and does not fetch, reset, clean, or push the source.
+Process records keep their IDs, definitions, and desired states. Orbit stops their source units, creates them on the destination, and leaves no duplicate. The destination gets its own [Vite port](/reference/assigned-vite-ports), and Orbit releases the source port after cleanup.
 
-### Source checkout
+## Route
 
-The destination checkout includes branch and commit evidence, tracked changes, untracked files, executable modes, unpublished commits, and detached Git state. A source worktree becomes an independent destination checkout. Transfer leaves the common repository, sibling worktrees, local branches, and unrelated Git administration unchanged.
+An explicit domain keeps its Route. The Route moves to the destination Node and Cluster.
 
-### Selected SQLite
+A generated domain uses the destination Cluster TLD: `<project-slug>.<tld>` for `default`, and `<name>.<project-slug>.<tld>` otherwise. When that domain is the same, the Route keeps its ID. When it changes, Orbit creates a replacement Route and releases the old domain after cleanup. A domain that another Route owns returns `route.domain_conflict`.
 
-When the operator selects one SQLite database, the Gateway pauses source execution, captures one consistent snapshot, and installs those bytes at the destination. It never discovers or copies another database or persistent path.
+## Failure and retry
 
-### Environment and runtime
+Cutover is the moment the destination becomes authoritative.
 
-Transfer imports the source `.env` into the encrypted Gateway store without returning or logging values. Stored application keys win over imported keys. The Gateway resolves destination references and writes the destination environment before it activates destination runtime.
+- A failure before cutover restarts the source Processes and keeps the source Route.
+- It also deletes the destination checkout, the destination Vite port, and a replacement Route that is not active yet.
+- Keys imported into the stored environment stay.
+- After cutover, recovery only goes forward. Orbit never restarts the source. It finishes the Route, runtime, and cleanup without copying the source again.
 
-Existing Process and Schedule records keep their IDs, definitions, and desired states. The Gateway stops source processes and timers for the downtime window, recreates destination runtime artifacts under the destination identity, and leaves no source or destination duplicate.
+A failed or unfinished transfer stays open. Only the identical request resumes it, and it is the only way to close it: a different transfer returns `instance.transfer_retry_conflict`, and removal returns `instance.transfer_incomplete`. For a pending transfer, the CLI offers the retry and names the original source Node. If a Schedule targets the Instance before reservation or is added before cutover, transfer returns `schedule.target_in_use`. Remove the Schedule or retarget it away from the Instance, then retry the identical transfer request.
 
-## Move the Route
-
-An explicit Route domain and a generated Route whose destination domain stays the same keep their Route ID. Transfer moves the Route target and Cluster or Node scope.
-
-A generated Route whose destination domain changes uses the destination Cluster TLD and the replacement Route lifecycle from [ADR 0065](/decisions/0065-replace-routes-when-domains-change). The new generated domain is `{app-slug}.{tld}` when the destination name is `default`, and `{name}.{app-slug}.{tld}` otherwise.
-
-## Recover from failure
-
-A failure before cutover restores the source Route, environment, processes, and schedules as authoritative. The Gateway removes successfully reversible destination state and retains bounded recovery evidence when that cleanup is incomplete. Only the identical request can resume.
-
-Once cutover makes the destination authoritative, retry proceeds only forward. The Gateway never restarts source execution, completes Route publication and runtime activation, and resumes exact old-placement cleanup without copying source again.
-
-For a pending transfer to the same destination, the CLI asks to retry the transfer and names its original source Node, including after cutover. The Gateway still checks that the request matches the pending transfer.
-
-The transfer records the original Router before cutover. If an older incomplete transfer passed cutover without this evidence, cleanup stops with `instance.transfer_source_router_unknown`. Recover the original Router identity from retained operation evidence before retrying; the current Cluster membership alone does not establish that identity.
-
-## Finish cleanup
-
-Successful transfer deletes the old managed checkout or owned worktree and its runtime artifacts. It releases an obsolete generated Route. It preserves unowned worktree resources such as the common repository and sibling worktrees.
-
-After cutover, an obsolete generated Route stops contributing serving and DNS projections. Its record reserves the old domain until cleanup succeeds. The Gateway reconciles the old workload and Router before removing their unused certificates, firewall rules and source placement. A cleanup failure keeps the destination authoritative and retains the transfer identity for an identical retry.
-
-Successful cleanup clears the destination Route's replacement state and completes the transfer together. The resulting Route can be used by environment operations and a later transfer, including a transfer back to the original Node.
-
-The result reports the destination Node, destination path, authoritative domain, and whether cleanup completed. Completion depends on verified source, environment, runtime, Route, and placement state. It does not depend on a successful application HTTP response.
-
-## Run the same-Cluster transfer
-
-Move a development Instance to another app-dev Node in the same Cluster:
-
-```text
-orbit instance:transfer 11 8 --force
-```
-
-The destination path uses the destination Node apps root, the Project slug, and the current Instance name. A generated Route that keeps the same Cluster TLD keeps its domain and Route ID.
-
-## Run the cross-Cluster transfer
-
-Move the same Instance to an app-dev Node in another Cluster:
-
-```text
-orbit instance:transfer 11 9 --name=preview --force
-```
-
-The optional name recalculates the destination path and generated domain. A generated domain that changes uses the destination Cluster TLD and replaces the source Route.
+Cleanup deletes the old checkout or worktree and its runtime files, certificates, and firewall rules on the old workload and Router. The result reports the destination Node, path, domain, and whether cleanup finished. It does not depend on an HTTP response from the application.
 
 ## Failure codes
 
-The Gateway returns these transfer conflicts before or during the operation.
+The Gateway returns these codes before or during a transfer.
 
-| Code | When the Gateway returns it |
+| Code | Cause |
 | --- | --- |
-| `instance.lifecycle_conflict` | The Instance is not active, has no authoritative Route, or has an incomplete Route replacement. |
-| `instance.production_refused` | The Instance is not development. |
-| `instance.migration_required` | The Instance still requires source migration. |
+| `instance.confirmation_required` | The call has no consent. |
+| `instance.lifecycle_conflict` | The Instance is not active, or its Route is not ready. |
+| `schedule.target_in_use` | A Schedule targets the Instance. Remove it or retarget it away from the Instance before retrying the identical transfer request. |
+| `instance.production_refused` | The Instance is a production Instance. |
 | `instance.removal_conflict` | The Instance is being removed. |
 | `instance.same_node` | The destination is the current Node. |
-| `instance.node_inactive` | The source or destination Node is not an active Linux Node. |
-| `instance.node_not_app_dev` | The source or destination Node has no active app-dev role. |
-| `instance.node_excluded` | The destination Node is excluded for this Project. [Development node exclusions](/reference/development-node-exclusions) owns that list. |
-| `instance.standalone_unsupported` | The source or destination Node is not in an active Cluster. |
-| `instance.identity_conflict` | The destination name is already owned on the Project. |
-| `instance.destination_exists` | The destination path is occupied, overlapping, or unsafe. |
-| `route.domain_conflict` | The destination domain is already owned. |
-| `instance.transfer_retry_conflict` | A different request tried to resume an incomplete transfer. |
-| `instance.transfer_failed` | Transfer failed and the Gateway restored or retained the current authority. |
-| `instance.transfer_cleanup_incomplete` | The destination is authoritative and old-placement cleanup still needs the identical retry. |
-| `instance.transfer_source_router_unknown` | The original Router identity is unavailable, so source projection cleanup cannot proceed. |
-| `instance.transfer_cleanup_conflict` | Recorded placement or Route ownership changed, so cleanup stops without finalizing the transfer. |
+| `instance.node_inactive` | A Node is not an active Linux Node. |
+| `instance.node_not_app_dev` | A Node has no active `app-dev` role. |
+| `instance.node_excluded` | The Project excludes the destination. |
+| `instance.standalone_unsupported` | A Node is not in an active Cluster. |
+| `instance.identity_conflict` | Another Instance of the Project has the name. |
+| `instance.destination_exists` | The destination path is occupied or unsafe. |
+| `route.domain_conflict` | Another Route owns the destination domain. |
+| `instance.transfer_retry_conflict` | A different request tried to resume a transfer. |
+| `instance.transfer_failed` | The transfer failed before cutover and the source is authoritative. |
+| `instance.transfer_cleanup_incomplete` | The destination is authoritative, and cleanup needs the identical retry. |
+| `instance.transfer_source_router_unknown` | The source Router is unknown, so Orbit cannot clean up the source projection. |
+| `instance.transfer_cleanup_conflict` | The recorded placement or Route changed, so cleanup stops. |
+| `instance.clone_sqlite_unconfirmed` | Orbit cannot confirm the SQLite copy. Retry. |
+| `sqlite.seed_preflight_failed`, `sqlite.seed_transfer_failed`, `sqlite.seed_failed` | The SQLite snapshot failed its checks, its copy, or its install. |
+
+## Why it works this way
+
+These reasons explain the design. Check them before you propose a change.
+
+### Keep the Instance, not the layout
+
+Removing the Instance and registering a new one would lose its ID and rebuild its Route, environment, and Processes. So transfer keeps the record. A worktree cannot keep its link to a common repository on another Node, so the destination is always an independent checkout.
+
+### Downtime, not live migration
+
+A consistent SQLite snapshot needs a moment with no writes. So transfer stops the source for a short window. Zero-downtime transfer was rejected.
+
+### Only the selected SQLite file
+
+Orbit cannot know the owner, credentials, or consistency rules of other databases. So it copies only the SQLite file you name. Discovering and copying external databases was rejected.
+
+### Clusters on both sides
+
+A move between Clusters can change the generated domain and the Router path. Transfer uses the destination Cluster's naming and the replacement Route lifecycle for that change. Standalone Nodes are refused.

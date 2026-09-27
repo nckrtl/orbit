@@ -444,7 +444,7 @@ function tool_action_cli_display(string $command, array $arguments = []): array
     return [$tester->execute($arguments, ['interactive' => false]), $tester->getDisplay(true)];
 }
 
-/** @param array<string, bool|int|string|null> $overrides */
+/** @param array<string, int|string|null> $overrides */
 function tool_action_data(array $overrides = []): array
 {
     return array_replace([
@@ -453,7 +453,6 @@ function tool_action_data(array $overrides = []): array
         'manager' => 'vp',
         'package' => '@openai/codex',
         'version_constraint' => null,
-        'protected' => false,
         'status' => 'installed',
         'installed_version' => null,
         'failed_operation' => null,
