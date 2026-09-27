@@ -51,7 +51,6 @@ final readonly class ToolResponse
         string $package,
         #[SensitiveParameter]
         ?string $versionConstraint,
-        public bool $protected,
         #[SensitiveParameter]
         string $status,
         #[SensitiveParameter]
@@ -147,7 +146,6 @@ final readonly class ToolResponse
             manager: self::requiredString($data, 'manager'),
             package: self::requiredString($data, 'package'),
             versionConstraint: self::nullableString($data, 'version_constraint'),
-            protected: self::requiredBoolean($data, 'protected'),
             status: self::requiredString($data, 'status'),
             installedVersion: self::nullableString($data, 'installed_version'),
             failedOperation: self::nullableString($data, 'failed_operation'),
@@ -157,7 +155,7 @@ final readonly class ToolResponse
         );
     }
 
-    /** @return array<string, bool|int|string|null> */
+    /** @return array<string, int|string|null> */
     public function toArray(): array
     {
         return [
@@ -166,7 +164,6 @@ final readonly class ToolResponse
             'manager' => $this->manager,
             'package' => $this->package,
             'version_constraint' => $this->versionConstraint,
-            'protected' => $this->protected,
             'status' => $this->status,
             'installed_version' => $this->installedVersion,
             'failed_operation' => $this->failedOperation,
@@ -180,16 +177,6 @@ final readonly class ToolResponse
     private static function requiredInteger(#[SensitiveParameter] array $data, string $key): int
     {
         if (! is_int($data[$key] ?? null)) {
-            throw new InvalidArgumentException("Invalid Tool response field [{$key}].");
-        }
-
-        return $data[$key];
-    }
-
-    /** @param array<string, mixed> $data */
-    private static function requiredBoolean(#[SensitiveParameter] array $data, string $key): bool
-    {
-        if (! is_bool($data[$key] ?? null)) {
             throw new InvalidArgumentException("Invalid Tool response field [{$key}].");
         }
 

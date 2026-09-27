@@ -20,24 +20,6 @@ use Tests\Support\FakeToolManager;
 use Tests\Support\ImmediateToolOperationLock;
 
 describe(RemoveToolAction::class, function (): void {
-    it('rejects protected intent before the lock or manager calls', function (): void {
-        [$tool] = removal_tool_fixture(protected: true);
-        [$action, $manager, $lock] = removal_tool_action();
-
-        $exception = removal_tool_exception(fn () => $action->execute($tool));
-
-        expect($exception->errorCode)
-            ->toBe('tool.protected')
-            ->and($exception->status)
-            ->toBe(409)
-            ->and($manager->calls)
-            ->toBeEmpty()
-            ->and($lock->runs)
-            ->toBe(0)
-            ->and(Tool::query()->find($tool->id))
-            ->not->toBeNull();
-    });
-
     it('rejects manager and node ownership mismatches', function (): void {
         $node = removal_tool_node('removal-owner');
         $other = removal_tool_node('removal-other');
@@ -376,7 +358,6 @@ function removal_tool_fixture(
     LifecycleStatus $managerStatus = LifecycleStatus::Active,
     ToolStatus $status = ToolStatus::Installed,
     ?ToolOperation $failedOperation = null,
-    bool $protected = false,
     ?string $versionConstraint = null,
     ?string $installedVersion = '2.4.1',
     ?string $errorCode = null,
@@ -390,7 +371,6 @@ function removal_tool_fixture(
             manager: $manager,
             status: $status,
             failedOperation: $failedOperation,
-            protected: $protected,
             versionConstraint: $versionConstraint,
             installedVersion: $installedVersion,
             errorCode: $errorCode,
@@ -425,7 +405,6 @@ function removal_tool_record(
     string $package = 'jq',
     ToolStatus $status = ToolStatus::Installed,
     ?ToolOperation $failedOperation = null,
-    bool $protected = false,
     ?string $versionConstraint = null,
     ?string $installedVersion = '2.4.1',
     ?string $errorCode = null,
@@ -434,7 +413,6 @@ function removal_tool_record(
         'tool_manager_id' => $manager->id,
         'package' => $package,
         'version_constraint' => $versionConstraint,
-        'protected' => $protected,
         'status' => $status,
         'installed_version' => $installedVersion,
         'failed_operation' => $failedOperation,

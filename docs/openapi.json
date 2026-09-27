@@ -24104,9 +24104,6 @@
               "null"
             ]
           },
-          "protected": {
-            "type": "boolean"
-          },
           "status": {
             "type": "string"
           },
