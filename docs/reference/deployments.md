@@ -81,22 +81,30 @@ The Gateway flushes output while a command runs. Before each phase event, it wri
 
 ## Deploy
 
-A deployment reads the branch and the steps once, when it starts. Then it runs these phases in order.
+A deployment captures the Instance's current branch and recorded steps when it starts. The Gateway fetches the latest configured remote branch into a fresh release; a deployment accepts no commit selector, and a failed fetch leaves the selected release unchanged. A branch that moves later does not change the release being prepared.
 
-1. **Source preparation.** The Gateway clones the repository into a new release as the production user and checks out the latest commit of the branch. A branch that moves later does not change this release.
-2. **Environment sync.** The Gateway writes the stored configuration into `<home>/.env`, as [synchronization](/reference/environment-variables#synchronize) does. This needs exactly one Route on the Instance. An Instance without a Route fails here with `env.owner_unavailable`.
-3. **Before activation.** The Gateway runs each `before_activation` step in order, from the new release, as the production user, with a non-interactive shell.
-4. **Activation.** The Gateway replaces `current` atomically with a link to the new release.
-5. **PHP refresh.** For a PHP Instance, the Gateway refreshes the Instance's PHP-FPM pool and waits until it finishes.
-6. **After activation.** The Gateway runs each `after_activation` step in order.
+The Gateway runs these phases in order:
 
-Orbit adds no command of its own: no migration, cache clear, dependency install, asset build, health check, or restart. With no steps, a deployment runs no application command. A request during the switch gets either the old release or the new one.
+1. **Source preparation.** The Gateway creates a fresh release as the production user and checks out the fetched branch.
+2. **Environment sync.** The Gateway writes the stored environment to `<home>/.env` on the Instance's owning Node.
+3. **Before activation.** The Gateway runs each `before_activation` step in phase and placement order from the fresh release, as the Instance's Unix user through a fixed non-interactive shell. It transports each command as protected script content.
+4. **Activation.** After every pre-activation step succeeds, the Gateway atomically replaces `current` with a link to the fresh release.
+5. **PHP refresh.** For a PHP Instance, the Gateway refreshes its dedicated runtime cache and waits for confirmed completion. An Instance without PHP skips this operation.
+6. **After activation.** The Gateway runs each `after_activation` step in phase and placement order.
 
-Each step has its own timeout. A timeout stops the step's process group and every later step. The whole deployment has a deadline of the step timeouts plus 900 seconds. It never exceeds the request's 570-second command deadline. When a deadline stops the run, the error code is `deployment.deadline_exceeded`.
+The Instance's placement owns its environment, so synchronization does not require a Route. When a stored value contains `{{app_instance.domain}}`, the Gateway needs an authoritative Route domain; otherwise synchronization fails with `env.reference_unavailable`. A route-less Instance without that domain reference can deploy normally. See [environment synchronization](/reference/environment-variables#synchronize).
+
+Provisioning and cloning never start a deployment. Orbit adds no command of its own: no migration, cache clear, dependency install, asset build, health check, or restart. An empty step list runs no application command. A request during the switch resolves to a complete old or new release. The switch and PHP cache refresh do not make a compatible application unavailable, but an application command can change its availability, and Orbit retains that command's effect.
+
+Each application command emits standard output and standard error as events while it runs. An event carries bytes from one stream and at most 16 KiB; the Gateway splits larger process reads into ordered events without changing their bytes. The final command result retains the latest 64 KiB from each stream and marks a stream `truncated: true` when older bytes were discarded.
+
+The Gateway records one history row for each deployment and rollback, including the branch, commit, status, failed boundary, selected release, caller, and phase/output events. It retains the most recent 50 rows per Instance, with at most 128 KiB of events per row. It does not snapshot the earlier step configuration.
+
+Each step uses its recorded timeout. Timeout or cancellation terminates that step's process group and stops later steps; Orbit never resumes or automatically replays an interrupted command. The operation deadline is the accepted sum of step timeouts plus up to 900 seconds for release, environment, activation, and runtime work, and never exceeds the request's 570-second deadline. A stopped run reports `deployment.deadline_exceeded` when a deadline expires.
 
 ## Failures
 
-The failed boundary decides which release stays selected.
+The failed boundary decides which release stays selected. The deployment result identifies that boundary and the release selected when the invocation ends.
 
 | Failed boundary | Selected release |
 | --- | --- |
@@ -104,11 +112,11 @@ The failed boundary decides which release stays selected.
 | Activation | The release that `current` selects when the Gateway reads it back from the Node. When that read fails, the release selected before the deployment. |
 | PHP refresh or an `after_activation` step | The new release. |
 
-Orbit never undoes the effects of a step, of the environment sync, or of data changes. You decide how to recover.
+Orbit does not undo the effects of a step, environment sync, or data changes. You decide how to recover.
 
 ## Roll back
 
-A rollback selects one retained release through `current`. The Gateway checks that the release is inside `releases/` and that the web root stays inside it. It then switches `current` and refreshes PHP-FPM, as a deployment does. A rollback fetches nothing, writes no environment, runs no step, and changes no database file.
+A code rollback selects one retained release beneath the Instance's `releases/` directory through `current`. The Gateway verifies release ownership and that the web root stays inside the release, then switches `current` atomically and refreshes PHP-FPM. An Instance without PHP skips the cache refresh. A rollback fetches no Git data, synchronizes no environment, runs no deployment step, changes no database file, and infers no application recovery command. You own any data or application recovery needed after the switch.
 
 ## History
 
@@ -143,39 +151,6 @@ The Gateway detects a client disconnect when it writes an output event or perfor
 Once the disconnect is detected, cancellation stops the next protected boundary from starting, and the Gateway waits for bounded process cleanup. It sends no success result, replays no event, and does not roll code back automatically. The client can use the releases request to inspect the current selection before deciding whether to retry or request a rollback.
 
 Deployment and rollback require access to the Instance's Node. Their Activity records contain only the request and target identifiers and the terminal status, selected release, failed step, and error code. They never contain application output or configured command text. Generic errors follow the same redaction boundary.
-
-## Deploy the configured branch
-
-An explicit deployment captures the Instance's current branch and recorded steps for the complete invocation. The Gateway creates a fresh release, fetches the latest configured remote branch into it, and keeps that checkout even if the remote branch advances while the deployment runs. A deployment accepts no commit selector. A failed fetch leaves the selected release unchanged.
-
-The Gateway synchronizes stored environment values to the Instance's owning Node before it runs an application command. The Instance's placement owns its environment; synchronization does not require a Route. This also applies to route-less `monorepo`, `laravel-package`, and `node-package` Instances. The Gateway then runs every `before_activation` step in phase and placement order from the fresh release as the Instance's Unix user through a fixed non-interactive shell. Orbit transports the command as protected script content and does not add inferred setup, migration, cache, health, maintenance, dependency, or asset commands. An empty step list runs no application commands. Provisioning and cloning never start a deployment.
-
-After every pre-activation step succeeds, the Gateway atomically replaces `current` with a link to the fresh release. A PHP Instance then refreshes its dedicated runtime cache and waits for confirmed completion before the Gateway runs the `after_activation` steps in phase and placement order. An Instance without PHP skips the cache operation.
-
-Each request that overlaps activation resolves to a complete old or new release. The `current` replacement and PHP cache refresh do not cause a missing-root or unavailable-service response for a compatible application. An application command can still change application availability, and Orbit retains that command's effect.
-
-## Read output and failures
-
-Each application command emits its standard output and standard error as events while the deployment invocation runs. One event carries bytes from exactly one stream and contains at most 16 KiB, or 16,384 bytes. The Gateway splits a larger process read into ordered events without changing its bytes. Event delivery continues until the command exits, times out, or is cancelled.
-
-The final command result retains the latest 64 KiB, or 65,536 bytes, from standard output and the latest 64 KiB from standard error. Output at the exact limit is complete. When either stream exceeds its limit, the result discards that stream's older bytes and reports `truncated: true`. Orbit keeps events and the final result only for the invocation. It creates no deployment-run row, output history, or earlier step-configuration snapshot.
-
-Each step uses its recorded timeout. Timeout or cancellation terminates the process group owned by that step and stops later steps. Orbit never resumes or automatically replays an interrupted command. The operation deadline is the accepted sum of step timeouts plus no more than 900 seconds for release, environment, activation, and runtime work. It never extends the 570-second deadline of the request that runs the deployment, so a deployment that runs out of either fails with `deployment.deadline_exceeded` before PHP-FPM ends the request. A step the deadline stops reports `deployment.deadline_exceeded`, not `deployment.command_timed_out` or `deployment.step_failed`.
-
-The deployment result identifies the failed boundary and the release selected when the invocation ends. Its code-selection outcome depends on when failure occurs.
-
-| Failed boundary | Selected code |
-| --- | --- |
-| Release fetch, environment synchronization, or a pre-activation step | The prior `current` target remains selected, or no release remains selected when this is the first deployment. |
-| PHP cache refresh or a post-activation step | The fresh release remains selected. |
-
-Orbit does not claim that persistent environment, database, or application effects were undone after either failure. The operating agent owns compatibility and application recovery.
-
-## Roll back retained code
-
-Code rollback accepts one retained release name beneath the Instance's `releases/` directory. The Gateway verifies source ownership and checks that the web root stays inside the release, then atomically selects it through `current`. PHP instances receive the same verified cache refresh as deployment. Instances without PHP skip it.
-
-Code rollback does not fetch Git, synchronize environment values, run deployment steps, change database files, or infer an application recovery command. The operating agent selects the retained release and owns any data or application recovery needed after the switch.
 
 ## Exclude competing mutations
 

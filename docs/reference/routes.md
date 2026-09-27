@@ -77,7 +77,7 @@ A Project slug update recomputes every generated development Route domain from t
 
 ## Create and change targets
 
-`route:create` stores an explicit `app` Route with `pending` status, for a target Instance or with a Node or Cluster scope. It sets up no traffic path. The only step that activates such a Route is a production target-set change on another Route that reassigns an Instance to it, as [Change a production target set](#change-a-production-target-set) describes. Until then Doctor reports it as `route.lifecycle_not_active`. A second identical request returns the existing Route. A request that changes the Project, publication, scope, or target fails with `route.retry_conflict`. The Gateway refuses a reserved platform name: `gateway.orbit`, `metrics.orbit`, `reverb.orbit`, `analytics.orbit`, and `collector.cli-proxy-api.orbit`.
+`route:create` refuses a new explicit Project Route that would remain pending. Custom proxy Routes use a separate flow that converges their Node-local serving path. The Gateway refuses reserved platform names: `gateway.orbit`, `metrics.orbit`, `reverb.orbit`, `analytics.orbit`, and `collector.cli-proxy-api.orbit`.
 
 ## Route operations
 
