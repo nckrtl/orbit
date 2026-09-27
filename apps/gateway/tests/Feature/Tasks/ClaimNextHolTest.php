@@ -383,6 +383,10 @@ describe('a start that fails after provisioning', function (): void {
 });
 
 describe('the stale reservation sweep', function (): void {
+    beforeEach(function (): void {
+        $this->freezeTime();
+    });
+
     it('returns a group stranded in reserved past the bound to todo and claims it again', function (): void {
         claim_hol_enable();
         $app = claim_hol_app();

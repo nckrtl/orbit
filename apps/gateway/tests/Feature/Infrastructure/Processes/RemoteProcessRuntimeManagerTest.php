@@ -1533,6 +1533,7 @@ it('reads logs without the ownership check when a fresh agent view lists the exa
 });
 
 it('keeps the ownership check before logs when the agent view does not list the unit', function (string $case): void {
+    $this->freezeTime();
     $process = runtime_manager_systemd_process($this->instance);
     seed_agent_view(
         $this->instance->node_id,
