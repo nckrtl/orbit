@@ -38,7 +38,10 @@ try:
         raise SystemExit(125)
     lock_path = '/tmp/orbit-lifecycle-' + str(os.getuid()) + '-' + hashlib.sha256(checkout.encode()).hexdigest() + '.lock'
     lock = os.open(lock_path, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
-    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        raise SystemExit(75)
     descriptor, command_path = tempfile.mkstemp(prefix='orbit-lifecycle-')
     with os.fdopen(descriptor, 'w') as command_file:
         command_file.write(payload['command'])

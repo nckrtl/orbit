@@ -179,6 +179,10 @@ final readonly class CreateAppInstanceAction
                 fn (): bool => $runner->run($instance, LifecyclePhase::Setup),
             );
         } catch (ResourceOperationException $setupFailure) {
+            if (($setupFailure->details['outcome'] ?? null) === 'busy') {
+                throw $setupFailure;
+            }
+
             $details = $setupFailure->details;
             // A step the request deadline stopped keeps that code, so it reads apart from a failed command.
             $deadlineCut = $setupFailure->errorCode === 'command.deadline_exceeded';
@@ -197,6 +201,10 @@ final readonly class CreateAppInstanceAction
                     fn (): bool => $runner->run($instance->fresh() ?? $instance, LifecyclePhase::Teardown),
                 );
             } catch (ResourceOperationException $teardownFailure) {
+                if (($teardownFailure->details['outcome'] ?? null) === 'busy') {
+                    throw $teardownFailure;
+                }
+
                 if (($teardownFailure->details['outcome'] ?? null) === 'unconfirmed') {
                     throw new ResourceOperationException(
                         errorCode: $code,

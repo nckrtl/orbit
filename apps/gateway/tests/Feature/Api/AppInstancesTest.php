@@ -51,6 +51,7 @@ use App\Infrastructure\Processes\CommandDeadline;
 use App\Models\Activity;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
+use App\Models\AppInstanceRemoval;
 use App\Models\AppInstanceRemovalMember;
 use App\Models\AppInstanceTransfer;
 use App\Models\Cluster;
@@ -3371,6 +3372,41 @@ it('runs setup once on create and skips it for an already active instance', func
     $this->postJson('/api/v1/instances', $input)->assertCreated();
     $this->postJson('/api/v1/instances', $input)->assertOk();
     expect($transport->inputs)->toHaveCount(1);
+});
+
+it('keeps the Instance when setup encounters a busy lifecycle lock', function (): void {
+    ProjectLifecycleStep::query()->create(['app_id' => $this->orbitApp->id, 'phase' => 'setup', 'name' => 'install', 'command' => 'install', 'timeout_seconds' => 30, 'position' => 0]);
+    ProjectLifecycleStep::query()->create(['app_id' => $this->orbitApp->id, 'phase' => 'teardown', 'name' => 'cleanup', 'command' => 'cleanup', 'timeout_seconds' => 30, 'position' => 0]);
+    $transport = new LifecycleSshExecutor(result: static fn (): int => 75);
+    app()->instance(ProjectLifecycleRunner::class, $transport->runner());
+
+    $this->postJson('/api/v1/instances', ['project_id' => $this->orbitApp->id, 'node_id' => $this->node->id, 'name' => 'busy', 'branch' => 'dev'])
+        ->assertConflict()->assertJsonPath('error.code', 'instance.lifecycle_busy')
+        ->assertJsonPath('error.details.outcome', 'busy');
+
+    $instance = AppInstance::query()->where('name', 'busy')->sole();
+    expect($instance->failed_step)->toBeNull()
+        ->and($instance->error_code)->toBeNull()
+        ->and(Route::query()->count())->toBe(1)
+        ->and(array_column($transport->inputs, 'command'))->toBe(['install']);
+});
+
+it('keeps the Instance when rollback teardown encounters a busy lifecycle lock', function (): void {
+    foreach (['setup', 'teardown'] as $position => $phase) {
+        ProjectLifecycleStep::query()->create(['app_id' => $this->orbitApp->id, 'phase' => $phase, 'name' => $phase, 'command' => $phase, 'timeout_seconds' => 30, 'position' => $position]);
+    }
+    $transport = new LifecycleSshExecutor(result: static fn (array $input): int => $input['command'] === 'setup' ? 1 : 75);
+    app()->instance(ProjectLifecycleRunner::class, $transport->runner());
+
+    $this->postJson('/api/v1/instances', ['project_id' => $this->orbitApp->id, 'node_id' => $this->node->id, 'name' => 'busy-rollback', 'branch' => 'dev'])
+        ->assertConflict()->assertJsonPath('error.code', 'instance.lifecycle_busy')
+        ->assertJsonPath('error.details.outcome', 'busy');
+
+    $instance = AppInstance::query()->where('name', 'busy-rollback')->sole();
+    expect($instance->failed_step)->toBe('setup')
+        ->and(Route::query()->count())->toBe(1)
+        ->and(AppInstanceRemoval::query()->count())->toBe(0)
+        ->and(array_column($transport->inputs, 'command'))->toBe(['setup', 'teardown']);
 });
 
 it('tears down and removes a newly created instance after confirmed setup failure', function (int $teardownExit): void {
