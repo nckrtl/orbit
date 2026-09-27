@@ -127,17 +127,17 @@ final class InstanceShowFlowCommand extends GatewayCommand
     private function instanceSummary(string $name): array
     {
         $record = $this->fixtureObject($name);
-        $app = $record['app'] ?? null;
+        $project = $record['project'] ?? null;
         $node = $record['node'] ?? null;
 
-        if (! is_array($app) || ! is_array($node)) {
+        if (! is_array($project) || ! is_array($node)) {
             throw new RuntimeException("Gateway fixture {$name} is not recorded.");
         }
 
         return [
             'id' => $this->fixtureInt($record, 'id', $name),
             'name' => $this->fixtureString($record, 'name', $name),
-            'slug' => $this->fixtureString($this->stringKeyed($app, $name), 'slug', $name),
+            'slug' => $this->fixtureString($this->stringKeyed($project, $name), 'slug', $name),
             'node' => $this->fixtureString($this->stringKeyed($node, $name), 'name', $name),
             'status' => $this->fixtureString($record, 'status', $name),
             'environment' => $this->fixtureString($record, 'environment', $name),

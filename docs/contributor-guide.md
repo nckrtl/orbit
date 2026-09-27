@@ -2,11 +2,21 @@
 title: "Contributing to Orbit"
 sidebarTitle: "Contributor guide"
 description: "Prepare architecture and documentation, build a feature, and submit a complete pull request."
+covers:
+  - composer.json
+  - bin/{bootstrap,test,pest-plain,review-check}
+  - "{apps/*,packages/php-sdk}/composer.json"
+  - "{apps/*,packages/php-sdk}/phpstan.neon"
+  - apps/gateway/tests/Support/{LinuxHost,TestToolchain}.php
+  - apps/docs/**
+  - .github/workflows/ci.yml
 ---
 
 # Contributing to Orbit
 
-Submit a complete feature with its implementation, tests, documentation, and any architectural decisions. Orbit reproduces features on Incus during independent review, and the maintainer approves each merge.
+Submit a complete feature: its implementation, tests, documentation, and any architecture decisions. Orbit reproduces the feature on Incus during independent review, and the maintainer approves each merge.
+
+The order is always the same: architecture, documentation, implementation, a complete pull request, review, maintainer approval, and merge.
 
 From the repository root, install the project dependencies:
 
@@ -16,15 +26,21 @@ bin/bootstrap
 
 ## 1. Check the architecture
 
-Read the affected [architecture decisions](/decisions/overview), code, tests, and documentation. Establish what the feature should do and which parts of Orbit it affects. You can find related documentation with `composer docs-context -- --component=apps/cli`, using the component your feature changes.
+Read the [mission](/mission), the [architecture](/architecture), and the [concepts](/concepts). Then read the documentation, code, and tests of the parts your feature changes. The documentation is the current truth about Orbit, and each page explains its design in a "Why it works this way" section. [Architecture decisions](/decisions/overview) holds the decisions that are not built yet.
 
-When the feature changes a significant architectural decision, draft an ADR in the same branch. Explain the alternatives, consequences, and any existing ADR it extends or supersedes.
+Find the pages for a component with `composer docs-context -- --component=apps/cli`. `--concept=Cluster` selects pages by concept. The command returns an ordered reading list. It does not decide what the feature must do.
 
-Reviewers assess the proposed ADRs alongside the implementation and documentation. The ADRs become accepted when the maintainer approves the PR and it is merged. See the [ADR guide](https://github.com/nckrtl/orbit/blob/main/docs/decisions/README.md) for status and history conventions.
+When the feature makes a significant architecture decision, draft an architecture decision record (ADR) on the same branch. A decision is significant when it sets a contract between components, an architecture boundary, a security or ownership model, or a choice that is costly to reverse. Explain the alternatives and the consequences, and name any record it extends, amends, or supersedes. Implementation details stay in code and tests.
+
+Mark the draft `Proposed.` Reviewers assess it with the implementation and the documentation. The maintainer accepts it by approving and merging the pull request. The [ADR guide](https://github.com/nckrtl/orbit/blob/main/docs/decisions/README.md) covers numbering, format, and status.
 
 ## 2. Write the documentation
 
-Update the pages under `docs/` before coding. Describe what users can do, the limits, and what happens when an operation fails. Write in the present tense and check that the pages and proposed ADRs agree. The documentation ships with the implementation.
+Update the pages under `docs/` before you write code. Describe what a user can do, the limits, and what happens when an operation fails. Write in the present tense, and check that the pages and the proposed ADRs agree. The documentation ships in the same pull request as the behavior it describes.
+
+Update the documentation when the feature changes behavior, terms, architecture, a public or operational contract, or knowledge that another contributor needs. A fix that restores documented behavior, or a refactor that changes no behavior, can leave the documentation alone. Do not write prose only to produce a documentation change.
+
+When an ADR, a page, the code, or a test disagree, stop and report the conflict. Do not resolve it by quietly changing one of them.
 
 Run from the repository root:
 
@@ -33,17 +49,17 @@ composer docs-build
 composer docs-lint
 ```
 
-Commit `docs/generated/context.json` when generation changes it. For Mintlify page or navigation changes, also run `npx mint validate` and `npx mint broken-links` from `docs/`.
+Commit `docs/generated/context.json` when `docs-build` changes it. For Mintlify page or navigation changes, also run `npx mint validate` and `npx mint broken-links` from `docs/`.
 
 ## 3. Implement and verify
 
-Build the feature and tests against the documented behavior. Keep proposed ADRs and documentation aligned with what the implementation delivers. Explain material changes in direction in the PR.
+Build the feature and its tests against the documented behavior. Keep the proposed ADRs and the documentation in line with what the implementation delivers. Explain any change of direction in the pull request.
 
-`composer test:affected` selects tests with Pest test-impact analysis (TIA), which needs PCOV or Xdebug. Without a coverage driver, TIA is skipped and every test runs. On macOS, install PCOV with `brew install shivammathur/extensions/pcov@8.5`. Every project sets Composer's `process-timeout` to `0`, so a long test or check run is never stopped after Composer's default 300 seconds.
+`composer test:affected` selects tests with Pest test-impact analysis (TIA), which needs PCOV or Xdebug. Without a coverage driver, TIA is skipped and every test runs. On macOS, install PCOV with `brew install shivammathur/extensions/pcov@8.5`. Every project sets Composer's `process-timeout` to `0`, so Composer never stops a long test or check run.
 
 CI uses different test selection for pull requests and pushes to `main`. Pull requests run the TIA-selected tests plus every architecture test, so TIA cannot omit architecture checks when a new file has no coverage links yet. A push to `main` runs the full test suite without TIA and refreshes the TIA graph for later pull-request selections. Orbit's task gate, `bin/review-check`, also runs every architecture test in addition to its affected-test checks.
 
-The `test` and `test:affected` scripts in each PHP project, and root `bin/test`, pass `--colors=never` to Pest. `bin/pest-plain` strips leftover ANSI control sequences from that output. The output has no ANSI escape codes and still ends with the `Tests:` summary. The scripts do not pass `--no-progress`, because parallel Pest then omits that summary. Keep the flag on the scripts. `phpunit.xml` is a TIA input, and changing it rebuilds the test impact graph.
+The `test` and `test:affected` scripts in each PHP project, and root `bin/test`, pass `--colors=never` to Pest. `bin/pest-plain` strips any ANSI control sequences that remain. The output has no ANSI escape codes and still ends with the `Tests:` summary. The scripts do not pass `--no-progress`, because parallel Pest then omits that summary. Keep the flag on the scripts. `phpunit.xml` is a TIA input, and a change to it rebuilds the test impact graph.
 
 Run these commands in each changed project, such as `apps/cli`:
 
@@ -54,50 +70,38 @@ composer check
 
 Gateway tests run the shell programs that Orbit installs on Ubuntu Nodes. On macOS, install the Linux tools they need with `brew install bash coreutils gnu-sed findutils caddy`. The test bootstrap puts these tools first on `PATH`, supplies `setsid` and `flock`, and stops with the missing package names when a tool is absent. The test application reads the tracked `.env.example`, not your `.env`. Child processes that boot the Gateway, such as `artisan` calls, still read `.env` when it exists.
 
-Tests of Node programs that use Linux kernel interfaces, such as `/proc/net/tcp` or `os.O_PATH`, run on a Linux test host: beast, an Ubuntu machine like the Nodes, or the SSH host that `ORBIT_LINUX_TEST_HOST` names. On Linux, such as in CI or on beast, they run directly. The host must accept `ssh` without a prompt; otherwise these tests fail.
+Tests of Node programs that use Linux kernel interfaces, such as `/proc/net/tcp` or `os.O_PATH`, run on a Linux test host. The host is beast, an Ubuntu machine like the Nodes, or the SSH host that `ORBIT_LINUX_TEST_HOST` names. On Linux, such as in CI or on beast, these tests run directly. The host must accept `ssh` without a prompt, or these tests fail.
 
-Each test process copies `apps/gateway` to the host with rsync once and reuses the copy. The copy holds only the files Git would track and `vendor/`, so ignored files such as keys, logs, caches, and databases stay local. It never holds `.env` files other than `.env.example`. It lives in a mode 700 directory under `/tmp/orbit-gateway-linux-tests-<uid>`. The process removes its copy when it ends, also on Ctrl-C or `SIGTERM`. A test that runs past five minutes, or `ORBIT_LINUX_TEST_TIMEOUT` seconds, is stopped on the host. A later run removes copies left by a killed process after six hours, including old copies in the earlier shared `/tmp/orbit-gateway-linux-tests`.
+Each test process copies `apps/gateway` to the host with rsync once and reuses the copy. The copy holds only the files that Git would track, as `git ls-files --cached --others --exclude-standard` lists them, and `vendor/`. So ignored files such as keys, logs, caches, and databases stay local, and no `.env` file except `.env.example` leaves your machine. The copy lives in a mode 700 directory under `/tmp/orbit-gateway-linux-tests-<uid>`. The process removes its copy when it ends, also on Ctrl-C or `SIGTERM`. The host stops a test that runs longer than five minutes, or `ORBIT_LINUX_TEST_TIMEOUT` seconds. A later run removes the copies that a killed process left, after six hours.
 
-Add regression coverage for behavior changes and their important failure modes. Confirm that the tests exercising the new behavior ran.
+Add regression tests for behavior changes and their important failure modes. Confirm that the tests that exercise the new behavior ran.
 
-GitHub CI runs quality checks and affected tests for all five projects, including documentation lint. Root `composer check` can also run the complete local check on a clean commit.
+GitHub CI runs quality checks and affected tests for all five projects, including documentation lint. Root `composer check` runs `bin/review-check`. It runs `composer validate --strict`, `composer check`, and `composer test:affected` in each of the five projects. It checks the working tree as it is, uncommitted changes included, and writes a report under `<git-common-dir>/orbit-checks/<HEAD>/`.
 
 ## Static analysis
 
-PHPStan checks each PHP project during `composer check`. Laravel projects use Larastan. The SDK uses PHPStan directly. [ADR 0166](/decisions/0166-raise-phpstan-one-level-at-a-time) raises all five projects from level 6 to level 9, one level at a time.
+PHPStan checks each PHP project during `composer check`, at level 9. The projects are `apps/gateway`, `apps/cli`, `packages/php-sdk`, `apps/e2e`, and `apps/docs`. Laravel projects use Larastan. The SDK uses PHPStan directly.
 
-The projects are `apps/gateway`, `apps/cli`, `packages/php-sdk`, `apps/e2e`, and `apps/docs`. A level is complete only when every project passes it. The next level starts only after that Task group's pull request merges. Do not raise one project ahead of the others. Until that merge, each project runs the level on main. That level is 6.
-
-Fix the code PHPStan reports. Stricter types catch escapes before review. That is part of tightening CI before auto-merge.
-
-Do not clear a finding with any of these:
+Fix the code that PHPStan reports, so that the declared type and the runtime value agree. Do not clear a finding with any of these:
 
 - an ignore, including `@phpstan-ignore`, or a baseline
 - `assert()` or an inline `@var` that overrides the inferred type
 - a cast that only silences the finding
 - a wider type that hides the finding
 
-The counted `ignoreErrors` entries already in CLI and E2E stay as recorded. Do not add an entry or raise a count to pass the next level.
-
-On 2026-09-26, PHPStan reported these error totals. A higher level includes the errors from the levels below it. Level 7 is the next change.
-
-| Level | Gateway | CLI | SDK | E2E | Docs |
-| --- | --- | --- | --- | --- | --- |
-| 7 | 74 | 21 | 3 | 14 | 0 |
-| 8 | 106 | 27 | 3 | 17 | 0 |
-| 9 | 438 | 81 | 25 | 98 | 2 |
+The CLI and E2E projects each keep one counted `ignoreErrors` entry for a Larastan finding on an inherited command helper. Each entry names the commands, the option, the file, and the count. Do not add an entry or raise a count.
 
 ## 4. Submit a complete pull request
 
-Explain the problem, resulting behavior, architectural decisions, documentation changes, verification results, and remaining limitations. Link an issue when one exists.
+Explain the problem, the resulting behavior, the architecture decisions, the documentation changes, the verification results, and the remaining limits. Link an issue when one exists.
 
-Request maintainer review when the feature is complete. If you use a draft PR while working, mark it ready when implementation is complete.
+Request maintainer review when the feature is complete. You can use a draft pull request while you work. Mark it ready when the implementation is complete.
 
 ## Review and merge
 
-Orbit's independent reviewer checks the code, documentation, and ADRs and reproduces the feature on Incus. The reviewer records the commit, environment, actions, results, and limitations.
+Orbit's independent reviewer checks the code, the documentation, and the ADRs, and reproduces the feature on an [Incus topology](/reference/incus-topologies). The reviewer records the commit, the environment, the actions, the results, and the limits. The [feature delivery reference](/reference/implementation-loop) lists that evidence.
 
-Address review findings. Reviewers check the fixes and repeat affected verification on the updated PR. Passing CI, successful Orbit code and Incus review, resolved findings, and the maintainer's approval are required to merge.
+Address the review findings. Reviewers check the fixes and repeat the affected checks on the updated pull request. A merge needs passing CI, a successful independent code and Incus review, resolved findings, and the maintainer's approval.
 
 ## Use an agent
 
@@ -106,14 +110,41 @@ The skills in the repository guide an agent through the work.
 | Task | Skill |
 | --- | --- |
 | Shape the feature and prepare its ADRs and documentation | [grill-with-docs](https://github.com/nckrtl/orbit/blob/main/.agents/skills/grill-with-docs/SKILL.md) |
+| Split an agreed feature into Orbit Tasks | [creating-tasks](https://github.com/nckrtl/orbit/blob/main/.agents/skills/creating-tasks/SKILL.md) |
 | Implement, verify, and submit the feature | [developing-features](https://github.com/nckrtl/orbit/blob/main/.agents/skills/developing-features/SKILL.md) |
-| Independently review a proposal or completed PR | [reviewing-pull-requests](https://github.com/nckrtl/orbit/blob/main/.agents/skills/reviewing-pull-requests/SKILL.md) |
-| Merge an approved PR and clean up | [merging-pull-requests](https://github.com/nckrtl/orbit/blob/main/.agents/skills/merging-pull-requests/SKILL.md) |
+| Review a proposal or a completed pull request | [reviewing-pull-requests](https://github.com/nckrtl/orbit/blob/main/.agents/skills/reviewing-pull-requests/SKILL.md) |
+| Merge an approved pull request and clean up | [merging-pull-requests](https://github.com/nckrtl/orbit/blob/main/.agents/skills/merging-pull-requests/SKILL.md) |
 
-For focused work, use [writing-documentation](https://github.com/nckrtl/orbit/blob/main/.agents/skills/writing-documentation/SKILL.md) or [verifying-cli-output](https://github.com/nckrtl/orbit/blob/main/.agents/skills/verifying-cli-output/SKILL.md). Web UI layout uses [verifying-web-ui](https://github.com/nckrtl/orbit/blob/main/.agents/skills/verifying-web-ui/SKILL.md). CLI development and review follow the [CLI standard](/reference/cli-ux).
+For focused work, use [writing-documentation](https://github.com/nckrtl/orbit/blob/main/.agents/skills/writing-documentation/SKILL.md), [verifying-cli-output](https://github.com/nckrtl/orbit/blob/main/.agents/skills/verifying-cli-output/SKILL.md), [verifying-web-ui](https://github.com/nckrtl/orbit/blob/main/.agents/skills/verifying-web-ui/SKILL.md), or [proving-on-incus](https://github.com/nckrtl/orbit/blob/main/.agents/skills/proving-on-incus/SKILL.md). CLI work follows the [CLI design standard](/reference/cli-ux) and the [command vocabulary](/reference/cli-command-vocabulary). A web UI change follows [web verification](/reference/web-verification).
 
-An independent reviewer can review the proposed ADRs and documentation before coding when requested. The [feature delivery reference](/reference/implementation-loop) describes review evidence and merge responsibilities.
+An independent reviewer can review the proposed ADRs and documentation before coding, on request.
 
 ## Report a problem
 
-Use [GitHub issues](https://github.com/nckrtl/orbit/issues) for bugs and questions. Include the source commit, Orbit version, operating system, exact command, expected result, and observed result. Remove credentials, environment values, private keys, tokens, and personal data from shared logs. Include a request ID and stable error code when available.
+Use [GitHub issues](https://github.com/nckrtl/orbit/issues) for bugs and questions. Include the source commit, the Orbit version, the operating system, the exact command, the expected result, and the observed result. Remove credentials, environment values, private keys, tokens, and personal data from shared logs. Include a request ID and a stable error code when you have them.
+
+## Why it works this way
+
+These reasons explain the process. Check them before you propose a change.
+
+### Decisions ship with their feature
+
+A pull request carries the proposed ADR, the implementation, and the documentation together. The maintainer then reviews a decision with the code that shows its consequences. Merging ADRs before their implementation is a rejected alternative, because it separates the decision from the evidence. A required plan in every pull request is also rejected, because the implementation, the documentation, and the decisions already describe the feature.
+
+### Review reproduces on a discovery topology
+
+Orbit's reviewer reproduces the feature on a fresh [discovery topology](/reference/incus-topologies) and records the evidence. Contributors do not have to run Incus before they submit, because they may not have the environment and Orbit owns the machine review. External contributors and internal automation meet the same review and merge standard.
+
+A separate proof run for each candidate is a rejected alternative. That flow kept a proof plan and fixtures beside each branch, captured immutable evidence on a proof topology, kept those machines through review, compared later commits by recorded inputs, and promoted the proof topology into the snapshot at closeout. It doubled the delivery steps and held machines through review. The ownership and cleanup rules of that flow still apply to every topology.
+
+### One documentation corpus
+
+All maintained documentation lives under the root `docs/` directory, for humans and agents alike. `apps/docs` holds only the tooling: the lint rules, the context index builder, and their tests. A second content tree would drift from the first.
+
+### Checks that need no network
+
+`composer docs-lint` checks structure, links, ADR format, blocked wording, and the freshness of the committed context index. It reads the repository only, with no network, external service, or Incus topology. Live behavior is proved on Incus, separately. A lint rule earns its place only when it protects a current invariant and has tests for a valid and an invalid case.
+
+### A committed context index
+
+`docs/generated/context.json` maps pages to concepts and components. Agents use it to load the right pages without reading all the code. Generation is an explicit write, and lint only checks that the committed index is current.

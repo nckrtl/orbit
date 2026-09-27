@@ -1,27 +1,49 @@
 ---
 title: "Realtime events"
-description: "The envelope, channel, and full catalogue of record-change events the Gateway broadcasts to Reverb, and the websocket role that turns it on."
+description: "The channel, authorization, discovery, envelope, and full catalogue of the events the Gateway broadcasts through Reverb, and the per-Node channels that Node agents publish on."
+covers:
+  - apps/gateway/app/Domain/Broadcasting/**
+  - apps/gateway/app/Infrastructure/Broadcasting/**
+  - apps/gateway/app/Http/Controllers/Api/RealtimeAuthController.php
+  - apps/gateway/app/Http/Controllers/Api/RealtimeConfigController.php
+  - apps/gateway/app/Actions/Broadcasting/**
+  - apps/gateway/app/Domain/Tasks/TaskBroadcasts.php
+  - apps/gateway/app/Domain/Activity/ActivityBroadcaster.php
+  - apps/gateway/routes/channels.php
 ---
 
 # Realtime events
 
-The Gateway broadcasts one realtime event for every record it changes, so a client such as the [web app](/reference/web-app) can stay live without polling. This page defines the envelope, the channel and its authorization, the full catalogue of event types, and the node role that configures delivery.
+The Gateway broadcasts an event for every record it changes, so a client such as the [web app](/reference/web-app) stays current without polling. HTTP stays the only way to act. An event only tells a client that something it fetched over HTTP has changed.
 
 ## Transport
 
-The Gateway never runs a broadcast server. It only broadcasts, as a Pusher-protocol client, to an external Laravel Reverb server reachable at `wss://reverb.orbit`. A client that wants realtime updates connects to that Reverb server directly and subscribes to the `orbit` channel; it does not connect to the Gateway for the WebSocket itself.
+The Gateway sends events to Laravel Reverb at `wss://reverb.orbit`. Reverb runs on the Node that holds the `websocket` role. [Realtime events with Reverb](/solutions/realtime-reverb) sets it up. Without an active `websocket` role, the Gateway broadcasts nothing.
 
-Every broadcast happens synchronously, inside the same request that changed the record. The Gateway does not use a queue for broadcasting, matching its no-queues rule. A Reverb outage never fails the request that changed the record: the Gateway logs a warning (`Failed to broadcast a record event.`) and continues. A client cannot tell from an API response whether its change was also broadcast; it can only tell whether the change itself succeeded.
+A client connects to Reverb directly, not to the Gateway. The Gateway only publishes, as a Pusher-protocol client.
+
+The Gateway broadcasts inside the request that changed the record. It uses no queue. A broadcast waits at most 2 seconds to connect and 5 seconds in total. A failed broadcast never fails the request: the Gateway logs the warning `Failed to broadcast a record event.` and continues. So an API response proves that the change happened, not that its event was sent.
+
+The Gateway looks up the connection at most once per request, and only when the request broadcasts or asks for the realtime connection. It connects to the `websocket` Node's WireGuard address and verifies the name `reverb.orbit` against the Orbit root CA.
+
+During a `websocket` move, clients that connected before the move still listen on the old Node's Reverb. The Gateway then sends each event to both servers. The old server gets 0.3 seconds to connect and 0.5 seconds in total. After a failed send, the Gateway skips the old server for 30 seconds.
 
 ## Channel and authorization
 
-Every event broadcasts on one private channel, `orbit`. A client authorizes access the same way it calls the rest of the API: as an active WireGuard peer Node, identified by its source address, against `POST /api/v1/broadcasting/auth`. The endpoint requires Gateway access: the active Gateway peer, or a Node with an access edge to the Gateway. There is no per-Node scoping on this channel. An unauthenticated caller, or a caller whose peer address does not match an active Node, receives `403`, and a Node without Gateway access receives `403` with `node_access.required`.
+Every Gateway event goes out on one private channel, `orbit`. A client signs its subscription through `POST /api/v1/broadcasting/auth`. The endpoint needs Gateway access: the caller is the Gateway Node or holds an access grant to it. It identifies the caller by WireGuard address, as the rest of the API does.
 
-Node agents publish on separate per-Node presence channels, not on `orbit`. See [Node agent channels](#node-agent-channels). Live log lines use their own channels, which this endpoint never signs. See [Log channels](#log-channels).
+| Code | HTTP | Meaning |
+| --- | --- | --- |
+| `peer.identity_unknown` | 403 | The caller's address does not belong to an active Node. |
+| `node_access.required` | 403 | The caller has no access grant to the Gateway. |
+| `realtime.not_configured` | 404 | No `websocket` role is active. |
+| `broadcast.channel_forbidden` | 403 | The channel is a `presence-*` channel other than `presence-node.{id}`, a malformed `presence-node.*` name, or a `private-log-stream.*` channel. |
+
+The same endpoint signs a viewer membership on `presence-node.{id}`, as [Node agent channels](#node-agent-channels) describes.
 
 ## Discovery
 
-A client asks the Gateway where Reverb is instead of carrying hand-edited connection settings. `GET /api/v1/realtime` requires the same active WireGuard peer identity as the rest of the API and returns:
+A client asks the Gateway where Reverb is. `GET /api/v1/realtime` needs Gateway access and returns:
 
 ```json
 {
@@ -30,27 +52,18 @@ A client asks the Gateway where Reverb is instead of carrying hand-edited connec
 }
 ```
 
-`url` and `key` are `null` when broadcasting is not configured, that is when no `websocket` role is active on the fleet:
-
-```json
-{
-  "data": { "url": null, "key": null, "channel": "orbit" },
-  "meta": { "request_id": "..." }
-}
-```
-
-`channel` is always `"orbit"`, whether or not broadcasting is configured, so a client can read it once and reuse it across both shapes.
+`url` and `key` are null when no `websocket` role is active. `channel` is always `orbit`. The key is public. The Reverb app secret never leaves the Gateway.
 
 ## Envelope
 
-Every event shares the same shape. The broadcast name equals `type`.
+Every event has the same shape. The broadcast name equals `type`.
 
 | Field | Contract |
 | --- | --- |
-| `type` | `<family>.<verb>`, for example `node.created`. Also the broadcast name a client subscribes to. |
-| `id` | The changed record's id. A string annotation ID for annotations; a numeric id for every family except deploy steps, which use the step's name. |
-| `at` | ISO 8601 timestamp of the broadcast, in the Gateway's timezone. |
-| `data` | For annotation notices, `{ id, instanceId, revision }`. For task notices, Activity notices, and Process usage, the fields their tables below list. For other changes, the record exactly as its list or show endpoint returns it: the same Spatie Data object, unchanged. A `deleted` event carries a minimal snapshot instead, usually just `id` and a name or slug, because the action deletes the record before the broadcast and leaves nothing else to serialize. |
+| `type` | `<family>.<verb>`, such as `node.created`. |
+| `id` | The record's id. An annotation uses its string ID, and a deploy step uses its name. |
+| `at` | ISO 8601 time of the broadcast, in the Gateway's timezone. |
+| `data` | The record as its list or show endpoint returns it, unless the catalogue names other fields. |
 
 ```json
 {
@@ -61,9 +74,7 @@ Every event shares the same shape. The broadcast name equals `type`.
 }
 ```
 
-## Verbs
-
-Most families broadcast `created`, `updated`, and `deleted`. Three families also broadcast `status`, reserved for a change to the Gateway's own recorded runtime state rather than to configuration: process start, stop, and restart. Node and Instance runtime state changes are not currently broadcast; see [Limits](#limits). `process.usage` is a periodic sample rather than a record change. Activity broadcasts `created` and `updated`, not `deleted`, because the Gateway does not delete Activity rows.
+A `deleted` event carries a short snapshot, because the record is already gone. Task, Activity, annotation, and Process usage events are notices: they carry only identifiers, status, and counts. A client fetches the record over HTTP when it needs more.
 
 ## Event catalogue
 
@@ -72,230 +83,230 @@ Most families broadcast `created`, `updated`, and `deleted`. Three families also
 | Type | Fires when | Data |
 | --- | --- | --- |
 | `node.created` | A Node is provisioned for the first time. | `NodeData` |
-| `node.updated` | An existing Node is reprovisioned, its settings change, it is retargeted to a new public SSH host, or a role is added or removed. | `NodeData` |
-| `node.deleted` | A Node is removed from the fleet. | `{ id, name }` |
+| `node.updated` | A Node is provisioned again, renamed, retargeted, or its settings or roles change, including a role relocate. | `NodeData` |
+| `node.deleted` | A Node is removed. | `{ id, name }` |
 
 ### Project
 
 | Type | Fires when | Data |
 | --- | --- | --- |
-| `app.created` | A new Project is created. | `AppData` |
-| `app.updated` | A Project's slug, repository, default branch, or root changes. | `AppData` |
+| `app.created` | A Project is created. | `AppData` |
+| `app.updated` | A Project changes. | `AppData` |
 | `app.deleted` | A Project is removed. | `{ id, name, slug }` |
 
-### Instance (`instance`)
+### Instance
 
 | Type | Fires when | Data |
 | --- | --- | --- |
-| `instance.created` | An Instance is created or registered for the first time. | `AppInstanceData` |
-| `instance.updated` | An Instance's deployment branch changes, or its removal begins but has not yet deleted the record. | `AppInstanceData` |
-| `instance.deleted` | An Instance is fully removed. | `{ id, name }` |
+| `instance.created` | An Instance is created or registered. | `AppInstanceData` |
+| `instance.updated` | An Instance's deployment branch changes, or its removal returns while the record still exists. | `AppInstanceData` |
+| `instance.deleted` | An Instance is removed. | `{ id, name }` |
 
 ### Process
 
 | Type | Fires when | Data |
 | --- | --- | --- |
-| `process.created` | A new Process is added. | `ProcessData` |
+| `process.created` | A Process is added. | `ProcessData` |
 | `process.status` | A Process is started, stopped, or restarted. | `ProcessData` |
 | `process.deleted` | A Process is removed. | `{ id, name }` |
+
+`process.status` carries the Process's stored status and desired state, and the `runtime_status` that the Gateway read when the action ended. Later runtime changes come from the [Node agent channels](#node-agent-channels).
+
+Other changes to an Instance, such as a transfer, a clone, an environment change, or a deployment, send no `instance.*` event. A deployment sends [`deployment.*`](#deployment).
+
+### Process usage
+
+| Type | Fires when | Data |
+| --- | --- | --- |
+| `process.usage` | Every 15 seconds while a browser watches. | `{ part, parts, processes }` |
+
+The agent view subscriber sends `process.usage` while at least one `viewer.*` member is on a Node agent channel. [Process usage](/reference/node-agent#process-usage) describes when. `id` is the sample time in Unix seconds. `processes` lists `[id, cpu, memory_bytes]` for at most 200 Processes per part, with the units of the Process list. A Process without a sample has null values.
 
 ### Schedule
 
 | Type | Fires when | Data |
 | --- | --- | --- |
-| `schedule.created` | A new Schedule is added. | `ScheduleData` |
-| `schedule.updated` | A Schedule is activated, records a completed run, or begins removal without finishing it in the same request. | `ScheduleData` |
-| `schedule.deleted` | A Schedule is fully removed. | `{ id, name }` |
+| `schedule.created` | A Schedule is added. | `ScheduleData` |
+| `schedule.updated` | A Schedule is activated, records a run, or its removal starts. | `ScheduleData` |
+| `schedule.deleted` | A Schedule is removed. | `{ id, name }` |
 
-### Database connection (`database`)
+### Database connection
 
 | Type | Fires when | Data |
 | --- | --- | --- |
-| `database.created` | A new database connection is registered. | `DatabaseConnectionData` |
-| `database.updated` | A database connection's fields change. | `DatabaseConnectionData` |
+| `database.created` | A database connection is registered. | `DatabaseConnectionData` |
+| `database.updated` | A database connection changes. | `DatabaseConnectionData` |
 | `database.deleted` | A database connection is removed. | `{ id, slug }` |
 
-### Firewall rule (`firewall`)
+### Firewall rule
 
 | Type | Fires when | Data |
 | --- | --- | --- |
-| `firewall.created` | A new firewall rule is stored. | `FirewallRuleData` |
+| `firewall.created` | A firewall rule is stored. | `FirewallRuleData` |
 | `firewall.deleted` | A firewall rule is removed. | `{ id, name }` |
 
-There is no `firewall.updated`. Storing a rule under a name that already exists requires the same action, source, protocol, and port as the stored rule; any difference is refused as a conflict, so there is no path that changes a stored rule's fields.
-
-### Tasks
-
-Task events are notices. They carry identifiers, status, and counts, never titles, briefs, receipts, or messages, because a task group with its subtasks can pass Reverb's 10,000-byte limit. A client fetches the record over HTTP when it needs more. [ADR 0151](/decisions/0151-push-task-and-process-usage-changes-over-realtime) records the design.
-
-| Type | Fires when | Data |
-| --- | --- | --- |
-| `task_group.created` | A task group is created. | `{ id, status }` |
-| `task_group.updated` | A group, one of its subtasks, or one of its Project checks changes, or the Gateway sees a new diff summary for the group's workspace. | `{ id, status, lines_added, lines_deleted, line_diff }` |
-| `task_comment.created` | A comment or run receipt is stored on a subtask. | `{ id, task_group_id, task_id }` |
-| `agent_thread.updated` | An agent thread is created, or its state, error, or observation error changes. | `{ id, task_group_id, task_id, state }` |
-| `tasks.updated` | The tasks extension is enabled or disabled. | `{ enabled }` |
-
-`id` is the group's id for `task_group.*`, the comment's id for `task_comment.created`, the thread's id for `agent_thread.updated`, and `0` for `tasks.updated`. A group-level thread has a null `task_id`; a subtask's reviewer and implementer carry that subtask's id. A reserved thread row whose external id starts with `pending:` does not send `agent_thread.updated`.
-
-A change only to a group's or subtask's tokens, line counts, or duration does not broadcast by itself, because showing a group refreshes those values. They reach clients with the next other change. The Gateway collects the task changes of one request, one scheduler tick, or one agent view pass, and broadcasts each record once when that work ends.
-
-### Activity
-
-Activity events are notices on the `orbit` channel. They carry the list columns and never `properties`. `properties` can pass Reverb's 10,000-byte limit, and they hold operation input. A client calls [`activity:show`](/cli/activity) for the full record. [ADR 0159](/decisions/0159-push-activity-changes-to-the-web-app) records the design.
-
-| Type | Fires when | Data |
-| --- | --- | --- |
-| `activity.created` | A row is stored. | `{ id, request_id, command, status, caller_node_id, target_node_id, error_code, duration_ms, occurred_at }` |
-| `activity.updated` | A stored `running` row records its outcome. | The same fields as `activity.created`. |
-
-A command that can change something fires `activity.created` when its `running` row is stored. It fires `activity.updated` when that row records `succeeded` or `failed`.
-
-A read fires `activity.created` only, and only when a row is stored. [ADR 0152](/decisions/0152-sample-successful-read-activity) stores a successful read once per command, caller, and target in 60 seconds. A read that writes no row broadcasts nothing. A `schedule:*` read and a `:credentials` read are stored on every call, still as `created` only.
-
-The interrupted-Activity sweep and the shutdown finalizer fire `activity.updated` when they end a `running` row. [ADR 0158](/decisions/0158-end-interrupted-activity) defines that ending. The row is saved before the notice. A failed broadcast leaves the saved outcome in place.
-
-A row whose command starts with `activity:` is not broadcast. The page's own list and show therefore do not arrive as notices. A write that changes only `properties` is not broadcast, because the notice has no field for them.
-
-The envelope `id` and `data.id` are the Activity id. `occurred_at` is the time the Gateway recorded the row. `caller_node_id`, `target_node_id`, `error_code`, and `duration_ms` are null when the row has none.
-
-### Process usage
-
-While a browser watches, the Gateway broadcasts the CPU and memory of every Process every 15 seconds.
-
-| Type | Fires when | Data |
-| --- | --- | --- |
-| `process.usage` | Every 15 seconds while at least one `viewer.*` member is on a [Node agent channel](#node-agent-channels). | `{ part, parts, processes }` |
-
-`id` is the sample time in Unix seconds, the same for every part of one sample. `processes` lists `[id, cpu, memory_bytes]` for at most 200 Processes per part, with the same values and units as the `cpu` and `memory_bytes` fields of the Process list. A Process without a sample has null values. The agent view subscriber sends these events; [Process usage](/reference/node-agent#process-usage) describes when.
+A stored rule never changes, so there is no `firewall.updated`.
 
 ### Route
 
 | Type | Fires when | Data |
 | --- | --- | --- |
-| `route.created` | A new Route is created directly through the routes API. | `RouteData` |
-| `route.updated` | A Route's domain or publication changes, or its target is set or cleared. | `RouteData` |
+| `route.created` | A Route is created through the routes API, or analytics creates a tracking Route. | `RouteData` |
+| `route.updated` | A Route's domain, publication, or target changes. | `RouteData` |
 | `route.deleted` | A Route is removed. | `{ id, domain }` |
 
-A Route that Orbit creates implicitly while provisioning an Instance does not emit its own `route.created`; only a Route created directly through the routes API does.
+A Route that Orbit creates or replaces as part of another action sends no `route.created`. That covers the Route of a new or cloned Instance and the replacement Routes of a transfer, a target change, or a domain change.
 
-### Deploy step (`deploy_step`)
-
-| Type | Fires when | Data |
-| --- | --- | --- |
-| `deploy_step.created` | A deploy step is added to an Instance's deployment recipe. | `DeploymentStepData` |
-| `deploy_step.updated` | A deploy step's command, phase, timeout, or position changes. | `DeploymentStepData` |
-| `deploy_step.deleted` | A deploy step is removed. | `DeploymentStepData` (the removed step's last known fields) |
-
-A deploy step has no numeric id in its API shape, so `id` carries the step's name instead. `data` matches the deploy-step list and show endpoints exactly, so it does not include the owning Instance's id.
-
-### Deployment (`deployment`)
+### Deploy step
 
 | Type | Fires when | Data |
 | --- | --- | --- |
-| `deployment.created` | An `instance:deploy` or `instance:rollback` run starts and records its `running` row. | `AppInstanceDeploymentData` |
-| `deployment.updated` | That run finishes, whether it succeeded or failed. | `AppInstanceDeploymentData` |
+| `deploy_step.created` | A deploy step is added. | `DeploymentStepData` |
+| `deploy_step.updated` | A deploy step changes. | `DeploymentStepData` |
+| `deploy_step.deleted` | A deploy step is removed. | `DeploymentStepData` of the removed step |
 
-`data` matches one row of `GET /api/v1/instances/{instance}/deployments`, so it carries `app_instance_id`. It never carries the run's output events; a client fetches `GET /api/v1/deployments/{deployment}` for those. The Gateway keeps the 50 newest rows per Instance and removes older rows without an event, so a client that shows the history refetches it after `deployment.updated`.
+`id` is the step's name. `data` matches the deploy step endpoints, so it has no Instance id.
 
-## Limits
+### Deployment
 
-An event broadcasts only when its triggering action returns successfully. Deployment events are one exception: a failed run still records its outcome, so it still broadcasts `deployment.updated`. Activity is the other: a failed command still stores a row, and that store still broadcasts. The interrupted-Activity sweep and the shutdown finalizer broadcast `activity.updated` from outside the request. An operation that fails after it already wrote failure evidence onto a record, such as a `failed_step` or `error_code`, does not broadcast that write: the action throws before it reaches the broadcast call, and the HTTP response already reports the failure.
+| Type | Fires when | Data |
+| --- | --- | --- |
+| `deployment.created` | A deploy or rollback starts. | `AppInstanceDeploymentData` |
+| `deployment.updated` | That run ends, with success or failure. | `AppInstanceDeploymentData` |
 
-An idempotent create call, such as adding a Process, Schedule, or firewall rule that already exists with identical configuration, returns the existing record without change and does not broadcast. Only a call that creates a genuinely new record broadcasts a `created` event.
-
-`node.status` and `instance.status` are not currently emitted, even though they exist for parity with `process.status`:
-
-- A Node's own recorded status only changes as a side effect of provisioning, removal, or a role change, and each of those is already covered by `node.created`, `node.updated`, or `node.deleted`. No Gateway action flips only a Node's status field.
-- Instance dev-runtime hibernation (wake and sleep) tracks "awake" and "asleep" through a marker store outside the Instance and Process rows. It never writes a field either record's list or show endpoint returns, so the Gateway has nothing on the record to broadcast.
-
-`process.status` carries the Process's own persisted lifecycle status and desired state, not the live runtime string its show endpoint also reports (the state a process manager observes right now, such as whether the OS process is currently running). That live string is polled at read time, not recorded anywhere, so a change in it alone cannot be broadcast. The Node agent publishes live runtime state to subscribers of its [Node agent channel](#node-agent-channels) instead.
-
-Repairing a Node's DNS resolver (`orbit node:dns-repair` and similar recovery paths) re-pushes already-stored WireGuard and DNS configuration to the peer. It does not change the Node record, so it does not broadcast.
-
-## Configuration
-
-Broadcasting turns on by assigning the `websocket` node role, which installs and runs Reverb itself; see [Realtime events with Reverb](/solutions/realtime-reverb):
-
-```bash
-orbit node:role:add gateway websocket --converge
-```
-
-There is no environment variable to set. The Gateway resolves the active connection (host, port, scheme, and the Reverb application credentials it generated for the role) from the role assignment itself, lazily and once per request, and configures its `reverb` broadcast connection from it before every broadcast. The Gateway connects to the role's Node by its WireGuard address while still presenting and verifying the name `reverb.orbit`, so during a `websocket` move it reaches each serving Node directly. Other clients on the Gateway machine, such as the Orbit CLI, resolve `reverb.orbit` through [the Gateway machine's private DNS route](/reference/private-dns#the-gateway-machine). The role's Caddy site for `reverb.orbit` joins the Node's WireGuard-address listener when another site binds that address. When the Node's other sites bind only the wildcard address, it binds the wildcard too, so it never takes their traffic. Removing the role removes the connection, the certificate, the Caddy site, the private DNS record, and the stored credentials; `GET /api/v1/realtime` then reports `url` and `key` as `null` again.
+`data` matches one row of `GET /api/v1/instances/{instance}/deployments`. It never carries the run's output. The Gateway keeps the 50 newest rows per Instance and removes older rows without an event.
 
 ### Annotation
 
-`annotation.updated` fires after an annotation transaction commits. Its data is `{ id, instanceId, revision }`, a small invalidation notice rather than the full record. Clients fetch the Instance annotation list to recover current state. Screenshot and comment payloads stay out of broadcasts.
+| Type | Fires when | Data |
+| --- | --- | --- |
+| `annotation.updated` | An annotation change commits. | `{ id, instanceId, revision }` |
+
+A client fetches the Instance's annotation list for the current state.
+
+### Tasks
+
+| Type | Fires when | Data |
+| --- | --- | --- |
+| `task_group.created` | A task group is created. | `{ id, status }` |
+| `task_group.updated` | A group, one of its Tasks, or one of its checks changes, or the workspace has a new diff. | `{ id, status, lines_added, lines_deleted, line_diff }` |
+| `task_comment.created` | A comment or run receipt is stored. | `{ id, task_group_id, task_id }` |
+| `agent_thread.updated` | An agent thread is created, or its state, error, or observation error changes. | `{ id, task_group_id, task_id, state }` |
+| `tasks.updated` | The Tasks extension is enabled or disabled. | `{ enabled }` |
+
+`id` is the group, comment, or thread id, and `0` for `tasks.updated`. A group-level thread has a null `task_id`. A Task's implementer and reviewer threads carry that Task's id. A thread row that is still reserved, with an external id that starts with `pending:`, sends no event.
+
+In a request or a scheduler tick, a change only to tokens, line counts, or duration sends no event, because showing a group refreshes those values. A publish run for a new workspace report always sends `task_group.updated` for the groups of that workspace. The Gateway collects the task changes of one request, one scheduler tick, or one publish run, and sends each record once when that work ends.
+
+### Activity
+
+| Type | Fires when | Data |
+| --- | --- | --- |
+| `activity.created` | An Activity row is stored. | `{ id, request_id, command, status, caller_node_id, target_node_id, error_code, duration_ms, occurred_at }` |
+| `activity.updated` | A `running` row records its outcome. | The same fields |
+
+A change request fires `activity.created` when its `running` row is stored and `activity.updated` when the outcome is stored. A read is stored once, when it ends, so it fires only `activity.created`. A read that stores no row fires nothing. [What the Gateway records](/cli/activity#what-the-gateway-records) lists which requests store a row. The interrupted-Activity sweep and the shutdown finalizer fire `activity.updated` after they save the row.
+
+A row whose command starts with `activity:` fires nothing, so reading the log never feeds it. A write that changes only `properties` fires nothing. `occurred_at` is the row's `created_at`: the time the request started, also for a read that is written when it ends. Null columns stay null.
+
+The Gateway never deletes an Activity row, so there is no `activity.deleted`. Removing a Node sets its id in `caller_node_id` and `target_node_id` to null.
+
+## When no event fires
+
+An event fires only after its action succeeds. Two writes also fire after a failure: a deployment records its outcome, and a failed request stores its Activity. Failure details that an action writes before it throws, such as `failed_step`, fire nothing. The HTTP response reports that failure.
+
+A create call that finds the same record already stored, such as an identical Process, Schedule, or firewall rule, changes nothing and fires nothing.
+
+No event reports a change of a Node's or an Instance's runtime state. A Node's status changes only through actions that already fire `node.*`. Hibernation keeps an Instance's awake state outside the Instance and Process records.
 
 ## Node agent channels
 
-Each Node has a presence channel, `presence-node.{id}`, where its [Node agent](/reference/node-agent) publishes presence and Process runtime state. The Gateway does not broadcast on these channels. Its agent view subscriber joins every channel and keeps the latest state as the [Gateway view](/reference/node-agent#gateway-view). [ADR 0129](/decisions/0129-publish-node-presence-and-process-state-on-per-node-presence-channels) records the channel design.
+Each Node has a presence channel, `presence-node.{id}`. Its [Node agent](/reference/node-agent) publishes presence and Process state there. The Gateway broadcasts nothing on these channels. Its agent view subscriber joins every channel and keeps the latest state as the [Gateway view](/reference/node-agent#gateway-view).
 
 ### Membership
 
 | Member ID | Who | Signed by |
 | --- | --- | --- |
-| `agent.{id}` | The agent of Node `{id}` | `POST /api/v1/agent/broadcasting/auth`, only for a request from Node `{id}`'s own WireGuard address that carries the Node's [agent secret](/reference/node-agent#agent-secret), when that Node is managed. |
-| `gateway.{socket id}` | The Gateway's agent view subscriber | The subscriber itself, with the Reverb app secret the Gateway holds. No HTTP request is involved. |
-| `viewer.{socket id}` | Any other subscriber, such as a browser | `POST /api/v1/broadcasting/auth`, with the same rules as `orbit`. |
+| `agent.{id}` | The agent of Node `{id}` | `POST /api/v1/agent/broadcasting/auth`, only for Node `{id}`'s own address and [agent secret](/reference/node-agent#agent-secret) |
+| `gateway.{socket id}` | The Gateway's agent view subscriber | The subscriber itself, with the Reverb app secret |
+| `viewer.{socket id}` | Any other subscriber, such as a browser | `POST /api/v1/broadcasting/auth` |
 
-A member's `user_info` is `{ "kind": "agent", "node_id": 12, "version": "0.1.0" }` for the agent, `{ "kind": "gateway" }` for the subscriber, and `{ "kind": "viewer", "node_id": 7 }` for a viewer, where a viewer's `node_id` is the Node the viewer connects from. The existing auth endpoint never signs an `agent.*` or `gateway.*` member. It refuses any other `presence-*` channel, including `presence-node-logs.*` and a malformed `presence-node.*` name, with `broadcast.channel_forbidden` (403). Presence events tell a subscriber when the agent joins (`pusher:member_added`) and leaves (`pusher:member_removed`). A clean agent stop and an agent crash both close the connection, so the agent leaves at once. Reverb announces a member only when its first connection joins and its last connection leaves, so a second connection with the same member ID produces no presence event.
+`user_info` is `{ "kind": "agent", "node_id": 12, "version": "0.3.0" }` for the agent, `{ "kind": "gateway" }` for the subscriber, and `{ "kind": "viewer", "node_id": 7 }` for a viewer. A viewer's `node_id` is the Node it connects from. `POST /api/v1/broadcasting/auth` never signs an `agent.*` or `gateway.*` member.
+
+Reverb announces a member when its first connection joins (`pusher:member_added`) and when its last connection leaves (`pusher:member_removed`). A stopped or crashed agent closes its connection, so it leaves at once.
 
 ### Events
 
-The agent publishes Pusher client events. Reverb adds the sender's `user_id` to each one. A subscriber must ignore an event on `presence-node.{id}` unless its `user_id` is `agent.{id}`.
+The agent publishes Pusher client events. The Reverb app accepts client events from channel members (`accept_client_events_from` is `members`). Reverb adds the sender's `user_id` to each one. A subscriber ignores an event on `presence-node.{id}` unless its `user_id` is `agent.{id}`.
 
 | Event | When | Data |
 | --- | --- | --- |
 | `client-heartbeat` | Every 5 seconds. | `{ sequence, at }` |
-| `client-snapshot` | After the agent joins, when a new member joins, after the agent reconnects to Docker, and at least every 60 seconds. Agent 0.1.1 sends no periodic snapshot. | `{ sequence, at, docker, part, parts, units }` |
-| `client-process` | As soon as a unit or container changes, after 250 milliseconds of merging. | `{ sequence, at, unit }` |
-| `client-workspaces` | After each snapshot, when the agent's watch list changes, and when a checkout that it read before fails to open. | `{ sequence, at, part, parts, workspaces }` |
-| `client-workspace` | As soon as the agent reads a new state for one watched task checkout. | `{ sequence, at, workspace }` |
+| `client-snapshot` | After the agent joins, when a member joins, after the agent reconnects to Docker, and at least every 60 seconds. | `{ sequence, at, docker, part, parts, units }` |
+| `client-process` | When a unit or container changes, after 250 milliseconds of merging. | `{ sequence, at, unit }` |
+| `client-workspaces` | After each snapshot, when the watch list changes, and when a checkout it read before fails to open. | `{ sequence, at, part, parts, workspaces }` |
+| `client-workspace` | When the agent reads a new state for one task checkout. | `{ sequence, at, workspace }` |
 
 | Field | Contract |
 | --- | --- |
-| `sequence` | A counter that increases with every event from one agent run. It restarts at 1 when the agent restarts. A subscriber that sees it go back without a member event cannot tell a restarted agent from a second agent process, so it should discard its state and wait for a new snapshot. |
+| `sequence` | A counter that grows with every event of one agent run and restarts at 1 when the agent restarts. When it goes back without a member event, a subscriber drops its state and waits for a new snapshot. |
 | `at` | ISO 8601 UTC time at which the agent sent the event. |
 | `docker` | `available` or `absent`. |
-| `part`, `parts` | This part's number, from 1, and the number of parts. The agent splits a snapshot so that each message stays under Reverb's 10,000-byte limit. The parts arrive in order with consecutive `sequence` values, and a subscriber applies the snapshot once it has every part. |
-| `units` | A list of `unit` entries: every `orbit-process-*` unit and container the agent sees. |
-| `unit` | `{ name, runtime, runtime_status }`, for example `{ "name": "orbit-process-42-web", "runtime": "docker", "runtime_status": "exited" }`. `name` has no `.service` suffix. `runtime` is `systemd` or `docker`. |
-| `workspaces` | A list of `workspace` entries: every task checkout on the agent's watch list that it could read. Parts follow the snapshot's rules. |
-| `workspace` | `{ instance_id, base, start, branch, head, dirty, commits, diff }`, the Git state of one task checkout. [Task workspaces](/reference/node-agent#task-workspaces) defines each field. |
+| `part`, `parts` | The part number, from 1, and the number of parts. Each message stays under Reverb's 10,000-byte limit. Parts arrive in order, and a subscriber applies the list once it has every part. |
+| `units` | Every `orbit-process-*` unit and container the agent sees. |
+| `unit` | `{ name, runtime, runtime_status }`, such as `{ "name": "orbit-process-42-web", "runtime": "docker", "runtime_status": "exited" }`. `name` has no `.service` suffix. `runtime` is `systemd` or `docker`. |
+| `workspaces` | Every watched task checkout the agent could read. |
+| `workspace` | `{ instance_id, base, start, branch, head, dirty, commits, diff }`. [Task workspaces](/reference/node-agent#task-workspaces) defines each field. |
 
-A complete `client-workspaces` list replaces what a subscriber knows about the Node's workspaces. A workspace missing from it is not watched or cannot be read.
+A complete snapshot replaces what a subscriber knows about the Node's units. A Process whose unit is missing reads as `inactive` for systemd and `exited` for Docker. A complete `client-workspaces` list replaces the Node's workspaces in the same way.
 
-A snapshot replaces what a subscriber knows about the Node's units. A unit missing from a complete snapshot, or from a `client-process` event since, has no unit or container. Its Process reads as `inactive` for systemd or `exited` for Docker.
-
-A subscriber applies a `unit` entry to a Process only when the Process runs on Node `{id}`, uses the same runtime, and `name` equals `orbit-process-{process id}-{process name}`. It ignores every other entry.
+A subscriber applies a `unit` to a Process only when the Process runs on Node `{id}`, uses the same runtime, and `name` equals `orbit-process-{process id}-{process name}`.
 
 ### Presence
 
-A subscriber treats the Node's agent as online while `agent.{id}` is a member and a heartbeat, snapshot, or change arrived in the last 15 seconds. It treats the agent as lost when the member leaves or the 15 seconds pass without an event. A subscriber that has not seen the agent since it subscribed knows nothing about the Node from this channel and uses another source, such as Prometheus.
+A subscriber treats the agent as online while `agent.{id}` is a member and an event arrived in the last 15 seconds. It treats the agent as lost when the member leaves or 15 seconds pass without an event. Before it sees the agent, a subscriber knows nothing about the Node from this channel and uses another source, such as Prometheus.
 
 ## Log channels
 
-[Live log streams](/reference/live-logs) use two kinds of channel. No log line is sent on `orbit` or on `presence-node.{id}`. [Live logs](/reference/live-logs#why-it-works-this-way) records the reasons.
+[Live logs](/reference/live-logs) use two more kinds of channel. No log line goes out on `orbit` or `presence-node.{id}`.
 
 | Channel | Members | Signed by |
 | --- | --- | --- |
-| `presence-node-logs.{id}` | `agent.{id}` and the Gateway's subscriber, `gateway.{socket id}` | `POST /api/v1/agent/broadcasting/auth` for the agent, only from Node `{id}`'s own address; the subscriber signs itself |
+| `presence-node-logs.{id}` | `agent.{id}` and the subscriber's `gateway.{socket id}` | `POST /api/v1/agent/broadcasting/auth` for the agent; the subscriber signs itself |
 | `private-log-stream.{stream}` | The one client that opened the stream | The response that opens the stream, for that client's `socket_id` only |
 
-`POST /api/v1/broadcasting/auth` refuses both kinds with `broadcast.channel_forbidden` (403).
+The agent publishes `client-log` and `client-log-end` on `presence-node-logs.{id}`. The Gateway publishes `log-streams.changed`, with empty data, when a stream of the Node opens or closes. The agent then fetches its [stream list](/reference/node-agent#stream-list).
 
-### Agent log events
+The Gateway publishes `log.lines` and `log.ended` on `private-log-stream.{stream}`, in the envelope above, with the stream ID as `id`. [Live logs](/reference/live-logs#receive-events) defines their data.
 
-The agent publishes these client events on `presence-node-logs.{id}`. The subscriber ignores an event unless its `user_id` is `agent.{id}`, and its [log relay](/reference/node-agent#log-relay) drops lines unless the stream is open for Node `{id}`.
+## Why it works this way
 
-| Event | When | Data |
-| --- | --- | --- |
-| `client-log` | The first lines of a stream, then new lines, at most every 250 milliseconds for each stream | `{ stream, sequence, lines, dropped, skipped }` |
-| `client-log-end` | The agent cannot open or keep reading a stream's source | `{ stream, reason }` |
+These reasons explain the design. Check them before you propose a change.
 
-The Gateway publishes one server event there, `log-streams.changed`, with empty data, when a stream of the Node becomes active or closes. It tells the agent to fetch its [stream list](/reference/node-agent#stream-list).
+### Reverb as a role, not inside the Gateway
 
-### Stream events
+A WebSocket server holds long-lived connections. The Gateway process serves every API request, so it must not hold them too. Reverb is a purpose-built server that fans events out to every client. It runs as an unmodified Laravel app, so it carries no Orbit code. The `websocket` role installs it with one command. Running Reverb as an Instance behind a custom proxy Route takes six manual steps, and that Instance cannot share the Gateway's Node, because `gateway` conflicts with `app-prod`.
 
-The Gateway publishes `log.lines` and `log.ended` on `private-log-stream.{stream}`, with the envelope above and the stream ID as `id`. [Live logs](/reference/live-logs#receive-events) defines their data. A client ignores every `client-*` event on that channel.
+### Broadcast inside the request, without a queue
+
+The Gateway runs every action inside its own request and has no queue worker. A queued event could also arrive after a second change to the same record and look newer than it is.
+
+### Events do not replace HTTP
+
+A client acts only through the API, which checks identity, access grants, and validation. An event only invalidates what a client fetched. So a lost event costs a refetch, never a wrong action.
+
+### Notices instead of full records
+
+Reverb refuses a message over 10,000 bytes. A task group with its Tasks can pass that limit. Activity `properties` hold operation input, which should not reach every subscriber. So these events carry identifiers, status, and counts, and a client refetches the record. A change only to tokens or duration sends nothing, because every show would then send an event and make every tab show the group again.
+
+### One channel for all Gateway events
+
+Every subscriber of `orbit` has Gateway access and can already read every record over HTTP. A channel per family or per Node would add authorization rules that protect nothing.
+
+### A presence channel per Node for agents
+
+Whoever holds the Reverb app secret can sign any membership and publish any event, so the secret stays on the Gateway. The Gateway signs `agent.{id}` only for Node `{id}`, and Reverb stamps each client event with the sender's member ID. So a Node can report false state only about itself. A client event on a private channel carries no sender, so any member could forge another Node's state. A Reverb app per Node would force a browser to open one connection per Node and restart Reverb on every `node:add`. Agent messages never pass through the Gateway, so a heartbeat costs no Gateway request.
+
+### A heartbeat timeout detects lost agents
+
+Reverb checks for dead connections on a fixed timer, and a vanished connection stays a member for 120 to 180 seconds. Changing that timer would make Reverb Orbit-specific. A 15-second heartbeat timeout detects a lost Node without a change to Reverb.
