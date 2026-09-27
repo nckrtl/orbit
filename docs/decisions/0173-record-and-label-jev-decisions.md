@@ -1,12 +1,12 @@
 ---
 title: "ADR 0173: Record and label every Jev decision"
 sidebarTitle: "0173 Jev decision records"
-description: "Proposed. Store every Jev request and answer in durable records, label decisions from deterministic outcomes, and report quality and calibration."
+description: "Proposed. Store every Jev request and answer in durable records, label decisions from deterministic outcomes, and report false negatives and latency."
 ---
 
 # ADR 0173: Record and label every Jev decision
 
-Orbit stores every Jev call and its answers in a durable dataset, then labels answers only from deterministic evidence. A Gateway report measures failures, accuracy, errors, confidence calibration, and latency so Orbit can evaluate Jev and build a Laya dataset.
+Orbit stores every Jev call and its answers in a durable dataset, then labels answers only from deterministic evidence. A Gateway report measures calls, failures, false negatives, call-level correct labels, and latency so Orbit can evaluate Jev and build a Laya dataset.
 
 ## Status
 
@@ -24,19 +24,17 @@ Laravel AI v1.0.0 represents a Boolean answer with the probability that the answ
 
 ## Decision
 
-The Gateway writes exactly one `jev_decisions` row for each Jev call, including calls that fail. The call row stores its purpose, subject identifiers (group, subtask, and agent thread when the call concerns them), serialized question definitions, the input state sent to Jev with secrets redacted, per-question answers, provider model identifier when returned, elapsed time, and a sanitized error code on failure. Each question definition includes its type, options, and criteria. The original request and answer fields do not change when labels are added.
+The Gateway writes exactly one `jev_decisions` row for each Jev call, including calls that fail. The call row stores its purpose, subject identifiers (group, subtask, and agent thread when the call concerns them), serialized question definitions, the input state sent to Jev with secrets redacted, per-question answers, provider model identifier when returned, elapsed time, and a sanitized error code on failure. Each question definition includes its type, options, and criteria. The original request and answer fields do not change when labels are added. The `questions` and `input_state` JSON snapshots are each capped at 64 KiB after redaction. Truncation preserves their structure where possible and records explicit truncation metadata; when a bounded representation cannot preserve the structure, the Gateway stores a bounded truncation marker. The labeler does not assign question labels from a truncated snapshot.
 
-For each answer, store the provider's returned probability distribution and nullable `provider_confidence` separately from `selected_answer_probability`. For a Boolean answer, store `P(true)` and `P(false) = 1 - P(true)`; set `selected_answer_probability` to `P(true)` when the answer is true and `P(false)` when it is false. The SDK supplies no separate provider-confidence value for a Boolean answer, so `provider_confidence` is null. For a Choice answer, store the provider's probabilities and nullable confidence as returned; `selected_answer_probability` is the probability assigned to the selected option. Do not substitute Choice confidence for the selected-option probability. If the selected option has no valid probability, preserve the answer and provider confidence but leave `selected_answer_probability` null. Calibration excludes answers with a null selected-answer probability; Boolean answers returned by the live coverage classifier have the probability needed for calibration.
+For each answer, store the provider's returned probability distribution and nullable `provider_confidence` separately from `selected_answer_probability`. For a Boolean answer, store `P(true)` and `P(false) = 1 - P(true)`; set `selected_answer_probability` to `P(true)` when the answer is true and `P(false)` when it is false. The SDK supplies no separate provider-confidence value for a Boolean answer, so `provider_confidence` is null. For a Choice answer, store the provider's probabilities and nullable confidence as returned; `selected_answer_probability` is the probability assigned to the selected option. Do not substitute Choice confidence for the selected-option probability. If the selected option has no valid probability, preserve the answer and provider confidence but leave `selected_answer_probability` null.
 
 Records exclude credentials, secrets, and raw provider error bodies. Error codes are stable, bounded identifiers, not exception messages. Preserve records indefinitely as Orbit's training and evaluation dataset; routine retention cleanup does not expire them.
 
 ### `brief_coverage` evidence and labels
 
-At the coverage call, store the final approval comment identifier and digest of its `pull_request.changes` list. At merge, store the GitHub pull request number, merge commit SHA and time, and the pull request body's `## Changes` list snapshot and digest. The merged pull request body is the authoritative merge-time snapshot. A line is an approved line still present at merge only when its normalized text appears in both the final approval's change list and the merge-time `## Changes` list. Lines added or altered after approval do not count as approved lines.
+At the coverage call, store the final approval comment identifier and digest of its `pull_request.changes` list. At merge, store the GitHub pull request number, merge commit SHA and time, and the pull request body's `## Changes` list snapshot and digest. The merged pull request body is the authoritative merge-time snapshot. A line is an approved line still present at merge only when its normalized text appears in both the final approval's change list and the merge-time `## Changes` list. Lines added or altered after approval do not count as approved lines. The stored merge-time change list is capped at 64 KiB, and truncated merge evidence remains unlabeled.
 
 Match change-list lines to subtasks mechanically. Normalize Unicode with NFKC, case-fold, replace each run of punctuation or symbols with a space, and collapse whitespace. A line names a subtask only when the normalized full subtask title appears as a contiguous sequence of whole tokens. Ignore the summary and breaking-changes sections. The match is known only when the title is unique within the group and exactly one approved merge-time line matches it. A duplicate title, multiple matching lines, missing snapshot, unavailable approval record, or unverifiable merge body makes that subtask's outcome unknown. Do not ask a model or reviewer to resolve an ambiguous match.
-
-Orbit does not detect whether a change after the pull request merge fixes a coverage gap. The labeler does not read commit history or commit-message trailers.
 
 Use mutually exclusive question labels for each Boolean answer when the merge-time outcome is known:
 
@@ -52,9 +50,7 @@ Keep the brief's call-level label distinct from question labels. When every answ
 
 ### Report
 
-A Gateway Artisan command, `orbit:tasks:jev-report`, reports each purpose over the selected record set. It includes call count, failed calls, labeled share, per-question accuracy, false-positive and false-negative counts, confidence calibration, and p50/p95 call latency. Labeled share is the fraction of calls with at least one labeled question or a call-level label. Accuracy and false-positive/false-negative counts use only labeled questions; “covered” is the positive class. Call-level labels are reported separately and do not enter these question metrics.
-
-Calibration groups labeled questions with a non-null `selected_answer_probability` into fixed buckets `[0,.5)`, `[.5,.6)`, `[.6,.7)`, `[.7,.8)`, `[.8,.9)`, and `[.9,1]`. For each bucket, report the observed accuracy: the fraction of question labels marked correct. Do not use `provider_confidence` as the calibration probability. Latency percentiles include calls with a measured duration, including failures; unavailable latency is excluded. A purpose with no eligible observations reports null rather than a misleading zero.
+A Gateway Artisan command, `orbit:tasks:jev-report`, reports each purpose over the selected record set. It includes call count, failures, labeled share, false-negative count and share of missing answers, a false-negative confidence-bucket breakdown, call-level `correct` count, and p50/p95 call latency. Labeled share is the fraction of calls with at least one labeled question or a call-level label. The Gateway produces only the `false_negative` question label; its share uses all Boolean missing answers as the denominator. Confidence buckets use each labeled answer's `selected_answer_probability`. Latency percentiles include calls with a measured duration, including failures; unavailable latency is excluded. A purpose with no missing answers reports a null false-negative share, and a purpose with no measured duration reports null percentiles.
 
 ## Rejected alternatives
 
@@ -66,7 +62,7 @@ Calibration groups labeled questions with a non-null `selected_answer_probabilit
 ## Consequences
 
 - Jev calls become auditable and provide a durable, labeled evaluation set for considering Laya.
-- A missing answer earns `false_negative` only when the approved change list still names the task at merge. A merged pull request earns its call a separate `correct` label when all answers were covered. Orbit does not detect whether a change fixes a coverage gap.
+- A missing answer earns `false_negative` only when the approved change list still names the task at merge. A merged pull request earns its call a separate `correct` label when all answers were covered.
 - Ambiguous or incomplete merge evidence stays unlabeled; reports expose that limit rather than guessing.
 - The Gateway owns the record schema, secret redaction, label provenance, retention, and report semantics.
 - Permanent retention requires strict exclusion of secrets and raw provider errors.

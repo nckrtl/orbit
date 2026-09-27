@@ -14,6 +14,8 @@ final readonly class JevRecorder
 {
     private const int SnapshotLimit = 65536;
 
+    private const string TruncationMetadataKey = '__orbit_truncated__';
+
     private const int ReportDecaySeconds = 60;
 
     /**
@@ -91,26 +93,53 @@ final readonly class JevRecorder
 
     private static function capped(mixed $value): mixed
     {
-        $encoded = json_encode($value, JSON_THROW_ON_ERROR);
-        if (strlen($encoded) <= self::SnapshotLimit) {
+        if (self::encodedSize($value) <= self::SnapshotLimit) {
             return $value;
         }
 
-        $marker = '[truncated at '.self::SnapshotLimit.' bytes]';
-        if (! is_array($value) || ! array_is_list($value)) {
-            return ['__truncated__' => $marker];
-        }
-
-        $capped = [];
-        foreach ($value as $item) {
-            $candidate = [...$capped, $item, $marker];
-            if (strlen(json_encode($candidate, JSON_THROW_ON_ERROR)) > self::SnapshotLimit) {
-                break;
+        for ($stringLimit = 16384; $stringLimit > 0; $stringLimit = intdiv($stringLimit, 2)) {
+            $capped = self::markTruncated(self::truncateStrings($value, $stringLimit));
+            if (self::encodedSize($capped) <= self::SnapshotLimit) {
+                return $capped;
             }
-            $capped[] = $item;
         }
 
-        return [...$capped, $marker];
+        // Pathological key/container overhead cannot be reduced by shortening string values.
+        // Keep an explicit, bounded marker rather than persisting an oversized snapshot.
+        return [self::TruncationMetadataKey => true];
+    }
+
+    private static function encodedSize(mixed $value): int
+    {
+        return strlen(json_encode($value, JSON_THROW_ON_ERROR));
+    }
+
+    /** @return array<string|int, mixed> */
+    private static function markTruncated(mixed $value): array
+    {
+        if (is_array($value)) {
+            $value[self::TruncationMetadataKey] = true;
+
+            return $value;
+        }
+
+        return ['value' => $value, self::TruncationMetadataKey => true];
+    }
+
+    private static function truncateStrings(mixed $value, int $limit): mixed
+    {
+        if (is_string($value) && strlen($value) > $limit) {
+            return mb_strcut($value, 0, max(0, $limit - 14), 'UTF-8').'[truncated]';
+        }
+        if (! is_array($value)) {
+            return $value;
+        }
+
+        foreach ($value as $key => $item) {
+            $value[$key] = self::truncateStrings($item, $limit);
+        }
+
+        return $value;
     }
 
     private static function reportFailure(Throwable $exception): void

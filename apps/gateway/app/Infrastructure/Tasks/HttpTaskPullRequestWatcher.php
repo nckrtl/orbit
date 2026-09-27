@@ -60,15 +60,6 @@ final readonly class HttpTaskPullRequestWatcher implements TaskPullRequestWatche
         try {
             $pullRequest = $this->github->pullRequest($this->access->token($repository), $repository, $number);
             if ($pullRequest->state !== GitHubPullRequestState::Open) {
-                $commits = null;
-                if ($pullRequest->state === GitHubPullRequestState::Merged) {
-                    try {
-                        $commits = $this->github->pullRequestCommits($this->access->token($repository), $repository, $number);
-                    } catch (Throwable) {
-                        // A merge remains observable even if history cannot be verified; labels then stay unknown.
-                    }
-                }
-
                 return new TaskPullRequestHealth(
                     $pullRequest->state->value,
                     headSha: $pullRequest->headSha,
@@ -76,7 +67,6 @@ final readonly class HttpTaskPullRequestWatcher implements TaskPullRequestWatche
                     mergeBody: $pullRequest->body,
                     mergeSha: $pullRequest->mergeCommitSha,
                     mergedAt: $pullRequest->mergedAt,
-                    mergeCommits: $commits,
                 );
             }
             ['failed' => $failed, 'pending' => $pending] = $this->headChecks($repository, $number, $pullRequest);

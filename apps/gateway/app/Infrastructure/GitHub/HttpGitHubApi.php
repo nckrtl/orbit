@@ -10,7 +10,6 @@ use App\Domain\GitHub\GitHubAppCredentials;
 use App\Domain\GitHub\GitHubCheckRun;
 use App\Domain\GitHub\GitHubInstallation;
 use App\Domain\GitHub\GitHubPullRequest;
-use App\Domain\GitHub\GitHubPullRequestCommit;
 use App\Domain\GitHub\GitHubPullRequestDraft;
 use App\Domain\GitHub\GitHubPullRequestState;
 use App\Domain\GitHub\GitHubRepository;
@@ -208,38 +207,6 @@ final readonly class HttpGitHubApi implements GitHubApi
             mergeCommitSha: $this->text($response->json('merge_commit_sha')),
             mergedAt: $this->text($response->json('merged_at')),
         );
-    }
-
-    public function pullRequestCommits(#[SensitiveParameter] string $token, GitHubRepository $repository, int $number): array
-    {
-        $commits = [];
-        for ($page = 1; ; $page++) {
-            $response = $this->send(fn (): Response => $this->request()->withToken($token)
-                ->get($this->repositoryPath($repository).'/pulls/'.$number.'/commits', ['per_page' => 100, 'page' => $page]));
-            $rows = $response->json();
-            if (! $response->successful() || ! is_array($rows) || ! array_is_list($rows)) {
-                throw GitHubApiException::unavailable();
-            }
-            foreach ($rows as $row) {
-                $rowData = is_array($row) ? $row : [];
-                $commit = is_array($rowData['commit'] ?? null) ? $rowData['commit'] : [];
-                $committer = is_array($commit['committer'] ?? null) ? $commit['committer'] : [];
-                $sha = $this->text($rowData['sha'] ?? null);
-                $message = $this->text($commit['message'] ?? null);
-                $committedAt = $this->text($committer['date'] ?? null);
-                if ($sha === null || $message === null) {
-                    throw GitHubApiException::unavailable();
-                }
-                $commits[] = new GitHubPullRequestCommit($sha, $message, $committedAt);
-            }
-            if (count($commits) >= 250) {
-                // GitHub caps pull-request commit responses at 250 entries, even with pagination.
-                throw GitHubApiException::unavailable();
-            }
-            if (count($rows) < 100) {
-                return $commits;
-            }
-        }
     }
 
     public function checkRuns(#[SensitiveParameter] string $token, GitHubRepository $repository, string $sha): array

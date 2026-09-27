@@ -112,43 +112,6 @@ it('reports merged and closed pull requests without reading their checks', funct
     'closed' => [false, 'closed'],
 ]);
 
-it('fetches authoritative merge metadata and the complete commit-history source', function (): void {
-    GitHubTestSupport::storeApp();
-    $firstPage = array_map(static fn (int $index): array => [
-        'sha' => 'page-one-'.$index,
-        'commit' => ['message' => 'Ordinary change', 'committer' => ['date' => '2026-09-30T09:00:00Z']],
-    ], range(1, 100));
-    Http::fake([
-        'https://api.github.com/repos/acme/orbit/installation' => Http::response(['id' => 9]),
-        'https://api.github.com/app/installations/9/access_tokens' => Http::response(['token' => 'ghs_watch'], 201),
-        'https://api.github.com/repos/acme/orbit/pulls/42' => Http::response([
-            'merged' => true,
-            'state' => 'closed',
-            'head' => ['sha' => 'head-sha'],
-            'body' => "Summary\n\n## Changes\n\n- Deliver orders\n",
-            'merge_commit_sha' => 'merge-sha',
-            'merged_at' => '2026-10-01T10:00:00Z',
-        ]),
-        'https://api.github.com/repos/acme/orbit/pulls/42/commits*' => Http::sequence()
-            ->push($firstPage)
-            ->push([[
-                'sha' => 'fix-sha',
-                'commit' => ['message' => 'Ordinary change', 'committer' => ['date' => '2026-10-01T09:00:00Z']],
-            ]]),
-    ]);
-
-    $health = app(HttpTaskPullRequestWatcher::class)->health(watcher_group());
-
-    expect($health?->state)->toBe('merged')
-        ->and($health?->headSha)->toBe('head-sha')
-        ->and($health?->pullRequestNumber)->toBe(42)
-        ->and($health?->mergeBody)->toContain('## Changes')
-        ->and($health?->mergeSha)->toBe('merge-sha')
-        ->and($health?->mergedAt)->toBe('2026-10-01T10:00:00Z')
-        ->and($health?->mergeCommits)->toHaveCount(101)
-        ->and($health?->mergeCommits[100]->sha)->toBe('fix-sha');
-});
-
 it('reports an open pull request that conflicts with its base branch', function (array $pullRequest): void {
     GitHubTestSupport::storeApp();
     watcher_fake_health($pullRequest);

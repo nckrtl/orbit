@@ -10,6 +10,7 @@ use App\Domain\Tasks\TaskPullRequestWatcher;
 use App\Domain\Tasks\TaskRunPullRequest;
 use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskStatus;
+use App\Infrastructure\Tasks\JevRecorder;
 use App\Infrastructure\Tasks\LaravelAiTaskBriefCoverage;
 use App\Models\App as OrbitApp;
 use App\Models\JevDecision;
@@ -147,7 +148,7 @@ it('does not treat breaking-change lines as coverage when the Changes section is
     app(BriefCoverageLabeler::class)->label($group, new TaskPullRequestHealth(
         state: 'merged', pullRequestNumber: 42,
         mergeBody: "## Changes\n\n## Breaking changes\n\n- Orders export as CSV.\n",
-        mergeSha: 'merge-sha', mergedAt: '2026-10-01T10:00:00Z', mergeCommits: [],
+        mergeSha: 'merge-sha', mergedAt: '2026-10-01T10:00:00Z',
     ));
 
     $decision = JevDecision::query()->sole();
@@ -159,7 +160,7 @@ it('leaves labels unknown when merge evidence is missing and uses the changed me
     [$group, $cancelled, $failed, $completed] = cancelled_brief_coverage_group();
     Classification::fake([['subtask_'.$completed->id => new BooleanAnswer(0.2)]]);
     app(LaravelAiTaskBriefCoverage::class)->missing($group, cancelled_brief_coverage_pull_request(), 82, ['Orders export as CSV.']);
-    app(BriefCoverageLabeler::class)->label($group, new TaskPullRequestHealth(state: 'merged', pullRequestNumber: 42, mergeCommits: []));
+    app(BriefCoverageLabeler::class)->label($group, new TaskPullRequestHealth(state: 'merged', pullRequestNumber: 42));
     expect(JevDecision::query()->sole()->labels)->toBeNull();
 
     app(BriefCoverageLabeler::class)->label($group, new TaskPullRequestHealth(
@@ -168,7 +169,6 @@ it('leaves labels unknown when merge evidence is missing and uses the changed me
         mergeBody: "Summary.\n\n## Changes\n\n- Export unrelated data.\n",
         mergeSha: 'merge-sha',
         mergedAt: '2026-10-01T10:00:00Z',
-        mergeCommits: [],
     ));
     expect(JevDecision::query()->sole()->labels)->toBeNull();
 });
@@ -183,7 +183,6 @@ it('labels correct answers, call outcomes, and leaves failures unlabeled', funct
         mergeBody: "Summary.\n\n## Changes\n\n- Unrelated change.\n",
         mergeSha: 'merge-sha',
         mergedAt: '2026-10-01T10:00:00Z',
-        mergeCommits: [],
     );
     app(BriefCoverageLabeler::class)->label($group, $merge);
 
@@ -204,7 +203,7 @@ it('normalizes compatibility characters with Unicode NFKC before matching', func
     $completed->update(['title' => 'Ｅｘｐｏｒｔ']);
     Classification::fake([['subtask_'.$completed->id => new BooleanAnswer(0.2)]]);
     app(LaravelAiTaskBriefCoverage::class)->missing($group, new TaskRunPullRequest('Summary.', ['Export'], []), 89, ['Export']);
-    app(BriefCoverageLabeler::class)->label($group, new TaskPullRequestHealth(state: 'merged', pullRequestNumber: 42, mergeBody: "## Changes\n\n- Export\n", mergeSha: 'merge-sha', mergedAt: '2026-10-01T10:00:00Z', mergeCommits: []));
+    app(BriefCoverageLabeler::class)->label($group, new TaskPullRequestHealth(state: 'merged', pullRequestNumber: 42, mergeBody: "## Changes\n\n- Export\n", mergeSha: 'merge-sha', mergedAt: '2026-10-01T10:00:00Z'));
 
     expect(JevDecision::query()->sole()->labels['questions']['subtask_'.$completed->id]['label'])->toBe('false_negative');
 });
@@ -218,7 +217,7 @@ it('does not assign a call-level label to a mixed-answer coverage call', functio
     app(LaravelAiTaskBriefCoverage::class)->missing($group, new TaskRunPullRequest('Summary.', ['Export', 'Route'], []), 88, ['Export', 'Route']);
     app(BriefCoverageLabeler::class)->label($group, new TaskPullRequestHealth(
         state: 'merged', pullRequestNumber: 42, mergeBody: "## Changes\n\n- Export\n- Route\n",
-        mergeSha: 'merge-sha', mergedAt: '2026-10-01T10:00:00Z', mergeCommits: [],
+        mergeSha: 'merge-sha', mergedAt: '2026-10-01T10:00:00Z',
     ));
 
     expect(JevDecision::query()->sole()->labels)->not->toHaveKey('call');
@@ -232,7 +231,7 @@ it('uses normalized title uniqueness and Unicode case folding before labeling', 
         ['subtask_'.$completed->id => new BooleanAnswer(0.2), 'subtask_'.Task::query()->where('title', 'STRASSE')->value('id') => new BooleanAnswer(0.2)],
     ]);
     app(LaravelAiTaskBriefCoverage::class)->missing($group, new TaskRunPullRequest('Summary.', ['Straße'], []), 85, ['Straße']);
-    app(BriefCoverageLabeler::class)->label($group, new TaskPullRequestHealth(state: 'merged', pullRequestNumber: 42, mergeBody: "## Changes\n\n- STRASSE\n", mergeSha: 'merge-sha', mergedAt: '2026-10-01T10:00:00Z', mergeCommits: []));
+    app(BriefCoverageLabeler::class)->label($group, new TaskPullRequestHealth(state: 'merged', pullRequestNumber: 42, mergeBody: "## Changes\n\n- STRASSE\n", mergeSha: 'merge-sha', mergedAt: '2026-10-01T10:00:00Z'));
 
     expect(JevDecision::query()->sole()->labels)->toBeNull();
 });
@@ -242,7 +241,7 @@ it('case-folds Unicode titles when matching merge change lines', function (): vo
     $completed->update(['title' => 'Straße']);
     Classification::fake([['subtask_'.$completed->id => new BooleanAnswer(0.2)]]);
     app(LaravelAiTaskBriefCoverage::class)->missing($group, new TaskRunPullRequest('Summary.', ['Fix STRASSE behavior'], []), 86, ['Fix STRASSE behavior']);
-    app(BriefCoverageLabeler::class)->label($group, new TaskPullRequestHealth(state: 'merged', pullRequestNumber: 42, mergeBody: "## Changes\n\n- Fix STRASSE behavior\n", mergeSha: 'merge-sha', mergedAt: '2026-10-01T10:00:00Z', mergeCommits: []));
+    app(BriefCoverageLabeler::class)->label($group, new TaskPullRequestHealth(state: 'merged', pullRequestNumber: 42, mergeBody: "## Changes\n\n- Fix STRASSE behavior\n", mergeSha: 'merge-sha', mergedAt: '2026-10-01T10:00:00Z'));
 
     expect(JevDecision::query()->sole()->labels['questions']['subtask_'.$completed->id]['label'])->toBe('false_negative');
 });
@@ -252,7 +251,7 @@ it('labels only from merged pull-request change evidence', function (): void {
     Classification::fake([['subtask_'.$completed->id => new BooleanAnswer(0.2)]]);
     app(LaravelAiTaskBriefCoverage::class)->missing($group, cancelled_brief_coverage_pull_request(), 87, ['Orders export as CSV.']);
     $decision = JevDecision::query()->sole();
-    $health = new TaskPullRequestHealth(state: 'merged', pullRequestNumber: 42, mergeBody: "## Changes\n\n- Orders export as CSV.\n", mergeSha: 'merge-sha', mergedAt: '2026-10-01T10:00:00Z', mergeCommits: null);
+    $health = new TaskPullRequestHealth(state: 'merged', pullRequestNumber: 42, mergeBody: "## Changes\n\n- Orders export as CSV.\n", mergeSha: 'merge-sha', mergedAt: '2026-10-01T10:00:00Z');
     app(BriefCoverageLabeler::class)->label($group, new TaskPullRequestHealth(state: 'open', pullRequestNumber: 42, mergeBody: $health->mergeBody, mergeSha: 'not-merged', mergedAt: $health->mergedAt));
     expect($decision->fresh()->labels)->toBeNull();
 
@@ -273,6 +272,40 @@ it('keeps the coverage decision unchanged when bookkeeping failure occurs during
     Exceptions::assertReported(QueryException::class);
 });
 
+it('marks long Jev evidence incomplete and leaves its question unlabeled', function (): void {
+    [$group, $cancelled, $failed, $completed] = cancelled_brief_coverage_group();
+    $longBrief = str_repeat('Detailed coverage requirement. ', 4000);
+    $group->update(['brief' => $longBrief]);
+    $completed->update(['brief' => $longBrief]);
+    Classification::fake([['subtask_'.$completed->id => new BooleanAnswer(0.2)]])->preventStrayClassifications();
+
+    app(LaravelAiTaskBriefCoverage::class)->missing($group, new TaskRunPullRequest('Export feature.', ['Export'], []), 89, ['Export']);
+    app(BriefCoverageLabeler::class)->label($group, new TaskPullRequestHealth(
+        state: 'merged',
+        pullRequestNumber: 42,
+        mergeBody: "Summary.\n\n## Changes\n\n- Export\n",
+        mergeSha: 'merge-sha',
+        mergedAt: '2026-10-01T10:00:00Z',
+    ));
+
+    $stored = JevDecision::query()->sole();
+    expect($stored->questions['__orbit_truncated__'] ?? false)->toBeTrue()
+        ->and($stored->input_state['__orbit_truncated__'] ?? false)->toBeTrue()
+        ->and($stored->merge_changes)->toBe(['Export'])
+        ->and($stored->merge_changes_redacted)->toBeFalse()
+        ->and($stored->labels)->toBeNull();
+});
+
+it('caps snapshots under the JSON byte limit when many short fields dominate', function (): void {
+    $state = ['subtasks' => array_fill(0, 3000, ['title' => 'Export', 'brief' => 'Add CSV'])];
+    app(JevRecorder::class)->record('brief_coverage', [], [], $state, null, null, null, hrtime(true), now()->toIso8601String());
+
+    $stored = DB::table('jev_decisions')->sole();
+    $decoded = json_decode($stored->input_state, true, flags: JSON_THROW_ON_ERROR);
+    expect(strlen($stored->input_state))->toBeLessThanOrEqual(65536)
+        ->and($decoded['__orbit_truncated__'] ?? false)->toBeTrue();
+});
+
 it('caps Unicode questions, input state, and merge changes at the persisted JSON byte limit', function (): void {
     [$group, $cancelled, $failed, $completed] = cancelled_brief_coverage_group();
     $longLine = 'Export '.str_repeat('é', 20000);
@@ -287,7 +320,6 @@ it('caps Unicode questions, input state, and merge changes at the persisted JSON
         mergeBody: "Summary.\n\n## Changes\n\n- {$longLine}\n",
         mergeSha: 'merge-sha',
         mergedAt: '2026-10-01T10:00:00Z',
-        mergeCommits: [],
     ));
 
     $stored = DB::table('jev_decisions')->sole();
@@ -295,7 +327,9 @@ it('caps Unicode questions, input state, and merge changes at the persisted JSON
         ->and(strlen($stored->input_state))->toBeLessThanOrEqual(65536)
         ->and(strlen($stored->merge_changes))->toBeLessThanOrEqual(65536)
         ->and($stored->questions)->toContain('truncated')
+        ->and(array_key_exists('subtask_'.$completed->id, json_decode($stored->questions, true)))->toBeTrue()
         ->and($stored->input_state)->toContain('truncated')
+        ->and(array_keys(json_decode($stored->input_state, true)))->toContain('subtasks')
         ->and($stored->merge_changes)->toContain('truncated');
 });
 
@@ -309,7 +343,6 @@ it('completes the group when bookkeeping failure occurs during labeling', functi
         mergeBody: "Summary.\n\n## Changes\n\n- Orders export as CSV.\n",
         mergeSha: 'actual-merge-sha',
         mergedAt: '2026-10-01T10:00:00Z',
-        mergeCommits: [],
     );
     $group->update(['status' => 'settling', 'execution_mode' => 'managed', 'pr_url' => 'https://github.com/acme/shop/pull/42']);
     app()->instance(TaskPullRequestWatcher::class, new class($merge) implements TaskPullRequestWatcher

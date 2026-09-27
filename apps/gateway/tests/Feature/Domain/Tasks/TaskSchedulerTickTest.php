@@ -10,6 +10,7 @@ use App\Domain\AppInstances\AppInstanceRemover;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\AgentSpawner;
 use App\Domain\Tasks\ArchiveFinishedTaskThreads;
+use App\Domain\Tasks\BriefCoverageLabeler;
 use App\Domain\Tasks\CoderSettleNotifier;
 use App\Domain\Tasks\NullAgentSpawner;
 use App\Domain\Tasks\NullCoderSettleNotifier;
@@ -26,6 +27,7 @@ use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskPlannerMcp;
 use App\Domain\Tasks\TaskPullRequestDescription;
 use App\Domain\Tasks\TaskPullRequestException;
+use App\Domain\Tasks\TaskPullRequestHealth;
 use App\Domain\Tasks\TaskPullRequestPublisher;
 use App\Domain\Tasks\TaskRunInstructions;
 use App\Domain\Tasks\TaskRunPullRequest;
@@ -558,7 +560,7 @@ it('continues watching a prior settling PR and completes only after it merges', 
 
     $this->assertDatabaseHas('task_groups', ['id' => $group->id, 'status' => 'completed', 'pr_url' => $group->pr_url, 'taskable_id' => null]);
     $this->assertDatabaseMissing('app_instances', ['id' => $group->taskable_id]);
-    Http::assertSentCount(8);
+    Http::assertSentCount(6);
 });
 
 /** A settling group whose pull request the tick reads through the faked GitHub App. */
@@ -894,12 +896,6 @@ it('preserves labeled merge evidence and report metrics when cleanup retries los
                 'merged' => true, 'state' => 'closed', 'head' => ['sha' => 'head-sha'],
                 'merge_commit_sha' => 'actual-merge-sha', 'merged_at' => '2026-10-01T10:00:00Z',
             ]),
-        'https://api.github.com/repos/acme/orbit/pulls/42/commits*' => Http::sequence()
-            ->push([[
-                'sha' => 'verified-commit',
-                'commit' => ['message' => 'Ordinary change', 'committer' => ['date' => '2026-10-01T09:00:00Z']],
-            ]])
-            ->push([], 502),
     ]);
 
     app(TaskScheduler::class)->tick();
@@ -920,8 +916,7 @@ it('preserves labeled merge evidence and report metrics when cleanup retries los
         ->and($retried?->labels)->toBe($verified?->labels)
         ->and($report['calls'])->toBe(1)
         ->and($report['labeled_share'])->toBe(1)
-        ->and($report['accuracy'])->toBeNull()
-        ->and($report['call_labels'])->toBe(['correct' => 1]);
+        ->and($report['call_correct'])->toBe(1);
 });
 
 it('uses backoff for publication and removal retries and retries a failed manual complete', function (): void {
@@ -1763,6 +1758,23 @@ it('fast-forwards the workspace before a resumed subtask starts and retries a fa
 
     expect($agents->fastForwards)->toBe(2)
         ->and($waiting->fresh()?->communication_failures)->toBe(2);
+});
+
+it('reports a throwing brief coverage labeler and continues the tick', function (): void {
+    $group = tick_settling_group();
+    Exceptions::fake();
+    app()->instance(BriefCoverageLabeler::class, new class implements BriefCoverageLabeler
+    {
+        public function label(TaskGroup $group, TaskPullRequestHealth $health): void
+        {
+            throw new RuntimeException('labeling failed');
+        }
+    });
+    tick_watch_pulls([['merged' => true, 'state' => 'closed', 'head' => ['sha' => 'abc123'], 'base' => ['ref' => 'main']]]);
+
+    expect(app(TaskScheduler::class)->tick())->toBe([]);
+
+    Exceptions::assertReported(RuntimeException::class);
 });
 
 it('keeps a merged group settling when an approved commit missed the merge', function (): void {

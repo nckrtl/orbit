@@ -72,6 +72,7 @@ final readonly class JevBriefCoverageLabeler implements BriefCoverageLabeler
                     $mergedAt = $decision->getAttribute('merged_at');
 
                     $answers = $decision->getAttribute('answers');
+                    $questions = $decision->getAttribute('questions');
                     $state = $decision->getAttribute('input_state');
                     $taskIds = $decision->getAttribute('task_ids');
                     if (! is_array($answers) || ! is_array($state) || ! is_array($taskIds) || ! array_is_list($taskIds) || $taskIds === []
@@ -109,7 +110,8 @@ final readonly class JevBriefCoverageLabeler implements BriefCoverageLabeler
                     $approvalCommentId = $decision->getAttribute('approval_comment_id');
                     $approvalDigest = $decision->getAttribute('approval_changes_digest');
                     if (! is_array($approvalLines) || ! array_is_list($approvalLines) || array_filter($approvalLines, is_string(...)) !== $approvalLines
-                        || ! is_array($subtasks) || ! is_int($approvalCommentId) || ! is_string($approvalDigest) || $approvalRedacted
+                        || ! is_array($subtasks) || ! is_array($questions) || self::hasTruncationMarker($questions) || self::hasTruncationMarker($state)
+                        || ! is_int($approvalCommentId) || ! is_string($approvalDigest) || $approvalRedacted
                         || ! is_array($mergeLines) || ! array_is_list($mergeLines) || array_filter($mergeLines, is_string(...)) !== $mergeLines
                         || $mergeChangesRedacted || ! is_string($mergeChangesDigest)
                         || ! is_string($bodyDigest) || ! $mergeMetadataKnown || ! self::digest($approvalLines, $approvalDigest)) {
@@ -166,6 +168,16 @@ final readonly class JevBriefCoverageLabeler implements BriefCoverageLabeler
                     $decision->forceFill(['labels' => $labels !== [] ? $labels : null])->save();
                 });
             });
+    }
+
+    /** @param array<string|int, mixed> $snapshot */
+    private static function hasTruncationMarker(array $snapshot): bool
+    {
+        if (($snapshot['__orbit_truncated__'] ?? null) === true || array_key_exists('__truncated__', $snapshot)) {
+            return true;
+        }
+
+        return array_any($snapshot, fn ($value): bool => is_array($value) && self::hasTruncationMarker($value));
     }
 
     /**
