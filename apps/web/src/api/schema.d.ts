@@ -3306,6 +3306,8 @@ export interface components {
             prometheus?: string;
             grafana?: string;
             exporters?: components["schemas"]["MetricsExporter"][];
+            reconcile_status?: string;
+            reconcile_error_code?: string | null;
         };
         MetricsAssignment: {
             id?: number;
@@ -3323,7 +3325,8 @@ export interface components {
             /** @enum {string} */
             reason?: "ineligible" | "metrics_node" | "explicit_enabled" | "role_default" | "explicit_disabled" | "roleless_default_excluded";
             /** @enum {string|null} */
-            degraded_reason?: "unreachable" | "firewall_inactive" | null;
+            degraded_reason?: "unreachable" | "firewall_inactive" | "reconcile_failed" | null;
+            degraded_error_code?: string | null;
         };
         Node: {
             id?: number;
