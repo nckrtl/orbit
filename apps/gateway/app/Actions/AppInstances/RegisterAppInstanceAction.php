@@ -615,7 +615,7 @@ final readonly class RegisterAppInstanceAction
             $this->nodeSettings->fromStored($node->settings),
             $account,
         );
-        $destination = $roots->instance->append($app->slug, $name)->value;
+        $destination = $roots->append($app->slug, $name)->value;
         if ($planned !== null && ($plannedName !== $name || $plannedCheckoutPath !== $destination)) {
             throw $this->conflict(
                 'instance.registration_evidence_invalid',
@@ -785,7 +785,7 @@ final readonly class RegisterAppInstanceAction
                     ->retainedInstanceName($instance, $explicitName),
                 default => $this->instanceName($app, $fact, $explicitName),
             };
-            $destination = $roots->instance->append($app->slug, $name);
+            $destination = $roots->append($app->slug, $name);
 
             if ($instance instanceof AppInstance && $instance->migration_required) {
                 $this->assertMigrationProposal($node, $instance, $name, $destination);

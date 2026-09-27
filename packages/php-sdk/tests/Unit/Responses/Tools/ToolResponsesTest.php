@@ -8,7 +8,7 @@ use Orbit\Sdk\Responses\Tools\ToolResponse;
 use Orbit\Sdk\Responses\Tools\ToolsResponse;
 
 describe('tool responses', function (): void {
-    it('maps every tool field without applying Tool policy', function (): void {
+    it('decodes the current Gateway Tool payload', function (): void {
         $response = ToolResponse::fromGatewayData(tool_response_data(), tool_response_request_id());
 
         expect($response->id)
@@ -21,8 +21,6 @@ describe('tool responses', function (): void {
             ->toBe('@openai/codex')
             ->and($response->versionConstraint)
             ->toBe('^0.150')
-            ->and($response->protected)
-            ->toBeFalse()
             ->and($response->status)
             ->toBe('installed')
             ->and($response->installedVersion)
@@ -42,7 +40,6 @@ describe('tool responses', function (): void {
                 'manager' => 'vp',
                 'package' => '@openai/codex',
                 'version_constraint' => '^0.150',
-                'protected' => false,
                 'status' => 'installed',
                 'installed_version' => '0.150.0',
                 'failed_operation' => null,
@@ -125,7 +122,6 @@ describe('tool responses', function (): void {
             $boundedName,
             $boundedText,
             '',
-            false,
             $boundedToken,
             $boundedText,
             $boundedToken,
@@ -198,7 +194,6 @@ describe('tool responses', function (): void {
                     'manager' => 'vp',
                     'package' => '@openai/codex',
                     'version_constraint' => '^0.150',
-                    'protected' => false,
                     'status' => 'installed',
                     'installed_version' => '0.150.0',
                     'failed_operation' => null,
@@ -224,7 +219,6 @@ describe('tool responses', function (): void {
         'string id' => [['id' => '41']],
         'missing manager' => [['manager' => null]],
         'empty package' => [['package' => '']],
-        'non-boolean protected' => [['protected' => 1]],
         'oversized manager' => [['manager' => str_repeat('m', times: 33)]],
         'oversized package' => [['package' => str_repeat('p', times: 256)]],
         'invalid status token' => [['status' => "installed\nunsafe"]],
@@ -333,7 +327,6 @@ describe('tool responses', function (): void {
             "token={$credential}",
             "https://operator:{$credential}@packages.test/tool",
             "Bearer {$credential}",
-            false,
             'installed',
             "api_token={$credential}",
             null,
@@ -372,7 +365,6 @@ describe('tool responses', function (): void {
             'vp',
             '@openai/codex',
             '^0.150',
-            false,
             'installed',
             null,
             null,
@@ -394,12 +386,12 @@ describe('tool responses', function (): void {
             expect(fn (): ToolResponse => new ToolResponse(...$values))->toThrow(InvalidArgumentException::class);
         }
         $values = $valid;
-        $values[7] = str_repeat('x', times: 256);
+        $values[6] = str_repeat('x', times: 256);
         expect(fn (): ToolResponse => new ToolResponse(...$values))->toThrow(InvalidArgumentException::class);
         $values = $valid;
-        $values[9] = 'unsafe code';
+        $values[8] = 'unsafe code';
         expect(new ToolResponse(...$values)->errorCode)->toBeNull();
-        $values[11] = 'not-a-request-id';
+        $values[10] = 'not-a-request-id';
         expect(new ToolResponse(...$values)->requestId)->toBeEmpty();
 
         foreach ([ToolResponse::class, ToolManagerResponse::class] as $responseClass) {
@@ -453,7 +445,6 @@ describe('tool responses', function (): void {
                 'vp',
                 '@openai/codex',
                 $oversizedConstraint,
-                false,
                 'installed',
                 null,
                 null,
@@ -501,7 +492,6 @@ function tool_response_data(): array
         'manager' => 'vp',
         'package' => '@openai/codex',
         'version_constraint' => '^0.150',
-        'protected' => false,
         'status' => 'installed',
         'installed_version' => '0.150.0',
         'failed_operation' => null,

@@ -6,6 +6,7 @@ namespace App\Infrastructure\Metrics;
 
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\AppInstances\ProductionPhpRuntimeIdentity;
+use App\Domain\AppInstances\ProductionPhpRuntimeManager;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppProd\AppProdSshExecutor;
@@ -23,6 +24,7 @@ final readonly class NativeServiceMetricsRuntime implements ServiceMetricsRuntim
         private AppProdSshExecutor $ssh,
         private NodeCaddyBuilds $builds,
         private ServiceMetricsConfigRenderer $renderer = new ServiceMetricsConfigRenderer,
+        private ?ProductionPhpRuntimeManager $productionPhp = null,
     ) {}
 
     public function snapshot(ServiceMetricsNode $target): string
@@ -30,8 +32,7 @@ final readonly class NativeServiceMetricsRuntime implements ServiceMetricsRuntim
         $state = $this->program($target->node, ['operation' => 'snapshot']);
         $pools = [];
         foreach ($target->instances as $instance) {
-            $identity = ProductionPhpRuntimeIdentity::from($instance);
-            $pools[(string) $instance->id] = $this->pool($target->node, $identity, ['operation' => 'snapshot']);
+            $pools[(string) $instance->id] = $this->pool($target->node, ProductionPhpRuntimeIdentity::from($instance));
         }
 
         return json_encode(['exporter' => $state, 'pools' => $pools], JSON_THROW_ON_ERROR);
@@ -41,8 +42,10 @@ final readonly class NativeServiceMetricsRuntime implements ServiceMetricsRuntim
     {
         $fingerprints = '';
         foreach ($target->instances as $instance) {
-            $state = $this->pool($target->node, ProductionPhpRuntimeIdentity::from($instance), ['operation' => 'apply', 'enabled' => $target->fpm]);
-            $fingerprints .= '# runtime '.StoredValue::integer($instance->id).': '.(is_string($state['fingerprint'] ?? null) ? $state['fingerprint'] : '')."\n";
+            $manager = $this->productionPhp ?? app(ProductionPhpRuntimeManager::class);
+            $manager->convergeMonitoring($instance, $target->fpm);
+            $state = $this->pool($target->node, ProductionPhpRuntimeIdentity::from($instance));
+            $fingerprints .= '# runtime '.StoredValue::integer($instance->id).': '.$state['fingerprint']."\n";
         }
         $fpm = $target->fpm && $target->instances !== [];
         $rules = [];
@@ -77,32 +80,43 @@ final readonly class NativeServiceMetricsRuntime implements ServiceMetricsRuntim
         if (! is_array($state)) {
             throw new ResourceOperationException('metrics.service_inspection_failed', 'FPM monitoring snapshot is invalid.', 502);
         }
-        $pools = is_array($state['pools'] ?? null) ? $state['pools'] : [];
-        foreach ($target->instances as $instance) {
-            $poolState = $pools[(string) $instance->id] ?? null;
-            if (! is_array($poolState)) {
-                throw new ResourceOperationException('metrics.service_inspection_failed', 'FPM monitoring snapshot is missing a pool.', 502);
-            }
-            $this->pool($target->node, ProductionPhpRuntimeIdentity::from($instance), ['operation' => 'restore', 'state' => $poolState]);
-        }
         $exporter = $state['exporter'] ?? null;
         if (! is_array($exporter)) {
             throw new ResourceOperationException('metrics.service_inspection_failed', 'FPM monitoring snapshot is missing exporter state.', 502);
+        }
+        $poolSnapshots = is_array($state['pools'] ?? null) ? $state['pools'] : [];
+        $pools = [];
+        foreach ($target->instances as $instance) {
+            $pool = $poolSnapshots[(string) $instance->id] ?? null;
+            if (! is_array($pool) || ! is_bool($pool['enabled'] ?? null)) {
+                throw new ResourceOperationException('metrics.service_inspection_failed', 'FPM monitoring snapshot is missing a pool state.', 502);
+            }
+            $pools[(string) $instance->id] = ['enabled' => $pool['enabled']];
+        }
+        foreach ($target->instances as $instance) {
+            ($this->productionPhp ?? app(ProductionPhpRuntimeManager::class))->convergeMonitoring(
+                $instance,
+                $pools[(string) $instance->id]['enabled'],
+            );
         }
         $this->program($target->node, ['operation' => 'apply', 'state' => $exporter]);
         $this->build($target->node);
     }
 
-    /** @param array<string, mixed> $request
-     * @return array<string, mixed>
+    /** @return array{enabled: bool, fingerprint: string}
      */
-    private function pool(Node $node, ProductionPhpRuntimeIdentity $identity, array $request): array
+    private function pool(Node $node, ProductionPhpRuntimeIdentity $identity): array
     {
         $program = file_get_contents(resource_path('scripts/service-metrics-fpm.py'));
         if (! is_string($program)) {
             throw new ResourceOperationException('metrics.service_program_missing', 'FPM monitoring program is unavailable.', 500);
         }
-        $request += ['user' => $identity->user, 'version' => $identity->version, 'marker' => $identity->marker()];
+        $request = [
+            'operation' => 'snapshot',
+            'user' => $identity->user,
+            'version' => $identity->version,
+            'marker' => $identity->marker(),
+        ];
         $result = $this->ssh->execute($node, new RemoteCommand(
             ['sudo', 'python3', '-', base64_encode(json_encode($request, JSON_THROW_ON_ERROR))],
             input: $program,
@@ -112,13 +126,14 @@ final readonly class NativeServiceMetricsRuntime implements ServiceMetricsRuntim
         if ($result->truncated) {
             throw new ResourceOperationException('metrics.service_inspection_failed', 'FPM monitoring inspection was truncated.', 502);
         }
-
         $state = json_decode($result->stdout, true, flags: JSON_THROW_ON_ERROR);
-        if (! is_array($state)) {
+        if (! is_array($state) || ! is_string($state['pool'] ?? null) || ! is_string($state['fingerprint'] ?? null)) {
             throw new ResourceOperationException('metrics.service_inspection_failed', 'FPM monitoring returned invalid state.', 502);
         }
+        $enabled = str_contains($state['pool'], "pm.status_path = /orbit-fpm-status\n")
+            && str_contains($state['pool'], "pm.status_listen = {$identity->socket}.status\n");
 
-        return array_filter($state, is_string(...), ARRAY_FILTER_USE_KEY);
+        return ['enabled' => $enabled, 'fingerprint' => $state['fingerprint']];
     }
 
     /**

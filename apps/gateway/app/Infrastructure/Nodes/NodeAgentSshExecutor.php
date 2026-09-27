@@ -76,7 +76,7 @@ final readonly class NodeAgentSshExecutor implements NodeAgentRuntime
     {
         try {
             $account = $this->accounts->resolve($node);
-            $root = $this->storageRoots->resolveApps($this->nodeSettings->fromStored($node->settings), $account)->instance->value;
+            $root = $this->storageRoots->resolveApps($this->nodeSettings->fromStored($node->settings), $account)->value;
         } catch (Throwable) {
             return null;
         }

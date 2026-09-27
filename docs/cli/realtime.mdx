@@ -1,43 +1,35 @@
 ---
 title: "realtime"
-description: "Stream decoded realtime Gateway events as they arrive, or confirm realtime is not configured yet."
+description: "Show where the Gateway's realtime server is, and stream realtime Gateway events as they arrive."
+covers:
+  - apps/cli/app/Commands/Realtime/**
+  - apps/cli/app/Support/Realtime/**
 ---
 
-The Gateway can publish realtime events over a private WebSocket channel. `realtime:tail` connects to that channel, subscribes, and prints each decoded event as it arrives. Use it to watch fleet activity live, or to check whether realtime is reachable before relying on it from another tool.
-
-## Before you start
-
-`realtime:tail` asks the active Gateway for its Reverb endpoint and app key, so a Gateway with an active `websocket` role needs no local configuration. To point at a different endpoint, store `realtime_url` and `realtime_key` on the active profile in `$ORBIT_HOME/config.json`, alongside `url` and `ca_path`, or set `ORBIT_REALTIME_URL` and `ORBIT_REALTIME_KEY` in the environment; `realtime:tail` uses those values when they are present and asks the Gateway only when they are not. `ORBIT_REALTIME_URL` looks like `wss://reverb.orbit`. When no source supplies both values, `realtime:tail` fails with `realtime.not_configured` and callers fall back to polling the affected commands instead.
-
-Run `orbit realtime:show` to see what the active Gateway itself reports.
+The Gateway publishes [realtime events](/reference/events) on a private WebSocket channel. `realtime:show` shows where that channel is. `realtime:tail` connects to it and prints each event as it arrives. Realtime needs an active `websocket` role, as [Realtime events with Reverb](/solutions/realtime-reverb) describes.
 
 ## Commands
 
 | Command | Result |
 | --- | --- |
-| [`realtime:show`](#orbit-realtimeshow) | Show the Gateway's Reverb connection details. |
-| [`realtime:tail`](#orbit-realtimetail) | Stream decoded realtime Gateway events as they arrive. |
+| [`realtime:show`](#orbit-realtimeshow) | Show the Gateway's Reverb connection. |
+| [`realtime:tail`](#orbit-realtimetail) | Stream realtime Gateway events as they arrive. |
 
 Both commands accept `--json`.
 
 ## orbit realtime:show
 
-Ask the active Gateway where its Reverb server is and which app key and channel a client uses to reach it.
+Ask the active Gateway where its Reverb server is and which key and channel a client uses.
 
 ```bash
 orbit realtime:show [--json]
 ```
 
-Human output shows a `Status` of `configured` or `not configured`, the Reverb `URL`, the `Channel` (always `orbit`), and the `Key` in full — the Reverb app key is public; the app secret never leaves the Gateway. `URL` and `Key` show `—` when no Node holds an active `websocket` role. JSON output returns `{ "url", "key", "channel", "request_id" }`, with `url` and `key` as `null` in the same case.
-
-```bash
-orbit realtime:show
-orbit realtime:show --json
-```
+Human output shows `Status` (`configured` or `not configured`), `URL`, `Channel`, and `Key`. The key is public. The Reverb app secret never leaves the Gateway. `URL` and `Key` show `—` when no Node holds an active `websocket` role. JSON returns `{ "url", "key", "channel", "request_id" }`, with `url` and `key` null in that case. `channel` is always `orbit`.
 
 ## orbit realtime:tail
 
-Connect to the Gateway's realtime channel and print every event it carries until interrupted.
+Connect to the `orbit` channel and print every event until you stop the command.
 
 ```bash
 orbit realtime:tail [--types=FILTER,...] [--json]
@@ -45,8 +37,8 @@ orbit realtime:tail [--types=FILTER,...] [--json]
 
 | Option | Meaning |
 | --- | --- |
-| `--types=FILTER,...` | Comma-separated event type filters. Each filter is an exact type such as `process.status`, or a family prefix ending in `*` such as `node.*`. Omit the option to print every type. |
-| `--json` | Print each event's full envelope as one JSON line instead of a formatted line. |
+| `--types=FILTER,...` | Comma-separated type filters. Each filter is an exact type, such as `process.status`, or a family followed by `.*`, such as `node.*`. Without the option, every type prints. |
+| `--json` | Print each event's full envelope as one JSON line. |
 
 ```bash
 orbit realtime:tail
@@ -54,12 +46,12 @@ orbit realtime:tail --types=node.*,process.status
 orbit realtime:tail --json
 ```
 
-Human output prints one line per event as `<at>  <type>  <summary>`, where `<summary>` lists the event's data fields as space-separated `key=value` pairs. JSON output prints the event's `{type, id, at, data}` envelope, one complete JSON object per line. The command keeps streaming until interrupted; press Ctrl-C to stop it, which exits with the interrupted-signal status.
+The command asks the Gateway for the connection, as `realtime:show` does, and signs its subscription through the Gateway. Human output prints one line per event: `<at>  <type>  <summary>`, where the summary lists the data fields as `key=value` pairs. JSON output prints the `{ type, id, at, data }` envelope, one object per line. Press Ctrl-C to stop.
 
-Event types follow `<family>.<verb>`, for example `node.created`, `instance.status`, `process.status`, `schedule.updated`, `database.created`, `firewall.updated`, `deploy_step.created`, and `deployment.log`.
+| Error code | Meaning |
+| --- | --- |
+| `realtime.not_configured` | No `websocket` role is active. Poll the commands you need instead. |
+| `input.noninteractive_required` | The command runs without a terminal and without `--json`. |
+| `input.invalid` | A `--types` filter is not valid. |
 
-`realtime:tail` needs an interactive terminal unless `--json` is set; a noninteractive invocation without `--json` fails with `input.noninteractive_required`. An invalid `--types` filter fails with `input.invalid`.
-
-### Reconnection
-
-When the socket drops, the command reconnects automatically with increasing backoff: 1, 2, 4, 8, 16, then 30 seconds between attempts. It keeps retrying rather than exiting, so a long-running `orbit realtime:tail` survives a Gateway restart or a brief network interruption.
+When the socket drops, the command reconnects after 1, 2, 4, 8, and 16 seconds, and then every 30 seconds. It keeps trying, so it survives a Gateway restart or a short network loss.

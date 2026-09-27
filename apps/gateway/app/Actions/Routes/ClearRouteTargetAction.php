@@ -8,6 +8,7 @@ use App\Data\Routes\RouteData;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentOperationLock;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
+use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Routes\RouteAssociationGuard;
 use App\Domain\Routes\RouteReconciliationGuard;
 use App\Domain\Shared\ResourceOperationException;
@@ -21,6 +22,7 @@ final readonly class ClearRouteTargetAction
         private AppInstanceEnvironmentOperationLock $environmentOperations,
         private RouteAssociationGuard $associations,
         private ?RecordEventBroadcaster $broadcaster = null,
+        private ?MetricsFleetReconciler $metrics = null,
     ) {}
 
     public function execute(Route $route): Route
@@ -51,6 +53,8 @@ final readonly class ClearRouteTargetAction
             $result->id,
             RouteData::fromModel($result)->toArray(),
         );
+
+        $this->metrics?->reconcile();
 
         return $result;
     }

@@ -327,7 +327,7 @@ final readonly class TransferAppInstanceAction
             $account,
         );
 
-        return $roots->instance->append($appSlug, $name);
+        return $roots->append($appSlug, $name);
     }
 
     private function assertDestinationAvailable(Node $destination, StoragePath $path): void

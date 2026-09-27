@@ -216,7 +216,6 @@ final readonly class InstallToolAction
                 'tool_manager_id' => $record->id,
                 'package' => $data->package,
                 'version_constraint' => $data->versionConstraint,
-                'protected' => false,
                 'status' => ToolStatus::Installing,
             ]);
             $created = true;
@@ -534,10 +533,6 @@ final readonly class InstallToolAction
     {
         if ($tool === null) {
             return;
-        }
-
-        if ($tool->protected) {
-            throw $this->stateFailure($data, $manager, $tool);
         }
 
         if ($tool->status === ToolStatus::Installed) {

@@ -14,8 +14,10 @@ function orb247_gate_fixture(): array
     mkdir($root.'/tooling', 0o700, true);
 
     foreach (['apps/cli', 'apps/docs', 'apps/gateway', 'apps/e2e', 'packages/php-sdk'] as $project) {
-        mkdir($root.'/'.$project, 0o700, true);
+        mkdir($root.'/'.$project.'/vendor/bin', 0o700, true);
         file_put_contents($root.'/'.$project.'/.gitkeep', '');
+        file_put_contents($root.'/'.$project.'/vendor/bin/pest', "#!/usr/bin/env sh\nexit 0\n");
+        chmod($root.'/'.$project.'/vendor/bin/pest', 0o700);
     }
 
     copy(base_path('../../bin/review-check'), $root.'/bin/review-check');

@@ -35,7 +35,6 @@ function install_payload(string $outcome = 'applied'): array
         'manager' => 'vp',
         'package' => '@openai/codex',
         'version_constraint' => null,
-        'protected' => false,
         'status' => 'installed',
         'installed_version' => '0.150.0',
         'failed_operation' => null,

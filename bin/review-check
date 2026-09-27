@@ -19,6 +19,24 @@ WEB_CHECK_COMMANDS = (('vp', 'check'), ('bun', 'run', 'test:unit'), WEB_TYPES)
 PI_SERVER_COMMANDS = (('bun', 'install', '--frozen-lockfile'), ('bun', 'run', 'check'),
                       ('bun', 'run', 'test'), ('bun', 'run', 'build'))
 AFFECTED = ('composer', 'test:affected')
+ARCHITECTURE_TESTS = {
+    'apps/cli': ('tests/Feature/CommandSurfaceTest.php',),
+    'apps/gateway': (
+        'tests/Unit/Architecture',
+        'tests/Feature/Infrastructure/AppInstances/ConfiguredOriginReadTest.php',
+        'tests/Feature/Infrastructure/Caddy/CaddyPublicationLockTest.php',
+    ),
+    'apps/e2e': (
+        'tests/Unit/E2E/ProofFixtureContractTest.php',
+        'tests/Unit/E2E/ProofFixtureShellContractTest.php',
+    ),
+    'packages/php-sdk': (
+        'tests/Unit/SuccessRequestIdBoundaryTest.php',
+        'tests/Unit/RepositoryGuidanceTest.php',
+        'tests/Unit/Requests/Workspaces/WorkspaceRequestsTest.php',
+        'tests/Unit/Requests/Deployments/DeploymentRequestsTest.php',
+    ),
+}
 BASES = ('origin/main', 'main')
 NO_SELECTION = 'No affected tests found'
 
@@ -156,6 +174,9 @@ def main():
             subprocess.run([str(root / seed[0]), *seed[1:]], check=False)
     for project, project_commands in selected_projects(paths, root):
         commands = list(project_commands)
+        if project_commands == PHP_COMMANDS and any(path.startswith(project + '/') for path in paths):
+            commands.extend(('vendor/bin/pest', architecture_path)
+                            for architecture_path in ARCHITECTURE_TESTS.get(project, ()))
         index = 0
         while index < len(commands):
             command = commands[index]

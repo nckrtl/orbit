@@ -223,8 +223,6 @@ it('stores one tracked tool manager and package identity per node', function ():
         ->toBeTrue()
         ->and($tool->manager->is($manager))
         ->toBeTrue()
-        ->and($tool->protected)
-        ->toBeFalse()
         ->and($tool->failed_operation)
         ->toBeNull();
 });
