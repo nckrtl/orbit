@@ -214,112 +214,329 @@
           {
             "group": "Gateway",
             "openapi": "/openapi.json",
-            "pages": []
+            "pages": [
+              "GET /api/v1/ca/root",
+              "GET /api/v1/gateway/status"
+            ]
           },
           {
             "group": "Nodes",
             "openapi": "/openapi.json",
-            "pages": []
+            "pages": [
+              "GET /api/v1/nodes",
+              "POST /api/v1/nodes",
+              "DELETE /api/v1/nodes/{node}",
+              "GET /api/v1/nodes/{node}",
+              "GET /api/v1/nodes/{node}/excluded-projects",
+              "DELETE /api/v1/nodes/{node}/excluded-projects/{app}",
+              "POST /api/v1/nodes/{node}/excluded-projects/{app}",
+              "GET /api/v1/nodes/{node}/metrics",
+              "PATCH /api/v1/nodes/{node}/name",
+              "GET /api/v1/nodes/{node}/roles",
+              "POST /api/v1/nodes/{node}/roles",
+              "DELETE /api/v1/nodes/{node}/roles/{role}",
+              "POST /api/v1/nodes/{node}/roles/{role}/relocate",
+              "PATCH /api/v1/nodes/{node}/settings",
+              "DELETE /api/v1/nodes/{serving_node}/access/{consumer_node}",
+              "PUT /api/v1/nodes/{serving_node}/access/{consumer_node}"
+            ]
           },
           {
             "group": "Clusters",
             "openapi": "/openapi.json",
-            "pages": []
+            "pages": [
+              "GET /api/v1/clusters",
+              "POST /api/v1/clusters",
+              "DELETE /api/v1/clusters/{cluster}",
+              "GET /api/v1/clusters/{cluster}",
+              "PATCH /api/v1/clusters/{cluster}",
+              "DELETE /api/v1/clusters/{cluster}/nodes/{node}",
+              "PUT /api/v1/clusters/{cluster}/nodes/{node}",
+              "DELETE /api/v1/clusters/{cluster}/router",
+              "PUT /api/v1/clusters/{cluster}/router/{node}"
+            ]
           },
           {
             "group": "Firewall",
             "openapi": "/openapi.json",
-            "pages": []
+            "pages": [
+              "GET /api/v1/firewall-rules",
+              "GET /api/v1/nodes/{node}/firewall-rules",
+              "POST /api/v1/nodes/{node}/firewall-rules/allow",
+              "POST /api/v1/nodes/{node}/firewall-rules/deny",
+              "DELETE /api/v1/nodes/{node}/firewall-rules/{firewall_rule}",
+              "GET /api/v1/nodes/{node}/live-firewall-rules",
+              "GET /api/v1/nodes/{node}/managed-firewall-rules"
+            ]
           },
           {
             "group": "Tools",
             "openapi": "/openapi.json",
-            "pages": []
+            "pages": [
+              "GET /api/v1/tool-managers",
+              "GET /api/v1/tools",
+              "POST /api/v1/tools",
+              "DELETE /api/v1/tools/{tool}",
+              "GET /api/v1/tools/{tool}",
+              "POST /api/v1/tools/{tool}/update"
+            ]
           },
           {
             "group": "Metrics",
             "openapi": "/openapi.json",
-            "pages": []
+            "pages": [
+              "DELETE /api/v1/metrics",
+              "POST /api/v1/metrics",
+              "GET /api/v1/metrics/credentials",
+              "POST /api/v1/metrics/credentials/reset",
+              "DELETE /api/v1/metrics/exporters/{node}",
+              "PUT /api/v1/metrics/exporters/{node}",
+              "GET /api/v1/metrics/status"
+            ]
           },
           {
             "group": "GitHub App",
             "openapi": "/openapi.json",
-            "pages": []
+            "pages": [
+              "DELETE /api/v1/github/app",
+              "GET /api/v1/github/app",
+              "POST /api/v1/github/app/install"
+            ]
           },
           {
             "group": "Analytics",
             "openapi": "/openapi.json",
-            "pages": []
+            "pages": [
+              "DELETE /api/v1/analytics/credentials",
+              "GET /api/v1/analytics/credentials",
+              "PUT /api/v1/analytics/credentials",
+              "POST /api/v1/analytics/update"
+            ]
           },
           {
             "group": "Projects",
             "openapi": "/openapi.json",
-            "pages": []
+            "pages": [
+              "GET /api/v1/projects",
+              "POST /api/v1/projects",
+              "DELETE /api/v1/projects/{app}",
+              "GET /api/v1/projects/{app}",
+              "PATCH /api/v1/projects/{app}",
+              "GET /api/v1/projects/{app}/excluded-nodes",
+              "DELETE /api/v1/projects/{app}/excluded-nodes/{node}",
+              "POST /api/v1/projects/{app}/excluded-nodes/{node}",
+              "GET /api/v1/projects/{app}/process-definitions",
+              "POST /api/v1/projects/{app}/process-definitions",
+              "DELETE /api/v1/projects/{app}/process-definitions/{process_definition}",
+              "GET /api/v1/projects/{app}/process-definitions/{process_definition}",
+              "PUT /api/v1/projects/{app}/process-definitions/{process_definition}",
+              "GET /api/v1/projects/{app}/schedule-definitions",
+              "POST /api/v1/projects/{app}/schedule-definitions",
+              "DELETE /api/v1/projects/{app}/schedule-definitions/{schedule_definition}",
+              "GET /api/v1/projects/{app}/schedule-definitions/{schedule_definition}",
+              "PUT /api/v1/projects/{app}/schedule-definitions/{schedule_definition}"
+            ]
           },
           {
             "group": "Instances",
             "openapi": "/openapi.json",
-            "pages": []
+            "pages": [
+              "GET /api/v1/deployments/{deployment}",
+              "GET /api/v1/instances",
+              "POST /api/v1/instances",
+              "POST /api/v1/instances/register",
+              "GET /api/v1/instances/resolve",
+              "GET /api/v1/instances/resolve-directory",
+              "POST /api/v1/instances/{candidate}/clone",
+              "DELETE /api/v1/instances/{instance}",
+              "GET /api/v1/instances/{instance}",
+              "PATCH /api/v1/instances/{instance}",
+              "DELETE /api/v1/instances/{instance}/analytics",
+              "GET /api/v1/instances/{instance}/analytics",
+              "POST /api/v1/instances/{instance}/analytics",
+              "GET /api/v1/instances/{instance}/analytics/stats",
+              "DELETE /api/v1/instances/{instance}/database-connections/{database_connection}",
+              "PUT /api/v1/instances/{instance}/database-connections/{database_connection}",
+              "GET /api/v1/instances/{instance}/dependencies",
+              "POST /api/v1/instances/{instance}/dependencies/scan",
+              "POST /api/v1/instances/{instance}/dependencies/update",
+              "POST /api/v1/instances/{instance}/deploy",
+              "GET /api/v1/instances/{instance}/deploy-steps",
+              "POST /api/v1/instances/{instance}/deploy-steps",
+              "DELETE /api/v1/instances/{instance}/deploy-steps/{step}",
+              "PATCH /api/v1/instances/{instance}/deploy-steps/{step}",
+              "GET /api/v1/instances/{instance}/deployments",
+              "POST /api/v1/instances/{instance}/log-streams",
+              "DELETE /api/v1/instances/{instance}/log-streams/{stream}",
+              "PUT /api/v1/instances/{instance}/log-streams/{stream}",
+              "GET /api/v1/instances/{instance}/logs",
+              "GET /api/v1/instances/{instance}/queue",
+              "GET /api/v1/instances/{instance}/releases",
+              "POST /api/v1/instances/{instance}/rollback",
+              "POST /api/v1/instances/{instance}/setup",
+              "POST /api/v1/instances/{instance}/transfer",
+              "GET /api/v1/projects/{app}/setup-steps",
+              "POST /api/v1/projects/{app}/setup-steps",
+              "DELETE /api/v1/projects/{app}/setup-steps/{step}",
+              "PATCH /api/v1/projects/{app}/setup-steps/{step}",
+              "GET /api/v1/projects/{app}/teardown-steps",
+              "POST /api/v1/projects/{app}/teardown-steps",
+              "DELETE /api/v1/projects/{app}/teardown-steps/{step}",
+              "PATCH /api/v1/projects/{app}/teardown-steps/{step}"
+            ]
           },
           {
             "group": "Environment",
             "openapi": "/openapi.json",
-            "pages": []
+            "pages": [
+              "POST /api/v1/instances/{instance}/environment/import",
+              "POST /api/v1/instances/{instance}/environment/sync",
+              "PUT /api/v1/instances/{instance}/environment/{key}"
+            ]
           },
           {
             "group": "Routes",
             "openapi": "/openapi.json",
-            "pages": []
+            "pages": [
+              "GET /api/v1/routes",
+              "POST /api/v1/routes",
+              "DELETE /api/v1/routes/{route}",
+              "GET /api/v1/routes/{route}",
+              "PATCH /api/v1/routes/{route}",
+              "DELETE /api/v1/routes/{route}/target",
+              "PUT /api/v1/routes/{route}/target"
+            ]
           },
           {
             "group": "Database connections",
             "openapi": "/openapi.json",
-            "pages": []
+            "pages": [
+              "GET /api/v1/database-connections",
+              "POST /api/v1/database-connections",
+              "DELETE /api/v1/database-connections/{database_connection}",
+              "GET /api/v1/database-connections/{database_connection}",
+              "PATCH /api/v1/database-connections/{database_connection}",
+              "GET /api/v1/database-connections/{database_connection}/describe/{table}",
+              "POST /api/v1/database-connections/{database_connection}/query",
+              "GET /api/v1/database-connections/{database_connection}/schema",
+              "GET /api/v1/database-connections/{database_connection}/tables",
+              "GET /api/v1/database-connections/{database_connection}/users",
+              "POST /api/v1/processes/{process}/database-users"
+            ]
           },
           {
             "group": "Processes",
             "openapi": "/openapi.json",
-            "pages": []
+            "pages": [
+              "GET /api/v1/processes",
+              "POST /api/v1/processes",
+              "DELETE /api/v1/processes/{process}",
+              "POST /api/v1/processes/{process}/log-streams",
+              "DELETE /api/v1/processes/{process}/log-streams/{stream}",
+              "PUT /api/v1/processes/{process}/log-streams/{stream}",
+              "GET /api/v1/processes/{process}/logs",
+              "POST /api/v1/processes/{process}/restart",
+              "POST /api/v1/processes/{process}/start",
+              "POST /api/v1/processes/{process}/stop"
+            ]
           },
           {
             "group": "Schedules",
             "openapi": "/openapi.json",
-            "pages": []
+            "pages": [
+              "GET /api/v1/schedules",
+              "POST /api/v1/schedules",
+              "DELETE /api/v1/schedules/{schedule}",
+              "GET /api/v1/schedules/{schedule}",
+              "POST /api/v1/schedules/{schedule}/activate",
+              "GET /api/v1/schedules/{schedule}/logs",
+              "POST /api/v1/schedules/{schedule}/run"
+            ]
           },
           {
             "group": "Annotations",
             "openapi": "/openapi.json",
-            "pages": []
+            "pages": [
+              "GET /api/v1/instances/{instance}/annotations",
+              "POST /api/v1/instances/{instance}/annotations",
+              "GET /api/v1/instances/{instance}/annotations/events",
+              "POST /api/v1/instances/{instance}/annotations/{annotation}/retry",
+              "POST /api/v1/instances/{instance}/annotations/{annotation}/status"
+            ]
           },
           {
             "group": "Tasks",
             "openapi": "/openapi.json",
-            "pages": []
+            "pages": [
+              "GET /api/v1/task-groups",
+              "POST /api/v1/task-groups",
+              "GET /api/v1/task-groups/{group}",
+              "PATCH /api/v1/task-groups/{group}",
+              "GET /api/v1/task-groups/{group}/agents",
+              "GET /api/v1/task-groups/{group}/agents/{session}/stream",
+              "POST /api/v1/task-groups/{group}/cancel",
+              "POST /api/v1/task-groups/{group}/complete",
+              "POST /api/v1/task-groups/{group}/tasks",
+              "DELETE /api/v1/task-groups/{group}/tasks/{task}",
+              "PATCH /api/v1/task-groups/{group}/tasks/{task}",
+              "POST /api/v1/task-groups/{group}/tasks/{task}/cancel",
+              "POST /api/v1/task-groups/{group}/tasks/{task}/check/cancel",
+              "GET /api/v1/task-groups/{group}/tasks/{task}/comments",
+              "POST /api/v1/task-groups/{group}/tasks/{task}/comments",
+              "POST /api/v1/tasks/disable",
+              "POST /api/v1/tasks/enable",
+              "GET /api/v1/tasks/status"
+            ]
           },
           {
             "group": "Doctor",
             "openapi": "/openapi.json",
-            "pages": []
+            "pages": [
+              "POST /api/v1/doctor"
+            ]
           },
           {
             "group": "Activities",
             "openapi": "/openapi.json",
-            "pages": []
+            "pages": [
+              "GET /api/v1/activities",
+              "GET /api/v1/activities/{activity}"
+            ]
           },
           {
             "group": "proxycli",
             "openapi": "/openapi.json",
-            "pages": []
+            "pages": [
+              "DELETE /api/v1/proxycli",
+              "GET /api/v1/proxycli",
+              "POST /api/v1/proxycli",
+              "PATCH /api/v1/proxycli/accounts/{account}",
+              "GET /api/v1/proxycli/providers",
+              "GET /api/v1/proxycli/providers/{provider}"
+            ]
           },
           {
             "group": "Realtime",
             "openapi": "/openapi.json",
-            "pages": []
+            "pages": [
+              "GET /api/v1/broadcasting/auth",
+              "GET /api/v1/realtime"
+            ]
           },
           {
             "group": "Node callbacks",
             "openapi": "/openapi.json",
-            "pages": []
+            "pages": [
+              "POST /api/v1/agent/broadcasting/auth",
+              "GET /api/v1/agent/log-streams",
+              "GET /api/v1/agent/realtime",
+              "GET /api/v1/agent/workspaces",
+              "GET /api/v1/github/app/callback",
+              "GET /api/v1/github/app/register",
+              "GET /api/v1/metrics/grafana/authorize",
+              "GET /api/v1/runtime-activations/app-instance/{instance}",
+              "POST /api/v1/schedules/{schedule}/complete"
+            ]
           }
         ]
       },
