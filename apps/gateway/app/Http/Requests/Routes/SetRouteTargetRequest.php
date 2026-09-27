@@ -50,28 +50,47 @@ final class SetRouteTargetRequest extends FormRequest
 
     public function appInstanceId(): int
     {
-        return (int) $this->validated('app_instance_id');
+        return $this->integer('app_instance_id');
     }
 
     public function payload(): SetRouteTargetsData
     {
         $dispositions = [];
+        $validatedDispositions = $this->validated('dispositions');
 
-        foreach ($this->validated('dispositions') ?? [] as $disposition) {
+        foreach (is_array($validatedDispositions) ? $validatedDispositions : [] as $disposition) {
             if (! is_array($disposition)) {
                 continue;
             }
 
+            $appInstanceId = self::integerValue($disposition['app_instance_id'] ?? null);
+            $routeId = array_key_exists('route_id', $disposition)
+                ? self::integerValue($disposition['route_id'])
+                : null;
+
             $dispositions[] = new RouteTargetDispositionData(
-                appInstanceId: (int) $disposition['app_instance_id'],
-                routeId: isset($disposition['route_id']) ? (int) $disposition['route_id'] : null,
+                appInstanceId: $appInstanceId,
+                routeId: $routeId,
                 remove: ($disposition['remove'] ?? false) === true,
             );
         }
 
-        /** @var list<int> $targets */
-        $targets = array_map(intval(...), $this->validated('targets') ?? []);
+        $validatedTargets = $this->validated('targets');
+        $targets = is_array($validatedTargets)
+            ? array_values(array_map(self::integerValue(...), $validatedTargets))
+            : [];
 
         return new SetRouteTargetsData($targets, $dispositions);
+    }
+
+    private static function integerValue(mixed $value): int
+    {
+        $integer = filter_var($value, FILTER_VALIDATE_INT, FILTER_NULL_ON_FAILURE);
+
+        if (! is_int($integer)) {
+            throw new UnexpectedValueException('A route target identifier must be an integer.');
+        }
+
+        return $integer;
     }
 }

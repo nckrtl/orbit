@@ -38,6 +38,6 @@ final class CompleteScheduleRequest extends FormRequest
 
     public function status(): ScheduleRunStatus
     {
-        return ScheduleRunStatus::from((string) $this->validated('status'));
+        return ScheduleRunStatus::from($this->string('status')->toString());
     }
 }

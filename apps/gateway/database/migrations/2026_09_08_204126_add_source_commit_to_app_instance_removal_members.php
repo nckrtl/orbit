@@ -16,7 +16,7 @@ return new class extends Migration
             ->whereRaw('(starting_commit IS NULL OR length(starting_commit) NOT IN (40, 64))')
             ->orderBy('id')
             ->pluck('id')
-            ->map(static fn (mixed $id): string => (string) $id)
+            ->map(static fn (mixed $id): string => is_string($id) ? $id : (is_int($id) ? (string) $id : throw new RuntimeException('Expected an integer database identifier.')))
             ->all();
 
         if ($invalid !== []) {
@@ -42,7 +42,7 @@ return new class extends Migration
             ->whereRaw('source_commit IS NOT starting_commit')
             ->orderBy('id')
             ->pluck('id')
-            ->map(static fn (mixed $id): string => (string) $id)
+            ->map(static fn (mixed $id): string => is_string($id) ? $id : (is_int($id) ? (string) $id : throw new RuntimeException('Expected an integer database identifier.')))
             ->all();
 
         if ($incompatible !== []) {

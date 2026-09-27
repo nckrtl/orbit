@@ -84,7 +84,7 @@ final class RegisterAppInstanceRequest extends FormRequest
 
             $appId = $this->input('app_id');
             $projectId = $this->input('project_id');
-            if ($appId !== null && $projectId !== null && (int) $appId !== (int) $projectId) {
+            if ($appId !== null && $projectId !== null && $this->integer('app_id') !== $this->integer('project_id')) {
                 $validator->errors()->add('project_id', 'project_id and app_id must name the same Project.');
             }
         }];
@@ -96,7 +96,7 @@ final class RegisterAppInstanceRequest extends FormRequest
         $values = $this->validated();
 
         return new RegisterAppInstanceData(
-            sourcePath: (string) $values['source_path'],
+            sourcePath: $this->string('source_path')->toString(),
             includeWorktrees: ($values['include_worktrees'] ?? false) === true,
             appId: is_int($values['project_id'] ?? null)
                 ? $values['project_id']

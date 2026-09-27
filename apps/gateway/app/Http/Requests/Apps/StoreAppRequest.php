@@ -76,17 +76,17 @@ final class StoreAppRequest extends FormRequest
     {
         /** @var array<string, mixed> $validated */
         $validated = $this->validated();
-        $slug = (string) $validated['slug'];
+        $slug = $this->string('slug')->toString();
         $defaults = is_array($validated['defaults'] ?? null) ? $validated['defaults'] : null;
 
         return new CreateAppData(
             code: is_string($validated['code'] ?? null) ? $validated['code'] : null,
             name: is_string($validated['name'] ?? null) ? $validated['name'] : $slug,
             slug: $slug,
-            type: ProjectType::tryFrom((string) ($validated['type'] ?? '')) ?? ProjectType::LaravelApp,
-            repositoryUrl: (string) $validated['repository_url'],
+            type: ProjectType::tryFrom($this->string('type')->toString()) ?? ProjectType::LaravelApp,
+            repositoryUrl: $this->string('repository_url')->toString(),
             defaultBranch: is_string($validated['default_branch'] ?? null) ? $validated['default_branch'] : null,
-            root: (string) $validated['root'],
+            root: $this->string('root')->toString(),
             defaults: $defaults,
             taskCheckProvided: array_key_exists('task_check', $validated),
             taskCheck: is_string($validated['task_check'] ?? null) ? $validated['task_check'] : null,
@@ -102,7 +102,7 @@ final class StoreAppRequest extends FormRequest
         }
 
         $root = $this->input('root');
-        $type = ProjectType::tryFrom((string) $this->input('type')) ?? ProjectType::LaravelApp;
+        $type = ProjectType::tryFrom($this->string('type')->toString()) ?? ProjectType::LaravelApp;
 
         if (is_string($root) && ! ProjectRoot::isValid($root, $type)) {
             $validator->errors()->add('root', ProjectRoot::message($root, $type));

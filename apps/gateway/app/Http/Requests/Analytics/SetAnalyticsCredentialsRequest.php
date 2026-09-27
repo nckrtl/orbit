@@ -31,6 +31,6 @@ final class SetAnalyticsCredentialsRequest extends FormRequest
 
     public function apiKey(): string
     {
-        return (string) $this->validated('api_key');
+        return $this->string('api_key')->toString();
     }
 }

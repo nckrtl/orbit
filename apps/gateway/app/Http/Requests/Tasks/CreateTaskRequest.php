@@ -55,8 +55,8 @@ final class CreateTaskRequest extends FormRequest
     public function payload(): CreateTaskData
     {
         return new CreateTaskData(
-            title: (string) $this->validated('title'),
-            brief: (string) $this->validated('brief'),
+            title: $this->string('title')->toString(),
+            brief: $this->string('brief')->toString(),
             deliverables: self::deliverables($this->validated('deliverables')),
         );
     }

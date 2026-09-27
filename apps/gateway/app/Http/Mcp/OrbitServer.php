@@ -44,7 +44,7 @@ class OrbitServer extends Server
         $this->tools = $this->catalogue();
     }
 
-    /** @return array<int|string, mixed> */
+    /** @return list<ApiOperationTool> */
     protected function catalogue(): array
     {
         return ToolManifest::default()->tools(app(ApiDispatcher::class));

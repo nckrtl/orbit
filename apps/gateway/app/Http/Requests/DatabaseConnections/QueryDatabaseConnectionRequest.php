@@ -33,7 +33,7 @@ final class QueryDatabaseConnectionRequest extends FormRequest
 
     public function sql(): string
     {
-        return (string) $this->validated('sql');
+        return $this->string('sql')->toString();
     }
 
     public function write(): bool

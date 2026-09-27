@@ -42,7 +42,13 @@ final class AddNodeRoleRequest extends FormRequest
 
     public function role(): RoleName
     {
-        return RoleName::from((string) $this->validated('role'));
+        $role = $this->validated('role');
+
+        if (! is_string($role)) {
+            throw new UnexpectedValueException('A Node role must be a string.');
+        }
+
+        return RoleName::from($role);
     }
 
     public function convergeExisting(): bool

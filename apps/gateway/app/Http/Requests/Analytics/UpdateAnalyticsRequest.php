@@ -19,6 +19,6 @@ final class UpdateAnalyticsRequest extends FormRequest
 
     public function version(): string
     {
-        return (string) $this->validated('version');
+        return $this->string('version')->toString();
     }
 }

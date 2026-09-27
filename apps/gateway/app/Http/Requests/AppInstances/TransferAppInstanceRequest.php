@@ -54,7 +54,7 @@ final class TransferAppInstanceRequest extends FormRequest
         $validated = $this->validated();
 
         return new TransferAppInstanceData(
-            nodeId: (int) $validated['node_id'],
+            nodeId: $this->integer('node_id'),
             name: is_string($validated['name'] ?? null) ? $validated['name'] : null,
             sqliteSourcePath: is_string($validated['sqlite_source_path'] ?? null)
                 ? $validated['sqlite_source_path']

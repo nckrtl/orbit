@@ -47,10 +47,10 @@ final class EnableProxyCliRequest extends FormRequest
         $validated = $this->validated();
 
         return new EnableProxyCliData(
-            $validated['node_id'],
-            $validated['cache_connection'],
-            $validated['cliproxy_url'],
-            $validated['cliproxy_management_key'],
+            $this->integer('node_id'),
+            $this->string('cache_connection')->toString(),
+            $this->string('cliproxy_url')->toString(),
+            $this->string('cliproxy_management_key')->toString(),
         );
     }
 

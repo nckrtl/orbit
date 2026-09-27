@@ -77,9 +77,9 @@ final class CloneAppInstanceRequest extends FormRequest
         $validated = $this->validated();
 
         return new CloneAppInstanceData(
-            nodeId: (int) $validated['node_id'],
-            name: (string) $validated['name'],
-            previewName: RouteDomain::normalize((string) $validated['preview_name']),
+            nodeId: $this->integer('node_id'),
+            name: $this->string('name')->toString(),
+            previewName: RouteDomain::normalize($this->string('preview_name')->toString()),
             branch: is_string($validated['branch'] ?? null) ? $validated['branch'] : null,
             sqliteSourcePath: is_string($validated['sqlite_source_path'] ?? null)
                 ? $validated['sqlite_source_path']

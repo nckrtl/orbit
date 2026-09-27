@@ -89,8 +89,8 @@ final class StoreAppInstanceRequest extends FormRequest
 
         return new CreateAppInstanceData(
             appId: $this->resolvedProjectId($validated),
-            nodeId: (int) $validated['node_id'],
-            name: (string) $validated['name'],
+            nodeId: $this->integer('node_id'),
+            name: $this->string('name')->toString(),
             root: is_string($validated['root'] ?? null) ? $validated['root'] : null,
             domain: is_string($validated['domain'] ?? null)
                 ? RouteDomain::normalize($validated['domain'])
@@ -109,7 +109,7 @@ final class StoreAppInstanceRequest extends FormRequest
             $validator->errors()->add('project_id', 'Supply project_id or app_id.');
         }
 
-        if ($appId !== null && $projectId !== null && (int) $appId !== (int) $projectId) {
+        if ($appId !== null && $projectId !== null && $this->integer('app_id') !== $this->integer('project_id')) {
             $validator->errors()->add('project_id', 'project_id and app_id must name the same Project.');
         }
     }
@@ -117,6 +117,8 @@ final class StoreAppInstanceRequest extends FormRequest
     /** @param array<string, mixed> $validated */
     private function resolvedProjectId(array $validated): int
     {
-        return (int) ($validated['project_id'] ?? $validated['app_id']);
+        $key = array_key_exists('project_id', $validated) ? 'project_id' : 'app_id';
+
+        return $this->integer($key);
     }
 }

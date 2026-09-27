@@ -128,7 +128,9 @@ return new class extends Migration
             ->first(static function (object $index): bool {
                 $indexColumns = get_object_vars($index);
 
-                if ((int) ($indexColumns['unique'] ?? 0) !== 1) {
+                $unique = filter_var($indexColumns['unique'] ?? null, FILTER_VALIDATE_INT, FILTER_NULL_ON_FAILURE);
+
+                if ($unique !== 1) {
                     return false;
                 }
 

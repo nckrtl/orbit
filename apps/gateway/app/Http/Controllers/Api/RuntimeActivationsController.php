@@ -42,7 +42,7 @@ final class RuntimeActivationsController extends Controller
             return $pages->failed("AppInstance [{$instance->name}] is not an app-dev development target.", $instance, $uri);
         }
 
-        $failure = $failures->pull((int) $instance->getKey());
+        $failure = $failures->pull($instance->id);
         $schedule->afterResponse($instance);
 
         return $failure === null

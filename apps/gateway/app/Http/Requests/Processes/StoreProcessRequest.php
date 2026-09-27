@@ -107,7 +107,7 @@ final class StoreProcessRequest extends FormRequest
         /** @var array<string, mixed> $validated */
         $validated = $this->validated();
         /** @var list<string> $command */
-        $command = isset($validated['preset']) ? ProcessPresets::command((string) $validated['preset']) : $validated['command'];
+        $command = isset($validated['preset']) ? ProcessPresets::command($this->string('preset')->toString()) : $validated['command'];
         /** @var array<string, string> $environment */
         $environment = is_array($validated['environment'] ?? null) ? $validated['environment'] : [];
         /** @var list<string> $ports */
@@ -115,10 +115,10 @@ final class StoreProcessRequest extends FormRequest
         $volumes = $this->volumes($validated['volumes'] ?? []);
 
         return new AddProcessData(
-            targetType: ProcessTargetType::from((string) $validated['target_type']),
-            targetId: (int) $validated['target_id'],
-            name: (string) $validated['name'],
-            runtime: isset($validated['preset']) ? ProcessRuntime::Systemd : ProcessRuntime::from((string) $validated['runtime']),
+            targetType: ProcessTargetType::from($this->string('target_type')->toString()),
+            targetId: $this->integer('target_id'),
+            name: $this->string('name')->toString(),
+            runtime: isset($validated['preset']) ? ProcessRuntime::Systemd : ProcessRuntime::from($this->string('runtime')->toString()),
             command: $command,
             image: is_string($validated['image'] ?? null) ? $validated['image'] : null,
             workingDirectory: is_string($validated['working_directory'] ?? null)
@@ -129,10 +129,10 @@ final class StoreProcessRequest extends FormRequest
             volumes: $volumes,
             restartPolicy: is_string($validated['restart_policy'] ?? null)
                 ? $validated['restart_policy']
-                : (isset($validated['preset']) ? ProcessPresets::restartPolicy((string) $validated['preset']) : 'never'),
+                : (isset($validated['preset']) ? ProcessPresets::restartPolicy($this->string('preset')->toString()) : 'never'),
             start: ($validated['start'] ?? false) === true,
             keepAlive: ($validated['keep_alive'] ?? false) === true,
-            preset: isset($validated['preset']) ? (string) $validated['preset'] : null,
+            preset: isset($validated['preset']) ? $this->string('preset')->toString() : null,
         );
     }
 
@@ -228,9 +228,13 @@ final class StoreProcessRequest extends FormRequest
                 continue;
             }
 
+            if (! is_string($volume['source'] ?? null) || ! is_string($volume['target'] ?? null)) {
+                continue;
+            }
+
             $volumes[] = [
-                'source' => (string) $volume['source'],
-                'target' => (string) $volume['target'],
+                'source' => $volume['source'],
+                'target' => $volume['target'],
                 'read_only' => ($volume['read_only'] ?? false) === true,
             ];
         }

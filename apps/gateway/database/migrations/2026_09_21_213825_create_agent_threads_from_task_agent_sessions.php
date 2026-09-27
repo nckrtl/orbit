@@ -46,8 +46,9 @@ return new class extends Migration
             $table->foreignId('implementer_agent_thread_id')->nullable()->constrained('agent_threads')->nullOnDelete();
         });
         foreach (DB::table('task_groups')->orderBy('id')->cursor() as $group) {
-            $nodeId = in_array($group->taskable_type, ['instance', 'App\\Models\\AppInstance'], true)
+            $nodeIdValue = in_array($group->taskable_type, ['instance', 'App\\Models\\AppInstance'], true)
                 ? DB::table('app_instances')->where('id', $group->taskable_id)->value('node_id') : null;
+            $nodeId = filter_var($nodeIdValue, FILTER_VALIDATE_INT, FILTER_NULL_ON_FAILURE);
             $this->link('task_groups', $group->id, $group->id, null, $nodeId, 'reviewer', $group->reviewer_thread_id, $group->reviewer_model);
             foreach (DB::table('tasks')->where('task_group_id', $group->id)->orderBy('id')->cursor() as $task) {
                 $this->link('tasks', $task->id, $group->id, $task->id, $nodeId, 'implementer', $task->implementer_thread_id, $group->implementer_model);
