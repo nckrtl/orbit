@@ -1,0 +1,1 @@
+docs/reference/schedules.md: This change adjusts the docs-impact extractor's schedule parsing; it does not change the application's scheduled behavior.

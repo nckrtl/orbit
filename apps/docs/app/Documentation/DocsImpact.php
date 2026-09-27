@@ -73,6 +73,9 @@ final readonly class DocsImpact
                     }
                 }
             }
+            if (preg_match('#(?:^|/)tests?/#', $path) === 1) {
+                continue;
+            }
 
             $source = $this->sourceForPath($path, $base);
             if ($source === null) {
@@ -147,6 +150,58 @@ final readonly class DocsImpact
             'surfaces_handled_by_generator' => $handled,
             'errors' => array_values(array_unique($errors)),
             'verdict' => $impacts === [] && $errors === [] && array_filter($handled, static fn (array $generator): bool => $generator['status'] !== 'passed') === [] ? 'no_docs_change' : 'docs_required',
+        ];
+    }
+
+    /**
+     * @return array{
+     *   report: array{base: ?string, paths: list<string>, impacted_pages: list<array{page: string, reasons: list<string>}>, surfaces: list<array{path: string, kind: string, owner: string, reason: string, generator_status: ?string}>, surfaces_handled_by_generator: list<array{generator: string, paths: list<string>, status: string, current: bool}>, errors: list<string>, verdict: string},
+     *   missing_pages: list<string>,
+     *   exceptions: array<string, string>,
+     *   failures: list<string>,
+     *   passed: bool
+     * }
+     */
+    public function gate(string $base): array
+    {
+        $report = $this->report($base, []);
+        $changed = array_fill_keys($report['paths'], true);
+        $exceptionPath = $this->root.'/docs/.docs-unaffected';
+        $exceptionFile = is_file($exceptionPath) ? file_get_contents($exceptionPath) : false;
+        $baseExceptionFile = $this->gitAllowMissing(['show', $base.':docs/.docs-unaffected']);
+        $baseLines = array_fill_keys(array_map(trim(...), preg_split('/\\R/', $baseExceptionFile ?? '') ?: []), true);
+        $exceptions = [];
+        foreach (preg_split('/\\R/', is_string($exceptionFile) ? $exceptionFile : '') ?: [] as $line) {
+            $line = trim($line);
+            if (isset($baseLines[$line]) || preg_match('/^([^:#]+):\\s*(\\S.*)$/', $line, $match) !== 1) {
+                continue;
+            }
+            $exceptions[$match[1]] = $match[2];
+        }
+        $missing = [];
+        foreach ($report['impacted_pages'] as $impact) {
+            $page = $impact['page'];
+            if (! str_starts_with($page, 'docs/') || isset($changed[$page]) || isset($exceptions[$page])) {
+                continue;
+            }
+            $missing[] = $page;
+        }
+        sort($missing);
+        $failures = $report['errors'];
+        foreach ($report['surfaces_handled_by_generator'] as $generator) {
+            if ($generator['status'] !== 'passed') {
+                $failures[] = "{$generator['generator']} generator status is {$generator['status']}.";
+            }
+        }
+        $failures = array_values(array_unique($failures));
+        sort($failures);
+
+        return [
+            'report' => $report,
+            'missing_pages' => $missing,
+            'exceptions' => $exceptions,
+            'failures' => $failures,
+            'passed' => $missing === [] && $failures === [],
         ];
     }
 

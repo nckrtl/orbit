@@ -12,7 +12,7 @@ use RuntimeException;
 final class DocsImpactCommand extends Command
 {
     #[\Override]
-    protected $signature = 'orbit:docs-impact {--base=} {--paths=*}';
+    protected $signature = 'orbit:docs-impact {--base=} {--paths=*} {--gate}';
 
     #[\Override]
     protected $description = 'Report documentation pages and generators affected by repository changes.';
@@ -40,7 +40,28 @@ final class DocsImpactCommand extends Command
             return self::FAILURE;
         }
         try {
-            $report = new DocsImpact($root)->report($base, array_values(array_map(static fn (?string $path): string => $path ?? '', $paths)));
+            $impact = new DocsImpact($root);
+            if ($this->option('gate')) {
+                if (! is_string($base)) {
+                    $this->error('The --gate option requires --base <commit>.');
+
+                    return self::FAILURE;
+                }
+                $gate = $impact->gate($base);
+                $this->line(json_encode($gate, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT));
+                if ($gate['missing_pages'] !== []) {
+                    $this->error('Impacted documentation pages were not changed: '.implode(', ', $gate['missing_pages']));
+                }
+                foreach ($gate['failures'] as $failure) {
+                    $this->error($failure);
+                }
+                if (! $gate['passed']) {
+                    return self::FAILURE;
+                }
+
+                return self::SUCCESS;
+            }
+            $report = $impact->report($base, array_values(array_map(static fn (?string $path): string => $path ?? '', $paths)));
             $this->line(json_encode($report, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT));
 
             return self::SUCCESS;
