@@ -14,7 +14,9 @@ A proof of the verify-only Doctor runs on the `gateway_app-dev_app-prod` proof t
 
 ## Cause
 
-Doctor reports one finding per inspector that fails, so a fixture must break exactly one inspector. The production Instance inspector runs `sudo bash`. The role inspector runs `sudo ufw`. The firewall inspector also runs it when the selected Node has a persisted or synthetic firewall target. A file inventory of the Gateway home sees two kinds of files come and go. SQLite creates and removes its `-wal` and `-shm` sidecars for any connection, including a read-only one. The Caddy build check creates its lock file under the Orbit home's `locks/caddy-build/` directory.
+Doctor reports one finding per inspector that fails, so a fixture must break exactly one inspector. The production Instance inspector runs `sudo bash`. The role inspector runs `sudo ufw`. The firewall inspector also runs it when the selected Node has a persisted or synthetic firewall target. The public Route edge inspector, in the `instance` family, runs `sudo ufw status numbered` on a Node that serves a public Route edge.
+
+A file inventory of the Gateway home also sees changes that are not Doctor writes. SQLite creates and removes its `-wal` and `-shm` sidecars for any connection, including a read-only one. The Caddy build check creates a lock file under the Orbit home's `locks/caddy-build/` directory, and the file stays.
 
 ## Solution
 
@@ -26,11 +28,13 @@ The `converge` phase of `prove` completes before the first setup action runs. A 
 
 ### Drift
 
-Doctor checks the PHP-FPM projection only for production Instances. So change `pm.max_children` in `/etc/orbit/php-fpm/<user>/generated/pool.conf` for one production Instance on `app-prod`. Doctor reports exactly one `instance.php_fpm_projection_mismatch`. A second `sed` restores the value, and the next report is clean.
+Doctor checks the PHP-FPM projection only for production Instances. It compares each generated file byte for byte with the expected content. So pick one production Instance on `app-prod`, and edit its pool file `/etc/orbit/php-fpm/<user>/generated/pool.conf`. Change the line `listen.mode = 0660` to `listen.mode = 0666`. Doctor reports exactly one `instance.php_fpm_projection_mismatch`. A second `sed` restores `0660`, and the next report is clean.
+
+Do not edit `pm.max_children`. That line is in `local.conf`, and Doctor checks only the structure of `local.conf`, not its values. The running master reads the pool file only at its next reload, so the edit changes no running worker.
 
 ### Unverifiable condition
 
-Add a sudoers drop-in on `app-prod` that keeps `NOPASSWD:ALL` for the Orbit user and denies `/usr/sbin/ufw`. Run `orbit doctor --node=<node-id> --family=role` to produce exactly one `role.inspection_failed`. A full-family request isolates the same failure only when the selected Node has no persisted firewall rules and no synthetic Metrics firewall targets. Removing the file restores the baseline.
+Add a sudoers drop-in on `app-prod` that keeps `NOPASSWD:ALL` for the Orbit user and denies `/usr/sbin/ufw`. Run `orbit doctor --node=<node-id> --family=role` to produce exactly one `role.inspection_failed`. A full-family request isolates the same failure only when the selected Node has no persisted firewall rules, no synthetic Metrics firewall targets, and no public Route edge. Removing the file restores the baseline.
 
 ### Mutation scan
 
