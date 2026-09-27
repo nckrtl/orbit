@@ -30,6 +30,7 @@ final readonly class DeploymentReleasesResponse
             || ! array_is_list($releases)
             || ! array_all($releases, self::validRelease(...))
             || count($releases) !== count(array_unique($releases))
+            || ($selected !== null && ! is_string($selected))
             || ($selected !== null && ! self::validRelease($selected))
             || ($selected !== null && ! in_array($selected, $releases, strict: true))
             || $validRequestId === null

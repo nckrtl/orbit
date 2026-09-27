@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Tasks\T3;
 
+use App\Infrastructure\Shared\StoredValue;
 use App\Models\Node;
 use SensitiveParameter;
 
@@ -20,7 +21,7 @@ final readonly class T3Connection
             throw new T3DispatchException('The agent Node address is unavailable.');
         }
         $host = str_contains($host, ':') ? '['.$host.']' : $host;
-        $port = (int) config('orbit.t3.port', 3773);
+        $port = StoredValue::integer(config('orbit.t3.port', 3773), 3773);
 
         return 'http://'.$host.':'.($port > 0 && $port <= 65535 ? $port : 3773);
     }

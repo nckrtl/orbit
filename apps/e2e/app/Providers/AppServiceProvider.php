@@ -157,10 +157,17 @@ final class AppServiceProvider extends ServiceProvider
         });
         $this->app->bind(GuestTransport::class, fn (Application $app): IncusHost => $app->make(IncusHost::class));
         $this->app->singleton(IncusNetworkLifecycle::class);
-        $this->app->singleton(HostCapacity::class, fn (Application $app): HostCapacity => new HostCapacity(
-            $app->make(IncusHost::class),
-            (int) $app->make(Repository::class)->get('e2e.incus.max_vms', 24),
-        ));
+        $this->app->singleton(HostCapacity::class, function (Application $app): HostCapacity {
+            $maxVms = $app->make(Repository::class)->get('e2e.incus.max_vms', 24);
+            if ((is_float($maxVms) && is_finite($maxVms)) || (is_string($maxVms) && is_numeric($maxVms))) {
+                $maxVms = (int) $maxVms;
+            }
+            if (! is_int($maxVms)) {
+                throw new \RuntimeException('Incus host capacity is invalid.');
+            }
+
+            return new HostCapacity($app->make(IncusHost::class), $maxVms);
+        });
         $this->app->singleton(ColdTopologyConstructor::class, fn (Application $app): ColdTopologyConstructor => new ColdTopologyConstructor(
             $app->make(IncusHost::class),
             $app->make(IncusNetworkLifecycle::class),

@@ -57,40 +57,41 @@ final class StoreAppInstanceRequest extends FormRequest
     public function after(): array
     {
         return [function (Validator $validator): void {
-            $root = $this->input('root');
+            $data = $validator->getData();
+            $root = $data['root'] ?? null;
 
-            $projectId = $this->input('project_id') ?? $this->input('app_id');
-            $project = is_numeric($projectId) ? OrbitApp::query()->find((int) $projectId) : null;
+            $projectId = self::integerId($data['project_id'] ?? $data['app_id'] ?? null);
+            $project = $projectId === null ? null : OrbitApp::query()->find($projectId);
 
             if (is_string($root) && ! ProjectRoot::isValid($root, $project instanceof OrbitApp ? $project->type : ProjectType::LaravelApp)) {
                 $validator->errors()->add('root', 'The root must be a normalized relative Project path.');
             }
 
-            $domain = $this->input('domain');
+            $domain = $data['domain'] ?? null;
 
             if (is_string($domain) && ! RouteDomain::isValid($domain)) {
                 $validator->errors()->add('domain', 'The Route domain is invalid.');
             }
 
-            $branch = $this->input('branch');
+            $branch = $data['branch'] ?? null;
 
             if (is_string($branch) && ! GitBranchName::isValid($branch)) {
                 $validator->errors()->add('branch', 'The branch is not a valid Git branch name.');
             }
 
-            $this->validateProjectOwner($validator);
+            $this->validateProjectOwner($validator, $data);
         }];
     }
 
     public function payload(): CreateAppInstanceData
     {
-        /** @var array<string, mixed> $validated */
+        /** @var array{node_id: int|string, name: string, app_id?: int|string, project_id?: int|string, root?: string, domain?: string, branch?: string, recover_source_profile?: bool} $validated */
         $validated = $this->validated();
 
         return new CreateAppInstanceData(
             appId: $this->resolvedProjectId($validated),
-            nodeId: (int) $validated['node_id'],
-            name: (string) $validated['name'],
+            nodeId: self::integerId($validated['node_id']) ?? throw new UnexpectedValueException('A validated Node identifier must be an integer.'),
+            name: $validated['name'],
             root: is_string($validated['root'] ?? null) ? $validated['root'] : null,
             domain: is_string($validated['domain'] ?? null)
                 ? RouteDomain::normalize($validated['domain'])
@@ -100,16 +101,17 @@ final class StoreAppInstanceRequest extends FormRequest
         );
     }
 
-    private function validateProjectOwner(Validator $validator): void
+    /** @param array<string, mixed> $data */
+    private function validateProjectOwner(Validator $validator, array $data): void
     {
-        $appId = $this->input('app_id');
-        $projectId = $this->input('project_id');
+        $appId = self::integerId($data['app_id'] ?? null);
+        $projectId = self::integerId($data['project_id'] ?? null);
 
         if ($appId === null && $projectId === null) {
             $validator->errors()->add('project_id', 'Supply project_id or app_id.');
         }
 
-        if ($appId !== null && $projectId !== null && (int) $appId !== (int) $projectId) {
+        if ($appId !== null && $projectId !== null && $appId !== $projectId) {
             $validator->errors()->add('project_id', 'project_id and app_id must name the same Project.');
         }
     }
@@ -117,6 +119,19 @@ final class StoreAppInstanceRequest extends FormRequest
     /** @param array<string, mixed> $validated */
     private function resolvedProjectId(array $validated): int
     {
-        return (int) ($validated['project_id'] ?? $validated['app_id']);
+        $projectId = self::integerId($validated['project_id'] ?? $validated['app_id'] ?? null);
+
+        if ($projectId === null) {
+            throw new UnexpectedValueException('A validated Project identifier must be an integer.');
+        }
+
+        return $projectId;
+    }
+
+    private static function integerId(mixed $value): ?int
+    {
+        $integer = filter_var($value, FILTER_VALIDATE_INT, FILTER_NULL_ON_FAILURE);
+
+        return is_int($integer) ? $integer : null;
     }
 }

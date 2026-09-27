@@ -141,10 +141,16 @@ final class ProvisionNodeRequest extends FormRequest
         $roles = is_array($validated['roles'] ?? null) ? $validated['roles'] : [];
 
         return new ProvisionNodeData(
-            name: (string) $validated['name'],
+            name: is_string($validated['name'] ?? null) ? $validated['name'] : '',
             publicSshHost: is_string($validated['public_ssh_host'] ?? null) ? $validated['public_ssh_host'] : '',
             roles: array_values(array_map(
-                RoleName::from(...),
+                static function (mixed $role): RoleName {
+                    if (! is_string($role)) {
+                        throw new \UnexpectedValueException('A Node role must be a string.');
+                    }
+
+                    return RoleName::from($role);
+                },
                 $roles,
             )),
             publicSshPort: is_int($validated['public_ssh_port'] ?? null) ? $validated['public_ssh_port'] : 22,

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\E2E\Value;
 
+use App\E2E\StringKeyedMap;
+
 final readonly class LegacyTopologySnapshotInventory
 {
     /**
@@ -31,7 +33,11 @@ final readonly class LegacyTopologySnapshotInventory
     {
         $names = array_keys($this->instances);
         if ($this->network !== null) {
-            $names[] = (string) $this->network['name'];
+            $name = $this->network['name'] ?? null;
+            if (! is_string($name)) {
+                throw new \InvalidArgumentException('The legacy topology snapshot inventory is invalid.');
+            }
+            $names[] = $name;
         }
         sort($names, SORT_STRING);
 
@@ -98,7 +104,14 @@ final readonly class LegacyTopologySnapshotInventory
         $instances = $value['instances'];
         /** @var array<string, list<array{name:string,created_at:string}>> $snapshots */
         $snapshots = $value['snapshots'];
-        $network = $value['network'];
+        $networkValue = $value['network'];
+        $network = null;
+        if ($networkValue !== null) {
+            $network = StringKeyedMap::of(
+                $networkValue,
+                new \InvalidArgumentException('The legacy topology snapshot inventory is invalid.'),
+            );
+        }
 
         return new self(
             $scope,

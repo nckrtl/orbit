@@ -71,7 +71,8 @@ final readonly class AnalyticsStorageConnection
 
     private static function optional(#[SensitiveParameter] Process $process, string $key): ?string
     {
-        $value = $process->runtime_config['environment'][$key] ?? null;
+        $environment = $process->runtime_config['environment'] ?? null;
+        $value = is_array($environment) ? ($environment[$key] ?? null) : null;
 
         return is_string($value) && $value !== '' ? $value : null;
     }

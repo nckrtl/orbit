@@ -106,10 +106,20 @@ final class ProcessDefinitionRequest extends FormRequest
         /** @var array{name: string, environments: list<string>, spec: array<string, mixed>} $validated */
         $validated = $this->validated();
 
+        $spec = $validated['spec'];
+        if (is_array($spec['volumes'] ?? null)) {
+            foreach ($spec['volumes'] as &$volume) {
+                if (is_array($volume)) {
+                    $volume['read_only'] = in_array($volume['read_only'] ?? false, [true, 1, '1'], strict: true);
+                }
+            }
+            unset($volume);
+        }
+
         return new AppDefinitionInputData(
             name: $validated['name'],
             environments: $validated['environments'],
-            spec: $validated['spec'],
+            spec: $spec,
         );
     }
 

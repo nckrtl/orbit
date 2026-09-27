@@ -147,6 +147,9 @@ final readonly class SelectDependencyInputAction
                     array_pop($objects);
                 } elseif (preg_match('/\G\s*:/', $contents, offset: $offset + strlen($token)) === 1) {
                     $key = json_decode($token, flags: JSON_THROW_ON_ERROR);
+                    if (! is_string($key)) {
+                        throw new DependencyCollectionException('dependencies.invalid_manifest');
+                    }
                     $index = count($objects) - 1;
                     if (isset($objects[$index][$key])) {
                         throw new DependencyCollectionException('dependencies.invalid_manifest');

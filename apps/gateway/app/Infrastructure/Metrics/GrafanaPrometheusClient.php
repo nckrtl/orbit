@@ -77,9 +77,22 @@ final class GrafanaPrometheusClient
             return [];
         }
 
-        $result = $decoded['data']['result'] ?? null;
+        $data = $decoded['data'] ?? null;
+        $result = is_array($data) ? ($data['result'] ?? null) : null;
+        if (! is_array($result)) {
+            return [];
+        }
 
-        return is_array($result) ? array_values(array_filter($result, is_array(...))) : [];
+        $series = [];
+        foreach ($result as $entry) {
+            if (! is_array($entry)) {
+                continue;
+            }
+
+            $series[] = array_filter($entry, is_string(...), ARRAY_FILTER_USE_KEY);
+        }
+
+        return $series;
     }
 
     private function metricsNodeAddress(): string

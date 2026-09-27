@@ -35,7 +35,18 @@ final readonly class HttpT3ThreadReader implements T3ThreadReader
 
         $payload = $response->json();
 
-        return is_array($payload) ? $payload : null;
+        if (! is_array($payload)) {
+            return null;
+        }
+
+        $snapshot = [];
+        foreach ($payload as $key => $value) {
+            if (is_string($key)) {
+                $snapshot[$key] = $value;
+            }
+        }
+
+        return $snapshot;
     }
 
     private function request(Node $node): PendingRequest

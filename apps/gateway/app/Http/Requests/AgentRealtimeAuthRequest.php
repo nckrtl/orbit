@@ -20,16 +20,18 @@ final class AgentRealtimeAuthRequest extends FormRequest
 
     public function socketId(): string
     {
-        return $this->validated('socket_id');
+        return $this->string('socket_id')->toString();
     }
 
     public function channelName(): string
     {
-        return $this->validated('channel_name');
+        return $this->string('channel_name')->toString();
     }
 
     public function version(): ?string
     {
-        return $this->validated('version');
+        $version = $this->validated('version');
+
+        return is_string($version) ? $version : null;
     }
 }

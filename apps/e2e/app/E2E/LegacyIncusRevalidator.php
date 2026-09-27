@@ -142,7 +142,7 @@ final readonly class LegacyIncusRevalidator
                 'networks' => '/1.0/networks/'.$this->exactName($identity, 'network'),
                 'snapshots' => $this->snapshotPath($identity),
                 'new_namespace' => '/1.0/projects/'
-                    .$this->exactName((string) ($expected['identity'] ?? $identity), 'project'),
+                    .$this->exactName($this->projectIdentity($expected, $identity), 'project'),
                 default => throw new RuntimeException('The live Incus resource kind is invalid.'),
             };
 
@@ -460,6 +460,19 @@ final readonly class LegacyIncusRevalidator
         }
 
         return [$remote, $project, $identity];
+    }
+
+    /**
+     * The project name is the reviewed identity when that field is a string.
+     * Otherwise it is the scope identity already checked above.
+     *
+     * @param  array<string, mixed>  $expected
+     */
+    private function projectIdentity(array $expected, string $identity): string
+    {
+        $projectIdentity = $expected['identity'] ?? null;
+
+        return is_string($projectIdentity) ? $projectIdentity : $identity;
     }
 
     private function isBatchLabel(mixed $label): bool

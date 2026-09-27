@@ -7,6 +7,7 @@ namespace App\Domain\Firewall;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\StoredInteger;
 use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\NodeRole;
@@ -37,6 +38,7 @@ final readonly class RouterLanIngressPolicy
             ->whereKeyNot($router->id)
             ->orderBy('id')
             ->pluck('id')
+            ->map(static fn (mixed $id): int => StoredInteger::from($id))
             ->all();
 
         foreach ($nodeOverrides as $id => $override) {

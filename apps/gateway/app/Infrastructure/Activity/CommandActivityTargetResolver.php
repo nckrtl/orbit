@@ -7,6 +7,7 @@ namespace App\Infrastructure\Activity;
 use App\Domain\Processes\ProcessTargetType;
 use App\Domain\Schedules\ScheduleTargetType;
 use App\Domain\Tools\ToolOperationException;
+use App\Infrastructure\Shared\StoredValue;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\FirewallRule;
@@ -36,7 +37,7 @@ final readonly class CommandActivityTargetResolver
 
         return [
             'subject_type' => $subject->getMorphClass(),
-            'subject_id' => (int) $subject->getKey(),
+            'subject_id' => StoredValue::integer($subject->getKey()),
             'target_node_id' => $this->targetNodeId($subject),
         ];
     }
@@ -50,7 +51,7 @@ final readonly class CommandActivityTargetResolver
 
         if ($tool instanceof Tool) {
             $result['subject_type'] = $tool->getMorphClass();
-            $result['subject_id'] = (int) $tool->getKey();
+            $result['subject_id'] = StoredValue::integer($tool->getKey());
         }
 
         return $result;
@@ -201,7 +202,7 @@ final readonly class CommandActivityTargetResolver
                 ->where('name', $request->input('name'))
                 ->first(),
             'route:create' => Route::query()
-                ->where('domain', mb_strtolower(trim((string) $request->input('domain'))))
+                ->where('domain', mb_strtolower(trim(is_string($request->input('domain')) ? $request->input('domain') : '')))
                 ->first(),
             default => null,
         };

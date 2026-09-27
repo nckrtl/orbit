@@ -27,6 +27,12 @@ final class DescribeDatabaseTableRequest extends FormRequest
 
     public function table(): string
     {
-        return (string) $this->validated('table');
+        $table = $this->validated('table');
+
+        if (! is_string($table)) {
+            throw new \UnexpectedValueException('A database table is required.');
+        }
+
+        return $table;
     }
 }

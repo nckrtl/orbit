@@ -12,6 +12,7 @@ use App\Infrastructure\AppProd\AppProdSshExecutor;
 use App\Infrastructure\Caddy\Build\CaddySiteRoles;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuildException;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
+use App\Infrastructure\Shared\StoredValue;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Node;
 use JsonException;
@@ -41,7 +42,7 @@ final readonly class NativeServiceMetricsRuntime implements ServiceMetricsRuntim
         $fingerprints = '';
         foreach ($target->instances as $instance) {
             $state = $this->pool($target->node, ProductionPhpRuntimeIdentity::from($instance), ['operation' => 'apply', 'enabled' => $target->fpm]);
-            $fingerprints .= '# runtime '.$instance->id.': '.$state['fingerprint']."\n";
+            $fingerprints .= '# runtime '.StoredValue::integer($instance->id).': '.(is_string($state['fingerprint'] ?? null) ? $state['fingerprint'] : '')."\n";
         }
         $fpm = $target->fpm && $target->instances !== [];
         $rules = [];
@@ -73,10 +74,22 @@ final readonly class NativeServiceMetricsRuntime implements ServiceMetricsRuntim
     public function restore(ServiceMetricsNode $target, string $snapshot): void
     {
         $state = json_decode($snapshot, true, flags: JSON_THROW_ON_ERROR);
-        foreach ($target->instances as $instance) {
-            $this->pool($target->node, ProductionPhpRuntimeIdentity::from($instance), ['operation' => 'restore', 'state' => $state['pools'][(string) $instance->id]]);
+        if (! is_array($state)) {
+            throw new ResourceOperationException('metrics.service_inspection_failed', 'FPM monitoring snapshot is invalid.', 502);
         }
-        $this->program($target->node, ['operation' => 'apply', 'state' => $state['exporter']]);
+        $pools = is_array($state['pools'] ?? null) ? $state['pools'] : [];
+        foreach ($target->instances as $instance) {
+            $poolState = $pools[(string) $instance->id] ?? null;
+            if (! is_array($poolState)) {
+                throw new ResourceOperationException('metrics.service_inspection_failed', 'FPM monitoring snapshot is missing a pool.', 502);
+            }
+            $this->pool($target->node, ProductionPhpRuntimeIdentity::from($instance), ['operation' => 'restore', 'state' => $poolState]);
+        }
+        $exporter = $state['exporter'] ?? null;
+        if (! is_array($exporter)) {
+            throw new ResourceOperationException('metrics.service_inspection_failed', 'FPM monitoring snapshot is missing exporter state.', 502);
+        }
+        $this->program($target->node, ['operation' => 'apply', 'state' => $exporter]);
         $this->build($target->node);
     }
 
@@ -100,7 +113,12 @@ final readonly class NativeServiceMetricsRuntime implements ServiceMetricsRuntim
             throw new ResourceOperationException('metrics.service_inspection_failed', 'FPM monitoring inspection was truncated.', 502);
         }
 
-        return json_decode($result->stdout, true, flags: JSON_THROW_ON_ERROR);
+        $state = json_decode($result->stdout, true, flags: JSON_THROW_ON_ERROR);
+        if (! is_array($state)) {
+            throw new ResourceOperationException('metrics.service_inspection_failed', 'FPM monitoring returned invalid state.', 502);
+        }
+
+        return array_filter($state, is_string(...), ARRAY_FILTER_USE_KEY);
     }
 
     /**
@@ -158,6 +176,6 @@ final readonly class NativeServiceMetricsRuntime implements ServiceMetricsRuntim
             throw new ResourceOperationException('metrics.service_inspection_failed', 'Service metrics inspection returned invalid state.', 502);
         }
 
-        return $state;
+        return array_filter($state, is_string(...), ARRAY_FILTER_USE_KEY);
     }
 }

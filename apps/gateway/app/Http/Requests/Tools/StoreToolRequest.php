@@ -43,9 +43,9 @@ final class StoreToolRequest extends FormRequest
         $validated = $this->validated();
 
         return new InstallToolData(
-            nodeId: (int) $validated['node_id'],
-            manager: (string) $validated['manager'],
-            package: (string) $validated['package'],
+            nodeId: $this->integer('node_id'),
+            manager: $this->string('manager')->toString(),
+            package: $this->string('package')->toString(),
             versionConstraint: is_string($validated['version_constraint'] ?? null)
                 ? $validated['version_constraint']
                 : null,

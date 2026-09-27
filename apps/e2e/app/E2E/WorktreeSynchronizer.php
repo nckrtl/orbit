@@ -692,8 +692,12 @@ final readonly class WorktreeSynchronizer
             if ($marker instanceof GuestCommandResult && $marker->exitCode === 0) {
                 try {
                     $markerState = json_decode(trim($marker->stdout), true, 512, JSON_THROW_ON_ERROR);
-                    $markerSha = $markerState['sha'] ?? null;
-                    $tree = $markerState['tree'] ?? null;
+                    $markerSha = null;
+                    $tree = null;
+                    if (is_array($markerState)) {
+                        $markerSha = $markerState['sha'] ?? null;
+                        $tree = $markerState['tree'] ?? null;
+                    }
                     if (
                         ! is_string($markerSha)
                         || preg_match('/\A[0-9a-f]{40}\z/D', strtolower($markerSha)) !== 1

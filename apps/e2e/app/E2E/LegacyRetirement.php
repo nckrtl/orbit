@@ -218,6 +218,7 @@ final readonly class LegacyRetirement
             if (! is_string($kind) || ! is_array($resource)) {
                 throw new RuntimeException('The quarantine target is invalid.');
             }
+            $resource = StringKeyedMap::of($resource, new RuntimeException('The quarantine target is invalid.'));
             if (isset($deletedMap[$this->targetKey($target)])) {
                 continue;
             }
@@ -492,6 +493,7 @@ final readonly class LegacyRetirement
         if (! is_string($kind) || ! is_array($resource)) {
             throw new RuntimeException('The quarantine target is invalid.');
         }
+        $resource = StringKeyedMap::of($resource, new RuntimeException('The quarantine target is invalid.'));
 
         if ($kind === 'instances' && ($target['original_status'] ?? null) === 'RUNNING') {
             if (! $this->resourceMatches($kind, $resource, $observed)) {
@@ -515,6 +517,7 @@ final readonly class LegacyRetirement
         if (! is_string($kind) || ! is_array($resource)) {
             throw new RuntimeException('The quarantine target is invalid.');
         }
+        $resource = StringKeyedMap::of($resource, new RuntimeException('The quarantine target is invalid.'));
 
         $expected = $resource;
         if ($kind === 'instances' && ($target['original_status'] ?? null) === 'RUNNING') {
@@ -536,6 +539,7 @@ final readonly class LegacyRetirement
         if (! is_string($kind) || ! is_array($resource)) {
             throw new RuntimeException('The quarantine target is invalid.');
         }
+        $resource = StringKeyedMap::of($resource, new RuntimeException('The quarantine target is invalid.'));
         if ($this->findExact($kind, $observed[$kind] ?? [], $resource) !== null) {
             throw new RuntimeException('A recorded deletion was not completed.');
         }
@@ -552,6 +556,7 @@ final readonly class LegacyRetirement
         if (! is_string($kind) || ! is_array($resource)) {
             throw new RuntimeException('The quarantine target is invalid.');
         }
+        $resource = StringKeyedMap::of($resource, new RuntimeException('The quarantine target is invalid.'));
         RetirementInventory::assertLegacyCandidate($kind, $resource);
         if (in_array($kind, ['source_paths', 'manifests', 'locks'], true)) {
             $this->assertSafeFileTarget($kind, $resource);
@@ -613,13 +618,16 @@ final readonly class LegacyRetirement
             || ! in_array($resume['phase'] ?? null, ['pending', 'complete'], true)
             || ($resume['inventory_sha256'] ?? null) !== $inventory->sha256()
             || ($resume['freeze_evidence'] ?? null) !== $evidenceIdentity
-            || ! is_array($resume['manifest'] ?? null)
+            || ! is_array($manifestValue = $resume['manifest'] ?? null)
             || ! is_array($resume['targets'] ?? null)
             || $resume['targets'] !== $targets
         ) {
             throw new RuntimeException('The quarantine recovery journal is invalid.');
         }
-        $journalManifest = QuarantineManifest::fromArray($resume['manifest']);
+        $journalManifest = QuarantineManifest::fromArray(StringKeyedMap::of(
+            $manifestValue,
+            new RuntimeException('The quarantine recovery journal is invalid.'),
+        ));
         if (
             $journalManifest->inventorySha256 !== $inventory->sha256()
             || $journalManifest->freezeEvidence !== $evidenceIdentity
@@ -702,13 +710,16 @@ final readonly class LegacyRetirement
             || ! in_array($resume['phase'] ?? null, ['pending', 'complete'], true)
             || ($resume['quarantine_sha256'] ?? null) !== $manifest->sha256()
             || ($resume['freeze_evidence'] ?? null) !== $manifest->freezeEvidence
-            || ! is_array($resume['manifest'] ?? null)
+            || ! is_array($manifestValue = $resume['manifest'] ?? null)
             || ! is_array($resume['targets'] ?? null)
             || $resume['targets'] !== $manifest->targets
         ) {
             throw new RuntimeException('The deletion recovery journal is invalid.');
         }
-        $journalManifest = QuarantineManifest::fromArray($resume['manifest']);
+        $journalManifest = QuarantineManifest::fromArray(StringKeyedMap::of(
+            $manifestValue,
+            new RuntimeException('The deletion recovery journal is invalid.'),
+        ));
         if ($journalManifest->toArray() !== $manifest->toArray()) {
             throw new RuntimeException('The deletion recovery journal does not match the requested operation.');
         }
@@ -1083,12 +1094,24 @@ final readonly class LegacyRetirement
         $order = array_flip(['snapshots', 'instances', 'networks', 'source_paths', 'manifests', 'locks']);
         usort(
             $targets,
-            fn (array $left, array $right): int => (
-                ($order[$left['kind'] ?? ''] ?? 99) <=> ($order[$right['kind'] ?? ''] ?? 99)
-            ),
+            fn (array $left, array $right): int => $this->targetKindPosition($order, $left) <=> $this->targetKindPosition($order, $right),
         );
 
         return $targets;
+    }
+
+    /**
+     * @param  array<string, int>  $order
+     * @param  array<string, mixed>  $target
+     */
+    private function targetKindPosition(array $order, array $target): int
+    {
+        $kind = $target['kind'] ?? null;
+        if (! is_string($kind)) {
+            return 99;
+        }
+
+        return $order[$kind] ?? 99;
     }
 
     /** @return array{path: string, content_sha256: string, mode: int, filesystem_type: string} */
@@ -1389,15 +1412,21 @@ final readonly class LegacyRetirement
      */
     private function recoveryCommands(string $kind, array $resource): array
     {
-        return
-            $kind === 'instances' && ($resource['status'] ?? null) === 'RUNNING'
-                ? [sprintf(
-                    'incus --project %s start %s:%s',
-                    escapeshellarg((string) ($resource['project'] ?? '')),
-                    escapeshellarg((string) ($resource['remote'] ?? '')),
-                    escapeshellarg($this->identity($resource)),
-                )]
-                : [];
+        if ($kind !== 'instances' || ($resource['status'] ?? null) !== 'RUNNING') {
+            return [];
+        }
+        $project = $resource['project'] ?? '';
+        $remote = $resource['remote'] ?? '';
+        if (! is_string($project) || ! is_string($remote)) {
+            throw new RuntimeException('An Incus retirement resource has no exact scope.');
+        }
+
+        return [sprintf(
+            'incus --project %s start %s:%s',
+            escapeshellarg($project),
+            escapeshellarg($remote),
+            escapeshellarg($this->identity($resource)),
+        )];
     }
 
     private function canonical(mixed $value): string

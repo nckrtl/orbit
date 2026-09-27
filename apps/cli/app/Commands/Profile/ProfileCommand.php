@@ -234,7 +234,21 @@ final class ProfileCommand extends GatewayCommand
 
         $summary = json_decode($decoded, associative: true);
 
-        return is_array($summary) ? $summary : null;
+        if (! is_array($summary)) {
+            return null;
+        }
+
+        $record = [];
+
+        foreach ($summary as $key => $value) {
+            if (! is_string($key)) {
+                return null;
+            }
+
+            $record[$key] = $value;
+        }
+
+        return $record;
     }
 
     /**

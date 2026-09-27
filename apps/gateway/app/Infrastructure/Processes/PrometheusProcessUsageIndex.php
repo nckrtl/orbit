@@ -80,7 +80,7 @@ final readonly class PrometheusProcessUsageIndex implements ProcessUsageIndex
 
         foreach ($this->prometheus->series($promql) as $entry) {
             $metric = $entry['metric'] ?? null;
-            $name = is_array($metric) ? self::key($metric) : null;
+            $name = is_array($metric) ? self::key($this->stringKeyed($metric)) : null;
 
             if ($name === null) {
                 continue;
@@ -97,6 +97,21 @@ final readonly class PrometheusProcessUsageIndex implements ProcessUsageIndex
         }
 
         return $values;
+    }
+
+    /** @param array<mixed, mixed> $metric
+     * @return array<string, mixed>
+     */
+    private function stringKeyed(array $metric): array
+    {
+        $result = [];
+        foreach ($metric as $key => $value) {
+            if (is_string($key)) {
+                $result[$key] = $value;
+            }
+        }
+
+        return $result;
     }
 
     /**

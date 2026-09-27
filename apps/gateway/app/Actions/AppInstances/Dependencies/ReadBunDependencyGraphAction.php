@@ -95,6 +95,9 @@ final readonly class ReadBunDependencyGraphAction
                 array_pop($objects);
             } elseif (preg_match('/\G\s*:/', $contents, offset: $offset + strlen($token)) === 1) {
                 $key = json_decode($token, flags: JSON_THROW_ON_ERROR);
+                if (! is_string($key)) {
+                    $this->invalid();
+                }
                 $index = count($objects) - 1;
 
                 if (isset($objects[$index][$key])) {

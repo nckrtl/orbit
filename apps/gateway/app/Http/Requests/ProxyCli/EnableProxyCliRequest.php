@@ -44,6 +44,7 @@ final class EnableProxyCliRequest extends FormRequest
 
     public function payload(): EnableProxyCliData
     {
+        /** @var array{node_id: int, cache_connection: string, cliproxy_url: string, cliproxy_management_key: string} $validated */
         $validated = $this->validated();
 
         return new EnableProxyCliData(

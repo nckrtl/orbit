@@ -18,6 +18,6 @@ final class ListToolManagersRequest extends FormRequest
 
     public function nodeId(): int
     {
-        return (int) $this->validated('node_id');
+        return $this->integer('node_id');
     }
 }

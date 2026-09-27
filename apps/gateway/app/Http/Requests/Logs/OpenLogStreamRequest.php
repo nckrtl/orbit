@@ -19,11 +19,11 @@ final class OpenLogStreamRequest extends FormRequest
 
     public function socketId(): string
     {
-        return $this->validated('socket_id');
+        return $this->string('socket_id')->toString();
     }
 
     public function lines(): int
     {
-        return (int) ($this->validated('lines') ?? 100);
+        return $this->integer('lines', 100);
     }
 }

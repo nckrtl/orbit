@@ -20,18 +20,32 @@ use Saloon\Http\Faking\MockResponse;
  */
 final class FixtureReplay
 {
-    public static function install(string $names, string $home): void
+    public static function install(string $names, string $home, ?string $fixtureRoot = null): void
     {
+        $root = $fixtureRoot ?? dirname(__DIR__, 4).'/packages/php-sdk/fixtures';
         $fixtures = [];
         foreach (array_filter(array_map(trim(...), explode(',', $names))) as $name) {
-            $path = dirname(__DIR__, 4).'/packages/php-sdk/fixtures/'.$name.'.json';
+            $path = $root.'/'.$name.'.json';
             if (! is_file($path)) {
                 throw new RuntimeException("Gateway fixture {$name} is not recorded.");
             }
-            $fixture = json_decode((string) file_get_contents($path), flags: JSON_THROW_ON_ERROR);
-            $fixtures[$fixture->request] = MockResponse::make(
-                json_encode($fixture->body, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES),
-                $fixture->status,
+            $contents = file_get_contents($path);
+            if (! is_string($contents)) {
+                throw new RuntimeException("Gateway fixture {$name} is not recorded.");
+            }
+            $decoded = json_decode($contents, flags: JSON_THROW_ON_ERROR);
+            if (! is_object($decoded)) {
+                throw new RuntimeException("Gateway fixture {$name} is not recorded.");
+            }
+            $record = get_object_vars($decoded);
+            $request = $record['request'] ?? null;
+            $status = $record['status'] ?? null;
+            if (! array_key_exists('body', $record) || ! is_string($request) || ! is_int($status)) {
+                throw new RuntimeException("Gateway fixture {$name} is not recorded.");
+            }
+            $fixtures[$request] = MockResponse::make(
+                json_encode($record['body'], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES),
+                $status,
                 ['Content-Type' => 'application/json'],
             );
         }

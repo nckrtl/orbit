@@ -29,11 +29,11 @@ final class ListProcessesRequest extends FormRequest
 
     public function targetType(): ProcessTargetType
     {
-        return ProcessTargetType::from((string) $this->validated('target_type'));
+        return ProcessTargetType::from($this->string('target_type')->toString());
     }
 
     public function targetId(): int
     {
-        return (int) $this->validated('target_id');
+        return $this->integer('target_id');
     }
 }

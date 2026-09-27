@@ -75,24 +75,25 @@ final class CreateTaskGroupRequest extends FormRequest
     public function payload(): CreateTaskGroupData
     {
         $tasks = [];
+        $validatedTasks = $this->validated('tasks');
 
-        foreach ($this->validated('tasks') ?? [] as $task) {
-            if (! is_array($task)) {
+        foreach (is_array($validatedTasks) ? $validatedTasks : [] as $task) {
+            if (! is_array($task) || ! is_string($task['title'] ?? null) || ! is_string($task['brief'] ?? null)) {
                 continue;
             }
 
             $tasks[] = new TaskInputData(
-                title: (string) $task['title'],
-                brief: (string) $task['brief'],
+                title: $task['title'],
+                brief: $task['brief'],
                 deliverables: CreateTaskRequest::deliverables($task['deliverables'] ?? null),
             );
         }
 
         return new CreateTaskGroupData(
-            appId: (int) $this->validated('app_id'),
-            title: (string) $this->validated('title'),
-            brief: (string) $this->validated('brief'),
-            status: TaskGroupStatus::from((string) ($this->validated('status') ?? TaskGroupStatus::Backlog->value)),
+            appId: $this->integer('app_id'),
+            title: $this->string('title')->toString(),
+            brief: $this->string('brief')->toString(),
+            status: TaskGroupStatus::from($this->string('status', TaskGroupStatus::Backlog->value)->toString()),
             notifyCoder: $this->boolean('notify_coder') || $this->boolean('notify_on_settle'),
             plan: $this->boolean('plan'),
             tasks: $tasks,

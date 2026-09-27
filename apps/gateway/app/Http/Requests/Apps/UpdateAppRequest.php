@@ -78,7 +78,7 @@ final class UpdateAppRequest extends FormRequest
             }
 
             $routeApp = $this->route('app');
-            $type = ProjectType::tryFrom((string) $this->input('type'))
+            $type = ProjectType::tryFrom($this->string('type')->toString())
                 ?? ($routeApp instanceof OrbitApp ? $routeApp->type : ProjectType::LaravelApp);
             $sentRoot = $this->input('root');
             $root = is_string($sentRoot) ? $sentRoot : ($routeApp instanceof OrbitApp ? $routeApp->root : null);
@@ -99,7 +99,7 @@ final class UpdateAppRequest extends FormRequest
         return new UpdateAppData(
             code: is_string($validated['code'] ?? null) ? $validated['code'] : null,
             typeProvided: array_key_exists('type', $validated),
-            type: ProjectType::tryFrom((string) ($validated['type'] ?? '')),
+            type: is_string($validated['type'] ?? null) ? ProjectType::tryFrom($validated['type']) : null,
             slugProvided: array_key_exists('slug', $validated),
             slug: is_string($validated['slug'] ?? null) ? $validated['slug'] : null,
             repositoryUrlProvided: array_key_exists('repository_url', $validated),

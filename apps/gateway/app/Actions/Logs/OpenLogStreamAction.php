@@ -31,7 +31,7 @@ final readonly class OpenLogStreamAction
     /** @return array{stream: LogStream, auth: string} */
     public function execute(LogStreamTarget $target, Node $viewer, string $socketId, int $lines): array
     {
-        $nodeId = (int) $target->node->getKey();
+        $nodeId = $target->node->id;
         $reason = $target->sshOnly ? 'ssh_only' : $this->availability->unavailableReason($nodeId);
         $connection = $this->realtime->resolve();
 
@@ -53,7 +53,7 @@ final readonly class OpenLogStreamAction
             recordType: $target->recordType,
             recordId: $target->recordId,
             nodeId: $nodeId,
-            viewerNodeId: (int) $viewer->getKey(),
+            viewerNodeId: $viewer->id,
             source: $target->source,
             lines: $lines,
             expiresAt: CacheAgentStateView::now() + LogStreamStore::LeaseSeconds,

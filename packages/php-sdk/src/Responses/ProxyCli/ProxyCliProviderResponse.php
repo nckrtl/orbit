@@ -56,7 +56,7 @@ final readonly class ProxyCliProviderResponse
                         );
                     }
 
-                    return ProxyCliWindowResponse::fromGatewayData($window, $requestId);
+                    return ProxyCliWindowResponse::fromGatewayData(self::stringKeyed($window), $requestId);
                 },
                 $windows,
             ),
@@ -69,12 +69,29 @@ final readonly class ProxyCliProviderResponse
                         );
                     }
 
-                    return ProxyCliAccountResponse::fromGatewayData($account, $requestId);
+                    return ProxyCliAccountResponse::fromGatewayData(self::stringKeyed($account), $requestId);
                 },
                 $accounts,
             ),
             $requestId,
         );
+    }
+
+    /**
+     * @param  array<mixed, mixed>  $data
+     * @return array<string, mixed>
+     */
+    private static function stringKeyed(#[SensitiveParameter] array $data): array
+    {
+        $result = [];
+
+        foreach ($data as $key => $value) {
+            if (is_string($key)) {
+                $result[$key] = $value;
+            }
+        }
+
+        return $result;
     }
 
     /**

@@ -84,14 +84,17 @@ final readonly class VerificationReport
     {
         $failed = [];
         foreach ($this->probes as $name => $result) {
-            if (is_array($result) && ($result['passed'] ?? true) === false) {
-                $failed[] = sprintf(
-                    '%s (expected %s, observed %s)',
-                    (string) $name,
-                    (string) ($result['expected'] ?? '?'),
-                    (string) ($result['observed'] ?? '?'),
-                );
+            if (! is_string($name) || ! is_array($result) || ($result['passed'] ?? true) !== false) {
+                continue;
             }
+            $expected = $result['expected'] ?? null;
+            $observed = $result['observed'] ?? null;
+            $failed[] = sprintf(
+                '%s (expected %s, observed %s)',
+                $name,
+                is_string($expected) ? $expected : '?',
+                is_string($observed) ? $observed : '?',
+            );
         }
 
         return $failed === [] ? '' : ' Failed probes: '.implode('; ', $failed).'.';

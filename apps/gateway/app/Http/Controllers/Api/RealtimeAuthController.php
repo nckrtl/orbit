@@ -59,6 +59,6 @@ final class RealtimeAuthController extends Controller
 
     private function nodeId(Node $node): int
     {
-        return (int) $node->getKey();
+        return $node->id;
     }
 }

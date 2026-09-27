@@ -122,7 +122,23 @@ final readonly class MintlifyLinksRule implements GroupedRule
             return false;
         }
 
-        return is_array($spec) && is_array($spec['paths'][$matches[2]][strtolower($matches[1])] ?? null);
+        if (! is_array($spec)) {
+            return false;
+        }
+
+        $paths = $spec['paths'] ?? null;
+
+        if (! is_array($paths)) {
+            return false;
+        }
+
+        $pathItem = $paths[$matches[2]] ?? null;
+
+        if (! is_array($pathItem)) {
+            return false;
+        }
+
+        return is_array($pathItem[strtolower($matches[1])] ?? null);
     }
 
     private function exists(string $source, string $target): bool

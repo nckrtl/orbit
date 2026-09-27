@@ -69,7 +69,13 @@ abstract class TaskCommand extends GatewayCommand
             return $this->promptable("tasks.{$code}_required", "{$label} is required.");
         }
 
-        $error = is_string($value) ? self::textError($value, $label, $max) : "{$label} is invalid.";
+        if (! is_string($value)) {
+            $this->renderGatewayFailure("tasks.{$code}_invalid", "{$label} is invalid.");
+
+            return false;
+        }
+
+        $error = self::textError($value, $label, $max);
 
         if ($error !== null) {
             $this->renderGatewayFailure("tasks.{$code}_invalid", $error);
@@ -77,7 +83,7 @@ abstract class TaskCommand extends GatewayCommand
             return false;
         }
 
-        return (string) $value;
+        return $value;
     }
 
     /** Checks an optional change: null when absent, false after the refusal. */
@@ -87,7 +93,13 @@ abstract class TaskCommand extends GatewayCommand
             return null;
         }
 
-        $error = is_string($value) ? self::textError($value, $label, $max) : "{$label} is invalid.";
+        if (! is_string($value)) {
+            $this->renderGatewayFailure("tasks.{$code}_invalid", "{$label} is invalid.");
+
+            return false;
+        }
+
+        $error = self::textError($value, $label, $max);
 
         if ($error !== null) {
             $this->renderGatewayFailure("tasks.{$code}_invalid", $error);
@@ -95,7 +107,7 @@ abstract class TaskCommand extends GatewayCommand
             return false;
         }
 
-        return (string) $value;
+        return $value;
     }
 
     /** @param list<string> $choices */
@@ -415,7 +427,7 @@ abstract class TaskCommand extends GatewayCommand
 
                 if ($field === 'fails_on_base') {
                     if (! is_bool($value)) {
-                        self::$deliverablesRefusal = 'The fails_on_base value for '.self::deliverableWho($entry).' must be true or false.';
+                        self::$deliverablesRefusal = 'The fails_on_base value for '.self::deliverableWho(self::deliverableIdentity($entry)).' must be true or false.';
 
                         return null;
                     }
@@ -433,7 +445,7 @@ abstract class TaskCommand extends GatewayCommand
             }
 
             if (array_key_exists('fails_on_base', $fields) && ($fields['type'] ?? '') !== 'test') {
-                self::$deliverablesRefusal = 'The fails_on_base field is only allowed on a test deliverable ('.self::deliverableWho($entry).').';
+                self::$deliverablesRefusal = 'The fails_on_base field is only allowed on a test deliverable ('.self::deliverableWho(self::deliverableIdentity($entry)).').';
 
                 return null;
             }
@@ -442,6 +454,26 @@ abstract class TaskCommand extends GatewayCommand
         }
 
         return $deliverables;
+    }
+
+    /**
+     * String keys are the only ones a deliverable identity can use. Other keys are ignored here
+     * and refused by the field walk that called this.
+     *
+     * @param  array<mixed, mixed>  $deliverable
+     * @return array<string, mixed>
+     */
+    private static function deliverableIdentity(array $deliverable): array
+    {
+        $identity = [];
+
+        foreach ($deliverable as $key => $value) {
+            if (is_string($key)) {
+                $identity[$key] = $value;
+            }
+        }
+
+        return $identity;
     }
 
     /** @param array<string, mixed> $deliverable */

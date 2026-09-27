@@ -82,6 +82,9 @@ final readonly class AcquisitionRollback
             $inventory = ($this->readBatch)($resources);
             foreach ($resources as $resource) {
                 $value = $inventory[$resource] ?? null;
+                if ($value !== null && ! $value instanceof IncusInstance && ! $value instanceof IncusNetwork) {
+                    throw new RuntimeException('Rollback resource read returned an invalid resource.');
+                }
                 $observed[$resource] = $value === null ? null : $this->identity($value);
             }
         } catch (Throwable $exception) {

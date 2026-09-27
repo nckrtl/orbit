@@ -20,8 +20,14 @@ final class ResolveDependencyInstanceController extends Controller
         /** @var Node $consumer */
         $consumer = $request->user();
 
+        $domain = $request->validated('domain');
+
+        if (! is_string($domain)) {
+            throw new \UnexpectedValueException('A domain is required.');
+        }
+
         return response()->json([
-            'data' => $action->execute($request->validated('domain'), $consumer)->toArray(),
+            'data' => $action->execute($domain, $consumer)->toArray(),
             'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')],
         ]);
     }
