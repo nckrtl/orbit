@@ -48,7 +48,7 @@ The Gateway reads the connection from the active role assignment. It needs no br
 orbit node:role:relocate <node> websocket --force
 ```
 
-Relocate copies the Reverb identity to the target when the target has none, and never overwrites one. It converges the target, points `reverb.orbit` at it, and removes the runtime and publication from the source. Clients keep the same key. [`node:role:relocate`](/cli/node#orbit-noderolerelocate) describes `--from` for a target that already holds the role.
+Relocate copies the Reverb identity to the target when the target has none, and never overwrites one. It converges the target, points `reverb.orbit` at it, and removes the runtime and publication from the source. Clients keep the same key. Removing the role and adding it again would generate a new identity, and every client would need the new key. [`node:role:relocate`](/cli/node#orbit-noderolerelocate) describes `--from` for a target that already holds the role.
 
 ### Remove the role
 

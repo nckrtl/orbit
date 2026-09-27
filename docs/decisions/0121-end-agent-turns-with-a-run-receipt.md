@@ -12,7 +12,7 @@ An agent ends its turn by running `.git/orbit/run`, a script the Gateway places 
 
 Proposed.
 
-This amends [ADR 0113](/decisions/0113-gate-task-completion-on-validation-and-review), [ADR 0114](/decisions/0114-judge-task-completion-as-separate-checks), [ADR 0117](/decisions/0117-judge-the-blocked-question-on-role-evidence), and [ADR 0098](/decisions/0098-read-github-repositories-through-a-gateway-owned-github-app). The mechanical checks in ADR 0114 and the `check_script` item stay. Task verification (ADR 0120, proposed in #591) supplies stronger evidence when it lands.
+This amends [ADR 0113](/decisions/0113-gate-task-completion-on-validation-and-review), [ADR 0114](/decisions/0114-judge-task-completion-as-separate-checks), [ADR 0117](/decisions/0117-judge-the-blocked-question-on-role-evidence), and [ADR 0098](/reference/github-app#why-it-works-this-way). The mechanical checks in ADR 0114 and the `check_script` item stay. Task verification (ADR 0120, proposed in #591) supplies stronger evidence when it lands.
 
 [ADR 0132](/decisions/0132-pause-only-for-the-acting-thread-and-a-real-question) requires a `blocked` receipt to ask the operator one specific question.
 
@@ -88,7 +88,7 @@ The reviewer no longer commits. After an `approved` receipt, Orbit commits the w
 
 ### The pull request
 
-Orbit opens the final pull request itself. The Gateway GitHub App gains write permission for repository contents and pull requests, which amends [ADR 0098](/decisions/0098-read-github-repositories-through-a-gateway-owned-github-app). Each operation still asks for a token with only the permissions it needs. Orbit pushes the task branch and opens the pull request against the Project's default branch. The pull request watch uses the App as well, so the tasks extension needs no separate GitHub token.
+Orbit opens the final pull request itself. The Gateway GitHub App gains write permission for repository contents and pull requests, which amends [ADR 0098](/reference/github-app#why-it-works-this-way). Each operation still asks for a token with only the permissions it needs. Orbit pushes the task branch and opens the pull request against the Project's default branch. The pull request watch uses the App as well, so the tasks extension needs no separate GitHub token.
 
 On the last subtask, the reviewer's approval also describes the pull request:
 
@@ -135,6 +135,6 @@ Operator comments stay: `assistance_requested` from Orbit and `resolution` from 
 ## Affects
 
 - Components: apps/gateway, apps/docs
-- ADRs: [ADR 0098](/decisions/0098-read-github-repositories-through-a-gateway-owned-github-app), [ADR 0113](/decisions/0113-gate-task-completion-on-validation-and-review), [ADR 0114](/decisions/0114-judge-task-completion-as-separate-checks), [ADR 0117](/decisions/0117-judge-the-blocked-question-on-role-evidence)
+- ADRs: [ADR 0098](/reference/github-app#why-it-works-this-way), [ADR 0113](/decisions/0113-gate-task-completion-on-validation-and-review), [ADR 0114](/decisions/0114-judge-task-completion-as-separate-checks), [ADR 0117](/decisions/0117-judge-the-blocked-question-on-role-evidence)
 - Detail: [Tasks](/reference/tasks)
 - Verify: scheduler tests for each receipt outcome, the missing-receipt reminder and assistance, duplicate-receipt handling, the approval commit, and opening the pull request; the brief-coverage check; a script test for accepted and refused input, including the pull request fields; and an Incus run of one group with an implementer and a reviewer that completes review without agent-posted comments
