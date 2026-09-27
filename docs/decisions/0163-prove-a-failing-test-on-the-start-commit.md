@@ -88,7 +88,7 @@ A failed case with an empty message omits the colon and the message. A pass or a
 
 ### Who sets the field
 
-The [creating-tasks](https://github.com/nckrtl/orbit/blob/main/.agents/skills/creating-tasks/SKILL.md) skill tells a planner that a bug group's first code subtask carries a `test` deliverable with `fails_on_base` set to `true`. The first code subtask is the first subtask that changes code. A docs-only subtask is not that subtask.
+The external ADE or authorized task author follows the Project's task policy for repro-first bugs. In Orbit's repository, the [`orbit-tasks` skill](https://github.com/nckrtl/orbit/blob/main/.agents/skills/orbit-tasks/SKILL.md) requires the first code-changing subtask to carry the reproduction deliverable with `fails_on_base` set to `true`. A documentation-only subtask is not that subtask.
 
 When a bug cannot be reproduced automatically, for example an iOS behavior that shows up only on a device, the brief says so. That subtask adds a `review` deliverable for the manual check, and it does not set `fails_on_base`.
 

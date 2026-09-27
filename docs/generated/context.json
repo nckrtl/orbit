@@ -3531,7 +3531,8 @@
                 "0124",
                 "0125",
                 "0133",
-                "0163"
+                "0163",
+                "0178"
             ]
         },
         {
@@ -4411,6 +4412,32 @@
             ]
         },
         {
+            "path": "docs/decisions/0178-run-project-agnostic-tasks-without-a-planner.md",
+            "title": "ADR 0178: Run project-agnostic Tasks without a planner",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Gateway",
+                "Instance",
+                "Process",
+                "Project",
+                "Task"
+            ],
+            "governing_adrs": [
+                "0122",
+                "0124",
+                "0125",
+                "0133",
+                "0135",
+                "0163",
+                "0164",
+                "0178"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -4610,7 +4637,8 @@
                 "0168",
                 "0169",
                 "0170",
-                "0171"
+                "0171",
+                "0178"
             ]
         },
         {
@@ -5825,12 +5853,8 @@
             "title": "Tasks",
             "kind": "reference",
             "components": [
-                "apps/cli",
-                "apps/docs",
-                "apps/e2e",
                 "apps/gateway",
-                "apps/web",
-                "packages/php-sdk"
+                "apps/web"
             ],
             "concepts": [
                 "Database",
@@ -5842,8 +5866,10 @@
                 "Node agent",
                 "Process",
                 "Project",
+                "Project type",
                 "Route",
                 "Schedule",
+                "Setup step",
                 "Task",
                 "Task group",
                 "Tool"
@@ -5857,12 +5883,10 @@
                 "0116",
                 "0121",
                 "0122",
-                "0124",
                 "0125",
                 "0132",
                 "0133",
                 "0134",
-                "0135",
                 "0140",
                 "0160",
                 "0163",
@@ -5871,7 +5895,8 @@
                 "0167",
                 "0169",
                 "0170",
-                "0171"
+                "0171",
+                "0178"
             ]
         },
         {
