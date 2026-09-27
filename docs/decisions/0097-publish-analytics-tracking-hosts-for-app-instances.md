@@ -16,7 +16,7 @@ Proposed.
 
 Plausible counts a visit when the visitor's browser loads a script and posts an event. Both requests must reach Plausible from the public internet, while the Plausible dashboard stays private at `analytics.orbit` ([ADR 0096](/reference/analytics)). A tracking host on the App's own domain also keeps the requests first-party, so content blockers that list the Plausible domains do not drop them.
 
-A Route today serves one upstream for every path. The only path-scoped handling is two reserved development prefixes that the app-dev site renders itself ([ADR 0067](/reference/routes#development-server-endpoint) and [ADR 0082](/decisions/0082-wire-agentation-watch-mode-through-appinstance-processes)). A node-owned custom proxy Route accepts only a loopback upstream on its serving Node and no path ([ADR 0080](/reference/routes#custom-proxy-routes)). Public Routes reach an App through one Ingress and one Router in an active cluster ([ADR 0011](/reference/routes#publish-a-public-route) and [ADR 0023](/reference/routes#routes-own-domains-and-cluster-membership-owns-scope)).
+A Route today serves one upstream for every path. The only path-scoped handling is two reserved development prefixes that the app-dev site renders itself ([ADR 0067](/reference/routes#development-server-endpoint) and [Agentation](/reference/agentation)). A node-owned custom proxy Route accepts only a loopback upstream on its serving Node and no path ([ADR 0080](/reference/routes#custom-proxy-routes)). Public Routes reach an App through one Ingress and one Router in an active cluster ([ADR 0011](/reference/routes#publish-a-public-route) and [ADR 0023](/reference/routes#routes-own-domains-and-cluster-membership-owns-scope)).
 
 ## Decision
 
