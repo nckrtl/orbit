@@ -1,26 +1,31 @@
 ---
 title: "Mission"
-description: "Why Orbit exists, how the Gateway, CLI, and Nodes divide the work, and what Orbit manages for humans and coding agents."
+description: "What Orbit is for, where it stops, and the principles every decision must fit."
 ---
 
 # Mission
 
-Orbit manages local development, production hosting, and day-to-day machine maintenance. You or your AI agent can operate it through the same command-line interface (CLI).
+Orbit turns the machines you own into an always-on network for developing and hosting your applications. Your agent operates it. You steer.
 
-## Why Orbit exists
+## What Orbit does
 
-Development, deployment, and monitoring tools often track the same application in separate settings and dashboards. Orbit connects these tasks. It keeps your applications, machines, and change history in one place.
+- Orbit manages your machines, called Nodes, and the applications on them: development Instances, production releases, Routes, Processes, Schedules, and certificates.
+- Orbit runs planned work with coding agents on those machines through the optional [Tasks](/reference/tasks) extension. The work runs in isolated Instances, passes checks, and arrives as a pull request.
 
-## How Orbit helps
+## Where Orbit stops
 
-The Gateway stores your machine and application records. It authorizes CLI requests and coordinates changes on managed machines, called Nodes. Nodes run applications, route traffic, and perform other assigned work.
+- Your agentic development environment (ADE) is where you think, plan, and steer. Orbit is where work runs. Orbit has no editor, chat, or planning interface. Plans arrive through the CLI or MCP.
+- Orbit manages only the machines and resources you add.
+- Each Project defines its own way of working in its repository. The Orbit engine stays generic.
 
-## Built for humans and agents
+## Principles
 
-Commands return readable output for people and structured data for automation. Agents use the same permissions as other callers. Orbit records changes so you can trace problems.
+1. **Agents operate, humans steer.** Every action is a command that an agent can run and a human can read.
+2. **One way, one name.** Each task has one supported path. Each concept has one term in the CLI, API, database, and documentation.
+3. **No exceptions and no legacy.** Orbit refuses an unsupported combination instead of making it work. Orbit removes old paths instead of keeping them for compatibility.
+4. **Deterministic first.** Code and checks decide what they can. Models judge only what code cannot.
+5. **Lean.** A feature earns its place. Orbit deletes the parts that nothing uses.
+6. **The documentation describes the present.** It is the current agreed truth. Orbit absorbs each decision into it once the decision is built.
+7. **Security fits the real threat model.** Orbit adds no defense layer against an attacker who is already past the boundary.
 
-## What Orbit manages
-
-Orbit manages applications, development environments, production servers, routes, processes, tools, settings, metrics, realtime events, networking, and certificates. You choose the infrastructure. Orbit manages only the machines and resources you add.
-
-See [Architecture](/architecture) for how these parts work together.
+Every architecture decision must fit this mission. See [Architecture](/architecture) for how the parts work together.
