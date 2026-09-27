@@ -1,160 +1,208 @@
 ---
 title: "Agent annotation package"
-description: "Install the annotation overlay and configure its speech endpoint."
+description: "The browser annotation overlay, its speech input, and its two delivery modes: a local annotation server, or Orbit Tasks sent to a T3 thread."
+covers:
+  - packages/agent-annotation/**
+  - apps/web/dev/annotation-thread.ts
+  - apps/gateway/app/{Actions,Data,Http/Requests}/Annotations/**
+  - apps/gateway/app/Http/Controllers/Api/AnnotationsController.php
+  - apps/gateway/app/Models/Annotation.php
+  - apps/gateway/app/Console/Commands/DispatchAnnotations.php
 ---
 
 # Agent annotation package
 
-`@nckrtl/annotate` installs a floating annotation control into its own Shadow DOM. It captures element context and screenshots and stores annotations in browser local storage. Orbit web uses the same package. A host application can mount it without rendering a React component. The comment field opens above the buttons with a “Listening” placeholder. Recording and text entry keep this layout without an expansion animation.
+`@nckrtl/annotate` in `packages/agent-annotation` is a browser overlay. You click an element, write or speak a comment, and the overlay saves an annotation with the element, page context, and a screenshot. It runs in its own Shadow DOM and needs neither Orbit nor Laravel. The Orbit web app uses it.
+
+An annotation goes to one of two places:
+
+- **Local server**: a small server on your machine stores it as a file, and your agent picks it up.
+- **Orbit**: the Gateway stores it as a Task and sends it to a T3 thread in the Instance's checkout.
 
 ## Install and mount
 
-Build the package with `bun install` and `bun run build` in `packages/agent-annotation`, then run `npm pack` there. Install the resulting archive in the target project. The package includes React and its styles in the browser bundle; the host does not need Tailwind or React.
+In `packages/agent-annotation`, run `bun install`, `bun run build`, and `npm pack`. Install the archive in the target project. The bundle includes React and its styles, so the host needs neither.
 
 ```ts
 import { mountAnnotation } from "@nckrtl/annotate";
 
 const annotation = mountAnnotation({
-    dictation: {
-        wsUrl: "wss://speech.example.com/v1/audio/stream",
-        autoStart: false,
-    },
+    dictation: { wsUrl: "wss://speech.example.com/v1/audio/stream" },
 });
 
-// Remove controls, listeners, and microphone capture when the host shuts down.
+// Remove the controls, listeners, and microphone capture.
 annotation.destroy();
 ```
 
-For script injection, serve `dist/inject.js` and set `window.__AGENT_ANNOTATION__` to the same options before loading the script. The script mounts after the document is ready. It exposes `window.AgentAnnotation` with the package API.
+A second `mountAnnotation` call updates the options and adds no second overlay. To inject the overlay as a script, set `window.__AGENT_ANNOTATION__` to the options and load `dist/inject.js`. The script mounts when the document is ready and sets `window.AgentAnnotation.mountAnnotation`.
 
-## Speech configuration
+| Option | Meaning |
+| --- | --- |
+| `serviceUrl` | The Orbit annotation endpoint of an Instance. With it, Orbit is the default delivery mode. |
+| `orbit.tasksStatusUrl` | The Tasks status endpoint. The default is `/api/v1/tasks/status` on the `serviceUrl` origin. |
+| `realtime` | How the overlay hears about changes in Orbit mode. See [Orbit delivery](#orbit-delivery). |
+| `thread` | `{ id, discoveryUrl }`: a fixed T3 thread ID, or a URL that detects one. |
+| `dictation` | Speech input. See [Speech](#speech). |
+| `getToolbarData` | A callback that returns `primary_color`, `primary_text_color`, `font_size`, and `request.controller_action` and `request.route_name`. Laravel hosts use it to add request context. |
 
-Speech is disabled when no URL is configured. `dictation.wsUrl` accepts a `ws://` or `wss://` URL, or a route such as `/speech/stream` on the current origin. HTTP and HTTPS routes are converted to WebSocket URLs. An invalid scheme fails during configuration, before microphone capture. Set `autoStart: false` to record only when the microphone control is pressed. The default is `true`.
+## Use the overlay
 
-The endpoint must implement the Diction streaming protocol: binary Opus or PCM16 audio, a final `{"action":"done"}` message, and a `{"text":"..."}` response. The model is chosen by that service. This URL is not an arbitrary HTTP transcription API. Do not put provider API secrets in browser configuration.
+Press Cmd+Shift+A on macOS, or Ctrl+Shift+A on Windows and Linux, to turn annotation mode on or off. Press Cmd+Shift+R or Ctrl+Shift+R to clear all annotations. Both shortcuts work while the comment field has focus. The page receives no reload for the clear shortcut when the browser passes the keys to the page.
 
-Orbit web reads `VITE_ANNOTATION_TRANSCRIPTION_URL` and `VITE_ANNOTATION_AUTO_START` at startup. Set them in `apps/web/.env.local` and restart the dev server. An empty URL disables speech. Mobile browsers use the same endpoint and need HTTPS, microphone permission, and network access to that endpoint. Browsers block microphone access on HTTP network addresses. Use HTTPS or localhost. Recording failures appear below the comment field.
+The comment field opens above the buttons, with the placeholder "Listening". The browser keeps annotations in local storage per path. The trash button next to the toggle clears the annotations of every path on the site and closes an open draft. It does not change annotation mode. Clearing hides annotations in this browser only. It does not cancel work that a server already holds.
 
-### Local development
+## Speech
 
-For local development, set `ANNOTATION_TRANSCRIPTION_TARGET` to the Diction service origin, such as `http://127.0.0.1:8080`, and set `VITE_ANNOTATION_TRANSCRIPTION_URL=/__annotate/speech`. The dev server proxies that route to `/v1/audio/stream` on the service. This keeps the speech connection on the page origin. The page still needs HTTPS when accessed from another machine.
+Speech is off until you set `dictation.wsUrl`, or `postUrl` for [desktop dictation](#desktop-dictation).
 
-Explicit mount options override the legacy `window.__TOOLBAR_AGENTATION__.dictation` configuration. Legacy `ws_url` and `auto_start` fields remain supported.
+`dictation.wsUrl` is a Diction streaming endpoint: a `ws://` or `wss://` URL, or a path on the page origin. The overlay turns an `http` or `https` URL into its WebSocket form and refuses any other scheme. It sends Opus audio when the browser can record Opus, and PCM16 at 16 kHz otherwise. `dictation.codec` forces `opus` or `pcm`. It ends the audio with `{"action":"done"}` and reads `{"text":"..."}` back. The Diction service picks the model. Keep provider secrets out of the browser.
 
-## Host integration
+Recording starts when a new comment field opens. Set `autoStart: false` to record only when you press the microphone button. The browser allows the microphone only on HTTPS or `localhost`.
 
-The optional `commander` object accepts `enabled`, `project`, and `endpoint`. Submission is disabled by default. Set `serviceUrl` to use the Gateway annotation service. The optional Commander adapter is used only when no service URL is set and Commander is enabled. Annotations remain stored locally when submission fails.
+### Desktop dictation
 
-The optional `getToolbarData` callback returns toolbar colors, font size, and current request context (`request.controller_action` and `request.route_name`). Laravel integrations can use it without making the package depend on toolbar source files. Existing toolbar host identifiers and Inertia navigation events remain supported. Migrating the Laravel extension and adding a desktop hotkey bridge are separate follow-up work.
+Set `provider: "post"` and `postUrl` to a dictation service on your own machine, such as `http://127.0.0.1:12321/dictate`. The overlay then records nothing. A new annotation focuses its comment field and sends one POST with no body. Any successful response counts. The desktop service records and types the text. That service must allow the page origin through CORS, and the browser can ask for local-network permission.
 
-## Local dictation trigger
+Also set `stopUrl`, such as `http://127.0.0.1:12321/dictate-stop`, to move straight to the next element. A click outside the open popup then sends a POST to `stopUrl`, and the placeholder changes to "Waiting for paste…". When the text arrives and the field stays unchanged for 500 ms, the overlay saves the annotation and opens a new one on the clicked element. A failed stop request, an empty field, or no text within 15 seconds keeps the annotation open with an error. Escape cancels the move.
 
-Set `dictation.provider` to `post` and `dictation.postUrl` to `http://127.0.0.1:12321/dictate` to trigger a desktop dictation service instead of capturing audio in the browser. A new annotation focuses its comment field and sends one POST with no body. Any successful HTTP response acknowledges the trigger; the desktop service owns recording and text insertion. The microphone button can trigger another request. Failed requests show an error and do not start browser recording.
+The browser Performance API keeps the latest `annotate:dictate-request`, `annotate:dictate-stop-request`, and `annotate:paste-wait` measures. A request measure includes connection and permission time in the browser.
 
-Orbit web accepts `VITE_ANNOTATION_DICTATION_PROVIDER=post` and `VITE_ANNOTATION_DICTATION_POST_URL=http://127.0.0.1:12321/dictate`. Set `autoStart: false` (or `VITE_ANNOTATION_AUTO_START=0`) for manual triggering only. The request goes directly from the browser to its own machine. The local service must allow the page origin through CORS; the browser may also request local-network permission.
+## Delivery modes
 
-### Stop and move to another element
+The gear button opens the settings. **Delivery mode** is **Local server** or **Orbit**. The overlay keeps the choice for the browser tab, across refreshes. A failed submission stays in the browser with its error. The overlay never switches to the other mode.
 
-Set `dictation.stopUrl` (web: `VITE_ANNOTATION_DICTATION_STOP_URL`) to `http://127.0.0.1:12321/dictate-stop`. In POST mode, clicking outside the current popup keeps the comment field focused, sends a bodyless POST to the stop endpoint, and waits for a new input event. After the request succeeds and input has settled for 500 ms, the tool saves the comment and opens a new annotation on the clicked element. The new popup triggers dictation as usual.
-
-The placeholder changes from “Listening” to “Waiting for paste…” during the stop request. No extra status panel appears. Only the first outside click is queued while waiting. A failed stop request, an empty transcript, or no paste within 15 seconds leaves the current annotation open with an error. Escape cancels the pending transition. Local storage receives the annotation before the next popup opens; agent submission continues in the background. Without a configured stop URL, outside clicks retain the existing behavior.
-
-### Request timing
-
-Both local POST requests start without an intentional delay. The stop flow waits for the HTTP response and for 500 ms of settled input before moving to the next annotation. Browser Performance measures `annotate:dictate-request`, `annotate:dictate-stop-request`, and `annotate:paste-wait` record the latest request durations and the time spent waiting after the stop response. Request duration includes browser connection and permission handling as well as service response time; it is not a measurement of service processing alone.
-
-## Clear annotations and keyboard shortcuts
-
-The trash button beside the floating annotation toggle clears all saved annotations for this site, including other paths, and closes any open draft. It leaves annotation mode enabled or disabled as it was. Submitted work remains in the service. Clearing or deleting pins hides them in this browser; it does not cancel queued work or remove shared records.
-
-Press Cmd+Shift+A on macOS or Ctrl+Shift+A on Windows and Linux to toggle annotation mode. Cmd+Shift+R or Ctrl+Shift+R clears all annotations. These shortcuts work while the comment field is focused. The clear shortcut replaces the browser reload action when the browser delivers that key combination to the page.
-
-## T3 thread selection
-
-On page load or refresh, automatic detection fills the T3 thread ID field when a match is available. Open the gear button in the annotation pill to edit and save a manual override. Clear the field and save to keep the thread ID empty. An explicit empty value disables automatic filling for that tab, including after refresh. Saving an unchanged automatic value keeps automatic detection enabled.
-
-The override is stored in browser session storage, scoped to the site and tab. It survives refreshes and is cleared when the tab session ends. New tabs opened by another tab may inherit its initial session storage; later edits remain separate.
-
-Hosts can pass `thread: { id, discoveryUrl }` to `mountAnnotation`. Orbit web accepts `VITE_ANNOTATION_THREAD_ID` and uses `/__annotate/thread` during development. The dev server reads the local T3 database in read-only mode and selects a single non-archived thread for this worktree. Missing data or multiple matches leave the thread unset. Manual selection takes priority over host configuration and detection.
-
-New annotations capture the selected `threadId` when their draft opens. Existing annotations retain their thread ID. With an annotation service configured, the Gateway uses this ID to deliver the annotation to T3.
-
-## Orbit delivery
-
-Orbit mode requires a configured annotation service URL, an enabled tasks extension, and access to the Instance annotation endpoint. Settings checks these requirements and shows why Orbit is unavailable. The T3 thread ID selects the session that receives the task. Hosts can override the tasks status endpoint with `orbit.tasksStatusUrl`; its default is `/api/v1/tasks/status` on the annotation service origin.
-
-The annotation service stores each submitted annotation before delivery. The selected T3 thread ID travels with the annotation; later changes to the setting do not reroute saved work. Requests use the annotation ID for idempotency. Missing thread IDs remain visible as delivery errors instead of being sent to another thread.
-
-The service delivers pending annotations in order, with one unfinished annotation per T3 thread. It waits until the thread is idle before sending a message. The message includes the annotation context and instructions to report `in_progress` before editing, then `resolved` with a summary after verification. Successful message delivery alone does not mark work complete. Delivery failures retain the annotation and display the error.
-
-### Reconnect and shared state
-
-The browser receives change notifications through the Gateway's existing private Reverb channel. Orbit shares its existing WebSocket connection with the annotation tool. Standalone hosts configure `realtime.configUrl` (normally `/api/v1/realtime`) and `realtime.authUrl` (normally `/api/v1/broadcasting/auth`), or provide `realtime.url`, `key`, and `channel` directly. Only the public app key reaches the browser; the signing secret stays on the server. These WebSocket settings apply only to Orbit mode. Local server mode needs only the annotation server URL; it discovers the server’s event stream automatically. The host backend must proxy discovery and authorization using its WireGuard identity and restrict access to trusted annotators.
-
-Submissions remain HTTP POSTs so Gateway validation, persistence, and retries use the same API. Reverb client messages do not execute Gateway actions. Notifications contain only the annotation ID, Instance ID, and revision; the browser fetches the authorized annotation snapshot. It also fetches on subscription, reconnect, and refresh.
-
-While no subscription is live, it also fetches every 15 seconds and when a hidden tab becomes visible. It never polls from a hidden tab. A host that shares its connection passes `realtime.live`, a function that returns whether that connection is subscribed. Server state is authoritative; browser storage retains submissions that could not reach the service. The legacy SSE endpoint remains available for older clients.
-
-Annotations belong to an Orbit Instance and live in the Gateway database. Configure the host with a service URL of `/api/v1/instances/{id}/annotations`, proxied through the host backend with its WireGuard identity. Instance visitors share the same records and events. The Instance page has Overview and Tasks tabs. Overview contains properties, processes, schedules, and application logs. Tasks reuses the main Kanban board, filtered to task groups belonging to the Instance, including annotation tasks.
-
-The Gateway uses its existing T3 connection for the Instance’s Node. Configure that Node’s `settings.t3.url` and `settings.t3.token` on the Gateway; keep the bearer token out of browser settings. T3 can issue a server credential with `t3 auth session issue --ttl 7d --label "Orbit annotations" --token-only`. Renew it before its chosen expiry. A scheduled `annotations:dispatch` command attempts delivery every ten seconds, independently of browser connections. No full Task or Task Group is created. The T3 thread must use the Instance checkout. The Gateway preserves the thread’s model, permission mode, and interaction mode.
-
-### Connect a host
-
-Set `VITE_ANNOTATION_SERVICE_URL=/api/v1/instances/107/annotations` in the Orbit web environment, replacing `107` with the owning Instance ID. Other hosts pass that path as `serviceUrl` to `mountAnnotation` and proxy it to the Gateway. The host must restrict access to trusted annotators: its backend submits under its Node identity. Public visitor authentication and named authors are not part of this slice.
-
-The API offers GET and POST on `/api/v1/instances/{instance}/annotations`, GET on `events`, and POST on `{annotation}/status` and `{annotation}/retry`. Status accepts `in_progress` or `resolved`; resolution requires a `summary`. These routes use the existing Instance Node access checks. The annotation service retains records and events until an operator defines a retention policy.
-
-An edit to an instruction that has reached the server needs a new annotation. The existing ID is immutable to keep retries from creating duplicate work. A missing thread ID produces a delivery error. Select a thread and create a new annotation. Connection failures offer Retry delivery.
-
-## Orbit tasks
-
-Every annotation creates one Task with `type=annotation` in a TaskGroup with `execution_mode=existing_thread`. The group references the existing Instance; it does not own that Instance. Each annotation has its own group so completion remains independent. The browser continues to call these records annotations. Its pending, in-progress, and done states derive from the Task's todo, running, and completed states. The Task owns the completion summary and timestamps; the annotation stores page context and delivery bookkeeping.
-
-Managed groups keep `execution_mode=managed`. The managed scheduler excludes existing-thread groups from claiming, monitoring, provisioning, review, cleanup, and concurrency counts. Managed lifecycle, edit, and subtask-removal actions reject these groups with `tasks.external_execution`, preventing accidental Instance removal. The annotation dispatcher sends existing-thread tasks serially to their selected T3 thread, waits for explicit completion, and never falls back to starting a managed worker. Missing destinations remain pending. A retry can assign a thread before the first delivery attempt; commands already sent cannot be retargeted.
-
-The migration converts existing annotations to Tasks and preserves their IDs, state, summaries, and delivery commands. It stops if an annotation references a missing Instance, because Project ownership cannot safely be inferred. Back up the Gateway database before applying this migration; production rollback uses that backup. Existing annotation status endpoints update their Tasks and publish the same browser notifications. Token usage stays unknown unless it can be attributed to the individual task; a shared thread total is not a task total.
-
-When Instance removal is accepted, unfinished annotation tasks are cancelled and further delivery stops. Completed tasks retain their history. Cancellation does not undo changes or recall a message already delivered to T3. A late completion report cannot reopen a cancelled task.
+| Mode | Needs |
+| --- | --- |
+| Local server | An **Annotation server URL**. |
+| Orbit | A `serviceUrl` from the host, the Tasks extension enabled, access to the Instance, and a **T3 thread ID**. The settings show why Orbit is unavailable. |
 
 ## Local server
 
-Run `npx @nckrtl/annotate serve` to start an independent local annotation service. It binds to loopback on a random available port and prints `http://127.0.0.1:<port>/annotations`. Choose **Local server** and paste that URL into **Annotation server URL** in the toolbar settings. No Vite configuration is required. Each server uses its own URL and storage directory, so several sessions can run together.
+Run the server from a project that has the package installed:
 
-Use `--port 29703` for a fixed port or `--store /path/to/session` to resume a saved store. By default, the server creates a temporary directory and prints the storage path. Writes persist before acknowledgement. If the port changes after restarting, paste the new URL into settings.
+```bash
+npx @nckrtl/annotate serve [--port PORT] [--host IP] [--store DIRECTORY]
+```
 
-The toolbar remembers the URL for the browser tab across refreshes. Choose **Local server** in **Delivery mode** to use that URL without Orbit or T3 delivery. Clearing the URL does not change the mode; server mode requires a URL. Choose **Orbit** explicitly to use the host delivery integration. Orbit mode requires a nonempty thread ID.
+It binds `127.0.0.1` on a random port, creates a temporary store, and prints both, for example `http://127.0.0.1:52817/annotations`. Paste that URL into **Annotation server URL**. The overlay checks the URL when you press Enter or leave the field. `--port` fixes the port. `--store` reuses a store, so numbering and records continue. Only one server can use a store at a time. Each server has its own URL and store, so several can run at once.
 
-Failed submissions stay in the browser for manual retry and do not fall back to T3. Settings show the connection state. Press Enter in the server URL field or leave the field to check the entered URL before saving. The check uses the same development bridge as annotation writes and shows whether the server is reachable; it does not save settings or create an annotation. Browsers may request local-network permission; loopback URLs on mobile refer to the mobile device.
+The server writes each annotation to `<store>/todo/`, `<store>/in-progress/`, or `<store>/done/` as `<id>.json`, before it answers. The folder decides the status: `todo`, `in_progress`, or `done`. A record with status `cancelled` also lives in `done/`. The server reads the folders on every request. Edit a file by replacing it atomically.
 
-### Agent access
+Each annotation gets a `number` that never changes. Numbers go up across the store. The server prints one line when an annotation is created or changes status, such as `#1 created: Fix the heading`.
 
-Each annotation is stored as `<id>.json` under `todo/`, `in-progress/`, or `done/` in the printed store directory. Files use status `todo`, `in_progress`, or `done`. Cancelled records also live in `done/` but retain status `cancelled`. Existing single-file stores are migrated when passed to `--store`, and the original file is preserved with a `.legacy` suffix.
+### Agent API
 
-| Endpoint | Result |
+Append the operation to the printed URL.
+
+| Request | Result |
 | --- | --- |
-| `POST /claim` | Claims the oldest todo annotation, sets `in_progress`, moves its file, and returns `{data: annotation}`. Returns `204` when no work is available. |
-| `POST /complete` | Accepts an in-progress `id` and optional `summary`, sets `done`, and moves its file into `done/`. Repeating completion returns the completed record. |
-| `POST /release` | Accepts an in-progress `id`, sets `todo`, and moves its file back to `todo/`. |
-| `GET /annotations` | Returns `{data: [...]}`, including completed records. |
-| `POST /annotations` | Creates a todo annotation; duplicate IDs return the existing record. |
-| `GET /annotations/events` | Streams invalidations so clients re-fetch current state. |
+| `GET /annotations` | `{data: [...]}` with every record, completed ones included. |
+| `POST /annotations` | Creates a `todo` annotation. The same ID again returns the existing record. |
+| `POST /annotations/claim` | Moves the oldest `todo` annotation to `in_progress` and returns it. `204` when there is none. |
+| `POST /annotations/complete` | Takes `id` and an optional `summary`, and moves an `in_progress` annotation to `done`. |
+| `POST /annotations/release` | Takes `id` and moves an `in_progress` annotation back to `todo`. |
+| `GET /annotations/events` | A server-sent event stream. Each event tells the client to fetch again. |
 
-The worker endpoints also accept `/annotations/claim`, `/annotations/complete`, and `/annotations/release`, so agents can append the operation to the printed annotation URL. Unknown IDs return `404`; completion or release from an invalid state returns `409`. The older `/annotations/:id/status` endpoint still accepts `pending` and `resolved` as aliases for `todo` and `done`. The toolbar translates local states to its existing marker states; Orbit's task API is unchanged.
+An unknown ID returns `404`. Completing or releasing an annotation that is not `in_progress` returns `409`, unless it already has the target status. Two agents that claim at once get different annotations. A claim has no timeout: an `in_progress` annotation stays so across restarts until an agent completes or releases it. The server only stores work. It starts no agent and sends nothing to T3.
 
-One server owns each directory. Claim selection, file movement, and status writing execute without yielding, so concurrent monitor requests receive distinct work. Writes finish before acknowledgement. In-progress records survive a restart and require completion or explicit release; there is no lease timeout. The server watches all three directories and reads current files for each request. External edits should use atomic file replacement. Directory placement determines status when a move was interrupted before its JSON update, or when an external tool moves a file.
+### Another machine
 
-Local annotations receive a stable `number` from the server. Numbers increase across the store and do not change when work completes or is released. The toolbar keeps the session counter after completion and uses the same numbers on pins. Reusing a store preserves its numbering; a new store starts at 1. The server prints one activity line per creation or status change, such as `#1 created: Fix the heading`, `#1 in progress: Fix the heading`, and `#1 done: Fix the heading`. Repeated submissions and unchanged statuses do not produce duplicate activity lines.
+A browser on another machine cannot reach `127.0.0.1` on the server machine. Start the server with `--host <private-IP>`. An HTTPS page also needs an HTTPS endpoint, such as a reverse proxy in front of the server.
 
-The browser re-fetches on connection and after each event, retaining periodic polling as a fallback. The local server stores and exposes work but does not launch agents or send messages to T3.
+A Vite host can add the `annotationServerProxy()` plugin from `@nckrtl/annotate/vite` instead. During development it forwards `/__annotate/local/<port>/annotations` to that port on the development machine. The overlay then sends a loopback server URL through the page origin, so a remote browser and an HTTPS page both work. The plugin forwards only to a port that answers as an annotation server. The Orbit web app enables it.
 
-When the browser runs on a different machine, its loopback address does not reach the server. Use `--host <private-IP>` to bind to the server machine’s private network address. An HTTPS page also requires an HTTPS endpoint for a remote server; a reverse proxy can forward it to the local annotation process. The proxy changes transport only: annotations remain in the local store and are not sent to Orbit tasks or T3.
+## Orbit delivery
 
-### Development server bridge
+In Orbit mode, the Gateway stores each annotation and sends it to a T3 thread. The endpoint is `/api/v1/instances/{instance}/annotations`, and every call needs [access](/cli/node) to the Instance's Node.
 
-Orbit’s web development server enables the package’s `annotationServerProxy()` Vite plugin. When Local server mode contains an HTTP loopback URL ending in `/annotations`, the toolbar sends requests through the development server on the page’s origin. The development server connects to that annotation port on its own machine. Both submissions and SSE use this bridge. This supports a remote browser and an HTTPS page without hard-coding an annotation port or involving Orbit tasks or T3 delivery. 
+| Request | Result |
+| --- | --- |
+| `GET` | The Instance's annotations. |
+| `POST` | Stores an annotation. The same ID with the same content returns the stored one. A changed instruction needs a new annotation, or it fails with `annotation.conflict`. |
+| `POST {annotation}/status` | `in_progress`, or `resolved` with a `summary`. `resolved` needs `in_progress` first. |
+| `POST {annotation}/retry` | Queues a failed delivery again. It can set `threadId` while nothing was sent. |
 
-A newly started server can use a different random port; paste its new URL into settings. Restart older annotation servers with the current package so they provide the service identification required by the bridge.
+The Orbit web app is on the Gateway origin, so it calls the endpoint directly: set `VITE_ANNOTATION_SERVICE_URL=/api/v1/instances/107/annotations` with the owning Instance ID. Another host passes the path as `serviceUrl` and proxies it to the Gateway. Its backend then calls under its own Node identity, so the host must admit only trusted annotators.
 
-Other Vite hosts enable the same plugin from `@nckrtl/annotate/vite`. The bridge runs only during development and accepts annotation API paths after verifying the target service. Without the plugin, the URL must be directly reachable from the browser.
+### Threads
 
+The annotation carries the T3 thread ID that is selected when you submit it. A later change of the selection does not move saved work. The thread ID field fills itself from `thread.id`, or from `thread.discoveryUrl`. The Orbit web app reads `VITE_ANNOTATION_THREAD_ID`. During development it detects the thread at `/__annotate/thread`: the dev server reads the local T3 database read-only and picks the one open thread for this worktree. No match, or more than one, leaves the field empty.
+
+You can type a thread ID and save it. The overlay keeps it in session storage for the site and tab, across refreshes. A saved empty value turns detection off for that tab.
+
+### Tasks
+
+Each annotation creates one task group with `execution_mode=existing_thread` and one Task with `type=annotation`. The group points at the Instance but does not own it. The annotation keeps the page context and the delivery state. The Task keeps the status, the summary, and the times.
+
+| Annotation status | Task status |
+| --- | --- |
+| `pending` | `todo` |
+| `in_progress` | `running` |
+| `resolved` | `completed` |
+| `cancelled` | `cancelled` |
+
+The [managed scheduler](/reference/tasks) never claims, provisions, reviews, or cleans up an existing-thread group, and does not count it for concurrency. The managed Task commands refuse such a group with `tasks.external_execution`. So no managed action can remove the Instance.
+
+### Delivery
+
+The scheduler runs `annotations:dispatch` every ten seconds, with or without a browser. It takes queued annotations in submission order. Each T3 thread gets one unfinished annotation at a time. For each annotation, the Gateway reads the thread through the Instance Node's T3 connection and checks these:
+
+- The thread exists, and is neither archived nor deleted.
+- The thread's worktree is the Instance checkout.
+- The thread is idle. A busy thread waits for the next run.
+
+Then the Gateway starts a turn with the annotation as the message. The turn keeps the thread's runtime mode and interaction mode. The message tells the agent to report `in_progress` before it edits and `resolved` with a summary after it checks the work. A sent message does not complete the annotation. Only the `resolved` report does.
+
+The command and message IDs are fixed when the annotation is stored, so a repeated send creates no second turn. A missing thread ID or a failed send marks the delivery `error`. Retry sends it again. [Tasks](/reference/tasks#coder-settle-webhook) lists the T3 URL and token settings of a Node. Keep the T3 token on the Gateway, never in the browser.
+
+### Live updates
+
+Every change sends an [`annotation.updated`](/reference/events#annotation) notice with the ID, Instance ID, and revision. The browser then fetches the list. It also fetches when it subscribes, reconnects, or refreshes. Submissions stay HTTP requests.
+
+The Orbit web app shares its own realtime connection through `realtime.subscribe` and `realtime.live`. Another host sets `realtime.configUrl`, normally `/api/v1/realtime`, and `realtime.authUrl`, normally `/api/v1/broadcasting/auth`, or it sets `realtime.url`, `key`, and `channel`. While no subscription is live, the browser fetches every 15 seconds and when a hidden tab becomes visible. It never fetches from a hidden tab.
+
+### Instance removal
+
+The Gateway refuses new annotations for an Instance that is being removed, with `annotation.instance_removing`. [Instance removal](/reference/appinstance-removal#removal-steps) cancels the Instance's open annotation Tasks and marks their annotations `cancelled`. Completed Tasks keep their history. Cancellation does not undo changes or recall a message that T3 already has.
+
+## Orbit web configuration
+
+The Orbit web app reads these values at startup. Set them in `apps/web/.env.local` and restart the dev server.
+
+| Variable | Meaning |
+| --- | --- |
+| `VITE_ANNOTATION_SERVICE_URL` | The Instance annotation endpoint. |
+| `VITE_ANNOTATION_THREAD_ID` | A fixed T3 thread ID. |
+| `VITE_ANNOTATION_TRANSCRIPTION_URL` | The speech URL. Empty turns speech off. |
+| `VITE_ANNOTATION_AUTO_START` | `0` records only on the microphone button. |
+| `VITE_ANNOTATION_DICTATION_PROVIDER` | `post` for desktop dictation. |
+| `VITE_ANNOTATION_DICTATION_POST_URL`, `VITE_ANNOTATION_DICTATION_STOP_URL` | The desktop dictation endpoints. |
+| `ANNOTATION_TRANSCRIPTION_TARGET` | A Diction origin, such as `http://127.0.0.1:8080`. The dev server proxies `/__annotate/speech` to its `/v1/audio/stream`. Set the speech URL to `/__annotate/speech` to keep speech on the page origin. |
+
+## Why it works this way
+
+These reasons explain the design. Check them before you propose a change.
+
+### One package for every host
+
+A copy of the overlay in each application would drift. So one package owns it, and Orbit web uses the package like any other host.
+
+### React and styles in the bundle
+
+A host that must compile Tailwind or mount React cannot load the overlay as a script. So the bundle carries both.
+
+### HTTP submissions, realtime notices
+
+HTTP keeps Gateway validation, storage, and a durable answer for each submission. A realtime client message cannot run a Gateway action. So a notice only tells the browser to fetch.
+
+### A Task in an existing-thread group
+
+An annotation is work for an agent, so it uses the Task record and shows on the task board. The execution mode, not the task type, keeps it out of the managed scheduler. So the managed lifecycle never provisions or removes the Instance for it.
+
+### Completion is a report
+
+A delivered message does not mean done. The next annotation for a thread waits for the explicit `resolved` report, so two instructions never mix in one turn.
+
+### Fixed IDs
+
+An annotation ID and its T3 command ID never change. A retry then cannot create a second turn. A changed instruction is a new annotation.
