@@ -105,8 +105,12 @@
                 "Gateway",
                 "Instance",
                 "Node",
+                "Node agent",
+                "Process",
                 "Route",
-                "Schedule"
+                "Schedule",
+                "Task",
+                "Tool"
             ],
             "governing_adrs": [
                 "0152",
@@ -3993,6 +3997,7 @@
                 "Gateway",
                 "Instance",
                 "Node",
+                "Node agent",
                 "Process",
                 "Project",
                 "Role",
