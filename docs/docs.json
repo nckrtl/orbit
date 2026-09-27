@@ -691,7 +691,8 @@
               "decisions/0168-offload-large-pi-tool-output",
               "decisions/0169-start-each-subtask-review-in-a-fresh-thread",
               "decisions/0170-edit-todo-subtasks-after-a-group-starts",
-              "decisions/0171-reset-fixup-caps-after-operator-work"
+              "decisions/0171-reset-fixup-caps-after-operator-work",
+              "decisions/0173-record-and-label-jev-decisions"
             ]
           }
         ]

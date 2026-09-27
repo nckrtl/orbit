@@ -2612,7 +2612,8 @@
                 "0113",
                 "0114",
                 "0117",
-                "0132"
+                "0132",
+                "0173"
             ]
         },
         {
@@ -3765,6 +3766,24 @@
             ]
         },
         {
+            "path": "docs/decisions/0173-record-and-label-jev-decisions.md",
+            "title": "ADR 0173: Record and label every Jev decision",
+            "kind": "decision",
+            "components": [
+                "apps/docs",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Gateway",
+                "Role",
+                "Task"
+            ],
+            "governing_adrs": [
+                "0117",
+                "0173"
+            ]
+        },
+        {
             "path": "docs/decisions/0177-remove-the-app-compatibility-surface.md",
             "title": "ADR 0177: Remove the app compatibility surface",
             "kind": "decision",
@@ -3962,7 +3981,8 @@
                 "0168",
                 "0169",
                 "0170",
-                "0171"
+                "0171",
+                "0173"
             ]
         },
         {
@@ -5194,7 +5214,8 @@
                 "0169",
                 "0170",
                 "0171",
-                "0172"
+                "0172",
+                "0173"
             ]
         },
         {
