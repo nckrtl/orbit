@@ -16,16 +16,27 @@ use App\Domain\Tasks\TaskPullRequestException;
 use App\Domain\Tasks\TaskPullRequestPublisher;
 use App\Infrastructure\AppDev\AppDevSshExecutor;
 use App\Infrastructure\GitHub\GitReadScript;
+use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\AppInstance;
 use App\Models\TaskGroup;
+use SensitiveParameter;
 
 /**
  * The token reaches the Node only on the SSH process's standard input, as for a read
  * ([ADR 0098](/decisions/0098-read-github-repositories-through-a-gateway-owned-github-app)).
+ * A failed push names git's error, with the token removed. A missing Workflows permission is named.
  */
 final readonly class GitHubTaskPullRequestPublisher implements TaskPullRequestPublisher
 {
+    /** Last lines of git's stderr. Progress above them is not useful in an assistance reason. */
+    private const int PushErrorLines = 12;
+
+    /** End of those lines, in bytes, so one huge line cannot fill the assistance reason. */
+    private const int PushErrorBytes = 2000;
+
+    private const string WorkflowRefusal = 'GitHub refused a change under .github/workflows/: grant the Orbit GitHub App the Workflows (read and write) permission, or push the commit yourself.';
+
     public function __construct(
         private RepositoryPullRequestAccess $access,
         private GitHubApi $github,
@@ -81,7 +92,7 @@ final readonly class GitHubTaskPullRequestPublisher implements TaskPullRequestPu
         return [$repository, $instance, 'task-'.$group->id];
     }
 
-    private function pushBranch(AppInstance $instance, string $branch, string $token, string $commit): void
+    private function pushBranch(AppInstance $instance, string $branch, #[SensitiveParameter] string $token, string $commit): void
     {
         if (preg_match('/\A[0-9a-f]{40}(?:[0-9a-f]{24})?\z/D', $commit) !== 1) {
             throw new TaskPullRequestException('The approved commit is not a Git SHA.');
@@ -100,7 +111,68 @@ final readonly class GitHubTaskPullRequestPublisher implements TaskPullRequestPu
                 protectedInput: $script->protectedInput,
             ), 'task-pull-request-push', 'tasks.push_failed');
         } catch (RuntimeConvergenceException $exception) {
-            throw new TaskPullRequestException('The task branch could not be pushed.', previous: $exception);
+            $this->failedPush($exception, $token);
         }
+    }
+
+    /**
+     * Git's own message is the only sign of a rejected push. Keep the last lines, without the
+     * installation token. GitHub's workflow refusal names the permission the App needs.
+     */
+    private function failedPush(RuntimeConvergenceException $exception, #[SensitiveParameter] string $token): never
+    {
+        $stderr = $exception->result instanceof CommandResult ? $exception->result->stderr : '';
+        $message = 'The task branch could not be pushed.';
+
+        if ($this->refusedWorkflow($stderr)) {
+            $message .= ' '.self::WorkflowRefusal;
+        }
+
+        $tail = $this->stderrTail($stderr, $token);
+        if ($tail !== '') {
+            $message .= "\n".$tail;
+        }
+
+        throw new TaskPullRequestException($message, previous: $exception);
+    }
+
+    private function refusedWorkflow(string $stderr): bool
+    {
+        return str_contains($stderr, 'refusing to allow a GitHub App to create or update workflow ')
+            && str_contains($stderr, '.github/workflows/')
+            && str_contains($stderr, 'without `workflows` permission');
+    }
+
+    private function stderrTail(string $stderr, #[SensitiveParameter] string $token): string
+    {
+        $text = str_replace(["\r\n", "\r"], "\n", $this->redactToken($stderr, $token));
+        $text = trim(mb_scrub($text, 'UTF-8'));
+        if ($text === '') {
+            return '';
+        }
+
+        $tail = implode("\n", array_slice(explode("\n", $text), -self::PushErrorLines));
+        if (strlen($tail) <= self::PushErrorBytes) {
+            return $tail;
+        }
+
+        return mb_strcut($tail, -self::PushErrorBytes, null, 'UTF-8');
+    }
+
+    private function redactToken(string $text, #[SensitiveParameter] string $token): string
+    {
+        if ($token === '') {
+            return $text;
+        }
+
+        $secrets = [
+            'x-access-token:'.$token,
+            base64_encode('x-access-token:'.$token),
+            base64_encode($token),
+            $token,
+        ];
+        usort($secrets, static fn (string $left, string $right): int => strlen($right) <=> strlen($left));
+
+        return str_replace($secrets, '[REDACTED]', $text);
     }
 }
