@@ -140,10 +140,11 @@ describe('site sources', function (): void {
 
     it('renders the service metrics scrape site on a selected Ingress Node', function (): void {
         $metrics = caddy_build_node('metrics', '10.44.0.5');
+        $metrics->update(['ssh_host_fingerprint' => 'SHA256:metrics']);
         $metrics->roles()->create(['role' => RoleName::Metrics, 'status' => LifecycleStatus::Active]);
         $cluster = Cluster::query()->create(['name' => 'production', 'state' => ClusterState::Active]);
         $ingress = caddy_build_node('edge', '10.44.0.6');
-        $ingress->update(['cluster_id' => $cluster->id]);
+        $ingress->update(['cluster_id' => $cluster->id, 'ssh_host_fingerprint' => 'SHA256:ingress']);
         $ingress->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
         $ingress->roles()->create(['role' => RoleName::Ingress, 'status' => LifecycleStatus::Active, 'cluster_id' => $cluster->id]);
         $app = OrbitApp::query()->create(['name' => 'Shop', 'slug' => 'shop', 'repository_url' => 'https://example.test/shop.git', 'root' => 'public']);

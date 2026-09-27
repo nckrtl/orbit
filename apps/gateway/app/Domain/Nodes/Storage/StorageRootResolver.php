@@ -15,8 +15,10 @@ final readonly class StorageRootResolver
         private ProtectedPathCatalog $catalog,
     ) {}
 
-    public function resolve(?LegacyNodeSettings $settings, ManagedUserAccount $account): EffectiveStorageRoots
-    {
+    public function resolveApps(
+        ?NodeSettingsData $settings,
+        ManagedUserAccount $account,
+    ): EffectiveStorageRoots {
         $instanceDefault = $this->catalog->instanceDefault($account);
         $worktreeDefault = $this->catalog->worktreeDefault($account);
 
@@ -26,24 +28,10 @@ final readonly class StorageRootResolver
                 'Managed user account is unavailable.',
             );
         }
-
-        $instancePath = $settings?->instancePath;
-        $worktreePath = $settings?->worktreePath;
-        $instance = $instancePath === null ? $instanceDefault : StoragePath::parse($instancePath);
-        $worktree = $worktreePath === null ? $worktreeDefault : StoragePath::parse($worktreePath);
-
-        return new EffectiveStorageRoots($instance, $worktree);
-    }
-
-    public function resolveApps(
-        ?NodeSettingsData $settings,
-        ManagedUserAccount $account,
-    ): EffectiveStorageRoots {
-        $defaults = $this->resolve(null, $account);
         $normalized = $this->normalizer->normalize($settings);
         $appsPath = $normalized?->appsPath();
-        $apps = $appsPath === null ? $defaults->instance : StoragePath::parse($appsPath);
+        $apps = $appsPath === null ? $instanceDefault : StoragePath::parse($appsPath);
 
-        return new EffectiveStorageRoots($apps, $defaults->worktree);
+        return new EffectiveStorageRoots($apps, $worktreeDefault);
     }
 }

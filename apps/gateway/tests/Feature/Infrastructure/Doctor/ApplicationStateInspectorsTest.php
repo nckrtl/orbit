@@ -305,6 +305,55 @@ it('observes production projections through fixed arguments and protected input'
         ->toBe(30.0);
 });
 
+it('inspects non-PHP production Instances without requiring or probing a PHP-FPM service', function (): void {
+    $instance = application_production_app_instance(
+        application_inspector_app(),
+        application_inspector_node(),
+        'doctor-static-secret',
+    );
+    $instance->update([
+        'selected_php_version' => null,
+        'production_php_service' => null,
+        'production_php_pool' => null,
+        'production_php_socket' => null,
+    ]);
+    $ssh = new AppDevFakeSshExecutor([app_inspector_result(implode(PHP_EOL, ['1', '1', '1', '1', '1', '1', '']))]);
+
+    $inspection = application_instance_inspector($ssh)->inspect($instance->refresh());
+    $expectation = app(ProductionInstanceInspectionExpectationFactory::class)->make($instance->refresh());
+    $input = $ssh->commands[0]->protectedInput;
+    if (! $input instanceof ProtectedInput) {
+        throw new RuntimeException('Expected protected production inspection input.');
+    }
+    $program = stream_get_contents($input->stream());
+    if (! is_string($program)) {
+        throw new RuntimeException('Expected readable production inspection input.');
+    }
+
+    expect($inspection->phpFpmProjectionMatches)->toBeTrue()
+        ->and($inspection->caddyProjectionMatches)->toBeTrue()
+        ->and($expectation->associationMatches)->toBeTrue()
+        ->and($expectation->runtime)->toBeNull()
+        ->and($expectation->runtimeConfiguration)->toBeNull()
+        ->and($program)->toContain("runtime_expected='0'");
+});
+
+it('refuses PHP production inspection when its dedicated service is missing', function (): void {
+    $instance = application_production_app_instance(
+        application_inspector_app(),
+        application_inspector_node(),
+        'doctor-php-secret',
+    );
+    $instance->update([
+        'production_php_service' => null,
+        'production_php_pool' => null,
+        'production_php_socket' => null,
+    ]);
+
+    expect(fn () => app(ProductionInstanceInspectionExpectationFactory::class)->make($instance->refresh()))
+        ->toThrow(InvalidArgumentException::class, 'The production PHP Instance requires a dedicated PHP-FPM service and PHP version.');
+});
+
 it('executes loaded service association outcomes from the production program', function (
     string $systemctl,
     string $expected,

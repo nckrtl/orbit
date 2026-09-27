@@ -36,7 +36,6 @@ final class StoreAppInstanceRequest extends FormRequest
             'root' => ['sometimes', 'string', 'max:255'],
             'domain' => ['sometimes', 'string', 'max:253'],
             'branch' => ['sometimes', 'string', 'max:255'],
-            'recover_source_profile' => ['sometimes', 'boolean'],
         ];
     }
 
@@ -46,7 +45,7 @@ final class StoreAppInstanceRequest extends FormRequest
         try {
             return app(TopLevelJsonObjectInspector::class)->inspect(
                 $this->getContent(),
-                ['app_id', 'project_id', 'node_id', 'name', 'root', 'domain', 'branch', 'recover_source_profile'],
+                ['app_id', 'project_id', 'node_id', 'name', 'root', 'domain', 'branch'],
             );
         } catch (UnexpectedValueException $exception) {
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
@@ -85,7 +84,7 @@ final class StoreAppInstanceRequest extends FormRequest
 
     public function payload(): CreateAppInstanceData
     {
-        /** @var array{node_id: int|string, name: string, app_id?: int|string, project_id?: int|string, root?: string, domain?: string, branch?: string, recover_source_profile?: bool} $validated */
+        /** @var array{node_id: int|string, name: string, app_id?: int|string, project_id?: int|string, root?: string, domain?: string, branch?: string} $validated */
         $validated = $this->validated();
 
         return new CreateAppInstanceData(
@@ -97,7 +96,6 @@ final class StoreAppInstanceRequest extends FormRequest
                 ? RouteDomain::normalize($validated['domain'])
                 : null,
             branch: is_string($validated['branch'] ?? null) ? $validated['branch'] : null,
-            recoverSourceProfile: (bool) ($validated['recover_source_profile'] ?? false),
         );
     }
 

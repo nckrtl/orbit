@@ -18,6 +18,8 @@ use App\Domain\Projects\ProjectType;
 use App\Domain\Routes\PublicRouteEdgeProjector;
 use App\Domain\Routes\PublicRouteEligibility;
 use App\Domain\Routes\RouteDomainProjector;
+use App\Domain\Routes\RouteKind;
+use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteRemovalProjector;
 use App\Domain\Routes\RouteReplacementStep;
@@ -33,6 +35,7 @@ use App\Models\AppInstance;
 use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\Route;
+use App\Models\RouteAnalyticsTracking;
 use App\Models\RouteTarget;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -270,6 +273,31 @@ it('removes Route-owned projections for an untargeted Route and preserves unrela
         ->not->toBeNull()
         ->and($this->node->fresh())
         ->not->toBeNull();
+});
+
+it('refuses a tracking route', function (): void {
+    $route = Route::query()->create([
+        'kind' => RouteKind::AnalyticsTracking,
+        'app_id' => null,
+        'node_id' => $this->node->id,
+        'cluster_id' => null,
+        'generation_basis_node_id' => null,
+        'domain' => 'tracking.example.test',
+        'provenance' => RouteProvenance::Explicit,
+        'publication' => RoutePublication::Private,
+        'status' => RouteStatus::Pending,
+    ]);
+    RouteAnalyticsTracking::query()->create([
+        'route_id' => $route->id,
+        'app_instance_id' => $this->target->id,
+    ]);
+
+    $this->deleteJson("/api/v1/routes/{$route->id}")
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'route.tracking_managed');
+
+    expect($route->fresh())->not->toBeNull()
+        ->and($this->removal->events)->toBe([]);
 });
 
 it('accepts the Route id in a DELETE body and still binds the path', function (): void {
@@ -561,7 +589,7 @@ it('returns 409 instance.source_profile_missing for an explicit domain change wi
         ->assertJsonPath('error.code', 'instance.source_profile_missing')
         ->assertJsonPath(
             'error.message',
-            'The AppInstance has no recorded source profile. Repeat the same creation request with recover_source_profile to inspect the source and store the complete profile.',
+            'The AppInstance has no recorded source profile and cannot be used.',
         );
 
     expect($route->fresh(['targets'])->toArray())->toBe($before);

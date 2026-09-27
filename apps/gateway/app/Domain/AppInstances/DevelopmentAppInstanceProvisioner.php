@@ -10,9 +10,5 @@ interface DevelopmentAppInstanceProvisioner
 {
     public function reserve(AppInstance $appInstance, ?string $domain): void;
 
-    public function complete(
-        AppInstance $appInstance,
-        ?string $domain,
-        bool $recoverSourceProfile = false,
-    ): AppInstance;
+    public function complete(AppInstance $appInstance, ?string $domain): AppInstance;
 }
