@@ -2515,6 +2515,7 @@
             ],
             "concepts": [
                 "Activity",
+                "Cluster",
                 "Extension",
                 "Gateway",
                 "Instance",
@@ -2898,6 +2899,7 @@
                 "Node agent",
                 "Process",
                 "Role",
+                "Route",
                 "Task",
                 "Task group"
             ],
@@ -2996,6 +2998,7 @@
                 "Cluster",
                 "Doctor",
                 "Gateway",
+                "Instance",
                 "Node",
                 "Process",
                 "Project",

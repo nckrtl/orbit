@@ -58,6 +58,8 @@ Use `create` and `destroy` when the Gateway owns the resource lifecycle. Use `ad
 | `tasks:subtask` | `create` and `destroy` | A Task in a task group |
 | `tool` | `install` and `remove` | A Tool on a Node |
 
+`route:create` takes an Instance ID and domain for an app Route. It does not take a Project ID or an explicit Node or Cluster scope. A custom proxy Route instead takes a domain, serving Node, and upstream or Process. See [Route creation](/reference/routes#create-and-change-targets).
+
 `cluster:router` and `route:target` use `set` and `unset`, because each holds one slot. `extension` uses `enable` and `disable` for the Gateway-owned switch; `instance:analytics`, `metrics`, and `metrics:exporter` use `enable` and `disable`. `proxycli` uses `setup` and `teardown` for its fleet resources, while `proxycli:status` remains a family-specific read. `tasks` uses `create` for task groups and `status` for assistance; its extension switch is `extension:enable tasks` or `extension:disable tasks`. `schedule:enable` turns a Schedule on. A Project target selects a definition and never creates a Process or Schedule.
 
 ## Family-specific actions

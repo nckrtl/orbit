@@ -785,14 +785,14 @@ it('keeps an explicit app-prod Route valid when its Node has no TLD', function (
     $this->node->update(['ssh_host_fingerprint' => 'SHA256:pinned']);
     $this->node->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
     $this->target->delete();
-    $route = app(CreateRouteAction::class)->execute(new CreateRouteData(
-        appId: $this->orbitApp->id,
-        domain: 'production.example.test',
-        publication: RoutePublication::Public,
-        appInstanceId: null,
-        nodeId: $this->node->id,
-        clusterId: null,
-    ))['route'];
+    $route = Route::query()->create([
+        'app_id' => $this->orbitApp->id,
+        'node_id' => $this->node->id,
+        'domain' => 'production.example.test',
+        'provenance' => 'explicit',
+        'publication' => RoutePublication::Public,
+        'status' => RouteStatus::Pending,
+    ]);
     bind_route_reconciliation_provisioning();
 
     app(ProvisionNodeAction::class)->execute(new ProvisionNodeData(
