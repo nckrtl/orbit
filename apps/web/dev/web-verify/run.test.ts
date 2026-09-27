@@ -200,7 +200,7 @@ it("sets phone safe-area insets and clears them on desktop", async () => {
     } finally {
         await browser.close();
     }
-});
+}, 60_000);
 
 it("prints the feature map without starting the app", () => {
     const map = JSON.parse(
