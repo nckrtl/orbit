@@ -1,43 +1,33 @@
 ---
 title: "Tech stack"
-description: "The PHP projects, managed-machine platform, data stores, and development tools that make up Orbit."
+description: "The languages, frameworks, and platform each part of Orbit uses."
 ---
 
 # Tech stack
 
-Orbit contains separate PHP projects in one repository. Each has its own dependencies, tests, and Composer lock file.
+Orbit is one repository with separate projects. Each project has its own dependencies, tests, and lock file.
 
-## PHP applications
+## Projects
 
-Every project requires PHP 8.5 and uses Composer. Its `composer.json` records the framework version.
+Each project in the repository uses the stack in this table.
 
-- `apps/gateway` is a Laravel 13 application.
-- `apps/cli` uses Laravel Zero 13.
-- `apps/docs` uses Laravel 13 and Librarian.
-- `packages/php-sdk` uses Saloon for HTTP requests, without Laravel.
-- `apps/e2e` provides the Incus test harness.
+| Project | Stack |
+| --- | --- |
+| `apps/gateway` | PHP 8.5, Laravel 13, SQLite, Laravel MCP, Laravel AI |
+| `apps/cli` | PHP 8.5, Laravel Zero 13 |
+| `packages/php-sdk` | PHP 8.5, Saloon |
+| `apps/web` | TypeScript, React, TanStack Router and Query, Tailwind CSS, Vite+ |
+| `apps/desktop` | Tauri 2 |
+| `apps/agent` | Rust |
+| `apps/pi-server` | TypeScript on Bun, the Pi coding agent |
+| `packages/agent-annotation` | TypeScript |
+| `apps/docs` | PHP 8.5, Laravel 13, Librarian |
+| `apps/e2e` | PHP 8.5, Laravel 13, Incus |
 
-## Managed machines
+## Platform
 
-Orbit supports Ubuntu 26.04 Resolute Nodes. Ubuntu 24.04 is unsupported, including for operator clients without roles. Orbit installs PHP from a pinned Sury apt source and manages services with systemd. See [PHP runtime defaults](/reference/php-runtime) for the settings.
+Nodes run Ubuntu 26.04. Orbit runs services natively under systemd: Caddy serves HTTP and HTTPS, PHP-FPM runs PHP from a pinned Sury apt source, and WireGuard carries the private network. Docker runs container Processes, such as shared databases. Reverb on the `websocket` Node carries realtime events. Mintlify publishes this documentation.
 
-Caddy 2.6 or newer handles HTTP and HTTPS traffic. WireGuard provides the private network between Nodes. Orbit runs these services directly instead of putting everything in containers.
+## Checks
 
-## Data
-
-The Gateway stores Orbit's data in SQLite. Applications manage their own data.
-
-Mintlify publishes Markdown and MDX pages from `docs/`. A generated JSON index helps contributors and agents find pages for each component or concept.
-
-## Development and testing
-
-Orbit uses these tools to keep its code and documentation consistent:
-
-- Pest runs the automated test suites.
-- Laravel Pint formats PHP code and checks syntax and style.
-- Larastan analyzes the Laravel applications. PHPStan analyzes the framework-neutral SDK.
-- Rector checks PHP refactoring rules.
-- Librarian checks documentation.
-- Incus creates temporary Linux machines for end-to-end testing.
-
-Project scripts and GitHub CI use impacted TIA to run affected tests alongside quality checks. Incus acceptance remains the independent review proof. CI validates all five projects and maintained documentation. The [feature delivery reference](/reference/implementation-loop#ci-and-local-verification) explains checks and review.
+Pest, Pint, Larastan, PHPStan, and Rector check the PHP projects. Vitest and Playwright check the web app. Incus provides disposable Linux machines for end-to-end tests. GitHub Actions runs the checks for every pull request. See the [contributor guide](/contributor-guide) for the local workflow.

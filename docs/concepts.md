@@ -28,14 +28,14 @@ These are the terms every part of Orbit shares. Each domain page defines the ter
 ## Operations
 
 - **Doctor**: The check that compares the state the Gateway expects with each Node's actual state. It reports every difference and changes nothing. See [Doctor](/cli/doctor).
-- **Activity**: The record the Gateway keeps of each request: who asked, what changed, and the result. Every command result carries its request ID. See [Activity](/cli/activity).
+- **Activity**: The record the Gateway keeps of each request. It shows who asked, what changed, and the result. See [Activity](/cli/activity).
 - **Node agent**: The program on every Node that reports presence and Process state. It never changes a Node. See [Node agent](/reference/node-agent).
 - **Extension**: An optional feature that you enable explicitly, such as Tasks.
 
 ## Tasks
 
 - **Task group**: One feature or bug fix, delivered as one pull request. See [Tasks](/reference/tasks).
-- **Task**: One ordered unit of work in a task group. A fresh coding agent implements it, and a reviewer approves it. Because it belongs to a group, the CLI and web app call it a subtask.
+- **Task**: One ordered unit of work in a task group. A fresh coding agent implements it. A reviewer approves it. The CLI and web app call it a subtask because it has a parent group.
 - **Deliverable**: A checkable item that a task must produce, such as a file, a test, or a command that passes.
 - **Task check**: The command that a Project runs to verify every task handoff.
 - **Task workspace**: The Instance that Orbit provisions for a task group, and its checkout on an `app-dev` Node.

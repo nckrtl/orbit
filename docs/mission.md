@@ -9,16 +9,23 @@ Orbit turns the machines you own into an always-on network for developing and ho
 
 ## What Orbit does
 
-- Orbit manages your machines, called Nodes, and the applications on them: development Instances, production releases, Routes, Processes, Schedules, and certificates.
-- Orbit runs planned work with coding agents on those machines through the optional [Tasks](/reference/tasks) extension. The work runs in isolated Instances, passes checks, and arrives as a pull request.
+Orbit does two jobs on the machines you add.
+
+- It manages your machines, called Nodes, and the applications on them. That covers development Instances, production releases, Routes, Processes, Schedules, and certificates.
+- It runs planned work with coding agents through the optional [Tasks](/reference/tasks) extension. The work runs in isolated Instances and passes checks. It arrives as a pull request.
 
 ## Where Orbit stops
 
-- Your agentic development environment (ADE) is where you think, plan, and steer. Orbit is where work runs. Orbit has no editor, chat, or planning interface. Plans arrive through the CLI or MCP.
+These boundaries keep Orbit small and neutral.
+
+- Your agentic development environment (ADE) is where you think, plan, and steer.
+- Orbit is where work runs. It has no editor, chat, or planning interface, and plans arrive through the CLI or MCP.
 - Orbit manages only the machines and resources you add.
 - Each Project defines its own way of working in its repository. The Orbit engine stays generic.
 
 ## Principles
+
+Every architecture decision must fit these principles.
 
 1. **Agents operate, humans steer.** Every action is a command that an agent can run and a human can read.
 2. **One way, one name.** Each task has one supported path. Each concept has one term in the CLI, API, database, and documentation.
@@ -28,4 +35,4 @@ Orbit turns the machines you own into an always-on network for developing and ho
 6. **The documentation describes the present.** It is the current agreed truth. Orbit absorbs each decision into it once the decision is built.
 7. **Security fits the real threat model.** Orbit adds no defense layer against an attacker who is already past the boundary.
 
-Every architecture decision must fit this mission. See [Architecture](/architecture) for how the parts work together.
+See [Architecture](/architecture) for how the parts work together.

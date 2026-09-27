@@ -9,9 +9,11 @@ Orbit has one Gateway that owns all fleet state. Clients ask the Gateway for cha
 
 ## Components
 
+Orbit consists of these components. Each one lives in its own project in the repository.
+
 | Component | Code | Role |
 | --- | --- | --- |
-| Gateway | `apps/gateway` | The only authority. It stores fleet state in SQLite, authorizes every request, applies changes to Nodes over SSH, and runs scheduled work. It serves the HTTP API, the MCP endpoint, and the web app. |
+| Gateway | `apps/gateway` | The only authority. It stores fleet state, authorizes requests, and applies changes to Nodes over SSH. It also serves the API, MCP, and the web app. |
 | CLI | `apps/cli`, `packages/php-sdk` | A thin client for humans and agents. It calls the Gateway API and never connects to a Node. |
 | Web app | `apps/web`, `apps/desktop` | A static single-page app that reads the API and shows record changes live. The desktop app is a native shell around it. |
 | Node agent | `apps/agent` | A program on every Node that reports presence and Process state. It never changes a Node. |
@@ -50,7 +52,7 @@ A role refuses a Node that holds a conflicting role. For example, the `gateway` 
 
 **Observation.** Node agents publish state to the `websocket` Node. The Gateway keeps a view of it, and the web app shows it live. [Doctor](/cli/doctor) compares the state the Gateway expects with each Node's actual state and reports every difference without changing anything.
 
-**Tasks.** With the Tasks extension enabled, the Gateway provisions a task workspace on an `app-dev` Node, runs coding agents in it one subtask at a time, checks each handoff with the Project's task check, and opens a pull request through the GitHub App. See [Tasks](/reference/tasks).
+**Tasks.** With the Tasks extension enabled, the Gateway provisions a task workspace on an `app-dev` Node. It runs coding agents there one task at a time and checks each handoff with the Project's task check. At the end, it opens a pull request through the GitHub App. See [Tasks](/reference/tasks).
 
 ## Data
 
