@@ -408,7 +408,7 @@ function stored_transition_remove_target(Route $route, AppInstance $instance): v
         'node_id' => $instance->node_id,
         'route_id' => $route->id,
         'name' => $instance->name,
-        'environment' => $instance->environment,
+        'environment' => $instance->defaultAppEnv(),
         'source_layout' => $instance->source_layout,
         'repository_identity' => $instance->app->repository_identity,
         'checkout_path' => $instance->checkout_path,

@@ -51,6 +51,27 @@ PYTHON);
     }
 })->with(['lost credentials', 'unsafe permissions', 'conflicting process', 'missing process']);
 
+it('derives fixture Instance placement from Node roles without an environment payload field', function (): void {
+    $script = file_get_contents(dirname(__DIR__, 2).'/resources/guest/converge-sample-fixtures.sh');
+    $start = strpos($script, '    def instance_placement(instance, nodes):');
+    $end = strpos($script, '    nodes=orbit(', $start);
+
+    expect($start)->not->toBeFalse()->and($end)->not->toBeFalse();
+
+    $helper = substr($script, $start, $end - $start);
+    $helper = preg_replace('/^    /m', '', $helper);
+    $python = $helper."\nimport json\n".<<<'PYTHON'
+nodes=[{'id': 2, 'roles': ['app-dev']}, {'id': 3, 'roles': ['app-prod']}]
+instances=[{'id': 11, 'node_id': 2}, {'id': 12, 'node_id': 3}]
+print(json.dumps([instance_placement(instance, nodes) for instance in instances]))
+PYTHON;
+    $process = new Process(['python3', '-c', $python]);
+
+    expect($process->run())->toBe(0, $process->getErrorOutput())
+        ->and(json_decode($process->getOutput(), true, 16, JSON_THROW_ON_ERROR))
+        ->toBe(['development', 'production']);
+});
+
 it('checks sleeping queue workers through Doctor without changing their desired state', function (string $desiredState, bool $keepAlive, bool $healthy, int $exitCode, bool $checksDoctor): void {
     $root = temporaryPath('orbit-sleeping-fixtures-', 6);
     mkdir($root.'/bin', 0700, true);
@@ -70,7 +91,7 @@ ports=[3306,5432,6379]
 commands=[['mysqld','--innodb-buffer-pool-size=67108864','--max-connections=30','--mysqlx=0','--performance-schema=OFF'],['postgres','-c','shared_buffers=32MB','-c','max_connections=30'],['sh','-ec','exec valkey-server --requirepass "$VALKEY_PASSWORD" --appendonly yes --maxmemory 64mb --maxmemory-policy allkeys-lru']]
 processes=[dict(id=i+1,name=name,target_type='node',target_id=2,runtime='docker',restart_policy='unless-stopped',status='active',runtime_status='running',runtime_config=dict(image=['mysql:8.4','postgres:18-alpine','valkey/valkey:8-alpine'][i],command=commands[i],ports=[f'10.44.0.2:{ports[i]}:{ports[i]}'],volumes=[dict(source=name+'-data',target=['/var/lib/mysql','/var/lib/postgresql','/data'][i],read_only=False)])) for i,name in enumerate(names)]
 connections=[dict(slug=name,driver=['mysql','pgsql','redis'][i],node_id=2,host='10.44.0.2',port=ports[i],database='1' if i==2 else 'orbit_e2e',username='default' if i==2 else 'orbit_e2e') for i,name in enumerate(names)]
-instances=[dict(id=i+1,name=name,app_id=1 if i<2 else i,node_id=3 if i==1 else 2,status='active',route=None,checkout_path=os.environ['FIXTURE_ROOT']) for i,name in enumerate(['e2e-dev','e2e-prod','e2e-monorepo','e2e-package'])]
+instances=[dict(id=i+1,name=name,app_id=1 if i<2 else i,project_id=1 if i<2 else i,node_id=3 if i==1 else 2,status='active',route=None,checkout_path=os.environ['FIXTURE_ROOT']) for i,name in enumerate(['e2e-dev','e2e-prod','e2e-monorepo','e2e-package'])]
 worker=dict(id=4,name='e2e-queue',target_id=1,runtime='systemd',runtime_status='inactive',status='active',desired_state=os.environ['DESIRED_STATE'],keep_alive=os.environ['KEEP_ALIVE']=='1',runtime_config=dict(command=['/usr/bin/php','artisan','queue:work','redis','--sleep=3','--tries=1','--max-time=3600']))
 schedule=dict(id=1,name='e2e-scheduler',target_type='instance',target_id=1,status='active',desired_timer_state='enabled',command='/usr/bin/php artisan schedule:run',calendar='*-*-* *:*:00')
 responses={

@@ -27,11 +27,9 @@ final readonly class ResolveDirectoryInstanceAction
                 $this->notFound();
             }
             $matches = AppInstance::query()->where('node_id', $consumer->id)->get()->filter(function (AppInstance $instance) use ($directory): bool {
-                $root = match ($instance->environment) {
-                    'development' => $instance->checkout_path,
-                    'production' => $instance->production_home,
-                    default => null,
-                };
+                $root = $instance->placedOnAppProd()
+                    ? $instance->production_home
+                    : ($instance->placedOnAppDev() ? $instance->checkout_path : null);
 
                 return is_string($root) && $root !== '/' && $this->canonical($root)
                     && ($directory === $root || str_starts_with($directory, $root.'/'));
@@ -47,7 +45,7 @@ final readonly class ResolveDirectoryInstanceAction
                 throw new ResourceOperationException('dependencies.instance_unavailable', 'The instance is unavailable for dependency inventory.', 409);
             }
 
-            return new ResolvedDirectoryInstanceData($instance->id, $instance->app_id, $instance->node_id, $instance->environment);
+            return new ResolvedDirectoryInstanceData($instance->id, $instance->app_id, $instance->node_id, $instance->defaultAppEnv());
         });
     }
 

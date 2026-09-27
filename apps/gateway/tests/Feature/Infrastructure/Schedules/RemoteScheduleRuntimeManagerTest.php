@@ -17,6 +17,8 @@ use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Models\App as OrbitApp;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Schedule;
 use Illuminate\Filesystem\Filesystem;
@@ -52,6 +54,55 @@ beforeEach(function (): void {
         'desired_timer_state' => DesiredTimerState::Enabled,
         'status' => LifecycleStatus::Provisioning,
     ]);
+});
+
+it('requires the selected production release even when installing a disabled Schedule', function (): void {
+    $node = Node::query()->create([
+        'name' => 'app-prod',
+        'status' => LifecycleStatus::Active,
+        'platform' => 'linux',
+        'public_ssh_host' => '192.0.2.21',
+        'user' => 'orbit',
+        'wireguard_ip' => '10.44.0.4',
+    ]);
+    $node->roles()->create(['role' => 'app-prod', 'status' => LifecycleStatus::Active]);
+    $app = OrbitApp::query()->create([
+        'name' => 'Release target',
+        'slug' => 'release-target',
+        'repository_url' => 'https://example.test/release-target.git',
+    ]);
+    $instance = $app->appInstances()->create([
+        'node_id' => $node->id,
+        'name' => 'main',
+        'checkout_path' => '/home/managed/releases/prepared',
+        'production_user' => 'managed',
+        'production_home' => '/home/managed',
+        'branch' => 'main',
+        'starting_commit' => str_repeat('a', 40),
+        'provisioning_step' => 'active',
+        'status' => 'active',
+    ]);
+    $schedule = Schedule::query()->create([
+        'target_type' => AppInstance::MorphAlias,
+        'target_id' => $instance->id,
+        'host_node_id' => $node->id,
+        'name' => 'disabled-production',
+        'calendar' => 'daily',
+        'command' => 'true',
+        'timeout_seconds' => 3600,
+        'desired_timer_state' => DesiredTimerState::Disabled,
+        'status' => LifecycleStatus::Provisioning,
+    ]);
+    $this->ssh->responses = [schedule_runtime_result(exitCode: 1)];
+
+    expect(fn () => $this->manager->install($schedule))
+        ->toThrow(function (ScheduleOperationException $exception): void {
+            expect($exception->error)->toBe(ScheduleErrorCode::TargetUnavailable);
+        });
+
+    expect($this->ssh->commands)->toHaveCount(1)
+        ->and($this->ssh->commands[0]->arguments)
+        ->toBe(['sudo', '-u', 'managed', 'test', '-d', '/home/managed/current']);
 });
 
 it('installs through one locked protected-input transaction with fixed safe argv', function (): void {

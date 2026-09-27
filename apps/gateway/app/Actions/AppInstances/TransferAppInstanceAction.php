@@ -254,7 +254,7 @@ final readonly class TransferAppInstanceAction
             throw $this->conflict('instance.lifecycle_conflict', 'The AppInstance is not active for transfer.');
         }
 
-        if ($instance->environment !== 'development') {
+        if (! $instance->placedOnAppDev()) {
             throw $this->conflict(
                 'instance.production_refused',
                 'Transfer accepts only an active development AppInstance.',

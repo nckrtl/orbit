@@ -409,7 +409,6 @@ function instance_gateway_data(): array
         'node_id' => 4,
         'vite_port' => null,
         'name' => 'main',
-        'environment' => 'development',
         'source_layout' => 'checkout',
         'checkout_path' => '/home/orbit/apps/orbit-docs',
         'production_user' => null,

@@ -14,7 +14,6 @@ it('reads the recorded instance summary', function (): void {
         'slug' => 'charlie-shop',
         'node' => 'app-dev',
         'status' => 'active',
-        'environment' => 'development',
         'source_layout' => 'checkout',
         'checkout_path' => '/srv/orbit/apps/charlie-shop/dev',
         'vite_port' => 5173,
@@ -50,7 +49,7 @@ it('refuses a fixture whose shape cannot be shown', function (string $method, st
     }
 })->with([
     'instance data is a list' => ['instanceSummary', show_flow_fixture([])],
-    'instance app is missing' => ['instanceSummary', show_flow_fixture(show_flow_instance(app: null))],
+    'instance project is missing' => ['instanceSummary', show_flow_fixture(show_flow_instance(project: null))],
     'instance id is text' => ['instanceSummary', show_flow_fixture(show_flow_instance(id: '1'))],
     'migration flag is text' => ['instanceSummary', show_flow_fixture(show_flow_instance(migration: 'no'))],
     'process data is an object' => ['processRows', show_flow_fixture(['id' => 1])],
@@ -83,15 +82,14 @@ function show_flow_fixture(mixed $data): string
 /**
  * @return array<string, mixed>
  */
-function show_flow_instance(mixed $id = 1, mixed $app = ['slug' => 'charlie-shop'], mixed $migration = false): array
+function show_flow_instance(mixed $id = 1, mixed $project = ['slug' => 'charlie-shop'], mixed $migration = false): array
 {
     return [
         'id' => $id,
         'name' => 'dev',
-        'app' => $app,
+        'project' => $project,
         'node' => ['name' => 'app-dev'],
         'status' => 'active',
-        'environment' => 'development',
         'source_layout' => 'checkout',
         'checkout_path' => '/srv/orbit/apps/charlie-shop/dev',
         'vite_port' => 5173,

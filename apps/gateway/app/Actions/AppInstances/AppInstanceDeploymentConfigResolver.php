@@ -32,7 +32,7 @@ final readonly class AppInstanceDeploymentConfigResolver
     public function assertAvailable(AppInstance $instance): void
     {
         if (
-            $instance->environment !== 'production'
+            ! $instance->placedOnAppProd()
             || ! in_array($instance->status, [AppInstanceState::SourceResolved, AppInstanceState::Active], strict: true)
             || ! is_string($instance->branch)
             || ! GitBranchName::isValid($instance->branch)

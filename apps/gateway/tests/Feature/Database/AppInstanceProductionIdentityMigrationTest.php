@@ -9,6 +9,9 @@ use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
+beforeEach(fn () => app_instance_environment_migration()->down());
+afterEach(fn () => restore_app_instance_environment_schema_for_migration_test());
+
 it('adds nullable production identity and enforces one production placement per App and Node', function (): void {
     $migration = app_instance_production_identity_migration();
     $migration->down();
@@ -44,12 +47,17 @@ it('adds nullable production identity and enforces one production placement per 
 
         expect($development->exists)
             ->toBeTrue()
-            ->and(fn () => AppInstance::query()->create([
+            ->and(fn () => DB::table('app_instances')->insert([
                 'app_id' => $app->id,
                 'node_id' => $node->id,
                 'name' => 'second',
                 'environment' => 'production',
+                'source_layout' => 'checkout',
                 'checkout_path' => '/home/orbit-app-1-second',
+                'migration_required' => false,
+                'status' => 'reserved',
+                'created_at' => now(),
+                'updated_at' => now(),
             ]))
             ->toThrow(QueryException::class);
     } finally {

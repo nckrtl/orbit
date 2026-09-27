@@ -278,6 +278,7 @@ it('hydrates only AppInstance Route sites and never reads leftover Instance or W
         'public_ssh_host' => '192.0.2.40',
         'wireguard_ip' => '10.44.0.40',
     ]);
+    $unrelatedNode->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
     $unrelatedApp = app_dev_supported_app_instance($unrelatedNode, $app->id, 'unrelated');
     $unrelatedRoute = app_dev_supported_route($unrelatedApp, 'unrelated.app-dev.orbit');
     $sites = new AppDevSiteRepository;

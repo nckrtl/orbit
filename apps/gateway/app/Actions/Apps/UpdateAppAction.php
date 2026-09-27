@@ -622,7 +622,7 @@ final readonly class UpdateAppAction
         $snapshots = [];
 
         foreach ($instances as $instance) {
-            if ($instance->environment !== 'production') {
+            if (! $instance->placedOnAppProd()) {
                 continue;
             }
 

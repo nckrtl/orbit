@@ -31,7 +31,9 @@ function yarn_update_instance(bool $production = false, string $path = '/home/or
         'root' => 'public',
         'migration_required' => false,
     ]);
-    $instance->setRelation('node', new Node(['user' => 'orbit', 'wireguard_ip' => '10.44.0.2']));
+    $node = new Node(['user' => 'orbit', 'wireguard_ip' => '10.44.0.2']);
+    orbit_test_set_app_placement_role($node, $production);
+    $instance->setRelation('node', $node);
 
     return $instance;
 }

@@ -8,6 +8,7 @@ use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Projects\ProjectType;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\ResourceOperationException;
 use App\Models\Relations\DualSafeMorphMany;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
@@ -26,7 +27,6 @@ use Illuminate\Support\Carbon;
  * @property int|null $agentation_port
  * @property int $node_id
  * @property string $name
- * @property string $environment
  * @property string $source_layout
  * @property string $checkout_path
  * @property string|null $production_user
@@ -95,7 +95,6 @@ final class AppInstance extends Model
     /** @var array<string, mixed> */
     #[\Override]
     protected $attributes = [
-        'environment' => 'development',
         'source_layout' => 'checkout',
         'migration_required' => false,
         'registration_detached' => false,
@@ -112,7 +111,6 @@ final class AppInstance extends Model
         'vite_port',
         'agentation_port',
         'name',
-        'environment',
         'source_layout',
         'checkout_path',
         'production_user',
@@ -278,35 +276,19 @@ final class AppInstance extends Model
     public function usesProductionReleaseLayout(): bool
     {
         return
-            $this->placedOnAppProd()
+            $this->placementEnvironment(allowRemovingRole: true) === 'production'
             && is_string($this->production_home)
             && str_starts_with($this->checkout_path, "{$this->production_home}/releases/");
     }
 
     public function placedOnAppProd(): bool
     {
-        if ($this->hasActiveRole(RoleName::AppProd)) {
-            return true;
-        }
-
-        if ($this->hasActiveRole(RoleName::AppDev)) {
-            return false;
-        }
-
-        return $this->environment === 'production';
+        return $this->placementEnvironment() === 'production';
     }
 
     public function placedOnAppDev(): bool
     {
-        if ($this->hasActiveRole(RoleName::AppDev)) {
-            return true;
-        }
-
-        if ($this->hasActiveRole(RoleName::AppProd)) {
-            return false;
-        }
-
-        return $this->environment === 'development';
+        return $this->placementEnvironment() === 'development';
     }
 
     public function requiresRoute(): bool
@@ -331,7 +313,17 @@ final class AppInstance extends Model
 
     public function defaultAppEnv(): string
     {
-        return $this->placedOnAppProd() ? 'production' : 'development';
+        $environment = $this->placementEnvironment(allowRemovingRole: true);
+
+        if ($environment === null) {
+            throw new ResourceOperationException(
+                errorCode: 'app_instance.placement_unavailable',
+                message: "AppInstance [{$this->name}] has no app-dev or app-prod Node role.",
+                status: 409,
+            );
+        }
+
+        return $environment;
     }
 
     public function configuredAppEnv(): string
@@ -352,30 +344,41 @@ final class AppInstance extends Model
     {
         $root = $this->root ?? $this->app->root;
 
-        if ($this->placedOnAppProd() && is_string($this->production_home) && is_string($root)) {
-            $base = $this->usesProductionReleaseLayout()
-                ? "{$this->production_home}/current"
-                : $this->production_home;
-
-            return "{$base}/{$root}";
+        if ($this->placementEnvironment(allowRemovingRole: true) === 'production' && is_string($this->production_home) && is_string($root)) {
+            return "{$this->production_home}/current/{$root}";
         }
 
         return $root;
     }
 
-    private function hasActiveRole(RoleName $role): bool
+    public function placementEnvironment(bool $allowRemovingRole = false): ?string
     {
         $this->loadMissing('node.roles');
         $node = $this->getRelation('node');
 
         if (! $node instanceof Node) {
-            return false;
+            return null;
         }
 
-        return $node->roles->contains(
-            static fn (mixed $assigned): bool => $assigned->role === $role
-                && $assigned->status === LifecycleStatus::Active,
+        $active = $node->roles->filter(
+            static fn (NodeRole $role): bool => $role->status === LifecycleStatus::Active
+                && in_array($role->role, [RoleName::AppDev, RoleName::AppProd], strict: true),
         );
+        if ($active->count() === 1) {
+            return $active->sole()->role === RoleName::AppProd ? 'production' : 'development';
+        }
+        if ($active->count() > 1 || ! $allowRemovingRole) {
+            return null;
+        }
+
+        $removing = $node->roles->filter(
+            static fn (NodeRole $role): bool => $role->status === LifecycleStatus::Removing
+                && in_array($role->role, [RoleName::AppDev, RoleName::AppProd], strict: true),
+        );
+
+        return $removing->count() === 1
+            ? ($removing->sole()->role === RoleName::AppProd ? 'production' : 'development')
+            : null;
     }
 
     /** @return array<string, string> */

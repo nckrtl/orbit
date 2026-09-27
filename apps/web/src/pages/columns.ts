@@ -68,7 +68,6 @@ export const instanceColumns = (show: "project" | "node"): Column<Instance>[] =>
         ? [{ header: "Project", width: 22, value: (i: Instance) => i.project.slug }]
         : []),
     { header: "Name", width: 16, value: (i) => i.name },
-    { header: "Environment", width: 16, value: (i) => i.environment },
     ...(show === "node"
         ? [{ header: "Node", width: 14, value: (i: Instance) => i.node.name }]
         : []),

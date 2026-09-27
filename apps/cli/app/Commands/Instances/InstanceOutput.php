@@ -17,7 +17,6 @@ trait InstanceOutput
             'Project' => $instance->project->slug ?? (string) $instance->projectId,
             'Node' => $instance->node->name ?? (string) $instance->nodeId,
             'Status' => $instance->status,
-            'Environment' => $instance->environment,
             'Source layout' => $instance->sourceLayout,
             'Checkout' => $instance->checkoutPath,
             'Vite port' => $instance->vitePort,

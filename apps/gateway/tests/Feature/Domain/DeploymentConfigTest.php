@@ -204,6 +204,9 @@ function deployment_domain_fixture(): array
         'platform' => 'linux',
         'public_ssh_host' => "192.0.2.{$number}",
     ]), [121, 122]);
+    foreach ($nodes as $node) {
+        $node->roles()->create(['role' => 'app-prod', 'status' => 'active']);
+    }
     $instances = [];
 
     foreach ([['first', 'main', 'main'], ['second', 'stable', null]] as $index => [$name, $branch, $override]) {

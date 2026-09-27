@@ -368,6 +368,7 @@ function database_connection_doctor_instance(Node $node): AppInstance
         'default_branch' => 'main',
         'root' => 'public',
     ]);
+    $node->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
     $instance = AppInstance::query()->create([
         'app_id' => $app->id,
         'node_id' => $node->id,

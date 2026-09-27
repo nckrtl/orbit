@@ -229,6 +229,7 @@ function native_process_inspector(
         'user' => 'nckrtl',
         'wireguard_ip' => '10.44.0.51',
     ]);
+    orbit_test_set_app_placement_role($node, false);
     $app = OrbitApp::query()->create([
         'name' => fake()->word(),
         'slug' => fake()->unique()->slug(),

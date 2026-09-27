@@ -33,6 +33,7 @@ it('derives production serving paths through current and resolves PHP roots afte
         'wireguard_ip' => '10.44.0.216',
         'user' => 'orbit',
     ]);
+    $node->roles()->create(['role' => 'app-prod', 'status' => 'active']);
     $app = OrbitApp::query()->create([
         'name' => 'Release layout',
         'slug' => 'release-layout',
@@ -98,7 +99,7 @@ it('derives production serving paths through current and resolves PHP roots afte
         ->not->toContain('resolve_root_symlink');
 });
 
-it('keeps an existing flat production checkout on its recorded serving path', function (): void {
+it('uses the current-release root instead of a flat production home', function (): void {
     $node = Node::query()->create([
         'name' => 'flat-production',
         'status' => 'active',
@@ -107,6 +108,7 @@ it('keeps an existing flat production checkout on its recorded serving path', fu
         'wireguard_ip' => '10.44.0.218',
         'user' => 'orbit',
     ]);
+    $node->roles()->create(['role' => 'app-prod', 'status' => 'active']);
     $app = OrbitApp::query()->create([
         'name' => 'Flat production',
         'slug' => 'flat-production',
@@ -144,12 +146,11 @@ it('keeps an existing flat production checkout on its recorded serving path', fu
     $configuration = new AppDevCaddyConfigRenderer()->render(collect([$site]));
 
     expect($instance->load('app')->effectiveRoot())
-        ->toBe('/home/orbit-app-218/public')
+        ->toBe('/home/orbit-app-218/current/public')
         ->and($site->checkoutPath)
-        ->toBe('/home/orbit-app-218')
+        ->toBe('/home/orbit-app-218/current')
         ->and($configuration)
-        ->toContain('root * /home/orbit-app-218/public')
-        ->not->toContain('root * /home/orbit-app-218/current/');
+        ->not->toContain('root * /home/orbit-app-218/public');
 });
 
 it('authenticates a selected release before publication and clears only its serving link', function (): void {
@@ -239,6 +240,7 @@ function orb216_release_layout_lifecycle(array $results): array
         'wireguard_ip' => '10.44.0.217',
         'user' => 'orbit',
     ]);
+    $node->roles()->create(['role' => 'app-prod', 'status' => 'active']);
     $app = OrbitApp::query()->create([
         'name' => 'Release layout remote',
         'slug' => 'release-layout-remote',

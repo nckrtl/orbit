@@ -345,6 +345,7 @@ function schedules_api_node(string $name, string $ip): Node
 
 function schedules_api_instance(Node $node): AppInstance
 {
+    orbit_test_set_app_placement_role($node, false);
     $app = OrbitApp::query()->create([
         'name' => 'Reports',
         'slug' => 'reports',

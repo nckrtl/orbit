@@ -57,7 +57,7 @@ final readonly class ResolveDependencyInstanceAction
                 throw new ResourceOperationException('dependencies.instance_unavailable', 'The instance is unavailable for dependency inventory.', 409);
             }
 
-            return new ResolvedDependencyInstanceData($domain, $instance->id, $instance->app_id, $instance->node_id, $instance->environment);
+            return new ResolvedDependencyInstanceData($domain, $instance->id, $instance->app_id, $instance->node_id, $instance->defaultAppEnv());
         });
     }
 

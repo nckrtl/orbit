@@ -462,7 +462,7 @@ final readonly class AppDevSiteRepository
         Route $route,
         bool $domainChange = false,
     ): AppDevSite {
-        $checkoutPath = $instance->usesProductionReleaseLayout()
+        $checkoutPath = $instance->placedOnAppProd()
             ? "{$instance->production_home}/current"
             : $instance->checkout_path;
 
@@ -474,7 +474,7 @@ final readonly class AppDevSiteRepository
             documentRoot: $instance->root ?? $instance->app->root ?? '',
             phpVersion: $instance->selected_php_version,
             domain: $route->domain,
-            environment: $instance->environment,
+            environment: $instance->defaultAppEnv(),
             productionUser: $instance->production_user,
             productionHome: $instance->production_home,
             appSlug: $instance->app->slug,
@@ -550,14 +550,14 @@ final readonly class AppDevSiteRepository
             nodeId: $router->id,
             nodeAddress: $router->wireguard_ip ?? '',
             scope: "route-{$route->id}-router",
-            checkoutPath: $localInstance->usesProductionReleaseLayout()
+            checkoutPath: $localInstance->placedOnAppProd()
                 ? "{$localInstance->production_home}/current"
                 : ($localInstance->checkout_path ?? ''),
             documentRoot: $localInstance->root ?? $localInstance->app->root ?? '',
             phpVersion: $localInstance->selected_php_version,
             domain: $route->domain,
             upstreamAddresses: $addresses,
-            environment: $localInstance->environment,
+            environment: $localInstance->defaultAppEnv(),
             productionUser: $localInstance->production_user,
             productionHome: $localInstance->production_home,
             appSlug: $localInstance->app->slug,

@@ -7,10 +7,13 @@ use App\Data\Apps\UpdateAppData;
 use App\Domain\AppInstances\AppInstanceSourceLayout;
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Apps\AppUpdateStatus;
+use App\Domain\Nodes\RoleName;
+use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\AppInstance;
 use App\Models\AppInstanceEnvironmentValue;
 use App\Models\AppUpdate;
+use App\Models\Node;
 use App\Models\Route;
 use Tests\Support\Orb101AppUpdateFixture;
 
@@ -195,9 +198,19 @@ describe('UpdateAppAction', function (): void {
             'branch' => 'main',
             'status' => AppInstanceState::Active,
         ]);
+        $productionNode = Node::query()->create([
+            'name' => 'app-prod',
+            'status' => LifecycleStatus::Active,
+            'public_ssh_host' => '192.0.2.81',
+            'wireguard_ip' => '10.44.0.81',
+        ]);
+        $productionNode->roles()->create([
+            'role' => RoleName::AppProd,
+            'status' => LifecycleStatus::Active,
+        ]);
         $production = AppInstance::query()->create([
             'app_id' => $this->fixture->app->id,
-            'node_id' => $this->fixture->node->id,
+            'node_id' => $productionNode->id,
             'name' => 'prod',
             'environment' => 'production',
             'source_layout' => 'release',

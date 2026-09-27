@@ -55,6 +55,24 @@ describe('instance:create development contract', function (): void {
     });
 });
 
+describe('process:create preset target validation', function (): void {
+    it('refuses a preset with project before sending a request', function (): void {
+        $mock = MockClient::global([]);
+
+        $exitCode = Artisan::call('process:create', [
+            'name' => 'assets',
+            '--preset' => 'vp-dev',
+            '--project' => '7',
+            '--json' => true,
+        ]);
+        $output = Artisan::output();
+
+        expect($exitCode)->toBe(1)
+            ->and($output)->toContain('process.preset_target_invalid');
+        $mock->assertNothingSent();
+    });
+});
+
 describe('instance:create production refusal', function (): void {
     it('renders the candidate-required error and directs callers to instance:clone', function (): void {
         MockClient::global([

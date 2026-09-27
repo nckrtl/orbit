@@ -701,8 +701,9 @@ it('keeps final cleanup failures bounded through the Route update API', function
 });
 
 it('updates an active explicit private production domain through a replacement Route', function (): void {
+    $this->target->node->roles()->where('role', RoleName::AppDev)->delete();
+    $this->target->node->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
     $this->target->update([
-        'environment' => 'production',
         'source_is_laravel' => false,
         'provisioning_step' => 'active',
     ]);
@@ -1337,6 +1338,9 @@ function route_node(string $name, string $wireguardIp, ?string $tld): Node
 
 function route_instance(OrbitApp $app, Node $node, string $name): AppInstance
 {
+    $production = $node->roles()->where('role', RoleName::AppProd)->where('status', LifecycleStatus::Active)->exists();
+    orbit_test_set_app_placement_role($node, $production);
+
     return AppInstance::query()->create([
         'app_id' => $app->id,
         'node_id' => $node->id,

@@ -42,6 +42,7 @@ it('records a canonical dedicated PHP runtime identity without converting existi
         'platform' => 'linux',
         'public_ssh_host' => '192.0.2.214',
     ]);
+    $node->roles()->create(['role' => 'app-prod', 'status' => 'active']);
     $instance = AppInstance::query()->create([
         'app_id' => $app->id,
         'node_id' => $node->id,
@@ -446,6 +447,7 @@ function orb214_runtime_instance(): array
         'wireguard_ip' => '10.44.0.214',
         'user' => 'orbit',
     ]);
+    $node->roles()->create(['role' => 'app-prod', 'status' => 'active']);
     $user = "orbit-app-{$app->id}";
 
     return [

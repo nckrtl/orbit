@@ -32,7 +32,7 @@ final readonly class CollectInstanceDependencyFilesAction
         $production = $instance->placedOnAppProd();
         $path = $production ? $instance->production_home : $instance->checkout_path;
         $user = $production ? $instance->production_user : $node->user;
-        if (! in_array($instance->environment, ['development', 'production'], true)
+        if ((! $instance->placedOnAppDev() && ! $production)
             || ! in_array($instance->source_layout, array_column(AppInstanceSourceLayout::cases(), 'value'), true)
             || $instance->migration_required
             || ! is_string($path) || ! str_starts_with($path, '/') || str_contains($path, "\0")
@@ -42,7 +42,7 @@ final readonly class CollectInstanceDependencyFilesAction
             throw new DependencyCollectionException('dependencies.unsafe_source');
         }
 
-        $arguments = ['/usr/bin/python3', '-I', '-', $instance->environment, $path];
+        $arguments = ['/usr/bin/python3', '-I', '-', $instance->defaultAppEnv(), $path];
         if ($production) {
             $arguments = ['sudo', '-n', '-u', $user, '-H', '--', ...$arguments];
         }

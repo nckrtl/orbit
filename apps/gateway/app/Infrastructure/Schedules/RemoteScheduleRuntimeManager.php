@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Infrastructure\Schedules;
 
 use App\Data\Schedules\ScheduleLogsData;
-use App\Domain\Schedules\DesiredTimerState;
 use App\Domain\Schedules\ScheduleErrorCode;
 use App\Domain\Schedules\ScheduleOperationException;
 use App\Domain\Schedules\ScheduleRenderer;
@@ -41,9 +40,7 @@ final readonly class RemoteScheduleRuntimeManager implements ScheduleRuntimeMana
     {
         $target = $this->targets->forInstallation($schedule);
 
-        if (! $target->isProduction() || $schedule->desired_timer_state === DesiredTimerState::Enabled) {
-            $this->assertRunnable($schedule, $target);
-        }
+        $this->assertRunnable($schedule, $target);
 
         try {
             $program = $this->installProgram(

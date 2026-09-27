@@ -91,10 +91,6 @@ final readonly class AddProcessAction
                 );
             }
 
-            if ($fresh->desired_state === DesiredProcessState::Running) {
-                $this->runtime->assertCanStart($fresh);
-            }
-
             $fresh->fill([
                 ...$admission['attributes'],
                 'desired_state' => $fresh->desired_state,
@@ -187,9 +183,7 @@ final readonly class AddProcessAction
             'desired_state' => $desiredState,
         ]);
 
-        if ($desiredState === DesiredProcessState::Running) {
-            $this->runtime->assertCanStart($process);
-        }
+        $this->runtime->assertCanStart($process);
 
         if ($created) {
             $process->fill([
@@ -223,7 +217,7 @@ final readonly class AddProcessAction
             throw new ResourceOperationException('process.preset_target_invalid', 'The Process preset is not supported.', 422);
         }
 
-        if ($target->appInstance?->environment !== 'development') {
+        if (! $target->appInstance?->placedOnAppDev()) {
             throw new ResourceOperationException(
                 errorCode: 'process.preset_target_invalid',
                 message: "The {$data->preset} preset requires a development AppInstance.",

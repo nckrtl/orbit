@@ -534,7 +534,6 @@ function InstanceOverview({ fleet, instance }: { fleet: Fleet; instance: Instanc
                             value: instance.node.name,
                             onOpen: node === undefined ? undefined : () => go.record("nodes", node),
                         },
-                        { name: "Environment", value: instance.environment },
                         {
                             name: "Domain",
                             value: instance.domain,

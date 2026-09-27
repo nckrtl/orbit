@@ -239,7 +239,7 @@ final class ScanInstanceDependenciesCommand extends GatewayCommand
             && $this->listingPositiveId($row->project_id ?? null)
             && $this->listingPositiveId($row->node_id ?? null)
             && $this->listingNonEmptyString($row->name ?? null)
-            && $this->listingEnvironment($row->environment ?? null)
+            && $this->listingPlacement($row)
             && ($domain === null || is_string($domain));
     }
 
@@ -253,9 +253,13 @@ final class ScanInstanceDependenciesCommand extends GatewayCommand
         return is_string($value) && $value !== '';
     }
 
-    private function listingEnvironment(mixed $value): bool
+    private function listingPlacement(stdClass $row): bool
     {
-        return $value === 'development' || $value === 'production';
+        $productionHome = $row->production_home ?? null;
+        $productionUser = $row->production_user ?? null;
+
+        return ($productionHome === null && $productionUser === null)
+            || ($this->listingNonEmptyString($productionHome) && $this->listingNonEmptyString($productionUser));
     }
 
     private function listingRequestId(Response $response): ?string
@@ -317,7 +321,7 @@ final class ScanInstanceDependenciesCommand extends GatewayCommand
             'project_id' => $instance->projectId,
             'node_id' => $instance->nodeId,
             'name' => $instance->name,
-            'environment' => $instance->environment,
+            'environment' => ($instance->productionHome !== null ? 'production' : 'development'),
             'domain' => $instance->domain,
         ];
     }
@@ -332,7 +336,7 @@ final class ScanInstanceDependenciesCommand extends GatewayCommand
             $instance->id,
             $instance->projectId,
             $instance->nodeId,
-            $instance->environment,
+            ($instance->productionHome !== null ? 'production' : 'development'),
             $result->succeeded === true,
             $result->requestId,
             $instance->name,
@@ -352,7 +356,7 @@ final class ScanInstanceDependenciesCommand extends GatewayCommand
             $instance->id,
             $instance->projectId,
             $instance->nodeId,
-            $instance->environment,
+            ($instance->productionHome !== null ? 'production' : 'development'),
             false,
             $requestId,
             $instance->name,

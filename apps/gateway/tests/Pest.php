@@ -33,6 +33,7 @@ use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\Cluster;
 use App\Models\Node;
+use App\Models\NodeRole;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
@@ -49,6 +50,7 @@ use Tests\Support\FakeVitePortRuntime;
 use Tests\Support\TestToolchain;
 use Tests\TestCase;
 
+require_once __DIR__.'/Support/AppInstanceEnvironmentMigration.php';
 require_once __DIR__.'/Support/FakeNodeAgentRuntime.php';
 require_once __DIR__.'/Support/Orb245TransferFakes.php';
 require_once __DIR__.'/Support/AgentDriverTestSupport.php';
@@ -133,6 +135,24 @@ function store_deploy_steps(AppInstance $instance, array $steps): void
 }
 
 /** @return list<array{name: string, phase: string, command: string, timeout_seconds: int}> */
+function orbit_test_set_app_placement_role(Node $node, bool $production): void
+{
+    $role = $production ? RoleName::AppProd : RoleName::AppDev;
+
+    if ($node->exists) {
+        NodeRole::query()->updateOrCreate(
+            ['node_id' => $node->id, 'role' => $role],
+            ['status' => LifecycleStatus::Active],
+        );
+
+        return;
+    }
+
+    $node->setRelation('roles', collect([
+        new NodeRole(['role' => $role, 'status' => LifecycleStatus::Active]),
+    ]));
+}
+
 function normalized_deploy_steps(AppInstance $instance): array
 {
     return array_map(
@@ -196,6 +216,7 @@ function deployment_api_fixture(): array
         'wireguard_ip' => '10.44.0.141',
         'user' => 'orbit',
     ]);
+    $owner->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
     $app = OrbitApp::query()->create([
         'name' => 'Deployment API',
         'slug' => 'deployment-api',

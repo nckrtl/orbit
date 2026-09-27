@@ -27,6 +27,7 @@ function dependency_scan_instance(): AppInstance
 {
     $app = OrbitApp::query()->create(['slug' => 'dependency-scan', 'name' => 'Dependency scan', 'repository_url' => 'https://example.test/scan.git']);
     $node = Node::query()->create(['name' => 'dependency-scan', 'public_ssh_host' => '192.0.2.180', 'wireguard_ip' => '10.44.0.2', 'user' => 'orbit', 'status' => 'active']);
+    orbit_test_set_app_placement_role($node, false);
 
     return $app->appInstances()->create([
         'node_id' => $node->id, 'name' => 'scan', 'environment' => 'development',
@@ -211,7 +212,9 @@ describe('coordinated instance dependency scans', function (): void {
         $instance = dependency_scan_instance();
         $receipt = dependency_scan_receipt();
         if ($production) {
-            $instance->update(['environment' => 'production', 'production_user' => 'app_sample', 'production_home' => '/home/app_sample']);
+            $instance->node->roles()->where('role', 'app-dev')->delete();
+            $instance->node->roles()->create(['role' => 'app-prod', 'status' => 'active']);
+            $instance->update(['production_user' => 'app_sample', 'production_home' => '/home/app_sample']);
             $receipt['root'] = '/home/app_sample/releases/first';
             $receipt['reference'] = 'first';
         }

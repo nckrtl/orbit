@@ -157,9 +157,13 @@ function service_metrics_node(string $name): Node
 
 function service_metrics_instance(Node $node, string $name, string $version): AppInstance
 {
+    if (! $node->roles()->where('role', 'app-prod')->exists()) {
+        $node->roles()->create(['role' => 'app-prod', 'status' => 'active']);
+    }
+
     $app = OrbitApp::query()->create(['name' => $name, 'slug' => $name, 'repository_url' => 'https://example.test/'.$name.'.git', 'default_branch' => 'main', 'root' => 'public']);
     $user = 'orbit-app-'.$app->id;
-    $instance = AppInstance::query()->create(['app_id' => $app->id, 'node_id' => $node->id, 'name' => 'default', 'environment' => 'production', 'status' => 'active', 'checkout_path' => '/home/'.$user, 'production_user' => $user, 'production_home' => '/home/'.$user, 'root' => 'public', 'selected_php_version' => $version]);
+    $instance = AppInstance::query()->create(['app_id' => $app->id, 'node_id' => $node->id, 'name' => 'default', 'environment' => 'production', 'status' => 'active', 'checkout_path' => '/home/'.$user.'/releases/initial', 'production_user' => $user, 'production_home' => '/home/'.$user, 'root' => 'public', 'selected_php_version' => $version]);
     $instance->update(ProductionPhpRuntimeIdentity::forProvisioning($instance, $version)->attributes());
 
     return $instance->refresh();

@@ -62,6 +62,19 @@ use Tests\Support\FakeClusterRouterReplacementProjector;
 use Tests\Support\FakeRouteRemovalProjector;
 use Tests\Support\FakeToolManagerMaterializer;
 
+function ensure_active_app_dev_role(Node $node): void
+{
+    $role = $node->roles()->where('role', RoleName::AppDev->value)->first();
+
+    if ($role) {
+        $role->update(['status' => LifecycleStatus::Active]);
+
+        return;
+    }
+
+    $node->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
+}
+
 beforeEach(function (): void {
     $this->orbitApp = OrbitApp::query()->create([
         'name' => 'Acme',
@@ -596,7 +609,7 @@ it('requires an effective TLD when deactivation would strand a generated basis',
 
 it('reconciles a retained generated Route and Node TLD before remote provisioning', function (): void {
     $this->node->update(['ssh_host_fingerprint' => 'SHA256:pinned']);
-    $this->node->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
+    ensure_active_app_dev_role($this->node);
     $route = app(CreateRouteAction::class)->ensureForAppInstance($this->target, null);
     $this->target->update(['status' => AppInstanceState::Reserved]);
     app(ClearRouteTargetAction::class)->execute($route);
@@ -693,7 +706,7 @@ it('preserves a legacy default domain and source during Route-only reconciliatio
 
 it('preserves Node and Route state when the last app-dev TLD has no active fallback', function (): void {
     $this->node->update(['ssh_host_fingerprint' => 'SHA256:pinned']);
-    $this->node->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
+    ensure_active_app_dev_role($this->node);
     $route = app(CreateRouteAction::class)->ensureForAppInstance($this->target, null);
     $this->target->update(['status' => AppInstanceState::Reserved]);
     app(ClearRouteTargetAction::class)->execute($route);
@@ -722,7 +735,7 @@ it('keeps the Cluster TLD when a retained basis Node TLD is cleared', function (
         'cluster_id' => $cluster->id,
         'ssh_host_fingerprint' => 'SHA256:pinned',
     ]);
-    $this->node->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
+    ensure_active_app_dev_role($this->node);
     $route = app(CreateRouteAction::class)->ensureForAppInstance($this->target, null);
     $this->target->update(['status' => AppInstanceState::Reserved]);
     app(ClearRouteTargetAction::class)->execute($route);
@@ -750,6 +763,7 @@ it('keeps the Cluster TLD when a retained basis Node TLD is cleared', function (
 
 it('keeps an explicit app-prod Route valid when its Node has no TLD', function (): void {
     $this->node->update(['ssh_host_fingerprint' => 'SHA256:pinned']);
+    $this->node->roles()->where('role', RoleName::AppDev->value)->delete();
     $this->node->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
     $this->target->delete();
     $route = app(CreateRouteAction::class)->execute(new CreateRouteData(
@@ -820,7 +834,7 @@ it('keeps Cluster membership unchanged when DNS selection expansion fails during
 it('inventories Node TLD changes and refuses an occupied generated domain before any write', function (): void {
     $this->target->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
     $this->node->update(['ssh_host_fingerprint' => 'SHA256:pinned']);
-    $this->node->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
+    ensure_active_app_dev_role($this->node);
     $generated = app(CreateRouteAction::class)->ensureForAppInstance($this->target, null);
     $generated->update(['status' => RouteStatus::Active]);
     $owner = reconciliation_node('occupied-owner', 'owner.test');
@@ -854,7 +868,7 @@ it('inventories Node TLD changes and refuses an occupied generated domain before
 it('prepares generated private projections before publishing a Node TLD change', function (): void {
     $this->target->update(['source_is_laravel' => true, 'provisioning_step' => 'active']);
     $this->node->update(['ssh_host_fingerprint' => 'SHA256:pinned']);
-    $this->node->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
+    ensure_active_app_dev_role($this->node);
     $generated = app(CreateRouteAction::class)->ensureForAppInstance($this->target, null);
     $generated->update(['status' => RouteStatus::Active]);
     $events = bind_node_tld_projection();
@@ -902,7 +916,7 @@ it('does not rename a generated Route when a Cluster member Node TLD changes', f
         'cluster_id' => $cluster->id,
         'ssh_host_fingerprint' => 'SHA256:pinned',
     ]);
-    $this->node->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
+    ensure_active_app_dev_role($this->node);
     $generated = app(CreateRouteAction::class)->ensureForAppInstance($this->target, null);
     $generated->update(['status' => RouteStatus::Active]);
     bind_node_tld_projection();
@@ -925,7 +939,7 @@ it('does not rename a generated Route when a Cluster member Node TLD changes', f
 it('keeps an explicit Route domain fixed when the Node TLD changes', function (): void {
     $this->target->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
     $this->node->update(['ssh_host_fingerprint' => 'SHA256:pinned']);
-    $this->node->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
+    ensure_active_app_dev_role($this->node);
     $explicit = app(CreateRouteAction::class)->execute(new CreateRouteData(
         appId: $this->orbitApp->id,
         domain: 'fixed.example.test',
@@ -959,7 +973,7 @@ it('keeps the Cluster TLD when a targeted member Node TLD is cleared', function 
         'cluster_id' => $cluster->id,
         'ssh_host_fingerprint' => 'SHA256:pinned',
     ]);
-    $this->node->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
+    ensure_active_app_dev_role($this->node);
     $generated = app(CreateRouteAction::class)->ensureForAppInstance($this->target, null);
     $generated->update(['status' => RouteStatus::Active]);
     bind_node_tld_projection();
@@ -985,7 +999,7 @@ it('keeps the Cluster TLD when a targeted member Node TLD is cleared', function 
 it('does not return reconciliation_required after a Node TLD change and still refuses Router clearing', function (): void {
     $this->target->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
     $this->node->update(['ssh_host_fingerprint' => 'SHA256:pinned']);
-    $this->node->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
+    ensure_active_app_dev_role($this->node);
     $generated = app(CreateRouteAction::class)->ensureForAppInstance($this->target, null);
     $generated->update(['status' => RouteStatus::Active]);
     bind_node_tld_projection();
@@ -2007,7 +2021,7 @@ it('refuses a Cluster TLD change before any Route moves when a later Route canno
 
 it('refuses a Node TLD change before any Route moves when a later Route cannot move', function (): void {
     $this->node->update(['ssh_host_fingerprint' => 'SHA256:pinned']);
-    $this->node->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
+    ensure_active_app_dev_role($this->node);
     [$first, $legacy] = reconciliation_routes_with_legacy($this->orbitApp, $this->target, generated: true);
     $legacy->update(['source_is_laravel' => null]);
     $events = bind_node_tld_projection();
@@ -2413,6 +2427,10 @@ function bind_route_reconciliation_provisioning(?Closure $onConverge = null): vo
 
 function reconciliation_instance(OrbitApp $app, Node $node, string $name): AppInstance
 {
+    if (! $node->roles()->whereIn('role', [RoleName::AppDev->value, RoleName::AppProd->value])->exists()) {
+        ensure_active_app_dev_role($node);
+    }
+
     return AppInstance::query()->create([
         'app_id' => $app->id,
         'node_id' => $node->id,

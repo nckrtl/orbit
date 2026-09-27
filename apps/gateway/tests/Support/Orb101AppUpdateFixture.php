@@ -8,6 +8,7 @@ use App\Domain\AppInstances\AppInstanceSourceLayout;
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Apps\AppUpdateProjectionMutator;
 use App\Domain\Apps\AppUpdateSourceMutator;
+use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
@@ -55,6 +56,10 @@ final class Orb101AppUpdateFixture
             'public_ssh_host' => '192.0.2.80',
             'wireguard_ip' => '10.44.0.80',
             'tld' => 'test',
+        ]);
+        $node->roles()->create([
+            'role' => RoleName::AppDev,
+            'status' => LifecycleStatus::Active,
         ]);
         $app = OrbitApp::query()->create([
             'name' => 'Acme',

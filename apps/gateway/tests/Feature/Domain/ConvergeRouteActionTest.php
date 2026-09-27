@@ -1708,6 +1708,7 @@ function cluster_tld_generated_route(): array
         'wireguard_ip' => '10.44.0.81',
         'user' => 'orbit',
     ]);
+    $member->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
     $app = OrbitApp::query()->create([
         'name' => 'Acme',
         'slug' => 'acme',
@@ -1753,11 +1754,14 @@ function route_domain_change_route(bool $laravel, string $environment = 'develop
         'wireguard_ip' => '10.44.0.2',
         'user' => 'orbit',
     ]);
+    $node->roles()->create([
+        'role' => $environment === 'production' ? RoleName::AppProd : RoleName::AppDev,
+        'status' => LifecycleStatus::Active,
+    ]);
     $instance = AppInstance::query()->create([
         'app_id' => $app->id,
         'node_id' => $node->id,
         'name' => 'main',
-        'environment' => $environment,
         'checkout_path' => '/srv/acme/main',
         'production_home' => $environment === 'production' ? '/srv/acme/main' : null,
         'production_user' => $environment === 'production' ? 'orbit-acme' : null,

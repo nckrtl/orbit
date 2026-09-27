@@ -197,6 +197,7 @@ it('rewrites same-node Docker Process host and port and keeps remote registry va
         'wireguard_ip' => '10.44.0.210',
         'user' => 'orbit',
     ]);
+    orbit_test_set_app_placement_role($remote, false);
     $remoteInstance = AppInstance::query()->create([
         'app_id' => $this->instance->app_id,
         'node_id' => $remote->id,
@@ -321,6 +322,7 @@ function database_attachment_fixture(): array
         'wireguard_ip' => '10.44.0.201',
         'user' => 'orbit',
     ]);
+    orbit_test_set_app_placement_role($node, false);
     $app = OrbitApp::query()->create([
         'name' => 'Environment API',
         'slug' => 'environment-api',

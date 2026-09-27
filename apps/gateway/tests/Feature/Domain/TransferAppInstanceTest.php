@@ -338,7 +338,11 @@ it('refuses ineligible sources and destinations before source mutation', functio
         ->and($instance->name)->toBe('web');
 })->with([
     'production' => [function (object $test): void {
-        $test->instance->update(['environment' => 'production']);
+        $test->sourceNode->roles()->where('role', RoleName::AppDev->value)->delete();
+        $test->sourceNode->roles()->create([
+            'role' => RoleName::AppProd,
+            'status' => LifecycleStatus::Active,
+        ]);
     }, 'instance.production_refused'],
     'inactive instance' => [function (object $test): void {
         $test->instance->update(['status' => AppInstanceState::Reserved]);

@@ -268,7 +268,7 @@ function clone_environment_fixture(string $suffix = 'primary'): array
 
 function clone_environment_node(string $name, int $address): Node
 {
-    return Node::query()->create([
+    $node = Node::query()->create([
         'name' => "clone-environment-{$name}",
         'status' => LifecycleStatus::Active,
         'platform' => 'linux',
@@ -276,6 +276,12 @@ function clone_environment_node(string $name, int $address): Node
         'wireguard_ip' => "10.44.0.{$address}",
         'user' => 'orbit',
     ]);
+    $node->roles()->create([
+        'role' => str_starts_with($name, 'target-') ? 'app-prod' : 'app-dev',
+        'status' => LifecycleStatus::Active,
+    ]);
+
+    return $node;
 }
 
 /** @return array{Orb198CloneEnvironmentLock, Orb198CloneEnvironmentPreflight, Orb198CloneEnvironmentWriter} */

@@ -42,6 +42,7 @@ it('records retained production identity without changing content bytes or owner
         'public_ssh_host' => '192.0.2.81',
         'wireguard_ip' => '10.44.0.81',
     ]);
+    $node->roles()->create(['role' => 'app-prod', 'status' => LifecycleStatus::Active]);
     $instance = AppInstance::query()
         ->create([
             'app_id' => $app->id,
@@ -75,7 +76,7 @@ it('records retained production identity without changing content bytes or owner
         'app_id' => $instance->app_id,
         'node_id' => $instance->node_id,
         'name' => $instance->name,
-        'environment' => $instance->environment,
+        'environment' => $instance->defaultAppEnv(),
         'source_layout' => $inventory->layout,
         'repository_identity' => $inventory->repositoryIdentity,
         'checkout_path' => $inventory->checkoutPath,

@@ -15,7 +15,6 @@ function instance_payload(?array $removal = null): array
         'node' => ['id' => 2, 'name' => 'beast'],
         'vite_port' => null,
         'name' => 'dev',
-        'environment' => 'development',
         'source_layout' => 'checkout',
         'checkout_path' => '/home/orbit/apps/orbit-docs/dev',
         'production_user' => null,

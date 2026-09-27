@@ -191,7 +191,7 @@ describe('App runtime definition requests', function (): void {
             'id' => 41,
             'app_id' => '7',
             'name' => ['worker'],
-            'environments' => ['development', 5, 'production'],
+            'environments' => [5, 'production'],
             'spec' => ['runtime' => 'systemd', 0 => 'malformed'],
         ], runtime_definition_request_id());
 
@@ -204,7 +204,7 @@ describe('App runtime definition requests', function (): void {
             ->and($response->name)
             ->toBe('')
             ->and($response->environments)
-            ->toBe(['development', 'production'])
+            ->toBe(['production'])
             ->and($response->spec)
             ->toBe(['runtime' => 'systemd'])
             ->and(fn (): mixed => $response->name = 'changed')
@@ -302,7 +302,7 @@ function runtime_definition_gateway_data(bool $includeCommand = true): array
         'id' => runtime_definition_id(),
         'app_id' => 7,
         'name' => 'worker',
-        'environments' => ['development', 'production'],
+        'environments' => ['production'],
         'spec' => $spec,
     ];
 }
@@ -316,7 +316,7 @@ function runtime_definition_public_data(bool $includeCommand = true): array
 function runtime_definition_json(): string
 {
     return <<<'JSON'
-{"name":"worker","environments":["development","production"],"spec":{"runtime":"systemd","command":["/usr/bin/php","artisan","queue:work"],"restart_policy":"on-failure"}}
+{"name":"worker","environments":["production"],"spec":{"runtime":"systemd","command":["/usr/bin/php","artisan","queue:work"],"restart_policy":"on-failure"}}
 JSON;
 }
 

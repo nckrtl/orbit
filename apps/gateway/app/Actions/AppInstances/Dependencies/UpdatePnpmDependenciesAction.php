@@ -186,7 +186,7 @@ final readonly class UpdatePnpmDependenciesAction
         $node = $instance->node;
         $path = $instance->checkout_path;
         $user = $node->user;
-        if ($instance->environment !== 'development'
+        if (! $instance->placedOnAppDev()
             || ! in_array($instance->source_layout, array_column(AppInstanceSourceLayout::cases(), 'value'), true)
             || $instance->migration_required
             || ! str_starts_with($path, '/') || str_contains($path, "\0")

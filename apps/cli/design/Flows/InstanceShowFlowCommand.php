@@ -43,7 +43,6 @@ final class InstanceShowFlowCommand extends GatewayCommand
             'Project' => $instance['slug'],
             'Node' => $instance['node'],
             'Status' => $instance['status'],
-            'Environment' => $instance['environment'],
             'Source layout' => $instance['source_layout'],
             'Checkout' => $instance['checkout_path'],
             'Vite port' => $instance['vite_port'],
@@ -111,7 +110,6 @@ final class InstanceShowFlowCommand extends GatewayCommand
      *     slug: string,
      *     node: string,
      *     status: string,
-     *     environment: string,
      *     source_layout: string,
      *     checkout_path: string,
      *     vite_port: int|null,
@@ -127,20 +125,19 @@ final class InstanceShowFlowCommand extends GatewayCommand
     private function instanceSummary(string $name): array
     {
         $record = $this->fixtureObject($name);
-        $app = $record['app'] ?? null;
+        $project = $record['project'] ?? null;
         $node = $record['node'] ?? null;
 
-        if (! is_array($app) || ! is_array($node)) {
+        if (! is_array($project) || ! is_array($node)) {
             throw new RuntimeException("Gateway fixture {$name} is not recorded.");
         }
 
         return [
             'id' => $this->fixtureInt($record, 'id', $name),
             'name' => $this->fixtureString($record, 'name', $name),
-            'slug' => $this->fixtureString($this->stringKeyed($app, $name), 'slug', $name),
+            'slug' => $this->fixtureString($this->stringKeyed($project, $name), 'slug', $name),
             'node' => $this->fixtureString($this->stringKeyed($node, $name), 'name', $name),
             'status' => $this->fixtureString($record, 'status', $name),
-            'environment' => $this->fixtureString($record, 'environment', $name),
             'source_layout' => $this->fixtureString($record, 'source_layout', $name),
             'checkout_path' => $this->fixtureString($record, 'checkout_path', $name),
             'vite_port' => $this->fixtureNullableInt($record, 'vite_port', $name),

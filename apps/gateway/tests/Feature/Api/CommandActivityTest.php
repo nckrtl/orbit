@@ -1666,7 +1666,7 @@ it('records definition commands against the App instead of a Process or Schedule
     $this
         ->postJson("/api/v1/projects/{$orbitApp->id}/process-definitions", [
             'name' => 'worker',
-            'environments' => ['development'],
+            'environments' => ['production'],
             'spec' => [
                 'runtime' => 'systemd',
                 'command' => ['/usr/bin/php', 'artisan', 'queue:work'],
@@ -1687,7 +1687,7 @@ it('records definition commands against the App instead of a Process or Schedule
         ->and($activity->properties?->get('input'))
         ->toBe([
             'name' => 'worker',
-            'environments' => ['development'],
+            'environments' => ['production'],
         ]);
 });
 
@@ -1789,6 +1789,7 @@ function command_activity_environment_fixture(): array
     $caller = command_activity_doctor_node('environment-activity-caller');
     $caller->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
     $owner = command_activity_doctor_node('environment-activity-owner');
+    $owner->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
     $app = OrbitApp::query()->create([
         'name' => 'Environment activity',
         'slug' => 'environment-activity',

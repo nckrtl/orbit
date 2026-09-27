@@ -15,6 +15,7 @@ use App\Models\Process;
 function vite_lifecycle_instance(): AppInstance
 {
     $node = Node::query()->create(['name' => 'vite', 'platform' => 'linux', 'user' => 'orbit', 'public_ssh_host' => '192.0.2.10']);
+    orbit_test_set_app_placement_role($node, false);
     $app = OrbitApp::query()->create(['name' => 'Vite', 'slug' => 'vite', 'repository_url' => 'git@example.test:vite.git']);
 
     return AppInstance::query()->create(['app_id' => $app->id, 'node_id' => $node->id, 'name' => 'main', 'checkout_path' => '/apps/vite/main']);

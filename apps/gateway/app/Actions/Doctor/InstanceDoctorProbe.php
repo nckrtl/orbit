@@ -253,7 +253,7 @@ final readonly class InstanceDoctorProbe implements DoctorFamilyProbe
         return $instances->contains(function (AppInstance $other) use ($instance): bool {
             if (
                 $other->id === $instance->id
-                || $other->environment !== 'production'
+                || ! $other->placedOnAppProd()
                 || $other->selected_php_version === null
             ) {
                 return false;

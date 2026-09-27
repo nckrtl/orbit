@@ -62,6 +62,7 @@ beforeEach(function (): void {
         'user' => 'nckrtl',
         'wireguard_ip' => '10.44.0.3',
     ]);
+    $this->node->roles()->create(['role' => 'app-dev', 'status' => LifecycleStatus::Active]);
     $this->orbitApp = OrbitApp::query()->create([
         'name' => 'Docs',
         'slug' => 'docs',

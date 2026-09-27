@@ -90,6 +90,7 @@ function orb131_cascade_instance(string $suffix): AppInstance
         'wireguard_ip' => "10.44.0.{$octet}",
         'user' => 'orbit',
     ]);
+    orbit_test_set_app_placement_role($node, false);
 
     return AppInstance::query()->create([
         'app_id' => $app->id,

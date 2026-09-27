@@ -1706,6 +1706,27 @@ it('refuses production start when no current release is selected', function (): 
         ->toBe(['sudo', 'test', '-d', '/home/orbit-docs/current']);
 });
 
+it('refuses stopped production convergence before runtime mutation when no release is selected', function (): void {
+    $process = runtime_manager_systemd_process($this->instance);
+    $this->instance->update([
+        'checkout_path' => '/home/orbit-docs/releases/20260910',
+        'production_user' => 'orbit-docs',
+        'production_home' => '/home/orbit-docs',
+    ]);
+    runtime_manager_place_on_app_prod($this->instance);
+    $this->ssh->responses = [process_runtime_result(1)];
+
+    expect(fn () => $this->manager->converge($process))
+        ->toThrow(function (ResourceOperationException $exception): void {
+            expect($exception->errorCode)->toBe('process.release_unavailable');
+        });
+
+    expect($this->ssh->commands)
+        ->toHaveCount(1)
+        ->and($this->ssh->commands[0]->arguments)
+        ->toBe(['sudo', 'test', '-d', '/home/orbit-docs/current']);
+});
+
 it('refuses desired-running production convergence before runtime mutation when no release is selected', function (): void {
     $process = runtime_manager_systemd_process($this->instance);
     $process->update(['desired_state' => 'running']);

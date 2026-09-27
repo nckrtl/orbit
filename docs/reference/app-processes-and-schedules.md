@@ -36,11 +36,11 @@ Creating, updating, or destroying a definition changes only Project-owned config
 
 ## Prepare production copies
 
-Production preparation captures the Project definitions before it installs any target runtime. The captured selection belongs to that target and does not change when a Project definition is later added, replaced, or removed.
+Production preparation captures the Project definitions and creates independent, Instance-owned copies. The captured selection belongs to that target and does not change when a Project definition is later added, replaced, or removed. Cloning does not install those copies while the production `current` release is absent; they remain pending until a deployment selects a release.
 
-For each captured process definition, Orbit creates a new Instance-owned Process with its own ID and target-derived runtime identity. It preserves the supported systemd or Docker specification and installs the Process stopped. For each captured Schedule definition, Orbit creates a new Instance-owned Schedule with its own UUID and target-derived host identity. It installs the timer disabled and stopped, and that installation applies the host calendar check. Production preparation does not execute application code.
+After a deployment activates a release, Orbit installs each captured process with its own ID and target-derived runtime identity. It preserves the supported systemd or Docker specification and installs the Process stopped. It installs each captured Schedule with its own UUID and target-derived host identity, with the timer disabled and stopped. Schedule installation applies the host calendar check. Runtime installation does not execute application code.
 
-Preparation records completed copies and resumes only unfinished installation after an interruption. A retry uses the target's captured selection instead of reading the Project definitions again. It does not rewrite a completed copy, undo a later operator edit, or stop a copy that an operator started. A name conflict or a conflict with a runtime artifact stops preparation without adopting the existing record or artifact. Removing the target later cleans the instantiated copies through the [Instance removal lifecycle](/reference/appinstance-removal) and retains the Project definitions.
+Installation records completed copies and resumes only unfinished work after an interruption. A retry uses the target's captured selection instead of reading the Project definitions again. It does not rewrite a completed copy, undo a later operator edit, or stop a copy that an operator started. A name conflict or a conflict with a runtime artifact stops installation without adopting the existing record or artifact. Removing the target later cleans the instantiated copies through the [Instance removal lifecycle](/reference/appinstance-removal) and retains the Project definitions.
 
 ## Manage definitions from the CLI
 

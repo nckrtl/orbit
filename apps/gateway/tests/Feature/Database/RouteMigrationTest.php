@@ -18,6 +18,9 @@ use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
+beforeEach(fn () => app_instance_environment_migration()->down());
+afterEach(fn () => restore_app_instance_environment_schema_for_migration_test());
+
 function production_route_target_set_migration(): Migration
 {
     return require base_path(
@@ -360,14 +363,21 @@ function route_migration_instance(
     string $name,
     string $environment = 'production',
 ): AppInstance {
-    return AppInstance::query()->create([
+    $role = $environment === 'production' ? RoleName::AppProd : RoleName::AppDev;
+    if (! $node->roles()->where('role', $role->value)->exists()) {
+        $node->roles()->create(['role' => $role, 'status' => LifecycleStatus::Active]);
+    }
+
+    $instance = AppInstance::query()->create([
         'app_id' => $app->id,
         'node_id' => $node->id,
         'name' => $name,
-        'environment' => $environment,
         'checkout_path' => "/srv/{$name}",
         'status' => AppInstanceState::Active,
     ]);
+    DB::table('app_instances')->where('id', $instance->id)->update(['environment' => $environment]);
+
+    return $instance;
 }
 
 function route_migration_replacement_route(string $suffix, bool $activate = true): Route
@@ -429,8 +439,8 @@ function route_migration_production_set(string $suffix, string $environment = 'p
     $twoNode->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
     $one = route_migration_instance($app, $oneNode, "{$suffix}-one");
     $two = route_migration_instance($app, $twoNode, "{$suffix}-two");
-    $one->update(['environment' => $environment]);
-    $two->update(['environment' => $environment]);
+    DB::table('app_instances')->where('id', $one->id)->update(['environment' => $environment]);
+    DB::table('app_instances')->where('id', $two->id)->update(['environment' => $environment]);
     $route = Route::query()->create([
         'app_id' => $app->id,
         'cluster_id' => $cluster->id,

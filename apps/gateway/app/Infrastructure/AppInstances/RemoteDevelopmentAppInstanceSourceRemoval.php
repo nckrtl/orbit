@@ -731,7 +731,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
             $member->app_id !== $appInstance->app_id
             || $member->node_id !== $appInstance->node_id
             || $member->name !== $appInstance->name
-            || $member->environment !== $appInstance->environment
+            || $member->environment !== $appInstance->defaultAppEnv()
             || $member->source_layout !== $appInstance->source_layout
             || $member->checkout_path !== $appInstance->checkout_path
             || $member->root !== $appInstance->effectiveRoot()

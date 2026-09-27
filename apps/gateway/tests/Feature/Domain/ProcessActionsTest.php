@@ -54,6 +54,7 @@ beforeEach(function (): void {
         'user' => 'nckrtl',
         'wireguard_ip' => '10.44.0.3',
     ]);
+    $this->node->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
     $this->orbitApp = OrbitApp::query()->create([
         'name' => 'Docs',
         'slug' => 'docs',
@@ -315,6 +316,8 @@ it('refuses a new desired-running production process before admission when no re
         'production_user' => 'orbit-docs',
         'production_home' => '/home/orbit-docs',
     ]);
+    $this->node->roles()->delete();
+    $this->node->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
     $this->runtime->startUnavailable = true;
     $data = new AddProcessData(
         targetType: ProcessTargetType::AppInstance,
@@ -354,6 +357,8 @@ it('refuses an idempotent desired-running production add without changing its re
         'production_user' => 'orbit-docs',
         'production_home' => '/home/orbit-docs',
     ]);
+    $this->node->roles()->delete();
+    $this->node->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
     $process = Process::query()->create([
         'owner_type' => AppInstance::MorphAlias,
         'owner_id' => $this->instance->id,
@@ -494,6 +499,8 @@ it('uses an isolated app user for app-prod systemd processes', function (): void
         'production_user' => 'orbit-docs',
         'production_home' => '/home/orbit-docs',
     ]);
+    $this->node->roles()->delete();
+    $this->node->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
 
     $target = $this->targets->resolve(ProcessTargetType::AppInstance, $this->instance->id);
 

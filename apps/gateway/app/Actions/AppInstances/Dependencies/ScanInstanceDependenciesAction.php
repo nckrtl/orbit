@@ -71,11 +71,19 @@ final readonly class ScanInstanceDependenciesAction
             $composer = $this->parse($files, DependencyEcosystem::Composer, $attemptedAt);
             $javascript = $this->parse($files, DependencyEcosystem::Npm, $attemptedAt);
             $confirmed = $this->collect->execute($current);
+            $current = AppInstance::query()->with('node')->find($instance->id);
+            if (! $current instanceof AppInstance || ! $this->available($current)) {
+                return $this->failure($instance->id, $attemptedAt, 'dependencies.instance_unavailable');
+            }
             if ($files != $confirmed) {
                 throw new DependencyCollectionException('dependencies.source_changed');
             }
         } catch (DependencyCollectionException $exception) {
-            return $this->failure($instance->id, $attemptedAt, $exception->errorCode);
+            $current = AppInstance::query()->with('node')->find($instance->id);
+
+            return ! $current instanceof AppInstance || ! $this->available($current)
+                ? $this->failure($instance->id, $attemptedAt, 'dependencies.instance_unavailable')
+                : $this->failure($instance->id, $attemptedAt, $exception->errorCode);
         }
 
         return new InstanceDependencyScanResult(

@@ -23,6 +23,7 @@ beforeEach(function (): void {
         'user' => 'orbit',
         'wireguard_ip' => '10.44.0.3',
     ]);
+    $this->node->roles()->create(['role' => 'app-dev', 'status' => LifecycleStatus::Active]);
     $app = OrbitApp::query()->create([
         'name' => 'Docs',
         'slug' => 'docs',
@@ -57,8 +58,9 @@ it('derives the Node and development AppInstance contexts', function (): void {
 });
 
 it('derives the stable production current context with fixed non-login bash', function (): void {
+    $this->node->roles()->where('role', 'app-dev')->delete();
+    $this->node->roles()->create(['role' => 'app-prod', 'status' => LifecycleStatus::Active]);
     $this->instance->update([
-        'environment' => 'production',
         'checkout_path' => '/home/docs/releases/20260911',
         'production_user' => 'docs',
         'production_home' => '/home/docs',

@@ -327,7 +327,7 @@ final class FakeAppUpdateProjectionMutator implements AppUpdateProjectionMutator
     {
         $root = $instance->root ?? $appRoot;
 
-        if ($instance->environment === 'production' && is_string($instance->production_home) && is_string($root)) {
+        if ($instance->placedOnAppProd() && is_string($instance->production_home) && is_string($root)) {
             $base = $instance->usesProductionReleaseLayout()
                 ? "{$instance->production_home}/current"
                 : $instance->production_home;

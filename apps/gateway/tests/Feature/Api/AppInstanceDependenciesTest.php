@@ -38,6 +38,7 @@ function dependency_api_fixture(): array
 {
     $caller = Node::query()->create(['public_ssh_host' => '192.0.2.80', 'user' => 'orbit', 'name' => 'inventory-caller', 'wireguard_ip' => '10.44.0.80', 'status' => 'active']);
     $owner = Node::query()->create(['public_ssh_host' => '192.0.2.81', 'name' => 'inventory-owner', 'wireguard_ip' => '10.44.0.81', 'user' => 'orbit', 'status' => 'active']);
+    orbit_test_set_app_placement_role($owner, false);
     $caller->accessibleNodes()->attach($owner);
     $app = OrbitApp::query()->create(['name' => 'Inventory', 'slug' => 'inventory', 'repository_url' => 'https://example.test/inventory.git']);
     $instance = $app->appInstances()->create(['node_id' => $owner->id, 'name' => 'development', 'environment' => 'development', 'status' => 'active', 'source_layout' => 'checkout', 'checkout_path' => '/home/orbit/project']);
@@ -79,14 +80,13 @@ function dependency_api_removing(AppInstance $instance, bool $markedRemoving): v
 {
     $instance->app->update(['repository_identity' => 'example.test/inventory']);
     $instance->update(['root' => 'public', 'branch' => 'main', 'starting_commit' => str_repeat('a', 40)]);
-    $instance->node->roles()->create(['role' => 'app-dev', 'status' => 'active']);
     $route = Route::query()->create(['app_id' => $instance->app_id, 'node_id' => $instance->node_id, 'generation_basis_node_id' => $instance->node_id, 'domain' => 'inventory.test', 'provenance' => 'generated', 'publication' => 'private', 'status' => 'pending']);
     $route->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
     $route->update(['status' => 'active']);
     $removal = AppInstanceRemoval::query()->create(['id' => (string) Str::uuid(), 'requested_app_instance_id' => $instance->id, 'requested_name' => $instance->name, 'force' => false, 'inventory_digest' => str_repeat('d', 64), 'total' => 1, 'status' => 'removing', 'current_step' => 'source_preparation']);
     $removal->members()->create([
         'position' => 0, 'app_instance_id' => $instance->id, 'app_id' => $instance->app_id, 'node_id' => $instance->node_id,
-        'name' => $instance->name, 'environment' => $instance->environment, 'source_layout' => $instance->source_layout,
+        'name' => $instance->name, 'environment' => $instance->defaultAppEnv(), 'source_layout' => $instance->source_layout,
         'checkout_path' => $instance->checkout_path, 'linked_worktree_paths' => [], 'source_digest' => str_repeat('d', 64),
         'route_id' => $route->id, 'repository_identity' => 'example.test/inventory', 'root' => 'public', 'branch' => 'main',
         'starting_commit' => str_repeat('a', 40), 'source_commit' => str_repeat('a', 40),
@@ -364,7 +364,9 @@ describe('single-instance dependency update API', function (): void {
 
     it('returns a typed production refusal without package invocation', function (): void {
         [$caller, $instance] = dependency_api_fixture();
-        $instance->update(['environment' => 'production', 'production_user' => 'app_sample', 'production_home' => '/home/app_sample']);
+        $instance->node->roles()->where('role', 'app-dev')->delete();
+        $instance->node->roles()->create(['role' => 'app-prod', 'status' => 'active']);
+        $instance->update(['production_user' => 'app_sample', 'production_home' => '/home/app_sample']);
         mock(SshExecutor::class)->shouldNotReceive('execute');
 
         $response = $this->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])

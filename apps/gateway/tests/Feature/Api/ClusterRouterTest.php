@@ -909,6 +909,10 @@ function cluster_router_replacement_projector(): FakeClusterRouterReplacementPro
  */
 function cluster_router_owned_route(Cluster $cluster, Node $workload): array
 {
+    if (! $workload->roles()->where('role', RoleName::AppDev->value)->exists()) {
+        $workload->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
+    }
+
     $app = OrbitApp::query()->create([
         'name' => 'Acme',
         'slug' => 'acme-'.Str::random(6),

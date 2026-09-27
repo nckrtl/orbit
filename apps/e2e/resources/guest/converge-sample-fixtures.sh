@@ -64,6 +64,15 @@ exit($status);"""
     def require(condition, message):
         if not condition: raise RuntimeError(message)
 
+    def instance_placement(instance, nodes):
+        matches = [candidate for candidate in nodes if candidate.get('id') == instance.get('node_id')]
+        if len(matches) != 1: raise RuntimeError('Instance Node placement is unavailable or ambiguous')
+        roles = set(matches[0].get('roles', []))
+        is_development = 'app-dev' in roles
+        is_production = 'app-prod' in roles
+        if is_development == is_production: raise RuntimeError('Instance Node has no unique application placement role')
+        return 'development' if is_development else 'production'
+
     nodes=orbit('node:list')['nodes']
     node=unique(nodes, 'name', 'app-dev')
     require(node is not None and node['status']=='active' and 'database' in node['roles'] and node['wireguard_ip']=='10.44.0.2', 'Invalid database Node')
@@ -173,7 +182,7 @@ exit($status);"""
             for key,value in {'APP_URL':'https://{{app_instance.domain}}','QUEUE_CONNECTION':'redis','REDIS_DB':'1','REDIS_CACHE_DB':'1','CACHE_STORE':'redis','SESSION_DRIVER':'database'}.items():
                 orbit('env:update',selector,'--key='+key,'--value='+value)
             orbit('env:sync',selector)
-            if instance['environment']=='development':
+            if instance_placement(instance, nodes)=='development':
                 run(['php',instance['checkout_path']+'/artisan','migrate','--force','--no-interaction'])
             else:
                 # The existing deploy steps include migrations before activation.

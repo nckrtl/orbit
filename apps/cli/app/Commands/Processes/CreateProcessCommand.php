@@ -62,6 +62,13 @@ final class CreateProcessCommand extends TargetedProcessCommand
 
         $preset = $this->stringOption('preset');
         if ($preset !== null) {
+            if ($this->option('project') !== null) {
+                return $this->renderGatewayFailure(
+                    'process.preset_target_invalid',
+                    'A Process preset cannot be used with --project.',
+                );
+            }
+
             if (! in_array($preset, ['vp-dev', 'agentation-mcp', 'antigravity-watch'], true)) {
                 return $this->renderGatewayFailure('process.preset_invalid', 'Supported Process presets are vp-dev, agentation-mcp, and antigravity-watch.');
             }

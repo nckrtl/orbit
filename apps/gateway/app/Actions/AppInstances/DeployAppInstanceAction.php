@@ -33,6 +33,7 @@ final readonly class DeployAppInstanceAction
         private AppInstanceEnvironmentSynchronizer $environment,
         private ProductionDeployment $deployment,
         private ProductionPhpRuntimeManager $runtime,
+        private InstantiateAppRuntimeDefinitionsAction $definitions,
         private CommandDeadline $deadline,
     ) {}
 
@@ -92,6 +93,8 @@ final readonly class DeployAppInstanceAction
             $this->assertNotCancelled($request);
             $selected = $this->deployment->activate($appInstance, $release);
             $appInstance->update(['checkout_path' => $selected->path]);
+            $boundary = DeploymentFailureBoundary::AfterActivation;
+            $this->definitions->installCaptured($appInstance);
 
             if (is_string($appInstance->selected_php_version)) {
                 $boundary = DeploymentFailureBoundary::CacheRefresh;

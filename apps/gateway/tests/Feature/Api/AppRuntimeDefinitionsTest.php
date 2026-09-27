@@ -35,7 +35,7 @@ it('provides complete process definition CRUD with command-safe collections', fu
         ->assertCreated()
         ->assertJsonPath('data.app_id', $this->orbitApp->id)
         ->assertJsonPath('data.name', 'worker')
-        ->assertJsonPath('data.environments', ['development'])
+        ->assertJsonPath('data.environments', ['production'])
         ->assertJsonPath('data.spec.runtime', 'systemd')
         ->assertJsonPath('data.spec.command.0', $command)
         ->assertJsonPath('data.spec.restart_policy', 'on-failure')
@@ -57,20 +57,20 @@ it('provides complete process definition CRUD with command-safe collections', fu
         ->assertJsonPath('data.spec.command.0', $command);
 
     $replacement = runtime_definition_process_payload('web', '/usr/bin/new-command');
-    $replacement['environments'] = ['development', 'production'];
+    $replacement['environments'] = ['production'];
     $this
         ->putJson("/api/v1/projects/{$this->orbitApp->id}/process-definitions/worker", $replacement)
         ->assertOk()
         ->assertJsonPath('data.id', $id)
         ->assertJsonPath('data.name', 'web')
-        ->assertJsonPath('data.environments', ['development', 'production'])
+        ->assertJsonPath('data.environments', ['production'])
         ->assertJsonPath('data.spec.command.0', '/usr/bin/new-command');
 
     $stored = ProcessDefinition::query()->sole();
     expect($stored->name)
         ->toBe('web')
         ->and($stored->environments)
-        ->toBe(['development', 'production'])
+        ->toBe(['production'])
         ->and($stored->spec)
         ->toMatchArray($replacement['spec']);
 
@@ -203,7 +203,7 @@ it('keeps definition commands out of conflict logs', function (string $kind, str
 it('applies Process specification limits to non-JSON content types', function (array $specification): void {
     $body = json_encode([
         'name' => 'worker',
-        'environments' => ['development'],
+        'environments' => ['production'],
         'spec' => $specification,
     ], JSON_THROW_ON_ERROR);
 
@@ -243,7 +243,7 @@ it('rejects literal dots and asterisks in Docker environment names', function (
 ): void {
     $body = json_encode([
         'name' => 'worker',
-        'environments' => ['development'],
+        'environments' => ['production'],
         'spec' => [
             'runtime' => 'docker',
             'command' => ['php'],
@@ -338,22 +338,22 @@ it('rejects unknown and recursively duplicated JSON members without disclosing c
         ->not->toContain($sentinel);
 })->with([
     'unknown root member' => [
-        '{"name":"worker","environments":["development"],"spec":{"runtime":"systemd","command":["__COMMAND__"]},"start":true}',
+        '{"name":"worker","environments":["production"],"spec":{"runtime":"systemd","command":["__COMMAND__"]},"start":true}',
     ],
     'duplicate root member' => [
-        '{"name":"worker","name":"other","environments":["development"],"spec":{"runtime":"systemd","command":["__COMMAND__"]}}',
+        '{"name":"worker","name":"other","environments":["production"],"spec":{"runtime":"systemd","command":["__COMMAND__"]}}',
     ],
     'escaped duplicate nested member' => [
-        '{"name":"worker","environments":["development"],"spec":{"runtime":"systemd","command":["__COMMAND__"],"comm\\u0061nd":["other"]}}',
+        '{"name":"worker","environments":["production"],"spec":{"runtime":"systemd","command":["__COMMAND__"],"comm\\u0061nd":["other"]}}',
     ],
     'unknown nested member' => [
-        '{"name":"worker","environments":["development"],"spec":{"runtime":"systemd","command":["__COMMAND__"],"host_node_id":1}}',
+        '{"name":"worker","environments":["production"],"spec":{"runtime":"systemd","command":["__COMMAND__"],"host_node_id":1}}',
     ],
     'duplicate environment member' => [
-        '{"name":"worker","environments":["development"],"spec":{"runtime":"docker","command":["__COMMAND__"],"image":"php:8.5","environment":{"TOKEN":"first","TOKEN":"second"}}}',
+        '{"name":"worker","environments":["production"],"spec":{"runtime":"docker","command":["__COMMAND__"],"image":"php:8.5","environment":{"TOKEN":"first","TOKEN":"second"}}}',
     ],
     'duplicate volume member' => [
-        '{"name":"worker","environments":["development"],"spec":{"runtime":"docker","command":["__COMMAND__"],"image":"php:8.5","volumes":[{"source":"data","target":"/data","targ\\u0065t":"/other"}]}}',
+        '{"name":"worker","environments":["production"],"spec":{"runtime":"docker","command":["__COMMAND__"],"image":"php:8.5","volumes":[{"source":"data","target":"/data","targ\\u0065t":"/other"}]}}',
     ],
 ]);
 
@@ -444,7 +444,7 @@ function runtime_definition_process_payload(
 ): array {
     return [
         'name' => $name,
-        'environments' => ['development'],
+        'environments' => ['production'],
         'spec' => [
             'runtime' => 'systemd',
             'command' => [$command, 'artisan', 'queue:work'],
@@ -462,7 +462,7 @@ function runtime_definition_schedule_payload(
 ): array {
     return [
         'name' => $name,
-        'environments' => ['development', 'production'],
+        'environments' => ['production'],
         'spec' => [
             'command' => $command,
             'calendar' => 'hourly',

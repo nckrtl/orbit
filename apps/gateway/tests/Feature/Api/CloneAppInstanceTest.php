@@ -37,6 +37,7 @@ beforeEach(function (): void {
     $this->caller = clone_api_node('clone-api-caller');
     $this->caller->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
     $this->candidateNode = clone_api_node('clone-api-candidate');
+    $this->candidateNode->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
     $this->destinationNode = clone_api_node('clone-api-destination');
     $app = OrbitApp::query()->create([
         'name' => 'Clone API',
@@ -216,8 +217,8 @@ it('returns the ordinary created AppInstance and records the target without SQLi
         ->assertCreated()
         ->assertJsonPath('data.id', $target->id)
         ->assertJsonPath('data.name', 'target')
-        ->assertJsonPath('data.environment', 'production')
-        ->assertJsonPath('data.status', 'active');
+        ->assertJsonPath('data.status', 'active')
+        ->assertJsonMissingPath('data.environment');
 
     $activity = Activity::query()->where('command', 'instance:clone')->sole();
     expect($activity->status)->toBe('succeeded')
@@ -318,7 +319,7 @@ final class Orb198ApiCandidateInspector implements AppInstanceCloneCandidateInsp
 
         return new CloneCandidateSource(
             appInstanceId: $candidate->id,
-            environment: $candidate->environment,
+            environment: $candidate->defaultAppEnv(),
             basePath: $candidate->checkout_path,
             executionUser: $candidate->node->user,
             branch: (string) $candidate->branch,

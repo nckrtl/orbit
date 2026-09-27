@@ -42,6 +42,7 @@ it('reports every invalid active AppInstance before changing the upgrade schema 
         'wireguard_ip' => '10.44.0.60',
         'tld' => 'test',
     ]);
+    $node->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
     $missingRoute = app_instance_route_preflight_instance($app, $node, 'missing-route');
     $valid = app_instance_route_preflight_instance($app, $node, 'valid');
     $multipleRoutes = app_instance_route_preflight_instance($app, $node, 'multiple-routes');
@@ -149,7 +150,7 @@ it('allows only a recorded removing member to lose its Route after source prepar
             'node_id' => $instance->node_id,
             'route_id' => $route->id,
             'name' => $instance->name,
-            'environment' => $instance->environment,
+            'environment' => $instance->defaultAppEnv(),
             'source_layout' => $instance->source_layout,
             'repository_identity' => $instance->app->repository_identity,
             'checkout_path' => $instance->checkout_path,
@@ -283,7 +284,7 @@ it('prevents an existing shared production target set from drifting through rela
                 'status' => LifecycleStatus::Failed->value,
             ]))
         ->toThrow(QueryException::class)
-        ->and(fn () => $one->update(['environment' => 'development']))
+        ->and(fn () => $one->node->roles()->where('role', RoleName::AppProd->value)->delete())
         ->toThrow(QueryException::class);
 
     $other = Cluster::query()->create(['name' => 'drift', 'state' => 'active']);

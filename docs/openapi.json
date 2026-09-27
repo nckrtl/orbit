@@ -14654,7 +14654,6 @@
                     "items": {
                       "type": "string",
                       "enum": [
-                        "development",
                         "production"
                       ]
                     }
@@ -15091,7 +15090,6 @@
                     "items": {
                       "type": "string",
                       "enum": [
-                        "development",
                         "production"
                       ]
                     }
@@ -15396,7 +15394,6 @@
                     "items": {
                       "type": "string",
                       "enum": [
-                        "development",
                         "production"
                       ]
                     }
@@ -15764,7 +15761,6 @@
                     "items": {
                       "type": "string",
                       "enum": [
-                        "development",
                         "production"
                       ]
                     }
@@ -22173,9 +22169,6 @@
             "$ref": "#/components/schemas/NodeIdentity"
           },
           "name": {
-            "type": "string"
-          },
-          "environment": {
             "type": "string"
           },
           "source_layout": {

@@ -6,6 +6,7 @@ namespace App\Domain\Processes;
 
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Hibernation\AppDevHibernationPolicy;
+use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\AppInstance;
@@ -128,7 +129,7 @@ final readonly class ProcessTargetResolver
             );
         }
 
-        return $this->instanceContext($owner);
+        return $this->instanceContext($owner, allowRemovingRole: true);
     }
 
     private function forAdmissionOwner(AppInstance|Node $owner): ProcessTarget
@@ -176,17 +177,28 @@ final readonly class ProcessTargetResolver
         );
     }
 
-    private function instanceContext(AppInstance $instance): ProcessTarget
+    private function instanceContext(AppInstance $instance, bool $allowRemovingRole = false): ProcessTarget
     {
         $this->ensureLinux($instance->node);
 
-        if ($instance->placedOnAppDev()) {
+        $appDevPlacement = $instance->placedOnAppDev()
+            || ($allowRemovingRole && $instance->node->roles()
+                ->where('role', RoleName::AppDev->value)
+                ->where('status', LifecycleStatus::Removing->value)
+                ->exists());
+        $appProdPlacement = $instance->placedOnAppProd()
+            || ($allowRemovingRole && $instance->node->roles()
+                ->where('role', RoleName::AppProd->value)
+                ->where('status', LifecycleStatus::Removing->value)
+                ->exists());
+
+        if ($appDevPlacement) {
             $workingDirectory = $instance->checkout_path;
             $environmentFile = "{$instance->checkout_path}/.env";
             $user = $instance->node->user;
             $certificateScope = "app-instance-{$instance->id}";
             $productionReleaseLayout = false;
-        } elseif ($instance->placedOnAppProd()) {
+        } elseif ($appProdPlacement) {
             $home = $instance->production_home;
             $user = $instance->production_user;
 
@@ -194,13 +206,12 @@ final readonly class ProcessTargetResolver
                 $this->unavailable($instance);
             }
 
-            $productionReleaseLayout = $instance->usesProductionReleaseLayout();
-
-            if ($instance->checkout_path !== $home && ! $productionReleaseLayout) {
+            if (! $instance->usesProductionReleaseLayout()) {
                 $this->unavailable($instance);
             }
 
-            $workingDirectory = $productionReleaseLayout ? "{$home}/current" : $home;
+            $productionReleaseLayout = true;
+            $workingDirectory = "{$home}/current";
             $environmentFile = "{$home}/.env";
             $certificateScope = null;
         } else {
@@ -230,7 +241,7 @@ final readonly class ProcessTargetResolver
 
     private function developmentRouteDomain(AppInstance $instance): ?string
     {
-        if ($instance->environment !== 'development') {
+        if (! $instance->placedOnAppDev()) {
             return null;
         }
 

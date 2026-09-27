@@ -662,7 +662,7 @@ function orb181_projector_member(AppInstance $instance, Route $route): AppInstan
             'node_id' => $instance->node_id,
             'route_id' => $route->id,
             'name' => $instance->name,
-            'environment' => $instance->environment,
+            'environment' => $instance->defaultAppEnv(),
             'source_layout' => $instance->source_layout,
             'repository_identity' => $instance->app->repository_identity,
             'checkout_path' => $instance->checkout_path,

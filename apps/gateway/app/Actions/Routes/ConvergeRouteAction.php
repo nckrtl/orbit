@@ -646,7 +646,7 @@ final readonly class ConvergeRouteAction
         }
 
         $environments = array_values(array_unique(array_map(
-            static fn (AppInstance $instance): string => $instance->environment,
+            static fn (AppInstance $instance): string => $instance->defaultAppEnv(),
             $targets,
         )));
 

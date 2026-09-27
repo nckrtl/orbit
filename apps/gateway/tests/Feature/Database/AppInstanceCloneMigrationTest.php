@@ -9,6 +9,9 @@ use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
+beforeEach(fn () => app_instance_environment_migration()->down());
+afterEach(fn () => restore_app_instance_environment_schema_for_migration_test());
+
 it('adds nullable clone evidence without changing legacy AppInstances', function (): void {
     $migration = app_instance_clone_migration();
     $migration->down();

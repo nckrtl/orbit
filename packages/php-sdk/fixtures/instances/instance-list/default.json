@@ -20,7 +20,6 @@
                     "name": "app-dev"
                 },
                 "name": "dev",
-                "environment": "development",
                 "source_layout": "checkout",
                 "checkout_path": "/srv/orbit/apps/acme/dev",
                 "production_user": null,

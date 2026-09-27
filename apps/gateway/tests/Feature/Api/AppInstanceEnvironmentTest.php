@@ -451,6 +451,8 @@ it('synchronizes by the existing selector with a narrow value-free result', func
 
 it('keeps a release-layout production environment at the persistent home', function (): void {
     $home = '/home/orbit-app-216';
+    $this->instance->node->roles()->where('role', RoleName::AppDev)->delete();
+    $this->instance->node->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
     $this->instance->update([
         'environment' => 'production',
         'checkout_path' => "{$home}/releases/initial",
@@ -624,6 +626,7 @@ function environment_api_fixture(): array
         'wireguard_ip' => '10.44.0.201',
         'user' => 'orbit',
     ]);
+    $node->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
     $app = OrbitApp::query()->create([
         'name' => 'Environment API',
         'slug' => 'environment-api',

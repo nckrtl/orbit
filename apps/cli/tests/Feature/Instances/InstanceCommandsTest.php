@@ -488,7 +488,6 @@ describe('instance:create', function (): void {
     it('reports production placement identity for humans', function (): void {
         $payload = [
             ...instance_payload(),
-            'environment' => 'production',
             'production_user' => 'orbit-app-3',
             'production_home' => '/home/orbit-app-3',
             'checkout_path' => '/home/orbit-app-3',
@@ -538,8 +537,8 @@ describe('instance:list', function (): void {
 
         expect(Artisan::call('instance:list'))->toBe(0);
         expect(instance_source_text(Artisan::output()))->toContain(
-            'ID PROJECT NODE VITE PORT NAME ENVIRONMENT SOURCE LAYOUT ROOT SELECTED BRANCH BRANCH OVERRIDE MIGRATION REQUIRED ROUTE DOMAIN URL STATUS REMOVAL',
-            '5 3 2 — dev development checkout public dev — no dev.orbit.test https://dev.orbit.test active —',
+            'ID PROJECT NODE VITE PORT NAME SOURCE LAYOUT ROOT SELECTED BRANCH BRANCH OVERRIDE MIGRATION REQUIRED ROUTE DOMAIN URL STATUS REMOVAL',
+            '5 3 2 — dev checkout public dev — no dev.orbit.test https://dev.orbit.test active —',
             'Request ID: '.instance_request_id(),
         );
     });
@@ -573,7 +572,6 @@ describe('instance:list', function (): void {
 describe('instance:update', function (): void {
     it('shows the accepted deployment branch separately from the unchanged source branch', function (): void {
         $payload = instance_payload();
-        $payload['environment'] = 'production';
         $payload['selected_branch'] = 'main';
         $mock = MockClient::global([
             UpdateAppInstanceRequest::class => instance_mock_response(payload: $payload),
