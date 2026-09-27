@@ -17,6 +17,7 @@ use App\Domain\Metrics\ExporterDegradationReason;
 use App\Domain\Metrics\MetricsPublicationCleanup;
 use App\Domain\Metrics\MetricsRoleManager;
 use App\Domain\Nodes\GatewayPrivateDnsRoute;
+use App\Domain\Nodes\NodeConverger;
 use App\Domain\Nodes\NodeReachabilityProbe;
 use App\Domain\Nodes\NodeRoleDependencySet;
 use App\Domain\Nodes\NodeRoleDependentCleaner;
@@ -49,6 +50,7 @@ use App\Models\Tool;
 use App\Models\ToolManagerRecord;
 use Illuminate\Support\Str;
 use Tests\Support\FakeGatewayPrivateDnsRoute;
+use Tests\Support\FakeNodeConverger;
 use Tests\Support\FakeNodeRoleFirewallManager;
 use Tests\Support\FakeRouteRemovalProjector;
 use Tests\Support\FakeToolManager;
@@ -850,6 +852,7 @@ it('records node access add and remove commands against the serving node and pre
 
 it('records node role commands against the node with bounded inputs and stable failures', function (): void {
     app()->instance(ToolManagerMaterializer::class, new FakeToolManagerMaterializer);
+    app()->instance(NodeConverger::class, new FakeNodeConverger);
     $gateway = $this->markAsGateway(Node::query()->create([
         'name' => 'role-activity-gateway',
         'status' => LifecycleStatus::Active,
