@@ -10,6 +10,7 @@ use App\Domain\Nodes\NodeProvisioningException;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\Processes\ProtectedInput;
+use App\Infrastructure\Shared\StoredValue;
 use RuntimeException;
 use Throwable;
 
@@ -29,7 +30,7 @@ final readonly class NativeRuntimeHibernatorConverger implements RuntimeHibernat
     public function converge(): void
     {
         $artisan = $this->artisan !== '' ? $this->artisan : base_path('artisan');
-        $orbitHome = $this->orbitHome !== '' ? $this->orbitHome : (string) config('orbit.home');
+        $orbitHome = $this->orbitHome !== '' ? $this->orbitHome : StoredValue::string(config('orbit.home'));
         $workingDirectory = $this->workingDirectory !== '' ? $this->workingDirectory : base_path();
         $user = $this->user !== '' ? $this->user : 'orbit';
         $service = $this->units->renderService($this->phpBinary, $artisan, $orbitHome, $workingDirectory, $user);

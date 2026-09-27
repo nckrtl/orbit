@@ -49,6 +49,6 @@ final class AnnotationsController extends Controller
 
     public function events(StreamAnnotationsRequest $request, AppInstance $instance, StreamAnnotationsAction $action): StreamedResponse
     {
-        return $action->execute($instance, (int) $request->validated('after', 0));
+        return $action->execute($instance, $request->integer('after', 0));
     }
 }

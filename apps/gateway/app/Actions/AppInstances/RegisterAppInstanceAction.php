@@ -565,7 +565,7 @@ final readonly class RegisterAppInstanceAction
             inferredSlug: $instance->registration_inferred_slug,
             inferredRoot: $instance->registration_inferred_root,
             commonRepositoryPath: $instance->registration_common_repository_path,
-            worktreePaths: array_values($worktreePaths),
+            worktreePaths: array_values(array_filter($worktreePaths, is_string(...))),
             sourceDigest: $instance->registration_source_digest,
         );
     }

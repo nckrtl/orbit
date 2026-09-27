@@ -30,7 +30,13 @@ final class ActivityShutdownFinalizer
 
     public static function arm(Activity $activity): self
     {
-        $finalizer = new self((int) $activity->getKey());
+        $activityId = $activity->getKey();
+
+        if (! is_int($activityId)) {
+            throw new \UnexpectedValueException('Activity must have an integer key before it is armed.');
+        }
+
+        $finalizer = new self($activityId);
         self::$armed[spl_object_id($finalizer)] = $finalizer;
 
         register_shutdown_function($finalizer->finalize(...));

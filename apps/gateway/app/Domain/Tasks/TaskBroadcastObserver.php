@@ -25,7 +25,7 @@ final readonly class TaskBroadcastObserver
             $model instanceof TaskGroup => $this->broadcasts->groupCreated($model->id),
             $model instanceof Task => $this->broadcasts->groupChanged($model->task_group_id),
             $model instanceof TaskCheck => $this->checkChanged($model),
-            $model instanceof TaskComment => $this->broadcasts->commentCreated((int) $model->getKey()),
+            $model instanceof TaskComment => $this->broadcasts->commentCreated($model->id),
             $model instanceof AgentThread => $this->broadcasts->threadChanged($model->id),
             default => null,
         };

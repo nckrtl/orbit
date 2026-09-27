@@ -86,10 +86,17 @@ final readonly class LocalExtensionState
             throw new GatewayConfigException('Orbit extension configuration is invalid.');
         }
 
-        $enabled = is_array($decoded['enabled']) ? $decoded['enabled'] : null;
-
-        if ($enabled === null || array_any($enabled, static fn (mixed $item): bool => ! is_string($item))) {
+        if (! is_array($decoded['enabled'])) {
             throw new GatewayConfigException('Orbit extension configuration is invalid.');
+        }
+
+        $enabled = [];
+        foreach ($decoded['enabled'] as $item) {
+            if (! is_string($item)) {
+                throw new GatewayConfigException('Orbit extension configuration is invalid.');
+            }
+
+            $enabled[] = $item;
         }
 
         return array_values(array_unique(array_filter($enabled, $this->known(...))));

@@ -22,11 +22,11 @@ final class AppInstanceQueueRequest extends FormRequest
     public function state(): string
     {
         /** @var 'pending'|'completed'|'failed' */
-        return (string) ($this->validated('state') ?? 'pending');
+        return $this->string('state', 'pending')->toString();
     }
 
     public function limit(): int
     {
-        return (int) ($this->validated('limit') ?? 50);
+        return $this->integer('limit', 50);
     }
 }

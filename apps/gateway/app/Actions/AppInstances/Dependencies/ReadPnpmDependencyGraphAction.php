@@ -394,6 +394,9 @@ final readonly class ReadPnpmDependencyGraphAction
         foreach ([array_diff_key($regular, $optional), $optional] as $index => $links) {
             foreach ($links as $name => $reference) {
                 $name = $this->packageName((string) $name);
+                if (! is_string($reference)) {
+                    $this->invalid();
+                }
                 $target = $this->target($name, $reference, $snapshots);
                 $targets[$name] = $target;
 
@@ -439,6 +442,9 @@ final readonly class ReadPnpmDependencyGraphAction
                 array_pop($objects);
             } elseif (preg_match('/\G\s*:/', $contents, offset: $offset + strlen($token)) === 1) {
                 $key = json_decode($token, flags: JSON_THROW_ON_ERROR);
+                if (! is_string($key)) {
+                    $this->invalid();
+                }
                 $index = count($objects) - 1;
 
                 if (isset($objects[$index][$key])) {

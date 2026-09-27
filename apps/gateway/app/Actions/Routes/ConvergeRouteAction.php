@@ -21,6 +21,7 @@ use App\Domain\Routes\RouteReconciliationGuard;
 use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Shared\StoredInteger;
 use App\Models\AppInstance;
 use App\Models\Cluster;
 use App\Models\Route;
@@ -96,7 +97,13 @@ final readonly class ConvergeRouteAction
      */
     public function completePlacements(iterable $routes): void
     {
-        $pending = collect($routes)
+        $routeList = [];
+
+        foreach ($routes as $route) {
+            $routeList[] = $route;
+        }
+
+        $pending = collect($routeList)
             ->map(static fn (Route $route): ?Route => Route::query()->find($route->id))
             ->filter(fn (?Route $route): bool => $route instanceof Route && $this->awaitsPlacementWithdrawal($route))
             ->values();
@@ -190,7 +197,7 @@ final readonly class ConvergeRouteAction
     {
         $instanceId = $route->analyticsTracking()->value('app_instance_id');
 
-        return $instanceId === null ? [] : [(int) $instanceId];
+        return $instanceId === null ? [] : [StoredInteger::from($instanceId)];
     }
 
     private function tracking(): ConvergeAnalyticsTrackingPlacementAction
@@ -221,7 +228,7 @@ final readonly class ConvergeRouteAction
             ->orderBy('position')
             ->orderBy('app_instance_id')
             ->pluck('app_instance_id')
-            ->map(static fn (mixed $id): int => (int) $id)
+            ->map(static fn (mixed $id): int => StoredInteger::from($id))
             ->all());
     }
 
@@ -606,7 +613,7 @@ final readonly class ConvergeRouteAction
         $currentTargetIds = $route
             ->targets
             ->pluck('app_instance_id')
-            ->map(static fn (mixed $id): int => (int) $id)
+            ->map(static fn (mixed $id): int => StoredInteger::from($id))
             ->sort()
             ->values()
             ->all();

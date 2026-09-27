@@ -6,6 +6,7 @@ namespace App\Infrastructure\Nodes\Roles;
 
 use App\Domain\Nodes\NodeRoleOperationException;
 use App\Infrastructure\Nodes\NodeLocks;
+use App\Infrastructure\Shared\StoredValue;
 use App\Models\Node;
 use Closure;
 use Illuminate\Contracts\Cache\Lock;
@@ -85,6 +86,6 @@ final class NodeRoleConvergeLock
 
     private static function name(Node $node): string
     {
-        return 'node-role:'.($node->exists ? 'id:'.$node->getKey() : 'name:'.$node->name);
+        return 'node-role:'.($node->exists ? 'id:'.StoredValue::integer($node->getKey()) : 'name:'.$node->name);
     }
 }

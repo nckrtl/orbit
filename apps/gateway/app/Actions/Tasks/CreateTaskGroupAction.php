@@ -31,8 +31,8 @@ final readonly class CreateTaskGroupAction
         $this->requireExtension->execute();
 
         try {
-            $implementerDriver = $this->drivers->get((string) config('orbit.tasks.implementer_agent_driver', 't3'))->key();
-            $reviewerDriver = $this->drivers->get((string) config('orbit.tasks.reviewer_agent_driver', 't3'))->key();
+            $implementerDriver = $this->drivers->get($this->configuredDriver('orbit.tasks.implementer_agent_driver'))->key();
+            $reviewerDriver = $this->drivers->get($this->configuredDriver('orbit.tasks.reviewer_agent_driver'))->key();
         } catch (AgentDriverException) {
             throw new ResourceOperationException('tasks.agent_driver_unavailable', 'The configured agent driver is unavailable.', 409);
         }
@@ -94,5 +94,16 @@ final readonly class CreateTaskGroupAction
         $model = config('orbit.tasks.'.$key);
 
         return is_string($model) && $model !== '' ? $model : $default;
+    }
+
+    private function configuredDriver(string $key): string
+    {
+        $driver = config($key, 't3');
+
+        if (! is_string($driver)) {
+            throw new AgentDriverException('The configured agent driver is unavailable.');
+        }
+
+        return $driver;
     }
 }

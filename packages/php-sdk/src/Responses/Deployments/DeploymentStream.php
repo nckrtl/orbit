@@ -183,15 +183,15 @@ final class DeploymentStream implements IteratorAggregate
         }
 
         return match ($event['type']) {
-            'phase' => $this->phase($event),
-            'output' => $this->output($event),
-            'result' => $this->result($event),
+            'phase' => $this->phase($event, $event['sequence']),
+            'output' => $this->output($event, $event['sequence']),
+            'result' => $this->result($event, $event['sequence']),
             default => throw $this->invalid(),
         };
     }
 
     /** @param array<array-key, mixed> $event */
-    private function phase(#[SensitiveParameter] array $event): DeploymentPhaseEvent
+    private function phase(#[SensitiveParameter] array $event, int $sequence): DeploymentPhaseEvent
     {
         $phase = $event['phase'] ?? null;
         $stepRequired = in_array($phase, ['before_activation', 'after_activation'], strict: true);
@@ -215,16 +215,23 @@ final class DeploymentStream implements IteratorAggregate
                 'after_activation',
                 'rollback',
             ], strict: true)
-            || ($stepRequired && (! is_string($stepName) || ! $this->validStepName($stepName)))
         ) {
             throw $this->invalid();
         }
 
-        return new DeploymentPhaseEvent($event['sequence'], $this->requestId, $phase, $stepName);
+        if (! $stepRequired) {
+            return new DeploymentPhaseEvent($sequence, $this->requestId, $phase, null);
+        }
+
+        if (! is_string($stepName) || ! $this->validStepName($stepName)) {
+            throw $this->invalid();
+        }
+
+        return new DeploymentPhaseEvent($sequence, $this->requestId, $phase, $stepName);
     }
 
     /** @param array<array-key, mixed> $event */
-    private function output(#[SensitiveParameter] array $event): DeploymentOutputEvent
+    private function output(#[SensitiveParameter] array $event, int $sequence): DeploymentOutputEvent
     {
         if (
             ! $this->hasExactFields($event, [
@@ -252,7 +259,7 @@ final class DeploymentStream implements IteratorAggregate
         }
 
         return new DeploymentOutputEvent(
-            $event['sequence'],
+            $sequence,
             $this->requestId,
             $event['stream'],
             $decoded,
@@ -260,7 +267,7 @@ final class DeploymentStream implements IteratorAggregate
     }
 
     /** @param array<array-key, mixed> $event */
-    private function result(#[SensitiveParameter] array $event): DeploymentResultEvent
+    private function result(#[SensitiveParameter] array $event, int $sequence): DeploymentResultEvent
     {
         if (! $this->hasExactFields($event, [
             'type',
@@ -292,7 +299,9 @@ final class DeploymentStream implements IteratorAggregate
                 'rollback_selection',
                 'operation',
             ], strict: true)))
+            || ($errorCode !== null && ! is_string($errorCode))
             || ($errorCode !== null && GatewayErrorCode::fromTransport($errorCode) === null)
+            || ($selectedRelease !== null && ! is_string($selectedRelease))
             || ($selectedRelease !== null && ! $this->validRelease($selectedRelease))
             || ($status === 'succeeded' && ($failedStep !== null || $errorCode !== null || $selectedRelease === null))
             || ($status === 'failed' && ($failedStep === null || $errorCode === null))
@@ -301,7 +310,7 @@ final class DeploymentStream implements IteratorAggregate
         }
 
         return new DeploymentResultEvent(
-            $event['sequence'],
+            $sequence,
             $this->requestId,
             $status,
             $failedStep,

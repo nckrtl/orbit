@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\Tasks\Pi;
 
 use App\Domain\Tasks\AgentDriverException;
+use App\Infrastructure\Shared\StoredValue;
 use App\Models\Node;
 use SensitiveParameter;
 
@@ -25,7 +26,7 @@ final readonly class PiConnection
             throw new AgentDriverException('The agent Node address is unavailable.');
         }
         $host = str_contains($host, ':') ? '['.$host.']' : $host;
-        $port = (int) config('orbit.pi.port', 3774);
+        $port = StoredValue::integer(config('orbit.pi.port', 3774), 3774);
 
         return 'http://'.$host.':'.($port > 0 && $port <= 65535 ? $port : 3774);
     }

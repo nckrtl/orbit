@@ -7,6 +7,7 @@ namespace App\Domain\Logs;
 use App\Domain\Broadcasting\RealtimeConnection;
 use App\Infrastructure\Broadcasting\ReverbBroadcaster;
 use DateTimeInterface;
+use Illuminate\Contracts\Broadcasting\Broadcaster;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\Log;
@@ -134,7 +135,13 @@ final readonly class LogStreamBroadcaster
             try {
                 $this->realtime->configureBroadcasting($connection, oldServer: true);
                 Broadcast::purge('reverb');
-                Broadcast::connection('reverb')->broadcast($event->broadcastOn(), $event->broadcastAs(), $event->broadcastWith());
+                $broadcaster = Broadcast::connection('reverb');
+
+                if (! $broadcaster instanceof Broadcaster) {
+                    throw new RuntimeException('The reverb broadcaster is unavailable.');
+                }
+
+                $broadcaster->broadcast($event->broadcastOn(), $event->broadcastAs(), $event->broadcastWith());
                 $this->realtime->recordOldServer($connection, true);
             } catch (Throwable $exception) {
                 $this->failed($event, $exception);

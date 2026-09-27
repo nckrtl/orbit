@@ -14,11 +14,14 @@ final class ProfileHumanRenderer
      */
     public function lines(array $data): array
     {
-        $request = is_array($data['request'] ?? null) ? $data['request'] : [];
-        $timings = is_array($data['timings'] ?? null) ? $data['timings'] : [];
+        $requestValue = $data['request'] ?? null;
+        $timingsValue = $data['timings'] ?? null;
+        $request = is_array($requestValue) ? self::stringKeyed($requestValue) : [];
+        $timings = is_array($timingsValue) ? self::stringKeyed($timingsValue) : [];
         $method = is_string($request['method'] ?? null) && $request['method'] !== '' ? $request['method'] : 'GET';
         $url = is_string($request['url'] ?? null) ? $request['url'] : '';
-        $status = $request['status'] ?? '-';
+        $statusValue = $request['status'] ?? null;
+        $status = is_scalar($statusValue) ? (string) $statusValue : '-';
         $totalMs = $this->timingMs($timings, 'total_ms');
         $dnsMs = $this->timingMs($timings, 'dns_ms');
         $connectTotalMs = $this->timingMs($timings, 'connect_ms');
@@ -34,10 +37,13 @@ final class ProfileHumanRenderer
             $this->dottedLine('Waiting for response', $this->formatMs($waitingMs).'ms'),
         ];
 
-        if (is_array($data['toolbar'] ?? null)) {
+        $toolbarValue = $data['toolbar'] ?? null;
+        $toolbar = is_array($toolbarValue) ? self::stringKeyed($toolbarValue) : null;
+
+        if ($toolbar !== null) {
             $lines = [
                 ...$lines,
-                ...$this->toolbarLines($waitingMs, $data['toolbar'], $data['response_headers'] ?? []),
+                ...$this->toolbarLines($waitingMs, $toolbar, $data['response_headers'] ?? []),
             ];
         }
 
@@ -48,8 +54,9 @@ final class ProfileHumanRenderer
         );
         $lines[] = $this->dottedLine('Total', $this->formatMs($totalMs).'ms');
 
-        if (is_array($data['toolbar'] ?? null)) {
-            $queries = is_array($data['toolbar']['queries'] ?? null) ? $data['toolbar']['queries'] : [];
+        if ($toolbar !== null) {
+            $queriesValue = $toolbar['queries'] ?? null;
+            $queries = is_array($queriesValue) ? self::stringKeyed($queriesValue) : [];
             $querySummary = $this->toolbarQuerySummary($queries);
 
             if ($querySummary !== null) {
@@ -67,7 +74,7 @@ final class ProfileHumanRenderer
      */
     private function toolbarLines(float $waitingMs, array $toolbar, mixed $responseHeaders): array
     {
-        $headers = is_array($responseHeaders) ? $responseHeaders : [];
+        $headers = is_array($responseHeaders) ? self::stringKeyed($responseHeaders) : [];
         $anchors = is_array($toolbar['timing_anchors'] ?? null) ? $toolbar['timing_anchors'] : [];
         $caddyStart = $this->numericValue($anchors, 'caddy_start_ms');
         $phpStart = $this->numericValue($anchors, 'php_start_ms');
@@ -137,15 +144,15 @@ final class ProfileHumanRenderer
      */
     private function toolbarQuerySummary(array $queries): ?string
     {
-        $count = (int) ($queries['count'] ?? 0);
+        $count = $this->countValue($queries, 'count');
 
         if ($count <= 0) {
             return null;
         }
 
         $parts = ["{$count} queries"];
-        $slowCount = (int) ($queries['slow_count'] ?? 0);
-        $duplicateCount = (int) ($queries['duplicate_count'] ?? 0);
+        $slowCount = $this->countValue($queries, 'slow_count');
+        $duplicateCount = $this->countValue($queries, 'duplicate_count');
 
         if ($slowCount > 0) {
             $parts[] = "{$slowCount} slow";
@@ -156,6 +163,41 @@ final class ProfileHumanRenderer
         }
 
         return implode(', ', $parts);
+    }
+
+    /**
+     * @param  array<mixed, mixed>  $value
+     * @return array<string, mixed>
+     */
+    private static function stringKeyed(array $value): array
+    {
+        $mapped = [];
+
+        foreach ($value as $key => $item) {
+            if (is_string($key)) {
+                $mapped[$key] = $item;
+            }
+        }
+
+        return $mapped;
+    }
+
+    /**
+     * @param  array<string, mixed>  $values
+     */
+    private function countValue(array $values, string $key): int
+    {
+        $value = $values[$key] ?? null;
+
+        if (is_int($value)) {
+            return $value;
+        }
+
+        if ((is_float($value) && is_finite($value)) || (is_string($value) && is_numeric($value))) {
+            return (int) $value;
+        }
+
+        return 0;
     }
 
     /**

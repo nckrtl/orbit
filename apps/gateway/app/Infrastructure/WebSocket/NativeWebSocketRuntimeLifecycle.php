@@ -11,6 +11,7 @@ use App\Domain\WebSocket\WebSocketCredentials;
 use App\Domain\WebSocket\WebSocketRuntimeLifecycle;
 use App\Infrastructure\Nodes\Roles\NodeRolePrerequisiteCommandFactory;
 use App\Infrastructure\Processes\ProtectedInput;
+use App\Infrastructure\Shared\StoredValue;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
@@ -230,21 +231,21 @@ final readonly class NativeWebSocketRuntimeLifecycle implements WebSocketRuntime
 
     private function resolvedRepository(): string
     {
-        return $this->repository !== '' ? $this->repository : (string) config('orbit.websocket.repository');
+        return $this->repository !== '' ? $this->repository : StoredValue::string(config('orbit.websocket.repository'));
     }
 
     private function resolvedRef(): string
     {
-        return $this->ref !== '' ? $this->ref : (string) config('orbit.websocket.ref');
+        return $this->ref !== '' ? $this->ref : StoredValue::string(config('orbit.websocket.ref'));
     }
 
     private function resolvedInstallPath(): string
     {
-        return $this->installPath !== '' ? $this->installPath : (string) config('orbit.websocket.install_path');
+        return $this->installPath !== '' ? $this->installPath : StoredValue::string(config('orbit.websocket.install_path'));
     }
 
     private function resolvedPort(): int
     {
-        return $this->port > 0 ? $this->port : (int) config('orbit.websocket.port');
+        return $this->port > 0 ? $this->port : StoredValue::integer(config('orbit.websocket.port'));
     }
 }

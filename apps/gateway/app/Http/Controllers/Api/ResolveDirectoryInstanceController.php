@@ -20,8 +20,14 @@ final class ResolveDirectoryInstanceController extends Controller
         /** @var Node $consumer */
         $consumer = $request->user();
 
+        $directory = $request->validated('directory');
+
+        if (! is_string($directory)) {
+            throw new \UnexpectedValueException('A directory is required.');
+        }
+
         return response()->json([
-            'data' => $action->execute($request->validated('directory'), $consumer)->toArray(),
+            'data' => $action->execute($directory, $consumer)->toArray(),
             'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')],
         ]);
     }

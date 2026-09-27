@@ -49,7 +49,11 @@ final readonly class ProxyCliSnapshotStore
             return [];
         }
 
-        $rows = is_array($decoded['accounts'] ?? null) ? $decoded['accounts'] : (is_array($decoded) ? $decoded : []);
+        if (! is_array($decoded)) {
+            return [];
+        }
+
+        $rows = is_array($decoded['accounts'] ?? null) ? $decoded['accounts'] : $decoded;
         $accounts = [];
 
         foreach ($rows as $row) {

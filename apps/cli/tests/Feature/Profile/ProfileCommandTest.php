@@ -373,6 +373,31 @@ describe('profile', function (): void {
             ->not->toHaveKey('X-TOOLBAR-USER');
     });
 
+    it('ignores a toolbar summary that is not an object', function (): void {
+        $url = 'https://docs.test/login';
+        fakeLocalProfile(fakeProfileData(
+            url: $url,
+            headers: [
+                'x-toolbar-summary' => base64_encode(json_encode([1, 2], JSON_THROW_ON_ERROR)),
+            ],
+        ));
+
+        $exitCode = Artisan::call('profile', [
+            'url' => $url,
+            '--json' => true,
+        ]);
+        $decoded = json_decode(trim(Artisan::output()), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)
+            ->toBe(Command::SUCCESS)
+            ->and($decoded['source'])
+            ->toBe('baseline')
+            ->and($decoded['instrumented'])
+            ->toBeFalse()
+            ->and($decoded)
+            ->not->toHaveKey('toolbar');
+    });
+
     it('treats a completed non-2xx response as success', function (): void {
         fakeLocalProfile(fakeProfileData(status: 503));
 

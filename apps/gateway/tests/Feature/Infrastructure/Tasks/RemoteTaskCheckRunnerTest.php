@@ -13,6 +13,8 @@ use App\Infrastructure\AppDev\AppDevSshExecutor;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
+use App\Infrastructure\Ssh\RemoteCommand;
+use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\Tasks\RemoteTaskCheckRunner;
@@ -190,6 +192,32 @@ it('reports an unreachable workspace and invalid output as check failures', func
     'unreachable' => [new CommandResult(255, '', 'Connection refused', 1, false), 'The task workspace could not be reached for the check.'],
     'invalid output' => [new CommandResult(0, 'not json', '', 1, false), 'The check answered with invalid output.'],
 ]);
+
+it('reads a finished status larger than the 64 KiB process default', function (): void {
+    $cases = array_map(static fn (int $index): array => ['name' => 'case '.$index.' '.str_repeat('x', 150), 'status' => 'passed'], range(1, 400));
+    $status = json_encode(['state' => 'finished', 'output' => str_repeat('o', 16_384), 'result' => [
+        'exit_code' => 0,
+        'head_after' => str_repeat('a', 40),
+        'tree_after' => str_repeat('b', 40),
+        'changed_paths' => [],
+        'deliverables' => ['tests' => ['repro' => ['exit_code' => 0, 'cases' => $cases]]],
+    ]], JSON_THROW_ON_ERROR);
+    expect(strlen($status))->toBeGreaterThan(65_536);
+    $transport = new class($status) implements SshExecutor
+    {
+        public function __construct(private string $status) {}
+
+        public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
+        {
+            return new CommandResult(0, substr($this->status, 0, $command->maxOutputBytes ?? 65_536), '', 1, false);
+        }
+    };
+
+    $reading = check_runner($transport)->read(check_runner_instance('/srv/orbit/apps/shop/task-8'), new TaskCheckProcess(7, 'started', 'head', 'tree'));
+
+    expect($reading->state)->toBe('finished')
+        ->and($reading->exitCode)->toBe(0);
+});
 
 it('reads the same working tree as the check without touching the index', function (): void {
     $checkout = check_runner_checkout('echo ok');

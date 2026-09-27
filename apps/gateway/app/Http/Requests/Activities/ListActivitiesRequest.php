@@ -25,7 +25,7 @@ final class ListActivitiesRequest extends FormRequest
 
     public function limit(): int
     {
-        return (int) ($this->validated('limit') ?? 25);
+        return $this->integer('limit', 25);
     }
 
     public function requestId(): ?string
@@ -72,6 +72,6 @@ final class ListActivitiesRequest extends FormRequest
             return null;
         }
 
-        return (int) $value;
+        return $this->integer($key);
     }
 }

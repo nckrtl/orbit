@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\AppDev;
 
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Shared\StoredInteger;
 use App\Models\AppInstance;
 use App\Models\Node;
 use Illuminate\Support\Facades\DB;
@@ -32,7 +33,7 @@ final readonly class VitePortAllocator
 
             $excluded = array_values(array_unique([
                 ...self::EXCLUDED_PORTS,
-                ...DB::table('vite_port_assignments')->where('node_id', $node->id)->where('app_instance_id', '!=', $instance->id)->pluck('port')->map(static fn ($port): int => (int) $port)->all(),
+                ...DB::table('vite_port_assignments')->where('node_id', $node->id)->where('app_instance_id', '!=', $instance->id)->pluck('port')->map(static fn (mixed $port): int => StoredInteger::from($port))->all(),
             ]));
             $port = $this->runtime->selectPort($node, $preferred, $excluded);
             if ($port < 1024 || $port > 65535 || in_array($port, $excluded, true)) {

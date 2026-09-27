@@ -361,6 +361,7 @@ use App\Models\DatabaseConnection;
 use Illuminate\Broadcasting\BroadcastManager;
 use Illuminate\Cache\CacheManager;
 use Illuminate\Database\Eloquent\Relations\Relation;
+use Illuminate\Support\Facades\Config;
 use Illuminate\Support\ServiceProvider;
 use Laravel\Boost\Console\InstallCommand;
 use Laravel\Boost\Install\GuidelineComposer;
@@ -531,21 +532,21 @@ final class AppServiceProvider extends ServiceProvider
                 runtime: $app->make(ProcessRuntimeManager::class),
                 markers: $app->make(HibernationMarkerStore::class),
                 checkouts: $app->make(AppInstanceCheckoutInspector::class),
-                idleSeconds: (int) config('orbit.hibernation.idle_seconds'),
-                dependencyIdleSeconds: (int) config('orbit.hibernation.dependency_idle_seconds'),
+                idleSeconds: Config::integer('orbit.hibernation.idle_seconds'),
+                dependencyIdleSeconds: Config::integer('orbit.hibernation.dependency_idle_seconds'),
                 agents: $app->make(AgentProcessView::class),
             ),
         );
         $this->app->singleton(
             LogStreamStore::class,
             static fn ($app): CacheLogStreamStore => new CacheLogStreamStore(
-                $app->make(CacheManager::class)->build(CacheAgentStateView::storeConfiguration((string) config('orbit.home'))),
+                $app->make(CacheManager::class)->build(CacheAgentStateView::storeConfiguration(Config::string('orbit.home'))),
             ),
         );
         $this->app->singleton(
             NodeLocks::class,
             static fn ($app): NodeLocks => new NodeLocks(
-                $app->make(CacheManager::class)->build(NodeLocks::storeConfiguration((string) config('orbit.home'))),
+                $app->make(CacheManager::class)->build(NodeLocks::storeConfiguration(Config::string('orbit.home'))),
                 console: $app->runningInConsole(),
             ),
         );
@@ -560,7 +561,7 @@ final class AppServiceProvider extends ServiceProvider
         $this->app->singleton(
             CacheAgentStateView::class,
             static fn ($app): CacheAgentStateView => new CacheAgentStateView(
-                $app->make(CacheManager::class)->build(CacheAgentStateView::storeConfiguration((string) config('orbit.home'))),
+                $app->make(CacheManager::class)->build(CacheAgentStateView::storeConfiguration(Config::string('orbit.home'))),
             ),
         );
         $this->app->bind(
@@ -571,7 +572,7 @@ final class AppServiceProvider extends ServiceProvider
                 view: $app->make(CacheAgentStateView::class),
                 signer: $app->make(PresenceChannelSigner::class),
                 log: $app->make(LoggerInterface::class),
-                caPath: rtrim(string: (string) config('orbit.home'), characters: '/').'/ca/root.pem',
+                caPath: rtrim(string: Config::string('orbit.home'), characters: '/').'/ca/root.pem',
                 commit: static function () use ($app): ?string {
                     $result = $app->make(ProcessRunner::class)->run(
                         new ProcessInvocation(['git', '-C', base_path(), 'rev-parse', 'HEAD'], timeout: 10.0),
@@ -595,7 +596,7 @@ final class AppServiceProvider extends ServiceProvider
             RuntimeHibernatorConverger::class,
             static fn ($app): NativeRuntimeHibernatorConverger => new NativeRuntimeHibernatorConverger(
                 processes: $app->make(ProcessRunner::class),
-                sweepSeconds: (int) config('orbit.hibernation.sweep_seconds'),
+                sweepSeconds: Config::integer('orbit.hibernation.sweep_seconds'),
             ),
         );
         $this->app->bind(
@@ -605,7 +606,7 @@ final class AppServiceProvider extends ServiceProvider
                 ssh: $app->make(SshExecutor::class),
                 keys: $app->make(SshKeyProvider::class),
                 knownHosts: $app->make(KnownHostsStore::class),
-                timeoutSeconds: (int) config('orbit.hibernation.wake_timeout_seconds'),
+                timeoutSeconds: Config::integer('orbit.hibernation.wake_timeout_seconds'),
                 agents: $app->make(AgentProcessView::class),
             ),
         );
@@ -616,7 +617,7 @@ final class AppServiceProvider extends ServiceProvider
                 keys: $app->make(SshKeyProvider::class),
                 knownHosts: $app->make(KnownHostsStore::class),
                 accounts: $app->make(ManagedUserAccountResolver::class),
-                restoreTimeoutSeconds: (int) config('orbit.hibernation.cold_wake_timeout_seconds'),
+                restoreTimeoutSeconds: Config::integer('orbit.hibernation.cold_wake_timeout_seconds'),
             ),
         );
         $this->app->singleton(ManagedUserAccountResolver::class, SshManagedUserAccountResolver::class);
@@ -625,7 +626,7 @@ final class AppServiceProvider extends ServiceProvider
         $this->app->scoped(
             MetricsCredentialOperationLock::class,
             static fn (): MetricsCredentialOperationLock => new NativeMetricsCredentialOperationLock(
-                directory: rtrim(string: (string) config('orbit.home'), characters: '/')
+                directory: rtrim(string: Config::string('orbit.home'), characters: '/')
                     .'/locks/metrics-credentials',
                 deadline: app(CommandDeadline::class),
             ),
@@ -633,7 +634,7 @@ final class AppServiceProvider extends ServiceProvider
         $this->app->scoped(
             NodeCaddyBuildLock::class,
             static fn (): NodeCaddyBuildLock => new NodeCaddyBuildLock(
-                directory: rtrim(string: (string) config('orbit.home'), characters: '/').'/locks/caddy-build',
+                directory: rtrim(string: Config::string('orbit.home'), characters: '/').'/locks/caddy-build',
                 deadline: app(CommandDeadline::class),
             ),
         );
@@ -652,14 +653,14 @@ final class AppServiceProvider extends ServiceProvider
         $this->app->scoped(
             ClusterRouterOperationLock::class,
             static fn (): ClusterRouterOperationLock => new NativeClusterRouterOperationLock(
-                directory: rtrim(string: (string) config('orbit.home'), characters: '/').'/locks/cluster-router',
+                directory: rtrim(string: Config::string('orbit.home'), characters: '/').'/locks/cluster-router',
                 deadline: app(CommandDeadline::class),
             ),
         );
         $this->app->scoped(
             AppInstanceEnvironmentOperationLock::class,
             static fn (): AppInstanceEnvironmentOperationLock => new NativeAppInstanceEnvironmentOperationLock(
-                directory: rtrim(string: (string) config('orbit.home'), characters: '/')
+                directory: rtrim(string: Config::string('orbit.home'), characters: '/')
                     .'/locks/app-instance-environment',
                 deadline: app(CommandDeadline::class),
             ),
@@ -667,7 +668,7 @@ final class AppServiceProvider extends ServiceProvider
         $this->app->scoped(
             ProcessAdmissionLock::class,
             static fn (): ProcessAdmissionLock => new NativeProcessAdmissionLock(
-                directory: rtrim(string: (string) config('orbit.home'), characters: '/').'/locks/process-admission',
+                directory: rtrim(string: Config::string('orbit.home'), characters: '/').'/locks/process-admission',
                 deadline: app(CommandDeadline::class),
             ),
         );
@@ -675,7 +676,7 @@ final class AppServiceProvider extends ServiceProvider
         $this->app->scoped(
             DevelopmentProjectionOperationLock::class,
             static fn (): DevelopmentProjectionOperationLock => new NativeDevelopmentProjectionOperationLock(
-                orbitHome: rtrim(string: (string) config('orbit.home'), characters: '/'),
+                orbitHome: rtrim(string: Config::string('orbit.home'), characters: '/'),
                 deadline: app(CommandDeadline::class),
             ),
         );
@@ -689,7 +690,7 @@ final class AppServiceProvider extends ServiceProvider
             RealtimeConnection::class,
             static fn ($app): RealtimeConnection => new RealtimeConnection(
                 credentials: $app->make(WebSocketCredentialManager::class),
-                orbitHome: rtrim(string: (string) config('orbit.home'), characters: '/'),
+                orbitHome: rtrim(string: Config::string('orbit.home'), characters: '/'),
             ),
         );
 
@@ -725,7 +726,7 @@ final class AppServiceProvider extends ServiceProvider
         $this->app->singleton(
             AppDevSourceOperationLock::class,
             static fn (): AppDevSourceOperationLock => new NativeAppDevSourceOperationLock(
-                rtrim(string: (string) config('orbit.home'), characters: '/').'/locks/app-dev-source',
+                rtrim(string: Config::string('orbit.home'), characters: '/').'/locks/app-dev-source',
             ),
         );
         $this->app->singleton(
@@ -736,7 +737,7 @@ final class AppServiceProvider extends ServiceProvider
             LeafCertificateSigner::class,
             static fn (): LeafCertificateSigner => new OpenSslLeafCertificateSigner(
                 processes: app(ProcessRunner::class),
-                orbitHome: rtrim(string: (string) config('orbit.home'), characters: '/'),
+                orbitHome: rtrim(string: Config::string('orbit.home'), characters: '/'),
             ),
         );
         $this->app->singleton(
@@ -745,7 +746,7 @@ final class AppServiceProvider extends ServiceProvider
                 processes: app(ProcessRunner::class),
                 validator: app(OpenSslGatewayCertificateValidator::class),
                 links: app(NativeAtomicSymlinkPublisher::class),
-                orbitHome: rtrim(string: (string) config('orbit.home'), characters: '/'),
+                orbitHome: rtrim(string: Config::string('orbit.home'), characters: '/'),
             ),
         );
         $this->app->singleton(
@@ -755,7 +756,7 @@ final class AppServiceProvider extends ServiceProvider
                 files: app(ProtectedFileWriter::class),
                 processes: app(ProcessRunner::class),
                 firewallParser: app(UfwStatusParser::class),
-                orbitHome: rtrim(string: (string) config('orbit.home'), characters: '/'),
+                orbitHome: rtrim(string: Config::string('orbit.home'), characters: '/'),
             ),
         );
         $this->app->singleton(
@@ -766,21 +767,21 @@ final class AppServiceProvider extends ServiceProvider
                 files: app(ProtectedFileWriter::class),
                 checkout: new GatewayCheckoutAccessConverger(
                     processes: app(ProcessRunner::class),
-                    checkoutPath: rtrim(string: (string) config('orbit.gateway_checkout'), characters: '/'),
+                    checkoutPath: rtrim(string: Config::string('orbit.gateway_checkout'), characters: '/'),
                 ),
                 webDirectory: new GatewayWebDirectoryConverger(
                     processes: app(ProcessRunner::class),
-                    webRoot: (string) config('orbit.gateway_web'),
+                    webRoot: Config::string('orbit.gateway_web'),
                 ),
                 certificatePublisher: new NativeGatewayCertificatePublisher(
                     processes: app(ProcessRunner::class),
-                    orbitHome: rtrim(string: (string) config('orbit.home'), characters: '/'),
+                    orbitHome: rtrim(string: Config::string('orbit.home'), characters: '/'),
                 ),
                 fpm: new NativeGatewayFpmConverger(app(ProcessRunner::class)),
                 builds: app(NodeCaddyBuilds::class),
                 caddyInstaller: new NativeGatewayCaddyInstaller(app(ProcessRunner::class)),
-                orbitHome: rtrim(string: (string) config('orbit.home'), characters: '/'),
-                checkoutPath: rtrim(string: (string) config('orbit.gateway_checkout'), characters: '/'),
+                orbitHome: rtrim(string: Config::string('orbit.home'), characters: '/'),
+                checkoutPath: rtrim(string: Config::string('orbit.gateway_checkout'), characters: '/'),
                 hibernator: app(RuntimeHibernatorConverger::class),
                 agentView: app(AgentViewConverger::class),
             ),
@@ -807,20 +808,20 @@ final class AppServiceProvider extends ServiceProvider
                 web: app(GatewayWebConverger::class),
                 selfAccess: app(GatewaySelfAccessConverger::class),
                 dns: app(PrivateDnsManager::class),
-                orbitHome: rtrim(string: (string) config('orbit.home'), characters: '/'),
+                orbitHome: rtrim(string: Config::string('orbit.home'), characters: '/'),
             ),
         );
         $this->app->singleton(
             KnownHostsRepository::class,
             static fn (): KnownHostsRepository => new KnownHostsRepository(
-                rtrim(string: (string) config('orbit.home'), characters: '/').'/ssh/known_hosts',
+                rtrim(string: Config::string('orbit.home'), characters: '/').'/ssh/known_hosts',
             ),
         );
         $this->app->alias(KnownHostsRepository::class, KnownHostsStore::class);
         $this->app->singleton(
             GatewaySshKeys::class,
             static fn (): GatewaySshKeys => new GatewaySshKeys(
-                rtrim(string: (string) config('orbit.home'), characters: '/').'/ssh/id_ed25519',
+                rtrim(string: Config::string('orbit.home'), characters: '/').'/ssh/id_ed25519',
             ),
         );
         $this->app->alias(GatewaySshKeys::class, SshKeyProvider::class);
@@ -828,7 +829,7 @@ final class AppServiceProvider extends ServiceProvider
             VpnConfigurationRepository::class,
             static fn (): VpnConfigurationRepository => new VpnConfigurationRepository(
                 app(VpnSettings::class),
-                rtrim(string: (string) config('orbit.home'), characters: '/'),
+                rtrim(string: Config::string('orbit.home'), characters: '/'),
             ),
         );
         $this->app->singleton(
@@ -838,7 +839,7 @@ final class AppServiceProvider extends ServiceProvider
                 serverRenderer: app(WireGuardServerConfigRenderer::class),
                 files: app(ProtectedFileWriter::class),
                 processes: app(ProcessRunner::class),
-                orbitHome: rtrim(string: (string) config('orbit.home'), characters: '/'),
+                orbitHome: rtrim(string: Config::string('orbit.home'), characters: '/'),
                 ssh: app(SshExecutor::class),
                 keys: app(SshKeyProvider::class),
                 knownHosts: app(KnownHostsStore::class),

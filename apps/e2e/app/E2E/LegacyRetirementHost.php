@@ -108,6 +108,10 @@ final readonly class LegacyRetirementHost
                 if (! is_string($kind) || ! is_array($resource)) {
                     throw new \RuntimeException('The requested host observation is invalid.');
                 }
+                $resource = StringKeyedMap::of(
+                    $resource,
+                    new \RuntimeException('The requested host observation is invalid.'),
+                );
                 $key = $this->resourceSelectionKey($kind, $resource);
                 if (isset($seen[$key])) {
                     throw new \RuntimeException('The requested host observation contains a duplicate resource.');
@@ -142,24 +146,36 @@ final readonly class LegacyRetirementHost
         }
 
         $value = LegacyRetirement::readProtectedJson($path);
-        foreach (['source_paths', 'manifests', 'locks', 'evidence'] as $kind) {
-            foreach ($value[$kind] ?? [] as &$resource) {
+        $observation = [];
+        foreach ($value as $kind => $resources) {
+            if (! is_array($resources)) {
+                throw new \RuntimeException('The reviewed host path is invalid.');
+            }
+            $typed = [];
+            foreach ($resources as $resource) {
                 if (! is_array($resource)) {
                     throw new \RuntimeException('The reviewed host path is invalid.');
                 }
-                $expectedType = $this->expectedFilesystemType($kind);
-                if (
-                    array_key_exists('filesystem_type', $resource)
-                    && ($resource['filesystem_type'] ?? null) !== $expectedType
-                ) {
-                    throw new \RuntimeException('The reviewed host path filesystem type is invalid.');
+                $mapped = StringKeyedMap::of(
+                    $resource,
+                    new \RuntimeException('The reviewed host path is invalid.'),
+                );
+                if (in_array($kind, ['source_paths', 'manifests', 'locks', 'evidence'], true)) {
+                    $expectedType = $this->expectedFilesystemType($kind);
+                    if (
+                        array_key_exists('filesystem_type', $mapped)
+                        && ($mapped['filesystem_type'] ?? null) !== $expectedType
+                    ) {
+                        throw new \RuntimeException('The reviewed host path filesystem type is invalid.');
+                    }
+                    $mapped['filesystem_type'] = $expectedType;
                 }
-                $resource['filesystem_type'] = $expectedType;
+                $typed[] = $mapped;
             }
-            unset($resource);
+            $observation[$kind] = $typed;
         }
 
-        return $value;
+        return $observation;
     }
 
     private function fileDigest(string $path): string

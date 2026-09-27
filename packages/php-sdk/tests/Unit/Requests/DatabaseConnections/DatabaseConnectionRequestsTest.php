@@ -326,6 +326,39 @@ describe('database connection requests', function (): void {
             ->and($response->toArray())
             ->not->toContain(DATABASE_CONNECTION_SDK_SECRET);
     });
+
+    it('rejects query columns and rows that are not lists', function (string $field, array $data): void {
+        expect(fn () => DatabaseQueryResponse::fromGatewayData($data, '11111111-1111-4111-8111-111111111111'))
+            ->toThrow(InvalidArgumentException::class, "Invalid Database query response field [{$field}].");
+    })->with([
+        'columns as text' => ['columns', [
+            'slug' => 'app',
+            'driver' => 'mysql',
+            'write' => false,
+            'columns' => 'email',
+            'rows' => [],
+            'row_count' => 0,
+            'truncated' => false,
+        ]],
+        'rows as text' => ['rows', [
+            'slug' => 'app',
+            'driver' => 'mysql',
+            'write' => false,
+            'columns' => [],
+            'rows' => 'email',
+            'row_count' => 0,
+            'truncated' => false,
+        ]],
+    ]);
+
+    it('rejects a tables field that is not a list', function (): void {
+        expect(fn () => DatabaseTablesResponse::fromGatewayData([
+            'slug' => 'app',
+            'driver' => 'mysql',
+            'tables' => 'users',
+        ], '11111111-1111-4111-8111-111111111111'))
+            ->toThrow(InvalidArgumentException::class, 'Invalid Database tables response field [tables].');
+    });
 });
 
 /** @return array<string, bool|int|string|null> */

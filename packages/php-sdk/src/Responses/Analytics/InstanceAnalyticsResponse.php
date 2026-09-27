@@ -31,14 +31,19 @@ final readonly class InstanceAnalyticsResponse
         #[SensitiveParameter]
         string $requestId,
     ): self {
+        $instanceId = $data['instance_id'] ?? null;
+        $enabled = $data['enabled'] ?? null;
+        $domain = $data['domain'] ?? null;
+        $dashboardUrl = $data['dashboard_url'] ?? null;
+        $snippet = $data['snippet'] ?? null;
         $hosts = $data['hosts'] ?? null;
 
         if (
-            ! is_int($data['instance_id'] ?? null)
-            || ! is_bool($data['enabled'] ?? null)
-            || ! self::nullableString($data, 'domain')
-            || ! self::nullableString($data, 'dashboard_url')
-            || ! self::nullableString($data, 'snippet')
+            ! is_int($instanceId)
+            || ! is_bool($enabled)
+            || ($domain !== null && ! is_string($domain))
+            || ($dashboardUrl !== null && ! is_string($dashboardUrl))
+            || ($snippet !== null && ! is_string($snippet))
             || ! is_array($hosts)
             || ! array_is_list($hosts)
         ) {
@@ -48,16 +53,21 @@ final readonly class InstanceAnalyticsResponse
         $normalized = [];
 
         foreach ($hosts as $host) {
-            $dns = is_array($host) ? ($host['dns'] ?? null) : null;
+            if (! is_array($host)) {
+                throw self::invalid($requestId);
+            }
+
+            $dns = $host['dns'] ?? null;
+            $failedStep = $host['failed_step'] ?? null;
+            $errorCode = $host['error_code'] ?? null;
 
             if (
-                ! is_array($host)
-                || ! is_string($host['host'] ?? null)
+                ! is_string($host['host'] ?? null)
                 || ! is_int($host['route_id'] ?? null)
                 || ! is_string($host['status'] ?? null)
                 || ! is_string($host['publication'] ?? null)
-                || ! self::nullableString($host, 'failed_step')
-                || ! self::nullableString($host, 'error_code')
+                || ($failedStep !== null && ! is_string($failedStep))
+                || ($errorCode !== null && ! is_string($errorCode))
                 || ! is_string($host['script_url'] ?? null)
                 || ! is_string($host['event_url'] ?? null)
                 || ($dns !== null && (
@@ -75,8 +85,8 @@ final readonly class InstanceAnalyticsResponse
                 'route_id' => $host['route_id'],
                 'status' => $host['status'],
                 'publication' => $host['publication'],
-                'failed_step' => $host['failed_step'] ?? null,
-                'error_code' => $host['error_code'] ?? null,
+                'failed_step' => $failedStep,
+                'error_code' => $errorCode,
                 'script_url' => $host['script_url'],
                 'event_url' => $host['event_url'],
                 // Null while the App instance has no domain to point the host at.
@@ -85,12 +95,12 @@ final readonly class InstanceAnalyticsResponse
         }
 
         return new self(
-            $data['instance_id'],
-            $data['enabled'],
-            $data['domain'] ?? null,
-            $data['dashboard_url'] ?? null,
+            $instanceId,
+            $enabled,
+            $domain,
+            $dashboardUrl,
             $normalized,
-            $data['snippet'] ?? null,
+            $snippet,
             $requestId,
         );
     }
@@ -107,12 +117,6 @@ final readonly class InstanceAnalyticsResponse
             'snippet' => $this->snippet,
             'request_id' => $this->requestId,
         ];
-    }
-
-    /** @param array<array-key, mixed> $data */
-    private static function nullableString(array $data, string $key): bool
-    {
-        return ! array_key_exists($key, $data) || $data[$key] === null || is_string($data[$key]);
     }
 
     private static function invalid(string $requestId): GatewayApiException

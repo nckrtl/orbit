@@ -7,6 +7,7 @@ namespace App\Infrastructure\Caddy\Build;
 use App\Domain\Settings\SettingRepository;
 use App\Domain\Settings\SettingScope;
 use App\Domain\Settings\SettingScopeType;
+use App\Infrastructure\Shared\StoredValue;
 use App\Models\Setting;
 use Carbon\CarbonImmutable;
 
@@ -50,7 +51,7 @@ final readonly class CaddySiteCertificates
             ->whereNotNull('value')
             ->orderBy('scope_id')
             ->pluck('scope_id')
-            ->map(static fn (mixed $id): int => (int) $id)
+            ->map(static fn (mixed $id): int => StoredValue::integer($id))
             ->all());
     }
 

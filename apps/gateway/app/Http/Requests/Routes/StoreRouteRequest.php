@@ -112,18 +112,18 @@ final class StoreRouteRequest extends FormRequest
 
         if ($this->isCustomProxy()) {
             return new CreateRouteData(
-                domain: (string) $validated['domain'],
+                domain: $this->string('domain')->toString(),
                 publication: RoutePublication::Private,
-                nodeId: (int) $validated['node_id'],
+                nodeId: $this->integer('node_id'),
                 upstream: is_string($validated['upstream'] ?? null) ? $validated['upstream'] : null,
-                processId: isset($validated['process_id']) ? (int) $validated['process_id'] : null,
+                processId: isset($validated['process_id']) ? $this->integer('process_id') : null,
             );
         }
 
         return new CreateRouteData(
-            domain: (string) $validated['domain'],
-            publication: RoutePublication::from((string) $validated['publication']),
-            appId: (int) $validated['app_id'],
+            domain: $this->string('domain')->toString(),
+            publication: RoutePublication::from($this->string('publication')->toString()),
+            appId: $this->integer('app_id'),
             appInstanceId: is_int($validated['app_instance_id'] ?? null) ? $validated['app_instance_id'] : null,
             nodeId: is_int($validated['node_id'] ?? null) ? $validated['node_id'] : null,
             clusterId: is_int($validated['cluster_id'] ?? null) ? $validated['cluster_id'] : null,

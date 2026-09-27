@@ -35,7 +35,8 @@ final readonly class StoreTaskCommentAction
                 'completion_attempt' => $task->completion_attempt,
                 'posted_at' => Carbon::now(),
             ]);
-            $type = TaskCommentType::tryFrom((string) $comment->getRawOriginal('type'));
+            $rawType = $comment->getRawOriginal('type');
+            $type = TaskCommentType::tryFrom(is_string($rawType) ? $rawType : '');
 
             if ($type === TaskCommentType::AssistanceRequested) {
                 $task->update(['assistance_requested' => true, 'assistance_reason' => $comment->body]);
@@ -71,7 +72,8 @@ final readonly class StoreTaskCommentAction
             }
         }
 
-        if (TaskCommentType::tryFrom((string) $comment->getRawOriginal('type')) === TaskCommentType::AssistanceRequested) {
+        $rawType = $comment->getRawOriginal('type');
+        if (TaskCommentType::tryFrom(is_string($rawType) ? $rawType : '') === TaskCommentType::AssistanceRequested) {
             $this->notifier->assistance($task->taskGroup()->firstOrFail(), $comment->body);
         }
 

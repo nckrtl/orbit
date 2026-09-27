@@ -112,4 +112,11 @@ it('rejects operation navigation when its specification is missing or malformed'
     file_put_contents($this->root.'/docs.json', '{"navigation":{"groups":[{"openapi":"/openapi.json","pages":["GET /api/v1/nodes"]}]}}');
 
     expect($this->rule->check())->toHaveCount(1);
-})->with([null, '{broken', 'null', '{"paths":{}}']);
+})->with([
+    null,
+    '{broken',
+    'null',
+    '{"paths":{}}',
+    '{"paths":"nope"}',
+    '{"paths":{"/api/v1/nodes":"get"}}',
+]);

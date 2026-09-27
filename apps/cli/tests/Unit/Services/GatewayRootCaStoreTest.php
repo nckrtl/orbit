@@ -33,6 +33,17 @@ it('rejects a symlinked named gateway directory', function (): void {
     expect($this->externalDirectory.'/ca')->not->toBeDirectory();
 });
 
+it('refuses an orbit home that is not a path', function (mixed $home): void {
+    config()->set('orbit.home', $home);
+
+    expect(fn () => new GatewayRootCaStore()->store('test-gateway', $this->certificate))
+        ->toThrow(RuntimeException::class, 'Orbit home is not configured.');
+    expect($this->orbitHome.'/gateways')->not->toBeDirectory();
+})->with([
+    'integer' => 12,
+    'empty' => '',
+]);
+
 it('rejects a symlinked fingerprint path', function (): void {
     $caDirectory = $this->orbitHome.'/gateways/test-gateway-7c27512b7c3e/ca';
     mkdir($caDirectory, permissions: 0o700, recursive: true);

@@ -90,10 +90,27 @@ final readonly class ScenarioResult
         if (array_keys($value) !== $keys || ($value['schema'] ?? null) !== 1) {
             throw new InvalidArgumentException('The scenario result schema is invalid.');
         }
-        foreach (['candidate_sha', 'run_id', 'scenario_id', 'attempt_id', 'lane', 'definition_fingerprint', 'recipe_fingerprint', 'started_at', 'finished_at'] as $key) {
-            if (! is_string($value[$key])) {
-                throw new InvalidArgumentException('The scenario result schema is invalid.');
-            }
+        $candidateSha = $value['candidate_sha'] ?? null;
+        $runId = $value['run_id'] ?? null;
+        $scenarioId = $value['scenario_id'] ?? null;
+        $attemptId = $value['attempt_id'] ?? null;
+        $lane = $value['lane'] ?? null;
+        $definitionFingerprint = $value['definition_fingerprint'] ?? null;
+        $recipeFingerprint = $value['recipe_fingerprint'] ?? null;
+        $startedAt = $value['started_at'] ?? null;
+        $finishedAt = $value['finished_at'] ?? null;
+        if (
+            ! is_string($candidateSha)
+            || ! is_string($runId)
+            || ! is_string($scenarioId)
+            || ! is_string($attemptId)
+            || ! is_string($lane)
+            || ! is_string($definitionFingerprint)
+            || ! is_string($recipeFingerprint)
+            || ! is_string($startedAt)
+            || ! is_string($finishedAt)
+        ) {
+            throw new InvalidArgumentException('The scenario result schema is invalid.');
         }
         foreach (['definition', 'actions', 'phase_timings', 'diagnostics', 'cleanup'] as $key) {
             if (! is_array($value[$key])) {
@@ -122,23 +139,23 @@ final readonly class ScenarioResult
         $cleanup = $value['cleanup'];
 
         return new self(
-            $value['candidate_sha'],
-            new ScenarioRunId($value['run_id']),
-            new ScenarioId($value['scenario_id']),
-            new AttemptId($value['attempt_id']),
-            $value['lane'],
+            $candidateSha,
+            new ScenarioRunId($runId),
+            new ScenarioId($scenarioId),
+            new AttemptId($attemptId),
+            $lane,
             $primary,
             $status,
             $definition,
-            $value['definition_fingerprint'],
-            $value['recipe_fingerprint'],
+            $definitionFingerprint,
+            $recipeFingerprint,
             $actions,
             $phaseTimings,
             $verification,
             $diagnostics,
             $cleanup,
-            $value['started_at'],
-            $value['finished_at'],
+            $startedAt,
+            $finishedAt,
         );
     }
 

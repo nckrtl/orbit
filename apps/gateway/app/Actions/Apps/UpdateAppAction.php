@@ -19,6 +19,7 @@ use App\Domain\Projects\ProjectCode;
 use App\Domain\Projects\ProjectType;
 use App\Domain\Routes\RouteTargetWebRoot;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Shared\StoredInteger;
 use App\Domain\SourceControl\GitBranchName;
 use App\Domain\SourceControl\GitRepositoryIdentity;
 use App\Domain\SourceControl\GitRepositoryOrigin;
@@ -83,7 +84,7 @@ final readonly class UpdateAppAction
         $instanceIds = array_values($app->appInstances()
             ->orderBy('id')
             ->pluck('id')
-            ->map(static fn (mixed $id): int => (int) $id)
+            ->map(static fn (mixed $id): int => StoredInteger::from($id))
             ->all());
 
         if (! $data->hasReconcilableChanges()) {
@@ -319,32 +320,41 @@ final readonly class UpdateAppAction
     private function prepare(AppUpdate $update): void
     {
         $app = $update->app()->with('appInstances')->firstOrFail();
-        $inventory = $update->inventory ?? [];
-        $evidence = $update->evidence ?? [];
+        $inventory = $this->storedMap($update->inventory) ?? [];
+        $evidence = $this->storedMap($update->evidence) ?? [];
 
         if (is_string($update->requested_default_branch)) {
-            $evidence['branches'] = $this->prepareDefaultBranches($app, $update->requested_default_branch, $evidence['branches'] ?? []);
+            $evidence['branches'] = $this->prepareDefaultBranches(
+                $app,
+                $update->requested_default_branch,
+                $this->branchEvidence($evidence['branches'] ?? []),
+            );
         }
 
         if (is_string($update->requested_repository_url)) {
-            $checkoutIds = $inventory['repository']['checkout_ids'] ?? [];
+            $repository = $this->storedMap($inventory['repository'] ?? null) ?? [];
+            $checkoutIds = $this->integerList($repository['checkout_ids'] ?? []);
             $checkouts = array_values($app->appInstances
-                ->whereIn('id', is_array($checkoutIds) ? $checkoutIds : [])
+                ->whereIn('id', $checkoutIds)
                 ->all());
+            $origins = $evidence['origins'] ?? [];
+            $origins = is_array($origins) ? $origins : [];
             $evidence['origins'] = $this->sources->changeOrigins(
                 $checkouts,
                 $update->previous_repository_url,
                 $update->requested_repository_url,
-                $evidence['origins'] ?? [],
+                $this->originMutations($origins),
             );
         }
 
-        if (is_array($inventory['slug'] ?? null) && is_string($update->requested_slug)) {
-            $evidence['slug'] = $this->projections->prepareSlug($app, $update->requested_slug, $inventory['slug']);
+        $slugInventory = $this->storedMap($inventory['slug'] ?? null);
+        if ($slugInventory !== null && is_string($update->requested_slug)) {
+            $evidence['slug'] = $this->projections->prepareSlug($app, $update->requested_slug, $slugInventory);
         }
 
-        if (is_array($inventory['root'] ?? null) && is_string($update->requested_root)) {
-            $evidence['root'] = $this->projections->prepareRoot($app, $update->requested_root, $inventory['root']);
+        $rootInventory = $this->storedMap($inventory['root'] ?? null);
+        if ($rootInventory !== null && is_string($update->requested_root)) {
+            $evidence['root'] = $this->projections->prepareRoot($app, $update->requested_root, $rootInventory);
         }
 
         $update->update([
@@ -372,7 +382,7 @@ final readonly class UpdateAppAction
 
             $existing = $byId[$instance->id] ?? null;
 
-            if (is_array($existing) && $existing['switched']) {
+            if ($existing !== null && $existing['switched']) {
                 continue;
             }
 
@@ -420,12 +430,14 @@ final readonly class UpdateAppAction
 
         $evidence = $update->evidence ?? [];
 
-        if (is_array($evidence['slug'] ?? null) && is_string($update->requested_slug)) {
-            $this->projections->publishSlug($app->refresh(), $update->requested_slug, $evidence['slug']);
+        $slugEvidence = $this->storedMap($evidence['slug'] ?? null);
+        if ($slugEvidence !== null && is_string($update->requested_slug)) {
+            $this->projections->publishSlug($app->refresh(), $update->requested_slug, $slugEvidence);
         }
 
-        if (is_array($evidence['root'] ?? null) && is_string($update->requested_root)) {
-            $this->projections->publishRoot($app->refresh(), $update->requested_root, $evidence['root']);
+        $rootEvidence = $this->storedMap($evidence['root'] ?? null);
+        if ($rootEvidence !== null && is_string($update->requested_root)) {
+            $this->projections->publishRoot($app->refresh(), $update->requested_root, $rootEvidence);
         }
 
         $this->assertProductionUnchanged($update);
@@ -492,22 +504,24 @@ final readonly class UpdateAppAction
     private function rollback(AppUpdate $update): void
     {
         $app = $update->app()->with('appInstances')->firstOrFail();
-        $evidence = $update->evidence ?? [];
+        $evidence = $this->storedMap($update->evidence) ?? [];
 
-        if (is_array($evidence['slug'] ?? null)) {
-            $this->projections->rollbackSlug($app, $evidence['slug']);
+        $slugEvidence = $this->storedMap($evidence['slug'] ?? null);
+        if ($slugEvidence !== null) {
+            $this->projections->rollbackSlug($app, $slugEvidence);
         }
 
-        if (is_array($evidence['root'] ?? null)) {
-            $this->projections->rollbackRoot($app, $evidence['root']);
+        $rootEvidence = $this->storedMap($evidence['root'] ?? null);
+        if ($rootEvidence !== null) {
+            $this->projections->rollbackRoot($app, $rootEvidence);
         }
 
         if (is_array($evidence['origins'] ?? null)) {
             $this->sources->restoreOrigins($this->originMutations($evidence['origins']));
         }
 
-        foreach ($evidence['branches'] ?? [] as $row) {
-            if (! is_array($row) || ! ($row['switched'] ?? false)) {
+        foreach ($this->branchEvidence($evidence['branches'] ?? []) as $row) {
+            if (! $row['switched']) {
                 continue;
             }
 
@@ -517,7 +531,7 @@ final readonly class UpdateAppAction
                 continue;
             }
 
-            $previous = is_string($row['previous_branch'] ?? null) ? $row['previous_branch'] : $update->previous_default_branch;
+            $previous = $row['previous_branch'] ?? $update->previous_default_branch;
 
             if (is_string($previous)) {
                 $this->sources->restoreDefaultBranch($instance, $previous);
@@ -633,20 +647,92 @@ final readonly class UpdateAppAction
         ];
     }
 
+    /** @return array<string, mixed>|null */
+    private function storedMap(mixed $value): ?array
+    {
+        if (! is_array($value)) {
+            return null;
+        }
+
+        $map = [];
+        foreach ($value as $key => $item) {
+            if (! is_string($key)) {
+                return null;
+            }
+
+            $map[$key] = $item;
+        }
+
+        return $map;
+    }
+
+    /** @return list<int> */
+    private function integerList(mixed $value): array
+    {
+        if (! is_array($value) || ! array_is_list($value)) {
+            return [];
+        }
+
+        foreach ($value as $item) {
+            if (! is_int($item)) {
+                return [];
+            }
+        }
+
+        return $value;
+    }
+
+    /**
+     * @return list<array{instance_id: int, previous_branch: ?string, current_branch: string, switched: bool}>
+     */
+    private function branchEvidence(mixed $value): array
+    {
+        if (! is_array($value) || ! array_is_list($value)) {
+            return [];
+        }
+
+        $rows = [];
+        foreach ($value as $row) {
+            if (! is_array($row)) {
+                return [];
+            }
+
+            $previousBranch = $row['previous_branch'] ?? null;
+            if (
+                ! is_int($row['instance_id'] ?? null)
+                || (! is_string($previousBranch) && $previousBranch !== null)
+                || ! is_string($row['current_branch'] ?? null)
+                || ! is_bool($row['switched'] ?? null)
+            ) {
+                return [];
+            }
+
+            $rows[] = [
+                'instance_id' => $row['instance_id'],
+                'previous_branch' => $previousBranch,
+                'current_branch' => $row['current_branch'],
+                'switched' => $row['switched'],
+            ];
+        }
+
+        return $rows;
+    }
+
     private function assertProductionUnchanged(AppUpdate $update): void
     {
-        $expected = $update->inventory['production'] ?? [];
+        $inventory = $this->storedMap($update->inventory) ?? [];
+        $expected = $inventory['production'] ?? [];
 
         if (! is_array($expected)) {
             return;
         }
 
         foreach ($expected as $snapshot) {
-            if (! is_array($snapshot) || ! isset($snapshot['id'])) {
+            if (! is_array($snapshot) || ! is_int($snapshot['id'] ?? null)) {
                 continue;
             }
 
-            $instance = AppInstance::query()->find((int) $snapshot['id']);
+            $instance = AppInstance::query()->find($snapshot['id']);
 
             if (! $instance instanceof AppInstance) {
                 throw new ResourceOperationException(

@@ -7,6 +7,7 @@ namespace App\Http\Requests\Projects;
 use App\Http\Requests\TopLevelJsonObjectInspector;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\ValidationException;
+use Illuminate\Validation\Validator;
 use UnexpectedValueException;
 
 final class UpdateProjectLifecycleStepRequest extends FormRequest
@@ -37,7 +38,7 @@ final class UpdateProjectLifecycleStepRequest extends FormRequest
         }
     }
 
-    public function withValidator(mixed $validator): void
+    public function withValidator(Validator $validator): void
     {
         $validator->after(function () use ($validator): void {
             $payload = $this->validated();

@@ -116,6 +116,26 @@ final readonly class PhpRuntimeInventory
         $packages = $pcovRequired ? self::PACKAGES : self::RUNTIME_PACKAGES;
         $shared = null;
         foreach ($runtimes as $index => $runtime) {
+            $packageVersions = is_array($runtime) ? ($runtime['package_versions'] ?? null) : null;
+            $versions = [];
+            $packageVersionsValid = is_array($packageVersions) && array_keys($packageVersions) === $packages;
+            if ($packageVersionsValid) {
+                foreach ($packageVersions as $version) {
+                    if (
+                        ! is_string($version)
+                        || $version === ''
+                        || str_contains($version, "\r")
+                        || str_contains($version, "\n")
+                    ) {
+                        $packageVersionsValid = false;
+                        break;
+                    }
+                    $versions[] = $version;
+                }
+            }
+            $phpVersion = is_array($runtime) ? ($runtime['php_version'] ?? null) : null;
+            $fpmVersion = is_array($runtime) ? ($runtime['fpm_version'] ?? null) : null;
+            $pcovVersion = is_array($runtime) ? ($runtime['pcov_version'] ?? null) : null;
             if (
                 ! is_array($runtime)
                 || array_keys($runtime) !== [
@@ -126,27 +146,18 @@ final readonly class PhpRuntimeInventory
                     'package_versions',
                 ]
                 || ($runtime['role'] ?? null) !== (self::ROLES[$index] ?? null)
-                || ! is_string($runtime['php_version'] ?? null)
-                || preg_match('/\A8\.5\.[0-9]+(?:[^\r\n]*)?\z/D', $runtime['php_version']) !== 1
-                || ! is_string($runtime['fpm_version'] ?? null)
-                || $runtime['fpm_version'] !== $runtime['php_version']
+                || ! is_string($phpVersion)
+                || preg_match('/\A8\.5\.[0-9]+(?:[^\r\n]*)?\z/D', $phpVersion) !== 1
+                || ! is_string($fpmVersion)
+                || $fpmVersion !== $phpVersion
                 || (
                     $pcovRequired
-                        ? ! is_string($runtime['pcov_version'] ?? null)
-                        || preg_match('/\A[0-9]+\.[0-9]+\.[0-9]+(?:[^\r\n]*)?\z/D', $runtime['pcov_version']) !== 1
-                        : $runtime['pcov_version'] !== null
+                        ? ! is_string($pcovVersion)
+                        || preg_match('/\A[0-9]+\.[0-9]+\.[0-9]+(?:[^\r\n]*)?\z/D', $pcovVersion) !== 1
+                        : $pcovVersion !== null
                 )
-                || ! is_array($runtime['package_versions'] ?? null)
-                || array_keys($runtime['package_versions']) !== $packages
-                || array_any(
-                    $runtime['package_versions'],
-                    static fn (mixed $version): bool => ! is_string($version)
-                    || $version === ''
-                    || str_contains($version, "\r")
-                    || str_contains($version, "\n"),
-                )
-                || count(array_unique(array_slice($runtime['package_versions'], 0, count(self::RUNTIME_PACKAGES))))
-                    !== 1
+                || ! $packageVersionsValid
+                || count(array_unique(array_slice($versions, 0, count(self::RUNTIME_PACKAGES)))) !== 1
             ) {
                 throw new InvalidArgumentException('An observed PHP runtime entry is invalid.');
             }

@@ -64,10 +64,10 @@ final readonly class UpdateTaskAction
                         ->where('task_group_id', $locked->id)
                         ->orderBy('position')
                         ->get(['id', 'position', 'status']);
-                    $lastStartedOrFinished = (int) ($ordered
+                    $lastStartedOrFinished = $ordered
                         ->filter(static fn (Task $candidate): bool => $candidate->status !== TaskStatus::Todo)
-                        ->max('position') ?? 0);
-                    $tailStart = $lastStartedOrFinished + 1;
+                        ->max('position');
+                    $tailStart = (is_int($lastStartedOrFinished) ? $lastStartedOrFinished : 0) + 1;
 
                     if ($task->position < $tailStart || $data->position < $tailStart || $data->position > $ordered->count()) {
                         throw ValidationException::withMessages(['position' => [__('A todo subtask can move only within the todo tail.')]]);

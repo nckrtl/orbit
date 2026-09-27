@@ -4251,7 +4251,8 @@
                 "0121",
                 "0140",
                 "0160",
-                "0164"
+                "0164",
+                "0171"
             ]
         },
         {
@@ -4391,6 +4392,22 @@
                 "0122",
                 "0133",
                 "0170"
+            ]
+        },
+        {
+            "path": "docs/decisions/0171-reset-fixup-caps-after-operator-work.md",
+            "title": "ADR 0171: Reset fixup caps after operator work",
+            "kind": "decision",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Gateway",
+                "Task"
+            ],
+            "governing_adrs": [
+                "0164",
+                "0171"
             ]
         },
         {
@@ -4592,7 +4609,8 @@
                 "0167",
                 "0168",
                 "0169",
-                "0170"
+                "0170",
+                "0171"
             ]
         },
         {
@@ -5852,7 +5870,8 @@
                 "0165",
                 "0167",
                 "0169",
-                "0170"
+                "0170",
+                "0171"
             ]
         },
         {

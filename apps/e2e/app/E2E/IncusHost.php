@@ -186,25 +186,27 @@ final class IncusHost implements GuestTransport
         $this->validateImage($alias);
         [$remote, $selector] = $this->imageSelector($alias);
         $images = $this->readJson(['image', 'list', $remote, $selector, '--format=json']);
-        $matches = array_values(array_filter($images, function (mixed $image) use ($selector): bool {
+        $matches = [];
+        foreach ($images as $image) {
             if (! is_array($image) || ($image['type'] ?? null) !== 'virtual-machine') {
-                return false;
+                continue;
             }
-
             if (($image['fingerprint'] ?? null) === $selector) {
-                return true;
-            }
+                $matches[] = $image;
 
+                continue;
+            }
             $aliases = $image['aliases'] ?? null;
             if (! is_array($aliases)) {
-                return false;
+                continue;
             }
-
-            return array_any(
+            if (array_any(
                 $aliases,
                 fn ($imageAlias) => is_array($imageAlias) && ($imageAlias['name'] ?? null) === $selector,
-            );
-        }));
+            )) {
+                $matches[] = $image;
+            }
+        }
         if (count($matches) !== 1) {
             throw new RuntimeException('Incus image selector did not identify exactly one virtual-machine image.');
         }
@@ -609,7 +611,7 @@ final class IncusHost implements GuestTransport
             if ($requireRunning && ! $vm->isRunning()) {
                 throw new RuntimeException("Incus instance {$instance} is not running.");
             }
-            $eth0 = $resource['devices']['eth0'] ?? $resource['expanded_devices']['eth0'] ?? null;
+            $eth0 = $this->valueAt($resource, 'devices', 'eth0') ?? $this->valueAt($resource, 'expanded_devices', 'eth0');
             if (! is_array($eth0) || ($eth0['network'] ?? null) !== $network) {
                 throw new RuntimeException("Incus instance {$instance} network identity does not match topology.");
             }
@@ -1081,10 +1083,20 @@ final class IncusHost implements GuestTransport
 
     private function incusLimit(string $key, string $default): string
     {
-        if (function_exists('config') && app()->bound('config')) {
-            $value = (string) config("e2e.incus.{$key}", $default);
+        $configured = function_exists('config') && app()->bound('config')
+            ? config("e2e.incus.{$key}", $default)
+            : $default;
+        if (is_int($configured) || is_float($configured)) {
+            $value = (string) $configured;
+        } elseif (is_string($configured)) {
+            $value = $configured;
         } else {
-            $value = $default;
+            throw new InvalidArgumentException(match ($key) {
+                'cpu' => 'Incus CPU limit must be a positive integer.',
+                'memory' => 'Incus memory limit must use MiB or GiB.',
+                'root_size' => 'Incus root volume size must use MiB or GiB.',
+                default => 'Incus limit must be a string.',
+            });
         }
         if ($key === 'cpu' && ! preg_match('/^[1-9][0-9]*$/', $value)) {
             throw new InvalidArgumentException('Incus CPU limit must be a positive integer.');
@@ -1458,6 +1470,7 @@ final class IncusHost implements GuestTransport
             throw new RuntimeException('Incus guest command batch must be non-empty.');
         }
         $full = [];
+        $batch = [];
         $instances = [];
         foreach ($commands as $label => $request) {
             $this->validateName($label, 'guest command label');
@@ -1467,19 +1480,21 @@ final class IncusHost implements GuestTransport
                 throw new RuntimeException('Incus guest command batch request is invalid.');
             }
             $instances[$instance] = true;
+            $batch[$label] = ['instance' => $instance, 'command' => $command];
             $full[$label] = ['exec', $this->target($instance), '--', ...$command->command];
         }
         $this->operationOwnedInstances(array_keys($instances), 'guest command');
         try {
             $requests = [];
             foreach ($full as $label => $argv) {
+                $request = $batch[$label];
                 $requests[] = [
                     'label' => $label,
                     'project' => $this->project,
-                    'instance' => $this->target($commands[$label]['instance']),
-                    'argv' => $commands[$label]['command']->command,
-                    'timeout' => $commands[$label]['command']->timeout,
-                    'stdin' => $commands[$label]['command']->stdin,
+                    'instance' => $this->target($request['instance']),
+                    'argv' => $request['command']->command,
+                    'timeout' => $request['command']->timeout,
+                    'stdin' => $request['command']->stdin,
                 ];
             }
             $input = json_encode(['requests' => $requests], JSON_THROW_ON_ERROR);
@@ -1603,7 +1618,8 @@ final class IncusHost implements GuestTransport
             }
             throw new RuntimeException('Incus instance identity is not a virtual machine.');
         }
-        $pool = $resource['devices']['root']['pool'] ?? $resource['expanded_devices']['root']['pool'] ?? null;
+        $pool = $this->valueAt($resource, 'devices', 'root', 'pool')
+            ?? $this->valueAt($resource, 'expanded_devices', 'root', 'pool');
         if (! is_string($pool) || $pool === '') {
             if ($requestedName !== null) {
                 throw new RuntimeException("Incus instance {$name} has no storage pool identity.");
@@ -1624,8 +1640,10 @@ final class IncusHost implements GuestTransport
             }
             throw new RuntimeException("Incus instance {$name} identity is invalid.");
         }
-        $network = $resource['devices']['eth0']['network'] ?? $resource['expanded_devices']['eth0']['network'] ?? null;
-        $mac = $resource['devices']['eth0']['hwaddr'] ?? $resource['expanded_devices']['eth0']['hwaddr'] ?? null;
+        $network = $this->valueAt($resource, 'devices', 'eth0', 'network')
+            ?? $this->valueAt($resource, 'expanded_devices', 'eth0', 'network');
+        $mac = $this->valueAt($resource, 'devices', 'eth0', 'hwaddr')
+            ?? $this->valueAt($resource, 'expanded_devices', 'eth0', 'hwaddr');
         if ($network !== null && ! is_string($network)) {
             if ($requestedName !== null) {
                 throw new RuntimeException("Incus instance {$name} has an invalid network identity.");
@@ -1778,6 +1796,25 @@ final class IncusHost implements GuestTransport
                 throw new RuntimeException("Incus {$resource} ownership metadata does not match.");
             }
         }
+    }
+
+    /**
+     * Read a nested Incus JSON value. Missing levels and non-arrays match the
+     * null-coalescing chains this used to inline.
+     *
+     * @param  array<array-key, mixed>  $value
+     */
+    private function valueAt(array $value, string ...$path): mixed
+    {
+        $current = $value;
+        foreach ($path as $segment) {
+            if (! is_array($current) || ! array_key_exists($segment, $current)) {
+                return null;
+            }
+            $current = $current[$segment];
+        }
+
+        return $current;
     }
 
     /**

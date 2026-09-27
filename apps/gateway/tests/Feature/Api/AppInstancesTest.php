@@ -855,6 +855,24 @@ it('creates an active checkout AppInstance on a standalone Node with inherited r
         ->toBe(AppInstance::query()->sole()->id);
 });
 
+it('creates an Instance from a parsed JSON body without Content-Type using normalized IDs', function (): void {
+    $this->source->resolution = new DevelopmentSourceResolution('no-content-type', str_repeat('a', 40));
+
+    $response = $this->call(
+        'POST',
+        '/api/v1/instances',
+        server: ['HTTP_ACCEPT' => 'application/json'],
+        content: json_encode([
+            'project_id' => (string) $this->orbitApp->id,
+            'node_id' => (string) $this->node->id,
+            'name' => 'no-content-type',
+        ], JSON_THROW_ON_ERROR),
+    )->assertCreated();
+
+    expect($response->json('data.project.id'))->toBe($this->orbitApp->id)
+        ->and(AppInstance::query()->sole()->node_id)->toBe($this->node->id);
+});
+
 it('creates an Instance with a repository-root Project root for each package type', function (): void {
     foreach ([ProjectType::LaravelPackage, ProjectType::NodePackage] as $index => $type) {
         $project = OrbitApp::query()->create([

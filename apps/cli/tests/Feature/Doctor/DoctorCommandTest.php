@@ -82,6 +82,33 @@ it('rejects invalid node options through the exact json envelope before HTTP', f
     'empty' => [''],
 ]);
 
+it('rejects a family value that is not text before HTTP', function (): void {
+    $mock = MockClient::global();
+    $expected = json_encode([
+        'error' => [
+            'code' => 'doctor.family_invalid',
+            'message' => 'Family must be a string.',
+            'request_id' => null,
+        ],
+    ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+
+    $exitCode = Artisan::call('doctor', ['--family' => [['not-a-name']], '--json' => true]);
+
+    expect($exitCode)
+        ->toBe(Command::FAILURE)
+        ->and(trim(Artisan::output()))
+        ->toBe($expected)
+        ->and($mock->getLastPendingRequest())
+        ->toBeNull();
+});
+
+it('sends a numeric family option as its decimal string', function (): void {
+    $mock = doctor_cli_mock(doctor_cli_report(healthy: true));
+
+    expect(Artisan::call('doctor', ['--family' => [7], '--json' => true]))->toBe(Command::SUCCESS);
+    expect($mock->getLastPendingRequest()?->body()->all())->toBe('{"families":["7"]}');
+});
+
 it('posts the exact empty request to the doctor endpoint', function (): void {
     $mock = doctor_cli_mock(doctor_cli_report(healthy: true));
 
