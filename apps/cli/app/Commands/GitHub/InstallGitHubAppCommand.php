@@ -18,6 +18,7 @@ use Orbit\Sdk\Requests\GitHub\InstallGitHubAppRequest;
 use Orbit\Sdk\Requests\GitHub\ShowGitHubAppRequest;
 use Orbit\Sdk\Responses\GitHub\GitHubAppInstallResponse;
 use Orbit\Sdk\Responses\GitHub\GitHubAppResponse;
+use RuntimeException;
 
 /**
  * Sends the operator's browser to GitHub, first to register the App when the Gateway has none, then
@@ -177,8 +178,8 @@ final class InstallGitHubAppCommand extends GitHubCommand
 
     private function waitForInstallation(GatewayConnector $connector, GitHubAppInstallResponse $step): int
     {
-        $poll = max(0, (int) config('orbit.github.install_poll_seconds', self::POLL_SECONDS));
-        $deadline = time() + max(0, (int) config('orbit.github.install_wait_seconds', self::WAIT_SECONDS));
+        $poll = self::configuredSeconds('orbit.github.install_poll_seconds', self::POLL_SECONDS);
+        $deadline = time() + self::configuredSeconds('orbit.github.install_wait_seconds', self::WAIT_SECONDS);
         $progress = $this->progressDisplay('Wait for the installation');
         $progress->admit('install', 'Wait for the installation', 'Waiting for GitHub', 'Installed the App');
 
@@ -228,6 +229,25 @@ final class InstallGitHubAppCommand extends GitHubCommand
         $progress->finish("Installed the App on {$account}.");
 
         return self::SUCCESS;
+    }
+
+    /**
+     * Whole seconds from configuration. Integers, finite floats, and numeric strings keep the
+     * previous truncation; anything else is not a duration.
+     */
+    private static function configuredSeconds(string $key, int $default): int
+    {
+        $value = config($key, $default);
+
+        if (is_int($value)) {
+            return max(0, $value);
+        }
+
+        if ((is_float($value) && is_finite($value)) || (is_string($value) && is_numeric($value))) {
+            return max(0, (int) $value);
+        }
+
+        throw new RuntimeException("Configuration [{$key}] must be a number of seconds.");
     }
 
     /**

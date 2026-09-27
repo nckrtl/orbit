@@ -272,6 +272,57 @@ describe('github:app:install', function (): void {
 
         expect($output)->toContain('Stopped waiting before the Gateway saw a new installation.');
     });
+
+    it('treats numeric duration configuration as whole seconds', function (float|string $wait): void {
+        MockClient::global([
+            ShowGitHubAppRequest::class => MockResponse::make([
+                'data' => github_app_payload(),
+                'meta' => ['request_id' => github_request_id()],
+            ]),
+            InstallGitHubAppRequest::class => MockResponse::make([
+                'data' => [
+                    'step' => 'install',
+                    'url' => 'https://github.com/apps/orbit-acme/installations/new',
+                    'accounts' => ['acme'],
+                ],
+                'meta' => ['request_id' => github_request_id()],
+            ]),
+        ]);
+        config()->set('orbit.github.install_poll_seconds', '0');
+        config()->set('orbit.github.install_wait_seconds', $wait);
+
+        $output = github_run('github:app:install', expectedStatus: 1);
+
+        expect($output)->toContain('Stopped waiting before the Gateway saw a new installation.');
+    })->with([
+        'numeric string' => '0',
+        'float' => 0.0,
+    ]);
+
+    it('refuses a duration setting that is not a number', function (): void {
+        MockClient::global([
+            ShowGitHubAppRequest::class => MockResponse::make([
+                'data' => github_app_payload(),
+                'meta' => ['request_id' => github_request_id()],
+            ]),
+            InstallGitHubAppRequest::class => MockResponse::make([
+                'data' => [
+                    'step' => 'install',
+                    'url' => 'https://github.com/apps/orbit-acme/installations/new',
+                    'accounts' => ['acme'],
+                ],
+                'meta' => ['request_id' => github_request_id()],
+            ]),
+        ]);
+        config()->set('orbit.github.install_wait_seconds', ['600']);
+
+        $output = new BufferedOutput;
+        $status = app(Kernel::class)->handle(new StringInput('github:app:install'), $output);
+
+        expect($status)->toBe(1)
+            ->and($output->fetch())
+            ->toContain('Configuration [orbit.github.install_wait_seconds] must be a number of seconds.');
+    });
 });
 
 function github_run(string $command, int $expectedStatus = 0): string

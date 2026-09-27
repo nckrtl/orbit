@@ -36,8 +36,10 @@ final class DoctorCommand extends GatewayCommand
             }
         }
 
-        $families = $this->input->getOption('family');
-        $families = is_array($families) && $families !== [] ? array_values(array_map(strval(...), $families)) : null;
+        $families = $this->familyNames();
+        if ($families === false) {
+            return self::FAILURE;
+        }
         $connector = $this->gatewayConnector($repository, $connectors);
         if ($connector === null) {
             return self::FAILURE;
@@ -96,6 +98,42 @@ final class DoctorCommand extends GatewayCommand
         $this->writeHumanMessage("Request ID: {$report->requestId}");
 
         return $report->healthy ? self::SUCCESS : self::FAILURE;
+    }
+
+    /**
+     * Family options are names. Scalars keep the previous string cast; a list or object is not a name.
+     *
+     * @return list<string>|false|null
+     */
+    private function familyNames(): array|false|null
+    {
+        $families = $this->input->getOption('family');
+
+        if (! is_array($families) || $families === []) {
+            return null;
+        }
+
+        $names = [];
+
+        foreach ($families as $family) {
+            if (is_string($family) || is_int($family) || is_float($family) || is_bool($family) || $family === null || $family instanceof \GMP || is_resource($family)) {
+                $names[] = strval($family);
+
+                continue;
+            }
+
+            if ($family instanceof \Stringable) {
+                $names[] = (string) $family;
+
+                continue;
+            }
+
+            $this->renderGatewayFailure('doctor.family_invalid', 'Family must be a string.');
+
+            return false;
+        }
+
+        return $names;
     }
 
     private function doctorResourceLabel(string $resourceType, int|string|null $resourceId, ?string $resourceName): string

@@ -74,16 +74,17 @@ final class NodeAddFlowCommand extends GatewayCommand
     {
         $name = $this->optionalArgument('name');
         if ($name === null) {
-            $name = $this->promptOrRefuse('The Node name is required.', fn (): TextPrompt => new TextPrompt(
+            $prompted = $this->promptOrRefuse('The Node name is required.', fn (): TextPrompt => new TextPrompt(
                 'Node name',
                 placeholder: 'beast',
                 required: true,
                 validate: self::nameError(...),
                 hint: 'Lowercase letters, digits, and hyphens.',
             ));
-            if ($name === null) {
+            if (! is_string($prompted)) {
                 return null;
             }
+            $name = $prompted;
         }
 
         $host = $this->optionalArgument('host');
@@ -145,7 +146,7 @@ final class NodeAddFlowCommand extends GatewayCommand
             }
         }
 
-        if (! is_string($name) || ! is_string($host) || ! is_string($user) || ($tld !== null && ! is_string($tld))) {
+        if (! is_string($host) || ! is_string($user) || ($tld !== null && ! is_string($tld))) {
             return null;
         }
 

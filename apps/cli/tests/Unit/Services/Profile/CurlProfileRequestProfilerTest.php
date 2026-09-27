@@ -102,6 +102,41 @@ describe('ProfileHumanRenderer', function (): void {
             ->and($lines)
             ->toContain('Download response ....................... 5.12ms - 44.1KB');
     });
+
+    it('renders a non-text status as a dash', function (): void {
+        $lines = (new ProfileHumanRenderer)->lines([
+            'request' => [
+                'method' => 'GET',
+                'url' => 'https://docs.test',
+                'status' => ['nope'],
+                'bytes' => 0,
+            ],
+            'timings' => [],
+        ]);
+
+        expect($lines[0])->toBe('GET https://docs.test - in 0.00ms');
+    });
+
+    it('counts whole-number toolbar queries', function (): void {
+        $lines = (new ProfileHumanRenderer)->lines([
+            'request' => [
+                'method' => 'GET',
+                'url' => 'https://docs.test',
+                'status' => 200,
+                'bytes' => 0,
+            ],
+            'timings' => ['total_ms' => 1],
+            'toolbar' => [
+                'queries' => [
+                    'count' => 5,
+                    'slow_count' => '1',
+                    'duplicate_count' => 0,
+                ],
+            ],
+        ]);
+
+        expect($lines)->toContain('5 queries, 1 slow');
+    });
 });
 
 /**
