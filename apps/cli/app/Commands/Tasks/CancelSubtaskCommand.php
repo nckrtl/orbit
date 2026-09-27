@@ -23,7 +23,7 @@ final class CancelSubtaskCommand extends TaskCommand
         {--json : Return machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'Cancel a running subtask and start the next one.';
+    protected $description = 'Cancel a todo or running subtask.';
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
     {
@@ -40,7 +40,7 @@ final class CancelSubtaskCommand extends TaskCommand
             return self::FAILURE;
         }
 
-        $groupId ??= $this->selectGroup($connector, ['running']);
+        $groupId ??= $this->selectGroup($connector, ['todo', 'running', 'reviewing', 'settling']);
 
         if ($groupId === null) {
             return self::FAILURE;
@@ -55,7 +55,7 @@ final class CancelSubtaskCommand extends TaskCommand
                 return self::FAILURE;
             }
 
-            $subtaskId = $this->selectSubtask($group, ['running']);
+            $subtaskId = $this->selectSubtask($group, ['todo', 'running']);
         }
 
         $consented = $this->consent(function () use ($connector, $groupId, $subtaskId, $group): ?string {
@@ -67,11 +67,11 @@ final class CancelSubtaskCommand extends TaskCommand
 
             foreach ($group->tasks as $task) {
                 if ($task->id === $subtaskId) {
-                    return "Cancel subtask {$task->position} ({$task->title}) of task group {$group->reference()} and stop its implementer?";
+                    return $this->cancelConfirmation($task->position, $task->title, $task->status, $group->reference());
                 }
             }
 
-            return "Cancel subtask {$subtaskId} of task group {$group->reference()} and stop its implementer?";
+            return "Cancel subtask {$subtaskId} of task group {$group->reference()}?";
         }, "Subtask [{$subtaskId}] was not cancelled.");
 
         if (! $consented) {
@@ -81,5 +81,12 @@ final class CancelSubtaskCommand extends TaskCommand
         $task = $this->sendWithProgress($connector, new CancelSubtaskRequest($groupId, $subtaskId), SubtaskResponse::class, ['Cancel subtask', 'Cancelling subtask', 'Cancelled subtask']);
 
         return $task instanceof SubtaskResponse ? $this->renderSubtask($task) : self::FAILURE;
+    }
+
+    private function cancelConfirmation(int $position, string $title, string $status, string $group): string
+    {
+        $action = $status === 'running' ? ' and stop its implementer' : ' without starting it';
+
+        return "Cancel subtask {$position} ({$title}) of task group {$group}{$action}?";
     }
 }

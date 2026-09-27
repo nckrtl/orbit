@@ -9,5 +9,5 @@ use App\Models\Node;
 interface T3Stream
 {
     /** @return iterable<array<string, mixed>> */
-    public function events(Node $node, string $threadId, ?int $afterSequence): iterable;
+    public function events(Node $node, string $threadId, ?int $afterSequence, ?float $timeoutSeconds = null): iterable;
 }

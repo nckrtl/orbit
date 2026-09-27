@@ -11,15 +11,13 @@
             ],
             "concepts": [
                 "Cluster",
-                "Database",
                 "Gateway",
                 "Node",
                 "Process",
+                "Role",
                 "Route",
-                "Runtime hibernation",
                 "Schedule",
-                "Tool",
-                "proxycli"
+                "Tool"
             ],
             "governing_adrs": []
         },
@@ -29,13 +27,13 @@
             "kind": "product",
             "components": [],
             "concepts": [
+                "Activity",
                 "Cluster",
-                "Database",
+                "Deployment",
                 "Gateway",
                 "Instance",
                 "Node",
                 "Route",
-                "Router",
                 "Schedule"
             ],
             "governing_adrs": [
@@ -50,12 +48,16 @@
                 "packages/php-sdk"
             ],
             "concepts": [
+                "Activity",
+                "Deployment",
                 "Doctor",
+                "Extension",
                 "Gateway",
                 "Instance",
                 "Node",
                 "Process",
                 "Project",
+                "Role",
                 "Route",
                 "Schedule"
             ],
@@ -67,42 +69,29 @@
             "kind": "product",
             "components": [
                 "apps/cli",
-                "apps/docs",
-                "apps/e2e",
-                "apps/gateway"
+                "apps/gateway",
+                "apps/web",
+                "packages/php-sdk"
             ],
             "concepts": [
+                "Access grant",
                 "Cluster",
-                "Database",
                 "Doctor",
+                "Extension",
                 "Gateway",
-                "Ingress",
                 "Instance",
                 "Node",
                 "Node agent",
                 "Process",
                 "Project",
+                "Role",
                 "Route",
-                "Router",
                 "Task",
-                "Task group",
-                "proxycli"
+                "Task check",
+                "Task workspace",
+                "Tool"
             ],
-            "governing_adrs": [
-                "0004",
-                "0014",
-                "0081",
-                "0083",
-                "0090",
-                "0091",
-                "0095",
-                "0103",
-                "0104",
-                "0109",
-                "0110",
-                "0127",
-                "0145"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/cli/activity.mdx",
@@ -110,6 +99,8 @@
             "kind": "product",
             "components": [],
             "concepts": [
+                "Activity",
+                "Deployment",
                 "Doctor",
                 "Gateway",
                 "Instance",
@@ -129,11 +120,11 @@
             "kind": "product",
             "components": [],
             "concepts": [
-                "Database",
                 "Gateway",
                 "Instance",
                 "Node",
-                "Process"
+                "Process",
+                "Role"
             ],
             "governing_adrs": []
         },
@@ -158,11 +149,10 @@
             "concepts": [
                 "Cluster",
                 "Gateway",
-                "Ingress",
                 "Node",
                 "Project",
-                "Route",
-                "Router"
+                "Role",
+                "Route"
             ],
             "governing_adrs": []
         },
@@ -172,14 +162,13 @@
             "kind": "product",
             "components": [],
             "concepts": [
-                "Database",
-                "Database connection",
                 "Doctor",
                 "Gateway",
                 "Instance",
                 "Node",
                 "Process",
-                "Project"
+                "Project",
+                "Role"
             ],
             "governing_adrs": []
         },
@@ -192,8 +181,7 @@
                 "Cluster",
                 "Gateway",
                 "Node",
-                "Route",
-                "Router"
+                "Route"
             ],
             "governing_adrs": []
         },
@@ -203,19 +191,21 @@
             "kind": "product",
             "components": [],
             "concepts": [
+                "Activity",
                 "Cluster",
-                "Database",
+                "Deployment",
                 "Doctor",
                 "Gateway",
-                "Ingress",
                 "Instance",
                 "Node",
                 "Node agent",
                 "Process",
                 "Project",
+                "Role",
                 "Route",
                 "Schedule",
                 "Task",
+                "Task workspace",
                 "Tool"
             ],
             "governing_adrs": [
@@ -228,7 +218,8 @@
             "kind": "product",
             "components": [],
             "concepts": [
-                "Database",
+                "Activity",
+                "Deployment",
                 "Doctor",
                 "Gateway",
                 "Instance",
@@ -243,8 +234,8 @@
             "kind": "product",
             "components": [],
             "concepts": [
-                "Gateway",
-                "proxycli"
+                "Extension",
+                "Gateway"
             ],
             "governing_adrs": []
         },
@@ -255,9 +246,9 @@
             "components": [],
             "concepts": [
                 "Doctor",
-                "Firewall rule",
                 "Gateway",
-                "Node"
+                "Node",
+                "Role"
             ],
             "governing_adrs": [
                 "0093"
@@ -269,6 +260,7 @@
             "kind": "product",
             "components": [],
             "concepts": [
+                "Activity",
                 "Gateway",
                 "Node"
             ],
@@ -294,18 +286,15 @@
             "components": [],
             "concepts": [
                 "Cluster",
-                "Database",
-                "Database connection",
+                "Deployment",
                 "Gateway",
                 "Instance",
                 "Node",
                 "Process",
                 "Project",
-                "Repository identity",
+                "Role",
                 "Route",
-                "Schedule",
-                "Setup step",
-                "Teardown step"
+                "Schedule"
             ],
             "governing_adrs": []
         },
@@ -315,10 +304,11 @@
             "kind": "product",
             "components": [],
             "concepts": [
+                "Access grant",
                 "Doctor",
-                "Firewall rule",
                 "Gateway",
                 "Node",
+                "Role",
                 "Route"
             ],
             "governing_adrs": []
@@ -330,15 +320,12 @@
             "components": [],
             "concepts": [
                 "Cluster",
-                "Database",
-                "Firewall rule",
                 "Gateway",
-                "Ingress",
                 "Instance",
                 "Node",
                 "Process",
-                "Route",
-                "Router"
+                "Role",
+                "Route"
             ],
             "governing_adrs": [
                 "0088",
@@ -351,20 +338,21 @@
             "kind": "product",
             "components": [],
             "concepts": [
+                "Activity",
                 "Cluster",
-                "Database",
+                "Deployment",
                 "Doctor",
+                "Extension",
                 "Gateway",
                 "Instance",
                 "Node",
                 "Process",
                 "Project",
+                "Role",
                 "Route",
-                "Router",
                 "Schedule",
                 "Task",
-                "Tool",
-                "proxycli"
+                "Tool"
             ],
             "governing_adrs": []
         },
@@ -374,7 +362,6 @@
             "kind": "product",
             "components": [],
             "concepts": [
-                "Database",
                 "Doctor",
                 "Gateway",
                 "Instance",
@@ -382,6 +369,7 @@
                 "Node agent",
                 "Process",
                 "Project",
+                "Role",
                 "Route",
                 "Schedule"
             ],
@@ -393,6 +381,7 @@
             "kind": "product",
             "components": [],
             "concepts": [
+                "Activity",
                 "Doctor",
                 "Gateway",
                 "Instance",
@@ -407,17 +396,16 @@
             "kind": "product",
             "components": [],
             "concepts": [
+                "Deployment",
                 "Gateway",
                 "Instance",
                 "Node",
                 "Process",
                 "Project",
-                "Project type",
-                "Repository identity",
                 "Route",
                 "Schedule",
                 "Task",
-                "Web root"
+                "Task check"
             ],
             "governing_adrs": []
         },
@@ -427,13 +415,12 @@
             "kind": "product",
             "components": [],
             "concepts": [
-                "Database",
-                "Database connection",
+                "Extension",
                 "Gateway",
                 "Node",
                 "Process",
-                "Route",
-                "proxycli"
+                "Role",
+                "Route"
             ],
             "governing_adrs": []
         },
@@ -443,11 +430,13 @@
             "kind": "product",
             "components": [],
             "concepts": [
-                "Database",
+                "Activity",
+                "Deployment",
                 "Gateway",
                 "Instance",
                 "Node",
                 "Process",
+                "Role",
                 "Schedule",
                 "Tool"
             ],
@@ -465,9 +454,7 @@
                 "Node",
                 "Process",
                 "Project",
-                "Route",
-                "Router",
-                "Web root"
+                "Route"
             ],
             "governing_adrs": []
         },
@@ -477,6 +464,7 @@
             "kind": "product",
             "components": [],
             "concepts": [
+                "Activity",
                 "Doctor",
                 "Gateway",
                 "Instance",
@@ -493,10 +481,14 @@
             "kind": "product",
             "components": [],
             "concepts": [
+                "Access grant",
+                "Deliverable",
+                "Extension",
                 "Gateway",
                 "Instance",
                 "Node",
                 "Project",
+                "Role",
                 "Route",
                 "Task",
                 "Task group",
@@ -510,12 +502,11 @@
             "kind": "product",
             "components": [],
             "concepts": [
-                "Database",
                 "Doctor",
                 "Gateway",
                 "Node",
-                "Tool",
-                "Tool Manager"
+                "Role",
+                "Tool"
             ],
             "governing_adrs": []
         },
@@ -536,53 +527,29 @@
             "kind": "product",
             "components": [],
             "concepts": [
-                "Agentation endpoint",
-                "Analytics driver",
+                "Access grant",
+                "Activity",
                 "Cluster",
-                "Database",
-                "Database connection",
-                "Development node exclusion",
-                "Development-server endpoint",
+                "Deliverable",
+                "Deployment",
                 "Doctor",
-                "Documentation context",
-                "Firewall rule",
+                "Extension",
                 "Gateway",
-                "Ingress",
                 "Instance",
-                "Instance routing",
                 "Node",
                 "Node agent",
-                "Package root",
                 "Process",
                 "Project",
-                "Project type",
-                "Proof topology",
-                "Repository identity",
+                "Role",
                 "Route",
-                "Route replacement",
-                "Router",
-                "Runtime hibernation",
                 "Schedule",
-                "Setup step",
                 "Task",
+                "Task check",
                 "Task group",
-                "Teardown step",
-                "Tool",
-                "Tool Manager",
-                "Web root",
-                "proxycli"
+                "Task workspace",
+                "Tool"
             ],
-            "governing_adrs": [
-                "0004",
-                "0011",
-                "0047",
-                "0056",
-                "0064",
-                "0065",
-                "0080",
-                "0093",
-                "0106"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/contributor-guide.md",
@@ -614,9 +581,11 @@
             "kind": "decision",
             "components": [],
             "concepts": [
+                "Activity",
                 "Gateway",
                 "Node",
                 "Process",
+                "Role",
                 "Tool"
             ],
             "governing_adrs": [
@@ -629,6 +598,8 @@
             "kind": "decision",
             "components": [],
             "concepts": [
+                "Activity",
+                "Deployment",
                 "Task"
             ],
             "governing_adrs": [
@@ -642,10 +613,12 @@
             "kind": "decision",
             "components": [],
             "concepts": [
-                "Firewall rule",
+                "Access grant",
+                "Activity",
                 "Gateway",
                 "Node",
                 "Process",
+                "Role",
                 "Tool"
             ],
             "governing_adrs": [
@@ -660,12 +633,13 @@
                 "apps/gateway"
             ],
             "concepts": [
-                "Database",
+                "Activity",
                 "Doctor",
                 "Gateway",
                 "Instance",
                 "Node",
                 "Process",
+                "Role",
                 "Tool"
             ],
             "governing_adrs": [
@@ -680,8 +654,10 @@
                 "apps/e2e"
             ],
             "concepts": [
+                "Deployment",
                 "Gateway",
-                "Node"
+                "Node",
+                "Role"
             ],
             "governing_adrs": [
                 "0005",
@@ -696,7 +672,7 @@
                 "apps/e2e"
             ],
             "concepts": [
-                "Proof topology",
+                "Deployment",
                 "Task"
             ],
             "governing_adrs": [
@@ -711,10 +687,11 @@
             "kind": "decision",
             "components": [],
             "concepts": [
-                "Database",
+                "Deployment",
                 "Gateway",
                 "Instance",
-                "Node"
+                "Node",
+                "Role"
             ],
             "governing_adrs": [
                 "0008"
@@ -727,16 +704,14 @@
             "components": [],
             "concepts": [
                 "Cluster",
-                "Database",
+                "Extension",
                 "Gateway",
-                "Ingress",
                 "Instance",
                 "Node",
                 "Process",
+                "Role",
                 "Route",
-                "Router",
-                "Schedule",
-                "Web root"
+                "Schedule"
             ],
             "governing_adrs": [
                 "0008",
@@ -760,13 +735,12 @@
             "components": [],
             "concepts": [
                 "Cluster",
-                "Ingress",
+                "Deployment",
                 "Instance",
                 "Node",
                 "Process",
-                "Route",
-                "Router",
-                "Web root"
+                "Role",
+                "Route"
             ],
             "governing_adrs": [
                 "0009",
@@ -781,9 +755,8 @@
             "concepts": [
                 "Doctor",
                 "Gateway",
-                "Ingress",
                 "Node",
-                "Router",
+                "Role",
                 "Tool"
             ],
             "governing_adrs": [
@@ -798,19 +771,18 @@
             "kind": "decision",
             "components": [],
             "concepts": [
+                "Activity",
                 "Cluster",
-                "Database",
+                "Deployment",
                 "Doctor",
                 "Gateway",
-                "Ingress",
                 "Instance",
                 "Node",
                 "Process",
                 "Project",
-                "Proof topology",
+                "Role",
                 "Schedule",
-                "Tool",
-                "Web root"
+                "Tool"
             ],
             "governing_adrs": [
                 "0002",
@@ -828,7 +800,7 @@
                 "apps/docs"
             ],
             "concepts": [
-                "Database",
+                "Deployment",
                 "Project",
                 "Route"
             ],
@@ -845,11 +817,13 @@
                 "apps/docs"
             ],
             "concepts": [
+                "Deployment",
+                "Extension",
                 "Gateway",
                 "Node",
                 "Process",
                 "Project",
-                "Proof topology"
+                "Role"
             ],
             "governing_adrs": [
                 "0002",
@@ -864,15 +838,12 @@
             "components": [],
             "concepts": [
                 "Cluster",
-                "Database",
+                "Deployment",
                 "Gateway",
-                "Ingress",
                 "Instance",
                 "Node",
-                "Repository identity",
-                "Route",
-                "Router",
-                "Web root"
+                "Role",
+                "Route"
             ],
             "governing_adrs": [
                 "0009",
@@ -887,12 +858,12 @@
             "components": [],
             "concepts": [
                 "Cluster",
+                "Deployment",
                 "Gateway",
-                "Ingress",
                 "Instance",
                 "Node",
-                "Route",
-                "Router"
+                "Role",
+                "Route"
             ],
             "governing_adrs": [
                 "0009",
@@ -907,14 +878,15 @@
             "kind": "decision",
             "components": [],
             "concepts": [
+                "Activity",
                 "Cluster",
                 "Doctor",
                 "Gateway",
                 "Instance",
                 "Node",
+                "Role",
                 "Route",
-                "Tool",
-                "Web root"
+                "Tool"
             ],
             "governing_adrs": [
                 "0009",
@@ -930,10 +902,10 @@
             "components": [],
             "concepts": [
                 "Cluster",
-                "Database",
                 "Gateway",
                 "Node",
-                "Process"
+                "Process",
+                "Role"
             ],
             "governing_adrs": [
                 "0005",
@@ -951,7 +923,8 @@
             ],
             "concepts": [
                 "Gateway",
-                "Node"
+                "Node",
+                "Role"
             ],
             "governing_adrs": [
                 "0021"
@@ -982,12 +955,11 @@
             "concepts": [
                 "Cluster",
                 "Gateway",
-                "Ingress",
                 "Instance",
                 "Node",
                 "Project",
-                "Route",
-                "Router"
+                "Role",
+                "Route"
             ],
             "governing_adrs": [
                 "0009",
@@ -1030,6 +1002,7 @@
                 "Gateway",
                 "Instance",
                 "Project",
+                "Role",
                 "Route"
             ],
             "governing_adrs": [
@@ -1050,10 +1023,8 @@
                 "packages/php-sdk"
             ],
             "concepts": [
-                "Database",
                 "Gateway",
-                "Instance",
-                "Repository identity"
+                "Instance"
             ],
             "governing_adrs": [
                 "0009",
@@ -1121,8 +1092,8 @@
             ],
             "concepts": [
                 "Cluster",
+                "Deployment",
                 "Gateway",
-                "Ingress",
                 "Route",
                 "Tool"
             ],
@@ -1144,9 +1115,8 @@
                 "packages/php-sdk"
             ],
             "concepts": [
-                "Database",
+                "Deployment",
                 "Gateway",
-                "Ingress",
                 "Instance",
                 "Route"
             ],
@@ -1169,8 +1139,8 @@
                 "packages/php-sdk"
             ],
             "concepts": [
+                "Deployment",
                 "Gateway",
-                "Ingress",
                 "Route"
             ],
             "governing_adrs": [
@@ -1190,6 +1160,7 @@
                 "packages/php-sdk"
             ],
             "concepts": [
+                "Deployment",
                 "Gateway",
                 "Instance",
                 "Route"
@@ -1211,11 +1182,9 @@
             "concepts": [
                 "Cluster",
                 "Gateway",
-                "Ingress",
                 "Instance",
                 "Node",
-                "Route",
-                "Router"
+                "Route"
             ],
             "governing_adrs": [
                 "0009",
@@ -1238,7 +1207,8 @@
                 "Gateway",
                 "Instance",
                 "Node",
-                "Project"
+                "Project",
+                "Role"
             ],
             "governing_adrs": [
                 "0009",
@@ -1273,6 +1243,7 @@
                 "packages/php-sdk"
             ],
             "concepts": [
+                "Deployment",
                 "Gateway",
                 "Instance",
                 "Route"
@@ -1292,7 +1263,6 @@
             "concepts": [
                 "Gateway",
                 "Node",
-                "Proof topology",
                 "Route"
             ],
             "governing_adrs": [
@@ -1337,11 +1307,8 @@
             ],
             "concepts": [
                 "Cluster",
-                "Database",
                 "Gateway",
-                "Ingress",
-                "Route",
-                "Router"
+                "Route"
             ],
             "governing_adrs": [
                 "0011",
@@ -1358,6 +1325,7 @@
                 "apps/e2e"
             ],
             "concepts": [
+                "Extension",
                 "Gateway",
                 "Node"
             ],
@@ -1400,8 +1368,8 @@
             "concepts": [
                 "Gateway",
                 "Node",
-                "Tool",
-                "Tool Manager"
+                "Role",
+                "Tool"
             ],
             "governing_adrs": [
                 "0001",
@@ -1423,8 +1391,7 @@
                 "Node",
                 "Process",
                 "Project",
-                "Tool",
-                "Tool Manager"
+                "Tool"
             ],
             "governing_adrs": [
                 "0001",
@@ -1442,7 +1409,8 @@
                 "packages/php-sdk"
             ],
             "concepts": [
-                "Database",
+                "Activity",
+                "Deployment",
                 "Gateway",
                 "Instance",
                 "Node",
@@ -1463,11 +1431,12 @@
                 "apps/gateway"
             ],
             "concepts": [
+                "Deployment",
                 "Gateway",
-                "Ingress",
                 "Instance",
                 "Node",
-                "Project"
+                "Project",
+                "Role"
             ],
             "governing_adrs": [
                 "0011",
@@ -1488,13 +1457,12 @@
                 "packages/php-sdk"
             ],
             "concepts": [
-                "Database",
+                "Deployment",
                 "Gateway",
-                "Ingress",
                 "Instance",
                 "Node",
                 "Process",
-                "Web root"
+                "Role"
             ],
             "governing_adrs": [
                 "0011",
@@ -1518,13 +1486,13 @@
                 "packages/php-sdk"
             ],
             "concepts": [
-                "Database",
+                "Deployment",
                 "Gateway",
-                "Ingress",
                 "Instance",
                 "Node",
                 "Process",
                 "Project",
+                "Role",
                 "Route",
                 "Schedule"
             ],
@@ -1550,6 +1518,7 @@
                 "packages/php-sdk"
             ],
             "concepts": [
+                "Deployment",
                 "Doctor",
                 "Gateway",
                 "Instance",
@@ -1585,9 +1554,7 @@
             "components": [
                 "apps/e2e"
             ],
-            "concepts": [
-                "Proof topology"
-            ],
+            "concepts": [],
             "governing_adrs": [
                 "0006",
                 "0015",
@@ -1604,7 +1571,6 @@
             ],
             "concepts": [
                 "Project",
-                "Proof topology",
                 "Tool"
             ],
             "governing_adrs": [
@@ -1687,8 +1653,10 @@
                 "apps/gateway"
             ],
             "concepts": [
+                "Access grant",
                 "Gateway",
-                "Node"
+                "Node",
+                "Role"
             ],
             "governing_adrs": [
                 "0003",
@@ -1704,8 +1672,7 @@
                 "apps/e2e"
             ],
             "concepts": [
-                "Node",
-                "Proof topology"
+                "Node"
             ],
             "governing_adrs": [
                 "0006",
@@ -1726,7 +1693,8 @@
             "concepts": [
                 "Doctor",
                 "Gateway",
-                "Node"
+                "Node",
+                "Role"
             ],
             "governing_adrs": [
                 "0003",
@@ -1739,9 +1707,7 @@
             "title": "ADR 0058: Separate Incus requirements from delivery flow",
             "kind": "decision",
             "components": [],
-            "concepts": [
-                "Proof topology"
-            ],
+            "concepts": [],
             "governing_adrs": [
                 "0051",
                 "0058"
@@ -1755,7 +1721,8 @@
                 "apps/e2e"
             ],
             "concepts": [
-                "Project"
+                "Project",
+                "Role"
             ],
             "governing_adrs": [
                 "0053",
@@ -1808,11 +1775,9 @@
             "concepts": [
                 "Cluster",
                 "Gateway",
-                "Ingress",
                 "Instance",
                 "Node",
-                "Route",
-                "Router"
+                "Route"
             ],
             "governing_adrs": [
                 "0009",
@@ -1872,7 +1837,6 @@
                 "packages/php-sdk"
             ],
             "concepts": [
-                "Database",
                 "Gateway",
                 "Route"
             ],
@@ -1893,11 +1857,11 @@
             ],
             "concepts": [
                 "Cluster",
-                "Database",
                 "Gateway",
                 "Instance",
                 "Node",
                 "Process",
+                "Role",
                 "Route",
                 "Schedule"
             ],
@@ -1920,13 +1884,11 @@
             ],
             "concepts": [
                 "Cluster",
-                "Development-server endpoint",
                 "Gateway",
                 "Instance",
                 "Node",
                 "Process",
-                "Route",
-                "Router"
+                "Route"
             ],
             "governing_adrs": [
                 "0009",
@@ -1966,7 +1928,6 @@
                 "packages/php-sdk"
             ],
             "concepts": [
-                "Database",
                 "Gateway",
                 "Node",
                 "Process",
@@ -1987,12 +1948,10 @@
                 "apps/gateway"
             ],
             "concepts": [
-                "Database",
                 "Gateway",
-                "Ingress",
                 "Node",
                 "Process",
-                "Router",
+                "Role",
                 "Tool"
             ],
             "governing_adrs": [
@@ -2014,12 +1973,15 @@
                 "packages/php-sdk"
             ],
             "concepts": [
+                "Access grant",
+                "Activity",
                 "Cluster",
                 "Doctor",
                 "Gateway",
                 "Instance",
                 "Node",
                 "Process",
+                "Role",
                 "Route",
                 "Schedule"
             ],
@@ -2042,10 +2004,10 @@
                 "packages/php-sdk"
             ],
             "concepts": [
-                "Firewall rule",
                 "Gateway",
                 "Node",
-                "Process"
+                "Process",
+                "Role"
             ],
             "governing_adrs": [
                 "0069",
@@ -2065,6 +2027,7 @@
                 "packages/php-sdk"
             ],
             "concepts": [
+                "Deployment",
                 "Gateway"
             ],
             "governing_adrs": [
@@ -2081,11 +2044,12 @@
                 "apps/gateway"
             ],
             "concepts": [
+                "Activity",
                 "Doctor",
                 "Gateway",
                 "Node",
                 "Process",
-                "Runtime hibernation",
+                "Role",
                 "Schedule"
             ],
             "governing_adrs": [
@@ -2105,8 +2069,7 @@
             "concepts": [
                 "Gateway",
                 "Node",
-                "Process",
-                "Runtime hibernation"
+                "Process"
             ],
             "governing_adrs": [
                 "0074",
@@ -2122,8 +2085,10 @@
                 "apps/e2e"
             ],
             "concepts": [
+                "Deployment",
                 "Node",
                 "Project",
+                "Role",
                 "Task"
             ],
             "governing_adrs": [
@@ -2153,13 +2118,11 @@
             ],
             "concepts": [
                 "Cluster",
-                "Database",
                 "Doctor",
                 "Gateway",
-                "Ingress",
                 "Node",
                 "Process",
-                "Router"
+                "Role"
             ],
             "governing_adrs": [
                 "0069",
@@ -2179,7 +2142,6 @@
             ],
             "concepts": [
                 "Cluster",
-                "Database",
                 "Gateway",
                 "Instance",
                 "Node",
@@ -2227,9 +2189,7 @@
                 "Instance",
                 "Node",
                 "Process",
-                "Route",
-                "Router",
-                "Web root"
+                "Route"
             ],
             "governing_adrs": [
                 "0009",
@@ -2248,8 +2208,6 @@
                 "apps/gateway"
             ],
             "concepts": [
-                "Database",
-                "Database connection",
                 "Gateway",
                 "Node",
                 "Process",
@@ -2299,7 +2257,6 @@
                 "apps/gateway"
             ],
             "concepts": [
-                "Database",
                 "Gateway",
                 "Node",
                 "Process",
@@ -2320,13 +2277,12 @@
                 "packages/php-sdk"
             ],
             "concepts": [
-                "Database",
-                "Database connection",
-                "Firewall rule",
+                "Deployment",
                 "Gateway",
                 "Instance",
                 "Node",
                 "Process",
+                "Role",
                 "Route",
                 "Schedule"
             ],
@@ -2347,10 +2303,8 @@
                 "apps/docs"
             ],
             "concepts": [
-                "Database",
-                "Database connection",
+                "Deployment",
                 "Doctor",
-                "Firewall rule",
                 "Gateway",
                 "Instance",
                 "Node",
@@ -2373,6 +2327,8 @@
                 "apps/gateway"
             ],
             "concepts": [
+                "Activity",
+                "Deployment",
                 "Gateway",
                 "Instance",
                 "Node",
@@ -2397,12 +2353,12 @@
                 "packages/php-sdk"
             ],
             "concepts": [
-                "Database",
-                "Firewall rule",
+                "Deployment",
                 "Gateway",
                 "Instance",
                 "Node",
                 "Process",
+                "Role",
                 "Route"
             ],
             "governing_adrs": [
@@ -2422,10 +2378,10 @@
                 "apps/gateway"
             ],
             "concepts": [
-                "Firewall rule",
                 "Gateway",
                 "Instance",
                 "Node",
+                "Role",
                 "Route"
             ],
             "governing_adrs": [
@@ -2447,6 +2403,7 @@
                 "packages/php-sdk"
             ],
             "concepts": [
+                "Deployment",
                 "Gateway",
                 "Instance",
                 "Node",
@@ -2474,11 +2431,11 @@
                 "packages/php-sdk"
             ],
             "concepts": [
-                "Database",
                 "Gateway",
                 "Node",
                 "Process",
                 "Project",
+                "Role",
                 "Route"
             ],
             "governing_adrs": [
@@ -2504,6 +2461,7 @@
             "concepts": [
                 "Gateway",
                 "Node",
+                "Role",
                 "Route"
             ],
             "governing_adrs": [
@@ -2527,7 +2485,8 @@
             "concepts": [
                 "Gateway",
                 "Node",
-                "Process"
+                "Process",
+                "Role"
             ],
             "governing_adrs": [
                 "0061",
@@ -2546,7 +2505,8 @@
             "concepts": [
                 "Doctor",
                 "Gateway",
-                "Node"
+                "Node",
+                "Role"
             ],
             "governing_adrs": [
                 "0093"
@@ -2564,7 +2524,8 @@
                 "Gateway",
                 "Node",
                 "Process",
-                "Project"
+                "Project",
+                "Role"
             ],
             "governing_adrs": [
                 "0061",
@@ -2586,7 +2547,8 @@
             "concepts": [
                 "Gateway",
                 "Node",
-                "Process"
+                "Process",
+                "Role"
             ],
             "governing_adrs": [
                 "0061",
@@ -2608,12 +2570,12 @@
                 "packages/php-sdk"
             ],
             "concepts": [
-                "Database",
                 "Doctor",
                 "Gateway",
                 "Instance",
                 "Node",
-                "Process"
+                "Process",
+                "Role"
             ],
             "governing_adrs": [
                 "0003",
@@ -2637,11 +2599,10 @@
             "concepts": [
                 "Cluster",
                 "Gateway",
-                "Ingress",
                 "Instance",
                 "Node",
-                "Route",
-                "Router"
+                "Role",
+                "Route"
             ],
             "governing_adrs": [
                 "0011",
@@ -2665,11 +2626,13 @@
                 "packages/php-sdk"
             ],
             "concepts": [
+                "Activity",
                 "Doctor",
                 "Gateway",
                 "Instance",
                 "Node",
                 "Process",
+                "Role",
                 "Schedule",
                 "Tool"
             ],
@@ -2689,12 +2652,14 @@
                 "apps/gateway"
             ],
             "concepts": [
+                "Deployment",
                 "Doctor",
+                "Extension",
                 "Gateway",
-                "Ingress",
                 "Instance",
                 "Node",
                 "Process",
+                "Role",
                 "Route"
             ],
             "governing_adrs": [
@@ -2718,6 +2683,7 @@
                 "Instance",
                 "Node",
                 "Project",
+                "Role",
                 "Route"
             ],
             "governing_adrs": [
@@ -2741,10 +2707,8 @@
                 "Cluster",
                 "Doctor",
                 "Gateway",
-                "Ingress",
                 "Instance",
-                "Route",
-                "Router"
+                "Route"
             ],
             "governing_adrs": [
                 "0011",
@@ -2763,10 +2727,11 @@
                 "packages/php-sdk"
             ],
             "concepts": [
-                "Analytics driver",
+                "Activity",
                 "Gateway",
                 "Instance",
-                "Node"
+                "Node",
+                "Role"
             ],
             "governing_adrs": [
                 "0088",
@@ -2784,12 +2749,13 @@
                 "apps/gateway"
             ],
             "concepts": [
-                "Database",
+                "Extension",
                 "Gateway",
                 "Instance",
                 "Node",
                 "Process",
                 "Project",
+                "Role",
                 "Route",
                 "Task"
             ],
@@ -2816,13 +2782,12 @@
                 "packages/php-sdk"
             ],
             "concepts": [
-                "Database",
-                "Database connection",
+                "Extension",
                 "Gateway",
                 "Node",
                 "Process",
-                "Route",
-                "proxycli"
+                "Role",
+                "Route"
             ],
             "governing_adrs": [
                 "0069",
@@ -2846,6 +2811,7 @@
                 "packages/php-sdk"
             ],
             "concepts": [
+                "Activity",
                 "Gateway",
                 "Instance",
                 "Node",
@@ -2874,14 +2840,13 @@
                 "packages/php-sdk"
             ],
             "concepts": [
+                "Extension",
                 "Gateway",
                 "Instance",
                 "Node",
                 "Project",
-                "Project type",
-                "Repository identity",
-                "Route",
-                "Web root"
+                "Role",
+                "Route"
             ],
             "governing_adrs": [
                 "0028",
@@ -2904,11 +2869,13 @@
                 "packages/php-sdk"
             ],
             "concepts": [
+                "Deployment",
                 "Doctor",
                 "Gateway",
                 "Instance",
                 "Node",
-                "Project"
+                "Project",
+                "Role"
             ],
             "governing_adrs": [
                 "0044",
@@ -2930,11 +2897,11 @@
                 "apps/gateway"
             ],
             "concepts": [
+                "Extension",
                 "Gateway",
                 "Instance",
                 "Node",
-                "Process",
-                "proxycli"
+                "Process"
             ],
             "governing_adrs": [
                 "0069",
@@ -2953,11 +2920,11 @@
                 "packages/php-sdk"
             ],
             "concepts": [
+                "Extension",
                 "Gateway",
                 "Node",
                 "Process",
-                "Route",
-                "proxycli"
+                "Route"
             ],
             "governing_adrs": [
                 "0104",
@@ -2974,8 +2941,11 @@
                 "apps/gateway"
             ],
             "concepts": [
+                "Activity",
+                "Extension",
                 "Gateway",
                 "Instance",
+                "Role",
                 "Route",
                 "Task"
             ],
@@ -3011,9 +2981,11 @@
                 "apps/web"
             ],
             "concepts": [
-                "Database",
+                "Activity",
+                "Extension",
                 "Gateway",
                 "Node",
+                "Role",
                 "Route",
                 "Task",
                 "Tool"
@@ -3037,6 +3009,8 @@
                 "packages/php-sdk"
             ],
             "concepts": [
+                "Activity",
+                "Extension",
                 "Gateway",
                 "Node",
                 "Project",
@@ -3062,12 +3036,10 @@
             ],
             "concepts": [
                 "Cluster",
-                "Database",
                 "Gateway",
-                "Ingress",
                 "Node",
-                "Route",
-                "Router"
+                "Role",
+                "Route"
             ],
             "governing_adrs": [
                 "0005",
@@ -3083,7 +3055,9 @@
                 "apps/gateway"
             ],
             "concepts": [
+                "Activity",
                 "Gateway",
+                "Role",
                 "Route",
                 "Task",
                 "Tool"
@@ -3109,6 +3083,7 @@
                 "packages/php-sdk"
             ],
             "concepts": [
+                "Activity",
                 "Gateway",
                 "Instance",
                 "Process",
@@ -3137,6 +3112,7 @@
                 "Node",
                 "Process",
                 "Project",
+                "Role",
                 "Task",
                 "Task group",
                 "Tool"
@@ -3160,6 +3136,7 @@
             ],
             "concepts": [
                 "Gateway",
+                "Role",
                 "Task",
                 "Task group",
                 "Tool"
@@ -3180,10 +3157,12 @@
                 "packages/php-sdk"
             ],
             "concepts": [
+                "Extension",
                 "Gateway",
                 "Instance",
                 "Node",
                 "Project",
+                "Role",
                 "Task",
                 "Tool"
             ],
@@ -3207,8 +3186,10 @@
                 "packages/php-sdk"
             ],
             "concepts": [
+                "Deployment",
                 "Gateway",
-                "Task"
+                "Task",
+                "Task workspace"
             ],
             "governing_adrs": [
                 "0052",
@@ -3225,6 +3206,7 @@
                 "apps/web"
             ],
             "concepts": [
+                "Extension",
                 "Gateway",
                 "Instance",
                 "Node",
@@ -3244,8 +3226,10 @@
                 "apps/gateway"
             ],
             "concepts": [
+                "Extension",
                 "Gateway",
                 "Project",
+                "Role",
                 "Task",
                 "Task group"
             ],
@@ -3269,7 +3253,7 @@
                 "apps/web"
             ],
             "concepts": [
-                "Database",
+                "Extension",
                 "Gateway",
                 "Instance",
                 "Task",
@@ -3292,8 +3276,7 @@
             ],
             "concepts": [
                 "Gateway",
-                "Node",
-                "Router"
+                "Node"
             ],
             "governing_adrs": [
                 "0084",
@@ -3314,6 +3297,7 @@
                 "Gateway",
                 "Instance",
                 "Node",
+                "Role",
                 "Task",
                 "Task group"
             ],
@@ -3336,14 +3320,15 @@
                 "packages/php-sdk"
             ],
             "concepts": [
+                "Activity",
                 "Gateway",
                 "Instance",
                 "Node",
                 "Process",
                 "Project",
-                "Project type",
-                "Setup step",
                 "Task",
+                "Task check",
+                "Task workspace",
                 "Tool"
             ],
             "governing_adrs": [
@@ -3362,6 +3347,7 @@
                 "apps/web"
             ],
             "concepts": [
+                "Deployment",
                 "Gateway",
                 "Node",
                 "Route"
@@ -3379,10 +3365,12 @@
                 "apps/gateway"
             ],
             "concepts": [
+                "Deployment",
                 "Doctor",
                 "Gateway",
                 "Node",
                 "Process",
+                "Role",
                 "Task"
             ],
             "governing_adrs": [
@@ -3406,9 +3394,10 @@
                 "Node agent",
                 "Process",
                 "Project",
+                "Role",
                 "Task",
-                "Tool",
-                "Tool Manager"
+                "Task workspace",
+                "Tool"
             ],
             "governing_adrs": [
                 "0057",
@@ -3434,6 +3423,7 @@
                 "Node",
                 "Node agent",
                 "Process",
+                "Role",
                 "Task"
             ],
             "governing_adrs": [
@@ -3478,7 +3468,8 @@
                 "Gateway",
                 "Project",
                 "Task",
-                "Task group"
+                "Task group",
+                "Task workspace"
             ],
             "governing_adrs": [
                 "0052",
@@ -3521,6 +3512,7 @@
                 "packages/php-sdk"
             ],
             "concepts": [
+                "Deliverable",
                 "Gateway",
                 "Project",
                 "Task",
@@ -3563,10 +3555,10 @@
                 "apps/gateway"
             ],
             "concepts": [
-                "Database",
                 "Gateway",
                 "Task",
-                "Task group"
+                "Task group",
+                "Task workspace"
             ],
             "governing_adrs": [
                 "0005",
@@ -3602,9 +3594,10 @@
                 "apps/gateway"
             ],
             "concepts": [
+                "Activity",
                 "Gateway",
                 "Node",
-                "proxycli"
+                "Role"
             ],
             "governing_adrs": [
                 "0137",
@@ -3622,9 +3615,9 @@
             "concepts": [
                 "Doctor",
                 "Gateway",
-                "Ingress",
                 "Instance",
                 "Node",
+                "Role",
                 "Route"
             ],
             "governing_adrs": [
@@ -3644,9 +3637,9 @@
             ],
             "concepts": [
                 "Gateway",
-                "Ingress",
                 "Instance",
                 "Node",
+                "Role",
                 "Route"
             ],
             "governing_adrs": [
@@ -3686,18 +3679,16 @@
                 "apps/gateway"
             ],
             "concepts": [
+                "Activity",
                 "Cluster",
-                "Database",
                 "Doctor",
                 "Gateway",
-                "Ingress",
                 "Instance",
                 "Node",
                 "Process",
                 "Project",
-                "Route",
-                "Router",
-                "proxycli"
+                "Role",
+                "Route"
             ],
             "governing_adrs": [
                 "0009",
@@ -3724,10 +3715,10 @@
                 "apps/gateway"
             ],
             "concepts": [
-                "Database",
                 "Gateway",
                 "Node",
-                "Process"
+                "Process",
+                "Role"
             ],
             "governing_adrs": [
                 "0096",
@@ -3743,10 +3734,12 @@
                 "apps/e2e"
             ],
             "concepts": [
+                "Extension",
                 "Gateway",
                 "Node",
                 "Task",
-                "Task group"
+                "Task group",
+                "Task workspace"
             ],
             "governing_adrs": [
                 "0005",
@@ -3766,7 +3759,7 @@
                 "Doctor",
                 "Gateway",
                 "Node",
-                "proxycli"
+                "Role"
             ],
             "governing_adrs": [
                 "0100",
@@ -3784,12 +3777,11 @@
                 "packages/php-sdk"
             ],
             "concepts": [
+                "Extension",
                 "Gateway",
-                "Ingress",
                 "Node",
                 "Process",
-                "Route",
-                "proxycli"
+                "Route"
             ],
             "governing_adrs": [
                 "0104",
@@ -3810,15 +3802,14 @@
                 "packages/php-sdk"
             ],
             "concepts": [
-                "Database",
                 "Doctor",
+                "Extension",
                 "Gateway",
                 "Node",
                 "Process",
+                "Role",
                 "Route",
-                "Tool",
-                "Tool Manager",
-                "proxycli"
+                "Tool"
             ],
             "governing_adrs": [
                 "0043",
@@ -3839,6 +3830,7 @@
                 "apps/docs"
             ],
             "concepts": [
+                "Extension",
                 "Gateway",
                 "Node",
                 "Process"
@@ -3860,14 +3852,13 @@
                 "apps/gateway"
             ],
             "concepts": [
-                "Database",
                 "Doctor",
                 "Gateway",
                 "Instance",
                 "Node",
                 "Node agent",
                 "Process",
-                "Runtime hibernation",
+                "Role",
                 "Task"
             ],
             "governing_adrs": [
@@ -3888,7 +3879,6 @@
                 "apps/gateway"
             ],
             "concepts": [
-                "Database",
                 "Gateway",
                 "Node",
                 "Process"
@@ -3907,10 +3897,10 @@
                 "apps/docs"
             ],
             "concepts": [
+                "Extension",
                 "Gateway",
                 "Node",
-                "Process",
-                "proxycli"
+                "Process"
             ],
             "governing_adrs": [
                 "0104",
@@ -3927,16 +3917,19 @@
                 "apps/web"
             ],
             "concepts": [
-                "Database",
+                "Activity",
+                "Extension",
                 "Gateway",
                 "Instance",
                 "Node",
                 "Node agent",
                 "Process",
                 "Project",
+                "Role",
                 "Schedule",
                 "Task",
-                "Task group"
+                "Task group",
+                "Task workspace"
             ],
             "governing_adrs": [
                 "0084",
@@ -3957,8 +3950,7 @@
                 "apps/gateway"
             ],
             "concepts": [
-                "Database",
-                "Database connection",
+                "Activity",
                 "Doctor",
                 "Gateway",
                 "Node",
@@ -3987,12 +3979,12 @@
                 "packages/php-sdk"
             ],
             "concepts": [
-                "Database",
                 "Gateway",
                 "Instance",
                 "Node",
                 "Node agent",
                 "Process",
+                "Role",
                 "Route",
                 "Task"
             ],
@@ -4035,7 +4027,6 @@
                 "apps/gateway"
             ],
             "concepts": [
-                "Database",
                 "Doctor",
                 "Gateway",
                 "Instance",
@@ -4044,7 +4035,8 @@
                 "Process",
                 "Project",
                 "Route",
-                "Task"
+                "Task",
+                "Task workspace"
             ],
             "governing_adrs": [
                 "0033",
@@ -4068,6 +4060,7 @@
                 "Gateway",
                 "Node",
                 "Project",
+                "Role",
                 "Route",
                 "Tool"
             ],
@@ -4089,11 +4082,9 @@
                 "Cluster",
                 "Doctor",
                 "Gateway",
-                "Ingress",
                 "Node",
-                "Route",
-                "Router",
-                "proxycli"
+                "Role",
+                "Route"
             ],
             "governing_adrs": [
                 "0141",
@@ -4109,11 +4100,13 @@
                 "apps/gateway"
             ],
             "concepts": [
-                "Database",
+                "Activity",
+                "Deployment",
                 "Gateway",
                 "Instance",
                 "Node",
                 "Process",
+                "Role",
                 "Schedule"
             ],
             "governing_adrs": [
@@ -4133,6 +4126,7 @@
                 "packages/php-sdk"
             ],
             "concepts": [
+                "Activity",
                 "Gateway",
                 "Node",
                 "Process",
@@ -4157,13 +4151,15 @@
             ],
             "concepts": [
                 "Doctor",
+                "Extension",
                 "Gateway",
                 "Instance",
                 "Node",
                 "Process",
                 "Project",
                 "Route",
-                "Task"
+                "Task",
+                "Task workspace"
             ],
             "governing_adrs": [
                 "0103",
@@ -4182,9 +4178,8 @@
             "concepts": [
                 "Doctor",
                 "Gateway",
-                "Ingress",
                 "Node",
-                "Router"
+                "Role"
             ],
             "governing_adrs": [
                 "0141",
@@ -4202,7 +4197,6 @@
             "concepts": [
                 "Gateway",
                 "Route",
-                "Router",
                 "Tool"
             ],
             "governing_adrs": [
@@ -4220,10 +4214,12 @@
                 "packages/php-sdk"
             ],
             "concepts": [
+                "Deliverable",
                 "Gateway",
                 "Node",
                 "Project",
-                "Task"
+                "Task",
+                "Task workspace"
             ],
             "governing_adrs": [
                 "0133",
@@ -4243,6 +4239,7 @@
                 "packages/php-sdk"
             ],
             "concepts": [
+                "Deliverable",
                 "Gateway",
                 "Project",
                 "Task"
@@ -4267,6 +4264,8 @@
                 "packages/php-sdk"
             ],
             "concepts": [
+                "Activity",
+                "Extension",
                 "Gateway",
                 "Process",
                 "Task"
@@ -4312,6 +4311,7 @@
                 "Gateway",
                 "Node",
                 "Process",
+                "Role",
                 "Schedule",
                 "Task"
             ],
@@ -4353,10 +4353,15 @@
                 "apps/web"
             ],
             "concepts": [
+                "Deliverable",
+                "Extension",
                 "Gateway",
                 "Node",
                 "Project",
+                "Role",
                 "Task",
+                "Task check",
+                "Task workspace",
                 "Tool"
             ],
             "governing_adrs": [
@@ -4372,6 +4377,27 @@
                 "0164",
                 "0165",
                 "0169"
+            ]
+        },
+        {
+            "path": "docs/decisions/0170-edit-todo-subtasks-after-a-group-starts.md",
+            "title": "ADR 0170: Edit Todo subtasks after a group starts",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Deliverable",
+                "Gateway",
+                "Task",
+                "Task group"
+            ],
+            "governing_adrs": [
+                "0122",
+                "0133",
+                "0170"
             ]
         },
         {
@@ -4391,6 +4417,25 @@
             ]
         },
         {
+            "path": "docs/decisions/0172-count-every-t3-model-call-in-thread-metrics.md",
+            "title": "ADR 0172: Count every T3 model call in thread metrics",
+            "kind": "decision",
+            "components": [
+                "apps/docs",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Activity",
+                "Gateway",
+                "Process",
+                "Task"
+            ],
+            "governing_adrs": [
+                "0165",
+                "0172"
+            ]
+        },
+        {
             "path": "docs/decisions/0173-record-and-label-jev-decisions.md",
             "title": "ADR 0173: Record and label every Jev decision",
             "kind": "decision",
@@ -4400,6 +4445,7 @@
             ],
             "concepts": [
                 "Gateway",
+                "Role",
                 "Task"
             ],
             "governing_adrs": [
@@ -4424,23 +4470,23 @@
             "kind": "decision",
             "components": [],
             "concepts": [
+                "Activity",
                 "Cluster",
-                "Database",
+                "Deployment",
                 "Doctor",
+                "Extension",
                 "Gateway",
-                "Ingress",
                 "Instance",
                 "Node",
                 "Node agent",
                 "Process",
                 "Project",
-                "Project type",
+                "Role",
                 "Route",
-                "Router",
                 "Schedule",
                 "Task",
-                "Tool",
-                "proxycli"
+                "Task workspace",
+                "Tool"
             ],
             "governing_adrs": [
                 "0001",
@@ -4606,6 +4652,7 @@
                 "0167",
                 "0168",
                 "0169",
+                "0170",
                 "0171",
                 "0173"
             ]
@@ -4626,19 +4673,17 @@
             "kind": "domain",
             "components": [],
             "concepts": [
+                "Activity",
                 "Cluster",
-                "Database",
+                "Deployment",
                 "Doctor",
                 "Gateway",
-                "Ingress",
                 "Instance",
                 "Node",
                 "Process",
                 "Project",
-                "Repository identity",
-                "Route",
-                "Router",
-                "Web root"
+                "Role",
+                "Route"
             ],
             "governing_adrs": [
                 "0009",
@@ -4658,12 +4703,10 @@
             "kind": "product",
             "components": [],
             "concepts": [
-                "Cluster",
                 "Gateway",
                 "Instance",
                 "Node",
-                "Project",
-                "Route"
+                "Project"
             ],
             "governing_adrs": []
         },
@@ -4673,8 +4716,9 @@
             "kind": "product",
             "components": [],
             "concepts": [
-                "Gateway",
-                "Route"
+                "Extension",
+                "Project",
+                "Task"
             ],
             "governing_adrs": []
         },
@@ -4687,15 +4731,15 @@
                 "apps/gateway"
             ],
             "concepts": [
-                "Database",
+                "Activity",
                 "Doctor",
                 "Gateway",
                 "Instance",
                 "Node",
                 "Process",
                 "Project",
-                "Route",
-                "Web root"
+                "Role",
+                "Route"
             ],
             "governing_adrs": []
         },
@@ -4707,7 +4751,8 @@
                 "apps/web"
             ],
             "concepts": [
-                "Database",
+                "Activity",
+                "Extension",
                 "Gateway",
                 "Instance",
                 "Node",
@@ -4731,6 +4776,7 @@
                 "Node",
                 "Process",
                 "Project",
+                "Role",
                 "Route"
             ],
             "governing_adrs": [
@@ -4743,10 +4789,11 @@
             "kind": "reference",
             "components": [],
             "concepts": [
-                "Database",
+                "Deployment",
                 "Gateway",
                 "Instance",
                 "Node",
+                "Role",
                 "Route"
             ],
             "governing_adrs": []
@@ -4758,16 +4805,13 @@
             "components": [],
             "concepts": [
                 "Cluster",
-                "Database",
-                "Firewall rule",
                 "Gateway",
-                "Ingress",
                 "Instance",
                 "Node",
                 "Process",
                 "Project",
-                "Route",
-                "Router"
+                "Role",
+                "Route"
             ],
             "governing_adrs": [
                 "0096",
@@ -4782,6 +4826,7 @@
             "kind": "reference",
             "components": [],
             "concepts": [
+                "Activity",
                 "Doctor",
                 "Gateway",
                 "Instance",
@@ -4789,7 +4834,7 @@
                 "Node agent",
                 "Process",
                 "Project",
-                "Runtime hibernation"
+                "Role"
             ],
             "governing_adrs": [
                 "0074",
@@ -4802,18 +4847,16 @@
             "kind": "reference",
             "components": [],
             "concepts": [
-                "Database",
-                "Database connection",
-                "Development-server endpoint",
+                "Activity",
                 "Doctor",
                 "Gateway",
                 "Instance",
                 "Node",
                 "Process",
                 "Project",
+                "Role",
                 "Route",
-                "Schedule",
-                "proxycli"
+                "Schedule"
             ],
             "governing_adrs": [
                 "0036",
@@ -4833,15 +4876,14 @@
             ],
             "concepts": [
                 "Cluster",
-                "Database",
+                "Deployment",
                 "Gateway",
-                "Ingress",
                 "Instance",
                 "Node",
                 "Process",
                 "Project",
+                "Role",
                 "Route",
-                "Router",
                 "Schedule"
             ],
             "governing_adrs": [
@@ -4859,19 +4901,19 @@
             "kind": "reference",
             "components": [],
             "concepts": [
+                "Activity",
                 "Cluster",
-                "Database",
+                "Deployment",
                 "Gateway",
                 "Instance",
                 "Node",
                 "Process",
                 "Project",
-                "Repository identity",
                 "Route",
-                "Router",
                 "Schedule",
                 "Task",
-                "Task group"
+                "Task group",
+                "Task workspace"
             ],
             "governing_adrs": [
                 "0027",
@@ -4892,15 +4934,13 @@
             "components": [],
             "concepts": [
                 "Cluster",
-                "Database",
                 "Gateway",
                 "Instance",
                 "Node",
                 "Process",
                 "Project",
+                "Role",
                 "Route",
-                "Route replacement",
-                "Router",
                 "Schedule"
             ],
             "governing_adrs": [
@@ -4915,16 +4955,17 @@
             "kind": "reference",
             "components": [],
             "concepts": [
+                "Activity",
+                "Deployment",
                 "Doctor",
                 "Gateway",
                 "Instance",
                 "Node",
                 "Project",
-                "Repository identity",
                 "Route",
                 "Task",
-                "Tool",
-                "Web root"
+                "Task check",
+                "Tool"
             ],
             "governing_adrs": [
                 "0016",
@@ -4940,7 +4981,6 @@
             "kind": "reference",
             "components": [],
             "concepts": [
-                "Database",
                 "Gateway",
                 "Instance",
                 "Node",
@@ -4975,18 +5015,16 @@
             "kind": "reference",
             "components": [],
             "concepts": [
+                "Activity",
                 "Cluster",
-                "Database",
                 "Doctor",
                 "Gateway",
-                "Ingress",
                 "Instance",
                 "Node",
                 "Node agent",
                 "Process",
-                "Route",
-                "Router",
-                "proxycli"
+                "Role",
+                "Route"
             ],
             "governing_adrs": [
                 "0138",
@@ -5005,7 +5043,7 @@
                 "packages/php-sdk"
             ],
             "concepts": [
-                "Database",
+                "Extension",
                 "Gateway",
                 "Node",
                 "Project"
@@ -5023,25 +5061,22 @@
                 "apps/gateway"
             ],
             "concepts": [
+                "Access grant",
+                "Activity",
                 "Cluster",
-                "Database",
-                "Database connection",
                 "Doctor",
-                "Firewall rule",
+                "Extension",
                 "Gateway",
                 "Instance",
                 "Node",
                 "Process",
                 "Project",
+                "Role",
                 "Route",
-                "Router",
                 "Schedule",
-                "Setup step",
                 "Task",
                 "Task group",
-                "Teardown step",
-                "Tool",
-                "proxycli"
+                "Tool"
             ],
             "governing_adrs": [
                 "0071"
@@ -5055,11 +5090,13 @@
                 "apps/cli"
             ],
             "concepts": [
+                "Extension",
                 "Gateway",
                 "Instance",
                 "Node",
                 "Process",
                 "Project",
+                "Role",
                 "Task"
             ],
             "governing_adrs": [
@@ -5072,13 +5109,13 @@
             "kind": "reference",
             "components": [],
             "concepts": [
-                "Database",
-                "Database connection",
+                "Activity",
                 "Doctor",
                 "Gateway",
                 "Instance",
                 "Node",
                 "Process",
+                "Role",
                 "Route"
             ],
             "governing_adrs": [
@@ -5094,14 +5131,11 @@
             "kind": "reference",
             "components": [],
             "concepts": [
-                "Database",
-                "Database connection",
                 "Doctor",
                 "Gateway",
-                "Ingress",
                 "Node",
                 "Process",
-                "Router",
+                "Role",
                 "Tool"
             ],
             "governing_adrs": [
@@ -5116,16 +5150,16 @@
             "kind": "reference",
             "components": [],
             "concepts": [
+                "Activity",
                 "Cluster",
-                "Database",
+                "Deployment",
                 "Doctor",
                 "Gateway",
                 "Instance",
                 "Node",
                 "Process",
                 "Project",
-                "Route",
-                "Web root"
+                "Route"
             ],
             "governing_adrs": [
                 "0046",
@@ -5142,6 +5176,7 @@
                 "Instance",
                 "Node",
                 "Project",
+                "Role",
                 "Route",
                 "Task",
                 "Tool"
@@ -5156,17 +5191,17 @@
             "kind": "reference",
             "components": [],
             "concepts": [
+                "Activity",
                 "Cluster",
-                "Database",
+                "Deployment",
                 "Doctor",
                 "Gateway",
-                "Ingress",
                 "Instance",
                 "Node",
                 "Process",
                 "Project",
-                "Route",
-                "Web root"
+                "Role",
+                "Route"
             ],
             "governing_adrs": [
                 "0044",
@@ -5179,17 +5214,17 @@
             "kind": "reference",
             "components": [],
             "concepts": [
-                "Database",
-                "Database connection",
-                "Firewall rule",
+                "Activity",
+                "Deployment",
+                "Extension",
                 "Gateway",
                 "Instance",
                 "Node",
                 "Node agent",
                 "Process",
                 "Project",
+                "Role",
                 "Route",
-                "Runtime hibernation",
                 "Schedule",
                 "Task",
                 "Task group"
@@ -5213,7 +5248,6 @@
                 "apps/gateway"
             ],
             "concepts": [
-                "Database",
                 "Doctor",
                 "Gateway",
                 "Node",
@@ -5234,10 +5268,11 @@
                 "packages/php-sdk"
             ],
             "concepts": [
-                "Database",
+                "Deployment",
                 "Gateway",
                 "Instance",
                 "Node",
+                "Role",
                 "Route"
             ],
             "governing_adrs": []
@@ -5258,8 +5293,10 @@
             "kind": "reference",
             "components": [],
             "concepts": [
-                "Database",
+                "Activity",
+                "Deployment",
                 "Doctor",
+                "Extension",
                 "Gateway",
                 "Instance",
                 "Node",
@@ -5284,13 +5321,14 @@
                 "packages/php-sdk"
             ],
             "concepts": [
-                "Database",
+                "Deployment",
                 "Gateway",
                 "Node",
                 "Process",
                 "Project",
                 "Task",
                 "Task group",
+                "Task workspace",
                 "Tool"
             ],
             "governing_adrs": [
@@ -5315,20 +5353,19 @@
             ],
             "concepts": [
                 "Cluster",
-                "Database",
                 "Doctor",
+                "Extension",
                 "Gateway",
-                "Ingress",
                 "Instance",
                 "Node",
                 "Process",
                 "Project",
-                "Proof topology",
+                "Role",
                 "Route",
-                "Router",
                 "Schedule",
                 "Task",
-                "Task group"
+                "Task group",
+                "Task workspace"
             ],
             "governing_adrs": [
                 "0005",
@@ -5349,10 +5386,10 @@
             "kind": "reference",
             "components": [],
             "concepts": [
-                "Analytics driver",
                 "Gateway",
                 "Instance",
                 "Node",
+                "Role",
                 "Route"
             ],
             "governing_adrs": [
@@ -5365,13 +5402,13 @@
             "kind": "reference",
             "components": [],
             "concepts": [
+                "Deployment",
                 "Gateway",
                 "Instance",
                 "Node",
                 "Process",
                 "Project",
                 "Route",
-                "Runtime hibernation",
                 "Schedule",
                 "Task"
             ],
@@ -5385,15 +5422,14 @@
             "kind": "reference",
             "components": [],
             "concepts": [
-                "Database",
+                "Deployment",
                 "Gateway",
                 "Instance",
                 "Node",
                 "Process",
                 "Project",
                 "Route",
-                "Schedule",
-                "Web root"
+                "Schedule"
             ],
             "governing_adrs": [
                 "0089"
@@ -5434,16 +5470,14 @@
             "kind": "reference",
             "components": [],
             "concepts": [
-                "Database",
+                "Activity",
                 "Gateway",
                 "Instance",
                 "Node",
                 "Process",
                 "Project",
                 "Route",
-                "Setup step",
-                "Task",
-                "Teardown step"
+                "Task"
             ],
             "governing_adrs": [
                 "0115"
@@ -5455,11 +5489,13 @@
             "kind": "reference",
             "components": [],
             "concepts": [
+                "Activity",
                 "Gateway",
                 "Instance",
                 "Node",
                 "Node agent",
                 "Process",
+                "Role",
                 "Route"
             ],
             "governing_adrs": [
@@ -5478,8 +5514,7 @@
                 "Gateway",
                 "Instance",
                 "Node",
-                "Route",
-                "Router"
+                "Route"
             ],
             "governing_adrs": [
                 "0009"
@@ -5493,6 +5528,8 @@
                 "apps/gateway"
             ],
             "concepts": [
+                "Activity",
+                "Extension",
                 "Gateway",
                 "Instance",
                 "Node",
@@ -5509,13 +5546,14 @@
             "kind": "reference",
             "components": [],
             "concepts": [
+                "Access grant",
                 "Doctor",
-                "Firewall rule",
+                "Extension",
                 "Gateway",
-                "Ingress",
                 "Instance",
                 "Node",
                 "Process",
+                "Role",
                 "Route"
             ],
             "governing_adrs": [
@@ -5532,14 +5570,16 @@
             "kind": "reference",
             "components": [],
             "concepts": [
-                "Database",
+                "Activity",
                 "Doctor",
+                "Extension",
                 "Gateway",
                 "Instance",
                 "Node",
                 "Node agent",
                 "Process",
                 "Project",
+                "Role",
                 "Task",
                 "Task group"
             ],
@@ -5562,21 +5602,18 @@
                 "apps/gateway"
             ],
             "concepts": [
+                "Activity",
                 "Cluster",
-                "Database",
                 "Doctor",
                 "Gateway",
-                "Ingress",
                 "Instance",
                 "Node",
                 "Node agent",
                 "Process",
                 "Project",
+                "Role",
                 "Route",
-                "Router",
-                "Tool",
-                "Tool Manager",
-                "proxycli"
+                "Tool"
             ],
             "governing_adrs": [
                 "0072",
@@ -5596,7 +5633,8 @@
             ],
             "concepts": [
                 "Gateway",
-                "Node"
+                "Node",
+                "Role"
             ],
             "governing_adrs": []
         },
@@ -5609,7 +5647,8 @@
                 "Doctor",
                 "Gateway",
                 "Instance",
-                "Node"
+                "Node",
+                "Role"
             ],
             "governing_adrs": [
                 "0008",
@@ -5623,16 +5662,18 @@
             "kind": "reference",
             "components": [],
             "concepts": [
+                "Activity",
                 "Cluster",
-                "Development-server endpoint",
+                "Deployment",
                 "Doctor",
+                "Extension",
                 "Gateway",
                 "Instance",
                 "Node",
                 "Process",
                 "Project",
+                "Role",
                 "Route",
-                "Router",
                 "Schedule",
                 "Task"
             ],
@@ -5672,14 +5713,14 @@
             "kind": "reference",
             "components": [],
             "concepts": [
+                "Activity",
                 "Cluster",
                 "Doctor",
                 "Gateway",
                 "Node",
                 "Project",
-                "Route",
-                "Router",
-                "proxycli"
+                "Role",
+                "Route"
             ],
             "governing_adrs": [
                 "0061",
@@ -5696,10 +5737,11 @@
                 "apps/e2e"
             ],
             "concepts": [
+                "Extension",
                 "Gateway",
                 "Node",
                 "Process",
-                "Proof topology"
+                "Role"
             ],
             "governing_adrs": [
                 "0015",
@@ -5713,15 +5755,14 @@
             "kind": "reference",
             "components": [],
             "concepts": [
-                "Database",
-                "Database connection",
                 "Doctor",
+                "Extension",
                 "Gateway",
                 "Node",
                 "Process",
+                "Role",
                 "Route",
-                "Schedule",
-                "proxycli"
+                "Schedule"
             ],
             "governing_adrs": [
                 "0104",
@@ -5737,22 +5778,18 @@
             "kind": "reference",
             "components": [],
             "concepts": [
-                "Agentation endpoint",
+                "Activity",
                 "Cluster",
-                "Database",
-                "Development-server endpoint",
+                "Deployment",
                 "Doctor",
-                "Firewall rule",
                 "Gateway",
-                "Ingress",
                 "Instance",
                 "Node",
                 "Process",
                 "Project",
+                "Role",
                 "Route",
-                "Router",
-                "Tool",
-                "Web root"
+                "Tool"
             ],
             "governing_adrs": [
                 "0009",
@@ -5782,12 +5819,14 @@
             "kind": "reference",
             "components": [],
             "concepts": [
+                "Activity",
                 "Doctor",
                 "Gateway",
                 "Instance",
                 "Node",
                 "Process",
                 "Project",
+                "Role",
                 "Schedule"
             ],
             "governing_adrs": [
@@ -5804,14 +5843,14 @@
             "kind": "reference",
             "components": [],
             "concepts": [
+                "Deployment",
                 "Doctor",
-                "Ingress",
+                "Extension",
                 "Instance",
                 "Node",
                 "Process",
-                "Route",
-                "Router",
-                "Web root"
+                "Role",
+                "Route"
             ],
             "governing_adrs": [
                 "0099"
@@ -5830,19 +5869,24 @@
                 "packages/php-sdk"
             ],
             "concepts": [
-                "Database",
-                "Development node exclusion",
+                "Activity",
+                "Deliverable",
+                "Deployment",
                 "Doctor",
+                "Extension",
                 "Gateway",
                 "Instance",
                 "Node",
                 "Node agent",
                 "Process",
                 "Project",
+                "Role",
                 "Route",
                 "Schedule",
                 "Task",
+                "Task check",
                 "Task group",
+                "Task workspace",
                 "Tool"
             ],
             "governing_adrs": [
@@ -5867,7 +5911,9 @@
                 "0165",
                 "0167",
                 "0169",
+                "0170",
                 "0171",
+                "0172",
                 "0173"
             ]
         },
@@ -5877,13 +5923,13 @@
             "kind": "reference",
             "components": [],
             "concepts": [
-                "Database",
+                "Activity",
                 "Doctor",
                 "Gateway",
                 "Node",
                 "Process",
-                "Tool",
-                "Tool Manager"
+                "Role",
+                "Tool"
             ],
             "governing_adrs": [
                 "0001",
@@ -5901,19 +5947,18 @@
             ],
             "concepts": [
                 "Cluster",
-                "Database",
+                "Deployment",
                 "Doctor",
+                "Extension",
                 "Gateway",
-                "Ingress",
                 "Instance",
                 "Node",
                 "Process",
                 "Project",
-                "Proof topology",
+                "Role",
                 "Route",
-                "Router",
                 "Task",
-                "Web root"
+                "Task workspace"
             ],
             "governing_adrs": [
                 "0005",
@@ -5934,16 +5979,16 @@
                 "apps/web"
             ],
             "concepts": [
-                "Database",
+                "Activity",
+                "Deployment",
+                "Extension",
                 "Gateway",
                 "Instance",
                 "Node",
                 "Node agent",
                 "Process",
-                "Router",
                 "Task",
-                "Task group",
-                "proxycli"
+                "Task group"
             ],
             "governing_adrs": [
                 "0123",
@@ -5959,11 +6004,12 @@
                 "apps/web"
             ],
             "concepts": [
+                "Activity",
+                "Deployment",
                 "Gateway",
                 "Instance",
                 "Node",
                 "Route",
-                "Router",
                 "Task",
                 "Task group",
                 "Tool"
@@ -5999,13 +6045,12 @@
             "kind": "solution",
             "components": [],
             "concepts": [
-                "Database",
-                "Database connection",
+                "Extension",
                 "Gateway",
                 "Node",
                 "Process",
-                "Route",
-                "proxycli"
+                "Role",
+                "Route"
             ],
             "governing_adrs": [
                 "0104",
@@ -6018,11 +6063,12 @@
             "kind": "solution",
             "components": [],
             "concepts": [
+                "Activity",
                 "Doctor",
                 "Gateway",
                 "Instance",
                 "Node",
-                "Proof topology",
+                "Role",
                 "Route",
                 "Schedule"
             ],
@@ -6042,8 +6088,7 @@
                 "Node",
                 "Process",
                 "Project",
-                "Route",
-                "Router"
+                "Route"
             ],
             "governing_adrs": [
                 "0080"
@@ -6061,7 +6106,7 @@
                 "Gateway",
                 "Node",
                 "Process",
-                "Router"
+                "Role"
             ],
             "governing_adrs": [
                 "0092"
@@ -6079,6 +6124,7 @@
                 "Node",
                 "Process",
                 "Project",
+                "Role",
                 "Route"
             ],
             "governing_adrs": []
@@ -6091,12 +6137,12 @@
                 "apps/e2e"
             ],
             "concepts": [
-                "Database",
                 "Doctor",
                 "Gateway",
                 "Node",
                 "Process",
                 "Project",
+                "Role",
                 "Route"
             ],
             "governing_adrs": [
@@ -6129,7 +6175,6 @@
                 "apps/gateway"
             ],
             "concepts": [
-                "Database",
                 "Gateway",
                 "Node",
                 "Process"
@@ -6160,11 +6205,14 @@
                 "apps/docs",
                 "apps/e2e",
                 "apps/gateway",
+                "apps/web",
                 "packages/php-sdk"
             ],
             "concepts": [
                 "Gateway",
-                "Project"
+                "Node",
+                "Project",
+                "Role"
             ],
             "governing_adrs": []
         }
