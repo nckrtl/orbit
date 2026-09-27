@@ -118,8 +118,12 @@
             "path": "docs/cli/analytics.mdx",
             "title": "analytics",
             "kind": "product",
-            "components": [],
+            "components": [
+                "apps/cli",
+                "packages/php-sdk"
+            ],
             "concepts": [
+                "Access grant",
                 "Gateway",
                 "Instance",
                 "Node",
@@ -189,8 +193,13 @@
             "path": "docs/cli/doctor.mdx",
             "title": "doctor",
             "kind": "product",
-            "components": [],
+            "components": [
+                "apps/cli",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
             "concepts": [
+                "Access grant",
                 "Activity",
                 "Cluster",
                 "Deployment",
@@ -208,9 +217,7 @@
                 "Task workspace",
                 "Tool"
             ],
-            "governing_adrs": [
-                "0004"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/cli/env.mdx",
@@ -302,14 +309,16 @@
             "path": "docs/cli/metrics.mdx",
             "title": "metrics",
             "kind": "product",
-            "components": [],
+            "components": [
+                "apps/cli",
+                "packages/php-sdk"
+            ],
             "concepts": [
                 "Access grant",
                 "Doctor",
                 "Gateway",
                 "Node",
-                "Role",
-                "Route"
+                "Role"
             ],
             "governing_adrs": []
         },
@@ -608,45 +617,6 @@
             ]
         },
         {
-            "path": "docs/decisions/0003-singleton-metrics-role.md",
-            "title": "ADR 0003: Adopt the singleton Metrics role contract",
-            "kind": "decision",
-            "components": [],
-            "concepts": [
-                "Access grant",
-                "Activity",
-                "Gateway",
-                "Node",
-                "Process",
-                "Role",
-                "Tool"
-            ],
-            "governing_adrs": [
-                "0003"
-            ]
-        },
-        {
-            "path": "docs/decisions/0004-verify-only-doctor-boundary.md",
-            "title": "ADR 0004: Define the verify-only Doctor boundary",
-            "kind": "decision",
-            "components": [
-                "apps/gateway"
-            ],
-            "concepts": [
-                "Activity",
-                "Doctor",
-                "Gateway",
-                "Instance",
-                "Node",
-                "Process",
-                "Role",
-                "Tool"
-            ],
-            "governing_adrs": [
-                "0004"
-            ]
-        },
-        {
             "path": "docs/decisions/0005-rolling-incus-development-topology.md",
             "title": "ADR 0005: Adopt a rolling Incus development topology",
             "kind": "decision",
@@ -761,8 +731,7 @@
             ],
             "governing_adrs": [
                 "0012",
-                "0042",
-                "0057"
+                "0042"
             ]
         },
         {
@@ -786,7 +755,6 @@
             ],
             "governing_adrs": [
                 "0002",
-                "0004",
                 "0009",
                 "0011",
                 "0013"
@@ -1646,25 +1614,6 @@
             ]
         },
         {
-            "path": "docs/decisions/0055-restrict-grafana-access-to-authorized-gateway-peers.md",
-            "title": "ADR 0055: Restrict Grafana access to authorized Gateway peers",
-            "kind": "decision",
-            "components": [
-                "apps/gateway"
-            ],
-            "concepts": [
-                "Access grant",
-                "Gateway",
-                "Node",
-                "Role"
-            ],
-            "governing_adrs": [
-                "0003",
-                "0033",
-                "0055"
-            ]
-        },
-        {
             "path": "docs/decisions/0056-retain-proof-topologies-for-interactive-review.md",
             "title": "ADR 0056: Retain proof topologies for interactive review",
             "kind": "decision",
@@ -1681,25 +1630,6 @@
                 "0050",
                 "0051",
                 "0056"
-            ]
-        },
-        {
-            "path": "docs/decisions/0057-limit-metrics-exporters-to-managed-nodes.md",
-            "title": "ADR 0057: Limit Metrics exporters to managed Nodes",
-            "kind": "decision",
-            "components": [
-                "apps/gateway"
-            ],
-            "concepts": [
-                "Doctor",
-                "Gateway",
-                "Node",
-                "Role"
-            ],
-            "governing_adrs": [
-                "0003",
-                "0012",
-                "0057"
             ]
         },
         {
@@ -2012,8 +1942,7 @@
             "governing_adrs": [
                 "0069",
                 "0071",
-                "0072",
-                "0146"
+                "0072"
             ]
         },
         {
@@ -2469,8 +2398,7 @@
                 "0071",
                 "0072",
                 "0090",
-                "0091",
-                "0146"
+                "0091"
             ]
         },
         {
@@ -2560,33 +2488,6 @@
             ]
         },
         {
-            "path": "docs/decisions/0096-run-plausible-through-an-analytics-role.md",
-            "title": "ADR 0096: Run Plausible through an analytics role",
-            "kind": "decision",
-            "components": [
-                "apps/cli",
-                "apps/e2e",
-                "apps/gateway",
-                "packages/php-sdk"
-            ],
-            "concepts": [
-                "Doctor",
-                "Gateway",
-                "Instance",
-                "Node",
-                "Process",
-                "Role"
-            ],
-            "governing_adrs": [
-                "0003",
-                "0069",
-                "0070",
-                "0087",
-                "0096",
-                "0097"
-            ]
-        },
-        {
             "path": "docs/decisions/0097-publish-analytics-tracking-hosts-for-app-instances.md",
             "title": "ADR 0097: Publish analytics tracking hosts for App instances",
             "kind": "decision",
@@ -2610,7 +2511,6 @@
                 "0067",
                 "0080",
                 "0082",
-                "0096",
                 "0097"
             ]
         },
@@ -2632,41 +2532,13 @@
                 "Instance",
                 "Node",
                 "Process",
-                "Role",
                 "Schedule",
                 "Tool"
             ],
             "governing_adrs": [
-                "0003",
-                "0004",
                 "0026",
                 "0031",
                 "0098"
-            ]
-        },
-        {
-            "path": "docs/decisions/0099-collect-role-specific-service-metrics.md",
-            "title": "ADR 0099: Collect role-specific service metrics",
-            "kind": "decision",
-            "components": [
-                "apps/gateway"
-            ],
-            "concepts": [
-                "Deployment",
-                "Doctor",
-                "Extension",
-                "Gateway",
-                "Instance",
-                "Node",
-                "Process",
-                "Role",
-                "Route"
-            ],
-            "governing_adrs": [
-                "0003",
-                "0045",
-                "0057",
-                "0099"
             ]
         },
         {
@@ -2687,7 +2559,6 @@
                 "Route"
             ],
             "governing_adrs": [
-                "0004",
                 "0021",
                 "0074",
                 "0100"
@@ -2714,30 +2585,6 @@
                 "0011",
                 "0097",
                 "0101"
-            ]
-        },
-        {
-            "path": "docs/decisions/0102-read-app-instance-analytics-through-a-fleet-driver.md",
-            "title": "ADR 0102: Read App instance analytics through a fleet driver",
-            "kind": "decision",
-            "components": [
-                "apps/cli",
-                "apps/docs",
-                "apps/gateway",
-                "packages/php-sdk"
-            ],
-            "concepts": [
-                "Activity",
-                "Gateway",
-                "Instance",
-                "Node",
-                "Role"
-            ],
-            "governing_adrs": [
-                "0088",
-                "0096",
-                "0097",
-                "0102"
             ]
         },
         {
@@ -3399,7 +3246,6 @@
                 "Tool"
             ],
             "governing_adrs": [
-                "0057",
                 "0127",
                 "0128",
                 "0129",
@@ -3638,11 +3484,9 @@
                 "Gateway",
                 "Instance",
                 "Node",
-                "Role",
                 "Route"
             ],
             "governing_adrs": [
-                "0099",
                 "0137",
                 "0138",
                 "0139"
@@ -3693,35 +3537,14 @@
                 "0009",
                 "0011",
                 "0080",
-                "0099",
                 "0100",
                 "0128",
                 "0137",
                 "0138",
                 "0139",
                 "0141",
-                "0146",
                 "0157",
                 "0161"
-            ]
-        },
-        {
-            "path": "docs/decisions/0142-apply-plausibles-clickhouse-configuration-from-the-analytics-role.md",
-            "title": "ADR 0142: Apply Plausible's ClickHouse configuration from the analytics role",
-            "kind": "decision",
-            "components": [
-                "apps/docs",
-                "apps/gateway"
-            ],
-            "concepts": [
-                "Gateway",
-                "Node",
-                "Process",
-                "Role"
-            ],
-            "governing_adrs": [
-                "0096",
-                "0142"
             ]
         },
         {
@@ -3787,37 +3610,6 @@
                 "0109",
                 "0141",
                 "0145"
-            ]
-        },
-        {
-            "path": "docs/decisions/0146-retire-the-herdr-integration.md",
-            "title": "ADR 0146: Retire the Herdr integration",
-            "kind": "decision",
-            "components": [
-                "apps/cli",
-                "apps/docs",
-                "apps/gateway",
-                "apps/web",
-                "packages/php-sdk"
-            ],
-            "concepts": [
-                "Doctor",
-                "Extension",
-                "Gateway",
-                "Node",
-                "Process",
-                "Role",
-                "Route",
-                "Tool"
-            ],
-            "governing_adrs": [
-                "0043",
-                "0069",
-                "0072",
-                "0091",
-                "0123",
-                "0141",
-                "0146"
             ]
         },
         {
@@ -3960,7 +3752,6 @@
                 "Tool"
             ],
             "governing_adrs": [
-                "0004",
                 "0013",
                 "0086",
                 "0152"
@@ -4472,8 +4263,6 @@
             "governing_adrs": [
                 "0001",
                 "0002",
-                "0003",
-                "0004",
                 "0005",
                 "0006",
                 "0008",
@@ -4522,9 +4311,7 @@
                 "0052",
                 "0053",
                 "0054",
-                "0055",
                 "0056",
-                "0057",
                 "0058",
                 "0059",
                 "0060",
@@ -4563,13 +4350,10 @@
                 "0093",
                 "0094",
                 "0095",
-                "0096",
                 "0097",
                 "0098",
-                "0099",
                 "0100",
                 "0101",
-                "0102",
                 "0103",
                 "0104",
                 "0105",
@@ -4605,11 +4389,9 @@
                 "0139",
                 "0140",
                 "0141",
-                "0142",
                 "0143",
                 "0144",
                 "0145",
-                "0146",
                 "0147",
                 "0148",
                 "0149",
@@ -4782,9 +4564,13 @@
             "path": "docs/reference/analytics.md",
             "title": "Analytics role",
             "kind": "reference",
-            "components": [],
+            "components": [
+                "apps/cli",
+                "apps/gateway"
+            ],
             "concepts": [
                 "Cluster",
+                "Doctor",
                 "Gateway",
                 "Instance",
                 "Node",
@@ -4793,12 +4579,7 @@
                 "Role",
                 "Route"
             ],
-            "governing_adrs": [
-                "0096",
-                "0097",
-                "0102",
-                "0142"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/reference/app-dev-runtime-hibernation.md",
@@ -5372,9 +5153,7 @@
                 "Role",
                 "Route"
             ],
-            "governing_adrs": [
-                "0102"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/reference/instance-dependencies.md",
@@ -5524,25 +5303,20 @@
             "path": "docs/reference/metrics.md",
             "title": "Metrics role",
             "kind": "reference",
-            "components": [],
+            "components": [
+                "apps/gateway"
+            ],
             "concepts": [
                 "Access grant",
-                "Doctor",
-                "Extension",
                 "Gateway",
                 "Instance",
                 "Node",
                 "Process",
                 "Role",
-                "Route"
+                "Route",
+                "Tool"
             ],
-            "governing_adrs": [
-                "0003",
-                "0055",
-                "0057",
-                "0088",
-                "0092"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/reference/node-agent.md",
@@ -5821,20 +5595,20 @@
             "path": "docs/reference/service-metrics.md",
             "title": "Service metrics",
             "kind": "reference",
-            "components": [],
+            "components": [
+                "apps/gateway"
+            ],
             "concepts": [
                 "Deployment",
                 "Doctor",
-                "Extension",
+                "Gateway",
                 "Instance",
                 "Node",
                 "Process",
                 "Role",
                 "Route"
             ],
-            "governing_adrs": [
-                "0099"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/reference/tasks.md",
@@ -5912,7 +5686,6 @@
             ],
             "governing_adrs": [
                 "0001",
-                "0004",
                 "0042",
                 "0043"
             ]
@@ -6040,7 +5813,10 @@
             "path": "docs/solutions/doctor-incus-proof.md",
             "title": "Prove the verify-only Doctor on an Incus topology",
             "kind": "solution",
-            "components": [],
+            "components": [
+                "apps/e2e",
+                "apps/gateway"
+            ],
             "concepts": [
                 "Activity",
                 "Doctor",
@@ -6051,9 +5827,7 @@
                 "Route",
                 "Schedule"
             ],
-            "governing_adrs": [
-                "0022"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/solutions/migrate-unmanaged-executor-hostname.md",

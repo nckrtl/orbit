@@ -5,14 +5,11 @@ description: "Reusable implementation lessons: a proven approach, its failure mo
 
 # Solutions
 
-Store reusable implementation lessons here. A solution note explains a proven
-approach, an important failure mode, and the evidence that supports it.
+A solution note records one reusable implementation lesson. It explains a proven approach, an important failure mode, and the evidence for it.
 
-Prefer updating an existing note. Add a new note only when the information will
-help future work. Do not copy pull request narration or transient debugging
-logs into this directory.
+Update an existing note when you can. Add a new note only when it helps future work. Do not copy pull request narration or temporary debugging logs into this directory.
 
-Use a short kebab-case file name and include:
+Give the note a short kebab-case file name. Include these parts:
 
 - the problem;
 - the cause;

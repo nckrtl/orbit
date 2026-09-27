@@ -5,7 +5,7 @@ description: "How the Gateway reads live visitors, period visitor counts, and to
 
 # Instance analytics stats
 
-This page tells an operator how the Gateway reports visits for an Instance that publishes a tracking host. The report comes from the fleet analytics driver. The first driver reads the Plausible Community Edition Stats API of the analytics role. [Analytics role](/reference/analytics) owns the role, the tracking host, and the Stats API key. [ADR 0102](/decisions/0102-read-app-instance-analytics-through-a-fleet-driver) owns the driver and the panel.
+This page tells an operator how the Gateway reports visits for an Instance that publishes a tracking host. The report comes from the fleet analytics driver. The first driver reads the Plausible Community Edition Stats API of the analytics role. [Analytics role](/reference/analytics) owns the role, the tracking host, and the Stats API key.
 
 ## Read the stats
 
