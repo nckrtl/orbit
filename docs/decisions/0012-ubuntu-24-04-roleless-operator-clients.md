@@ -10,7 +10,7 @@ description: "Accepted on 2026-08-31. Ubuntu 24.04 support withdrawn by the repo
 
 Accepted on 2026-08-31. Ubuntu 24.04 support withdrawn by the repository owner on 2026-09-10.
 
-Ubuntu 24.04 is no longer supported, including for roleless operator clients. The original support rationale and enrollment contract below remain only as historical context, not requirements to implement. This withdrawal does not authorize an operator-client platform or enrollment replacement. The management restrictions preserved by [ADR 0042](/decisions/0042-provision-tool-managers-on-demand) and [ADR 0057](/decisions/0057-limit-metrics-exporters-to-managed-nodes) remain applicable; they do not grant platform support.
+Ubuntu 24.04 is no longer supported, including for roleless operator clients. The original support rationale and enrollment contract below remain only as historical context, not requirements to implement. This withdrawal does not authorize an operator-client platform or enrollment replacement. The management restrictions preserved by [ADR 0042](/decisions/0042-provision-tool-managers-on-demand) and [ADR 0057](/reference/metrics#exporter-selection) remain applicable; they do not grant platform support.
 
 ## Context
 
