@@ -707,7 +707,11 @@ it('imports legacy thread links using the instance morph alias', function (strin
             // The token split alters agent_threads, which this legacy import creates.
             && ! str_contains($path, 'add_token_metrics_to_agent_threads')
             // The Pi resume points at agent_threads, which this legacy import creates.
-            && ! str_contains($path, 'add_pi_restart_resume_to_tasks')));
+            && ! str_contains($path, 'add_pi_restart_resume_to_tasks')
+            // Thread archiving alters agent_threads, which this legacy import creates.
+            && ! str_contains($path, 'add_thread_archiving_to_agent_threads')
+            // Archive backoff alters agent_threads, which this legacy import creates.
+            && ! str_contains($path, 'add_archive_backoff_to_agent_threads')));
         Artisan::call('migrate', ['--database' => 'agent_migration', '--path' => $paths, '--realpath' => true, '--force' => true]);
         $appId = DB::table('apps')->insertGetId(['name' => 'legacy', 'slug' => 'legacy', 'code' => 'LEG', 'repository_url' => 'git@example.test:legacy.git', 'repository_identity' => 'example.test/legacy']);
         $nodeId = DB::table('nodes')->insertGetId(['name' => 'legacy-node', 'public_ssh_host' => '10.44.0.110', 'status' => 'active', 'platform' => 'linux']);

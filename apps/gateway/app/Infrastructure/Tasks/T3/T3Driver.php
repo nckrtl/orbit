@@ -71,6 +71,14 @@ final readonly class T3Driver implements AgentDriver
         ]);
     }
 
+    public function archive(AgentThread $thread, string $commandId): void
+    {
+        $this->dispatcher->dispatch($this->node($thread), [
+            'type' => 'thread.archive', 'threadId' => $thread->external_id,
+            'commandId' => $commandId, 'createdAt' => now()->toIso8601String(),
+        ]);
+    }
+
     public function observe(AgentThread $thread): AgentObservation
     {
         $snapshot = $this->reader->snapshot($this->node($thread), $thread->external_id);

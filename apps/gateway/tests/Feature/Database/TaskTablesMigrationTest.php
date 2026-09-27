@@ -48,7 +48,22 @@ it('creates task_groups and tasks with morph, metrics, and ordering columns', fu
             'output_tokens',
             'model_calls',
             'peak_context_tokens',
+            'archived_at',
+            'archive_command_id',
         ]))->toBeTrue();
+});
+
+it('rolls back archive backoff columns and their index', function (): void {
+    $migration = require database_path('migrations/2026_09_29_120000_add_archive_backoff_to_agent_threads.php');
+
+    try {
+        $migration->down();
+
+        expect(Schema::hasColumns('agent_threads', ['archive_attempts', 'archive_retry_at']))->toBeFalse()
+            ->and(Schema::hasIndex('agent_threads', 'agent_threads_archive_retry_at_index'))->toBeFalse();
+    } finally {
+        $migration->up();
+    }
 });
 
 it('persists a TaskGroup morph to an App instance and ordered subtasks', function (): void {
