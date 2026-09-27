@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 namespace App\Http\Middleware;
 
+use App\Infrastructure\Logging\RequestLogContext;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 final class EnsureRequestId
 {
@@ -22,10 +24,20 @@ final class EnsureRequestId
         }
 
         $request->attributes->set('orbit.request_id', $requestId);
+        $previousRequestId = RequestLogContext::enter($requestId);
 
-        $response = $next($request);
-        $response->headers->set('X-Orbit-Request-Id', $requestId);
+        try {
+            /** @var Response $response */
+            $response = $next($request);
+            $response->headers->set('X-Orbit-Request-Id', $requestId);
 
-        return $response;
+            if ($response instanceof StreamedResponse) {
+                RequestLogContext::retainForStream($response, $requestId);
+            }
+
+            return $response;
+        } finally {
+            RequestLogContext::leave($requestId, $previousRequestId);
+        }
     }
 }

@@ -6,6 +6,8 @@ namespace App\Actions\Doctor;
 
 use App\Data\Doctor\DoctorFamilyReportData;
 use App\Data\Doctor\DoctorIssueData;
+use App\Domain\AppInstances\AppInstanceProvisioning;
+use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Doctor\AppDoctorIssueCode;
 use App\Domain\Doctor\AppStateInspector;
 use App\Domain\Doctor\DoctorFamily;
@@ -13,8 +15,9 @@ use App\Domain\Doctor\DoctorFamilyProbe;
 use App\Domain\Doctor\DoctorInspectionException;
 use App\Domain\Doctor\DoctorIssueKind;
 use App\Domain\Doctor\DoctorNodeContext;
+use App\Domain\Tasks\TaskWorkspaceLifecycle;
 use App\Models\App;
-use Illuminate\Database\Eloquent\Builder;
+use App\Models\AppInstance;
 
 final readonly class AppDoctorProbe implements DoctorFamilyProbe
 {
@@ -29,11 +32,9 @@ final readonly class AppDoctorProbe implements DoctorFamilyProbe
 
     public function inspect(DoctorNodeContext $context): DoctorFamilyReportData
     {
+        $eligibleInstanceIds = $this->eligibleInstanceIds($context->node->id);
         $rows = App::query()
-            ->whereHas('appInstances', static fn (Builder $query): Builder => $query->where(
-                'node_id',
-                $context->node->id,
-            ))
+            ->whereIn('id', AppInstance::query()->whereIn('id', $eligibleInstanceIds)->select('app_id'))
             ->orderBy('id')
             ->get();
         if ($rows->isEmpty()) {
@@ -55,19 +56,44 @@ final readonly class AppDoctorProbe implements DoctorFamilyProbe
         foreach ($rows as $app) {
             try {
                 $observation = $this->inspector->inspect($app, $context->node);
-                if (! $observation->repositoryOriginsMatch) {
-                    $issues[] = new DoctorIssueData(
-                        AppDoctorIssueCode::RepositoryOriginMismatch,
-                        DoctorIssueKind::Drift,
-                        'app',
-                        $app->id,
-                        $app->name,
-                        'App repository origin does not match managed identity.',
-                        'matching',
-                        'mismatch',
-                    );
+                if (! $observation->repositoryOriginsMatch || $observation->failedInstanceIds !== []) {
+                    $currentInstanceIds = $this->currentInstanceIds($app, $context->node->id);
+                    $mismatchingInstanceIds = $observation->mismatchingInstanceIds === []
+                        ? $currentInstanceIds
+                        : array_intersect($observation->mismatchingInstanceIds, $currentInstanceIds);
+                    $failedInstanceIds = array_intersect($observation->failedInstanceIds, $currentInstanceIds);
+
+                    if (! $observation->repositoryOriginsMatch && $mismatchingInstanceIds !== []) {
+                        $issues[] = new DoctorIssueData(
+                            AppDoctorIssueCode::RepositoryOriginMismatch,
+                            DoctorIssueKind::Drift,
+                            'app',
+                            $app->id,
+                            $app->name,
+                            'App repository origin does not match managed identity.',
+                            'matching',
+                            'mismatch',
+                        );
+                    }
+
+                    if ($failedInstanceIds !== []) {
+                        $issues[] = new DoctorIssueData(
+                            AppDoctorIssueCode::InspectionFailed,
+                            DoctorIssueKind::Unverifiable,
+                            'app',
+                            $app->id,
+                            $app->name,
+                            'App inspection could not be verified.',
+                            'verifiable',
+                            'unverifiable',
+                        );
+                    }
                 }
             } catch (DoctorInspectionException) {
+                if (! $this->hasCheckoutsOutsideRemoval($app, $context->node->id)) {
+                    continue;
+                }
+
                 $issues[] = new DoctorIssueData(
                     AppDoctorIssueCode::InspectionFailed,
                     DoctorIssueKind::Unverifiable,
@@ -82,5 +108,44 @@ final readonly class AppDoctorProbe implements DoctorFamilyProbe
         }
 
         return DoctorFamilyReportData::fromIssues(DoctorFamily::App, $rows->count(), $issues);
+    }
+
+    /** @return list<int> */
+    private function currentInstanceIds(App $app, int $nodeId): array
+    {
+        return $this->eligibleInstanceIds($nodeId, $app->id);
+    }
+
+    /** @return list<int> */
+    private function eligibleInstanceIds(int $nodeId, ?int $appId = null): array
+    {
+        $query = AppInstance::query()
+            ->with(['app', 'taskGroups'])
+            ->where('node_id', $nodeId)
+            ->where('status', '!=', AppInstanceState::Removing);
+        if ($appId !== null) {
+            $query->where('app_id', $appId);
+        }
+
+        $ids = [];
+        foreach ($query->get() as $instance) {
+            if ($this->isEligible($instance)) {
+                $ids[] = $instance->id;
+            }
+        }
+
+        return $ids;
+    }
+
+    private function isEligible(AppInstance $instance): bool
+    {
+        $settled = TaskWorkspaceLifecycle::settledState($instance);
+
+        return ! AppInstanceProvisioning::isInFlight($instance, $settled);
+    }
+
+    private function hasCheckoutsOutsideRemoval(App $app, int $nodeId): bool
+    {
+        return $this->currentInstanceIds($app, $nodeId) !== [];
     }
 }

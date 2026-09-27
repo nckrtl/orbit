@@ -9,7 +9,7 @@ describe(AppInstanceResponse::class, function (): void {
     it('maps every public AppInstance field from gateway data', function (): void {
         $response = AppInstanceResponse::fromGatewayData([
             'id' => 7,
-            'app_id' => 3,
+            'project_id' => 3,
             'node_id' => 4,
             'vite_port' => null,
             'name' => 'main',
@@ -30,9 +30,9 @@ describe(AppInstanceResponse::class, function (): void {
 
         expect($response->toArray())->toBe([
             'id' => 7,
-            'app_id' => 3,
+            'project_id' => 3,
             'node_id' => 4,
-            'app' => null,
+            'project' => null,
             'node' => null,
             'vite_port' => null,
             'name' => 'main',

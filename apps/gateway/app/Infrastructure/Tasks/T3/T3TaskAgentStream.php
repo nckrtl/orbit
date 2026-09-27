@@ -13,7 +13,7 @@ use RuntimeException;
 final readonly class T3TaskAgentStream implements T3Stream
 {
     /** @return iterable<array<string, mixed>> */
-    public function events(Node $node, string $threadId, ?int $afterSequence): iterable
+    public function events(Node $node, string $threadId, ?int $afterSequence, ?float $timeoutSeconds = null): iterable
     {
         $base = new T3Connection()->baseUrl($node);
         $token = new T3Connection()->credentials($node)['token'];
@@ -30,7 +30,7 @@ final readonly class T3TaskAgentStream implements T3Stream
                 $payload['afterSequence'] = $afterSequence;
             }
             $socket->send(['_tag' => 'Request', 'id' => $id, 'tag' => 'orchestration.subscribeThread', 'payload' => $payload, 'headers' => []]);
-            $deadline = microtime(true) + 20;
+            $deadline = microtime(true) + ($timeoutSeconds ?? 20);
             while (microtime(true) < $deadline && ! connection_aborted()) {
                 $frame = $socket->receive(min(5, max(0.01, $deadline - microtime(true))));
                 if ($frame === null) {

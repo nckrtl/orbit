@@ -18,7 +18,7 @@ final readonly class TaskSessionObserver
     /**
      * Observes the task's implementer and its reviewer. Only the thread that acts in the task's current
      * phase defers the task while it works: the implementer while the task runs, and that subtask's
-     * reviewer while it is in review. The planner and an earlier subtask's reviewer do not.
+     * reviewer while it is in review. An earlier subtask's reviewer does not.
      */
     public function observe(TaskGroup $group, Task $task): TaskSessionObservation
     {
@@ -108,10 +108,7 @@ final readonly class TaskSessionObserver
         return $thread->task_id === null && $thread->id === $group->reviewer_agent_thread_id;
     }
 
-    /**
-     * The acting reviewer is this subtask's reviewer. A legacy shared reviewer acts only after this
-     * attempt was sent to it. The planner never acts for a subtask.
-     */
+    /** The acting reviewer is this subtask's reviewer, or a legacy shared reviewer after notification. */
     private function acts(AgentThread $thread, TaskThreadRole $role, Task $task, TaskGroup $group, ?int $reviewerId): bool
     {
         if ($role === TaskThreadRole::Implementer) {
@@ -121,8 +118,7 @@ final readonly class TaskSessionObserver
             return $thread->id === $reviewerId;
         }
 
-        return ! $group->plan
-            && $thread->id === $group->reviewer_agent_thread_id
+        return $thread->id === $group->reviewer_agent_thread_id
             && $task->review_notified_attempt === $task->review_attempt;
     }
 

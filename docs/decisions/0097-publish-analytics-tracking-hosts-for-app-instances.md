@@ -14,9 +14,9 @@ Proposed.
 
 ## Context
 
-Plausible counts a visit when the visitor's browser loads a script and posts an event. Both requests must reach Plausible from the public internet, while the Plausible dashboard stays private at `analytics.orbit` ([ADR 0096](/decisions/0096-run-plausible-through-an-analytics-role)). A tracking host on the App's own domain also keeps the requests first-party, so content blockers that list the Plausible domains do not drop them.
+Plausible counts a visit when the visitor's browser loads a script and posts an event. Both requests must reach Plausible from the public internet, while the Plausible dashboard stays private at `analytics.orbit` ([ADR 0096](/reference/analytics)). A tracking host on the App's own domain also keeps the requests first-party, so content blockers that list the Plausible domains do not drop them.
 
-A Route today serves one upstream for every path. The only path-scoped handling is two reserved development prefixes that the app-dev site renders itself ([ADR 0067](/decisions/0067-serve-development-servers-on-the-route-origin) and [ADR 0082](/decisions/0082-wire-agentation-watch-mode-through-appinstance-processes)). A node-owned custom proxy Route accepts only a loopback upstream on its serving Node and no path ([ADR 0080](/decisions/0080-add-node-owned-custom-proxy-routes)). Public Routes reach an App through one Ingress and one Router in an active cluster ([ADR 0011](/decisions/0011-clustered-production-ingress-and-app-prod-placement) and [ADR 0023](/decisions/0023-separate-hostname-selection-from-cluster-routing)).
+A Route today serves one upstream for every path. The only path-scoped handling is two reserved development prefixes that the app-dev site renders itself ([ADR 0067](/reference/routes#development-server-endpoint) and [ADR 0082](/decisions/0082-wire-agentation-watch-mode-through-appinstance-processes)). A node-owned custom proxy Route accepts only a loopback upstream on its serving Node and no path ([ADR 0080](/reference/routes#custom-proxy-routes)). Public Routes reach an App through one Ingress and one Router in an active cluster ([ADR 0011](/reference/routes#publish-a-public-route) and [ADR 0023](/reference/routes#routes-own-domains-and-cluster-membership-owns-scope)).
 
 ## Decision
 
@@ -47,6 +47,6 @@ A Route today serves one upstream for every path. The only path-scoped handling 
 ## Affects
 
 - Components: apps/cli, apps/gateway, packages/php-sdk, apps/e2e
-- ADRs: extends [ADR 0011](/decisions/0011-clustered-production-ingress-and-app-prod-placement), [ADR 0023](/decisions/0023-separate-hostname-selection-from-cluster-routing), and [ADR 0096](/decisions/0096-run-plausible-through-an-analytics-role)
+- ADRs: extends [ADR 0011](/reference/routes#publish-a-public-route), [ADR 0023](/reference/routes#routes-own-domains-and-cluster-membership-owns-scope), and [ADR 0096](/reference/analytics)
 - Detail: [Analytics role](/reference/analytics)
 - Verify: Gateway feature tests for the Route kind and its rendered Router site, and an Incus proof that loads the script path and gets 404 for the root path

@@ -24,7 +24,7 @@ orbit node:rename gateway vpn
 orbit node:add gateway <new-vps-host>
 ```
 
-`node:add` looks up an existing record by name. Rename-first avoids a unique-name collision. [ADR 0091](/decisions/0091-rename-a-node-without-changing-wireguard-identity) owns that command.
+`node:add` looks up an existing record by name. Rename-first avoids a unique-name collision. [`node:rename`](/cli/node#orbit-noderename) describes that command.
 
 Then provision the new Node as an ordinary machine. It must not already hold `app-dev`, `app-prod`, or `database`; those roles conflict with `gateway`. Install PHP-FPM and Caddy there, and copy the serving checkout, `ORBIT_HOME` (CA and Gateway SSH keys), and Gateway `.env`. Relocate updates the live SQLite on the process host that runs the command, so copy that database onto the target after relocate (or copy it again if you staged one earlier). Then transfer the singleton assignment:
 
@@ -55,9 +55,9 @@ Between those commands `gateway.orbit` has no active role, so private DNS omits 
 6. The leftover serving-host setting still names the original Node, so that Node keeps implicit control-plane authority until you re-bootstrap or write `gateway.serving_node_id` to the new Node.
 7. Stop leftover Caddy and PHP-FPM on the old Node after the new `/up` is healthy.
 
-Private DNS publication now SSHes to the `vpn` node when that node is not the serving Gateway. Inspect the catalog and listener there, not on the new Gateway. The publication also installs the listener release from the new Gateway's code there, so the `vpn` node needs no Orbit checkout. [ADR 0149](/decisions/0149-install-the-private-dns-listener-from-the-gateway) records this. A Metrics `--converge` that fails while publishing DNS leaves Grafana, Prometheus, and `/etc/orbit/metrics` in place.
+Private DNS publication now SSHes to the `vpn` node when that node is not the serving Gateway. Inspect the catalog and listener there, not on the new Gateway. The publication also installs the listener release from the new Gateway's code there, so the `vpn` node needs no Orbit checkout. [Private DNS](/reference/private-dns#release-and-sockets) describes the release. A Metrics `--converge` that fails while publishing DNS leaves Grafana, Prometheus, and `/etc/orbit/metrics` in place.
 
-Peer converge and `node:add` project the WireGuard hub `PrivateKey` and `Address` onto the `vpn` node. After the roles split, that install SSHes to the `vpn` node and does not write those hub credentials onto the Gateway PHP host. The Gateway host keeps the peer configuration that already joined the mesh. Inspect `/etc/wireguard/orbit.conf` on the `vpn` node for hub identity. [ADR 0094](/decisions/0094-project-wireguard-hub-config-onto-the-vpn-node) owns that target.
+Peer converge and `node:add` project the WireGuard hub `PrivateKey` and `Address` onto the `vpn` node. After the roles split, that install SSHes to the `vpn` node and does not write those hub credentials onto the Gateway PHP host. The Gateway host keeps the peer configuration that already joined the mesh. Inspect `/etc/wireguard/orbit.conf` on the `vpn` node for hub identity. [WireGuard hub](/reference/node-provisioning#wireguard-hub) describes that target.
 
 Relocate also moves the private DNS route that [Private DNS](/reference/private-dns#the-gateway-machine) describes. It adds the route on the target, so the new Gateway resolves names such as `reverb.orbit`. It then removes the route from the source before it retracts the source firewall. If the target route fails, the role still moves, and the response's `follow_up` names the command that retries it. If removing the source route fails, the move is incomplete. The error names the `--from` command that finishes it, and the source keeps its gateway firewall until then.
 

@@ -236,7 +236,7 @@ final class ScanInstanceDependenciesCommand extends GatewayCommand
         $domain = $row->domain ?? null;
 
         return $this->listingPositiveId($row->id ?? null)
-            && $this->listingPositiveId($row->app_id ?? null)
+            && $this->listingPositiveId($row->project_id ?? null)
             && $this->listingPositiveId($row->node_id ?? null)
             && $this->listingNonEmptyString($row->name ?? null)
             && $this->listingEnvironment($row->environment ?? null)
@@ -309,12 +309,12 @@ final class ScanInstanceDependenciesCommand extends GatewayCommand
         ];
     }
 
-    /** @return array{instance_id: int, app_id: int, node_id: int, name: string, environment: string, domain: ?string} */
+    /** @return array{instance_id: int, project_id: int, node_id: int, name: string, environment: string, domain: ?string} */
     private function instanceIdentity(AppInstanceResponse $instance): array
     {
         return [
             'instance_id' => $instance->id,
-            'app_id' => $instance->appId,
+            'project_id' => $instance->projectId,
             'node_id' => $instance->nodeId,
             'name' => $instance->name,
             'environment' => $instance->environment,
@@ -330,7 +330,7 @@ final class ScanInstanceDependenciesCommand extends GatewayCommand
 
         $this->renderIdentity(
             $instance->id,
-            $instance->appId,
+            $instance->projectId,
             $instance->nodeId,
             $instance->environment,
             $result->succeeded === true,
@@ -350,7 +350,7 @@ final class ScanInstanceDependenciesCommand extends GatewayCommand
 
         $this->renderIdentity(
             $instance->id,
-            $instance->appId,
+            $instance->projectId,
             $instance->nodeId,
             $instance->environment,
             false,
@@ -363,7 +363,7 @@ final class ScanInstanceDependenciesCommand extends GatewayCommand
 
     private function renderIdentity(
         int $instanceId,
-        int $appId,
+        int $projectId,
         int $nodeId,
         string $environment,
         bool $succeeded,
@@ -373,7 +373,7 @@ final class ScanInstanceDependenciesCommand extends GatewayCommand
         ?string $error = null,
     ): void {
         $fields = [
-            'Project' => $appId,
+            'Project' => $projectId,
             'Node' => $nodeId,
             'Environment' => $environment,
         ];

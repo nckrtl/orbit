@@ -73,7 +73,7 @@ it('rejects resource state and process logs from unknown or inactive peers', fun
         $stateResponse = $this
             ->withServerVariables(['REMOTE_ADDR' => $remoteAddress])
             ->withHeaders([...$spoofedHeaders, 'X-Orbit-Request-Id' => $stateRequestId])
-            ->getJson('/api/v1/apps');
+            ->getJson('/api/v1/projects');
         $logsResponse = $this
             ->withServerVariables(['REMOTE_ADDR' => $remoteAddress])
             ->withHeaders([...$spoofedHeaders, 'X-Orbit-Request-Id' => $logsRequestId])
@@ -130,7 +130,7 @@ it('identifies the peer before resolving a route-bound resource', function (stri
     'node' => '/api/v1/nodes/999999',
     'node roles' => '/api/v1/nodes/999999/roles',
     'node firewall rules' => '/api/v1/nodes/999999/firewall-rules',
-    'app' => '/api/v1/apps/999999',
+    'app' => '/api/v1/projects/999999',
     'instance' => '/api/v1/instances/999999',
     'process logs' => '/api/v1/processes/999999/logs',
     'activity' => '/api/v1/activities/999999',
@@ -180,7 +180,7 @@ it('rejects an active role-less operator without direct node access', function (
     $this
         ->withServerVariables(['REMOTE_ADDR' => $operator->wireguard_ip])
         ->withHeader('X-Orbit-Request-Id', $stateRequestId)
-        ->getJson('/api/v1/apps')
+        ->getJson('/api/v1/projects')
         ->assertForbidden()
         ->assertJson([
             'error' => [
@@ -268,8 +268,9 @@ it('rejects mutating commands from an unknown peer with the correlated error', f
                 'X-Orbit-Request-Id' => $requestId,
                 'X-Orbit-WireGuard-Ip' => '10.44.0.2',
             ])
-            ->postJson('/api/v1/apps', [
+            ->postJson('/api/v1/projects', [
                 'slug' => 'acme',
+                'type' => 'laravel-app',
                 'repository_url' => 'https://github.com/acme/site.git',
             ]);
     } finally {
@@ -301,8 +302,9 @@ it('rejects mutating commands from an inactive registered peer', function (): vo
 
     $this
         ->withServerVariables(['REMOTE_ADDR' => '10.44.0.2'])
-        ->postJson('/api/v1/apps', [
+        ->postJson('/api/v1/projects', [
             'slug' => 'acme',
+            'type' => 'laravel-app',
             'repository_url' => 'https://github.com/acme/site.git',
         ])
         ->assertForbidden()
@@ -329,8 +331,9 @@ it('allows Gateway-scoped app creation from an active Gateway peer', function ()
     $response = $this
         ->withServerVariables(['REMOTE_ADDR' => '10.44.0.2'])
         ->withHeader('X-Orbit-Request-Id', $requestId)
-        ->postJson('/api/v1/apps', [
+        ->postJson('/api/v1/projects', [
             'slug' => 'acme',
+            'type' => 'laravel-app',
             'repository_url' => 'https://github.com/acme/site.git',
             'default_branch' => 'main',
             'root' => 'public',

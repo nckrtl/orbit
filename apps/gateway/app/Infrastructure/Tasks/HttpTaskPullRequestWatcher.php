@@ -60,7 +60,14 @@ final readonly class HttpTaskPullRequestWatcher implements TaskPullRequestWatche
         try {
             $pullRequest = $this->github->pullRequest($this->access->token($repository), $repository, $number);
             if ($pullRequest->state !== GitHubPullRequestState::Open) {
-                return new TaskPullRequestHealth($pullRequest->state->value, headSha: $pullRequest->headSha);
+                return new TaskPullRequestHealth(
+                    $pullRequest->state->value,
+                    headSha: $pullRequest->headSha,
+                    pullRequestNumber: $number,
+                    mergeBody: $pullRequest->body,
+                    mergeSha: $pullRequest->mergeCommitSha,
+                    mergedAt: $pullRequest->mergedAt,
+                );
             }
             ['failed' => $failed, 'pending' => $pending] = $this->headChecks($repository, $number, $pullRequest);
         } catch (Throwable) {

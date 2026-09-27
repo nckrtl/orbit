@@ -190,6 +190,7 @@ describe('task response fixtures', function (): void {
         $first = $group->tasks()->orderBy('position')->firstOrFail();
         $group->update(['status' => TaskGroupStatus::Running]);
 
+        $first->update(['status' => TaskStatus::Completed]);
         record_fixture($this->postJson("/api/v1/task-groups/{$group->id}/tasks/{$first->id}/cancel")->assertConflict(), 'tasks/tasks-subtask-cancel/not-running', CancelSubtaskRequest::class, 'POST /api/v1/task-groups/{group}/tasks/{task}/cancel');
 
         $first->update(['status' => TaskStatus::Running]);

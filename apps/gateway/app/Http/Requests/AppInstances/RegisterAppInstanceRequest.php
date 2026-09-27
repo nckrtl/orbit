@@ -25,7 +25,6 @@ final class RegisterAppInstanceRequest extends FormRequest
         return [
             'source_path' => ['required', 'string', 'max:4096', 'regex:/\A\/[^\x00-\x1f]*\z/'],
             'include_worktrees' => ['sometimes', 'boolean'],
-            'app_id' => ['sometimes', 'integer', Rule::exists(new OrbitApp()->getTable(), 'id')],
             'project_id' => ['sometimes', 'integer', Rule::exists(new OrbitApp()->getTable(), 'id')],
             'app_name' => ['sometimes', 'string', 'max:255'],
             'app_slug' => ['sometimes', 'string', 'alpha_dash:ascii', 'max:63'],
@@ -44,7 +43,6 @@ final class RegisterAppInstanceRequest extends FormRequest
             return app(TopLevelJsonObjectInspector::class)->inspect($this->getContent(), [
                 'source_path',
                 'include_worktrees',
-                'app_id',
                 'project_id',
                 'app_name',
                 'app_slug',
@@ -69,7 +67,7 @@ final class RegisterAppInstanceRequest extends FormRequest
             }
 
             $root = $this->input('root');
-            $projectId = $this->input('project_id') ?? $this->input('app_id');
+            $projectId = $this->input('project_id');
             $project = is_numeric($projectId) ? OrbitApp::query()->find((int) $projectId) : null;
             $type = $project instanceof OrbitApp ? $project->type : ProjectType::LaravelPackage;
 
@@ -82,11 +80,6 @@ final class RegisterAppInstanceRequest extends FormRequest
                 $validator->errors()->add('domain', 'The Route domain is invalid.');
             }
 
-            $appId = $this->input('app_id');
-            $projectId = $this->input('project_id');
-            if ($appId !== null && $projectId !== null && $this->integer('app_id') !== $this->integer('project_id')) {
-                $validator->errors()->add('project_id', 'project_id and app_id must name the same Project.');
-            }
         }];
     }
 
@@ -98,9 +91,7 @@ final class RegisterAppInstanceRequest extends FormRequest
         return new RegisterAppInstanceData(
             sourcePath: is_string($values['source_path'] ?? null) ? $values['source_path'] : '',
             includeWorktrees: ($values['include_worktrees'] ?? false) === true,
-            appId: is_int($values['project_id'] ?? null)
-                ? $values['project_id']
-                : (is_int($values['app_id'] ?? null) ? $values['app_id'] : null),
+            appId: is_int($values['project_id'] ?? null) ? $values['project_id'] : null,
             appName: is_string($values['app_name'] ?? null) ? $values['app_name'] : null,
             appSlug: is_string($values['app_slug'] ?? null) ? $values['app_slug'] : null,
             defaultBranch: is_string($values['default_branch'] ?? null) ? $values['default_branch'] : null,

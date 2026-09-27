@@ -18,9 +18,9 @@ use App\Models\TaskCheck;
 use App\Models\TaskGroup;
 
 /**
- * Stops a running subtask's implementer and its running check, then lets the scheduler start the next
- * subtask. Both stops are remote calls that run after the status check and outside any database
- * transaction. The scheduler records the cancel afterwards, only while the subtask is still running.
+ * Cancels a todo subtask directly, or stops a running subtask's implementer and running check before
+ * letting the scheduler start the next subtask. Remote stops run after the status check and outside any
+ * database transaction. The scheduler records a running cancel only while the subtask is still running.
  */
 final readonly class CancelRunningSubtaskAction
 {

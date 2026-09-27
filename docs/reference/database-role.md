@@ -1,47 +1,57 @@
 ---
 title: "Database role"
-description: "What the database role converges on a Node, which roles it may share, and how add, converge, and remove behave."
+description: "What the database role converges on a Node, which roles it shares a Node with, and how add, converge, and remove behave."
+covers:
+  - apps/gateway/app/Infrastructure/Nodes/Roles/DatabaseRoleBaseline.php
+  - apps/gateway/app/Domain/Nodes/DatabaseRoleSettings.php
 ---
 
 # Database role
 
-This page tells an operator what the `database` role converges on a Node, which other roles it may share, and how add, converge, and remove behave. [ADR 0070](/decisions/0070-keep-the-database-role-as-a-docker-baseline) records the role boundary, [ADR 0077](/decisions/0077-allow-database-beside-router) records router compatibility, and [ADR 0069](/decisions/0069-allow-node-process-targets) owns Node Process targets for shared Docker databases; this page states what the operator observes.
-
-The role ensures Docker on the assigned Node. Shared MySQL or Postgres containers are Node Processes. The role add request accepts no settings members. The [Database connection](/reference/database-connections) registry does not require this role; a remote or external host is registered without it.
+The `database` role makes sure a Node can run Docker. It marks the Node as a host for shared database Processes. The role owns no database container: shared MySQL or Postgres containers are Node [Processes](/reference/app-processes-and-schedules). A Node without this role can still run such a Process when Docker is present. The [database connection](/reference/database-connections) registry does not need the role either.
 
 ## Add and converge
 
-Add the role on an active Ubuntu Node:
+Add the role to an active Node:
 
-```text
+```bash
 orbit node:role:add <node> database
 ```
 
-The node is a numeric ID or a registered node name. Retry a failed or active assignment with `--converge`.
+`node` is a numeric ID or a Node name. Retry a failed or active assignment with `--converge`. `node:add --role=database` assigns the role during provisioning.
 
-The Gateway installs the Ubuntu `docker.io` package when Docker CE is not already healthy on the Node. It does not create a Tool row for Docker.
+Convergence installs the Ubuntu `docker.io` package, unless Docker CE is already installed and its `docker` service runs. The Gateway creates no Tool for Docker. The role accepts no options: a request with any other member, such as `settings`, fails with `validation.failed`.
 
-The role may share a Node with `app-dev`, `metrics`, `router`, or `websocket`. Either assignment order is accepted. Add, converge, and remove still only ensure Docker; they do not rewrite Router configuration, change existing Docker services, or take Node Process ownership.
+Add, converge, and remove only ensure Docker. They do not change Router configuration, existing Docker services, or Process ownership.
 
-The Gateway refuses the assignment when the Node already carries one of these roles:
+## Shared Nodes
 
-| Conflicting role | Result |
-| --- | --- |
-| `gateway` | `validation.failed` |
-| `vpn` | `validation.failed` |
-| `ingress` | `validation.failed` |
-| `app-prod` | `validation.failed` |
-
-The Gateway answers `validation.failed` when the request includes a `settings` member or another unsupported key.
+The role shares a Node with `app-dev`, `router`, `metrics`, `websocket`, and `analytics`, in either order. It never shares a Node with `gateway`, `vpn`, `ingress`, or `app-prod`. A conflicting request fails with `validation.failed` before it changes anything. [Role compatibility](/reference/node-provisioning#role-compatibility) lists every pair.
 
 ## Remove
 
-Remove the role with the generic command:
+Remove the role with the generic role command:
 
-```text
+```bash
 orbit node:role:remove <node> database --force
 ```
 
-Removal deletes the role assignment. Docker packages, the Docker service, and any Node Processes stay on the Node. `--purge-data` does not delete Docker.
+Removal deletes the assignment. Docker, its service, and every Node Process stay on the Node. `--purge-data` changes nothing more.
 
-Doctor expects the `docker.io` package and the `docker` service while the assignment is active.
+While the assignment is active, [Doctor](/cli/doctor) expects Docker to be installed and the `docker` service to run.
+
+## Why it works this way
+
+These reasons explain the design. Check them before you propose a change.
+
+### Processes own the containers
+
+Node Processes already own the lifecycle of Docker containers on a Node. A role that also owned database containers would give them two owners. So the role only ensures Docker.
+
+### Removal keeps Docker
+
+Processes on the Node can still use Docker after the role is gone. Removing Docker would break them.
+
+### The remaining conflicts
+
+`gateway`, `vpn`, `ingress`, and `app-prod` are dedicated control-plane, network, public, or production Nodes. A shared database host does not belong on them. `router` has no such reason, so the role shares a Node with it.

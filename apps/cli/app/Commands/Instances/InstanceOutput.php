@@ -14,7 +14,7 @@ trait InstanceOutput
     {
         $fields = [
             'ID' => $instance->id,
-            'Project' => $instance->app->slug ?? (string) $instance->appId,
+            'Project' => $instance->project->slug ?? (string) $instance->projectId,
             'Node' => $instance->node->name ?? (string) $instance->nodeId,
             'Status' => $instance->status,
             'Environment' => $instance->environment,

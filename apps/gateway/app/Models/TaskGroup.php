@@ -36,7 +36,6 @@ use Illuminate\Support\Carbon;
  * @property bool $assistance_requested
  * @property string|null $assistance_reason
  * @property bool $notify_coder
- * @property bool $plan
  * @property string $implementer_model
  * @property string $reviewer_model
  * @property int|null $tokens
@@ -62,7 +61,6 @@ final class TaskGroup extends Model
         'implementer_agent_driver' => 't3',
         'reviewer_agent_driver' => 't3',
         'notify_coder' => false,
-        'plan' => false,
         'assistance_requested' => false,
         'implementer_model' => TaskAgentDefaults::ImplementerModel,
         'reviewer_model' => TaskAgentDefaults::ReviewerModel,
@@ -86,7 +84,6 @@ final class TaskGroup extends Model
         'pr_url',
         'assistance_requested', 'assistance_reason',
         'notify_coder',
-        'plan',
         'implementer_model',
         'reviewer_model',
         'tokens',
@@ -135,7 +132,6 @@ final class TaskGroup extends Model
     {
         return [
             'notify_coder' => 'boolean',
-            'plan' => 'boolean',
             'assistance_requested' => 'boolean',
             'agent_unavailable_since' => 'datetime',
             'agent_unavailable_notified_at' => 'datetime',

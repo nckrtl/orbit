@@ -19,7 +19,7 @@ Instance list and show output, the API, and the PHP SDK expose `vite_port`. Hibe
 
 ## Process preset
 
-The positional argument to `process:create` is a name. Generic processes use repeated `--command` values for their executable and arguments. The `--app` option selects a reusable Project definition.
+The positional argument to `process:create` is a name. Generic processes use repeated `--command` values for their executable and arguments. The `--project` option selects a reusable Project definition.
 
 This command selects a preset explicitly:
 
@@ -27,7 +27,7 @@ This command selects a preset explicitly:
 orbit process:create vite --instance=commander.test --preset=vp-dev --start
 ```
 
-`process:create --instance` accepts a positive ID or an exact Route domain that resolves to one authorized development Instance. It preserves the meaning of `--app`. The supported preset is `vp-dev` for an instance-owned systemd Process. Naming an ordinary Process `vp-dev` has no special effect.
+`process:create --instance` accepts a positive ID or an exact Route domain that resolves to one authorized development Instance. It preserves the meaning of `--project`. The supported preset is `vp-dev` for an instance-owned systemd Process. Naming an ordinary Process `vp-dev` has no special effect.
 
 Preset creation checks the VitePlus executable, project manifest, and installed dependencies, prepares the assigned port, writes service configuration, and installs the Process. `--start` records the running desired state and starts it; omission keeps the current stopped-by-default contract. An identical create reuses the Process and preserves its desired state. One instance has at most one Vite preset Process. A same-name generic Process or unrelated listener is not adopted automatically.
 

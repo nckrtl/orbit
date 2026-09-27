@@ -48,7 +48,41 @@ it('creates task_groups and tasks with morph, metrics, and ordering columns', fu
             'output_tokens',
             'model_calls',
             'peak_context_tokens',
-        ]))->toBeTrue();
+            'archived_at',
+            'archive_command_id',
+            'archive_attempts',
+            'archive_retry_at',
+            't3_input_tokens',
+            't3_cached_input_tokens',
+            't3_output_tokens',
+            't3_model_calls',
+            't3_peak_context_tokens',
+            't3_counted_total_processed_tokens',
+            't3_observed_total_processed_tokens',
+            't3_event_sequence',
+            't3_metrics_partial',
+            't3_metrics_initialized',
+            't3_metrics_collected_at',
+            't3_metrics_final_at',
+            't3_metrics_retry_at',
+            't3_metrics_attempts',
+            't3_metrics_activity_version',
+            't3_metrics_observed_activity_version',
+        ]))->toBeTrue()
+        ->and(Schema::hasColumns('agent_thread_send_leases', ['agent_thread_id', 'owner_token', 'expires_at']))->toBeTrue();
+});
+
+it('rolls back archive backoff columns and their index', function (): void {
+    $migration = require database_path('migrations/2026_09_29_120000_add_archive_backoff_to_agent_threads.php');
+
+    try {
+        $migration->down();
+
+        expect(Schema::hasColumns('agent_threads', ['archive_attempts', 'archive_retry_at']))->toBeFalse()
+            ->and(Schema::hasIndex('agent_threads', 'agent_threads_archive_retry_at_index'))->toBeFalse();
+    } finally {
+        $migration->up();
+    }
 });
 
 it('persists a TaskGroup morph to an App instance and ordered subtasks', function (): void {

@@ -6,4 +6,4 @@ Cancelling subtask...
 │
 └  Operation failed.
 
-Only a running subtask can be cancelled.
+Only a todo or running subtask can be cancelled.

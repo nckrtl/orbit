@@ -6,6 +6,7 @@ namespace App\Actions\Doctor;
 
 use App\Data\Doctor\DoctorFamilyReportData;
 use App\Data\Doctor\DoctorIssueData;
+use App\Domain\AppInstances\AppInstanceProvisioning;
 use App\Domain\AppInstances\AppInstanceSourceLayout;
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Doctor\DoctorFamily;
@@ -28,6 +29,10 @@ use Illuminate\Database\Eloquent\Collection;
 
 final readonly class InstanceDoctorProbe implements DoctorFamilyProbe
 {
+    public const int StuckRemovalMinutes = 10;
+
+    public const int StuckProvisioningMinutes = 20;
+
     public function __construct(
         private InstanceStateInspector $inspector,
         private ?PublicRouteEdgeInspector $publicEdge = null,
@@ -60,7 +65,45 @@ final readonly class InstanceDoctorProbe implements DoctorFamilyProbe
         }
         $issues = [];
         foreach ($rows as $instance) {
+            $instanceIssueOffset = count($issues);
+
+            if ($instance->status === AppInstanceState::Removing) {
+                if ($instance->updated_at?->lessThanOrEqualTo(now()->subMinutes(self::StuckRemovalMinutes))) {
+                    $issues[] = new DoctorIssueData(
+                        InstanceDoctorIssueCode::RemovalStuck,
+                        DoctorIssueKind::Drift,
+                        'instance',
+                        $instance->id,
+                        $instance->name,
+                        'Instance removal has not completed.',
+                        'removed',
+                        'removing',
+                    );
+                }
+
+                continue;
+            }
+
             $settled = TaskWorkspaceLifecycle::settledState($instance);
+            if ($this->isProvisioning($instance, $settled)) {
+                if ($instance->updated_at?->greaterThanOrEqualTo(now()->subMinutes(self::StuckProvisioningMinutes))) {
+                    continue;
+                }
+
+                $issues[] = new DoctorIssueData(
+                    InstanceDoctorIssueCode::ProvisioningStuck,
+                    DoctorIssueKind::Drift,
+                    'instance',
+                    $instance->id,
+                    $instance->name,
+                    'Instance provisioning has not completed.',
+                    $settled->value,
+                    $instance->status->value,
+                );
+
+                continue;
+            }
+
             if ($instance->status !== $settled) {
                 $issues[] = new DoctorIssueData(
                     InstanceDoctorIssueCode::LifecycleNotActive,
@@ -150,9 +193,38 @@ final readonly class InstanceDoctorProbe implements DoctorFamilyProbe
             }
 
             $issues = [...$issues, ...$this->privateRouteIssues($instance, $context), ...$this->publicRouteIssues($instance, $context)];
+
+            if (count($issues) > $instanceIssueOffset) {
+                $current = AppInstance::query()->find($instance->id);
+
+                if (! $current instanceof AppInstance || $current->status === AppInstanceState::Removing) {
+                    $issues = array_slice($issues, 0, $instanceIssueOffset);
+
+                    if (
+                        $current instanceof AppInstance
+                        && $current->updated_at?->lessThanOrEqualTo(now()->subMinutes(self::StuckRemovalMinutes))
+                    ) {
+                        $issues[] = new DoctorIssueData(
+                            InstanceDoctorIssueCode::RemovalStuck,
+                            DoctorIssueKind::Drift,
+                            'instance',
+                            $current->id,
+                            $current->name,
+                            'Instance removal has not completed.',
+                            'removed',
+                            'removing',
+                        );
+                    }
+                }
+            }
         }
 
         return DoctorFamilyReportData::fromIssues(DoctorFamily::Instance, $rows->count(), $issues);
+    }
+
+    private function isProvisioning(AppInstance $instance, AppInstanceState $settled): bool
+    {
+        return AppInstanceProvisioning::isInFlight($instance, $settled);
     }
 
     private function productionAssociationMissing(AppInstance $instance): bool

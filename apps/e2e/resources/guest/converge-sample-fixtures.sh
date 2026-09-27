@@ -153,12 +153,12 @@ exit($status);"""
     instances=orbit('instance:list')['instances']
     dev=unique(instances,'name','e2e-dev')
     prod=unique(instances,'name','e2e-prod')
-    require(dev is not None and prod is not None and dev['app_id']==prod['app_id'] and dev['node_id']==node['id'], 'Missing or conflicting Laravel Instances')
+    require(dev is not None and prod is not None and dev['project_id']==prod['project_id'] and dev['node_id']==node['id'], 'Missing or conflicting Laravel Instances')
     for instance, sql_slug in [(dev,'e2e-mysql'),(prod,'e2e-postgres')]:
         selector='--instance='+str(instance['id'])
         if not verify:
             # Recover only the known, existing identity through the product.
-            args=['instance:create',str(instance['app_id']),str(instance['node_id']),instance['name'],'--domain='+instance['domain'],'--recover-source-profile']
+            args=['instance:create',str(instance['project_id']),str(instance['node_id']),instance['name'],'--domain='+instance['domain'],'--recover-source-profile']
             if instance.get('branch_override'): args += ['--branch='+instance['branch_override']]
             try:
                 orbit('env:import',selector)
@@ -193,7 +193,7 @@ exit($status);"""
             project=orbit('project:create',slug,kind,repository)
         instance=unique(instances,'name',slug)
         if instance:
-            require(instance['app_id']==project['id'] and instance['node_id']==node['id'] and instance['status']=='active' and instance.get('route') is None, 'Conflicting non-web Instance '+slug)
+            require(instance['project_id']==project['id'] and instance['node_id']==node['id'] and instance['status']=='active' and instance.get('route') is None, 'Conflicting non-web Instance '+slug)
         else:
             require(not verify,'Missing typed Instance '+slug)
             orbit('instance:create',str(project['id']),str(node['id']),slug)
