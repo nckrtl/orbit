@@ -123,6 +123,13 @@ it('refuses an ambiguous singleton role lookup', function () {
         ->toThrow(InvalidArgumentException::class, 'exactly one physical Node');
 });
 
+it('rejects a recipe with no Nodes', function () {
+    expect(fn () => TopologyRecipe::fromArray([
+        'id' => 'empty',
+        'nodes' => [],
+    ]))->toThrow(InvalidArgumentException::class, 'Node inventory is invalid');
+});
+
 it('rejects a Node key that collides with a role assigned to another Node', function () {
     expect(
         fn () => new TopologyRecipe('colliding', [

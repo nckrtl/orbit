@@ -101,4 +101,35 @@ describe('task agent viewer', function (): void {
             ->and($session->fresh()->error)->toBeNull()
             ->and($session->fresh()->observation_error)->toBeNull();
     });
+
+    it('shows per-thread token metrics', function (): void {
+        [$group, $session] = agent_viewer_fixture();
+        $session->update([
+            'tokens' => 130,
+            'input_tokens' => 40,
+            'cached_input_tokens' => 70,
+            'output_tokens' => 20,
+            'model_calls' => 2,
+            'peak_context_tokens' => 80,
+        ]);
+        AgentThread::query()->create([
+            'task_group_id' => $group->id, 'node_id' => $session->node_id, 'role' => 'implementer',
+            'model' => 'gpt-5.6-luna', 'effort' => 'low', 'external_id' => 'thread-two', 'driver' => 'pi',
+            'runtime_key' => 'node:'.$session->node_id,
+        ]);
+
+        $response = $this->getJson("/api/v1/task-groups/{$group->id}/agents")->assertOk();
+        $reported = $response->json('data.0');
+        $unknown = $response->json('data.1');
+
+        expect($reported)->toMatchArray([
+            'tokens' => 130, 'input_tokens' => 40, 'cached_input_tokens' => 70, 'output_tokens' => 20, 'model_calls' => 2, 'peak_context_tokens' => 80,
+        ])->and($unknown)->toHaveKeys(['input_tokens', 'cached_input_tokens', 'output_tokens', 'model_calls', 'peak_context_tokens'])
+            ->and($unknown['tokens'])->toBeNull()
+            ->and($unknown['input_tokens'])->toBeNull()
+            ->and($unknown['cached_input_tokens'])->toBeNull()
+            ->and($unknown['output_tokens'])->toBeNull()
+            ->and($unknown['model_calls'])->toBeNull()
+            ->and($unknown['peak_context_tokens'])->toBeNull();
+    });
 });

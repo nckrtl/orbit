@@ -31,7 +31,11 @@ final class NativeToolManagerScopeLock implements ToolManagerScopeLock
             try {
                 return $callback();
             } finally {
-                $this->held[$key]['depth']--;
+                $depth = $this->held[$key]['depth'] - 1;
+
+                if ($depth >= 1) {
+                    $this->held[$key]['depth'] = $depth;
+                }
             }
         }
 

@@ -94,6 +94,32 @@ The app needs `laravel/boost` installed, so run `composer install` in it first. 
 
 The tool stops Boost after the answer, after 60 seconds, or when the turn is interrupted. A failed search returns an error result to the agent. The error names the cause, such as no Laravel app, Boost not installed or not enabled, or a timeout.
 
+## Large tool output
+
+A `read` or `bash` result larger than 8 KiB does not enter the model context. The server writes the full text to a file and stores a short notice in the session. The stream shows that notice. [ADR 0168](/decisions/0168-offload-large-pi-tool-output) records the decision. `edit`, `write`, `search_docs`, and an image `read` are unchanged.
+
+8 KiB is 8,192 UTF-8 bytes. `read` measures the selected lines when the call sets `offset` or `limit`, and the whole file otherwise. `bash` measures stdout and stderr in the order the tool read them, without the exit line. A result of 8,192 bytes or fewer is returned in full. There is no line cap on that result.
+
+The file is new, under the session workspace at `.git/orbit/tool-output/`. The server creates the directory with mode `0700` when `.git` is a directory. The file mode is `0600`. Its name starts with the tool, the session id, and the tool call id. A second result does not replace an earlier file. The file contains the measured text only. The notice uses the absolute path.
+
+The notice is at most 8,192 bytes:
+
+```text
+<bytes> bytes, <lines> lines, saved to <absolute path>
+<preview>
+View more with the read tool using offset and limit, or grep on that file.
+```
+
+`read` previews the first 20 lines. `bash` previews the last 40. Lines split on newline. A final newline does not add a line. When the preview would make the notice larger than 8,192 bytes, whole lines drop from the end of a `read` preview or the start of a `bash` preview. A line is not split. The file keeps it. The first line then adds `Preview shows N lines.`
+
+A `bash` notice ends with `Exit code: N` when the process exits, including `0`. An abort ends with `Command aborted`. A timeout ends with `Command timed out after N seconds`. A non-zero exit, an abort, and a timeout stay failed tool results. The failure text is the notice.
+
+The files stay on the Node until the workspace clone is removed. Idle unload and a server restart leave them in place. They are not pushed and not copied off the Node. Git ignores paths inside `.git`, so they stay out of diffs and the review workspace tree. A workspace whose `.git` is not a directory returns the full text and writes no file.
+
+Reading the saved file follows the same rule. A slice of 8,192 bytes or fewer returns in full. When the file cannot be written, the result is an error: the byte count, the line count, and the reason. The error does not include the output. A `bash` error ends with the same exit, abort, or timeout line as a notice.
+
+The `read` and `bash` descriptions tell the model about this limit. They name `.git/orbit/tool-output/`, the path, the counts, and the short preview.
+
 ## API
 
 Every route requires `Authorization: Bearer <token>`. Errors return `{"error": {"code", "message"}}`.
@@ -104,7 +130,7 @@ Every route requires `Authorization: Bearer <token>`. Errors return `{"error": {
 | `POST /sessions` | Creates a session from `id`, `cwd`, `model`, `thinkingLevel`, and an optional `appendSystemPrompt`. Repeating the same create returns `200` |
 | `POST /sessions/{id}/messages` | Starts a turn from `key` and `text`. A repeated key returns `200` with `duplicate: true` and starts no turn |
 | `POST /sessions/{id}/interrupt` | Aborts the active turn |
-| `GET /sessions/{id}` | Snapshot: session settings, state, error, turn ID, transcript entries, and cumulative token usage |
+| `GET /sessions/{id}` | Snapshot: session settings, state, error, turn ID, transcript entries, and [token usage](#token-usage) |
 | `GET /sessions/{id}/stream` | Newline-delimited JSON: a snapshot or, with `run` and `after`, a resumed start; then `entry` and `state` events, with a `heartbeat` every 15 seconds. See [Stream](#stream) |
 
 | Error code | Status | Meaning |
@@ -117,6 +143,22 @@ Every route requires `Authorization: Bearer <token>`. Errors return `{"error": {
 | `turn_active` | 409 | The session is already working on a turn |
 
 The turn ID is the key of the latest accepted send. The Gateway uses a new key for each turn and reuses it when it retries a send.
+
+## Token usage
+
+The snapshot and each stream `state` event include `usage`. The sums cover every assistant message that has numeric `input`, `output`, `cacheRead`, and `cacheWrite`. A message without that usage is not a call. [ADR 0165](/decisions/0165-record-per-thread-token-metrics) records how the Gateway stores these numbers on the agent thread.
+
+| Field | Meaning |
+| --- | --- |
+| `input` | Prompt tokens that are neither a cache read nor a cache write. This field alone is not Orbit's uncached input |
+| `output` | Output. A reasoning count on the message is already inside this number |
+| `cacheRead` | Input read from cache. This is Orbit's cached input |
+| `cacheWrite` | Input written to cache. A cache write is uncached input, so Orbit adds it to `input` |
+| `total` | `input + output + cacheRead + cacheWrite` |
+| `calls` | Assistant messages included in the sums |
+| `peakContext` | Largest prompt on one call: `input + cacheRead + cacheWrite`. That is uncached input plus cached input. Output is excluded |
+
+Orbit stores uncached input as `input + cacheWrite` and cached input as `cacheRead`. Per-call usage in the session file uses the same `input`, `cacheRead`, `cacheWrite`, and `output` fields. `totalTokens` on a call equals those four numbers added.
 
 ## Stream
 
@@ -144,10 +186,30 @@ The server reports one of the Orbit thread states from its own evidence. The Gat
 | A turn was accepted and has not settled | `working` |
 | The last assistant message stopped normally | `done` |
 | The turn ended with a provider error, an interruption, or the output limit | `failed`, with the error |
-| The server restarted while the turn was active | `failed`, with a restart error |
+| The server restarted while the turn was active | `failed`, with error `The Pi server restarted during the turn.` |
 
 Pi has no approvals, so a Pi thread never asks for input. A new turn replaces a `done` or `failed` state with `working`.
 
 ## Restarts
 
-Transcripts persist as Pi session files. After a restart, the server reloads a session when it is first used. Accepted send keys persist, so a repeated send after a restart still starts no turn. The server records a turn as active before it starts and clears the record when the turn settles. A record still marked active after a restart reports `failed`.
+Transcripts persist as Pi session files. After a restart, the server reloads a session when it is first used. Accepted send keys persist, so a repeated send after a restart still starts no turn. The server records a turn as active before it starts and clears the record when the turn settles. A record still marked active after a restart reports `failed` with the error `The Pi server restarted during the turn.` The Gateway resumes that turn. [Recover a Pi server restart](/reference/tasks#recover-a-pi-server-restart) states how.
+
+## Roll out a new binary
+
+Stop the Gateway scheduler before you replace `pi-server` on a Node. A restart kills every turn that is `working` on that server. Pausing first keeps those turns alive. [Recover a Pi server restart](/reference/tasks#recover-a-pi-server-restart) still heals a turn the wait missed. [ADR 0167](/decisions/0167-resume-a-pi-turn-interrupted-by-a-server-restart) records the pause and the resume.
+
+1. Stop the Process that runs `php artisan schedule:work` in the Gateway checkout. Find its numeric id with [`process:list`](/cli/process#orbit-processlist). [`process:stop`](/cli/process#orbit-processstop) stops that unit.
+2. On the host that runs the Gateway checkout, confirm that no process is running `artisan tasks:tick`.
+3. Wait until no Pi session you will restart has live state `working`. Read that state from the Pi server, not from [`tasks:agents`](/cli/tasks#orbit-tasksagents).
+4. On the Node, replace the binary the `pi-server` Process runs. Restart that Process with [`process:restart`](/cli/process#orbit-processrestart).
+5. Start the scheduler Process again with [`process:start`](/cli/process#orbit-processstart).
+
+[`process:stop`](/cli/process#orbit-processstop) returns when that unit is inactive. The cache lock is a different signal. `tasks:tick` holds `orbit:tasks:tick` for 300 seconds and releases the lock when the command returns. The lock can expire while that command is still running, so an expired lock is not proof the command has exited. Step 2 is that proof.
+
+[`tasks:agents`](/cli/tasks#orbit-tasksagents) and `GET /api/v1/task-groups/{group}/agents` return the stored row. The tick writes that row. While the tick is paused, a finished turn can stay `working` there. Use the list only for the thread id, the driver, and `external_id`. [`tasks:list`](/cli/tasks#orbit-taskslist) with status `running`, then `reviewing`, names the groups.
+
+For a `pi` thread, `GET /sessions/{external_id}` on that Node is the live snapshot. Wait until `state` is not `working`. The first `snapshot` event on `GET /api/v1/task-groups/{group}/agents/{thread}/stream` is that same snapshot. The stream reads Pi and does not write the stored row. The [agent viewer](/reference/tasks#agent-viewer) shows it.
+
+The [install steps](#install-on-a-node) copy the binary to `~/.local/bin/pi-server`. Replace the file that Process actually runs.
+
+A turn still `working` at the restart fails with the restart error. The next tick resumes it, at most twice for that subtask. Do not post a resolution comment for that failure.

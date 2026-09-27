@@ -92,7 +92,7 @@ final class CreateTaskGroupCommand extends TaskCommand
             ),
             TaskGroupResponse::class,
             ['Create task group', 'Creating task group', 'Created task group'],
-            static fn (object $group): ProgressState|ProgressOutcome => $group instanceof TaskGroupResponse && $group->status === 'failed'
+            static fn (TaskGroupResponse $group): ProgressState|ProgressOutcome => $group->status === 'failed'
                 ? new ProgressOutcome(ProgressState::Warning, 'Created task group, but it failed to start')
                 : ProgressState::Success,
         );

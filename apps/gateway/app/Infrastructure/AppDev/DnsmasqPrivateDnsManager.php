@@ -25,7 +25,7 @@ use JsonException;
 final readonly class DnsmasqPrivateDnsManager implements PrivateDnsManager
 {
     /**
-     * @param  list<string>  $shell
+     * @param  non-empty-list<string>  $shell
      */
     public function __construct(
         private ProcessRunner $processes,

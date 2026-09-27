@@ -41,16 +41,16 @@ final class TableTheme
         }
     }
 
-    /** @var array<class-string<Prompt>, class-string> Renderers added at runtime, such as design sketches. */
+    /** @var array<class-string<Prompt>, class-string<callable-object>> Renderers added at runtime, such as design sketches. */
     private static array $extensions = [];
 
-    /** @param array<class-string<Prompt>, class-string> $renderers */
+    /** @param array<class-string<Prompt>, class-string<callable-object>> $renderers */
     public static function extend(array $renderers): void
     {
         self::$extensions = [...self::$extensions, ...$renderers];
     }
 
-    /** @return array<class-string<Prompt>, class-string> */
+    /** @return array<class-string<Prompt>, class-string<callable-object>> */
     public static function renderers(): array
     {
         // The data list is the stock Laravel Prompts rendering, minus the summary a chosen row would leave behind.

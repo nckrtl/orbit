@@ -301,7 +301,36 @@ final readonly class PrometheusNodeMetricsMapper
 
         $result = $data['result'] ?? null;
 
-        return is_array($result) ? $result : [];
+        if (! is_array($result)) {
+            return [];
+        }
+
+        $samples = [];
+
+        foreach ($result as $sample) {
+            if (! is_array($sample)) {
+                continue;
+            }
+
+            $metric = [];
+            $rawMetric = $sample['metric'] ?? null;
+
+            if (is_array($rawMetric)) {
+                foreach ($rawMetric as $name => $label) {
+                    if (is_string($name) && is_string($label)) {
+                        $metric[$name] = $label;
+                    }
+                }
+            }
+
+            $rawValue = $sample['value'] ?? null;
+            $value = is_array($rawValue)
+                ? [$rawValue[0] ?? null, array_key_exists(1, $rawValue) ? $rawValue[1] : null]
+                : [null, null];
+            $samples[] = ['metric' => $metric, 'value' => $value];
+        }
+
+        return $samples;
     }
 
     /**

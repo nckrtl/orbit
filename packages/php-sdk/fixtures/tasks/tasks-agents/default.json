@@ -20,6 +20,11 @@
                 "observation_error": null,
                 "error": null,
                 "tokens": 48200,
+                "input_tokens": 2100,
+                "cached_input_tokens": 40100,
+                "output_tokens": 6000,
+                "model_calls": 4,
+                "peak_context_tokens": 9800,
                 "lines_added": 120,
                 "lines_deleted": 14
             },
@@ -38,6 +43,11 @@
                 "observation_error": "T3 did not answer in time.",
                 "error": null,
                 "tokens": null,
+                "input_tokens": null,
+                "cached_input_tokens": null,
+                "output_tokens": null,
+                "model_calls": null,
+                "peak_context_tokens": null,
                 "lines_added": null,
                 "lines_deleted": null
             }

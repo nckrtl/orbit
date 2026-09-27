@@ -21,6 +21,7 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 use Throwable;
 
 final readonly class TaskScheduler
@@ -44,6 +45,27 @@ final readonly class TaskScheduler
 
     /** Re-evaluations of cancelled or unstarted checks on one head before the group asks for assistance (ADR 0164). */
     public const int InfrastructureCheckRetries = 5;
+
+    /** The Pi server reports this when it restarted while a turn was still active (ADR 0116, ADR 0167). */
+    public const string PiServerRestartError = 'The Pi server restarted during the turn.';
+
+    /** T3 0.0.42 reports this when a provider session does not survive a server restart and continuation is off. */
+    public const string T3ServerRestartError = 'Provider session did not survive a server restart. Send a new message to continue.';
+
+    /** T3 0.0.42 reports this when restart continuation was on and the continue itself failed. */
+    public const string T3ServerRestartContinuationError = 'Could not continue this thread after the server restart. Send a new message to continue.';
+
+    /** One continue, on the same thread, after that restart. It does not ask for assistance. */
+    public const string PiServerRestartContinue = 'Your previous turn was interrupted by a server restart. Check git status and git diff, finish the subtask, and hand off with the run script.';
+
+    /** Resumes reserved for one subtask before the next restart asks for assistance (ADR 0167). */
+    public const int PiServerRestartResumeLimit = 2;
+
+    private const string PiRestartPending = 'pending';
+
+    private const string PiRestartAccepted = 'accepted';
+
+    private const string PiRestartSuperseded = 'superseded';
 
     /** Reasons the scheduler sets when a claim returns a group to todo. A start, a capacity wait, or a move to backlog clears them. */
     public const array ClaimFailureReasons = [
@@ -231,9 +253,12 @@ final readonly class TaskScheduler
         if ($implementer === null) {
             return false;
         }
+        $this->reconcilePiRestart($task, $implementer);
         $state = AgentThreadState::tryFrom($implementer->sessState);
         if ($state === AgentThreadState::Failed) {
-            $this->requestAssistance($task, $group, 'The implementer thread failed.', $observation);
+            if ($this->resumePiServerRestart($task, $group, $implementer) !== 'handled') {
+                $this->requestAssistance($task, $group, 'The implementer thread failed.', $observation);
+            }
 
             return true;
         }
@@ -406,14 +431,20 @@ final readonly class TaskScheduler
     private function handleReviewerOutcome(TaskGroup $group, Task $task, TaskSessionObservation $observation): bool
     {
         $reviewer = $observation->thread(TaskThreadRole::Reviewer);
+        // The shared reviewer can still be on another conversation when this subtask reaches review.
+        // A Pi restart of that turn is not this subtask's review. Request the review first, and recover
+        // only a review that was already requested (ADR 0167).
         if ($reviewer === null || $task->review_notified_attempt !== $task->review_attempt) {
             $this->nudgeReviewer($task, $reviewer);
 
             return true;
         }
+        $this->reconcilePiRestart($task, $reviewer);
         $state = AgentThreadState::tryFrom($reviewer->sessState);
         if ($state === AgentThreadState::Failed) {
-            $this->requestAssistance($task, $group, 'The reviewer thread failed.', $observation);
+            if ($this->resumePiServerRestart($task, $group, $reviewer) !== 'handled') {
+                $this->requestAssistance($task, $group, 'The reviewer thread failed.', $observation);
+            }
 
             return true;
         }
@@ -985,6 +1016,126 @@ final readonly class TaskScheduler
         $task->update(['assistance_requested' => true, 'assistance_reason' => $reason]);
         $group->update(['assistance_requested' => true, 'assistance_reason' => $reason]);
         $this->coder->assistance($group, $reason);
+    }
+
+    /**
+     * Marks a pending Pi resume accepted or superseded from the turn now on the acting thread (ADR 0167).
+     * An accepted key is not sent again. A different turn does not reuse it either.
+     */
+    private function reconcilePiRestart(Task $task, TaskThreadObservation $acting): void
+    {
+        if ($task->pi_restart_reservation !== self::PiRestartPending || (int) $task->pi_restart_thread_id !== $acting->threadId) {
+            return;
+        }
+        $turnId = $acting->turnId;
+        if (! is_string($turnId) || $turnId === '') {
+            return;
+        }
+        if ($turnId === $task->pi_restart_key) {
+            $task->update(['pi_restart_reservation' => self::PiRestartAccepted]);
+
+            return;
+        }
+        if ($turnId !== $task->pi_restart_source_turn_id) {
+            $task->update(['pi_restart_reservation' => self::PiRestartSuperseded]);
+        }
+    }
+
+    /**
+     * Resumes a Pi or T3 turn that failed only because the server restarted (ADR 0167).
+     *
+     * @return 'handled'|'assist'|'skip' handled owns the tick, assist asks for assistance, skip keeps today's failure path
+     */
+    private function resumePiServerRestart(Task $task, TaskGroup $group, TaskThreadObservation $acting): string
+    {
+        $record = AgentThread::query()->find($acting->threadId);
+        if (! $record instanceof AgentThread || ! $this->isServerRestartError($record->driver, $acting->error)) {
+            return 'skip';
+        }
+        if (! is_string($acting->turnId) || $acting->turnId === '') {
+            return 'skip';
+        }
+        if ($task->pi_restart_reservation === self::PiRestartPending
+            && (int) $task->pi_restart_thread_id === $acting->threadId
+            && $acting->turnId === $task->pi_restart_source_turn_id
+            && is_string($task->pi_restart_key)
+            && $task->pi_restart_key !== '') {
+            if ($this->t3AcceptedResume($record, $acting, $task->pi_restart_key)) {
+                if (! $this->t3SessionRevisionChanged($task, $acting)) {
+                    // The stored session.updatedAt is unchanged. This is the error from before the
+                    // command. The message clock and the node clock are not compared (ADR 0167).
+                    return 'handled';
+                }
+                // session.updatedAt differs from the revision stored with this reservation. T3 wrote
+                // a new session error before latestTurn changed. Repeating the command id starts no turn.
+                $task->update(['pi_restart_reservation' => self::PiRestartAccepted]);
+            } else {
+                $this->sendPiRestartResume($task, $group, $acting, $task->pi_restart_key);
+
+                return 'handled';
+            }
+        }
+        if ((int) $task->pi_restart_resumes >= self::PiServerRestartResumeLimit) {
+            return 'assist';
+        }
+        $key = (string) Str::uuid();
+        $task->update([
+            'pi_restart_resumes' => (int) $task->pi_restart_resumes + 1,
+            'pi_restart_key' => $key,
+            'pi_restart_thread_id' => $acting->threadId,
+            'pi_restart_source_turn_id' => $acting->turnId,
+            'pi_restart_reservation' => self::PiRestartPending,
+            'pi_restart_session_revision' => $acting->sessionUpdatedAt === '' ? null : $acting->sessionUpdatedAt,
+        ]);
+        $this->sendPiRestartResume($task, $group, $acting, $key);
+
+        return 'handled';
+    }
+
+    /** T3 persisted the reserved message. That write happens before the session leaves its previous error. */
+    private function t3AcceptedResume(AgentThread $record, TaskThreadObservation $acting, string $key): bool
+    {
+        return $record->driver === 't3' && array_any(
+            $acting->recentMessages,
+            fn (array $message): bool => $message['id'] === $key,
+        );
+    }
+
+    /**
+     * The reservation stores the exact session.updatedAt seen when it was reserved.
+     * A different non-empty value is a new session write. Ordering it against the message time is
+     * not evidence: that time is the Gateway clock, and session.updatedAt is the node clock.
+     */
+    private function t3SessionRevisionChanged(Task $task, TaskThreadObservation $acting): bool
+    {
+        $stored = $task->pi_restart_session_revision;
+        $current = $acting->sessionUpdatedAt;
+
+        return is_string($stored) && $stored !== ''
+            && is_string($current) && $current !== ''
+            && $stored !== $current;
+    }
+
+    /** Pi uses its restart error. T3 0.0.42 uses the orphaned-session error, or the continuation failure. */
+    private function isServerRestartError(string $driver, ?string $error): bool
+    {
+        return match ($driver) {
+            'pi' => $error === self::PiServerRestartError,
+            't3' => in_array($error, [self::T3ServerRestartError, self::T3ServerRestartContinuationError], true),
+            default => false,
+        };
+    }
+
+    private function sendPiRestartResume(Task $task, TaskGroup $group, TaskThreadObservation $acting, string $key): void
+    {
+        try {
+            $this->actor->resumeInterruptedTurn($group, $acting, self::PiServerRestartContinue, $key);
+        } catch (AgentDriverException $exception) {
+            $this->recordCommunicationFailure($task, $group, $exception->getMessage());
+
+            return;
+        }
+        $this->clearCommunicationFailures($task);
     }
 
     private function classifyAvailable(TaskGroup $group, TaskSessionObservation $observation): TaskSessionDecision
@@ -2582,15 +2733,14 @@ final readonly class TaskScheduler
 
             return;
         }
-        $setup = ProjectLifecycleStep::query()
+        $setup = array_values(ProjectLifecycleStep::query()
             ->where('app_id', $group->app_id)
             ->where('phase', LifecyclePhase::Setup->value)
             ->orderBy('position')
             ->orderBy('id')
             ->get()
             ->map(static fn (ProjectLifecycleStep $step): array => ['name' => $step->name, 'command' => $step->command, 'timeout_seconds' => $step->timeout_seconds])
-            ->values()
-            ->all();
+            ->all());
         $command = $instance->app->taskCheckCommand();
         if ($command !== null && preg_match('/(?:^|[\\s;&|(])composer(?=$|\\s)|\\bvendor\\//i', $command) === 1) {
             $setup[] = [

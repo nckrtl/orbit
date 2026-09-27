@@ -80,12 +80,11 @@ final readonly class UpdateAppAction
             $app = $app->fresh() ?? $app;
         }
 
-        $instanceIds = $app->appInstances()
+        $instanceIds = array_values($app->appInstances()
             ->orderBy('id')
             ->pluck('id')
             ->map(static fn (mixed $id): int => (int) $id)
-            ->values()
-            ->all();
+            ->all());
 
         if (! $data->hasReconcilableChanges()) {
             if ($data->taskCheckProvided) {
@@ -329,10 +328,9 @@ final readonly class UpdateAppAction
 
         if (is_string($update->requested_repository_url)) {
             $checkoutIds = $inventory['repository']['checkout_ids'] ?? [];
-            $checkouts = $app->appInstances
+            $checkouts = array_values($app->appInstances
                 ->whereIn('id', is_array($checkoutIds) ? $checkoutIds : [])
-                ->values()
-                ->all();
+                ->all());
             $evidence['origins'] = $this->sources->changeOrigins(
                 $checkouts,
                 $update->previous_repository_url,
@@ -457,6 +455,40 @@ final readonly class UpdateAppAction
         $this->rollback($update);
     }
 
+    /**
+     * @param  array<mixed, mixed>  $origins
+     * @return list<array{path: string, previous_url: string, current_url: string, mutated: bool}>
+     */
+    private function originMutations(array $origins): array
+    {
+        $mutations = [];
+
+        foreach ($origins as $origin) {
+            if (
+                ! is_array($origin)
+                || ! is_string($origin['path'] ?? null)
+                || ! is_string($origin['previous_url'] ?? null)
+                || ! is_string($origin['current_url'] ?? null)
+                || ! is_bool($origin['mutated'] ?? null)
+            ) {
+                throw new ResourceOperationException(
+                    errorCode: 'app.update_failed',
+                    message: 'App update origin evidence is invalid.',
+                    status: 409,
+                );
+            }
+
+            $mutations[] = [
+                'path' => $origin['path'],
+                'previous_url' => $origin['previous_url'],
+                'current_url' => $origin['current_url'],
+                'mutated' => $origin['mutated'],
+            ];
+        }
+
+        return $mutations;
+    }
+
     private function rollback(AppUpdate $update): void
     {
         $app = $update->app()->with('appInstances')->firstOrFail();
@@ -471,7 +503,7 @@ final readonly class UpdateAppAction
         }
 
         if (is_array($evidence['origins'] ?? null)) {
-            $this->sources->restoreOrigins($evidence['origins']);
+            $this->sources->restoreOrigins($this->originMutations($evidence['origins']));
         }
 
         foreach ($evidence['branches'] ?? [] as $row) {

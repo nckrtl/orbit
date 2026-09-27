@@ -52,6 +52,7 @@ describe('tasks contract', function (): void {
         run_task_contract('tasks-enable/enabled', 'tasks:enable', [], 0);
         run_task_contract('tasks-disable/disabled', 'tasks:disable', [], 0);
         run_task_contract('tasks-status/enabled', 'tasks:status', [], 0);
+        run_task_contract('tasks-status/assistance', 'tasks:status', [], 0);
     });
 
     it('renders the group list and an empty list', function (): void {

@@ -253,6 +253,8 @@ abstract class TaskCommand extends GatewayCommand
             'Title' => $group->title,
             'Project' => $group->app ?? $group->appId,
             'Status' => $group->status,
+            'Assistance' => $group->assistanceRequested,
+            'Reason' => $group->assistanceReason,
             'Instance' => $group->taskableId,
             'Pull request' => $group->prUrl,
             'Notify Coder' => $group->notifyCoder,
@@ -274,10 +276,11 @@ abstract class TaskCommand extends GatewayCommand
             self::tokens($task->tokens),
             self::lineDiff($task->lineDiff, $task->linesAdded, $task->linesDeleted),
             self::duration($task->durationMs),
+            self::assistanceCell($task->assistanceRequested, $task->assistanceReason),
         ], $group->tasks);
 
         ConsoleWriter::write($this->output, $this->humanRenderer()->table(
-            ['Position', 'ID', 'Title', 'Status', 'Deliverables', 'Tokens', 'Line diff', 'Duration'],
+            ['Position', 'ID', 'Title', 'Status', 'Deliverables', 'Tokens', 'Line diff', 'Duration', 'Assistance'],
             $rows,
             'No subtasks.',
         ));
@@ -313,6 +316,8 @@ abstract class TaskCommand extends GatewayCommand
             'Position' => $task->position,
             'Title' => $task->title,
             'Status' => $task->status,
+            'Assistance' => $task->assistanceRequested,
+            'Reason' => $task->assistanceReason,
             'Type' => $task->type,
             'Implementer thread' => $task->implementerAgentThreadId,
             'Tokens' => self::tokens($task->tokens),
@@ -490,6 +495,11 @@ abstract class TaskCommand extends GatewayCommand
             $agent->model,
             $agent->state,
             self::tokens($agent->tokens),
+            self::tokenMetric($agent->inputTokens),
+            self::tokenMetric($agent->cachedInputTokens),
+            self::tokenMetric($agent->outputTokens),
+            self::tokenMetric($agent->modelCalls),
+            self::tokenMetric($agent->peakContextTokens),
             self::lineDiff(null, $agent->linesAdded, $agent->linesDeleted),
             self::time($agent->observedAt),
         ];
@@ -523,9 +533,27 @@ abstract class TaskCommand extends GatewayCommand
         return mb_strlen($value) > $max ? "{$label} must be at most ".number_format($max).' characters.' : null;
     }
 
+    /** The reason while the record is asking for assistance, or null so the cell is an em dash. */
+    protected static function assistanceCell(bool $requested, ?string $reason): ?string
+    {
+        if (! $requested) {
+            return null;
+        }
+
+        return $reason === null || $reason === '' ? 'yes' : $reason;
+    }
+
     protected static function tokens(?int $tokens): ?string
     {
         return $tokens === null ? null : number_format($tokens);
+    }
+
+    /**
+     * A reported count, or a space so an unknown split stays a blank cell rather than an em dash.
+     */
+    protected static function tokenMetric(?int $value): string
+    {
+        return $value === null ? ' ' : number_format($value);
     }
 
     protected static function lineDiff(?int $total, ?int $added, ?int $deleted): ?string

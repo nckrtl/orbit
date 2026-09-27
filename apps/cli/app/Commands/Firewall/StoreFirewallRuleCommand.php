@@ -66,10 +66,10 @@ abstract class StoreFirewallRuleCommand extends FirewallCommand
             $this->request($nodeId, $name, $source, $protocol, $port),
             FirewallRuleResponse::class,
             ['Apply firewall rule', 'Applying firewall rule', 'Applied firewall rule'],
-            static function (object $response): ProgressState {
-                if (! $response instanceof FirewallRuleResponse || $response->backendStatus !== 'active') {
+            static function (FirewallRuleResponse $response): ProgressState {
+                if ($response->backendStatus !== 'active') {
                     throw new GatewayApiException('Gateway response does not confirm the firewall operation.',
-                        'gateway.invalid_response', requestId: $response instanceof FirewallRuleResponse ? $response->requestId : null);
+                        'gateway.invalid_response', requestId: $response->requestId);
                 }
 
                 return ProgressState::Success;

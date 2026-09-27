@@ -97,7 +97,13 @@ final readonly class SocketPrivateDnsUpstream implements PrivateDnsUpstream
                 throw new RuntimeException('The private DNS upstream TCP response timed out.');
             }
 
-            $chunk = fread($socket, $bytes - strlen($buffer));
+            $needed = $bytes - strlen($buffer);
+
+            if ($needed < 1) {
+                throw new RuntimeException('The private DNS upstream TCP response was truncated.');
+            }
+
+            $chunk = fread($socket, $needed);
             if (! is_string($chunk) || $chunk === '') {
                 throw new RuntimeException('The private DNS upstream TCP response was truncated.');
             }

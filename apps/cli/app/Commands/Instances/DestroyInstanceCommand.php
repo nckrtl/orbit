@@ -79,10 +79,6 @@ final class DestroyInstanceCommand extends GatewayCommand
             return self::FAILURE;
         }
 
-        if (! $response instanceof AppInstanceRemovalResponse) {
-            return self::FAILURE;
-        }
-
         $progress->complete('remove', ProgressState::Success);
         $progress->finish('Instance removed.');
 

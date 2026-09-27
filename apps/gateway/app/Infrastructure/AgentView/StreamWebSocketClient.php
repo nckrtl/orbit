@@ -346,6 +346,10 @@ final class StreamWebSocketClient implements WebSocketClient
 
     private function writeFrame(int $opcode, string $payload): void
     {
+        if ($opcode < 0 || $opcode > 15) {
+            throw new \LogicException('WebSocket opcode is out of range.');
+        }
+
         $length = strlen($payload);
         $head = chr(0x80 | $opcode);
         $head .= match (true) {

@@ -17,6 +17,10 @@ Creating subtask...
 │
 ├  Status               todo
 │
+├  Assistance           no
+│
+├  Reason               —
+│
 ├  Type                 implementation
 │
 ├  Implementer thread   —

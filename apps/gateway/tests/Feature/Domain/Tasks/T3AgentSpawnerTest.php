@@ -402,7 +402,11 @@ it('imports legacy thread links using the instance morph alias', function (strin
     try {
         $paths = array_values(array_filter(glob(database_path('migrations/*.php')), static fn (string $path): bool => ! str_contains($path, 'create_agent_threads_from_task_agent_sessions')
             // The per-role split depends on the column this legacy import creates.
-            && ! str_contains($path, 'split_task_group_agent_driver_by_role')));
+            && ! str_contains($path, 'split_task_group_agent_driver_by_role')
+            // The token split alters agent_threads, which this legacy import creates.
+            && ! str_contains($path, 'add_token_metrics_to_agent_threads')
+            // The Pi resume points at agent_threads, which this legacy import creates.
+            && ! str_contains($path, 'add_pi_restart_resume_to_tasks')));
         Artisan::call('migrate', ['--database' => 'agent_migration', '--path' => $paths, '--realpath' => true, '--force' => true]);
         $appId = DB::table('apps')->insertGetId(['name' => 'legacy', 'slug' => 'legacy', 'code' => 'LEG', 'repository_url' => 'git@example.test:legacy.git', 'repository_identity' => 'example.test/legacy']);
         $nodeId = DB::table('nodes')->insertGetId(['name' => 'legacy-node', 'public_ssh_host' => '10.44.0.110', 'status' => 'active', 'platform' => 'linux']);

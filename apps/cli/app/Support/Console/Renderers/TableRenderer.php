@@ -13,8 +13,14 @@ final class TableRenderer extends Renderer
     public function __invoke(Table $table): string
     {
         $mode = TableTheme::mode();
-        $headers = array_map(static fn (string|array $header): string => is_array($header) ? implode(' ', $header) : $header, $table->headers);
-        $widths = TableLayout::widths($headers, $table->rows, $mode->columns);
+        $headers = array_values(array_map(static fn (string|array $header): string => is_array($header) ? implode(' ', $header) : $header, $table->headers));
+        $rows = [];
+
+        foreach ($table->rows as $key => $row) {
+            $rows[$key] = array_values($row);
+        }
+
+        $widths = TableLayout::widths($headers, $rows, $mode->columns);
         $lines = [TableLayout::border($widths, '┌', '┬', '┐', $mode->decorated)];
 
         foreach (TableLayout::wrapCells($headers, $widths) as $cells) {
@@ -23,7 +29,7 @@ final class TableRenderer extends Renderer
 
         $lines[] = TableLayout::border($widths, '├', '┼', '┤', $mode->decorated);
 
-        foreach ($table->rows as $row) {
+        foreach ($rows as $row) {
             foreach (TableLayout::wrapCells($row, $widths) as $cells) {
                 $lines[] = TableLayout::row($cells, $widths, $mode->decorated);
             }

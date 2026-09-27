@@ -50,6 +50,22 @@ it('uses stdin content in the immutable action identity without storing it', fun
         ->not->toContain('first input');
 });
 
+it('rejects an action argv that is not a list of strings', function (): void {
+    $payload = ProofReviewAction::incomplete(
+        'inspect-gateway',
+        'exec',
+        'gateway',
+        true,
+        ['true'],
+        null,
+        '2026-09-10T10:00:00Z',
+    )->toArray();
+    $payload['argv'] = [1];
+
+    expect(fn () => ProofReviewAction::fromArray($payload))
+        ->toThrow(InvalidArgumentException::class, 'schema is invalid');
+});
+
 it('rejects invalid Node and incomplete result state', function (): void {
     expect(fn () => ProofReviewAction::incomplete(
         'inspect',

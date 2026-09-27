@@ -72,6 +72,8 @@ bun run test:browser    # the whole app in headless Chromium
 
 Both projects run on Vitest, which ships with Vite+. Unit tests sit next to the code as `*.test.ts`. Browser tests mount the whole app at a URL against a fresh demo Gateway, drive it with the keyboard and the mouse, and assert on the screen, the URL, and the requests the demo Gateway received.
 
+Browser tests must never write tracked files. Do not save a screenshot, and do not pass a path to `page.screenshot`. A passing `bun run test` leaves the working tree clean.
+
 `tests/browser/expected/*.txt` hold each screen as text, one block per frame and one line per row. Review a changed screen there, then accept it:
 
 ```bash

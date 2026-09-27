@@ -7,7 +7,7 @@ description: "How the Gateway tasks extension holds TaskGroup features in Backlo
 
 This page tells an operator how the optional Gateway `tasks` extension runs a Commander-style feature group. A group waits in Backlog while its branch, ADRs, documentation, and subtasks are prepared. Once the group is in Todo, the Gateway provisions its shared Instance, starts agents, and moves each task from turn to turn with run receipts and mechanical checks. It commits approved work and pushes that commit to `origin`, opens and watches the pull request, retains capacity through assistance and merge wait, and removes the workspace clone when the group is cancelled or completed.
 
-[ADR 0103](/decisions/0103-absorb-commander-tasks-as-a-gateway-extension) owns the extension boundary. [ADR 0110](/decisions/0110-route-task-sessions-with-laravel-ai-jev) owns session routing. [ADR 0113](/decisions/0113-gate-task-completion-on-validation-and-review) owns completion gates. [ADR 0122](/decisions/0122-hold-task-groups-in-backlog-until-ready) owns Backlog and Todo. [ADR 0124](/decisions/0124-plan-backlog-groups-with-a-t3-planner) owns planning. [ADR 0160](/decisions/0160-push-each-approved-subtask-and-remove-the-finished-workspace-clone) owns the push after each approval and deletion of the workspace clone. [ADR 0164](/decisions/0164-heal-a-settling-pull-request-with-a-fixup-subtask) owns the fixup that returns a settling group to running.
+[ADR 0103](/decisions/0103-absorb-commander-tasks-as-a-gateway-extension) owns the extension boundary. [ADR 0110](/decisions/0110-route-task-sessions-with-laravel-ai-jev) owns session routing. [ADR 0113](/decisions/0113-gate-task-completion-on-validation-and-review) owns completion gates. [ADR 0122](/decisions/0122-hold-task-groups-in-backlog-until-ready) owns Backlog and Todo. [ADR 0124](/decisions/0124-plan-backlog-groups-with-a-t3-planner) owns planning. [ADR 0160](/decisions/0160-push-each-approved-subtask-and-remove-the-finished-workspace-clone) owns the push after each approval and deletion of the workspace clone. [ADR 0164](/decisions/0164-heal-a-settling-pull-request-with-a-fixup-subtask) owns the fixup that returns a settling group to running. [ADR 0165](/decisions/0165-record-per-thread-token-metrics) owns the per-thread token split. [ADR 0167](/decisions/0167-resume-a-pi-turn-interrupted-by-a-server-restart) owns recovery of a Pi turn that a server restart interrupted.
 
 The extension is off until an authorized Gateway caller enables it. There is no web UI for create. Agents create groups through the [MCP server](/reference/mcp). The [`tasks` CLI family](/cli/tasks) runs every operation on this page from a terminal when MCP is unavailable.
 
@@ -21,7 +21,9 @@ Enable and disable require Gateway access: the active Gateway peer, or a Node wi
 | --- | --- | --- |
 | `tasks:enable` | `POST /api/v1/tasks/enable` | Turns the extension on. Idempotent. |
 | `tasks:disable` | `POST /api/v1/tasks/disable` | Turns the extension off. Existing rows stay. Further group and subtask operations return `tasks.disabled`. |
-| `tasks:status` | `GET /api/v1/tasks/status` | Returns whether the extension is enabled. |
+| `tasks:status` | `GET /api/v1/tasks/status` | Returns whether the extension is enabled, and every group currently asking for assistance. |
+
+`tasks:status` returns `enabled` and `assistance`. `assistance` lists every group whose `assistance_requested` is true, in ascending group id order. Each entry has `id`, `app_id`, `app`, `project_code`, `title`, `status`, and `assistance_reason`. A group that is not asking is absent, even when it still stores an old reason. A flagged subtask does not add its group unless the group itself is asking. The list is present while the extension is off. `tasks:enable` and `tasks:disable` return only `enabled`.
 
 Every group and subtask operation below refuses with `tasks.disabled` and HTTP 409 while the extension is off.
 
@@ -35,6 +37,8 @@ A **TaskGroup** is one parent feature. A **Task** is an ordered subtask. Each ro
 | `brief` | both | Goal and acceptance |
 | `deliverables` | Task | Typed items the subtask must deliver. An empty list for subtasks created before deliverables existed |
 | `status` | both | Lifecycle state |
+| `assistance_requested` | both | True while that record is asking for assistance |
+| `assistance_reason` | both | Why it is asking. Clearing the flag can keep the last reason |
 | `position` | Task | Order inside the group, starting at 1 |
 | `taskable_type` / `taskable_id` | TaskGroup | Morph. v1 is an Instance only. Null until the scheduler assigns one |
 | `reviewer_agent_thread_id` | TaskGroup | Long-lived reviewer thread for the group |
@@ -287,6 +291,30 @@ When the parent task is open, Tokens is the total for the current implementer of
 
 The line diff comes from the Node agent's [task workspace](/reference/node-agent#task-workspaces) state while the Gateway's view of that Node is fresh, and from `git diff --shortstat` over SSH otherwise or when the agent's diff is truncated. When the agent reports a new commit or new counts, the Gateway stores the group's line counts when the diff is complete and broadcasts `task_group.updated` in either case. Missing runtime metrics remain unknown; failed reads preserve stored values.
 
+### Thread token metrics
+
+Each agent thread records five fields beside `tokens`. Null means the driver did not report that field. A reported zero is stored as zero. A failed read keeps the last stored value. Task, TaskGroup, the web task board, and the Coder settle webhook keep the cumulative `tokens` total and do not store this split. `tasks:agents` and `GET /api/v1/task-groups/{group}/agents` show it. [ADR 0165](/decisions/0165-record-per-thread-token-metrics) records the decision.
+
+| Field | Meaning |
+| --- | --- |
+| `input_tokens` | Uncached input summed across model calls, including cache writes |
+| `cached_input_tokens` | Input read from cache, summed across model calls. Cache writes are not included |
+| `output_tokens` | Output, summed across model calls. Reasoning is already included and is not added again |
+| `model_calls` | Model calls that reported usage |
+| `peak_context_tokens` | Largest single-call context. Context is that call's uncached input plus its cached input, so a Pi cache write is inside the peak, and output is excluded |
+
+Average context per call is `(input_tokens + cached_input_tokens) / model_calls`. The cached share of input is `cached_input_tokens / (input_tokens + cached_input_tokens)`. Cache writes sit in that denominator with the other uncached input. The Gateway does not recompute `tokens` from the split.
+
+For Pi, the server's `usage` object carries the sums `input`, `output`, `cacheRead`, `cacheWrite`, and `total`, plus `calls` and `peakContext`. Pi's `input` excludes cache writes. `tokens` is `total`. `input_tokens` is `input + cacheWrite`. `cached_input_tokens` is `cacheRead`. `output_tokens` is `output`. A source that is not an integer leaves that Orbit field null, and a missing `cacheWrite` leaves `input_tokens` null. `calls` counts assistant messages with numeric usage. `peakContext` is the maximum of `input + cacheRead + cacheWrite` over those messages, the same quantity as that call's uncached input plus its cached input. Both are null when the server omits the key. The session file `~/.pi/agent/orbit-sessions/*.jsonl` records the same per-call `input`, `cacheRead`, `cacheWrite`, and `output`. The Gateway reads the snapshot, not the file.
+
+For T3, the snapshot has no thread-level usage object. Figures sit on `context-window.updated` activities: `usedTokens`, and optionally `totalProcessedTokens`, `inputTokens`, `cachedInputTokens`, `outputTokens`, `reasoningOutputTokens`, and `lastInputTokens`, `lastCachedInputTokens`, `lastOutputTokens`, and `lastReasoningOutputTokens`. `tokens` still prefers the largest `totalProcessedTokens`, then `usedTokens`. The Gateway does not open Codex rollout files.
+
+The five fields are null when any `totalProcessedTokens` is lower than an earlier one, when a call that advances the total lacks integer `inputTokens`, `cachedInputTokens`, and `outputTokens`, when `cachedInputTokens` is greater than `inputTokens` on a counted call, or when no call is counted. A counted call has those three integers and either a `totalProcessedTokens` greater than every earlier one, or no earlier `totalProcessedTokens` and a triple different from the previous counted call. `last*` is the latest update, not a total. `reasoningOutputTokens` is not added. `input_tokens` sums `inputTokens - cachedInputTokens`. `cached_input_tokens` sums `cachedInputTokens`. `output_tokens` sums `outputTokens`. `model_calls` is the number of counted calls. `peak_context_tokens` is the maximum `inputTokens`, which already includes cached input.
+
+On Codex, `inputTokens` includes `cachedInputTokens`, `total_tokens` equals input plus output, and the counted calls match the rollout's `token_usage_record` rows and `thread_token_usage`. A Claude snapshot omits `cachedInputTokens`, so the five fields stay null.
+
+Groups 109 through 125, measured on 2026-09-26, are the comparison baseline: 596 million tokens, 94 percent cached input on the share above, 118 thousand tokens of implementer context per call, 107 thousand for the reviewer, and a median implementer subtask of 5.97 million tokens.
+
 ## Scheduler and ceilings
 
 After a create or update stores a `todo` group, the Gateway scheduler claims the oldest `todo` group that still fits the Node ceiling. If provisioning fails, that group returns to `todo` with a visible assistance reason and the scheduler continues with the next eligible `todo` group. A group that waits for Node capacity returns to `todo` without a reason.
@@ -348,7 +376,7 @@ Doctor expects the same final state. A non-visitable task workspace is healthy i
 
 The task group page shows an Agents section below Subtasks. Vertical tabs select the shared reviewer or an implementer. A subtask page shows its implementer conversations and the shared reviewer. Finished conversations remain available. Activity and connection health have separate labels; a disconnected viewer retains the last known activity state.
 
-`GET /api/v1/task-groups/{group}/agents` lists persisted threads, including driver, external ID, state, observation time, errors, and metrics. `GET /api/v1/task-groups/{group}/agents/{session}/stream` streams normalized conversation data for an Orbit thread ID. Both routes require Gateway access and an enabled tasks extension. Runtime credentials stay server-side. A missing original Node leaves the link visible but unavailable for streaming.
+`GET /api/v1/task-groups/{group}/agents` lists persisted threads, including driver, external ID, state, observation time, errors, and metrics. Metrics include `tokens` and the [thread token metrics](#thread-token-metrics). Each split field is present and null when the driver did not report it. `GET /api/v1/task-groups/{group}/agents/{session}/stream` streams normalized conversation data for an Orbit thread ID. Both routes require Gateway access and an enabled tasks extension. Runtime credentials stay server-side. A missing original Node leaves the link visible but unavailable for streaming.
 
 Snapshots replace the browser transcript. Entries merge by ID and kind, so a repeated or updated entry replaces the earlier one in place.
 
@@ -418,7 +446,7 @@ For `approved`, the workspace must be on `task-{group id}`. Orbit commits the wh
 
 When that commit is already stored and the push or the pull request open fails, the next attempt retries publication only while HEAD is still that commit and the recorded hash still matches. It does not commit again. Those attempts back off, as [Pull request and settle metrics](#pull-request-and-settle-metrics) describes, instead of running on every tick. A reset back to the HEAD from before the approval keeps the hash, but the Gateway refuses it and does not publish. After the last subtask's pull request is stored, the group moves to `settling` and remains active until its expected pull request is merged.
 
-`thread.turn.start` sends the T3 0.0.42 message struct `{messageId, role: user, text, attachments: []}` plus `modelSelection`. A flat string message is rejected by T3.
+`thread.turn.start` sends the T3 0.0.42 message struct `{messageId, role: user, text, attachments: []}` plus `modelSelection`. A flat string message is rejected by T3. A resume after a server restart reuses one command id and one message id for that send. [Recover a Pi server restart](#recover-a-pi-server-restart) states when.
 
 ### Pi driver
 
@@ -426,7 +454,9 @@ The `pi` driver runs a thread on the [Pi server](/reference/pi-server) of the No
 
 The Gateway chooses the session ID and stores it as the external ID. It creates the session in the Instance checkout, then starts the opening turn. Each send uses a new key; a retry reuses that key, so an ambiguous failure never starts a second turn. The driver maps model names to Pi's `provider/model` form. When `ORBIT_PI_PROVIDER` is set, such as to a CLIProxyAPI provider, every plain name uses it. Otherwise `gpt-` and `o`-series names use `openai-codex`, and `grok-` names use `xai`. Claude models are refused, including through a proxy.
 
-Transcripts become normalized entries. A bash result is one activity that ends with the command and `exit code N`. Other tools show their name and target, not file contents. Tokens come from Pi's cumulative usage. Per-thread line counts are unavailable. Pi threads never report pending input, and `respond` fails as unsupported.
+A restart error on this driver is resumed on the same thread. The resume key is stored before the send and reused only while that same interruption is still unresolved. [Recover a Pi server restart](#recover-a-pi-server-restart) states the limit of two resumes.
+
+Transcripts become normalized entries. A bash result is one activity that ends with the command and `exit code N`. Other tools show their name and target, not file contents. The cumulative token total comes from Pi's session usage, and the [thread token metrics](#thread-token-metrics) record the split. Per-thread line counts are unavailable. Pi threads never report pending input, and `respond` fails as unsupported.
 
 A tool call appears as soon as it starts: an activity labeled `Running` with text such as `Running: $ composer test`. Its result replaces that entry, with the same ID and kind. When the turn settles and a call still has no result, such as after a Pi server restart, the entry shows the call with `(stopped without a result)`.
 
@@ -459,13 +489,55 @@ The Gateway sends one reminder that names every failed code item. It starts and 
 
 The run script instructions name the commands for that role. The reminder installs the script again before it is sent. It does not say that the thread is blocked. An agent reports a blocker with a `blocked` receipt and a question for the operator. A receipt that the scheduler acted on is spent, so the next turn needs a new one.
 
-The next idle evaluation asks for assistance when any item still fails. Repeated reminder-send failures ask for assistance on the fifth failure. The same pending input does not count as that next evaluation. A `Failed` thread asks for assistance without a reminder.
+The next idle evaluation asks for assistance when any item still fails. Repeated reminder-send failures ask for assistance on the fifth failure. The same pending input does not count as that next evaluation. A `Failed` thread asks for assistance without a reminder, except a Pi or T3 restart, which [Recover a Pi server restart](#recover-a-pi-server-restart) resumes.
+
+### Recover a Pi server restart
+
+A Pi turn that failed only because its server restarted is not a failed task. The error is `The Pi server restarted during the turn.` [Thread states](/reference/pi-server#thread-states) define it. [ADR 0167](/decisions/0167-resume-a-pi-turn-interrupted-by-a-server-restart) records the recovery.
+
+The tick sends one message to that same thread and does not ask for assistance. The message is `Your previous turn was interrupted by a server restart. Check git status and git diff, finish the subtask, and hand off with the run script.`
+
+The resume uses a new key, stored before the send. It does not reuse the key of the interrupted turn. A repeated key starts no turn, including after a restart. The tick repeats the stored key only while that same send is still unresolved. The tick does not read a receipt, run the rubric, or send a reminder first. It does not install the run script again. The script from the interrupted turn stays at `.git/orbit/run`.
+
+The acting thread is the implementer while the subtask is `running`. It is the reviewer while the subtask is `reviewing`. That thread's driver is `pi` or `t3`. A planner thread is outside this rule.
+
+T3 0.0.42 reports an equivalent failure when a provider session does not survive a server restart. Continue threads after restarts is off by default, so the usual error is `Provider session did not survive a server restart. Send a new message to continue.` When continuation is on and the continue fails, the error is `Could not continue this thread after the server restart. Send a new message to continue.` The tick resumes either error with the same message and the same limit of two. Any other T3 error asks for assistance, including the Pi restart text on a T3 thread.
+
+One subtask gets at most two resumes. The implementer and the reviewer share that count. The subtask stores `pi_restart_resumes`, `pi_restart_key`, `pi_restart_thread_id`, `pi_restart_source_turn_id`, `pi_restart_reservation`, and `pi_restart_session_revision`. The count starts at 0. The key, the thread id, and the source turn id start null. The reservation starts null, then `pending`, `accepted`, or `superseded`. A resolution does not reset the count or these fields. A process stop does not reset them either. Show, the web board, and the agents API do not add them.
+
+The count increases when the tick reserves a resume, before it sends. That write stores a new key, the acting thread, the interrupted turn id, and the exact `session.updatedAt` as `pi_restart_session_revision`, and sets the reservation to `pending`. The Pi driver sends that key and does not mint a different one for this send. On T3 the key is the command id and the message id. T3 0.0.42 keeps a receipt for that command id, so repeating it returns the receipt and starts no second turn.
+
+The tick sends that stored key again only when the reservation is `pending`, the acting thread is the stored thread, and the observed turn id is still the stored source turn. That send is still unresolved. The tick does not add to the count.
+
+When that same thread's turn id equals the stored key, Pi accepted the reservation. The tick marks it `accepted` and does not send the key again. A restart of that accepted turn is a new interruption.
+
+T3 does not use the command id as the turn id. The tick repeats the stored command id while the reservation is pending, the turn id is the source turn, and the snapshot has no message with that command id. A message with that id means T3 accepted the command. T3 stores that message before the provider worker sets the session to `starting` and clears the previous error.
+
+`pi_restart_session_revision` is the exact `session.updatedAt` from the observation that reserved the resume. The Gateway clock supplies the message time. The node clock supplies `session.updatedAt`. The tick does not order those two clocks, and it does not drop a fraction of a second from the stored text.
+
+When that message is present and `session.updatedAt` is the stored revision, the restart error is the one from before the command. The tick does not send and does not reserve another resume. The session can then start without a second restart. This includes a node clock that is ahead of the message time.
+
+When the message is present, the turn id is the source turn, and `session.updatedAt` is a different non-empty value, T3 wrote a new session error after the reservation and before it assigned a new turn id. A difference inside the same second counts. The new value can read earlier than the message. The tick marks the reservation accepted and does not send that command id again. It reserves a new command id when the count is below 2, and asks for assistance when the count is already 2. A different turn id supersedes a pending reservation.
+
+When the observed turn id is a different turn, the tick marks a `pending` reservation `superseded` and does not send the old key. A reminder, a review relay, or a resolution can start that turn after the resume was accepted. Pi keeps the old key, so sending it again starts no turn.
+
+A reservation stored for the implementer is not sent to the reviewer. A reservation stored for the reviewer is not sent to the implementer. The acting thread gets a new reservation when the count is below 2. When the count is already 2, the tick asks for assistance and does not send. That includes a restart during the turn a resolution started after both resumes were reserved.
+
+The third interruption asks for assistance and does not send. While the subtask is `running`, the reason is `The implementer thread failed.` While it is `reviewing`, the reason is `The reviewer thread failed.`
+
+Any other `failed` error asks for assistance on the first observation. A failed thread on another driver does the same. There is no resume. A restart error with no turn id asks for assistance and does not reserve a resume. A T3 thread whose error is not one of the two restart errors above asks for assistance on that first observation.
+
+A send that throws leaves the pending reservation in place. It is a communication failure. The fifth consecutive failure asks for assistance. The next tick repeats the stored key only when that same thread still shows the same source turn. A returned send clears communication failures and does not change the count or the reservation.
+
+A lost response does not drop the count. The next observation on that thread carries the stored key as its turn id. The tick marks the reservation `accepted` and does not spend another resume on that same acceptance.
+
+The tick skips the resume while the subtask or the group is already asking for assistance. The stored reason stays.
 
 A failed receipt read, script install, send, commit, or push counts as a communication failure for that task and asks for assistance on the fifth consecutive failure. The tick continues with the other tasks. The assistance reason names each remaining item.
 
 Typed comments are the workflow record. They preserve the full body, author, timestamp, task and thread context, and reviewer attempt metadata. A stored receipt uses its outcome as the type and the role as the author. The final approval's comment also carries `pull_request`: the summary, changes, and breaking changes it proposed for the pull request. An approval that Orbit committed carries `commit_sha`. Other comments return `null` for both.
 
-Only `assistance_requested` and `resolution` comments come through the API. They do not create a separate validation-evidence record or API. `assistance_requested` flags the task and group, retains the active slot, and is notified once. A non-empty `resolution` comment preserves the history, resets the completion and communication attempts, and continues the blocked AgentThread idempotently; failed delivery leaves the task visibly blocked.
+Only `assistance_requested` and `resolution` comments come through the API. They do not create a separate validation-evidence record or API. `assistance_requested` flags the task and group, retains the active slot, and is notified once. A non-empty `resolution` is sent only when that subtask is already asking for assistance. The Gateway then clears the flag, resets the completion and communication attempts, and continues the blocked thread. A failed send leaves the task asking. A resolution posted before the flag is set is stored and not sent.
 
 Each observation includes normalized activity state, availability, errors, pending request IDs, and recent assistant and user text. It also reports new workspace commits, the pull request URL, and any available CI summary. The driver resolves pending requests from its runtime data. Missing or unavailable current conversations skip classification. The scheduler waits `ORBIT_TASKS_OBSERVATION_GRACE_SECONDS` (default `120`), then escalates once per continuous outage. Recovery resets the grace period and alert marker.
 
@@ -631,7 +703,7 @@ The Gateway then writes settle metrics. Active groups also refresh these fields 
 | `lines_added`, `lines_deleted` | TaskGroup | Separate branch insertion and deletion counts; null before a successful observation |
 | `duration_ms` | TaskGroup | Elapsed milliseconds from `started_at` to settle, or to now while the group is still active, or `0` when `started_at` is empty |
 
-For T3, token totals use `totalProcessedTokens` when present and otherwise `usedTokens`. Per-thread line counts come from checkpoints. Other drivers supply metrics with the same meaning or leave them unavailable.
+For T3, token totals use `totalProcessedTokens` when present and otherwise `usedTokens`. Per-thread line counts come from checkpoints. Other drivers supply metrics with the same meaning or leave them unavailable. The [thread token metrics](#thread-token-metrics) are the per-call split beside that total.
 
 ## Coder settle webhook
 
@@ -677,6 +749,10 @@ After Coder review and PR merge, an authorized Gateway caller runs `tasks:comple
 
 Cancel and complete remove the workspace clone on the Node. The forced Instance remover deletes the checkout directory recorded on the Instance and writes a removal record whose `source_finalization` step deleted that directory. This includes a non-visitable task workspace that stayed `source_resolved` because it has no Route. The Instance row is deleted only after that record is complete. A successful cancel or complete leaves no checkout at the recorded path. [ADR 0160](/decisions/0160-push-each-approved-subtask-and-remove-the-finished-workspace-clone) records the decision.
 
+The same removal deletes that group's Incus bridge worktree on the Node. The bridge is the linked worktree `<worktree root>/task-{id}-e2e` on branch `task-{id}-e2e` of the primary checkout registered for the repository. [ADR 0135](/decisions/0135-run-incus-topologies-for-task-workspace-clones-through-a-bridge-worktree) records it. Removal deletes that worktree only when the path and the branch both match the group, including when the clone is checked out on another branch. A user's worktree stays. A missing bridge is not a failure.
+
+Branch `task-{id}-e2e` is deleted when no worktree has it checked out. A worktree on that branch at another path stays, and so does the branch. The `refs/orbit/e2e-bridge/task-{id}` ref is deleted either way. The sweep retries this with the checkout. Removal does not release an Incus topology the bridge still holds, so release that topology before the group ends.
+
 When `tasks:complete` cannot remove the workspace, it still marks the group `completed` and keeps the Instance attached. The group asks for assistance with `Workspace removal failed: `, and the response reports that removal failure on the completed group. A permanently lost Node does not stop the operator from completing the group. Merge cleanup that fails before the group is completed uses the reason prefix `Merged pull request cleanup failed: ` and leaves the group `settling`. Cancel, complete, and the tick's removal of a leftover workspace use `Workspace removal failed: ` once the group has ended. The checkout and the Instance row stay, so the clone is still named by a record.
 
 The next tick's sweep retries a `cancelled` or `completed` group that still has a workspace, including a failed manual complete, and a `settling` group whose merged pull request cleanup failed. For a cancelled group that still holds an unpushed stored approval, the sweep pushes that commit before it deletes the checkout. The backoff under [Scheduler and ceilings](#scheduler-and-ceilings) applies: 1 minute, then 2, 5, 10, and 30 minutes. Repeating `tasks:cancel` or `tasks:complete` retries at once. Success clears an assistance request only when its reason starts with `Workspace removal failed: ` or `Merged pull request cleanup failed: `. Another cause stays. The tick does not remove the workspace of a group that is still active.
@@ -699,7 +775,7 @@ Call `tasks-cancel` with `{ "group": 123 }`, or run `orbit tasks:cancel 123`, to
 
 Repeating cancellation is safe and also cleans up an Instance still attached to a group already marked `cancelled`. Subtasks that are not completed or failed become `cancelled`. When removal succeeds, cancellation clears `assistance_requested` on the group and its subtasks and keeps the last `assistance_reason`. An unreachable Node records `Workspace removal failed: ` instead. Subtask records and agent thread identifiers stay as history.
 
-Cancellation removes the workspace with the forced Instance remover, which deletes its checkout and cleans up its Routes, including a route-free workspace that never became active (`reserved`, `checkout_prepared`, or `source_resolved`). On success the checkout is gone. Cancellation does not interrupt the external agent conversation.
+Cancellation removes the workspace with the forced Instance remover, which deletes its checkout and cleans up its Routes, including a route-free workspace that never became active (`reserved`, `checkout_prepared`, or `source_resolved`). On success the checkout is gone. It also removes the group's bridge worktree, as [Complete and cleanup](#complete-and-cleanup) describes. Cancellation does not interrupt the external agent conversation.
 
 When the Node is unreachable, cancel still marks the group `cancelled` and keeps the Instance attached. It asks for assistance with `Workspace removal failed: ` and returns the group in that state. It does not wait for a push the Node cannot accept. A permanently lost Node does not keep the group open: the operator's cancel ends it, and the Instance row keeps the checkout named until the sweep deletes it or the operator deletes the directory. The sweep retries removal on the backoff under [Scheduler and ceilings](#scheduler-and-ceilings).
 

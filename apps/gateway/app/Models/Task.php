@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Domain\Tasks\TaskBroadcastObserver;
 use App\Domain\Tasks\TaskDeliverable;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskType;
+use Illuminate\Database\Eloquent\Attributes\ObservedBy;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -37,6 +39,12 @@ use Illuminate\Support\Carbon;
  * @property bool $assistance_requested
  * @property string|null $assistance_reason
  * @property int $communication_failures
+ * @property int $pi_restart_resumes
+ * @property string|null $pi_restart_key
+ * @property int|null $pi_restart_thread_id
+ * @property string|null $pi_restart_source_turn_id
+ * @property string|null $pi_restart_reservation
+ * @property string|null $pi_restart_session_revision
  * @property int|null $resolution_delivered_comment_id
  * @property string $title
  * @property string $brief
@@ -55,6 +63,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $settled_at
  * @property-read TaskGroup $taskGroup
  */
+#[ObservedBy([TaskBroadcastObserver::class])]
 final class Task extends Model
 {
     /** @var array<string, mixed> */
@@ -62,6 +71,7 @@ final class Task extends Model
     protected $attributes = [
         'status' => 'todo',
         'assistance_requested' => false,
+        'pi_restart_resumes' => 0,
         'type' => 'implementation',
     ];
 
@@ -101,6 +111,7 @@ final class Task extends Model
         'review_workspace_head',
         'review_workspace_tree',
         'assistance_requested', 'assistance_reason', 'communication_failures', 'resolution_delivered_comment_id',
+        'pi_restart_resumes', 'pi_restart_key', 'pi_restart_thread_id', 'pi_restart_source_turn_id', 'pi_restart_reservation', 'pi_restart_session_revision',
     ];
 
     /** @return BelongsTo<TaskGroup, $this> */
@@ -189,6 +200,8 @@ final class Task extends Model
             'review_notified_attempt' => 'integer',
             'assistance_requested' => 'boolean',
             'communication_failures' => 'integer',
+            'pi_restart_resumes' => 'integer',
+            'pi_restart_thread_id' => 'integer',
             'resolution_delivered_comment_id' => 'integer',
         ];
     }

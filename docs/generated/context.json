@@ -590,7 +590,10 @@
             "kind": "product",
             "components": [
                 "apps/cli",
-                "apps/gateway"
+                "apps/docs",
+                "apps/e2e",
+                "apps/gateway",
+                "packages/php-sdk"
             ],
             "concepts": [
                 "Gateway",
@@ -598,9 +601,12 @@
                 "Process",
                 "Project",
                 "Task",
+                "Task group",
                 "Tool"
             ],
-            "governing_adrs": []
+            "governing_adrs": [
+                "0166"
+            ]
         },
         {
             "path": "docs/decisions/0001-tool-management.md",
@@ -2795,7 +2801,8 @@
                 "0112",
                 "0113",
                 "0122",
-                "0160"
+                "0160",
+                "0165"
             ]
         },
         {
@@ -3014,7 +3021,8 @@
             "governing_adrs": [
                 "0103",
                 "0110",
-                "0112"
+                "0112",
+                "0165"
             ]
         },
         {
@@ -3135,7 +3143,10 @@
             "governing_adrs": [
                 "0112",
                 "0114",
-                "0116"
+                "0116",
+                "0165",
+                "0167",
+                "0168"
             ]
         },
         {
@@ -3547,7 +3558,8 @@
             "kind": "decision",
             "components": [
                 "apps/docs",
-                "apps/e2e"
+                "apps/e2e",
+                "apps/gateway"
             ],
             "concepts": [
                 "Database",
@@ -3558,7 +3570,8 @@
             "governing_adrs": [
                 "0005",
                 "0131",
-                "0135"
+                "0135",
+                "0160"
             ]
         },
         {
@@ -4242,6 +4255,92 @@
             ]
         },
         {
+            "path": "docs/decisions/0165-record-per-thread-token-metrics.md",
+            "title": "ADR 0165: Record per-thread token metrics",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Gateway",
+                "Process",
+                "Task"
+            ],
+            "governing_adrs": [
+                "0103",
+                "0112",
+                "0116",
+                "0151",
+                "0165"
+            ]
+        },
+        {
+            "path": "docs/decisions/0166-raise-phpstan-one-level-at-a-time.md",
+            "title": "ADR 0166: Raise PHPStan one level at a time",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/e2e",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Gateway",
+                "Project",
+                "Task",
+                "Task group"
+            ],
+            "governing_adrs": [
+                "0166"
+            ]
+        },
+        {
+            "path": "docs/decisions/0167-resume-a-pi-turn-interrupted-by-a-server-restart.md",
+            "title": "ADR 0167: Resume a Pi turn interrupted by a server restart",
+            "kind": "decision",
+            "components": [
+                "apps/docs",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Gateway",
+                "Node",
+                "Process",
+                "Schedule",
+                "Task"
+            ],
+            "governing_adrs": [
+                "0116",
+                "0167"
+            ]
+        },
+        {
+            "path": "docs/decisions/0168-offload-large-pi-tool-output.md",
+            "title": "ADR 0168: Offload large Pi tool output",
+            "kind": "decision",
+            "components": [
+                "apps/docs"
+            ],
+            "concepts": [
+                "Gateway",
+                "Node",
+                "Process",
+                "Task",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0116",
+                "0133",
+                "0160",
+                "0165",
+                "0168"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -4434,7 +4533,11 @@
                 "0161",
                 "0162",
                 "0163",
-                "0164"
+                "0164",
+                "0165",
+                "0166",
+                "0167",
+                "0168"
             ]
         },
         {
@@ -5117,6 +5220,7 @@
                 "Process",
                 "Project",
                 "Task",
+                "Task group",
                 "Tool"
             ],
             "governing_adrs": [
@@ -5126,7 +5230,8 @@
                 "0113",
                 "0114",
                 "0119",
-                "0131"
+                "0131",
+                "0166"
             ]
         },
         {
@@ -5152,7 +5257,8 @@
                 "Route",
                 "Router",
                 "Schedule",
-                "Task"
+                "Task",
+                "Task group"
             ],
             "governing_adrs": [
                 "0005",
@@ -5479,11 +5585,15 @@
                 "Process",
                 "Project",
                 "Route",
+                "Schedule",
                 "Task",
                 "Tool"
             ],
             "governing_adrs": [
-                "0116"
+                "0116",
+                "0165",
+                "0167",
+                "0168"
             ]
         },
         {
@@ -5679,10 +5789,13 @@
                 "0132",
                 "0133",
                 "0134",
+                "0135",
                 "0140",
                 "0160",
                 "0163",
-                "0164"
+                "0164",
+                "0165",
+                "0167"
             ]
         },
         {

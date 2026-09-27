@@ -89,8 +89,8 @@ HELP;
                     branch: $this->stringOption('branch'),
                     sqliteSourcePath: $this->stringOption('sqlite-source-path'),
                 ), AppInstanceResponse::class);
-                if (! $response instanceof AppInstanceResponse || $response->route === null || $response->route->domain === '') {
-                    throw new GatewayApiException('Gateway response is invalid.', 'gateway.invalid_response', requestId: $response instanceof AppInstanceResponse ? $response->requestId : null);
+                if ($response->route === null || $response->route->domain === '') {
+                    throw new GatewayApiException('Gateway response is invalid.', 'gateway.invalid_response', requestId: $response->requestId);
                 }
 
                 return $response;
@@ -108,9 +108,6 @@ HELP;
                 $exception->errorCode() ?? 'gateway.request_failed', $exception->getMessage(), $exception->requestId(),
                 details: GatewayFailureRenderer::safeDetails($exception->errorCode() ?? 'gateway.request_failed', $exception->details()),
             );
-        }
-        if (! $releases instanceof DeploymentReleasesResponse) {
-            return self::FAILURE;
         }
         $progress->complete('releases', ProgressState::Success);
         $progress->finish('Instance cloned.');

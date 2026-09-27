@@ -142,7 +142,7 @@ abstract class GatewayCommand extends Command
             return $profile;
         }
 
-        if (! $realtime instanceof RealtimeResponse || $realtime->url === null || $realtime->key === null) {
+        if ($realtime->url === null || $realtime->key === null) {
             return $profile;
         }
 
@@ -294,14 +294,18 @@ abstract class GatewayCommand extends Command
     }
 
     /**
+     * @template TResponse of object
+     *
+     * @param  class-string<TResponse>  $responseClass
      * @param  array{string, string, string}  $labels  Waiting, running and completed labels.
-     * @param  null|Closure(object): (ProgressState|ProgressOutcome)  $resultState  Validate the product result before settling
-     *                                                                              progress. Return a bare ProgressState to keep
-     *                                                                              the completed label as the footer; return a
-     *                                                                              ProgressOutcome to replace it for a non-success
-     *                                                                              state whose completed label would misstate the
-     *                                                                              result.
+     * @param  null|Closure(TResponse): (ProgressState|ProgressOutcome)  $resultState  Validate the product result before settling
+     *                                                                                 progress. Return a bare ProgressState to keep
+     *                                                                                 the completed label as the footer; return a
+     *                                                                                 ProgressOutcome to replace it for a non-success
+     *                                                                                 state whose completed label would misstate the
+     *                                                                                 result.
      * @param  bool  $dismiss  Remove the tree once the result arrives, for a command whose result replaces it.
+     * @return TResponse|null
      */
     protected function sendWithProgress(
         GatewayConnector $connector,
@@ -374,6 +378,12 @@ abstract class GatewayCommand extends Command
         return false;
     }
 
+    /**
+     * @template TResponse of object
+     *
+     * @param  class-string<TResponse>  $responseClass
+     * @return TResponse|null
+     */
     protected function send(
         GatewayConnector $connector,
         GatewayRequest $request,
@@ -402,6 +412,12 @@ abstract class GatewayCommand extends Command
         return $response;
     }
 
+    /**
+     * @template TResponse of object
+     *
+     * @param  class-string<TResponse>  $responseClass
+     * @return TResponse
+     */
     protected function sendOrThrow(
         GatewayConnector $connector,
         GatewayRequest $request,
@@ -416,6 +432,12 @@ abstract class GatewayCommand extends Command
         return $this->dtoOrThrow($response, $responseClass);
     }
 
+    /**
+     * @template TResponse of object
+     *
+     * @param  class-string<TResponse>  $responseClass
+     * @return TResponse
+     */
     private function dtoOrThrow(Response $response, string $responseClass): object
     {
         try {
