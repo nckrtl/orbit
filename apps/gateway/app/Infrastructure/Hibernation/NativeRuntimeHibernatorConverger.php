@@ -10,6 +10,7 @@ use App\Domain\Nodes\NodeProvisioningException;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\Processes\ProtectedInput;
+use RuntimeException;
 use Throwable;
 
 final readonly class NativeRuntimeHibernatorConverger implements RuntimeHibernatorConverger
@@ -55,11 +56,16 @@ final readonly class NativeRuntimeHibernatorConverger implements RuntimeHibernat
         try {
             $input = ProtectedInput::fromString($contents);
             $metadata = stream_get_meta_data($input->stream());
+            $source = $metadata['uri'] ?? null;
+
+            if (! is_string($source) || $source === '') {
+                throw new RuntimeException('Gateway hibernator service file is unavailable.');
+            }
 
             $this->run(
                 step: $step,
                 errorCode: 'gateway.hibernator_install_failed',
-                arguments: ['sudo', 'install', '-m', '0644', $metadata['uri'], $path],
+                arguments: ['sudo', 'install', '-m', '0644', $source, $path],
             );
         } catch (NodeProvisioningException $exception) {
             throw $exception;

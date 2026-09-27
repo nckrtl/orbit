@@ -15,14 +15,13 @@ final readonly class ShowTasksStatusAction
 
     public function execute(): TasksStatusData
     {
-        $assistance = TaskGroup::query()
+        $assistance = array_values(TaskGroup::query()
             ->with('app')
             ->where('assistance_requested', true)
             ->orderBy('id')
             ->get()
             ->map(static fn (TaskGroup $group): TaskAssistanceData => TaskAssistanceData::fromModel($group))
-            ->values()
-            ->all();
+            ->all());
 
         return new TasksStatusData(
             enabled: $this->extension->enabled(),

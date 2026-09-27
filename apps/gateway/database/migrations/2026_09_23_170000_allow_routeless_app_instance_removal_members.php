@@ -97,7 +97,7 @@ return new class extends Migration
 
         DB::transaction(static function () use ($trigger, $updated): void {
             DB::statement("DROP TRIGGER {$trigger}");
-            DB::unprepared($updated);
+            DB::statement($updated);
         });
     }
 };

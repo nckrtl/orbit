@@ -124,6 +124,18 @@ final readonly class TaskSettlingFixup
             }
         }
 
-        return array_map(static fn (TaskDeliverable $deliverable): array => $deliverable->toArray(), $items);
+        return array_map(static function (TaskDeliverable $deliverable): array {
+            $encoded = [];
+
+            foreach ($deliverable->toArray() as $key => $value) {
+                if (! is_string($value)) {
+                    throw new \LogicException('A command deliverable field must be a string.');
+                }
+
+                $encoded[$key] = $value;
+            }
+
+            return $encoded;
+        }, $items);
     }
 }

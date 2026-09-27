@@ -12,6 +12,7 @@ import {
     SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 import { createSearchDocsTool } from "./search-docs.ts";
+import { createWorkspaceTools } from "./workspace-tools.ts";
 import { deriveState, type DerivedState } from "./state.ts";
 import { isValidSessionId, type SessionConfig, type SessionRecord, SessionStore } from "./store.ts";
 
@@ -349,7 +350,12 @@ export class SessionRegistry {
             settingsManager: this.settings,
             resourceLoader,
             sessionManager,
-            customTools: [createSearchDocsTool({ cwd })],
+            // read and bash replace Pi's tools so a result over 8 KiB is stored
+            // under the workspace .git before it is appended to the session.
+            customTools: [
+                createSearchDocsTool({ cwd }),
+                ...createWorkspaceTools({ cwd, sessionId: id }),
+            ],
         });
 
         const live: LiveSession = {

@@ -88,7 +88,7 @@ An unexpected refusal commonly means that Laravel loaded stale cached configurat
 
 Each project keeps its formatter configuration in `pint.json` and its analysis configuration in `phpstan.neon`. `composer format` applies Pint's Laravel preset. `composer format:check` checks without editing, and `composer lint` is an alias for that check. `composer analyse` runs PHPStan with Larastan in the applications and PHPStan directly in the framework-neutral SDK.
 
-Every project runs analysis at level 6. The configured paths keep the existing analysis scopes. Tests remain covered by Pint and Pest.
+Every project runs analysis at level 6. The configured paths keep the existing analysis scopes. Tests remain covered by Pint and Pest. [ADR 0166](/decisions/0166-raise-phpstan-one-level-at-a-time) raises that shared level from 6 to 9, one level at a time. A level is complete only when every project passes it. The next level starts only after that Task group's pull request merges. Until that merge, `level` in each `phpstan.neon` stays 6.
 
 | Project | Analysis level | Analyzed paths |
 | --- | --- | --- |

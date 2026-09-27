@@ -415,9 +415,9 @@ final readonly class VpToolManager implements ToolManager
     /** @return non-empty-list<string> */
     private function vpArguments(string ...$arguments): array
     {
-        return [
+        return array_values([
             self::VP_BINARY,
             ...$arguments,
-        ];
+        ]);
     }
 }

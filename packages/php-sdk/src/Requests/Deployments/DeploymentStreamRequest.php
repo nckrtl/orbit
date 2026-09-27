@@ -34,7 +34,10 @@ abstract class DeploymentStreamRequest extends GatewayRequest implements HasBody
 
     final public function createDtoFromResponse(#[SensitiveParameter] Response $response): DeploymentStream
     {
-        $contentType = strtolower(trim(explode(';', $response->header('Content-Type'))[0]));
+        $contentTypeHeader = $response->header('Content-Type');
+        $contentType = is_string($contentTypeHeader)
+            ? strtolower(trim(explode(';', $contentTypeHeader)[0]))
+            : '';
         $requestId = $this->successRequestId($response);
 
         if ($contentType !== 'application/x-ndjson' || $requestId === '') {

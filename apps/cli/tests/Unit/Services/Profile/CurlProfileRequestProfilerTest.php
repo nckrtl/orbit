@@ -6,6 +6,16 @@ use App\Services\Profile\CurlProfileRequestProfiler;
 use App\Services\Profile\ProfileHumanRenderer;
 
 describe('CurlProfileRequestProfiler', function (): void {
+    it('rejects an empty certificate bundle before opening a transfer', function (): void {
+        $profile = (new CurlProfileRequestProfiler(1))->profile('https://example.test', [], '');
+
+        expect($profile['request']['completed'])->toBeFalse()
+            ->and($profile['request']['status'])->toBeNull()
+            ->and($profile['request']['bytes'])->toBe(0)
+            ->and($profile['error'])->toBe(['message' => 'Certificate bundle path is empty.'])
+            ->and($profile['response_headers'])->toBe([]);
+    });
+
     it('derives TLS timing from microsecond app connect timing when available', function (): void {
         $timings = cliCurlProfileTimingsFromInfo([
             'namelookup_time_us' => 2100,

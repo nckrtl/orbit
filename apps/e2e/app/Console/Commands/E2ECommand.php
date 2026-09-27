@@ -9,6 +9,7 @@ use App\E2E\State\SecretRedactor;
 use App\E2E\Value\TopologyRequest;
 use App\E2E\WorktreeLocator;
 use Illuminate\Console\Command;
+use InvalidArgumentException;
 use Throwable;
 
 abstract class E2ECommand extends Command
@@ -41,9 +42,13 @@ abstract class E2ECommand extends Command
     protected function request(): TopologyRequest
     {
         $worktree = $this->hasOption('worktree') ? $this->option('worktree') : null;
+        $issue = $this->argument('issue');
+        if (! is_string($issue)) {
+            throw new InvalidArgumentException('The issue argument must be a string.');
+        }
 
         return app(WorktreeLocator::class)->locate(
-            (string) $this->argument('issue'),
+            $issue,
             is_string($worktree) ? $worktree : null,
         );
     }

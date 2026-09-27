@@ -78,10 +78,9 @@ final class TaskGroupData extends Data
             durationMs: $group->status->isActive() && $group->started_at !== null
                 ? max(0, (int) now()->diffInMilliseconds($group->started_at, true))
                 : $group->duration_ms,
-            tasks: $group->tasks
+            tasks: array_values($group->tasks
                 ->map(static fn (Task $task): TaskData => TaskData::fromModel($task))
-                ->values()
-                ->all(),
+                ->all()),
         );
     }
 }

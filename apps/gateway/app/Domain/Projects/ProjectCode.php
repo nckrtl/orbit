@@ -6,6 +6,7 @@ namespace App\Domain\Projects;
 
 use App\Domain\Shared\ResourceOperationException;
 use Illuminate\Support\Str;
+use LogicException;
 
 final readonly class ProjectCode
 {
@@ -19,12 +20,23 @@ final readonly class ProjectCode
             return $preferred;
         }
         for ($i = 0; $i < 26 * 26 * 26; $i++) {
-            $code = chr(65 + intdiv($i, 676)).chr(65 + intdiv($i % 676, 26)).chr(65 + $i % 26);
+            $code = self::letter(intdiv($i, 676)).self::letter(intdiv($i % 676, 26)).self::letter($i % 26);
             if (! isset($taken[$code])) {
                 return $code;
             }
         }
         throw new ResourceOperationException('app.codes_exhausted', 'All three-letter Project codes are in use.', 409);
+    }
+
+    private static function letter(int $index): string
+    {
+        $alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+
+        if ($index < 0 || $index > 25) {
+            throw new LogicException('Project code letter is out of range.');
+        }
+
+        return $alphabet[$index];
     }
 
     public static function validate(string $code): string

@@ -220,9 +220,15 @@ final readonly class SetClusterRouterAction
         });
         $this->forward($candidate, ClusterRouterReplacementStep::DnsPublished, function () use ($routes, $router, $alreadyPublished): void {
             if (! $alreadyPublished) {
+                $clusterId = $router->cluster_id;
+
+                if (! is_int($clusterId)) {
+                    throw new \LogicException('A Cluster Router requires a Cluster.');
+                }
+
                 $this->dnsSelection()->expand(
-                    clusterOverrides: [$router->cluster_id => ['router_node_id' => $router->id]],
-                    clusterIds: [(int) $router->cluster_id],
+                    clusterOverrides: [$clusterId => ['router_node_id' => $router->id]],
+                    clusterIds: [$clusterId],
                 );
             }
 
@@ -411,12 +417,11 @@ final readonly class SetClusterRouterAction
     /** @return list<AppInstance> */
     private function workloads(Route $route): array
     {
-        return $route
+        return array_values($route
             ->targets
             ->map(static fn ($target) => $target->appInstance)
             ->filter(static fn ($target): bool => $target instanceof AppInstance)
-            ->values()
-            ->all();
+            ->all());
     }
 
     private function finishOldCleanup(Cluster $cluster, NodeRole $current): void

@@ -93,7 +93,9 @@ final class ProgressDisplay
         }
 
         $this->started = true;
-        $this->steps[$id]['state'] = ProgressState::Running;
+        $step = $this->steps[$id];
+        $step['state'] = ProgressState::Running;
+        $this->steps[$id] = $step;
 
         return InterruptIntent::runIfAbsent(function () use ($id, $operation): mixed {
             $animation = new Animation(
@@ -132,8 +134,10 @@ final class ProgressDisplay
             throw new LogicException('Progress cannot regress or settle unstarted work.');
         }
 
-        $this->steps[$id]['state'] = $state;
-        $this->steps[$id]['message'] = TerminalText::safe($message);
+        $step = $this->steps[$id];
+        $step['state'] = $state;
+        $step['message'] = TerminalText::safe($message);
+        $this->steps[$id] = $step;
 
         if ($this->mode->mayRepaint) {
             $this->region->replace($this->frame());

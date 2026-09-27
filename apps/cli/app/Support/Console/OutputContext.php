@@ -19,22 +19,27 @@ final class OutputContext
      */
     public static function run(InputInterface $input, OutputInterface $output, Closure $operation): mixed
     {
-        $outputs = $output instanceof ConsoleOutputInterface ? [$output, $output->getErrorOutput()] : [$output];
-        $saved = array_map(static fn (OutputInterface $stream): array => [$stream->getFormatter(), $stream->getVerbosity()], $outputs);
+        $streams = $output instanceof ConsoleOutputInterface ? [$output, $output->getErrorOutput()] : [$output];
+        $saved = [];
+
+        foreach ($streams as $stream) {
+            $saved[] = [$stream, $stream->getFormatter(), $stream->getVerbosity()];
+        }
+
         $interactive = $input->isInteractive();
         $machine = $input->hasParameterOption('--json', true);
 
         try {
-            foreach ($outputs as $index => $stream) {
+            foreach ($saved as [$stream, $formatter]) {
                 $resource = ConsoleMode::outputStream($stream);
-                $stream->setFormatter(new InvocationFormatter(clone $saved[$index][0], ! $machine && is_resource($resource) && stream_isatty($resource)));
+                $stream->setFormatter(new InvocationFormatter(clone $formatter, ! $machine && is_resource($resource) && stream_isatty($resource)));
             }
 
             return $operation();
         } finally {
-            foreach ($outputs as $index => $stream) {
-                $stream->setFormatter($saved[$index][0]);
-                $stream->setVerbosity($saved[$index][1]);
+            foreach ($saved as [$stream, $formatter, $verbosity]) {
+                $stream->setFormatter($formatter);
+                $stream->setVerbosity($verbosity);
             }
 
             $input->setInteractive($interactive);

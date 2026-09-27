@@ -50,7 +50,11 @@ final class NativeClusterRouterOperationLock implements ClusterRouterOperationLo
             try {
                 return $operation();
             } finally {
-                $this->depths[$clusterId]--;
+                $depth = $this->depths[$clusterId] - 1;
+
+                if ($depth >= 1) {
+                    $this->depths[$clusterId] = $depth;
+                }
             }
         }
 

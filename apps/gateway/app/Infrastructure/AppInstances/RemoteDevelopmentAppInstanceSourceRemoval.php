@@ -951,21 +951,32 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
      */
     private static function liveWorktrees(string $inventory): array
     {
-        /** @var list<array{path: string, prunable: bool}> $records */
-        $records = [];
+        $paths = [];
+        $current = null;
+        $prunable = false;
 
         foreach (explode("\0", $inventory) as $field) {
             if (str_starts_with($field, 'worktree ')) {
-                $records[] = ['path' => substr($field, 9), 'prunable' => false];
-            } elseif ($records !== [] && ($field === 'prunable' || str_starts_with($field, 'prunable '))) {
-                $records[array_key_last($records)]['prunable'] = true;
+                if (is_string($current) && ! $prunable) {
+                    $paths[] = $current;
+                }
+
+                $current = substr($field, 9);
+                $prunable = false;
+
+                continue;
+            }
+
+            if ($current !== null && ($field === 'prunable' || str_starts_with($field, 'prunable '))) {
+                $prunable = true;
             }
         }
 
-        return array_values(array_map(
-            static fn (array $record): string => $record['path'],
-            array_filter($records, static fn (array $record): bool => ! $record['prunable']),
-        ));
+        if (is_string($current) && ! $prunable) {
+            $paths[] = $current;
+        }
+
+        return $paths;
     }
 
     private function isPublished(AppInstance $appInstance, string $origin, string $commit): bool

@@ -224,7 +224,13 @@ final class PrivateDnsTransportServer
                 throw new RuntimeException('The private DNS TCP query timed out.');
             }
 
-            $chunk = fread($connection, $bytes - strlen($buffer));
+            $needed = $bytes - strlen($buffer);
+
+            if ($needed < 1) {
+                throw new RuntimeException('The private DNS TCP query was truncated.');
+            }
+
+            $chunk = fread($connection, $needed);
             if (! is_string($chunk) || $chunk === '') {
                 throw new RuntimeException('The private DNS TCP query was truncated.');
             }

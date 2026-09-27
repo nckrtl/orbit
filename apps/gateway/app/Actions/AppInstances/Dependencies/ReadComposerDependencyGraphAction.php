@@ -301,11 +301,15 @@ final readonly class ReadComposerDependencyGraphAction
         }
 
         if (property_exists($record, 'repositories')) {
-            if (! is_array($record->repositories) && ! $record->repositories instanceof stdClass) {
+            if (is_array($record->repositories)) {
+                $repositories = $record->repositories;
+            } elseif ($record->repositories instanceof stdClass) {
+                $repositories = get_object_vars($record->repositories);
+            } else {
                 throw new DependencyParseException;
             }
 
-            foreach ($record->repositories as $repository) {
+            foreach ($repositories as $repository) {
                 if ($repository === false) {
                     continue;
                 }
