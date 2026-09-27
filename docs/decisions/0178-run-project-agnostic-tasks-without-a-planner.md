@@ -24,7 +24,11 @@ This decision also amends ADR 0122 so Backlog groups have no Instance until clai
 
 Backlog groups have no Instance. The Gateway creates an Instance only after a group is claimed for execution.
 
-Typed deliverables remain generic. A subsequent implementation group replaces test-specific deliverables with command deliverables, including `fails_on_base` and `paths`. Each Project supplies one command for its task check. Fixup tasks use that command, never a CI table keyed by Project slug.
+Typed deliverables are `file`, `command`, and `review`; `test` is removed with no compatibility path. A `command` deliverable has a command and directory, plus optional `fails_on_base: bool` and `paths: list<string>`. With `fails_on_base: true`, the engine runs the command against the start commit and then the working tree; it must exit nonzero on the base and zero on the working tree. For the base run, the engine overlays the listed working-tree files on its archive of the base commit. The engine owns that archive, the timeout, and the evidence. It does not interpret runner-specific results: matching Pest test names, parsing JUnit, and similar policy belong to the Project's command.
+
+### Follow-up: generic command deliverables
+
+The follow-up implementation removes the `test` deliverable type entirely. It converts stored `test` deliverables in open groups with a data migration, rather than requiring operators to have no open groups. Each converted `test` becomes a `command` that invokes the Project's configured test command for the former test file; its former project and file determine the command's working directory and file argument, and the former file becomes the sole `paths` entry for a base run. The migration carries `fails_on_base` across. Test-name matching is not represented in the generic engine and remains a Project concern. This preserves open work without retaining a legacy validation or execution path.
 
 Bridge-worktree removal is owned by the Orbit Project's teardown steps, not the Gateway's generic task cleanup.
 

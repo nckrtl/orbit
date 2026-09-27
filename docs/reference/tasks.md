@@ -132,17 +132,20 @@ Each deliverable is an object with an `id`, a `type`, a `description`, and the f
 | Type | Fields | Orbit checks |
 | --- | --- | --- |
 | `file` | `path`: a path or glob from the workspace root. `change`: `created`, `modified`, or `any` | A matching path in the subtask's diff, added for `created`, modified for `modified`, either for `any` |
-| `test` | `project`: directory or `.`. `file`: test file in that project. `name`: test-name substring | The test file is added or modified in the diff, at least one test whose name contains `name` exists, and all matching tests pass |
-| `command` | `command`: the command to run. `directory`: where to run it, relative to the workspace root; default `.` | Orbit's run of the command exits with 0 |
+| `command` | `command`: command to run. `directory`: working directory. Optional `fails_on_base` and `paths` | Command exits 0 on the working tree; when enabled, exits nonzero on the base and 0 on the working tree |
 | `review` | none | The reviewer confirms it in its approval |
 
-A `test` deliverable may set `fails_on_base` to `true`. [Reproduce a bug on the start commit](#reproduce-a-bug-on-the-start-commit) defines that check.
+The `directory` is relative to the workspace root and defaults to `.`. `fails_on_base` is a boolean. `paths` is a list of workspace-relative files to copy over the start-commit archive for the base run, generalizing the common case of applying only a new test file. Without `fails_on_base`, the command runs only on the working tree.
+
+The engine runs each command and owns the base archive, timeout, and recorded evidence. It does not interpret test names or runner output; the Project's own task policy and command define runner-specific matching, such as Pest test names or JUnit results. [Prove a command fails on the start commit](#prove-a-command-fails-on-the-start-commit) defines the two-run check.
+
+The engine has no `test` deliverable type or compatibility path. A data migration converts stored `test` deliverables in open groups to `command` deliverables that run the Project's configured test command for the former file, carry over `fails_on_base`, and overlay that file through `paths` for the base run. Test-name matching is Project policy, not a separate engine field.
 
 ```json
 [
   {"id": "reference-page", "type": "file", "description": "Document the export in the tasks reference", "path": "docs/reference/tasks.md", "change": "modified"},
-  {"id": "export-test", "type": "test", "description": "A feature test for the export", "project": "apps/gateway", "file": "tests/Feature/ExportTest.php", "name": "exports every subtask"},
-  {"id": "layout-repro", "type": "test", "description": "The home-screen test fails before the fix", "project": "apps/gateway", "file": "tests/Feature/HomeScreenTest.php", "name": "home screen layout", "fails_on_base": true},
+  {"id": "export-tests", "type": "command", "description": "The export tests pass", "command": "vendor/bin/pest tests/Feature/ExportTest.php", "directory": "apps/gateway"},
+  {"id": "layout-repro", "type": "command", "description": "The home-screen regression fails before the fix", "command": "vendor/bin/pest tests/Feature/HomeScreenTest.php", "directory": "apps/gateway", "fails_on_base": true, "paths": ["apps/gateway/tests/Feature/HomeScreenTest.php"]},
   {"id": "web-tests", "type": "command", "description": "The web app tests pass", "command": "bun test", "directory": "apps/web"},
   {"id": "error-copy", "type": "review", "description": "Error messages name the failing subtask"}
 ]
@@ -150,50 +153,38 @@ A `test` deliverable may set `fails_on_base` to `true`. [Reproduce a bug on the 
 
 | Rule | Limit |
 | --- | --- |
-| `id` | A lowercase slug such as `export-test`, at most 64 characters, unique within the subtask |
+| `id` | A lowercase slug such as `export-tests`, at most 64 characters, unique within the subtask |
 | `description` | At most 500 characters |
-| `path`, `file`, `project`, `directory` | Relative paths without `..`. At most 500 characters |
-| `test` `file` | One path that ends in `.php`, with no `*`, `?`, `[`, `{`, or `..` |
-| `name` | At most 200 characters |
+| `path`, `directory` | Relative paths without `..`. At most 500 characters |
 | `command` | At most 1000 characters |
-| `fails_on_base` | A JSON boolean on a `test` deliverable. Omitted means `false` |
+| `fails_on_base` | A JSON boolean on a `command` deliverable. Omitted means `false` |
+| `paths` | A list of relative file paths without `..`; applies only to a `command` deliverable |
 | Number | At least one and at most five per subtask. Each Project sets its own task policy. |
 
 A field that belongs to another type is refused. Only a `file` deliverable's `path` accepts a glob. In that `path`, `*` matches within one directory, `**` matches across directories, and `?` matches one character.
 
-
-Group create, subtask create, and subtask update refuse any other `file` with HTTP 422 `validation.failed`. The error names that deliverable's `id`.
+Group create, subtask create, and subtask update reject fields that are not allowed for the selected deliverable type with HTTP 422 `validation.failed`. The error names that deliverable's `id`.
 
 The subtask's diff runs from its start commit to the working tree that Orbit's check sees, uncommitted and untracked files included. Orbit records the start commit when the subtask starts, before the implementer's first turn. When that commit is empty, the diff uses the fallback described in [Review a subtask](#review-a-subtask). Deleted and ignored files never match.
 
-### Reproduce a bug on the start commit
+### Prove a command fails on the start commit
 
-A `test` deliverable may set `fails_on_base` to `true`. Omitted and `false` are the same: Orbit runs the file once, on the working tree. Show and the turn file include the boolean. An omitted input is stored as `false`. Orbit runs the test directly with `vendor/bin/pest FILE --log-junit=...`, with test impact analysis off, as `resources/tasks/check` does.
-
-When the value is `true`, Orbit runs that file twice at handoff.
+A `command` deliverable may set `fails_on_base` to `true`. Omitted and `false` are the same: Orbit runs the command on the working tree only. When true, Orbit runs the command against the start commit with the files in `paths` overlaid from the working tree, then runs it on the working tree. The check passes only when the base command exits nonzero and the working-tree command exits 0. A failed base command is expected evidence, not a failed deliverable.
 
 | Run | Code under test | Passes when |
 | --- | --- | --- |
-| Base | The start commit, or its fallback when that commit was never recorded, plus only this test file from the working tree | At least one test whose name contains `name` fails |
-| Working tree | The implementer's tree | Every test whose name contains `name` passes, and at least one such test exists |
+| Base | The start commit, or its fallback when that commit was never recorded, with only the listed `paths` overlaid from the working tree | The command exits nonzero |
+| Working tree | The implementer's tree | The command exits 0 |
 
-The base run reads that test file from the working tree, including an uncommitted or untracked file. No other file from the diff is present. The Project is responsible for making its test command available in the workspace. The base run does not change the workspace. When the recorded start commit is empty, this run uses the same fallback as the review diff: the previous subtask's approved commit, or the workspace starting commit for the first subtask.
+The base run uses a Git archive of the start commit under the clone's `.git/orbit/`, then extracts it to a temporary directory. It overlays the specified files, including uncommitted or untracked files. It does not register a Git worktree, and does not change the workspace. The check removes the temporary directory when the run finishes or is cancelled. A base run killed with SIGKILL can leave the directory; removing the clone removes the leftover.
 
-The base run builds the start commit in a directory under the clone's `.git/orbit/`. It archives that commit and extracts the archive there. It does not register a Git worktree, and the directory is not in the apps root. The check removes the directory when the base run finishes or the check is cancelled. A base run killed with SIGKILL can leave the directory. Nothing is registered, so removing the clone removes the leftover with it.
+When the recorded start commit is empty, the base run uses the same fallback as the review diff: the previous subtask's approved commit, or the workspace starting commit for the first subtask. The engine sets the base-run timeout and records its result and evidence. Each Project is responsible for making its command available in the workspace and interpreting runner-specific output. For example, a Project may implement test-name matching or JUnit result checks in its command.
 
-At the start of a check, Orbit removes any `orbit-base-*` worktree this checkout registered earlier, prunes Git's worktree list, and removes a leftover base directory under `.git/orbit/`.
+The `paths` list is not a glob. Every listed file must be a safe relative path within the workspace; the base overlay must not allow a path to escape the temporary archive. The handoff evidence records the base and working-tree command results. [ADR 0178](/decisions/0178-run-project-agnostic-tasks-without-a-planner) defines this generic contract.
 
-The base run passes when at least one test whose name contains `name` fails. A matching test that passes does not fail that run when another matching test fails. When no matching test fails and a matching test passes, the deliverable fails. The reminder says that the test does not reproduce the bug. When no matching test fails and a matching test is skipped, the reminder names the skip. When no test name contains `name`, the reminder says so. When the test file cannot be placed on the start commit, the base run does not start, and the reminder names that failure.
+Group create, subtask create, and subtask update accept `fails_on_base` and `paths` only on a `command` deliverable. `fails_on_base` must be the JSON boolean `true` or `false`; any other value is HTTP 422 `validation.failed`. The `paths` value must be a list of strings. The error names the deliverable's `id`.
 
-A JUnit `error` counts as a failure, including a missing class. The base run stops after 600 seconds. A timed-out base run counts as failing on the start commit.
-
-Each failed case on the base run records whether it was a `failure` or an `error`, and the tail of its message, at most 4096 characters. The review request shows those lines under a lead that says an error, such as a missing class, is not an assertion failure. It also says when the base run timed out and names the 600 second limit. [ADR 0163](/decisions/0163-prove-a-failing-test-on-the-start-commit) records the lines.
-
-The diff check from the table above still applies. Orbit reports a miss in the diff, a miss on the base run, and a miss on the working tree together. When the base run has no failing match, that miss is not hidden by another miss.
-
-Group create, subtask create, and subtask update accept `fails_on_base` only on a `test` deliverable. The value is the JSON boolean `true` or `false`. Any other value, and the field on another type, is HTTP 422 `validation.failed`. The error names that deliverable's `id`.
-
-The Orbit Project's [task policy skill](https://github.com/nckrtl/orbit/blob/main/.agents/skills/orbit-tasks/SKILL.md) requires repro-first bug work where the Project check can reproduce it. A bug group's first code subtask carries the reproduction. When a bug cannot be reproduced automatically, the brief says so and that subtask adds a `review` deliverable for the manual check.
+The Orbit Project's [task policy skill](https://github.com/nckrtl/orbit/blob/main/.agents/skills/orbit-tasks/SKILL.md) may require repro-first bug work where the Project check can reproduce it. A bug group's first code subtask can carry the reproduction command. When a bug cannot be reproduced automatically, the brief says so and that subtask adds a `review` deliverable for the manual check.
 
 ### Confirm deliverables
 
@@ -214,15 +205,9 @@ The script refuses a missing confirmation, an unknown ID, an ID given twice, emp
 
 ### Verify deliverables
 
-Before the handoff check runs the Project check, it validates every `test` deliverable. The `project` is a directory in the checkout, `.` or a path such as `apps/gateway`. The `file` exists in that project. An invalid deliverable fails the check in seconds, and the Project check does not run.
-
-The message names the deliverable id and the bad value. A project that is not a directory fails as `Deliverable sweep-test names project gateway, which is not a directory in the checkout.` A file that does not exist fails as `Deliverable sweep-test names file tests/Feature/SweepTest.php, which does not exist in apps/gateway.` The same words name any other id and value. A bad project is reported on its own, and the file is checked only when that project is a directory. Each invalid `test` deliverable adds one message, in list order.
-
-The group asks for assistance with each message. The implementer gets no reminder, because the implementer cannot change deliverables.
-
 When every other item passes, Orbit runs the Project's configured task check and verifies deliverables. When the configured command runs `composer check`, including as part of a compound command, the Gateway adds a `check_script` rubric item; the task workspace must define that Composer script. Before the baseline check, the scheduler runs the Project's setup steps, then may prepare dependencies based on the task-check command as described in [Project check](#project-check). Handoff checks do not install dependencies.
 
-The `deliverables` item fails when a confirmation is missing or a deliverable does not pass. The reminder names each failing deliverable and why, and the assistance reason repeats it. Like every item, it gets one reminder per completion attempt, then asks for assistance. An invalid `test` project or file does not use that reminder. The reviewer starts only when every deliverable passes.
+The `deliverables` item fails when a confirmation is missing or a deliverable does not pass. The reminder names each failing deliverable and why, and the assistance reason repeats it. Like every item, it gets one reminder per completion attempt, then asks for assistance. The reviewer starts only when every deliverable passes.
 
 A subtask with no deliverables skips these steps. Groups that left Backlog before deliverables existed keep running that way. To add deliverables to such a group, update its `todo` subtasks.
 
@@ -511,7 +496,7 @@ The input is a single JSON object with only the following fields. Field names an
 | `thread_id` | integer or null | Agent thread id used to render thread-specific instructions. |
 | `review_packet` | object | Present only for `reviewer` and `reviewer-continue`; the opening or continued review inputs described below. |
 
-Each deliverable object has string fields `id`, `type`, and `description`. Its type-specific fields match the task deliverable: `file` has string `path` and `change`; `test` has string `project`, `file`, and `name`, plus boolean `fails_on_base`; `command` has string `command` and `directory`; `review` has no type-specific fields.
+Each deliverable object has string fields `id`, `type`, and `description`. Its type-specific fields match the task deliverable: `file` has string `path` and `change`; `command` has string `command` and `directory`, optional boolean `fails_on_base`, and optional string-list `paths`; `review` has no type-specific fields.
 
 `review_packet` contains `opens_pull_request` (boolean), `earlier_approved_subtasks` (an array of objects with string `title` and `summary`), `diff_files` (an ordered array of objects with string `path` and integer `insertions` and `deletions`), `files_complete` and `diff_available` (booleans), `diff_summary` (an object with integer `files`, `insertions`, and `deletions`), `diff_body` (string), `untracked_content` (an ordered array of objects with string `path` and `patch`), `handoff_check`, `start_commit` (string), and `held_resolution` (string or null).
 
@@ -521,9 +506,9 @@ Each deliverable object has string fields `id`, `type`, and `description`. Its t
 
 To form the production diff, concatenate `diff_body` and the untracked `patch` strings in order with no added separators, then retain the first 20,000 bytes. The remote script adds one newline after that captured prefix before the summary marker; that separator newline is part of the parsed diff body, even when the prefix already ends in a newline. If the remote command output itself is truncated, production returns an empty file list and body with `files_complete` and `diff_available` both false, while `diff_summary` retains full totals. The flags and full summary must be supplied independently; do not infer them from the captured patch strings.
 
-`handoff_check` has string `status`, integer-or-null `exit_code`, and `evidence` (an object or null). Evidence has `diff` (an array of objects with string `status` and `path`, or null), `tests` (an object keyed by deliverable id; each value has integer `exit_code`, array `cases`, and optional base-run fields), and `commands` (an object keyed by deliverable id; each value has integer `exit_code` and string `output`).
+`handoff_check` has string `status`, integer-or-null `exit_code`, and `evidence` (an object or null). Evidence has `diff` (an array of objects with string `status` and `path`, or null) and command results keyed by deliverable id, including exit codes and output for working-tree and optional base runs.
 
-Each test case in `cases` or `base_cases` has string `name` and `status`, and optional string `kind` and `message`. Optional base-run fields are boolean `base_placed`, integer `base_exit_code`, boolean `base_timed_out`, integer `base_timeout_seconds`, and array `base_cases` of the same test-case objects. `opens_pull_request` supplies the value passed to the reviewer instructions: when true, the reviewer must provide pull request summary and change fields; when false, those fields are not requested. The value cannot be derived from the subtask position alone. A continued review uses the same input shape, but its rendered packet omits opening-only material such as earlier approvals and the held resolution.
+Command evidence records the command's output and exit status, including the optional base run; the engine does not parse runner-specific cases or result formats. `opens_pull_request` supplies the value passed to the reviewer instructions: when true, the reviewer must provide pull request summary and change fields; when false, those fields are not requested. The value cannot be derived from the subtask position alone. A continued review uses the same input shape, but its rendered packet omits opening-only material such as earlier approvals and the held resolution.
 
 The renderer uses the same prompt construction as `TaskAgentSpawner` and `TaskReviewPacket`. Tests assert that a prompt rendered from these inputs is byte-identical to the prompt sent in production for the same inputs. The command never reads the database, the workspace, or the network; provide all prompt inputs in the JSON instead. This lets an offline evaluation harness render frozen cases without copying the production prompt template.
 
@@ -538,7 +523,7 @@ The renderer uses the same prompt construction as `TaskAgentSpawner` and `TaskRe
 | Handoff | 2,000 | Each command is cut to 160 characters. Further lines are omitted. `.git/orbit/check.log` holds the rest |
 | Diff body | Remainder | Cut from the end, and at most 16,384 bytes. The diff command prints the rest |
 
-The handoff lines name the Project task check, each deliverable `test` and `command`, and a base run when `fails_on_base` is set. When that base run fails, the line includes the failure kind. A message tail is included only while it fits in the handoff cap. [ADR 0163](/decisions/0163-prove-a-failing-test-on-the-start-commit) records those lines. `.git/orbit/check.log` holds the command text and any tail that was cut. `.git/orbit/check.json` stores the exit codes.
+The handoff lines name the Project task check, each command deliverable, and a base run when `fails_on_base` is set. The lines record whether the base and working-tree commands met their expected exit status. A message tail is included only while it fits in the handoff cap. [ADR 0178](/decisions/0178-run-project-agnostic-tasks-without-a-planner) records the generic deliverable contract. `.git/orbit/check.log` holds the command text and any tail that was cut. `.git/orbit/check.json` stores the exit codes.
 
 The diff stat's summary line is the file count and the insertion and deletion counts, including untracked files. Dropped deliverable lines, dropped approval lines, and dropped handoff lines each leave one line that names how many were omitted. Orbit does not send a review when it cannot read the diff. That attempt is a communication failure, and the next tick tries again. It does not describe that failure as zero files changed. When the captured stat output is cut, the summary counts stay complete, the path list is left out, and the packet says the stat command prints the rest.
 
@@ -562,7 +547,7 @@ git diff START; git ls-files --others --exclude-standard -z | while IFS= read -r
 
 A continued re-review does not repeat the group brief, the deliverables, the earlier approval lines, or a resolution carried on the opening packet. That turn carries the new diff stat, the capped diff, both retrieval commands, and the new handoff result. The spared caps go to the diff body. When that thread cannot take a turn, Orbit starts a fresh thread and sends the full packet.
 
-The reviewer does not re-run the Project task check or the deliverable tests and commands the handoff already passed. That includes `composer check` when it is the task check. The reviewer runs another command only to get evidence the handoff result does not give, and the review summary says why.
+The reviewer does not re-run the Project task check or command deliverables the handoff already passed. That includes `composer check` when it is the task check. The reviewer runs another command only to get evidence the handoff result does not give, and the review summary says why.
 
 The reviewer prompt states this rule on the opening packet and on a continued turn. Orbit does not parse the summary to enforce it. The same prompt says the turn is read-only, that the implementer has no web access, and that the reviewer confirms framework and library usage against documentation for the Project's versions. Those checks are evidence the handoff result does not give. The opening packet also names the feature contract: the ADRs and documentation this branch changes against the Project default branch, such as `origin/main`. A continued turn does not repeat that sentence.
 

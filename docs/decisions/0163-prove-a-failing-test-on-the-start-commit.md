@@ -126,5 +126,5 @@ When `fails_on_base` is `true`, the deliverable line in the implementer prompt s
 
 - Components: apps/gateway, apps/cli, packages/php-sdk, apps/docs
 - ADRs: extends [ADR 0133](/decisions/0133-verify-typed-subtask-deliverables-at-handoff)
-- Detail: [Tasks](/reference/tasks#reproduce-a-bug-on-the-start-commit)
+- Detail: [Tasks](/reference/tasks#prove-a-command-fails-on-the-start-commit)
 - Verify: `composer docs-lint`; Gateway validation tests that refuse a non-boolean `fails_on_base` and refuse the field on any other type as `validation.failed` naming the deliverable id; a handoff test where every named test passes on the start commit and the reminder says the test does not reproduce the bug; a handoff test where one matching test fails on the start commit while another matching test passes, and the base run still passes; a handoff test where a matching test fails on the start commit with only the test file applied, then every matching test passes on the working tree; a test that kills a base run with SIGKILL and then removes the workspace with nothing registered; a test that stores the failure kind and the tail of the message; a test that a timed-out base run counts as failing on the start commit
