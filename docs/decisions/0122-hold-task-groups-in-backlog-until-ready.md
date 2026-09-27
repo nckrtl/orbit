@@ -12,7 +12,7 @@ A new task group starts in Backlog. The operator and an agent prepare its branch
 
 Proposed.
 
-This amends the claim rule in [ADR 0103](/decisions/0103-absorb-commander-tasks-as-a-gateway-extension), which claims a group immediately after create. It applies the Backlog and Todo meaning from [ADR 0010](/decisions/0010-record-decisions-before-implementation-issues) to task groups and follows the verb vocabulary in [ADR 0071](/decisions/0071-use-one-verb-vocabulary-across-cli-routes-and-sdk).
+This amends the claim rule in [ADR 0103](/decisions/0103-absorb-commander-tasks-as-a-gateway-extension), which claims a group immediately after create. It applies the Backlog and Todo meaning from [ADR 0010](/contributor-guide#decisions-ship-with-their-feature) to task groups and follows the verb vocabulary in [ADR 0071](/reference/cli-command-vocabulary#why-it-works-this-way).
 
 ## Context
 
@@ -62,6 +62,6 @@ ADR 0010 already defines these states for issues. Backlog records a request whos
 ## Affects
 
 - Components: apps/gateway, apps/docs
-- ADRs: amends [ADR 0103](/decisions/0103-absorb-commander-tasks-as-a-gateway-extension); applies [ADR 0010](/decisions/0010-record-decisions-before-implementation-issues) and [ADR 0071](/decisions/0071-use-one-verb-vocabulary-across-cli-routes-and-sdk)
+- ADRs: amends [ADR 0103](/decisions/0103-absorb-commander-tasks-as-a-gateway-extension); applies [ADR 0010](/contributor-guide#decisions-ship-with-their-feature) and [ADR 0071](/reference/cli-command-vocabulary#why-it-works-this-way)
 - Detail: [Tasks](/reference/tasks)
 - Verify: Gateway tests for create, update, subtask create, update, destroy, cancel, the claim rule, and the status migration; `apps/web/src/api/tasks.test.ts`; `bin/docs-openapi`; `bin/mcp-tools --check`; `composer docs-lint`

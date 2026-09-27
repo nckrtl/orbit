@@ -10,7 +10,7 @@ In the context of feature review with reusable main test baselines, facing repea
 
 ## Status
 
-Accepted on 2026-09-10. Extends [ADR 0052](/decisions/0052-seed-worktrees-from-successful-main-test-baselines). Supersedes [ADR 0049](/decisions/0049-keep-delivery-artifacts-off-the-merge-head), [ADR 0051](/decisions/0051-select-discovery-only-feature-delivery) and [ADR 0052](/decisions/0052-seed-worktrees-from-successful-main-test-baselines) for mandatory continuous integration checks.
+Accepted on 2026-09-10. Extends [ADR 0052](/decisions/0052-seed-worktrees-from-successful-main-test-baselines). Supersedes [ADR 0049](/contributor-guide#review-and-merge), [ADR 0051](/decisions/0051-select-discovery-only-feature-delivery) and [ADR 0052](/decisions/0052-seed-worktrees-from-successful-main-test-baselines) for mandatory continuous integration checks.
 
 ## Context
 
@@ -41,6 +41,6 @@ GitHub repeats full suites even when local test impact analysis can reuse main's
 ## Affects
 
 - Components: apps/cli, apps/docs, apps/e2e, apps/gateway, packages/php-sdk
-- ADRs: extends [ADR 0052](/decisions/0052-seed-worktrees-from-successful-main-test-baselines); supersedes [ADR 0049](/decisions/0049-keep-delivery-artifacts-off-the-merge-head), [ADR 0051](/decisions/0051-select-discovery-only-feature-delivery) and [ADR 0052](/decisions/0052-seed-worktrees-from-successful-main-test-baselines) for mandatory continuous integration checks
+- ADRs: extends [ADR 0052](/decisions/0052-seed-worktrees-from-successful-main-test-baselines); supersedes [ADR 0049](/contributor-guide#review-and-merge), [ADR 0051](/decisions/0051-select-discovery-only-feature-delivery) and [ADR 0052](/decisions/0052-seed-worktrees-from-successful-main-test-baselines) for mandatory continuous integration checks
 - Detail: [docs/reference/implementation-loop.md](/reference/implementation-loop)
 - Verify: local review gate and current-main worktree tests; `composer docs-lint`
