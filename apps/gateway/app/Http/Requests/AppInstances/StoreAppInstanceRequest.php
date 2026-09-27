@@ -84,7 +84,6 @@ final class StoreAppInstanceRequest extends FormRequest
 
     public function payload(): CreateAppInstanceData
     {
-        /** @var array{node_id: int|string, name: string, project_id: int|string, root?: string, domain?: string, branch?: string, recover_source_profile?: bool} $validated */
         $validated = $this->validated();
 
         return new CreateAppInstanceData(
