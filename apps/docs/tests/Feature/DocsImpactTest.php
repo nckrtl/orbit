@@ -16,9 +16,19 @@ afterEach(function (): void {
             RecursiveIteratorIterator::CHILD_FIRST,
         );
         foreach ($iterator as $item) {
-            $item->isDir() ? rmdir($item->getPathname()) : unlink($item->getPathname());
+            if ($item->isDir()) {
+                @rmdir($item->getPathname());
+
+                continue;
+            }
+
+            @unlink($item->getPathname());
         }
-        rmdir($root);
+        @rmdir($root);
+
+        if (is_dir($root)) {
+            throw new RuntimeException("Could not remove docs impact fixture at {$root}.");
+        }
     }
     $GLOBALS['docsImpactFixtureRoots'] = [];
 });
