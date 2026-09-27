@@ -714,7 +714,9 @@ A genuine failure beside that run still gets a fixup. When the run completes, th
 
 A conflict's identity is `conflict:` plus the base branch name. A failed check's identity is `check:` plus the check run name. The check URL is not part of the identity. The Gateway stores the identity on the fixup as `fixup_problem`. Show returns it. An operator subtask leaves it null, and the cap ignores that subtask.
 
-Each cap counts only fixups created after the most recent completed subtask whose `fixup_problem` is null. With no such completed subtask since the group started, the counts include every fixup in the group, as before. Every fixup status counts, including `cancelled` and `failed`. The non-fixup subtask is appended by a person—the operator or planner—so each reset requires a human step between fixup loops. Show and the assistance reason name the counts that applied; an assistance reason identifies the reached per-problem or group cap. A non-fixup subtask that is not completed does not reset either cap.
+Each cap counts only fixups created after the most recent completed subtask whose `fixup_problem` is null. With no such completed subtask since the group started, the counts include every fixup in the group, as before. Every fixup status counts, including `cancelled` and `failed`.
+
+The non-fixup subtask is appended by a person—the operator or planner—so each reset requires a human step between fixup loops. Show and the assistance reason name the counts that applied; an assistance reason identifies the reached per-problem or group cap. For example, an identity cap adds `Orbit reached the cap of 2 fixups for conflict:main in the current window (2 counted).`; the group cap remains `Orbit already appended 3 fixups to this group.` A non-fixup subtask that is not completed does not reset either cap.
 
 Each fixup records the pull request head it was created for. The Gateway appends no new fixup while the head is still that commit. After the head changes, it appends no check fixup until every check on the new head has completed or has been pending for more than 60 minutes. A conflict does not wait for checks.
 

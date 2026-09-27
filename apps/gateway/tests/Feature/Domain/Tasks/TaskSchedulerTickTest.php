@@ -577,8 +577,8 @@ it('asks for assistance once per set of pull request problems and withdraws it w
             ->push(['check_runs' => [['name' => 'Rust agent', 'status' => 'completed', 'conclusion' => 'failure', 'html_url' => 'https://github.com/acme/orbit/runs/1']]])
             ->push(['check_runs' => [['name' => 'Rust agent', 'status' => 'completed', 'conclusion' => 'success', 'html_url' => 'https://github.com/acme/orbit/runs/2']]]),
     ]);
-    $conflictReason = 'The pull request needs attention: It conflicts with main; merge main into the task branch and push.';
-    $checkReason = 'The pull request needs attention: Check Rust agent failed: https://github.com/acme/orbit/runs/1.';
+    $conflictReason = 'The pull request needs attention: It conflicts with main; merge main into the task branch and push. Orbit reached the cap of 2 fixups for conflict:main in the current window (2 counted).';
+    $checkReason = 'The pull request needs attention: Check Rust agent failed: https://github.com/acme/orbit/runs/1. Orbit reached the cap of 2 fixups for check:Rust agent in the current window (2 counted).';
 
     app(TaskScheduler::class)->tick();
     $this->assertDatabaseHas('task_groups', ['id' => $group->id, 'status' => 'settling', 'assistance_requested' => true, 'assistance_reason' => $conflictReason]);
@@ -954,13 +954,31 @@ it('appends a check fixup without a url when the run has none', function (): voi
         ->toBe('Check Deploy failed. Do not rebase and do not force-push.');
 });
 
+it('appends a fresh conflict fixup after operator work', function (): void {
+    $group = tick_settling_group();
+    tick_spent_fixup($group, 'conflict:main');
+    tick_spent_fixup($group, 'conflict:main');
+    tick_appended_subtask($group)->update(['status' => TaskStatus::Completed]);
+    $notifier = tick_assistance_notifier();
+    $agents = tick_running_agents();
+    tick_watch_pulls([tick_open_pull(['mergeable' => false, 'mergeable_state' => 'dirty'])], ['abc123' => []]);
+
+    app(TaskScheduler::class)->tick();
+
+    expect($notifier->reasons)->toBe([])
+        ->and($group->fresh()?->assistance_requested)->toBeFalse()
+        ->and(Task::query()->where('fixup_problem', 'conflict:main')->count())->toBe(3)
+        ->and(Task::query()->where('fixup_problem', 'conflict:main')->orderByDesc('position')->first()?->status)->toBe(TaskStatus::Running)
+        ->and($agents->fetched)->toBe(['main']);
+});
+
 it('asks for assistance instead of a third fixup for the same problem', function (): void {
     $group = tick_settling_group();
     tick_spent_fixup($group, 'conflict:main');
     tick_spent_fixup($group, 'conflict:main', TaskStatus::Cancelled);
     $notifier = tick_assistance_notifier();
     tick_watch_pulls([tick_open_pull(['mergeable' => false, 'mergeable_state' => 'dirty'])], ['abc123' => []]);
-    $reason = 'The pull request needs attention: It conflicts with main; merge main into the task branch and push.';
+    $reason = 'The pull request needs attention: It conflicts with main; merge main into the task branch and push. Orbit reached the cap of 2 fixups for conflict:main in the current window (2 counted).';
 
     app(TaskScheduler::class)->tick();
     app(TaskScheduler::class)->tick();
@@ -969,6 +987,24 @@ it('asks for assistance instead of a third fixup for the same problem', function
         ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Settling)
         ->and($group->fresh()?->assistance_reason)->toBe($reason)
         ->and(Task::query()->where('fixup_problem', 'conflict:main')->count())->toBe(2);
+});
+
+it('reports only the active-window count after an operator reset', function (): void {
+    $group = tick_settling_group();
+    tick_spent_fixup($group, 'conflict:main');
+    tick_spent_fixup($group, 'conflict:main');
+    tick_appended_subtask($group)->update(['status' => TaskStatus::Completed]);
+    tick_spent_fixup($group, 'conflict:main');
+    tick_spent_fixup($group, 'conflict:main', TaskStatus::Failed);
+    $notifier = tick_assistance_notifier();
+    tick_watch_pulls([tick_open_pull(['mergeable' => false, 'mergeable_state' => 'dirty'])], ['abc123' => []]);
+    $reason = 'The pull request needs attention: It conflicts with main; merge main into the task branch and push. Orbit reached the cap of 2 fixups for conflict:main in the current window (2 counted).';
+
+    app(TaskScheduler::class)->tick();
+
+    expect($notifier->reasons)->toBe([$reason])
+        ->and($group->fresh()?->assistance_reason)->toBe($reason)
+        ->and(Task::query()->where('fixup_problem', 'conflict:main')->count())->toBe(4);
 });
 
 it('appends a conflict fixup when a different-cased problem is already at the cap', function (): void {
@@ -1450,7 +1486,6 @@ it('asks for assistance once the group has three Gateway fixups', function (): v
     tick_spent_fixup($group, 'conflict:main');
     tick_spent_fixup($group, 'check:Custom');
     tick_spent_fixup($group, 'check:Lint');
-    tick_appended_subtask($group)->update(['status' => TaskStatus::Completed]);
     $notifier = tick_assistance_notifier();
     $agents = tick_running_agents();
     tick_watch_pulls([tick_open_pull()], ['abc123' => [
