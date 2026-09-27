@@ -5,7 +5,7 @@ description: Use when an Orbit web UI change needs phone and desktop screenshots
 
 # Verifying Web UI
 
-Verify a web app change with `bin/web-verify`. The command runs `apps/web` in demo mode and drives it with Playwright. Stdout is one JSON object and nothing else. The contract is [Web verification](../../../docs/reference/web-verification.md). [ADR 0162](../../../docs/decisions/0162-verify-web-ui-changes-with-bin-web-verify.md) records the decision.
+Verify a web app change with `bin/web-verify`. The command runs `apps/web` in demo mode and drives it with Playwright. Stdout is one JSON object and nothing else. The contract is [Web verification](../../../docs/reference/web-verification.md). [ADR 0162](../../../docs/reference/web-verification.md#why-it-works-this-way) records the decision.
 
 ## Capture evidence
 

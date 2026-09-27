@@ -10,7 +10,6 @@ use App\Domain\Nodes\NodeObservation;
 use App\Domain\Nodes\NodeProvisioningIdentity;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
-use App\Domain\Nodes\Storage\EffectiveStorageRoots;
 use App\Domain\Nodes\Storage\NodeStorageRootPreparer;
 use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Shared\LifecycleStatus;
@@ -26,7 +25,7 @@ function fake_storage_preparer(): NodeStorageRootPreparer
     {
         public function inspect(Node $node, ManagedUserAccount $account, StoragePath $path): void {}
 
-        public function prepare(Node $node, ManagedUserAccount $account, EffectiveStorageRoots $roots): void {}
+        public function prepare(Node $node, ManagedUserAccount $account, StoragePath $root): void {}
     };
 }
 
@@ -465,7 +464,7 @@ describe('node storage settings', function (): void {
             ->and($inspected)
             ->toBe([])
             ->and($prepared)
-            ->toBe(['/home/orbit/apps', '/home/orbit/.orbit/worktrees']);
+            ->toBe(['/home/orbit/apps']);
     });
 
     it('leaves stored settings unchanged when preparing defaults for the last unset fails', function (): void {
@@ -473,7 +472,7 @@ describe('node storage settings', function (): void {
         {
             public function inspect(Node $node, ManagedUserAccount $account, StoragePath $path): void {}
 
-            public function prepare(Node $node, ManagedUserAccount $account, EffectiveStorageRoots $roots): void
+            public function prepare(Node $node, ManagedUserAccount $account, StoragePath $root): void
             {
                 throw new RuntimeConvergenceException(
                     step: 'node-storage-root',
@@ -605,10 +604,9 @@ function recording_storage_preparer(array &$inspected, array &$prepared): NodeSt
             $this->inspected[] = $path->value;
         }
 
-        public function prepare(Node $node, ManagedUserAccount $account, EffectiveStorageRoots $roots): void
+        public function prepare(Node $node, ManagedUserAccount $account, StoragePath $root): void
         {
-            $this->prepared[] = $roots->instance->value;
-            $this->prepared[] = $roots->worktree->value;
+            $this->prepared[] = $root->value;
         }
     };
 }

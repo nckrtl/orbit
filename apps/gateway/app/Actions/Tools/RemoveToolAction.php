@@ -33,10 +33,6 @@ final readonly class RemoveToolAction
 
     public function execute(Tool $tool): ToolActionResult
     {
-        if ($tool->protected) {
-            throw $this->failure($tool, 'tool.protected', 409, 'Protected tools cannot be removed.');
-        }
-
         [, , $manager] = $this->resolveState($tool);
 
         if (! in_array($tool->status, [ToolStatus::Installed, ToolStatus::Failed], strict: true)) {
@@ -57,10 +53,6 @@ final readonly class RemoveToolAction
     {
         $tool->refresh();
         [$node, , $manager] = $this->resolveState($tool);
-
-        if ($tool->protected) {
-            throw $this->failure($tool, 'tool.protected', 409, 'Protected tools cannot be removed.');
-        }
 
         if (! in_array($tool->status, [ToolStatus::Installed, ToolStatus::Failed], strict: true)) {
             throw $this->failure($tool, 'tool.state_invalid', 409, 'The tool is not in a removable state.');

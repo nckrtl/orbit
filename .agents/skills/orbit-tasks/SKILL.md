@@ -11,7 +11,15 @@ The Gateway Tasks engine is generic; this file defines Orbit's repository policy
 
 Start after [grill-with-docs](../grill-with-docs/SKILL.md), once the behavior is agreed and the ADRs and documentation are written on the group's branch. They are the contract that every subtask implements. Read the group's brief, ADRs, maintained documentation, and relevant code before splitting work. Look for prefactoring that makes the feature easier to build; put it first as its own subtask.
 
-Before implementation, add a documentation subtask that writes or updates the relevant maintained documentation. Record any architectural decision in an ADR, using the next available number and preserving the ADR process in `docs/decisions/README.md`. The ADRs and documentation changed against the group's base commit are the feature contract for later subtasks.
+Every group starts with a docs subtask, before any implementation subtask. Run the deterministic impact check against the group's start commit and every planned path named in the brief, including paths that do not exist yet:
+
+```bash
+bin/docs-impact --base <start-commit> --paths <planned-path> --paths <another-planned-path>
+```
+
+The start commit is the merge base with `origin/main`. Repeat `--paths` for every planned path. For `docs_required`, update the impacted pages or run the named generator. For `no_docs_change`, provide the complete JSON report as the subtask deliverable; the reviewer must confirm that the report and planned paths are complete before implementation begins. Follow the [Tasks impact-check contract](../../../docs/reference/tasks.md#run-the-docs-first-impact-check) for the report and handoff rules.
+
+Use the docs subtask to write or update the relevant maintained documentation when the report requires it. Record architectural decisions in an ADR, using the next available number and preserving the ADR process in `docs/decisions/README.md`. The ADRs and documentation changed against the group's base commit are the feature contract for later subtasks.
 
 Keep the branch's documentation, ADRs, implementation, tests, and task briefs consistent. Focus the group on one feature and order subtasks by dependency.
 

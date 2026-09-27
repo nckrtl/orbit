@@ -160,6 +160,54 @@ it('reports only lifecycle drift for an inactive unmanaged record', function ():
         ->toBe('node.lifecycle_not_active');
 });
 
+it('reports no agent-secret issue for an unmanaged node without a stored secret', function (): void {
+    $node = new Node([
+        'name' => 'operator-client',
+        'status' => LifecycleStatus::Active,
+        'platform' => 'linux',
+        'architecture' => 'x86_64',
+        'agent_secret_hash' => null,
+    ]);
+    $node->setRelation('roles', new Collection);
+
+    $report = new NodeDoctorProbe()->inspect(new DoctorNodeContext(
+        $node,
+        new NodeInspectionData(true, 'linux', 'x86_64', true, true, true, true, true),
+    ));
+
+    expect(array_map(static fn (DoctorIssueData $issue): string => $issue->code, $report->issues))
+        ->not->toContain('node.agent_secret_mismatch');
+});
+
+it('reports agent binary mismatch for a managed Node', function (): void {
+    $node = new Node([
+        'name' => 'edge',
+        'status' => LifecycleStatus::Active,
+        'platform' => 'linux',
+        'architecture' => 'amd64',
+        'wireguard_ip' => '10.44.0.2',
+        'ssh_host_fingerprint' => 'SHA256:managed',
+    ]);
+
+    $report = new NodeDoctorProbe()->inspect(new DoctorNodeContext(
+        $node,
+        new NodeInspectionData(true, 'linux', 'x86_64', true, true, true, true, false),
+    ));
+
+    expect($report->status->value)
+        ->toBe('drift')
+        ->and(array_map(static fn (DoctorIssueData $issue): string => $issue->code, $report->issues))
+        ->toContain('node.agent_binary_mismatch');
+
+    $issue = collect($report->issues)->firstWhere('code', 'node.agent_binary_mismatch');
+    expect($issue)
+        ->not->toBeNull()
+        ->and($issue->kind->value)
+        ->toBe('drift')
+        ->and($issue->summary)
+        ->toBe('Node agent binary does not match the pinned checksum.');
+});
+
 it('reports a healthy node with bounded values', function (): void {
     $node = new Node([
         'name' => 'edge',

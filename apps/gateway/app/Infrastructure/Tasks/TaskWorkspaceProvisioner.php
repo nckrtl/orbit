@@ -109,7 +109,7 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
                 $this->nodeSettings->fromStored($node->settings),
                 $account,
             );
-            $checkout = $roots->instance->append($group->app->slug, $name);
+            $checkout = $roots->append($group->app->slug, $name);
             $this->checkoutOverlap->assertAvailable($node->id, $checkout, 'instance.path_taken');
             $this->destinationGuard->assertUnoccupied($node, $checkout);
 

@@ -35,7 +35,7 @@ function orb277_tia_directory(string $root, string|false $override): string
 }
 
 /** @return array{root: string, main: string, candidate: string, path: string} */
-function orb277_gate_fixture(): array
+function orb277_gate_fixture(string $changedProject = 'apps/gateway'): array
 {
     $root = temporaryPath('orbit-builder-gate-', 6);
 
@@ -46,11 +46,18 @@ function orb277_gate_fixture(): array
         mkdir($root.'/'.$project, 0o700, true);
         file_put_contents($root.'/'.$project.'/.gitkeep', '');
     }
+    foreach (orb277_projects() as $project) {
+        mkdir($root.'/'.$project.'/vendor/bin', 0o700, true);
+        file_put_contents($root.'/'.$project.'/vendor/bin/pest', "#!/usr/bin/env sh\nexit 0\n");
+        chmod($root.'/'.$project.'/vendor/bin/pest', 0o700);
+    }
 
     copy(base_path('../../bin/review-check'), $root.'/bin/review-check');
+    file_put_contents($root.'/bin/docs-impact', "#!/usr/bin/env sh\nexit 0\n");
     copy(base_path('tests/Fixtures/BuilderGate/composer'), $root.'/tooling/composer');
     file_put_contents($root.'/bin/tia-cache', "#!/usr/bin/env sh\n\nexit 0\n");
     chmod($root.'/bin/review-check', 0o700);
+    chmod($root.'/bin/docs-impact', 0o700);
     chmod($root.'/bin/tia-cache', 0o700);
     chmod($root.'/tooling/composer', 0o700);
 
@@ -66,10 +73,14 @@ function orb277_gate_fixture(): array
 
     $main = trim((new Process(['git', 'rev-parse', 'HEAD'], $root))->mustRun()->getOutput());
 
-    mkdir($root.'/apps/gateway/app', 0o700, true);
-    mkdir($root.'/apps/gateway/tests', 0o700, true);
-    file_put_contents($root.'/apps/gateway/app/Example.php', "<?php\n\nfinal class Example {}\n");
-    file_put_contents($root.'/apps/gateway/tests/ExampleTest.php', "<?php\n\nit('exists', fn () => expect(true)->toBeTrue());\n");
+    if ($changedProject === 'apps/gateway') {
+        mkdir($root.'/apps/gateway/app', 0o700, true);
+        mkdir($root.'/apps/gateway/tests', 0o700, true);
+        file_put_contents($root.'/apps/gateway/app/Example.php', "<?php\n\nfinal class Example {}\n");
+        file_put_contents($root.'/apps/gateway/tests/ExampleTest.php', "<?php\n\nit('exists', fn () => expect(true)->toBeTrue());\n");
+    } else {
+        file_put_contents($root.'/'.$changedProject.'/changed.txt', 'changed');
+    }
 
     foreach ([
         ['git', 'checkout', '--quiet', '-b', 'orb-277-candidate'],
@@ -164,10 +175,43 @@ describe('Builder gate', function (): void {
             ->toHaveKey('warning', $receipt['warnings'][0]['message']);
         expect(orb277_check($receipt, 'apps/cli', 'test:affected'))->not->toHaveKey('warning');
         expect(orb277_check($receipt, 'apps/gateway', 'check'))->not->toHaveKey('warning');
+        expect(collect($receipt['checks'])->first(static fn (array $check): bool => $check['project'] === 'apps/gateway'
+            && $check['command'] === ['vendor/bin/pest', 'tests/Unit/Architecture']))
+            ->toMatchArray(['exit_code' => 0]);
         expect($run['process']->getOutput())
             ->toContain('[apps/gateway] WARNING: composer test:affected selected no tests', 'Selection warnings: 1')
             ->not->toContain('[apps/cli] WARNING');
     });
+
+    it('runs every directory-scanning architecture test for every changed PHP project', function (string $project, array $architecturePaths): void {
+        $fixture = orb277_gate_fixture($project);
+        $receipt = orb277_run_gate($fixture, '')['receipt'];
+        $architectureChecks = collect($receipt['checks'])
+            ->filter(static fn (array $check): bool => $check['project'] === $project)
+            ->filter(static fn (array $check): bool => $check['command'][0] === 'vendor/bin/pest');
+
+        expect($architectureChecks->pluck('command')->all())
+            ->toBe(array_map(static fn (string $path): array => ['vendor/bin/pest', $path], $architecturePaths))
+            ->and($architectureChecks->pluck('exit_code')->unique()->all())
+            ->toBe([0]);
+    })->with([
+        ['apps/cli', ['tests/Feature/CommandSurfaceTest.php']],
+        ['apps/gateway', [
+            'tests/Unit/Architecture',
+            'tests/Feature/Infrastructure/AppInstances/ConfiguredOriginReadTest.php',
+            'tests/Feature/Infrastructure/Caddy/CaddyPublicationLockTest.php',
+        ]],
+        ['apps/e2e', [
+            'tests/Unit/E2E/ProofFixtureContractTest.php',
+            'tests/Unit/E2E/ProofFixtureShellContractTest.php',
+        ]],
+        ['packages/php-sdk', [
+            'tests/Unit/SuccessRequestIdBoundaryTest.php',
+            'tests/Unit/RepositoryGuidanceTest.php',
+            'tests/Unit/Requests/Workspaces/WorkspaceRequestsTest.php',
+            'tests/Unit/Requests/Deployments/DeploymentRequestsTest.php',
+        ]],
+    ]);
 
     it('records no selection warning when the changed project executes tests or the candidate is main', function (): void {
         $fixture = orb277_gate_fixture();

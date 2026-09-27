@@ -31,7 +31,6 @@ use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Nodes\NodeRoleValidationException;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\ConfiguredStoragePathValidator;
-use App\Domain\Nodes\Storage\EffectiveStorageRoots;
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Nodes\Storage\NodeStorageRootPreparer;
 use App\Domain\Nodes\Storage\ProtectedPathCatalog;
@@ -403,7 +402,7 @@ it('passes a nondefault managed account into every baseline prerequisite command
             public function prepare(
                 Node $node,
                 ManagedUserAccount $account,
-                EffectiveStorageRoots $roots,
+                StoragePath $root,
             ): void {}
         },
         new ConfiguredStoragePathValidator(
@@ -1341,7 +1340,7 @@ function app_dev_role_baseline(array &$events): AppDevRoleBaseline
             public function prepare(
                 Node $node,
                 ManagedUserAccount $account,
-                EffectiveStorageRoots $roots,
+                StoragePath $root,
             ): void {}
         },
         new ConfiguredStoragePathValidator(

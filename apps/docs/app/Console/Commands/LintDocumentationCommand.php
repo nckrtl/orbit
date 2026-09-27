@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Documentation\DocsImpact;
 use App\Documentation\DocumentationLintPolicy;
 use HardImpact\Librarian\Linting\Finding;
+use HardImpact\Librarian\Linting\FindingSeverity;
 use HardImpact\Librarian\Linting\Linter;
 use HardImpact\Librarian\Linting\LintResult;
 use Illuminate\Console\Command;
@@ -33,6 +35,26 @@ final class LintDocumentationCommand extends Command
 
         $strict = (bool) $this->option('strict');
         $result = $policy->apply($linter->lint());
+        $docsPath = config('librarian.path');
+        if (! is_string($docsPath)) {
+            $this->error('The documentation repository path is not configured.');
+
+            return self::FAILURE;
+        }
+        $root = dirname($docsPath);
+        $coverageFindings = new DocsImpact($root)->coverageFindings();
+        if ($coverageFindings !== []) {
+            $result = new LintResult([...$result->findings, ...array_map(
+                static fn (array $finding): Finding => new Finding(
+                    $finding['page'],
+                    null,
+                    FindingSeverity::Error,
+                    'orbit.docs_covers',
+                    "{$finding['message']} Pattern: {$finding['pattern']}",
+                ),
+                $coverageFindings,
+            )]);
+        }
 
         if ($format === 'text') {
             $this->renderText($result);

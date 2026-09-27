@@ -131,7 +131,6 @@ describe('tool reads', function (): void {
             'manager',
             'package',
             'version_constraint',
-            'protected',
             'status',
             'installed_version',
             'failed_operation',
@@ -169,7 +168,6 @@ describe('tool writes', function (): void {
             'manager',
             'package',
             'version_constraint',
-            'protected',
             'status',
             'installed_version',
             'failed_operation',
@@ -614,28 +612,6 @@ describe('tool lifecycle failure contracts', function (): void {
         'installed version unparseable' => ['release-2.4', null, 409, 'tool.installed_version_unparseable'],
         'installed version violates constraint' => ['2.0.0', null, 409, 'tool.installed_version_constraint_violated'],
     ]);
-
-    it('rejects protected removal without deleting the tool', function (): void {
-        $tool = $this->node
-            ->tools()
-            ->create([
-                'tool_manager_id' => $this->managerRecord->id,
-                'package' => 'jq',
-                'status' => ToolStatus::Installed,
-                'protected' => true,
-            ]);
-
-        assert_tools_api_error(
-            $this->deleteJson('/api/v1/tools/'.$tool->id),
-            409,
-            'tool.protected',
-            'manager_failed',
-            'remove',
-            $tool->id,
-        );
-
-        $this->assertModelExists($tool);
-    });
 
     it('rejects an installed unmanaged package without adopting it', function (): void {
         $this->toolManager->installedVersions = ['1.7.1'];

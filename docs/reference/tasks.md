@@ -1,6 +1,9 @@
 ---
 title: "Tasks"
 description: "How the optional Gateway Tasks extension coordinates task groups, subtasks, typed deliverables, Project checks, and their lifecycle."
+covers:
+  - "apps/gateway/app/Domain/Tasks/**"
+  - "bin/review-check"
 ---
 
 # Tasks
@@ -9,12 +12,34 @@ This page describes the optional Gateway `tasks` extension. It coordinates featu
 
 [ADR 0103](/decisions/0103-absorb-commander-tasks-as-a-gateway-extension) owns the extension boundary. [ADR 0110](/decisions/0110-route-task-sessions-with-laravel-ai-jev) owns session routing. [ADR 0113](/decisions/0113-gate-task-completion-on-validation-and-review) owns completion gates. [ADR 0122](/decisions/0122-hold-task-groups-in-backlog-until-ready) owns Backlog and Todo. [ADR 0178](/decisions/0178-run-project-agnostic-tasks-without-a-planner) defines the generic engine and removes the planner.
 
-[ADR 0160](/decisions/0160-push-each-approved-subtask-and-remove-the-finished-workspace-clone) owns the push after each approval and deletion of the workspace clone. [ADR 0164](/decisions/0164-heal-a-settling-pull-request-with-a-fixup-subtask) owns the fixup that returns a settling group to running. [ADR 0171](/decisions/0171-reset-fixup-caps-after-operator-work) owns when its fixup caps reset. [ADR 0165](/decisions/0165-record-per-thread-token-metrics) owns the per-thread token split. [ADR 0172](/decisions/0172-count-every-t3-model-call-in-thread-metrics) owns complete T3 per-call collection and gap handling. [ADR 0167](/decisions/0167-resume-a-pi-turn-interrupted-by-a-server-restart) owns recovery of a Pi turn that a server restart interrupted. [ADR 0169](/decisions/0169-start-each-subtask-review-in-a-fresh-thread) owns the fresh reviewer thread and review packet.
-[ADR 0170](/decisions/0170-edit-todo-subtasks-after-a-group-starts) changes the rule in ADR 0122 that limits subtask editing to Backlog. It defines edits and cancellation for Todo subtasks after a group starts. It preserves [ADR 0133](/decisions/0133-verify-typed-subtask-deliverables-at-handoff)'s deliverable contract.
+[ADR 0160](/decisions/0160-push-each-approved-subtask-and-remove-the-finished-workspace-clone) owns the push after each approval and deletion of the workspace clone. [ADR 0164](/decisions/0164-heal-a-settling-pull-request-with-a-fixup-subtask) owns the fixup that returns a settling group to running. [ADR 0171](/decisions/0171-reset-fixup-caps-after-operator-work) owns when its fixup caps reset.
+
+[ADR 0165](/decisions/0165-record-per-thread-token-metrics) owns the per-thread token split. [ADR 0172](/decisions/0172-count-every-t3-model-call-in-thread-metrics) owns complete T3 per-call collection and gap handling. [ADR 0167](/decisions/0167-resume-a-pi-turn-interrupted-by-a-server-restart) owns recovery of a Pi turn that a server restart interrupted. [ADR 0169](/decisions/0169-start-each-subtask-review-in-a-fresh-thread) owns the fresh reviewer thread and review packet.
+[ADR 0170](/decisions/0170-edit-todo-subtasks-after-a-group-starts) changes the rule in ADR 0122 that limits subtask editing to Backlog. It defines edits and cancellation for Todo subtasks after a group starts. It preserves [ADR 0133](/decisions/0133-verify-typed-subtask-deliverables-at-handoff)'s deliverable contract. [ADR 0175](/decisions/0175-docs-impact-check-in-orbit-repo) owns the deterministic docs-impact report and docs-first gate.
 
 The extension is off until an authorized Gateway caller enables it. There is no web UI for create. Agents create groups through the [MCP server](/reference/mcp). The [`tasks` CLI family](/cli/tasks) runs every operation on this page from a terminal when MCP is unavailable.
 
 [ADR 0112](/decisions/0112-isolate-agent-threads-behind-drivers) defines the `AgentThread` and `AgentDriver` boundary. Orbit stores persistent conversations and delegates runtime communication to a driver. T3 is the first driver.
+
+## Run the docs-first impact check
+
+Every Orbit task group starts with a docs subtask before implementation. It updates documentation required by the impact report, or provides an honest `no_docs_change` report for reviewer confirmation. Implementation waits for that handoff.
+
+Run the check against the group's start commit and every path named in the brief, including paths that do not exist yet:
+
+```bash
+bin/docs-impact --base <start-commit> --paths <planned-path> --paths <another-planned-path>
+```
+
+The start commit is the merge base with `origin/main`. Repeat `--paths` for each planned path. The check combines them with paths changed in the base comparison and prints stable JSON. Orbit's task check runs the impact check against the candidate diff from the group's start commit at every handoff. For local investigation, run `bin/docs-impact --base <start-commit>` to inspect the current full diff.
+
+The extractor reports API operations and schemas, CLI signatures and options, configuration and environment keys, error and Doctor codes, migrations, scheduled and Artisan commands, and MCP tools. It maps each surface to its owning page or to the generator that already documents it. It also matches changed paths against optional `covers:` globs in documentation frontmatter. Test files can match coverage globs, but their source text is not parsed as product behavior. Docs-lint checks each glob for safety and a tracked-path match.
+
+The JSON report includes the base and paths, impacted pages and reasons, detected surfaces, surfaces handled by generators, errors, and the verdict. `docs_required` means a page or generator output needs work. `no_docs_change` means the deterministic report found none; a reviewer still confirms that the planned paths and report are complete.
+
+For `docs_required`, update the listed pages or run the named generator and include the result in the handoff. For `no_docs_change`, include the complete JSON report as evidence. The reviewer checks the report and confirms the planned paths without requiring a prose justification or a new ADR.
+
+At every handoff, `bin/review-check` fails with the list of impacted pages that the candidate diff did not change. A reviewer-confirmed exception requires a matching `page: reason` line in `docs/.docs-unaffected`, committed in that candidate diff. The exception does not bypass generator checks. `covers:` remains optional for pages not yet on the coverage ratchet; the ratchet may only grow, and this page is its initial entry. Jev is out of scope for this first version.
 
 ## Enable the extension
 
@@ -873,7 +898,7 @@ After Coder review and PR merge, an authorized Gateway caller runs `tasks:comple
 
 Cancel and complete remove the workspace clone on the Node. The forced Instance remover deletes the checkout directory recorded on the Instance and writes a removal record whose `source_finalization` step deleted that directory. This includes a non-visitable task workspace that stayed `source_resolved` because it has no Route. The Instance row is deleted only after that record is complete. A successful cancel or complete leaves no checkout at the recorded path. [ADR 0160](/decisions/0160-push-each-approved-subtask-and-remove-the-finished-workspace-clone) records the decision.
 
-The same removal deletes that group's Incus bridge worktree on the Node. The bridge is the linked worktree `<worktree root>/task-{id}-e2e` on branch `task-{id}-e2e` of the primary checkout registered for the repository. [ADR 0135](/decisions/0135-run-incus-topologies-for-task-workspace-clones-through-a-bridge-worktree) records it. `RemoveTaskWorkspaceAction` calls `RemoteTaskBridgeWorktreeRemover` before removing the task checkout. Removal deletes the bridge worktree only when its path and branch both match the group, including when the clone is checked out on another branch. A user's worktree stays. A missing bridge is not a failure.
+The same removal deletes that group's Incus bridge worktree on the Node. The bridge is the linked worktree `<worktree root>/task-{id}-e2e` on branch `task-{id}-e2e` of the primary checkout registered for the repository. [ADR 0135](/reference/incus-topologies#task-workspace-clones) records it. `RemoveTaskWorkspaceAction` calls `RemoteTaskBridgeWorktreeRemover` before removing the task checkout. Removal deletes the bridge worktree only when its path and branch both match the group, including when the clone is checked out on another branch. A user's worktree stays. A missing bridge is not a failure.
 
 Branch `task-{id}-e2e` is deleted when no worktree has it checked out. A worktree on that branch at another path stays, and so does the branch. The `refs/orbit/e2e-bridge/task-{id}` ref is deleted either way. The sweep retries this with the checkout. Removal does not release an Incus topology the bridge still holds, so release that topology before the group ends.
 

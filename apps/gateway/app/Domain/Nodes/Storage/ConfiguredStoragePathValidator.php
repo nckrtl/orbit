@@ -44,13 +44,13 @@ final readonly class ConfiguredStoragePathValidator
         ?NodeSettingsData $settings,
         Node $node,
         ManagedUserAccount $account,
-    ): EffectiveStorageRoots {
+    ): StoragePath {
         $this->validateGrammar($settings);
-        $roots = $this->roots->resolveApps($settings, $account);
+        $root = $this->roots->resolveApps($settings, $account);
 
-        $this->assertAllowedRoot($roots->instance, $account, $node, 'apps');
+        $this->assertAllowedRoot($root, $account, $node, 'apps');
 
-        return $roots;
+        return $root;
     }
 
     private function assertAllowedRoot(
@@ -59,7 +59,7 @@ final readonly class ConfiguredStoragePathValidator
         Node $node,
         string $field,
     ): void {
-        if ($this->catalog->isProtected($path, $account, $field)) {
+        if ($this->catalog->isProtected($path, $account)) {
             throw new ResourceOperationException(
                 errorCode: 'node.settings_path_protected',
                 message: "The {$field} storage path is protected.",

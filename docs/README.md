@@ -49,7 +49,7 @@ These pages explain commands and managed services.
 These pages help contributors design, verify, and maintain Orbit.
 
 - [CLI design standard](/reference/cli-ux) guides command authors and reviewers through input, output, consent, terminal behavior, and verification.
-- Development reference pages describe the [Incus topology registry](/reference/incus-topologies), [Proof plans](/reference/proof-plans), and the [Topology snapshot](/reference/topology-snapshot).
+- Development reference pages describe the [Incus topology registry](/reference/incus-topologies) and the [Topology snapshot](/reference/topology-snapshot).
 - [Solutions](/solutions/README) collects useful fixes and lessons from past
   work.
 
