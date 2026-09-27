@@ -1,224 +1,157 @@
 ---
 title: "Production release layout"
 description: "How a production Instance stores deploy steps, separates releases from persistent files, deploys a branch, and rolls back retained code."
+covers:
+  - apps/gateway/app/Domain/AppInstances/Deployment/**
+  - apps/gateway/app/Actions/AppInstances/{Deploy,Rollback}AppInstanceAction.php
+  - apps/gateway/app/Actions/AppInstances/{AppInstanceDeploymentConfigResolver,UpdateAppInstanceAction,ListAppInstanceReleasesAction,ListAppInstanceDeploymentsAction}.php
+  - apps/gateway/app/Actions/AppInstances/*AppInstanceDeployStep*Action.php
+  - apps/gateway/app/Infrastructure/AppInstances/RemoteProductionDeployment.php
+  - apps/gateway/app/Http/Streaming/**
+  - apps/gateway/app/Http/Controllers/Api/{AppInstanceDeploymentsController,AppInstanceDeployStepsController,AppInstanceReleasesController,AppInstanceRollbacksController}.php
+  - apps/gateway/app/Models/{AppInstanceDeployment,AppInstanceDeployStep}.php
 ---
 
 # Production release layout
 
-This page tells an operator how a production Instance stores named deploy steps and changes its deployment branch. It describes how that Instance separates replaceable code from persistent environment configuration and optional SQLite data. It covers deployment of the recorded branch and rollback of retained code. Cloning produces each production Instance, and the first deployment produces the release layout. [ADR 0046](/decisions/0046-own-production-release-deployment-in-orbit) owns the production release and serving-layout boundary. [ADR 0073](/decisions/0073-store-deploy-steps-as-named-appinstance-records) owns deploy-step records and the branch update.
+An Instance on an `app-prod` Node serves code from a release. The Gateway deploys the Instance's branch into a fresh release, runs the Instance's deploy steps, and switches the `current` link atomically. Environment configuration and an optional SQLite database live outside the releases, so they survive each deployment. [Cloning](/reference/appinstance-cloning) creates every production Instance, and its first deployment selects the first release. [`instance`](/cli/instance#orbit-instancedeploy) lists the commands.
 
-Removing a deploy step requires consent. The prompt names the Instance and step and defaults to No; `--yes` confirms without prompting. JSON and noninteractive calls require `--yes`. Read commands show complete tables with explicit empty results; create and update commands show the recorded step details.
+The `app-prod` role decides this layout. `APP_ENV` does not; see [Laravel mode](/reference/environment-variables#laravel-mode).
 
-## Read the production home
+## The production home
 
-The Gateway prepares each new production home with these paths before it publishes serving state.
+Each production Instance has a home, `/home/<production-user>`, with these paths.
 
 | Path | Purpose |
 | --- | --- |
-| `releases/` | Contains retained, replaceable code releases owned by the production Instance. |
-| `.env` | Holds the persistent environment file outside every release. |
-| `database.sqlite` | Holds the optional persistent SQLite database when the operating agent configures or supplies one. Layout preparation does not create this file. |
-| `current` | Selects one release through a symbolic link. It is absent until Orbit selects code. |
+| `releases/<name>/` | One retained release: a Git checkout of the deployed branch. |
+| `.env` | The environment file. Each release holds a `.env` link to it. |
+| `database.sqlite` | An optional SQLite database. Orbit keeps the path but does not create the file. |
+| `current` | A link to the selected release. It is absent until the first deployment. |
 
-Each prepared release contains a `.env` symbolic link that resolves to the production home's `.env` file. Production creation stages initial source under `releases/` and leaves `current` absent. The explicit first deployment selects code later. Staged source does not become serving state merely because it exists.
+A clone leaves the home prepared, with no `current` link. The application must point its SQLite configuration at `<home>/database.sqlite` itself. Orbit has no placeholder for that path. [Cloning](/reference/appinstance-cloning) describes how to seed the file.
 
-Orbit keeps `database.sqlite` at the production-home path. The operating agent must configure the application to use that path. Orbit provides no database-path environment placeholder and does not infer or rewrite a stored literal database value. The [Instance cloning reference](/reference/appinstance-cloning) describes optional SQLite seeding into this path.
+The web root is the Instance root, or else the Project root, inside `current`. A root such as `public` serves `<home>/current/public`. Caddy resolves the `current` link before it passes a script path to PHP-FPM, so a request after a switch loads its PHP files from the new release.
 
-## Configure deploy steps
+## Deploy steps
 
-The Gateway stores each deploy step as a named record on the production Instance. The Gateway does not start a deployment when it stores, lists, or removes a step.
+A deploy step is a named command that runs during a deployment. Each production Instance stores its own steps. Storing a step does not start a deployment.
 
-Each record uses these fields.
+| Field | Contract |
+| --- | --- |
+| `name` | Unique within the Instance. 1 through 63 lowercase letters, digits, or hyphens. It starts and ends with a letter or digit. |
+| `phase` | `before_activation` (the default) or `after_activation`. |
+| `command` | Non-empty UTF-8 of at most 16 KiB, without a NUL byte. |
+| `timeout_seconds` | 1 through 900. The default is 300. |
 
-| Field | Type | Contract |
-| --- | --- | --- |
-| `name` | string | Unique within the Instance. 1 through 63 lowercase letters, digits, or hyphens. A name starts and ends with a letter or digit. |
-| `phase` | string | `before_activation` or `after_activation`. Create defaults to `before_activation`. |
-| `command` | string | Nonempty UTF-8 command of at most 16 KiB with no NUL byte. The operating agent owns this command. |
-| `timeout_seconds` | integer | Timeout from 1 through 900 seconds. Create defaults to 300 seconds. |
-
-The Gateway places an unplaced step at the end of its phase. Placement names one existing step in the same phase with `before` or `after`. The two placement fields are exclusive. A production Instance may own at most 32 steps. The sum of timeouts, including defaulted values, cannot exceed 3,600 seconds. The Gateway enforces those limits on every create, update, and destroy.
-
-The Gateway refuses a duplicate name, a placement that names an unknown step or a step in another phase, a thirty-third step, a timeout over 900 seconds, or a total over 3,600 seconds, and it stores no change. The Gateway uses the Instance's current Node-access authorization for every deploy-step request and refuses a non-production Instance. Authorized reads return commands, but the Gateway keeps command text out of Activity records, validation errors, and generic diagnostics.
+A new step goes to the end of its phase. `before` or `after` places it next to another step of the same phase. The two fields are exclusive. An Instance has at most 32 steps, and their timeouts add up to at most 3,600 seconds. The Gateway refuses a change that breaks a rule and stores nothing.
 
 | Request | Result |
 | --- | --- |
-| `GET /api/v1/instances/{instance}/deploy-steps` | Returns the step records in phase and placement order. An Instance with no steps returns an empty array. |
-| `POST /api/v1/instances/{instance}/deploy-steps` | Creates one step. The body requires `name` and `command` and accepts `phase`, `timeout_seconds`, and exclusive `before` or `after`. |
-| `PATCH /api/v1/instances/{instance}/deploy-steps/{step}` | Updates the named step. The body may change `command`, `phase`, `timeout_seconds`, and exclusive `before` or `after`. |
-| `DELETE /api/v1/instances/{instance}/deploy-steps/{step}` | Destroys the named step. Remaining steps keep their relative order. |
+| `GET /api/v1/instances/{instance}/deploy-steps` | The steps in phase and placement order. |
+| `POST /api/v1/instances/{instance}/deploy-steps` | Creates one step. Requires `name` and `command`. Accepts `phase`, `timeout_seconds`, and `before` or `after`. |
+| `PATCH /api/v1/instances/{instance}/deploy-steps/{name}` | Changes `command`, `phase`, `timeout_seconds`, or the placement. |
+| `DELETE /api/v1/instances/{instance}/deploy-steps/{name}` | Removes the step. The others keep their order. |
 
-The `{step}` path segment is the step's unique name.
+The branch lives on the Instance. `PATCH /api/v1/instances/{instance}` with `branch` sets it. Without one, a deployment uses the Instance's selected branch. A Project default change does not change it.
 
-## Change the deployment branch
-
-The Gateway stores the deployment branch on the production Instance. The Gateway does not change deploy steps or start a deployment when it stores a branch.
-
-The CLI's human result shows the accepted deployment branch alongside the selected source branch. The JSON Instance response keeps `selected_branch` as the source branch; it does not expose the stored deployment setting.
-
-| Request | Result |
-| --- | --- |
-| `PATCH /api/v1/instances/{instance}` | Accepts `branch`, a Git branch name accepted by Orbit's branch validator. A later Project default change does not replace this instance-owned value. |
-
-The Gateway refuses a development Instance with a bounded conflict before it stores a branch. The same Node-access authorization as deploy-step mutations applies.
+Deploy-step and branch changes need an access grant to the Instance's Node. The Gateway refuses them for an Instance that is not a production Instance with `deployment_config.unavailable` (409). Activity and errors never contain a step command.
 
 ## Use the deployment API
 
-An authorized client starts a deployment or code rollback synchronously and can inspect the retained releases before or after an interrupted request.
+A deployment and a rollback run synchronously and stream their progress.
 
-| Request | Input and response |
-| --- | --- |
-| `POST /api/v1/instances/{instance}/deploy` | Accepts only an empty JSON object and returns deployment events as `application/x-ndjson`. |
-| `POST /api/v1/instances/{instance}/rollback` | Accepts only `release`, the retained release name to select, and returns rollback events as `application/x-ndjson`. |
-| `GET /api/v1/instances/{instance}/releases` | Returns the present retained release names as `releases` and the nullable current selection as `selected_release`. Retained releases are not deployment history; see [Deployment history](#deployment-history) for that record. |
+| Request | Body | Result |
+| --- | --- | --- |
+| `POST /api/v1/instances/{instance}/deploy` | `{}` | Deploys the Instance's branch. |
+| `POST /api/v1/instances/{instance}/rollback` | `{"release": "<name>"}` | Selects one retained release. |
+| `GET /api/v1/instances/{instance}/releases` | none | `releases`, the retained release names, and `selected_release`, which can be null. |
 
-## Deployment history
-
-The Gateway records one deployment row per `instance:deploy` or `instance:rollback` run: a write when the run starts and a write when it finishes. It keeps the last 50 rows per Instance and drops older ones.
-
-Each row holds `app_instance_id`, `release`, `branch`, `commit`, `started_at`, `finished_at`, `duration_seconds`, `status` (`running`, `succeeded`, or `failed`), `failed_step`, `error_code`, `selected_release`, `triggered_by` (the calling Node's name), and `events` (the phase and output lines the run streamed, capped so one noisy step cannot grow a row without bound).
-
-| Request | Result |
-| --- | --- |
-| `GET /api/v1/instances/{instance}/deployments` | Returns recorded deployments for that Instance, newest first, without `events`. |
-| `GET /api/v1/deployments/{deployment}` | Returns one recorded deployment with `events`. |
-
-## Use the PHP SDK
-
-The PHP software development kit (SDK) exposes typed create, list, update, and destroy operations for deploy steps on these same routes. It also exposes an Instance update for the branch, deploy, rollback, retained-release list, and deployment-history list and show. Deploy-step, branch, and retained-release operations keep the ordinary JSON request, envelope, error, and response transport. A step create omits `timeout_seconds` when the caller does not supply it. A deployment sends an empty JSON object. A rollback sends only `release`. List and show reads remain bodyless.
-
-Deploy and rollback return a closeable stream of typed phase, output, and result events. The SDK reads newline-delimited JSON (NDJSON) as the caller advances the stream and handles lines split across arbitrary HTTP chunks. Before it yields an event, it validates the event fields, encoded and decoded limits, continuous sequence, matching request identity, and base64 output encoding. It reports success only when one successful result is the final event, and it rejects malformed or truncated streams without reporting success.
-
-The caller closes the stream when it stops before the terminal result. Closing the stream also closes the HTTP response so the Gateway can observe cancellation. The SDK does not retry the HTTP request or replay stream events. Deploy and rollback keep the connector's TLS verification and redirect policy and use bounded transport timeouts that cover the Gateway's accepted operation deadline.
-
-Request validation and Node-access authorization finish before a deployment stream opens. A refusal at that boundary uses the ordinary JSON error envelope. After admission, each newline-delimited JSON (NDJSON) line is one event with a maximum encoded size of 32 KiB. Every event contains `type`, a monotonically increasing `sequence`, and the request's `request_id`.
+The Gateway validates the request and the access grant before it opens the stream. A refusal there uses the normal JSON error envelope. After that, the response is `application/x-ndjson`. Each line is one event of at most 32 KiB with `type`, an increasing `sequence`, and the `request_id`.
 
 | Event type | Fields |
 | --- | --- |
-| `phase` | `phase` identifies `source_preparation`, `environment_sync`, `before_activation`, `activation`, `php_refresh`, `after_activation`, or `rollback`. `step_name` is present only for a named `before_activation` or `after_activation` step. Other phase events omit it. |
-| `output` | `stream` is `stdout` or `stderr`. `data_base64` carries at most 16 KiB of decoded bytes so arbitrary application output remains valid NDJSON. |
-| `result` | `status` is `succeeded` or `failed`. `failed_step`, `error_code`, and `selected_release` are nullable. This event is the final line. |
+| `phase` | `phase` is `source_preparation`, `environment_sync`, `before_activation`, `activation`, `php_refresh`, `after_activation`, or `rollback`. `step_name` names a deploy step. |
+| `output` | `stream` is `stdout` or `stderr`. `data_base64` holds at most 16 KiB of output. |
+| `result` | `status` is `succeeded` or `failed`, with `failed_step`, `error_code`, and `selected_release`, each nullable. This is always the last line. |
 
-A succeeded result includes `selected_release` and sets `failed_step` and `error_code` to null. A failed result includes `failed_step` and `error_code`; `selected_release` is null when no release remains selected.
+`failed_step` names the boundary that failed: `preparation`, `environment`, `before_activation`, `activation`, `cache_refresh`, `after_activation`, `rollback_selection`, or `operation`. An error after the stream opens, such as a non-production Instance, ends the stream with a failed `result` and no second HTTP error.
 
-## Use deployment commands
+The Gateway flushes output while a command runs. Before each phase event, it writes one whitespace byte every 10 milliseconds for 250 milliseconds. That lets it notice a closed connection through Caddy and PHP-FPM. It notices a disconnect only when it writes, so a silent command can run until it writes, exits, or times out. Then the Gateway starts no further step and sends no result. It never replays events or rolls back by itself.
 
-The CLI sends each deployment operation through the typed PHP SDK. It does not run an application command, Secure Shell (SSH) command, or deployment step on the operator's machine.
+## Deploy
 
-| Command | Result |
+A deployment reads the branch and the steps once, when it starts. Then it runs these phases in order.
+
+1. **Source preparation.** The Gateway clones the repository into a new release as the production user and checks out the latest commit of the branch. A branch that moves later does not change this release.
+2. **Environment sync.** The Gateway writes the stored configuration into `<home>/.env`, as [synchronization](/reference/environment-variables#synchronize) does.
+3. **Before activation.** The Gateway runs each `before_activation` step in order, from the new release, as the production user, with a non-interactive shell.
+4. **Activation.** The Gateway replaces `current` atomically with a link to the new release.
+5. **PHP refresh.** For a PHP Instance, the Gateway refreshes the Instance's PHP-FPM pool and waits until it finishes.
+6. **After activation.** The Gateway runs each `after_activation` step in order.
+
+Orbit adds no command of its own: no migration, cache clear, dependency install, asset build, health check, or restart. With no steps, a deployment runs no application command. A request during the switch gets either the old release or the new one.
+
+Each step has its own timeout. A timeout stops the step's process group and every later step. The whole deployment has a deadline of the step timeouts plus 900 seconds. It never exceeds the request's 570-second command deadline. When a deadline stops the run, the error code is `deployment.deadline_exceeded`.
+
+## Failures
+
+The failed boundary decides which release stays selected.
+
+| Failed boundary | Selected release |
 | --- | --- |
-| `orbit instance:deploy-step:create INSTANCE NAME --command=COMMAND` | Records a step at the end of `before_activation`. Add `--phase`, `--timeout=SECONDS`, and exclusive `--before=NAME` or `--after=NAME` to select the phase, timeout, and placement. Add `--json` to return the stored step and its `request_id`. |
-| `orbit instance:deploy-step:list INSTANCE` | Lists the steps in phase and placement order. Add `--json` to return those steps and the `request_id` as one JSON object. |
-| `orbit instance:deploy-step:update INSTANCE NAME` | Changes the named step. Add `--command`, `--phase`, `--timeout=SECONDS`, and exclusive `--before=NAME` or `--after=NAME`. Add `--json` to return the stored step and its `request_id`. |
-| `orbit instance:deploy-step:destroy INSTANCE NAME` | Removes the named step. Add `--json` to return the destroyed step and its `request_id`. |
-| `orbit instance:update INSTANCE --branch=BRANCH` | Changes the deployment branch without changing steps. Add `--json` to return the Instance and its `request_id`. |
-| `orbit instance:show INSTANCE` | Shows the Instance and prints its deploy steps in phase and placement order. Add `--json` to include those steps in the Instance object. |
-| `orbit instance:deploy INSTANCE` | Starts an explicit deployment and renders phase, output, and result events as they arrive. Add `--json` to write those same events as newline-delimited JSON (NDJSON), including a failed `result`. |
-| `orbit instance:rollback INSTANCE --release=NAME` | Selects one retained release and renders rollback events as they arrive. Add `--json` to write those same events as NDJSON, including a failed `result`. |
-| `orbit instance:release:list INSTANCE` | Lists retained release names, the current selection, and the `request_id`. Add `--json` to return those values as one JSON object. |
+| Source preparation, environment sync, or a `before_activation` step | The earlier release, or none before the first deployment. |
+| PHP refresh or an `after_activation` step | The new release. |
 
-Human deploy and rollback output shows a progress tree. The phases the Gateway always sends appear up front; named deploy steps and the PHP cache refresh phase reveal only when their phase starts. Glyphs and color show waiting, running, success, failure, and not-reached states, and active indicators alternate while work is in progress. Standard output and standard error from application commands appear labeled and escaped, and print above the tree without redrawing it, while their step runs, so application output cannot become terminal control input.
+Orbit never undoes the effects of a step, of the environment sync, or of data changes. You decide how to recover.
 
-On failure the tree marks the last reached step as failed, with the error code shown under it, even when the Gateway's failed boundary has no step of its own (an activation or cache-refresh failure during a rollback, for example). Every later step shows as not reached, and the footer turns red. The final lines add the failed boundary, the error code, the selected release when available, and the request ID.
+## Roll back
 
-Add `--json` to deploy or rollback to write newline-delimited JSON (NDJSON) without prompts, progress decoration, or other prose. The CLI writes each validated event as one compact line using the event fields in the table above. An `output` line keeps `data_base64`, so arbitrary application bytes remain valid JSON.
+A rollback selects one retained release through `current`. The Gateway checks that the release is inside `releases/` and that the web root stays inside it. It then switches `current` and refreshes PHP-FPM, as a deployment does. A rollback fetches nothing, writes no environment, runs no step, and changes no database file.
 
-The JSON contract for these commands is that event stream. The CLI writes the terminal `result` event when `status` is `succeeded` and when `status` is `failed`. A failed `result` keeps `type`, `sequence`, `request_id`, `status`, `failed_step`, `error_code`, and `selected_release`. The CLI does not rewrite that event as `{"error":{"code","message","request_id"}}`. A development Instance that cannot supply deployment configuration therefore ends `--json` with a failed `result` whose `error_code` is `deployment_config.unavailable`.
+## History
 
-The CLI uses the shared safe JSON error envelope as one line, and preserves the request ID when available, only for these outcomes.
+The Gateway records one row for each deployment and each rollback. It writes the row when the run starts and completes it when the run ends. It keeps the last 50 rows for each Instance.
 
-| Outcome | JSON document |
+Each row holds `release`, `branch`, `commit`, `started_at`, `finished_at`, `duration_seconds`, `status` (`running`, `succeeded`, or `failed`), `failed_step`, `error_code`, `selected_release`, `triggered_by` (the calling Node's name), and `events`. `events` holds the phase and output events of the run, with at most 128 KiB of output.
+
+| Request | Result |
 | --- | --- |
-| The stream ends with a `result` event | The validated NDJSON events, including a failed `result`. |
-| The Gateway or CLI refuses the command before the stream opens | One object with `error.code`, `error.message`, and `error.request_id`. |
-| The stream is malformed, truncated, or ends without a result | The validated events already written, then one error-envelope line. |
+| `GET /api/v1/instances/{instance}/deployments` | The Instance's rows, newest first, without `events`. |
+| `GET /api/v1/deployments/{deployment}` | One row with `events`. |
 
-`instance:deploy-step:create`, `instance:deploy-step:list`, `instance:deploy-step:update`, `instance:deploy-step:destroy`, `instance:update`, `instance:show`, and `instance:release:list` write one JSON object and use that error envelope on failure.
+## One operation at a time
 
-The command exit status identifies whether the streamed operation completed successfully.
-
-| Stream outcome | Exit status |
-| --- | --- |
-| The final event is a succeeded result. | Zero. |
-| The final event is a failed result. | Nonzero. The command identifies the failed boundary and the selected release when the result includes one. |
-| The stream is malformed, truncated, or ends without a result. | Nonzero. The command never infers success from earlier events. |
-| The operator presses Ctrl-C. | Nonzero. The CLI closes its HTTP connection at once and does not submit another deployment or rollback request. |
-
-A connected invocation ends with exactly one `result` event. An execution failure after admission produces a failed result in the stream; the Gateway does not try to send a second HTTP error response. An unavailable deployment configuration, including a development Instance, is such a failed result. Application output is flushed while its command is still running, and Caddy uses a 1 millisecond flush interval so it can still cancel the FastCGI request after a client disconnects. Gateway request and proxy limits cover the accepted deployment deadline.
-
-Ctrl-C closes the connection at once, including during a silent step with no output yet: the CLI does not wait for that step to finish first. Human output marks the current step failed and shows a red "Operation interrupted." footer; JSON mode ends the stream with no result line.
-
-Before each phase event, the Gateway uses a bounded 250 millisecond probe that flushes one JSON-safe whitespace byte every 10 milliseconds. The whitespace and event form one valid NDJSON line, and every byte counts toward the 32 KiB line limit.
-
-The Gateway detects a client disconnect when it writes an output event or performs a phase probe. A silent active command can therefore continue until it produces output, exits, or times out and the Gateway attempts the next stream write. The bounded probe gives HTTP/1.1 and HTTP/2 disconnects time to propagate through Caddy and PHP FastCGI Process Manager (PHP-FPM), but one write does not guarantee immediate detection of every downstream close.
-
-Once the disconnect is detected, cancellation stops the next protected boundary from starting, and the Gateway waits for bounded process cleanup. It sends no success result, replays no event, and does not roll code back automatically. The client can use the releases request to inspect the current selection before deciding whether to retry or request a rollback.
-
-Deployment and rollback require access to the Instance's Node. Their Activity records contain only the request and target identifiers and the terminal status, selected release, failed step, and error code. They never contain application output or configured command text. Generic errors follow the same redaction boundary.
-
-## Deploy the configured branch
-
-An explicit deployment captures the Instance's current branch and recorded steps for the complete invocation. The Gateway creates a fresh release, fetches the latest configured remote branch into it, and keeps that checkout even if the remote branch advances while the deployment runs. A deployment accepts no commit selector. A failed fetch leaves the selected release unchanged.
-
-The Gateway synchronizes stored environment values before it runs an application command. It then runs every `before_activation` step in phase and placement order from the fresh release as the Instance's Unix user through a fixed non-interactive shell. Orbit transports the command as protected script content and does not add inferred setup, migration, cache, health, maintenance, dependency, or asset commands. An empty step list runs no application commands. Provisioning and cloning never start a deployment.
-
-After every pre-activation step succeeds, the Gateway atomically replaces `current` with a link to the fresh release. A PHP Instance then refreshes its dedicated runtime cache and waits for confirmed completion before the Gateway runs the `after_activation` steps in phase and placement order. An Instance without PHP skips the cache operation.
-
-Each request that overlaps activation resolves to a complete old or new release. The `current` replacement and PHP cache refresh do not cause a missing-root or unavailable-service response for a compatible application. An application command can still change application availability, and Orbit retains that command's effect.
-
-## Read output and failures
-
-Each application command emits its standard output and standard error as events while the deployment invocation runs. One event carries bytes from exactly one stream and contains at most 16 KiB, or 16,384 bytes. The Gateway splits a larger process read into ordered events without changing its bytes. Event delivery continues until the command exits, times out, or is cancelled.
-
-The final command result retains the latest 64 KiB, or 65,536 bytes, from standard output and the latest 64 KiB from standard error. Output at the exact limit is complete. When either stream exceeds its limit, the result discards that stream's older bytes and reports `truncated: true`. Orbit keeps events and the final result only for the invocation. It creates no deployment-run row, output history, or earlier step-configuration snapshot.
-
-Each step uses its recorded timeout. Timeout or cancellation terminates the process group owned by that step and stops later steps. Orbit never resumes or automatically replays an interrupted command. The operation deadline is the accepted sum of step timeouts plus no more than 900 seconds for release, environment, activation, and runtime work. It never extends the 570-second deadline of the request that runs the deployment, so a deployment that runs out of either fails with `deployment.deadline_exceeded` before PHP-FPM ends the request. A step the deadline stops reports `deployment.deadline_exceeded`, not `deployment.command_timed_out` or `deployment.step_failed`.
-
-The deployment result identifies the failed boundary and the release selected when the invocation ends. Its code-selection outcome depends on when failure occurs.
-
-| Failed boundary | Selected code |
-| --- | --- |
-| Release fetch, environment synchronization, or a pre-activation step | The prior `current` target remains selected, or no release remains selected when this is the first deployment. |
-| PHP cache refresh or a post-activation step | The fresh release remains selected. |
-
-Orbit does not claim that persistent environment, database, or application effects were undone after either failure. The operating agent owns compatibility and application recovery.
-
-## Roll back retained code
-
-Code rollback accepts one retained release name beneath the Instance's `releases/` directory. The Gateway verifies source ownership and checks that the web root stays inside the release, then atomically selects it through `current`. PHP instances receive the same verified cache refresh as deployment. Instances without PHP skip it.
-
-Code rollback does not fetch Git, synchronize environment values, run deployment steps, change database files, or infer an application recovery command. The operating agent selects the retained release and owns any data or application recovery needed after the switch.
-
-## Exclude competing mutations
-
-Deployment and code rollback share one operation owner for the same production Instance. That owner also covers deploy-step create, update, and destroy, and the branch update. It further covers Instance removal, environment import, stored environment updates, environment synchronization, and Route domain changes. A competing request waits within the bounded operation deadline or receives a busy refusal before it can mutate that instance. An interrupted deployment releases the owner only after it has stopped its active application command.
-
-## Produce the release layout
-
-Cloning is the only way the Gateway creates a production Instance. The clone result is a prepared home with no selected `current` release. The first explicit deployment fetches the configured branch, synchronizes stored environment values, runs recorded deploy steps, and selects that release. See [Instance cloning](/reference/appinstance-cloning).
-
-## Project updates
-
-A Project update does not deploy, change `deployment_branch`, replace production source, or select a different release. Production Instances keep their recorded initial branch, starting commit, checkout path, production home, and deployment ownership. When the Project web root changes, production continues to resolve that root inside the already selected `current` release.
-
-## Resolve the serving path
-
-The web root is the Instance root override or its Project root beneath `current`, and `current` must resolve to a release beneath the same production home. A root such as `public` therefore serves `<production-home>/current/public` while code is selected.
-
-The Gateway refuses parent traversal, an escaped symbolic link, a selected target outside `releases/`, or an existing owned path with the wrong type or ownership before it publishes the serving projection. A missing `current` link remains a valid prepared layout without silently selecting staged source.
-
-Caddy resolves the root symbolic link to the selected release before it passes a script path to PHP FastCGI Process Manager (PHP-FPM). When `current` selects different code, a request resolves its included PHP files from the newly selected release instead of retaining the previous release's path.
+Deployment, rollback, deploy-step changes, and branch changes share the Instance's operation lock with environment operations, Instance removal, and Route changes. A competing request waits or receives a busy error. An interrupted deployment releases the lock after its running command stops.
 
 ## Inspect release placement with Doctor
 
-Doctor checks each production Instance against its recorded home and release layout without changing the Instance, its files, or its source. It reports bounded findings for a missing or wrongly owned production home, a broken `current` link, a selected release that is missing or resolves outside `releases/`, and an web root that escapes the selected release.
+[Doctor](/cli/doctor) checks each production Instance against its home. It reports a missing or wrongly owned home, a broken `current` link, a selected release outside `releases/`, and a web root that leaves the release. A home without `current` is healthy before the first deployment. Doctor accepts an older release after a rollback, and a release whose branch has moved on.
 
-A prepared production home with no `current` link is healthy before its first deployment. Once `current` exists, Doctor requires it to select a retained directory beneath the same production home. These rules apply to standalone and Cluster-scoped Instances because the workload Node owns the release placement in both routing shapes.
+## Retained content
 
-Doctor accepts a retained release when the configured branch has advanced since that release was prepared or when an explicit rollback selected older code. It does not fetch the branch head, interpret deployment history, make an application request, or treat an HTTP error as release drift.
+Orbit never deletes an old release by itself. [Instance removal](/reference/appinstance-removal) removes `current` and the serving setup, and keeps `releases/`, `.env`, `database.sqlite`, and the local PHP-FPM tuning for recovery.
 
-## Retain production content
+## Why it works this way
 
-Instance removal clears the owned `current` serving link and its Caddy, certificate, Route, and runtime projections. It retains `releases/`, `.env`, an existing `database.sqlite`, and `/etc/orbit/php-fpm/<production-user>/local.conf` for operator recovery.
+These reasons explain the design. Check them before you propose a change.
 
-Orbit does not remove old releases automatically. Orbit owns explicit release preparation, activation, and code rollback, while the operating agent owns configured application steps and recovery decisions.
+### Orbit owns releases, you own the steps
+
+Release preparation, the switch, and the PHP-FPM refresh are the same for every application, so Orbit does them. The commands before and after the switch differ for each application, so each Instance stores its own. Orbit does not guess steps from the framework.
+
+### Deploy a branch, not a commit
+
+The operation is "deploy what the branch holds now". So a deployment takes no commit. Two deployments of one branch can produce different code.
+
+### Rollback selects code only
+
+Older code can need a data recovery that only the application knows. So a rollback switches code and nothing else. Coupling it to a database rollback is a rejected alternative.
+
+### Steps as named records
+
+Each step has its own create, update, and destroy, so you can change one step without resending the others. A single replace-all document and a repeatable step flag are rejected alternatives. A command with spaces, colons, or quotes breaks a flag separator.
+
+### Clone is the only way in
+
+Every production Instance comes from a clone, and its first deployment builds the release layout. Orbit does not convert a production home that serves code from its checkout.
