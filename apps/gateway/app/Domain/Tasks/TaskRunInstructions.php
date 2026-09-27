@@ -36,7 +36,7 @@ final readonly class TaskRunInstructions
             $approve .= ' The approval must confirm each review deliverable ('.self::ids($reviews).') with --deliverable=ID=evidence, where the evidence says what you checked.';
         }
 
-        return 'This review is read-only. Do not create, edit, reset, or delete workspace files, including disposable fixtures. Request changes from the implementer instead. Do not commit; Orbit commits after you approve. '.$approve.' Otherwise end your turn with '.self::command($threadId, '--outcome=changes_requested --summary="The findings the implementer must address"').'. '.self::blocked($threadId);
+        return 'This review is read-only. Do not create, edit, reset, or delete workspace files, including disposable fixtures. Request changes from the implementer instead. Do not commit; Orbit commits after you approve. Report a missing guarantee against injected failures, such as a lost response or a crash between two writes, as a finding when this subtask adds or changes that state transition, or when the brief, an ADR, or a deliverable names it; otherwise list it as a follow-up in your summary. '.$approve.' Otherwise end your turn with '.self::command($threadId, '--outcome=changes_requested --summary="The findings the implementer must address"').'. '.self::blocked($threadId);
     }
 
     /**

@@ -4,9 +4,13 @@ declare(strict_types=1);
 
 use App\Actions\Nodes\AddNodeRoleAction;
 use App\Domain\AppDev\RuntimeConvergenceException;
+use App\Domain\Nodes\NodeConverger;
 use App\Domain\Nodes\NodeLockLoss;
+use App\Domain\Nodes\NodeObservation;
 use App\Domain\Nodes\NodeProvisioningException;
+use App\Domain\Nodes\NodeProvisioningIdentity;
 use App\Domain\Nodes\NodeRoleOperationException;
+use App\Domain\Nodes\RecoverableNodeConverger;
 use App\Domain\Nodes\RoleAssignmentException;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
@@ -31,6 +35,136 @@ use Tests\Support\FakeToolManagerMaterializer;
 describe(AddNodeRoleAction::class, function (): void {
     beforeEach(function (): void {
         app()->instance(ToolManagerMaterializer::class, new FakeToolManagerMaterializer);
+        app()->instance(NodeConverger::class, new AddNodeRoleNodeConvergerFake);
+    });
+
+    it('moves the first role from operator DNS to managed DNS before converging the role', function (): void {
+        $nodeConverger = new AddNodeRoleNodeConvergerFake;
+        $baseline = new AddNodeRoleBaselineFake;
+        $baseline->onConverge = function () use ($nodeConverger): void {
+            $nodeConverger->events[] = 'role';
+        };
+        app()->instance(NodeConverger::class, $nodeConverger);
+        app()->instance(RoleBaselineConverger::class, $baseline);
+        $node = add_role_node();
+
+        $result = app(AddNodeRoleAction::class)->execute($node, RoleName::Metrics);
+
+        expect($nodeConverger->events)->toBe(['peer:managed:0', 'role']);
+        expect($nodeConverger->identities)->toBe([['orbit', 'orbit']]);
+        expect($result['assignment']->status)->toBe(LifecycleStatus::Active);
+        expect($node->roles()->count())->toBe(1);
+    });
+
+    it('leaves a roleless Node unassigned when peer convergence fails and permits retry', function (): void {
+        $nodeConverger = new AddNodeRoleNodeConvergerFake;
+        $nodeConverger->failure = new NodeProvisioningException('wireguard', 'vpn.peer_converge_failed', 'Peer publication failed.');
+        app()->instance(NodeConverger::class, $nodeConverger);
+        $baseline = new AddNodeRoleBaselineFake;
+        app()->instance(RoleBaselineConverger::class, $baseline);
+        $node = add_role_node();
+
+        expect(fn () => app(AddNodeRoleAction::class)->execute($node, RoleName::Metrics))
+            ->toThrow(function (NodeRoleOperationException $exception): void {
+                expect($exception->step)->toBe('converge:wireguard')
+                    ->and($exception->underlyingErrorCode)->toBe('vpn.peer_converge_failed');
+            });
+        expect($node->roles()->exists())->toBeFalse();
+        expect($baseline->convergedRoles)->toBeEmpty();
+
+        $nodeConverger->failure = null;
+        $result = app(AddNodeRoleAction::class)->execute($node, RoleName::Metrics);
+
+        expect($nodeConverger->events)->toBe(['peer:managed:0', 'peer:managed:0']);
+        expect($result['assignment']->status)->toBe(LifecycleStatus::Active);
+    });
+
+    it('reconverges managed DNS on retry after the initial role baseline rolls back the peer', function (): void {
+        $nodeConverger = new AddNodeRoleNodeConvergerFake;
+        app()->instance(NodeConverger::class, $nodeConverger);
+        $baseline = new AddNodeRoleBaselineFake;
+        $baseline->failure = new NodeProvisioningException('baseline', 'node.baseline_failed', 'Baseline failed.');
+        app()->instance(RoleBaselineConverger::class, $baseline);
+        $node = add_role_node();
+
+        expect(fn () => app(AddNodeRoleAction::class)->execute($node, RoleName::Metrics))
+            ->toThrow(NodeRoleOperationException::class);
+        expect($nodeConverger->dnsMode)->toBe('operator');
+        expect($node->roles()->sole()->status)->toBe(LifecycleStatus::Failed);
+
+        $baseline->failure = null;
+        $result = app(AddNodeRoleAction::class)->execute($node, RoleName::Metrics, convergeExisting: true);
+
+        expect($nodeConverger->events)->toBe(['peer:managed:0', 'rollback', 'peer:managed:1']);
+        expect($nodeConverger->dnsMode)->toBe('managed');
+        expect($result['created'])->toBeFalse();
+        expect($result['assignment']->status)->toBe(LifecycleStatus::Active);
+    });
+
+    it('fails the assigned role if peer finalization rolls back after its baseline and retries managed DNS', function (): void {
+        $nodeConverger = new AddNodeRoleNodeConvergerFake;
+        $nodeConverger->finalizationFailure = new NodeProvisioningException('wireguard-peer-finalize', 'vpn.peer_finalize_failed', 'Finalization failed.');
+        app()->instance(NodeConverger::class, $nodeConverger);
+        $baseline = new AddNodeRoleBaselineFake;
+        app()->instance(RoleBaselineConverger::class, $baseline);
+        $node = add_role_node();
+
+        expect(fn () => app(AddNodeRoleAction::class)->execute($node, RoleName::Metrics))
+            ->toThrow(function (NodeRoleOperationException $exception): void {
+                expect($exception->underlyingErrorCode)->toBe('vpn.peer_finalize_failed');
+            });
+        expect($nodeConverger->dnsMode)->toBe('operator');
+        expect($node->roles()->sole()->status)->toBe(LifecycleStatus::Failed);
+        expect($node->roles()->sole()->failed_step)->toBe('converge:wireguard-peer-finalize');
+
+        $nodeConverger->finalizationFailure = null;
+        $result = app(AddNodeRoleAction::class)->execute($node, RoleName::Metrics, convergeExisting: true);
+
+        expect($nodeConverger->events)->toBe(['peer:managed:0', 'rollback', 'peer:managed:1']);
+        expect($nodeConverger->dnsMode)->toBe('managed');
+        expect($result['assignment']->status)->toBe(LifecycleStatus::Active);
+    });
+
+    it('republishes managed DNS after two different roles fail and roll back the peer', function (): void {
+        $nodeConverger = new AddNodeRoleNodeConvergerFake;
+        app()->instance(NodeConverger::class, $nodeConverger);
+        $baseline = new AddNodeRoleBaselineFake;
+        $baseline->failure = new NodeProvisioningException('baseline', 'node.baseline_failed', 'Baseline failed.');
+        app()->instance(RoleBaselineConverger::class, $baseline);
+        $node = add_role_node();
+
+        expect(fn () => app(AddNodeRoleAction::class)->execute($node, RoleName::Metrics))
+            ->toThrow(NodeRoleOperationException::class);
+        expect(fn () => app(AddNodeRoleAction::class)->execute($node, RoleName::AppDev))
+            ->toThrow(NodeRoleOperationException::class);
+        expect($node->roles()->where('status', LifecycleStatus::Failed)->count())->toBe(2);
+        expect($nodeConverger->dnsMode)->toBe('operator');
+
+        $baseline->failure = null;
+        $result = app(AddNodeRoleAction::class)->execute($node, RoleName::Metrics, convergeExisting: true);
+
+        expect($nodeConverger->events)->toBe([
+            'peer:managed:0', 'rollback',
+            'peer:managed:1', 'rollback',
+            'peer:managed:2',
+        ]);
+        expect($nodeConverger->dnsMode)->toBe('managed');
+        expect($result['assignment']->status)->toBe(LifecycleStatus::Active);
+        expect($node->roles()->where('status', LifecycleStatus::Failed)->count())->toBe(1);
+    });
+
+    it('skips peer convergence when the Node already has a role', function (): void {
+        $nodeConverger = new AddNodeRoleNodeConvergerFake;
+        app()->instance(NodeConverger::class, $nodeConverger);
+        $baseline = new AddNodeRoleBaselineFake;
+        app()->instance(RoleBaselineConverger::class, $baseline);
+        $node = add_role_node();
+        $node->roles()->create(['role' => RoleName::Metrics, 'status' => LifecycleStatus::Active]);
+
+        $result = app(AddNodeRoleAction::class)->execute($node, RoleName::AppDev);
+
+        expect($nodeConverger->events)->toBeEmpty();
+        expect($result['assignment']->status)->toBe(LifecycleStatus::Active);
     });
 
     it('maps outer Composer contention without claiming the role', function (): void {
@@ -593,11 +727,14 @@ final class AddNodeRoleBaselineFake implements RoleBaselineConverger
 
     public ?Throwable $failure = null;
 
+    public ?Closure $onConverge = null;
+
     public function converge(Node $node, NodeRole $assignment): void
     {
         $this->convergedRoles[] = $assignment->role;
         $this->observedStatuses[] = $assignment->status;
         $this->transactionLevels[] = DB::transactionLevel();
+        ($this->onConverge ?? static function (): void {})();
 
         if ($this->failure instanceof Throwable) {
             throw $this->failure;
@@ -607,6 +744,53 @@ final class AddNodeRoleBaselineFake implements RoleBaselineConverger
     public function remove(Node $node, NodeRole $assignment, bool $purgeData): void {}
 
     public function removeUnreachable(Node $node, NodeRole $assignment): void {}
+}
+
+final class AddNodeRoleNodeConvergerFake implements NodeConverger, RecoverableNodeConverger
+{
+    /** @var list<string> */
+    public array $events = [];
+
+    /** @var list<array{string, string}> */
+    public array $identities = [];
+
+    public ?NodeProvisioningException $failure = null;
+
+    public ?NodeProvisioningException $finalizationFailure = null;
+
+    public string $dnsMode = 'operator';
+
+    public function converge(Node $node, NodeProvisioningIdentity $identity, ?string $expectedSshHostFingerprint = null, bool $rolelessOperator = false): NodeObservation
+    {
+        $this->events[] = 'peer:'.($rolelessOperator ? 'operator' : 'managed').':'.$node->roles()->count();
+        $this->identities[] = [$identity->bootstrapUser, $identity->managedUser];
+
+        if ($this->failure instanceof NodeProvisioningException) {
+            throw $this->failure;
+        }
+
+        return new NodeObservation('x86_64');
+    }
+
+    public function convergeRecoverably(Node $node, NodeProvisioningIdentity $identity, ?string $expectedSshHostFingerprint, Closure $completion, bool $rolelessOperator = false): void
+    {
+        $observation = $this->converge($node, $identity, $expectedSshHostFingerprint, $rolelessOperator);
+        $oldMode = $this->dnsMode;
+        $this->dnsMode = $rolelessOperator ? 'operator' : 'managed';
+
+        try {
+            $completion($observation);
+
+            if ($this->finalizationFailure instanceof NodeProvisioningException) {
+                throw $this->finalizationFailure;
+            }
+        } catch (Throwable $exception) {
+            $this->dnsMode = $oldMode;
+            $this->events[] = 'rollback';
+
+            throw $exception;
+        }
+    }
 }
 
 final class StateAwareToolManagerScopeLock implements ToolManagerScopeLock

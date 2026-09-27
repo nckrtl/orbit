@@ -167,6 +167,10 @@ Browser tests assert on the page, the URL, and the requests that the demo Gatewa
 
 These reasons explain the design. Check them before you propose a change.
 
+### One live fleet view
+
+The web app is the only live fleet view, and the CLI has none. A terminal screen is rejected: it would need its own copy of the metrics queries, and it would have to follow every change to shared requests and realtime events. Without a browser, use the list commands and `realtime:tail`.
+
 ### The Gateway origin
 
 The Gateway identifies a caller by its WireGuard address. A proxy in front of the API would replace the browser's address with its own. A separate hostname such as `app.orbit` would make every API call cross-origin. On the Gateway origin, the browser already trusts the certificate, and the Gateway already knows the caller. The app adds no authority, because every request it makes is an API request from the browser's own address.
