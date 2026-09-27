@@ -28,8 +28,6 @@ return new class extends Migration
             $table->char('merge_changes_digest', 64)->nullable();
             $table->boolean('merge_changes_redacted')->nullable();
             $table->char('merge_body_digest', 64)->nullable();
-            $table->json('merge_commit_history')->nullable();
-            $table->boolean('merge_history_complete')->nullable();
             $table->string('agent_thread_id')->nullable();
             $table->json('questions');
             $table->json('input_state');

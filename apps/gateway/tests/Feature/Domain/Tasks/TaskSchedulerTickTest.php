@@ -727,8 +727,8 @@ it('preserves labeled merge evidence and report metrics when cleanup retries los
     app(TaskScheduler::class)->tick();
     $verified = $decision->fresh();
     expect($group->fresh()?->status)->toBe(TaskGroupStatus::Settling)
-        ->and($verified?->merge_history_complete)->toBeTrue()
-        ->and($verified?->labels['questions']['subtask_'.$task->id]['label'])->toBe('correct');
+        ->and($verified?->labels['questions'] ?? [])->toBe([])
+        ->and($verified?->labels['call']['label'])->toBe('correct');
 
     app(TaskScheduler::class)->tick();
     $retried = $decision->fresh();
@@ -736,15 +736,13 @@ it('preserves labeled merge evidence and report metrics when cleanup retries los
     $report = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['brief_coverage'];
 
     expect($group->fresh()?->status)->toBe(TaskGroupStatus::Settling)
-        ->and($retried?->merge_history_complete)->toBeTrue()
-        ->and($retried?->merge_commit_history)->toBe($verified?->merge_commit_history)
         ->and($retried?->merge_changes)->toBe($verified?->merge_changes)
         ->and($retried?->merge_changes_digest)->toBe($verified?->merge_changes_digest)
         ->and($retried?->merge_body_digest)->toBe($verified?->merge_body_digest)
         ->and($retried?->labels)->toBe($verified?->labels)
         ->and($report['calls'])->toBe(1)
         ->and($report['labeled_share'])->toBe(1)
-        ->and($report['accuracy'])->toBe(1)
+        ->and($report['accuracy'])->toBeNull()
         ->and($report['call_labels'])->toBe(['correct' => 1]);
 });
 

@@ -2,8 +2,18 @@
 
 declare(strict_types=1);
 
+use App\Domain\Tasks\BriefCoverageLabeler;
+use App\Domain\Tasks\TaskPullRequestHealth;
+use App\Domain\Tasks\TaskRunPullRequest;
+use App\Domain\Tasks\TaskStatus;
+use App\Infrastructure\Tasks\LaravelAiTaskBriefCoverage;
+use App\Models\App as OrbitApp;
 use App\Models\JevDecision;
+use App\Models\Task;
+use App\Models\TaskGroup;
 use Illuminate\Support\Facades\Artisan;
+use Laravel\Ai\Classification;
+use Laravel\Ai\Responses\Data\BooleanAnswer;
 
 it('reports Jev accuracy, calibration, failures, and latency as JSON', function (): void {
     JevDecision::query()->create([
@@ -87,4 +97,50 @@ it('reports Jev accuracy, calibration, failures, and latency as JSON', function 
         ->and($human)->toContain('latency ms: p50 30, p95 40')
         ->and($human)->toContain('unknown_purpose: 1 calls; 0 failures; labeled share 0%')
         ->and($human)->toContain('latency ms: p50 n/a, p95 n/a');
+});
+
+/** @return array{TaskGroup, Task} */
+function jev_report_coverage_fixture(): array
+{
+    $app = OrbitApp::query()->create(['name' => 'Shop', 'slug' => 'shop', 'repository_url' => 'git@github.com:acme/shop.git', 'default_branch' => 'main']);
+    $group = TaskGroup::query()->create(['app_id' => $app->id, 'title' => 'Export orders', 'brief' => 'Export orders.', 'status' => 'reviewing']);
+    $task = Task::query()->create(['task_group_id' => $group->id, 'position' => 1, 'title' => 'Export', 'brief' => 'Write the export.', 'status' => TaskStatus::Completed]);
+
+    return [$group, $task];
+}
+
+it('keeps covered answers without a named change unlabeled with deterministic labels only', function (): void {
+    [$group, $completed] = jev_report_coverage_fixture();
+    Classification::fake([['subtask_'.$completed->id => new BooleanAnswer(0.97)]]);
+    app(LaravelAiTaskBriefCoverage::class)->missing($group, new TaskRunPullRequest('Adds an export.', ['An unrelated change.'], []), 101, ['An unrelated change.']);
+    app(BriefCoverageLabeler::class)->label($group, new TaskPullRequestHealth(
+        state: 'merged', pullRequestNumber: 42, mergeBody: "## Changes\n\n- An unrelated change.\n",
+        mergeSha: 'merge-sha', mergedAt: '2026-10-01T10:00:00Z', mergeCommits: [],
+    ));
+
+    expect(JevDecision::query()->sole()->labels['questions'] ?? [])->toBe([]);
+});
+
+it('keeps missing answers without a named change unlabeled with deterministic labels only', function (): void {
+    [$group, $completed] = jev_report_coverage_fixture();
+    Classification::fake([['subtask_'.$completed->id => new BooleanAnswer(0.2)]]);
+    app(LaravelAiTaskBriefCoverage::class)->missing($group, new TaskRunPullRequest('Adds an export.', ['An unrelated change.'], []), 102, ['An unrelated change.']);
+    app(BriefCoverageLabeler::class)->label($group, new TaskPullRequestHealth(
+        state: 'merged', pullRequestNumber: 42, mergeBody: "## Changes\n\n- An unrelated change.\n",
+        mergeSha: 'merge-sha', mergedAt: '2026-10-01T10:00:00Z', mergeCommits: [],
+    ));
+
+    expect(JevDecision::query()->sole()->labels)->toBeNull();
+});
+
+it('labels a missing answer false negative when the merged change names it with deterministic labels only', function (): void {
+    [$group, $completed] = jev_report_coverage_fixture();
+    Classification::fake([['subtask_'.$completed->id => new BooleanAnswer(0.2)]]);
+    app(LaravelAiTaskBriefCoverage::class)->missing($group, new TaskRunPullRequest('Adds an export.', ['Export'], []), 103, ['Export']);
+    app(BriefCoverageLabeler::class)->label($group, new TaskPullRequestHealth(
+        state: 'merged', pullRequestNumber: 42, mergeBody: "## Changes\n\n- Export\n",
+        mergeSha: 'merge-sha', mergedAt: '2026-10-01T10:00:00Z', mergeCommits: [],
+    ));
+
+    expect(JevDecision::query()->sole()->labels['questions']['subtask_'.$completed->id]['label'])->toBe('false_negative');
 });

@@ -32,24 +32,23 @@ Records exclude credentials, secrets, and raw provider error bodies. Error codes
 
 ### `brief_coverage` evidence and labels
 
-At the coverage call, store the final approval comment identifier and digest of its `pull_request.changes` list. At merge, store the GitHub pull request number, merge commit SHA and time, the pull request body's `## Changes` list snapshot and digest, and the commit trailers in the merged pull request. The merged pull request body is the authoritative merge-time snapshot. A line is an approved line still present at merge only when its normalized text appears in both the final approval's change list and the merge-time `## Changes` list. Lines added or altered after approval do not count as approved lines.
+At the coverage call, store the final approval comment identifier and digest of its `pull_request.changes` list. At merge, store the GitHub pull request number, merge commit SHA and time, and the pull request body's `## Changes` list snapshot and digest. The merged pull request body is the authoritative merge-time snapshot. A line is an approved line still present at merge only when its normalized text appears in both the final approval's change list and the merge-time `## Changes` list. Lines added or altered after approval do not count as approved lines.
 
 Match change-list lines to subtasks mechanically. Normalize Unicode with NFKC, case-fold, replace each run of punctuation or symbols with a space, and collapse whitespace. A line names a subtask only when the normalized full subtask title appears as a contiguous sequence of whole tokens. Ignore the summary and breaking-changes sections. The match is known only when the title is unique within the group and exactly one approved merge-time line matches it. A duplicate title, multiple matching lines, missing snapshot, unavailable approval record, or unverifiable merge body makes that subtask's outcome unknown. Do not ask a model or reviewer to resolve an ambiguous match.
 
-Mark a coverage fix with the exact commit-message trailer `Orbit-Coverage-Fix: task-<id>` on a commit after the Jev call and included in the pull request's merge commit. A trailer counts only when its task ID belongs to the group and the commit is in the merged pull request's commit history. This explicit marker is the deterministic evidence of a coverage fix; do not infer a fix from code, prose, or reviewer judgment. A missing or unverifiable commit history leaves fix status unknown. The marker must identify the task whose coverage the commit fixes.
+Orbit does not detect whether a change after the pull request merge fixes a coverage gap. The labeler does not read commit history or commit-message trailers.
 
 Use mutually exclusive question labels for each Boolean answer when the merge-time outcome is known:
 
 | Jev answer | Deterministic evidence | Question label |
 | --- | --- | --- |
 | Missing / false | Exactly one approved merge-time change line names the subtask | False negative |
-| Missing / false | No approved merge-time change line names the subtask | Correct (true negative) |
-| Covered / true | Exactly one approved merge-time change line names the subtask and no coverage-fix trailer names the task | Correct (true positive) |
-| Covered / true | No approved merge-time change line names the subtask, or a coverage-fix trailer names the task | False positive |
+| Missing / false | No approved merge-time change line names the subtask | Unlabeled |
+| Covered / true | Any change-list evidence | Unlabeled |
 
-The matching rules above are exhaustive only when the snapshots, title match, and commit history are known. A Jev failure or missing answer, an unmerged or closed pull request, or any unknown evidence remains unlabeled. Store label provenance with each labeled answer: rule version, question and task IDs, approval comment ID and list digest, pull request number, merge SHA and time, merge-body digest, matching change line (when present), and matching coverage-fix commit SHA (when present).
+Only a missing answer with exactly one named approved merge-time line receives a question-level `false_negative` label. Covered answers, missing answers without that evidence, Jev failures, unmerged or closed pull requests, and unknown evidence remain unlabeled. Store label provenance with each labeled answer: rule version, question and task IDs, approval comment ID and list digest, pull request number, merge SHA and time, merge-body digest, and matching change line.
 
-Keep the brief's call-level label distinct from question labels. When every answer in a `brief_coverage` call says covered, label the call `correct` only if its pull request merges and the complete merged-PR history has no coverage-fix trailer for any subtask in the call. This call-level label describes the merged call outcome, not whether each answer matched its change-list evidence. For example, an all-covered call can receive call-level `correct` while a covered answer for a subtask absent from the approved change list receives the question-level false-positive label. These labels apply to different units: only the question label enters per-question accuracy and confusion counts. Calls with mixed answers do not receive this all-covered call label.
+Keep the brief's call-level label distinct from question labels. When every answer in a `brief_coverage` call says covered and its pull request merges, label the call `correct`. This label records only that the call's covered outcome reached a merge; it does not validate individual answers against the change list. Calls with mixed answers do not receive this all-covered call label.
 
 ### Report
 
@@ -67,7 +66,7 @@ Calibration groups labeled questions with a non-null `selected_answer_probabilit
 ## Consequences
 
 - Jev calls become auditable and provide a durable, labeled evaluation set for considering Laya.
-- The explicit change-line matching and commit-trailer rules allow deterministic labels without reading code or asking a model or reviewer to judge coverage.
+- A missing answer earns `false_negative` only when the approved change list still names the task at merge. A merged pull request earns its call a separate `correct` label when all answers were covered. Orbit does not detect whether a change fixes a coverage gap.
 - Ambiguous or incomplete merge evidence stays unlabeled; reports expose that limit rather than guessing.
 - The Gateway owns the record schema, secret redaction, label provenance, retention, and report semantics.
 - Permanent retention requires strict exclusion of secrets and raw provider errors.

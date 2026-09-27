@@ -22,8 +22,6 @@ final class JevDecision extends Model
             'task_ids' => 'array',
             'approval_changes' => 'array',
             'merge_changes' => 'array',
-            'merge_commit_history' => 'array',
-            'merge_history_complete' => 'boolean',
             'merge_changes_redacted' => 'boolean',
             'approval_changes_redacted' => 'boolean',
         ];

@@ -4,15 +4,12 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Tasks;
 
-use App\Domain\GitHub\GitHubPullRequestCommit;
 use App\Domain\Tasks\BriefCoverageLabeler;
 use App\Domain\Tasks\TaskPullRequestHealth;
 use App\Infrastructure\Activity\CommandActivityInputSanitizer;
 use App\Models\JevDecision;
 use App\Models\TaskGroup;
-use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
-use Throwable;
 
 final readonly class JevBriefCoverageLabeler implements BriefCoverageLabeler
 {
@@ -29,13 +26,9 @@ final readonly class JevBriefCoverageLabeler implements BriefCoverageLabeler
         $sanitizedMergeLines = is_array($mergeLines) ? self::sanitizedLines($mergeLines) : null;
         $storedMergeLines = is_array($sanitizedMergeLines) ? self::cappedLines($sanitizedMergeLines) : null;
         $bodyDigest = $merge->mergeBody === null ? null : hash('sha256', $merge->mergeBody);
-        $commitEvidence = $merge->mergeCommits === null ? null : self::commitEvidence($merge->mergeCommits);
-        $storedCommitHistory = $commitEvidence['commits'] ?? null;
-        $commitHistoryComplete = $merge->mergeCommits !== null && ($commitEvidence['complete'] ?? false);
-
         JevDecision::query()->where('task_group_id', $group->id)->where('purpose', 'brief_coverage')->get()
-            ->each(static function (JevDecision $candidate) use ($group, $merge, $titles, $mergeLines, $storedMergeLines, $bodyDigest, $storedCommitHistory, $commitHistoryComplete): void {
-                DB::transaction(static function () use ($candidate, $group, $merge, $titles, $mergeLines, $storedMergeLines, $bodyDigest, $storedCommitHistory, $commitHistoryComplete): void {
+            ->each(static function (JevDecision $candidate) use ($group, $merge, $titles, $mergeLines, $storedMergeLines, $bodyDigest): void {
+                DB::transaction(static function () use ($candidate, $group, $merge, $titles, $mergeLines, $storedMergeLines, $bodyDigest): void {
                     $decision = JevDecision::query()->lockForUpdate()->find($candidate->id);
                     if (! $decision instanceof JevDecision) {
                         return;
@@ -66,39 +59,10 @@ final readonly class JevBriefCoverageLabeler implements BriefCoverageLabeler
                         $updates['merge_changes_redacted'] = $storedMergeLines === null ? null : $storedMergeLines !== $mergeLines;
                         $evidenceChanged = true;
                     }
-                    if ($decision->getAttribute('merge_history_complete') !== true) {
-                        if ($commitHistoryComplete) {
-                            $updates['merge_commit_history'] = $storedCommitHistory;
-                            $updates['merge_history_complete'] = true;
-                            $evidenceChanged = true;
-                        } elseif ($decision->getAttribute('merge_commit_history') === null && $storedCommitHistory !== null) {
-                            $updates['merge_commit_history'] = $storedCommitHistory;
-                            $updates['merge_history_complete'] = false;
-                            $evidenceChanged = true;
-                        } elseif ($decision->getAttribute('merge_history_complete') === null) {
-                            $updates['merge_history_complete'] = false;
-                            $evidenceChanged = true;
-                        }
-                    }
                     if (! $evidenceChanged) {
-                        if ($decision->getAttribute('merge_history_complete') !== true && $decision->getAttribute('labels') !== null) {
-                            $decision->forceFill(['labels' => null])->save();
-                        }
-
                         return;
                     }
                     $decision->forceFill($updates);
-                    if ($decision->getAttribute('merge_history_complete') !== true) {
-                        $decision->forceFill(['labels' => null])->save();
-
-                        return;
-                    }
-                    $mergeCommits = self::restoreCommitHistory($decision->getAttribute('merge_commit_history'));
-                    if ($mergeCommits === null) {
-                        $decision->forceFill(['merge_history_complete' => false, 'labels' => null])->save();
-
-                        return;
-                    }
                     $mergeLines = $decision->getAttribute('merge_changes');
                     $bodyDigest = $decision->getAttribute('merge_body_digest');
                     $mergeChangesDigest = $decision->getAttribute('merge_changes_digest');
@@ -117,9 +81,6 @@ final readonly class JevBriefCoverageLabeler implements BriefCoverageLabeler
                         return;
                     }
                     /** @var list<int|string> $taskIds */
-                    $calledAt = $decision->getAttribute('call_started_at');
-                    assert(is_string($calledAt));
-                    $fixes = self::fixCommits($mergeCommits, $taskIds, $calledAt);
                     $labels = [];
                     $questionLabels = [];
                     $expectedAnswerKeys = array_map(static fn (int|string $taskId): string => 'subtask_'.$taskId, $taskIds);
@@ -135,7 +96,7 @@ final readonly class JevBriefCoverageLabeler implements BriefCoverageLabeler
                         $allCovered = $allCovered && $answer['value'];
                     }
                     $mergeMetadataKnown = is_int($pullRequestNumber) && is_string($mergeSha) && is_string($mergedAt);
-                    if ($mergeMetadataKnown && $allCovered && self::completeHistoryHasNoTaskFix($mergeCommits, $taskIds)) {
+                    if ($mergeMetadataKnown && $allCovered) {
                         $labels['call'] = [
                             'label' => 'correct',
                             'source' => ['rule' => 'brief_coverage_call_v1', 'pull_request_number' => $pullRequestNumber, 'merge_sha' => $mergeSha, 'merged_at' => $mergedAt],
@@ -178,16 +139,10 @@ final readonly class JevBriefCoverageLabeler implements BriefCoverageLabeler
                             continue;
                         }
                         $hasNamedApprovedLine = count($approvedLines) === 1 && count($merged) === 1;
-                        if (array_key_exists($taskId, $fixes) && $fixes[$taskId] === null) {
+                        if (! $hasNamedApprovedLine || $answer['value']) {
                             continue;
                         }
-                        $fixSha = $fixes[$taskId] ?? null;
-                        $label = match (true) {
-                            $answer['value'] && $hasNamedApprovedLine && $fixSha === null => 'correct',
-                            $answer['value'] => 'false_positive',
-                            $hasNamedApprovedLine => 'false_negative',
-                            default => 'correct',
-                        };
+                        $label = 'false_negative';
                         $questionLabels[$key] = [
                             'label' => $label,
                             'source' => [
@@ -201,81 +156,16 @@ final readonly class JevBriefCoverageLabeler implements BriefCoverageLabeler
                                 'merged_at' => $mergedAt,
                                 'merge_body_digest' => $bodyDigest,
                                 'merge_changes_digest' => $mergeChangesDigest,
-                                'matching_change_line' => $hasNamedApprovedLine ? $approvedLines[0] : null,
-                                'coverage_fix_commit_sha' => $fixSha,
+                                'matching_change_line' => $approvedLines[0],
                             ],
                         ];
                     }
-                    $labels['questions'] = $questionLabels;
-                    $decision->forceFill(['labels' => $labels['questions'] !== [] || isset($labels['call']) ? $labels : null])->save();
+                    if ($questionLabels !== []) {
+                        $labels['questions'] = $questionLabels;
+                    }
+                    $decision->forceFill(['labels' => $labels !== [] ? $labels : null])->save();
                 });
             });
-    }
-
-    /**
-     * @param  list<GitHubPullRequestCommit>  $commits
-     * @param  list<int|string>  $taskIds
-     * @return array<int, string|null>
-     */
-    private static function fixCommits(array $commits, array $taskIds, string $calledAt): array
-    {
-        $fixes = [];
-        foreach ($commits as $commit) {
-            foreach (self::coverageFixTrailers($commit->message) as $taskId) {
-                if (! in_array($taskId, array_map(intval(...), $taskIds), true)) {
-                    continue;
-                }
-                if (! is_string($commit->committedAt)) {
-                    $fixes[$taskId] = null;
-
-                    continue;
-                }
-                try {
-                    if (Carbon::parse($commit->committedAt)->greaterThan(Carbon::parse($calledAt)) && (! array_key_exists($taskId, $fixes) || $fixes[$taskId] !== null)) {
-                        $fixes[$taskId] = $commit->sha;
-                    }
-                } catch (Throwable) {
-                    $fixes[$taskId] = null;
-                }
-            }
-        }
-
-        return $fixes;
-    }
-
-    /**
-     * @param  list<GitHubPullRequestCommit>  $commits
-     * @param  list<int|string>  $taskIds
-     */
-    private static function completeHistoryHasNoTaskFix(array $commits, array $taskIds): bool
-    {
-        foreach ($commits as $commit) {
-            foreach (self::coverageFixTrailers($commit->message) as $taskId) {
-                if (in_array($taskId, array_map(intval(...), $taskIds), true)) {
-                    return false;
-                }
-            }
-        }
-
-        return true;
-    }
-
-    /** @return list<int> */
-    private static function coverageFixTrailers(string $message): array
-    {
-        $lines = preg_split('/\r?\n/', rtrim($message)) ?: [];
-        $footer = [];
-        for ($index = count($lines) - 1; $index >= 0 && trim($lines[$index]) !== ''; $index--) {
-            array_unshift($footer, $lines[$index]);
-        }
-        $taskIds = [];
-        foreach ($footer as $line) {
-            if (preg_match('/^Orbit-Coverage-Fix: task-(\d+)$/D', $line, $match)) {
-                $taskIds[] = (int) $match[1];
-            }
-        }
-
-        return $taskIds;
     }
 
     /**
@@ -349,70 +239,6 @@ final readonly class JevBriefCoverageLabeler implements BriefCoverageLabeler
     private static function snapshotDigest(array $lines): string
     {
         return hash('sha256', json_encode($lines, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE));
-    }
-
-    /**
-     * @return list<GitHubPullRequestCommit>|null
-     */
-    private static function restoreCommitHistory(mixed $stored): ?array
-    {
-        if (! is_array($stored) || ! array_is_list($stored)) {
-            return null;
-        }
-        $commits = [];
-        foreach ($stored as $commit) {
-            $committedAt = is_array($commit) ? ($commit['committed_at'] ?? null) : null;
-            if (! is_array($commit) || ! is_string($commit['sha'] ?? null)
-                || (! is_string($committedAt) && $committedAt !== null)
-                || ! is_array($commit['trailers'] ?? null) || ! array_is_list($commit['trailers'])
-                || array_filter($commit['trailers'], is_string(...)) !== $commit['trailers']) {
-                return null;
-            }
-            $trailers = $commit['trailers'];
-            $message = $trailers === [] ? '' : "Persisted commit trailers\n\n".implode("\n", $trailers);
-            $commits[] = new GitHubPullRequestCommit($commit['sha'], $message, $committedAt);
-        }
-
-        return $commits;
-    }
-
-    /**
-     * @param  list<GitHubPullRequestCommit>  $commits
-     * @return array{commits: list<array{sha: string, committed_at: ?string, trailers: list<string>}>, complete: bool}
-     */
-    private static function commitEvidence(array $commits): array
-    {
-        $evidence = [];
-        $complete = true;
-        foreach ($commits as $commit) {
-            $originalTrailers = self::commitTrailerLines($commit->message);
-            $trailers = self::redact($originalTrailers);
-            if (! is_array($trailers) || ! array_is_list($trailers) || array_filter($trailers, is_string(...)) !== $trailers) {
-                $trailers = [];
-                $complete = false;
-            } elseif ($trailers !== $originalTrailers) {
-                $complete = false;
-            }
-            $evidence[] = [
-                'sha' => $commit->sha,
-                'committed_at' => $commit->committedAt,
-                'trailers' => $trailers,
-            ];
-        }
-
-        return ['commits' => $evidence, 'complete' => $complete];
-    }
-
-    /** @return list<string> */
-    private static function commitTrailerLines(string $message): array
-    {
-        $lines = preg_split('/\r?\n/', rtrim($message)) ?: [];
-        $footer = [];
-        for ($index = count($lines) - 1; $index >= 0 && trim($lines[$index]) !== ''; $index--) {
-            array_unshift($footer, $lines[$index]);
-        }
-
-        return array_values(array_filter($footer, static fn (string $line): bool => preg_match('/^[A-Za-z0-9][A-Za-z0-9-]*: .+$/D', $line) === 1));
     }
 
     /** @return list<string>|null */

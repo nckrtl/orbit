@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Domain\GitHub\GitHubPullRequestCommit;
 use App\Domain\Tasks\BriefCoverageLabeler;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
@@ -99,7 +98,6 @@ it('labels a false negative from a pull request observed merged and records both
         mergeBody: $mergedBody,
         mergeSha: 'actual-merge-sha',
         mergedAt: '2026-10-01T10:00:00Z',
-        mergeCommits: [new GitHubPullRequestCommit('audit-sha', "Audit changes\n\nBuild: 17", '2026-10-01T09:30:00Z')],
     );
     $group->update(['status' => 'settling', 'execution_mode' => 'managed', 'pr_url' => 'https://github.com/acme/shop/pull/42']);
     app()->instance(TaskPullRequestWatcher::class, new class($merge) implements TaskPullRequestWatcher
@@ -130,8 +128,6 @@ it('labels a false negative from a pull request observed merged and records both
         ->and($decision->merged_pull_request_number)->toBe(42)
         ->and($decision->merge_commit_sha)->toBe('actual-merge-sha')
         ->and($decision->merged_at)->toBe('2026-10-01T10:00:00Z')
-        ->and($decision->merge_history_complete)->toBeTrue()
-        ->and($decision->merge_commit_history)->toBe([['sha' => 'audit-sha', 'committed_at' => '2026-10-01T09:30:00Z', 'trailers' => ['Build: 17']]])
         ->and($decision->input_state['pull_request']['changes'])->toBe(['Orders export as CSV.'])
         ->and($label['label'])->toBe('false_negative')
         ->and($label['source']['rule'])->toBe('brief_coverage_v1')
@@ -156,7 +152,7 @@ it('does not treat breaking-change lines as coverage when the Changes section is
 
     $decision = JevDecision::query()->sole();
     expect($decision->merge_changes)->toBe([])
-        ->and($decision->labels['questions']['subtask_'.$completed->id]['label'])->toBe('correct');
+        ->and($decision->labels)->toBeNull();
 });
 
 it('leaves labels unknown when merge evidence is missing and uses the changed merge snapshot when known', function (): void {
@@ -174,7 +170,7 @@ it('leaves labels unknown when merge evidence is missing and uses the changed me
         mergedAt: '2026-10-01T10:00:00Z',
         mergeCommits: [],
     ));
-    expect(JevDecision::query()->sole()->labels['questions']['subtask_'.$completed->id]['label'])->toBe('correct');
+    expect(JevDecision::query()->sole()->labels)->toBeNull();
 });
 
 it('labels correct answers, call outcomes, and leaves failures unlabeled', function (): void {
@@ -192,7 +188,7 @@ it('labels correct answers, call outcomes, and leaves failures unlabeled', funct
     app(BriefCoverageLabeler::class)->label($group, $merge);
 
     $decision = JevDecision::query()->sole();
-    expect($decision->labels['questions']['subtask_'.$completed->id]['label'])->toBe('false_positive')
+    expect($decision->labels['questions'] ?? [])->toBe([])
         ->and($decision->labels['call']['label'])->toBe('correct');
 
     $failedDecision = JevDecision::query()->create([
@@ -228,22 +224,6 @@ it('does not assign a call-level label to a mixed-answer coverage call', functio
     expect(JevDecision::query()->sole()->labels)->not->toHaveKey('call');
 });
 
-it('labels a covered answer false positive when a later merged commit has its exact coverage fix trailer', function (): void {
-    [$group, $cancelled, $failed, $completed] = cancelled_brief_coverage_group();
-    Classification::fake([['subtask_'.$completed->id => new BooleanAnswer(0.97)]]);
-    app(LaravelAiTaskBriefCoverage::class)->missing($group, cancelled_brief_coverage_pull_request(), 84, ['Orders export as CSV.']);
-    app(BriefCoverageLabeler::class)->label($group, new TaskPullRequestHealth(
-        state: 'merged', pullRequestNumber: 42,
-        mergeBody: "## Changes\n\n- Orders export as CSV.\n",
-        mergeSha: 'merge-sha', mergedAt: '2026-10-01T10:00:00Z',
-        mergeCommits: [new GitHubPullRequestCommit('fix-sha', "Fix export\n\nOrbit-Coverage-Fix: task-{$completed->id}", now()->addMinute()->toIso8601String())],
-    ));
-
-    $label = JevDecision::query()->sole()->labels['questions']['subtask_'.$completed->id];
-    expect($label['label'])->toBe('false_positive')
-        ->and($label['source']['coverage_fix_commit_sha'])->toBe('fix-sha');
-});
-
 it('uses normalized title uniqueness and Unicode case folding before labeling', function (): void {
     [$group, $cancelled, $failed, $completed] = cancelled_brief_coverage_group();
     $completed->update(['title' => 'Straße']);
@@ -267,23 +247,17 @@ it('case-folds Unicode titles when matching merge change lines', function (): vo
     expect(JevDecision::query()->sole()->labels['questions']['subtask_'.$completed->id]['label'])->toBe('false_negative');
 });
 
-it('does not label from an unmerged PR or unavailable history and ignores pre-call and out-of-group fixes', function (): void {
+it('labels only from merged pull-request change evidence', function (): void {
     [$group, $cancelled, $failed, $completed] = cancelled_brief_coverage_group();
-    Classification::fake([['subtask_'.$completed->id => new BooleanAnswer(0.97)]]);
+    Classification::fake([['subtask_'.$completed->id => new BooleanAnswer(0.2)]]);
     app(LaravelAiTaskBriefCoverage::class)->missing($group, cancelled_brief_coverage_pull_request(), 87, ['Orders export as CSV.']);
     $decision = JevDecision::query()->sole();
-    $history = [
-        new GitHubPullRequestCommit('pre-call', "Fix\n\nOrbit-Coverage-Fix: task-{$completed->id}", now()->subMinute()->toIso8601String()),
-        new GitHubPullRequestCommit('other-task', "Fix\n\nOrbit-Coverage-Fix: task-999999", now()->addMinute()->toIso8601String()),
-    ];
-    app(BriefCoverageLabeler::class)->label($group, new TaskPullRequestHealth(state: 'open', pullRequestNumber: 42, mergeBody: "## Changes\n\n- Orders export as CSV.\n", mergeSha: 'not-merged', mergedAt: '2026-10-01T10:00:00Z', mergeCommits: $history));
+    $health = new TaskPullRequestHealth(state: 'merged', pullRequestNumber: 42, mergeBody: "## Changes\n\n- Orders export as CSV.\n", mergeSha: 'merge-sha', mergedAt: '2026-10-01T10:00:00Z', mergeCommits: null);
+    app(BriefCoverageLabeler::class)->label($group, new TaskPullRequestHealth(state: 'open', pullRequestNumber: 42, mergeBody: $health->mergeBody, mergeSha: 'not-merged', mergedAt: $health->mergedAt));
     expect($decision->fresh()->labels)->toBeNull();
 
-    app(BriefCoverageLabeler::class)->label($group, new TaskPullRequestHealth(state: 'merged', pullRequestNumber: 42, mergeBody: "## Changes\n\n- Orders export as CSV.\n", mergeSha: 'merge-sha', mergedAt: '2026-10-01T10:00:00Z', mergeCommits: null));
-    expect($decision->fresh()->labels)->toBeNull();
-
-    app(BriefCoverageLabeler::class)->label($group, new TaskPullRequestHealth(state: 'merged', pullRequestNumber: 42, mergeBody: "## Changes\n\n- Orders export as CSV.\n", mergeSha: 'merge-sha', mergedAt: '2026-10-01T10:00:00Z', mergeCommits: $history));
-    expect($decision->fresh()->labels['questions']['subtask_'.$completed->id]['label'])->toBe('correct');
+    app(BriefCoverageLabeler::class)->label($group, $health);
+    expect($decision->fresh()->labels['questions']['subtask_'.$completed->id]['label'])->toBe('false_negative');
 });
 
 it('keeps the coverage decision unchanged when bookkeeping failure occurs during recording', function (): void {
