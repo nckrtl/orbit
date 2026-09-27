@@ -1,1 +1,2 @@
 docs/reference/schedules.md: This change adjusts the docs-impact extractor's schedule parsing; it does not change the application's scheduled behavior.
+docs/cli/design.mdx: This change updates a development-only fixture reader to accept the current Gateway fixture shape; it does not change a published CLI command or behavior.

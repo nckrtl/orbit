@@ -1457,10 +1457,35 @@ final readonly class DocsImpact
 
     private function matches(string $path, string $pattern): bool
     {
-        $regex = preg_quote($pattern, '#');
-        $regex = str_replace(['\\*\\*', '\\*'], ['.*', '[^/]*'], $regex);
+        foreach ($this->expandBraces($pattern) as $alternative) {
+            $regex = preg_quote($alternative, '#');
+            $regex = str_replace(['\\*\\*', '\\*'], ['.*', '[^/]*'], $regex);
 
-        return preg_match('#^'.$regex.'$#', $path) === 1 || (str_ends_with($pattern, '/**') && str_starts_with($path, substr($pattern, 0, -3).'/'));
+            if (preg_match('#^'.$regex.'$#', $path) === 1 || (str_ends_with($alternative, '/**') && str_starts_with($path, substr($alternative, 0, -3).'/'))) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /** @return list<string> */
+    private function expandBraces(string $pattern): array
+    {
+        if (preg_match('/\{([^{}]+)\}/', $pattern, $match, PREG_OFFSET_CAPTURE) !== 1) {
+            return [$pattern];
+        }
+
+        $alternatives = [];
+        $before = substr($pattern, 0, $match[0][1]);
+        $after = substr($pattern, $match[0][1] + strlen($match[0][0]));
+        foreach (explode(',', $match[1][0]) as $choice) {
+            foreach ($this->expandBraces($before.$choice.$after) as $expanded) {
+                $alternatives[] = $expanded;
+            }
+        }
+
+        return $alternatives;
     }
 
     private function frontmatter(string $content): string

@@ -515,6 +515,13 @@ it('docs impact docs-lint accepts pages without covers', function (): void {
     expect(new DocsImpact($root, [])->coverageFindings())->toBe([]);
 });
 
+it('docs impact docs-lint accepts brace alternatives in coverage globs', function (): void {
+    $root = docsImpactFixture();
+    file_put_contents($root.'/docs/reference/tasks.md', "---\ntitle: Tasks\ncovers:\n  - \"apps/gateway/app/{Domain/Tasks,Models}/**\"\n---\nTasks\n");
+
+    expect(new DocsImpact($root, [])->coverageFindings())->toBe([]);
+});
+
 it('docs impact docs-lint rejects covers globs with no tracked match', function (): void {
     $root = docsImpactFixture();
     file_put_contents($root.'/docs/reference/tasks.md', "---\ntitle: Tasks\ncovers:\n  - \"does/not/exist/**\"\n---\nTasks\n");

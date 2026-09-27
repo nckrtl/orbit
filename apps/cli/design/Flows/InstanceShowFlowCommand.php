@@ -127,7 +127,7 @@ final class InstanceShowFlowCommand extends GatewayCommand
     private function instanceSummary(string $name): array
     {
         $record = $this->fixtureObject($name);
-        $app = $record['app'] ?? null;
+        $app = $record['project'] ?? $record['app'] ?? null;
         $node = $record['node'] ?? null;
 
         if (! is_array($app) || ! is_array($node)) {
