@@ -79,6 +79,7 @@ describe('the Gateway view of Node agents', function (): void {
     });
 
     it('does not answer for a Process whose Node has no fresh view', function (): void {
+        $this->freezeTime();
         $node = agent_view_node();
         $web = agent_view_instance_process($node, 'web');
         seed_agent_view($node->id, ["systemd:orbit-process-{$web->id}-web" => 'active'], ageSeconds: 16);

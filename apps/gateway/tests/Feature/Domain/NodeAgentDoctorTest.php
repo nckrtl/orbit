@@ -196,6 +196,7 @@ describe('the Gateway view of an active agent', function (): void {
     ]);
 
     it('reports a missing or stale Node view and nothing for a fresh one', function (): void {
+        $this->freezeTime();
         activate_websocket_role();
         [$context, $nodeId] = node_agent_view_doctor_context();
         app(CacheAgentStateView::class)->putSubscriber(configured: true, connected: true, channels: 2);

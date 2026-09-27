@@ -336,6 +336,7 @@ describe('a workspace the group never attached', function (): void {
     });
 
     it('removes the leftover workspace of a group stranded in reserved past the bound', function (): void {
+        $this->freezeTime();
         app(TaskExtensionState::class)->enable();
         $remover = cancel_recording_remover();
         [$group, $workspace] = cancel_unattached_workspace(TaskGroupStatus::Reserved);

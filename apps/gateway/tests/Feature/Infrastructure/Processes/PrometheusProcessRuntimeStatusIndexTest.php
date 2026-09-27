@@ -277,6 +277,7 @@ describe('the Process list with a Gateway view of the Node agents', function ():
     });
 
     it('falls back to the Node when the view is stale and Prometheus cannot answer', function (): void {
+        $this->freezeTime();
         Http::fake(['*' => Http::response([], 503)]);
         $node = agent_view_node();
         $web = agent_view_instance_process($node, 'web');
