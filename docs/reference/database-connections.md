@@ -1,240 +1,137 @@
 ---
 title: "Database connections"
 description: "The Gateway-owned registry of mysql, pgsql, sqlite, and redis connections and how an operator attaches one to an Instance."
+covers:
+  - apps/gateway/app/Actions/DatabaseConnections/**
+  - apps/gateway/app/Domain/DatabaseConnections/**
+  - apps/gateway/app/Infrastructure/DatabaseConnections/**
+  - apps/gateway/app/Http/Controllers/Api/{DatabaseConnectionsController,DatabaseConnectionAttachmentsController,DatabaseUsersController}.php
+  - apps/gateway/app/Http/Requests/DatabaseConnections/**
+  - apps/gateway/app/Models/{DatabaseConnection,DatabaseConnectionTarget,DatabaseUser}.php
+  - apps/cli/app/Commands/Internal/InternalDatabaseLocalCommand.php
+  - apps/cli/app/Services/Database/**
 ---
 
 # Database connections
 
-This page tells an operator how the Gateway stores named mysql, pgsql, sqlite, and redis connection records and which fields each driver requires. It also covers list, show, create, update, destroy, managed user create, managed user list, add, remove, query, tables, schema, describe, and Doctor inspection. [ADR 0069](/decisions/0069-allow-node-process-targets) owns Node Process targets for shared Docker database servers, and [Database role](/reference/database-role) owns the `database` role as a Docker baseline; this page owns the connection registry.
-
-A Database connection is a Gateway-owned registry record. The operator registers a remote host or a sqlite path without assigning the `database` role. Node Processes start and stop Docker database servers. The registry does not start or stop a database. The Gateway can create a MySQL user and database through an existing Node-targeted Docker MySQL Process and then register or refresh the connection. Query, tables, schema, and describe run against a registered connection only.
-
-The operator adds a connection on an Instance only. Add writes prefixed keys into the Gateway-owned stored Instance environment under [ADR 0044](/decisions/0044-own-appinstance-environment-configuration-in-orbit). It does not write the workload `.env`. Run `orbit env:sync` after add or remove when the workload file must match stored configuration. [Instance environment variables](/reference/environment-variables) owns import, update, and synchronization.
-
-The CLI uses the shared table and detail tree, shows progress on Gateway calls, and never prints a password. Destroy and attachment removal require default-No confirmation or `--force`. Human query cells render SQL null as `NULL` and an empty string as `""` so those values stay distinct from each other and from a literal em dash. JSON query cells stay exact.
-
-## Create a connection
-
-Create one record with a unique slug:
-
-```text
-orbit database:create app --driver=mysql --host=db.example.test --database=app --username=app --password=secret
-```
-
-The slug is a lowercase kebab name of at most 63 characters. The Gateway encrypts the password with its application encryption key before it writes the row. Responses, activity records, errors, and debug output omit the password and replace a password-shaped value with `[REDACTED]`.
-
-The optional `--node` value is a numeric Node ID or a registered Node name. The Gateway stores that Node as an association. It does not require the `database` role on that Node, and it accepts a record with no Node for a remote or external host.
-
-SQLite uses a Unix absolute path instead of host, port, and database name:
-
-```text
-orbit database:create local --driver=sqlite --path=/var/lib/app/database.sqlite
-```
+A Database connection is a Gateway record that describes one database: its driver, where it is, and how to log in. The Gateway stores the password encrypted. You can inspect a registered database, create a MySQL user through a Docker Process, and attach a connection to an Instance. The registry never starts or stops a database. A shared database server runs as a Docker [Node Process](/reference/app-processes-and-schedules#owners). [`database`](/cli/database) lists the commands.
 
 ## Drivers and fields
 
-Each driver stores one complete connection profile.
+Each record has a unique slug: lowercase words joined by hyphens, at most 63 characters. Each driver takes its own fields.
 
-| Driver | Required fields | Optional fields | Default port |
+| Driver | Required | Optional | Default port |
 | --- | --- | --- | --- |
 | `mysql` | `host`, `database`, `username`, `password` | `node_id`, `port` | `3306` |
 | `pgsql` | `host`, `database`, `username`, `password` | `node_id`, `port` | `5432` |
 | `sqlite` | `path` | `node_id`, `username`, `password` | none |
 | `redis` | `host` | `node_id`, `port`, `database`, `username`, `password` | `6379` |
 
-The Gateway answers `validation.failed` when a mysql, pgsql, or redis record includes `path`, when a sqlite record includes `host`, `port`, or `database`, when a redis record omits `host`, or when the request includes an unsupported key. A sqlite `path` is a nonempty Unix absolute path of at most 1024 characters. A `host` is a hostname or IP address without userinfo or a port. A `port` is an integer from 1 through 65535. `database` and `username` are bounded printable names; a redis `database` is its numeric database index, stored as a 1-3 digit string. Redis stores a `username` or `password` only when the caller supplies one; it never requires either.
+`host` is a hostname or an IP address, without a user or a port. `port` is 1 through 65535. `path` is an absolute Unix path of at most 1,024 characters. A redis `database` is the numeric database index. The Gateway returns `validation.failed` for a field that the driver does not take, such as `path` on mysql or `host` on sqlite.
 
-Redis has no PDO inspector. `query`, `tables`, `schema`, and `describe` refuse a redis connection with `database.driver_unsupported` (HTTP 422) before they touch the connection.
+`node_id` links the record to a Node. The Node needs no `database` role. SQLite inspection needs this link, and it lets an Instance on the same Node reach a Docker Process locally.
 
-The API and PHP software development kit (SDK) return this identity for each record.
-
-| Field | Meaning |
-| --- | --- |
-| `id` | Numeric registry ID |
-| `slug` | Unique connection name |
-| `driver` | `mysql`, `pgsql`, `sqlite`, or `redis` |
-| `node_id` | Optional associated Node ID |
-| `host` | Hostname or IP for mysql, pgsql, and redis |
-| `port` | TCP port for mysql, pgsql, and redis |
-| `database` | Database name for mysql and pgsql, or the database index for redis |
-| `path` | Unix absolute sqlite path |
-| `username` | Stored username, or null |
-| `has_password` | Whether a password is stored |
-| `users_count` | Recorded user count. Present only on `database:show`. |
-
-Item and collection responses never include the password.
-
-## Commands
-
-The CLI sends each operation through the Gateway.
-
-| Command | Result |
-| --- | --- |
-| `orbit database:list` | List every registered connection without passwords. |
-| `orbit database:show SLUG` | Show one connection without the password. |
-| `orbit database:create SLUG --driver=DRIVER` | Create one connection and encrypt the supplied password. |
-| `orbit database:update SLUG` | Replace the supplied fields on one connection. |
-| `orbit database:user:create SLUG --process=ID` | Create a MySQL user and database through a Node Docker Process, then register or refresh the connection. |
-| `orbit database:user:list SLUG` | List the users the Gateway recorded for the connection. |
-| `orbit database:destroy SLUG --force` | Destroy the connection record. |
-| `orbit database:query SLUG SQL` | Run one SQL statement against the registered connection. |
-| `orbit database:tables SLUG` | List tables on the registered connection. |
-| `orbit database:schema SLUG` | Show columns for every table on the registered connection. |
-| `orbit database:describe SLUG TABLE` | Show columns for one table on the registered connection. |
-| `orbit instance:database:add SLUG --instance=SELECTOR` | Add the connection on one Instance and write prefixed stored environment keys. |
-| `orbit instance:database:remove SLUG --instance=SELECTOR --force` | Remove the connection from one Instance and clear the prefixed stored environment keys. |
-
-Every command also accepts `--json`. Human and JSON results include the Gateway request ID. `database:destroy` and `instance:database:remove` require interactive confirmation or `--force` before they send the delete request. `database:update` requires at least one field option. `database:query` is read-only unless `--write` is set.
-
-The create command accepts `--host`, `--port`, `--database`, `--path`, `--username`, `--password`, and `--node`. The update command accepts the same field options except the slug. An empty `--node` on update clears the stored Node association. `database:user:create` accepts `--process`, `--database`, `--username`, and `--password`.
-
-## Create a managed MySQL user
-
-Create a MySQL user and database through an existing Node-targeted Docker MySQL Process, then register or refresh the connection:
-
-```text
-orbit database:user:create app --process=12 --database=app --username=app --password=secret
-```
-
-The Process must be Node-owned, use the Docker runtime, use a `mysql` or `mysql-server` image, publish container port `3306`, and store `MYSQL_ROOT_PASSWORD` in its environment. The Gateway runs the create through that Process. The CLI does not open SSH to the Node.
-
-The Gateway writes these connection fields from the Process. The host is the Node WireGuard address. The port is the published host port for container port `3306`. The Node association is the Process owner. The driver is `mysql`.
-
-The SQL is idempotent: the Gateway creates the database and user when they are missing, then sets the password and grants privileges on that database from any host. A slug that already names a mysql connection is refreshed with those fields. A slug that names a pgsql or sqlite connection returns `database.slug_conflict` (HTTP 409) and does not change the Process.
-
-The Gateway answers these process refusals before it writes a connection.
-
-| Code | HTTP | Meaning |
-| --- | --- | --- |
-| `http.404` | 404 | The Process ID is not present. |
-| `database.process_not_node` | 422 | The Process is not Node-targeted. |
-| `database.process_not_docker` | 422 | The Process is not Docker. |
-| `database.process_not_mysql` | 422 | The image is not MySQL or container port `3306` is not published. |
-| `database.root_password_missing` | 422 | The Process environment has no `MYSQL_ROOT_PASSWORD`. |
-| `database.user_create_failed` | 502 | The Process could not create the user. |
-| `database.slug_conflict` | 409 | The slug already names a non-mysql connection. |
-
-Responses, activity records, errors, and debug output omit the user password and the Process root password.
-
-## List recorded users
-
-`database:user:create` records one row per username on a connection: `username`, `privileges` (the granted SQL privileges as a description, such as `` ALL PRIVILEGES ON `app`.* ``), `created_by` (the calling Node's name, since the Gateway authorizes every command as a Node), and `created_at`. Recreating a user through `database:user:create` updates that row's `privileges` and `created_by` instead of adding a second one. `database:show` reports the row count as `users_count`.
-
-```text
-orbit database:user:list app
-```
+Responses contain `id`, `slug`, `driver`, `node_id`, `host`, `port`, `database`, `path`, `username`, and `has_password`. Show also returns `users_count`. No response, Activity entry, or error contains a password.
 
 ## API
 
-The Gateway exposes the registry at `/api/v1/database-connections`. Access to those registry routes is fleet-wide. Managed user create uses the Process owning Node at `/api/v1/processes/{process}/database-users`.
+The registry routes need an access grant to the Gateway Node. A duplicate slug returns `database.slug_conflict` (409), and an unknown slug returns 404.
 
 | Method | Path | Result |
 | --- | --- | --- |
-| `GET` | `/api/v1/database-connections` | List records ordered by slug |
-| `POST` | `/api/v1/database-connections` | Create one record |
-| `POST` | `/api/v1/processes/{process}/database-users` | Create a MySQL user and database through that Process, then register or refresh the connection |
-| `GET` | `/api/v1/database-connections/{slug}` | Show one record, with `users_count` |
-| `GET` | `/api/v1/database-connections/{slug}/users` | List the connection's recorded users |
-| `PATCH` | `/api/v1/database-connections/{slug}` | Update supplied fields |
-| `DELETE` | `/api/v1/database-connections/{slug}` | Destroy the record |
-| `POST` | `/api/v1/database-connections/{slug}/query` | Run one SQL statement |
-| `GET` | `/api/v1/database-connections/{slug}/tables` | List tables |
-| `GET` | `/api/v1/database-connections/{slug}/schema` | Show every table's columns |
-| `GET` | `/api/v1/database-connections/{slug}/describe/{table}` | Show one table's columns |
+| `GET` | `/api/v1/database-connections` | List the records, ordered by slug. |
+| `POST` | `/api/v1/database-connections` | Create one record. |
+| `GET` | `/api/v1/database-connections/{slug}` | Show one record. |
+| `PATCH` | `/api/v1/database-connections/{slug}` | Change the given fields. A `node_id` of null removes the Node link. |
+| `DELETE` | `/api/v1/database-connections/{slug}` | Delete the record. `database.connection_attached` (409) while an Instance still uses it. |
+| `GET` | `/api/v1/database-connections/{slug}/users` | List the users that `database:user:create` recorded. |
+| `POST` | `/api/v1/database-connections/{slug}/query` | Run one SQL statement. |
+| `GET` | `/api/v1/database-connections/{slug}/tables` | List the tables. |
+| `GET` | `/api/v1/database-connections/{slug}/schema` | List the columns of every table. |
+| `GET` | `/api/v1/database-connections/{slug}/describe/{table}` | List the columns of one table. |
 
-A duplicate slug on registry create returns `database.slug_conflict` (HTTP 409) and leaves the existing record unchanged. Managed user create returns HTTP 201 for a new mysql row and HTTP 200 when it refreshes an existing mysql slug. An unknown slug returns `http.404`. Destroying a record deletes that row when no Instance attachment exists. The Gateway answers `database.connection_attached` (HTTP 409) when an attachment still exists. Recovery of a stored password depends on retaining the Gateway encryption key material.
+A change to a record does not change the keys that an earlier attachment stored. Attach the connection again to update them.
 
 ## Inspect a registered connection
 
-The operator inspects a registered connection with query, tables, schema, and describe. The Gateway refuses SQL that is not sent against a stored slug. The request never accepts a host, path, username, or password of its own.
+Query, tables, schema, and describe run only against a registered slug. The request never takes its own host, path, user, or password.
 
-Query is read-only by default. The Gateway answers `database.write_required` when the statement would write and the request omits `write: true`. `--write` on the CLI sends that permission flag; it is not proof that rows mutated. `row_count` is the inspector-reported count and is driver-specific. Query accepts one statement. Stacked statements return `database.sql_multiple_statements`.
+A query takes `sql`, at most 16,384 characters, and `write`. It runs one statement; a stacked statement returns `database.sql_multiple_statements`. It is read-only unless `write` is `true`. A write statement without it returns `database.write_required`. `write` is permission, not proof that rows changed. The result holds `columns`, at most 500 `rows`, `row_count` as the driver reports it, and `truncated` when more rows exist. The Gateway replaces the stored password with `[REDACTED]` wherever it appears in a result.
 
-SQLite query, tables, schema, and describe run on the associated Node. The Gateway answers `database.sqlite_node_required` when that connection has no Node. The remote command is the hidden Orbit CLI command `internal:database-local`, which opens the file with PDO. SQL and the lane token travel on protected stdin and do not enter argv. The inspector never invokes `sqlite3`. [ADR 0081](/decisions/0081-query-registered-databases-through-pdo) owns that split.
+| Driver | Where it runs |
+| --- | --- |
+| `mysql`, `pgsql` | On the Gateway, through PDO, with the stored host, port, database, user, and password. |
+| `sqlite` | On the linked Node, through the hidden command `orbit internal:database-local`, which opens the file with PDO. |
+| `redis` | Not supported. `database.driver_unsupported` (422). |
 
-MySQL and PostgreSQL inspection uses PDO on the Gateway with the stored host, port, database, username, and password. The password never enters a DSN, response, activity record, error, or debug output. Responses, activity records, errors, and debug output replace a password-shaped value with `[REDACTED]`. Query returns at most 500 rows and sets `truncated` when more remain.
+For SQLite, the Gateway connects to the linked Node over SSH and sends a JSON envelope on protected standard input: a random 64-character token, the path, the SQL, and the write flag. None of these values appear on the command line. A read-only request opens the file read-only. The Node must be active, with a WireGuard address and an `orbit` binary on its `PATH`. A record without a Node returns `database.sqlite_node_required`.
 
-An unknown table returns `database.table_missing` (HTTP 404). A failed remote or driver execution returns `database.query_failed` (HTTP 502).
+An unknown table returns `database.table_missing` (404). A failed query on the database or the Node returns `database.query_failed` (502).
 
-```text
-orbit database:query app "SELECT id, email FROM users"
-orbit database:query app "DELETE FROM users WHERE id = 1" --write
-orbit database:tables app
-orbit database:schema app
-orbit database:describe app users
-```
+## Create a managed MySQL user
+
+`POST /api/v1/processes/{process}/database-users` creates a MySQL database and user through a running Docker Process, and then creates or refreshes the connection record. It takes `slug`, `database`, `username`, and `password`. The database and user names are identifiers of 1 to 32 characters. The route needs an access grant to the Process's Node.
+
+The Process must be a Node Process with the Docker runtime and a `mysql` or `mysql-server` image. It must publish container port `3306` and store `MYSQL_ROOT_PASSWORD` in its environment. The SQL creates the database and user when they are missing, sets the password, and grants all privileges on that database from any host.
+
+The record gets driver `mysql`, the Node's WireGuard address as host, the published host port as port, and the Process's Node as `node_id`. A new record returns 201. An existing `mysql` record with the same slug is refreshed and returns 200.
+
+| Code | HTTP | Meaning |
+| --- | --- | --- |
+| `database.process_not_node` | 422 | The Process belongs to an Instance. |
+| `database.process_not_docker` | 422 | The Process is not Docker. |
+| `database.process_not_mysql` | 422 | The image is not MySQL, or container port `3306` is not published. |
+| `database.root_password_missing` | 422 | The Process environment has no `MYSQL_ROOT_PASSWORD`. |
+| `database.user_create_failed` | 502 | The Process could not create the user. |
+| `database.slug_conflict` | 409 | The slug names a connection with another driver. |
+
+The Gateway records one row for each user of a connection: `username`, `privileges`, `created_by` (the calling Node's name), and `created_at`. Creating the same user again updates its row.
 
 ## Add a connection on an Instance
 
-Add writes stored environment keys for one Instance. The target is an Instance ID or exact Route domain. Orbit accepts no Workspace target.
+`PUT /api/v1/instances/{instance}/database-connections/{slug}` writes the connection into the Instance's stored environment configuration. `{instance}` is an Instance ID or an exact Route domain. The body can hold `prefix`, an uppercase name of at most 32 characters that starts with a letter. The default is `DB`. The route needs an access grant to the Instance's Node.
 
-```text
-orbit instance:database:add app --instance=12
-```
-
-The optional `--prefix` value defaults to `DB`. A prefix is an uppercase name that starts with a letter and then uses letters, digits, or underscores, at most 32 characters. Add replaces an existing mapping that already uses that prefix on the same Instance.
-
-The Gateway writes these keys for mysql and pgsql.
-
-| Prefix `DB` key | Source |
+| Driver | Keys with prefix `DB` |
 | --- | --- |
-| `DB_CONNECTION` | Driver (`mysql` or `pgsql`) |
-| `DB_HOST` | Resolved hostname or IP |
-| `DB_PORT` | Resolved TCP port |
-| `DB_DATABASE` | Stored database name |
-| `DB_USERNAME` | Stored username |
-| `DB_PASSWORD` | Stored password |
+| `mysql`, `pgsql` | `DB_CONNECTION`, `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD` |
+| `redis` | `DB_CONNECTION`, `DB_HOST`, `DB_PORT`, and `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD` when stored |
+| `sqlite` | `DB_CONNECTION`, `DB_DATABASE` as the file path, and `DB_USERNAME`, `DB_PASSWORD` when stored |
 
-SQLite writes `DB_CONNECTION=sqlite` and `DB_DATABASE` as the Unix absolute path. It writes `DB_USERNAME` and `DB_PASSWORD` only when those values are stored. It does not write `DB_HOST` or `DB_PORT`, and it removes those keys when a previous mysql or pgsql attachment used the same prefix.
+The Gateway removes the other keys of the prefix, for example `DB_HOST` when a sqlite connection replaces a mysql one. A second add with the same prefix replaces the earlier mapping.
 
-Responses, activity records, errors, and debug output omit environment values and the password. The add result names the Instance, slug, prefix, written key names, resolved host and port, whether stored configuration changed, and the total stored key count.
+When the record has a `node_id` and a port, the Gateway looks for a Docker Node Process on that Node that publishes the port, as host port or container port. When it finds one and the Instance runs on the same Node, it writes host `127.0.0.1`, or the explicit bind address of that port, and the published host port. Otherwise it writes the stored host and port.
 
-Add changes stored configuration only. The workload `.env` stays unchanged until the operator runs `orbit env:sync`.
+The result names the Instance, slug, prefix, written keys, host, port, whether stored configuration changed, and the key count. It never holds a value.
 
-## Same-node Docker Process host and port
+`DELETE /api/v1/instances/{instance}/database-connections/{slug}` removes the mapping and the six keys of its prefix. Other keys stay. An unknown mapping returns `database.attachment_missing` (404).
 
-A connection with a stored `node_id` can align with a Node-owned Docker Process on that Node. Alignment holds when one published port mapping on that Process uses the connection's port as the published host port or the container port.
-
-When the Instance lives on that same Node, the Gateway writes host `127.0.0.1` and the mapping's published host port. When the Instance lives on another Node, or the connection has no aligned Docker Process, the Gateway writes the registry host and port.
-
-## Remove a connection from an Instance
-
-Remove deletes the mapping and the related stored keys for that prefix.
-
-```text
-orbit instance:database:remove app --instance=12 --force
-```
-
-`--prefix` defaults to `DB`. Remove deletes `PREFIX_CONNECTION`, `PREFIX_HOST`, `PREFIX_PORT`, `PREFIX_DATABASE`, `PREFIX_USERNAME`, and `PREFIX_PASSWORD` when they are stored. Other stored keys stay in place. An unknown attachment returns `database.attachment_missing` (HTTP 404).
-
-## Add and remove API
-
-The Gateway exposes add and remove on the Instance.
-
-| Method | Path | Result |
-| --- | --- | --- |
-| `PUT` | `/api/v1/instances/{instance}/database-connections/{slug}` | Add the connection and write stored environment keys |
-| `DELETE` | `/api/v1/instances/{instance}/database-connections/{slug}` | Remove the connection and clear the prefixed stored keys |
-
-The `{instance}` selector is a positive Instance ID or an exact Route domain, as [Instance environment variables](/reference/environment-variables) describes. The optional JSON body accepts `prefix`. Omission uses `DB`. Access uses the Instance owning Node.
+Add and remove change stored configuration only. Run [`env:sync`](/reference/environment-variables#synchronize) to write the Instance's `.env`.
 
 ## Inspect attachments with Doctor
 
-Doctor inspects database connections as the explicit `database_connection` family. It compares Gateway registry records and Instance attachment mappings with stored Instance environment keys. It does not write stored environment, start a database, or change a Node.
+[Doctor](/cli/doctor) checks database connections in its `database_connection` family. It compares each record and mapping with the Instance's stored keys, and changes nothing.
 
 | Code | Kind | Meaning |
 | --- | --- | --- |
-| `database_connection.missing` | Drift | An attachment names a registry connection that is not present. |
-| `database_connection.unhealthy` | Drift | A registry connection is missing required fields or names a Node that is gone. |
-| `database_connection.env_mismatch` | Drift | An attachment's stored keys are missing, leftover, or different from the attach projection. |
-| `database_connection.inspection_failed` | Unverifiable | Doctor could not read the registry password or stored environment. |
+| `database_connection.missing` | Drift | A mapping names a record that does not exist. |
+| `database_connection.unhealthy` | Drift | A record lacks a required field or names a Node that is gone. |
+| `database_connection.env_mismatch` | Drift | A mapping's stored keys are missing, left over, or different. |
+| `database_connection.inspection_failed` | Unverifiable | Doctor could not read the password or the stored configuration. |
 
-```bash
-orbit doctor --node=<node-id> --family=database_connection
-```
+To repair an `env_mismatch`, add the connection again with the same prefix, then synchronize.
 
-Responses, activity records, errors, and debug output omit environment values and the password.
+## Why it works this way
 
-## Restore stored environment
+These reasons explain the design. Check them before you propose a change.
 
-Run `orbit instance:database:add SLUG --instance=SELECTOR` with the same prefix. The Gateway re-projects stored keys from the registry using the same rules as the first add, including same-node Docker host `127.0.0.1` and the published host port, sqlite path keys, and leftover host or port removal on prefix reuse. Doctor does not write those keys. The workload `.env` stays unchanged until the operator runs `orbit env:sync`.
+### A registry, not a database manager
+
+The registry records how to reach a database. Node Processes run database servers, and the `database` role only prepares Docker. So a connection works for an external host too, and deleting a record never touches data.
+
+### One PDO path for every SQL driver
+
+Every SQL driver runs through PHP PDO, so query results have one shape. The Gateway reaches mysql and pgsql directly. A SQLite file exists only on its Node, so the Node runs PDO through the hidden CLI command. `sqlite3` on the Node is a rejected alternative, because it is a second engine with its own output format. Opening the file from the Gateway is impossible.
+
+### Secrets stay off the command line
+
+The SQL, the path, and the token travel on protected standard input, so they never show in a process list. SSH from the Gateway is the authorization boundary for the hidden command.
