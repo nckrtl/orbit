@@ -58,7 +58,7 @@ The response has status 201:
 }
 ```
 
-`auth` is valid only for the `socket_id` in the request. Subscribe with it as the Pusher `auth` value. The browser auth endpoint, `POST /api/v1/broadcasting/auth`, refuses every `private-log-stream.*` channel.
+The stream ID is a random 128-bit value, and the Gateway never lists it. `auth` is valid only for the `socket_id` in the request. Subscribe with it as the Pusher `auth` value. The browser auth endpoint, `POST /api/v1/broadcasting/auth`, refuses every `private-log-stream.*` channel.
 
 ## Renew and close
 
@@ -144,7 +144,7 @@ The agent and the Gateway bound every stream, so a busy log cannot exhaust eithe
 
 The 8 KiB counts the line's UTF-8 bytes, so a line of accented letters, CJK characters, or emoji keeps its full length: the Gateway sends Reverb each character as UTF-8, not as an escape. A line of many quotes or backslashes can be cut shorter than 8 KiB, because Reverb's request carries each quote and backslash twice and one line must fit one event.
 
-Lines above a rate are dropped and counted in `dropped`. The agent never queues more than one burst for each stream. The Gateway queues lines only while a relay run is slow or failing, up to its limit for waiting lines; past it, the stream ends with `relay_behind`. A flood therefore cannot grow the agent's or the Gateway's memory.
+Lines above a rate are dropped and counted in `dropped`. The agent never queues more than one burst for each stream. The Gateway queues lines only while a relay run is slow or failing, up to its limit for waiting lines; past it, the stream ends with `relay_behind`. For the next 120 seconds the Gateway ignores every event for that stream. A flood therefore cannot grow the agent's or the Gateway's memory.
 
 ## Redaction
 
@@ -160,6 +160,8 @@ The setting keys are exactly `APP_ENV`, `APP_NAME`, `APP_DEBUG`, `APP_LOCALE`, `
 A PEM block that spans lines is redacted from its `BEGIN` line through its `END` line, for at most 200 lines. When no `END` line comes within 200 lines, the 200th line becomes `[orbit] 199 lines redacted after a PEM BEGIN line without END`, and the lines after it show again.
 
 Redaction is a safety net. It misses a secret with no recognizable shape or key name, and a secret split across lines or encoded. It keeps an environment value shorter than eight characters or stored under a setting key. It also misses personal data, such as email addresses and customer records in exception messages. Access to the serving Node decides who may read a log.
+
+The `websocket` role Node sees every log line in plain text, because TLS ends there. Orbit trusts that Node as part of the realtime layer, as it does for every other realtime message.
 
 The CLI redacts credential-shaped text again before it prints a line, and it writes `[redacted]` in lower case. A line in the terminal can therefore show both forms. `[REDACTED]` marks a value that the agent or the Gateway replaced. `[redacted]` marks one that the CLI replaced, for example in `API_KEY=[redacted]`, where the CLI matched the already redacted `API_KEY=[REDACTED]` again.
 

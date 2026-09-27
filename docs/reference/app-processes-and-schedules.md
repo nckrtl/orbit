@@ -41,9 +41,9 @@ The systemd unit is `orbit-process-{id}-{name}.service`, and the Docker containe
 
 The unit sets `PATH` and `NODE_USE_SYSTEM_CA=1`. An Instance Process then reads the Instance's `.env` file: in the checkout on `app-dev`, or in the production home on `app-prod`.
 
-A Process can also store an environment map in its specification. The unit receives each pair as an `Environment=` directive, never on `ExecStart`. Gateway-owned features store such a map, for example the [proxycli](/reference/proxycli) collector. The public create API does not accept one for systemd. The derived keys always win: `PATH`, `NODE_USE_SYSTEM_CA`, `VITE_DEV_SERVER_CERT`, `VITE_DEV_SERVER_KEY`, the `ORBIT_DEV_SERVER_*` keys, and the Agentation keys.
+A Process can also store an environment map in its specification. The unit receives each pair as an `Environment=` directive, never on `ExecStart`. The unit file under `/etc/systemd/system` is written with mode `0644`, so these values sit in plain text that every local user on the Node can read. For the proxycli collector that includes its management key and tokens. WireGuard membership and Node access are the security boundary. Gateway-owned features store such a map, for example the [proxycli](/reference/proxycli) collector. The public create API does not accept one for systemd. The derived keys always win: `PATH`, `NODE_USE_SYSTEM_CA`, `VITE_DEV_SERVER_CERT`, `VITE_DEV_SERVER_KEY`, the `ORBIT_DEV_SERVER_*` keys, and the Agentation keys.
 
-A development Process also receives `VITE_DEV_SERVER_CERT` and `VITE_DEV_SERVER_KEY` for the Instance's Route domain. When the Instance has a Route, it receives `ORBIT_DEV_SERVER_ORIGIN`, `ORBIT_DEV_SERVER_HOST`, `ORBIT_DEV_SERVER_PATH`, and `ORBIT_DEV_SERVER_PORT` for the [development-server endpoint](/reference/routes#development-server-endpoint).
+A development Process also receives `VITE_DEV_SERVER_CERT` and `VITE_DEV_SERVER_KEY`, the paths of the Instance's certificate files under `~/.orbit/certificates/app-instance-{id}/current/`. The `vp-dev` preset does not receive them. When the Instance has a Route, it receives `ORBIT_DEV_SERVER_ORIGIN`, `ORBIT_DEV_SERVER_HOST`, `ORBIT_DEV_SERVER_PATH`, and `ORBIT_DEV_SERVER_PORT` for the [development-server endpoint](/reference/routes#development-server-endpoint), and the Agentation keys when it has an Agentation port. These derived values are not secret. The unit carries them both as `Environment=` directives and on `ExecStart` through `/usr/bin/env`.
 
 ## Presets
 
@@ -53,13 +53,13 @@ A preset configures a development Instance Process. It sets the command, the run
 | --- | --- |
 | `vp-dev` | Runs VitePlus on an [assigned Vite port](/reference/assigned-vite-ports). The default restart policy is `on-failure`. |
 | `agentation-mcp` | Runs the [Agentation](/reference/agentation) HTTP server, assigns its port, and publishes `/__orbit/agentation`. It refuses keep-alive. |
-| `antigravity-watch` | Runs the Agentation watcher. It needs the `agentation-mcp` Process, refuses keep-alive, and restarts `always`. |
+| `antigravity-watch` | Runs the Agentation watcher. It needs the `agentation-mcp` Process and refuses keep-alive. Its default restart policy is `always`. |
 
 ## Create a Process
 
 Create installs the unit or container. With `start`, it also starts it. An identical create returns the existing Process and keeps its desired state. A different specification with the same owner and name returns `process.name_taken` (409) and changes nothing. To change a Process, destroy it and create it again.
 
-On a Node with the active `app-dev` role, a systemd Process installs without a boot start. The Gateway starts it with `systemctl start` and does not enable the unit. After a reboot the Process stays down until `process:start` or the next HTTP wake. [Hibernation](/reference/app-dev-runtime-hibernation) describes idle stop, `keep_alive`, and wake.
+On a Node with the active `app-dev` role, a systemd Instance Process installs without a boot start. A Docker Instance Process there maps restart policy `always` to Docker `unless-stopped`, so an idle stop survives a Docker daemon restart. Node Processes on the same Node keep the normal behavior. The Gateway starts it with `systemctl start` and does not enable the unit. After a reboot the Process stays down until `process:start` or the next HTTP wake. [Hibernation](/reference/app-dev-runtime-hibernation) describes idle stop, `keep_alive`, and wake.
 
 An Instance on `app-prod` with no selected release accepts a stopped Process. A start fails with `process.release_unavailable` until [a deployment](/reference/deployments) selects a release. A later start uses the release that `current` selects then. A new release does not restart a running Process.
 
@@ -77,7 +77,7 @@ The Gateway exposes these Process endpoints.
 
 Creating or starting an Instance Process needs an active Instance on an active Node. Creating or starting a Node Process needs an active managed Node. Otherwise the Gateway refuses with `process.target_inactive` before it changes anything. Removal can use the recorded placement of a failed or removing Instance while its Node is active.
 
-`cpu` is a ratio of one core and `memory_bytes` is bytes. Both come from the [Metrics role](/reference/metrics#cadvisor) and are null when the Process is not running or no sample exists. Responses, Activity, and errors show Docker environment values as `[REDACTED]`.
+`cpu` is a ratio of one core and `memory_bytes` is bytes. Both come from the [Metrics role](/reference/metrics#cadvisor) and are null when the Process is not running or no sample exists. Responses, Activity, and errors show every stored environment value, Docker or systemd, as `[REDACTED]`.
 
 Removing a systemd Process disables and stops the unit, deletes the unit file, reloads systemd, and resets the unit's failed state. A crashed unit therefore leaves no `failed` entry in `systemctl list-units`.
 
@@ -95,8 +95,8 @@ A Project holds Process definitions and Schedule definitions. A definition has a
 
 | Field | Contract |
 | --- | --- |
-| `name` | 1 through 63 lowercase letters, digits, or hyphens. It starts and ends with a letter or digit. |
-| `environments` | One or two distinct values: `development`, `production`. |
+| `name` | 1 through 63 lowercase letters, digits, or hyphens. It starts and ends with a letter or digit. A Schedule definition name also allows no two hyphens in a row. |
+| `environments` | Must include `production` for the definition to have an effect. Production preparation copies only definitions that include it. |
 | `spec` | For a Process: the runtime fields above, without owner, start, user, or environment file. For a Schedule: `command`, `calendar`, and `timeout_seconds`, with the limits of a Schedule. |
 
 A Schedule definition has no host Node, so the Gateway does not run `systemd-analyze calendar` when it stores one. The host Node checks the calendar when production preparation installs the copy.
@@ -112,7 +112,7 @@ A definition change touches only the Project. It makes no remote call and does n
 
 ## Production copies
 
-[Cloning](/reference/appinstance-cloning) a production Instance copies the Project's definitions into that Instance. The Gateway captures every definition whose `environments` include `production`, once for each target. It ignores development-only definitions and the candidate's own Processes and Schedules.
+[Cloning](/reference/appinstance-cloning) a production Instance copies the Project's definitions into that Instance. The Gateway captures every definition whose `environments` include `production`, once for each target. It ignores every other definition and the candidate's own Processes and Schedules.
 
 Each Process definition becomes a new Instance Process with its own ID, installed stopped. Each Schedule definition becomes a new Instance Schedule with its own UUID, installed with its timer disabled. The copies do not need a selected release, and preparation runs no application code. Start them with [`process:start`](/cli/process#orbit-processstart) and [`schedule:enable`](/cli/schedule#orbit-scheduleenable) when the Instance is ready.
 
@@ -142,4 +142,4 @@ A copied worker or Schedule can run before the new Instance's data is ready, for
 
 ### Managed environment as `Environment=` directives
 
-A Node Process has no Instance `.env` file, but Gateway-owned Processes need secrets. Values on `ExecStart`, for example through `/usr/bin/env`, would put secrets in the process list. So the unit carries them as `Environment=` directives.
+A Node Process has no Instance `.env` file, but Gateway-owned Processes need secrets. Values on `ExecStart`, for example through `/usr/bin/env`, would put secrets in the process list. So the unit carries the stored map as `Environment=` directives. The cost is that the values sit in the mode-`0644` unit file. A separate mode-`0600` environment file is a possible later change and is not built.

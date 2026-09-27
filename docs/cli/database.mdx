@@ -183,7 +183,7 @@ The Gateway answers `database.connection_attached` while any Instance still atta
 
 ## orbit database:query
 
-Run one SQL statement against a registered connection. The command is read-only unless `--write` is set. The Gateway refuses SQL that is not sent against a stored slug.
+Run one SQL statement against a registered connection. Without `--write`, the Gateway refuses a statement whose leading verb writes. That check reads only the leading verb; see [Inspect a registered connection](/reference/database-connections#inspect-a-registered-connection). The Gateway refuses SQL that is not sent against a stored slug.
 
 ```bash
 orbit database:query <slug> <sql> [--write] [--json]

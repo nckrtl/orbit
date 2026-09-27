@@ -56,7 +56,11 @@ A change to a record does not change the keys that an earlier attachment stored.
 
 Query, tables, schema, and describe run only against a registered slug. The request never takes its own host, path, user, or password.
 
-A query takes `sql`, at most 16,384 characters, and `write`. It runs one statement; a stacked statement returns `database.sql_multiple_statements`. It is read-only unless `write` is `true`. A write statement without it returns `database.write_required`. `write` is permission, not proof that rows changed. The result holds `columns`, at most 500 `rows`, `row_count` as the driver reports it, and `truncated` when more rows exist. The Gateway replaces the stored password with `[REDACTED]` wherever it appears in a result.
+A query takes `sql`, at most 16,384 characters, and `write`. It runs one statement; a stacked statement returns `database.sql_multiple_statements`.
+
+Without `write: true`, the Gateway refuses a statement whose leading verb writes, such as `INSERT`, `UPDATE`, `DELETE`, `CREATE`, or `DROP`, with `database.write_required`. That check reads only the leading verb. For mysql and pgsql the statement then runs in a normal session, so a statement with side effects that does not start with a write verb, such as `SET` or a `SELECT` that calls a function, runs without `write`. Only SQLite opens the file read-only.
+
+`write` is permission, not proof that rows changed. The result holds `columns`, at most 500 `rows`, `row_count`, and `truncated` when more rows exist. For a read, `row_count` is the number of returned rows. For a write, it is the count that the driver reports. The Gateway replaces the stored password with `[REDACTED]` wherever it appears in a result.
 
 | Driver | Where it runs |
 | --- | --- |
@@ -64,7 +68,11 @@ A query takes `sql`, at most 16,384 characters, and `write`. It runs one stateme
 | `sqlite` | On the linked Node, through the hidden command `orbit internal:database-local`, which opens the file with PDO. |
 | `redis` | Not supported. `database.driver_unsupported` (422). |
 
-For SQLite, the Gateway connects to the linked Node over SSH and sends a JSON envelope on protected standard input: a random 64-character token, the path, the SQL, and the write flag. None of these values appear on the command line. A read-only request opens the file read-only. The Node must be active, with a WireGuard address and an `orbit` binary on its `PATH`. A record without a Node returns `database.sqlite_node_required`.
+For SQLite, the Gateway connects to the linked Node over SSH and sends a JSON envelope on protected standard input: a random 64-character token, the path, the SQL, and the write flag. None of these values appear on the command line.
+
+The hidden command checks only that the token is 64 hexadecimal characters. It compares the token with `ORBIT_INTERNAL_DATABASE_TOKEN` only when that variable is set on the Node, and Orbit does not set it. So any user who can run `orbit internal:database-local` on the Node can open a local SQLite file that the user can read.
+
+A read-only request opens the file read-only. The Node must be active, with a WireGuard address and an `orbit` binary on its `PATH`. A record without a Node returns `database.sqlite_node_required`.
 
 An unknown table returns `database.table_missing` (404). A failed query on the database or the Node returns `database.query_failed` (502).
 
@@ -134,4 +142,4 @@ Every SQL driver runs through PHP PDO, so query results have one shape. The Gate
 
 ### Secrets stay off the command line
 
-The SQL, the path, and the token travel on protected standard input, so they never show in a process list. SSH from the Gateway is the authorization boundary for the hidden command.
+The SQL, the path, and the token travel on protected standard input, so they never show in a process list. SSH from the Gateway is the authorization boundary for the hidden command, and WireGuard membership is the boundary for the fleet. The token does not add protection by default.

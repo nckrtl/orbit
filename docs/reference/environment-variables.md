@@ -29,7 +29,7 @@ Import and update change stored configuration only. The `.env` file on the Node 
 
 A success returns `app_instance_id`, `operation`, `changed`, and `key_count`, the total number of stored keys. `changed` is `false` when the stored value or the file already matched.
 
-The Instance must be active, with complete placement, no pending source migration, and no pending Route change. Otherwise the Gateway returns `env.owner_unavailable` (409). A public Route that is live can finish its last cleanup steps without blocking these operations. The caller needs an access grant to the Instance's Node. Import and synchronize also need an active Node. Update does not contact the Node, so it works while the Node is unreachable.
+The Instance must be active, with complete placement and no pending source migration. It must be the target of exactly one Route, and that Route must be authoritative, without a failure or a pending change. Otherwise the Gateway returns `env.owner_unavailable` (409). So an Instance without a Route cannot import, update, or synchronize. A public Route that is live can finish its last cleanup steps without blocking these operations. The caller needs an access grant to the Instance's Node. Import and synchronize also need an active Node. Update does not contact the Node, so it works while the Node is unreachable.
 
 ## Where the file lives
 
@@ -70,7 +70,7 @@ The Gateway checks the complete result before it stores any part of an import or
 
 ## Synchronize
 
-Synchronization takes one snapshot of the Instance, its authoritative Route, and the stored configuration. It resolves `{{app_instance.domain}}` to the Route's domain and `{{app_instance.environment}}` to `development` or `production`, the Instance's placement. A missing Route or an unresolved placeholder returns `env.reference_unavailable` (409) before the file changes.
+Synchronization takes one snapshot of the Instance, its authoritative Route, and the stored configuration. It resolves `{{app_instance.domain}}` to the Route's domain and `{{app_instance.environment}}` to `development` on `app-dev` or `production` on `app-prod`. A leftover `{{` or `}}` after that returns `env.reference_unavailable` (409) before the file changes.
 
 Before it decrypts a value, the Gateway checks SSH access, the user, the path, the directory's write permission, the file type and owner, read-only storage, and free space. A failed check returns an error and leaves `.env` as it is.
 
@@ -122,10 +122,10 @@ Environment operations return these codes in the Orbit error envelope. None of t
 | Code | HTTP | Cause |
 | --- | --- | --- |
 | `env.target_ambiguous` | 409 | The domain reaches more than one Instance. |
-| `env.owner_unavailable` | 409 | The Instance is not active, not fully placed, or in a Route change. |
+| `env.owner_unavailable` | 409 | The Instance is not active or not fully placed, or it lacks exactly one healthy Route. |
 | `env.import_conflict` | 409 | Import without `replace` found a key that is already stored. |
 | `env.configuration_invalid` | 422 | A key, value, placeholder, count, size, or Laravel `APP_URL` rule failed. |
-| `env.reference_unavailable` | 409 | A placeholder cannot resolve, for example without a Route. |
+| `env.reference_unavailable` | 409 | A placeholder is left over after rendering. |
 | `env.operation_busy` | 409 | Another operation holds the Instance's lock. |
 | `env.sync_unconfirmed` | 409 | The Gateway cannot confirm the write. Retry the request. |
 

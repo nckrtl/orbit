@@ -84,7 +84,7 @@ The Gateway flushes output while a command runs. Before each phase event, it wri
 A deployment reads the branch and the steps once, when it starts. Then it runs these phases in order.
 
 1. **Source preparation.** The Gateway clones the repository into a new release as the production user and checks out the latest commit of the branch. A branch that moves later does not change this release.
-2. **Environment sync.** The Gateway writes the stored configuration into `<home>/.env`, as [synchronization](/reference/environment-variables#synchronize) does.
+2. **Environment sync.** The Gateway writes the stored configuration into `<home>/.env`, as [synchronization](/reference/environment-variables#synchronize) does. This needs exactly one Route on the Instance. An Instance without a Route fails here with `env.owner_unavailable`.
 3. **Before activation.** The Gateway runs each `before_activation` step in order, from the new release, as the production user, with a non-interactive shell.
 4. **Activation.** The Gateway replaces `current` atomically with a link to the new release.
 5. **PHP refresh.** For a PHP Instance, the Gateway refreshes the Instance's PHP-FPM pool and waits until it finishes.
@@ -101,6 +101,7 @@ The failed boundary decides which release stays selected.
 | Failed boundary | Selected release |
 | --- | --- |
 | Source preparation, environment sync, or a `before_activation` step | The earlier release, or none before the first deployment. |
+| Activation | The release that `current` selects when the Gateway reads it back from the Node. When that read fails, the release selected before the deployment. |
 | PHP refresh or an `after_activation` step | The new release. |
 
 Orbit never undoes the effects of a step, of the environment sync, or of data changes. You decide how to recover.

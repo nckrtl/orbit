@@ -64,7 +64,7 @@ The caller picks only the target. The Gateway derives the host Node, the user, t
 
 The target Node must be an active Linux Node with a WireGuard address. An Instance target must be active. A production Schedule resolves `current` each time it runs, so a new release changes later runs. A production Instance with no selected release accepts a Schedule with a disabled timer. A run, an enable, or an enabled install then fails with `schedule.target_unavailable` until [a deployment](/reference/deployments) selects a release.
 
-A Schedule does not follow its target. While a Schedule exists, the Gateway refuses to remove its target Node or host Node with `schedule.target_in_use` (409). [Instance transfer](/reference/appinstance-transfer) does not check Schedules. After a transfer, every operation on a Schedule of that Instance fails with `schedule.target_unavailable`, because the Instance runs on another Node than the host Node. Destroy the Instance's Schedules before a transfer. Instance removal removes the Instance's Schedules itself.
+A Schedule does not follow its target. While a Schedule exists, the Gateway refuses to remove its target Node or host Node with `schedule.target_in_use` (409). [Instance transfer](/reference/appinstance-transfer) does not check Schedules. After a transfer, list and show still work, and an identical create returns `schedule.target_in_use`. Run, logs, enable, and destroy fail with `schedule.target_unavailable`, because the Instance runs on another Node than the host Node. Destroy the Instance's Schedules before a transfer. Instance removal removes the Instance's Schedules itself.
 
 ## Host artifacts
 
@@ -96,11 +96,11 @@ Run starts the service with `systemctl start --no-block` and returns at once. It
 
 ## Logs
 
-Logs read only the Schedule's service, with fixed `journalctl --output cat` arguments. `lines` is 1 through 1,000, and the default is 100. The read has a 10-second deadline and returns at most 1 MiB. The response holds `output` with the newest complete lines, oldest first, and sets `truncated` to `true` when the byte limit removed older lines. Orbit does not store journal output.
+Logs read only the Schedule's service, with fixed `journalctl --output cat` arguments. `lines` is 1 through 1,000, and the default is 100. The read has a 10-second deadline and returns at most 1 MiB. The response holds `output` with the newest complete lines, oldest first, and sets `truncated` to `true` when the byte limit removed older lines. Logs need an `active` Schedule; otherwise the Gateway returns `schedule.state_invalid`. Orbit does not store journal output, and it does not redact it: Process and Instance logs are redacted, Schedule logs are not. Keep secrets out of command output. The host Node's journal settings decide how long lines stay, and Orbit keeps no copy elsewhere.
 
 ## Latest run
 
-When the service stops, the script sends one report to `https://gateway.orbit/api/v1/schedules/{uuid}/complete` with `success` or `error`. The Gateway accepts it only from the Schedule's host Node, which it identifies by the WireGuard address. It sets `last_run_at` to the time of receipt and `last_run_status` to the reported status, and changes nothing else. A report for a Schedule that is `removing` changes nothing.
+When the service stops, the script sends one report to `https://gateway.orbit/api/v1/schedules/{uuid}/complete` with `success` or `error`. It uses `curl` with the Orbit root CA embedded in the script, so the Node needs no Orbit CLI. The Gateway accepts it only from the Schedule's host Node, which it identifies by the WireGuard address. It sets `last_run_at` to the time of receipt and `last_run_status` to the reported status, and changes nothing else. A report for a Schedule that is `removing` changes nothing.
 
 The Node does not retry a failed report. A lost report leaves the earlier values in place and does not affect the command or later runs.
 
