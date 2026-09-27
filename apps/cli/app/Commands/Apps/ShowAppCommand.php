@@ -73,7 +73,7 @@ final class ShowAppCommand extends GatewayCommand
         $headers = ['ID', 'Name', 'Environment', 'Node', 'Domain', 'Status'];
         $rows = [];
         foreach ($instances->appInstances as $instance) {
-            if ($instance->appId !== $app->id) {
+            if ($instance->projectId !== $app->id) {
                 continue;
             }
             $rows[$instance->id] = [(string) $instance->id, $instance->name, $instance->environment, $instance->node->name ?? (string) $instance->nodeId, $instance->domain ?? '—', $instance->status];

@@ -5652,9 +5652,6 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "app_id": {
-                    "type": "integer"
-                  },
                   "project_id": {
                     "type": "integer"
                   },
@@ -5688,6 +5685,7 @@
                   }
                 },
                 "required": [
+                  "project_id",
                   "node_id",
                   "name"
                 ],
@@ -5776,12 +5774,12 @@
           {
             "lang": "bash",
             "label": "curl",
-            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/instances\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"node_id\": 7, \"name\": \"default\"}'\n"
+            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/instances\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"project_id\": 1, \"node_id\": 7, \"name\": \"default\"}'\n"
           },
           {
             "lang": "php",
             "label": "PHP SDK",
-            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\AppInstances\\CreateAppInstanceRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new CreateAppInstanceRequest(appId: 4, nodeId: 7, name: 'default'))->dto();\n"
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\AppInstances\\CreateAppInstanceRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new CreateAppInstanceRequest(projectId: 1, nodeId: 7, name: 'default'))->dto();\n"
           }
         ]
       }
@@ -5809,9 +5807,6 @@
                   "include_worktrees": {
                     "type": "boolean",
                     "description": "Adopt the checkout and every linked worktree"
-                  },
-                  "app_id": {
-                    "type": "integer"
                   },
                   "project_id": {
                     "type": "integer"
@@ -24082,17 +24077,11 @@
           "id": {
             "type": "integer"
           },
-          "app_id": {
-            "type": "integer"
-          },
           "project_id": {
             "type": "integer"
           },
           "node_id": {
             "type": "integer"
-          },
-          "app": {
-            "$ref": "#/components/schemas/AppIdentity"
           },
           "project": {
             "$ref": "#/components/schemas/AppIdentity"

@@ -56,7 +56,7 @@ export function Dashboard() {
                     </span>
                 ),
             },
-            { header: "Project", width: 26, value: (i) => i.app.slug },
+            { header: "Project", width: 26, value: (i) => i.project.slug },
             { header: "Node", width: 24, value: (i) => i.node.name },
             {
                 header: "Status",

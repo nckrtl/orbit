@@ -95,7 +95,7 @@ final class RegisterInstanceCommand extends GatewayCommand
             new RegisterAppInstanceRequest(
                 sourcePath: $facts->path,
                 includeWorktrees: $this->option('include-worktrees') === true,
-                appId: $values['appId'],
+                projectId: $values['appId'],
                 appName: $values['appName'],
                 appSlug: $values['appSlug'],
                 defaultBranch: $values['defaultBranch'],

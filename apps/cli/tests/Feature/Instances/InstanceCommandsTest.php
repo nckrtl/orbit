@@ -219,7 +219,7 @@ describe('instance:register', function (): void {
         expect($mockClient->getLastRequest()?->body()->all())->toBe([
             'source_path' => '/work/acme',
             'include_worktrees' => true,
-            'app_id' => 3,
+            'project_id' => 3,
             'instance_name' => 'feature',
             'domain' => 'feature.test',
         ]);
@@ -347,7 +347,7 @@ describe('instance:create', function (): void {
             ->and($request)
             ->toBeInstanceOf(CreateAppInstanceRequest::class)
             ->and($request?->body()->all())
-            ->toBe(['app_id' => 3, 'node_id' => 2, 'name' => 'dev']);
+            ->toBe(['project_id' => 3, 'node_id' => 2, 'name' => 'dev']);
     });
 
     it('transports an optional root override without execution controls', function (): void {
@@ -365,7 +365,7 @@ describe('instance:create', function (): void {
             ->assertExitCode(0);
 
         expect($mockClient->getLastRequest()?->body()->all())->toBe([
-            'app_id' => 3,
+            'project_id' => 3,
             'node_id' => 2,
             'name' => 'dev',
             'root' => 'site/public',
@@ -387,7 +387,7 @@ describe('instance:create', function (): void {
             ->assertExitCode(0);
 
         expect($mockClient->getLastRequest()?->body()->all())->toBe([
-            'app_id' => 3,
+            'project_id' => 3,
             'node_id' => 2,
             'name' => 'dev',
             'domain' => 'Odd_Value',
@@ -430,7 +430,7 @@ describe('instance:create', function (): void {
             ->assertExitCode(0);
 
         expect($mockClient->getLastRequest()?->body()->all())->toBe([
-            'app_id' => 3,
+            'project_id' => 3,
             'node_id' => 2,
             'name' => 'default',
             'branch' => 'release',
@@ -452,7 +452,7 @@ describe('instance:create', function (): void {
             ->assertExitCode(0);
 
         expect($mockClient->getLastRequest()?->body()->all())->toBe([
-            'app_id' => 3,
+            'project_id' => 3,
             'node_id' => 2,
             'name' => 'default',
             'recover_source_profile' => true,

@@ -3281,10 +3281,8 @@ export interface components {
         };
         AppInstance: {
             id?: number;
-            app_id?: number;
             project_id?: number;
             node_id?: number;
-            app?: components["schemas"]["AppIdentity"];
             project?: components["schemas"]["AppIdentity"];
             node?: components["schemas"]["NodeIdentity"];
             name?: string;
@@ -6741,8 +6739,7 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
-                    app_id?: number;
-                    project_id?: number;
+                    project_id: number;
                     node_id: number;
                     /** @description Instance name; default is reserved for the default development source */
                     name: string;
@@ -6824,7 +6821,6 @@ export interface operations {
                     source_path: string;
                     /** @description Adopt the checkout and every linked worktree */
                     include_worktrees?: boolean;
-                    app_id?: number;
                     project_id?: number;
                     /** @description Confirmed Project display name */
                     app_name?: string;

@@ -198,7 +198,7 @@ final readonly class CommandActivityTargetResolver
             'doctor' => $this->doctorNode($request),
             'app:create' => OrbitApp::query()->where('slug', $request->input('slug'))->first(),
             'instance:create' => AppInstance::query()
-                ->where('app_id', $request->integer('app_id'))
+                ->where('app_id', $request->integer('project_id'))
                 ->where('name', $request->input('name'))
                 ->first(),
             'route:create' => Route::query()

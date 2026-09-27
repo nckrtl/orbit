@@ -2459,9 +2459,6 @@
       "input_schema": {
         "type": "object",
         "properties": {
-          "app_id": {
-            "type": "integer"
-          },
           "project_id": {
             "type": "integer"
           },
@@ -2496,6 +2493,7 @@
         },
         "additionalProperties": false,
         "required": [
+          "project_id",
           "node_id",
           "name"
         ]
@@ -2992,9 +2990,6 @@
           "include_worktrees": {
             "type": "boolean",
             "description": "Adopt the checkout and every linked worktree"
-          },
-          "app_id": {
-            "type": "integer"
           },
           "project_id": {
             "type": "integer"
