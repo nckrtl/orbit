@@ -80,17 +80,6 @@ beforeEach(function (): void {
         'desired_state' => DesiredProcessState::Running,
         'status' => LifecycleStatus::Active,
     ]);
-    $this->schedule = Schedule::query()->create([
-        'target_type' => AppInstance::class,
-        'target_id' => $this->instance->id,
-        'host_node_id' => $this->sourceNode->id,
-        'name' => 'nightly',
-        'calendar' => '*-*-* 02:00:00',
-        'command' => 'php artisan schedule:run',
-        'timeout_seconds' => 60,
-        'desired_timer_state' => DesiredTimerState::Enabled,
-        'status' => LifecycleStatus::Active,
-    ]);
     $this->instance->environmentValues()->create([
         'env_key' => 'APP_KEY',
         'env_value' => 'base64:stored-app-key',
@@ -142,6 +131,29 @@ beforeEach(function (): void {
     );
 });
 
+it('refuses transfer when schedules target the AppInstance', function (): void {
+    Schedule::query()->create([
+        'target_type' => AppInstance::class,
+        'target_id' => $this->instance->id,
+        'host_node_id' => $this->sourceNode->id,
+        'name' => 'nightly',
+        'calendar' => '*-*-* 02:00:00',
+        'command' => 'php artisan schedule:run',
+        'timeout_seconds' => 60,
+        'desired_timer_state' => DesiredTimerState::Enabled,
+        'status' => LifecycleStatus::Active,
+    ]);
+
+    expect(fn () => $this->action->execute($this->instance, $this->data))
+        ->toThrow(function (ResourceOperationException $exception): void {
+            expect($exception->errorCode)->toBe('schedule.target_in_use');
+        });
+
+    expect($this->instance->refresh()->node_id)->toBe($this->sourceNode->id)
+        ->and(AppInstanceTransfer::query()->exists())->toBeFalse()
+        ->and($this->sources->calls)->toBeEmpty();
+});
+
 it('transfers a development AppInstance to another app-dev Node in the same Cluster', function (): void {
     $this->destinationNode->update([
         'cluster_id' => $this->sourceCluster->id,
@@ -172,9 +184,6 @@ it('transfers a development AppInstance to another app-dev Node in the same Clus
         ->and($this->process->refresh()->id)->toBe($this->process->id)
         ->and($this->process->desired_state)->toBe(DesiredProcessState::Running)
         ->and($this->process->working_directory)->toBe('/srv/orbit/apps/shop/web')
-        ->and($this->schedule->refresh()->id)->toBe($this->schedule->id)
-        ->and($this->schedule->host_node_id)->toBe($this->destinationNode->id)
-        ->and($this->schedule->desired_timer_state)->toBe(DesiredTimerState::Enabled)
         ->and($this->writer->path)->toBe('/srv/orbit/apps/shop/web')
         ->and($this->writer->domain)->toBe('web.shop.dev.orbit')
         ->and($this->writer->contents)
@@ -501,6 +510,41 @@ it('restores the source and discards destination state when transfer fails befor
     expect($result['created'])->toBeFalse()
         ->and($result['transfer']->status)->toBe(AppInstanceTransferStatus::Completed)
         ->and($result['appInstance']->node_id)->toBe($this->destinationNode->id);
+});
+
+it('refuses a pre-cutover retry when schedules target the AppInstance', function (): void {
+    $this->sources->failMaterialize = true;
+
+    expect(fn () => $this->action->execute($this->instance, $this->data))
+        ->toThrow(ResourceOperationException::class);
+
+    $transfer = AppInstanceTransfer::query()->where('app_instance_id', $this->instance->id)->sole();
+    $sourceCalls = $this->sources->calls;
+    $runtimeCalls = $this->runtime->calls;
+
+    Schedule::query()->create([
+        'target_type' => AppInstance::class,
+        'target_id' => $this->instance->id,
+        'host_node_id' => $this->sourceNode->id,
+        'name' => 'nightly',
+        'calendar' => '*-*-* 02:00:00',
+        'command' => 'php artisan schedule:run',
+        'timeout_seconds' => 60,
+        'desired_timer_state' => DesiredTimerState::Enabled,
+        'status' => LifecycleStatus::Active,
+    ]);
+    $this->sources->failMaterialize = false;
+
+    expect(fn () => $this->action->execute($this->instance->refresh(), $this->data))
+        ->toThrow(function (ResourceOperationException $exception): void {
+            expect($exception->errorCode)->toBe('schedule.target_in_use');
+        });
+
+    expect($this->instance->refresh()->node_id)->toBe($this->sourceNode->id)
+        ->and($transfer->refresh()->cutover_at)->toBeNull()
+        ->and($transfer->refresh()->current_step)->toBe(AppInstanceTransferStep::Reserved)
+        ->and($this->sources->calls)->toBe($sourceCalls)
+        ->and($this->runtime->calls)->toBe($runtimeCalls);
 });
 
 it('continues only forward after cutover and does not recopy source', function (): void {

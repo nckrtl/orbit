@@ -48,7 +48,7 @@ When the operator selects one SQLite database, the Gateway pauses source executi
 
 Transfer imports the source `.env` into the encrypted Gateway store without returning or logging values. Stored application keys win over imported keys. The Gateway resolves destination references and writes the destination environment before it activates destination runtime.
 
-Existing Process and Schedule records keep their IDs, definitions, and desired states. The Gateway stops source processes and timers for the downtime window, recreates destination runtime artifacts under the destination identity, and leaves no source or destination duplicate.
+Existing Process records keep their IDs, definitions, and desired states. The Gateway stops source processes for the downtime window, recreates destination runtime artifacts under the destination identity, and leaves no source or destination duplicate. Transfer is refused with `schedule.target_in_use` while any Schedule targets the Instance; remove or retarget those Schedules before retrying.
 
 ## Move the Route
 

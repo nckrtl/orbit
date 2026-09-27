@@ -43,6 +43,7 @@ use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStateResolver;
 use App\Domain\Routes\RouteStatus;
+use App\Domain\Schedules\ScheduleTargetUseGuard;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Shared\StoredInteger;
@@ -79,6 +80,7 @@ final readonly class TransferAppInstanceAction
         private AppInstanceTransferRouteProjector $transferProjection,
         private DevelopmentProjectionOperationLock $projectionOwner,
         private ClusterRouterOperationLock $routerOwner,
+        private ?ScheduleTargetUseGuard $schedules = null,
     ) {}
 
     /** @return array{appInstance: AppInstance, transfer: AppInstanceTransfer, created: bool} */
@@ -121,8 +123,12 @@ final readonly class TransferAppInstanceAction
         ?int $sourceClusterId,
     ): array {
         if ($existing instanceof AppInstanceTransfer) {
-            $transfer = $existing;
+            $transfer = $existing->refresh();
             $created = false;
+
+            if ($transfer->cutover_at === null) {
+                ($this->schedules ?? app(ScheduleTargetUseGuard::class))->assertAppInstanceStable($instance);
+            }
         } else {
             $transfer = $this->environmentOperations->run(
                 [$instance->id],
@@ -203,6 +209,7 @@ final readonly class TransferAppInstanceAction
 
     private function reserve(AppInstance $instance, TransferAppInstanceData $data): AppInstanceTransfer
     {
+        ($this->schedules ?? app(ScheduleTargetUseGuard::class))->assertAppInstanceStable($instance);
         [$destination, $path, $domain, $route] = $this->preflight($instance, $data);
 
         return AppInstanceTransfer::query()->create([
