@@ -62,12 +62,12 @@ orbit node:add <name> [host] [options]
 | `--platform=PLATFORM` | `linux` | Only `linux` is accepted. |
 | `--architecture=ARCH` | the observed value | Machine architecture, such as `x86_64`. A given value must equal the observed one. |
 | `--tld=TLD` | none | Node TLD. Required for `app-dev`, unless the Node joins an active Cluster with a TLD. A production Node needs it for [clone](/cli/instance#orbit-instanceclone) preview domains. |
-| `--role=ROLE` | none | Role to assign. Repeat for more roles. |
+| `--role=ROLE` | none | Role to assign. Repeat for more roles. Without it, see [Nodes without roles](/reference/node-provisioning#nodes-without-roles). |
 | `--cluster=ID` | none | Cluster to join. |
 | `--wireguard-ip=IP` | generated | Stable WireGuard address. |
 | `--lan-ip=IP` | none | LAN IPv4 address that a Cluster Router uses to reach this Node. |
 | `--wireguard-endpoint=HOST:PORT` | generated | WireGuard endpoint override. See [WireGuard endpoints](/reference/wireguard-endpoints). |
-| `--dns-server=IP` | Orbit VPN DNS | DNS server override. See [Private DNS](/reference/private-dns). |
+| `--dns-server=IP` | Orbit VPN DNS | DNS server override. See [Private DNS](/reference/private-dns). A [Node without roles](/reference/node-provisioning#nodes-without-roles) does not use it. |
 | `--setting=PATH:VALUE` | none | Node setting. The only path is `apps.path`. |
 
 `--role` accepts `app-dev`, `app-prod`, `database`, `metrics`, `websocket`, `gateway`, and `vpn`. Add `ingress` and `analytics` with [`node:role:add`](#orbit-noderoleadd). A Cluster Router comes from [`cluster:router:set`](/cli/cluster#orbit-clusterrouterset).
