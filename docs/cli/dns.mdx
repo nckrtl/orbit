@@ -62,11 +62,12 @@ Restart open browsers after a change. A browser reuses an open connection and ke
 
 | Error code | Meaning |
 | --- | --- |
+| `dns.tld_required` | No name was given. |
 | `dns.tld_invalid` | The TLD is not one lowercase DNS label. |
 | `dns.hostname_invalid` | The Route name is not a lowercase DNS name with several labels. |
 | `dns.target_invalid` | The target is not an IP address, or a target was given with `--reset`. |
 | `dns.unsupported_platform` | The operator machine is not macOS. Nothing changes. |
-| `dns.dnsmasq_missing` | Homebrew `dnsmasq` is not installed. Nothing changes. |
+| `dns.dnsmasq_missing` | Homebrew `dnsmasq` is not installed. Only a set checks this, and nothing changes. A `--reset` without `dnsmasq` removes the files and then fails with `dns.refresh_failed`. |
 | `dns.write_failed` | The configuration or resolver file could not be written. |
 | `dns.refresh_failed` | The files changed, but `dnsmasq` could not be restarted or does not answer with the target. |
 

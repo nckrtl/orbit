@@ -128,7 +128,7 @@ A command that adds a site publishes the site's certificate before the build, be
 
 The Gateway refuses to remove a certificate that a site in its stored state still renders on the Node. A Route certificate removal then fails with `app-dev.certificate_in_use`, names the blocking site's domain, and keeps the certificate, so the command can be retried.
 
-The `app-dev` role creates the hibernation marker and log directories before it requests a build, because `caddy validate` opens those logs as the `caddy` user.
+The `app-dev` role creates the hibernation marker and log directories before it requests a build, because `caddy validate` opens those logs as the `caddy` user. The convergence of `app-dev`, `app-prod`, `router`, and `ingress` first runs the step `caddy-service-ordering`, which orders the Caddy service after `wg-quick@orbit`, and then builds the Node.
 
 The Gateway runs one build at a time for each Node. A second build waits up to 30 seconds and then reads the latest committed state, so the last build always renders every committed change. A build that renders the file that is already live changes nothing and does not reload Caddy, so open WebSocket streams stay connected.
 
@@ -293,7 +293,7 @@ Caddy allows one global block, and service metrics needs the `metrics` option. P
 
 ### Private sites off the public listener
 
-A private Router or workload site on `0.0.0.0` answered its hostname on the public address of an Ingress Node. Binding private sites to the WireGuard and LAN addresses separates them by listener. The client guard covers the paths that a listener alone leaves open. Limiting the Ingress firewall to public addresses is rejected, because Orbit does not know those addresses. A firewall deny for the WireGuard address on other interfaces is rejected, because UFW rules have no guaranteed order. For the same reason `ingress` never shares a Node with `gateway`: the Gateway stays private.
+A private Router or workload site on `0.0.0.0` would answer its hostname on the public address of an Ingress Node. Binding private sites to the WireGuard and LAN addresses separates them by listener. The client guard covers the paths that a listener alone leaves open. Limiting the Ingress firewall to public addresses is rejected, because Orbit does not know those addresses. A firewall deny for the WireGuard address on other interfaces is rejected, because UFW rules have no guaranteed order. For the same reason `ingress` never shares a Node with `gateway`: the Gateway stays private.
 
 ### Set a stale Caddyfile aside when Caddy is absent
 

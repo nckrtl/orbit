@@ -33,7 +33,7 @@ The Gateway serves three read-only lists. The CLI has no command for them. The w
 
 The first role convergence removes `orbit:public-ssh-recovery`. So a Node with an active role does not list public port 22 as intended. The managed list comes from the same catalog that convergence applies.
 
-In the live list, a live rule that is not an exact managed or operator rule is drift. A managed or operator rule that is absent from UFW is missing. An inactive, absent, or unreachable UFW returns no live rows. The web app lists the live rules, shows drift in red, and flags missing rules. When it cannot read live UFW, it shows the operator rules and the managed catalog instead.
+In the live list, each live rule has a `match` value. `exact` means it equals a managed or operator rule. `drift` means its comment names such a rule but the rule differs. `unmanaged` means its comment names no managed or operator rule, or it has no comment. A managed or operator rule that is absent from UFW is listed as missing. An inactive, absent, or unreachable UFW returns no live rows. The web app lists the live rules, shows `drift` and `unmanaged` rules in red, and flags missing rules. When it cannot read live UFW, it shows the operator rules and the managed catalog instead.
 
 ## Rules and names
 

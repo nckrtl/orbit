@@ -56,7 +56,7 @@ orbit route:create executor.orbit --node=beast --upstream=http://127.0.0.1:4788
 orbit route:create executor.orbit --node=beast --process=executor
 ```
 
-`--upstream` or `--process` selects the custom proxy form. Its first argument is the domain, and it needs `--node`. It refuses a Project, `--target`, `--cluster`, and public publication. A Project Route is stored with `pending` status.
+`--upstream` or `--process` selects the custom proxy form. Its first argument is the domain, and it needs `--node`. It refuses a Project, `--target`, `--cluster`, and public publication. A Project Route is stored with `pending` status and gets no traffic path. See [Create and change targets](/reference/routes#create-and-change-targets).
 
 Before it sends a request, the CLI refuses `--target` together with a scope option (`route.scope_conflict`), and a Route without a target that lacks exactly one scope (`route.scope_required`). An identical second request returns the existing Route.
 
@@ -148,7 +148,7 @@ orbit route:target:set 9 12
 orbit route:target:set 9 12 --targets=15 --reassign=18:4 --remove=19
 ```
 
-Without pool options, the command sets one target. With them, it sends the complete target set and a disposition for each detached Instance. [Change a production target set](/reference/routes#change-a-production-target-set) lists the rules and error codes. A request that would take an Instance from another Route, or detach an active Instance from its only Route, returns `route.target_conflict` and changes nothing.
+Without pool options, the command sets one target. With them, it sends the complete target set and a disposition for each detached Instance. [Change a production target set](/reference/routes#change-a-production-target-set) lists the rules and error codes. A single-target request that would take an Instance from another Route, or detach an active Instance from its only Route, returns `route.target_conflict` and changes nothing. A production target set can take an Instance from another Route in the same Cluster.
 
 ## orbit route:target:unset
 

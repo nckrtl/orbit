@@ -83,7 +83,7 @@ The Gateway installs the listener itself. The listener is a small release: `serv
 
 Each release holds a `.manifest` of file digests. Before a publication installs a release, it runs `serve.php --self-test`, which checks `ext-sockets` and `ext-pcntl` and loads every class. When an installed file differs from the manifest, the publication installs the release again and restarts the listener on it.
 
-`orbit-private-dns.socket` binds UDP and TCP port 53 on the VPN DNS address and passes both sockets to `orbit-private-dns.service`. A service restart never closes them. Queries that arrive during a restart wait in the socket for the next listener.
+`orbit-private-dns.socket` binds UDP and TCP port 53 on the VPN DNS address and passes both sockets to `orbit-private-dns.service`. A service restart never closes them. Queries that arrive during a restart wait in the socket for the next listener. On `SIGTERM` the listener finishes the query in hand and exits. The unit gives it 5 seconds.
 
 | Unit | Content |
 | --- | --- |
@@ -102,7 +102,7 @@ Every publication checks that confirmation while the listener runs.
 | The catalog changed and the confirmation does not match within 5 seconds | The publication removes the confirmation and restarts the service behind its socket. |
 | The catalog is unchanged and the confirmation names another catalog | The publication removes the confirmation and restarts the service once. |
 
-A failed start or restart restores the previous units, DNS files, and services. A failed publication does not remove a Metrics runtime that already converged.
+A failed start or restart restores the previous units, DNS files, and services.
 
 ### Publication target
 
@@ -132,7 +132,9 @@ The rule covers the Cluster TLD and every exact Cluster-scoped Route domain, als
 | --- | --- |
 | A Node-scoped Route | The workload Node's WireGuard address |
 | A custom proxy Route | The serving Node's WireGuard address |
-| `gateway.orbit` and `metrics.orbit` | The WireGuard address of the Node with the active `gateway` role |
+| A name under an `app-dev` Node's TLD | That Node's WireGuard address, unless the TLD is also a Cluster TLD |
+| `gateway.orbit` | The WireGuard address of the Node with the `gateway` role, active or converging |
+| `metrics.orbit` | The same address as `gateway.orbit`, and only while a Node holds the `metrics` role |
 | `reverb.orbit` | The Node that holds `websocket` |
 | `analytics.orbit` | The Node that holds `analytics` |
 | `collector.cli-proxy-api.orbit` | The ProxyCli collector Node. See [proxycli](/reference/proxycli). |

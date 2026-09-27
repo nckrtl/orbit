@@ -30,11 +30,11 @@ Public Routes, custom proxy Routes, analytics tracking hosts, and Routes that ar
 
 ## Annotation package
 
-The annotation package's Orbit mode calls the Gateway from the page it annotates. It works on an Instance with an active private Route. On any other page, its availability check reports the refusal.
+The annotation package's Orbit mode calls the Gateway from the page it annotates. It works on an Instance with an active private Route. On any other page, the refusal carries no CORS headers, so the browser hides it. The availability check then reports `Cannot reach Orbit. Check the connection.`
 
 ## Web app development server
 
-`vp dev` in `apps/web` proxies `/api` and `/grafana` to the Gateway. The proxy removes the browser's `Origin` header, because it serves the page on its own origin. The browser's `Sec-Fetch-Site` header still reaches the Gateway, so a cross-site request through the development server is refused too.
+`vp dev` in `apps/web` proxies `/api` to the Gateway and `/grafana` to Grafana. For both, the proxy removes the browser's `Origin` header, because it serves the page on its own origin. The browser's `Sec-Fetch-Site` header still reaches the Gateway, so a cross-site request through the development server is refused too.
 
 ## Refusal response
 
