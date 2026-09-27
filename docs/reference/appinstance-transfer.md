@@ -22,7 +22,7 @@ The caller needs directed access to both the source Node and the destination Nod
 
 The Gateway accepts one active development Instance on an active Linux Node that has the active `app-dev` role and belongs to an active Cluster. The destination must be a distinct active Linux Node that also has the active `app-dev` role and belongs to an active Cluster. The destination may be in the same Cluster or another Cluster.
 
-The Gateway refuses the request before it mutates source state when the Instance is production, reserved, migrating, or being removed, when either Node is inactive, missing `app-dev`, or standalone, or when the destination is the current Node.
+The Gateway refuses the request before it mutates source state when the Instance is production, reserved, migrating, or being removed, when either Node is inactive, missing `app-dev`, or standalone, or when the destination is the current Node. Transfer also refuses while any Schedule targets the Instance, with `schedule.target_in_use`; remove or retarget those Schedules before retrying.
 
 ## Reserve the destination
 
@@ -103,6 +103,7 @@ The Gateway returns these transfer conflicts before or during the operation.
 | Code | When the Gateway returns it |
 | --- | --- |
 | `instance.lifecycle_conflict` | The Instance is not active, has no authoritative Route, or has an incomplete Route replacement. |
+| `schedule.target_in_use` | One or more Schedules target the Instance; remove or retarget them before transfer. |
 | `instance.production_refused` | The Instance is not development. |
 | `instance.migration_required` | The Instance still requires source migration. |
 | `instance.removal_conflict` | The Instance is being removed. |
