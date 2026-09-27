@@ -35,7 +35,7 @@ A new Cluster is `inactive`. Membership, name, and TLD can be prepared while it 
 
 ## Placement and TLDs
 
-A Node belongs to at most one Cluster. A standalone Node is a full placement, not a step toward a Cluster. An Instance never selects a Cluster: its routing scope follows its Node. Joining or leaving a Cluster adds or removes no role.
+A Node belongs to at most one Cluster. A standalone Node is a full placement, not a step toward a Cluster. An Instance never selects a Cluster: its routing scope follows its Node. Joining a Cluster adds no role. Leaving it removes only a `router` assignment of the Node that never became active, as [`cluster:node:remove`](#orbit-clusternoderemove) describes.
 
 A Node keeps its own TLD while it belongs to a Cluster, and membership never changes it. While the Cluster is active and has a TLD, that TLD wins for generated domains. Otherwise the Node TLD applies. [Routes](/reference/routes#select-a-domain-and-scope) owns domain generation.
 
@@ -152,7 +152,7 @@ Attaching to an inactive Cluster records membership and leaves Node routing and 
 
 ## orbit cluster:node:remove
 
-Detach a Node from a Cluster. Routes on that Node return to Node scope before membership ends. Generated domains fall back to the Node TLD.
+Detach a Node from a Cluster. Routes on that Node return to Node scope before membership ends. Generated domains fall back to the Node TLD. The Gateway deletes the Node's `router` assignments that never became active. An active Router blocks the detach.
 
 ```bash
 orbit cluster:node:remove <cluster> <node> [--force]
