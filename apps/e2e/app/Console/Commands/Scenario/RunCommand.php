@@ -23,16 +23,19 @@ final class RunCommand extends Command
             $candidate = $this->environment('ORBIT_SCENARIO_CANDIDATE_SHA');
             $repository = $this->environment('ORBIT_SCENARIO_REPOSITORY');
             $primary = $this->environment('ORBIT_SCENARIO_PRIMARY_ROOT');
-            $selected = $this->option('scenario');
-            if (! array_all($selected, static fn (?string $id): bool => is_string($id))) {
-                throw new InvalidArgumentException('The scenario selection is invalid.');
+            $selected = [];
+            foreach ($this->option('scenario') as $id) {
+                if (! is_string($id)) {
+                    throw new InvalidArgumentException('The scenario selection is invalid.');
+                }
+                $selected[] = $id;
             }
             $workers = $this->workerCount($this->option('workers'));
             $aggregate = $runner->runAll(
                 $candidate,
                 $repository,
                 $primary,
-                array_values($selected),
+                $selected,
                 $workers,
                 fn (string $output) => $this->output->write($output),
             );

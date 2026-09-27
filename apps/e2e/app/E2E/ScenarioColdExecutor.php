@@ -233,9 +233,12 @@ final readonly class ScenarioColdExecutor
             $diagnostics[] = $this->redactor->redact($exception->getMessage());
             $primary = ScenarioStatus::InfrastructureError;
         } finally {
-            if ($cleanupStarted === null) {
+            $recordCleanupTiming = $cleanupStarted === null;
+            if ($recordCleanupTiming) {
                 $cleanupStarted = microtime(true);
-                $cleanup ??= $this->constructor->cleanup($target, $operation);
+            }
+            $cleanup ??= $this->constructor->cleanup($target, $operation);
+            if ($recordCleanupTiming) {
                 $cleanupFinished = microtime(true);
             }
             $cleanupFinished ??= microtime(true);

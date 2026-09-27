@@ -23,11 +23,13 @@ final class SnapshotCommand extends Command
             $candidate = $this->environment('ORBIT_SCENARIO_CANDIDATE_SHA');
             $repository = $this->environment('ORBIT_SCENARIO_REPOSITORY');
             $primary = $this->environment('ORBIT_SCENARIO_PRIMARY_ROOT');
-            $selected = $this->option('scenario');
-            if (! array_all($selected, static fn (?string $id): bool => is_string($id))) {
-                throw new InvalidArgumentException('The scenario selection is invalid.');
+            $selected = [];
+            foreach ($this->option('scenario') as $id) {
+                if (! is_string($id)) {
+                    throw new InvalidArgumentException('The scenario selection is invalid.');
+                }
+                $selected[] = $id;
             }
-            $selected = array_values($selected);
             $aggregate = $runner->run(
                 $candidate,
                 $repository,
