@@ -85,6 +85,9 @@ final class GatewayExceptionStatus
             || $exception instanceof ScheduleOperationException
             || $exception instanceof ToolOperationException
             || $exception instanceof ValidationException
+            || $exception instanceof AuthenticationException
+            || $exception instanceof AuthorizationException
+            || $exception instanceof HttpExceptionInterface
             || $exception instanceof BackedEnumCaseNotFoundException
             || $exception instanceof ModelNotFoundException
             || $exception instanceof RecordNotFoundException

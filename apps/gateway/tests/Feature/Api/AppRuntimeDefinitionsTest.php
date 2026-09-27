@@ -190,7 +190,7 @@ it('keeps definition commands out of conflict logs', function (string $kind, str
         ->assertJsonPath('error.code', "{$kind}_definition.name_taken");
 
     expect($logged)
-        ->not->toBeEmpty()
+        ->toBeEmpty()
         ->and(implode("\n", $logged))
         ->not->toContain($sentinel);
 })->with([

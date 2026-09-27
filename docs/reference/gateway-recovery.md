@@ -9,7 +9,7 @@ This guide helps an operator preserve Gateway state during a source update and r
 
 ## Gateway request logs
 
-An exception rendered as an HTTP status below 500 is an expected client refusal and is recorded at `INFO`, not `ERROR`, so client mistakes and operation guards do not inflate the server-error signal. Exceptions rendered with a status of 500 or higher are reported at `ERROR`.
+Exceptions rendered with a status below 500 are client refusals and are not logged. Activity already records failed requests. Exceptions rendered with a status of 500 or higher are reported at `ERROR`.
 
 Every log entry written during an HTTP request carries that request's `request_id`. When the request creates an Activity row, its `activity_log.request_id` has the same value. Search the Gateway logs for the Activity row's request ID to find all related request log entries.
 

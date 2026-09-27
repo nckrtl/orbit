@@ -2,12 +2,29 @@
 
 declare(strict_types=1);
 
+use App\Domain\AppDev\RuntimeConvergenceException;
+use App\Domain\AppInstances\AppInstanceRemovalStatus;
+use App\Domain\AppInstances\Removal\AppInstanceRemovalException;
+use App\Domain\Firewall\FirewallOperationException;
+use App\Domain\Nodes\NodeProvisioningException;
+use App\Domain\Nodes\NodeRemovalException;
+use App\Domain\Nodes\NodeRoleOperationException;
+use App\Domain\Nodes\NodeRoleValidationException;
 use App\Domain\Nodes\RoleAssignmentException;
+use App\Domain\Processes\ProcessOperationException;
+use App\Domain\Schedules\ScheduleErrorCode;
+use App\Domain\Schedules\ScheduleOperationException;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tools\ToolOperationException;
+use App\Domain\Tools\ToolOutcome;
 use App\Http\Mcp\OrbitServer;
+use App\Infrastructure\Logging\GatewayExceptionStatus;
+use App\Infrastructure\Processes\CommandResult;
+use App\Models\AppInstanceRemoval;
 use App\Models\Node;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Auth\AuthenticationException;
 use Illuminate\Container\Container;
 use Illuminate\Contracts\Http\Kernel;
 use Illuminate\Database\RecordNotFoundException;
@@ -95,6 +112,12 @@ it('includes the request id in the log for successful and server-error requests 
     Route::middleware('api')->get('/api/test/log-context/authorization-refusal', function () {
         throw new AuthorizationException('The authorization was refused.');
     });
+    Route::middleware('api')->get('/api/test/log-context/authentication-refusal', function () {
+        throw new AuthenticationException('Authentication required.');
+    });
+    Route::middleware('api')->get('/api/test/log-context/framework-server-error', function () {
+        throw new HttpException(503, 'Framework server error.');
+    });
     Route::middleware('api')->get('/api/test/log-context/refusal', function () {
         throw new ResourceOperationException('test.refused', 'The operation was refused.', 409);
     });
@@ -123,6 +146,8 @@ it('includes the request id in the log for successful and server-error requests 
         'server_refusal' => 'f327e527-4de7-4e1f-86ba-babb15921704',
         'http_refusal' => '037e527a-4de7-4e1f-86ba-babb15921704',
         'authorization_refusal' => '137e527a-4de7-4e1f-86ba-babb15921704',
+        'authentication_refusal' => '437e527b-4de7-4e1f-86ba-babb15921704',
+        'framework_server_error' => '537e527b-4de7-4e1f-86ba-babb15921704',
         'record_not_found' => '237e527b-4de7-4e1f-86ba-babb15921704',
         'records_not_found' => '337e527b-4de7-4e1f-86ba-babb15921704',
     ];
@@ -133,8 +158,10 @@ it('includes the request id in the log for successful and server-error requests 
     $this->withHeader('X-Orbit-Request-Id', $requestIds['role_refusal'])->getJson('/api/test/log-context/role-refusal')->assertStatus(422);
     $this->withHeader('X-Orbit-Request-Id', $requestIds['not_found'])->getJson('/api/test/log-context/not-found')->assertNotFound();
     $this->withHeader('X-Orbit-Request-Id', $requestIds['server_refusal'])->getJson('/api/test/log-context/server-refusal')->assertStatus(503);
-    $this->withHeader('X-Orbit-Request-Id', $requestIds['http_refusal'])->getJson('/api/test/log-context/http-refusal')->assertInternalServerError();
-    $this->withHeader('X-Orbit-Request-Id', $requestIds['authorization_refusal'])->getJson('/api/test/log-context/authorization-refusal')->assertInternalServerError();
+    $this->withHeader('X-Orbit-Request-Id', $requestIds['http_refusal'])->getJson('/api/test/log-context/http-refusal')->assertForbidden();
+    $this->withHeader('X-Orbit-Request-Id', $requestIds['authorization_refusal'])->getJson('/api/test/log-context/authorization-refusal')->assertForbidden();
+    $this->withHeader('X-Orbit-Request-Id', $requestIds['authentication_refusal'])->getJson('/api/test/log-context/authentication-refusal')->assertUnauthorized();
+    $this->withHeader('X-Orbit-Request-Id', $requestIds['framework_server_error'])->getJson('/api/test/log-context/framework-server-error')->assertStatus(503);
     $this->withHeader('X-Orbit-Request-Id', $requestIds['record_not_found'])->getJson('/api/test/log-context/record-not-found')->assertNotFound();
     $this->withHeader('X-Orbit-Request-Id', $requestIds['records_not_found'])->getJson('/api/test/log-context/records-not-found')->assertNotFound();
 
@@ -144,28 +171,100 @@ it('includes the request id in the log for successful and server-error requests 
         ->toBe($requestIds['success']);
     expect(collect($records)->first(fn ($record): bool => $record->level === Level::Error && str_contains($record->message, 'request log context server error'))?->context['request_id'] ?? null)
         ->toBe($requestIds['server_error']);
-    expect(collect($records)->first(fn ($record): bool => $record->level === Level::Info && ($record->context['exception'] ?? null) instanceof ResourceOperationException && $record->context['exception']->errorCode === 'test.refused')?->context['request_id'] ?? null)
-        ->toBe($requestIds['refusal']);
-    expect(collect($records)->first(fn ($record): bool => $record->level === Level::Info && ($record->context['exception'] ?? null) instanceof RoleAssignmentException)?->context['request_id'] ?? null)
-        ->toBe($requestIds['role_refusal']);
-    expect(collect($records)->first(fn ($record): bool => $record->level === Level::Info && ($record->context['exception'] ?? null) instanceof NotFoundHttpException)?->context['request_id'] ?? null)
-        ->toBe($requestIds['not_found']);
+    expect(collect($records)->contains(fn ($record): bool => ($record->context['exception'] ?? null) instanceof ResourceOperationException && $record->context['exception']->errorCode === 'test.refused'))->toBeFalse();
+    expect(collect($records)->contains(fn ($record): bool => ($record->context['exception'] ?? null) instanceof RoleAssignmentException))->toBeFalse();
+    expect(collect($records)->contains(fn ($record): bool => ($record->context['exception'] ?? null) instanceof NotFoundHttpException))->toBeFalse();
     expect(collect($records)->contains(fn ($record): bool => $record->level->value >= Level::Error->value && ($record->context['exception'] ?? null) instanceof ResourceOperationException && $record->context['exception']->errorCode === 'test.refused'))
         ->toBeFalse();
     expect(collect($records)->first(fn ($record): bool => $record->level === Level::Error && ($record->context['exception'] ?? null) instanceof ResourceOperationException && $record->context['exception']->errorCode === 'test.server_refusal')?->context['request_id'] ?? null)
         ->toBe($requestIds['server_refusal']);
-    expect(collect($records)->first(fn ($record): bool => $record->level === Level::Error && ($record->context['exception'] ?? null) instanceof HttpException)?->context['request_id'] ?? null)
-        ->toBe($requestIds['http_refusal']);
-    expect(collect($records)->first(fn ($record): bool => $record->level === Level::Error && ($record->context['exception'] ?? null) instanceof AuthorizationException)?->context['request_id'] ?? null)
-        ->toBe($requestIds['authorization_refusal']);
-    expect(collect($records)->first(fn ($record): bool => $record->level === Level::Info && ($record->context['exception'] ?? null) instanceof RecordNotFoundException)?->context['request_id'] ?? null)
-        ->toBe($requestIds['record_not_found']);
-    expect(collect($records)->first(fn ($record): bool => $record->level === Level::Info && ($record->context['exception'] ?? null) instanceof RecordsNotFoundException)?->context['request_id'] ?? null)
-        ->toBe($requestIds['records_not_found']);
+    $frameworkServerErrors = collect($records)->filter(fn ($record): bool => ($record->context['exception'] ?? null) instanceof HttpException
+        && $record->context['exception']->getStatusCode() === 503);
+    expect($frameworkServerErrors)->toHaveCount(1)
+        ->and($frameworkServerErrors->first()->level)->toBe(Level::Error)
+        ->and($frameworkServerErrors->first()->context['request_id'])->toBe($requestIds['framework_server_error']);
+    expect(collect($records)->contains(fn ($record): bool => ($record->context['exception'] ?? null) instanceof AuthenticationException))->toBeFalse();
+    expect(collect($records)->contains(fn ($record): bool => ($record->context['exception'] ?? null) instanceof AuthorizationException))->toBeFalse();
+    expect(collect($records)->contains(fn ($record): bool => ($record->context['exception'] ?? null) instanceof RecordNotFoundException))->toBeFalse();
+    expect(collect($records)->contains(fn ($record): bool => ($record->context['exception'] ?? null) instanceof RecordsNotFoundException))->toBeFalse();
     expect(collect($records)->contains(fn ($record): bool => $record->level->value >= Level::Error->value
         && (($record->context['exception'] ?? null) instanceof RecordNotFoundException
             || ($record->context['exception'] ?? null) instanceof RecordsNotFoundException)))
         ->toBeFalse();
+});
+
+it('renders domain and framework exception statuses from one status source', function (): void {
+    $result = new CommandResult(1, '', '', 1, false);
+    $removal = new AppInstanceRemoval([
+        'id' => 'status-source-removal',
+        'requested_app_instance_id' => 1,
+        'requested_name' => 'status-source-app',
+        'force' => false,
+        'inventory_digest' => 'digest',
+        'total' => 0,
+        'status' => AppInstanceRemovalStatus::Failed,
+    ]);
+    $exceptions = [
+        new AppInstanceRemovalException('app_instance.remove_failed', 503, $removal),
+        new NodeRoleValidationException('Role validation failed.'),
+        new NodeRoleOperationException('apply', 'node_role.failed', 'failed', 'Role operation failed.', $result),
+        new NodeProvisioningException('provision', 'node.provision_failed', 'Provisioning failed.', result: $result),
+        new NodeRemovalException('remove', 'node.remove_failed', 'Removal failed.', $result),
+        new RuntimeConvergenceException('converge', 'runtime.failed', 'Runtime convergence failed.', result: $result),
+        new ProcessOperationException('run', 'process.failed', 'Process operation failed.', $result),
+        new ScheduleOperationException('install', ScheduleErrorCode::InstallFailed, 'Schedule operation failed.'),
+        new FirewallOperationException('apply', 'firewall.failed', 'Firewall operation failed.', status: 503),
+        new ToolOperationException('install', 'tool.failed', ToolOutcome::ManagerFailed, 409, 1, 'apt', 'nginx', null, 'Tool operation failed.'),
+        new ResourceOperationException('resource.failed', 'Resource operation failed.', 409),
+        new RoleAssignmentException('Role assignment failed.'),
+        new HttpException(503, 'Framework server failure.'),
+        new AuthenticationException('Authentication required.'),
+    ];
+
+    foreach ($exceptions as $index => $exception) {
+        $path = '/api/test/log-context/domain-exception-'.$index;
+        Route::middleware('api')->get($path, static function () use ($exception): never {
+            throw $exception;
+        });
+
+        $response = $this->getJson($path);
+        expect($response->status())->toBe(GatewayExceptionStatus::for($exception));
+    }
+
+    $bootstrap = file_get_contents(base_path('bootstrap/app.php'));
+    expect($bootstrap)->not->toContain('], 422)')
+        ->and($bootstrap)->not->toContain('], 502)')
+        ->and($bootstrap)->not->toContain('$exception->status');
+});
+
+it('does not report client refusals and reports server errors at ERROR with the request id', function (): void {
+    $handler = new TestHandler;
+    $logger = Log::channel('stack')->getLogger();
+    expect($logger)->toBeInstanceOf(Logger::class);
+    $logger->pushHandler($handler);
+
+    Route::middleware('api')->get('/api/test/log-context/one-status-source-refusal', static function (): never {
+        throw new ResourceOperationException('test.refusal', 'Client refusal.', 409);
+    });
+    Route::middleware('api')->get('/api/test/log-context/one-status-source-failure', static function (): never {
+        throw new RuntimeException('Server failure.');
+    });
+
+    $requestId = '4a05fa33-2cb4-4762-9a63-4c4385f06a0d';
+    $refusalRequestId = 'f4a05fa3-2cb4-4762-9a63-4c4385f06a0d';
+    $this->withHeader('X-Orbit-Request-Id', $refusalRequestId)
+        ->getJson('/api/test/log-context/one-status-source-refusal')
+        ->assertStatus(409);
+    $this->withHeader('X-Orbit-Request-Id', $requestId)
+        ->getJson('/api/test/log-context/one-status-source-failure')
+        ->assertInternalServerError();
+
+    $records = collect($handler->getRecords());
+    expect($records->contains(fn ($record): bool => ($record->context['exception'] ?? null) instanceof ResourceOperationException))->toBeFalse()
+        ->and($records->contains(fn ($record): bool => ($record->context['request_id'] ?? null) === $refusalRequestId))->toBeFalse();
+    expect($records->first(fn ($record): bool => $record->level === Level::Error
+        && ($record->context['exception'] ?? null) instanceof RuntimeException)?->context['request_id'] ?? null)
+        ->toBe($requestId);
 });
 
 it('correlates requests that do not match an API route', function (): void {
@@ -180,12 +279,9 @@ it('correlates requests that do not match an API route', function (): void {
         ->assertNotFound()
         ->assertHeader('X-Orbit-Request-Id', $requestId);
 
-    $record = collect($handler->getRecords())->first(
-        fn ($record): bool => $record->level === Level::Info
-            && ($record->context['exception'] ?? null) instanceof NotFoundHttpException,
-    );
-
-    expect($record?->context['request_id'] ?? null)->toBe($requestId);
+    expect(collect($handler->getRecords())->contains(
+        fn ($record): bool => ($record->context['exception'] ?? null) instanceof NotFoundHttpException,
+    ))->toBeFalse();
 });
 
 it('restores the outer request id after a nested request', function (): void {
