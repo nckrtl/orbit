@@ -20,9 +20,9 @@ use App\Domain\Nodes\Storage\ManagedCheckoutOverlap;
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Nodes\Storage\StorageRootResolver;
 use App\Domain\Processes\DesiredProcessState;
+use App\Domain\Processes\ProcessAdmissionLock;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Processes\ProcessRuntimeManager;
-use App\Domain\Processes\ProcessAdmissionLock;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteReplacementStep;
@@ -503,6 +503,17 @@ it('pauses before capture', function (): void {
 
 it('gracefully stops an owned Docker Process before removing it and capturing the checkout', function (): void {
     $this->process->update(['runtime' => ProcessRuntime::Docker]);
+    $this->schedule = Schedule::query()->create([
+        'target_type' => AppInstance::class,
+        'target_id' => $this->instance->id,
+        'host_node_id' => $this->sourceNode->id,
+        'name' => 'nightly',
+        'calendar' => '*-*-* 02:00:00',
+        'command' => 'php artisan schedule:run',
+        'timeout_seconds' => 60,
+        'desired_timer_state' => DesiredTimerState::Enabled,
+        'status' => LifecycleStatus::Active,
+    ]);
     $events = [];
     $processes = Mockery::mock(ProcessRuntimeManager::class);
     $processes->shouldReceive('status')->once()->with(Mockery::on(
@@ -538,6 +549,17 @@ it('gracefully stops an owned Docker Process before removing it and capturing th
 });
 
 it('repeats native transfer pause after process artifacts are removed', function (): void {
+    $this->schedule = Schedule::query()->create([
+        'target_type' => AppInstance::class,
+        'target_id' => $this->instance->id,
+        'host_node_id' => $this->sourceNode->id,
+        'name' => 'nightly',
+        'calendar' => '*-*-* 02:00:00',
+        'command' => 'php artisan schedule:run',
+        'timeout_seconds' => 60,
+        'desired_timer_state' => DesiredTimerState::Enabled,
+        'status' => LifecycleStatus::Active,
+    ]);
     $processes = Mockery::mock(ProcessRuntimeManager::class);
     $processes->shouldReceive('status')->twice()->andReturn('absent');
     $processes->shouldNotReceive('stop');
