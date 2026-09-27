@@ -13,6 +13,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Node;
+use Illuminate\Support\Facades\DB;
 
 it('returns a healthy empty report when no app projects a checkout on the node', function (): void {
     $node = app_probe_node();
@@ -78,6 +79,107 @@ it('checks selected apps in id order and reports a bounded origin mismatch', fun
         ->toBe('mismatch')
         ->and(json_encode($report))
         ->not->toContain('github.com', 'private-origin');
+});
+
+it('ignores removal in flight when the only checkout mismatch belongs to a removing Instance', function (): void {
+    $node = app_probe_node();
+    $app = app_probe_app();
+    $instance = app_probe_projection($app, $node);
+    app_probe_mark_removing($instance);
+    $calls = 0;
+
+    $report = new AppDoctorProbe(new class($calls) implements AppStateInspector
+    {
+        public function __construct(
+            private int &$calls,
+        ) {}
+
+        public function inspect(App $app, Node $node): AppInspectionData
+        {
+            $this->calls++;
+
+            return new AppInspectionData(1, false);
+        }
+    })->inspect(app_probe_context($node));
+
+    expect($report->checked)
+        ->toBe(0)
+        ->and($report->issues)
+        ->toBeEmpty()
+        ->and($calls)
+        ->toBe(0);
+});
+
+it('drops removal in flight mismatch when the Instance starts removing during inspection', function (): void {
+    $node = app_probe_node();
+    $app = app_probe_app();
+    $instance = app_probe_projection($app, $node);
+
+    $report = new AppDoctorProbe(new class($instance) implements AppStateInspector
+    {
+        public function __construct(
+            private AppInstance $instance,
+        ) {}
+
+        public function inspect(App $app, Node $node): AppInspectionData
+        {
+            app_probe_mark_removing($this->instance);
+
+            return new AppInspectionData(1, false, [(int) $this->instance->id]);
+        }
+    })->inspect(app_probe_context($node));
+
+    expect($instance->fresh()->status)
+        ->toBe(AppInstanceState::Removing)
+        ->and($report->issues)
+        ->toBeEmpty();
+});
+
+it('ignores removal in flight checkout failures when another checkout remains healthy', function (): void {
+    $node = app_probe_node();
+    $app = app_probe_app();
+    $removing = app_probe_projection($app, $node);
+    $healthy = app_probe_projection($app, $node);
+
+    $report = new AppDoctorProbe(new class($removing) implements AppStateInspector
+    {
+        public function __construct(private AppInstance $removing) {}
+
+        public function inspect(App $app, Node $node): AppInspectionData
+        {
+            app_probe_mark_removing($this->removing);
+
+            return new AppInspectionData(2, true, [], [(int) $this->removing->id]);
+        }
+    })->inspect(app_probe_context($node));
+
+    expect($healthy->fresh()->status)
+        ->toBe(AppInstanceState::Active)
+        ->and($report->issues)
+        ->toBeEmpty();
+});
+
+it('reports a checkout failure while its Instance remains active', function (): void {
+    $node = app_probe_node();
+    $app = app_probe_app();
+    $instance = app_probe_projection($app, $node);
+
+    $report = new AppDoctorProbe(new class($instance) implements AppStateInspector
+    {
+        public function __construct(private AppInstance $failed) {}
+
+        public function inspect(App $app, Node $node): AppInspectionData
+        {
+            return new AppInspectionData(1, true, [], [(int) $this->failed->id]);
+        }
+    })->inspect(app_probe_context($node));
+
+    expect($report->issues)
+        ->toHaveCount(1)
+        ->and($report->issues[0]->code)
+        ->toBe('app.inspection_failed')
+        ->and($report->issues[0]->resourceId)
+        ->toBe($app->id);
 });
 
 it('short-circuits app inspection when the node is unreachable', function (): void {
@@ -173,15 +275,34 @@ function app_probe_app(): App
 
 function app_probe_projection(App $app, Node $node): AppInstance
 {
+    $number = $app->appInstances()->count() + 1;
+
     return AppInstance::query()->create([
         'app_id' => $app->id,
         'node_id' => $node->id,
-        'name' => 'development',
-        'checkout_path' => "/home/orbit/apps/{$app->slug}/development",
+        'name' => "development-{$number}",
+        'checkout_path' => "/home/orbit/apps/{$app->slug}/development-{$number}",
         'branch' => 'main',
         'starting_commit' => str_repeat('a', 40),
         'status' => AppInstanceState::Active,
     ]);
+}
+
+function app_probe_mark_removing(AppInstance $instance): void
+{
+    // Model a concurrent persisted status change without building the unrelated removal inventory fixture.
+    $trigger = DB::table('sqlite_master')
+        ->where('type', 'trigger')
+        ->where('name', 'app_instances_removal_status_update')
+        ->value('sql');
+    expect($trigger)->toBeString();
+    DB::statement('DROP TRIGGER app_instances_removal_status_update');
+
+    try {
+        $instance->update(['status' => AppInstanceState::Removing]);
+    } finally {
+        DB::statement($trigger);
+    }
 }
 
 function app_probe_context(Node $node, bool $reachable = true): DoctorNodeContext
