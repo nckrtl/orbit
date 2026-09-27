@@ -72,7 +72,7 @@ Cluster membership decides routing scope, independently of the domain. A Node in
 
 ### Generated domains after a Project slug update
 
-A Project slug update recomputes every generated development Route domain from the new slug, the Instance name, and the effective TLD. Orbit creates a replacement Route for each domain that changes. The replacement keeps the Project, scope, provenance, publication, and target. Explicit domains never change. A default-branch update changes no Route. [Projects](/reference/apps#update-an-app) owns the update lifecycle.
+A Project slug update recomputes every generated development Route domain from the new slug, the Instance name, and the effective TLD. Orbit creates a replacement Route for each domain that changes. The replacement keeps the Project, scope, provenance, publication, and target. Explicit domains never change. A default-branch update changes no Route. [Projects](/reference/apps#update-a-project) owns the update lifecycle.
 
 ## Create and change targets
 
