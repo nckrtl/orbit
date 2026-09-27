@@ -10,7 +10,7 @@ In the context of feature delivery on a shared Incus host, facing repeated proof
 
 ## Status
 
-Accepted on 2026-09-10. Extends [ADR 0049](/decisions/0049-keep-delivery-artifacts-off-the-merge-head). Supersedes [ADR 0006](/decisions/0006-topology-led-feature-development), [ADR 0015](/decisions/0015-retain-incus-proof-by-recorded-input-equivalence), and [ADR 0050](/decisions/0050-release-successful-proof-resources-before-landing) for proof, base freshness, and snapshot closeout requirements when discovery-only delivery is selected.
+Accepted on 2026-09-10. Extends [ADR 0049](/contributor-guide#review-reproduces-on-a-discovery-topology). Supersedes [ADR 0006](/reference/incus-topologies#a-live-mount), [ADR 0015](/contributor-guide#review-reproduces-on-a-discovery-topology), and [ADR 0050](/contributor-guide#review-reproduces-on-a-discovery-topology) for proof, base freshness, and snapshot closeout requirements when discovery-only delivery is selected.
 
 ## Context
 
@@ -45,6 +45,6 @@ Captured proof releases successful virtual machines before landing but still req
 ## Affects
 
 - Components: apps/e2e
-- ADRs: extends [ADR 0049](/decisions/0049-keep-delivery-artifacts-off-the-merge-head); supersedes [ADR 0006](/decisions/0006-topology-led-feature-development), [ADR 0015](/decisions/0015-retain-incus-proof-by-recorded-input-equivalence), and [ADR 0050](/decisions/0050-release-successful-proof-resources-before-landing) for discovery-only delivery
+- ADRs: extends [ADR 0049](/contributor-guide#review-reproduces-on-a-discovery-topology); supersedes [ADR 0006](/reference/incus-topologies#a-live-mount), [ADR 0015](/contributor-guide#review-reproduces-on-a-discovery-topology), and [ADR 0050](/contributor-guide#review-reproduces-on-a-discovery-topology) for discovery-only delivery
 - Detail: [docs/reference/implementation-loop.md](/reference/implementation-loop)
 - Verify: flow selection and merge lineage tests; `composer docs-lint`

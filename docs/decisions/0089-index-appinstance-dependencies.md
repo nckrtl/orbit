@@ -58,6 +58,6 @@ An App identifies a repository, while its instances can select different source 
 ## Affects
 
 - Components: apps/gateway, packages/php-sdk, apps/cli, apps/e2e, apps/docs
-- ADRs: extends [ADR 0046](/reference/deployments), [ADR 0071](/decisions/0071-use-one-verb-vocabulary-across-cli-routes-and-sdk), and [ADR 0075](/decisions/0075-prune-idle-app-dev-checkout-dependencies)
+- ADRs: extends [ADR 0046](/reference/deployments), [ADR 0071](/reference/cli-command-vocabulary#why-it-works-this-way), and [ADR 0075](/decisions/0075-prune-idle-app-dev-checkout-dependencies)
 - Detail: [App instance dependencies](/reference/instance-dependencies), [Gateway dependency contracts](/reference/instance-dependency-contracts)
 - Verify: `composer docs-build`; `composer docs-lint`; parser fixtures, Gateway inventory and mutation tests, SDK contracts, CLI selector and result tests, and Incus scan, update, production refusal, and nightly Schedule verification

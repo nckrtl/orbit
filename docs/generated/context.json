@@ -580,116 +580,15 @@
                 "packages/php-sdk"
             ],
             "concepts": [
+                "Cluster",
                 "Gateway",
                 "Node",
                 "Process",
                 "Project",
                 "Task",
-                "Task group",
                 "Tool"
             ],
-            "governing_adrs": [
-                "0166"
-            ]
-        },
-        {
-            "path": "docs/decisions/0002-candidate-deployment-proof-boundary.md",
-            "title": "ADR 0002: Keep proof resources task-owned and production separate",
-            "kind": "decision",
-            "components": [],
-            "concepts": [
-                "Activity",
-                "Deployment",
-                "Task"
-            ],
-            "governing_adrs": [
-                "0002",
-                "0006"
-            ]
-        },
-        {
-            "path": "docs/decisions/0005-rolling-incus-development-topology.md",
-            "title": "ADR 0005: Adopt a rolling Incus development topology",
-            "kind": "decision",
-            "components": [
-                "apps/e2e"
-            ],
-            "concepts": [
-                "Deployment",
-                "Gateway",
-                "Node",
-                "Role"
-            ],
-            "governing_adrs": [
-                "0005",
-                "0006"
-            ]
-        },
-        {
-            "path": "docs/decisions/0006-topology-led-feature-development.md",
-            "title": "ADR 0006: Separate disposable discovery from immutable proof",
-            "kind": "decision",
-            "components": [
-                "apps/e2e"
-            ],
-            "concepts": [
-                "Deployment",
-                "Task"
-            ],
-            "governing_adrs": [
-                "0002",
-                "0005",
-                "0006"
-            ]
-        },
-        {
-            "path": "docs/decisions/0010-record-decisions-before-implementation-issues.md",
-            "title": "ADR 0010: Record decisions before implementation issues",
-            "kind": "decision",
-            "components": [],
-            "concepts": [],
-            "governing_adrs": [
-                "0010"
-            ]
-        },
-        {
-            "path": "docs/decisions/0014-maintain-verified-documentation-context.md",
-            "title": "ADR 0014: Maintain verified documentation as implementation context",
-            "kind": "decision",
-            "components": [
-                "apps/docs"
-            ],
-            "concepts": [
-                "Deployment",
-                "Project",
-                "Route"
-            ],
-            "governing_adrs": [
-                "0010",
-                "0014"
-            ]
-        },
-        {
-            "path": "docs/decisions/0015-retain-incus-proof-by-recorded-input-equivalence.md",
-            "title": "ADR 0015: Retain Incus proof by recorded-input equivalence",
-            "kind": "decision",
-            "components": [
-                "apps/docs"
-            ],
-            "concepts": [
-                "Deployment",
-                "Extension",
-                "Gateway",
-                "Node",
-                "Process",
-                "Project",
-                "Role"
-            ],
-            "governing_adrs": [
-                "0002",
-                "0006",
-                "0015"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/decisions/0016-reconcile-app-identity-and-source-default-updates.md",
@@ -751,25 +650,6 @@
             ]
         },
         {
-            "path": "docs/decisions/0019-run-disposable-incus-scenario-lanes.md",
-            "title": "ADR 0019: Run disposable Incus scenario lanes",
-            "kind": "decision",
-            "components": [],
-            "concepts": [
-                "Cluster",
-                "Gateway",
-                "Node",
-                "Process",
-                "Role"
-            ],
-            "governing_adrs": [
-                "0005",
-                "0006",
-                "0015",
-                "0019"
-            ]
-        },
-        {
             "path": "docs/decisions/0021-pin-sury-php-fpm-with-opcache-profiles-per-role.md",
             "title": "ADR 0021: Pin Sury PHP-FPM with OPcache profiles per role",
             "kind": "decision",
@@ -783,19 +663,6 @@
             ],
             "governing_adrs": [
                 "0021"
-            ]
-        },
-        {
-            "path": "docs/decisions/0022-track-the-issue-workspace-and-delete-it-before-merge.md",
-            "title": "ADR 0022: Track the issue workspace and delete it before merge",
-            "kind": "decision",
-            "components": [
-                "apps/e2e"
-            ],
-            "concepts": [],
-            "governing_adrs": [
-                "0015",
-                "0022"
             ]
         },
         {
@@ -965,22 +832,6 @@
             ]
         },
         {
-            "path": "docs/decisions/0035-close-out-mutating-proofs-by-refreshing-the-topology-snapshot.md",
-            "title": "ADR 0035: Close out mutating proofs by refreshing the topology snapshot",
-            "kind": "decision",
-            "components": [
-                "apps/e2e"
-            ],
-            "concepts": [
-                "Node"
-            ],
-            "governing_adrs": [
-                "0006",
-                "0015",
-                "0035"
-            ]
-        },
-        {
             "path": "docs/decisions/0036-support-only-appinstances.md",
             "title": "ADR 0036: Support only AppInstances",
             "kind": "decision",
@@ -998,27 +849,6 @@
             ],
             "governing_adrs": [
                 "0036"
-            ]
-        },
-        {
-            "path": "docs/decisions/0037-promote-fresh-three-node-topology-snapshots.md",
-            "title": "ADR 0037: Promote fresh three-node topology snapshots",
-            "kind": "decision",
-            "components": [
-                "apps/e2e"
-            ],
-            "concepts": [
-                "Gateway",
-                "Node",
-                "Route"
-            ],
-            "governing_adrs": [
-                "0005",
-                "0006",
-                "0015",
-                "0019",
-                "0036",
-                "0037"
             ]
         },
         {
@@ -1040,25 +870,6 @@
             "governing_adrs": [
                 "0036",
                 "0038"
-            ]
-        },
-        {
-            "path": "docs/decisions/0040-extend-issue-proof-with-one-app-prod-node.md",
-            "title": "ADR 0040: Extend issue proof with one app-prod Node",
-            "kind": "decision",
-            "components": [
-                "apps/e2e"
-            ],
-            "concepts": [
-                "Extension",
-                "Gateway",
-                "Node"
-            ],
-            "governing_adrs": [
-                "0006",
-                "0035",
-                "0037",
-                "0040"
             ]
         },
         {
@@ -1114,35 +925,6 @@
             ]
         },
         {
-            "path": "docs/decisions/0049-keep-delivery-artifacts-off-the-merge-head.md",
-            "title": "ADR 0049: Keep delivery artifacts off the merge head",
-            "kind": "decision",
-            "components": [
-                "apps/e2e"
-            ],
-            "concepts": [],
-            "governing_adrs": [
-                "0015",
-                "0022",
-                "0049"
-            ]
-        },
-        {
-            "path": "docs/decisions/0050-release-successful-proof-resources-before-landing.md",
-            "title": "ADR 0050: Release successful proof resources before landing",
-            "kind": "decision",
-            "components": [
-                "apps/e2e"
-            ],
-            "concepts": [],
-            "governing_adrs": [
-                "0006",
-                "0015",
-                "0035",
-                "0050"
-            ]
-        },
-        {
             "path": "docs/decisions/0051-select-discovery-only-feature-delivery.md",
             "title": "ADR 0051: Select discovery-only feature delivery",
             "kind": "decision",
@@ -1154,10 +936,6 @@
                 "Tool"
             ],
             "governing_adrs": [
-                "0006",
-                "0015",
-                "0049",
-                "0050",
                 "0051"
             ]
         },
@@ -1197,7 +975,6 @@
                 "Project"
             ],
             "governing_adrs": [
-                "0049",
                 "0051",
                 "0052",
                 "0053"
@@ -1223,25 +1000,6 @@
                 "0052",
                 "0053",
                 "0054"
-            ]
-        },
-        {
-            "path": "docs/decisions/0056-retain-proof-topologies-for-interactive-review.md",
-            "title": "ADR 0056: Retain proof topologies for interactive review",
-            "kind": "decision",
-            "components": [
-                "apps/e2e"
-            ],
-            "concepts": [
-                "Node"
-            ],
-            "governing_adrs": [
-                "0006",
-                "0015",
-                "0040",
-                "0050",
-                "0051",
-                "0056"
             ]
         },
         {
@@ -1294,35 +1052,6 @@
             ]
         },
         {
-            "path": "docs/decisions/0071-use-one-verb-vocabulary-across-cli-routes-and-sdk.md",
-            "title": "ADR 0071: Use one verb vocabulary across the CLI, route names, and SDK",
-            "kind": "decision",
-            "components": [
-                "apps/cli",
-                "apps/docs",
-                "apps/e2e",
-                "apps/gateway",
-                "packages/php-sdk"
-            ],
-            "concepts": [
-                "Access grant",
-                "Activity",
-                "Cluster",
-                "Doctor",
-                "Gateway",
-                "Instance",
-                "Node",
-                "Process",
-                "Role",
-                "Route",
-                "Schedule"
-            ],
-            "governing_adrs": [
-                "0036",
-                "0071"
-            ]
-        },
-        {
             "path": "docs/decisions/0074-hibernate-idle-app-dev-appinstance-processes.md",
             "title": "ADR 0074: Hibernate idle app-dev AppInstance Processes",
             "kind": "decision",
@@ -1370,25 +1099,14 @@
                 "apps/e2e"
             ],
             "concepts": [
-                "Deployment",
-                "Node",
+                "Extension",
                 "Project",
                 "Role",
                 "Task"
             ],
             "governing_adrs": [
-                "0002",
-                "0006",
-                "0010",
-                "0015",
-                "0022",
-                "0035",
-                "0040",
-                "0049",
-                "0050",
                 "0051",
                 "0053",
-                "0056",
                 "0058",
                 "0059",
                 "0076"
@@ -1582,7 +1300,6 @@
                 "Task"
             ],
             "governing_adrs": [
-                "0071",
                 "0075",
                 "0089"
             ]
@@ -1623,7 +1340,6 @@
                 "Role"
             ],
             "governing_adrs": [
-                "0071",
                 "0087",
                 "0092",
                 "0095"
@@ -1758,7 +1474,6 @@
             "governing_adrs": [
                 "0025",
                 "0036",
-                "0071",
                 "0086",
                 "0105"
             ]
@@ -1909,25 +1624,6 @@
             ]
         },
         {
-            "path": "docs/decisions/0114-expand-the-three-node-incus-cluster.md",
-            "title": "ADR 0114: Expand the three-node Incus Cluster",
-            "kind": "decision",
-            "components": [
-                "apps/e2e"
-            ],
-            "concepts": [
-                "Cluster",
-                "Gateway",
-                "Node",
-                "Role",
-                "Route"
-            ],
-            "governing_adrs": [
-                "0005",
-                "0114"
-            ]
-        },
-        {
             "path": "docs/decisions/0114-judge-task-completion-as-separate-checks.md",
             "title": "ADR 0114: Judge task completion as separate checks",
             "kind": "decision",
@@ -1973,7 +1669,6 @@
             ],
             "governing_adrs": [
                 "0027",
-                "0071",
                 "0115"
             ]
         },
@@ -2048,7 +1743,6 @@
             ],
             "governing_adrs": [
                 "0066",
-                "0071",
                 "0086",
                 "0103",
                 "0118"
@@ -2140,8 +1834,6 @@
                 "Task group"
             ],
             "governing_adrs": [
-                "0010",
-                "0071",
                 "0103",
                 "0122"
             ]
@@ -2354,47 +2046,6 @@
             ]
         },
         {
-            "path": "docs/decisions/0135-run-incus-topologies-for-task-workspace-clones-through-a-bridge-worktree.md",
-            "title": "ADR 0135: Run Incus topologies for task workspace clones through a bridge worktree",
-            "kind": "decision",
-            "components": [
-                "apps/docs",
-                "apps/e2e",
-                "apps/gateway"
-            ],
-            "concepts": [
-                "Gateway",
-                "Task",
-                "Task group",
-                "Task workspace"
-            ],
-            "governing_adrs": [
-                "0005",
-                "0131",
-                "0135",
-                "0160"
-            ]
-        },
-        {
-            "path": "docs/decisions/0136-run-long-lived-topology-processes-as-transient-units.md",
-            "title": "ADR 0136: Run long-lived topology processes as transient units",
-            "kind": "decision",
-            "components": [
-                "apps/docs",
-                "apps/e2e"
-            ],
-            "concepts": [
-                "Node",
-                "Process",
-                "Task",
-                "Task group"
-            ],
-            "governing_adrs": [
-                "0005",
-                "0136"
-            ]
-        },
-        {
             "path": "docs/decisions/0140-watch-settling-pull-requests-for-conflicts-and-failed-checks.md",
             "title": "ADR 0140: Watch settling pull requests for conflicts and failed checks",
             "kind": "decision",
@@ -2412,28 +2063,6 @@
                 "0121",
                 "0140",
                 "0164"
-            ]
-        },
-        {
-            "path": "docs/decisions/0143-record-topology-evidence-and-sync-without-verification.md",
-            "title": "ADR 0143: Record topology evidence and sync without verification",
-            "kind": "decision",
-            "components": [
-                "apps/docs",
-                "apps/e2e"
-            ],
-            "concepts": [
-                "Extension",
-                "Gateway",
-                "Node",
-                "Task",
-                "Task group",
-                "Task workspace"
-            ],
-            "governing_adrs": [
-                "0005",
-                "0136",
-                "0143"
             ]
         },
         {
@@ -2629,23 +2258,6 @@
                 "0103",
                 "0121",
                 "0160"
-            ]
-        },
-        {
-            "path": "docs/decisions/0162-verify-web-ui-changes-with-bin-web-verify.md",
-            "title": "ADR 0162: Verify web UI changes with bin/web-verify",
-            "kind": "decision",
-            "components": [
-                "apps/docs",
-                "apps/web"
-            ],
-            "concepts": [
-                "Gateway",
-                "Route",
-                "Tool"
-            ],
-            "governing_adrs": [
-                "0162"
             ]
         },
         {
@@ -2950,7 +2562,6 @@
                 "0124",
                 "0125",
                 "0133",
-                "0135",
                 "0163",
                 "0164",
                 "0178"
@@ -2992,18 +2603,10 @@
                 "Tool"
             ],
             "governing_adrs": [
-                "0002",
-                "0005",
-                "0006",
-                "0010",
-                "0014",
-                "0015",
                 "0016",
                 "0017",
                 "0018",
-                "0019",
                 "0021",
-                "0022",
                 "0025",
                 "0026",
                 "0027",
@@ -3012,24 +2615,17 @@
                 "0031",
                 "0032",
                 "0034",
-                "0035",
                 "0036",
-                "0037",
                 "0038",
-                "0040",
                 "0045",
                 "0047",
-                "0049",
-                "0050",
                 "0051",
                 "0052",
                 "0053",
                 "0054",
-                "0056",
                 "0058",
                 "0059",
                 "0066",
-                "0071",
                 "0074",
                 "0075",
                 "0076",
@@ -3068,10 +2664,7 @@
                 "0132",
                 "0133",
                 "0134",
-                "0135",
-                "0136",
                 "0140",
-                "0143",
                 "0145",
                 "0147",
                 "0150",
@@ -3080,7 +2673,6 @@
                 "0158",
                 "0159",
                 "0160",
-                "0162",
                 "0163",
                 "0164",
                 "0165",
@@ -3223,7 +2815,6 @@
             "kind": "reference",
             "components": [],
             "concepts": [
-                "Deployment",
                 "Gateway",
                 "Instance",
                 "Node",
@@ -3488,9 +3079,7 @@
                 "Task group",
                 "Tool"
             ],
-            "governing_adrs": [
-                "0071"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/reference/cli-ux.md",
@@ -3509,9 +3098,7 @@
                 "Role",
                 "Task"
             ],
-            "governing_adrs": [
-                "0071"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/reference/database-connections.md",
@@ -3760,7 +3347,7 @@
             ],
             "concepts": [
                 "Cluster",
-                "Doctor",
+                "Deployment",
                 "Extension",
                 "Gateway",
                 "Instance",
@@ -3774,18 +3361,7 @@
                 "Task group",
                 "Task workspace"
             ],
-            "governing_adrs": [
-                "0005",
-                "0019",
-                "0037",
-                "0040",
-                "0049",
-                "0056",
-                "0114",
-                "0135",
-                "0136",
-                "0143"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/reference/instance-analytics-stats.md",
@@ -4101,26 +3677,6 @@
             "governing_adrs": []
         },
         {
-            "path": "docs/reference/proof-plans.md",
-            "title": "Proof plans",
-            "kind": "reference",
-            "components": [
-                "apps/e2e"
-            ],
-            "concepts": [
-                "Extension",
-                "Gateway",
-                "Node",
-                "Process",
-                "Role"
-            ],
-            "governing_adrs": [
-                "0015",
-                "0049",
-                "0056"
-            ]
-        },
-        {
             "path": "docs/reference/proxycli.md",
             "title": "proxycli",
             "kind": "reference",
@@ -4251,7 +3807,6 @@
                 "0132",
                 "0133",
                 "0134",
-                "0135",
                 "0140",
                 "0160",
                 "0163",
@@ -4291,8 +3846,8 @@
             ],
             "concepts": [
                 "Cluster",
+                "Deployment",
                 "Doctor",
-                "Extension",
                 "Gateway",
                 "Instance",
                 "Node",
@@ -4303,15 +3858,7 @@
                 "Task",
                 "Task workspace"
             ],
-            "governing_adrs": [
-                "0005",
-                "0035",
-                "0036",
-                "0037",
-                "0049",
-                "0056",
-                "0135"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/reference/web-app.md",
@@ -4356,9 +3903,7 @@
                 "Task group",
                 "Tool"
             ],
-            "governing_adrs": [
-                "0162"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/reference/wireguard-endpoints.md",

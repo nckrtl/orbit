@@ -10,7 +10,7 @@ Orbit's repository-owned record is a Project. A managed placement of that Projec
 
 ## Status
 
-Proposed. Amends [ADR 0025](/decisions/0025-stabilize-the-default-appinstance-identity) for Project and Instance terminology and the reserved `default` identity. Amends [ADR 0071](/decisions/0071-use-one-verb-vocabulary-across-cli-routes-and-sdk) for one compatibility window that keeps the previous App HTTP and MCP names. Extends [ADR 0036](/decisions/0036-support-only-appinstances) and [ADR 0086](/decisions/0086-offer-the-api-as-mcp-tools).
+Proposed. Amends [ADR 0025](/decisions/0025-stabilize-the-default-appinstance-identity) for Project and Instance terminology and the reserved `default` identity. Amends [ADR 0071](/reference/cli-command-vocabulary#why-it-works-this-way) for one compatibility window that keeps the previous App HTTP and MCP names. Extends [ADR 0036](/decisions/0036-support-only-appinstances) and [ADR 0086](/decisions/0086-offer-the-api-as-mcp-tools).
 
 ## Context
 
@@ -38,7 +38,7 @@ GitHub App, `app-dev`, `app-prod`, `APP_ENV`, `APP_DEBUG`, and the monorepo dire
 
 - Rename the tables and foreign keys in the same upgrade: rejected because a table rename is not required to change the public contract and adds a second data-loss surface while Ops must prove zero row loss.
 - Hard-cut `/apps` and `app-*` MCP tools in this PR: rejected because a mixed fleet would lose the Ops MCP catalogue mid-upgrade.
-- Keep CLI `app:*` aliases beside `project:*`: rejected because [ADR 0071](/decisions/0071-use-one-verb-vocabulary-across-cli-routes-and-sdk) forbids command aliases; the Gateway compatibility window already covers older binaries.
+- Keep CLI `app:*` aliases beside `project:*`: rejected because [ADR 0071](/reference/cli-command-vocabulary#why-it-works-this-way) forbids command aliases; the Gateway compatibility window already covers older binaries.
 - Rename `app-dev`, `app-prod`, or GitHub App: rejected because those names are Node roles and an external product, not the Orbit repository record.
 
 ## Consequences
@@ -51,6 +51,6 @@ GitHub App, `app-dev`, `app-prod`, `APP_ENV`, `APP_DEBUG`, and the monorepo dire
 ## Affects
 
 - Components: apps/cli, apps/docs, apps/e2e, apps/gateway, packages/php-sdk
-- ADRs: amends [ADR 0025](/decisions/0025-stabilize-the-default-appinstance-identity) and [ADR 0071](/decisions/0071-use-one-verb-vocabulary-across-cli-routes-and-sdk); extends [ADR 0036](/decisions/0036-support-only-appinstances) and [ADR 0086](/decisions/0086-offer-the-api-as-mcp-tools)
+- ADRs: amends [ADR 0025](/decisions/0025-stabilize-the-default-appinstance-identity) and [ADR 0071](/reference/cli-command-vocabulary#why-it-works-this-way); extends [ADR 0036](/decisions/0036-support-only-appinstances) and [ADR 0086](/decisions/0086-offer-the-api-as-mcp-tools)
 - Detail: [Projects](/reference/apps), [Applications](/domains/applications), [Concepts](/concepts)
 - Verify: `composer docs-lint`; Gateway dual-read tests; CLI command-surface test; PHP SDK transport tests
