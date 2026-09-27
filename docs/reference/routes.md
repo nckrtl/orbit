@@ -419,6 +419,10 @@ These reasons explain the design. Check them before you propose a change.
 
 A Route keeps its domain with zero targets or with targets on several Nodes, so the domain lives on the Route, not on the Instance. Routing scope follows active Cluster membership, not the domain or the presence of a TLD. A TLD-less Cluster can then route explicit production domains through its Router.
 
+### Domains and hostnames
+
+A Route owns an application domain. A machine or network identity is a hostname. The two terms stay apart in the API, SDK, CLI, and stored data, so a placement change can show which name changes. The API has no `hostname` alias for a Route domain.
+
 ### One Route per active Instance
 
 An application needs one canonical URL, and Laravel's `APP_URL` must agree with it. Several Routes per Instance, or a primary Route among several, would publish the application under more than one domain. An active Instance without a Route would break the promise that active means reachable.
