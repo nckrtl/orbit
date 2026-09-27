@@ -22954,6 +22954,15 @@
             "items": {
               "$ref": "#/components/schemas/MetricsExporter"
             }
+          },
+          "reconcile_status": {
+            "type": "string"
+          },
+          "reconcile_error_code": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },
@@ -23019,7 +23028,14 @@
             ],
             "enum": [
               "unreachable",
-              "firewall_inactive"
+              "firewall_inactive",
+              "reconcile_failed"
+            ]
+          },
+          "degraded_error_code": {
+            "type": [
+              "string",
+              "null"
             ]
           }
         }

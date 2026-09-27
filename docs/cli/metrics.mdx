@@ -42,7 +42,7 @@ A second enable fails with `node.role_conflict`. Retry a failed convergence with
 
 ## orbit metrics:status
 
-Show whether Metrics is enabled and the Grafana URL. The output also shows the assignment with its Node, status, failed step, and error code. It has one row per exporter with its desired state, actual state, selection reason, and degraded reason.
+Show whether Metrics is enabled and the Grafana URL. The output also shows the assignment with its Node, status, failed step, and error code, plus the Metrics reconcile status and error code. It has one row per exporter with its desired state, actual state, selection reason, degraded reason, and degraded error code.
 
 ```bash
 orbit metrics:status [--json]
