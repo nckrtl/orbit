@@ -1215,6 +1215,9 @@ class ReviewGateTest(unittest.TestCase):
         runner = self.root / 'bin/review-check'
         runner.write_bytes(Path(cache.__file__).with_name('review-check').read_bytes())
         runner.chmod(0o755)
+        docs_impact = self.root / 'bin/docs-impact'
+        docs_impact.write_text('#!/bin/sh\nexit 0\n')
+        docs_impact.chmod(0o755)
         for name in ('tia-cache', 'worktree-cache'):
             seed = self.root / 'bin' / name
             seed.write_text(f'#!/bin/sh\nprintf "{name} %s\\n" "$*" >> "$GATE_TEST_SEEDS"\n')
@@ -1256,10 +1259,12 @@ fi
         self.assertTrue(report['passed'])
         self.assertEqual('builder', report['role'])
         self.assertEqual(cache.git(self.root, 'rev-parse', 'HEAD'), report['candidate'])
+        self.assertEqual(('repository', ['bin/docs-impact', '--gate', '--base', self.commit]),
+                         (report['checks'][0]['project'], report['checks'][0]['command']))
         self.assertEqual([(project, command) for project in cache.PROJECTS
                           for command in [['composer', 'validate', '--strict'], ['composer', 'check'],
                                           ['composer', 'test:affected']]],
-                         [(item['project'], item['command']) for item in report['checks']])
+                         [(item['project'], item['command']) for item in report['checks'][1:]])
         self.assertEqual(15, len((self.common / 'calls').read_text().splitlines()))
 
     def test_gate_rejects_failed_checks_and_candidate_mutation(self):
