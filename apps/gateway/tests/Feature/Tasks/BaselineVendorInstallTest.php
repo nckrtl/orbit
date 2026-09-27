@@ -6,6 +6,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskCheckKind;
 use App\Domain\Tasks\TaskCheckReading;
 use App\Domain\Tasks\TaskCheckRunner;
+use App\Domain\Tasks\TaskCheckStatus;
 use App\Domain\Tasks\TaskExecutionMode;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
@@ -152,7 +153,68 @@ it('reports missing dependencies instead of claiming the default branch is broke
 })->with([
     'Composer install failure' => ['[Orbit internal] Install Composer dependencies', "Could not install dependencies.\n", 'Composer dependency installation failed'],
     'nested project vendor tools missing' => [null, 'sh: 1: vendor/bin/pest: not found', 'Project dependencies appear to be missing'],
+    'unexpected check error' => ['check_error', "Traceback (most recent call last):\nFileNotFoundError: missing\n", 'The Project baseline check failed'],
 ]);
+
+it('keeps a baseline check error failed when the tree changed during the run', function (): void {
+    $app = OrbitApp::query()->create([
+        'name' => 'baseline changed error',
+        'slug' => 'baseline-changed-error',
+        'repository_url' => 'git@example.test:baseline-changed-error.git',
+        'default_branch' => 'main',
+        'task_check' => 'composer check',
+    ]);
+    $node = Node::query()->create([
+        'name' => 'baseline-changed-error-node',
+        'status' => LifecycleStatus::Active,
+        'platform' => 'linux',
+        'public_ssh_host' => '10.44.0.193',
+        'wireguard_ip' => '10.44.0.193',
+    ]);
+    $instance = AppInstance::query()->create([
+        'app_id' => $app->id,
+        'node_id' => $node->id,
+        'name' => 'baseline-changed-error',
+        'checkout_path' => '/tmp/tasks-baseline-changed-error',
+        'status' => 'reserved',
+    ]);
+    $group = TaskGroup::query()->create([
+        'app_id' => $app->id,
+        'title' => 'Baseline changed error',
+        'brief' => 'Report a check error even when the tree changes.',
+        'status' => TaskGroupStatus::Running,
+        'execution_mode' => TaskExecutionMode::Managed,
+    ]);
+    $group->taskable()->associate($instance);
+    $group->save();
+    Task::query()->create([
+        'task_group_id' => $group->id,
+        'position' => 1,
+        'title' => 'First task',
+        'brief' => 'First task brief',
+        'status' => TaskStatus::Running,
+    ]);
+    $output = "Traceback (most recent call last):\nFileNotFoundError: [Errno 2] No such file or directory\n";
+    $checks = new FakeTaskCheckRunner([
+        TaskCheckReading::finished(1, str_repeat('a', 40), str_repeat('c', 40), ['app'], $output, null, str_repeat('b', 40), 'check_error'),
+    ]);
+    app()->instance(TaskCheckRunner::class, $checks);
+    app(TaskExtensionState::class)->enable();
+
+    app(TaskScheduler::class)->tick();
+    app(TaskScheduler::class)->tick();
+
+    $check = TaskCheck::query()->sole();
+    $reason = $group->fresh()?->assistance_reason;
+    expect($checks->starts)->toBe(1)
+        ->and($group->fresh()?->assistance_requested)->toBeTrue()
+        ->and($reason)->toContain('The Project baseline check failed')
+        ->and($reason)->not->toContain('workspace changed')
+        ->and($check->status)->toBe(TaskCheckStatus::Failed)
+        ->and($check->failed_step)->toBe('check_error')
+        ->and($check->changed_paths)->toBe(['app'])
+        ->and($check->output)->toBe($output);
+});
 
 it('installs the root Composer package without a lockfile, removes the lockfile it writes, and skips nested manifests without one', function (): void {
     $directory = sys_get_temp_dir().'/orbit-baseline-install-'.bin2hex(random_bytes(6));

@@ -2879,6 +2879,70 @@ it('reminds the implementer with the failing check output once, then asks for as
         ->and(TaskCheck::query()->count())->toBe(2);
 });
 
+it('shows an unexpected check error as a failed check whose output ends with the error', function (): void {
+    $group = tick_group();
+    app(TaskExtensionState::class)->enable();
+    $dispatcher = tick_dispatcher();
+    app()->instance(T3Dispatcher::class, $dispatcher);
+    app()->instance(T3ThreadReader::class, new class implements T3ThreadReader
+    {
+        public function snapshot(Node $node, string $threadId): ?array
+        {
+            return ['thread' => ['session' => ['status' => 'idle']]];
+        }
+    });
+    $output = "composer check\n\nTraceback (most recent call last):\nFileNotFoundError: [Errno 2] No such file or directory: 'gateway'\n";
+    $failed = TaskCheckReading::finished(1, str_repeat('a', 40), str_repeat('b', 40), [], $output, failedStep: 'check_error');
+    app()->instance(TaskCheckRunner::class, new FakeTaskCheckRunner([$failed]));
+    app()->instance(TaskRunReceipts::class, new FakeTaskRunReceipts([
+        FakeTaskRunReceipts::contents('ready_for_review'), null,
+    ]));
+
+    app(TaskScheduler::class)->tick();
+    app(TaskScheduler::class)->tick();
+
+    $reminder = $dispatcher->commands[0]['message']['text'];
+    expect($group->fresh()?->assistance_requested)->toBeFalse()
+        ->and($reminder)->toContain('Orbit ran composer check, and it failed with exit code 1.')
+        ->and($reminder)->toContain("FileNotFoundError: [Errno 2] No such file or directory: 'gateway'")
+        ->and(TaskCheck::query()->sole()->status)->toBe(TaskCheckStatus::Failed)
+        ->and(TaskCheck::query()->sole()->failed_step)->toBe('check_error');
+});
+
+it('keeps an unexpected check error failed when the tree changed during the run', function (): void {
+    $group = tick_group();
+    app(TaskExtensionState::class)->enable();
+    $dispatcher = tick_dispatcher();
+    app()->instance(T3Dispatcher::class, $dispatcher);
+    app()->instance(T3ThreadReader::class, new class implements T3ThreadReader
+    {
+        public function snapshot(Node $node, string $threadId): ?array
+        {
+            return ['thread' => ['session' => ['status' => 'idle']]];
+        }
+    });
+    $output = "rm -rf app\n\nTraceback (most recent call last):\nFileNotFoundError: [Errno 2] No such file or directory\n";
+    $failed = TaskCheckReading::finished(1, str_repeat('a', 40), str_repeat('c', 40), ['app'], $output, failedStep: 'check_error');
+    $checks = new FakeTaskCheckRunner([$failed]);
+    app()->instance(TaskCheckRunner::class, $checks);
+    app()->instance(TaskRunReceipts::class, new FakeTaskRunReceipts([
+        FakeTaskRunReceipts::contents('ready_for_review'), null,
+    ]));
+
+    app(TaskScheduler::class)->tick();
+    app(TaskScheduler::class)->tick();
+
+    $reminder = $dispatcher->commands[0]['message']['text'];
+    $check = TaskCheck::query()->sole();
+    expect($group->fresh()?->assistance_requested)->toBeFalse()
+        ->and($checks->starts)->toBe(1)
+        ->and($check->status)->toBe(TaskCheckStatus::Failed)
+        ->and($check->failed_step)->toBe('check_error')
+        ->and($check->changed_paths)->toBe(['app'])
+        ->and($reminder)->toContain('FileNotFoundError: [Errno 2] No such file or directory')
+        ->and($reminder)->not->toContain('workspace changed');
+});
+
 it('retries the reviewer nudge until the handoff send succeeds', function (): void {
     $group = tick_group();
     app(TaskExtensionState::class)->enable();
@@ -4295,5 +4359,66 @@ describe('subtask deliverables at handoff', function (): void {
         ]])
             ->and($task->fresh()?->status)->toBe(TaskStatus::Running)
             ->and($reminder)->toContain('layout-repro (test): The test "it keeps the home screen layout" passes on the start commit, so it does not reproduce the bug.');
+    });
+
+    it('asks for assistance when a test deliverable project or file is invalid, without reminding the implementer', function (): void {
+        $reason = "Deliverable sweep-test names project gateway, which is not a directory in the checkout.\nDeliverable sweep-test names file tests/Feature/SweepTest.php, which does not exist in apps/gateway.";
+        $failed = TaskCheckReading::finished(1, str_repeat('a', 40), str_repeat('b', 40), [], $reason."\n", failedStep: 'invalid_deliverable');
+        [$group, $task, $checks, $notifier] = tick_deliverables(
+            [[
+                'id' => 'sweep-test',
+                'type' => 'test',
+                'description' => 'Repro the sweep',
+                'project' => 'gateway',
+                'file' => 'tests/Feature/SweepTest.php',
+                'name' => 'sweep',
+            ]],
+            ['sweep-test' => 'The check names the project'],
+            null,
+            [$failed],
+        );
+
+        app(TaskScheduler::class)->tick();
+        app(TaskScheduler::class)->tick();
+
+        expect($group->fresh()?->assistance_requested)->toBeTrue()
+            ->and($group->fresh()?->assistance_reason)->toBe($reason)
+            ->and($task->fresh()?->assistance_reason)->toBe($reason)
+            ->and($notifier->reason)->toBe($reason)
+            ->and(app(T3Dispatcher::class)->commands)->toBe([])
+            ->and($checks->starts)->toBe(1)
+            ->and(TaskCheck::query()->sole()->status)->toBe(TaskCheckStatus::Failed)
+            ->and(TaskCheck::query()->sole()->failed_step)->toBe('invalid_deliverable');
+    });
+
+    it('asks for assistance for an invalid deliverable even when the tree changed', function (): void {
+        $reason = 'Deliverable sweep-test names project gateway, which is not a directory in the checkout.';
+        $failed = TaskCheckReading::finished(1, str_repeat('d', 40), str_repeat('c', 40), ['app'], $reason."\n", failedStep: 'invalid_deliverable');
+        [$group, $task, $checks, $notifier] = tick_deliverables(
+            [[
+                'id' => 'sweep-test',
+                'type' => 'test',
+                'description' => 'Repro the sweep',
+                'project' => 'gateway',
+                'file' => 'tests/Feature/SweepTest.php',
+                'name' => 'sweep',
+            ]],
+            ['sweep-test' => 'The check names the project'],
+            null,
+            [$failed],
+        );
+
+        app(TaskScheduler::class)->tick();
+        app(TaskScheduler::class)->tick();
+
+        expect($group->fresh()?->assistance_requested)->toBeTrue()
+            ->and($group->fresh()?->assistance_reason)->toBe($reason)
+            ->and($task->fresh()?->assistance_reason)->toBe($reason)
+            ->and($notifier->reason)->toBe($reason)
+            ->and(app(T3Dispatcher::class)->commands)->toBe([])
+            ->and($checks->starts)->toBe(1)
+            ->and(TaskCheck::query()->sole()->status)->toBe(TaskCheckStatus::Failed)
+            ->and(TaskCheck::query()->sole()->failed_step)->toBe('invalid_deliverable')
+            ->and(TaskCheck::query()->sole()->changed_paths)->toBe(['app']);
     });
 });

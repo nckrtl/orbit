@@ -365,6 +365,79 @@ describe('deliverable evidence', function (): void {
 
         expect($reading->deliverables['commands'])->toBe(['escape' => ['exit_code' => 127, 'output' => 'The directory is outside the workspace.']]);
     });
+
+    it('fails a test deliverable whose project directory does not exist before the project check runs', function (): void {
+        [$checkout, $start] = check_runner_deliverables_checkout('');
+        File::ensureDirectoryExists($checkout.'/apps/gateway');
+        $instance = check_runner_instance($checkout);
+        $runner = check_runner(new LocalShellSshExecutor);
+
+        $reading = check_runner_wait($runner, $instance, $runner->start($instance, 'touch project-check-ran', [], [
+            'start' => $start,
+            'tests' => [
+                ['id' => 'sweep-test', 'project' => 'gateway', 'file' => 'tests/Feature/SweepTest.php'],
+                ['id' => 'sweep-test', 'project' => 'apps/gateway', 'file' => 'tests/Feature/SweepTest.php'],
+            ],
+            'commands' => [],
+        ]));
+
+        expect($reading->state)->toBe('finished')
+            ->and($reading->exitCode)->not->toBe(0)
+            ->and($reading->failedStep)->toBe('invalid_deliverable')
+            ->and($reading->changedPaths)->toBe([])
+            ->and($reading->deliverables)->toBeNull()
+            ->and($reading->output)->toBe("Deliverable sweep-test names project gateway, which is not a directory in the checkout.\nDeliverable sweep-test names file tests/Feature/SweepTest.php, which does not exist in apps/gateway.\n")
+            ->and(file_exists($checkout.'/project-check-ran'))->toBeFalse();
+    });
+});
+
+it('writes a failed result when the check script hits an unexpected error', function (): void {
+    $checkout = check_runner_checkout('echo ok');
+    $script = test()->directory.'/script/check';
+    File::ensureDirectoryExists(dirname($script));
+    File::copy(resource_path('tasks/check'), $script);
+    $deliverables = test()->directory.'/not-a-file';
+    File::ensureDirectoryExists($deliverables);
+    $ran = new Process(['python3', '-c', <<<'PYTHON'
+        import importlib.machinery, importlib.util, sys
+        loader = importlib.machinery.SourceFileLoader('check', sys.argv[1])
+        check = importlib.util.module_from_spec(importlib.util.spec_from_loader('check', loader))
+        loader.exec_module(check)
+        checkout, deliverables = sys.argv[2], sys.argv[3]
+        check.run(checkout, check.git(checkout, 'rev-parse', 'HEAD'), check.working_tree(checkout), '-', deliverables, 'touch project-check-ran')
+        PYTHON, $script, $checkout, $deliverables]);
+
+    $ran->mustRun();
+    $result = json_decode((string) file_get_contents(dirname($script).'/check.json'), true, flags: JSON_THROW_ON_ERROR);
+    $log = (string) file_get_contents(dirname($script).'/check.log');
+
+    expect($result['exit_code'])->not->toBe(0)
+        ->and($result['failed_step'])->toBe('check_error')
+        ->and($result['deliverables'])->toBeNull()
+        ->and($log)->toContain('Traceback (most recent call last):')
+        ->and(trim($log))->toContain('IsADirectoryError')
+        ->and(file_exists($checkout.'/project-check-ran'))->toBeFalse();
+});
+
+it('records a check error when the project check changes the tree and verification then fails', function (): void {
+    [$checkout, $start] = check_runner_deliverables_checkout('');
+    $instance = check_runner_instance($checkout);
+    $runner = check_runner(new LocalShellSshExecutor);
+
+    $reading = check_runner_wait($runner, $instance, $runner->start($instance, 'rm -rf app', [], [
+        'start' => $start,
+        'tests' => [['id' => 'export-test', 'project' => 'app', 'file' => 'tests/ExportTest.php']],
+        'commands' => [],
+    ]));
+
+    expect($reading->state)->toBe('finished')
+        ->and($reading->exitCode)->not->toBe(0)
+        ->and($reading->failedStep)->toBe('check_error')
+        ->and($reading->treeBefore)->toBeString()
+        ->and($reading->treeAfter)->not->toBe($reading->treeBefore)
+        ->and($reading->changedPaths)->toContain('app/tests/ExportTest.php')
+        ->and($reading->output)->toContain('Traceback (most recent call last):')
+        ->and($reading->output)->toContain('FileNotFoundError');
 });
 
 /**
