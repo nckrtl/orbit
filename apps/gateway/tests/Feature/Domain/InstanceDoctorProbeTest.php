@@ -111,6 +111,29 @@ it('does not report drift for a task workspace being removed', function (): void
         ->toBe(0);
 });
 
+it('drops projection issues when removal started during inspection', function (): void {
+    $instance = instance_probe_task_workspace_for_removal();
+    $instance->update(['status' => AppInstanceState::SourceResolved]);
+    $node = $instance->node;
+
+    $report = new InstanceDoctorProbe(new class implements InstanceStateInspector
+    {
+        public function inspect(AppInstance $appInstance): InstanceInspectionData
+        {
+            expect($appInstance->status)->toBe(AppInstanceState::SourceResolved);
+            $appInstance->update(['status' => AppInstanceState::Active]);
+            instance_probe_mark_removing($appInstance);
+
+            return new InstanceInspectionData(false, true, true, true);
+        }
+    })->inspect(instance_probe_context($node));
+
+    expect($instance->fresh()->status)
+        ->toBe(AppInstanceState::Removing)
+        ->and($report->issues)
+        ->toBeEmpty();
+});
+
 it('reports only a stuck removal for a task workspace being removed beyond the bound', function (): void {
     $instance = instance_probe_task_workspace_for_removal();
     $node = $instance->node;

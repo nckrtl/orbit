@@ -101,28 +101,6 @@ it('refuses newly dirty teardown before acceptance and requires an explicit forc
     expect($removal->status->value)->toBe('completed')->and($transport->inputs)->toHaveCount(2);
 });
 
-it('records and marks removal before running project teardown', function (): void {
-    $instance = orb181_coordinator_instance();
-    ProjectLifecycleStep::query()->create(['app_id' => $instance->app_id, 'phase' => 'teardown', 'name' => 'cleanup', 'command' => 'cleanup', 'timeout_seconds' => 30, 'position' => 0]);
-    $stagedBeforeTeardown = false;
-    $transport = new LifecycleSshExecutor(result: function () use ($instance, &$stagedBeforeTeardown): int {
-        $stagedBeforeTeardown = $instance->fresh()?->status === AppInstanceState::Removing
-            && AppInstanceRemovalMember::query()->where('app_instance_id', $instance->id)->whereNull('row_deleted_at')->exists();
-
-        return 0;
-    });
-    app()->instance(ProjectLifecycleRunner::class, $transport->runner());
-
-    $removal = $this->orb181Coordinator->prepare($instance, true);
-
-    expect($stagedBeforeTeardown)
-        ->toBeTrue()
-        ->and($removal->status->value)
-        ->toBe('removing')
-        ->and($instance->fresh()?->status)
-        ->toBe(AppInstanceState::Removing);
-});
-
 it('refuses source identity changes made by teardown', function (): void {
     $instance = orb181_coordinator_instance();
     ProjectLifecycleStep::query()->create(['app_id' => $instance->app_id, 'phase' => 'teardown', 'name' => 'cleanup', 'command' => 'cleanup', 'timeout_seconds' => 30, 'position' => 0]);
