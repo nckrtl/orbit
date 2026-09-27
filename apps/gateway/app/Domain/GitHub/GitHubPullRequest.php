@@ -18,6 +18,9 @@ final readonly class GitHubPullRequest
         public ?string $mergeableState,
         public ?string $headSha,
         public ?string $baseRef,
+        public ?string $body = null,
+        public ?string $mergeCommitSha = null,
+        public ?string $mergedAt = null,
     ) {}
 
     /** Whether GitHub reports that the pull request conflicts with its base branch. */

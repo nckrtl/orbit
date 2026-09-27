@@ -104,6 +104,7 @@ final readonly class TaskScheduler
         private TaskRunReceipts $receipts,
         private TaskWorkspaceSigner $signer,
         private TaskBriefCoverage $coverage,
+        private BriefCoverageLabeler $coverageLabeler,
         private TaskPullRequestPublisher $publisher,
         private TaskCheckRunner $checks,
         private TaskBroadcasts $broadcasts,
@@ -149,6 +150,14 @@ final readonly class TaskScheduler
             $health = $this->pullRequestWatcher->health($group);
             $status = $health?->state;
             if ($status === 'merged') {
+                try {
+                    $this->coverageLabeler->label($group, $health);
+                } catch (Throwable $exception) {
+                    try {
+                        report($exception);
+                    } catch (Throwable) {
+                    }
+                }
                 if (! $this->orphanedCommit($group)) {
                     $this->completeMergedGroup($group);
                 }
@@ -573,7 +582,12 @@ final readonly class TaskScheduler
         }
         if ($this->failedItems($items) === [] && $pullRequest instanceof TaskRunPullRequest) {
             try {
-                $missing = $this->coverage->missing($group, $pullRequest);
+                $missing = $this->coverage->missing(
+                    $group,
+                    $pullRequest,
+                    $receipt instanceof TaskComment ? $receipt->id : null,
+                    $pullRequest->changes,
+                );
             } catch (TaskSessionClassificationException $exception) {
                 $this->recordCommunicationFailure($task, $group, $exception->getMessage());
 

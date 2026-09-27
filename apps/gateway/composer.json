@@ -7,6 +7,7 @@
     "license": "MIT",
     "require": {
         "php": "^8.5",
+        "ext-intl": "*",
         "composer/semver": "^3.4",
         "laravel/ai": "^1.0@dev",
         "laravel/framework": "^13.0",

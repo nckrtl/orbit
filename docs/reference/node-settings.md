@@ -1,76 +1,100 @@
 ---
 title: "Node settings"
-description: "The apps.path storage setting on a Node: accepted input, effective root, validation, and failure codes."
+description: "The apps.path setting on a Node: input, the effective apps root, validation, preparation, and failure codes."
+covers:
+  - apps/gateway/app/Domain/Nodes/Storage/**
+  - apps/gateway/app/Actions/Nodes/UpdateNodeSettingsAction.php
+  - apps/gateway/app/Infrastructure/Nodes/RemoteNodeStorageRootPreparer.php
+  - apps/gateway/app/Data/Nodes/{NodeSettingsData,AppsSettingsData}.php
+  - apps/gateway/app/Http/Requests/Nodes/UpdateNodeSettingsRequest.php
+  - apps/cli/app/{Support/NodeSettingOptions,Commands/Nodes/UpdateNodeSettingsCommand}.php
+  - packages/php-sdk/src/{Responses/Nodes/NodeSettings,Requests/Nodes/UpdateNodeSettingsRequest}.php
 ---
 
 # Node settings
 
-This reference is for operators who set the apps-root storage path on a Node and need the accepted setting path, inputs, outputs, and failure codes.
-
-A Node owns one typed apps-root setting. [ADR 0008](/decisions/0008-typed-app-dev-node-storage-settings) closes the settings contract, [ADR 0009](/decisions/0009-clustered-app-instance-routing) defines the single apps root, and [ADR 0068](/decisions/0068-accept-only-apps-path-node-storage-setting) names the public setting path.
+A Node has one setting: `apps.path`, the apps root under which the Gateway creates development Instance checkouts. Set it with `node:add` or `node:settings`. [`node`](/cli/node#orbit-nodesettings) lists the commands.
 
 ## Set the apps root
 
-`node:add` and `node:settings` accept repeatable `--setting=<setting-path>:<value>` options. The only known setting path is `apps.path`.
+Both commands take repeatable `--setting=<setting-path>:<value>` options. `apps.path` is the only setting path.
 
 ```bash
 orbit node:add app-dev app-dev.example --role=app-dev --setting=apps.path:/srv/orbit/apps
 orbit node:settings app-dev --setting=apps.path:/mnt/apps
 ```
 
-The CLI splits each option at its first colon, so a value may contain additional colons. An empty value is the unset form: `--setting=apps.path:` sends a null apps path. The CLI does not trim or otherwise reinterpret a non-empty path.
+The CLI splits each option at its first colon, so a value can contain more colons. An empty value unsets the path: `--setting=apps.path:` sends null. The CLI does not trim a value. `node:settings` needs at least one `--setting` option.
 
-`node:settings` requires at least one `--setting` option. `node:add` may omit `--setting` and then provisions the Node without a storage override.
-
-The known setting path has this result.
-
-| Setting path | Result |
-| --- | --- |
-| `apps.path` | Sets or unsets the Node apps root |
-
-The Gateway and PHP SDK use the same public JSON shape.
+The API uses the same shape:
 
 ```json
-{
-  "settings": {
-    "apps": {"path": "/srv/orbit/apps"}
-  }
-}
+{ "settings": { "apps": { "path": "/srv/orbit/apps" } } }
 ```
 
-`POST /api/v1/nodes` accepts an optional `settings` member with that complete nullable shape. An absent or null member provisions the Node without a storage override. `PATCH /api/v1/nodes/{node}/settings` accepts a partial object that must contain the `apps` member. A nested object with `path: null`, or an explicit null `apps` member, removes the override. An empty string `path` is invalid.
-
-Node responses return the raw apps override through the same shape. They return `settings: null` when no apps override exists and never replace a null with an effective default. `orbit node:show <id> --json` exposes that raw member.
-
-The CLI requires an explicit Node ID or registered name and at least one setting in every input mode. Human output shows waiting feedback while resolving a name and updating the settings, then the Node result and request ID. `node:show` displays the configured apps path in its detail tree, using an em dash when it is unset. JSON preserves the raw nullable settings shape and emits no prompts or progress.
+`POST /api/v1/nodes` accepts an optional `settings` member. `PATCH /api/v1/nodes/{node}/settings` needs the `apps` member. `"path": null` or `"apps": null` removes the path. Node responses return the stored value only. They return `settings: null` when no path is set, never the default. `orbit node:show` shows the path, or an em dash when none is set.
 
 ## Derive the effective root
 
-When a checkout is created, the Gateway resolves the effective apps root as `settings.apps.path`, or `<managed-user-home>/apps` when that override is absent.
+The apps root is `apps.path`, or `<managed-user-home>/apps` when the path is not set. The Gateway computes the default each time and does not store it.
 
-A new Instance checkout is `<apps-root>/<app-slug>/<instance-name>`. [Applications](/domains/applications) owns placement and identity. The Gateway records that path on the Instance and does not move, rewrite, or delete an existing checkout when the Node setting changes. [Doctor](/cli/doctor#what-each-family-checks) accepts a development checkout under the configured apps root or under the managed user's home, so a checkout from before the setting still passes.
+A new development Instance checkout is `<apps-root>/<project-slug>/<instance-name>`. The Gateway stores that path on the Instance. A later change to `apps.path` never moves, rewrites, or deletes an existing checkout. [Doctor](/cli/doctor#what-each-family-checks) accepts a development checkout under the apps root or under the managed user's home.
 
-## Validate before the root becomes stored
+## Validation
 
-The Gateway validates every configured path at the API boundary and again on the target Node before it persists a provisioning or settings mutation. [ADR 0008](/decisions/0008-typed-app-dev-node-storage-settings) owns the path, overlap, protected-path, and preparation rules. A failed mutation leaves stored settings unchanged.
+The Gateway checks the path before it stores it. A path must:
+
+- be absolute and normalized: not `/`, with no trailing or repeated `/`, no `.` or `..` part, and no control character;
+- not be the managed user's home or an ancestor of it;
+- not overlap `/boot`, `/dev`, `/etc`, `/proc`, `/run`, `/sys`, `/usr`, `/opt/orbit`, `/var/lib/orbit`, `/var/www`, or the Gateway checkout;
+- not be inside a hidden directory of the managed user's home; and
+- not equal, or lie inside, an existing Instance checkout on the Node.
+
+The Gateway then checks the path on the Node. When the Node has an active `app-dev` role, it prepares the path: it creates each missing directory, owned by the managed user and group with mode `0755`. Otherwise the path must already exist. `app-dev` convergence prepares the apps root in the same way.
+
+An existing directory must be a real directory, not a symlink, owned by the managed user and group. The owner must have read, write, and execute access, and group and others must not have write access. The Gateway never changes the owner or mode of an existing directory. When a check fails, the stored setting stays unchanged. A directory that the Gateway created before the failure can remain.
+
+### Caddy access
+
+Caddy runs as its own user and must reach each development site's document root, also when the apps root lies outside the managed user's home. When a development site publishes, the Gateway adds execute access for the `caddy` user on each ancestor directory of the document root that Caddy cannot enter yet. It adds no read access to those directories, so Caddy can pass through them but cannot list them. Inside the checkout, Caddy can read only the document root and the public storage target.
 
 ## Failure codes
 
-The CLI rejects unknown, duplicate, and malformed `--setting` options before it sends a request.
+The CLI refuses a bad option before it sends a request.
 
 | Code | Condition |
 | --- | --- |
-| `node.setting_unknown` | The setting path is not `apps.path` |
-| `node.setting_duplicate` | The same setting path appears more than once |
-| `node.setting_invalid` | An option is missing a colon or has an empty key |
-| `node.setting_required` | `node:settings` ran with no `--setting` option |
+| `node.setting_unknown` | The setting path is not `apps.path`. |
+| `node.setting_duplicate` | The same setting path appears twice. |
+| `node.setting_invalid` | An option has no colon or an empty setting path. |
+| `node.setting_required` | `node:settings` got no `--setting` option. |
 
-The Gateway rejects an invalid public settings object or an unsafe root without changing stored intent.
+The Gateway refuses an invalid value without changing the stored setting.
 
 | Code | Condition |
 | --- | --- |
-| `node.settings_invalid` | The object has an unknown member, is not an object, or a patch omits `apps` |
-| `node.settings_path_invalid` | The apps path is empty or is not a normalized absolute path |
-| `node.settings_path_protected` | The apps path is a protected or operating-system path |
-| `node.settings_path_managed` | The apps path overlaps a managed checkout |
-| `node.settings_root_failed` | Directory, ownership, or access-control preparation failed |
+| `node.settings_invalid` | The object has an unknown member, is not an object, or a patch has no `apps` member. |
+| `node.settings_path_invalid` | The path is empty or not absolute and normalized. |
+| `node.settings_path_protected` | The path overlaps a protected path. |
+| `node.settings_path_managed` | The path equals or lies inside an Instance checkout. |
+| `node.settings_root_failed` | The path failed the check or the preparation on the Node. |
+
+## Why it works this way
+
+These reasons explain the design. Check them before you propose a change.
+
+### One typed setting
+
+A generic settings map would make any key part of the public contract. A column for each setting would make each new setting a schema change. So `settings` is one closed, typed value that grows only through reviewed code. `instance.path` and `worktree.path` are unknown paths.
+
+### Only intent is stored
+
+Storing the computed default would go stale when the managed user's home changes. So the Gateway stores only the path you set and derives the default when it needs it.
+
+### Settings never move checkouts
+
+Moving source on a settings change would be a hidden, risky migration. So each checkout keeps the path it got at creation. Move or remove old checkouts with explicit commands.
+
+### No ownership changes to existing directories
+
+The path can be outside the managed user's home, so a broad `chown` could damage unrelated data. The Gateway only creates missing directories and refuses an existing one that does not already fit.

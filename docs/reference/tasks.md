@@ -394,7 +394,7 @@ Completion and failure remain visible until a new turn starts. Task completion s
 
 A group records an implementer driver and a reviewer driver. `ORBIT_TASKS_IMPLEMENTER_AGENT_DRIVER` and `ORBIT_TASKS_REVIEWER_AGENT_DRIVER` select them for new groups, and each defaults to `t3`. Placement requires a Node that allows both drivers. Existing groups and threads keep their recorded drivers. The Gateway registers drivers; callers cannot supply arbitrary runtime URLs. Unsupported driver operations fail explicitly. An unknown configured driver rejects group creation with `tasks.agent_driver_unavailable` before any group is stored.
 
-The Gateway sends normalized conversation snapshots, entries, states, input requests, and metrics to the web app. Reconnect cursors belong to the selected driver. The browser renders Orbit data without parsing runtime-specific events. Laravel AI continues to select scheduler actions through Jev.
+The Gateway sends normalized conversation snapshots, entries, states, input requests, and metrics to the web app. Reconnect cursors belong to the selected driver. The browser renders Orbit data without parsing runtime-specific events. Jev currently judges brief coverage before the final approved commit.
 
 ### Archive finished threads
 
@@ -651,7 +651,7 @@ While the subtask is `running`, the resolution continues the implementer and sta
 
 In that case, assistance clears and the review stays unrequested. The next tick starts a fresh reviewer whose opening packet includes the resolution. A failed send to an existing thread leaves the task asking. A resolution posted before the flag is set is stored and not sent.
 
-Each observation includes normalized activity state, availability, errors, pending request IDs, and recent assistant and user text. It also reports new workspace commits, the pull request URL, and any available CI summary. The driver resolves pending requests from its runtime data. Missing or unavailable current conversations skip classification. The scheduler waits `ORBIT_TASKS_OBSERVATION_GRACE_SECONDS` (default `120`), then escalates once per continuous outage. Recovery resets the grace period and alert marker.
+Each observation includes normalized activity state, availability, errors, pending request IDs, and recent assistant and user text. It also reports new workspace commits, the pull request URL, and any available CI summary. The driver resolves pending requests from its runtime data. Missing or unavailable current conversations are skipped. The scheduler waits `ORBIT_TASKS_OBSERVATION_GRACE_SECONDS` (default `120`), then escalates once per continuous outage. Recovery resets the grace period and alert marker.
 
 Legacy scheduler actions:
 
@@ -663,10 +663,7 @@ Legacy scheduler actions:
 | `relay_review_to_implementer` | Driver follow-up on the implementer including the last reviewer excerpt |
 | `mark_subtask_done` | Existing settleImplementer, acceptReview, and next-subtask spawn paths |
 | `settle_group` | Existing settle path: use the verified PR, write metrics, and notify Coder when CLEAN-ready |
-| `escalate_coder` | HMAC Coder webhook with the observation and the low-confidence or failed Choice |
 | `noop` | No driver action and no Coder notification |
-
-Confidence below `ORBIT_TASKS_JEV_CONFIDENCE_THRESHOLD` (default `0.75`) becomes `escalate_coder`. A missing `TYPESAFE_API_KEY` fails closed with a clear error and never invents a next action.
 
 Gateway uses `laravel/ai` Classification with its official TypeSafe provider in `config/ai.php`. The package client posts to TypeSafe. Tests use the package fake and never call the network.
 
@@ -716,6 +713,24 @@ Call `tasks-check-cancel` with `{ "group": 123, "task": 456 }` to stop a running
 Orbit opens the pull request after the approval of the last subtask. That approval describes it with `--pr-summary`, at least one `--pr-change`, and at least one `--pr-breaking`, or `--pr-breaking=none`. The script accepts these flags only for that approval and refuses the approval without them. There is no limit on the number of changes.
 
 Before Orbit commits the last subtask, Jev checks that the change list covers every subtask of the group except cancelled and failed subtasks. Jev reads the group and subtask briefs and the pull request fields. For each checked subtask, it answers whether a listed change delivers it. A subtask counts as covered when Jev gives "yes" a probability of at least one half. Jev cannot read code, so this checks coverage, not correctness. Each missing subtask fails `brief_coverage`, and the reviewer's reminder names it. A failed Jev request counts as a communication failure.
+
+### Jev decision records and report
+
+Every call to Jev is stored in the Gateway's `jev_decisions` table, including failed calls. Each record captures its purpose, group, subtask, and agent-thread identifiers when the call concerns them. It records each question's type, options, and criteria, along with the input state sent with secrets redacted. Each answer stores its value, probability distribution, provider confidence when returned, and selected-answer probability separately. The record also stores the provider model identifier when returned, latency, and a sanitized error code on failure. The Gateway stores no secrets or raw provider error bodies. Records are retained indefinitely as Orbit's training and evaluation dataset.
+
+The stored `questions`, `input_state`, and merge-time `merge_changes` snapshots are each capped at 64 KiB after redaction. An oversized `questions` or `input_state` snapshot carries truncation metadata; the Gateway preserves its structure where possible and uses a bounded marker when it cannot fit. The labeler leaves question labels unknown when either snapshot is truncated. Truncated merge-time change evidence is also incomplete for labeling.
+
+The live `brief_coverage` questions are Boolean. Laravel AI v1.0.0 returns `P(true)` for a Boolean answer and has no separate provider-confidence value for it. Store `P(false) = 1 - P(true)`; the selected-answer probability is `P(true)` for “covered” and `P(false)` for “missing.” Choice questions instead use the provider's probability for the selected option as selected-answer probability and keep nullable provider confidence separate. If the selected-answer probability is absent or invalid, keep the answer and record a null selected-answer probability.
+
+For `brief_coverage`, store the approved change-list snapshot from the final approval comment and the pull request's `## Changes` list at merge. The merge-time list is authoritative. Normalize text with Unicode NFKC, case-folding, punctuation-to-space replacement, and whitespace collapsing. A line names a subtask only when it contains the complete normalized title as a whole-token sequence, the title is unique in the group, and exactly one line matches. The line must appear in both the approved list and the merge-time list. Ambiguous titles or missing snapshots remain unlabeled.
+
+Only a Jev “missing” answer with exactly one named approved line at merge is labeled `false_negative`. All other question answers are unlabeled, including a missing answer without a named line and every covered answer. Failed or unanswered calls, unmerged or closed pull requests, and incomplete or ambiguous evidence also remain unlabeled. Labels record their approval snapshot, merge snapshot, merge SHA, matching line, and rule version as provenance.
+
+When all answers in a call said “covered” and the pull request merges, the call receives a separate call-level `correct` label. This records only the merged call outcome; it does not validate each answer against the change list. Mixed-answer calls do not receive this call-level label.
+
+The Gateway report command `orbit:tasks:jev-report` reports calls, failures, labeled share, false-negative count and share of missing answers, false-negative confidence buckets, call-level `correct` count, and p50/p95 latency for each purpose. Labeled share counts calls with at least one labeled question or a call-level label. The Gateway produces only the `false_negative` question label; its share uses all missing answers as the denominator.
+
+For each false negative, its selected-answer probability determines the confidence bucket. Latency percentiles include measured call durations, including failed calls; missing latency is excluded. A purpose with no missing answers has a null false-negative share, and a purpose with no measured latency has null percentiles. See [ADR 0173](/decisions/0173-record-and-label-jev-decisions) for the full contract.
 
 After every approved commit, including the last, the Gateway pushes that stored commit to `task-{group id}` on `origin` through the [Gateway GitHub App](/reference/github-app). The push uses that repository's installation token with `Contents: write` and `Pull requests: write`, passed on the SSH process standard input, and runs `git push --quiet origin <commit_sha>:refs/heads/task-{group id}`. `<commit_sha>` is the commit stored on the approval. The push never uses `HEAD`.
 
@@ -845,8 +860,7 @@ When `notify_coder` is true, settle POSTs an HMAC-signed JSON body to Coder. Thi
 | `ORBIT_T3_TOKEN` | Optional bearer for that Node's T3 server |
 | `nodes.settings.t3.token` | Required bearer projected with each node when node-scoped T3 credentials are enabled. A projected node never falls back to `ORBIT_T3_TOKEN`; missing configuration fails closed. |
 | `nodes.settings.t3.url` | Optional full base URL for that node's T3 server. When absent, the node's WireGuard address and `ORBIT_T3_PORT` are used. |
-| `TYPESAFE_API_KEY` | TypeSafe Jev key for task-session Classification. Missing key fails closed |
-| `ORBIT_TASKS_JEV_CONFIDENCE_THRESHOLD` | Minimum Choice confidence before execute. Defaults to `0.75`, measured as the margin between the two choice probabilities. Below this, the tick escalates |
+| `TYPESAFE_API_KEY` | TypeSafe key used for Jev calls, including brief-coverage checks |
 
 The Gateway skips the webhook when the URL or secret is missing. A refused Coder response does not fail settle.
 

@@ -12,11 +12,11 @@ After the `gateway` role leaves the `vpn` node, private DNS publication must run
 
 Proposed.
 
-This amends [ADR 0090](/decisions/0090-relocate-the-gateway-role-independently-of-vpn). It does not change [ADR 0061](/decisions/0061-use-vpn-dns-by-default-on-managed-peers) or the VPN baseline.
+This amends [ADR 0090](/cli/node#a-dedicated-relocate-for-gateway). It does not change [ADR 0061](/decisions/0061-use-vpn-dns-by-default-on-managed-peers) or the VPN baseline.
 
 ## Context
 
-[ADR 0090](/decisions/0090-relocate-the-gateway-role-independently-of-vpn) moves the `gateway` role without moving `vpn`. The WireGuard server, dnsmasq backend, and `orbit-private-dns` listener stay on the `vpn` node. `DnsmasqPrivateDnsManager` still ran `NativeProcessRunner` on the serving Gateway process. After a live split (`vpn` at `10.44.0.1`, `gateway` at `10.44.0.2`), `metrics --converge` and other publication paths failed at `converge:private-dns` / `app-dev.dns_config_failed` because the serving host has no listener.
+[ADR 0090](/cli/node#a-dedicated-relocate-for-gateway) moves the `gateway` role without moving `vpn`. The WireGuard server, dnsmasq backend, and `orbit-private-dns` listener stay on the `vpn` node. `DnsmasqPrivateDnsManager` still ran `NativeProcessRunner` on the serving Gateway process. After a live split (`vpn` at `10.44.0.1`, `gateway` at `10.44.0.2`), `metrics --converge` and other publication paths failed at `converge:private-dns` / `app-dev.dns_config_failed` because the serving host has no listener.
 
 `MetricsRoleBaseline` treated that publication failure as a full convergence failure. It removed a runtime that had already started Grafana and Prometheus and deleted `/etc/orbit/metrics`. Operators then had to restore Metrics by hand before the next converge succeeded.
 
@@ -46,6 +46,6 @@ The new Gateway node also had an empty `can_access` list. Operators needed direc
 ## Affects
 
 - Components: apps/gateway, apps/docs, apps/e2e
-- ADRs: amends [ADR 0090](/decisions/0090-relocate-the-gateway-role-independently-of-vpn); leaves [ADR 0061](/decisions/0061-use-vpn-dns-by-default-on-managed-peers) unchanged
+- ADRs: amends [ADR 0090](/cli/node#a-dedicated-relocate-for-gateway); leaves [ADR 0061](/decisions/0061-use-vpn-dns-by-default-on-managed-peers) unchanged
 - Detail: [Relocate the gateway role](/solutions/relocate-gateway-role), [Private DNS](/reference/private-dns), [Metrics](/reference/metrics), [`node`](/cli/node)
 - Verify: Gateway DnsmasqPrivateDnsManager targeting tests, MetricsRoleBaseline publication-failure tests, RelocateNodeRoleAction and GatewayRoleBaseline access-grant tests, MCP `node-role-add` boolean schema

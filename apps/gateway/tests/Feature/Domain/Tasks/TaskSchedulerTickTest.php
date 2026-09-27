@@ -10,6 +10,7 @@ use App\Domain\AppInstances\AppInstanceRemover;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\AgentSpawner;
 use App\Domain\Tasks\ArchiveFinishedTaskThreads;
+use App\Domain\Tasks\BriefCoverageLabeler;
 use App\Domain\Tasks\CoderSettleNotifier;
 use App\Domain\Tasks\NullAgentSpawner;
 use App\Domain\Tasks\NullCoderSettleNotifier;
@@ -23,10 +24,9 @@ use App\Domain\Tasks\TaskCheckStatus;
 use App\Domain\Tasks\TaskCommentType;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
-use App\Domain\Tasks\TaskJevDecision;
-use App\Domain\Tasks\TaskJevOutcome;
 use App\Domain\Tasks\TaskPullRequestDescription;
 use App\Domain\Tasks\TaskPullRequestException;
+use App\Domain\Tasks\TaskPullRequestHealth;
 use App\Domain\Tasks\TaskPullRequestPublisher;
 use App\Domain\Tasks\TaskRunInstructions;
 use App\Domain\Tasks\TaskRunPullRequest;
@@ -35,9 +35,7 @@ use App\Domain\Tasks\TaskRunReceiptException;
 use App\Domain\Tasks\TaskRunReceipts;
 use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskSessionClassificationException;
-use App\Domain\Tasks\TaskSessionClassifier;
 use App\Domain\Tasks\TaskSessionDecision;
-use App\Domain\Tasks\TaskSessionNextAction;
 use App\Domain\Tasks\TaskSessionObservation;
 use App\Domain\Tasks\TaskSettleMetrics;
 use App\Domain\Tasks\TaskSettleMetricsCollector;
@@ -54,15 +52,21 @@ use App\Models\AgentThread;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\AppInstanceRemoval;
+use App\Models\JevDecision;
 use App\Models\Node;
 use App\Models\Task;
 use App\Models\TaskCheck;
 use App\Models\TaskComment;
 use App\Models\TaskGroup;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Exceptions;
 use Illuminate\Support\Facades\Http;
 use Laravel\Ai\Classification;
+use Laravel\Ai\Responses\Data\BooleanAnswer;
 use Tests\Feature\GitHub\GitHubTestSupport;
 use Tests\Support\AcceptingTaskWorkspaceMcp;
 use Tests\Support\FakeTaskCheckRunner;
@@ -858,6 +862,61 @@ it('backs off a merged pull request cleanup and retries it on a later tick', fun
 
     expect($calls)->toBe(2)
         ->and($group->fresh()?->taskable_id)->toBe($group->taskable_id);
+});
+
+it('preserves labeled merge evidence and report metrics when cleanup retries lose GitHub evidence', function (): void {
+    $group = tick_settling_group();
+    $task = $group->tasks->sole();
+    $changes = [$task->title];
+    $decision = JevDecision::query()->create([
+        'purpose' => 'brief_coverage',
+        'task_group_id' => $group->id,
+        'task_ids' => [$task->id],
+        'approval_comment_id' => 901,
+        'approval_changes' => $changes,
+        'approval_changes_digest' => hash('sha256', json_encode($changes, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE)),
+        'approval_changes_redacted' => false,
+        'call_started_at' => now()->subMinute()->toIso8601String(),
+        'questions' => ['subtask_'.$task->id => []],
+        'input_state' => ['subtasks' => [['title' => $task->title]], 'pull_request' => ['changes' => $changes]],
+        'answers' => ['subtask_'.$task->id => ['value' => true, 'selected_answer_probability' => 0.97]],
+        'latency_ms' => 25,
+    ]);
+    mock(AppInstanceRemover::class)->shouldReceive('execute')->andThrow(new RuntimeException('disk full'));
+    Http::preventStrayRequests();
+    Http::fake([
+        'https://api.github.com/repos/acme/orbit/installation' => Http::response(['id' => 9]),
+        'https://api.github.com/app/installations/9/access_tokens' => Http::response(['token' => 'ghs_watch'], 201),
+        'https://api.github.com/repos/acme/orbit/pulls/42' => Http::sequence()
+            ->push([
+                'merged' => true, 'state' => 'closed', 'head' => ['sha' => 'head-sha'],
+                'body' => "## Changes\n\n- {$task->title}\n", 'merge_commit_sha' => 'actual-merge-sha', 'merged_at' => '2026-10-01T10:00:00Z',
+            ])
+            ->push([
+                'merged' => true, 'state' => 'closed', 'head' => ['sha' => 'head-sha'],
+                'merge_commit_sha' => 'actual-merge-sha', 'merged_at' => '2026-10-01T10:00:00Z',
+            ]),
+    ]);
+
+    app(TaskScheduler::class)->tick();
+    $verified = $decision->fresh();
+    expect($group->fresh()?->status)->toBe(TaskGroupStatus::Settling)
+        ->and($verified?->labels['questions'] ?? [])->toBe([])
+        ->and($verified?->labels['call']['label'])->toBe('correct');
+
+    app(TaskScheduler::class)->tick();
+    $retried = $decision->fresh();
+    Artisan::call('orbit:tasks:jev-report', ['--json' => true]);
+    $report = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['brief_coverage'];
+
+    expect($group->fresh()?->status)->toBe(TaskGroupStatus::Settling)
+        ->and($retried?->merge_changes)->toBe($verified?->merge_changes)
+        ->and($retried?->merge_changes_digest)->toBe($verified?->merge_changes_digest)
+        ->and($retried?->merge_body_digest)->toBe($verified?->merge_body_digest)
+        ->and($retried?->labels)->toBe($verified?->labels)
+        ->and($report['calls'])->toBe(1)
+        ->and($report['labeled_share'])->toBe(1)
+        ->and($report['call_correct'])->toBe(1);
 });
 
 it('uses backoff for publication and removal retries and retries a failed manual complete', function (): void {
@@ -1699,6 +1758,23 @@ it('fast-forwards the workspace before a resumed subtask starts and retries a fa
 
     expect($agents->fastForwards)->toBe(2)
         ->and($waiting->fresh()?->communication_failures)->toBe(2);
+});
+
+it('reports a throwing brief coverage labeler and continues the tick', function (): void {
+    $group = tick_settling_group();
+    Exceptions::fake();
+    app()->instance(BriefCoverageLabeler::class, new class implements BriefCoverageLabeler
+    {
+        public function label(TaskGroup $group, TaskPullRequestHealth $health): void
+        {
+            throw new RuntimeException('labeling failed');
+        }
+    });
+    tick_watch_pulls([['merged' => true, 'state' => 'closed', 'head' => ['sha' => 'abc123'], 'base' => ['ref' => 'main']]]);
+
+    expect(app(TaskScheduler::class)->tick())->toBe([]);
+
+    Exceptions::assertReported(RuntimeException::class);
 });
 
 it('keeps a merged group settling when an approved commit missed the merge', function (): void {
@@ -2980,19 +3056,6 @@ it('does not classify or advance a task while its T3 thread is active', function
             ]];
         }
     });
-    app()->instance(TaskSessionClassifier::class, new class implements TaskSessionClassifier
-    {
-        public function classify(TaskSessionObservation $observation): TaskSessionDecision
-        {
-            throw new LogicException('Active tasks must not call Jev.');
-        }
-
-        public function classifyOutcome(TaskSessionObservation $observation, TaskThreadRole $role): TaskJevDecision
-        {
-            throw new LogicException('Active tasks must not call Jev.');
-        }
-    });
-
     $decisions = app(TaskScheduler::class)->tick();
 
     expect($decisions)->toBe([])
@@ -3033,7 +3096,7 @@ it('does not classify an in-progress task without an attached session', function
     Classification::assertNothingClassified();
 });
 
-it('targets the idle in-progress task while another task is working', function (TaskSessionNextAction $action): void {
+it('targets the idle in-progress task while another task is working', function (): void {
     $group = tick_group();
     $workingTask = $group->tasks->first();
     $workingTask->update(['status' => TaskStatus::Reviewing]);
@@ -3065,27 +3128,6 @@ it('targets the idle in-progress task while another task is working', function (
         }
     };
     app()->instance(T3ThreadReader::class, $reader);
-    $classifier = new class($action) implements TaskSessionClassifier
-    {
-        /** @var list<TaskSessionObservation> */
-        public array $observations = [];
-
-        public function __construct(private TaskSessionNextAction $action) {}
-
-        public function classify(TaskSessionObservation $observation): TaskSessionDecision
-        {
-            $this->observations[] = $observation;
-
-            return new TaskSessionDecision($this->action, 0.95, 'Route the observed task.');
-        }
-
-        public function classifyOutcome(TaskSessionObservation $observation, TaskThreadRole $role): TaskJevDecision
-        {
-            return new TaskJevDecision(TaskJevOutcome::AssistanceRequired, 1.0, 'Legacy test classifier.');
-        }
-    };
-    app()->instance(TaskSessionClassifier::class, $classifier);
-
     $decisions = app(TaskScheduler::class)->tick();
 
     expect($decisions)->toBe([])
@@ -3094,7 +3136,7 @@ it('targets the idle in-progress task while another task is working', function (
         ->and(TaskCheck::query()->where('task_id', $workingTask->id)->count())->toBe(0)
         ->and($workingTask->fresh()->status)->toBe(TaskStatus::Reviewing)
         ->and($idleTask->fresh()->status)->toBe(TaskStatus::Running);
-})->with([TaskSessionNextAction::ContinueImplementer, TaskSessionNextAction::MarkSubtaskDone]);
+});
 
 it('reminds the implementer with the failing check output once, then asks for assistance', function (): void {
     $group = tick_group();
@@ -3421,18 +3463,6 @@ it('unavailable implementer uses observation grace instead of rubric', function 
         public function snapshot(Node $node, string $threadId): ?array
         {
             return null;
-        }
-    });
-    app()->instance(TaskSessionClassifier::class, new class implements TaskSessionClassifier
-    {
-        public function classify(TaskSessionObservation $observation): TaskSessionDecision
-        {
-            throw new LogicException('unused');
-        }
-
-        public function classifyOutcome(TaskSessionObservation $observation, TaskThreadRole $role): TaskJevDecision
-        {
-            throw new LogicException('unused');
         }
     });
     app(TaskScheduler::class)->tick();
@@ -3916,12 +3946,19 @@ function tick_publishing(array $missing = [[]], int $failures = 0): object
     {
         public int $calls = 0;
 
+        public ?int $approvalCommentId = null;
+
+        /** @var list<string>|null */
+        public ?array $approvalChanges = null;
+
         /** @param list<list<string>> $missing */
         public function __construct(private array $missing) {}
 
-        public function missing(TaskGroup $group, TaskRunPullRequest $pullRequest): array
+        public function missing(TaskGroup $group, TaskRunPullRequest $pullRequest, ?int $approvalCommentId = null, ?array $approvalChanges = null): array
         {
             $this->calls++;
+            $this->approvalCommentId = $approvalCommentId;
+            $this->approvalChanges = $approvalChanges;
 
             return array_shift($this->missing) ?? [];
         }
@@ -3959,6 +3996,21 @@ function tick_publishing(array $missing = [[]], int $failures = 0): object
     return (object) ['coverage' => $coverage, 'publisher' => $publisher];
 }
 
+it('continues an approval tick after Jev recording fails and reaches later work', function (): void {
+    [$group, $task, , $signer, $publisher] = tick_review([tick_final_approval()], last: true);
+    Classification::fake([['subtask_'.$task->id => new BooleanAnswer(0.97)]])->preventStrayClassifications();
+    Exceptions::fake();
+    DB::statement("CREATE TRIGGER fail_jev_decision_insert_during_tick BEFORE INSERT ON jev_decisions BEGIN SELECT RAISE(ABORT, 'jev bookkeeping insert failed'); END");
+
+    app(TaskScheduler::class)->tick();
+
+    expect($signer->messages)->toBe(["Models\n\nChecked the feature."])
+        ->and($publisher->pushes)->toBe([$group->id])
+        ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Settling)
+        ->and($task->fresh()?->status)->toBe(TaskStatus::Completed);
+    Exceptions::assertReported(QueryException::class);
+});
+
 it('commits the last approved subtask, opens the pull request with the reviewer fields, and settles the group', function (): void {
     [$group, $task, , $signer] = tick_review([tick_final_approval()], last: true);
     $publishing = tick_publishing();
@@ -3970,6 +4022,8 @@ it('commits the last approved subtask, opens the pull request with the reviewer 
         ->and($publishing->publisher->pushes)->toBe([$group->id])
         ->and($publishing->publisher->bodies)->toBe([TaskPullRequestDescription::render(new TaskRunPullRequest('Adds tick routing.', ['Tasks store their records.'], []), 1)])
         ->and($approval->pull_request)->toBe(['summary' => 'Adds tick routing.', 'changes' => ['Tasks store their records.'], 'breaking' => []])
+        ->and($publishing->coverage->approvalCommentId)->toBe($approval->id)
+        ->and($publishing->coverage->approvalChanges)->toBe(['Tasks store their records.'])
         ->and($group->fresh()?->pr_url)->toBe('https://github.com/acme/orbit/pull/42')
         ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Settling)
         ->and($group->fresh()?->assistance_requested)->toBeFalse()
@@ -4121,7 +4175,7 @@ it('counts a failed coverage answer as a communication failure', function (): vo
     tick_publishing();
     app()->instance(TaskBriefCoverage::class, new class implements TaskBriefCoverage
     {
-        public function missing(TaskGroup $group, TaskRunPullRequest $pullRequest): array
+        public function missing(TaskGroup $group, TaskRunPullRequest $pullRequest, ?int $approvalCommentId = null, ?array $approvalChanges = null): array
         {
             throw new TaskSessionClassificationException('TypeSafe Jev request failed (ConnectionException).');
         }

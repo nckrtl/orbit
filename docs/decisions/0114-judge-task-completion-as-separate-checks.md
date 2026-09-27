@@ -30,7 +30,7 @@ Evaluate the implementer rubric when the task is `running` and the implementer t
 
 `AskingForInput` fails the code item `waiting_for_input`. That item joins the same reminder as the other failures. The second pass waits until that pending input has cleared or the reminder has started a turn that has since stopped. Ticks that still show the same pending input do not escalate. If the driver refuses the reminder, the tick records the refusal and uses the existing communication-failure path.
 
-A Jev item passes only when Jev selects the passing choice at a confidence greater than or equal to `ORBIT_TASKS_JEV_CONFIDENCE_THRESHOLD` (default `0.75`). The threshold applies to each question. A code item passes or fails on the fact itself. A confident failing choice and a passing choice below the threshold are both failures. The Gateway asks the transcript questions in one Classification call. A missing answer, a missing TypeSafe key, or a classification error follows the existing communication-failure path. That path does not send the rubric reminder and does not treat the missing answer as a pass.
+This ADR's Jev Classification rubric and confidence-threshold rule are historical and no longer describe production behavior. [ADR 0173](/decisions/0173-record-and-label-jev-decisions) retires the unused task-session classifier and its `ORBIT_TASKS_JEV_CONFIDENCE_THRESHOLD` configuration. The live `brief_coverage` decision is described in ADR 0173 and [Tasks](/reference/tasks).
 
 A successful classification does not clear a failed-send counter. When the rubric requires a message, successful delivery clears that counter.
 
@@ -113,4 +113,4 @@ The second pass is the next rubric evaluation after that reminder, once the same
 - Components: apps/gateway, apps/docs
 - ADRs: [ADR 0110](/decisions/0110-route-task-sessions-with-laravel-ai-jev), [ADR 0113](/decisions/0113-gate-task-completion-on-validation-and-review)
 - Detail: [Tasks](/reference/tasks)
-- Verify: `TaskSchedulerTickTest`, `ComposerCheckEvidenceTest`, `RemoteTaskWorkspaceStateReaderTest`, `LaravelAiTaskSessionClassifierTest`, and `composer check` in `apps/gateway`
+- Verify: `TaskSchedulerTickTest`, `ComposerCheckEvidenceTest`, `RemoteTaskWorkspaceStateReaderTest`, `BriefCoverageCancelledTest`, and `composer check` in `apps/gateway`
