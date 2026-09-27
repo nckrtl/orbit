@@ -133,3 +133,5 @@ A partial generation is never promoted. A failed refresh keeps the old generatio
 ### Recovery by exact inventory
 
 Recovery deletes only resources whose identity and metadata it has proved and journaled. A name alone never authorizes deletion, so recovery cannot remove a resource that it does not own.
+
+The topology snapshot omits the removed Instance environment field and identifies runtime targets with morph aliases.

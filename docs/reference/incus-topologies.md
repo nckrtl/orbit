@@ -288,3 +288,5 @@ The harness expects every topology to belong to a linked worktree of the primary
 ### Scenarios stay outside delivery
 
 Scenarios are regression evidence for one commit, and they run on demand. They never gate review or merge. A cold scenario proves that Orbit builds from the unchanged base image, so it installs nothing before construction.
+
+Topology fixtures identify Instances by their current API fields and use the `instance` morph alias for Instance-owned runtime records.

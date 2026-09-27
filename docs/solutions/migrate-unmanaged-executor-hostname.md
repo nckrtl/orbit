@@ -37,3 +37,5 @@ Orbit does not delete the hand-placed files and does not move DNS clients. A nam
 ## Verification
 
 After you create the Route, `orbit route:show` reports kind `custom_proxy`, and `getent ahostsv4 executor.orbit` returns the Node's address. `https://executor.orbit` reaches the service with Orbit CA TLS, and `orbit doctor --family=route` is healthy for the Node. After you delete the hand-placed fragment, `executor.orbit` still works.
+
+Instance Route prompts identify targets without the removed environment column; the Gateway derives placement from the Node.

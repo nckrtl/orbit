@@ -240,3 +240,5 @@ Destroying a definition leaves every existing Instance copy in place.
 - [`instance:destroy`](/cli/instance#orbit-instancedestroy) removes every Process of the Instance. Node Processes stay.
 - [`doctor`](/cli/doctor) with `--family=process` compares desired and observed state.
 - [`database:user:create`](/cli/database#orbit-databaseusercreate) creates a MySQL user through a Node Docker Process.
+
+The CLI refuses `--preset` with `--node` or `--project` using `process.preset_target_invalid`; presets configure development Instance Processes only.

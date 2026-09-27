@@ -6,7 +6,7 @@ covers:
   - apps/gateway/app/Actions/AppInstances/{Import,Update,Synchronize}AppInstanceEnvironmentAction.php
   - apps/gateway/app/Http/Controllers/Api/AppInstanceEnvironment*Controller.php
   - apps/gateway/app/Infrastructure/AppInstances/{RemoteAppInstanceEnvironmentAccess,NativeAppInstanceEnvironmentOperationLock}.php
-  - apps/gateway/app/Models/AppInstanceEnvironmentValue.php
+  - apps/gateway/app/Models/{AppInstance,AppInstanceEnvironmentValue}.php
   - apps/cli/app/Commands/Environment/**
   - packages/php-sdk/src/{Requests,Responses}/Environment/**
 ---
@@ -29,7 +29,9 @@ Import and update change stored configuration only. The `.env` file on the Node 
 
 A success returns `app_instance_id`, `operation`, `changed`, and `key_count`, the total number of stored keys. `changed` is `false` when the stored value or the file already matched.
 
-The Instance must be active, with complete placement and no pending source migration. Import, update, and synchronization use the Instance's recorded owning Node. A Route is not required for synchronization unless a stored value refers to `{{app_instance.domain}}`; then the Gateway needs an authoritative Route and returns `env.reference_unavailable` (409) if it cannot resolve one. A Route in an incomplete transition also blocks synchronization. The caller needs an access grant to the Instance's Node. Import and synchronize also need an active Node. Update does not contact the Node, so it works while the Node is unreachable.
+The Instance must be active, with complete placement and no pending source migration. The Node must have exactly one active `app-dev` or `app-prod` role; without one, the Gateway returns `app_instance.placement_unavailable` (409).
+
+Import, update, and synchronization use the Instance's recorded owning Node. A Route is not required for synchronization unless a stored value refers to `{{app_instance.domain}}`; then the Gateway needs an authoritative Route and returns `env.reference_unavailable` (409) if it cannot resolve one. A Route in an incomplete transition also blocks synchronization. The caller needs an access grant to the Instance's Node. Import and synchronize also need an active Node. Update does not contact the Node, so it works while the Node is unreachable.
 
 ## Where the file lives
 
@@ -125,6 +127,7 @@ Environment operations return these codes in the Orbit error envelope. None of t
 | --- | --- | --- |
 | `env.target_ambiguous` | 409 | The domain reaches more than one Instance. |
 | `env.owner_unavailable` | 409 | The Instance is not active or not fully placed, or it lacks exactly one healthy Route. |
+| `app_instance.placement_unavailable` | 409 | The owning Node does not have exactly one active `app-dev` or `app-prod` role. |
 | `env.import_conflict` | 409 | Import without `replace` found a key that is already stored. |
 | `env.configuration_invalid` | 422 | A key, value, placeholder, count, size, or Laravel `APP_URL` rule failed. |
 | `env.reference_unavailable` | 409 | A placeholder is left over after rendering. |
@@ -154,3 +157,5 @@ Synchronization must work before dependencies are installed and before the appli
 ### The Node role decides isolation
 
 An operator may set `APP_ENV` to `local` or `staging` on a production Instance. If `APP_ENV` decided the layout or the Unix user, that edit would turn off release layout or user isolation. So the Node role decides them, and `APP_ENV` stays an application setting.
+
+The Instance environment comes from its Node role. The Gateway stores no separate `app_instances.environment` column.

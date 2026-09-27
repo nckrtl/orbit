@@ -9,6 +9,7 @@ covers:
   - apps/gateway/app/Http/{Controllers/Api/Schedule*,Requests/Schedules/*}.php
   - apps/gateway/app/Models/Schedule.php
   - packages/php-sdk/src/{Requests,Responses}/Schedules/**
+  - apps/gateway/database/migrations/2026_09_30_*.php
 ---
 
 # Schedules
@@ -163,3 +164,5 @@ The completion report is informational. The Gateway stores only the latest resul
 ### A stopped timer for copied Schedules
 
 A copied Schedule on a new production Instance can run before the data of that Instance is ready. So an Instance Schedule can install with its timer disabled, and enable is a separate step. A manual run is not an enable, because one run does not start the recurring timer.
+
+Schedule targets use the stable `instance` morph alias, and the Gateway derives Instance placement from the owning Node role.

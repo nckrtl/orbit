@@ -196,3 +196,5 @@ Volumes and the password survive a removal, so re-enabling is safe. Data deletio
 ### Node metrics through Grafana
 
 Prometheus stays unpublished. Grafana's datasource proxy reuses the publication and the password that already exist. A new Prometheus host name is a rejected alternative. A Gateway endpoint that reads Prometheus over SSH is also rejected, because it adds an SSH round trip to each refresh.
+
+Instance placement is derived from active Node roles; metrics clients must not expect a stored Instance environment field.

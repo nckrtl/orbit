@@ -188,3 +188,5 @@ Instances of one repository share one serving contract. Per-Instance route or PH
 ### Project and Instance
 
 "App" also names Laravel applications, desktop builds, and Node roles such as `app-dev`. So the repository record is a Project, and one copy on a Node is an Instance. Stored table names keep `apps` and `app_instances`.
+
+A Project does not supply an Instance environment column. The owning Node's active App role determines the Instance placement.

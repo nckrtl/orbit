@@ -142,3 +142,5 @@ Stopping workers or clearing queues on the candidate would disturb a live applic
 ### No automatic deployment
 
 You need to check the environment and deploy steps before the first release. So cloning and deployment are separate requests.
+
+The clone target is identified by its `app-prod` Node role. Orbit does not rely on a stored Instance environment column to select production behavior.

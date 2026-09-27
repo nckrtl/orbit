@@ -194,3 +194,5 @@ Each notice carries every list column. A refetch per notice would reload the pag
 ### An opaque status bar on iOS 26
 
 With a translucent status bar and `viewport-fit=cover`, iOS 26 starts the web view under the status bar and makes it shorter by the top inset. Every CSS height and `innerHeight` then leaves a dead band at the bottom, and the edge blur covers the header. [WebKit bug 301108](https://bugs.webkit.org/show_bug.cgi?id=301108) records the fault. The opaque `black` style starts the web view below the bar and lets it reach the bottom edge.
+
+Instance records omit an environment column; clients derive placement from the owning Node role.

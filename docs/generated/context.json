@@ -429,6 +429,7 @@
                 "Node",
                 "Process",
                 "Project",
+                "Role",
                 "Route",
                 "Schedule",
                 "Task",
@@ -481,6 +482,7 @@
                 "Node",
                 "Process",
                 "Project",
+                "Role",
                 "Route"
             ],
             "governing_adrs": []
@@ -1959,6 +1961,7 @@
                 "Node",
                 "Process",
                 "Project",
+                "Role",
                 "Route",
                 "Schedule",
                 "Task",
@@ -1979,6 +1982,7 @@
                 "Instance",
                 "Node",
                 "Process",
+                "Project",
                 "Route"
             ],
             "governing_adrs": []
@@ -2243,6 +2247,7 @@
             ],
             "concepts": [
                 "Gateway",
+                "Instance",
                 "Node",
                 "Route"
             ],
@@ -2373,6 +2378,7 @@
                 "Node",
                 "Process",
                 "Project",
+                "Role",
                 "Route",
                 "Schedule"
             ],
@@ -2718,6 +2724,7 @@
                 "Node",
                 "Process",
                 "Project",
+                "Role",
                 "Schedule"
             ],
             "governing_adrs": [
@@ -3015,7 +3022,9 @@
             ],
             "concepts": [
                 "Gateway",
+                "Instance",
                 "Node",
+                "Process",
                 "Role"
             ],
             "governing_adrs": []
