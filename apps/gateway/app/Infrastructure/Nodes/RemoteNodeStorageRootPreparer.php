@@ -6,7 +6,6 @@ namespace App\Infrastructure\Nodes;
 
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Nodes\ManagedUserAccount;
-use App\Domain\Nodes\Storage\EffectiveStorageRoots;
 use App\Domain\Nodes\Storage\NodeStorageRootPreparer;
 use App\Domain\Nodes\Storage\StoragePath;
 use App\Infrastructure\AppDev\AppDevSshExecutor;
@@ -24,10 +23,9 @@ final readonly class RemoteNodeStorageRootPreparer implements NodeStorageRootPre
         $this->run($node, $account, $path, createMissing: false);
     }
 
-    public function prepare(Node $node, ManagedUserAccount $account, EffectiveStorageRoots $roots): void
+    public function prepare(Node $node, ManagedUserAccount $account, StoragePath $root): void
     {
-        $this->run($node, $account, $roots->instance, createMissing: true);
-        $this->run($node, $account, $roots->worktree, createMissing: true);
+        $this->run($node, $account, $root, createMissing: true);
     }
 
     private function run(

@@ -12,7 +12,6 @@ use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Firewall\FirewallOperationException;
-use App\Domain\Nodes\DatabaseRoleSettings;
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\NodeRoleFollowUpReport;
 use App\Domain\Nodes\NodeRoleOperationException;
@@ -60,7 +59,6 @@ final readonly class AddNodeRoleAction
         ?AnalyticsRoleSettings $analytics = null,
     ): array {
         $this->guardActiveNode($node);
-        $this->guardEmptyDatabaseSettings($role);
         $this->guardAnalyticsStorage($node, $role, $analytics);
 
         if (! $this->registry->definition($role)->mutable) {
@@ -97,8 +95,6 @@ final readonly class AddNodeRoleAction
     public function executeDuringProvisioning(Node $node, RoleName $role): NodeRole
     {
         $this->guardProvisioningNode($node);
-        $this->guardEmptyDatabaseSettings($role);
-
         if (! $this->registry->definition($role)->assignableDuringProvisioning) {
             throw new RoleAssignmentException("Role [{$role->value}] cannot be assigned during provisioning.");
         }
@@ -243,15 +239,6 @@ final readonly class AddNodeRoleAction
     private function followUps(): NodeRoleFollowUpReport
     {
         return $this->followUps ?? app(NodeRoleFollowUpReport::class);
-    }
-
-    private function guardEmptyDatabaseSettings(RoleName $role): void
-    {
-        if ($role !== RoleName::Database) {
-            return;
-        }
-
-        DatabaseRoleSettings::from([]);
     }
 
     /**

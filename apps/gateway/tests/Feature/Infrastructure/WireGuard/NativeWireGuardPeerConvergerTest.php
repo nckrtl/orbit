@@ -915,57 +915,6 @@ it('rolls back exact peer state when the recoverable completion fails', function
     }
 });
 
-it('restores resolver settings after a legacy peer restart during rollback', function (string $failureMode): void {
-    $harness = remote_wireguard_peer_install_harness(
-        filesPresent: true,
-        activeState: 'active',
-        enabledState: 'enabled',
-        legacyResolverHooks: true,
-    );
-
-    try {
-        $before = $harness->state();
-        $result = $failureMode === 'retained'
-            ? $harness->convergeRecoverably(function () use ($harness): void {
-                $harness->useLegacyTransactionRecord();
-                throw new RuntimeException('completion failed');
-            })
-            : $harness->converge(lateFailure: true);
-
-        expect($result['succeeded'])
-            ->toBeFalse()
-            ->and($result['exception'])
-            ->toBeInstanceOf($failureMode === 'retained' ? RuntimeException::class : NodeProvisioningException::class)
-            ->and($result['live'])
-            ->toBe($harness->originalLive())
-            ->and($result['dns'])
-            ->toBe($harness->originalDns())
-            ->and($result['service_state'])
-            ->toBe(['active', 'enabled'])
-            ->and($result['resolver'])
-            ->toBe($before['resolver'])
-            ->and($result['command_log'])
-            ->toContain(
-                'resolvectl dns orbit 10.43.0.53',
-                'resolvectl domain orbit ~old.orbit.internal',
-                'resolvectl default-route orbit no',
-                'resolvectl llmnr orbit resolve',
-                'resolvectl mdns orbit yes',
-                'resolvectl dnssec orbit allow-downgrade',
-                'resolvectl dnsovertls orbit opportunistic',
-                'resolvectl nta orbit corp.example',
-            )
-            ->not->toContain('resolvectl revert orbit')
-            ->and($result['rollback_artifacts'])
-            ->toBeEmpty();
-    } finally {
-        $harness->cleanup();
-    }
-})->with([
-    'immediate rollback' => 'immediate',
-    'retained rollback' => 'retained',
-]);
-
 it('rolls back exact peer state when recoverable commit validation fails', function (): void {
     $harness = remote_wireguard_peer_install_harness(
         filesPresent: true,
@@ -1101,7 +1050,6 @@ it('fails bounded when a stale recoverable peer transaction is already present',
         filesPresent: true,
         activeState: 'active',
         enabledState: 'enabled',
-        legacyResolverHooks: true,
     );
 
     try {
@@ -2456,7 +2404,6 @@ function remote_wireguard_peer_install_harness(
     bool $dnsSymlink = false,
     ?string $peerTld = null,
     ?string $dnsServerOverride = null,
-    bool $legacyResolverHooks = false,
 ): object {
     $root = sys_get_temp_dir().'/orbit-wireguard-peer-shell-'.Str::uuid();
     $filesystem = new Filesystem;
@@ -2496,16 +2443,8 @@ function remote_wireguard_peer_install_harness(
     file_put_contents("{$root}/wireguard/private.key", str_repeat(string: 'K', times: 43).'=');
     file_put_contents("{$root}/wireguard/public.key", str_repeat(string: 'P', times: 43).'=');
 
-    $originalLiveContent = $legacyResolverHooks
-        ? "[Interface]\nPrivateKey = prior-secret\nAddress = 10.43.0.7/24\nPostUp = resolvectl dns %i 10.43.0.53; resolvectl domain %i ~old.orbit.internal\nPreDown = resolvectl revert %i\n"
-        : "[Interface]\nPrivateKey = prior-secret\nAddress = 10.43.0.7/24\n";
-    $originalDnsContent = $legacyResolverHooks
-        ? "orbit\n10.43.0.53\nold.orbit.internal\n"
-        : "old0\n10.43.0.53\nold.orbit.internal\n";
-    if ($legacyResolverHooks) {
-        file_put_contents("{$root}/state/resolver/orbit/dns", "10.43.0.53\n");
-        file_put_contents("{$root}/state/resolver/orbit/domain", "~old.orbit.internal\n");
-    }
+    $originalLiveContent = "[Interface]\nPrivateKey = prior-secret\nAddress = 10.43.0.7/24\n";
+    $originalDnsContent = "old0\n10.43.0.53\nold.orbit.internal\n";
     if ($filesPresent) {
         file_put_contents("{$root}/wireguard/orbit.conf", $originalLiveContent);
         chmod(filename: "{$root}/wireguard/orbit.conf", permissions: 0o640);
@@ -2591,11 +2530,6 @@ function remote_wireguard_peer_install_harness(
                 restart)
                     [ ! -f "{$root}/state/restore-failure" ] || exit 1
                     if [ "\$(cat "{$root}/state/active")" = active ] && [ -f "{$root}/wireguard/orbit.conf" ]; then
-                        pre_down=\$(sed -n 's/^PreDown = //p' "{$root}/wireguard/orbit.conf")
-                        if [ -n "\$pre_down" ]; then
-                            pre_down=\$(printf '%s' "\$pre_down" | sed 's/%i/orbit/g')
-                            eval "\$pre_down"
-                        fi
                         : > "{$root}/state/resolver/orbit/dns"
                         : > "{$root}/state/resolver/orbit/domain"
                         for setting in default-route llmnr mdns dnssec dnsovertls nta; do
@@ -2869,13 +2803,6 @@ function remote_wireguard_peer_install_harness(
         public function failCommitCleanup(): void
         {
             file_put_contents(filename: $this->root.'/state/commit-cleanup-failure', data: '1');
-        }
-
-        public function useLegacyTransactionRecord(): void
-        {
-            $transaction = $this->root.'/wireguard/.orbit.peer-transaction';
-            $state = array_slice(explode("\n", (string) file_get_contents($transaction)), 0, 4);
-            file_put_contents($transaction, implode("\n", $state)."\n");
         }
 
         public function allowRollback(): void

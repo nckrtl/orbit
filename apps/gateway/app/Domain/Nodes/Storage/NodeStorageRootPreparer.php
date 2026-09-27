@@ -11,5 +11,5 @@ interface NodeStorageRootPreparer
 {
     public function inspect(Node $node, ManagedUserAccount $account, StoragePath $path): void;
 
-    public function prepare(Node $node, ManagedUserAccount $account, EffectiveStorageRoots $roots): void;
+    public function prepare(Node $node, ManagedUserAccount $account, StoragePath $root): void;
 }

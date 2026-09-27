@@ -49,12 +49,11 @@ final class ListToolsCommand extends ToolCommand
             $t->versionConstraint,
             $t->status,
             $t->installedVersion,
-            $t->protected ? 'yes' : 'no',
             $t->errorCode,
         ], $response->tools);
         ConsoleWriter::write(
             $this->output,
-            $this->humanRenderer()->table(['ID', 'Manager', 'Package', 'Constraint', 'Status', 'Version', 'Protected', 'Error'], $rows),
+            $this->humanRenderer()->table(['ID', 'Manager', 'Package', 'Constraint', 'Status', 'Version', 'Error'], $rows),
         );
         $this->writeHumanMessage("Request ID: {$response->requestId}");
 
