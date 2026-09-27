@@ -14,7 +14,7 @@ This page describes the optional Gateway `tasks` extension. It coordinates featu
 
 The extension is off until an authorized Gateway caller enables it. There is no web UI for create. Agents create groups through the [MCP server](/reference/mcp). The [`tasks` CLI family](/cli/tasks) runs every operation on this page from a terminal when MCP is unavailable.
 
-[ADR 0112](/decisions/0112-isolate-agent-threads-behind-drivers) defines the `AgentThread` and `AgentDriver` boundary. Orbit stores persistent conversations and delegates runtime communication to a driver.
+[ADR 0112](/decisions/0112-isolate-agent-threads-behind-drivers) defines the `AgentThread` and `AgentDriver` boundary. Orbit stores persistent conversations and delegates runtime communication to a driver. T3 is the first driver.
 
 ## Enable the extension
 
@@ -222,7 +222,7 @@ The group asks for assistance with each message. The implementer gets no reminde
 
 When every other item passes, Orbit runs the Project's configured task check and verifies deliverables. When the configured command runs `composer check`, including as part of a compound command, the Gateway adds a `check_script` rubric item; the task workspace must define that Composer script. Before the baseline check, the scheduler runs the Project's setup steps, then may prepare dependencies based on the task-check command as described in [Project check](#project-check). Handoff checks do not install dependencies.
 
-The `deliverables` item fails when a confirmation is missing or a deliverable does not pass. The reminder names each failing deliverable and why, and the assistance reason repeats it. Like every item, it gets one reminder per completion attempt, then asks for assistance. The reviewer starts only when every deliverable passes.
+The `deliverables` item fails when a confirmation is missing or a deliverable does not pass. The reminder names each failing deliverable and why, and the assistance reason repeats it. Like every item, it gets one reminder per completion attempt, then asks for assistance. An invalid `test` project or file does not use that reminder. The reviewer starts only when every deliverable passes.
 
 A subtask with no deliverables skips these steps. Groups that left Backlog before deliverables existed keep running that way. To add deliverables to such a group, update its `todo` subtasks.
 
@@ -418,7 +418,7 @@ Each subtask gets a fresh implementer (`instanceId=codex`, `model=gpt-5.6-luna`,
 
 The T3 provider instance is selected from the model: Claude model names use `claudeAgent`; other configured models use `codex`. Role supplies default model and effort. The instance is fixed at `thread.create`. Subtasks run in position order. At most one Task in a group is `running`. Opening starts only the first `todo` subtask. The next `todo` subtask becomes `running` only after the approval or [cancellation](#groups-and-subtasks) ends the current one and no sibling is `running`. The scheduler refuses a second running task and does not spawn another implementer.
 
-When an implementer is idle, done, or asking for input, the Gateway reads the implementer's run receipt and evaluates generic task gates. A pending input fails on its own. When these items pass, Orbit runs the Project check itself.
+When an implementer is idle, done, or asking for input, the Gateway reads the implementer's run receipt and `composer.json` at the workspace root, which must define a `check` script. A pending input fails on its own. When these items pass, Orbit runs the Project check itself.
 
 Before each agent turn, the Gateway installs the run script at `.git/orbit/run`, writes `.git/orbit/turn.json` with the role of the turn, the subtask's deliverables, and the acting thread's Orbit id, and removes any earlier receipt. Git never tracks `.git/orbit/`. The agent ends its turn with `.git/orbit/run --thread=ID --outcome=OUTCOME --summary="…"`. `ID` is the Orbit thread id from that turn's instructions. An implementer uses `ready_for_review` or `blocked`. A reviewer uses `approved`, `changes_requested`, or `blocked`.
 
@@ -560,7 +560,7 @@ git diff START; git ls-files --others --exclude-standard -z | while IFS= read -r
 
 A continued re-review does not repeat the group brief, the deliverables, the earlier approval lines, or a resolution carried on the opening packet. That turn carries the new diff stat, the capped diff, both retrieval commands, and the new handoff result. The spared caps go to the diff body. When that thread cannot take a turn, Orbit starts a fresh thread and sends the full packet.
 
-The reviewer does not re-run the Project task check or deliverable commands the handoff already passed. The reviewer runs another command only to get evidence the handoff result does not give, and the review summary says why.
+The reviewer does not re-run the Project task check or the deliverable tests and commands the handoff already passed. That includes `composer check` when it is the task check. The reviewer runs another command only to get evidence the handoff result does not give, and the review summary says why.
 
 The reviewer prompt states this rule on the opening packet and on a continued turn. Orbit does not parse the summary to enforce it. The same prompt says the turn is read-only, that the implementer has no web access, and that the reviewer confirms framework and library usage against documentation for the Project's versions. Those checks are evidence the handoff result does not give. The opening packet also names the feature contract: the ADRs and documentation this branch changes against the Project default branch, such as `origin/main`. A continued turn does not repeat that sentence.
 
@@ -580,7 +580,7 @@ Otherwise the tick checks for commits since the thread started. It reads the cou
 
 The other thread's work does not defer the task. While the operator talks to a reviewer that is not the acting thread, the tick still reads the implementer's receipt, asks for assistance on `blocked`, runs the handoff check, and sends reminders to the implementer. The Gateway sends no turn to the working thread until it stops. [ADR 0132](/decisions/0132-pause-only-for-the-acting-thread-and-a-real-question) records the decision.
 
-The Gateway does not inspect Project manifests or infer a check policy from their contents. Project-specific validation belongs in the Project's configured task-check command.
+When the Project's task check runs the `composer check` command, not a longer command such as `composer check-platform-reqs`, the tick also reads `composer.json` at the workspace root over SSH. The `check_script` item then passes only when `scripts.check` is a non-empty command or list. For any other task check, or none, `check_script` passes. Composer resolves abbreviated command names, so without that script `composer check` runs the built-in `check-platform-reqs` command and exits 0. A missing file, invalid JSON, or a missing or empty `check` script fails `check_script`, and Orbit does not start the check.
 
 A pending input fails `waiting_for_input` in code. A thread state the rubric does not recognize waits. The rubric makes no model call. When every item, the Project check, and the [deliverables](#verify-deliverables) pass, the Gateway sets the task to `reviewing`. [ADR 0114](/decisions/0114-judge-task-completion-as-separate-checks) owns this rubric.
 
