@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\Doctor\DoctorFamily;
 use App\Models\Activity;
 use App\Models\AgentThread;
+use App\Models\AgentThreadSendLease;
 use App\Models\Annotation;
 use App\Models\App as AppModel;
 use App\Models\AppInstance;
@@ -91,6 +92,7 @@ it('partitions every persisted model across doctor dispositions', function (): v
         DatabaseUser::class,
         Task::class,
         AgentThread::class,
+        AgentThreadSendLease::class,
         TaskGroup::class,
         TaskComment::class,
         TaskCheck::class,
